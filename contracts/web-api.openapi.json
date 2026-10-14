@@ -61481,6 +61481,16 @@
                         },
                         "requires_running_exit_confirmation": {
                           "type": "boolean"
+                        },
+                        "current_run_started_at": {
+                          "anyOf": [
+                            {
+                              "type": "number"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
                         }
                       },
                       "required": [
@@ -61491,7 +61501,8 @@
                         "claim_live",
                         "has_completion_evidence",
                         "available_actions",
-                        "requires_running_exit_confirmation"
+                        "requires_running_exit_confirmation",
+                        "current_run_started_at"
                       ],
                       "additionalProperties": {}
                     },
@@ -61543,12 +61554,35 @@
                         "parents",
                         "children"
                       ]
+                    },
+                    "link_tasks": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "id": {
+                            "type": "string"
+                          },
+                          "title": {
+                            "type": "string"
+                          },
+                          "status": {
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "id",
+                          "title",
+                          "status"
+                        ]
+                      }
                     }
                   },
                   "required": [
                     "task",
                     "last_card_action",
-                    "links"
+                    "links",
+                    "link_tasks"
                   ],
                   "additionalProperties": {}
                 }

@@ -576,11 +576,17 @@ def task_detail_payload(params: dict) -> dict:
         task = kb.get_task(conn, task_id)
         if not task:
             raise NotFound("task not found")
+        data = _task_dict(task, conn)
+        # ``started_at`` is the first-ever start; a retried task's run clock counts from its current run (TAL-809).
+        data["current_run_started_at"] = kb.current_run_started_ats(conn, [task_id]).get(task_id)
+        links = {"parents": kb.parent_ids(conn, task_id), "children": kb.child_ids(conn, task_id)}
+        linked = (kb.get_task(conn, link_id) for link_id in dict.fromkeys([*links["parents"], *links["children"]]))
         return {
-            "task": _task_dict(task, conn),
+            "task": data,
             "comments": [_obj_dict(c) for c in kb.list_comments(conn, task_id)],
             "events": [_obj_dict(e) for e in kb.list_events(conn, task_id)],
-            "links": {"parents": kb.parent_ids(conn, task_id), "children": kb.child_ids(conn, task_id)},
+            "links": links,
+            "link_tasks": [{"id": t.id, "title": t.title, "status": t.status} for t in linked if t],
             "runs": [_obj_dict(r) for r in kb.list_runs(conn, task_id)],
             "read_only": False,
         }

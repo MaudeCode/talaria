@@ -88,6 +88,9 @@ const Board = ProfileHomeParams.extend({ board: z.string().nullable().optional()
  * `agent_move_targets`: the Agent workflow's manual moves from the task's status, `null` before Agent 0.21.6 (TAL-796). */
 export const KanbanTaskSchema = z.object({ id: z.string(), title: z.string(), status: z.string(), priority: z.number().int(), claim_live: z.boolean(), has_completion_evidence: z.boolean(), agent_move_targets: z.array(z.string()).nullable() }).catchall(Json)
 const TaskEnvelope = z.object({ task: KanbanTaskSchema, read_only: z.boolean() })
+/** Task detail's links (TAL-809): `link_tasks` names each linked task that still exists; `current_run_started_at` is the active run's start, `null` without one (`started_at` is the first-ever start). */
+export const KanbanTaskLinksShape = { links: z.object({ parents: z.array(z.string()), children: z.array(z.string()) }), link_tasks: z.array(z.object({ id: z.string(), title: z.string(), status: z.string() })) }
+export const KanbanRunStartShape = { current_run_started_at: z.number().nullable() }
 export const KanbanBoardSchema = z.union([
   z.object({ changed: z.literal(false), latest_event_id: z.number().int(), read_only: z.boolean() }),
   z.object({
@@ -107,7 +110,7 @@ export const KANBAN_METHODS = {
   'kanban.update_board': { params: ProfileHomeParams.extend({ slug: z.string(), board_spec: Loose }), result: z.object({ board: KanbanBoardMetaSchema, read_only: z.boolean() }) },
   'kanban.delete_board': { params: ProfileHomeParams.extend({ slug: z.string(), delete: z.boolean().optional() }), result: z.object({ result: Json, current: z.string(), read_only: z.boolean() }) },
   'kanban.switch_board': { params: ProfileHomeParams.extend({ slug: z.string() }), result: z.object({ current: z.string(), read_only: z.boolean() }) },
-  'kanban.task': { params: Board.extend({ task_id: z.string() }), result: z.object({ task: KanbanTaskSchema, comments: z.array(Loose), events: z.array(Loose), links: z.object({ parents: z.array(z.string()), children: z.array(z.string()) }), runs: z.array(Loose), read_only: z.boolean() }) },
+  'kanban.task': { params: Board.extend({ task_id: z.string() }), result: z.object({ task: KanbanTaskSchema.extend(KanbanRunStartShape), comments: z.array(Loose), events: z.array(Loose), ...KanbanTaskLinksShape, runs: z.array(Loose), read_only: z.boolean() }) },
   'kanban.create_task': { params: Board.extend({ task: Loose }), result: TaskEnvelope },
   'kanban.patch_task': { params: Board.extend({ task_id: z.string(), patch: Loose }), result: TaskEnvelope },
   'kanban.task_action': { params: Board.extend({ task_id: z.string(), action: z.enum(['block', 'unblock']), reason: z.string().nullable().optional(), confirm_running_exit: z.boolean().optional() }), result: TaskEnvelope },
