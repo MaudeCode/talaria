@@ -32,8 +32,18 @@ _PASSTHROUGH_FIELDS = ("script", "no_agent", "context_from", "reasoning_effort",
 _RUNNING: dict[str, float] = {}
 _RUNNING_LOCK = threading.Lock()
 _SNAPSHOT_LOCK = threading.Lock()
-# The Agent's fire claim lives FIRE_CLAIM_TTL_SECONDS (300); a run refreshes it well inside that.
+# The Agent's fire claim lives FIRE_CLAIM_TTL_SECONDS (300); a run refreshes it well inside that, re-checks a missed
+# refresh once before treating the claim as lost (as the Agent's own runs do), and gives up once no refresh has landed
+# for most of the lease.
 _CLAIM_HEARTBEAT_SECONDS = 60.0
+_CLAIM_MISS_CONFIRM_SECONDS = 1.0
+_CLAIM_HEARTBEAT_GRACE_SECONDS = 240.0
+_CLAIM_LOST = "Another process took over this task's run claim, so this run stopped before saving or delivering anything"
+
+
+class _ClaimLost(RuntimeError):
+    def __init__(self) -> None:
+        super().__init__(_CLAIM_LOST)
 
 
 def _main_model_pin() -> tuple[str | None, str | None]:
@@ -180,11 +190,12 @@ def _live_executions(home: Path, job_ids: list[str], *, strict: bool = False) ->
         return {}
 
 
-def _claim_fire(store_home: Path, job: dict) -> str | bool | None:
+def _claim_fire(store_home: Path, job: dict) -> dict | bool | None:
     """The Agent's own run-now lease (``claim_job_for_fire(manual=True)``), which a gateway tick must also win.
 
-    The claim token, ``False`` when another process holds the job, or ``None`` for a paused or disabled job, which no
-    tick fires. ``mark_job_run`` releases it when the run ends; the run heartbeats it meanwhile."""
+    The exact record the claim took (the one to run), ``False`` when another process holds the job, or ``None`` for a
+    paused or disabled job, which no tick fires. ``mark_job_run`` releases it when the run ends; the run heartbeats it
+    meanwhile."""
     jobs = _jobs()
     with _store(store_home):
         if not jobs.is_job_runnable(job):
@@ -192,7 +203,23 @@ def _claim_fire(store_home: Path, job: dict) -> str | bool | None:
         claimed = jobs.claim_job_for_fire(job["id"], manual=True, return_job=True)
     if not isinstance(claimed, dict):
         return False
-    return str((claimed.get("fire_claim") or {}).get("by") or "") or None
+    return {key: value for key, value in claimed.items() if key != "_scheduled_instant"}
+
+
+def _owner_fence(jobs, job_id: str, owner: str | None):
+    """Held while a claimed run saves, delivers, and records: yields whether ``owner`` still holds the fire claim."""
+    return jobs.fire_claim_fence(job_id, expected_owner=owner) if owner else contextlib.nullcontext(True)
+
+
+def _mark_run(jobs, job_id: str, success: bool, error, owner: str | None, delivery_error=None) -> None:
+    """``mark_job_run`` fenced by the run's fire claim: a run that lost its claim records nothing over the new owner's."""
+    fence = {"expected_fire_owner": owner} if owner else {}
+    try:
+        jobs.mark_job_run(job_id, success, error, delivery_error=delivery_error, **fence)
+    except TypeError:
+        if owner:
+            raise
+        jobs.mark_job_run(job_id, success, error)
 
 
 def _elapsed(record: dict) -> float:
@@ -337,7 +364,10 @@ def _run_in_child(job, execution_home, ctx: CallContext, heartbeat=None):
             except queue.Empty:
                 if heartbeat is not None and time.monotonic() >= next_beat:
                     next_beat = time.monotonic() + _CLAIM_HEARTBEAT_SECONDS
-                    heartbeat()
+                    if not heartbeat():
+                        process.terminate()
+                        process.join(timeout=5)
+                        raise _ClaimLost()
                 if ctx.cancelled:
                     process.terminate()
                     process.join(timeout=5)
@@ -402,15 +432,29 @@ def run_tracked(job: dict, store_home: Path, execution_home: Path | None, ctx: C
     execution_home = execution_home or store_home
     outcome: dict = {"job_id": job_id, "status": "completed"}
     try:
-        def heartbeat() -> None:
+        last_beat = time.monotonic()
+
+        def heartbeat() -> bool:
+            """Refresh the claim; ``False`` once another process provably holds it or no refresh has landed for most of the lease."""
+            nonlocal last_beat
             try:
                 with _store(store_home):
-                    jobs.heartbeat_fire_claim(job_id, expected_owner=claim_owner)
+                    owned = jobs.heartbeat_fire_claim(job_id, expected_owner=claim_owner) is not False
+                    if not owned:
+                        time.sleep(_CLAIM_MISS_CONFIRM_SECONDS)
+                        owned = jobs.heartbeat_fire_claim(job_id, expected_owner=claim_owner) is not False
             except Exception:  # noqa: BLE001 - a missed beat only shortens the lease
                 log.warning("Fire claim heartbeat failed for job %s", job_id, exc_info=True)
+                return time.monotonic() - last_beat < _CLAIM_HEARTBEAT_GRACE_SECONDS
+            if owned:
+                last_beat = time.monotonic()
+            return owned
 
         success, output, final_response, error = _run_in_child(job, execution_home, ctx, heartbeat if claim_owner else None)
-        with _store(store_home), _delivery_home(scheduler, store_home):
+        with _store(store_home), _owner_fence(jobs, job_id, claim_owner) as owns, contextlib.ExitStack() as delivery:
+            if not owns:
+                raise _ClaimLost()
+            delivery.enter_context(_delivery_home(scheduler, store_home))
             jobs.save_job_output(job_id, output)
             content = final_response if success else f"⚠️ Cron job '{job.get('name', job_id)}' failed:\n{error}"
             should_deliver = bool(content) and not (success and silent_marker in content.strip().upper())
@@ -422,15 +466,12 @@ def run_tracked(job: dict, store_home: Path, execution_home: Path | None, ctx: C
                     delivery_error = str(exc)
             if success and not final_response:
                 success, error = False, "Agent completed but produced empty response (model error, timeout, or misconfiguration)"
-            try:
-                jobs.mark_job_run(job_id, success, error, delivery_error=delivery_error)
-            except TypeError:
-                jobs.mark_job_run(job_id, success, error)
+            _mark_run(jobs, job_id, success, error, claim_owner, delivery_error)
         outcome.update(success=bool(success), error=error, delivery_error=delivery_error)
     except RpcError:
         with _store(store_home):
             try:
-                jobs.mark_job_run(job_id, False, "cancelled")
+                _mark_run(jobs, job_id, False, "cancelled", claim_owner)
             except Exception:  # noqa: BLE001
                 pass
         raise
@@ -438,7 +479,7 @@ def run_tracked(job: dict, store_home: Path, execution_home: Path | None, ctx: C
         log.exception("Manual cron run failed for job %s", job_id)
         with _store(store_home):
             try:
-                jobs.mark_job_run(job_id, False, str(exc))
+                _mark_run(jobs, job_id, False, str(exc), claim_owner)
             except Exception:  # noqa: BLE001
                 pass
         outcome.update(status="failed", success=False, error=str(exc))
@@ -595,15 +636,19 @@ def register(registry) -> None:
                 return {"job_id": job_id, "status": "already_running", "elapsed": round(time.time() - started, 1)}
             _RUNNING[job_id] = time.time()
         try:
-            owner = _claim_fire(store_home, job)
+            claimed = _claim_fire(store_home, job)
         except BaseException:
             with _RUNNING_LOCK:
                 _RUNNING.pop(job_id, None)
             raise
-        if owner is False:
+        if claimed is False:
             with _RUNNING_LOCK:
                 _RUNNING.pop(job_id, None)
             return {"job_id": job_id, "status": "already_running", "elapsed": 0.0}
+        owner = None
+        if claimed:
+            job = claimed
+            owner = str((claimed.get("fire_claim") or {}).get("by") or "") or None
         ctx.emit("started", {"job_id": job_id})
         return run_tracked(job, store_home, execution_home, ctx, owner)
 
