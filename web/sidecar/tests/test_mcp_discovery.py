@@ -102,7 +102,7 @@ print(json.dumps({"status": result["status"], "elapsed": time.monotonic() - star
 
 # ``mcp.reload`` in profile A while three sessions hold cached agents: two of A's (the first one's refresh fails) and
 # one of profile B's, each built from the real refresh. Discovery changes the stub tool's description under the same
-# name; the probe reports which description each working agent's tools carry afterwards.
+# name; the probe reports which description each working agent's tools carry afterwards, and which sessions stay cached.
 RELOAD_REFRESH_PROBE = """
 import json, os, sys, types
 from pathlib import Path
@@ -141,7 +141,7 @@ registry = Registry(runtime=types.SimpleNamespace(load=lambda: None, ensure_curr
 mcp.register(registry)
 output = registry.methods["mcp.reload"](None, {"profile_home": str(profile_a)})["output"]
 seen = {name: next(word for word in ("reloaded", "original") if word in json.dumps(agents[name].tools)) for name in ("a", "b")}
-print(json.dumps({"output": output, "seen": seen}))
+print(json.dumps({"output": output, "seen": seen, "cached": sorted(chat._AGENT_CACHE)}))
 """
 
 
@@ -245,8 +245,9 @@ def test_reload_refreshes_only_the_reloaded_profiles_cached_agents(tmp_path) -> 
     outcome = _probe(tmp_path, root, RELOAD_REFRESH_PROBE)
     assert outcome["output"].startswith("Reloaded MCP servers"), outcome
     # Profile A's agent gets the same-name tool's new description despite the failing agent before it; profile B's
-    # agent keeps its own.
+    # agent keeps its own. The agent whose refresh failed is evicted, so its next turn rebuilds from the live registry.
     assert outcome["seen"] == {"a": "reloaded", "b": "original"}, outcome
+    assert outcome["cached"] == ["s2", "s3"], outcome
 
 
 @requires_agent
