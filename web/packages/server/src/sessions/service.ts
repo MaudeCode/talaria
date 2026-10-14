@@ -1339,6 +1339,29 @@ export class SessionService {
     }
   }
 
+  /**
+   * TAL-1005: measure the model context again when it holds a post-compression estimate the rows after it may have
+   * outgrown (a waiting turn's prompt, a stopped or failed turn's work). Skipped while a turn owns the session, which
+   * settles its own figures, or once the estimate changed meanwhile. True when it stored a new estimate.
+   */
+  async remeasureContext(sid: string): Promise<boolean> {
+    const sidecar = this.deps.sidecar?.()
+    let s: Session
+    try { s = this.store.get(sid) } catch { return false }
+    const before = s.post_compression_context_tokens_estimate
+    if (before === null || s.active_stream_id || !sidecar) return false
+    let tokens: number
+    try { tokens = (await sidecar.call('models.estimate_tokens', { messages: this.modelContext(s) })).tokens } catch { return false }
+    return this.store.withLock(sid, () => {
+      let live: Session
+      try { live = this.store.get(sid) } catch { return false }
+      if (live.active_stream_id || live.post_compression_context_tokens_estimate !== before) return false
+      live.post_compression_context_tokens_estimate = Math.max(1, tokens)
+      this.store.save(live, { touchUpdatedAt: false })
+      return true
+    })
+  }
+
   private storedCompactionDue(sid: string): boolean {
     try { return this.compactionDue(this.store.get(sid, { metadataOnly: true })) } catch { return false }
   }
@@ -1524,6 +1547,7 @@ export class SessionService {
     if (result.status !== 'compressed') throw new HttpFailure(result.status === 'lock_skipped' ? 409 : 400, result.message ?? 'Nothing to compress yet.')
     const summary = result.summary ?? {}
     let committed = false
+    let keptTurnRows = false
     try {
       const current = await this.store.withLock(sid, () => {
         let live: Session
@@ -1543,6 +1567,7 @@ export class SessionService {
         const compressed = copyJson(result.messages) as Message[]
         for (const m of compressed) m.timestamp ??= stamp
         live.context_messages = [...compressed, ...copyJson(tail)]
+        keptTurnRows = tail.length > 0
         if (!turn) {
           live.pending_user_message = null
           live.pending_attachments = []
@@ -1574,6 +1599,9 @@ export class SessionService {
         return live
       })
       committed = true
+      // The estimate covers the compressed rows only; a stopped turn's kept prompt is measured with them (a waiting turn
+      // settles its own figures instead).
+      if (keptTurnRows) await this.remeasureContext(sid)
       // Open chats refetch the session for its new context figures; the list order stays (no recency change).
       this.publish('session_compress', current.profile, sid)
       // The cached turn agent still carries the uncompressed state; the next turn builds a fresh one (gateway parity).

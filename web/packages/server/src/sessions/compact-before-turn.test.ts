@@ -247,6 +247,26 @@ describe('compaction before the next turn', () => {
     sidecar.respond('models.estimate_tokens', undefined)
   })
 
+  it("measures a stopped turn's kept prompt with the compressed context when the job commits after the Stop", async () => {
+    const sid = await seeded(OVER)
+    let release!: () => void
+    const gate = new Promise<void>((r) => { release = r })
+    sidecar.respond('chat.compress', async (params) => { compressCalls += 1; await gate; return compressed(params) })
+    sidecar.respond('models.estimate_tokens', (params) => ({ tokens: params.messages.length * 100 }))
+    try {
+      const streamId = String((await json(await post(s, '/api/chat/start', { session_id: sid, message: 'stopped' }))).stream_id)
+      await s.sse(`/api/chat/stream?stream_id=${streamId}`, (f) => f.event === 'compressing')
+      expect((await s.get(`/api/chat/cancel?stream_id=${streamId}`)).status).toBe(200)
+      await vi.waitFor(() => { expect(s.deps.sessionStore.get(sid).active_stream_id).toBeNull() })
+      release()
+      await vi.waitFor(async () => { expect((await json(await s.get(`/api/session/compress/status?session_id=${sid}`))).status).toBe('done') })
+      const stored = s.deps.sessionStore.get(sid)
+      // Not the 120 tokens of the compressed rows alone: the kept prompt is counted too.
+      expect(contents(stored.context_messages)).toEqual(['one', 'four', 'stopped'])
+      expect(stored.post_compression_context_tokens_estimate).toBe(300)
+    } finally { sidecar.respond('models.estimate_tokens', undefined) }
+  })
+
   it("leaves a turn on another model to the Agent's own preflight", async () => {
     const sid = await seeded({ ...OVER, model: 'old-model' })
     let model: unknown
