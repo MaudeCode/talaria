@@ -280,10 +280,30 @@ def _rough_tokens(text: str) -> int:
         return -(-len(text) // _ROUGH_TOKEN_CHARS)
 
 
+def _tool_failure_outcome(text: str) -> str:
+    """`` FAILED: <error>`` for a JSON tool payload with a top-level ``error`` / ``success: false``, `` FAILED: exit N`` for
+    a non-zero ``exit_code`` the agent did not kill itself, else ``""``: the Agent's compression-stub rule
+    (``_payload_failure_suffix``, ``_sum_process_manage``). Payloads put these fields after ``output``, so a cut drops them."""
+    try:
+        payload = json.loads(text)
+    except (ValueError, RecursionError):
+        return ""
+    if not isinstance(payload, dict):
+        return ""
+    error = payload.get("error")
+    if not error and payload.get("success") is not False:
+        code = payload.get("exit_code")
+        if not isinstance(code, int) or isinstance(code, bool) or code == 0 or payload.get("completion_reason") == "killed":
+            return ""
+        error = f"exit {code}"
+    preview = " ".join(str(error).split())[:80] if error else ""
+    return f" FAILED: {preview}" if preview else " FAILED"
+
+
 def _capped_tool_result(text: str, tokens: int, keep_tokens: int) -> str:
-    """The kept head of an over-budget tool result plus a note on what the model no longer sees."""
+    """The kept head of an over-budget tool result plus a note on what the model no longer sees, ending on the outcome."""
     prefix = "[Talaria context budget: omitted "
-    suffix = f" (~{tokens} rough tokens) from this tool result; the full output remains in the visible transcript.]"
+    suffix = f" (~{tokens} rough tokens) from this tool result; the full output remains in the visible transcript.{_tool_failure_outcome(text)}]"
     if keep_tokens < _TAIL_TOOL_MIN_SNIPPET_TOKENS:
         return f"{prefix}{len(text)} chars{suffix}"
     room = keep_tokens - _rough_tokens(f"{prefix}{len(text)} of {len(text)} chars{suffix}") - 1

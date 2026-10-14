@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "After Talaria Web compresses a long turn, a trimmed tool result still tells the model the command failed, so a failed build or refused call no longer reads as a success.",
+      "highlight": false,
+      "components": ["web"]
+    }
+  ]
+}
