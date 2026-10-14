@@ -131,6 +131,8 @@ struct ChatView: View {
     @State private var editContext: MessageActionContext?
     @State private var editDraft = ""
     @State private var showEditSheet = false
+    /// True until the edit sheet's dismissal finishes, so a confirmation the send brings back presents after it (TAL-929).
+    @State private var isEditSheetOnScreen = false
     @State private var showApprovalBypassOffConfirmation = false
     @State private var showsQueuedMessagesSheet = false
     @State private var selectableResponseText: SelectableTextPresentation?
@@ -735,7 +737,7 @@ struct ChatView: View {
                     }
                 )
             }
-            .sheet(isPresented: $showEditSheet) {
+            .sheet(isPresented: $showEditSheet, onDismiss: { isEditSheetOnScreen = false }) {
                 EditMessageSheet(
                     originalText: editContext?.copyText ?? "",
                     editDraft: $editDraft,
@@ -749,7 +751,7 @@ struct ChatView: View {
             .alert(
                 "Discard Later Messages?",
                 isPresented: Binding(
-                    get: { viewModel.deepTruncateConfirmation != nil },
+                    get: { viewModel.deepTruncateConfirmation != nil && !isEditSheetOnScreen },
                     set: { if !$0 { viewModel.cancelDeepTruncate() } }
                 ),
                 presenting: viewModel.deepTruncateConfirmation
@@ -758,7 +760,9 @@ struct ChatView: View {
                     viewModel.cancelDeepTruncate()
                 }
                 Button(
-                    confirmation.action == .regenerate ? "Discard & Regenerate" : "Discard & Edit",
+                    confirmation.action == .regenerate
+                        ? String(localized: "Discard & Regenerate")
+                        : String(localized: "Discard & Edit"),
                     role: .destructive
                 ) {
                     ChatHaptics.destructiveConfirmationAccepted(isEnabled: isHapticsEnabled)
@@ -2874,6 +2878,7 @@ struct ChatView: View {
     private func beginEditMessage(_ context: MessageActionContext) {
         editDraft = context.copyText
         editContext = context
+        isEditSheetOnScreen = true
         showEditSheet = true
     }
 

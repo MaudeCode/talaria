@@ -126,9 +126,56 @@ final class ChatHostedTests: XCTestCase {
         XCTAssertTrue(removed, "A server-confirmed disabled bypass left the chip")
     }
 
+    /// An edit or regenerate the server holds asks with the server's count, the edit only once its sheet has closed;
+    /// Cancel keeps the transcript (TAL-929).
+    func testHeldEditAndRegenerateAskWithTheServersCount() async throws {
+        let window = try await hostFixtureChat(["--ui-test-compression-reference"])
+        func alert() -> UIAlertController? {
+            var controller = window.rootViewController
+            while let presented = controller?.presentedViewController { controller = presented }
+            return controller as? UIAlertController
+        }
+        func choose(_ title: String, on label: String) async throws {
+            let row = try await requireElement(in: window, label: label)
+            let hit = try XCTUnwrap(try messageMenuHit(at: row, in: window), "\(label) has no message menu")
+            try XCTUnwrap(hit.content.actions.first { $0.title == title }, "\(label) offers no \(title)").handler()
+        }
+
+        try await choose("Edit Message", on: "Plan the migration.")
+        let presented = await presentedController(in: window)
+        let sheet = try XCTUnwrap(presented, "Edit opened no sheet")
+        let send = await awaitCondition { HostedAccessibility.element(in: sheet.view, label: "Send") != nil }
+        XCTAssertTrue(send, "The edit sheet has no Send")
+        HostedAccessibility.activate(try XCTUnwrap(HostedAccessibility.element(in: sheet.view, label: "Send")))
+        let editAsked = await awaitCondition { alert() != nil }
+        XCTAssertTrue(editAsked, "The held edit never asked")
+        XCTAssertEqual(alert()?.title, "Discard Later Messages?")
+        XCTAssertEqual(alert()?.message, "Editing this message will discard 5 later messages.")
+        XCTAssertTrue(HostedAccessibility.tap("Cancel", in: try XCTUnwrap(alert())))
+        let editCancelled = await awaitCondition { window.rootViewController?.presentedViewController == nil }
+        XCTAssertTrue(editCancelled, "Cancel left the confirmation up")
+
+        try await choose("Regenerate Response", on: "Here is the plan.")
+        let regenerateAsked = await awaitCondition { alert() != nil }
+        XCTAssertTrue(regenerateAsked, "The held regenerate never asked")
+        XCTAssertEqual(alert()?.message, "Regenerating this response will discard 5 later messages.")
+        XCTAssertTrue(HostedAccessibility.tap("Cancel", in: try XCTUnwrap(alert())))
+        let regenerateCancelled = await awaitCondition { window.rootViewController?.presentedViewController == nil }
+        XCTAssertTrue(regenerateCancelled, "Cancel left the confirmation up")
+        XCTAssertNotNil(HostedAccessibility.element(in: window, label: "Step one done."), "Cancel changed the transcript")
+    }
+
     /// What the transcript's long press resolves to at `element`'s centre (TAL-485): the press handler's own registry
     /// and policy, read from the hosted transcript. The touch arbitration itself is the phone check's.
     private func messageMenuTarget(at element: NSObject, in window: UIWindow) throws -> ChatMessageMenuTarget? {
+        guard let hit = try messageMenuHit(at: element, in: window) else { return nil }
+        return ChatMessageMenuPolicy.target(
+            at: hit.localPoint, linkRegions: hit.content.linkRegions, controlRegions: hit.content.controlRegions
+        )
+    }
+
+    /// The message row a long press at `element`'s centre lands on, from the press handler's own registry.
+    private func messageMenuHit(at element: NSObject, in window: UIWindow) throws -> ChatMessageMenuRegistry.Hit? {
         let host = try XCTUnwrap(window.firstView(ofType: ChatMessageMenuHostView.self), "The transcript has no long-press handler")
         let stored = Dictionary(uniqueKeysWithValues: Mirror(reflecting: host).children.compactMap { child in
             child.label.map { ($0, child.value) }
@@ -137,9 +184,6 @@ final class ChatHostedTests: XCTestCase {
         let scrollView = try XCTUnwrap(host.superview.flatMap { sequence(first: $0, next: \.superview).first { $0 is UIScrollView } })
         let frame = window.convert(element.accessibilityFrame, from: nil)
         let point = scrollView.convert(CGPoint(x: frame.midX, y: frame.midY), from: window)
-        guard let hit = registry.hit(at: point, in: scrollView) else { return nil }
-        return ChatMessageMenuPolicy.target(
-            at: hit.localPoint, linkRegions: hit.content.linkRegions, controlRegions: hit.content.controlRegions
-        )
+        return registry.hit(at: point, in: scrollView)
     }
 }

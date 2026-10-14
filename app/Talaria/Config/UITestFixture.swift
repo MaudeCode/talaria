@@ -566,6 +566,9 @@ final class UITestFixtureURLProtocol: URLProtocol, @unchecked Sendable {
                 "result": "fixture result, in full",
                 "result_view": ["text": "fixture result, in full"]
             ])
+        case "/api/session/truncate" where requestJSON(request)["confirm_deep_truncate"] as? Bool != true:
+            // TAL-929: the server holds a cut of more than one user turn until it is confirmed, with its counts.
+            return json(["ok": false, "confirm_required": true, "discard_user_turns": 3, "discard_messages": 5])
         case "/api/session/new":
             // The title echoes the requested profile so a UI test can see that a
             // "new chat in <profile>" entry point pinned the session (TAL-77).
