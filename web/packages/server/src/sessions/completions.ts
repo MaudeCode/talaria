@@ -51,6 +51,8 @@ export interface CompletionDrainDeps {
   background?: Pick<BackgroundActivity, 'recordEvent'>
   /** TAL-933: a profile's parsed config, for its `delegation.surface_child_process_notifications`. */
   readConfig?: (profileHome: string) => Promise<Dict>
+  /** TAL-907: the server environment, for `HERMES_BACKGROUND_NOTIFICATIONS`. */
+  env?: Record<string, string | undefined>
 }
 
 /** `event` is the raw completion event: async delegations claim and acknowledge it in the Agent's ledger (TAL-459), and every
@@ -203,13 +205,29 @@ export class CompletionDrain {
     return (formatWakeupPrompt(evt) ?? '').trim()
   }
 
-  /** The owning profile's `delegation.surface_child_process_notifications`; off, the Agent's default, when it cannot be read. */
-  private async surfacesChildProcesses(sid: string): Promise<boolean> {
+  /** The session's owning profile config; empty when it cannot be read. */
+  private async profileConfig(sid: string): Promise<Dict> {
     try {
       const session = this.deps.store.get(sid, { metadataOnly: true, promote: false, cacheOnMiss: false })
-      const config = await this.deps.readConfig?.(this.deps.profileHome(session.profile ?? this.deps.activeProfile()))
-      return isDict(config?.delegation) && config.delegation.surface_child_process_notifications === true
-    } catch { return false }
+      return (await this.deps.readConfig?.(this.deps.profileHome(session.profile ?? this.deps.activeProfile()))) ?? {}
+    } catch { return {} }
+  }
+
+  /** The owning profile's `delegation.surface_child_process_notifications`; off, the Agent's default, when it cannot be read. */
+  private async surfacesChildProcesses(sid: string): Promise<boolean> {
+    const config = await this.profileConfig(sid)
+    return isDict(config.delegation) && config.delegation.surface_child_process_notifications === true
+  }
+
+  /** TAL-907 (Agent `_load_background_notifications_mode`): `HERMES_BACKGROUND_NOTIFICATIONS`, else the owning profile's
+   * `display.background_process_notifications` (YAML `false` is off). Only `off` changes Web delivery. */
+  private async notificationsOff(sid: string): Promise<boolean> {
+    let mode: unknown = this.deps.env?.HERMES_BACKGROUND_NOTIFICATIONS?.trim()
+    if (!mode) {
+      const config = await this.profileConfig(sid)
+      mode = isDict(config.display) ? config.display.background_process_notifications : undefined
+    }
+    return mode === false || str(mode).trim().toLowerCase() === 'off'
   }
 
   /** Python `_process_one`; returns false when the event has no owning WebUI session. */
@@ -234,6 +252,9 @@ export class CompletionDrain {
     this.deps.background?.recordEvent(sid, evt, prompt)
     if (backgroundEventKind(evt) !== 'progress') this.emitCoalesced(sid, this.buildPayload(evt, sid, prompt))
     if (!prompt) return true
+    // TAL-907: `off` mutes process-driven wakeups; the record and status row above are the whole delivery. A subagent
+    // result is not a process notification and still lands, as in the Agent.
+    if (evt.type !== 'async_delegation' && await this.notificationsOff(sid)) return true
     const entry: Deferred = { process_id: deliveryKey(evt, processId), wakeup_prompt: prompt, event: evt }
     if (this.hasActiveTurn(sid)) this.defer(sid, entry)
     else await this.startWakeup(sid, [entry])

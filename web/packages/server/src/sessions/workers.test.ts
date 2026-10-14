@@ -438,7 +438,7 @@ describe('async delegation delivery claims (TAL-459)', () => {
   })
 })
 
-describe('subagent process notifications follow the owning profile (TAL-933)', () => {
+describe('process notifications follow the owning profile (TAL-933, TAL-907)', () => {
   let s: TestServer
   let sidecar: FakeSidecar
   beforeAll(async () => {
@@ -448,7 +448,7 @@ describe('subagent process notifications follow the owning profile (TAL-933)', (
   afterAll(() => s.close())
 
   /** A session on profile `b` while `a` is active; only the owning profile's `delegation` section counts. */
-  const setup = async (configs: Record<string, Json>): Promise<{ sid: string; drain: CompletionDrain; starts: string[]; consumed: string[]; requeued: Json[]; notified: string[] }> => {
+  const setup = async (configs: Record<string, Json>, env: Record<string, string> = {}): Promise<{ sid: string; drain: CompletionDrain; starts: string[]; consumed: string[]; requeued: Json[]; notified: string[]; recorded: string[] }> => {
     const sid = String(((await json(await post(s, '/api/session/new', {}))).session as Json).session_id)
     const session = s.deps.sessionStore.get(sid)
     session.profile = 'b'
@@ -458,15 +458,17 @@ describe('subagent process notifications follow the owning profile (TAL-933)', (
     const consumed: string[] = []
     const requeued: Json[] = []
     const notified: string[] = []
+    const recorded: string[] = []
     sidecar.respond('process.mark_consumed', (params) => { consumed.push(str(params.process_id)); return { ok: true } })
     sidecar.respond('process.requeue', (params) => { requeued.push(...(params.events as Json[])); return { requeued: params.events.length } })
     const channels = { emit: (_sid: string, name: string, payload: Json) => { if (name === 'bg_task_complete') notified.push(str(payload.task_id)); return 1 } } as unknown as SessionChannels
     const drain = new CompletionDrain({
       sidecar: () => sidecar, baseHome: '/homes', profileHome: (profile) => `/homes/${profile ?? 'default'}`, activeProfile: () => 'a', store: s.deps.sessionStore, channels, registry: s.deps.registry,
-      readConfig: (home: string) => Promise.resolve(configs[home] ?? {}),
+      readConfig: (home: string) => Promise.resolve(configs[home] ?? {}), env,
+      background: { recordEvent: (_sid, evt) => { recorded.push(str(evt.process_id)) } },
       startTurn: (_session, prompt) => { starts.push(prompt); return { stream_id: 'run' } }, now: () => Date.now() / 1000, log: () => undefined,
     })
-    return { sid, drain, starts, consumed, requeued, notified }
+    return { sid, drain, starts, consumed, requeued, notified, recorded }
   }
   const optIn = { delegation: { surface_child_process_notifications: true } }
   type Drained = SidecarResult<'process.drain'>['events'][number]
@@ -506,6 +508,57 @@ describe('subagent process notifications follow the owning profile (TAL-933)', (
     expect(starts.join('\n')).toContain('Background process proc_own completed')
     expect(starts.join('\n')).toContain('ASYNC DELEGATION COMPLETE — deleg_sa')
     expect(requeued.map((e) => e.process_id)).toEqual(['deleg_elsewhere'])
+    drain.stop()
+  })
+
+  const notifications = (mode: unknown): Json => ({ display: { background_process_notifications: mode } })
+  const watch = (sid: string, id: string): Drained => ({ process_id: id, session_id: id, type: 'watch_match', pattern: 'ERR', command: 'tail', output: 'ERR', session_key: sid, consumed: false })
+  const beat = (sid: string, id: string): Drained => ({ process_id: id, session_id: id, type: 'heartbeat', session_key: sid, consumed: false })
+
+  it('settles every process event without waking the session when the owning profile sets background_process_notifications: off', async () => {
+    // The active profile's `all` does not count for a session owned by profile b.
+    const { sid, drain, starts, notified, recorded } = await setup({ '/homes/a': notifications('all'), '/homes/b': notifications('off') })
+    sidecar.respond('process.format_notification', () => ({ text: '[IMPORTANT: still running]' }))
+    for (const evt of [exit(sid, 'proc_off', false), watch(sid, 'proc_watch'), beat(sid, 'proc_beat')]) expect(await drain.processOne(evt)).toBe(true)
+    expect(starts).toEqual([])
+    expect(drain.deferredCount(sid)).toBe(0)
+    // The background record settles and the status row still reaches the session.
+    expect(recorded).toEqual(['proc_off', 'proc_watch', 'proc_beat'])
+    expect(notified).toEqual(['proc_off'])
+    drain.stop()
+  })
+
+  it.each(['concise', 'all', 'result', undefined])('wakes the session as before when the owning profile sets %s', async (mode) => {
+    const { sid, drain, starts } = await setup({ '/homes/a': notifications('off'), '/homes/b': notifications(mode) })
+    expect(await drain.processOne(exit(sid, `proc_${String(mode)}`, false))).toBe(true)
+    expect(starts).toHaveLength(1)
+    drain.stop()
+  })
+
+  it('treats a YAML false as off and lets HERMES_BACKGROUND_NOTIFICATIONS override the config', async () => {
+    const yamlOff = await setup({ '/homes/b': notifications(false) })
+    expect(await yamlOff.drain.processOne(exit(yamlOff.sid, 'proc_false', false))).toBe(true)
+    expect(yamlOff.starts).toEqual([])
+    yamlOff.drain.stop()
+    const envOff = await setup({ '/homes/b': notifications('all') }, { HERMES_BACKGROUND_NOTIFICATIONS: ' OFF ' })
+    expect(await envOff.drain.processOne(exit(envOff.sid, 'proc_env', false))).toBe(true)
+    expect(envOff.starts).toEqual([])
+    envOff.drain.stop()
+    const envOn = await setup({ '/homes/b': notifications('off') }, { HERMES_BACKGROUND_NOTIFICATIONS: 'all' })
+    expect(await envOn.drain.processOne(exit(envOn.sid, 'proc_env_on', false))).toBe(true)
+    expect(envOn.starts).toHaveLength(1)
+    envOn.drain.stop()
+  })
+
+  it('still delivers and acknowledges a subagent result when notifications are off', async () => {
+    const { sid, drain, starts } = await setup({ '/homes/b': notifications('off') })
+    const ledger: string[] = []
+    sidecar.respond('process.format_notification', () => ({ text: '[ASYNC DELEGATION COMPLETE — deleg_off]' }))
+    sidecar.respond('process.claim_delivery', () => { ledger.push('claim'); return { claim_id: 'c' } })
+    sidecar.respond('process.complete_delivery', () => { ledger.push('complete'); return { ok: true } })
+    expect(await drain.processOne({ process_id: 'deleg_off', delegation_id: 'deleg_off', type: 'async_delegation', origin_ui_session_id: sid, consumed: false })).toBe(true)
+    expect(starts).toEqual(['[ASYNC DELEGATION COMPLETE — deleg_off]'])
+    expect(ledger).toEqual(['claim', 'complete'])
     drain.stop()
   })
 })
