@@ -9,7 +9,7 @@ const recorded = JSON.parse(readFileSync(resolve(import.meta.dirname, '../../con
 const skill = recorded['write_approval.pending'][0]!.result.items[0]
 const memory = {
   id: 'f00dcafe', kind: 'memory', target: 'memory', op: 'patch', summary: "patch in memory: entry matching: tabs\nspan 'tabs' becomes: spaces", origin: 'background_review', created_at: 1,
-  revision: 'b'.repeat(64),
+  approvable: true, revision: 'b'.repeat(64),
   diff: '--- a/MEMORY.md\n+++ b/MEMORY.md\n@@ -1,3 +1,3 @@\n-User prefers tabs over spaces\n+User prefers spaces over spaces\n §\n Deploys go through the staging host first\n',
 }
 

@@ -49998,6 +49998,9 @@
                           "diff": {
                             "type": "string"
                           },
+                          "approvable": {
+                            "type": "boolean"
+                          },
                           "revision": {
                             "type": "string"
                           }
@@ -50011,6 +50014,7 @@
                           "origin",
                           "created_at",
                           "diff",
+                          "approvable",
                           "revision"
                         ]
                       }

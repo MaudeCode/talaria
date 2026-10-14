@@ -332,11 +332,12 @@ export const MEMORY_METHODS = {
  * TAL-819: one write the Agent staged for approval (`skills.write_approval` / `memory.write_approval`). `target` is the skill
  * name(s), or `memory` / `user` for the memory store; `op` the staged action; `diff` the unified diff an approval would apply
  * (a skill create shows the new file, a write that would fail says why); `revision` is the SHA-256 of that diff, which an approval
- * must send back.
+ * must send back. `approvable` is false when no diff could be built or the Agent would refuse the write (`diff` says why;
+ * `revision` is empty); such a write can only be rejected.
  */
 export const PendingWriteSchema = z.object({
   id: z.string().regex(/^[A-Za-z0-9_-]{1,64}$/), kind: z.enum(['skills', 'memory']), target: z.string(), op: z.string(), summary: z.string(),
-  origin: z.string(), created_at: z.number(), diff: z.string(), revision: z.string(),
+  origin: z.string(), created_at: z.number(), diff: z.string(), approvable: z.boolean(), revision: z.string(),
 })
 export type PendingWrite = z.infer<typeof PendingWriteSchema>
 export const PendingWriteRefSchema = z.object({ id: PendingWriteSchema.shape.id, revision: z.string() })

@@ -8,6 +8,7 @@ the diff an approval would apply, and approve or reject them through the Agent's
 
 from __future__ import annotations
 
+import contextlib
 import difflib
 import hashlib
 import re
@@ -59,10 +60,19 @@ def _memory_diff(payload: dict) -> str:
         result = apply_memory_pending(payload, store)
         after = list(store._entries_for(target))
     if not result.get("success"):
-        return f"(approve would fail: {result.get('error') or 'unknown error'})"
+        raise _Unapprovable(f"(approve would fail: {result.get('error') or 'unknown error'})")
     lines = lambda entries: ENTRY_DELIMITER.join(entries).splitlines(keepends=True)  # noqa: E731
     diff = difflib.unified_diff(lines(before), lines(after), fromfile=f"a/{real.name}", tofile=f"b/{real.name}")
     return "".join(diff) or "(no textual change)"
+
+
+class _Unapprovable(Exception):
+    """A write with no diff the user could review: its message replaces the diff and approval is refused."""
+
+
+def _skill_names(payload: dict) -> list[str]:
+    ops = payload.get("operations") or [] if payload.get("action") == "batch" else [payload]
+    return list(dict.fromkeys(str(op.get("name")) for op in ops if isinstance(op, dict) and op.get("name")))
 
 
 def _item(wa, kind: str, record: dict) -> dict:
@@ -70,22 +80,36 @@ def _item(wa, kind: str, record: dict) -> dict:
     if kind == "memory":
         target = "user" if payload.get("target") == "user" else "memory"
     else:
-        names = [payload.get("name")] if payload.get("action") != "batch" else [op.get("name") for op in payload.get("operations") or [] if isinstance(op, dict)]
-        target = ", ".join(dict.fromkeys(str(n) for n in names if n))
-    diff = _diff(wa, kind, record)
+        target = ", ".join(_skill_names(payload))
+    diff, approvable = _diff(wa, kind, record)
     return {
         "id": str(record.get("id") or ""), "kind": kind, "target": target, "op": str(payload.get("action") or record.get("action") or ""),
         "summary": str(record.get("summary") or ""), "origin": str(record.get("origin") or "foreground"),
-        "created_at": float(record.get("created_at") or 0), "diff": diff, "revision": _revision(diff),
+        "created_at": float(record.get("created_at") or 0), "diff": diff,
+        "approvable": approvable, "revision": _revision(diff) if approvable else "",
     }
 
 
-def _diff(wa, kind: str, record: dict) -> str:
+def _diff(wa, kind: str, record: dict) -> tuple[str, bool]:
+    """The diff approving ``record`` applies and whether it may be approved; a diff that cannot be built is never approvable."""
     payload = record.get("payload") if isinstance(record.get("payload"), dict) else {}
     try:
-        return _memory_diff(payload) if kind == "memory" else wa.skill_pending_diff(record)
+        return (_memory_diff(payload) if kind == "memory" else wa.skill_pending_diff(record)), True
+    except _Unapprovable as exc:
+        return str(exc), False
     except Exception as exc:  # noqa: BLE001 - one unreadable record must not hide the rest
-        return f"(diff unavailable: {exc})"
+        return f"(diff unavailable: {exc})", False
+
+
+def _apply_lock(kind: str, record: dict):
+    """Hold the Agent's own per-skill locks across the revision check and the apply (they are re-entrant in this thread, so
+    the Agent's apply takes them again). Memory needs none: the Agent applies a staged remove/patch only to the exact entry
+    it pinned at staging and an add only appends, so a concurrent write can never be dropped by an approval."""
+    if kind != "skills":
+        return contextlib.nullcontext()
+    from tools.skill_manager_tool import _skill_mutation_locks
+
+    return _skill_mutation_locks(_skill_names(record.get("payload") if isinstance(record.get("payload"), dict) else {}))
 
 
 def _revision(diff: str) -> str:
@@ -119,15 +143,23 @@ def review(kind: str, verb: str, writes: list[dict]) -> dict:
             if record is None:
                 results.append({"id": pending_id, "done": False, "message": f"No pending {kind} write with id '{pending_id}'."})
                 continue
-            if verb == "approve" and _revision(_diff(wa, kind, record)) != write["revision"]:
-                results.append({"id": pending_id, "done": False, "message": "This write's diff changed after you reviewed it. Review the new diff, then approve again."})
-                continue
-            store = None
-            if kind == "memory" and verb == "approve":
-                from tools.memory_tool import load_on_disk_store
+            if verb == "reject":
+                message = commands.handle_pending_subcommand(kind, [verb, pending_id]) or ""
+            else:
+                with _apply_lock(kind, record):
+                    diff, approvable = _diff(wa, kind, record)
+                    if not approvable:
+                        results.append({"id": pending_id, "done": False, "message": f"This write cannot be approved: {diff}"})
+                        continue
+                    if _revision(diff) != write["revision"]:
+                        results.append({"id": pending_id, "done": False, "message": "This write's diff changed after you reviewed it. Review the new diff, then approve again."})
+                        continue
+                    store = None
+                    if kind == "memory":
+                        from tools.memory_tool import load_on_disk_store
 
-                store = load_on_disk_store()
-            message = commands.handle_pending_subcommand(kind, [verb, pending_id], memory_store=store) or ""
+                        store = load_on_disk_store()
+                    message = commands.handle_pending_subcommand(kind, [verb, pending_id], memory_store=store) or ""
             results.append({"id": pending_id, "done": wa.get_pending(kind, pending_id) is None, "message": message})
     return {"results": results}
 

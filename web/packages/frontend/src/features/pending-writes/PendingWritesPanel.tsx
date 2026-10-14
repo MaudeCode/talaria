@@ -37,7 +37,7 @@ export function PendingWritesPanel({ kind }: { kind: Kind }) {
                 <div className="font-mono text-[11px] text-muted">{item.target} · {item.op}</div>
               </div>
               <div className="flex gap-2">
-                <Button variant="primary" disabled={review.isPending} onClick={() => review.mutate({ verb: 'approve', id: item.id, revision: item.revision })}>{m.pending_writes_approve()}</Button>
+                <Button variant="primary" disabled={review.isPending || !item.approvable} onClick={() => review.mutate({ verb: 'approve', id: item.id, revision: item.revision })}>{m.pending_writes_approve()}</Button>
                 <Button variant="ghost" disabled={review.isPending} onClick={() => review.mutate({ verb: 'reject', id: item.id, revision: item.revision })}>{m.pending_writes_reject()}</Button>
               </div>
             </div>

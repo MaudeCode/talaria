@@ -10,14 +10,15 @@
         "enabled": true,
         "items": [
           {
-            "id": "6d71d59b",
+            "id": "b2a74d84",
             "kind": "skills",
             "target": "demo-skill",
             "op": "create",
             "summary": "create 'demo-skill' — Staged by the test (68 chars)",
             "origin": "foreground",
-            "created_at": 1791971858.611829,
+            "created_at": 1791972733.871302,
             "diff": "---\nname: demo-skill\ndescription: Staged by the test\n---\n\nStep one.\n",
+            "approvable": true,
             "revision": "36397cc95df7e8df6f0cc93d2eba1f12ca010122449080622a601ed895ee2cf0"
           }
         ]
@@ -33,14 +34,15 @@
         "enabled": true,
         "items": [
           {
-            "id": "19dc791b",
+            "id": "11f7ba0d",
             "kind": "skills",
             "target": "demo-skill",
             "op": "create",
             "summary": "create 'demo-skill' — Staged by the test (68 chars)",
             "origin": "foreground",
-            "created_at": 1791971859.187854,
+            "created_at": 1791972734.460205,
             "diff": "---\nname: demo-skill\ndescription: Staged by the test\n---\n\nStep one.\n",
+            "approvable": true,
             "revision": "36397cc95df7e8df6f0cc93d2eba1f12ca010122449080622a601ed895ee2cf0"
           }
         ]
@@ -54,7 +56,7 @@
         "kind": "skills",
         "writes": [
           {
-            "id": "6d71d59b",
+            "id": "b2a74d84",
             "revision": "36397cc95df7e8df6f0cc93d2eba1f12ca010122449080622a601ed895ee2cf0"
           }
         ]
@@ -62,7 +64,7 @@
       "result": {
         "results": [
           {
-            "id": "6d71d59b",
+            "id": "b2a74d84",
             "done": true,
             "message": "Approved 1 skills write(s)."
           }
@@ -77,7 +79,7 @@
         "kind": "skills",
         "writes": [
           {
-            "id": "19dc791b",
+            "id": "11f7ba0d",
             "revision": "36397cc95df7e8df6f0cc93d2eba1f12ca010122449080622a601ed895ee2cf0"
           }
         ]
@@ -85,9 +87,9 @@
       "result": {
         "results": [
           {
-            "id": "19dc791b",
+            "id": "11f7ba0d",
             "done": true,
-            "message": "Rejected pending skills write '19dc791b'."
+            "message": "Rejected pending skills write '11f7ba0d'."
           }
         ]
       }

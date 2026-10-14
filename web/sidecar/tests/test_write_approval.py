@@ -150,3 +150,54 @@ def test_an_approval_is_refused_once_the_file_changed_after_the_review(handshake
     (applied,) = _review(handshaken, hermes_home, "approve", "memory", [current])
     assert applied["done"] is True, applied
     assert memory_file.read_text() == "User prefers spaces\n§\nDeploys go through staging"
+
+
+@requires_agent
+def test_a_write_without_a_reviewable_diff_cannot_be_approved(handshaken: SidecarProcess, hermes_home: pathlib.Path) -> None:
+    set_gates(hermes_home, False)
+    _remember(hermes_home, "User prefers tabs")
+    _remember(hermes_home, "Deploys go through staging")
+    set_gates(hermes_home, True)
+    _agent(hermes_home, "from tools.memory_tool import memory_tool, load_on_disk_store; "
+                        "print(memory_tool(action='remove', target='memory', old_text='tabs', store=load_on_disk_store()))")
+    memory_file = hermes_home / "memories" / "MEMORY.md"
+    memory_file.write_text("Deploys go through staging", encoding="utf-8")  # the pinned entry is gone
+    (item,) = _pending(handshaken, hermes_home, "memory")["items"]
+    assert (item["approvable"], item["revision"]) == (False, "")
+    assert item["diff"].startswith("(approve would fail")
+    (refused,) = _review(handshaken, hermes_home, "approve", "memory", [item])
+    assert refused["done"] is False and "cannot be approved" in refused["message"], refused
+    assert memory_file.read_text() == "Deploys go through staging"
+    (rejected,) = _review(handshaken, hermes_home, "reject", "memory", [item])
+    assert rejected["done"] is True
+
+
+HOLD_SKILL_LOCK = (
+    "import time; from tools.skill_manager_tool import _skill_mutation_lock; from pathlib import Path\n"
+    "with _skill_mutation_lock('demo-skill'):\n"
+    "    print('ready', flush=True); time.sleep(1.5)\n"
+    "    Path(sys.argv[2]).write_text(sys.argv[3], encoding='utf-8')\n"
+)
+
+
+@requires_agent
+def test_a_skill_write_landing_during_an_approval_is_never_overwritten(handshaken: SidecarProcess, hermes_home: pathlib.Path) -> None:
+    set_gates(hermes_home, False)
+    create_skill(hermes_home)
+    set_gates(hermes_home, True)
+    rewrite = SKILL.replace("Step one.", "Step one, rewritten.")
+    staged = _agent(hermes_home, "from tools.skill_manager_tool import skill_manage; print(skill_manage(action='edit', name='demo-skill', content=sys.argv[2]))", rewrite)
+    assert staged["staged"] is True
+    (reviewed,) = _pending(handshaken, hermes_home, "skills")["items"]
+    skill_file = hermes_home / "skills" / "demo-skill" / "SKILL.md"
+    concurrent = SKILL.replace("Step one.", "Step one.\nStep two, from another run.")
+    # Another Agent run holds the skill's lock and writes SKILL.md while the approval is in flight.
+    holder = subprocess.Popen([AGENT_PYTHON, "-c", f"import sys; sys.path.insert(0, sys.argv[1]); {HOLD_SKILL_LOCK}", str(AGENT_DIR), str(skill_file), concurrent],
+                              stdout=subprocess.PIPE, text=True, cwd=AGENT_DIR, env=isolated_env(hermes_home, PATH="/usr/bin:/bin"))
+    try:
+        assert holder.stdout.readline().strip() == "ready"
+        (result,) = _review(handshaken, hermes_home, "approve", "skills", [reviewed])
+    finally:
+        holder.wait(timeout=60)
+    assert result["done"] is False, result
+    assert skill_file.read_text() == concurrent
