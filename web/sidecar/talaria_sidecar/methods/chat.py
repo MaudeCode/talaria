@@ -931,6 +931,11 @@ def start(ctx: CallContext, params: dict) -> dict:  # noqa: PLR0915 - one turn, 
         # A previous turn for this session that never returned (a tool ignoring its interrupt) still owns the cached
         # agent; this turn must not share, rebind, or un-interrupt that live instance.
         session_busy = prior is not None and not prior.finished.is_set()
+        # TAL-829: a second agent beside a turn nobody stopped would wait on that turn's durable turn lease (up to 30
+        # minutes) and then write the same session. A stopped turn only lingers until the Agent abandons the wedged
+        # tool, which lets its lease go within seconds.
+        if session_busy and not (prior.cancel.is_set() or prior.ctx.cancelled):
+            raise RpcError("This chat is still answering the previous message. Stop it or wait for it to finish.", condition="session_busy")
         _RUNS[stream_id] = run
         _RUNS_BY_SESSION[session_id] = stream_id
     raw_emit = ctx.emit
