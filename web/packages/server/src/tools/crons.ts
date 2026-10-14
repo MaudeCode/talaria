@@ -81,7 +81,8 @@ const RESPONSE_FRAME = /^\*\*Response Characters:\*\* (\d+)\n## Response\n\n/
 
 /**
  * TAL-599, TAL-912: the agent's reply from a run file, read like the Agent's v0.21.6 `_archive_answer`. A framed run skips its
- * prompt by the writer's length stamp and takes exactly the stamped answer, so a prompt quoting `## Response` never leaks.
+ * prompt by the writer's length stamp and takes exactly the stamped answer (none when that frame is broken), so a prompt
+ * quoting `## Response` never leaks.
  * Otherwise the last Response heading is the writer's own; a run without one (script mode) is the whole text.
  */
 function runResponse(raw: string): string {
@@ -93,8 +94,8 @@ function runResponse(raw: string): string {
     const frame = RESPONSE_FRAME.exec(content.slice(frameAt))
     const answerStart = frame ? frameAt + frame[0].length : -1
     const answerEnd = frame ? advanceCodePoints(content, answerStart, Number(frame[1])) : -1
-    // A truncated or missing frame falls back to the heading split below.
-    if (frame && content.slice(answerEnd) === '\n') return content.slice(answerStart, answerEnd).trim()
+    // A truncated or missing answer frame is unusable: any later heading belongs to the prompt.
+    return frame && content.slice(answerEnd) === '\n' ? content.slice(answerStart, answerEnd).trim() : ''
   }
   const idx = [...content.matchAll(/^#{1,2} Response\s*$/gm)].at(-1)?.index ?? -1
   if (idx < 0) return content.trim()
@@ -574,9 +575,10 @@ export class CronService {
     home = (await this.resolveStore(home, jobId)).home
     try {
       const detail = await this.sidecar().call('cron.run_detail', { profile_home: home, job_id: jobId, filename })
-      // Leaked tool-call XML is removed from the run's text, as from a transcript reply (TAL-302).
+      // Leaked tool-call XML is removed from the run's text, as from a transcript reply (TAL-302); the response is
+      // framed on the Agent's raw text (TAL-912), then stripped.
       const content = stripToolCallXml(detail.content)
-      return { ...detail, content, snippet: stripToolCallXml(detail.snippet), response: runResponse(content) }
+      return { ...detail, content, snippet: stripToolCallXml(detail.snippet), response: stripToolCallXml(runResponse(detail.content)) }
     } catch (error) {
       if (error instanceof SidecarError && error.condition === 'not_found') throw new HttpFailure(404, 'run not found')
       throw error
