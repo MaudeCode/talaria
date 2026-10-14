@@ -237,6 +237,8 @@ function TaskDialog({ board, task, readOnly, onClose, onChanged }: { board: stri
     onError: (e) => showToast(e instanceof Error ? e.message : String(e), 4000, 'error'),
   })
   const links = detail.data?.links
+  // A linked task the server could not name (since deleted) falls back to its id.
+  const linked = new Map((detail.data?.link_tasks ?? []).map((t) => [t.id, t]))
   const act = useMutation({
     mutationFn: ({ action, body }: { action: Parameters<typeof api.kanbanTaskAction>[2]; body: Record<string, unknown> }) => api.kanbanTaskAction(board, task.id, action, body),
     onSuccess: () => { showToast(m.saved()); onChanged(); void log.refetch() },
@@ -278,12 +280,15 @@ function TaskDialog({ board, task, readOnly, onClose, onChanged }: { board: stri
                   <div className="text-muted">{label}</div>
                   {ids.length === 0 && <div className="text-muted">—</div>}
                   <ul>
-                    {ids.map((id) => (
-                      <li key={id} className="flex items-center gap-1">
-                        <span className="font-mono">{id}</span>
-                        {!readOnly && <IconButton label={m.kanban_remove_dependency_named({ a0: id })} className="h-6 w-6" onClick={() => link.mutate({ ...pair(id), remove: true })}><X size={12} aria-hidden="true" /></IconButton>}
-                      </li>
-                    ))}
+                    {ids.map((id) => {
+                      const named = linked.get(id)
+                      return (
+                        <li key={id} className="flex items-center gap-1">
+                          {named ? <span className="min-w-0 truncate" title={id}>{named.title} <span className="text-muted">· {statusLabel(named.status)}</span></span> : <span className="font-mono">{id}</span>}
+                          {!readOnly && <IconButton label={m.kanban_remove_dependency_named({ a0: named ? `${named.title} (${id})` : id })} className="h-6 w-6" onClick={() => link.mutate({ ...pair(id), remove: true })}><X size={12} aria-hidden="true" /></IconButton>}
+                        </li>
+                      )
+                    })}
                   </ul>
                 </div>
               ))}

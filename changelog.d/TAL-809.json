@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Added",
+      "summary": "Kanban task details show each linked task's title and status instead of its ID.",
+      "highlight": false,
+      "components": ["web"]
+    }
+  ]
+}

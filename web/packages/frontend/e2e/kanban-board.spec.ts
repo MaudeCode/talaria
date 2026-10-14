@@ -29,7 +29,7 @@ async function routeKanban(page: Page, boardFor: (q: URLSearchParams) => unknown
   await page.route('**/api/kanban/stats**', (route) => route.fulfill({ json: stats }))
   await page.route('**/api/kanban/config', (route) => { record(route); return route.fulfill({ json: { lane_by_profile: false } }) })
   // Later routes win: the task detail pattern also matches `tasks/bulk`, so it goes first.
-  await page.route(/\/api\/kanban\/tasks\/[^/?]+(\?.*)?$/, (route) => route.fulfill({ json: { task: task('T1', 'todo'), last_card_action: null, links: { parents: ['P1'], children: ['C1'] } } }))
+  await page.route(/\/api\/kanban\/tasks\/[^/?]+(\?.*)?$/, (route) => route.fulfill({ json: { task: task('T1', 'todo'), last_card_action: null, links: { parents: ['P1'], children: ['C1'] }, link_tasks: [{ id: 'P1', title: 'Plan the release', status: 'done' }] } }))
   await page.route('**/api/kanban/tasks/bulk', (route) => { record(route); return route.fulfill({ json: { results: [{ id: 'T1', ok: true }, { id: 'T2', ok: true }], read_only: false } }) })
   await page.route('**/api/kanban/links**', (route) => { record(route); return route.fulfill({ json: { ok: true } }) })
   await page.route('**/api/kanban/tasks/*/log**', (route) => route.fulfill({ json: { log: [] } }))
@@ -142,14 +142,13 @@ test('kanban bulk status, task links and board create and archive write through 
   await expect.poll(() => writes.at(-1)).toEqual({ method: 'POST', path: '/api/kanban/tasks/bulk', body: { ids: ['T1', 'T2'], status: 'done', board: 'ops' } })
   await expect(bulk).toHaveCount(0)
 
-  // Links: the task's parents and children, removable, and a new parent by id.
+  // Links: the task's parents and children by the server's title and status (an unnamed one by id), removable, and a new parent by id.
   await page.locator('[data-task-id="T1"]').click()
   const dialog = page.getByRole('dialog', { name: 'Task T1' })
   const links = dialog.getByRole('group', { name: 'Links' })
-  await expect(links).toContainText('P1')
-  await expect(links).toContainText('C1')
+  await expect(links.getByRole('listitem')).toHaveText(['Plan the release · Done', 'C1'])
   await page.screenshot({ path: testInfo.outputPath(`kanban-links-${testInfo.project.name}.png`) })
-  await links.getByRole('button', { name: 'Remove dependency P1' }).click()
+  await links.getByRole('button', { name: 'Remove dependency Plan the release (P1)' }).click()
   await expect.poll(() => writes.at(-1)).toEqual({ method: 'POST', path: '/api/kanban/links/delete', body: { parent_id: 'P1', child_id: 'T1', board: 'ops' } })
   await links.getByRole('button', { name: 'Remove dependency C1' }).click()
   await expect.poll(() => writes.at(-1)).toEqual({ method: 'POST', path: '/api/kanban/links/delete', body: { parent_id: 'T1', child_id: 'C1', board: 'ops' } })

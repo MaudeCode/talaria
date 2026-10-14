@@ -329,7 +329,7 @@ describe('crons, kanban, extensions, terminal', () => {
     const body = await json(res)
     expect(body.changed).toBe(true)
     expect(sidecar.calls.find((c) => c.method === 'kanban.board')?.params).toMatchObject({ only_mine: true, since: 0, profile: 'default' })
-    sidecar.respond('kanban.task', (params) => { if (params.task_id !== 't_1') throw new SidecarError('task not found', { condition: 'not_found' }); return { task: { id: 't_1', title: 'T', status: 'ready', priority: 1, claim_live: false, has_completion_evidence: false, agent_move_targets: null }, comments: [], events: [], links: { parents: [], children: [] }, runs: [], read_only: false } })
+    sidecar.respond('kanban.task', (params) => { if (params.task_id !== 't_1') throw new SidecarError('task not found', { condition: 'not_found' }); return { task: { id: 't_1', title: 'T', status: 'ready', priority: 1, claim_live: false, has_completion_evidence: false, agent_move_targets: null, current_run_started_at: null }, comments: [], events: [], links: { parents: [], children: [] }, link_tasks: [], runs: [], read_only: false } })
     res = await s.get('/api/kanban/tasks/t_1')
     expect((await json(res)).task).toMatchObject({ id: 't_1' })
     res = await s.get('/api/kanban/tasks/missing')
@@ -425,7 +425,7 @@ describe('crons, kanban, extensions, terminal', () => {
     // Detail and every mutation envelope carry the policy of the status the server returned.
     // The detail names the newest Block or Unblock event, so a client whose write outcome was lost can confirm it landed.
     const events = [{ id: 3, task_id: 't_1', run_id: null, kind: 'blocked', payload: null, created_at: 1 }, { id: 7, task_id: 't_1', run_id: null, kind: 'unblocked', payload: null, created_at: 2 }, { id: 9, task_id: 't_1', run_id: null, kind: 'commented', payload: null, created_at: 3 }]
-    sidecar.respond('kanban.task', () => ({ task: task('t_1', 'running'), comments: [], events, links: { parents: [], children: [] }, runs: [], read_only: false }))
+    sidecar.respond('kanban.task', () => ({ task: { ...task('t_1', 'running'), current_run_started_at: 1 }, comments: [], events, links: { parents: [], children: [] }, link_tasks: [], runs: [], read_only: false }))
     expect((await json(await s.get('/api/kanban/tasks/t_1'))).last_card_action).toEqual({ action: 'unblock', event_id: 7 })
     expect((await json(await s.get('/api/kanban/tasks/t_1'))).task).toMatchObject({ requires_running_exit_confirmation: true, available_actions: { block: true, move_to: ['triage', 'todo', 'ready'] } })
     // Unblock lands where the Agent re-gates it (here `todo`), and the actions follow that status.
