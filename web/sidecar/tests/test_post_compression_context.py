@@ -7,6 +7,8 @@ from __future__ import annotations
 import json
 import subprocess
 
+import pytest
+
 from conftest import AGENT_DIR, AGENT_PYTHON, isolated_env, requires_agent
 
 # Runs on the Agent interpreter: a stand-in AIAgent holding the Agent's real ContextCompressor.
@@ -115,10 +117,16 @@ def test_an_auto_compressed_turn_returns_pruned_context_and_its_estimate(tmp_pat
 
 # TAL-891: tool payloads put ``exit_code`` / ``error`` / ``success`` after ``output``, so the cap cut the outcome away
 # and a failed call read like a success on the next turn. ``LEGACY`` is the pre-fix cap: successful and non-JSON
-# results must stay byte-identical to it.
+# results must stay byte-identical to it on an Agent without ``agent.compression_marker`` (``legacy`` mode).
+# TAL-827: an Agent with it gets its elision marker, which its dispatch guard rejects in a durable write.
 OUTCOME_PROBE = """
-import json, sys
+import json, re, sys
 sys.path.append(sys.argv[1])
+if sys.argv[2] == "legacy":
+    sys.modules["agent.compression_marker"] = None
+    MARKER_RE = re.compile("^$")
+else:
+    from agent.compression_marker import _COMPRESSION_MARKER_RE as MARKER_RE
 from talaria_sidecar.methods import chat
 
 LEGACY_PREFIX = "[Talaria context budget: omitted "
@@ -147,6 +155,8 @@ payloads = {
 }
 texts = {name: json.dumps(payload) for name, payload in payloads.items()}
 texts["plain"] = OUTPUT
+# Token-dense text just over the budget: the cut is a few chars, fewer than the marker that replaces it.
+texts["dense"] = "\u6f22" * 2001
 out = {}
 for name, text in texts.items():
     tokens = chat._rough_tokens(text)
@@ -156,18 +166,26 @@ for name, text in texts.items():
             "tail": capped[-160:],
             "fits": chat._rough_tokens(capped) <= keep,
             "legacy": capped == legacy(text, tokens, keep),
+            "marker": bool(MARKER_RE.search(capped)),
+            "head": len(capped.partition("\\u27eaHERMES-CONTEXT-COMPRESSION:")[0]) if keep == 2000 else 0,
+            "prefix": text.startswith(capped.partition("\\u27eaHERMES-CONTEXT-COMPRESSION:")[0]),
         }
 print(json.dumps(out))
 """
 
 
-@requires_agent
-def test_a_capped_tool_result_keeps_its_failure_outcome(tmp_path) -> None:
+def outcome_probe(tmp_path, mode: str) -> dict:
     root = tmp_path / ".hermes"
     root.mkdir()
-    run = subprocess.run([AGENT_PYTHON, "-c", OUTCOME_PROBE, str(AGENT_DIR)], env=isolated_env(root), capture_output=True, text=True, timeout=120)
+    run = subprocess.run([AGENT_PYTHON, "-c", OUTCOME_PROBE, str(AGENT_DIR), mode], env=isolated_env(root), capture_output=True, text=True, timeout=120)
     assert run.returncode == 0, run.stderr[-4000:]
-    out = json.loads(run.stdout.strip().splitlines()[-1])
+    return json.loads(run.stdout.strip().splitlines()[-1])
+
+
+@requires_agent
+@pytest.mark.parametrize("mode", ["agent", "legacy"])
+def test_a_capped_tool_result_keeps_its_failure_outcome(tmp_path, mode) -> None:
+    out = outcome_probe(tmp_path, mode)
     for keep in (2000, 100):
         # Both the head-kept and the note-only branch end on the outcome the cut removed.
         assert out[f"exit/{keep}"]["tail"].endswith("visible transcript. FAILED: exit 2]")
@@ -175,8 +193,23 @@ def test_a_capped_tool_result_keeps_its_failure_outcome(tmp_path) -> None:
         assert out[f"exit_camel/{keep}"]["tail"].endswith("visible transcript. FAILED: exit 1]")
         assert out[f"error/{keep}"]["tail"].endswith("visible transcript. FAILED: 403 Forbidden (token expired)]")
         assert out[f"unsuccessful/{keep}"]["tail"].endswith("visible transcript. FAILED]")
-        # A process the agent killed exits non-zero by design; like successes and plain text it keeps today's note.
-        for name in ("killed", "success", "plain"):
-            assert out[f"{name}/{keep}"]["legacy"], (name, keep, out[f"{name}/{keep}"]["tail"])
+        for name in ("killed", "success", "plain", "dense"):
+            # A process the agent killed exits non-zero by design; like successes and plain text it gets no outcome.
+            assert out[f"{name}/{keep}"]["tail"].endswith("the full output remains in the visible transcript.]"), (name, keep)
+            if mode == "legacy":
+                # An Agent without the shared marker keeps today's note byte for byte.
+                assert out[f"{name}/{keep}"]["legacy"], (name, keep, out[f"{name}/{keep}"]["tail"])
     # The outcome counts against the remaining budget.
-    assert all(out[f"{name}/2000"]["fits"] for name in ("exit", "exit_camel", "error", "unsuccessful", "killed", "success", "plain"))
+    assert all(out[f"{name}/2000"]["fits"] for name in ("exit", "exit_camel", "error", "unsuccessful", "killed", "success", "plain", "dense"))
+
+
+@requires_agent
+def test_a_capped_tool_result_uses_the_agents_elision_marker(tmp_path) -> None:
+    out = outcome_probe(tmp_path, "agent")
+    for name, case in out.items():
+        # The Agent's dispatch guard matches the cut, which follows a kept head of the original text.
+        assert case["marker"] and case["prefix"], (name, case["tail"])
+        assert not case["legacy"] and "omitted " not in case["tail"], (name, case["tail"])
+    # The head still spends the remaining budget (TAL-539): most of 2000 rough tokens, not just the note.
+    assert all(case["head"] > 4000 for name, case in out.items() if name.endswith("/2000") and name != "dense/2000")
+    assert out["dense/2000"]["head"] > 1500

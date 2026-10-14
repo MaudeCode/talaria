@@ -320,20 +320,35 @@ def _tool_failure_outcome(text: str) -> str:
 
 
 def _capped_tool_result(text: str, tokens: int, keep_tokens: int) -> str:
-    """The kept head of an over-budget tool result plus a note on what the model no longer sees, ending on the outcome."""
-    prefix = "[Talaria context budget: omitted "
-    suffix = f" (~{tokens} rough tokens) from this tool result; the full output remains in the visible transcript.{_tool_failure_outcome(text)}]"
+    """The kept head of an over-budget tool result plus a note on what the model no longer sees, ending on the outcome.
+    TAL-827: the Agent's elision marker marks the cut, so its dispatch guard rejects a model that copies the marker
+    into a durable write; Talaria's note follows on its own line."""
+    outcome = _tool_failure_outcome(text)
+    try:
+        from agent.compression_marker import elide_middle
+    except ImportError:  # An Agent without the shared marker keeps Talaria's own.
+        prefix = "[Talaria context budget: omitted "
+        suffix = f" (~{tokens} rough tokens) from this tool result; the full output remains in the visible transcript.{outcome}]"
+        note_only, widest = f"{prefix}{len(text)} chars{suffix}", f"{prefix}{len(text)} of {len(text)} chars{suffix}"
+
+        def cut(snippet: str) -> str:
+            return f"{snippet}\n\n{prefix}{len(text) - len(snippet)} of {len(text)} chars{suffix}"
+    else:
+        note = f"\n[Talaria context budget: this tool result is ~{tokens} rough tokens; the full output remains in the visible transcript.{outcome}]"
+        # With nothing kept the marker counts every char, its widest form for this text.
+        note_only = widest = elide_middle(text, 0, 0) + note
+
+        def cut(snippet: str) -> str:
+            return elide_middle(text, len(snippet), 0) + note
     if keep_tokens < _TAIL_TOOL_MIN_SNIPPET_TOKENS:
-        return f"{prefix}{len(text)} chars{suffix}"
-    room = keep_tokens - _rough_tokens(f"{prefix}{len(text)} of {len(text)} chars{suffix}") - 1
+        return note_only
+    room = keep_tokens - _rough_tokens(widest) - 1
     snippet = text[: len(text) * room // tokens]
     # Density varies along the text: shrink until the kept head fits the remaining tokens.
     while snippet and _rough_tokens(snippet) > room:
         snippet = snippet[: len(snippet) * 3 // 4]
     snippet = snippet.rstrip()
-    if not snippet:
-        return f"{prefix}{len(text)} chars{suffix}"
-    return f"{snippet}\n\n{prefix}{len(text) - len(snippet)} of {len(text)} chars{suffix}"
+    return cut(snippet) if snippet else note_only
 
 
 def _cap_tool_results(messages: list, compressor: Any) -> list:

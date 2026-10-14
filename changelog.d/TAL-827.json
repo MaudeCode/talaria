@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Changed",
+      "summary": "When Talaria Web trims a long tool result after compressing a turn, it marks the cut with Hermes Agent's own marker, so the Agent stops a model from copying that marker into a file.",
+      "highlight": false,
+      "components": ["web"]
+    }
+  ]
+}
