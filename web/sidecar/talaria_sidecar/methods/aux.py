@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import contextlib
+import inspect
 import logging
 import threading
 import uuid
@@ -89,10 +90,14 @@ def _model_completion(task: str, messages: list, *, model: str, provider: str | 
         api_mode=runtime.get("api_mode"), messages=messages, max_tokens=int(max_tokens) if max_tokens else None,
         temperature=float(temperature) if temperature is not None else None, reasoning_config={"enabled": False}, timeout=30.0,
     )
-    choice = (getattr(response, "choices", None) or [None])[0]
-    message = getattr(choice, "message", None)
+    return _response_result(resolved, response)
+
+
+def _response_result(model: str, response) -> dict:
+    """The ``aux.complete`` result for one complete (non-streamed) chat response; a response without a choice raises."""
+    choice = response.choices[0]
     reason = getattr(choice, "finish_reason", None)
-    return {"model": resolved, "text": str(getattr(message, "content", None) or "").strip(), "usage": _usage_dict(getattr(response, "usage", None)),
+    return {"model": str(model), "text": str(choice.message.content or "").strip(), "usage": _usage_dict(getattr(response, "usage", None)),
             "finish_reason": str(reason) if reason else None}
 
 
@@ -118,49 +123,74 @@ def complete(task: str, messages: list, *, main_runtime: dict | None, max_tokens
         if main_fallback and main_runtime and main_runtime.get("model"):
             return _main_model_completion(messages, main_runtime, task=task)
         raise RpcError(f"no auxiliary model configured for task {task!r}", condition="aux_unconfigured")
+    create = _aux_request(task, client, model, messages, main_runtime=main_runtime, max_tokens=max_tokens, temperature=temperature)
     if main_fallback and main_runtime and main_runtime.get("model"):
         try:
-            return _stream_completion(client, model, messages, max_tokens=max_tokens, temperature=temperature, ctx=ctx)
+            return _stream_completion(create, model, ctx=ctx)
         except RpcError:
             raise
         except Exception as exc:  # noqa: BLE001 - predecessor fell back to the main model
             log.debug("auxiliary %s call failed; falling back to the main model: %s", task, exc)
             return _main_model_completion(messages, main_runtime, task=task)
-    return _stream_completion(client, model, messages, max_tokens=max_tokens, temperature=temperature, ctx=ctx)
+    return _stream_completion(create, model, ctx=ctx)
 
 
-def _stream_completion(client, model: str, messages: list, *, max_tokens: int | None, temperature: float | None, ctx: CallContext) -> dict:
-    kwargs: dict = {"model": model, "messages": messages}
+def _streaming_call_llm():
+    """The Agent's ``call_llm`` when it streams with a caller's main runtime, else None (older Agents)."""
+    try:
+        from agent.auxiliary_client import call_llm
+    except ImportError:
+        return None
+    return call_llm if {"stream", "main_runtime"} <= inspect.signature(call_llm).parameters.keys() else None
+
+
+def _aux_request(task: str, client, model: str, messages: list, *, main_runtime: dict | None, max_tokens: int | None, temperature: float | None):
+    """``create(**stream)`` for one auxiliary request. TAL-823: through the Agent's ``call_llm`` funnel (plugin hooks, a
+    custom provider's ``extra_body``, watchdogs, response unwrap, fallbacks) when it streams; else the raw client."""
+    kwargs: dict = {"messages": messages}
     if max_tokens:
         kwargs["max_tokens"] = int(max_tokens)
     if temperature is not None:
         kwargs["temperature"] = float(temperature)
+    call_llm = _streaming_call_llm()
+    if call_llm is not None:
+        return lambda **stream: call_llm(task, main_runtime=main_runtime, **kwargs, **stream)
+    return lambda **stream: client.chat.completions.create(model=model, **kwargs, **stream)
+
+
+def _stream_completion(create, model: str, *, ctx: CallContext) -> dict:
     text_parts: list[str] = []
     usage = None
     finish_reason = None
     try:
-        stream = client.chat.completions.create(stream=True, **kwargs)
-        for chunk in stream:
-            ctx.check_cancelled()
-            choices = getattr(chunk, "choices", None) or []
-            delta = getattr(choices[0], "delta", None) if choices else None
-            piece = getattr(delta, "content", None) if delta is not None else None
-            if piece:
-                text_parts.append(piece)
-                ctx.emit("token", {"text": piece})
-            if choices and getattr(choices[0], "finish_reason", None):
-                finish_reason = str(choices[0].finish_reason)
-            chunk_usage = getattr(chunk, "usage", None)
-            if chunk_usage is not None:
-                usage = _usage_dict(chunk_usage)
+        stream = create(stream=True)
+        if hasattr(stream, "choices"):  # a shim that ignores ``stream=True`` answered whole
+            return _response_result(model, stream)
+        try:
+            for chunk in stream:
+                ctx.check_cancelled()
+                choices = getattr(chunk, "choices", None) or []
+                delta = getattr(choices[0], "delta", None) if choices else None
+                piece = getattr(delta, "content", None) if delta is not None else None
+                if piece:
+                    text_parts.append(piece)
+                    ctx.emit("token", {"text": piece})
+                if choices and getattr(choices[0], "finish_reason", None):
+                    finish_reason = str(choices[0].finish_reason)
+                chunk_usage = getattr(chunk, "usage", None)
+                if chunk_usage is not None:
+                    usage = _usage_dict(chunk_usage)
+        finally:
+            # Releases the connection and the Agent's per-task concurrency permit on cancel or failure, too.
+            close = getattr(stream, "close", None)
+            if callable(close):
+                with contextlib.suppress(Exception):
+                    close()
     except RpcError:
         raise
     except Exception as exc:  # noqa: BLE001 - fall back to a non-streaming call
         log.debug("streaming auxiliary call failed (%s); retrying without stream", exc)
-        response = client.chat.completions.create(**kwargs)
-        text_parts = [str(response.choices[0].message.content or "")]
-        usage = _usage_dict(getattr(response, "usage", None))
-        finish_reason = str(response.choices[0].finish_reason) if getattr(response.choices[0], "finish_reason", None) else None
+        return _response_result(model, create())
     return {"model": str(model), "text": "".join(text_parts).strip(), "usage": usage, "finish_reason": finish_reason}
 
 
