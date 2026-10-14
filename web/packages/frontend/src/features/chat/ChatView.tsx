@@ -23,6 +23,7 @@ import { useQueuedTurns } from '../composer/queue'
 import { returnToComposer } from '../composer/composerReturn'
 import { ApprovalCard } from './ApprovalCard'
 import { ClarifyCard } from './ClarifyCard'
+import { ConnectCard } from '../connectors/ConnectCard'
 import { useClarify } from './useClarify'
 import { useMarkViewed } from './useMarkViewed'
 import { TerminalPanel } from '../terminal/TerminalPanel'
@@ -355,6 +356,7 @@ export function ChatView({ sessionId }: { sessionId: string | null }) {
         <div className="composer-flyout">
           {sessionId && live?.approval && <ApprovalCard key={live.approval.approval_id} sessionId={sessionId} pending={live.approval} onResolved={() => dispatch({ type: 'clear_approval', sessionId })} />}
           {clarify && <ClarifyCard key={clarify.pending.clarify_id} clarify={clarify} />}
+          {live?.connectCard && <ConnectCard key={live.connectCard.op_id} initial={live.connectCard} />}
           {terminalOpen && sessionId && <TerminalPanel sessionId={sessionId} workspace={workspace} onClose={() => setTerminalOpen(false)} />}
         </div>
         <Composer

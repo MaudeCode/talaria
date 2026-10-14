@@ -2998,6 +2998,707 @@
     ],
     "additionalProperties": false
   },
+  "connectors.available": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "properties": {
+      "available": {
+        "type": "boolean"
+      }
+    },
+    "required": [
+      "available"
+    ],
+    "additionalProperties": false
+  },
+  "connectors.catalog": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "properties": {
+      "connectors": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "properties": {
+            "slug": {
+              "type": "string"
+            },
+            "name": {
+              "type": "string"
+            },
+            "description": {
+              "type": "string"
+            },
+            "category": {
+              "type": "string"
+            },
+            "logo_url": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          "required": [
+            "slug",
+            "name",
+            "description",
+            "category",
+            "logo_url"
+          ],
+          "additionalProperties": false
+        }
+      }
+    },
+    "required": [
+      "connectors"
+    ],
+    "additionalProperties": false
+  },
+  "connectors.accounts": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "properties": {
+      "accounts": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "properties": {
+            "connection_id": {
+              "type": "string"
+            },
+            "connector": {
+              "type": "string"
+            },
+            "status": {
+              "type": "string"
+            },
+            "status_reason": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "label": {
+              "type": "string"
+            },
+            "alias": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "active": {
+              "type": "boolean"
+            },
+            "disabled": {
+              "type": "boolean"
+            },
+            "created_at": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "connection_id",
+            "connector",
+            "status",
+            "status_reason",
+            "label",
+            "alias",
+            "active",
+            "disabled",
+            "created_at"
+          ],
+          "additionalProperties": false
+        }
+      }
+    },
+    "required": [
+      "accounts"
+    ],
+    "additionalProperties": false
+  },
+  "connectors.remove": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "properties": {
+      "connection_id": {
+        "type": "string"
+      },
+      "connector": {
+        "type": "string"
+      },
+      "status": {
+        "type": "string",
+        "const": "removed"
+      }
+    },
+    "required": [
+      "connection_id",
+      "connector",
+      "status"
+    ],
+    "additionalProperties": false
+  },
+  "connectors.tools": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "properties": {
+      "connector": {
+        "type": "string"
+      },
+      "tools": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "properties": {
+            "slug": {
+              "type": "string"
+            },
+            "name": {
+              "type": "string"
+            },
+            "description": {
+              "type": "string"
+            },
+            "facet": {
+              "type": "string"
+            },
+            "hints": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "categories": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "deprecated": {
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "slug",
+            "name",
+            "description",
+            "facet",
+            "hints",
+            "categories",
+            "deprecated"
+          ],
+          "additionalProperties": false
+        }
+      }
+    },
+    "required": [
+      "connector",
+      "tools"
+    ],
+    "additionalProperties": false
+  },
+  "connectors.policy.get": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "properties": {
+      "layers": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "enum": [
+                "org",
+                "role",
+                "member"
+              ]
+            },
+            "revision": {
+              "type": "string"
+            },
+            "body": {
+              "type": "object",
+              "properties": {
+                "mode": {
+                  "type": "string",
+                  "enum": [
+                    "unrestricted",
+                    "deny-all",
+                    "allow",
+                    "deny"
+                  ]
+                },
+                "connectors": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                },
+                "disabled_connectors": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                },
+                "tools": {
+                  "type": "object",
+                  "propertyNames": {
+                    "type": "string"
+                  },
+                  "additionalProperties": {
+                    "type": "object",
+                    "properties": {
+                      "disable": {
+                        "type": "array",
+                        "items": {
+                          "type": "string"
+                        }
+                      }
+                    },
+                    "required": [
+                      "disable"
+                    ],
+                    "additionalProperties": false
+                  }
+                },
+                "tags": {
+                  "type": "object",
+                  "properties": {
+                    "enable": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    },
+                    "disable": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    }
+                  },
+                  "additionalProperties": false
+                }
+              },
+              "required": [
+                "mode"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "required": [
+            "kind",
+            "revision",
+            "body"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "effective": {
+        "type": "object",
+        "properties": {
+          "mode": {
+            "type": "string",
+            "enum": [
+              "unrestricted",
+              "deny-all",
+              "allow",
+              "deny"
+            ]
+          },
+          "connectors": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "disabled_connectors": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "tools": {
+            "type": "object",
+            "propertyNames": {
+              "type": "string"
+            },
+            "additionalProperties": {
+              "type": "object",
+              "properties": {
+                "disable": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                }
+              },
+              "required": [
+                "disable"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "tags": {
+            "type": "object",
+            "properties": {
+              "enable": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "disable": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              }
+            },
+            "additionalProperties": false
+          },
+          "revision": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "mode",
+          "revision"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "required": [
+      "layers",
+      "effective"
+    ],
+    "additionalProperties": false
+  },
+  "connectors.policy.set": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "properties": {
+      "revision": {
+        "type": "string"
+      }
+    },
+    "required": [
+      "revision"
+    ],
+    "additionalProperties": false
+  },
+  "connectors.connect": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "properties": {
+      "op_id": {
+        "type": "string"
+      },
+      "settled": {
+        "type": "boolean"
+      },
+      "owner": {
+        "type": "string",
+        "enum": [
+          "account",
+          "session"
+        ]
+      },
+      "tool_call_id": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "targets": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "properties": {
+            "name": {
+              "type": "string"
+            },
+            "kind": {
+              "type": "string"
+            },
+            "state": {
+              "type": "string",
+              "enum": [
+                "pending",
+                "initiated",
+                "connected",
+                "skipped",
+                "failed",
+                "expired",
+                "not_connected"
+              ]
+            },
+            "detail": {
+              "type": "string"
+            },
+            "connect_url": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "required_env": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "name": {
+                    "type": "string"
+                  },
+                  "prompt": {
+                    "type": "string"
+                  },
+                  "required": {
+                    "type": "boolean"
+                  },
+                  "secret": {
+                    "type": "boolean"
+                  }
+                },
+                "required": [
+                  "name",
+                  "prompt",
+                  "required",
+                  "secret"
+                ],
+                "additionalProperties": false
+              }
+            }
+          },
+          "required": [
+            "name",
+            "kind",
+            "state",
+            "detail",
+            "required_env"
+          ],
+          "additionalProperties": false
+        }
+      }
+    },
+    "required": [
+      "op_id",
+      "settled",
+      "owner",
+      "tool_call_id",
+      "targets"
+    ],
+    "additionalProperties": false
+  },
+  "connectors.operation": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "properties": {
+      "op_id": {
+        "type": "string"
+      },
+      "settled": {
+        "type": "boolean"
+      },
+      "owner": {
+        "type": "string",
+        "enum": [
+          "account",
+          "session"
+        ]
+      },
+      "tool_call_id": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "targets": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "properties": {
+            "name": {
+              "type": "string"
+            },
+            "kind": {
+              "type": "string"
+            },
+            "state": {
+              "type": "string",
+              "enum": [
+                "pending",
+                "initiated",
+                "connected",
+                "skipped",
+                "failed",
+                "expired",
+                "not_connected"
+              ]
+            },
+            "detail": {
+              "type": "string"
+            },
+            "connect_url": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "required_env": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "name": {
+                    "type": "string"
+                  },
+                  "prompt": {
+                    "type": "string"
+                  },
+                  "required": {
+                    "type": "boolean"
+                  },
+                  "secret": {
+                    "type": "boolean"
+                  }
+                },
+                "required": [
+                  "name",
+                  "prompt",
+                  "required",
+                  "secret"
+                ],
+                "additionalProperties": false
+              }
+            }
+          },
+          "required": [
+            "name",
+            "kind",
+            "state",
+            "detail",
+            "required_env"
+          ],
+          "additionalProperties": false
+        }
+      }
+    },
+    "required": [
+      "op_id",
+      "settled",
+      "owner",
+      "tool_call_id",
+      "targets"
+    ],
+    "additionalProperties": false
+  },
+  "connectors.respond": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "properties": {
+      "op_id": {
+        "type": "string"
+      },
+      "settled": {
+        "type": "boolean"
+      },
+      "owner": {
+        "type": "string",
+        "enum": [
+          "account",
+          "session"
+        ]
+      },
+      "tool_call_id": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "targets": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "properties": {
+            "name": {
+              "type": "string"
+            },
+            "kind": {
+              "type": "string"
+            },
+            "state": {
+              "type": "string",
+              "enum": [
+                "pending",
+                "initiated",
+                "connected",
+                "skipped",
+                "failed",
+                "expired",
+                "not_connected"
+              ]
+            },
+            "detail": {
+              "type": "string"
+            },
+            "connect_url": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "required_env": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "name": {
+                    "type": "string"
+                  },
+                  "prompt": {
+                    "type": "string"
+                  },
+                  "required": {
+                    "type": "boolean"
+                  },
+                  "secret": {
+                    "type": "boolean"
+                  }
+                },
+                "required": [
+                  "name",
+                  "prompt",
+                  "required",
+                  "secret"
+                ],
+                "additionalProperties": false
+              }
+            }
+          },
+          "required": [
+            "name",
+            "kind",
+            "state",
+            "detail",
+            "required_env"
+          ],
+          "additionalProperties": false
+        }
+      }
+    },
+    "required": [
+      "op_id",
+      "settled",
+      "owner",
+      "tool_call_id",
+      "targets"
+    ],
+    "additionalProperties": false
+  },
   "stt.capability": {
     "$schema": "https://json-schema.org/draft/2020-12/schema",
     "type": "object",

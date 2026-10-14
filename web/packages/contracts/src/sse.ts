@@ -1,5 +1,5 @@
 import { z } from 'zod'
-import { ClarifyStepSchema, ContextUsageFields, PendingSteerSchema, SessionGoalSchema, SessionNoticeSchema, SteerWithdrawnSchema, ToolDisplayFields, ToolResultViewSchema, TodoStateSchema, TurnTerminalStateSchema } from './views.js'
+import { ClarifyStepSchema, ConnectorOperationViewSchema, ContextUsageFields, PendingSteerSchema, SessionGoalSchema, SessionNoticeSchema, SteerWithdrawnSchema, ToolDisplayFields, ToolResultViewSchema, TodoStateSchema, TurnTerminalStateSchema } from './views.js'
 
 /**
  * Wire events of `GET /api/chat/stream` and the per-session relay
@@ -55,7 +55,7 @@ export const CHAT_EVENT_NAMES = [
   'token', 'reasoning', 'tool', 'tool_complete', 'interim_assistant', 'approval', 'approval_cleared', 'clarify', 'compressing', 'compressed',
   'title', 'title_status', 'warning', 'apperror', 'cancel', 'error', 'done', 'stream_end', 'metering', 'context_status',
   'goal', 'goal_continue', 'steer_consumed', 'steer_pending', 'steer_withdrawn', 'state_saved', 'todo_state', 'bg_task_complete',
-  'server_turn_started', 'notices', 'session_goal', 'rate_limit_wait', 'hello', 'initial', 'events', 'gateway_status', 'sessions_changed',
+  'server_turn_started', 'notices', 'session_goal', 'rate_limit_wait', 'connect_card', 'hello', 'initial', 'events', 'gateway_status', 'sessions_changed',
 ] as const
 export type ChatEventName = (typeof CHAT_EVENT_NAMES)[number]
 
@@ -96,6 +96,8 @@ export const ChatEventSchema = z.discriminatedUnion('event', [
   /** TAL-808: the session's standing goal changed; `goal` replaces the session's `goal`. */
   z.object({ event: z.literal('session_goal'), data: z.looseObject({ session_id: z.string().optional(), goal: SessionGoalSchema.nullable() }) }),
   z.object({ event: z.literal('rate_limit_wait'), data: z.looseObject({ session_id: z.string().optional(), wait: RateLimitWaitSchema.nullable() }) }),
+  /** TAL-818: a `manage_connections` card opened in this turn; clients read and answer it through `/api/connectors/operations/{op_id}`. */
+  z.object({ event: z.literal('connect_card'), data: ConnectorOperationViewSchema }),
   z.object({ event: z.literal('hello'), data: Loose }),
   z.object({ event: z.literal('initial'), data: Loose }),
   z.object({ event: z.literal('events'), data: Loose }),

@@ -220,6 +220,45 @@ export const MCP_METHODS = {
   'mcp.reload': { params: ProfileHomeParams, result: z.object({ output: z.string() }) },
 } as const
 
+// ── connectors (TAL-818) ───────────────────────────────────────────────
+const ConnectorSlug = z.string().regex(/^[a-z0-9][a-z0-9_-]*$/)
+/** One portal policy layer's rules (the Agent's `PolicyBody`): `allow` names the apps that stay on, `deny` the ones off; `tools` turns single tools off. */
+export const ConnectorPolicyBodySchema = z.object({
+  mode: z.enum(['unrestricted', 'deny-all', 'allow', 'deny']),
+  connectors: z.array(z.string()).optional(), disabled_connectors: z.array(z.string()).optional(),
+  tools: z.record(z.string(), z.object({ disable: z.array(z.string()) })).optional(),
+  tags: z.object({ enable: z.array(z.string()).optional(), disable: z.array(z.string()).optional() }).optional(),
+})
+/** A connection operation's target (`tools/connectors/operation.py`): a hosted app account, or an MCP server the card approves. */
+export const ConnectorOperationTargetSchema = z.object({
+  name: z.string(), kind: z.string(), state: z.enum(['pending', 'initiated', 'connected', 'skipped', 'failed', 'expired', 'not_connected']), detail: z.string(),
+  connect_url: z.string().nullable().optional(),
+  required_env: z.array(z.object({ name: z.string(), prompt: z.string(), required: z.boolean(), secret: z.boolean() })),
+})
+/** `owner`: `account` for the Connectors page's connect, `session` for a chat card, which `tool_call_id` opened. */
+export const ConnectorOperationSnapshotSchema = z.object({ op_id: z.string(), settled: z.boolean(), owner: z.enum(['account', 'session']), tool_call_id: z.string().nullable(), targets: z.array(ConnectorOperationTargetSchema) })
+const ConnectorOp = ProfileHomeParams.extend({ op_id: z.string().min(1) })
+/**
+ * Failures carry `data.condition`: `connectors_unavailable`, `connectors_sign_in`, `connectors_forbidden`, `connectors_org_required`,
+ * `connector_not_found`, `connection_not_found`, `policy_conflict` (the member rules changed since `expected_revision`), `policy_invalid`,
+ * `operation_not_found`, `operation_settled`, `operation_refused`, `connectors_failed`.
+ */
+export const CONNECTORS_METHODS = {
+  /** The Agent's `connectors_available()`; never creates an identity. */
+  'connectors.available': { params: ProfileHomeParams, result: z.object({ available: z.boolean() }) },
+  'connectors.catalog': { params: ProfileHomeParams, result: z.object({ connectors: z.array(z.object({ slug: z.string(), name: z.string(), description: z.string(), category: z.string(), logo_url: z.string().nullable() })) }) },
+  'connectors.accounts': { params: ProfileHomeParams, result: z.object({ accounts: z.array(z.object({ connection_id: z.string(), connector: z.string(), status: z.string(), status_reason: z.string().nullable(), label: z.string(), alias: z.string().nullable(), active: z.boolean(), disabled: z.boolean(), created_at: z.string() })) }) },
+  'connectors.remove': { params: ProfileHomeParams.extend({ connection_id: z.string().min(1) }), result: z.object({ connection_id: z.string(), connector: z.string(), status: z.literal('removed') }) },
+  'connectors.tools': { params: ProfileHomeParams.extend({ connector: ConnectorSlug, refresh: z.boolean().optional() }), result: z.object({ connector: z.string(), tools: z.array(z.object({ slug: z.string(), name: z.string(), description: z.string(), facet: z.string(), hints: z.array(z.string()), categories: z.array(z.string()), deprecated: z.boolean() })) }) },
+  'connectors.policy.get': { params: ProfileHomeParams, result: z.object({ layers: z.array(z.object({ kind: z.enum(['org', 'role', 'member']), revision: z.string(), body: ConnectorPolicyBodySchema })), effective: ConnectorPolicyBodySchema.extend({ revision: z.string() }) }) },
+  /** One member-rule change: `enabled` turns the app on or off; `tool` with `tool_enabled` turns one of its tools on or off. */
+  'connectors.policy.set': { params: ProfileHomeParams.extend({ connector: ConnectorSlug, expected_revision: z.string().min(1), enabled: z.boolean().optional(), tool: z.string().min(1).optional(), tool_enabled: z.boolean().optional() }), result: z.object({ revision: z.string() }) },
+  /** Starts (or rejoins) the account-owned connect and waits for its authorization link. */
+  'connectors.connect': { params: ProfileHomeParams.extend({ connector: ConnectorSlug }), result: ConnectorOperationSnapshotSchema },
+  'connectors.operation': { params: ConnectorOp, result: ConnectorOperationSnapshotSchema },
+  'connectors.respond': { params: ConnectorOp.extend({ action: z.enum(['skip', 'retry', 'approve', 'continue']), target: z.string().optional(), env: z.record(z.string(), z.string()).optional() }), result: ConnectorOperationSnapshotSchema },
+} as const
+
 // ── stt ────────────────────────────────────────────────────────────────
 export const STT_METHODS = {
   /** `streaming` (TAL-802): `stt.streaming` is on and the provider has a live wire with credentials, so `stt.stream` would open. */
@@ -491,6 +530,8 @@ export const ChatStreamSchema = z.discriminatedUnion('event', [
   z.object({ event: z.literal('approval'), data: Loose }),
   z.object({ event: z.literal('clarify'), data: Loose }),
   z.object({ event: z.literal('clarify_resolved'), data: Loose }),
+  /** TAL-818: a `manage_connections` card opened; `tool_call_id` is the call that opened it. */
+  z.object({ event: z.literal('connection'), data: ConnectorOperationSnapshotSchema }),
   /** The Agent stopped waiting on an approval: `reason` is its settle cause (`resolved`, `timeout`, `interrupted`, `session_closed`). */
   z.object({ event: z.literal('approval_resolved'), data: z.looseObject({ approval_id: z.string(), session_id: z.string().optional(), reason: z.string().optional() }) }),
   z.object({ event: z.literal('compressing'), data: Loose }),
@@ -522,6 +563,8 @@ export const CHAT_METHODS = {
       ephemeral: z.boolean().optional(),
       /** TAL-801: a spoken turn, which the Agent runs on the profile's `auxiliary.voice_chat` slot when it has that route. */
       voice_turn: z.boolean().optional(),
+      /** TAL-818: attach the Agent's `connection_callback`, so `manage_connections` streams a `connection` frame and waits on the card. */
+      connect_card: z.boolean().optional(),
     }),
     result: ChatStartResultSchema,
     stream: ChatStreamSchema,

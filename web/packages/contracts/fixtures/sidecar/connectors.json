@@ -1,0 +1,218 @@
+{
+  "connectors.available": [
+    {
+      "params": {
+        "profile_home": "<home>"
+      },
+      "result": {
+        "available": true
+      }
+    }
+  ],
+  "connectors.catalog": [
+    {
+      "params": {
+        "profile_home": "<home>"
+      },
+      "result": {
+        "connectors": [
+          {
+            "slug": "gmail",
+            "name": "Gmail",
+            "description": "Read and send mail.",
+            "category": "communication",
+            "logo_url": null
+          },
+          {
+            "slug": "notion",
+            "name": "Notion",
+            "description": "Pages and databases.",
+            "category": "productivity",
+            "logo_url": null
+          }
+        ]
+      }
+    }
+  ],
+  "connectors.accounts": [
+    {
+      "params": {
+        "profile_home": "<home>"
+      },
+      "result": {
+        "accounts": [
+          {
+            "connection_id": "conn-notion",
+            "connector": "notion",
+            "status": "active",
+            "status_reason": null,
+            "label": "notion@example.test",
+            "alias": null,
+            "active": true,
+            "disabled": false,
+            "created_at": "2026-10-14T00:00:00Z"
+          }
+        ]
+      }
+    }
+  ],
+  "connectors.tools": [
+    {
+      "params": {
+        "profile_home": "<home>",
+        "connector": "gmail"
+      },
+      "result": {
+        "connector": "gmail",
+        "tools": [
+          {
+            "slug": "gmail_read",
+            "name": "Read",
+            "description": "Read items.",
+            "facet": "read",
+            "hints": [
+              "readOnlyHint"
+            ],
+            "categories": [],
+            "deprecated": false
+          },
+          {
+            "slug": "gmail_send",
+            "name": "Send",
+            "description": "Send an item.",
+            "facet": "write",
+            "hints": [],
+            "categories": [],
+            "deprecated": false
+          }
+        ]
+      }
+    }
+  ],
+  "connectors.policy.get": [
+    {
+      "params": {
+        "profile_home": "<home>"
+      },
+      "result": {
+        "layers": [
+          {
+            "kind": "member",
+            "revision": "rev-1",
+            "body": {
+              "mode": "deny",
+              "disabled_connectors": [],
+              "tools": {}
+            }
+          }
+        ],
+        "effective": {
+          "revision": "rev-1",
+          "mode": "deny",
+          "disabled_connectors": [],
+          "tools": {}
+        }
+      }
+    }
+  ],
+  "connectors.policy.set": [
+    {
+      "params": {
+        "profile_home": "<home>",
+        "connector": "gmail",
+        "expected_revision": "rev-1",
+        "enabled": false
+      },
+      "result": {
+        "revision": "rev-2"
+      }
+    }
+  ],
+  "connectors.connect": [
+    {
+      "params": {
+        "profile_home": "<home>",
+        "connector": "gmail"
+      },
+      "result": {
+        "op_id": "3dde6b7a20b3",
+        "settled": false,
+        "owner": "account",
+        "tool_call_id": null,
+        "targets": [
+          {
+            "name": "gmail",
+            "kind": "connector",
+            "state": "initiated",
+            "detail": "",
+            "connect_url": "https://vendor.example.test/authorize/conn-gmail-1",
+            "required_env": []
+          }
+        ]
+      }
+    }
+  ],
+  "connectors.operation": [
+    {
+      "params": {
+        "profile_home": "<home>",
+        "op_id": "3dde6b7a20b3"
+      },
+      "result": {
+        "op_id": "3dde6b7a20b3",
+        "settled": false,
+        "owner": "account",
+        "tool_call_id": null,
+        "targets": [
+          {
+            "name": "gmail",
+            "kind": "connector",
+            "state": "initiated",
+            "detail": "",
+            "connect_url": "https://vendor.example.test/authorize/conn-gmail-1",
+            "required_env": []
+          }
+        ]
+      }
+    }
+  ],
+  "connectors.respond": [
+    {
+      "params": {
+        "profile_home": "<home>",
+        "op_id": "3dde6b7a20b3",
+        "action": "skip",
+        "target": "gmail"
+      },
+      "result": {
+        "op_id": "3dde6b7a20b3",
+        "settled": true,
+        "owner": "account",
+        "tool_call_id": null,
+        "targets": [
+          {
+            "name": "gmail",
+            "kind": "connector",
+            "state": "skipped",
+            "detail": "",
+            "connect_url": null,
+            "required_env": []
+          }
+        ]
+      }
+    }
+  ],
+  "connectors.remove": [
+    {
+      "params": {
+        "profile_home": "<home>",
+        "connection_id": "conn-notion"
+      },
+      "result": {
+        "connection_id": "conn-notion",
+        "connector": "notion",
+        "status": "removed"
+      }
+    }
+  ]
+}

@@ -4,6 +4,7 @@ import { m } from '../../paraglide/messages.js'
 import * as api from '../../api/endpoints'
 import { keys } from '../../api/queryKeys'
 import { cn } from '../../ui/cn'
+import { Badge } from '../../ui/Badge'
 import { HelpTip, Switch, TextInput } from '../../ui/Field'
 import { EmptyState, ErrorState, LoadingState } from '../../ui/States'
 import { showToast } from '../toast/toast'
@@ -17,10 +18,6 @@ const STATUS: Record<string, { label: () => string; tone: string }> = {
 const HEALTH: Record<string, { label: () => string; tone: string }> = {
   unhealthy: { label: m.mcp_health_unhealthy, tone: 'border-error/50 text-error' },
   needs_auth: { label: m.mcp_health_needs_auth, tone: 'border-warning/50 text-warning' },
-}
-
-function Badge({ tone, title, children }: { tone: string; title?: string | undefined; children: string }) {
-  return <span title={title} className={cn('rounded-full border px-1.5 text-[10px] uppercase tracking-wider', tone)}>{children}</span>
 }
 
 function StatusBadge({ status }: { status: string | undefined }) {

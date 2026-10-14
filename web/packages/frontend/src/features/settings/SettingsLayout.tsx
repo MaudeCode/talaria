@@ -1,5 +1,8 @@
 import type { ReactNode } from 'react'
 import { Link, useParams } from '@tanstack/react-router'
+import { useQuery } from '@tanstack/react-query'
+import * as api from '../../api/endpoints'
+import { keys } from '../../api/queryKeys'
 import { AppShell, MAIN_VIEW } from '../../shell/AppShell'
 import { PanelHead } from '../../shell/Sidebar'
 import { m } from '../../paraglide/messages.js'
@@ -7,9 +10,9 @@ import { cn } from '../../ui/cn'
 import { SettingsSectionSchema, type SettingsSection as Section } from '../../contracts/url'
 import { useLocale } from '../../i18n/useLocale'
 import { closeMobileSidebar } from '../../shell/useShellState'
-import { MessageSquare, AudioLines, SunMedium, SlidersHorizontal, Key, Star, Puzzle, Server, CircleHelp, type LucideIcon } from 'lucide-react'
+import { MessageSquare, AudioLines, SunMedium, SlidersHorizontal, Key, Link2, Star, Puzzle, Server, CircleHelp, type LucideIcon } from 'lucide-react'
 
-const SECTION_ICON: Record<Section, LucideIcon> = { conversation: MessageSquare, speech: AudioLines, appearance: SunMedium, preferences: SlidersHorizontal, providers: Key, plugins: Star, extensions: Puzzle, system: Server, help: CircleHelp }
+const SECTION_ICON: Record<Section, LucideIcon> = { conversation: MessageSquare, speech: AudioLines, appearance: SunMedium, preferences: SlidersHorizontal, providers: Key, connectors: Link2, plugins: Star, extensions: Puzzle, system: Server, help: CircleHelp }
 
 export const SECTION_LABEL: Record<Section, () => string> = {
   appearance: () => m.settings_section_appearance_title(),
@@ -17,6 +20,7 @@ export const SECTION_LABEL: Record<Section, () => string> = {
   speech: () => m.settings_section_speech_title(),
   preferences: () => m.settings_section_preferences_title(),
   providers: () => m.settings_section_providers_title(),
+  connectors: () => m.settings_section_connectors_title(),
   plugins: () => m.settings_section_plugins_title(),
   extensions: () => m.settings_section_extensions_title(),
   system: () => m.settings_section_system_title(),
@@ -26,12 +30,14 @@ export const SECTION_LABEL: Record<Section, () => string> = {
 function SectionMenu() {
   useLocale()
   const params: { section?: string } = useParams({ strict: false })
+  // TAL-818: the server's connectors gate; the entry stays hidden until it answers true.
+  const connectors = useQuery({ queryKey: keys.connectors.available, queryFn: api.fetchConnectorsAvailable, staleTime: 5 * 60_000 }).data?.available === true
   return (
     <div className="panel-view active" id="panelSettings">
       <PanelHead title={m.tab_settings()} />
       <nav className="side-menu flex flex-col gap-px p-2 overflow-visible min-h-0" id="settingsMenu" aria-label={m.tab_settings()}>
         <div className="settings-menu-items flex flex-col gap-0.5 min-h-0 flex-1 overflow-y-auto">
-          {SettingsSectionSchema.options.map((section) => {
+          {SettingsSectionSchema.options.filter((section) => section !== 'connectors' || connectors).map((section) => {
             const active = params.section === section
             const Icon = SECTION_ICON[section]
             return (

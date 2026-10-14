@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Added",
+      "summary": "A Connectors page in Settings lists your Nous Portal apps: connect and disconnect accounts, and turn apps or single tools on or off. A chat that asks to connect an app shows a card with the authorization link.",
+      "highlight": true,
+      "components": ["web"]
+    }
+  ]
+}
