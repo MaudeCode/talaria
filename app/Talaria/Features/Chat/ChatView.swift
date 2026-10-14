@@ -55,7 +55,6 @@ struct ChatView: View {
     private let approvalBypassStatusSpacerHeight: CGFloat = 44
     private let queuedMessagesChipSpacerHeight: CGFloat = 44
     private let goalChipSpacerHeight: CGFloat = 36
-    private let noticeChipSpacerHeight: CGFloat = 36
 
     @State private var completionAcknowledgementTask: Task<Void, Never>?
     @State private var completionAcknowledgementGeneration = 0
@@ -140,6 +139,7 @@ struct ChatView: View {
     @State private var dismissedSessionNotices: Set<SessionNotice> = []
     /// The notice chips' measured height, which the transcript makes room for: a notice can wrap to two lines.
     @State private var sessionNoticeChipsHeight: CGFloat = 0
+    @State private var noticeChipHeight: CGFloat = 0
     @State private var showsQueuedMessagesSheet = false
     @State private var selectableResponseText: SelectableTextPresentation?
     @State private var attachmentPreviewItem: ChatAttachmentPreviewItem?
@@ -1113,6 +1113,8 @@ struct ChatView: View {
 
                 if let notice = viewModel.currentNotice {
                     ChatNoticeChip(notice: notice, dismiss: viewModel.dismissNotice)
+                        // A two-line notice is taller than one status row.
+                        .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { noticeChipHeight = $0 }
                         .transition(ChatMotion.bottomOverlayTransition(reduceMotion: reduceMotion))
                 }
 
@@ -1506,7 +1508,7 @@ struct ChatView: View {
     /// leaves out a floating status (the syncing pill) and the lone scroll chip so they never
     /// shift the chat.
     private func composerAccessorySpacerHeight() -> CGFloat {
-        var height: CGFloat = viewModel.currentNotice == nil ? 0 : noticeChipSpacerHeight
+        var height: CGFloat = viewModel.currentNotice == nil ? 0 : noticeChipHeight
         var itemCount = viewModel.currentNotice == nil ? 0 : 1
         if !visibleSessionNotices.isEmpty {
             height += sessionNoticeChipsHeight
