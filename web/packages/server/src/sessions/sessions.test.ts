@@ -1834,16 +1834,17 @@ describe('session detail classifies the rows the Agent types for display (TAL-81
   beforeAll(async () => { s = await bootTestServer() })
   afterAll(() => s.close())
 
-  /** The served transcript of a session whose rows the released Agent wrote to state.db, keyed by stored timestamp. */
-  const served = async (): Promise<Map<number, Json>> => {
+  /** The served rows of a session whose rows the released Agent wrote to state.db, in order. */
+  const servedRows = async (query = ''): Promise<Json[]> => {
     const sid = String((await newSession(s)).session_id)
     writeMessages(s, sid, [])
     const db = new DatabaseSync(join(s.state, 'state.db'))
-    db.exec([...typedRows.schema, ...typedRows.inserts].join('\n').replaceAll(`'${typedRows.sessionId}'`, `'${sid}'`))
+    db.exec(['DROP TABLE IF EXISTS messages; DROP TABLE IF EXISTS system_prompts; DROP TABLE IF EXISTS sessions;', ...typedRows.schema, ...typedRows.inserts].join('\n').replaceAll(`'${typedRows.sessionId}'`, `'${sid}'`))
     db.close()
-    const messages = ((await json(await s.get(`/api/session?session_id=${sid}&messages=1`))).session as Json).messages as Json[]
-    return new Map(messages.map((m) => [Number(m.timestamp), m]))
+    return ((await json(await s.get(`/api/session?session_id=${sid}&messages=1${query}`))).session as Json).messages as Json[]
   }
+  /** The full served transcript, keyed by stored timestamp. */
+  const served = async (): Promise<Map<number, Json>> => new Map((await servedRows()).map((m) => [Number(m.timestamp), m]))
 
   it('shows a failed turn\'s boundary as a notice and never shows a hidden or untyped [System: row', async () => {
     const rows = await served()
@@ -1862,6 +1863,12 @@ describe('session detail classifies the rows the Agent types for display (TAL-81
     expect.soft(rows.get(1006)?._anchor_activity_scene).toBeDefined()
     // Typed prompts stay ordinary user rows.
     for (const at of [1000, 1005, 1009]) expect.soft(rows.get(at)).toMatchObject({ role: 'user', _display: 'row' })
+  })
+
+  it('fills a limited window with rows the reader sees, never with a hidden scaffold', async () => {
+    // The page before the first boundary (full index 4) ends on the hidden `[System:` row; one visible row is still due.
+    const rows = await servedRows('&msg_limit=1&msg_before=4')
+    expect(rows.filter((m) => m._display !== 'hidden' && m._display !== 'in_scene').map((m) => m.timestamp)).toEqual([1001])
   })
 
   it('serves the shared notice example exactly as the contract fixture records it', async () => {

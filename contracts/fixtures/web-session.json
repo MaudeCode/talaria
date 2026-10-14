@@ -4374,6 +4374,12 @@
         "api_content": "[interrupt: no assistant output for this turn]",
         "message_id": "notice-interrupt",
         "timestamp": 1770000606
+      },
+      {
+        "role": "user",
+        "content": "Try once more.",
+        "message_id": "notice-retry",
+        "timestamp": 1770000607
       }
     ],
     "messages": [
@@ -4496,6 +4502,14 @@
         "_turn_id": "legacy:5",
         "_display": "hidden",
         "display_kind": "hidden"
+      },
+      {
+        "role": "user",
+        "content": "Try once more.",
+        "message_id": "notice-retry",
+        "timestamp": 1770000607,
+        "_turn_id": "legacy:7",
+        "_display": "row"
       }
     ]
   }

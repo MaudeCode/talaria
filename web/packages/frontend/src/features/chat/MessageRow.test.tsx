@@ -156,7 +156,7 @@ describe('Agent notices (TAL-815)', () => {
     const view = render(<Transcript rows={projectMessages(messages)} live={null} assistantName="Assistant" mode="compact_worklog" renderUserMarkdown={false} autoFollow={false} sessionId="s" actions={{}} tts={false} truncated={false} loadedFrom={0} onLoadOlder={() => undefined} loadingOlder={false} emptyState={null} showJumpButtons={false} virtualizeLongTranscripts={false} />)
     const keyOf = (id: string) => projectMessages(messages).find((r) => r.message.message_id === id)?.key ?? `missing:${id}`
     const order = [...view.container.querySelectorAll('[data-message-key]')].map((el) => `${el.getAttribute('data-role') ?? ''}:${el.getAttribute('data-message-key') ?? ''}`)
-    expect(order).toEqual([`user:${keyOf('notice-prompt')}`, `assistant:${keyOf('notice-call')}`, `notice:${keyOf('notice-failed-turn')}`, `user:${keyOf('notice-deploy')}`])
+    expect(order).toEqual([`user:${keyOf('notice-prompt')}`, `assistant:${keyOf('notice-call')}`, `notice:${keyOf('notice-failed-turn')}`, `user:${keyOf('notice-deploy')}`, `user:${keyOf('notice-retry')}`])
     expect(screen.getByRole('note')).toHaveTextContent(messages.find((m) => m.message_id === 'notice-failed-turn')?.content as string)
     expect(view.container).not.toHaveTextContent('[System:')
   })
