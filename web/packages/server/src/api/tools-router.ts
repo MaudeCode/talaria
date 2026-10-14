@@ -59,7 +59,6 @@ const home = (ctx: RequestContext): string => ctx.deps.profileHome(activeProfile
 
 /** Profile homes with an `stt.warm` in flight (TAL-916). */
 const warmingHomes = new Set<string>()
-const STT_WARM_TIMEOUT_MS = 15 * 60_000
 
 function runningSidecar(ctx: RequestContext): NonNullable<ReturnType<RequestContext['deps']['sidecar']>> {
   const sidecar = ctx.deps.sidecar()
@@ -721,8 +720,9 @@ export const toolsRouter = os.router({
     // One load per profile at a time: a record start during a running load joins it rather than holding another sidecar slot.
     if (sidecar && !warmingHomes.has(profileHome)) {
       warmingHomes.add(profileHome)
-      // A first use downloads the model, so the load outlives the transcription timeout; nobody waits on it.
-      void sidecar.call('stt.warm', { profile_home: profileHome }, { timeoutMs: STT_WARM_TIMEOUT_MS })
+      // A first use downloads the model, and the Agent's load cannot be cancelled, so the call has no deadline: the entry
+      // lives exactly as long as the sidecar worker (a sidecar exit rejects it). Nobody waits on it.
+      void sidecar.call('stt.warm', { profile_home: profileHome }, { timeoutMs: 0 })
         .then((result) => { if (result.action === 'error') ctx.deps.log(`[stt] warm-up failed (${result.provider}): ${str(result.error)}`) })
         .catch((error: unknown) => { ctx.deps.log(`[stt] warm-up failed: ${str((error as Error).message)}`) })
         .finally(() => { warmingHomes.delete(profileHome) })

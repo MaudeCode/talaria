@@ -1,6 +1,7 @@
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
+import { SidecarError } from '../sidecar/client.js'
 import { FakeSidecar } from '../sidecar/fake.js'
 import { bootTestServer, type TestServer } from '../test/harness.js'
 
@@ -73,6 +74,31 @@ describe('local STT warm-up (TAL-916)', () => {
     })
     sidecar.respond('stt.warm', undefined)
     sidecar.respond('stt.transcribe', undefined)
+  })
+
+  it('keeps a running load joined until the sidecar call really exits', async () => {
+    // `stt.warm` cannot be cancelled once the Agent starts loading. Like `SidecarClient`, the fake gives up on a call
+    // the moment the server sets it a deadline (here: one shorter than the load) while the worker keeps loading.
+    let finish = (): void => undefined
+    const loading = new Promise<void>((resolve) => { finish = resolve })
+    let workers = 0
+    sidecar.respond('stt.warm', async (_params, _emit, opts) => {
+      workers++
+      const done = loading.then(() => ({ provider: 'local', warmed: true, action: 'loaded' }))
+      if (opts.timeoutMs !== 0) throw new SidecarError('sidecar call stt.warm timed out', { condition: 'sidecar_timeout' })
+      return await done
+    })
+    try {
+      await warm(s)
+      await new Promise((resolve) => setTimeout(resolve, 20))
+      // A record start after the client-side give-up must not stack a second load onto the one still running.
+      await warm(s)
+      await new Promise((resolve) => setTimeout(resolve, 20))
+      expect(workers).toBe(1)
+    } finally {
+      finish()
+      sidecar.respond('stt.warm', undefined)
+    }
   })
 
   it('swallows a failed warm-up: the client never waits on or sees it', async () => {
