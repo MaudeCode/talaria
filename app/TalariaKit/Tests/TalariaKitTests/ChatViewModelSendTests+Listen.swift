@@ -528,7 +528,7 @@ extension ChatViewModelSendTests {
         let viewModel = try makeViewModel(
             speechSynthesizerFactory: { speechSynthesizer }
         ) { request in
-            XCTFail("Text over the 5000-char cap must not hit /api/tts.")
+            XCTFail("A script over the 5000-char cap must not hit /api/tts.")
             return apiTestJSONResponse("{}", for: request)
         }
         let longText = String(repeating: "a", count: ServerTTSPolicy.maximumTextLength + 1)
@@ -544,9 +544,9 @@ extension ChatViewModelSendTests {
         ))
 
         viewModel.toggleListening(to: context)
+        await viewModel.listenPreparationTask?.value
 
-        // Straight to the on-device path — synchronous, no preparation task.
-        XCTAssertNil(viewModel.listenPreparationTask)
+        // A script over the cap goes straight to the on-device path.
         XCTAssertEqual(speechSynthesizer.spokenStrings, [longText])
         XCTAssertEqual(viewModel.listeningMessageID, "assistant-23")
     }
@@ -605,5 +605,30 @@ extension ChatViewModelSendTests {
         XCTAssertTrue(ServerTTSPolicy.shouldUseServerTTS(for: String(repeating: "a", count: 5000)))
         XCTAssertFalse(ServerTTSPolicy.shouldUseServerTTS(for: String(repeating: "a", count: 5001)))
         XCTAssertEqual(ServerTTSPolicy.defaultVoice, "en-US-AriaNeural")
+    }
+}
+
+@MainActor
+extension ChatViewModelSendTests {
+    /// TAL-906: a message whose server script says nothing (only code or paths) is not spoken.
+    func testListenWithAnEmptyServerScriptSpeaksNothing() async throws {
+        let speechSynthesizer = SpySpeechSynthesizer()
+        let viewModel = try makeViewModel(speechSynthesizerFactory: { speechSynthesizer }, spokenText: { _ in "" }) { request in
+            XCTFail("An empty script must not reach \(request.url?.path ?? "")")
+            return Self.ttsUnavailableResponse(for: request)
+        }
+        let context = try XCTUnwrap(MessageActionContext(
+            message: ChatMessage(role: "assistant", content: "```\nls /tmp\n```", timestamp: 1_770_000_091, messageId: "assistant-91"),
+            visibleIndex: 0,
+            messagesOffset: 0
+        ))
+
+        viewModel.toggleListening(to: context)
+        await viewModel.listenPreparationTask?.value
+
+        XCTAssertEqual(speechSynthesizer.spokenStrings, [])
+        XCTAssertNil(viewModel.listeningMessageID)
+        XCTAssertFalse(viewModel.showsListenPlaybackBar)
+        XCTAssertNotNil(viewModel.messageActionErrorMessage)
     }
 }

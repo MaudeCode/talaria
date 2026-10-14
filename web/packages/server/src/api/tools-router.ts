@@ -18,6 +18,7 @@ import { catalogNames, connectorOperation, connectorsPage, connectorTools, remem
 import { resolveWikiLocation, wikiPages, type WikiLocation } from '../tools/wiki.js'
 import { buildInsights } from '../tools/insights.js'
 import { commandCatalog, SESSION_EXEC_COMMANDS } from '../tools/commands.js'
+import { spokenText } from './tools-raw.js'
 import { agentHealth, applyDashboardConfig, dashboardConfig, dashboardStatus, gatewayStatus, parseDashboardConfig, readLogTail, remoteGatewayBaseUrl, systemHealth } from '../tools/health.js'
 import { restartGateway } from '../tools/gateway-restart.js'
 import { projectOsDashboard } from '../tools/project-os.js'
@@ -706,6 +707,9 @@ export const toolsRouter = os.router({
       return { ok: true as const, available: false, provider: 'none', streaming: false }
     }
   })),
+  speech: {
+    prepare: os.speech.prepare.handler(({ input, context: { ctx } }) => run(async () => ({ spoken_text: await spokenText(ctx, input.text.trim()) }))),
+  },
   clientEvents: os.clientEvents.handler(({ input, context: { ctx } }) => run(() => {
     if (ctx.deps.clientEventLimiter.limited(ctx.peer || 'unknown')) throw new HttpError(429, 'rate_limited', { ok: false })
     const payload = sanitizeClientEvent(input)

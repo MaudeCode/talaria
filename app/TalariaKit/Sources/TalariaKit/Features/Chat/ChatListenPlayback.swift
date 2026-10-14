@@ -135,28 +135,6 @@ final class ListenRemoteControlController: ListenRemoteControlControlling {
     }
 }
 
-struct SpeechTextNormalizer {
-    static func normalizedAssistantText(_ text: String) -> String? {
-        let lines = text
-            .replacingOccurrences(of: "`", with: "")
-            .components(separatedBy: .newlines)
-            .map { line in
-                line
-                    .replacingOccurrences(of: #"^\s{0,3}#{1,6}\s*"#, with: "", options: .regularExpression)
-                    .replacingOccurrences(of: #"^\s{0,3}[-*+]\s+"#, with: "", options: .regularExpression)
-                    .replacingOccurrences(of: #"^\s{0,3}>\s?"#, with: "", options: .regularExpression)
-                    .replacingOccurrences(of: #"\[([^\]]+)\]\([^)]+\)"#, with: "$1", options: .regularExpression)
-            }
-
-        let normalized = lines
-            .joined(separator: "\n")
-            .replacingOccurrences(of: #"\n{3,}"#, with: "\n\n", options: .regularExpression)
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-
-        return normalized.isEmpty ? nil : normalized
-    }
-}
-
 /// Routing policy for the "Listen" action (#15): prefer the server's configured
 /// TTS engine (`POST /api/tts`) and fall back to the on-device synthesizer when
 /// the server can't serve the request.

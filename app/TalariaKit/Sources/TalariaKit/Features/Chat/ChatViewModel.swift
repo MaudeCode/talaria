@@ -4583,14 +4583,7 @@ public final class ChatViewModel {
         listeningMessageID = context.messageID
         beginListenPlaybackPreparation(for: context)
 
-        guard ServerTTSPolicy.shouldUseServerTTS(for: listenText) else {
-            // Over the server's 5000-char request cap: go straight to the on-device
-            // path (chunking is a non-goal of #15).
-            clearListenPlaybackState()
-            speakWithOnDeviceSynthesizer(listenText)
-            return
-        }
-
+        // Speak the server's read-aloud script (TAL-906) on whichever engine plays it.
         // Prefer the server's neural TTS; on any failure (offline, 4xx/5xx, rate
         // limit, undecodable audio) fall back silently to the on-device
         // synthesizer — no error alert (#15).
@@ -4603,13 +4596,18 @@ public final class ChatViewModel {
                 // would be dropped anyway.
                 return
             }
+            // A server without `speech.prepare` speaks the message as written.
+            let spokenText = (try? await client.prepareSpeech(text: listenText)) ?? listenText
+            // Over the server's 5000-char request cap: go straight to the on-device
+            // path (chunking is a non-goal of #15).
+            let usesServerTTS = !spokenText.isEmpty && ServerTTSPolicy.shouldUseServerTTS(for: spokenText)
             let audioData: Data?
-            do {
-                audioData = try await client.synthesizeSpeech(
-                    text: listenText,
+            if usesServerTTS, !Task.isCancelled {
+                audioData = try? await client.synthesizeSpeech(
+                    text: spokenText,
                     voice: ServerTTSPolicy.defaultVoice
                 )
-            } catch {
+            } else {
                 audioData = nil
             }
 
@@ -4619,11 +4617,16 @@ public final class ChatViewModel {
                 return
             }
 
+            guard !spokenText.isEmpty else {
+                self.finishListening()
+                self.messageActionErrorMessage = String(localized: "There is no assistant text to listen to.")
+                return
+            }
             if let audioData, self.startServerAudioPlayback(audioData, title: self.listenPlaybackTitle) {
                 return
             }
             self.clearListenPlaybackState()
-            self.speakWithOnDeviceSynthesizer(listenText)
+            self.speakWithOnDeviceSynthesizer(spokenText)
         }
     }
 

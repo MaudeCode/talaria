@@ -195,6 +195,56 @@ describe('TTS validation, limits, and engines', () => {
     expect(JSON.parse(requests[0]?.init?.body as string)).toEqual({ model: 'gpt-4o-mini-tts', input: 'Hello', voice: 'alloy' })
   })
 
+  // TAL-906: the Agent's answers for these texts are recorded in contracts/fixtures/sidecar/text.json.
+  const CORPUS = 'Saved peyton-sample-20260922.wav to /tmp/out/9f2c1e7a-3b4d-4c2e-8f1a-0b9e2d7c6a51.json, see https://example.com/a/b?x=1 and commit 4bf46b7c8.'
+  const PROSE = 'Meet Ana on 2026-10-14 at ana@example.com; the ratio is 3:2, a well-known plan.'
+
+  const expectSpokenCorpus = (spoken: string): void => {
+    for (const identifier of ['peyton-sample-20260922.wav', '/tmp/out', '9f2c1e7a-3b4d-4c2e-8f1a-0b9e2d7c6a51', 'https://example.com']) expect(spoken).not.toContain(identifier)
+    expect(spoken).toBe('Saved to, see and commit 4bf46b7c8.')
+  }
+
+  it('/api/tts sends the engine the Agent spoken text without the filename, path, UUID, or URL', async () => {
+    fresh()
+    setEnv({ OPENAI_API_KEY: 'sk-openai-1234', VOICE_TOOLS_OPENAI_KEY: null })
+    setConfig({})
+    const res = await post(s, '/api/tts', { text: CORPUS, engine: 'openai' })
+    expect(res.status).toBe(200)
+    expectSpokenCorpus(String((JSON.parse(requests[0]?.init?.body as string) as Json).input))
+  })
+
+  it('speech.prepare answers the same spoken text', async () => {
+    const res = await post(s, '/api/speech/prepare', { text: CORPUS })
+    expect(res.status).toBe(200)
+    expectSpokenCorpus(String((await json(res)).spoken_text))
+  })
+
+  it('speech.prepare keeps prose, dates, and emails as written', async () => {
+    const res = await post(s, '/api/speech/prepare', { text: PROSE })
+    expect(res.status).toBe(200)
+    expect(await json(res)).toEqual({ spoken_text: PROSE })
+  })
+
+  it('a sidecar that cannot prepare the text leaves it as written, and a script with nothing to say calls no engine', async () => {
+    fresh()
+    setEnv({ OPENAI_API_KEY: 'sk-openai-1234', VOICE_TOOLS_OPENAI_KEY: null })
+    setConfig({})
+    const recorded = sidecar.responderFor('text.spoken')
+    try {
+      sidecar.respond('text.spoken', () => { throw new Error('boom') })
+      expect(await json(await post(s, '/api/speech/prepare', { text: `  ${CORPUS}\n` }))).toEqual({ spoken_text: CORPUS })
+      // The text as written keeps the 4000-character spoken cap.
+      expect(await json(await post(s, '/api/speech/prepare', { text: 'word '.repeat(2000) }))).toEqual({ spoken_text: 'word '.repeat(800).trimEnd() })
+      sidecar.respond('text.spoken', () => ({ spoken_text: '' }))
+      const res = await post(s, '/api/tts', { text: '```\nls\n```', engine: 'openai' })
+      expect(res.status).toBe(400)
+      expect(String((await json(res)).error)).toContain('nothing to speak')
+      expect(requests).toEqual([])
+    } finally {
+      sidecar.respond('text.spoken', recorded)
+    }
+  })
+
   it('VOICE_TOOLS_OPENAI_KEY wins over OPENAI_API_KEY', async () => {
     fresh()
     setEnv({ OPENAI_API_KEY: 'sk-openai-1234', VOICE_TOOLS_OPENAI_KEY: 'sk-voice-tools-1234' })

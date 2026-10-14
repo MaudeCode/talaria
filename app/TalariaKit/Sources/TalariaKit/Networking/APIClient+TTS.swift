@@ -10,7 +10,27 @@ struct TTSSynthesisRequest: Encodable {
     let voice: String
 }
 
+/// TAL-906: `POST /api/speech/prepare`, the server's read-aloud script for a message.
+struct SpeechPrepareRequest: Encodable {
+    let text: String
+}
+
+struct SpeechPrepareResponse: Decodable {
+    let spokenText: String
+}
+
 extension APIClient {
+    /// The server's read-aloud script for `text` (Markdown, filenames, paths, UUIDs, and
+    /// URLs dropped). Listen speaks it as is, on the server engine or the on-device one.
+    public func prepareSpeech(text: String) async throws -> String {
+        let response: SpeechPrepareResponse = try await send(
+            endpoint: .speechPrepare,
+            method: "POST",
+            body: SpeechPrepareRequest(text: text)
+        )
+        return response.spokenText
+    }
+
     /// Synthesizes `text` into speech via the server's configured TTS engine
     /// (`POST /api/tts`) and returns the raw `audio/mpeg` bytes.
     ///

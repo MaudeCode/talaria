@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Changed",
+      "summary": "Read aloud now skips file names, paths, IDs, hashes and links instead of spelling them out, and the App, Web and server voices all speak the same text.",
+      "highlight": false,
+      "components": ["web", "app"]
+    }
+  ]
+}
