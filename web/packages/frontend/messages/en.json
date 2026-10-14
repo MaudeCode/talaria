@@ -2159,6 +2159,7 @@
 	"providers_self_hosted_saved": "{provider} configured",
 	"plugins_empty": "No plugins found.",
 	"plugins_read_only": "Plugin settings are read-only on this instance.",
+	"plugins_secret_locked": "Set by the server's environment ({env}); change it there.",
 	"extensions_none": "No extensions installed.",
 	"extensions_installed": "Installed extensions",
 	"extensions_gallery": "Gallery",

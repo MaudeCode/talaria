@@ -635,5 +635,105 @@
         "providers": []
       }
     }
+  ],
+  "plugins.settings": [
+    {
+      "params": {
+        "profile_home": "<home>"
+      },
+      "result": {
+        "supported": true,
+        "plugins": [
+          {
+            "key": "fake-settings",
+            "fields": [
+              {
+                "key": "limit",
+                "type": "number",
+                "label": "limit",
+                "description": "",
+                "required": false,
+                "default": 5,
+                "value": 5
+              },
+              {
+                "key": "mode",
+                "type": "enum",
+                "label": "mode",
+                "description": "",
+                "required": false,
+                "choices": [
+                  "fast",
+                  "careful"
+                ],
+                "default": "fast",
+                "value": "fast"
+              },
+              {
+                "key": "api_key",
+                "type": "secret",
+                "label": "API key",
+                "description": "",
+                "required": false,
+                "env": "FAKE_SETTINGS_API_KEY",
+                "has_value": false
+              }
+            ]
+          }
+        ]
+      }
+    }
+  ],
+  "plugins.settings_save": [
+    {
+      "params": {
+        "profile_home": "<home>",
+        "key": "fake-settings",
+        "values": {
+          "limit": 9,
+          "mode": "careful"
+        }
+      },
+      "result": {
+        "key": "fake-settings",
+        "written": [
+          "limit",
+          "mode"
+        ],
+        "fields": [
+          {
+            "key": "limit",
+            "type": "number",
+            "label": "limit",
+            "description": "",
+            "required": false,
+            "default": 5,
+            "value": 9
+          },
+          {
+            "key": "mode",
+            "type": "enum",
+            "label": "mode",
+            "description": "",
+            "required": false,
+            "choices": [
+              "fast",
+              "careful"
+            ],
+            "default": "fast",
+            "value": "careful"
+          },
+          {
+            "key": "api_key",
+            "type": "secret",
+            "label": "API key",
+            "description": "",
+            "required": false,
+            "env": "FAKE_SETTINGS_API_KEY",
+            "has_value": false
+          }
+        ]
+      }
+    }
   ]
 }

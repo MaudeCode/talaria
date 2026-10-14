@@ -63,6 +63,15 @@ export const CommandSchema = z.object({
  * own verdict without spawning the plugin's CLI: `not_loaded` means the installed plugin could not be loaded (import failure, or its
  * provider id or directory name is taken by another profile's plugin in this process-wide registry).
  */
+/**
+ * TAL-806: one field of a plugin manifest's `config_schema` (Agent `plugin_settings_fields`) with its current value from
+ * `plugins.entries.<key>.settings`, else `default`. A `secret` field carries its `.env` name and `has_value`, never a value.
+ */
+export const PluginSettingFieldSchema = z.object({
+  key: z.string(), type: z.enum(['string', 'number', 'boolean', 'enum', 'json', 'secret']), label: z.string(), description: z.string(), required: z.boolean(),
+  choices: z.array(z.string()).optional(), default: Json.optional(), value: Json.optional(), env: z.string().optional(), has_value: z.boolean().optional(),
+})
+export type PluginSettingField = z.infer<typeof PluginSettingFieldSchema>
 export const PluginProviderSchema = z.object({ name: z.string(), display_name: z.string(), auth_type: z.string(), setup: z.enum(['ready', 'missing_cli', 'needs_setup', 'not_loaded', 'unavailable']) })
 /** A skill bundle: `/<name>` loads its `skill_count` skills in one message (TAL-265). */
 export const CommandBundleSchema = z.object({ name: z.string(), description: z.string(), skill_count: z.number().int(), source: z.literal('bundle') })
@@ -82,6 +91,15 @@ export const COMMANDS_METHODS = {
   'commands.moa_preset': { params: ProfileHomeParams.extend({ preset: z.string().nullable().optional() }), result: z.object({ moa: Loose }) },
   'plugins.providers': { params: ProfileHomeParams, result: z.object({ providers: z.array(PluginProviderSchema) }) },
   'plugins.list': { params: ProfileHomeParams.extend({ selected_providers: z.record(z.string(), z.string()).optional() }), result: z.object({ plugins: z.array(z.object({ name: z.string(), key: z.string(), version: z.string(), description: z.string(), enabled: z.boolean(), kind: z.string(), activation: z.string(), hooks: z.array(z.string()), is_active_provider: z.boolean().optional() })), supported_hooks: z.array(z.string()) }) },
+  /** TAL-806: plugins whose manifest declares settings; `supported` is false on an Agent without `hermes_cli.plugins_settings`. */
+  'plugins.settings': { params: ProfileHomeParams, result: z.object({ supported: z.boolean(), plugins: z.array(z.object({ key: z.string(), fields: z.array(PluginSettingFieldSchema) })) }) },
+  /**
+   * TAL-806: write non-secret `values` through the Agent's locked plugin-state writer and return the refreshed fields.
+   * An undeclared key, a secret or a type mismatch is invalid params; a managed install or key errors `plugin_settings_managed`.
+   * `secret_envs` (secret key → `.env` name the caller wrote) is checked against the current manifest before anything is
+   * written; a key that is no longer a secret stored under that name errors `plugin_settings_changed`.
+   */
+  'plugins.settings_save': { params: ProfileHomeParams.extend({ key: z.string().min(1), values: z.record(z.string(), Json), secret_envs: z.record(z.string(), z.string()).optional() }), result: z.object({ key: z.string(), written: z.array(z.string()), fields: z.array(PluginSettingFieldSchema) }) },
 } as const
 
 // ── kanban ─────────────────────────────────────────────────────────────

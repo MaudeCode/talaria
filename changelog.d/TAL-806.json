@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Added",
+      "summary": "Hermes Agent plugins that declare settings can be configured from Settings, Plugins; secret values are saved to the profile's .env, not config.yaml.",
+      "highlight": false,
+      "components": ["web"]
+    }
+  ]
+}

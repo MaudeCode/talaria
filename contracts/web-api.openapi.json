@@ -52960,6 +52960,61 @@
                                 }
                               ]
                             }
+                          },
+                          "settings": {
+                            "type": "array",
+                            "items": {
+                              "type": "object",
+                              "properties": {
+                                "key": {
+                                  "type": "string"
+                                },
+                                "type": {
+                                  "enum": [
+                                    "string",
+                                    "number",
+                                    "boolean",
+                                    "enum",
+                                    "json",
+                                    "secret"
+                                  ],
+                                  "type": "string"
+                                },
+                                "label": {
+                                  "type": "string"
+                                },
+                                "description": {
+                                  "type": "string"
+                                },
+                                "required": {
+                                  "type": "boolean"
+                                },
+                                "choices": {
+                                  "type": "array",
+                                  "items": {
+                                    "type": "string"
+                                  }
+                                },
+                                "default": {},
+                                "value": {},
+                                "env": {
+                                  "type": "string"
+                                },
+                                "has_value": {
+                                  "type": "boolean"
+                                },
+                                "locked": {
+                                  "type": "boolean"
+                                }
+                              },
+                              "required": [
+                                "key",
+                                "type",
+                                "label",
+                                "description",
+                                "required"
+                              ]
+                            }
                           }
                         },
                         "required": [
@@ -52988,6 +53043,137 @@
                     "plugins"
                   ],
                   "additionalProperties": {}
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/plugins/settings": {
+      "post": {
+        "operationId": "pluginSettings",
+        "summary": "TAL-806 (operator only): save a plugin's manifest-declared settings. `values` holds non-secret fields as the form entered them (numbers and JSON as text); the server checks each against the field list, writes the changed ones to `plugins.entries.<key>.settings`, and writes `secrets` to the profile `.env` under each field's `env` name (an empty one removes it). Secrets are written first; when a later write is refused, the ones already written are restored. 400 for an undeclared key, a bad value or a `locked` secret; 409 when the manifest changed; 503 when the Agent sidecar stopped before confirming (secrets stay written); 403 on a managed install, 404 for an unknown plugin.",
+        "tags": [
+          "tools"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "key": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "values": {
+                    "type": "object",
+                    "propertyNames": {
+                      "type": "string"
+                    },
+                    "additionalProperties": {}
+                  },
+                  "secrets": {
+                    "type": "object",
+                    "propertyNames": {
+                      "type": "string"
+                    },
+                    "additionalProperties": {
+                      "type": "string"
+                    }
+                  }
+                },
+                "required": [
+                  "key"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "ok": {
+                      "const": true
+                    },
+                    "key": {
+                      "type": "string"
+                    },
+                    "written": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    },
+                    "settings": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "key": {
+                            "type": "string"
+                          },
+                          "type": {
+                            "enum": [
+                              "string",
+                              "number",
+                              "boolean",
+                              "enum",
+                              "json",
+                              "secret"
+                            ],
+                            "type": "string"
+                          },
+                          "label": {
+                            "type": "string"
+                          },
+                          "description": {
+                            "type": "string"
+                          },
+                          "required": {
+                            "type": "boolean"
+                          },
+                          "choices": {
+                            "type": "array",
+                            "items": {
+                              "type": "string"
+                            }
+                          },
+                          "default": {},
+                          "value": {},
+                          "env": {
+                            "type": "string"
+                          },
+                          "has_value": {
+                            "type": "boolean"
+                          },
+                          "locked": {
+                            "type": "boolean"
+                          }
+                        },
+                        "required": [
+                          "key",
+                          "type",
+                          "label",
+                          "description",
+                          "required"
+                        ]
+                      }
+                    }
+                  },
+                  "required": [
+                    "ok",
+                    "key",
+                    "written",
+                    "settings"
+                  ]
                 }
               }
             }

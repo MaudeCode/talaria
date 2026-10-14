@@ -90,6 +90,8 @@
           "personalities.list",
           "plugins.list",
           "plugins.providers",
+          "plugins.settings",
+          "plugins.settings_save",
           "process.background_list",
           "process.claim_delivery",
           "process.complete_delivery",

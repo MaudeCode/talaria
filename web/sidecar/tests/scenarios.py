@@ -135,6 +135,9 @@ SCENARIOS: list[tuple[str, dict]] = [
     ("process.defer_delivery", {"profile_home": "{home}", "event": {"type": "async_delegation", "delegation_id": "deleg_fixture"}, "claim_id": ""}),
     ("process.background_list", {"profile_home": "{home}", "session_ids": ["webui-fixture"]}),
     ("process.delegation_result", {"profile_home": "{home}", "session_id": "webui-fixture", "delegation_id": "deleg_fixture"}),
+    # TAL-806: test_namespaces seeds a synthetic plugin that declares settings before this; last, so no earlier fixture sees its config write.
+    ("plugins.settings", {"profile_home": "{home}"}),
+    ("plugins.settings_save", {"profile_home": "{home}", "key": "fake-settings", "values": {"limit": 9, "mode": "careful"}}),
 ]
 
 # Scenarios whose params hold ids produced by earlier calls; resolved at run time.
