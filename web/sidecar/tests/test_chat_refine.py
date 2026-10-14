@@ -39,5 +39,5 @@ def test_refine_reviews_the_conversation_on_the_session_agent_in_its_profile(tmp
         "cached_for_turn": True,
         "held": 0,
     }
-    assert out["running"] == {"output": "Agent is running — wait for the turn to finish, then /refine.", "reviews": []}
+    assert out["running"] == {"output": "Agent is running — wait for the turn to finish, then /refine.", "reviews": [], "claimed": False, "held": 0}
     assert out["empty"] == {"output": "Nothing to refine yet — the conversation is empty.", "reviews": []}

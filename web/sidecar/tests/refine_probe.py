@@ -92,7 +92,9 @@ busy = Agent()
 chat._AGENT_CACHE["busy"] = (busy, "sig", str(ALPHA))
 run = chat._Run("stream-busy", "busy", None)
 chat._RUNS["stream-busy"], chat._RUNS_BY_SESSION["busy"] = run, "stream-busy"
-out["running"] = {"output": call("busy", ""), "reviews": busy.reviews}
+out["running"] = {"output": call("busy", ""), "reviews": busy.reviews,
+                  # A turn admitted after ``refine``'s own check: the claim rechecks and leaves the cached agent alone.
+                  "claimed": chat._refine_agent({}, "busy", str(ALPHA)) is not None, "held": len(chat._COMMITTING)}
 run.finished.set()
 
 empty = Agent()

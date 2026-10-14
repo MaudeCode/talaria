@@ -1416,6 +1416,13 @@ def start(ctx: CallContext, params: dict) -> dict:  # noqa: PLR0915 - one turn, 
             # A cached agent keeps the last turn's card callback; this turn's client decides afresh (TAL-818).
             if hasattr(agent, "connection_callback"):
                 agent.connection_callback = on_connection if connect_card else None
+            # TAL-902: an agent ``/refine`` built runs its first turn here. Like a new one, it lapses the notices of the
+            # agent it replaced and raises the startup notices it parked while it had no callback.
+            if vars(agent).pop("_talaria_unannounced", False):
+                emit("notices_reset", {})
+                replay = getattr(agent, "_replay_startup_warnings", None)
+                if callable(replay):
+                    replay()
         else:
             # TAL-803: the notices a replaced agent raised lapse with it (``lapses_with_agent``); this one raises its own.
             emit("notices_reset", {})
@@ -1703,6 +1710,10 @@ def _refine_agent(params: dict, session_id: str, home):
     """The session's cached agent, else one built the way its turn builds it and cached for that turn, held in
     ``_COMMITTING`` until the caller lets go; None when a turn started meanwhile. Runs under the call's ``scoped_home``."""
     with _AGENT_CACHE_LOCK:
+        with _RUNS_LOCK:
+            # Checked again with the claim: a turn admitted since ``refine``'s check holds the cached agent.
+            if _session_running_locked(session_id):
+                return None
         cached = _AGENT_CACHE.get(session_id)
         if cached is not None:
             _COMMITTING.append(cached[0])
@@ -1732,6 +1743,7 @@ def _refine_agent(params: dict, session_id: str, home):
         if agent is not None:
             _COMMITTING.append(agent)
         if agent is built:
+            built._talaria_unannounced = True  # its first turn announces it (``start``)
             _AGENT_CACHE[session_id] = (built, signature, home)
             _evict_idle_agents_locked()
         else:
