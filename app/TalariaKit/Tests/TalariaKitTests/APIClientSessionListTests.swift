@@ -123,6 +123,29 @@ final class APIClientSessionListTests: APIClientTestCase {
         )
     }
 
+    /// `agent_storage` (TAL-830): each state the server reports, with its reason; nil when an older server omits it
+    /// or a newer one reports a state this App does not know.
+    func testSessionsDecodeTheAgentStorageState() async throws {
+        let cases: [(json: String, expected: AgentStorage?)] = [
+            (#""agent_storage": {"state": "ok", "reason": null},"#, AgentStorage(state: .ok, reason: nil)),
+            (#""agent_storage": {"state": "corrupt", "reason": "state.db is damaged"},"#, AgentStorage(state: .corrupt, reason: "state.db is damaged")),
+            (#""agent_storage": {"state": "unavailable", "reason": "state.db is locked"},"#, AgentStorage(state: .unavailable, reason: "state.db is locked")),
+            (#""agent_storage": {"state": "outdated", "reason": "Upgrade hermes-agent"},"#, AgentStorage(state: .outdated, reason: "Upgrade hermes-agent")),
+            (#""agent_storage": {"state": "rebuilding", "reason": null},"#, nil),
+            ("", nil),
+        ]
+        for (field, expected) in cases {
+            let client = makeClient { request in
+                apiTestJSONResponse(#"{\#(field) "sessions": [{"session_id": "abc123"}]}"#, for: request)
+            }
+
+            let response = try await client.sessions()
+
+            XCTAssertEqual(response.agentStorage, expected, field)
+            XCTAssertEqual(response.sessions?.first?.sessionId, "abc123", field)
+        }
+    }
+
     func testSessionsDecodesDelegationAndReadOnlyMetadataTolerantly() async throws {
         let client = makeClient { request in
             XCTAssertEqual(request.url?.path, "/api/sessions")

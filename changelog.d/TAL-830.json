@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Added",
+      "summary": "The Chats list says when the Agent's session storage is damaged, unreadable or needs a newer hermes-agent, with the server's reason, instead of showing a list without the Agent's chats.",
+      "highlight": false,
+      "components": ["app"]
+    }
+  ]
+}

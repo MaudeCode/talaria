@@ -910,10 +910,14 @@ struct SessionListView: View {
     private var content: some View {
         SidebarList {
             if viewModel.isViewingCachedData {
-                OfflineCacheBanner()
+                SessionListBanner(systemImage: "wifi.slash", title: "Offline - viewing cached version")
                     .padding(.top, 16)
                     .sessionsScreenListRow()
             }
+
+            AgentStorageBanner(storage: viewModel.agentStorage)
+                .padding(.top, 16)
+                .sessionsScreenListRow()
 
             if !hasSearchQuery {
                 SessionFilterControls(

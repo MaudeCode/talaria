@@ -143,7 +143,7 @@
 		C107K0000000000000000021 /* CompactStatusRow.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107K0000000000000000121 /* CompactStatusRow.swift */; };
 		C107K0000000000000000022 /* SessionListStatusRow.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107K0000000000000000122 /* SessionListStatusRow.swift */; };
 		C107K0000000000000000023 /* SessionRowSkeletonView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107K0000000000000000123 /* SessionRowSkeletonView.swift */; };
-		C107K0000000000000000024 /* OfflineCacheBanner.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107K0000000000000000124 /* OfflineCacheBanner.swift */; };
+		C107K0000000000000000024 /* SessionListBanner.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107K0000000000000000124 /* SessionListBanner.swift */; };
 		A04300000000000000000002 /* SessionListActionConfirmations.swift in Sources */ = {isa = PBXBuildFile; fileRef = A04300000000000000000012 /* SessionListActionConfirmations.swift */; };
 		A040C0DE0000000000000001 /* ProjectCreationSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = A040C0DE0000000000000002 /* ProjectCreationSheet.swift */; };
 		A048C0DE0000000000000001 /* SessionRenameSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = A048C0DE0000000000000002 /* SessionRenameSheet.swift */; };
@@ -562,7 +562,7 @@
 		C107K0000000000000000121 /* CompactStatusRow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CompactStatusRow.swift; sourceTree = "<group>"; };
 		C107K0000000000000000122 /* SessionListStatusRow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SessionListStatusRow.swift; sourceTree = "<group>"; };
 		C107K0000000000000000123 /* SessionRowSkeletonView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SessionRowSkeletonView.swift; sourceTree = "<group>"; };
-		C107K0000000000000000124 /* OfflineCacheBanner.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OfflineCacheBanner.swift; sourceTree = "<group>"; };
+		C107K0000000000000000124 /* SessionListBanner.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SessionListBanner.swift; sourceTree = "<group>"; };
 		A04300000000000000000012 /* SessionListActionConfirmations.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SessionListActionConfirmations.swift; sourceTree = "<group>"; };
 		A040C0DE0000000000000002 /* ProjectCreationSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProjectCreationSheet.swift; sourceTree = "<group>"; };
 		A048C0DE0000000000000002 /* SessionRenameSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SessionRenameSheet.swift; sourceTree = "<group>"; };
@@ -1108,7 +1108,7 @@
 				C107K0000000000000000121 /* CompactStatusRow.swift */,
 				C107K0000000000000000122 /* SessionListStatusRow.swift */,
 				C107K0000000000000000123 /* SessionRowSkeletonView.swift */,
-				C107K0000000000000000124 /* OfflineCacheBanner.swift */,
+				C107K0000000000000000124 /* SessionListBanner.swift */,
 				A04300000000000000000012 /* SessionListActionConfirmations.swift */,
 				A040C0DE0000000000000002 /* ProjectCreationSheet.swift */,
 				A048C0DE0000000000000002 /* SessionRenameSheet.swift */,
@@ -1924,7 +1924,7 @@
 				C107K0000000000000000021 /* CompactStatusRow.swift in Sources */,
 				C107K0000000000000000022 /* SessionListStatusRow.swift in Sources */,
 				C107K0000000000000000023 /* SessionRowSkeletonView.swift in Sources */,
-				C107K0000000000000000024 /* OfflineCacheBanner.swift in Sources */,
+				C107K0000000000000000024 /* SessionListBanner.swift in Sources */,
 				A04300000000000000000002 /* SessionListActionConfirmations.swift in Sources */,
 				A040C0DE0000000000000001 /* ProjectCreationSheet.swift in Sources */,
 				A048C0DE0000000000000001 /* SessionRenameSheet.swift in Sources */,

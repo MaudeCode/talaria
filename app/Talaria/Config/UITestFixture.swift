@@ -38,6 +38,9 @@ struct UITestFixtureEnvironment {
     nonisolated static let holdArchiveUndoArgument = "--ui-test-hold-archive-undo"
     /// Opens the Chats list with its update notifications sheet up.
     nonisolated static let updateNotificationsArgument = "--ui-test-update-notifications"
+    /// Reports the Agent's session storage as corrupt on `/api/sessions` (TAL-830).
+    nonisolated static let corruptAgentStorageArgument = "--ui-test-corrupt-agent-storage"
+    nonisolated static let corruptAgentStorageReason = "Agent session storage (state.db) is damaged: database disk image is malformed."
 
     /// The fixture's response-cache directory, emptied once per launch.
     nonisolated static let responseCacheRoot: URL? = {
@@ -726,7 +729,10 @@ final class UITestFixtureURLProtocol: URLProtocol, @unchecked Sendable {
                 title: index == 0 ? sessionTitle : String(format: "Fixture Session %02d", index)
             )
         }.filter { !archivedIDs.contains($0["session_id"] as? String ?? "") }
-        return json(["sessions": sessions, "archived_count": 0])
+        let storage: [String: Any] = ProcessInfo.processInfo.arguments.contains(UITestFixtureEnvironment.corruptAgentStorageArgument)
+            ? ["state": "corrupt", "reason": UITestFixtureEnvironment.corruptAgentStorageReason]
+            : ["state": "ok", "reason": NSNull()]
+        return json(["sessions": sessions, "archived_count": 0, "agent_storage": storage])
     }
 
     /// The one archived row, which only the archived-sessions screen requests.

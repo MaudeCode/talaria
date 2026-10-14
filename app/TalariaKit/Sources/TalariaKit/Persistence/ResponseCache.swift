@@ -26,6 +26,8 @@ public struct ResponseCache: Sendable {
     public enum Kind {
         public static let profiles = "profiles"
         public static let projects = "projects"
+        /// The session list's `agent_storage` alone; its rows live in `CacheStore`.
+        public static let agentStorage = "agent-storage"
         public static let models = "models"
         public static let workspaces = "workspaces"
         public static let commands = "commands"

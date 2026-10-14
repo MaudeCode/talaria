@@ -92,6 +92,52 @@ extension SessionListMutationTests {
         XCTAssertFalse(relaunch.isViewingCachedData)
     }
 
+    /// TAL-830: the server's storage state comes with the list, and a relaunch paints it with the cached rows, so a
+    /// damaged `state.db` still explains the empty list before the server answers.
+    func testRelaunchShowsTheLastAgentStorageStateBeforeTheListLoads() async throws {
+        let server = try XCTUnwrap(URL(string: "https://example.test"))
+        let cache = makeResponseCache(server: server)
+        let client = try makeClient(server: server) { request in
+            apiTestJSONResponse(
+                #"{"sessions": [], "agent_storage": {"state": "corrupt", "reason": "state.db is damaged"}}"#,
+                for: request
+            )
+        }
+        let firstLaunch = SessionListViewModel(server: server, client: client, responseCache: cache)
+        await firstLaunch.load()
+        let corrupt = AgentStorage(state: .corrupt, reason: "state.db is damaged")
+        XCTAssertEqual(firstLaunch.agentStorage, corrupt)
+
+        let relaunchClient = try makeClient(server: server) { request in
+            apiTestJSONResponse(#"{"sessions": [], "agent_storage": {"state": "ok", "reason": null}}"#, for: request)
+        }
+        let relaunch = SessionListViewModel(server: server, client: relaunchClient, responseCache: cache)
+        relaunch.paintCachedStateIfEmpty(modelContext: try makeContext())
+        XCTAssertEqual(relaunch.agentStorage, corrupt)
+
+        await relaunch.load()
+        XCTAssertEqual(relaunch.agentStorage, AgentStorage(state: .ok, reason: nil), "The server's answer replaces the cached state")
+    }
+
+    /// A list that was in flight across a profile switch keeps its storage state out of the new profile's cache.
+    func testAListInFlightAcrossAProfileSwitchDoesNotCacheItsStorageStateForTheNewProfile() async throws {
+        let server = try XCTUnwrap(URL(string: "https://tal830-profile-switch.test"))
+        ActiveServerProfile.record("before", for: server)
+        addTeardownBlock { ActiveServerProfile.record(nil, for: server) }
+        let cache = makeResponseCache(server: server)
+        let client = try makeClient(server: server) { request in
+            ActiveServerProfile.record("after", for: server)
+            return apiTestJSONResponse(
+                #"{"sessions": [], "agent_storage": {"state": "corrupt", "reason": "state.db is damaged"}}"#,
+                for: request
+            )
+        }
+
+        await SessionListViewModel(server: server, client: client, responseCache: cache).load()
+
+        XCTAssertNil(cache.entry(ResponseCache.Kind.agentStorage).load(AgentStorage.self), "The previous profile's state reached the new one's cache")
+    }
+
     func testRunningChatsNeverOpenedHereArePrefetchedOncePerRun() async throws {
         let context = try makeContext()
         let server = try XCTUnwrap(URL(string: "https://example.test"))
