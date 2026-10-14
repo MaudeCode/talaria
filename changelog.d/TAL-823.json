@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Talaria Web's session titles and update and handoff summaries now go through Hermes Agent's auxiliary model path, so plugin hooks see them and a custom provider's extra request fields reach them.",
+      "highlight": false,
+      "components": ["web"]
+    }
+  ]
+}
