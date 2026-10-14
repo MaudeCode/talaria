@@ -761,7 +761,7 @@ def _join(threads, deadline: float) -> None:
         thread.join(max(0.0, deadline - time.monotonic()))
 
 
-def _cancel_background_reviews(entries, message: str) -> None:
+def _cancel_background_reviews(entries, message: str) -> list[threading.Thread]:
     """TAL-897: stop the post-turn memory/skill review fork of each ``(agent, home)``, which no turn interrupt or release
     reaches, so a deleted session or a stopping sidecar no longer pays for it. Each cancel then holds the agent's review
     slot (a run token from the Agent's ``prepare_background_review_run``, never finished), so the Agent admits no later
@@ -781,7 +781,7 @@ def _cancel_background_reviews(entries, message: str) -> None:
     try:
         from agent.background_review import cancel_background_review_for_live_turn, prepare_background_review_run
     except ImportError:
-        return
+        return []
 
     def cancel(agent) -> None:
         thread = threading.current_thread()
@@ -811,12 +811,15 @@ def _cancel_background_reviews(entries, message: str) -> None:
             with _RELEASES_LOCK:
                 _RELEASES.pop(thread, None)
 
+    threads = []
     for agent, home in unique.values():
         thread = threading.Thread(target=cancel, args=(agent,), daemon=True, name="chat-review-cancel")
         thread.failed = False  # type: ignore[attr-defined] - read by profile deletion
         with _RELEASES_LOCK:
             _RELEASES[thread] = home
         thread.start()
+        threads.append(thread)
+    return threads
 
 
 def evict_all_agents() -> int:
@@ -861,10 +864,11 @@ def release_profile_agents(home) -> None:
     target = os.path.realpath(home)
     with _AGENT_CACHE_LOCK:
         entries = [_AGENT_CACHE.pop(sid) for sid, entry in list(_AGENT_CACHE.items()) if os.path.realpath(entry[2]) == target]
-        _release_agents_locked(entries)
-    _cancel_background_reviews([(entry[0], entry[2]) for entry in entries], "profile deleted")
+        started = _release_agents_locked(entries)
+    started += _cancel_background_reviews([(entry[0], entry[2]) for entry in entries], "profile deleted")
+    # The threads started here count even once they left ``_RELEASES``: a fast failure must still block the delete.
     with _RELEASES_LOCK:
-        threads = [thread for thread, owner in _RELEASES.items() if owner is not None and os.path.realpath(owner) == target]
+        threads = list(dict.fromkeys(started + [thread for thread, owner in _RELEASES.items() if owner is not None and os.path.realpath(owner) == target]))
     _join(threads, time.monotonic() + _PROFILE_RELEASE_TIMEOUT)
     if any(thread.is_alive() for thread in threads):
         raise RpcError("The profile is still saving memory from its chats. Retry in a moment.")
