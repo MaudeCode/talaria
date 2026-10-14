@@ -1013,6 +1013,59 @@ describe('chat turns through the sidecar', () => {
     expect(reloaded.at(-1)?._anchor_activity_scene).toMatchObject({ terminal_state: 'no_response' })
   })
 
+  it('starts a typed Agent prompt built-in with the Agent\'s expansion and refuses one it cannot expand (TAL-817)', async () => {
+    const sid = await newSession(s)
+    const asked: Json[] = []
+    sidecar.respond('commands.expand_prompt', (params) => {
+      asked.push(params)
+      const name = params.command.slice(1).split(' ')[0]
+      if (name === 'initiate-setup' || name === 'initiate_setup') return { name: 'initiate-setup', message: '[/initiate-setup]\n\nSETUP SKILL' }
+      if (name === 'plan') return { name: 'plan', message: `[/plan — plan mode]\n\nTask to plan:\n${params.command.slice(6)}` }
+      if (name === 'blueprint') return { name: 'blueprint', message: null }
+      return { name: null, message: null }
+    })
+    const prompts: string[] = []
+    const steered: string[] = []
+    let release: () => void = () => undefined
+    sidecar.respond('chat.steer', (params) => { steered.push(params.text); return { accepted: true, fallback: null } })
+    sidecar.respond('chat.start', (params) => {
+      prompts.push(str(params.user_message))
+      const done = completed([{ role: 'user', content: str(params.user_message) }, { role: 'assistant', content: 'ok' }])
+      return prompts.length < 3 ? done : new Promise((resolve) => { release = () => { resolve(done) } })
+    })
+    const turn = async (message: string, settle = true): Promise<string> => {
+      const start = await json(await post(s, '/api/chat/start', { session_id: sid, message }))
+      if (settle) await s.sse(`/api/chat/stream?stream_id=${String(start.stream_id)}`, (f) => f.event === 'stream_end')
+      return String(start.stream_id)
+    }
+    try {
+      // The model gets the Agent-built prompt, asked for by alias with the session's workspace and toolsets.
+      await turn('/initiate_setup')
+      expect(prompts).toEqual(['[/initiate-setup]\n\nSETUP SKILL'])
+      expect(asked[0]).toMatchObject({ command: '/initiate_setup', workspace: s.deps.sessionStore.get(sid).workspace, enabled_toolsets: null })
+      // Other slash text is still the user's own message.
+      await turn('/etc/hosts looks wrong')
+      expect(prompts[1]).toBe('/etc/hosts looks wrong')
+      // A prompt built-in the Agent cannot expand never reaches the model.
+      const refused = await post(s, '/api/chat/start', { session_id: sid, message: '/blueprint daily digest' })
+      expect(refused.status).toBe(400)
+      expect((await json(refused)).error).toBe('/blueprint is not available in Talaria yet.')
+      expect(prompts).toHaveLength(2)
+      // Typed during a running turn, the Agent gets the expansion and the steer shows as typed.
+      const streamId = await turn('task', false)
+      await vi.waitFor(() => { expect(prompts).toHaveLength(3) })
+      const res = await json(await post(s, '/api/chat/steer', { session_id: sid, text: '/plan ship it', steer_id: 'steer-plan' }))
+      expect(res).toMatchObject({ accepted: true, steer_id: 'steer-plan' })
+      expect(steered).toEqual(['[/plan — plan mode]\n\nTask to plan:\nship it'])
+      expect(s.deps.turns.pendingSteers(streamId).map((r) => r.text)).toEqual(['/plan ship it'])
+      release()
+      await s.sse(`/api/chat/stream?stream_id=${streamId}&replay=1`, (f) => f.event === 'stream_end')
+    } finally {
+      release()
+      for (const method of ['commands.expand_prompt', 'chat.start', 'chat.steer'] as const) sidecar.respond(method, undefined)
+    }
+  })
+
   it('steers the live agent and reports fallbacks when nothing is running', async () => {
     const sid = await newSession(s)
     expect(await json(await post(s, '/api/chat/steer', { session_id: sid, text: 'focus' }))).toEqual({ accepted: false, fallback: 'not_running', stream_id: null })

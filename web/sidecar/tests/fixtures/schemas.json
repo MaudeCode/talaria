@@ -667,6 +667,20 @@
             },
             "exec": {
               "type": "boolean"
+            },
+            "prompt": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "enum": [
+                    "expand",
+                    "unsupported"
+                  ]
+                },
+                {
+                  "type": "null"
+                }
+              ]
             }
           },
           "required": [
@@ -678,7 +692,8 @@
             "subcommands",
             "cli_only",
             "gateway_only",
-            "exec"
+            "exec",
+            "prompt"
           ],
           "additionalProperties": false
         }
@@ -707,6 +722,29 @@
     "required": [
       "output",
       "source"
+    ],
+    "additionalProperties": false
+  },
+  "commands.expand_prompt": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "properties": {
+      "name": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "message": {
+        "type": [
+          "string",
+          "null"
+        ]
+      }
+    },
+    "required": [
+      "name",
+      "message"
     ],
     "additionalProperties": false
   },

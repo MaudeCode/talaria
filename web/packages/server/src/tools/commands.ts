@@ -41,10 +41,14 @@ export const CLIENT_COMMANDS: readonly Command[] = [
   client('use', 'Use a skill', { args_hint: '<skill>', ...webOnly('Use `/skills [query]` to search skills.') }),
 ]
 
+/** What a client shows for an Agent prompt built-in this Agent cannot expand (TAL-817); the turn path refuses it with the same text. */
+export const unsupportedPromptMessage = (name: string): string => `/${name} is not available in Talaria yet.`
+
 /**
  * The client table followed by the Agent registry. An Agent command whose name is already a client name or alias is
  * dropped, and client-claimed aliases are removed from the rest, so every typed name resolves to one entry.
- * Gateway-only commands never reach a client; CLI-only ones stay listed for no client.
+ * Gateway-only commands never reach a client; CLI-only ones and prompt built-ins the sidecar cannot expand stay listed
+ * for no client. An expandable prompt built-in is `handler: 'prompt'`: chat start sends the Agent's expansion (TAL-817).
  */
 export function commandCatalog(agent: readonly AgentCommand[]): Command[] {
   const claimed = new Set(CLIENT_COMMANDS.flatMap((c) => [c.name, ...c.aliases]))
@@ -53,7 +57,8 @@ export function commandCatalog(agent: readonly AgentCommand[]): Command[] {
     claimed.add(c.name)
     const aliases = c.aliases.filter((a) => !claimed.has(a))
     for (const a of aliases) claimed.add(a)
-    return [{ ...c, aliases, handler: 'agent', clients: c.cli_only ? [] : ALL, ...(c.cli_only ? { unsupported_message: `/${c.name} runs only in the Hermes CLI.` } : {}) }]
+    const unsupported = c.cli_only ? `/${c.name} runs only in the Hermes CLI.` : c.prompt === 'unsupported' ? unsupportedPromptMessage(c.name) : null
+    return [{ ...c, aliases, handler: c.prompt === 'expand' ? 'prompt' : 'agent', clients: unsupported === null ? ALL : [], ...(unsupported === null ? {} : { unsupported_message: unsupported }) }]
   })
   return [...CLIENT_COMMANDS, ...rows]
 }

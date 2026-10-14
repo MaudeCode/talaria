@@ -49163,7 +49163,8 @@
                           "handler": {
                             "enum": [
                               "client",
-                              "agent"
+                              "agent",
+                              "prompt"
                             ],
                             "type": "string"
                           },

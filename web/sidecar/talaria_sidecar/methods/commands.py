@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import importlib.util
 import logging
+import os
 import threading
 from typing import Any
 
@@ -40,6 +42,98 @@ def parse_slash_command(command: str) -> tuple[str, str]:
     return _ALIASES.get(base, base), parts[1] if len(parts) > 1 else ""
 
 
+def _expand_plan(args: str, **_turn) -> str:
+    from agent.plan_prompt import build_plan_prompt
+
+    return build_plan_prompt(args)
+
+
+def _expand_learn(args: str, **_turn) -> str:
+    from agent.learn_prompt import build_learn_prompt
+
+    return build_learn_prompt(args)
+
+
+def _expand_init(args: str, *, workspace: str, **_turn) -> str:
+    from hermes_cli.init_command import build_init_prompt_for_cwd
+
+    # The Agent falls back to the process cwd for a missing directory; the sidecar's is never the user's project.
+    if not workspace or not os.path.isdir(workspace):
+        raise InvalidParams("workspace is not a directory")
+    return build_init_prompt_for_cwd(cwd=workspace, extra=args)
+
+
+def _expand_initiate_setup(_args: str, *, enabled_toolsets, **_turn) -> str:
+    from agent.initiate_setup_prompt import build_initiate_setup_prompt
+    from hermes_cli.setup_profile import primary_profile
+    from hermes_constants import get_hermes_home
+    from model_tools import get_tool_definitions
+
+    from .chat import _turn_toolsets
+    from .toolsets import disabled_toolsets
+
+    # The gateway's ``_hm_cmd_initiate_setup``: the tools this turn's agent gets, by name.
+    tools = get_tool_definitions(enabled_toolsets=_turn_toolsets(enabled_toolsets), disabled_toolsets=disabled_toolsets(),
+                                 quiet_mode=True, skip_tool_search_assembly=True)
+    return build_initiate_setup_prompt("webui", [tool["function"]["name"] for tool in tools], primary_profile(get_hermes_home()))
+
+
+# The Agent built-ins every surface answers by rewriting the turn to a builder's prompt (the gateway's
+# ``_hm_rewrite_turn_to_prompt``), with the Agent module each expander needs. ``None``: no expander yet, so no client
+# offers it (``/blueprint`` seeds a turn only after its own slot parsing and job wiring).
+_PROMPT_BUILTINS: dict[str, tuple[Any, str] | None] = {
+    "plan": (_expand_plan, "agent.plan_prompt"),
+    "learn": (_expand_learn, "agent.learn_prompt"),
+    "init": (_expand_init, "hermes_cli.init_command"),
+    "initiate-setup": (_expand_initiate_setup, "agent.initiate_setup_prompt"),
+    "blueprint": None,
+}
+
+
+def _prompt_expander(name: str):
+    """The expander for a prompt built-in this Agent ships the builder for; None when it has none."""
+    entry = _PROMPT_BUILTINS.get(name)
+    if entry is None:
+        return None
+    try:
+        found = importlib.util.find_spec(entry[1]) is not None
+    except (ImportError, ValueError):
+        found = False
+    return entry[0] if found else None
+
+
+def _prompt_mode(name: str) -> str | None:
+    if name not in _PROMPT_BUILTINS:
+        return None
+    return "expand" if _prompt_expander(name) else "unsupported"
+
+
+def expand_prompt(command: str, workspace: str, enabled_toolsets) -> dict[str, Any]:
+    """``/<prompt built-in> [args]`` as the turn text the Agent's own builder writes. ``name`` is the built-in's (None
+    when the command is not one) and ``message`` None when this Agent has no builder for it."""
+    try:
+        name, args = parse_slash_command(command)
+        from hermes_cli.commands import resolve_command
+    except (InvalidParams, ImportError):
+        return {"name": None, "message": None}
+    cmd = resolve_command(name)
+    if cmd is None or cmd.name not in _PROMPT_BUILTINS:
+        return {"name": None, "message": None}
+    expander = _prompt_expander(cmd.name)
+    if expander is None:
+        return {"name": cmd.name, "message": None}
+    try:
+        message = str(expander(args, workspace=workspace, enabled_toolsets=enabled_toolsets) or "").strip()
+    except InvalidParams:
+        raise
+    except Exception as exc:  # noqa: BLE001
+        log.warning("Failed to expand /%s", cmd.name, exc_info=True)
+        raise RpcError(f"Couldn't start /{cmd.name}", condition="prompt_expand_failed") from exc
+    if not message:
+        raise RpcError(f"Couldn't start /{cmd.name}", condition="prompt_expand_failed")
+    return {"name": cmd.name, "message": message}
+
+
 def list_commands() -> list[dict[str, Any]]:
     try:
         from hermes_cli.commands import COMMAND_REGISTRY
@@ -53,13 +147,13 @@ def list_commands() -> list[dict[str, Any]]:
         out.append({
             "name": cmd.name, "description": cmd.description, "category": cmd.category, "aliases": list(cmd.aliases),
             "args_hint": cmd.args_hint, "subcommands": list(cmd.subcommands), "cli_only": bool(cmd.cli_only), "gateway_only": bool(cmd.gateway_only),
-            "exec": cmd.name in _ALLOWED,
+            "exec": cmd.name in _ALLOWED, "prompt": _prompt_mode(cmd.name),
         })
     listed = {c["name"] for c in out}
     for name, (description, category, args_hint) in _RUNTIME_COMMANDS.items():
         if name not in listed:
             out.append({"name": name, "description": description, "category": category, "aliases": [a for a, n in _ALIASES.items() if n == name],
-                        "args_hint": args_hint, "subcommands": [], "cli_only": False, "gateway_only": False, "exec": True})
+                        "args_hint": args_hint, "subcommands": [], "cli_only": False, "gateway_only": False, "exec": True, "prompt": None})
     try:
         from hermes_cli.plugins import get_plugin_commands
 
@@ -68,7 +162,7 @@ def list_commands() -> list[dict[str, Any]]:
             if name in existing or name in _NEVER_EXPOSE:
                 continue
             out.append({"name": name, "description": str(info.get("description", "Plugin command")), "category": "Plugin", "aliases": [],
-                        "args_hint": str(info.get("args_hint", "")), "subcommands": [], "cli_only": False, "gateway_only": False, "exec": True})
+                        "args_hint": str(info.get("args_hint", "")), "subcommands": [], "cli_only": False, "gateway_only": False, "exec": True, "prompt": None})
     except Exception:  # noqa: BLE001 - plugin registry is optional
         log.debug("plugin command listing failed", exc_info=True)
     return out
@@ -430,6 +524,11 @@ def register(registry) -> None:
         if output is None:
             raise RpcError(f"unknown command {parse_slash_command(command)[0]!r}", condition="command_not_found")
         return {"output": output, "source": source}
+
+    @registry.method("commands.expand_prompt")
+    def expand_prompt_(ctx: CallContext, params: dict) -> dict:
+        with scoped_home(profile_home_param(params)):
+            return expand_prompt(str(params.get("command") or ""), str(params.get("workspace") or ""), params.get("enabled_toolsets"))
 
     @registry.method("commands.bundles")
     def bundles(ctx: CallContext, params: dict) -> dict:
