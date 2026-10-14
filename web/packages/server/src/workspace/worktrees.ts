@@ -1,6 +1,7 @@
 /** WebUI-managed Agent git worktrees (Python `api/worktrees.py`). */
-import { lstatSync, readFileSync, realpathSync, statSync, unlinkSync } from 'node:fs'
-import { join, posix } from 'node:path'
+import { randomUUID } from 'node:crypto'
+import { lstatSync, readdirSync, readFileSync, realpathSync, renameSync, statSync, unlinkSync } from 'node:fs'
+import { basename, dirname, join, posix } from 'node:path'
 import { spawnGit } from './git.js'
 import { resolvePathLikePython } from './paths.js'
 import { pyOsError } from '../util.js'
@@ -73,11 +74,43 @@ function includeSymlinkPaths(worktreePath: string, repoRoot: string | null): Set
   return paths
 }
 
-function isIncludeLink(worktreePath: string, repoRoot: string, entry: string): boolean {
-  const dst = join(worktreePath, entry)
+function isIncludeLink(worktreePath: string, repoRoot: string, entry: string, at = join(worktreePath, entry)): boolean {
   try {
-    return lstatSync(dst).isSymbolicLink() && realpathSync(dst) === realpathSync(join(repoRoot, entry))
+    return lstatSync(at).isSymbolicLink() && realpathSync(at) === realpathSync(join(repoRoot, entry))
   } catch { return false } // unreadable or dangling: real state, still counts
+}
+
+/**
+ * The include links an untracked git-status path covers, or null when it holds anything else. `--untracked-files=normal`
+ * reports a nested link (`vendor/node_modules`) as its untracked parent (`vendor`), so a parent qualifies when it is a
+ * real directory holding only include links and directories leading to them.
+ */
+function coveredIncludeLinks(worktreePath: string, path: string, include: Set<string>): string[] | null {
+  if (include.has(path)) return [path]
+  if (![...include].some((e) => e.startsWith(`${path}/`))) return null
+  try {
+    if (!lstatSync(join(worktreePath, path)).isDirectory()) return null
+    const links: string[] = []
+    for (const child of readdirSync(join(worktreePath, path))) {
+      const covered = coveredIncludeLinks(worktreePath, `${path}/${child}`, include)
+      if (!covered) return null
+      links.push(...covered)
+    }
+    return links
+  } catch { return null }
+}
+
+/**
+ * Unlink an include link without a check-then-delete gap: move it to a private name first, then verify what was moved.
+ * Anything else stays under that name and stops the removal.
+ */
+function unlinkIncludeLink(worktreePath: string, repoRoot: string, entry: string): void {
+  const path = join(worktreePath, entry)
+  if (!isIncludeLink(worktreePath, repoRoot, entry)) return // replaced since the probe: git refuses it
+  const moved = join(dirname(path), `.${basename(path)}.talaria-remove-${randomUUID()}`)
+  try { renameSync(path, moved) } catch { return } // already gone: git decides
+  if (!isIncludeLink(worktreePath, repoRoot, entry, moved)) throw new Error(`Worktree changed during removal; ${path} was moved to ${moved}.`)
+  unlinkSync(moved)
 }
 
 /** `[dirty, untracked count, ignored include symlinks]`; the Agent's own include symlinks are not user state. */
@@ -94,9 +127,9 @@ async function statusPorcelain(worktreePath: string, repoRoot: string | null): P
     // A rename or copy carries its source path as the next NUL-separated field.
     if (/[RC]/.test(entry.slice(0, 2))) i++
     if (entry.startsWith('?? ')) {
-      const path = entry.slice(3).replace(/\/+$/, '')
       include ??= includeSymlinkPaths(worktreePath, repoRoot)
-      if (include.has(path)) { links.push(path); continue }
+      const covered = coveredIncludeLinks(worktreePath, entry.slice(3).replace(/\/+$/, ''), include)
+      if (covered) { links.push(...covered); continue }
     }
     counted.push(entry)
   }
@@ -182,11 +215,7 @@ export async function removeWorktreeForSession(session: Session, locks: Worktree
   // A plain `worktree remove` refuses any untracked entry; drop the Agent's include symlinks (never their targets)
   // so git still guards everything else. Each is rechecked first: one replaced since the probe stays for git to refuse.
   const resolvedRoot = resolvePath(repoRoot)
-  if (!force && resolvedRoot) {
-    for (const link of includeLinks) {
-      if (isIncludeLink(worktreePath, resolvedRoot, link)) try { unlinkSync(join(worktreePath, link)) } catch { /* already gone; git decides */ }
-    }
-  }
+  if (!force && resolvedRoot) for (const link of includeLinks) unlinkIncludeLink(worktreePath, resolvedRoot, link)
   const args = ['worktree', 'remove']
   if (force) args.push('--force')
   args.push(worktreePath)

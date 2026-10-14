@@ -84,6 +84,20 @@ describe('.worktreeinclude symlinks', () => {
     expect(readFileSync(link, 'utf8')).toBe('mine\n')
   })
 
+  it('ignores a nested include symlink that git reports as its untracked parent directory', async () => {
+    const { repo, worktree, session } = setup()
+    writeFileSync(join(repo, '.worktreeinclude'), 'vendor/node_modules/\n')
+    mkdirSync(join(repo, 'vendor', 'node_modules'), { recursive: true })
+    mkdirSync(join(worktree, 'vendor'))
+    symlinkSync(join(repo, 'vendor', 'node_modules'), join(worktree, 'vendor', 'node_modules'))
+    expect(await worktreeStatusForSession(session, unlocked)).toMatchObject({ dirty: false, untracked_count: 0, force_required: false })
+    writeFileSync(join(worktree, 'vendor', 'notes.txt'), 'mine\n')
+    expect(await worktreeStatusForSession(session, unlocked)).toMatchObject({ dirty: true, untracked_count: 1 })
+    unlinkSync(join(worktree, 'vendor', 'notes.txt'))
+    expect(await removeWorktreeForSession(session, unlocked)).toMatchObject({ ok: true, removed_path: worktree })
+    expect(lstatSync(join(repo, 'vendor', 'node_modules')).isDirectory()).toBe(true)
+  })
+
   it('still counts a symlink that points elsewhere', async () => {
     const { worktree, session } = setup()
     const elsewhere = join(root, `elsewhere-${String(n)}`)
