@@ -4737,5 +4737,357 @@
         "_display": "row"
       }
     ]
+  },
+  "tool_edit_metadata_diffs": {
+    "expected": {
+      "call-write": {
+        "added": 1,
+        "removed": 1,
+        "diff": "--- a/notes.txt\n+++ b/notes.txt\n@@ -1,2 +1,2 @@\n one\n-two\n+three",
+        "truncated": false,
+        "hunks": [
+          {
+            "header": "@@ -1,2 +1,2 @@",
+            "old_start": 1,
+            "new_start": 1,
+            "new_end": 2,
+            "additions": 1,
+            "deletions": 1,
+            "lines": [
+              {
+                "kind": "context",
+                "old_line": 1,
+                "new_line": 1,
+                "text": " one"
+              },
+              {
+                "kind": "deletion",
+                "old_line": 2,
+                "new_line": null,
+                "text": "-two"
+              },
+              {
+                "kind": "addition",
+                "old_line": null,
+                "new_line": 2,
+                "text": "+three"
+              }
+            ]
+          }
+        ]
+      },
+      "call-skill": {
+        "added": 1,
+        "removed": 0,
+        "diff": "--- a/skills/demo/SKILL.md\n+++ b/skills/demo/SKILL.md\n@@ -1 +1,2 @@\n # Demo\n+Use it for demos.",
+        "truncated": false,
+        "hunks": [
+          {
+            "header": "@@ -1 +1,2 @@",
+            "old_start": 1,
+            "new_start": 1,
+            "new_end": 2,
+            "additions": 1,
+            "deletions": 0,
+            "lines": [
+              {
+                "kind": "context",
+                "old_line": 1,
+                "new_line": 1,
+                "text": " # Demo"
+              },
+              {
+                "kind": "addition",
+                "old_line": null,
+                "new_line": 2,
+                "text": "+Use it for demos."
+              }
+            ]
+          }
+        ]
+      }
+    },
+    "session": {
+      "messages": [
+        {
+          "role": "user",
+          "content": "Write notes and update the skill",
+          "message_id": "meta-user",
+          "timestamp": 5000,
+          "_turn_id": "meta-run",
+          "_display": "row"
+        },
+        {
+          "role": "assistant",
+          "content": "",
+          "message_id": "meta-calls",
+          "timestamp": 5001,
+          "tool_calls": [
+            {
+              "kind": "write",
+              "target": "notes.txt",
+              "edit_diff": {
+                "added": 1,
+                "removed": 1,
+                "diff": "--- a/notes.txt\n+++ b/notes.txt\n@@ -1,2 +1,2 @@\n one\n-two\n+three",
+                "truncated": false,
+                "hunks": [
+                  {
+                    "header": "@@ -1,2 +1,2 @@",
+                    "old_start": 1,
+                    "new_start": 1,
+                    "new_end": 2,
+                    "additions": 1,
+                    "deletions": 1,
+                    "lines": [
+                      {
+                        "kind": "context",
+                        "old_line": 1,
+                        "new_line": 1,
+                        "text": " one"
+                      },
+                      {
+                        "kind": "deletion",
+                        "old_line": 2,
+                        "new_line": null,
+                        "text": "-two"
+                      },
+                      {
+                        "kind": "addition",
+                        "old_line": null,
+                        "new_line": 2,
+                        "text": "+three"
+                      }
+                    ]
+                  }
+                ]
+              },
+              "function": {
+                "name": "write_file",
+                "arguments": "{\"path\":\"notes.txt\"}"
+              },
+              "id": "call-write",
+              "done": true,
+              "is_error": false,
+              "result": "{\"bytes_written\":10,\"dirs_created\":false}",
+              "result_view": {
+                "text": "{\n  \"bytes_written\": 10,\n  \"dirs_created\": false\n}"
+              },
+              "duration": null,
+              "type": "function"
+            },
+            {
+              "kind": "skill",
+              "target": "demo",
+              "edit_diff": {
+                "added": 1,
+                "removed": 0,
+                "diff": "--- a/skills/demo/SKILL.md\n+++ b/skills/demo/SKILL.md\n@@ -1 +1,2 @@\n # Demo\n+Use it for demos.",
+                "truncated": false,
+                "hunks": [
+                  {
+                    "header": "@@ -1 +1,2 @@",
+                    "old_start": 1,
+                    "new_start": 1,
+                    "new_end": 2,
+                    "additions": 1,
+                    "deletions": 0,
+                    "lines": [
+                      {
+                        "kind": "context",
+                        "old_line": 1,
+                        "new_line": 1,
+                        "text": " # Demo"
+                      },
+                      {
+                        "kind": "addition",
+                        "old_line": null,
+                        "new_line": 2,
+                        "text": "+Use it for demos."
+                      }
+                    ]
+                  }
+                ]
+              },
+              "function": {
+                "name": "skill_manage",
+                "arguments": "{\"action\":\"edit\",\"name\":\"demo\"}"
+              },
+              "id": "call-skill",
+              "done": true,
+              "is_error": false,
+              "result": "{\"success\":true,\"message\":\"Skill demo updated.\"}",
+              "result_view": {
+                "text": "Skill demo updated."
+              },
+              "duration": null,
+              "type": "function"
+            }
+          ],
+          "_turn_id": "meta-run",
+          "_display": "row"
+        },
+        {
+          "role": "tool",
+          "content": "{\"bytes_written\":10,\"dirs_created\":false}",
+          "timestamp": 5002,
+          "tool_call_id": "call-write",
+          "_turn_id": "meta-run",
+          "_display": "in_scene"
+        },
+        {
+          "role": "tool",
+          "content": "{\"success\":true,\"message\":\"Skill demo updated.\"}",
+          "timestamp": 5003,
+          "tool_call_id": "call-skill",
+          "_turn_id": "meta-run",
+          "_display": "in_scene"
+        },
+        {
+          "role": "assistant",
+          "content": "Done.",
+          "message_id": "meta-answer",
+          "timestamp": 5004,
+          "_anchor_activity_scene": {
+            "version": "activity_scene_v1",
+            "activity_rows": [
+              {
+                "row_id": "tool:call-write",
+                "order_index": 0,
+                "role": "tool",
+                "created_at": 5001,
+                "tool": {
+                  "id": "call-write",
+                  "name": "write_file",
+                  "kind": "write",
+                  "target": "notes.txt",
+                  "edit_diff": {
+                    "added": 1,
+                    "removed": 1,
+                    "diff": "--- a/notes.txt\n+++ b/notes.txt\n@@ -1,2 +1,2 @@\n one\n-two\n+three",
+                    "truncated": false,
+                    "hunks": [
+                      {
+                        "header": "@@ -1,2 +1,2 @@",
+                        "old_start": 1,
+                        "new_start": 1,
+                        "new_end": 2,
+                        "additions": 1,
+                        "deletions": 1,
+                        "lines": [
+                          {
+                            "kind": "context",
+                            "old_line": 1,
+                            "new_line": 1,
+                            "text": " one"
+                          },
+                          {
+                            "kind": "deletion",
+                            "old_line": 2,
+                            "new_line": null,
+                            "text": "-two"
+                          },
+                          {
+                            "kind": "addition",
+                            "old_line": null,
+                            "new_line": 2,
+                            "text": "+three"
+                          }
+                        ]
+                      }
+                    ]
+                  },
+                  "args": {
+                    "path": "notes.txt"
+                  },
+                  "preview": null,
+                  "result": "{\"bytes_written\":10,\"dirs_created\":false}",
+                  "result_view": {
+                    "text": "{\n  \"bytes_written\": 10,\n  \"dirs_created\": false\n}"
+                  },
+                  "done": true,
+                  "is_error": false,
+                  "duration": null,
+                  "cost_usd": null
+                }
+              },
+              {
+                "row_id": "tool:call-skill",
+                "order_index": 1,
+                "role": "tool",
+                "created_at": 5001,
+                "tool": {
+                  "id": "call-skill",
+                  "name": "skill_manage",
+                  "kind": "skill",
+                  "target": "demo",
+                  "edit_diff": {
+                    "added": 1,
+                    "removed": 0,
+                    "diff": "--- a/skills/demo/SKILL.md\n+++ b/skills/demo/SKILL.md\n@@ -1 +1,2 @@\n # Demo\n+Use it for demos.",
+                    "truncated": false,
+                    "hunks": [
+                      {
+                        "header": "@@ -1 +1,2 @@",
+                        "old_start": 1,
+                        "new_start": 1,
+                        "new_end": 2,
+                        "additions": 1,
+                        "deletions": 0,
+                        "lines": [
+                          {
+                            "kind": "context",
+                            "old_line": 1,
+                            "new_line": 1,
+                            "text": " # Demo"
+                          },
+                          {
+                            "kind": "addition",
+                            "old_line": null,
+                            "new_line": 2,
+                            "text": "+Use it for demos."
+                          }
+                        ]
+                      }
+                    ]
+                  },
+                  "args": {
+                    "action": "edit",
+                    "name": "demo"
+                  },
+                  "preview": null,
+                  "result": "{\"success\":true,\"message\":\"Skill demo updated.\"}",
+                  "result_view": {
+                    "text": "Skill demo updated."
+                  },
+                  "done": true,
+                  "is_error": false,
+                  "duration": null,
+                  "cost_usd": null
+                }
+              }
+            ],
+            "final_answer": "Done.",
+            "turn_duration": null,
+            "terminal_state": "completed",
+            "expanded_by_default": false,
+            "has_consumed_steering": false,
+            "file_changes": [
+              {
+                "path": "notes.txt",
+                "action": "edited"
+              }
+            ],
+            "activity_rows_total": 2,
+            "activity_rows_offset": 0,
+            "activity_rows_complete": true,
+            "activity_rows_omitted": 0,
+            "activity_scene_ref": "177921a07b3152b28c822ef0608f8bf43b3ddf65520ed0f3cda50a4127604238"
+          },
+          "_turn_id": "meta-run",
+          "_display": "row"
+        }
+      ]
+    }
   }
 }

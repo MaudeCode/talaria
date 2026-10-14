@@ -33,12 +33,16 @@ describe('shared monorepo contracts', () => {
     expect(turns[2]?.assistantRows?.map((row) => row.message.message_id)).toEqual(['contract-run-a-1', 'contract-run-a-2'])
   })
 
-  it('accepts each file edit\'s server diff on its call and scene row (TAL-448)', () => {
-    const fixture = (JSON.parse(readFileSync(resolve(import.meta.dirname, '../../../../../contracts/fixtures/web-session.json'), 'utf8')) as { tool_edit_diffs: { expected: Record<string, unknown>; session: { messages: unknown } } }).tool_edit_diffs
+  it.each([
+    ['tool_edit_diffs', 'edit'],
+    // TAL-909: a write_file and a skill edit's diff, from the metadata the Agent persisted on its result row.
+    ['tool_edit_metadata_diffs', 'meta'],
+  ] as const)('accepts each file edit\'s server diff on its call and scene row (TAL-448): %s', (example, prefix) => {
+    const fixture = (JSON.parse(readFileSync(resolve(import.meta.dirname, '../../../../../contracts/fixtures/web-session.json'), 'utf8')) as Record<string, { expected: Record<string, unknown>; session: { messages: unknown } }>)[example]!
     const messages = MessageSchema.array().parse(fixture.session.messages)
-    const calls = messages.find((m) => m.message_id === 'edit-calls')?.tool_calls ?? []
+    const calls = messages.find((m) => m.message_id === `${prefix}-calls`)?.tool_calls ?? []
     expect(Object.fromEntries(calls.flatMap((call) => (call.edit_diff ? [[call.id, call.edit_diff]] : [])))).toEqual(fixture.expected)
-    const scene = messages.find((m) => m.message_id === 'edit-answer')?._anchor_activity_scene
+    const scene = messages.find((m) => m.message_id === `${prefix}-answer`)?._anchor_activity_scene
     expect(scene?.activity_rows.flatMap((row) => (row.tool?.edit_diff ? [[row.tool.id, row.tool.edit_diff]] : []))).toEqual(Object.entries(fixture.expected))
   })
 

@@ -2880,6 +2880,37 @@ describe('session detail ships each file edit\'s diff (TAL-448)', () => {
       expect(edits(rows.map((r) => r.tool as Json)), query).toEqual(expected)
     }
   })
+
+  it('builds a write_file and a skill edit\'s diff from the display_metadata the Agent persisted on its row (TAL-909)', async () => {
+    const write = '--- a/notes.txt\n+++ b/notes.txt\n@@ -1,2 +1,2 @@\n one\n-two\n+three\n'
+    const skill = '--- a/skills/demo/SKILL.md\n+++ b/skills/demo/SKILL.md\n@@ -1 +1,2 @@\n # Demo\n+Use it for demos.\n'
+    const sid = String((await newSession(s)).session_id)
+    const session = s.deps.sessionStore.get(sid)
+    session.messages = [
+      { role: 'user', content: 'Write notes and update the skill', message_id: 'meta-user', timestamp: 5000, _turn_id: 'meta-run' },
+      { role: 'assistant', content: '', message_id: 'meta-calls', timestamp: 5001, _turn_id: 'meta-run', tool_calls: [call('call-write', 'write_file', { path: 'notes.txt' }), call('call-skill', 'skill_manage', { action: 'edit', name: 'demo' })] },
+      { role: 'tool', tool_call_id: 'call-write', content: JSON.stringify({ bytes_written: 10, dirs_created: false }), display_metadata: { diff: write }, timestamp: 5002, _turn_id: 'meta-run' },
+      { role: 'tool', tool_call_id: 'call-skill', content: JSON.stringify({ success: true, message: 'Skill demo updated.' }), display_metadata: { diff: skill }, timestamp: 5003, _turn_id: 'meta-run' },
+      { role: 'assistant', content: 'Done.', message_id: 'meta-answer', timestamp: 5004, _turn_id: 'meta-run' },
+    ]
+    session.title = 'Tool edit diffs from metadata'
+    s.deps.sessionStore.save(session)
+    const fixture = (JSON.parse(readFileSync(fixturePath, 'utf8')) as Json).tool_edit_metadata_diffs as Json
+    const expected = fixture.expected as Json
+    expect(expected).toEqual({
+      'call-write': { added: 1, removed: 1, diff: write.trimEnd(), truncated: false, hunks: diffHunks(write) },
+      'call-skill': { added: 1, removed: 0, diff: skill.trimEnd(), truncated: false, hunks: diffHunks(skill) },
+    })
+    for (const query of ['', '&msg_limit=50']) {
+      const served = (await json(await s.get(`/api/session?session_id=${sid}&messages=1${query}`))).session as Json
+      const messages = served.messages as Json[]
+      expect(messages, query).toEqual((fixture.session as Json).messages)
+      const edits = (calls: Json[]): Json => Object.fromEntries(calls.filter((c) => c.edit_diff !== undefined).map((c) => [String(c.id), c.edit_diff] as const))
+      expect(edits(messages.find((m) => m.message_id === 'meta-calls')?.tool_calls as Json[]), query).toEqual(expected)
+      const rows = ((messages.find((m) => m.message_id === 'meta-answer')?._anchor_activity_scene as Json).activity_rows as Json[]).filter((r) => r.role === 'tool')
+      expect(edits(rows.map((r) => r.tool as Json)), query).toEqual(expected)
+    }
+  })
 })
 
 describe('session toolsets (TAL-631)', () => {

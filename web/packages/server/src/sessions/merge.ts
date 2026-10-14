@@ -635,15 +635,15 @@ export function withToolCallOutcomes<T>(messages: T[], sessionToolCalls: unknown
   // Providers may reuse an id (`call_1` in every response), so a reply answers the latest earlier assistant row that
   // declared its id, and everything is keyed by that row's index and the id.
   const key = (row: number, id: string) => `${String(row)}\0${id}`
-  const replies = new Map<string, { content: unknown; is_error: boolean }>()
+  const replies = new Map<string, { content: unknown; is_error: boolean; display_metadata?: unknown }>()
   const declared = new Map<string, number>()
-  const answer = (id: string, reply: { content: unknown; is_error: boolean }) => {
+  const answer = (id: string, reply: { content: unknown; is_error: boolean; display_metadata?: unknown }) => {
     const row = declared.get(id)
     if (id && row !== undefined) replies.set(key(row, id), reply)
   }
   messages.forEach((m, index) => {
     if (!isDict(m)) return
-    if (m.role === 'tool') answer(str(m.tool_call_id) || str(m.tool_use_id), { content: m.content, is_error: false })
+    if (m.role === 'tool') answer(str(m.tool_call_id) || str(m.tool_use_id), { content: m.content, is_error: false, display_metadata: m.display_metadata })
     else if (m.role === 'user' && Array.isArray(m.content)) {
       // Anthropic-style results: `tool_result` blocks in a user row, each naming its call.
       for (const part of m.content) if (isDict(part) && part.type === 'tool_result') answer(str(part.tool_use_id), { content: part.content ?? '', is_error: part.is_error === true })
@@ -685,7 +685,7 @@ export function withToolCallOutcomes<T>(messages: T[], sessionToolCalls: unknown
       const reply = id ? replies.get(key(index, id)) : undefined
       const outcome = reply ? { ...toolOutcome(reply.content), flagged: reply.is_error } : null
       // TAL-448: a file edit's change, from its full reply, else the one its live record decided.
-      const editDiff = reply ? toolEditDiff(name, reply.content) : decidedEditDiff(rec?.edit_diff)
+      const editDiff = reply ? toolEditDiff(name, reply.content, reply.display_metadata) : decidedEditDiff(rec?.edit_diff)
       return {
         ...(editDiff ? { edit_diff: editDiff } : {}),
         done: Boolean(reply) || answered || !running, is_error: outcome ? outcome.flagged || outcome.is_error : rec?.is_error === true,

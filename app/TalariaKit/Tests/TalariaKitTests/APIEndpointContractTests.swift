@@ -951,6 +951,28 @@ final class SharedContractTests: XCTestCase {
         XCTAssertEqual(edits(groups.first { $0.anchorMessageID == "edit-calls" }?.toolCalls ?? []), ["call-patch": want, "call-write": nil])
     }
 
+    func testSharedWebSessionCarriesWriteAndSkillEditDiffsFromMetadata() throws {
+        let object = try XCTUnwrap(JSONSerialization.jsonObject(with: try fixture("web-session")) as? [String: Any])
+        // TAL-909: a Web from before it has no such example.
+        guard let example = object["tool_edit_metadata_diffs"] as? [String: Any] else { return }
+        let decoder = JSONDecoder()
+        decoder.keyDecodingStrategy = .convertFromSnakeCase
+        let session = try decoder.decode(SessionDetail.self, from: JSONSerialization.data(withJSONObject: example["session"] as Any))
+        let messages = try XCTUnwrap(session.messages)
+        let expected = try XCTUnwrap(example["expected"] as? [String: Any])
+        let want = try expected.mapValues { try ToolEditDiff(JSONDecoder().decode(JSONValue.self, from: JSONSerialization.data(withJSONObject: $0))) }
+        XCTAssertEqual(want["call-write"]??.added, 1)
+        XCTAssertEqual(want["call-skill"]??.added, 1)
+        func edits(_ calls: [ToolCall]) -> [String: ToolEditDiff?] {
+            Dictionary(uniqueKeysWithValues: calls.map { ($0.id, $0.editDiff) })
+        }
+        let answer = try XCTUnwrap(messages.first { $0.messageId == "meta-answer" })
+        let timeline = try XCTUnwrap(AssistantActivityTimeline.authoritativeScene(message: answer))
+        XCTAssertEqual(edits(timeline.toolCalls), want)
+        let groups = ToolCallGroup.groups(messages: messages, messageOffset: nil)
+        XCTAssertEqual(edits(groups.first { $0.anchorMessageID == "meta-calls" }?.toolCalls ?? []), want)
+    }
+
     func testSharedWebSessionRendersServerBuiltTurnScenes() async throws {
         let data = try fixture("web-session")
         let session = session { request in

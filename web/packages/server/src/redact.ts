@@ -2035,6 +2035,8 @@ function publicMessageProjection(message: unknown, enabled: boolean, activeTurnT
   const item: Record<string, unknown> = {}
   for (const [key, value] of Object.entries(scrubbed as Record<string, unknown>)) {
     if (PUBLIC_MESSAGE_INTERNAL_FIELDS.has(key)) continue
+    // TAL-909: a tool row's metadata carries the whole edit diff, which ships capped and redacted as its call's `edit_diff`.
+    if (key === 'display_metadata' && (scrubbed as Record<string, unknown>).role === 'tool') continue
     const userParts = key === 'content' && Array.isArray(value) && (scrubbed as Record<string, unknown>).role === 'user'
     // Preserve the string/parts/null contract and redact JSON credential fields with their key context intact.
     const publicValue = key === 'content' && value != null && typeof value !== 'string' && !Array.isArray(value) ? JSON.stringify(value) : value

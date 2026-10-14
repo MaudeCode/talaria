@@ -102,4 +102,23 @@ describe('toolEditDiff (TAL-448)', () => {
     // TAL-604: a change decided before hunks shipped gets them from its diff.
     expect(decidedEditDiff({ ...decided, hunks: undefined })).toEqual(decided)
   })
+
+  it('reads a write_file or skill edit from the diff the Agent persisted in its row\'s display_metadata (TAL-909)', () => {
+    const write = '--- a/notes.txt\n+++ b/notes.txt\n@@ -1,2 +1,2 @@\n one\n-two\n+three\n'
+    const skill = '--- a/skills/demo/SKILL.md\n+++ b/skills/demo/SKILL.md\n@@ -0,0 +1,2 @@\n+# Demo\n+Use it.\n'
+    const [assistant] = withToolCallOutcomes([
+      { role: 'assistant', content: '', tool_calls: [{ id: 'w', type: 'function', function: { name: 'write_file', arguments: '{}' } }, { id: 's', type: 'function', function: { name: 'skill_manage', arguments: '{}' } }, { id: 'p', type: 'function', function: { name: 'patch', arguments: '{}' } }] },
+      { role: 'tool', tool_call_id: 'w', content: '{"bytes_written": 10}', display_metadata: { diff: write } },
+      { role: 'tool', tool_call_id: 's', content: '{"success": true}', display_metadata: { diff: skill } },
+      // A result's own diff wins over the metadata.
+      { role: 'tool', tool_call_id: 'p', content: patch, display_metadata: { diff: write } },
+    ], [], null) as unknown as [{ tool_calls: Record<string, unknown>[] }]
+    expect(assistant.tool_calls.map((call) => call.edit_diff)).toEqual([
+      { added: 1, removed: 1, diff: write.trimEnd(), truncated: false, hunks: diffHunks(write) },
+      { added: 2, removed: 0, diff: skill.trimEnd(), truncated: false, hunks: diffHunks(skill) },
+      toolEditDiff('patch', patch),
+    ])
+    expect(toolEditDiff('write_file', '{}', { diff: '' })).toBeUndefined()
+    expect(toolEditDiff('write_file', '{}', { diff: 3 })).toBeUndefined()
+  })
 })
