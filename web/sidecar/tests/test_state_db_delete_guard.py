@@ -109,3 +109,22 @@ def test_the_lineage_is_resolved_and_guarded_inside_the_delete_transaction(herme
     finally:
         proc.close()
     assert _rows(hermes_home, "SELECT id FROM sessions") == []
+
+
+def test_the_delete_removes_every_segment_of_a_long_compression_lineage(hermes_home) -> None:
+    """TAL-893: a session the Agent compressed 29 times loses every segment, not the first 21."""
+    _seed(hermes_home, "cli-000")
+    _agent(hermes_home, """
+        for i in range(1, 30):
+            db.end_session(f"cli-{i - 1:03d}", "compression")
+            db.create_session(session_id=f"cli-{i:03d}", source="cli", parent_session_id=f"cli-{i - 1:03d}")
+            db.append_message(f"cli-{i:03d}", "user", "continued")
+    """)
+    assert len(_rows(hermes_home, "SELECT id FROM sessions")) == 30
+    proc = SidecarProcess(hermes_home)
+    try:
+        assert _delete(proc, hermes_home, "cli-000", lineage=True) == {"ok": True}
+    finally:
+        proc.close()
+    assert _rows(hermes_home, "SELECT id FROM sessions") == []
+    assert _rows(hermes_home, "SELECT DISTINCT session_id FROM messages") == []

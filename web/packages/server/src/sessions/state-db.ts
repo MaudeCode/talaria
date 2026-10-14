@@ -92,6 +92,9 @@ export function isCliSessionRowVisible(row: Dict): boolean {
 
 // ── compression-chain projection ─────────────────────────────────────────
 
+/** The Agent's `_CHAIN_CAP`: the most hops a walk along a compression lineage takes. Its visited check stops a cycle sooner. */
+const COMPRESSION_CHAIN_CAP = 1000
+
 function isContinuationSession(parent: Dict | undefined, child: Dict | undefined): boolean {
   if (!parent || !child) return false
   if (lower(child.session_source) === 'fork') return false
@@ -799,7 +802,7 @@ export function stateDbSessionRead(dbPath: string, sid: string, opts: { stitch?:
         const select = db.prepare('SELECT id, source, started_at, parent_session_id, ended_at, end_reason FROM sessions WHERE id = ?')
         let current = select.get(id) as Dict | undefined
         const seen = new Set([id])
-        for (let hop = 0; hop < 20 && current; hop += 1) {
+        for (let hop = 0; hop < COMPRESSION_CHAIN_CAP && current; hop += 1) {
           const parentId = str(current.parent_session_id)
           if (!parentId || seen.has(parentId)) break
           const parent = select.get(parentId) as Dict | undefined
@@ -858,8 +861,8 @@ export function stateDbSessionRead(dbPath: string, sid: string, opts: { stitch?:
 
 /**
  * TAL-529: `sid` and each compression continuation the Agent rotated it to, down to the live tip (Python
- * `resolve_live_compression_tip`). The walk stops at the last unambiguous row: no continuation, several, a cycle, or 20
- * hops. A missing or unreadable database is `[sid]`.
+ * `resolve_live_compression_tip`). The walk stops at the last unambiguous row: no continuation, several, a cycle, or
+ * `COMPRESSION_CHAIN_CAP` hops. A missing or unreadable database is `[sid]`.
  */
 export function stateDbCompressionLineage(dbPath: string, sid: string): string[] {
   const lineage = [sid.trim()]
@@ -873,7 +876,7 @@ export function stateDbCompressionLineage(dbPath: string, sid: string): string[]
     const cols = `id, source, ${sessionSource}, started_at, parent_session_id, ended_at, end_reason`
     let current = db.prepare(`SELECT ${cols} FROM sessions WHERE id = ?`).get(lineage[0]) as Dict | undefined
     const children = db.prepare(`SELECT ${cols} FROM sessions WHERE parent_session_id = ?`)
-    for (let hop = 0; hop < 20 && current; hop += 1) {
+    for (let hop = 0; hop < COMPRESSION_CHAIN_CAP && current; hop += 1) {
       const parent = current
       const next = (children.all(str(parent.id)) as Dict[]).filter((child) => isContinuationSession(parent, child))
       if (next.length !== 1 || lineage.includes(str(next[0]!.id))) break
@@ -906,7 +909,7 @@ const emptyLineageReport = (sid: string): Dict => ({
  * newest first. A cycle, a hop limit hit, or a continuation off the walked path marks `manual_review`. A missing,
  * unreadable, or too-old database, or an unknown id, answers `found: false`.
  */
-export function stateDbLineageReport(dbPath: string, rawSid: string, maxHops = 20): Dict {
+export function stateDbLineageReport(dbPath: string, rawSid: string, maxHops = COMPRESSION_CHAIN_CAP): Dict {
   const sid = rawSid.trim()
   if (!sid || !existsSync(dbPath)) return emptyLineageReport(sid)
   let db: DatabaseSync

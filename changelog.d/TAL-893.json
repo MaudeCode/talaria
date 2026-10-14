@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "A chat the Agent compressed more than 20 times keeps every earlier part: its full history shows and deleting it removes every part.",
+      "highlight": false,
+      "components": ["web"]
+    }
+  ]
+}
