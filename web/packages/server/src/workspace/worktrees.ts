@@ -1,5 +1,6 @@
 /** WebUI-managed Agent git worktrees (Python `api/worktrees.py`). */
-import { statSync } from 'node:fs'
+import { lstatSync, readFileSync, realpathSync, statSync, unlinkSync } from 'node:fs'
+import { join, posix } from 'node:path'
 import { spawnGit } from './git.js'
 import { resolvePathLikePython } from './paths.js'
 import { pyOsError } from '../util.js'
@@ -53,11 +54,49 @@ async function worktreeListed(worktreePath: string, repoRoot: unknown): Promise<
   return parseWorktreeListPorcelain(result.stdout).has(worktreePath)
 }
 
-async function statusPorcelain(worktreePath: string): Promise<[boolean, number]> {
-  const result = await git(['status', '--porcelain', '--untracked-files=normal'], worktreePath)
-  if (result?.status !== 0) return [false, 0]
-  const lines = result.stdout.split('\n').filter(Boolean)
-  return [lines.length > 0, lines.filter((l) => l.startsWith('??')).length]
+/**
+ * Paths (git-status form) in the worktree that are the Agent's `.worktreeinclude` directory symlinks
+ * (`_include_symlink_paths`): a symlink at a listed entry that resolves to that same entry in the main checkout.
+ * A trailing-slash gitignore pattern never matches a symlink, so git reports each one as untracked.
+ */
+function includeSymlinkPaths(worktreePath: string, repoRoot: string | null): Set<string> {
+  const paths = new Set<string>()
+  if (!repoRoot) return paths
+  let text: string
+  try { text = readFileSync(join(repoRoot, '.worktreeinclude'), 'utf8').replace(/^\uFEFF/, '') } catch { return paths }
+  for (const line of text.split(/\r\n|\r|\n/)) {
+    const trimmed = line.trim()
+    if (!trimmed || trimmed.startsWith('#')) continue
+    const entry = posix.normalize(trimmed).replace(/\/+$/, '')
+    const dst = join(worktreePath, entry)
+    try {
+      if (lstatSync(dst).isSymbolicLink() && realpathSync(dst) === realpathSync(join(repoRoot, entry))) paths.add(entry)
+    } catch { /* unreadable or dangling: real state, still counts */ }
+  }
+  return paths
+}
+
+/** `[dirty, untracked count, ignored include symlinks]`; the Agent's own include symlinks are not user state. */
+async function statusPorcelain(worktreePath: string, repoRoot: string | null): Promise<[boolean, number, string[]]> {
+  const result = await git(['status', '--porcelain', '-z', '--untracked-files=normal'], worktreePath)
+  if (result?.status !== 0) return [false, 0, []]
+  const entries = result.stdout.split('\0')
+  const counted: string[] = []
+  const links: string[] = []
+  let include: Set<string> | undefined
+  for (let i = 0; i < entries.length; i++) {
+    const entry = entries[i] ?? ''
+    if (!entry) continue
+    // A rename or copy carries its source path as the next NUL-separated field.
+    if (/[RC]/.test(entry.slice(0, 2))) i++
+    if (entry.startsWith('?? ')) {
+      const path = entry.slice(3).replace(/\/+$/, '')
+      include ??= includeSymlinkPaths(worktreePath, repoRoot)
+      if (include.has(path)) { links.push(path); continue }
+    }
+    counted.push(entry)
+  }
+  return [counted.length > 0, counted.filter((e) => e.startsWith('??')).length, links]
 }
 
 async function aheadBehind(worktreePath: string): Promise<{ ahead: number; behind: number; available: boolean; upstream: string | null }> {
@@ -87,15 +126,19 @@ export interface WorktreeLocks {
 }
 
 export async function worktreeStatusForSession(session: Session, locks: WorktreeLocks): Promise<WorktreeStatus> {
+  return (await probeWorktree(session, locks)).status
+}
+
+async function probeWorktree(session: Session, locks: WorktreeLocks): Promise<{ status: WorktreeStatus; includeLinks: string[] }> {
   const worktreePath = resolvePath(session.worktree_path)
   if (!worktreePath) throw new Error('Session is not worktree-backed')
   const exists = isDir(worktreePath)
   const lockedByStream = locks.lockedByStream(session)
   const lockedByTerminal = locks.lockedByTerminal(session.session_id, worktreePath)
   const listed = await worktreeListed(worktreePath, session.worktree_repo_root)
-  const [dirty, untracked] = exists ? await statusPorcelain(worktreePath) : [false, 0]
+  const [dirty, untracked, includeLinks] = exists ? await statusPorcelain(worktreePath, resolvePath(session.worktree_repo_root)) : [false, 0, []]
   const aheadBehindStatus = exists ? await aheadBehind(worktreePath) : { ahead: 0, behind: 0, available: false, upstream: null }
-  return {
+  const status: WorktreeStatus = {
     path: worktreePath, exists, dirty, untracked_count: untracked, ahead_behind: aheadBehindStatus,
     locked_by_stream: lockedByStream, locked_by_terminal: lockedByTerminal, listed,
     // `removeWorktreeForSession`'s gates: a missing directory is always removable, a lock blocks removal outright,
@@ -103,12 +146,13 @@ export async function worktreeStatusForSession(session: Session, locks: Worktree
     removable: !exists || !(lockedByStream || lockedByTerminal),
     force_required: dirty || untracked > 0 || aheadBehindStatus.ahead > 0,
   }
+  return { status, includeLinks }
 }
 
 export async function removeWorktreeForSession(session: Session, locks: WorktreeLocks, opts: { force?: boolean } = {}): Promise<Record<string, unknown>> {
   const worktreePath = resolvePath(session.worktree_path)
   if (!worktreePath) throw new Error('Session is not worktree-backed')
-  const status = await worktreeStatusForSession(session, locks)
+  const { status, includeLinks } = await probeWorktree(session, locks)
   if (!status.exists) return { ok: true, removed_path: worktreePath, warnings: ['Worktree directory no longer exists on disk.'] }
   const warnings: string[] = []
   const force = Boolean(opts.force)
@@ -131,6 +175,9 @@ export async function removeWorktreeForSession(session: Session, locks: Worktree
   if (locks.lockedByStream(session)) throw new Error('Worktree is locked by an active streaming session')
   if (locks.lockedByTerminal(session.session_id, worktreePath)) throw new Error('Worktree is locked by an active terminal session')
   await git(['worktree', 'unlock', worktreePath], repoRoot, 5_000)
+  // A plain `worktree remove` refuses any untracked entry; drop the Agent's include symlinks (never their targets)
+  // so git still guards everything else.
+  if (!force) for (const link of includeLinks) try { unlinkSync(join(worktreePath, link)) } catch { /* already gone; git decides */ }
   const args = ['worktree', 'remove']
   if (force) args.push('--force')
   args.push(worktreePath)
