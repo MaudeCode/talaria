@@ -25,12 +25,16 @@ final class SessionGoalTests: APIClientTestCase {
         ])
     }
 
-    func testAnAbsentOrUnknownGoalDecodesAsNone() throws {
+    func testAnAbsentUnknownOrIncompleteGoalDecodesAsNone() throws {
         let decoder = JSONDecoder()
         decoder.keyDecodingStrategy = .convertFromSnakeCase
         for json in [
             #"{"session_id": "s"}"#,
-            #"{"session_id": "s", "goal": {"text": "x", "status": "someday", "turns_used": 1, "max_turns": 2}}"#
+            #"{"session_id": "s", "goal": {"text": "x", "status": "someday", "turns_used": 1, "max_turns": 2}}"#,
+            #"{"session_id": "s", "goal": {"text": "x", "status": "active", "max_turns": 2}}"#,
+            #"{"session_id": "s", "goal": {"text": "x", "status": "active", "turns_used": "many", "max_turns": 2}}"#,
+            #"{"session_id": "s", "goal": {"text": "x", "status": "active", "turns_used": 1}}"#,
+            #"{"session_id": "s", "goal": {"status": "active", "turns_used": 1, "max_turns": 2}}"#
         ] {
             XCTAssertNil(try decoder.decode(SessionDetail.self, from: Data(json.utf8)).goal, json)
         }

@@ -154,13 +154,18 @@ public struct SessionGoal: Decodable, Equatable {
 
     public init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
-        guard let status = container.decodeLossyStringIfPresent(forKey: .status).flatMap(Status.init(rawValue:)) else {
-            throw DecodingError.dataCorruptedError(forKey: .status, in: container, debugDescription: "A session goal needs a known status")
+        // A goal missing what the chip shows is dropped rather than shown with invented values.
+        guard let status = container.decodeLossyStringIfPresent(forKey: .status).flatMap(Status.init(rawValue:)),
+              let text = container.decodeLossyStringIfPresent(forKey: .text),
+              let turnsUsed = container.decodeLossyIntIfPresent(forKey: .turnsUsed),
+              let maxTurns = container.decodeLossyIntIfPresent(forKey: .maxTurns)
+        else {
+            throw DecodingError.dataCorruptedError(forKey: .status, in: container, debugDescription: "A session goal needs a known status, its text and its turns")
         }
         self.status = status
-        text = container.decodeLossyStringIfPresent(forKey: .text) ?? ""
-        turnsUsed = container.decodeLossyIntIfPresent(forKey: .turnsUsed) ?? 0
-        maxTurns = container.decodeLossyIntIfPresent(forKey: .maxTurns) ?? 0
+        self.text = text
+        self.turnsUsed = turnsUsed
+        self.maxTurns = maxTurns
         reason = container.decodeLossyStringIfPresent(forKey: .reason)
         parkedUntil = container.decodeLossyDoubleIfPresent(forKey: .parkedUntil)
     }
