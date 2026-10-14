@@ -350,7 +350,8 @@ export async function reasoningStatus(config: Config, resolve: EffortsResolver, 
     if (!baseUrl && m.base_url) baseUrl = str(m.base_url).trim()
   }
   const supported = model ? await resolve(model, provider, baseUrl) : []
-  const showRaw = display.show_reasoning
+  const webui = dict(dict(display.platforms).webui).show_reasoning
+  const showRaw = typeof webui === 'boolean' ? webui : display.show_reasoning
   return {
     show_reasoning: typeof showRaw === 'boolean' ? showRaw : true,
     reasoning_effort: coerceReasoningEffort(str(agent.reasoning_effort), supported, provider),
