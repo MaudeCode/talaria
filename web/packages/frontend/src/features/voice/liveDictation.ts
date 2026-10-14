@@ -26,26 +26,8 @@ export function liveDictationSupported(): boolean {
 /** Start recording; `onPartial` receives the provider's text for the whole recording so far (each call replaces the last). */
 export async function startLiveDictation(onPartial: (text: string) => void): Promise<LiveDictation> {
   const media = await navigator.mediaDevices.getUserMedia({ audio: { channelCount: 1, echoCancellation: true, noiseSuppression: true } })
-  const recorder = typeof MediaRecorder !== 'undefined' ? new MediaRecorder(media) : null
   const recorded: Blob[] = []
-  recorder?.addEventListener('dataavailable', (event) => { if (event.data.size) recorded.push(event.data) })
-  recorder?.start()
-  const audio = new AudioContext()
-  let tap: AudioWorkletNode
-  try {
-    await audio.audioWorklet.addModule(pcmTapUrl)
-    tap = new AudioWorkletNode(audio, 'pcm-tap')
-  } catch (error) {
-    recorder?.stop()
-    for (const track of media.getTracks()) track.stop()
-    void audio.close()
-    throw error
-  }
-  const source = audio.createMediaStreamSource(media)
-
-  const url = resolveApiUrl(TRANSCRIBE_STREAM_PATH)
-  url.protocol = url.protocol === 'https:' ? 'wss:' : 'ws:'
-  const ws = new WebSocket(url)
+  const { recorder, audio, tap, source, ws } = await openCapture(media, recorded)
   const early: ArrayBuffer[] = []
   let final: string | null = null
   let failed = false
@@ -127,6 +109,29 @@ export async function startLiveDictation(onPartial: (text: string) => void): Pro
       void recording().finally(stopTracks)
       ws.close()
     },
+  }
+}
+
+/** Recorder, audio graph and socket for an acquired microphone; a step that throws releases everything before it. */
+async function openCapture(media: MediaStream, recorded: Blob[]) {
+  let recorder: MediaRecorder | null = null
+  let audio: AudioContext | null = null
+  try {
+    recorder = typeof MediaRecorder !== 'undefined' ? new MediaRecorder(media) : null
+    recorder?.addEventListener('dataavailable', (event) => { if (event.data.size) recorded.push(event.data) })
+    recorder?.start()
+    audio = new AudioContext()
+    await audio.audioWorklet.addModule(pcmTapUrl)
+    const tap = new AudioWorkletNode(audio, 'pcm-tap')
+    const source = audio.createMediaStreamSource(media)
+    const url = resolveApiUrl(TRANSCRIBE_STREAM_PATH)
+    url.protocol = url.protocol === 'https:' ? 'wss:' : 'ws:'
+    return { recorder, audio, tap, source, ws: new WebSocket(url) }
+  } catch (error) {
+    if (recorder && recorder.state !== 'inactive') recorder.stop()
+    for (const track of media.getTracks()) track.stop()
+    void audio?.close()
+    throw error
   }
 }
 

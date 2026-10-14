@@ -77,6 +77,7 @@ async function start() {
 describe('live dictation (TAL-802)', () => {
   beforeEach(() => {
     FakeTap.last = undefined
+    FakeSocket.last = undefined as never
     getUserMedia.mockReset().mockResolvedValue({ getTracks: () => [track] })
     vi.mocked(api.transcribeRecording).mockReset().mockResolvedValue({ ok: true, transcript: ' from the recording ' })
     track.stop.mockReset()
@@ -156,6 +157,16 @@ describe('live dictation (TAL-802)', () => {
     expect(texts).toEqual([])
     expect(ends).toEqual([])
     expect(api.transcribeRecording).not.toHaveBeenCalled()
+  })
+
+  it.each(['MediaRecorder', 'AudioContext'])('releases the microphone when %s setup throws after it is acquired', async (failing) => {
+    const broken = new Error(`${failing} failed`)
+    vi.stubGlobal(failing, vi.fn(function construct() { throw broken }))
+    const ends: unknown[] = []
+    dictateLive(() => undefined, (error) => ends.push(error))
+    await vi.waitFor(() => { expect(ends).toEqual([broken]) })
+    expect(track.stop).toHaveBeenCalled()
+    expect(FakeSocket.last?.readyState ?? FakeSocket.CLOSED).toBe(FakeSocket.CLOSED)
   })
 
   it('reports a refused microphone as denied', async () => {

@@ -78,7 +78,14 @@ def run_stream(ctx: CallContext, session, sample_rate: int) -> dict:
         ctx.emit("ready", {"stream_id": stream_id})
         while not ended.wait(0.1):
             ctx.check_cancelled()
-        result = session.finalize()
+        # Finalize off this thread so a cancel still reaches the session while the provider flushes.
+        finalized: dict = {}
+        finalizer = threading.Thread(target=lambda: finalized.update(result=session.finalize()), name="stt-stream-finalize", daemon=True)
+        finalizer.start()
+        while finalizer.is_alive():
+            finalizer.join(0.1)
+            ctx.check_cancelled()
+        result = finalized.get("result")
     except BaseException:
         session.cancel()
         raise

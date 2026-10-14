@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import base64
 import json
+import time
 
 import pytest
 
@@ -15,6 +16,7 @@ from conftest import SidecarProcess, requires_agent
 
 PLUGIN = '''
 import pathlib
+import time
 
 from agent.transcription_provider import TranscriptionProvider, TranscriptionStreamSession
 
@@ -38,6 +40,8 @@ class _Session(TranscriptionStreamSession):
 
     def finalize(self):
         _log("finalize")
+        if EVENTS.with_name("slow").exists():
+            time.sleep(30)
         return {"success": True, "transcript": f" final {self.received} bytes ", "provider": "fake-live"}
 
 
@@ -158,6 +162,29 @@ def test_cancel_closes_the_session_without_finalizing(hermes_home):
         message, _ = sidecar.call("stt.stream_audio", {"stream_id": stream_id, "end": True})
         assert message["error"]["data"]["condition"] == "stt_stream_closed"
         assert _events(log) == ["open"]
+    finally:
+        sidecar.close()
+
+
+@requires_agent
+def test_cancel_during_a_slow_finalize_cancels_the_session(hermes_home):
+    log = _seed(hermes_home, streaming=True)
+    log.with_name("slow").write_text("")
+    sidecar = SidecarProcess(hermes_home)
+    try:
+        inbox = Inbox(sidecar)
+        stream = sidecar.request("stt.stream", {"profile_home": str(hermes_home), "sample_rate": 16000})
+        stream_id = inbox.frame(stream, "ready")["data"]["stream_id"]
+        assert inbox.response(sidecar.request("stt.stream_audio", {"stream_id": stream_id, "end": True}))["result"] == {"ok": True}
+        deadline = time.monotonic() + 10
+        while "finalize" not in _events(log):
+            assert time.monotonic() < deadline, "finalize never started"
+            time.sleep(0.05)
+        cancelled_at = time.monotonic()
+        sidecar.request("rpc.cancel", {"id": stream})
+        assert inbox.response(stream)["error"]["data"]["condition"] == "cancelled"
+        # The provider is still finalizing; the call (and its slot) is released at once.
+        assert time.monotonic() - cancelled_at < 5
     finally:
         sidecar.close()
 
