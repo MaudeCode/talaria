@@ -288,11 +288,25 @@ def _timestamp_value(value):
     return numeric if math.isfinite(numeric) else None
 
 
+class _ActiveWriteGuard(Exception):
+    """Another Agent process holds a live turn lease or compression lock on a row the delete would remove."""
+
+
 def _delete_locked(sid: str, home: Path) -> bool:
     stale_complete = _process_stale_manifests(home)
     db_path = home / "state.db"
     if not db_path.exists():
         return False
+    agent_db = _session_db(home)
+    if agent_db is None:
+        return False
+    try:
+        return _delete_rows(sid, home, db_path, getattr(agent_db, "_guarded_ids", None)) and stale_complete
+    finally:
+        _close(agent_db)
+
+
+def _delete_rows(sid: str, home: Path, db_path: Path, guarded_ids) -> bool:
     with closing(sqlite3.connect(str(db_path))) as conn:
         conn.row_factory = sqlite3.Row
         conn.execute("PRAGMA foreign_keys = ON")
@@ -370,6 +384,10 @@ def _delete_locked(sid: str, home: Path) -> bool:
             frontier = next_frontier
         delegate_ids = sorted(found - {sid})
         all_removed = [sid, *delegate_ids]
+        # TAL-792: the Agent's own user-delete guard (Agent v0.21.6+), run in this write transaction. A live writer's
+        # turn lease or compression lock on any removed row refuses; expired or dead-holder guards are reclaimed.
+        if guarded_ids is not None and guarded_ids(conn, all_removed):
+            raise _ActiveWriteGuard
         placeholders = ",".join("?" * len(all_removed))
         for child_id in delegate_ids:
             conn.execute("DELETE FROM messages WHERE session_id = ?", (child_id,))
@@ -404,17 +422,18 @@ def _delete_locked(sid: str, home: Path) -> bool:
             except Exception:  # noqa: BLE001 - fail closed: treat as alive
                 return set(ids)
 
-        cleanup_complete = _process_manifests(conn, sessions_dir, alive_query=alive_after_commit)
-        return stale_complete and cleanup_complete
+        return _process_manifests(conn, sessions_dir, alive_query=alive_after_commit)
 
 
-def delete_cli_session(home: Path, sid: str) -> bool:
+def delete_cli_session(home: Path, sid: str) -> dict:
     try:
         with _thread_lock(home), _process_lock(home):
-            return _delete_locked(sid, home)
+            return {"ok": _delete_locked(sid, home)}
+    except _ActiveWriteGuard:  # the uncommitted transaction rolls back on close: nothing is removed
+        return {"ok": False, "refused": "active_turn"}
     except Exception:  # noqa: BLE001
         log.warning("Failed to delete CLI session %s from state.db", sid, exc_info=True)
-        return False
+        return {"ok": False}
 
 
 def register(registry) -> None:
@@ -449,4 +468,4 @@ def register(registry) -> None:
         sid = _session_id(params)
         if not _is_safe_session_id(sid):
             raise InvalidParams("unsafe session_id")
-        return {"ok": delete_cli_session(profile_home_param(params).resolve(), sid)}
+        return delete_cli_session(profile_home_param(params).resolve(), sid)

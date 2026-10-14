@@ -1,7 +1,7 @@
 /** Session, project, share, workspace, and file procedures. */
 import { implement } from '@orpc/server'
 import { stateDbHasSession } from '../sessions/state-db.js'
-import { sessionsContract, workspacesContract, type Attachment, type SessionsListQuery } from '@maudecode/talaria-web-contracts'
+import { sessionsContract, workspacesContract, type Attachment, type SessionDeleteRefused, type SessionsListQuery } from '@maudecode/talaria-web-contracts'
 import { mkdirSync } from 'node:fs'
 import { closeSync, existsSync, lstatSync, statSync } from 'node:fs'
 import { writeFully } from '../fs/atomic.js'
@@ -156,7 +156,8 @@ export const sessionsRouter = os.router({
             : error instanceof HttpFailure ? [error.status, error.message]
               : error instanceof SessionNotFound ? [404, 'Session not found']
                 : [500, sanitizeError(error)]
-          results.push({ session_id: sid, ok: false, status, error: message })
+          const refused = error instanceof HttpFailure ? error.extra.refused as SessionDeleteRefused | undefined : undefined
+          results.push({ session_id: sid, ok: false, status, error: message, ...(refused ? { refused } : {}) })
         }
       }
       return { results }

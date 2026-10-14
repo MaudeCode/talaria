@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Deleting a chat that a Hermes terminal session is still running or compressing is now refused with a message to try again once it finishes, instead of deleting the conversation out from under it.",
+      "highlight": false,
+      "components": ["web"]
+    }
+  ]
+}

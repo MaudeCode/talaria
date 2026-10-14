@@ -1926,6 +1926,12 @@
     "properties": {
       "ok": {
         "type": "boolean"
+      },
+      "refused": {
+        "type": "string",
+        "enum": [
+          "active_turn"
+        ]
       }
     },
     "required": [

@@ -111,13 +111,17 @@ export const KANBAN_METHODS = {
 } as const
 
 // ── state_db ───────────────────────────────────────────────────────────
+/** Why a session delete was refused: `active_turn` is another Agent process running or compressing it (TAL-792). */
+export const SessionDeleteRefusedSchema = z.enum(['active_turn'])
+export type SessionDeleteRefused = z.infer<typeof SessionDeleteRefusedSchema>
 const Session = ProfileHomeParams.extend({ session_id: z.string().min(1) })
 export const STATE_DB_METHODS = {
   'state_db.sync_start': { params: Session.extend({ model: z.string().nullable().optional() }), result: Ok },
   'state_db.sync_usage': { params: Session.extend({ input_tokens: z.number().int().optional(), output_tokens: z.number().int().optional(), estimated_cost: z.number().nullable().optional(), model: z.string().nullable().optional(), title: z.string().nullable().optional(), message_count: z.number().int().nullable().optional(), cache_read_tokens: z.number().int().optional(), cache_write_tokens: z.number().int().optional(), api_call_count: z.number().int().nullable().optional() }), result: Ok },
   /** TAL-574: `manual` writes a user-requested title (rename or regenerate) with `user` provenance; otherwise it is an `llm` auto title. */
   'state_db.sync_title': { params: Session.extend({ title: z.string(), manual: z.boolean().optional() }), result: Ok },
-  'state_db.delete_cli_session': { params: Session, result: Ok },
+  /** TAL-792: `refused` when another Agent process holds a live turn lease or compression lock on a row the delete would remove; nothing is removed. */
+  'state_db.delete_cli_session': { params: Session, result: Ok.extend({ refused: SessionDeleteRefusedSchema.optional() }) },
   /** TAL-258: append one row through the Agent's `SessionDB.append_message` (bumps `message_count`); `ok` is false without a state.db. */
   'state_db.append_message': { params: Session.extend({ role: z.string().min(1), content: z.string(), tool_name: z.string().nullable().optional(), timestamp: z.number().nullable().optional() }), result: Ok },
 } as const
