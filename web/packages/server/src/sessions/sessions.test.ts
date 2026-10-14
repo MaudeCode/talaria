@@ -1083,6 +1083,33 @@ describe('a truncate that discards more than one user turn waits for confirmatio
     expect(served.map((m) => m.content)).toEqual(['u1', 'a1', 'u2', 'a2', 'u3', 'a3'])
   })
 
+  it('keeps a CLI row committed during the confirmed cut, which its count never saw', async () => {
+    const sid = String((await newSession(s)).session_id)
+    const rows: [string, string, number][] = [['user', 'u1', 100], ['assistant', 'a1', 101], ['user', 'u2', 102], ['assistant', 'a2', 103], ['user', 'u3', 104], ['assistant', 'a3', 105]]
+    writeMessages(s, sid, rows.slice(0, 2).map(([role, content, timestamp]) => ({ role, content, timestamp })))
+    const dbPath = join(s.state, 'state.db')
+    const insert = (role: string, content: string, ts: number): void => {
+      const db = new DatabaseSync(dbPath)
+      db.prepare('INSERT INTO messages (session_id, role, content, timestamp) VALUES (?, ?, ?, ?)').run(sid, role, content, ts)
+      db.close()
+    }
+    const db = new DatabaseSync(dbPath)
+    db.exec('CREATE TABLE IF NOT EXISTS sessions (id TEXT PRIMARY KEY, source TEXT, started_at REAL); CREATE TABLE IF NOT EXISTS messages (id INTEGER PRIMARY KEY AUTOINCREMENT, session_id TEXT, role TEXT, content TEXT, timestamp REAL)')
+    db.prepare('INSERT INTO sessions (id, source, started_at) VALUES (?, ?, ?)').run(sid, 'cli', 100)
+    db.close()
+    for (const [role, content, ts] of rows) insert(role, content, ts)
+    const held = await json(await post(s, '/api/session/truncate', { session_id: sid, keep_count: 2 }))
+    // The CLI commits a turn just after the confirmed request first reads state.db.
+    const sessions = s.deps.sessions
+    const read = sessions.stateDbRead.bind(sessions)
+    const spy = vi.spyOn(sessions, 'stateDbRead').mockImplementationOnce((session) => { const result = read(session); insert('user', 'from the CLI meanwhile', 200); return result })
+    try {
+      expect((await post(s, '/api/session/truncate', { session_id: sid, keep_count: 2, confirm_deep_truncate: true, confirm_token: held.confirm_token })).status).toBe(200)
+    } finally { spy.mockRestore() }
+    const served = ((await json(await s.get(`/api/session?session_id=${sid}&messages=1`))).session as Json).messages as Json[]
+    expect(served.map((m) => m.content)).toEqual(['u1', 'a1', 'from the CLI meanwhile'])
+  })
+
   it('tells clients this server holds a deep cut', async () => {
     const sid = await seed()
     expect(((await json(await s.get(`/api/session?session_id=${sid}&messages=1`))).session as Json).confirms_deep_truncate).toBe(true)

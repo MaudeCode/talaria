@@ -1227,10 +1227,12 @@ export class SessionService {
     if (!Number.isInteger(keep)) throw new HttpFailure(400, 'keep_count must be an integer')
     if (keep < 0) throw new HttpFailure(400, 'keep_count must be non-negative')
     const refused = await this.store.withLock(sid, () => {
-      const held = this.heldCut(s, keep)
+      // One state.db read decides and marks the boundary, so a row committed meanwhile is neither counted nor hidden.
+      const read = this.stateDbRead(s)
+      const held = this.heldCut(s, keep, read.rows)
       if (held && held.confirm_token !== confirmToken) return held
       truncateSessionAtKeep(s, keep)
-      this.markStateDbSeen(s, undefined, { boundary: true })
+      this.markStateDbSeen(s, read, { boundary: true })
       this.store.save(s)
       return null
     })
@@ -1244,8 +1246,8 @@ export class SessionService {
    * the detail shows, state.db continuation included, since `keep` indexes them: the user turns the cut removes, and the
    * messages after the row it starts at.
    */
-  private heldCut(s: Session, keep: number): { ok: false; confirm_required: true; discard_user_turns: number; discard_messages: number; confirm_token: string } | null {
-    const transcript = this.mergedTranscript(s)
+  private heldCut(s: Session, keep: number, stateRows: Message[]): { ok: false; confirm_required: true; discard_user_turns: number; discard_messages: number; confirm_token: string } | null {
+    const transcript = this.mergedTranscript(s, s.messages, stateRows)
     const cut = ((this.publicSession(s, true, transcript).messages ?? []) as Message[]).map((m, i) => ({ m, i })).filter(({ m, i }) => i >= keep && m._display === 'row')
     const userTurns = cut.filter(({ m }) => m.role === 'user').length
     if (userTurns <= 1) return null
