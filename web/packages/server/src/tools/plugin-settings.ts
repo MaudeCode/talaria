@@ -42,8 +42,8 @@ export function normalizePluginSetting(field: PluginSettingField, raw: unknown):
 export interface PluginSettingsPlan {
   /** Changed non-secret values for `plugins.settings_save`. */
   values: Record<string, unknown>
-  /** `.env` name → value for each secret field being set. */
-  secrets: Record<string, string>
+  /** `.env` name → value for each secret field being set, or null to remove it. */
+  secrets: Record<string, string | null>
 }
 
 export function planPluginSettings(fields: PluginSettingField[], values: Record<string, unknown>, secrets: Record<string, string>): PluginSettingsPlan {
@@ -63,8 +63,8 @@ export function planPluginSettings(fields: PluginSettingField[], values: Record<
     const field = declared(key)
     const value = raw.trim()
     if (field.type !== 'secret' || !field.env) throw new PluginSettingsInvalid(`'${key}' is not a secret setting`)
-    if (!value) throw new PluginSettingsInvalid(`${field.label} must not be empty`)
-    plan.secrets[field.env] = value
+    // An emptied field clears the stored secret; there is nothing to clear when none is stored.
+    if (value || field.has_value) plan.secrets[field.env] = value || null
   }
   return plan
 }

@@ -540,16 +540,33 @@ describe('skills, memory, prompts, commands, mcp, health, updates, diagnostics',
       expect(await json(res)).toMatchObject({ written: [] })
       expect(saves).toHaveLength(1)
 
-      for (const bad of [{ values: { api_key: 'sk-x' } }, { values: { mode: 'reckless' } }, { values: { nope: 1 } }, { values: { limit: 'abc' } }, { values: { rules: '"text"' } }, { secrets: { limit: 'x' } }, { secrets: { api_key: '   ' } }]) {
+      for (const bad of [{ values: { api_key: 'sk-x' } }, { values: { mode: 'reckless' } }, { values: { nope: 1 } }, { values: { limit: 'abc' } }, { values: { rules: '"text"' } }, { secrets: { limit: 'x' } }, { secrets: { nope: 'x' } }]) {
         res = await post(s, '/api/plugins/settings', { key: 'fake-settings', ...bad })
         expect(res.status, JSON.stringify(bad)).toBe(400)
       }
       expect(saves).toHaveLength(1)
       expect((await post(s, '/api/plugins/settings', { key: 'other', values: { limit: '1' } })).status).toBe(404)
 
+      // An emptied secret field clears the stored secret.
+      res = await post(s, '/api/plugins/settings', { key: 'fake-settings', secrets: { api_key: '' } })
+      expect(res.status).toBe(200)
+      expect(await json(res)).toMatchObject({ written: ['api_key'] })
+      expect(readFileSync(join(home, '.env'), 'utf8')).not.toContain('FAKE_SETTINGS_API_KEY')
+
+      // A refused secret leaves config.yaml untouched.
+      const envWrite = sidecar.responderFor('config.env_write')
+      sidecar.respond('config.env_write', () => { throw new SidecarError('Cannot set FAKE_SETTINGS_API_KEY: this Hermes installation manages it', { condition: 'env_write_refused' }) })
+      res = await post(s, '/api/plugins/settings', { key: 'fake-settings', values: { limit: '4' }, secrets: { api_key: 'sk-refused' } })
+      expect(res.status).toBe(409)
+      expect(saves).toHaveLength(1)
+      sidecar.respond('config.env_write', envWrite)
+
+      // A refused config write restores the secrets written before it.
+      writeFileSync(join(home, '.env'), 'FAKE_SETTINGS_API_KEY=sk-before\n')
       sidecar.respond('plugins.settings_save', () => { throw new SidecarError('Plugin settings cannot be changed in a managed install', { condition: 'plugin_settings_managed' }) })
-      res = await post(s, '/api/plugins/settings', { key: 'fake-settings', values: { limit: '3' } })
+      res = await post(s, '/api/plugins/settings', { key: 'fake-settings', values: { limit: '3' }, secrets: { api_key: 'sk-after' } })
       expect(res.status).toBe(403)
+      expect(readFileSync(join(home, '.env'), 'utf8')).toContain('FAKE_SETTINGS_API_KEY=sk-before')
     } finally {
       sidecar.respond('plugins.settings', undefined)
       sidecar.respond('plugins.settings_save', undefined)

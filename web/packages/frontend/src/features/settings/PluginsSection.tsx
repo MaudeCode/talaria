@@ -53,7 +53,7 @@ function PluginSettingsForm({ pluginKey, fields, onSaved }: { pluginKey: string;
     mutationFn: () => {
       const values: Record<string, unknown> = {}
       const secrets: Record<string, string> = {}
-      for (const f of fields) if (f.key in drafts) { if (f.type === 'secret') { if (text(drafts[f.key]).trim()) secrets[f.key] = text(drafts[f.key]) } else values[f.key] = drafts[f.key] }
+      for (const f of fields) if (f.key in drafts) { if (f.type === 'secret') secrets[f.key] = text(drafts[f.key]); else values[f.key] = drafts[f.key] }
       return api.savePluginSettings(pluginKey, values, secrets)
     },
     onSuccess: () => { showToast(m.saved()); void qc.invalidateQueries({ queryKey: keys.plugins }); onSaved() },

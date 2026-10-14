@@ -22,7 +22,7 @@ import { restartGateway } from '../tools/gateway-restart.js'
 import { projectOsDashboard } from '../tools/project-os.js'
 import { PluginSettingsInvalid, planPluginSettings } from '../tools/plugin-settings.js'
 import { RuntimeCredentialError, writeRuntimeCredential } from '../providers/runtime-env.js'
-import { EnvWriteError } from '../providers/env-file.js'
+import { EnvWriteError, loadEnvFile } from '../providers/env-file.js'
 import { loadGatewaySessionIdentityMap } from '../sessions/list.js'
 import { gitBadge } from '../workspace/git.js'
 import { sanitizeError } from '../workspace/media.js'
@@ -496,26 +496,28 @@ export const toolsRouter = os.router({
       if (error instanceof PluginSettingsInvalid) throw new HttpError(400, error.message)
       throw error
     }
+    // Secrets never reach config.yaml: each goes to the profile `.env` under the name the manifest field declares. They are
+    // written first and restored if a later write fails, so a refused save changes neither file.
+    const credential = (envVar: string, value: string | null) => writeRuntimeCredential({ env: ctx.deps.config.env, sidecar: ctx.deps.sidecar, log: ctx.deps.log }, ctx.deps.isRootProfile(activeProfileName(ctx)), home(ctx), envVar, value)
+    const previous = loadEnvFile(join(home(ctx), '.env'))
+    const applied: string[] = []
     let result = { key: input.key, written: [] as string[], fields }
-    if (Object.keys(plan.values).length) {
-      try {
-        result = await sidecar.call('plugins.settings_save', { profile_home: home(ctx), key: input.key, values: plan.values })
-      } catch (error) {
-        if (error instanceof SidecarError && error.condition === 'plugin_settings_managed') throw new HttpError(403, error.message, { condition: error.condition })
-        if (error instanceof SidecarError && error.condition === 'plugin_not_found') throw new HttpError(404, error.message)
-        if (error instanceof SidecarError && error.code === -32602) throw new HttpError(400, error.message)
-        throw error
+    try {
+      for (const [envVar, value] of Object.entries(plan.secrets)) {
+        await credential(envVar, value)
+        applied.push(envVar)
       }
-    }
-    // Secrets never reach config.yaml: each goes to the profile `.env` under the name the manifest field declares.
-    for (const [envVar, value] of Object.entries(plan.secrets)) {
-      try {
-        await writeRuntimeCredential({ env: ctx.deps.config.env, sidecar: ctx.deps.sidecar, log: ctx.deps.log }, ctx.deps.isRootProfile(activeProfileName(ctx)), home(ctx), envVar, value)
-      } catch (error) {
-        if (error instanceof RuntimeCredentialError) throw new HttpError(503, error.message)
-        if (error instanceof EnvWriteError) throw new HttpError(error.status, `Failed to save ${envVar}: ${error.message}`, { condition: error.condition })
-        throw error
+      if (Object.keys(plan.values).length) result = await sidecar.call('plugins.settings_save', { profile_home: home(ctx), key: input.key, values: plan.values })
+    } catch (error) {
+      for (const envVar of applied.reverse()) {
+        await credential(envVar, previous[envVar] ?? null).catch((restore: unknown) => { ctx.deps.log(`[plugins] could not restore ${envVar} after a failed settings save: ${str((restore as Error).message)}`) })
       }
+      if (error instanceof SidecarError && error.condition === 'plugin_settings_managed') throw new HttpError(403, error.message, { condition: error.condition })
+      if (error instanceof SidecarError && error.condition === 'plugin_not_found') throw new HttpError(404, error.message)
+      if (error instanceof SidecarError && error.code === -32602) throw new HttpError(400, error.message)
+      if (error instanceof RuntimeCredentialError) throw new HttpError(503, error.message)
+      if (error instanceof EnvWriteError) throw new HttpError(error.status, `Failed to save a secret: ${error.message}`, { condition: error.condition })
+      throw error
     }
     const written = [...result.written, ...fields.filter((field) => field.env && field.env in plan.secrets).map((field) => field.key)]
     const settings = Object.keys(plan.secrets).length ? ((await pluginSettingsList(ctx)).find((entry) => entry.key === result.key)?.fields ?? result.fields) : result.fields

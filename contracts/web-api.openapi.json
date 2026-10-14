@@ -52294,7 +52294,7 @@
     "/api/plugins/settings": {
       "post": {
         "operationId": "pluginSettings",
-        "summary": "TAL-806 (operator only): save a plugin's manifest-declared settings. `values` holds non-secret fields as the form entered them (numbers and JSON as text); the server checks each against the field list, writes the changed ones to `plugins.entries.<key>.settings`, and writes `secrets` to the profile `.env` under each field's `env` name. 400 for an undeclared key or bad value, 403 on a managed install, 404 for an unknown plugin.",
+        "summary": "TAL-806 (operator only): save a plugin's manifest-declared settings. `values` holds non-secret fields as the form entered them (numbers and JSON as text); the server checks each against the field list, writes the changed ones to `plugins.entries.<key>.settings`, and writes `secrets` to the profile `.env` under each field's `env` name (an empty one removes it). Secrets are written first; when a later write fails, the ones already written are restored. 400 for an undeclared key or bad value, 403 on a managed install, 404 for an unknown plugin.",
         "tags": [
           "tools"
         ],
@@ -52322,8 +52322,7 @@
                       "type": "string"
                     },
                     "additionalProperties": {
-                      "type": "string",
-                      "minLength": 1
+                      "type": "string"
                     }
                   }
                 },
