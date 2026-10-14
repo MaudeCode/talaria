@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "A long chat that needs its context compressed no longer restarts that compression when you press Stop or send again; the next message joins the compression already running, and it often starts as soon as the previous reply finishes.",
+      "highlight": false,
+      "components": ["web"]
+    }
+  ]
+}

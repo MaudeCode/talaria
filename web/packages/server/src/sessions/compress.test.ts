@@ -459,7 +459,7 @@ describe('compression job table', () => {
     vi.useFakeTimers()
     try {
       const jobs = new CompressionJobs()
-      const job: CompressionJob = { session_id: 's1', focus_topic: null, status: 'done', started_at: 0, updated_at: 0, result: { session: { messages: [] } }, done: Promise.resolve() }
+      const job: CompressionJob = { session_id: 's1', focus_topic: null, status: 'done', started_at: 0, updated_at: 0, result: { session: { messages: [] } }, turns: new Set(), automatic: false, done: Promise.resolve() }
       jobs.set(job)
       jobs.expireLater(job)
       vi.advanceTimersByTime(COMPRESSION_JOB_TTL_SECONDS * 1000 - 1)

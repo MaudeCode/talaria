@@ -274,7 +274,27 @@ def _context_length(agent: Any) -> dict:
         value = getattr(cc, key, None)
         if isinstance(value, (int, float)):
             out[key] = int(value)
+    threshold = _next_turn_threshold(agent, cc)
+    if threshold:
+        out["next_turn_threshold_tokens"] = threshold
     return out
+
+
+def _next_turn_threshold(agent: Any, cc: Any) -> int | None:
+    """TAL-1005: the compression threshold the next turn runs under. A turn that ended on a fallback leaves the
+    fallback's threshold on the compressor, but the Agent restores the primary runtime at the next turn's start
+    (``restore_primary_runtime``), so this is the trigger the compressor installs for that runtime's snapshot."""
+    value = getattr(cc, "threshold_tokens", None)
+    primary = getattr(agent, "_primary_runtime", None)
+    if getattr(agent, "_fallback_activated", False) is True and isinstance(primary, dict):
+        value = primary.get("compressor_threshold_tokens")
+        preview = getattr(cc, "preview_threshold_tokens", None)
+        if callable(preview) and isinstance(primary.get("compressor_context_length"), int):
+            try:
+                value = preview(str(primary.get("compressor_model") or ""), primary["compressor_context_length"], str(primary.get("compressor_provider") or ""))
+            except Exception:  # noqa: BLE001
+                log.debug("primary threshold preview failed", exc_info=True)
+    return int(value) if isinstance(value, (int, float)) and not isinstance(value, bool) and value > 0 else None
 
 
 # TAL-539: the hard cap on raw tool output kept in a compressed context (predecessor ``_hard_prune_post_compression_*``).
