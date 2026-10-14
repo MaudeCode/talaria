@@ -128,3 +128,38 @@ def test_the_delete_removes_every_segment_of_a_long_compression_lineage(hermes_h
         proc.close()
     assert _rows(hermes_home, "SELECT id FROM sessions") == []
     assert _rows(hermes_home, "SELECT DISTINCT session_id FROM messages") == []
+
+
+def test_the_delete_removes_the_legacy_session_transcript(hermes_home) -> None:
+    """TAL-892: like the Agent's own delete, the legacy ``session_<id>.json`` snapshot goes with the session, directly and
+    through a pending cleanup manifest; another session's snapshot stays."""
+    _seed(hermes_home, "cli-a")
+    _seed(hermes_home, "cli-b")
+    sessions = hermes_home / "sessions"
+    sessions.mkdir(exist_ok=True)
+    for name in ("session_cli-a.json", "session_cli-ab.json", "session_cli-b.json", "session_cli-gone.json"):
+        (sessions / name).write_text("{}", encoding="utf-8")
+    # An earlier delete of cli-gone left its artifacts pending.
+    (sessions / ".cleanup_manifest_pending.json").write_text('["cli-gone"]', encoding="utf-8")
+    proc = SidecarProcess(hermes_home)
+    try:
+        assert _delete(proc, hermes_home, "cli-a") == {"ok": True}
+    finally:
+        proc.close()
+    assert sorted(p.name for p in sessions.iterdir()) == ["session_cli-ab.json", "session_cli-b.json"]
+
+
+def test_the_legacy_name_of_a_live_prefixed_session_is_its_own_transcript(hermes_home) -> None:
+    """``session_<id>.json`` is also the current transcript of a live session whose id is ``session_<id>``: deleting
+    ``<id>`` keeps it."""
+    _seed(hermes_home, "cli-a")
+    _seed(hermes_home, "session_cli-a")
+    sessions = hermes_home / "sessions"
+    sessions.mkdir(exist_ok=True)
+    (sessions / "session_cli-a.json").write_text("{}", encoding="utf-8")
+    proc = SidecarProcess(hermes_home)
+    try:
+        assert _delete(proc, hermes_home, "cli-a") == {"ok": True}
+    finally:
+        proc.close()
+    assert sorted(p.name for p in sessions.iterdir()) == ["session_cli-a.json"]
