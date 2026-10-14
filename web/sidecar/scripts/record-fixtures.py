@@ -20,6 +20,7 @@ sys.path.insert(0, str(HERE / "tests"))
 
 from conftest import AGENT_DIR, AGENT_PYTHON, SidecarProcess  # noqa: E402
 from talaria_sidecar import SIDECAR_RPC_VERSION  # noqa: E402
+from scenarios import UNEXERCISED  # noqa: E402
 from test_namespaces import run_scenarios  # noqa: E402
 
 TARGET = HERE.parent / "packages" / "contracts" / "fixtures" / "sidecar"
@@ -47,7 +48,7 @@ def main() -> int:
     fixtures: dict[str, dict[str, list]] = {}
     try:
         handshake = proc.result("runtime.handshake", {"rpc_version": SIDECAR_RPC_VERSION})
-        subs = [(str(root / "profiles" / "alpha"), "<profile>"), (str(root), "<home>"), (str(root.parent), "<user-home>"), (str(AGENT_DIR), "<agent>"), (AGENT_PYTHON, "<python>")]
+        subs = [(str(root / "profiles" / "alpha"), "<profile>"), (str(root), "<home>"), (str(root.parent), "<user-home>"), (AGENT_PYTHON, "<python>"), (str(AGENT_DIR), "<agent>")]
         fixtures.setdefault("runtime", {})["runtime.handshake"] = [{"params": {"rpc_version": SIDECAR_RPC_VERSION}, "result": normalize(handshake, subs)}]
         for method, params, message, frames in run_scenarios(proc, root):
             if "error" in message:
@@ -60,8 +61,16 @@ def main() -> int:
     finally:
         proc.close()
     TARGET.mkdir(parents=True, exist_ok=True)
-    for stale in TARGET.glob("*.json"):
-        stale.unlink()
+    stale = sorted(TARGET.glob("*.json"))
+    # Scenarios cannot reach unexercised methods, so their hand-written entries carry over.
+    # Read every file before deleting any, so a malformed one leaves the directory intact.
+    for previous in [json.loads(path.read_text(encoding="utf-8")) for path in stale]:
+        for method, entries in previous.items():
+            namespace = method.split(".", 1)[0]
+            if method in UNEXERCISED and method not in fixtures.get(namespace, {}):
+                fixtures.setdefault(namespace, {})[method] = entries
+    for path in stale:
+        path.unlink()
     for namespace, methods in sorted(fixtures.items()):
         (TARGET / f"{namespace}.json").write_text(json.dumps(methods, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
     print(f"record-fixtures: wrote {sum(len(v) for v in fixtures.values())} methods across {len(fixtures)} namespaces to {TARGET}")

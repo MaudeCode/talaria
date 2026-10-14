@@ -98,7 +98,13 @@ SCENARIOS: list[tuple[str, dict]] = [
     ("providers.auth_status", {"profile_home": "{home}", "provider": "anthropic"}),
     ("providers.model_ids", {"profile_home": "{home}", "provider": "anthropic"}),
     ("providers.credential_pool", {"profile_home": "{home}", "provider": "anthropic"}),
-    ("models.speed_tiers", {"profile_home": "{home}", "routes": [{"model": "gpt-6-astra", "provider": "openai-codex", "base_url": "https://chatgpt.com/backend-api/codex"}]}),
+    ("models.speed_tiers", {"profile_home": "{home}", "routes": [
+        {"model": "gpt-6-astra", "provider": "openai-codex", "base_url": "https://chatgpt.com/backend-api/codex"},
+        {"model": "gpt-6-sol", "provider": "openai-codex", "base_url": "https://chatgpt.com/backend-api/codex"},
+        {"model": "gpt-6.1-sol", "provider": "openai-api", "base_url": "https://api.openai.com/v1"},
+        {"model": "claude-opus-4-8", "provider": "anthropic", "base_url": "https://api.anthropic.com"},
+        {"model": "gpt-6-astra", "provider": "openai", "base_url": "https://proxy.example/v1"},
+    ]}),
     ("models.context_length", {"profile_home": "{home}", "model": "claude-sonnet-4-5", "provider": "anthropic"}),
     ("models.estimate_tokens", {"messages": [{"role": "user", "content": "hello world"}]}),
     ("models.capabilities", {"profile_home": "{home}", "provider": "anthropic", "model": "claude-sonnet-4-5"}),
@@ -110,6 +116,8 @@ SCENARIOS: list[tuple[str, dict]] = [
     ("memory.check", {"profile_home": "{home}", "target": "user", "content": "x" * 1400}),
     # TAL-784: a save over a USER.md that does not exist yet (the SHA-256 of no bytes).
     ("memory.write", {"profile_home": "{home}", "section": "user", "base": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855", "content": "User prefers tabs"}),
+    # The same base again is stale now that USER.md exists: refused, not written.
+    ("memory.write", {"profile_home": "{home}", "section": "user", "base": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855", "content": "Stale save"}),
     ("process.drain", {"profile_home": "{home}"}),
     ("process.list", {"profile_home": "{home}"}),
     ("process.format_notification", {"event": {"type": "completion", "session_id": "proc_1", "command": "ls", "exit_code": 0, "output": "ok"}}),

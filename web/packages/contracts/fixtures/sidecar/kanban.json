@@ -45,7 +45,7 @@
           "color": "",
           "default_workdir": null,
           "project_id": null,
-          "created_at": 1791941262,
+          "created_at": 1791953009,
           "archived": false,
           "db_path": "<home>/kanban/boards/experiments/kanban.db"
         },
@@ -72,7 +72,7 @@
           "color": "",
           "default_workdir": null,
           "project_id": null,
-          "created_at": 1791941262,
+          "created_at": 1791953009,
           "archived": false,
           "db_path": "<home>/kanban/boards/experiments/kanban.db"
         },
@@ -112,7 +112,7 @@
         "result": {
           "slug": "experiments",
           "action": "archived",
-          "new_path": "<home>/kanban/boards/_archived/experiments-1791941262"
+          "new_path": "<home>/kanban/boards/_archived/experiments-1791953009"
         },
         "current": "default",
         "read_only": false
@@ -131,14 +131,14 @@
       },
       "result": {
         "task": {
-          "id": "t_408bf6b1",
+          "id": "t_f3e45504",
           "title": "first task",
           "body": "details",
           "assignee": null,
           "status": "ready",
           "priority": 2,
           "created_by": "webui",
-          "created_at": 1791941262,
+          "created_at": 1791953009,
           "started_at": null,
           "completed_at": null,
           "workspace_kind": "scratch",
@@ -203,14 +203,14 @@
       },
       "result": {
         "task": {
-          "id": "t_6d0343b9",
+          "id": "t_32dc7883",
           "title": "second task",
           "body": null,
           "assignee": null,
           "status": "ready",
           "priority": 0,
           "created_by": "webui",
-          "created_at": 1791941262,
+          "created_at": 1791953009,
           "started_at": null,
           "completed_at": null,
           "workspace_kind": "scratch",
@@ -294,14 +294,14 @@
             "label": "Ready",
             "tasks": [
               {
-                "id": "t_408bf6b1",
+                "id": "t_f3e45504",
                 "title": "first task",
                 "body": "details",
                 "assignee": null,
                 "status": "ready",
                 "priority": 2,
                 "created_by": "webui",
-                "created_at": 1791941262,
+                "created_at": 1791953009,
                 "started_at": null,
                 "completed_at": null,
                 "workspace_kind": "scratch",
@@ -360,14 +360,14 @@
                 "comment_count": 0
               },
               {
-                "id": "t_6d0343b9",
+                "id": "t_32dc7883",
                 "title": "second task",
                 "body": null,
                 "assignee": null,
                 "status": "ready",
                 "priority": 0,
                 "created_by": "webui",
-                "created_at": 1791941262,
+                "created_at": 1791953009,
                 "started_at": null,
                 "completed_at": null,
                 "workspace_kind": "scratch",
@@ -516,7 +516,7 @@
         },
         "by_assignee": {},
         "oldest_ready_age_seconds": 0,
-        "now": 1791941262,
+        "now": 1791953009,
         "column_order": [
           "triage",
           "todo",
@@ -568,7 +568,7 @@
         "events": [
           {
             "id": 1,
-            "task_id": "t_408bf6b1",
+            "task_id": "t_f3e45504",
             "run_id": null,
             "kind": "created",
             "payload": {
@@ -586,11 +586,11 @@
               "model_override": null,
               "provider_override": null
             },
-            "created_at": 1791941262
+            "created_at": 1791953009
           },
           {
             "id": 2,
-            "task_id": "t_6d0343b9",
+            "task_id": "t_32dc7883",
             "run_id": null,
             "kind": "created",
             "payload": {
@@ -608,7 +608,7 @@
               "model_override": null,
               "provider_override": null
             },
-            "created_at": 1791941262
+            "created_at": 1791953009
           }
         ],
         "cursor": 2,
@@ -630,8 +630,8 @@
         "reaped_terminal_workers": [],
         "spawned": [],
         "skipped_unassigned": [
-          "t_408bf6b1",
-          "t_6d0343b9"
+          "t_f3e45504",
+          "t_32dc7883"
         ],
         "auto_assigned_default": [],
         "skipped_nonspawnable": [],
@@ -651,18 +651,18 @@
     {
       "params": {
         "profile_home": "<home>",
-        "task_id": "t_408bf6b1"
+        "task_id": "t_f3e45504"
       },
       "result": {
         "task": {
-          "id": "t_408bf6b1",
+          "id": "t_f3e45504",
           "title": "first task",
           "body": "details",
           "assignee": null,
           "status": "ready",
           "priority": 2,
           "created_by": "webui",
-          "created_at": 1791941262,
+          "created_at": 1791953009,
           "started_at": null,
           "completed_at": null,
           "workspace_kind": "scratch",
@@ -719,7 +719,7 @@
         "events": [
           {
             "id": 1,
-            "task_id": "t_408bf6b1",
+            "task_id": "t_f3e45504",
             "kind": "created",
             "payload": {
               "assignee": null,
@@ -736,7 +736,7 @@
               "model_override": null,
               "provider_override": null
             },
-            "created_at": 1791941262,
+            "created_at": 1791953009,
             "run_id": null
           }
         ],
@@ -753,20 +753,20 @@
     {
       "params": {
         "profile_home": "<home>",
-        "task_id": "t_408bf6b1",
+        "task_id": "t_f3e45504",
         "action": "block",
         "reason": "waiting"
       },
       "result": {
         "task": {
-          "id": "t_408bf6b1",
+          "id": "t_f3e45504",
           "title": "first task",
           "body": "details",
           "assignee": null,
           "status": "blocked",
           "priority": 2,
           "created_by": "webui",
-          "created_at": 1791941262,
+          "created_at": 1791953009,
           "started_at": null,
           "completed_at": null,
           "workspace_kind": "scratch",
@@ -824,19 +824,19 @@
     {
       "params": {
         "profile_home": "<home>",
-        "task_id": "t_408bf6b1",
+        "task_id": "t_f3e45504",
         "action": "unblock"
       },
       "result": {
         "task": {
-          "id": "t_408bf6b1",
+          "id": "t_f3e45504",
           "title": "first task",
           "body": "details",
           "assignee": null,
           "status": "ready",
           "priority": 2,
           "created_by": "webui",
-          "created_at": 1791941262,
+          "created_at": 1791953009,
           "started_at": null,
           "completed_at": null,
           "workspace_kind": "scratch",
@@ -878,12 +878,12 @@
             "triage"
           ],
           "age_seconds": {
-            "created_age_seconds": 1,
+            "created_age_seconds": 2,
             "started_age_seconds": null,
             "time_to_complete_seconds": null
           },
           "age": {
-            "created_age_seconds": 1,
+            "created_age_seconds": 2,
             "started_age_seconds": null,
             "time_to_complete_seconds": null
           },
@@ -897,7 +897,7 @@
     {
       "params": {
         "profile_home": "<home>",
-        "task_id": "t_408bf6b1",
+        "task_id": "t_f3e45504",
         "patch": {
           "title": "renamed task",
           "status": "todo"
@@ -905,14 +905,14 @@
       },
       "result": {
         "task": {
-          "id": "t_408bf6b1",
+          "id": "t_f3e45504",
           "title": "renamed task",
           "body": "details",
           "assignee": null,
           "status": "todo",
           "priority": 2,
           "created_by": "webui",
-          "created_at": 1791941262,
+          "created_at": 1791953009,
           "started_at": null,
           "completed_at": null,
           "workspace_kind": "scratch",
@@ -951,12 +951,12 @@
             "triage"
           ],
           "age_seconds": {
-            "created_age_seconds": 1,
+            "created_age_seconds": 2,
             "started_age_seconds": null,
             "time_to_complete_seconds": null
           },
           "age": {
-            "created_age_seconds": 1,
+            "created_age_seconds": 2,
             "started_age_seconds": null,
             "time_to_complete_seconds": null
           },
@@ -970,7 +970,7 @@
     {
       "params": {
         "profile_home": "<home>",
-        "task_id": "t_408bf6b1",
+        "task_id": "t_f3e45504",
         "body": "note"
       },
       "result": {
@@ -984,13 +984,13 @@
     {
       "params": {
         "profile_home": "<home>",
-        "parent_id": "t_408bf6b1",
-        "child_id": "t_6d0343b9"
+        "parent_id": "t_f3e45504",
+        "child_id": "t_32dc7883"
       },
       "result": {
         "ok": true,
-        "parent_id": "t_408bf6b1",
-        "child_id": "t_6d0343b9",
+        "parent_id": "t_f3e45504",
+        "child_id": "t_32dc7883",
         "read_only": false
       }
     }
@@ -999,14 +999,14 @@
     {
       "params": {
         "profile_home": "<home>",
-        "parent_id": "t_408bf6b1",
-        "child_id": "t_6d0343b9"
+        "parent_id": "t_f3e45504",
+        "child_id": "t_32dc7883"
       },
       "result": {
         "ok": true,
         "changed": true,
-        "parent_id": "t_408bf6b1",
-        "child_id": "t_6d0343b9",
+        "parent_id": "t_f3e45504",
+        "child_id": "t_32dc7883",
         "read_only": false
       }
     }
@@ -1015,11 +1015,11 @@
     {
       "params": {
         "profile_home": "<home>",
-        "task_id": "t_408bf6b1"
+        "task_id": "t_f3e45504"
       },
       "result": {
-        "task_id": "t_408bf6b1",
-        "path": "<home>/kanban/logs/t_408bf6b1.log",
+        "task_id": "t_f3e45504",
+        "path": "<home>/kanban/logs/t_f3e45504.log",
         "exists": false,
         "size_bytes": 0,
         "content": "",
@@ -1033,8 +1033,8 @@
         "profile_home": "<home>",
         "bulk": {
           "ids": [
-            "t_408bf6b1",
-            "t_6d0343b9"
+            "t_f3e45504",
+            "t_32dc7883"
           ],
           "priority": 5
         }
@@ -1042,11 +1042,11 @@
       "result": {
         "results": [
           {
-            "id": "t_408bf6b1",
+            "id": "t_f3e45504",
             "ok": true
           },
           {
-            "id": "t_6d0343b9",
+            "id": "t_32dc7883",
             "ok": true
           }
         ],

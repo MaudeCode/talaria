@@ -5,11 +5,11 @@
         "profile_home": "<home>"
       },
       "result": {
-        "client_tag": "client=hermes-client-v0.21.6",
+        "client_tag": "client=hermes-client-v0.22.0",
         "conversation_tag": null,
         "tags": [
           "product=hermes-agent",
-          "client=hermes-client-v0.21.6"
+          "client=hermes-client-v0.22.0"
         ]
       }
     }

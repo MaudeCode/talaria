@@ -9,348 +9,570 @@
         "skills": [
           {
             "name": "apple-notes",
+            "load_name": "apple-notes",
+            "declared_name": "apple-notes",
+            "status": "unique",
+            "tier": 1,
             "description": "Manage Apple Notes via memo CLI: create, search, edit.",
             "category": "apple",
             "disabled": false
           },
           {
             "name": "apple-reminders",
+            "load_name": "apple-reminders",
+            "declared_name": "apple-reminders",
+            "status": "unique",
+            "tier": 1,
             "description": "Apple Reminders via remindctl: add, list, complete.",
             "category": "apple",
             "disabled": false
           },
           {
             "name": "findmy",
+            "load_name": "findmy",
+            "declared_name": "findmy",
+            "status": "unique",
+            "tier": 1,
             "description": "Track Apple devices/AirTags via FindMy.app on macOS.",
             "category": "apple",
             "disabled": false
           },
           {
             "name": "imessage",
+            "load_name": "imessage",
+            "declared_name": "imessage",
+            "status": "unique",
+            "tier": 1,
             "description": "Send and receive iMessages/SMS via the imsg CLI on macOS.",
             "category": "apple",
             "disabled": false
           },
           {
             "name": "claude-code",
+            "load_name": "claude-code",
+            "declared_name": "claude-code",
+            "status": "unique",
+            "tier": 1,
             "description": "Delegate coding to Claude Code CLI (features, PRs).",
             "category": "autonomous-ai-agents",
             "disabled": false
           },
           {
             "name": "codex",
+            "load_name": "codex",
+            "declared_name": "codex",
+            "status": "unique",
+            "tier": 1,
             "description": "Delegate coding to OpenAI Codex CLI (features, PRs).",
             "category": "autonomous-ai-agents",
             "disabled": false
           },
           {
             "name": "computer-use",
+            "load_name": "computer-use",
+            "declared_name": "computer-use",
+            "status": "unique",
+            "tier": 1,
             "description": "Drive the desktop background-first; escalate on signal.",
             "category": "autonomous-ai-agents",
             "disabled": false
           },
           {
             "name": "hermes-agent",
+            "load_name": "hermes-agent",
+            "declared_name": "hermes-agent",
+            "status": "unique",
+            "tier": 1,
             "description": "Use, configure, theme, extend, and orchestrate Hermes Agent.",
             "category": "autonomous-ai-agents",
             "disabled": false
           },
           {
             "name": "opencode",
+            "load_name": "opencode",
+            "declared_name": "opencode",
+            "status": "unique",
+            "tier": 1,
             "description": "Delegate coding to OpenCode CLI (features, PR review).",
             "category": "autonomous-ai-agents",
             "disabled": false
           },
           {
             "name": "architecture-diagram",
+            "load_name": "architecture-diagram",
+            "declared_name": "architecture-diagram",
+            "status": "unique",
+            "tier": 1,
             "description": "Dark-themed SVG architecture/cloud/infra diagrams as HTML.",
             "category": "creative",
             "disabled": false
           },
           {
             "name": "ascii-video",
+            "load_name": "ascii-video",
+            "declared_name": "ascii-video",
+            "status": "unique",
+            "tier": 1,
             "description": "ASCII video: convert video/audio to colored ASCII MP4/GIF.",
             "category": "creative",
             "disabled": false
           },
           {
             "name": "baoyu-infographic",
+            "load_name": "baoyu-infographic",
+            "declared_name": "baoyu-infographic",
+            "status": "unique",
+            "tier": 1,
             "description": "Infographics: 21 layouts x 21 styles (信息图, 可视化).",
             "category": "creative",
             "disabled": false
           },
           {
             "name": "claude-design",
+            "load_name": "claude-design",
+            "declared_name": "claude-design",
+            "status": "unique",
+            "tier": 1,
             "description": "Design one-off HTML artifacts (landing, deck, prototype).",
             "category": "creative",
             "disabled": false
           },
           {
             "name": "design-md",
+            "load_name": "design-md",
+            "declared_name": "design-md",
+            "status": "unique",
+            "tier": 1,
             "description": "Author/validate/export Google's DESIGN.md token spec files.",
             "category": "creative",
             "disabled": false
           },
           {
             "name": "humanizer",
+            "load_name": "humanizer",
+            "declared_name": "humanizer",
+            "status": "unique",
+            "tier": 1,
             "description": "Humanize text: strip AI-isms and add real voice.",
             "category": "creative",
             "disabled": false
           },
           {
             "name": "manim-video",
+            "load_name": "manim-video",
+            "declared_name": "manim-video",
+            "status": "unique",
+            "tier": 1,
             "description": "Manim CE animations: 3Blue1Brown math/algo videos.",
             "category": "creative",
             "disabled": false
           },
           {
             "name": "p5js",
+            "load_name": "p5js",
+            "declared_name": "p5js",
+            "status": "unique",
+            "tier": 1,
             "description": "p5.js sketches: gen art, shaders, interactive, 3D.",
             "category": "creative",
             "disabled": false
           },
           {
             "name": "popular-web-designs",
+            "load_name": "popular-web-designs",
+            "declared_name": "popular-web-designs",
+            "status": "unique",
+            "tier": 1,
             "description": "54 real design systems (Stripe, Linear, Vercel) as HTML/CSS.",
             "category": "creative",
             "disabled": false
           },
           {
             "name": "songwriting-and-ai-music",
+            "load_name": "songwriting-and-ai-music",
+            "declared_name": "songwriting-and-ai-music",
+            "status": "unique",
+            "tier": 1,
             "description": "Songwriting craft and Suno AI music prompts.",
             "category": "creative",
             "disabled": false
           },
           {
-            "name": "sdlc-review",
-            "description": "Review Kanban handoffs and route verified outcomes.",
-            "category": "devops",
-            "disabled": false
-          },
-          {
             "name": "email-inbox-triage",
+            "load_name": "email-inbox-triage",
+            "declared_name": "email-inbox-triage",
+            "status": "unique",
+            "tier": 1,
             "description": "Triage an inbox: prioritize threads, draft replies safely.",
             "category": "email",
             "disabled": false
           },
           {
             "name": "himalaya",
+            "load_name": "himalaya",
+            "declared_name": "himalaya",
+            "status": "unique",
+            "tier": 1,
             "description": "Himalaya CLI: IMAP/SMTP email from terminal.",
             "category": "email",
             "disabled": false
           },
           {
             "name": "gif-search",
+            "load_name": "gif-search",
+            "declared_name": "gif-search",
+            "status": "unique",
+            "tier": 1,
             "description": "Search/download GIFs from Tenor via curl + jq.",
             "category": "media",
             "disabled": false
           },
           {
             "name": "songsee",
+            "load_name": "songsee",
+            "declared_name": "songsee",
+            "status": "unique",
+            "tier": 1,
             "description": "Audio spectrograms/features (mel, chroma, MFCC) via CLI.",
             "category": "media",
             "disabled": false
           },
           {
             "name": "youtube-content",
+            "load_name": "youtube-content",
+            "declared_name": "youtube-content",
+            "status": "unique",
+            "tier": 1,
             "description": "YouTube transcripts to summaries, threads, blogs.",
             "category": "media",
             "disabled": false
           },
           {
             "name": "obsidian",
+            "load_name": "obsidian",
+            "declared_name": "obsidian",
+            "status": "unique",
+            "tier": 1,
             "description": "Read, search, create, and edit notes in the Obsidian vault.",
             "category": "note-taking",
             "disabled": false
           },
           {
             "name": "airtable",
+            "load_name": "airtable",
+            "declared_name": "airtable",
+            "status": "unique",
+            "tier": 1,
             "description": "Airtable REST API via curl. Records CRUD, filters, upserts.",
             "category": "productivity",
             "disabled": false
           },
           {
             "name": "box",
+            "load_name": "box",
+            "declared_name": "box",
+            "status": "unique",
+            "tier": 1,
             "description": "Box manages cloud files, sharing, search, and metadata.",
             "category": "productivity",
             "disabled": false
           },
           {
             "name": "document-to-action-items",
+            "load_name": "document-to-action-items",
+            "declared_name": "document-to-action-items",
+            "status": "unique",
+            "tier": 1,
             "description": "Extract cited obligations, deadlines, tasks from documents.",
             "category": "productivity",
             "disabled": false
           },
           {
             "name": "docx",
+            "load_name": "docx",
+            "declared_name": "docx",
+            "status": "unique",
+            "tier": 1,
             "description": "Create, read, edit, template, and review Word .docx files.",
             "category": "productivity",
             "disabled": false
           },
           {
             "name": "google-workspace",
+            "load_name": "google-workspace",
+            "declared_name": "google-workspace",
+            "status": "unique",
+            "tier": 1,
             "description": "Gmail, Calendar, Drive, Docs, Sheets via gws CLI or Python.",
             "category": "productivity",
             "disabled": false
           },
           {
             "name": "maps",
+            "load_name": "maps",
+            "declared_name": "maps",
+            "status": "unique",
+            "tier": 1,
             "description": "Geocode, POIs, routes, timezones via OpenStreetMap/OSRM.",
             "category": "productivity",
             "disabled": false
           },
           {
             "name": "meeting-action-items",
+            "load_name": "meeting-action-items",
+            "declared_name": "meeting-action-items",
+            "status": "unique",
+            "tier": 1,
             "description": "Turn meeting notes into cited decisions, owners, tickets.",
             "category": "productivity",
             "disabled": false
           },
           {
             "name": "notion",
+            "load_name": "notion",
+            "declared_name": "notion",
+            "status": "unique",
+            "tier": 1,
             "description": "Notion API + ntn CLI: pages, databases, markdown, Workers.",
             "category": "productivity",
             "disabled": false
           },
           {
             "name": "pdf",
+            "load_name": "pdf",
+            "declared_name": "pdf",
+            "status": "unique",
+            "tier": 1,
             "description": "PDF files: create, read, merge, fill, OCR, edit text.",
             "category": "productivity",
             "disabled": false
           },
           {
             "name": "powerpoint",
+            "load_name": "powerpoint",
+            "declared_name": "powerpoint",
+            "status": "unique",
+            "tier": 1,
             "description": "Create, read, edit .pptx decks with python-pptx.",
             "category": "productivity",
             "disabled": false
           },
           {
             "name": "product-price-monitor",
+            "load_name": "product-price-monitor",
+            "declared_name": "product-price-monitor",
+            "status": "unique",
+            "tier": 1,
             "description": "Watch product, flight, or listing prices; alert on target.",
             "category": "productivity",
             "disabled": false
           },
           {
             "name": "teams-meeting-pipeline",
+            "load_name": "teams-meeting-pipeline",
+            "declared_name": "teams-meeting-pipeline",
+            "status": "unique",
+            "tier": 1,
             "description": "Teams meeting summaries, job replay, Graph subscriptions.",
             "category": "productivity",
             "disabled": false
           },
           {
             "name": "weekly-review-planning",
+            "load_name": "weekly-review-planning",
+            "declared_name": "weekly-review-planning",
+            "status": "unique",
+            "tier": 1,
             "description": "Weekly reset: commitments, stalled work, next-week plan.",
             "category": "productivity",
             "disabled": false
           },
           {
             "name": "xlsx",
+            "load_name": "xlsx",
+            "declared_name": "xlsx",
+            "status": "unique",
+            "tier": 1,
             "description": "Create, read, edit Excel .xlsx workbooks and CSVs.",
             "category": "productivity",
             "disabled": false
           },
           {
             "name": "arxiv",
+            "load_name": "arxiv",
+            "declared_name": "arxiv",
+            "status": "unique",
+            "tier": 1,
             "description": "Search arXiv papers by keyword, author, category, or ID.",
             "category": "research",
             "disabled": false
           },
           {
             "name": "competitor-news-monitor",
+            "load_name": "competitor-news-monitor",
+            "declared_name": "competitor-news-monitor",
+            "status": "unique",
+            "tier": 1,
             "description": "Watch named companies for material news; cited digests.",
             "category": "research",
             "disabled": false
           },
           {
             "name": "grounded-citations",
+            "load_name": "grounded-citations",
+            "declared_name": "grounded-citations",
+            "status": "unique",
+            "tier": 1,
             "description": "Ground answers and documents in cited, verifiable sources.",
             "category": "research",
             "disabled": false
           },
           {
             "name": "llm-wiki",
+            "load_name": "llm-wiki",
+            "declared_name": "llm-wiki",
+            "status": "unique",
+            "tier": 1,
             "description": "Karpathy's LLM Wiki: build/query interlinked markdown KB.",
             "category": "research",
             "disabled": false
           },
           {
             "name": "xurl",
+            "load_name": "xurl",
+            "declared_name": "xurl",
+            "status": "unique",
+            "tier": 1,
             "description": "X/Twitter via xurl CLI: raw post search, posting, DM, media.",
             "category": "social-media",
             "disabled": false
           },
           {
             "name": "codebase-inspection",
+            "load_name": "codebase-inspection",
+            "declared_name": "codebase-inspection",
+            "status": "unique",
+            "tier": 1,
             "description": "Inspect codebases w/ pygount: LOC, languages, ratios.",
             "category": "software-development",
             "disabled": false
           },
           {
             "name": "dogfood",
+            "load_name": "dogfood",
+            "declared_name": "dogfood",
+            "status": "unique",
+            "tier": 1,
             "description": "Exploratory QA of web apps: find bugs, evidence, reports.",
             "category": "software-development",
             "disabled": false
           },
           {
             "name": "github",
+            "load_name": "github",
+            "declared_name": "github",
+            "status": "unique",
+            "tier": 1,
             "description": "GitHub via gh CLI: PRs, issues, reviews, repos, auth.",
             "category": "software-development",
             "disabled": false
           },
           {
             "name": "hermes-agent-skill-authoring",
+            "load_name": "hermes-agent-skill-authoring",
+            "declared_name": "hermes-agent-skill-authoring",
+            "status": "unique",
+            "tier": 1,
             "description": "Author in-repo SKILL.md files: frontmatter and structure.",
             "category": "software-development",
             "disabled": false
           },
           {
             "name": "inspecting-hermes-desktop-dom",
+            "load_name": "inspecting-hermes-desktop-dom",
+            "declared_name": "inspecting-hermes-desktop-dom",
+            "status": "unique",
+            "tier": 1,
             "description": "Read the live Hermes desktop DOM/CSS over CDP.",
             "category": "software-development",
             "disabled": false
           },
           {
             "name": "node-inspect-debugger",
+            "load_name": "node-inspect-debugger",
+            "declared_name": "node-inspect-debugger",
+            "status": "unique",
+            "tier": 1,
             "description": "Debug Node.js via --inspect + Chrome DevTools Protocol CLI.",
             "category": "software-development",
             "disabled": false
           },
           {
             "name": "python-debugpy",
+            "load_name": "python-debugpy",
+            "declared_name": "python-debugpy",
+            "status": "unique",
+            "tier": 1,
             "description": "Debug Python: pdb REPL + debugpy remote (DAP).",
             "category": "software-development",
             "disabled": false
           },
           {
             "name": "requesting-code-review",
+            "load_name": "requesting-code-review",
+            "declared_name": "requesting-code-review",
+            "status": "unique",
+            "tier": 1,
             "description": "Pre-commit review: security scan, quality gates, auto-fix.",
             "category": "software-development",
             "disabled": false
           },
           {
             "name": "simplify-code",
+            "load_name": "simplify-code",
+            "declared_name": "simplify-code",
+            "status": "unique",
+            "tier": 1,
             "description": "Parallel 4-agent cleanup of recent code changes.",
             "category": "software-development",
             "disabled": false
           },
           {
             "name": "spike",
+            "load_name": "spike",
+            "declared_name": "spike",
+            "status": "unique",
+            "tier": 1,
             "description": "Throwaway experiments to validate an idea before build.",
             "category": "software-development",
             "disabled": false
           },
           {
             "name": "systematic-debugging",
+            "load_name": "systematic-debugging",
+            "declared_name": "systematic-debugging",
+            "status": "unique",
+            "tier": 1,
             "description": "4-phase root cause debugging: understand bugs before fixing.",
             "category": "software-development",
             "disabled": false
           },
           {
             "name": "test-driven-development",
+            "load_name": "test-driven-development",
+            "declared_name": "test-driven-development",
+            "status": "unique",
+            "tier": 1,
             "description": "TDD: enforce RED-GREEN-REFACTOR, tests before code.",
             "category": "software-development",
             "disabled": false
           },
           {
             "name": "blocked-page-recovery",
+            "load_name": "blocked-page-recovery",
+            "declared_name": "blocked-page-recovery",
+            "status": "unique",
+            "tier": 1,
             "description": "Use when a fetch fails: 403/429, paywall, WAF, bot wall.",
             "category": "web",
             "disabled": false
@@ -360,7 +582,6 @@
           "apple",
           "autonomous-ai-agents",
           "creative",
-          "devops",
           "email",
           "media",
           "note-taking",
@@ -370,7 +591,7 @@
           "software-development",
           "web"
         ],
-        "count": 58
+        "count": 57
       }
     },
     {
@@ -383,24 +604,40 @@
         "skills": [
           {
             "name": "apple-notes",
+            "load_name": "apple-notes",
+            "declared_name": "apple-notes",
+            "status": "unique",
+            "tier": 1,
             "description": "Manage Apple Notes via memo CLI: create, search, edit.",
             "category": "apple",
             "disabled": false
           },
           {
             "name": "apple-reminders",
+            "load_name": "apple-reminders",
+            "declared_name": "apple-reminders",
+            "status": "unique",
+            "tier": 1,
             "description": "Apple Reminders via remindctl: add, list, complete.",
             "category": "apple",
             "disabled": false
           },
           {
             "name": "findmy",
+            "load_name": "findmy",
+            "declared_name": "findmy",
+            "status": "unique",
+            "tier": 1,
             "description": "Track Apple devices/AirTags via FindMy.app on macOS.",
             "category": "apple",
             "disabled": false
           },
           {
             "name": "imessage",
+            "load_name": "imessage",
+            "declared_name": "imessage",
+            "status": "unique",
+            "tier": 1,
             "description": "Send and receive iMessages/SMS via the imsg CLI on macOS.",
             "category": "apple",
             "disabled": false
@@ -410,41 +647,6 @@
           "apple"
         ],
         "count": 4
-      }
-    },
-    {
-      "params": {
-        "profile_home": "<profile>"
-      },
-      "result": {
-        "success": true,
-        "skills": [
-          {
-            "name": "a/one",
-            "load_name": "a/one",
-            "declared_name": "dup-demo",
-            "status": "ambiguous",
-            "tier": 1,
-            "description": "First copy",
-            "category": "a",
-            "disabled": false
-          },
-          {
-            "name": "b/two",
-            "load_name": "b/two",
-            "declared_name": "dup-demo",
-            "status": "ambiguous",
-            "tier": 1,
-            "description": "Second copy",
-            "category": "b",
-            "disabled": false
-          }
-        ],
-        "categories": [
-          "a",
-          "b"
-        ],
-        "count": 2
       }
     }
   ],
@@ -457,23 +659,11 @@
       "result": {
         "found": true,
         "skill_dir": "<profile>/skills/apple/apple-notes",
-        "skill_md": "<profile>/skills/apple/apple-notes/SKILL.md"
-      }
-    },
-    {
-      "params": {
-        "profile_home": "<profile>",
-        "name": "a/one"
-      },
-      "result": {
-        "found": true,
-        "skill_dir": "<profile>/skills/a/one",
-        "skill_md": "<profile>/skills/a/one/SKILL.md",
-        "load_name": "a/one",
-        "declared_name": "dup-demo",
+        "skill_md": "<profile>/skills/apple/apple-notes/SKILL.md",
+        "load_name": "apple-notes",
+        "declared_name": "apple-notes",
         "sibling_load_names": [
-          "a/one",
-          "b/two"
+          "apple-notes"
         ]
       }
     }
@@ -500,7 +690,8 @@
         "content": "---\nname: apple-notes\ndescription: \"Manage Apple Notes via memo CLI: create, search, edit.\"\nversion: 1.0.1\nauthor: Hermes Agent\nlicense: MIT\nplatforms: [macos]\nmetadata:\n  hermes:\n    tags: [Notes, Apple, macOS, note-taking]\n    related_skills: [obsidian]\nprerequisites:\n  commands: [memo]\n---\n\n# Apple Notes\n\nUse `memo` to manage Apple Notes directly from the terminal. Notes sync across all Apple devices via iCloud.\n\n## Prerequisites\n\n- **macOS** with Notes.app\n- Install: `brew tap antoniorodr/memo && brew install antoniorodr/memo/memo`\n- Grant Automation access to Notes.app when prompted (System Settings → Privacy → Automation)\n\n## When to Use\n\n- User asks to create, view, or search Apple Notes\n- Saving information to Notes.app for cross-device access\n- Organizing notes into folders\n- Exporting notes to Markdown/HTML\n\n## When NOT to Use\n\n- Obsidian vault management → use the `obsidian` skill\n- Bear Notes → separate app (not supported here)\n- Quick agent-only notes → use the `memory` tool instead\n\n## Quick Reference\n\n### View Notes\n\n```bash\nmemo notes                        # List all notes\nmemo notes -f \"Folder Name\"       # Filter by folder\nmemo notes -s \"query\"             # Search notes (fuzzy)\n```\n\n### Create Notes\n\n```bash\nmemo notes -a                     # Add a note (opens your $EDITOR)\nmemo notes -a -f \"Folder Name\"    # Add a note into a specific folder\n```\n\n`-a`/`--add` is a bare flag — it opens your `$EDITOR` to compose the note; it does\nnot take a title argument. Use `-f/--folder` to target a folder. Set `$EDITOR`\nfirst (e.g. `export EDITOR=vim`).\n\n### Edit Notes\n\n```bash\nmemo notes -e                     # Interactive selection to edit\n```\n\n### Delete Notes\n\n```bash\nmemo notes -d                     # Interactive selection to delete\n```\n\n### Move Notes\n\n```bash\nmemo notes -m                     # Move note to folder (interactive)\n```\n\n### Export Notes\n\n```bash\nmemo notes -ex                    # Export to HTML/Markdown\n```\n\n## Limitations\n\n- Cannot edit notes containing images or attachments\n- Interactive prompts require terminal access (use pty=true if needed)\n- macOS only — requires Apple Notes.app\n\n## Rules\n\n1. Prefer Apple Notes when user wants cross-device sync (iPhone/iPad/Mac)\n2. Use the `memory` tool for agent-internal notes that don't need to sync\n3. Use the `obsidian` skill for Markdown-native knowledge management\n",
         "path": "apple-notes/SKILL.md",
         "skill_dir": "<profile>/skills/apple/apple-notes",
-        "linked_files": {}
+        "linked_files": {},
+        "editable": true
       }
     },
     {
@@ -531,46 +722,11 @@
           "p5js",
           "popular-web-designs",
           "songwriting-and-ai-music",
-          "sdlc-review"
+          "email-inbox-triage"
         ],
         "available_skills_truncated": true,
-        "total_skills": 58,
-        "hint": "Showing 20 of 58 skills. Use skills_list to see all available skills"
-      }
-    },
-    {
-      "params": {
-        "profile_home": "<profile>",
-        "name": "b/two"
-      },
-      "result": {
-        "success": true,
-        "name": "dup-demo",
-        "description": "Second copy",
-        "tags": [],
-        "related_skills": [],
-        "content": "---\nname: dup-demo\ndescription: Second copy\n---\nSecond copy\n",
-        "path": "two/SKILL.md",
-        "skill_dir": "<profile>/skills/b/two",
-        "linked_files": {}
-      }
-    },
-    {
-      "params": {
-        "profile_home": "<profile>",
-        "name": "shared"
-      },
-      "result": {
-        "success": true,
-        "name": "shared",
-        "description": "Project copy",
-        "tags": [],
-        "related_skills": [],
-        "content": "---\nname: shared\ndescription: Project copy\n---\nProject copy\n",
-        "path": "shared/SKILL.md",
-        "skill_dir": "/private<profile>/project/.agents/skills/shared",
-        "linked_files": {},
-        "editable": false
+        "total_skills": 57,
+        "hint": "Showing 20 of 57 skills. Use skills_list to see all available skills"
       }
     }
   ]

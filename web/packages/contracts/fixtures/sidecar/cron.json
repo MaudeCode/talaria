@@ -21,7 +21,7 @@
       },
       "result": {
         "job": {
-          "id": "5b7d7ff9ceb0",
+          "id": "9dc6d23bb99b",
           "name": "hello",
           "prompt": "say hi",
           "skills": [],
@@ -49,8 +49,8 @@
           "state": "scheduled",
           "paused_at": null,
           "paused_reason": null,
-          "created_at": "2026-10-11T12:29:08.624751-04:00",
-          "next_run_at": "2026-10-11T13:29:08.630084-04:00",
+          "created_at": "2026-10-14T00:43:30.238713-04:00",
+          "next_run_at": "2026-10-14T01:43:30.239935-04:00",
           "last_run_at": null,
           "last_status": null,
           "last_error": null,
@@ -168,10 +168,10 @@
     },
     {
       "params": {
-        "job_id": "5b7d7ff9ceb0"
+        "job_id": "9dc6d23bb99b"
       },
       "result": {
-        "job_id": "5b7d7ff9ceb0",
+        "job_id": "9dc6d23bb99b",
         "running": false,
         "elapsed": 0.0
       }
@@ -181,11 +181,11 @@
     {
       "params": {
         "profile_home": "<home>",
-        "job_id": "5b7d7ff9ceb0"
+        "job_id": "9dc6d23bb99b"
       },
       "result": {
         "job": {
-          "id": "5b7d7ff9ceb0",
+          "id": "9dc6d23bb99b",
           "name": "hello",
           "prompt": "say hi",
           "skills": [],
@@ -213,8 +213,8 @@
           "state": "scheduled",
           "paused_at": null,
           "paused_reason": null,
-          "created_at": "2026-10-11T12:29:08.624751-04:00",
-          "next_run_at": "2026-10-11T13:29:08.630084-04:00",
+          "created_at": "2026-10-14T00:43:30.238713-04:00",
+          "next_run_at": "2026-10-14T01:43:30.239935-04:00",
           "last_run_at": null,
           "last_status": null,
           "last_error": null,
@@ -238,7 +238,7 @@
     {
       "params": {
         "profile_home": "<home>",
-        "job_id": "5b7d7ff9ceb0",
+        "job_id": "9dc6d23bb99b",
         "updates": {
           "name": "hello2",
           "continuity": true
@@ -246,7 +246,7 @@
       },
       "result": {
         "job": {
-          "id": "5b7d7ff9ceb0",
+          "id": "9dc6d23bb99b",
           "name": "hello2",
           "prompt": "say hi",
           "skills": [],
@@ -276,8 +276,8 @@
           "state": "scheduled",
           "paused_at": null,
           "paused_reason": null,
-          "created_at": "2026-10-11T12:29:08.624751-04:00",
-          "next_run_at": "2026-10-11T13:29:08.630084-04:00",
+          "created_at": "2026-10-14T00:43:30.238713-04:00",
+          "next_run_at": "2026-10-14T01:43:30.239935-04:00",
           "last_run_at": null,
           "last_status": null,
           "last_error": null,
@@ -301,11 +301,11 @@
     {
       "params": {
         "profile_home": "<home>",
-        "job_id": "5b7d7ff9ceb0"
+        "job_id": "9dc6d23bb99b"
       },
       "result": {
         "job": {
-          "id": "5b7d7ff9ceb0",
+          "id": "9dc6d23bb99b",
           "name": "hello2",
           "prompt": "say hi",
           "skills": [],
@@ -333,10 +333,10 @@
           },
           "enabled": false,
           "state": "paused",
-          "paused_at": "2026-10-11T12:29:09.314436-04:00",
+          "paused_at": "2026-10-14T00:43:31.104784-04:00",
           "paused_reason": null,
-          "created_at": "2026-10-11T12:29:08.624751-04:00",
-          "next_run_at": "2026-10-11T13:29:08.630084-04:00",
+          "created_at": "2026-10-14T00:43:30.238713-04:00",
+          "next_run_at": "2026-10-14T01:43:30.239935-04:00",
           "last_run_at": null,
           "last_status": null,
           "last_error": null,
@@ -356,11 +356,11 @@
     {
       "params": {
         "profile_home": "<home>",
-        "job_id": "5b7d7ff9ceb0"
+        "job_id": "9dc6d23bb99b"
       },
       "result": {
         "job": {
-          "id": "5b7d7ff9ceb0",
+          "id": "9dc6d23bb99b",
           "name": "hello2",
           "prompt": "say hi",
           "skills": [],
@@ -390,8 +390,8 @@
           "state": "scheduled",
           "paused_at": null,
           "paused_reason": null,
-          "created_at": "2026-10-11T12:29:08.624751-04:00",
-          "next_run_at": "2026-10-11T13:29:09.315555-04:00",
+          "created_at": "2026-10-14T00:43:30.238713-04:00",
+          "next_run_at": "2026-10-14T01:43:31.105935-04:00",
           "last_run_at": null,
           "last_status": null,
           "last_error": null,
@@ -411,15 +411,15 @@
     {
       "params": {
         "profile_home": "<home>",
-        "job_id": "5b7d7ff9ceb0"
+        "job_id": "9dc6d23bb99b"
       },
       "result": {
-        "job_id": "5b7d7ff9ceb0",
+        "job_id": "9dc6d23bb99b",
         "runs": [
           {
             "filename": "2026-09-20T12-00-00.md",
             "size": 83,
-            "modified": 1791736149.1794026,
+            "modified": 1791953010.9781847,
             "usage": {
               "model": "test-model",
               "input_tokens": 12,
@@ -437,10 +437,10 @@
     {
       "params": {
         "profile_home": "<home>",
-        "job_id": "5b7d7ff9ceb0"
+        "job_id": "9dc6d23bb99b"
       },
       "result": {
-        "job_id": "5b7d7ff9ceb0",
+        "job_id": "9dc6d23bb99b",
         "outputs": [
           {
             "filename": "2026-09-20T12-00-00.md",
@@ -454,11 +454,11 @@
     {
       "params": {
         "profile_home": "<home>",
-        "job_id": "5b7d7ff9ceb0",
+        "job_id": "9dc6d23bb99b",
         "filename": "2026-09-20T12-00-00.md"
       },
       "result": {
-        "job_id": "5b7d7ff9ceb0",
+        "job_id": "9dc6d23bb99b",
         "filename": "2026-09-20T12-00-00.md",
         "content": "# Cron run\n**Model:** test-model\n**Tokens:** 12 input, 4 output\n\n## Response\nhello\n",
         "snippet": "hello",
@@ -475,11 +475,11 @@
     {
       "params": {
         "profile_home": "<home>",
-        "job_id": "5b7d7ff9ceb0"
+        "job_id": "9dc6d23bb99b"
       },
       "result": {
         "ok": true,
-        "job_id": "5b7d7ff9ceb0"
+        "job_id": "9dc6d23bb99b"
       }
     }
   ]

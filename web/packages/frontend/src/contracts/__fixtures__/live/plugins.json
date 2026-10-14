@@ -344,17 +344,6 @@
         "version": "1.0.0"
       },
       {
-        "activation": "disabled",
-        "description": "Optional Langfuse observability for Hermes — traces conversations, LLM calls, and tool usage. Opt-in via `hermes plugins enable observability/langfuse` or `hermes tools → Langfuse Observability`.",
-        "enabled": false,
-        "hooks": [],
-        "is_active_provider": false,
-        "key": "observability/langfuse",
-        "kind": "standalone",
-        "name": "langfuse",
-        "version": "1.0.0"
-      },
-      {
         "activation": "enabled",
         "description": "Photon Spectrum gateway adapter for Hermes Agent. Connects to iMessage (and other Spectrum interfaces) through Photon's managed Spectrum platform. Both directions run over the `spectrum-ts` SDK's long-lived gRPC stream via a small supervised Node sidecar — inbound messages arriv…",
         "enabled": true,
@@ -418,17 +407,6 @@
         "key": "sms-platform",
         "kind": "platform",
         "name": "sms-platform",
-        "version": "1.0.0"
-      },
-      {
-        "activation": "enabled",
-        "description": "Native Spotify integration — 7 tools (playback, devices, queue, search, playlists, albums, library) using Spotify Web API + PKCE OAuth. Auth via `hermes auth spotify`. Tools gate on `providers.spotify` in ~/.hermes/auth.json.",
-        "enabled": true,
-        "hooks": [],
-        "is_active_provider": false,
-        "key": "spotify",
-        "kind": "backend",
-        "name": "spotify",
         "version": "1.0.0"
       },
       {

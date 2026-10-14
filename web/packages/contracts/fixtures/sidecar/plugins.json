@@ -197,22 +197,6 @@
             "is_active_provider": false
           },
           {
-            "name": "langfuse",
-            "key": "observability/langfuse",
-            "version": "1.0.0",
-            "description": "Optional Langfuse observability for Hermes — traces conversations, LLM calls, and tool usage. Opt-in via `hermes plugins enable observability/langfuse` or `hermes tools → Langfuse Observability`.",
-            "enabled": false,
-            "kind": "standalone",
-            "activation": "disabled",
-            "hooks": [
-              "pre_tool_call",
-              "post_tool_call",
-              "pre_llm_call",
-              "post_llm_call"
-            ],
-            "is_active_provider": false
-          },
-          {
             "name": "a2a-platform",
             "key": "platforms/a2a",
             "version": "1.0.0",
@@ -454,17 +438,6 @@
             "hooks": [
               "pre_tool_call"
             ],
-            "is_active_provider": false
-          },
-          {
-            "name": "spotify",
-            "key": "spotify",
-            "version": "1.0.0",
-            "description": "Native Spotify integration — 7 tools (playback, devices, queue, search, playlists, albums, library) using Spotify Web API + PKCE OAuth. Auth via `hermes auth spotify`. Tools gate on `providers.spotify` in ~/.hermes/auth.json.",
-            "enabled": true,
-            "kind": "backend",
-            "activation": "enabled",
-            "hooks": [],
             "is_active_provider": false
           },
           {
