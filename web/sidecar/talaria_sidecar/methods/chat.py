@@ -693,6 +693,17 @@ def _profile_fallback_chain() -> list[dict] | None:
     return get_fallback_chain(load_config() or {}) or None
 
 
+def _profile_prefill_messages() -> list[dict] | None:
+    """The profile's few-shot prefill (``HERMES_PREFILL_MESSAGES_FILE``, then ``prefill_messages_file``, then legacy
+    ``agent.prefill_messages_file``; relative to the profile) through the Agent's own loader, like the CLI, gateway and
+    Desktop. A missing or empty file is None. Runs under the call's ``scoped_home``."""
+    from hermes_cli.cli_config_load import _load_prefill_messages, _resolve_prefill_messages_file
+    from hermes_cli.config import load_config
+    from hermes_constants import get_hermes_home
+
+    return _load_prefill_messages(_resolve_prefill_messages_file(load_config() or {}), get_hermes_home()) or None
+
+
 def _main_model_request_overrides(model: str, provider, base_url: str = "") -> dict | None:
     """Predecessor ``_main_model_request_overrides``: the profile's ``model.service_tier`` and ``model.extra_body``
     (written by ``/api/model/set``) apply only to turns on that configured main model. Runs under ``scoped_home``."""
@@ -751,13 +762,15 @@ def _agent_signature(model: str, provider, runtime: dict, toolsets, home: str, k
         "checkpoints": [kwargs.get(name) for name in ("checkpoints_enabled", "checkpoint_max_snapshots", "checkpoint_max_total_size_mb", "checkpoint_max_file_size_mb")],
         # Entries may carry their own ``api_key``.
         "fallback_model": hashlib.sha256(json.dumps(kwargs.get("fallback_model"), sort_keys=True, default=str).encode("utf-8")).hexdigest()[:16],
+        # Read each turn, so an edited prefill file builds a fresh agent.
+        "prefill_messages": hashlib.sha256(json.dumps(kwargs.get("prefill_messages"), sort_keys=True, default=str).encode("utf-8")).hexdigest()[:16],
     }
     return json.dumps(bundle, sort_keys=True, default=str)
 
 
 def _agent_kwargs(AIAgent, params: dict, session_id: str, model: str, provider, runtime: dict, toolsets) -> dict:
     """The ``AIAgent`` arguments of a session's agent apart from a turn's callbacks: the resolved runtime, the session's
-    toolsets and budgets, and the profile's fallback chain, request overrides and checkpoints. Everything
+    toolsets and budgets, and the profile's fallback chain, request overrides, prefill and checkpoints. Everything
     ``_agent_signature`` reads is here, so an agent ``/refine`` builds (TAL-902) is the one the next turn reuses. Runs under
     the call's ``scoped_home``."""
     kwargs: dict = dict(
@@ -797,6 +810,9 @@ def _agent_kwargs(AIAgent, params: dict, session_id: str, model: str, provider, 
     request_overrides = _request_overrides(model, provider, runtime)
     if request_overrides and _supported(AIAgent, "request_overrides"):
         kwargs["request_overrides"] = request_overrides
+    prefill_messages = _profile_prefill_messages()
+    if prefill_messages and _supported(AIAgent, "prefill_messages"):
+        kwargs["prefill_messages"] = prefill_messages
     # TAL-913: the profile's ``checkpoints`` section, as the Agent's own CLI and gateway turns read it.
     for name, value in checkpoint_kwargs().items():
         if _supported(AIAgent, name):
@@ -1761,6 +1777,7 @@ def compress(ctx: CallContext, params: dict) -> dict:
         ("gateway_session_key", session_id),
         ("skip_memory", not _checkpoint_required()),
         ("request_overrides", _request_overrides(kwargs["model"], kwargs["provider"], runtime)),
+        ("prefill_messages", _profile_prefill_messages()),
     ):
         if _supported(AIAgent, name) and value is not None:
             kwargs[name] = value

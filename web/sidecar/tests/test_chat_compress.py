@@ -24,6 +24,7 @@ HISTORY = [
     {"role": "user", "content": "three"},
     {"role": "assistant", "content": "four"},
 ]
+PREFILL = [{"role": "user", "content": "always answer in French"}, {"role": "assistant", "content": "compris"}]
 
 
 class Ctx:
@@ -100,6 +101,7 @@ def agent_env(monkeypatch):
     monkeypatch.setattr(chat, "_profile_toolsets", lambda: ["file", "web"])
     monkeypatch.setattr(chat, "_checkpoint_required", lambda: False)
     monkeypatch.setattr(chat, "_main_model_request_overrides", lambda model, provider, base_url="": None)
+    monkeypatch.setattr(chat, "_profile_prefill_messages", lambda: PREFILL)
     monkeypatch.setattr(chat, "scoped_home", lambda home: contextlib.nullcontext(home))
     return calls, outcome
 
@@ -122,6 +124,7 @@ def test_compress_runs_the_shared_core_on_a_throwaway_agent_and_commits(agent_en
     assert call["history"] == HISTORY and call["request"].focus_topic == "schema" and call["task_id"] == "s1"
     agent = ThrowawayAgent.instances[0]
     assert agent.kwargs["session_id"] == "s1" and agent.kwargs["platform"] == "webui" and agent.kwargs["enabled_toolsets"] == ["memory"]
+    assert agent.kwargs["prefill_messages"] == PREFILL  # TAL-905: the profile's prefill, like a turn agent
     # The cached turn agent is never used for a manual compression.
     assert "s1" not in chat._AGENT_CACHE
     # The context-engine notification waits for the server's write (second phase).
