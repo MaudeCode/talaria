@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "With Hermes Agent v0.21.6 or later, showing a credential pool account's usage in Talaria Web no longer refreshes or rotates that account's credential when the provider rejects it; the account's limits show as unavailable instead.",
+      "highlight": false,
+      "components": ["web"]
+    }
+  ]
+}

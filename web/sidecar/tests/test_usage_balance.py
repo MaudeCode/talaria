@@ -7,12 +7,14 @@ import dataclasses
 import io
 import json
 import pathlib
+import subprocess
 import sys
 import time
 import types
 import urllib.error
 
-from conftest import SidecarProcess, requires_agent
+import pytest
+from conftest import AGENT_DIR, AGENT_PYTHON, SidecarProcess, isolated_env, requires_agent
 from talaria_sidecar import SIDECAR_RPC_VERSION
 from talaria_sidecar.methods import usage
 
@@ -119,7 +121,8 @@ def test_pool_rows_say_which_account_holds_the_configured_key(monkeypatch):
 
 
 def test_each_anthropic_pool_account_reads_its_own_limits(monkeypatch):
-    """The Agent's Anthropic fetcher reads only the ambient token; a pool account's usage is read with its own."""
+    """An Agent whose fetcher has no ``read_only`` reads only the ambient Anthropic token; a pool account's usage is read
+    with its own."""
     entries = [types.SimpleNamespace(id="work", label="work@example.test", runtime_api_key="sk-ant-oat-work"),
                types.SimpleNamespace(id="home", label="home@example.test", runtime_api_key="sk-ant-oat-home")]
     monkeypatch.setattr(usage, "_pool", lambda provider: (None, entries))
@@ -155,6 +158,65 @@ def test_each_anthropic_pool_account_reads_its_own_limits(monkeypatch):
     assert work["available"] is True and work["source"] == "oauth_usage_api"
     # Without a pool account the Agent's own fetcher still answers.
     assert usage.account("anthropic", base_url=None, api_key=None)["source"] == "ambient"
+
+
+# Runs on the Agent interpreter: the pinned Agent's real fetchers over a stubbed HTTP transport, a pool whose refresh
+# path records instead of rotating, and stand-in pool entries.
+READ_ONLY_PROBE = """
+import json, sys, types
+sys.path.append(sys.argv[1])
+import httpx
+from agent import account_usage_cache, credential_pool
+from talaria_sidecar.methods import usage
+
+requests, refreshes, mirrored = [], [], []
+
+def answer(request):
+    requests.append((request.url.host, request.headers["Authorization"]))
+    if request.url.host == "chatgpt.com":
+        return httpx.Response(401, json={"detail": "unauthorized"})
+    return httpx.Response(200, json={"five_hour": {"utilization": 0.25}})
+
+real_client = httpx.Client.__init__
+httpx.Client.__init__ = lambda self, *args, **kwargs: real_client(self, *args, **{**kwargs, "transport": httpx.MockTransport(answer)})
+
+class Pool:
+    def try_refresh_matching(self, api_key_hint=None):
+        refreshes.append(api_key_hint)
+        return None
+
+credential_pool.load_pool = lambda provider: Pool()
+entries = {"openai-codex": types.SimpleNamespace(id="benched", label="Benched", runtime_api_key="codex-benched", base_url="https://chatgpt.com/backend-api/codex"),
+           "anthropic": types.SimpleNamespace(id="work", label="Work", runtime_api_key="sk-ant-oat01-work")}
+usage._pool = lambda provider: (None, [entries[provider]])
+mirror = usage._anthropic_usage
+usage._anthropic_usage = lambda token: mirrored.append(token) or mirror(token)
+
+codex = usage.account("openai-codex", base_url=None, api_key=None, credential_id="benched")
+anthropic = usage.account("anthropic", base_url=None, api_key=None, credential_id="work")
+slot = account_usage_cache.cached_account_usage("anthropic", identity_id=account_usage_cache._identity_id_for("anthropic", entries["anthropic"]))
+print(json.dumps({"codex": codex, "anthropic": anthropic, "requests": requests, "refreshes": refreshes, "mirrored": mirrored,
+                  "account_slot": slot is not None, "provider_slot": account_usage_cache.cached_account_usage("anthropic") is not None}))
+"""
+
+
+@pytest.mark.skipif(AGENT_DIR is None or "read_only: bool = False" not in (AGENT_DIR / "agent/account_usage.py").read_text(), reason="read-only usage reads require Agent v0.21.6")
+@requires_agent
+def test_a_pool_account_usage_read_never_refreshes_its_credential(tmp_path):
+    """TAL-824: a pool account's usage read is read-only. A Codex 401 is reported, never repaired by refreshing or rotating
+    the credential, and the Anthropic read goes through the Agent's fetcher with the account's own key."""
+    root = tmp_path / ".hermes"
+    root.mkdir()
+    run = subprocess.run([AGENT_PYTHON, "-c", READ_ONLY_PROBE, str(AGENT_DIR)], env=isolated_env(root), capture_output=True, text=True, timeout=120)
+    assert run.returncode == 0, run.stderr[-4000:]
+    seen = json.loads(run.stdout.strip().splitlines()[-1])
+    assert seen["refreshes"] == [], seen
+    assert seen["codex"] is None, seen
+    assert seen["requests"] == [["chatgpt.com", "Bearer codex-benched"], ["api.anthropic.com", "Bearer sk-ant-oat01-work"]], seen
+    assert seen["mirrored"] == [], seen
+    assert seen["anthropic"]["available"] is True and [w["used_percent"] for w in seen["anthropic"]["windows"]] == [25.0], seen
+    # The read lands in that account's usage slot, never the provider-wide gauge.
+    assert (seen["account_slot"], seen["provider_slot"]) == (True, False), seen
 
 
 @requires_agent
