@@ -9,6 +9,7 @@ the diff an approval would apply, and approve or reject them through the Agent's
 from __future__ import annotations
 
 import difflib
+import hashlib
 import re
 import tempfile
 import threading
@@ -71,15 +72,25 @@ def _item(wa, kind: str, record: dict) -> dict:
     else:
         names = [payload.get("name")] if payload.get("action") != "batch" else [op.get("name") for op in payload.get("operations") or [] if isinstance(op, dict)]
         target = ", ".join(dict.fromkeys(str(n) for n in names if n))
-    try:
-        diff = _memory_diff(payload) if kind == "memory" else wa.skill_pending_diff(record)
-    except Exception as exc:  # noqa: BLE001 - one unreadable record must not hide the rest
-        diff = f"(diff unavailable: {exc})"
+    diff = _diff(wa, kind, record)
     return {
         "id": str(record.get("id") or ""), "kind": kind, "target": target, "op": str(payload.get("action") or record.get("action") or ""),
         "summary": str(record.get("summary") or ""), "origin": str(record.get("origin") or "foreground"),
-        "created_at": float(record.get("created_at") or 0), "diff": diff,
+        "created_at": float(record.get("created_at") or 0), "diff": diff, "revision": _revision(diff),
     }
+
+
+def _diff(wa, kind: str, record: dict) -> str:
+    payload = record.get("payload") if isinstance(record.get("payload"), dict) else {}
+    try:
+        return _memory_diff(payload) if kind == "memory" else wa.skill_pending_diff(record)
+    except Exception as exc:  # noqa: BLE001 - one unreadable record must not hide the rest
+        return f"(diff unavailable: {exc})"
+
+
+def _revision(diff: str) -> str:
+    """What the reviewer saw: the diff changes whenever the record or the file it applies to does."""
+    return hashlib.sha256(diff.encode("utf-8")).hexdigest()
 
 
 def pending(kind: str) -> dict:
@@ -91,16 +102,25 @@ def pending(kind: str) -> dict:
     return {"supported": True, "enabled": wa.write_approval_enabled(kind), "items": items}
 
 
-def review(kind: str, verb: str, ids: list[str]) -> dict:
-    """``approve`` or ``reject`` each id through the Agent's handler; a record that is gone afterwards was applied or dropped."""
+def review(kind: str, verb: str, writes: list[dict]) -> dict:
+    """``approve`` or ``reject`` each write through the Agent's handler; a record that is gone afterwards was applied or dropped.
+
+    An approval applies only while the write's diff still has the ``revision`` the reviewer saw; a changed file or record
+    is refused, so nothing lands that the user did not review.
+    """
     wa, commands = _agent()
-    if not ids or any(not _ID.fullmatch(i) for i in ids):
-        raise InvalidParams("ids must be pending write ids")
+    if not writes or any(not (isinstance(w, dict) and _ID.fullmatch(str(w.get("id") or "")) and isinstance(w.get("revision"), str)) for w in writes):
+        raise InvalidParams("writes must be pending write ids with the revision reviewed")
     results = []
     with _LOCK:
-        for pending_id in ids:
-            if wa.get_pending(kind, pending_id) is None:
+        for write in writes:
+            pending_id = write["id"]
+            record = wa.get_pending(kind, pending_id)
+            if record is None:
                 results.append({"id": pending_id, "done": False, "message": f"No pending {kind} write with id '{pending_id}'."})
+                continue
+            if verb == "approve" and _revision(_diff(wa, kind, record)) != write["revision"]:
+                results.append({"id": pending_id, "done": False, "message": "This write's diff changed after you reviewed it. Review the new diff, then approve again."})
                 continue
             store = None
             if kind == "memory" and verb == "approve":
@@ -122,8 +142,8 @@ def register(registry) -> None:
     for verb in ("approve", "reject"):
         def handler(ctx: CallContext, params: dict, verb: str = verb) -> dict:
             kind = _kind(params)
-            ids = [str(i) for i in params.get("ids") or []]
+            writes = list(params.get("writes") or [])
             with scoped_home(profile_home_param(params)):
-                return review(kind, verb, ids)
+                return review(kind, verb, writes)
 
         registry.method(f"write_approval.{verb}")(handler)

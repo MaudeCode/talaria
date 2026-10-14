@@ -331,19 +331,22 @@ export const MEMORY_METHODS = {
 /**
  * TAL-819: one write the Agent staged for approval (`skills.write_approval` / `memory.write_approval`). `target` is the skill
  * name(s), or `memory` / `user` for the memory store; `op` the staged action; `diff` the unified diff an approval would apply
- * (a skill create shows the new file, a write that would fail says why).
+ * (a skill create shows the new file, a write that would fail says why); `revision` is the SHA-256 of that diff, which an approval
+ * must send back.
  */
 export const PendingWriteSchema = z.object({
   id: z.string().regex(/^[A-Za-z0-9_-]{1,64}$/), kind: z.enum(['skills', 'memory']), target: z.string(), op: z.string(), summary: z.string(),
-  origin: z.string(), created_at: z.number(), diff: z.string(),
+  origin: z.string(), created_at: z.number(), diff: z.string(), revision: z.string(),
 })
 export type PendingWrite = z.infer<typeof PendingWriteSchema>
-const WriteApprovalParams = ProfileHomeParams.extend({ kind: z.enum(['skills', 'memory']), ids: z.array(z.string().regex(/^[A-Za-z0-9_-]{1,64}$/)).min(1) })
+export const PendingWriteRefSchema = z.object({ id: PendingWriteSchema.shape.id, revision: z.string() })
+const WriteApprovalParams = ProfileHomeParams.extend({ kind: z.enum(['skills', 'memory']), writes: z.array(PendingWriteRefSchema).min(1) })
 const WriteApprovalResult = z.object({ results: z.array(z.object({ id: z.string(), done: z.boolean(), message: z.string() })) })
 /**
  * TAL-819: the profile's staged writes of `kind`, oldest first, and whether its gate is on; `supported` is false on an Agent
- * without the review handlers. `approve` / `reject` run the Agent's `/skills` or `/memory` handler per id; `done` is true
- * once the record is gone (applied or dropped) and `message` is the handler's text.
+ * without the review handlers. `approve` / `reject` run the Agent's `/skills` or `/memory` handler per write; `done` is true
+ * once the record is gone (applied or dropped) and `message` is the handler's text. An approval whose diff no longer has the
+ * reviewed `revision` is refused (`done: false`) without applying.
  */
 export const WRITE_APPROVAL_METHODS = {
   'write_approval.pending': { params: ProfileHomeParams.extend({ kind: z.enum(['skills', 'memory']) }), result: z.object({ supported: z.boolean(), enabled: z.boolean(), items: z.array(PendingWriteSchema) }) },

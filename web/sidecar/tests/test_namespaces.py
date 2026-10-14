@@ -124,7 +124,7 @@ def run_scenarios(proc: SidecarProcess, home: pathlib.Path):
         pending = {"profile_home": str(review), "kind": "skills"}
         message, frames = proc.call("write_approval.pending", pending, timeout=60)
         yield "write_approval.pending", pending, message, frames
-        params = {**pending, "ids": [item["id"] for item in message["result"]["items"]]}
+        params = {**pending, "writes": [{"id": item["id"], "revision": item["revision"]} for item in message["result"]["items"]]}
         message, frames = proc.call(f"write_approval.{verb}", params, timeout=60)
         yield f"write_approval.{verb}", params, message, frames
 

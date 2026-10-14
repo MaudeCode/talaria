@@ -1,7 +1,7 @@
 import { oc } from '@orpc/contract'
 import { z } from 'zod'
 import { SkillsSchema, SkillContentSchema, SkillsUsageSchema, MemorySchema, PromptSchema, PromptsSchema, CommandsSchema, LogsSchema, InsightsSchema, AgentHealthSchema, SystemHealthSchema, McpServerSchema, McpServersSchema, McpToolsSchema, PluginsSchema, UpdatesCheckSchema, UpdatesSummarySchema, UpdateApplySchema, UpdateNotificationsSchema, UpdateNotificationSchema, TabIdSchema, FrontendBuildIdSchema, NotesSourcesSchema, NotesSearchSchema, NoteItemSchema, WikiStatusSchema, WikiBrowseSchema, WikiPageSchema, DashboardStatusSchema, DashboardConfigSchema, GatewayStatusSchema, GatewayActionSchema, ProjectOsDashboardSchema, TranscribeCapabilitySchema, PluginSettingViewSchema } from '../views.js'
-import { ToolsetsCatalogSchema, CommandBundleInvocationSchema, CommandBundleSchema, PendingWriteSchema } from '../sidecar/namespaces.js'
+import { ToolsetsCatalogSchema, CommandBundleInvocationSchema, CommandBundleSchema, PendingWriteSchema, PendingWriteRefSchema } from '../sidecar/namespaces.js'
 
 /** Skills, memory, prompts, commands, notes, insights, logs, health, MCP, plugins, updates, and diagnostics. */
 
@@ -39,7 +39,7 @@ const openApiSchema = (schema: z.ZodType): Record<string, unknown> => {
 /** TAL-819: a kind's staged writes and whether the page shows its review panel. */
 export const PendingWritesSchema = z.object({ kind: z.enum(['skills', 'memory']), visible: z.boolean(), enabled: z.boolean(), items: z.array(PendingWriteSchema) })
 export type PendingWrites = z.infer<typeof PendingWritesSchema>
-const PendingWritesReviewInput = z.object({ kind: z.enum(['skills', 'memory']), ids: z.array(PendingWriteSchema.shape.id).min(1) })
+const PendingWritesReviewInput = z.object({ kind: z.enum(['skills', 'memory']), writes: z.array(PendingWriteRefSchema).min(1) })
 const PendingWritesReviewSchema = z.object({ results: z.array(z.object({ id: z.string(), done: z.boolean(), message: z.string() })) })
 
 export const toolsContract = {
@@ -59,7 +59,7 @@ export const toolsContract = {
   pendingWrites: {
     list: oc.route({ method: 'GET', path: '/api/pending-writes', tags, summary: 'TAL-819: the active profile\'s skill or memory writes the Agent staged for approval, oldest first, each with the diff approving it applies. `visible` is whether the page shows its review panel (any write pending); `enabled` is the profile\'s `<kind>.write_approval` gate. An Agent without the review handlers, or no running Agent, lists none.' })
       .input(z.object({ kind: z.enum(['skills', 'memory']) })).output(PendingWritesSchema),
-    approve: oc.route({ method: 'POST', path: '/api/pending-writes/approve', tags, summary: 'TAL-819: apply each staged write through the Agent\'s `/skills` or `/memory approve`. `done` is false when the write was not applied (its record stays pending); `message` is the Agent\'s text either way.' })
+    approve: oc.route({ method: 'POST', path: '/api/pending-writes/approve', tags, summary: 'TAL-819: apply each staged write through the Agent\'s `/skills` or `/memory approve`. Each write carries the `revision` the user reviewed; a write whose diff changed since is refused unapplied. `done` is false when the write was not applied (its record stays pending); `message` is the Agent\'s text either way.' })
       .input(PendingWritesReviewInput).output(PendingWritesReviewSchema),
     reject: oc.route({ method: 'POST', path: '/api/pending-writes/reject', tags, summary: 'TAL-819: discard each staged write through the Agent\'s `/skills` or `/memory reject`.' })
       .input(PendingWritesReviewInput).output(PendingWritesReviewSchema),

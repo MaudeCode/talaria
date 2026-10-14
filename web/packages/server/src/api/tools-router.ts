@@ -351,10 +351,10 @@ export const toolsRouter = os.router({
       return { kind: input.kind, visible: items.length > 0, enabled, items }
     })),
     approve: os.pendingWrites.approve.handler(({ input, context: { ctx } }) => run(() =>
-      runningSidecar(ctx).call('write_approval.approve', { profile_home: home(ctx), kind: input.kind, ids: input.ids }),
+      runningSidecar(ctx).call('write_approval.approve', { profile_home: home(ctx), kind: input.kind, writes: input.writes }),
     )),
     reject: os.pendingWrites.reject.handler(({ input, context: { ctx } }) => run(() =>
-      runningSidecar(ctx).call('write_approval.reject', { profile_home: home(ctx), kind: input.kind, ids: input.ids }),
+      runningSidecar(ctx).call('write_approval.reject', { profile_home: home(ctx), kind: input.kind, writes: input.writes }),
     )),
   },
   prompts: {

@@ -7,7 +7,7 @@ vi.mock('../../api/endpoints', () => ({ fetchPendingWrites: vi.fn(), reviewPendi
 import * as api from '../../api/endpoints'
 import { PendingWritesPanel } from './PendingWritesPanel'
 
-const item = { id: 'abcd1234', kind: 'skills' as const, target: 'demo-skill', op: 'create', summary: "create 'demo-skill'", origin: 'foreground', created_at: 1, diff: '---\nname: demo-skill\n---\n' }
+const item = { id: 'abcd1234', kind: 'skills' as const, target: 'demo-skill', op: 'create', summary: "create 'demo-skill'", origin: 'foreground', created_at: 1, diff: '---\nname: demo-skill\n---\n', revision: 'rev1' }
 const view = () => render(<QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}><PendingWritesPanel kind="skills" /></QueryClientProvider>)
 
 beforeEach(() => {
@@ -22,10 +22,10 @@ describe('PendingWritesPanel (TAL-819)', () => {
     expect(await screen.findByText("create 'demo-skill'")).toBeInTheDocument()
     expect(screen.getByText(/name: demo-skill/)).toBeInTheDocument()
     await userEvent.click(screen.getByRole('button', { name: 'Approve' }))
-    expect(api.reviewPendingWrites).toHaveBeenCalledWith('approve', 'skills', [item.id])
+    expect(api.reviewPendingWrites).toHaveBeenCalledWith('approve', 'skills', [{ id: item.id, revision: 'rev1' }])
     await waitFor(() => expect(screen.getByRole('button', { name: 'Reject' })).toBeEnabled())
     await userEvent.click(screen.getByRole('button', { name: 'Reject' }))
-    expect(api.reviewPendingWrites).toHaveBeenLastCalledWith('reject', 'skills', [item.id])
+    expect(api.reviewPendingWrites).toHaveBeenLastCalledWith('reject', 'skills', [{ id: item.id, revision: 'rev1' }])
   })
 
   it('renders nothing when the server hides the panel', async () => {

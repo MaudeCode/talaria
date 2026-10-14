@@ -9,6 +9,7 @@ const recorded = JSON.parse(readFileSync(resolve(import.meta.dirname, '../../con
 const skill = recorded['write_approval.pending'][0]!.result.items[0]
 const memory = {
   id: 'f00dcafe', kind: 'memory', target: 'memory', op: 'patch', summary: "patch in memory: entry matching: tabs\nspan 'tabs' becomes: spaces", origin: 'background_review', created_at: 1,
+  revision: 'b'.repeat(64),
   diff: '--- a/MEMORY.md\n+++ b/MEMORY.md\n@@ -1,3 +1,3 @@\n-User prefers tabs over spaces\n+User prefers spaces over spaces\n §\n Deploys go through the staging host first\n',
 }
 
@@ -20,11 +21,11 @@ test('staged writes show on the Skills and Memory pages and leave once approved 
     return route.fulfill({ json: { kind, visible: pending[kind]!.length > 0, enabled: true, items: pending[kind] } })
   })
   await page.route(/\/api\/pending-writes\/(approve|reject)$/, (route) => {
-    const body = route.request().postDataJSON() as { kind: string; ids: string[] }
+    const body = route.request().postDataJSON() as { kind: string; writes: { id: string; revision: string }[] }
     const verb = route.request().url().split('/').pop()
     reviews.push({ verb, ...body })
     pending[body.kind] = []
-    return route.fulfill({ json: { results: body.ids.map((id) => ({ id, done: true, message: `${verb === 'approve' ? 'Approved' : 'Rejected'} 1 ${body.kind} write(s).` })) } })
+    return route.fulfill({ json: { results: body.writes.map(({ id }) => ({ id, done: true, message: `${verb === 'approve' ? 'Approved' : 'Rejected'} 1 ${body.kind} write(s).` })) } })
   })
 
   await page.goto('/skills')
@@ -46,5 +47,5 @@ test('staged writes show on the Skills and Memory pages and leave once approved 
   await memories.getByRole('button', { name: 'Reject' }).click()
   await expect(memories).toHaveCount(0)
   await page.screenshot({ path: testInfo.outputPath('memory-after.png') })
-  expect(reviews).toEqual([{ verb: 'approve', kind: 'skills', ids: [(skill as { id: string }).id] }, { verb: 'reject', kind: 'memory', ids: ['f00dcafe'] }])
+  expect(reviews).toEqual([{ verb: 'approve', kind: 'skills', writes: [{ id: (skill as { id: string }).id, revision: (skill as { revision: string }).revision }] }, { verb: 'reject', kind: 'memory', writes: [{ id: 'f00dcafe', revision: 'b'.repeat(64) }] }])
 })

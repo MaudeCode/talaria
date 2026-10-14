@@ -43,8 +43,9 @@ def _pending(proc: SidecarProcess, home: pathlib.Path, kind: str) -> dict:
     return result
 
 
-def _review(proc: SidecarProcess, home: pathlib.Path, verb: str, kind: str, ids: list[str]) -> list[dict]:
-    result = proc.result(f"write_approval.{verb}", {"profile_home": str(home), "kind": kind, "ids": ids})
+def _review(proc: SidecarProcess, home: pathlib.Path, verb: str, kind: str, items: list[dict]) -> list[dict]:
+    writes = [{"id": item["id"], "revision": item["revision"]} for item in items]
+    result = proc.result(f"write_approval.{verb}", {"profile_home": str(home), "kind": kind, "writes": writes})
     assert_matches(f"write_approval.{verb}", result)
     return result["results"]
 
@@ -68,10 +69,10 @@ def test_staged_writes_list_with_diffs_and_approve_applies_them(handshaken: Side
     assert (staged_skill["kind"], staged_skill["target"], staged_skill["op"]) == ("skills", "demo-skill", "create")
     assert staged_skill["diff"] == SKILL
 
-    (applied,) = _review(handshaken, hermes_home, "approve", "memory", [staged_memory["id"]])
+    (applied,) = _review(handshaken, hermes_home, "approve", "memory", [staged_memory])
     assert applied["done"] is True, applied
     assert "User prefers tabs" in memory_file.read_text()
-    (applied,) = _review(handshaken, hermes_home, "approve", "skills", [staged_skill["id"]])
+    (applied,) = _review(handshaken, hermes_home, "approve", "skills", [staged_skill])
     assert applied["done"] is True, applied
     assert skill_file.read_text() == SKILL
     assert _pending(handshaken, hermes_home, "memory")["items"] == [] and _pending(handshaken, hermes_home, "skills")["items"] == []
@@ -82,12 +83,12 @@ def test_reject_discards_a_staged_write(handshaken: SidecarProcess, hermes_home:
     set_gates(hermes_home, True)
     create_skill(hermes_home)
     (staged,) = _pending(handshaken, hermes_home, "skills")["items"]
-    (rejected,) = _review(handshaken, hermes_home, "reject", "skills", [staged["id"]])
+    (rejected,) = _review(handshaken, hermes_home, "reject", "skills", [staged])
     assert rejected["done"] is True, rejected
     assert _pending(handshaken, hermes_home, "skills")["items"] == []
     assert not (hermes_home / "skills" / "demo-skill").exists()
     # A record that is already gone reports not done instead of claiming the reject.
-    (again,) = _review(handshaken, hermes_home, "reject", "skills", [staged["id"]])
+    (again,) = _review(handshaken, hermes_home, "reject", "skills", [staged])
     assert again["done"] is False
 
 
@@ -105,7 +106,7 @@ def test_gates_off_stage_nothing(handshaken: SidecarProcess, hermes_home: pathli
 def test_ids_outside_the_pending_store_are_refused(handshaken: SidecarProcess, hermes_home: pathlib.Path, bad: str) -> None:
     (hermes_home / "pending" / "skills").mkdir(parents=True)  # as after any staged skill write
     (hermes_home / "config.json").write_text("{}", encoding="utf-8")
-    message = handshaken.call("write_approval.reject", {"profile_home": str(hermes_home), "kind": "skills", "ids": [bad]})[0]
+    message = handshaken.call("write_approval.reject", {"profile_home": str(hermes_home), "kind": "skills", "writes": [{"id": bad, "revision": ""}]})[0]
     assert (hermes_home / "config.json").exists()
     assert message.get("error", {}).get("code") == -32602, message
 
@@ -125,6 +126,27 @@ def test_a_staged_memory_remove_diffs_against_the_file_and_leaves_it_until_appro
     assert item["op"] == "remove"
     assert "-User prefers tabs" in item["diff"] and "+" not in item["diff"].split("@@")[-1]
     assert memory_file.read_bytes() == before
-    (applied,) = _review(handshaken, hermes_home, "approve", "memory", [item["id"]])
+    (applied,) = _review(handshaken, hermes_home, "approve", "memory", [item])
     assert applied["done"] is True, applied
     assert memory_file.read_text() == "Deploys go through staging"
+
+
+@requires_agent
+def test_an_approval_is_refused_once_the_file_changed_after_the_review(handshaken: SidecarProcess, hermes_home: pathlib.Path) -> None:
+    set_gates(hermes_home, False)
+    _remember(hermes_home, "User prefers tabs")
+    set_gates(hermes_home, True)
+    _remember(hermes_home, "Deploys go through staging")
+    (reviewed,) = _pending(handshaken, hermes_home, "memory")["items"]
+    memory_file = hermes_home / "memories" / "MEMORY.md"
+    # Another Agent run writes the file after the user read the diff.
+    memory_file.write_text("User prefers spaces", encoding="utf-8")
+    (refused,) = _review(handshaken, hermes_home, "approve", "memory", [reviewed])
+    assert refused["done"] is False, refused
+    assert memory_file.read_text() == "User prefers spaces"
+    (current,) = _pending(handshaken, hermes_home, "memory")["items"]
+    assert current["id"] == reviewed["id"] and current["revision"] != reviewed["revision"]
+    assert "User prefers spaces" in current["diff"]
+    (applied,) = _review(handshaken, hermes_home, "approve", "memory", [current])
+    assert applied["done"] is True, applied
+    assert memory_file.read_text() == "User prefers spaces\n§\nDeploys go through staging"

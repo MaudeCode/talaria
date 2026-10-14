@@ -49923,7 +49923,7 @@
     "/api/pending-writes": {
       "get": {
         "operationId": "pendingWrites.list",
-        "summary": "TAL-819: the active profile's skill or memory writes the Agent staged for approval, oldest first, each with the diff approving it applies. `visible` is whether the page shows its review panel (any write pending); `enabled` is the profile's `<kind>.write_approval` gate. An Agent without the review handlers lists none.",
+        "summary": "TAL-819: the active profile's skill or memory writes the Agent staged for approval, oldest first, each with the diff approving it applies. `visible` is whether the page shows its review panel (any write pending); `enabled` is the profile's `<kind>.write_approval` gate. An Agent without the review handlers, or no running Agent, lists none.",
         "tags": [
           "tools"
         ],
@@ -49997,6 +49997,9 @@
                           },
                           "diff": {
                             "type": "string"
+                          },
+                          "revision": {
+                            "type": "string"
                           }
                         },
                         "required": [
@@ -50007,7 +50010,8 @@
                           "summary",
                           "origin",
                           "created_at",
-                          "diff"
+                          "diff",
+                          "revision"
                         ]
                       }
                     }
@@ -50028,7 +50032,7 @@
     "/api/pending-writes/approve": {
       "post": {
         "operationId": "pendingWrites.approve",
-        "summary": "TAL-819: apply each staged write through the Agent's `/skills` or `/memory approve`. `done` is false when the write was not applied (its record stays pending); `message` is the Agent's text either way.",
+        "summary": "TAL-819: apply each staged write through the Agent's `/skills` or `/memory approve`. Each write carries the `revision` the user reviewed; a write whose diff changed since is refused unapplied. `done` is false when the write was not applied (its record stays pending); `message` is the Agent's text either way.",
         "tags": [
           "tools"
         ],
@@ -50046,18 +50050,30 @@
                     ],
                     "type": "string"
                   },
-                  "ids": {
+                  "writes": {
                     "type": "array",
                     "minItems": 1,
                     "items": {
-                      "type": "string",
-                      "pattern": "^[A-Za-z0-9_-]{1,64}$"
+                      "type": "object",
+                      "properties": {
+                        "id": {
+                          "type": "string",
+                          "pattern": "^[A-Za-z0-9_-]{1,64}$"
+                        },
+                        "revision": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "id",
+                        "revision"
+                      ]
                     }
                   }
                 },
                 "required": [
                   "kind",
-                  "ids"
+                  "writes"
                 ]
               }
             }
@@ -50125,18 +50141,30 @@
                     ],
                     "type": "string"
                   },
-                  "ids": {
+                  "writes": {
                     "type": "array",
                     "minItems": 1,
                     "items": {
-                      "type": "string",
-                      "pattern": "^[A-Za-z0-9_-]{1,64}$"
+                      "type": "object",
+                      "properties": {
+                        "id": {
+                          "type": "string",
+                          "pattern": "^[A-Za-z0-9_-]{1,64}$"
+                        },
+                        "revision": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "id",
+                        "revision"
+                      ]
                     }
                   }
                 },
                 "required": [
                   "kind",
-                  "ids"
+                  "writes"
                 ]
               }
             }

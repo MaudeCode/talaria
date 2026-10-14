@@ -189,7 +189,8 @@ export const toggleSkill = (name: string, enabled: boolean) => orpc().skills.tog
 export const fetchSkillsUsage = () => orpc().skills.usage()
 /** TAL-819: the Agent's staged skill or memory writes; approve applies them, reject discards them. */
 export const fetchPendingWrites = (kind: 'skills' | 'memory') => orpc().pendingWrites.list({ kind })
-export const reviewPendingWrites = (verb: 'approve' | 'reject', kind: 'skills' | 'memory', ids: string[]) => orpc().pendingWrites[verb]({ kind, ids })
+/** `writes` carry the `revision` the user reviewed; the server refuses an approval whose diff changed since. */
+export const reviewPendingWrites = (verb: 'approve' | 'reject', kind: 'skills' | 'memory', writes: { id: string; revision: string }[]) => orpc().pendingWrites[verb]({ kind, writes })
 export const fetchMemory = (workspace?: string) => orpc().memory.get(workspace ? { workspace } : {})
 /** `section` names the file: `memory`, `user`, or `soul`; `revision` is its `*_revision` the edit started from (TAL-784). */
 export const writeMemory = (body: { section: 'memory' | 'user' | 'soul'; content: string; revision: string }) => orpc().memory.write(body)

@@ -10,14 +10,15 @@
         "enabled": true,
         "items": [
           {
-            "id": "494239e0",
+            "id": "6d71d59b",
             "kind": "skills",
             "target": "demo-skill",
             "op": "create",
             "summary": "create 'demo-skill' — Staged by the test (68 chars)",
             "origin": "foreground",
-            "created_at": 1791970929.3589709,
-            "diff": "---\nname: demo-skill\ndescription: Staged by the test\n---\n\nStep one.\n"
+            "created_at": 1791971858.611829,
+            "diff": "---\nname: demo-skill\ndescription: Staged by the test\n---\n\nStep one.\n",
+            "revision": "36397cc95df7e8df6f0cc93d2eba1f12ca010122449080622a601ed895ee2cf0"
           }
         ]
       }
@@ -32,14 +33,15 @@
         "enabled": true,
         "items": [
           {
-            "id": "858452ee",
+            "id": "19dc791b",
             "kind": "skills",
             "target": "demo-skill",
             "op": "create",
             "summary": "create 'demo-skill' — Staged by the test (68 chars)",
             "origin": "foreground",
-            "created_at": 1791970929.9558551,
-            "diff": "---\nname: demo-skill\ndescription: Staged by the test\n---\n\nStep one.\n"
+            "created_at": 1791971859.187854,
+            "diff": "---\nname: demo-skill\ndescription: Staged by the test\n---\n\nStep one.\n",
+            "revision": "36397cc95df7e8df6f0cc93d2eba1f12ca010122449080622a601ed895ee2cf0"
           }
         ]
       }
@@ -50,14 +52,17 @@
       "params": {
         "profile_home": "<home>/profiles/review",
         "kind": "skills",
-        "ids": [
-          "494239e0"
+        "writes": [
+          {
+            "id": "6d71d59b",
+            "revision": "36397cc95df7e8df6f0cc93d2eba1f12ca010122449080622a601ed895ee2cf0"
+          }
         ]
       },
       "result": {
         "results": [
           {
-            "id": "494239e0",
+            "id": "6d71d59b",
             "done": true,
             "message": "Approved 1 skills write(s)."
           }
@@ -70,16 +75,19 @@
       "params": {
         "profile_home": "<home>/profiles/review",
         "kind": "skills",
-        "ids": [
-          "858452ee"
+        "writes": [
+          {
+            "id": "19dc791b",
+            "revision": "36397cc95df7e8df6f0cc93d2eba1f12ca010122449080622a601ed895ee2cf0"
+          }
         ]
       },
       "result": {
         "results": [
           {
-            "id": "858452ee",
+            "id": "19dc791b",
             "done": true,
-            "message": "Rejected pending skills write '858452ee'."
+            "message": "Rejected pending skills write '19dc791b'."
           }
         ]
       }

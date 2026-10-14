@@ -5156,6 +5156,9 @@
             },
             "diff": {
               "type": "string"
+            },
+            "revision": {
+              "type": "string"
             }
           },
           "required": [
@@ -5166,7 +5169,8 @@
             "summary",
             "origin",
             "created_at",
-            "diff"
+            "diff",
+            "revision"
           ],
           "additionalProperties": false
         }

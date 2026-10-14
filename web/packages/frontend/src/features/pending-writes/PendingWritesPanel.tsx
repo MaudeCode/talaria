@@ -10,9 +10,10 @@ type Kind = 'skills' | 'memory'
 
 export function PendingWritesPanel({ kind }: { kind: Kind }) {
   const qc = useQueryClient()
-  const pending = useQuery({ queryKey: keys.pendingWrites(kind), queryFn: () => api.fetchPendingWrites(kind), staleTime: 15_000 })
+  // Background reviews and cron runs stage writes while the page is open; there is no event for them, so the panel polls.
+  const pending = useQuery({ queryKey: keys.pendingWrites(kind), queryFn: () => api.fetchPendingWrites(kind), staleTime: 15_000, refetchInterval: 30_000 })
   const review = useMutation({
-    mutationFn: ({ verb, id }: { verb: 'approve' | 'reject'; id: string }) => api.reviewPendingWrites(verb, kind, [id]),
+    mutationFn: ({ verb, id, revision }: { verb: 'approve' | 'reject'; id: string; revision: string }) => api.reviewPendingWrites(verb, kind, [{ id, revision }]),
     onSuccess: ({ results }) => {
       for (const r of results) showToast(r.message, r.done ? 2500 : 4000, r.done ? 'info' : 'error')
     },
@@ -36,8 +37,8 @@ export function PendingWritesPanel({ kind }: { kind: Kind }) {
                 <div className="font-mono text-[11px] text-muted">{item.target} · {item.op}</div>
               </div>
               <div className="flex gap-2">
-                <Button variant="primary" disabled={review.isPending} onClick={() => review.mutate({ verb: 'approve', id: item.id })}>{m.pending_writes_approve()}</Button>
-                <Button variant="ghost" disabled={review.isPending} onClick={() => review.mutate({ verb: 'reject', id: item.id })}>{m.pending_writes_reject()}</Button>
+                <Button variant="primary" disabled={review.isPending} onClick={() => review.mutate({ verb: 'approve', id: item.id, revision: item.revision })}>{m.pending_writes_approve()}</Button>
+                <Button variant="ghost" disabled={review.isPending} onClick={() => review.mutate({ verb: 'reject', id: item.id, revision: item.revision })}>{m.pending_writes_reject()}</Button>
               </div>
             </div>
             <details>
