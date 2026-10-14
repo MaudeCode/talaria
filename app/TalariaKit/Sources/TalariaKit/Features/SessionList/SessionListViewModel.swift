@@ -89,6 +89,9 @@ public final class SessionListViewModel {
     /// load (TAL-482). nil until then or from an older server; the groups then count
     /// the loaded rows instead.
     public private(set) var automatedSessionCounts: AutomatedSessionCounts?
+    /// The Agent's session storage health from the last list load (TAL-830), kept in the response cache so a
+    /// relaunch still explains an empty list. nil until then or from an older server.
+    public private(set) var agentStorage: AgentStorage?
     /// The latest archive the Chats list still offers to undo (TAL-443). A second
     /// archive replaces it, so only the latest one is undoable.
     public private(set) var archiveUndo: SessionArchiveUndo?
@@ -269,6 +272,9 @@ public final class SessionListViewModel {
         if activeProfileName == nil, let cachedProfiles = responseCache?.entry(ResponseCache.Kind.profiles).load(ProfilesResponse.self) {
             applyActiveProfile(cachedProfiles)
         }
+        if agentStorage == nil {
+            agentStorage = responseCache?.entry(ResponseCache.Kind.agentStorage).load(AgentStorage.self)
+        }
     }
 
     /// Whether the rows are the cached paint, not yet replaced by a server answer. A failed load
@@ -366,6 +372,10 @@ public final class SessionListViewModel {
                 claimCountAtStart: claimCountAtStart
             )
             automatedSessionCounts = response.automatedSessionCounts
+            agentStorage = response.agentStorage
+            if let data = try? JSONEncoder().encode(response.agentStorage) {
+                responseCache?.entry(ResponseCache.Kind.agentStorage).save(data)
+            }
             isViewingCachedData = false
             isShowingCachedPaint = false
 

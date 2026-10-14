@@ -10,11 +10,13 @@ public struct SessionsResponse: Decodable {
     /// Server totals for the sidebar's automated-session groups (TAL-482); nil from
     /// older servers that omit them.
     public let automatedSessionCounts: AutomatedSessionCounts?
+    /// The Agent's session storage health (`agent_storage`, TAL-785); nil from older servers.
+    public let agentStorage: AgentStorage?
     let serverTime: Double?
     let serverTz: String?
 
     enum CodingKeys: String, CodingKey {
-        case sessions, cliCount, archivedCount, serverTime, serverTz
+        case sessions, cliCount, archivedCount, agentStorage, serverTime, serverTz
         case scheduledSessionCount, scheduledSessionsTruncated, webhookSessionCount, webhookSessionsTruncated
     }
 
@@ -23,6 +25,7 @@ public struct SessionsResponse: Decodable {
         cliCount: Int? = nil,
         archivedCount: Int? = nil,
         automatedSessionCounts: AutomatedSessionCounts? = nil,
+        agentStorage: AgentStorage? = nil,
         serverTime: Double? = nil,
         serverTz: String? = nil
     ) {
@@ -30,6 +33,7 @@ public struct SessionsResponse: Decodable {
         self.cliCount = cliCount
         self.archivedCount = archivedCount
         self.automatedSessionCounts = automatedSessionCounts
+        self.agentStorage = agentStorage
         self.serverTime = serverTime
         self.serverTz = serverTz
     }
@@ -50,6 +54,7 @@ public struct SessionsResponse: Decodable {
         } else {
             automatedSessionCounts = nil
         }
+        agentStorage = try? container.decodeIfPresent(AgentStorage.self, forKey: .agentStorage)
         serverTime = container.decodeLossyDoubleIfPresent(forKey: .serverTime)
         serverTz = container.decodeLossyStringIfPresent(forKey: .serverTz)
     }
@@ -68,6 +73,22 @@ public struct AutomatedSessionCounts: Equatable, Sendable {
         self.scheduledIsPartial = scheduledIsPartial
         self.webhook = webhook
         self.webhookIsPartial = webhookIsPartial
+    }
+}
+
+/// `agent_storage`: whether the Agent's `state.db` could be read (TAL-785). A degraded state explains an empty or
+/// missing Agent session list, and `reason` is the server's explanation. An unknown state decodes as nil.
+public struct AgentStorage: Codable, Equatable, Sendable {
+    public enum State: String, Codable, Sendable {
+        case ok, corrupt, unavailable, outdated
+    }
+
+    public let state: State
+    public let reason: String?
+
+    public init(state: State, reason: String?) {
+        self.state = state
+        self.reason = reason
     }
 }
 

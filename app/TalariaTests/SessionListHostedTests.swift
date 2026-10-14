@@ -99,6 +99,52 @@ final class SessionListHostedTests: XCTestCase {
         XCTAssertTrue(synced, "Syncing messages stayed after the server answered")
     }
 
+    /// A server that reports the Agent's `state.db` as corrupt gets one notice above the Chats list that VoiceOver
+    /// reads with the server's reason (TAL-830).
+    func testChatsListShowsTheServersCorruptAgentStorageNotice() async throws {
+        let fixture = try FixtureApp([UITestFixtureEnvironment.corruptAgentStorageArgument], for: self)
+        let window = try hostWindow(fixture.sessionList())
+
+        let found = await awaitElement(in: window) { $0.accessibilityLabel?.hasPrefix("Agent session storage is damaged") == true }
+        let notice = try XCTUnwrap(found, "No storage notice. Elements: \(HostedAccessibility.labels(in: window))")
+        XCTAssertTrue(
+            notice.accessibilityLabel?.contains(UITestFixtureEnvironment.corruptAgentStorageReason) == true,
+            "VoiceOver does not read the server's reason: \(notice.accessibilityLabel ?? "nil")"
+        )
+        XCTAssertEqual(HostedAccessibility.elements(in: window, labelContaining: "Agent session storage").count, 1)
+    }
+
+    /// Healthy storage shows no notice (TAL-830).
+    func testChatsListShowsNoStorageNoticeWhenTheServerReportsOK() async throws {
+        let fixture = try FixtureApp(for: self)
+        let window = try hostWindow(fixture.sessionList())
+        let listed = await awaitElement(in: window, where: isFixtureRow)
+        XCTAssertNotNil(listed, "Missing deterministic session fixture")
+
+        XCTAssertTrue(HostedAccessibility.elements(in: window, labelContaining: "Agent session").isEmpty)
+        XCTAssertTrue(HostedAccessibility.elements(in: window, labelContaining: "hermes-agent").isEmpty)
+    }
+
+    /// Each degraded state reads its own notice with the server's reason, and `ok` or no state shows none (TAL-830).
+    func testAgentStorageBannerReadsEachDegradedState() throws {
+        let notices: [(AgentStorage.State, String)] = [
+            (.corrupt, "Agent session storage is damaged"),
+            (.unavailable, "Agent sessions could not be read"),
+            (.outdated, "Upgrade hermes-agent to list Agent sessions"),
+        ]
+        for (state, title) in notices {
+            let window = try hostWindow(AgentStorageBanner(storage: AgentStorage(state: state, reason: "Synthetic reason")))
+            let labels = HostedAccessibility.labels(in: window)
+            XCTAssertEqual(labels.count, 1, "\(state): \(labels)")
+            XCTAssertTrue(labels.first?.hasPrefix(title) == true, "\(state): \(labels)")
+            XCTAssertTrue(labels.first?.contains("Synthetic reason") == true, "\(state): \(labels)")
+        }
+        for storage in [AgentStorage(state: .ok, reason: nil), nil] {
+            let window = try hostWindow(AgentStorageBanner(storage: storage))
+            XCTAssertEqual(HostedAccessibility.labels(in: window), [], "\(String(describing: storage))")
+        }
+    }
+
     /// A New Chat whose session fails to start says so in its composer, with Send off, and Retry starts it (TAL-636).
     func testNewChatReportsAFailedStartInItsComposerAndRetries() async throws {
         let fixture = try FixtureApp(["--ui-test-fail-first-session-creation"], for: self)
