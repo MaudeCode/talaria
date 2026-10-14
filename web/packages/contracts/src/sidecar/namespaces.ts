@@ -235,7 +235,8 @@ export const ConnectorOperationTargetSchema = z.object({
   connect_url: z.string().nullable().optional(),
   required_env: z.array(z.object({ name: z.string(), prompt: z.string(), required: z.boolean(), secret: z.boolean() })),
 })
-export const ConnectorOperationSnapshotSchema = z.object({ op_id: z.string(), settled: z.boolean(), targets: z.array(ConnectorOperationTargetSchema) })
+/** `owner`: `account` for the Connectors page's connect, `session` for a chat card, which `tool_call_id` opened. */
+export const ConnectorOperationSnapshotSchema = z.object({ op_id: z.string(), settled: z.boolean(), owner: z.enum(['account', 'session']), tool_call_id: z.string().nullable(), targets: z.array(ConnectorOperationTargetSchema) })
 const ConnectorOp = ProfileHomeParams.extend({ op_id: z.string().min(1) })
 /**
  * Failures carry `data.condition`: `connectors_unavailable`, `connectors_sign_in`, `connectors_forbidden`, `connectors_org_required`,
@@ -530,7 +531,7 @@ export const ChatStreamSchema = z.discriminatedUnion('event', [
   z.object({ event: z.literal('clarify'), data: Loose }),
   z.object({ event: z.literal('clarify_resolved'), data: Loose }),
   /** TAL-818: a `manage_connections` card opened; `tool_call_id` is the call that opened it. */
-  z.object({ event: z.literal('connection'), data: ConnectorOperationSnapshotSchema.extend({ tool_call_id: z.string().nullable().optional() }) }),
+  z.object({ event: z.literal('connection'), data: ConnectorOperationSnapshotSchema }),
   /** The Agent stopped waiting on an approval: `reason` is its settle cause (`resolved`, `timeout`, `interrupted`, `session_closed`). */
   z.object({ event: z.literal('approval_resolved'), data: z.looseObject({ approval_id: z.string(), session_id: z.string().optional(), reason: z.string().optional() }) }),
   z.object({ event: z.literal('compressing'), data: Loose }),

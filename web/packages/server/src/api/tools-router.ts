@@ -2,7 +2,7 @@
 import { implement } from '@orpc/server'
 import { createHash } from 'node:crypto'
 import { join } from 'node:path'
-import { toolsContract, type GatewayMode, type GatewayStatus, type PluginSettingField } from '@maudecode/talaria-web-contracts'
+import { toolsContract, type GatewayMode, type GatewayStatus, type PluginSettingField, type SidecarMethodName, type SidecarParams, type SidecarResult } from '@maudecode/talaria-web-contracts'
 import { HttpError, requireFields, type ApiContext } from './router.js'
 import { requestSessionIdGuard } from './session-visibility.js'
 import type { RequestContext } from '../http/context.js'
@@ -14,6 +14,7 @@ import { ConfigUnavailable, type Config, type Dict } from '../config/agent-confi
 import { SidecarError } from '../sidecar/client.js'
 import { createPrompt, deletePrompt, externalNotesEnabled, loadPrompts, readMemory, writeMemory } from '../tools/memory.js'
 import { JoplinError, joplinNote, joplinSearch, notesSources, type JoplinDeps } from '../tools/mcp.js'
+import { connectorOperation, connectorsPage, connectorTools } from '../tools/connectors.js'
 import { resolveWikiLocation, wikiPages, type WikiLocation } from '../tools/wiki.js'
 import { buildInsights } from '../tools/insights.js'
 import { commandCatalog } from '../tools/commands.js'
@@ -92,6 +93,29 @@ const definitiveRefusal = (error: unknown): boolean =>
   error instanceof SidecarError ? ['plugin_settings_managed', 'plugin_settings_changed', 'plugin_not_found'].includes(error.condition) || error.code === -32602
     : error instanceof EnvWriteError ? error.condition !== 'sidecar_unavailable'
     : error instanceof RuntimeCredentialError
+
+/** TAL-818: a sidecar `connectors.*` condition as the HTTP status the contract names; the body's `code` is the condition. */
+const CONNECTOR_STATUS: Record<string, number> = {
+  connectors_unavailable: 404, connector_not_found: 404, connection_not_found: 404, operation_not_found: 404,
+  connectors_sign_in: 403, connectors_forbidden: 403, policy_invalid: 400, connectors_failed: 502,
+  policy_conflict: 409, connectors_org_required: 409, operation_settled: 409, operation_refused: 409,
+}
+
+async function connectorCall<M extends SidecarMethodName>(ctx: RequestContext, method: M, params: Omit<SidecarParams<M>, 'profile_home'>): Promise<SidecarResult<M>> {
+  try {
+    // A connect waits up to 31 s for its link; every portal request inside a call is bounded at 30 s.
+    return await runningSidecar(ctx).call(method, { ...params, profile_home: home(ctx) } as SidecarParams<M>, { timeoutMs: 90_000 })
+  } catch (error) {
+    const status = error instanceof SidecarError ? CONNECTOR_STATUS[error.condition] : undefined
+    if (status !== undefined) throw new HttpError(status, (error as Error).message, { code: (error as SidecarError).condition })
+    if (error instanceof SidecarError && error.code === -32602) throw new HttpError(400, error.message)
+    throw error
+  }
+}
+
+/** The member rules, or null when they cannot be read (another layer's refusal): the page then shows them read-only. */
+const connectorPolicy = (ctx: RequestContext): Promise<SidecarResult<'connectors.policy.get'> | null> =>
+  connectorCall(ctx, 'connectors.policy.get', {}).catch((error: unknown) => { if (error instanceof HttpError) return null; throw error })
 
 const health = (ctx: RequestContext): Promise<Dict> => agentHealth({ env: ctx.deps.config.env, hermesHome: ctx.deps.config.hermesHome, profileHome: () => home(ctx), fetch: () => ctx.deps.fetch, now: ctx.deps.nowSeconds })
 
@@ -502,6 +526,39 @@ export const toolsRouter = os.router({
     toggle: os.mcp.toggle.handler(({ input, context: { ctx } }) => run(() => ctx.deps.mcp.toggle(home(ctx), decodeURIComponent(input.name), input.enabled))),
     update: os.mcp.update.handler(({ input, context: { ctx } }) => run(() => { const { name, ...body } = input; return ctx.deps.mcp.update(home(ctx), decodeURIComponent(name), body) as Promise<never> })),
     delete: os.mcp.delete.handler(({ input, context: { ctx } }) => run(() => ctx.deps.mcp.delete(home(ctx), decodeURIComponent(input.name)))),
+  },
+  connectors: {
+    // Fails closed: no sidecar, or one that cannot answer, hides the page.
+    available: os.connectors.available.handler(({ context: { ctx } }) => run(async () => ({ available: ctx.deps.sidecar() ? await connectorCall(ctx, 'connectors.available', {}).then((r) => r.available, () => false) : false }))),
+    page: os.connectors.page.handler(({ context: { ctx } }) => run(async () => {
+      if (!ctx.deps.sidecar() || !(await connectorCall(ctx, 'connectors.available', {})).available) return { available: false, connectors: [], policy_revision: null }
+      const [catalog, accounts, policy] = await Promise.all([connectorCall(ctx, 'connectors.catalog', {}), connectorCall(ctx, 'connectors.accounts', {}), connectorPolicy(ctx)])
+      return connectorsPage(catalog.connectors, accounts.accounts, policy)
+    })),
+    tools: os.connectors.tools.handler(({ input, context: { ctx } }) => run(async () => {
+      const [listing, policy] = await Promise.all([connectorCall(ctx, 'connectors.tools', { connector: input.connector }), connectorPolicy(ctx)])
+      return connectorTools(listing, policy)
+    })),
+    setPolicy: os.connectors.setPolicy.handler(({ input, context: { ctx } }) => run(async () => {
+      const change = input.tool === undefined ? (typeof input.enabled === 'boolean' ? { enabled: input.enabled } : null)
+        : typeof input.tool_enabled === 'boolean' && input.enabled === undefined ? { tool: input.tool, tool_enabled: input.tool_enabled } : null
+      if (!change) throw new HttpError(400, 'Send `enabled`, or `tool` with `tool_enabled`.', { code: 'policy_invalid' })
+      const { revision } = await connectorCall(ctx, 'connectors.policy.set', { connector: input.connector, expected_revision: input.revision, ...change })
+      return { ok: true as const, revision }
+    })),
+    connect: os.connectors.connect.handler(({ input, context: { ctx } }) => run(async () => connectorOperation(await connectorCall(ctx, 'connectors.connect', { connector: input.connector })))),
+    removeAccount: os.connectors.removeAccount.handler(({ input, context: { ctx } }) => run(async () => {
+      await connectorCall(ctx, 'connectors.remove', { connection_id: input.connection_id })
+      return { ok: true as const }
+    })),
+    operation: os.connectors.operation.handler(({ input, context: { ctx } }) => run(async () => connectorOperation(await connectorCall(ctx, 'connectors.operation', { op_id: input.op_id })))),
+    respond: os.connectors.respond.handler(({ input, context: { ctx } }) => run(async () => {
+      // Only a move the operation offers now reaches the Agent: the view decides, the sidecar applies.
+      const view = connectorOperation(await connectorCall(ctx, 'connectors.operation', { op_id: input.op_id }))
+      const offered = input.action === 'continue' ? view.can_continue : view.targets.some((t) => t.name === input.target && t.actions.includes(input.action as 'skip'))
+      if (!offered) throw new HttpError(409, 'That move is not open on this connection.', { code: 'operation_refused' })
+      return connectorOperation(await connectorCall(ctx, 'connectors.respond', { op_id: input.op_id, action: input.action, ...(input.target ? { target: input.target } : {}), ...(input.env ? { env: input.env } : {}) }))
+    })),
   },
   plugins: os.plugins.handler(({ context: { ctx } }) => run(async () => {
     const sidecar = ctx.deps.sidecar()

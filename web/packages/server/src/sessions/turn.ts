@@ -17,7 +17,8 @@ import type { StateDbRead } from './state-db.js'
 import { HttpFailure, markSessionTitleGenerated } from './service.js'
 import type { SessionEventBus } from './events.js'
 import { StreamRegistry, SessionChannels, type StreamChannel } from './streams.js'
-import { ChatUsageSchema, type ClarifyAnswers, type PendingSteer, type SessionGoal, type SessionNotice, type SidecarResult, type SteerWithdrawn, type SteerWithdrawRequest } from '@maudecode/talaria-web-contracts'
+import { ChatUsageSchema, ConnectorOperationSnapshotSchema, type ClarifyAnswers, type PendingSteer, type SessionGoal, type SessionNotice, type SidecarResult, type SteerWithdrawn, type SteerWithdrawRequest } from '@maudecode/talaria-web-contracts'
+import { connectorOperation } from '../tools/connectors.js'
 import { PendingPrompts, clarifyReply } from './pending.js'
 import { RunJournal, type RunJournalWriter } from './journal.js'
 import { COMPRESSION_RECOVERY_ACTION_START_FOCUSED, COMPRESSION_RECOVERY_TERMINAL_STATE, CONTEXT_USAGE_FIELDS, Session, contextUsage, titleFrom, type Message } from './session.js'
@@ -754,6 +755,12 @@ export class TurnRunner {
               rateLimitWait = until !== null
               const provider = str(data.provider) || null
               put('rate_limit_wait', { session_id: sessionId, wait: until === null ? null : { provider, provider_label: provider && (deps.providerLabel?.(s.profile ?? null, provider) ?? displayName(provider)), until, until_kind: data.until_kind === 'reset' ? 'reset' : 'retry' } })
+              return
+            }
+            // TAL-818: a `manage_connections` card opened; clients poll and answer the operation by its `op_id`.
+            case 'connection': {
+              const snapshot = ConnectorOperationSnapshotSchema.safeParse(data)
+              if (snapshot.success) put('connect_card', connectorOperation(snapshot.data))
               return
             }
             case 'status':

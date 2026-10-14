@@ -3400,6 +3400,19 @@
       "settled": {
         "type": "boolean"
       },
+      "owner": {
+        "type": "string",
+        "enum": [
+          "account",
+          "session"
+        ]
+      },
+      "tool_call_id": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
       "targets": {
         "type": "array",
         "items": {
@@ -3474,6 +3487,8 @@
     "required": [
       "op_id",
       "settled",
+      "owner",
+      "tool_call_id",
       "targets"
     ],
     "additionalProperties": false
@@ -3488,6 +3503,19 @@
       "settled": {
         "type": "boolean"
       },
+      "owner": {
+        "type": "string",
+        "enum": [
+          "account",
+          "session"
+        ]
+      },
+      "tool_call_id": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
       "targets": {
         "type": "array",
         "items": {
@@ -3562,6 +3590,8 @@
     "required": [
       "op_id",
       "settled",
+      "owner",
+      "tool_call_id",
       "targets"
     ],
     "additionalProperties": false
@@ -3576,6 +3606,19 @@
       "settled": {
         "type": "boolean"
       },
+      "owner": {
+        "type": "string",
+        "enum": [
+          "account",
+          "session"
+        ]
+      },
+      "tool_call_id": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
       "targets": {
         "type": "array",
         "items": {
@@ -3650,6 +3693,8 @@
     "required": [
       "op_id",
       "settled",
+      "owner",
+      "tool_call_id",
       "targets"
     ],
     "additionalProperties": false

@@ -178,6 +178,9 @@ def operation_view(operation) -> dict:
     return {
         "op_id": snapshot["op_id"],
         "settled": snapshot.get("settled_at") is not None,
+        # The Connectors page's own operations are account-owned; a chat's carry the tool call that opened the card.
+        "owner": "account" if operation.session_key.startswith("account:") else "session",
+        "tool_call_id": operation.tool_call_id,
         "targets": [{
             "name": target["name"], "kind": target["kind"], "state": target["state"], "detail": target.get("detail") or "",
             "connect_url": target.get("connect_url") if target["state"] == "initiated" else None,
@@ -240,7 +243,7 @@ def remember_chat_operation(home: Path, payload: dict) -> dict | None:
     if operation is None:
         return None
     _remember(home, operation)
-    return {**operation_view(operation), "tool_call_id": payload.get("tool_call_id")}
+    return operation_view(operation)
 
 
 def register(registry_) -> None:

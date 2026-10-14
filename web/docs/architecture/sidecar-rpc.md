@@ -152,6 +152,7 @@ under Hermes Agent's context-local home override (`talaria_sidecar/home.py`).
 | `profiles` | `list`, `create`, `delete`, `runtime_env`, `skills_stats` | |
 | `skills` | `list`, `view`, `find` | |
 | `mcp` | `status`, `registry_tools`, `reload` | |
+| `connectors` | `available`, `catalog`, `accounts`, `remove`, `tools`, `policy.get`, `policy.set`, `connect`, `operation`, `respond` | |
 | `stt` | `capability`, `transcribe` | |
 | `cron` | `list`, `get`, `create`, `update`, `delete`, `pause`, `resume`, `run`, `status`, `history`, `run_detail`, `output`, `delivery_options` | `run`: `started` |
 | `providers` | `registry`, `auth_status`, `model_ids`, `resolve_runtime`, `credential_pool` | |

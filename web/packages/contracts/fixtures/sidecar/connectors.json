@@ -135,8 +135,10 @@
         "connector": "gmail"
       },
       "result": {
-        "op_id": "123efa2fe130",
+        "op_id": "3dde6b7a20b3",
         "settled": false,
+        "owner": "account",
+        "tool_call_id": null,
         "targets": [
           {
             "name": "gmail",
@@ -154,11 +156,13 @@
     {
       "params": {
         "profile_home": "<home>",
-        "op_id": "123efa2fe130"
+        "op_id": "3dde6b7a20b3"
       },
       "result": {
-        "op_id": "123efa2fe130",
+        "op_id": "3dde6b7a20b3",
         "settled": false,
+        "owner": "account",
+        "tool_call_id": null,
         "targets": [
           {
             "name": "gmail",
@@ -176,13 +180,15 @@
     {
       "params": {
         "profile_home": "<home>",
-        "op_id": "123efa2fe130",
+        "op_id": "3dde6b7a20b3",
         "action": "skip",
         "target": "gmail"
       },
       "result": {
-        "op_id": "123efa2fe130",
+        "op_id": "3dde6b7a20b3",
         "settled": true,
+        "owner": "account",
+        "tool_call_id": null,
         "targets": [
           {
             "name": "gmail",

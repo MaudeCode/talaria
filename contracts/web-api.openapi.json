@@ -53493,6 +53493,853 @@
         }
       }
     },
+    "/api/connectors/available": {
+      "get": {
+        "operationId": "connectors.available",
+        "summary": "Whether the active profile has connectors; false hides the Connectors page. Never creates an identity.",
+        "tags": [
+          "tools"
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "available": {
+                      "type": "boolean"
+                    }
+                  },
+                  "required": [
+                    "available"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/connectors": {
+      "get": {
+        "operationId": "connectors.page",
+        "summary": "Every catalog app with its accounts and member rules. `available: false` with no apps when the profile has no connectors.",
+        "tags": [
+          "tools"
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "available": {
+                      "type": "boolean"
+                    },
+                    "connectors": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "slug": {
+                            "type": "string"
+                          },
+                          "name": {
+                            "type": "string"
+                          },
+                          "description": {
+                            "type": "string"
+                          },
+                          "category": {
+                            "type": "string"
+                          },
+                          "logo_url": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "connected": {
+                            "type": "boolean"
+                          },
+                          "accounts": {
+                            "type": "array",
+                            "items": {
+                              "type": "object",
+                              "properties": {
+                                "connection_id": {
+                                  "type": "string"
+                                },
+                                "name": {
+                                  "type": "string"
+                                },
+                                "status": {
+                                  "type": "string"
+                                },
+                                "status_reason": {
+                                  "anyOf": [
+                                    {
+                                      "type": "string"
+                                    },
+                                    {
+                                      "type": "null"
+                                    }
+                                  ]
+                                },
+                                "active": {
+                                  "type": "boolean"
+                                },
+                                "created_at": {
+                                  "type": "string"
+                                }
+                              },
+                              "required": [
+                                "connection_id",
+                                "name",
+                                "status",
+                                "status_reason",
+                                "active",
+                                "created_at"
+                              ]
+                            }
+                          },
+                          "enabled": {
+                            "type": "boolean"
+                          },
+                          "org_locked": {
+                            "type": "boolean"
+                          },
+                          "tools_off": {
+                            "type": "integer",
+                            "minimum": -9007199254740991,
+                            "maximum": 9007199254740991
+                          }
+                        },
+                        "required": [
+                          "slug",
+                          "name",
+                          "description",
+                          "category",
+                          "logo_url",
+                          "connected",
+                          "accounts",
+                          "enabled",
+                          "org_locked",
+                          "tools_off"
+                        ]
+                      }
+                    },
+                    "policy_revision": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "available",
+                    "connectors",
+                    "policy_revision"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/connectors/{connector}/tools": {
+      "get": {
+        "operationId": "connectors.tools",
+        "summary": "One app's tools with their member and organization rules.",
+        "tags": [
+          "tools"
+        ],
+        "parameters": [
+          {
+            "name": "connector",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "connector": {
+                      "type": "string"
+                    },
+                    "policy_revision": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "tools": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "slug": {
+                            "type": "string"
+                          },
+                          "name": {
+                            "type": "string"
+                          },
+                          "description": {
+                            "type": "string"
+                          },
+                          "facet": {
+                            "type": "string"
+                          },
+                          "deprecated": {
+                            "type": "boolean"
+                          },
+                          "enabled": {
+                            "type": "boolean"
+                          },
+                          "locked": {
+                            "type": "boolean"
+                          }
+                        },
+                        "required": [
+                          "slug",
+                          "name",
+                          "description",
+                          "facet",
+                          "deprecated",
+                          "enabled",
+                          "locked"
+                        ]
+                      }
+                    }
+                  },
+                  "required": [
+                    "connector",
+                    "policy_revision",
+                    "tools"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/connectors/{connector}/policy": {
+      "post": {
+        "operationId": "connectors.setPolicy",
+        "summary": "One member-rule change from `revision` (the page's `policy_revision`): `enabled` turns the app on or off, or `tool` with `tool_enabled` one of its tools. 409 `policy_conflict` when the rules changed since.",
+        "tags": [
+          "tools"
+        ],
+        "parameters": [
+          {
+            "name": "connector",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "revision": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "enabled": {
+                    "type": "boolean"
+                  },
+                  "tool": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "tool_enabled": {
+                    "type": "boolean"
+                  }
+                },
+                "required": [
+                  "revision"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "ok": {
+                      "const": true
+                    },
+                    "revision": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "ok",
+                    "revision"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/connectors/{connector}/connect": {
+      "post": {
+        "operationId": "connectors.connect",
+        "summary": "Starts the app's authorization (or rejoins an open one) and answers with its link; poll the operation until it settles.",
+        "tags": [
+          "tools"
+        ],
+        "parameters": [
+          {
+            "name": "connector",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "op_id": {
+                      "type": "string"
+                    },
+                    "settled": {
+                      "type": "boolean"
+                    },
+                    "can_continue": {
+                      "type": "boolean"
+                    },
+                    "tool_call_id": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "targets": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "name": {
+                            "type": "string"
+                          },
+                          "title": {
+                            "type": "string"
+                          },
+                          "kind": {
+                            "type": "string"
+                          },
+                          "state": {
+                            "enum": [
+                              "pending",
+                              "initiated",
+                              "connected",
+                              "skipped",
+                              "failed",
+                              "expired",
+                              "not_connected"
+                            ],
+                            "type": "string"
+                          },
+                          "detail": {
+                            "type": "string"
+                          },
+                          "connect_url": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "actions": {
+                            "type": "array",
+                            "items": {
+                              "enum": [
+                                "skip",
+                                "retry",
+                                "approve"
+                              ],
+                              "type": "string"
+                            }
+                          },
+                          "env_fields": {
+                            "type": "array",
+                            "items": {
+                              "type": "object",
+                              "properties": {
+                                "name": {
+                                  "type": "string"
+                                },
+                                "prompt": {
+                                  "type": "string"
+                                },
+                                "required": {
+                                  "type": "boolean"
+                                },
+                                "secret": {
+                                  "type": "boolean"
+                                }
+                              },
+                              "required": [
+                                "name",
+                                "prompt",
+                                "required",
+                                "secret"
+                              ]
+                            }
+                          }
+                        },
+                        "required": [
+                          "name",
+                          "title",
+                          "kind",
+                          "state",
+                          "detail",
+                          "connect_url",
+                          "actions",
+                          "env_fields"
+                        ]
+                      }
+                    }
+                  },
+                  "required": [
+                    "op_id",
+                    "settled",
+                    "can_continue",
+                    "tool_call_id",
+                    "targets"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/connectors/accounts/{connection_id}": {
+      "delete": {
+        "operationId": "connectors.removeAccount",
+        "summary": "Disconnects one account at the portal.",
+        "tags": [
+          "tools"
+        ],
+        "parameters": [
+          {
+            "name": "connection_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "ok": {
+                      "const": true
+                    }
+                  },
+                  "required": [
+                    "ok"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/connectors/operations/{op_id}": {
+      "get": {
+        "operationId": "connectors.operation",
+        "tags": [
+          "tools"
+        ],
+        "parameters": [
+          {
+            "name": "op_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "op_id": {
+                      "type": "string"
+                    },
+                    "settled": {
+                      "type": "boolean"
+                    },
+                    "can_continue": {
+                      "type": "boolean"
+                    },
+                    "tool_call_id": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "targets": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "name": {
+                            "type": "string"
+                          },
+                          "title": {
+                            "type": "string"
+                          },
+                          "kind": {
+                            "type": "string"
+                          },
+                          "state": {
+                            "enum": [
+                              "pending",
+                              "initiated",
+                              "connected",
+                              "skipped",
+                              "failed",
+                              "expired",
+                              "not_connected"
+                            ],
+                            "type": "string"
+                          },
+                          "detail": {
+                            "type": "string"
+                          },
+                          "connect_url": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "actions": {
+                            "type": "array",
+                            "items": {
+                              "enum": [
+                                "skip",
+                                "retry",
+                                "approve"
+                              ],
+                              "type": "string"
+                            }
+                          },
+                          "env_fields": {
+                            "type": "array",
+                            "items": {
+                              "type": "object",
+                              "properties": {
+                                "name": {
+                                  "type": "string"
+                                },
+                                "prompt": {
+                                  "type": "string"
+                                },
+                                "required": {
+                                  "type": "boolean"
+                                },
+                                "secret": {
+                                  "type": "boolean"
+                                }
+                              },
+                              "required": [
+                                "name",
+                                "prompt",
+                                "required",
+                                "secret"
+                              ]
+                            }
+                          }
+                        },
+                        "required": [
+                          "name",
+                          "title",
+                          "kind",
+                          "state",
+                          "detail",
+                          "connect_url",
+                          "actions",
+                          "env_fields"
+                        ]
+                      }
+                    }
+                  },
+                  "required": [
+                    "op_id",
+                    "settled",
+                    "can_continue",
+                    "tool_call_id",
+                    "targets"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "operationId": "connectors.respond",
+        "summary": "`skip`, `retry` or `approve` (with `env`) one `target`, as its `actions` allow, or `continue` the card without the rest.",
+        "tags": [
+          "tools"
+        ],
+        "parameters": [
+          {
+            "name": "op_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "action": {
+                    "enum": [
+                      "skip",
+                      "retry",
+                      "approve",
+                      "continue"
+                    ],
+                    "type": "string"
+                  },
+                  "target": {
+                    "type": "string"
+                  },
+                  "env": {
+                    "type": "object",
+                    "propertyNames": {
+                      "type": "string"
+                    },
+                    "additionalProperties": {
+                      "type": "string"
+                    }
+                  }
+                },
+                "required": [
+                  "action"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "op_id": {
+                      "type": "string"
+                    },
+                    "settled": {
+                      "type": "boolean"
+                    },
+                    "can_continue": {
+                      "type": "boolean"
+                    },
+                    "tool_call_id": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "targets": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "name": {
+                            "type": "string"
+                          },
+                          "title": {
+                            "type": "string"
+                          },
+                          "kind": {
+                            "type": "string"
+                          },
+                          "state": {
+                            "enum": [
+                              "pending",
+                              "initiated",
+                              "connected",
+                              "skipped",
+                              "failed",
+                              "expired",
+                              "not_connected"
+                            ],
+                            "type": "string"
+                          },
+                          "detail": {
+                            "type": "string"
+                          },
+                          "connect_url": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "actions": {
+                            "type": "array",
+                            "items": {
+                              "enum": [
+                                "skip",
+                                "retry",
+                                "approve"
+                              ],
+                              "type": "string"
+                            }
+                          },
+                          "env_fields": {
+                            "type": "array",
+                            "items": {
+                              "type": "object",
+                              "properties": {
+                                "name": {
+                                  "type": "string"
+                                },
+                                "prompt": {
+                                  "type": "string"
+                                },
+                                "required": {
+                                  "type": "boolean"
+                                },
+                                "secret": {
+                                  "type": "boolean"
+                                }
+                              },
+                              "required": [
+                                "name",
+                                "prompt",
+                                "required",
+                                "secret"
+                              ]
+                            }
+                          }
+                        },
+                        "required": [
+                          "name",
+                          "title",
+                          "kind",
+                          "state",
+                          "detail",
+                          "connect_url",
+                          "actions",
+                          "env_fields"
+                        ]
+                      }
+                    }
+                  },
+                  "required": [
+                    "op_id",
+                    "settled",
+                    "can_continue",
+                    "tool_call_id",
+                    "targets"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/plugins": {
       "get": {
         "operationId": "plugins",
