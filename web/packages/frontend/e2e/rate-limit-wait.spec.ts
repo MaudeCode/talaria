@@ -34,14 +34,16 @@ test('the run status shows a rate-limit wait until the server clears it, with St
     const until = new Date(Date.now() + 17 * 60_000)
     // The browser runs in UTC (playwright.config.ts).
     const time = until.toLocaleString('en-US', { hour: 'numeric', minute: '2-digit', timeZone: 'UTC' })
-    send('rate_limit_wait', { session_id: sid, wait: { provider: 'openrouter', provider_label: 'OpenRouter', until: until.getTime() / 1000 } })
+    send('rate_limit_wait', { session_id: sid, wait: { provider: 'openrouter', provider_label: 'OpenRouter', until: until.getTime() / 1000, until_kind: 'reset' } })
     await expect(status).toHaveText(new RegExp(`^OpenRouter rate limit until (\\w{3} )?${time}$`))
     await expect(page.locator('#btnStop')).toBeVisible()
     await shot('waiting')
     send('rate_limit_wait', { session_id: sid, wait: null })
     await expect(status).toContainText('Working')
-    send('rate_limit_wait', { session_id: sid, wait: { provider: 'openrouter', provider_label: 'OpenRouter', until: until.getTime() / 1000 } })
-    await expect(status).toContainText('OpenRouter rate limit')
+    // No reset from the provider: the time is the Agent's next retry.
+    send('rate_limit_wait', { session_id: sid, wait: { provider: 'openrouter', provider_label: 'OpenRouter', until: until.getTime() / 1000, until_kind: 'retry' } })
+    await expect(status).toHaveText(new RegExp(`^OpenRouter rate limit · retry at (\\w{3} )?${time}$`))
+    await shot('retry')
     await page.locator('#btnStop').click()
     await expect.poll(() => cancels).toEqual([streamId])
   } finally {

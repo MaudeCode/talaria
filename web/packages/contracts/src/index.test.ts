@@ -32,7 +32,7 @@ describe('contracts package', () => {
   it('parses the shared rate-limit wait run-status frames (TAL-821)', () => {
     const fixture = shared('fixtures/rate-limit-wait.json') as { wait: unknown; cleared: unknown }
     const wait = ChatEventSchema.parse(fixture.wait)
-    expect(wait.event === 'rate_limit_wait' && wait.data.wait).toEqual({ provider: 'openrouter', provider_label: 'OpenRouter', until: 1800000600 })
+    expect(wait.event === 'rate_limit_wait' && wait.data.wait).toEqual({ provider: 'openrouter', provider_label: 'OpenRouter', until: 1800000600, until_kind: 'reset' })
     const cleared = ChatEventSchema.parse(fixture.cleared)
     expect(cleared.event === 'rate_limit_wait' && cleared.data.wait).toBeNull()
   })

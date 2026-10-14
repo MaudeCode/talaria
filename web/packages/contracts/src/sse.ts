@@ -44,11 +44,11 @@ const BgTask = z.looseObject({ session_id: z.string().optional(), task_id: z.str
 const ServerTurn = z.looseObject({ session_id: z.string().optional(), stream_id: z.string().optional(), turn_id: z.string().optional(), user_message_id: z.union([z.string(), z.number()]).optional() })
 const Loose = z.looseObject({})
 /**
- * TAL-821: the Agent is sitting out a provider's rate limit. `until` is when the limit resets (else when the Agent
- * retries), epoch seconds; `provider_label` is the provider's display name. `wait: null` ends it: the Agent retried,
- * streamed, or the turn ended.
+ * TAL-821: the Agent is sitting out a provider's rate limit. `until` (epoch seconds) is when the limit resets
+ * (`until_kind: 'reset'`) or, when the provider named no reset, when the Agent retries (`'retry'`); `provider_label` is the
+ * provider's display name. `wait: null` ends it (the Agent retried or streamed), as does the turn's terminal frame.
  */
-export const RateLimitWaitSchema = z.object({ provider: z.string().nullable(), provider_label: z.string().nullable(), until: z.number() })
+export const RateLimitWaitSchema = z.object({ provider: z.string().nullable(), provider_label: z.string().nullable(), until: z.number(), until_kind: z.enum(['reset', 'retry']) })
 export type RateLimitWait = z.infer<typeof RateLimitWaitSchema>
 
 export const CHAT_EVENT_NAMES = [

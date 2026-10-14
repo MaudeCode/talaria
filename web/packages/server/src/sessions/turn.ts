@@ -49,8 +49,8 @@ const IMAGE_MODE_TIMEOUT_MS = 15_000
 const TERMINAL_SSE_VISIBLE_MESSAGE_LIMIT = 80
 /** TAL-397: streamed text reports the live meter at most this often (seconds); a counter change reports at once. */
 const METERING_INTERVAL_S = 1
-/** TAL-821: frames that end a rate-limit wait: the Agent's content (it got an answer) and the turn's terminal frames. */
-const RATE_LIMIT_WAIT_ENDS = new Set(['token', 'reasoning', 'interim_assistant', 'tool', 'tool_complete', 'done', 'cancel', 'apperror', 'error'])
+/** TAL-821: the Agent's content frames, which end a rate-limit wait (it got an answer). A terminal frame ends the run and its wait. */
+const RATE_LIMIT_WAIT_ENDS = new Set(['token', 'reasoning', 'interim_assistant', 'tool', 'tool_complete'])
 /** How long a user's message waits for a stopped background turn to unwind before its own turn is admitted. */
 const BACKGROUND_UNWIND_WAIT_MS = 30_000
 
@@ -498,7 +498,7 @@ export class TurnRunner {
       deps.log(`[webui] WARNING: run journal degraded for stream ${streamId}: ${(error as Error).message}`)
     }
     const failure: TurnFailure = { apperror: null, cancelled: false }
-    // TAL-821: whether the run's rate-limit wait is showing; the next content frame or the turn's end clears it.
+    // TAL-821: whether the run's rate-limit wait is showing; the next content frame clears it.
     let rateLimitWait = false
     const put = (event: string, data: Record<string, unknown>, meta: { redacted?: boolean } = {}): void => {
       if (rateLimitWait && RATE_LIMIT_WAIT_ENDS.has(event)) {
@@ -745,13 +745,13 @@ export class TurnRunner {
               if (head) put('clarify', head)
               return
             }
-            // TAL-821: the Agent sits out a provider's rate limit (the sidecar's `until` is its reset, epoch seconds).
+            // TAL-821: the Agent sits out a provider's rate limit (`until`, epoch seconds: its reset, else the Agent's retry).
             case 'rate_limit_wait': {
               const until = typeof data.until === 'number' ? data.until : null
               if (until === null && !rateLimitWait) return
               rateLimitWait = until !== null
               const provider = str(data.provider) || null
-              put('rate_limit_wait', { session_id: sessionId, wait: until === null ? null : { provider, provider_label: provider && displayName(provider), until } })
+              put('rate_limit_wait', { session_id: sessionId, wait: until === null ? null : { provider, provider_label: provider && displayName(provider), until, until_kind: data.until_kind === 'reset' ? 'reset' : 'retry' } })
               return
             }
             case 'status':

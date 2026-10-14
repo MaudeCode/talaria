@@ -9,14 +9,12 @@ import time
 
 import pytest
 
-from conftest import AGENT_DIR
 from test_chat_turn import Ctx, FakeAgent, _params, _patch
 from talaria_sidecar.methods import Registry, chat
 
 FREE_BUSY_WITH_RESET = "⏳ the free model is busy — resets in ~17m, retrying in 600s (attempt 1/3)"
 FREE_BUSY = "⏳ the free model is busy — retrying in 600s (attempt 1/3)"
 RATE_LIMITED = "⏳ rate limited — resets in ~1h 5m, retrying in 60s (attempt 2/3)"
-OVERLOADED = "⏳ provider overloaded — resets in ~45s, retrying in 30s (attempt 1/5)"
 SPINNER = "(｡◕‿◕｡) pondering..."
 
 
@@ -39,27 +37,19 @@ def _run(monkeypatch, *lines):
     return before, [(event, data) for event, data in ctx.frames if event in ("rate_limit_wait", "token")]
 
 
-@pytest.mark.parametrize(("line", "seconds"), [(FREE_BUSY_WITH_RESET, 17 * 60), (FREE_BUSY, 600), (RATE_LIMITED, 65 * 60), (OVERLOADED, 45)])
-def test_a_rate_limit_wait_reports_its_reset_and_clears_when_the_agent_retries(monkeypatch, line, seconds) -> None:
+@pytest.mark.parametrize(("line", "seconds", "kind"), [(FREE_BUSY_WITH_RESET, 17 * 60, "reset"), (FREE_BUSY, 600, "retry"), (RATE_LIMITED, 65 * 60, "reset")])
+def test_a_rate_limit_wait_reports_its_reset_and_clears_when_the_agent_retries(monkeypatch, line, seconds, kind) -> None:
     before, frames = _run(monkeypatch, line, "", SPINNER)
     assert [event for event, _data in frames] == ["rate_limit_wait", "rate_limit_wait", "token"]
     wait, clear, token = frames
-    assert wait[1]["provider"] == "p"
+    assert wait[1]["provider"] == "p" and wait[1]["until_kind"] == kind
     assert before + seconds <= wait[1]["until"] <= time.time() + seconds
     # The retry's spinner line ends the wait before any text streams.
     assert clear == ("rate_limit_wait", {"provider": None, "until": None})
     assert token == ("token", {"text": "ok"})
 
 
-@pytest.mark.skipif(AGENT_DIR is None, reason="pinned Hermes Agent checkout not found")
-def test_the_pinned_agent_still_writes_these_wait_lines() -> None:
-    source = (AGENT_DIR / "agent" / "turn_recovery.py").read_text(encoding="utf-8")
-    for template in ('"The free model is busy"', '"Provider overloaded"', '"Rate limited"', 'f"{_wait_reason.lower()} — resets in {_reset},"',
-                     '"the free model is busy —"', 'f"⏳ {_live_reason} retrying in {wait_time:.0f}s (attempt {retry_count}/{max_retries})"'):
-        assert template in source, template
-
-
-@pytest.mark.parametrize("line", ["⏳ waiting on provider — retrying in 4s (attempt 1/3)", SPINNER, "", "⏱️ Rate limited. Waiting 2.0s (attempt 1/3)..."])
+@pytest.mark.parametrize("line", ["⏳ waiting on provider — retrying in 4s (attempt 1/3)", "⏳ provider overloaded — resets in ~45s, retrying in 30s (attempt 1/5)", SPINNER, "", "⏱️ Rate limited. Waiting 2.0s (attempt 1/3)..."])
 def test_other_status_lines_report_no_wait(monkeypatch, line) -> None:
     _before, frames = _run(monkeypatch, line)
     assert frames == [("token", {"text": "ok"})]

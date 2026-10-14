@@ -69,12 +69,16 @@ describe('rate-limit wait (TAL-821)', () => {
     vi.useFakeTimers({ now: new Date(2026, 9, 14, 10, 0).getTime() })
     const run = liveRun()
     const until = new Date(2026, 9, 14, 10, 17).getTime() / 1000
-    run.emit({ event: 'rate_limit_wait', data: { session_id: 's', wait: { provider: 'openrouter', provider_label: 'OpenRouter', until } } })
+    run.emit({ event: 'rate_limit_wait', data: { session_id: 's', wait: { provider: 'openrouter', provider_label: 'OpenRouter', until, until_kind: 'reset' } } })
     const view = render(<LiveStatusPill turn={run.turn} />)
     expect(pills(view.container)[0]).toHaveTextContent(/^OpenRouter rate limit until 10:17\sAM$/)
-    run.emit({ event: 'rate_limit_wait', data: { session_id: 's', wait: { provider: null, provider_label: null, until } } })
+    run.emit({ event: 'rate_limit_wait', data: { session_id: 's', wait: { provider: null, provider_label: null, until, until_kind: 'reset' } } })
     view.rerender(<LiveStatusPill turn={run.turn} />)
     expect(pills(view.container)[0]).toHaveTextContent(/^Rate limited until 10:17\sAM$/)
+    // No reset from the provider: the time is the Agent's next retry.
+    run.emit({ event: 'rate_limit_wait', data: { session_id: 's', wait: { provider: 'openrouter', provider_label: 'OpenRouter', until, until_kind: 'retry' } } })
+    view.rerender(<LiveStatusPill turn={run.turn} />)
+    expect(pills(view.container)[0]).toHaveTextContent(/^OpenRouter rate limit · retry at 10:17\sAM$/)
     run.emit({ event: 'rate_limit_wait', data: { session_id: 's', wait: null } })
     view.rerender(<LiveStatusPill turn={run.turn} />)
     expect(pills(view.container)[0]).toHaveTextContent(/^Working \d/)

@@ -6,7 +6,7 @@ import { formatDurationUnits, resetTime } from '../../i18n/units'
 import { ArrowUp, Pencil, X } from 'lucide-react'
 import type { LiveTurn, PendingSteerRow } from '../../stream/reducer'
 import { sendSteerNow, withdrawSteer } from '../../api/endpoints'
-import type { SteerWithdrawRequest } from '@maudecode/talaria-web-contracts'
+import type { RateLimitWait, SteerWithdrawRequest } from '@maudecode/talaria-web-contracts'
 import { showToast } from '../toast/toast'
 import { returnToComposer } from '../composer/composerReturn'
 import { rememberLiveTurnHeight, SteerMessage, TurnActivityView } from './TurnActivityView'
@@ -79,19 +79,17 @@ function PendingSteerMessage({ sessionId, steer }: { sessionId: string; steer: P
   return <SteerMessage text={steer.text} state={steer.state} actions={actions} />
 }
 
-/** The live turn's status, docked as a centered pill above the composer so it never takes transcript space. */
-/** `background`: the server says a background result started this turn (`active_turn_origin`, TAL-460). */
-/** TAL-821: while the Agent sits out a rate limit, the server's provider and reset time replace "Working"; the composer's
- *  Stop stays the way out. */
+/**
+ * The live turn's status, docked as a centered pill above the composer so it never takes transcript space.
+ * `background`: the server says a background result started this turn (`active_turn_origin`, TAL-460).
+ * TAL-821: while the Agent sits out a rate limit, the server's provider and reset time replace "Working"; the composer's
+ * Stop stays the way out.
+ */
 export function LiveStatusPill({ turn, background = false }: { turn: LiveTurn; background?: boolean }) {
   const locale = useLocale()
   const reconnecting = turn.status === 'reconnecting'
   const wait = reconnecting ? null : turn.rateLimitWait
-  const label = reconnecting
-    ? m.live_reconnecting()
-    : wait
-      ? (wait.provider_label ? m.live_rate_limited_by({ provider: wait.provider_label, time: resetTime(locale, wait.until * 1000) }) : m.live_rate_limited({ time: resetTime(locale, wait.until * 1000) }))
-      : background ? m.live_background() : m.live_working()
+  const label = reconnecting ? m.live_reconnecting() : wait ? rateLimitLabel(wait, locale) : background ? m.live_background() : m.live_working()
   return (
     <div className="live-run-status flex items-center gap-2 text-muted" role="status" aria-live="polite">
       <LaurelSpinner />
@@ -100,6 +98,13 @@ export function LiveStatusPill({ turn, background = false }: { turn: LiveTurn; b
       {turn.tps != null && <span className="font-mono text-[11px] tabular-nums opacity-75" title="Tokens per second">{turn.tps.toFixed(1)} tok/s</span>}
     </div>
   )
+}
+
+function rateLimitLabel(wait: RateLimitWait, locale: string): string {
+  const time = resetTime(locale, wait.until * 1000)
+  const provider = wait.provider_label
+  if (wait.until_kind === 'reset') return provider ? m.live_rate_limited_by({ provider, time }) : m.live_rate_limited({ time })
+  return provider ? m.live_rate_limited_by_retry({ provider, time }) : m.live_rate_limited_retry({ time })
 }
 
 /** Time since the run started in T3 Code's units (TAL-922): `42s`, then `5m`, then `1h 30m`. Redrawn each second and

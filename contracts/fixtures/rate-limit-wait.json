@@ -3,7 +3,7 @@
     "event": "rate_limit_wait",
     "data": {
       "session_id": "contract-session",
-      "wait": { "provider": "openrouter", "provider_label": "OpenRouter", "until": 1800000600 }
+      "wait": { "provider": "openrouter", "provider_label": "OpenRouter", "until": 1800000600, "until_kind": "reset" }
     }
   },
   "cleared": {

@@ -108,7 +108,7 @@ describe('chat turns through the sidecar', () => {
     release()
   })
 
-  it('ships a rate-limit wait as a run-status frame and clears it on the next token or at turn end (TAL-821)', async () => {
+  it('ships a rate-limit wait as a run-status frame, cleared by the next token, ended with the turn (TAL-821)', async () => {
     const sid = await newSession(s)
     const until = 1_800_000_600
     const turn = async (message: string, frames: Json[]): Promise<Json[]> => {
@@ -120,20 +120,21 @@ describe('chat turns through the sidecar', () => {
       const sse = await s.sse(`/api/chat/stream?stream_id=${String(start.stream_id)}`, (f) => f.event === 'stream_end')
       return sse.filter((f) => ['rate_limit_wait', 'token', 'done'].includes(f.event)).map((f) => ({ event: f.event, ...(f.event === 'rate_limit_wait' ? { data: f.data } : {}) }))
     }
-    const wait = { event: 'rate_limit_wait', data: { session_id: sid, wait: { provider: 'openrouter', provider_label: 'OpenRouter', until } } }
+    const wait = { event: 'rate_limit_wait', data: { session_id: sid, wait: { provider: 'openrouter', provider_label: 'OpenRouter', until, until_kind: 'reset' } } }
     // Same shape as the shared contract example every client is tested against.
     const example = (JSON.parse(readFileSync(join(import.meta.dirname, '../../../../../contracts/fixtures/rate-limit-wait.json'), 'utf8')) as { wait: { data: { wait: Json } } }).wait.data
     expect({ ...example, session_id: sid }).toEqual(wait.data)
     const cleared = { event: 'rate_limit_wait', data: { session_id: sid, wait: null } }
     // The first token after the wait clears it, even when the Agent's retry line never reached the sidecar.
-    expect(await turn('token', [{ event: 'rate_limit_wait', data: { provider: 'openrouter', until } }, { event: 'token', data: { text: 'ok' } }]))
+    expect(await turn('token', [{ event: 'rate_limit_wait', data: { provider: 'openrouter', until, until_kind: 'reset' } }, { event: 'token', data: { text: 'ok' } }]))
       .toEqual([wait, cleared, { event: 'token' }, { event: 'done' }])
     // The sidecar's own clear (the Agent retried) is forwarded once.
-    expect(await turn('retry', [{ event: 'rate_limit_wait', data: { provider: 'openrouter', until } }, { event: 'rate_limit_wait', data: { provider: null, until: null } }, { event: 'token', data: { text: 'ok' } }]))
+    expect(await turn('retry', [{ event: 'rate_limit_wait', data: { provider: 'openrouter', until, until_kind: 'reset' } }, { event: 'rate_limit_wait', data: { provider: null, until: null } }, { event: 'token', data: { text: 'ok' } }]))
       .toEqual([wait, cleared, { event: 'token' }, { event: 'done' }])
-    // A turn that ends during the wait clears it before its terminal frame; an unnamed provider has no label.
-    expect(await turn('end', [{ event: 'rate_limit_wait', data: { provider: null, until } }]))
-      .toEqual([{ event: 'rate_limit_wait', data: { session_id: sid, wait: { provider: null, provider_label: null, until } } }, cleared, { event: 'done' }])
+    // A turn that ends during the wait ends it with its terminal frame; an unnamed provider has no label, and a wait with
+    // no reset names the Agent's retry.
+    expect(await turn('end', [{ event: 'rate_limit_wait', data: { provider: null, until, until_kind: 'retry' } }]))
+      .toEqual([{ event: 'rate_limit_wait', data: { session_id: sid, wait: { provider: null, provider_label: null, until, until_kind: 'retry' } } }, { event: 'done' }])
   })
 
   it('stops a turn during a rate-limit wait (TAL-821)', async () => {

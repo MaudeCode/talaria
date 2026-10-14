@@ -1044,25 +1044,26 @@ def _status_events(kind, text: str) -> list[str]:
 
 
 #: TAL-821: the Agent's live status line during a rate-limit backoff (``turn_recovery.compute_error_backoff``), e.g.
-#: "⏳ the free model is busy — resets in ~17m, retrying in 600s (attempt 1/3)". A plain "waiting on provider" retry is
-#: not a rate limit. ``webui`` is not an attended source, so the Agent sits out a free-tier cooldown instead of ending.
-_RATE_LIMIT_WAIT_RE = re.compile(r"^⏳ (?:rate limited|the free model is busy|provider overloaded) —.* retrying in (\d+)s\b", re.IGNORECASE)
+#: "⏳ the free model is busy — resets in ~17m, retrying in 600s (attempt 1/3)". The Agent's other waits are not known
+#: rate limits: "waiting on provider" covers a 5xx retry as well as a 429 without a reset, and "provider overloaded" is a
+#: Z.AI overload. ``webui`` is not an attended source, so the Agent sits out a free-tier cooldown instead of ending.
+_RATE_LIMIT_WAIT_RE = re.compile(r"^⏳ (?:rate limited|the free model is busy) —.* retrying in (\d+)s\b", re.IGNORECASE)
 #: The line's reset window, in the Agent's ``format_duration_compact`` units ("45s", "17m", "1h 5m", "1.5d").
 _RESET_IN_RE = re.compile(r"resets in ~((?:\d+(?:\.\d+)?[dhms] ?)+)")
 _DURATION_UNITS = {"d": 86400, "h": 3600, "m": 60, "s": 1}
 
 
-def _rate_limit_wait_seconds(text: str) -> float | None:
-    """Seconds until the provider's limit resets (else until the Agent retries) for a rate-limit wait line; None otherwise.
-    The reset is the provider's own ``reset_at`` as the Agent read it from the error; the credential pool's exhausted mark
-    is no better, since without that field it is a fixed one-hour guess."""
+def _rate_limit_wait(text: str) -> tuple[float, str] | None:
+    """``(seconds, "reset")`` until the provider's limit resets, else ``(seconds, "retry")`` until the Agent retries, for a
+    rate-limit wait line; None for any other line. The reset is the provider's own ``reset_at`` as the Agent read it from
+    the error; the credential pool's exhausted mark is no better, since without that field it is a fixed one-hour guess."""
     wait = _RATE_LIMIT_WAIT_RE.match(text)
     if not wait:
         return None
     reset = _RESET_IN_RE.search(text)
     if not reset:
-        return float(wait.group(1))
-    return sum(float(amount) * _DURATION_UNITS[unit] for amount, unit in re.findall(r"(\d+(?:\.\d+)?)([dhms])", reset.group(1)))
+        return float(wait.group(1)), "retry"
+    return sum(float(amount) * _DURATION_UNITS[unit] for amount, unit in re.findall(r"(\d+(?:\.\d+)?)([dhms])", reset.group(1))), "reset"
 
 
 def start(ctx: CallContext, params: dict) -> dict:  # noqa: PLR0915 - one turn, one function
@@ -1206,10 +1207,11 @@ def start(ctx: CallContext, params: dict) -> dict:  # noqa: PLR0915 - one turn, 
 
         def on_thinking(text):
             """TAL-821: a rate-limit wait on the Agent's live status line, cleared by the next line (its retry spinner)."""
-            seconds = _rate_limit_wait_seconds(str(text or "").strip())
-            if seconds is not None:
+            wait = _rate_limit_wait(str(text or "").strip())
+            if wait is not None:
                 wait_state["active"] = True
-                emit("rate_limit_wait", {"provider": str(getattr(run.agent, "provider", None) or resolved_provider or "") or None, "until": time.time() + seconds})
+                emit("rate_limit_wait", {"provider": str(getattr(run.agent, "provider", None) or resolved_provider or "") or None,
+                                         "until": time.time() + wait[0], "until_kind": wait[1]})
             elif wait_state["active"]:
                 wait_state["active"] = False
                 emit("rate_limit_wait", {"provider": None, "until": None})
