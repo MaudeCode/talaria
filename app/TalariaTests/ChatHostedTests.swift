@@ -173,10 +173,11 @@ final class ChatHostedTests: XCTestCase {
     func testManualCompressionShowsInTheRunStatusChip() async throws {
         let window = try await hostFixtureChat()
         try await sendFromComposer("/compress", in: window)
-        let chip = try await requireElement(in: window, "The compression never reached the run status chip") {
+        // The chip shows as the command is sent; its elapsed time follows once the server's job start arrives.
+        let chip = try await requireElement(in: window, "The chip never showed the time since the server's job start") {
             $0.accessibilityLabel?.hasSuffix("is compressing the context") == true
+                && $0.accessibilityValue?.hasPrefix("running for 1 minute") == true
         }
-        XCTAssertTrue(chip.accessibilityValue?.hasPrefix("running for 1 minute") == true, chip.accessibilityValue ?? "no elapsed time")
         XCTAssertTrue(window.bounds.contains(window.convert(chip.accessibilityFrame, from: nil)), "The chip is off screen")
         XCTAssertFalse(HostedAccessibility.labels(in: window).contains("Compressing context..."), "The composer placeholder still says it")
         // A typed command leaves the composer when it is sent, not when it finishes (the job above is still running).
