@@ -130,6 +130,25 @@ describe('cron job payloads carry the derived fields', () => {
   })
 })
 
+describe('unwritable cron stores (TAL-810)', () => {
+  it('reports a hidden profile\'s store only when its jobs are shown', async () => {
+    const sidecar = new FakeSidecar()
+    const homes: Record<string, string> = { default: '/synthetic/home', research: '/synthetic/profiles/research' }
+    const health = (home: string) => ({ store: `${home}/cron`, error: 'ENOSPC: No space left on device', since: 'unknown', fix: `free disk space, remount it read-write, or fix permissions on ${home}/cron` })
+    sidecar.respond('cron.list', (params) => ({ jobs: params.profile_home === homes.research ? [{ ...recurring, id: 'r00000000001', profile: null, toast_notifications: true, monitor: '', continuity: false }] as never[] : [], store_health: params.profile_home === homes.research ? health(homes.research) : null }))
+    const service = new CronService({
+      sidecar: () => sidecar,
+      profileHome: (name) => homes[name]!,
+      profileNames: () => Promise.resolve([{ name: 'default', visible: true }, { name: 'research', visible: true }]),
+      profilesMatch: (a, b) => a === b,
+      isolatedProfileMode: () => false,
+      log: () => undefined,
+    })
+    expect(await service.list('default', false)).toMatchObject({ jobs: [], other_profile_count: 1, unwritable_stores: [] })
+    expect(await service.list('default', true)).toMatchObject({ unwritable_stores: [{ profile: 'research', store: `${homes.research}/cron`, since: null }] })
+  })
+})
+
 describe('cron attention hint (TAL-599)', () => {
   it('names the missing croniter package only for a job that needs attention', () => {
     const stuck = { ...recurring, enabled: false, state: 'completed', next_run_at: null, last_error: "No module named 'croniter'" }

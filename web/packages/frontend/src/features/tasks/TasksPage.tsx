@@ -231,8 +231,7 @@ function UnwritableStores({ stores, className }: { stores: CronStoreHealth[]; cl
       <div className="text-sm font-medium text-warning">{m.cron_store_unwritable_title()}</div>
       {stores.map((store) => (
         <div key={store.store} className="mt-2 text-[13px] text-text">
-          {stores.length > 1 && <div className="text-muted">{store.profile}</div>}
-          <div className="font-mono text-[12px] text-error">{store.error}</div>
+          <div className="font-mono text-[12px] text-error"><span className="font-sans text-muted">{store.profile}: </span>{store.error}</div>
           <div className="mt-1">{store.fix}</div>
           {store.since !== null && <div className="mt-1 text-muted">{m.cron_store_last_saved({ when: formatDate(store.since) })}</div>}
         </div>

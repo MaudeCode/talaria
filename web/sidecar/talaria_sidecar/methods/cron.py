@@ -32,6 +32,8 @@ _PASSTHROUGH_FIELDS = ("script", "no_agent", "context_from", "reasoning_effort",
 _RUNNING: dict[str, float] = {}
 _RUNNING_LOCK = threading.Lock()
 _SNAPSHOT_LOCK = threading.Lock()
+# The Agent's fire claim lives FIRE_CLAIM_TTL_SECONDS (300); a run refreshes it well inside that.
+_CLAIM_HEARTBEAT_SECONDS = 60.0
 
 
 def _main_model_pin() -> tuple[str | None, str | None]:
@@ -156,11 +158,12 @@ def _store_health(cron_dir: Path) -> dict | None:
     return probe_report(cron_dir)
 
 
-def _live_executions(home: Path, job_ids: list[str]) -> dict[str, dict]:
+def _live_executions(home: Path, job_ids: list[str], *, strict: bool = False) -> dict[str, dict]:
     """Jobs whose latest attempt is claimed or running under a live owner: the gateway scheduler or another process.
 
     The executions ledger lives under ``get_hermes_home()``, not the cron store override, so it is read in the
-    profile's scope. A store without a ledger never ran anything, and is not created by this read."""
+    profile's scope. A store without a ledger never ran anything, and is not created by this read. An unreadable
+    ledger reads idle for a listing; ``strict`` (run admission) refuses instead, since it cannot prove the job idle."""
     try:
         from cron.executions import live_inflight_execution
     except ImportError:
@@ -170,9 +173,26 @@ def _live_executions(home: Path, job_ids: list[str]) -> dict[str, dict]:
     try:
         with scoped_home(home):
             return {job_id: record for job_id in job_ids if job_id and (record := live_inflight_execution(job_id))}
-    except Exception:  # noqa: BLE001 - an unreadable ledger cannot prove a run; the list still loads
+    except Exception as exc:  # noqa: BLE001 - an unreadable ledger cannot prove a run; the list still loads
+        if strict:
+            raise RpcError("Cannot tell whether this task is already running: its executions ledger is unreadable", condition="cron_ledger_unreadable") from exc
         log.warning("Cron executions ledger unreadable in %s", home, exc_info=True)
         return {}
+
+
+def _claim_fire(store_home: Path, job: dict) -> str | bool | None:
+    """The Agent's own run-now lease (``claim_job_for_fire(manual=True)``), which a gateway tick must also win.
+
+    The claim token, ``False`` when another process holds the job, or ``None`` for a paused or disabled job, which no
+    tick fires. ``mark_job_run`` releases it when the run ends; the run heartbeats it meanwhile."""
+    jobs = _jobs()
+    with _store(store_home):
+        if not jobs.is_job_runnable(job):
+            return None
+        claimed = jobs.claim_job_for_fire(job["id"], manual=True, return_job=True)
+    if not isinstance(claimed, dict):
+        return False
+    return str((claimed.get("fire_claim") or {}).get("by") or "") or None
 
 
 def _elapsed(record: dict) -> float:
@@ -301,12 +321,13 @@ def _result_timeout(job) -> float:
     return 6 * 60 * 60.0
 
 
-def _run_in_child(job, execution_home, ctx: CallContext):
+def _run_in_child(job, execution_home, ctx: CallContext, heartbeat=None):
     ctx_mp = multiprocessing.get_context("spawn")
     result_queue = ctx_mp.Queue(maxsize=1)
     process = ctx_mp.Process(target=_child_main, args=(job, str(execution_home) if execution_home else None, result_queue))
     process.start()
     deadline = time.monotonic() + _result_timeout(job)
+    next_beat = time.monotonic() + _CLAIM_HEARTBEAT_SECONDS
     status, payload = "error", ["cron run subprocess failed before producing a result", ""]
     try:
         while True:
@@ -314,6 +335,9 @@ def _run_in_child(job, execution_home, ctx: CallContext):
                 status, *payload = result_queue.get(timeout=1.0)
                 break
             except queue.Empty:
+                if heartbeat is not None and time.monotonic() >= next_beat:
+                    next_beat = time.monotonic() + _CLAIM_HEARTBEAT_SECONDS
+                    heartbeat()
                 if ctx.cancelled:
                     process.terminate()
                     process.join(timeout=5)
@@ -369,7 +393,7 @@ def _delivery_home(scheduler, home: Path):
                 pass
 
 
-def run_tracked(job: dict, store_home: Path, execution_home: Path | None, ctx: CallContext) -> dict:
+def run_tracked(job: dict, store_home: Path, execution_home: Path | None, ctx: CallContext, claim_owner: str | None = None) -> dict:
     jobs = _jobs()
     scheduler = importlib.import_module("cron.scheduler")
     silent_marker = getattr(scheduler, "SILENT_MARKER", "[SILENT]")
@@ -378,7 +402,14 @@ def run_tracked(job: dict, store_home: Path, execution_home: Path | None, ctx: C
     execution_home = execution_home or store_home
     outcome: dict = {"job_id": job_id, "status": "completed"}
     try:
-        success, output, final_response, error = _run_in_child(job, execution_home, ctx)
+        def heartbeat() -> None:
+            try:
+                with _store(store_home):
+                    jobs.heartbeat_fire_claim(job_id, expected_owner=claim_owner)
+            except Exception:  # noqa: BLE001 - a missed beat only shortens the lease
+                log.warning("Fire claim heartbeat failed for job %s", job_id, exc_info=True)
+
+        success, output, final_response, error = _run_in_child(job, execution_home, ctx, heartbeat if claim_owner else None)
         with _store(store_home), _delivery_home(scheduler, store_home):
             jobs.save_job_output(job_id, output)
             content = final_response if success else f"⚠️ Cron job '{job.get('name', job_id)}' failed:\n{error}"
@@ -555,7 +586,7 @@ def register(registry) -> None:
             job = _jobs().get_job(job_id)
         if not job:
             raise RpcError("Job not found", condition="not_found")
-        foreign = _live_executions(store_home, [job_id]).get(job_id)
+        foreign = _live_executions(store_home, [job_id], strict=True).get(job_id)
         if foreign is not None:
             return {"job_id": job_id, "status": "already_running", "elapsed": _elapsed(foreign)}
         with _RUNNING_LOCK:
@@ -563,8 +594,18 @@ def register(registry) -> None:
             if started is not None:
                 return {"job_id": job_id, "status": "already_running", "elapsed": round(time.time() - started, 1)}
             _RUNNING[job_id] = time.time()
+        try:
+            owner = _claim_fire(store_home, job)
+        except BaseException:
+            with _RUNNING_LOCK:
+                _RUNNING.pop(job_id, None)
+            raise
+        if owner is False:
+            with _RUNNING_LOCK:
+                _RUNNING.pop(job_id, None)
+            return {"job_id": job_id, "status": "already_running", "elapsed": 0.0}
         ctx.emit("started", {"job_id": job_id})
-        return run_tracked(job, store_home, execution_home, ctx)
+        return run_tracked(job, store_home, execution_home, ctx, owner)
 
     @registry.method("cron.status", requires_agent=False)
     def status(ctx: CallContext, params: dict) -> dict:

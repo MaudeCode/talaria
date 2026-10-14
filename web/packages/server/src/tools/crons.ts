@@ -339,10 +339,16 @@ export class CronService {
     const otherJobs: Dict[] = []
     const pickerHome = this.deps.profileHome(active)
     const unwritable: CronStoreHealth[] = []
-    try { for (const row of await this.storedJobs(active, unwritable)) (row.managed ? activeJobs : otherJobs).push(await this.view(row, pickerHome)) }
-    catch (error) { if (error instanceof SidecarError && error.condition === 'cron_unavailable') return { jobs: [], cron_unavailable: true, unwritable_stores: [] }; throw error }
     const all = allProfiles && !this.deps.isolatedProfileMode()
-    return { jobs: (all ? [...activeJobs, ...otherJobs] : activeJobs).sort(compareListedJobs), ordered: true, all_profiles: all, active_profile: active, other_profile_count: all ? 0 : otherJobs.length, unwritable_stores: unwritable }
+    // TAL-810: a failing store is reported for the active profile and for every store whose jobs this list shows.
+    const shownStores = new Set([active])
+    try {
+      for (const row of await this.storedJobs(active, unwritable)) {
+        (row.managed ? activeJobs : otherJobs).push(await this.view(row, pickerHome))
+        if (row.managed || all) shownStores.add(row.profile)
+      }
+    } catch (error) { if (error instanceof SidecarError && error.condition === 'cron_unavailable') return { jobs: [], cron_unavailable: true, unwritable_stores: [] }; throw error }
+    return { jobs: (all ? [...activeJobs, ...otherJobs] : activeJobs).sort(compareListedJobs), ordered: true, all_profiles: all, active_profile: active, other_profile_count: all ? 0 : otherJobs.length, unwritable_stores: unwritable.filter((store) => shownStores.has(store.profile)) }
   }
 
   /**
