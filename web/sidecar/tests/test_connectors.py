@@ -209,3 +209,19 @@ def test_a_client_without_the_card_keeps_the_agents_plain_connect_link(tmp_path,
     assert observed["frames"] == [] and observed["answers"] == []
     [tool] = observed["tool"]
     assert "https://vendor.example.test/authorize/conn-gmail-1" in json.dumps(tool)
+
+
+def test_the_operation_cache_never_drops_an_operation_still_open(monkeypatch, tmp_path):
+    """A chat card's operation stays readable however many settled ones follow it: only settled ones age out."""
+    from collections import OrderedDict
+    from types import SimpleNamespace
+
+    from talaria_sidecar.methods import connectors
+
+    monkeypatch.setattr(connectors, "_OPS", OrderedDict())
+    waiting = SimpleNamespace(op_id="op-waiting", settled=False)
+    connectors._remember(tmp_path, waiting)
+    for n in range(connectors._OPS_CAP + 5):
+        connectors._remember(tmp_path, SimpleNamespace(op_id=f"op-{n}", settled=True))
+    assert connectors._operation(tmp_path, "op-waiting") is waiting
+    assert len(connectors._OPS) == connectors._OPS_CAP

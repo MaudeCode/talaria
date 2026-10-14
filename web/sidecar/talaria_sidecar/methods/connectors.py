@@ -23,8 +23,8 @@ from ..rpc import CallContext
 log = logging.getLogger("talaria_sidecar.connectors")
 
 # Operations the page or a chat card may still read, by (profile home, op_id). The Agent's ``live`` registry drops an
-# operation once it settles, so its final state is kept here for the next poll.
-# ponytail: a fixed cap, oldest out; an operation older than the last 64 reads as not found.
+# operation once it settles, so its final state is kept here for the next poll. Only settled operations age out (oldest
+# first, past 64): an open one is someone's card, and the Agent bounds those (one per session, settled by its deadline).
 _OPS: OrderedDict[tuple[str, str], object] = OrderedDict()
 _OPS_CAP = 64
 _OPS_LOCK = threading.Lock()
@@ -159,8 +159,9 @@ def _remember(home: Path, operation) -> None:
     with _OPS_LOCK:
         _OPS[(str(home), operation.op_id)] = operation
         _OPS.move_to_end((str(home), operation.op_id))
-        while len(_OPS) > _OPS_CAP:
-            _OPS.popitem(last=False)
+        settled = [key for key, op in _OPS.items() if op.settled]
+        for key in settled[:max(0, len(_OPS) - _OPS_CAP)]:
+            del _OPS[key]
 
 
 def _operation(home: Path, op_id: str):
