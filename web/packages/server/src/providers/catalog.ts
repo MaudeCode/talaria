@@ -187,6 +187,8 @@ const MODEL_PICKER_VISIBLE_TARGET = 15
 const ACCOUNT_USAGE_CACHE_TTL_S = 45
 /** TAL-807: the oldest account-usage read the picker still shows a quota level from. */
 const PICKER_USAGE_MAX_AGE_S = 600
+/** TAL-807: how long a picker read waits for a provider's first account-usage read. */
+const PICKER_USAGE_WAIT_MS = 2_000
 const LIVE_TTL_S = 86_400
 /** TAL-799: the Agent's `_PROVIDER_MODELS_FALLBACK_TTL`; its placeholder for an unreachable catalog is re-probed soon. */
 const FALLBACK_TTL_S = 60
@@ -995,7 +997,6 @@ export class ProviderCatalog {
     } catch (error) {
       this.deps.log(`[catalog] pool limits failed: ${str((error as Error).message)}`)
     }
-    const thresholds = this.deps.quotaThresholds?.(profile) ?? QUOTA_THRESHOLD_DEFAULTS
     for (const g of catalog.groups) {
       const limit = limits[g.provider_id]
       if (limit?.scope === 'account') g.limit = limit
@@ -1008,32 +1009,42 @@ export class ProviderCatalog {
         }
         if (Object.keys(cooled).length) g.limit = { scope: 'models', models: cooled }
       }
-      // An account limit already says the login is out; the quota level would only repeat it.
-      const level = g.limit?.scope === 'account' ? null : this.pickerQuotaLevel(profileHome, g.provider_id, thresholds)
-      if (level) g.quota_level = level
     }
+    const thresholds = this.deps.quotaThresholds?.(profile) ?? QUOTA_THRESHOLD_DEFAULTS
+    // An account limit already says the login is out; the quota level would only repeat it.
+    const levels = await Promise.all(catalog.groups.map((g) => (g.limit?.scope === 'account' ? Promise.resolve(null) : this.pickerQuotaLevel(profileHome, g.provider_id, thresholds))))
+    catalog.groups.forEach((g, i) => { const level = levels[i]; if (level) g.quota_level = level })
     return catalog
   }
 
-  /** TAL-807: account-usage reads the picker started in the background, by `accountUsageCache` key. */
-  private readonly pickerUsageReads = new Set<string>()
+  /** TAL-807: account-usage reads the picker started, by `accountUsageCache` key. */
+  private readonly pickerUsageReads = new Map<string, Promise<void>>()
 
   /**
    * TAL-807: the TAL-411 `remaining` level of the tightest account-scope window in the provider's cached account-usage
-   * read; a model-family window (Opus or Sonnet weekly) never counts. The picker never waits on a usage API: a read past
-   * the cache TTL starts one in the background, and one past `PICKER_USAGE_MAX_AGE_S` shows nothing.
+   * read; a model-family window (Opus or Sonnet weekly) never counts. A read past the cache TTL starts a new one, which
+   * the picker waits for only when it has no read at all, and then for at most `PICKER_USAGE_WAIT_MS`; one past
+   * `PICKER_USAGE_MAX_AGE_S` shows nothing.
    */
-  private pickerQuotaLevel(profileHome: string, pid: string, t: QuotaThresholds): QuotaLevel | null {
+  private async pickerQuotaLevel(profileHome: string, pid: string, t: QuotaThresholds): Promise<QuotaLevel | null> {
     if (!ACCOUNT_USAGE_PROVIDERS.has(pid)) return null
     const key = `${profileHome}\0${pid}\0`
-    const cached = this.accountUsageCache.get(key)
-    const age = cached ? this.deps.now() - cached.at : Infinity
-    if (age > ACCOUNT_USAGE_CACHE_TTL_S && !this.pickerUsageReads.has(key)) {
-      this.pickerUsageReads.add(key)
-      void this.quota(profileHome, pid).catch(() => undefined).finally(() => this.pickerUsageReads.delete(key))
+    let cached = this.accountUsageCache.get(key)
+    if (!cached || this.deps.now() - cached.at > ACCOUNT_USAGE_CACHE_TTL_S) {
+      let read = this.pickerUsageReads.get(key)
+      if (!read) {
+        read = this.quota(profileHome, pid).then(() => undefined, () => undefined).finally(() => this.pickerUsageReads.delete(key))
+        this.pickerUsageReads.set(key, read)
+      }
+      if (!cached) {
+        let timer: NodeJS.Timeout | undefined
+        await Promise.race([read, new Promise<void>((resolve) => { timer = setTimeout(resolve, PICKER_USAGE_WAIT_MS) })])
+        clearTimeout(timer)
+        cached = this.accountUsageCache.get(key)
+      }
     }
     const limits = cached?.limits
-    if (!limits?.available || age > PICKER_USAGE_MAX_AGE_S) return null
+    if (!cached || !limits?.available || this.deps.now() - cached.at > PICKER_USAGE_MAX_AGE_S) return null
     const raw = (Array.isArray(limits.windows) ? limits.windows : []).filter((w) => isDict(w) && w.scope !== 'model')
     const tightest = normalizeQuotaWindows(raw, this.deps.now()).windows
       .reduce<QuotaWindow | undefined>((a, w) => (w.remaining_percent !== null && w.remaining_percent < (a?.remaining_percent ?? Infinity) ? w : a), undefined)

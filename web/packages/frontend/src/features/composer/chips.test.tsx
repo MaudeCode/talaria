@@ -36,6 +36,7 @@ const WORKSPACES = { workspaces: [{ path: '/src/talaria-main', name: 'Talaria' }
 
 vi.mock('../../api/endpoints', () => ({ fetchToolsetsCatalog: vi.fn(() => Promise.resolve({ toolsets: [{ name: 'file', description: 'Files', available: true, selected: true, unavailable_reason: null }, { name: 'todo', description: 'Tasks', available: false, selected: false, unavailable_reason: 'disabled' }], selected_toolsets: ['file'], using_defaults: true })), fetchModels: vi.fn(() => Promise.resolve(catalog)), fetchWorkspaces: vi.fn(() => Promise.resolve(WORKSPACES)) }))
 import { ModelChip, ToolsetsChip, WorkspaceChip } from './chips'
+import { fetchModels } from '../../api/endpoints'
 
 function renderChip(props: { model: string | null; optionId: string | null }, onChange = vi.fn()) {
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } })
@@ -101,7 +102,11 @@ describe('ModelChip', () => {
       { ...COLON_CATALOG.groups[3]!, quota_level: 'healthy' },
     ] }
     renderChip({ model: null, optionId: null })
+    await waitFor(() => { expect(screen.getByRole('button')).toHaveTextContent('M') })
+    const reads = vi.mocked(fetchModels).mock.calls.length
     await userEvent.click(screen.getByRole('button'))
+    // Opening the picker reads the catalog again, so the limits shown are the server's current ones.
+    await waitFor(() => { expect(vi.mocked(fetchModels).mock.calls.length).toBe(reads + 1) })
     const anthropic = await screen.findByRole('group', { name: /^Anthropic/ })
     expect(within(anthropic).getByRole('menuitemradio', { name: /Claude Opus 4\.7/ })).toHaveTextContent(`Limited until ${time}`)
     expect(within(anthropic).getByRole('menuitemradio', { name: 'M' })).not.toHaveTextContent('Limited')

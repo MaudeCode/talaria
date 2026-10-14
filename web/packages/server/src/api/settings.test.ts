@@ -1202,6 +1202,30 @@ describe('the model picker shows pool rate limits and the account quota level (T
   })
   afterAll(() => s.close())
 
+  // Runs first: it needs the cold account-usage cache.
+  it('the quota level follows the tightest account-scope window; an Opus weekly window at 100% never marks the account', async () => {
+    limits = {}
+    windows = [
+      { label: 'Current session', used_percent: 10, reset_at: '2026-09-28T12:00:00Z', scope: 'account' },
+      { label: 'Current week', used_percent: 40, reset_at: '2026-10-03T08:00:00Z', scope: 'account' },
+      { label: 'Opus week', used_percent: 100, reset_at: '2026-10-03T08:00:00Z', scope: 'model' },
+    ]
+    // The first picker read of a cold home waits for the provider's first account-usage read.
+    const group = await anthropic()
+    expect(group.quota_level).toBe('healthy')
+    expect(group.limit).toBeUndefined()
+
+    windows = [{ label: 'Current session', used_percent: 95, reset_at: '2026-09-28T12:00:00Z', scope: 'account' }, windows[2]!]
+    await s.get('/api/provider/quota?provider=anthropic&refresh=1')
+    expect((await anthropic()).quota_level).toBe('critical')
+
+    // An account limit already says the login is out: the group carries the limit alone.
+    limits = { anthropic: { scope: 'account', resets_at: RESET } }
+    expect(await anthropic()).toMatchObject({ limit: { scope: 'account', resets_at: RESET } })
+    expect((await anthropic()).quota_level).toBeUndefined()
+    limits = {}
+  })
+
   it('an account-wide pool limit marks the group, and a model cooldown only that model', async () => {
     limits = { anthropic: { scope: 'account', resets_at: RESET } }
     let group = await anthropic()
@@ -1232,29 +1256,6 @@ describe('the model picker shows pool rate limits and the account quota level (T
     } finally {
       sidecar.respond('usage.limits', restore)
     }
-  })
-
-  it('the quota level follows the tightest account-scope window; an Opus weekly window at 100% never marks the account', async () => {
-    limits = {}
-    windows = [
-      { label: 'Current session', used_percent: 10, reset_at: '2026-09-28T12:00:00Z', scope: 'account' },
-      { label: 'Current week', used_percent: 40, reset_at: '2026-10-03T08:00:00Z', scope: 'account' },
-      { label: 'Opus week', used_percent: 100, reset_at: '2026-10-03T08:00:00Z', scope: 'model' },
-    ]
-    await s.get('/api/provider/quota?provider=anthropic&refresh=1')
-    const group = await anthropic()
-    expect(group.quota_level).toBe('healthy')
-    expect(group.limit).toBeUndefined()
-
-    windows = [{ label: 'Current session', used_percent: 95, reset_at: '2026-09-28T12:00:00Z', scope: 'account' }, windows[2]!]
-    await s.get('/api/provider/quota?provider=anthropic&refresh=1')
-    expect((await anthropic()).quota_level).toBe('critical')
-
-    // An account limit already says the login is out: the group carries the limit alone.
-    limits = { anthropic: { scope: 'account', resets_at: RESET } }
-    expect(await anthropic()).toMatchObject({ limit: { scope: 'account', resets_at: RESET } })
-    expect((await anthropic()).quota_level).toBeUndefined()
-    limits = {}
   })
 })
 
