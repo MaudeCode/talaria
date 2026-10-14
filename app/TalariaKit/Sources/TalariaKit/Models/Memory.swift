@@ -18,6 +18,10 @@ public struct MemoryResponse: Decodable, Equatable {
     public let memoryMtime: Double?
     public let userMtime: Double?
     public let soulMtime: Double?
+    /// The revision of each file as the server read it (TAL-784); a save sends back the one its edit started from.
+    let memoryRevision: String?
+    let userRevision: String?
+    let soulRevision: String?
     public let projectContext: String?
     public let projectContextName: String?
     let projectContextPath: String?
@@ -36,6 +40,9 @@ public struct MemoryResponse: Decodable, Equatable {
         case memoryMtime
         case userMtime
         case soulMtime
+        case memoryRevision
+        case userRevision
+        case soulRevision
         case projectContext
         case projectContextName
         case projectContextPath
@@ -56,6 +63,9 @@ public struct MemoryResponse: Decodable, Equatable {
         memoryMtime = try container.decodeFlexibleDoubleIfPresent(forKey: .memoryMtime)
         userMtime = try container.decodeFlexibleDoubleIfPresent(forKey: .userMtime)
         soulMtime = try container.decodeFlexibleDoubleIfPresent(forKey: .soulMtime)
+        memoryRevision = try? container.decodeIfPresent(String.self, forKey: .memoryRevision)
+        userRevision = try? container.decodeIfPresent(String.self, forKey: .userRevision)
+        soulRevision = try? container.decodeIfPresent(String.self, forKey: .soulRevision)
         projectContext = try container.decodeIfPresent(String.self, forKey: .projectContext)
         projectContextName = try container.decodeIfPresent(String.self, forKey: .projectContextName)
         projectContextPath = try container.decodeIfPresent(String.self, forKey: .projectContextPath)
@@ -75,6 +85,16 @@ public struct MemoryResponse: Decodable, Equatable {
             projectContextShadowed = nil
         }
         externalNotesEnabled = (try? container.decodeIfPresent(Bool.self, forKey: .externalNotesEnabled)) ?? nil
+    }
+}
+
+extension MemoryResponse {
+    func revision(for section: MemorySection) -> String? {
+        switch section {
+        case .memory: memoryRevision
+        case .user: userRevision
+        case .soul: soulRevision
+        }
     }
 }
 

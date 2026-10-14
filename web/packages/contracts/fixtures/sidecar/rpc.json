@@ -75,6 +75,7 @@
           "mcp.reload",
           "mcp.status",
           "memory.check",
+          "memory.write",
           "models.capabilities",
           "models.context_length",
           "models.estimate_tokens",

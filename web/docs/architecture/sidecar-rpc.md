@@ -162,7 +162,7 @@ under Hermes Agent's context-local home override (`talaria_sidecar/home.py`).
 | `approval`, `clarify` | `approval.pending`, `approval.respond`, `approval.set_yolo`, `clarify.respond` | |
 | `worktree` | `create` | |
 | `checkpoints` | `list`, `diff`, `restore` | |
-| `memory` | `check` | |
+| `memory` | `check`, `write` | |
 | `config` | `get`, `set` | |
 
 Chat lifecycle diagnostics beginning with ⚠ or ❌ emit `warning` frames regardless

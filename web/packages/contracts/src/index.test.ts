@@ -12,9 +12,9 @@ describe('contracts package', () => {
     expect(parsed.skills.map((row) => row.name)).toEqual(['a/one', 'b/two'])
     expect(parsed.skills.every((row) => row.load_name === row.name && row.status === 'ambiguous' && row.tier === 1)).toBe(true)
   })
-  it('parses the shared memory save refusals (TAL-886)', () => {
+  it('parses the shared memory save refusals (TAL-886, TAL-784)', () => {
     const fixture = shared('fixtures/memory-write-refusals.json') as Record<string, unknown>
-    expect(Object.values(fixture).map((body) => MemoryWriteRefusalSchema.parse(body).code)).toEqual(['memory_char_limit', 'memory_mask_ambiguous', 'memory_mask_edited'])
+    expect(Object.values(fixture).map((body) => MemoryWriteRefusalSchema.parse(body).code)).toEqual(['memory_char_limit', 'memory_mask_ambiguous', 'memory_mask_edited', 'memory_conflict'])
   })
   it('exports an integer sidecar RPC version', () => {
     expect(Number.isInteger(SIDECAR_RPC_VERSION)).toBe(true)

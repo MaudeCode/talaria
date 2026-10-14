@@ -11,6 +11,7 @@ public final class MemoryViewModel {
     private(set) var memoryMtime: Date?
     private(set) var userMtime: Date?
     private(set) var soulMtime: Date?
+    private var loaded: MemoryResponse?
     public private(set) var projectContextText: String?
     private(set) var projectContextName: String?
     private(set) var projectContextWorkspace: String?
@@ -117,7 +118,11 @@ public final class MemoryViewModel {
         defer { isSaving = false }
 
         do {
-            let writeResponse = try await client.writeMemory(section: section, content: content)
+            let writeResponse = try await client.writeMemory(
+                section: section,
+                content: content,
+                revision: loaded?.revision(for: section)
+            )
             guard writeResponse.ok != false else {
                 actionErrorMessage = writeResponse.error ?? String(localized: "Could not save memory.")
                 return false
@@ -134,6 +139,7 @@ public final class MemoryViewModel {
     }
 
     private func apply(_ response: MemoryResponse) {
+        loaded = response
         memoryText = response.memory
         userText = response.user
         soulText = response.soul

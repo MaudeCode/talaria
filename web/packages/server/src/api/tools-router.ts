@@ -310,14 +310,16 @@ export const toolsRouter = os.router({
   memory: {
     get: os.memory.get.handler(({ input, context: { ctx } }) => run(async () => {
       const config = await ctx.deps.agentConfig.read(home(ctx))
-      return readMemory(home(ctx), config, memoryWorkspace(ctx, str(input.session_id), str(input.workspace)), ctx.deps.config.env, ctx.deps.sessions.deps.redactEnabled()) as never
+      return readMemory(home(ctx), config, memoryWorkspace(ctx, str(input.session_id), str(input.workspace)), ctx.deps.config.env, ctx.deps.sessions.deps.redactEnabled(), ctx.deps.auth.signingKey()) as never
     })),
     write: os.memory.write.handler(({ input, context: { ctx } }) => run(async () => {
       const section = input.section ?? input.target
-      if (section === undefined || input.content === undefined) throw new HttpError(400, 'Missing required field(s): section, content')
+      if (section === undefined || input.content === undefined || input.revision === undefined) throw new HttpError(400, 'Missing required field(s): section, content, revision')
       const profileHome = home(ctx)
-      return writeMemory(profileHome, await ctx.deps.agentConfig.read(profileHome), str(section), str(input.content), {
+      return writeMemory(profileHome, await ctx.deps.agentConfig.read(profileHome), str(section), str(input.content), input.revision, {
+        key: ctx.deps.auth.signingKey(),
         check: (target, content) => runningSidecar(ctx).call('memory.check', { profile_home: profileHome, target, content }),
+        write: (target, base, content) => runningSidecar(ctx).call('memory.write', { profile_home: profileHome, section: target, base, content }),
       })
     })),
   },

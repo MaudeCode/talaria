@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Saving the memory page no longer erases memories the Agent stored while the page was open; the save stops and offers a reload instead.",
+      "highlight": false,
+      "components": ["web", "app"]
+    }
+  ]
+}

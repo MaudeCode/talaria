@@ -4534,6 +4534,19 @@
     ],
     "additionalProperties": false
   },
+  "memory.write": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "properties": {
+      "written": {
+        "type": "boolean"
+      }
+    },
+    "required": [
+      "written"
+    ],
+    "additionalProperties": false
+  },
   "checkpoints.list": {
     "$schema": "https://json-schema.org/draft/2020-12/schema",
     "type": "object",

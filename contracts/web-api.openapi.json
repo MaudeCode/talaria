@@ -47888,12 +47888,24 @@
                     },
                     "external_notes_enabled": {
                       "type": "boolean"
+                    },
+                    "memory_revision": {
+                      "type": "string"
+                    },
+                    "user_revision": {
+                      "type": "string"
+                    },
+                    "soul_revision": {
+                      "type": "string"
                     }
                   },
                   "required": [
                     "memory",
                     "user",
-                    "soul"
+                    "soul",
+                    "memory_revision",
+                    "user_revision",
+                    "soul_revision"
                   ],
                   "additionalProperties": {}
                 }
@@ -47906,7 +47918,7 @@
     "/api/memory/write": {
       "post": {
         "operationId": "memory.write",
-        "summary": "`section` names the file (memory, user, soul); the legacy `target` alias is accepted. Masks the page showed are restored to the values they hide; 422 refuses an ambiguous or edited mask, or a MEMORY.md / USER.md body over the Agent store limit.",
+        "summary": "`section` names the file (memory, user, soul); the legacy `target` alias is accepted. `revision` is the section's `*_revision` the edit started from; 409 refuses the save when the file changed since. Masks the page showed are restored to the values they hide; 422 refuses an ambiguous or edited mask, or a MEMORY.md / USER.md body over the Agent store limit.",
         "tags": [
           "tools"
         ],
@@ -47924,6 +47936,9 @@
                     "type": "string"
                   },
                   "content": {
+                    "type": "string"
+                  },
+                  "revision": {
                     "type": "string"
                   }
                 }
@@ -47954,6 +47969,30 @@
                     "section",
                     "path"
                   ]
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The file changed since `revision`; the file is untouched.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string",
+                      "const": "memory_conflict"
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "code"
+                  ],
+                  "additionalProperties": false
                 }
               }
             }

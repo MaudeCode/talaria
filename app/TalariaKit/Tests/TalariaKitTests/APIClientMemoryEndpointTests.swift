@@ -18,6 +18,9 @@ final class APIClientMemoryEndpointTests: APIClientTestCase {
               "memory_mtime": 1770000000,
               "user_mtime": 1770000100,
               "soul_mtime": "1770000200",
+              "memory_revision": "rev-memory",
+              "user_revision": "rev-user",
+              "soul_revision": "rev-soul",
               "project_context": "# Project\\n\\n- Ship it",
               "project_context_name": "AGENTS.md",
               "project_context_path": "/Users/test/workspace/AGENTS.md",
@@ -46,6 +49,7 @@ final class APIClientMemoryEndpointTests: APIClientTestCase {
         XCTAssertEqual(response.memoryMtime, 1_770_000_000)
         XCTAssertEqual(response.userMtime, 1_770_000_100)
         XCTAssertEqual(response.soulMtime, 1_770_000_200)
+        XCTAssertEqual(MemorySection.allCases.map { response.revision(for: $0) }, ["rev-memory", "rev-user", "rev-soul"])
         XCTAssertEqual(response.projectContext, "# Project\n\n- Ship it")
         XCTAssertEqual(response.projectContextName, "AGENTS.md")
         XCTAssertEqual(response.projectContextPath, "/Users/test/workspace/AGENTS.md")
@@ -154,6 +158,7 @@ final class APIClientMemoryEndpointTests: APIClientTestCase {
             let body = try JSONSerialization.jsonObject(with: data) as? [String: Any]
             XCTAssertEqual(body?["section"] as? String, "user")
             XCTAssertEqual(body?["content"] as? String, "# Profile\n\n- Updated from iOS")
+            XCTAssertEqual(body?["revision"] as? String, "rev-user")
 
             return apiTestJSONResponse("""
             {
@@ -165,7 +170,11 @@ final class APIClientMemoryEndpointTests: APIClientTestCase {
             """, for: request)
         }
 
-        let response = try await client.writeMemory(section: .user, content: "# Profile\n\n- Updated from iOS")
+        let response = try await client.writeMemory(
+            section: .user,
+            content: "# Profile\n\n- Updated from iOS",
+            revision: "rev-user"
+        )
 
         XCTAssertEqual(response.ok, true)
         XCTAssertEqual(response.section, .user)
@@ -184,7 +193,7 @@ final class APIClientMemoryEndpointTests: APIClientTestCase {
             """, for: request)
         }
 
-        let response = try await client.writeMemory(section: .soul, content: "# Soul")
+        let response = try await client.writeMemory(section: .soul, content: "# Soul", revision: nil)
 
         XCTAssertNil(response.ok)
         XCTAssertNil(response.section)

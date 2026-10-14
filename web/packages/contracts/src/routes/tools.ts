@@ -16,18 +16,25 @@ const Target = z.object({ target: z.string().optional(), channel: z.string().nul
   version: z.string().min(1).max(128).optional().describe('TAL-946: a Stable `versions[].ref` of this target to install instead of the newest. Rejected when it is not listed or on Experimental.'),
   tab_id: TabIdSchema.optional() })
 
+/** TAL-784: a save whose `revision` no longer matches the file (409), so it would overwrite later changes. The page reloads. */
+export const MemoryWriteConflictSchema = z.object({ error: z.string(), code: z.literal('memory_conflict') })
 /**
  * TAL-886: a refused memory save (422) leaves the file untouched. `memory_char_limit`: the MEMORY.md / USER.md body is over the
  * Agent store's char limit as its parser counts it. `memory_mask_ambiguous`: the body holds a mask the page showed for more than
  * one hidden value, so the server cannot tell which one it stands for. `memory_mask_edited`: the body edits the text of a mask.
+ * A conflict (409, TAL-784) leaves it untouched too.
  */
-export const MemoryWriteRefusalSchema = z.union([
+const MemoryWriteRejectionSchema = z.union([
   z.object({ error: z.string(), code: z.literal('memory_char_limit'), char_limit: z.object({ count: z.number().int(), limit: z.number().int() }) }),
   z.object({ error: z.string(), code: z.enum(['memory_mask_ambiguous', 'memory_mask_edited']), mask: z.string() }),
 ])
+export const MemoryWriteRefusalSchema = z.union([...MemoryWriteRejectionSchema.options, MemoryWriteConflictSchema])
 export type MemoryWriteRefusal = z.infer<typeof MemoryWriteRefusalSchema>
-const memoryWriteRefusalJson = z.toJSONSchema(MemoryWriteRefusalSchema) as Record<string, unknown>
-delete memoryWriteRefusalJson.$schema
+const jsonSchema = (schema: z.ZodType): Record<string, unknown> => {
+  const json = z.toJSONSchema(schema) as Record<string, unknown>
+  delete json.$schema
+  return json
+}
 
 export const toolsContract = {
   toolsetsCatalog: oc.route({ method: 'POST', path: '/api/toolsets', tags, summary: 'Read the current profile catalog with a draft selection. Null uses profile defaults.' }).input(z.object({ session_id: z.string().optional(), toolsets: z.array(z.string()).nullable() })).output(ToolsetsCatalogSchema),
@@ -41,7 +48,7 @@ export const toolsContract = {
   },
   memory: {
     get: oc.route({ method: 'GET', path: '/api/memory', tags }).input(z.object({ session_id: z.string().optional(), workspace: z.string().optional() })).output(MemorySchema),
-    write: oc.route({ method: 'POST', path: '/api/memory/write', tags, summary: '`section` names the file (memory, user, soul); the legacy `target` alias is accepted. Masks the page showed are restored to the values they hide; 422 refuses an ambiguous or edited mask, or a MEMORY.md / USER.md body over the Agent store limit.', spec: (op) => ({ ...op, responses: { ...op.responses, 422: { description: 'Refused; the file is untouched.', content: { 'application/json': { schema: memoryWriteRefusalJson } } } } }) }).input(z.object({ section: z.string().optional(), target: z.string().optional(), content: z.string().optional() })).output(z.object({ ok: z.literal(true), section: z.string(), path: z.string() })),
+    write: oc.route({ method: 'POST', path: '/api/memory/write', tags, summary: '`section` names the file (memory, user, soul); the legacy `target` alias is accepted. `revision` is the section\'s `*_revision` the edit started from; 409 refuses the save when the file changed since. Masks the page showed are restored to the values they hide; 422 refuses an ambiguous or edited mask, or a MEMORY.md / USER.md body over the Agent store limit.', spec: (op) => ({ ...op, responses: { ...op.responses, 409: { description: 'The file changed since `revision`; the file is untouched.', content: { 'application/json': { schema: jsonSchema(MemoryWriteConflictSchema) } } }, 422: { description: 'Refused; the file is untouched.', content: { 'application/json': { schema: jsonSchema(MemoryWriteRejectionSchema) } } } } }) }).input(z.object({ section: z.string().optional(), target: z.string().optional(), content: z.string().optional(), revision: z.string().optional() })).output(z.object({ ok: z.literal(true), section: z.string(), path: z.string() })),
   },
   prompts: {
     list: oc.route({ method: 'GET', path: '/api/prompts', tags }).output(PromptsSchema),

@@ -54,6 +54,51 @@ final class MemoryViewModelTests: APIClientTestCase {
     }
 
     @MainActor
+    func testSaveSendsTheLoadedRevisionAndSurfacesAConflictWithoutReloading() async throws {
+        var requestPaths: [String] = []
+        let client = makeClient { request in
+            requestPaths.append(request.url?.path ?? "")
+            if request.url?.path == "/api/memory/write" {
+                let data = try XCTUnwrap(apiTestBodyData(from: request))
+                let body = try JSONSerialization.jsonObject(with: data) as? [String: Any]
+                XCTAssertEqual(body?["section"] as? String, "memory")
+                XCTAssertEqual(body?["revision"] as? String, "rev-memory")
+                return apiTestJSONResponse("""
+                {
+                  "error": "MEMORY.md changed since this page loaded it. Not saved.",
+                  "code": "memory_conflict"
+                }
+                """, statusCode: 409, for: request)
+            }
+            return apiTestJSONResponse("""
+            {
+              "memory": "Entry A",
+              "user": "",
+              "soul": "",
+              "memory_revision": "rev-memory",
+              "user_revision": "rev-user",
+              "soul_revision": "rev-soul"
+            }
+            """, for: request)
+        }
+        let viewModel = MemoryViewModel(
+            server: try XCTUnwrap(URL(string: "https://example.test")),
+            client: client
+        )
+
+        await viewModel.load()
+        let didSave = await viewModel.save(section: .memory, content: "Entry A\n§\nEntry C")
+
+        XCTAssertFalse(didSave)
+        XCTAssertEqual(requestPaths, ["/api/memory", "/api/memory/write"])
+        XCTAssertEqual(
+            viewModel.actionErrorMessage,
+            "Server returned HTTP 409: MEMORY.md changed since this page loaded it. Not saved."
+        )
+        XCTAssertEqual(viewModel.memoryText, "Entry A")
+    }
+
+    @MainActor
     func testSaveSurfacesRejectedResponseWithoutReloading() async throws {
         var requestPaths: [String] = []
         let client = makeClient { request in

@@ -7,9 +7,14 @@ import { HubPage } from '../../shell/AppShell'
 import { Button } from '../../ui/Button'
 import { ErrorState, LoadingState, formatDate } from '../../ui/States'
 import { showToast } from '../toast/toast'
+import { isApiError } from '../../contracts/common'
 import { cn } from '../../ui/cn'
 
 type Section = 'memory' | 'user' | 'soul' | 'project_context'
+type Writable = Exclude<Section, 'project_context'>
+/** An edit and the file revision it started from, which the save sends back (TAL-784). */
+interface Draft { text: string; revision: string }
+const without = <T,>(record: Record<string, T>, key: string): Record<string, T> => Object.fromEntries(Object.entries(record).filter(([k]) => k !== key))
 const SECTIONS: { id: Section; label: () => string; writable: boolean }[] = [
   { id: 'memory', label: () => m.memory_section_memory(), writable: true },
   { id: 'user', label: () => m.memory_section_user(), writable: true },
@@ -21,16 +26,22 @@ export function MemoryPage() {
   const qc = useQueryClient()
   const memory = useQuery({ queryKey: keys.memory, queryFn: () => api.fetchMemory(), staleTime: 15_000 })
   const [section, setSection] = useState<Section>('memory')
-  const [draft, setDraft] = useState<Record<string, string>>({})
+  const [draft, setDraft] = useState<Record<string, Draft>>({})
+  // The server's message for a save it refused because the file changed since the edit started.
+  const [conflict, setConflict] = useState<Record<string, string>>({})
   const write = useMutation({
-    mutationFn: ({ target, content }: { target: 'memory' | 'user' | 'soul'; content: string }) => api.writeMemory({ section: target, content }),
-    onSuccess: (_r, vars) => { showToast(m.memory_saved()); setDraft((d) => Object.fromEntries(Object.entries(d).filter(([k]) => k !== vars.target))); void qc.invalidateQueries({ queryKey: keys.memory }) },
-    onError: (e) => showToast(e instanceof Error ? e.message : String(e), 4000, 'error'),
+    mutationFn: ({ target, draft: d }: { target: Writable; draft: Draft }) => api.writeMemory({ section: target, content: d.text, revision: d.revision }),
+    onSuccess: (_r, vars) => { showToast(m.memory_saved()); setDraft((d) => without(d, vars.target)); void qc.invalidateQueries({ queryKey: keys.memory }) },
+    onError: (e, vars) => {
+      if (isApiError(e) && e.code === 'memory_conflict') setConflict((c) => ({ ...c, [vars.target]: e.message }))
+      else showToast(e instanceof Error ? e.message : String(e), 4000, 'error')
+    },
   })
+  const reload = (target: Section) => { setDraft((d) => without(d, target)); setConflict((c) => without(c, target)); void memory.refetch() }
   const data = memory.data
   const current = SECTIONS.find((s) => s.id === section) ?? SECTIONS[0]
   const serverText = data ? (section === 'project_context' ? data.project_context ?? '' : data[section]) : ''
-  const text = draft[section] ?? serverText
+  const text = draft[section]?.text ?? serverText
   const path = data ? (section === 'memory' ? data.memory_path : section === 'user' ? data.user_path : section === 'soul' ? data.soul_path : data.project_context_path) : ''
   const mtime = data ? (section === 'memory' ? data.memory_mtime : section === 'user' ? data.user_mtime : section === 'soul' ? data.soul_mtime : data.project_context_mtime) : null
   return (
@@ -60,16 +71,22 @@ export function MemoryPage() {
           <textarea
             value={text}
             readOnly={!current?.writable}
-            onChange={(e) => setDraft((d) => ({ ...d, [section]: e.target.value }))}
+            onChange={(e) => { const value = e.target.value; setDraft((d) => ({ ...d, [section]: { text: value, revision: d[section]?.revision ?? (section === 'project_context' ? '' : data[`${section}_revision`]) } })) }}
             rows={22}
             spellCheck={false}
             aria-label={current?.label()}
             className="w-full rounded-md border border-border bg-code-bg p-3 font-mono text-[12.5px] text-pre-text"
           />
+          {conflict[section] && (
+            <div role="alert" className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-error">
+              <span>{conflict[section]}</span>
+              <Button variant="link" className="text-xs" onClick={() => reload(section)}>{m.reload()}</Button>
+            </div>
+          )}
           {current?.writable && (
             <div className="flex gap-2">
-              <Button variant="primary" disabled={draft[section] === undefined || write.isPending} onClick={() => { const c = draft[section]; if (c !== undefined && section !== 'project_context') write.mutate({ target: section, content: c }) }}>{m.save()}</Button>
-              <Button variant="ghost" disabled={draft[section] === undefined} onClick={() => setDraft((d) => Object.fromEntries(Object.entries(d).filter(([k]) => k !== section)))}>{m.cancel()}</Button>
+              <Button variant="primary" disabled={draft[section] === undefined || conflict[section] !== undefined || write.isPending} onClick={() => { const d = draft[section]; if (d !== undefined && section !== 'project_context') write.mutate({ target: section, draft: d }) }}>{m.save()}</Button>
+              <Button variant="ghost" disabled={draft[section] === undefined} onClick={() => { setDraft((d) => without(d, section)); setConflict((c) => without(c, section)) }}>{m.cancel()}</Button>
             </div>
           )}
         </div>

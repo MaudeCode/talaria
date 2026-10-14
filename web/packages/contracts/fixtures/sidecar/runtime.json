@@ -2,10 +2,10 @@
   "runtime.handshake": [
     {
       "params": {
-        "rpc_version": 20
+        "rpc_version": 21
       },
       "result": {
-        "rpc_version": 20,
+        "rpc_version": 21,
         "python": "<python>",
         "python_version": "3.14.7",
         "agent_dir": "<agent>",
@@ -25,7 +25,7 @@
     {
       "params": {},
       "result": {
-        "rpc_version": 20,
+        "rpc_version": 21,
         "python": "<python>",
         "python_version": "3.14.7",
         "agent_dir": "<agent>",
