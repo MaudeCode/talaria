@@ -123,6 +123,10 @@ Agents retain module ownership checks, so another profile's plugins stay hidden.
 Hosted ids claimed by multiple directories remain `not_loaded`, including collisions
 with disabled or manifest-less plugins. Their model catalogs remain empty.
 
+`plugins.isolation` reads each profile's `plugins.isolation` and counts the plugin
+directories under its `plugins/` without loading them; the server's `/api/plugins`
+derives `plugin_isolation_advisory` from those rows.
+
 ## Method namespaces
 
 Every method has a Zod schema for params, result, and stream events in the

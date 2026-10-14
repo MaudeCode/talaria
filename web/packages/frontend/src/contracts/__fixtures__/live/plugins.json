@@ -1,6 +1,7 @@
 {
   "body": {
     "empty": false,
+    "plugin_isolation_advisory": true,
     "plugins": [
       {
         "activation": "enabled",

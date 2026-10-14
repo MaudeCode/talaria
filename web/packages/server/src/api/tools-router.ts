@@ -67,6 +67,14 @@ function commandFailure(error: unknown, notFound: string, message: string): neve
   return failure(error)
 }
 
+/** TAL-820: several profiles have third-party plugins and one of them loads its plugins into the shared sidecar process. */
+async function pluginIsolationAdvisory(ctx: RequestContext): Promise<boolean> {
+  if (ctx.deps.isolatedProfileMode()) return false
+  const { profiles } = await runningSidecar(ctx).call('plugins.isolation', { base_home: ctx.deps.profileHome('default') })
+  const withPlugins = profiles.filter((profile) => profile.third_party_plugins > 0)
+  return withPlugins.length > 1 && withPlugins.some((profile) => profile.isolation === 'in_process')
+}
+
 /** TAL-806: the active profile's plugins that declare settings; none on an Agent without the settings module. */
 async function pluginSettingsList(ctx: RequestContext) {
   const result = await runningSidecar(ctx).call('plugins.settings', { profile_home: home(ctx) })
@@ -490,7 +498,9 @@ export const toolsRouter = os.router({
       const declared = await pluginSettingsList(ctx).catch((error: unknown) => { ctx.deps.log(`[plugins] settings fields failed: ${str((error as Error).message)}`); return [] })
       const settings = new Map(declared.map((entry) => [entry.key, entry.fields]))
       const plugins = result.plugins.map((plugin) => settings.has(plugin.key) ? { ...plugin, settings: settings.get(plugin.key) } : plugin)
-      return { plugins, empty: plugins.length === 0, supported_hooks: result.supported_hooks, read_only: !editable }
+      // An advisory failure leaves the list itself readable.
+      const advisory = await pluginIsolationAdvisory(ctx).catch((error: unknown) => { ctx.deps.log(`[plugins] isolation advisory failed: ${str((error as Error).message)}`); return false })
+      return { plugins, empty: plugins.length === 0, supported_hooks: result.supported_hooks, read_only: !editable, plugin_isolation_advisory: advisory }
     } catch (error) {
       ctx.deps.log(`[plugins] visibility payload failed: ${str((error as Error).message)}`)
       return { plugins: [], empty: true, supported_hooks: hooks, read_only: true, unavailable: true }

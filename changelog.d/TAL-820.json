@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Added",
+      "summary": "Settings > Plugins recommends plugins.isolation: host when several profiles have third-party plugins and one of them still runs them in the shared process.",
+      "highlight": false,
+      "components": ["web"]
+    }
+  ]
+}

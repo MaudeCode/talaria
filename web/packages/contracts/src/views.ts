@@ -923,8 +923,12 @@ export type PluginSettingView = z.infer<typeof PluginSettingViewSchema>
 export const PluginSchema = z.looseObject({ key: z.string(), name: z.string().optional(), kind: z.string().optional(), enabled: z.boolean().optional(), description: z.string().optional(), version: z.string().optional(), activation: z.string().optional(), is_active_provider: z.boolean().optional(), hooks: z.array(Json).optional(),
   /** TAL-806: the manifest's `config_schema` fields with current values; absent when the plugin declares none. */
   settings: z.array(PluginSettingViewSchema).optional() })
-/** `read_only` (TAL-806): this session may not save plugin `settings` (not the server owner, or no sidecar). */
-export const PluginsSchema = z.looseObject({ plugins: z.array(PluginSchema), empty: z.boolean().optional(), read_only: z.boolean().optional(), supported_hooks: z.array(z.string()).optional(), unavailable: z.boolean().optional() })
+/**
+ * `read_only` (TAL-806): this session may not save plugin `settings` (not the server owner, or no sidecar).
+ * `plugin_isolation_advisory` (TAL-820): more than one profile has third-party plugins installed and one of those runs them
+ * `in_process`, so Settings recommends `plugins.isolation: host`; Talaria never sets the mode.
+ */
+export const PluginsSchema = z.looseObject({ plugins: z.array(PluginSchema), empty: z.boolean().optional(), read_only: z.boolean().optional(), supported_hooks: z.array(z.string()).optional(), unavailable: z.boolean().optional(), plugin_isolation_advisory: z.boolean().optional() })
 export const McpServerSchema = z.looseObject({ name: z.string(), id: z.string().optional(), transport: z.string().optional(), enabled: z.boolean().optional(), can_toggle: z.boolean().optional().describe('Whether PATCH can enable or disable this server; false for invalid config.'), active: z.boolean().optional(), status: z.string().optional(), tools: z.number().optional(), tool_count: z.number().int().nullable().optional(), health: z.string().optional(), health_detail: z.string().optional(), health_checked_at: Json.optional(), health_pending: z.boolean().optional() })
 export const McpServersSchema = z.looseObject({ servers: z.array(McpServerSchema), health_pending: z.boolean().optional(), reload_required: z.boolean().optional(), toggle_supported: z.boolean().optional() })
 export const McpToolsSchema = z.looseObject({ tools: z.array(z.looseObject({ name: z.string().optional(), server: z.string().optional(), description: z.string().optional() })), total: z.number().int().optional(), source: z.string().optional(), inventory_scope: z.string().optional(), unavailable_servers: z.array(z.string()).optional() })

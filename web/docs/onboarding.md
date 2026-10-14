@@ -136,6 +136,27 @@ substitutes an API key provider for it.
   profile, so a plugin cannot load when another profile's plugin already uses
   its provider id or directory name.
 
+### Plugin isolation across profiles
+
+Talaria Web serves every profile from one Agent process. With the Agent's
+default `plugins.isolation: in_process`, a profile's third-party plugins run in
+that process beside every other profile's credentials. When more than one
+profile has plugins installed under its `$HERMES_HOME/plugins/` and any of them
+runs `in_process`, Settings -> Plugins recommends host isolation.
+
+Set it in each such profile's `config.yaml` (Hermes Agent v0.21.6 or later),
+then restart Talaria Web:
+
+```yaml
+plugins:
+  isolation: host
+```
+
+The Agent then runs that profile's third-party plugins in their own host
+process with only that profile's environment; bundled plugins stay in-process.
+Talaria Web never changes this setting. Plugin lists, plugin slash commands,
+and plugin model providers work in either mode.
+
 ### Local models from Hermes Agent
 
 Hermes Agent v0.21.6 and later can download open models and run them on this

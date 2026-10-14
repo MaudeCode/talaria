@@ -20,6 +20,7 @@ export function PluginsSection() {
   return (
     <div className="flex flex-col gap-2" data-section="plugins">
       {plugins.data.read_only && <div className="text-xs text-warning">{m.plugins_read_only()}</div>}
+      {plugins.data.plugin_isolation_advisory && <div className="text-xs text-warning" data-advisory="plugin-isolation">{m.plugins_isolation_advisory()}</div>}
       {list.length === 0 && <EmptyState>{m.plugins_empty()}</EmptyState>}
       <ul className="flex flex-col divide-y divide-border-subtle">
         {list.map((p) => (

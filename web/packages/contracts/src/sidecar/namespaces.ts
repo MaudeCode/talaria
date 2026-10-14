@@ -91,6 +91,8 @@ export const COMMANDS_METHODS = {
   'commands.moa_preset': { params: ProfileHomeParams.extend({ preset: z.string().nullable().optional() }), result: z.object({ moa: Loose }) },
   'plugins.providers': { params: ProfileHomeParams, result: z.object({ providers: z.array(PluginProviderSchema) }) },
   'plugins.list': { params: ProfileHomeParams.extend({ selected_providers: z.record(z.string(), z.string()).optional() }), result: z.object({ plugins: z.array(z.object({ name: z.string(), key: z.string(), version: z.string(), description: z.string(), enabled: z.boolean(), kind: z.string(), activation: z.string(), hooks: z.array(z.string()), is_active_provider: z.boolean().optional() })), supported_hooks: z.array(z.string()) }) },
+  /** TAL-820: each profile's `plugins.isolation` and installed third-party plugin count, read without loading a plugin. */
+  'plugins.isolation': { params: BaseHomeParams, result: z.object({ profiles: z.array(z.object({ name: z.string(), isolation: z.enum(['in_process', 'host']), third_party_plugins: z.number().int() })) }) },
   /** TAL-806: plugins whose manifest declares settings; `supported` is false on an Agent without `hermes_cli.plugins_settings`. */
   'plugins.settings': { params: ProfileHomeParams, result: z.object({ supported: z.boolean(), plugins: z.array(z.object({ key: z.string(), fields: z.array(PluginSettingFieldSchema) })) }) },
   /**

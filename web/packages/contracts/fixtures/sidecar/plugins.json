@@ -636,6 +636,22 @@
       }
     }
   ],
+  "plugins.isolation": [
+    {
+      "params": {
+        "base_home": "<home>"
+      },
+      "result": {
+        "profiles": [
+          {
+            "name": "default",
+            "isolation": "in_process",
+            "third_party_plugins": 0
+          }
+        ]
+      }
+    }
+  ],
   "plugins.settings": [
     {
       "params": {
