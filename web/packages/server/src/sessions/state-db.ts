@@ -435,24 +435,26 @@ export function stateDbSessionSources(dbPath: string, sessionIds: Iterable<strin
 
 /**
  * Python `_resume_lineage_ids`: a walk from a session up the compression segments it continues, root first. Null when
- * the sessions table lacks the lineage columns; the walk stops at a non-continuation, a cycle, or 20 hops.
+ * the sessions table lacks the lineage columns; the walk stops at a non-continuation, a cycle, or `maxHops`.
  */
-function continuationAncestry(db: DatabaseSync): ((sid: string) => string[]) | null {
+function continuationAncestry(db: DatabaseSync, maxHops = 20): ((sid: string) => string[]) | null {
   const cols = tableColumns(db, 'sessions')
   if (!['id', 'parent_session_id', 'end_reason', 'started_at', 'source'].every((c) => cols.has(c))) return null
   const select = db.prepare('SELECT id, source, started_at, parent_session_id, ended_at, end_reason FROM sessions WHERE id = ?')
   return (sid) => {
     const chain = [sid]
+    const seen = new Set(chain)
     let current = select.get(sid) as Dict | undefined
-    for (let hop = 0; hop < 20 && current; hop += 1) {
+    for (let hop = 0; hop < maxHops && current; hop += 1) {
       const parentId = str(current.parent_session_id)
-      if (!parentId || chain.includes(parentId)) break
+      if (!parentId || seen.has(parentId)) break
       const parent = select.get(parentId) as Dict | undefined
       if (!parent || !isContinuationSession(parent, current)) break
-      chain.unshift(parentId)
+      chain.push(parentId)
+      seen.add(parentId)
       current = parent
     }
-    return chain
+    return chain.reverse()
   }
 }
 
@@ -462,7 +464,8 @@ function continuationAncestry(db: DatabaseSync): ((sid: string) => string[]) | n
  */
 function kanbanOwnedIds(db: DatabaseSync, cols: Set<string>, ids: string[]): string[] {
   if (!ids.length) return []
-  const walk = continuationAncestry(db)
+  // The Agent's `_CHAIN_CAP`: real worker lineages pass the transcript stitch's 20 hops, and ownership sits at the root.
+  const walk = continuationAncestry(db, 1000)
   const lineages = ids.map((id) => walk?.(id) ?? [id])
   const segments = [...new Set(lineages.flat())]
   const match = cols.has('created_source') ? "(source = 'kanban' OR created_source = 'kanban')" : "source = 'kanban'"

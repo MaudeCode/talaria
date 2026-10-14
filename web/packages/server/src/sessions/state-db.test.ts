@@ -582,12 +582,16 @@ describe('Kanban worker sessions (TAL-793)', () => {
     // A worker transcript compressed into a continuation the Agent created as `cli`: the lineage stays Kanban-owned.
     insert({ id: 'kanban-root', source: 'cli', started_at: 1200, title: 'Rotated worker run', ended_at: 1300, end_reason: 'compression', messages: turns(1200) }, 'kanban')
     insert({ id: 'kanban-tip', source: 'cli', started_at: 1300.5, title: 'Rotated worker run', parent: 'kanban-root', messages: turns(1300) }, 'cli')
+    // A long-running worker rotated past the transcript stitch's 20 hops: only its root still says Kanban.
+    for (let i = 0; i <= 30; i += 1) {
+      insert({ id: `kanban-long-${String(i)}`, source: 'cli', started_at: 2000 + i * 10, title: 'Long worker run', parent: i ? `kanban-long-${String(i - 1)}` : null, ...(i < 30 ? { ended_at: 2000 + i * 10 + 5, end_reason: 'compression' } : {}), messages: turns(2000 + i * 10) }, i ? 'cli' : 'kanban')
+    }
     insert({ id: 'cli-plain', source: 'cli', started_at: 1400, title: 'Plain CLI work', messages: turns(1400) }, 'cli')
     await s.deps.settings.save({ show_cli_sessions: true, show_kanban_sessions: true })
   })
   afterAll(async () => { db.close(); await s.close() })
 
-  const owned = ['kanban-w1', 'kanban-retagged', 'kanban-tip']
+  const owned = ['kanban-w1', 'kanban-retagged', 'kanban-tip', 'kanban-long-30']
 
   it('opens a Kanban-owned transcript read-only, by source, created_source or lineage, and refuses messaging and claiming it', async () => {
     const rows = (await json(await s.get('/api/sessions'))).sessions as Json[]
