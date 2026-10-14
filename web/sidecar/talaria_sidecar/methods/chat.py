@@ -418,6 +418,15 @@ def _set_vault_session(session_id) -> None:
     unlock.set_current_session_id(session_id)
 
 
+def _release_vault_session(session_id) -> None:
+    """Lock the password managers ``session_id`` unlocked; other sessions keep theirs."""
+    try:
+        from agent.vault_backends.unlock import release_session
+    except Exception:  # noqa: BLE001 - an Agent without the credential vault
+        return
+    release_session(session_id)
+
+
 def _set_vault_prompts(session_id, unlock_cb, save_login_cb, code_cb) -> None:
     """Bind (or with ``None``s clear) the Agent's per-thread vault prompts and the session an unlock belongs to."""
     try:
@@ -1602,6 +1611,10 @@ def start(ctx: CallContext, params: dict) -> dict:  # noqa: PLR0915 - one turn, 
                 _RUNS.pop(stream_id, None)
                 if _RUNS_BY_SESSION.get(session_id) == stream_id:
                     _RUNS_BY_SESSION.pop(session_id, None)
+                # TAL-887: a session ended mid-turn (``chat.evict_agent`` marks the run under these locks) released its
+                # unlocks then; one the Agent stored after that is released now.
+                if run.session_ended:
+                    _release_vault_session(session_id)
             # An agent evicted or replaced while this turn held it is released now that the turn is over.
             _release_if_dropped_locked(run.agent, home)
 
@@ -1850,11 +1863,7 @@ def register(registry) -> None:
             except Exception:  # noqa: BLE001
                 pass
             # TAL-887: a password manager this session unlocked locks again with it; other sessions keep theirs.
-            try:
-                from agent.vault_backends.unlock import release_session
-                release_session(session_id)
-            except Exception:  # noqa: BLE001
-                pass
+            _release_vault_session(session_id)
         return {"evicted": entry is not None}
 
     @registry.method("chat.commit_memory", requires_agent=False)

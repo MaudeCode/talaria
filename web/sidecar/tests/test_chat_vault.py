@@ -82,6 +82,10 @@ class Ctx:
             return
         if outcome == "cancelled":
             registry.methods["chat.interrupt"](self, {"stream_id": "st-vault"})
+        elif outcome == "cleared":
+            # The user clears the chat while the prompt is open, and the answer still lands.
+            registry.methods["chat.evict_agent"](self, {"session_id": "s-vault", "clear_session": True})
+            acks.append(registry.methods["clarify.respond"](self, {"stream_id": "st-vault", "clarify_id": data["clarify_id"], "response": ANSWER}))
         elif outcome in ("submitted", "declined"):
             acks.append(registry.methods["clarify.respond"](self, {
                 "stream_id": "st-vault", "clarify_id": data["clarify_id"], "response": ANSWER if outcome == "submitted" else ""}))
@@ -154,3 +158,12 @@ def test_vault_prompts_through_chat_start(tmp_path, tool, outcome):
         assert seen == {"unlock": [], "saved": [], "filled": []}
         if outcome == "declined":
             assert observed["acks"] == [{"ok": True, "clarify_id": prompts[0]["clarify_id"]}]
+
+
+@requires_agent
+def test_unlock_answered_after_the_session_ended_is_released(tmp_path):
+    observed = probe(tmp_path, "unlock", "cleared")
+    assert observed["tool"][0]["success"] is True
+    assert observed["seen"]["unlock"] == [observed["secret"]]
+    # The session ended before the Agent stored the unlock; the turn's end locks it again.
+    assert observed["unlocked"] is False

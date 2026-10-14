@@ -241,7 +241,9 @@ Agent copies the callbacks, not the session, onto its tool workers. Each
 parks like a clarify prompt with a `vault_*` `kind` and the Agent's own timeout
 (120 s to unlock, 180 s otherwise); an empty `clarify.respond` answer is its
 decline. Ending a session (`chat.evict_agent` with `clear_session`) locks the
-password managers that session unlocked.
+password managers that session unlocked. A turn that outlives its session's end
+releases them again when it finishes, so an unlock answered after the end
+does not stay open.
 
 Each turn agent holds a reference to its profile's `state.db` from the Agent's
 shared-handle registry (released with the agent), keyed by the Web session id,
