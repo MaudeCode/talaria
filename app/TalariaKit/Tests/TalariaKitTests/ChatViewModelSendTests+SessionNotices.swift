@@ -34,4 +34,29 @@ extension ChatViewModelSendTests {
         streamClient.emit(.notices(SessionNoticesEvent(sessionId: "session-abc", notices: [])))
         XCTAssertTrue(viewModel.sessionNotices.isEmpty)
     }
+
+    func testALoadFetchedBeforeANoticesFrameNeverBringsBackTheOlderList() async throws {
+        let streamClient = SpySSEStreamingClient()
+        HeldURLProtocol.path = "/api/session"
+        let viewModel = try makeViewModel(streamClient: streamClient, protocolClasses: [HeldURLProtocol.self, MockURLProtocol.self]) { request in
+            switch request.url?.path ?? "" {
+            case "/api/chat/start":
+                return apiTestJSONResponse(#"{"session_id":"session-abc","stream_id":"stream-123"}"#, for: request)
+            case "/api/chat/stream/status":
+                return apiTestJSONResponse(#"{"active":true,"stream_id":"stream-123","replay_available":true}"#, for: request)
+            default:
+                return apiTestJSONResponse(#"{}"#, for: request)
+            }
+        }
+        let started = await viewModel.sendMessage("Initial request")
+        XCTAssertTrue(started)
+
+        // The load's answer predates the Agent's clear, which the stream delivered meanwhile.
+        let load = Task { await viewModel.loadMessages() }
+        try await waitUntil { HeldURLProtocol.held != nil }
+        streamClient.emit(.notices(SessionNoticesEvent(sessionId: "session-abc", notices: [])))
+        HeldURLProtocol.release(#"{"session":{"session_id":"session-abc","active_stream_id":"stream-123","is_streaming":true,"messages":[{"role":"user","content":"Initial request","message_id":"user-1"}],"notices":[{"key":"startup-warning.1","level":"warn","text":"Memory is off.","expires_at":null}]}}"#)
+        await load.value
+        XCTAssertTrue(viewModel.sessionNotices.isEmpty, "The older load brought back a notice the stream cleared")
+    }
 }

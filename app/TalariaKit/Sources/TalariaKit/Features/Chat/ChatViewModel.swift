@@ -61,6 +61,8 @@ public final class ChatViewModel {
     private var steerRequestsInFlight = Set<String>()
     /// Counts each change to a pending row here; a session load fetched before a change never undoes it.
     private var steerChangeCount = 0
+    /// Counts the stream's `notices` frames, so a load fetched before one never restores the older list (TAL-831).
+    @ObservationIgnored private var noticesChangeCount = 0
     private var steerChangedAt: [String: Int] = [:]
     /// A session load reconciled the pending rows with `pending_steers`, so a snapshot merge adds no pending row of its own.
     private var hasAppliedServerPendingSteers = false
@@ -208,12 +210,14 @@ public final class ChatViewModel {
         recomputeCompressionReferenceCard()
     }
     /// Mirrors the list-row merge rule: the server's `read_only` replaces the
-    /// seeded flag; a detail that omits it keeps it.
-    private func applyReadOnlyState(from session: SessionDetail?) {
+    /// seeded flag; a detail that omits it keeps it. A load passes the notices count it fetched at.
+    private func applyReadOnlyState(from session: SessionDetail?, noticesChangesAtFetch: Int? = nil) {
         if let readOnly = session?.readOnly { isSessionReadOnly = readOnly }
         if let canBranch = session?.canBranch { self.canBranch = canBranch }
         if let assistantName = session?.assistantName { self.assistantName = assistantName }
-        if let notices = session?.notices { sessionNotices = notices }
+        if let notices = session?.notices, noticesChangesAtFetch.map({ $0 == noticesChangeCount }) ?? true {
+            sessionNotices = notices
+        }
         if let session, session.statesEnabledToolsets { sessionToolsets = SessionToolsets(names: session.enabledToolsets) }
         // A detail relabels the workspace it reports, so a registry rename shows on the next load (TAL-303).
         if let workspace = session?.workspace, workspace == serverWorkspacePath {
@@ -1393,6 +1397,7 @@ public final class ChatViewModel {
         }
         let renderedCacheFirst = !cacheFirstPlaceholder.isEmpty
         let steerChangesAtFetch = steerChangeCount
+        let noticesChangesAtFetch = noticesChangeCount
 
         do {
             let response = try await client.session(
@@ -1464,7 +1469,7 @@ public final class ChatViewModel {
                     else { continue }
                     Self.insertLocalOptimisticMessage(message, into: &mergedMessages)
                 }
-                applyReadOnlyState(from: session)
+                applyReadOnlyState(from: session, noticesChangesAtFetch: noticesChangesAtFetch)
                 serverConfirmsDeepTruncate = session?.confirmsDeepTruncate == true
                 let newerSteerRows = pendingSteerRows(changedAfter: steerChangesAtFetch)
                 applyReloadedMessages(
@@ -1496,7 +1501,7 @@ public final class ChatViewModel {
             }
             // After load arbitration only: a superseded response must not leave its
             // read-only flag behind once its transcript has been rejected.
-            applyReadOnlyState(from: session)
+            applyReadOnlyState(from: session, noticesChangesAtFetch: noticesChangesAtFetch)
             serverConfirmsDeepTruncate = session?.confirmsDeepTruncate == true
             applyCompressionReference(from: session)
             applyBranchedFrom(from: session, modelContext: modelContext)
@@ -6128,6 +6133,7 @@ extension ChatViewModel: ChatStreamCoordinatorDelegate {
 
     public func streamCoordinatorApplyNotices(_ event: SessionNoticesEvent) {
         guard event.sessionId == nil || event.sessionId == sessionID else { return }
+        noticesChangeCount += 1
         sessionNotices = event.notices
     }
 }

@@ -295,7 +295,7 @@ extension ChatViewModelSendTests {
 }
 
 /// Holds one request to `path` open until released, while other requests answer.
-private final class HeldURLProtocol: URLProtocol, @unchecked Sendable {
+final class HeldURLProtocol: URLProtocol, @unchecked Sendable {
     nonisolated(unsafe) static var path = ""
     nonisolated(unsafe) static var held: HeldURLProtocol?
 
