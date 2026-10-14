@@ -761,6 +761,25 @@ final class SSEClientTests: XCTestCase {
         XCTAssertEqual(SSEEventDecoder.decode(eventType: "notices", data: #"{"session_id":"s"}"#), .ignored)
     }
 
+    func testDecodesTheSharedCompressionSpan() throws {
+        // TAL-1006: every heartbeat of a span carries the span's start; `compressed` closes it.
+        let root = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+            .deletingLastPathComponent().deletingLastPathComponent()
+        let fixture = try XCTUnwrap(JSONSerialization.jsonObject(
+            with: Data(contentsOf: root.appendingPathComponent("contracts/fixtures/compression.json"))
+        ) as? [String: [String: Any]])
+        let decoded = try ["compressing", "heartbeat", "compressed"].map { key in
+            let frame = try XCTUnwrap(fixture[key])
+            let data = try JSONSerialization.data(withJSONObject: try XCTUnwrap(frame["data"]))
+            return SSEEventDecoder.decode(eventType: try XCTUnwrap(frame["event"] as? String), data: String(decoding: data, as: UTF8.self))
+        }
+        let start = Date(timeIntervalSince1970: 1_800_000_000)
+        XCTAssertEqual(decoded, [.compressing(startedAt: start), .compressing(startedAt: start), .compressed])
+        // A frame without the span's start says nothing about it.
+        XCTAssertEqual(SSEEventDecoder.decode(eventType: "compressing", data: #"{"session_id":"s"}"#), .ignored)
+    }
+
     func testErrorAndCancelFramesDeliverTheirSettledSessionFirst() {
         let failed = SSEEventDecoder.decodeFrame(
             eventType: "apperror",

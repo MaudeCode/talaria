@@ -158,12 +158,17 @@ extension APIClient {
         )
     }
 
-    public func compressSession(id: String, focusTopic: String? = nil) async throws -> SessionCompressResponse {
+    /// Starts the session's manual compression job, or joins the running one.
+    public func startSessionCompression(id: String, focusTopic: String? = nil) async throws -> SessionCompressResponse {
         try await send(
-            endpoint: .compressSession,
+            endpoint: .compressSessionStart,
             method: "POST",
             body: CompressSessionRequest(sessionId: id, focusTopic: focusTopic)
         )
+    }
+
+    public func sessionCompressionStatus(id: String) async throws -> SessionCompressResponse {
+        try await send(endpoint: .compressSessionStatus(id: id), method: "GET")
     }
 
     public func undoSession(id: String) async throws -> SessionUndoResponse {

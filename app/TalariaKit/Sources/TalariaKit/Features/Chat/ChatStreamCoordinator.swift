@@ -110,6 +110,7 @@ public final class ChatStreamCoordinator {
             guard activeStreamID != oldValue else { return }
             if activeStreamID != nil { delegate?.streamCoordinatorSetWarningMessage(nil) }
             activeRunStartedAt = activeStreamID == nil ? nil : now()
+            compressionStartedAt = nil
         }
     }
     /// When the run behind the current stream started. Seeded by the caller from
@@ -125,6 +126,8 @@ public final class ChatStreamCoordinator {
     private(set) var lastProgressDate: Date?
     private(set) var lastTransportActivityDate: Date?
     public private(set) var liveTokensPerSecond: Double?
+    /// TAL-1006: the start of the run's open compression span, from the server; nil when none is open.
+    public private(set) var compressionStartedAt: Date?
     private var lastRecoveryStatusCheckDate: Date?
     private(set) var isReplayConnection = false
     // The `after_seq` the current connection resumed from: its journal events at
@@ -314,6 +317,8 @@ public final class ChatStreamCoordinator {
         preparation: ChatStreamLoadPreparation,
         usedCacheFallback: Bool,
         runStartedAt: Date? = nil,
+        // TAL-1006: the session's open span, whose frames the resumed stream may begin past.
+        compressionStartedAt loadedCompressionStartedAt: Date? = nil,
         transcriptSeq: TranscriptSeq? = nil
     ) {
         hasCompletedCurrentResponse = false
@@ -335,6 +340,7 @@ public final class ChatStreamCoordinator {
             if let streamID = loadedActiveStreamID, !streamID.isEmpty {
                 activeStreamID = streamID
                 seedActiveRunStart(runStartedAt)
+                compressionStartedAt = compressionStartedAt ?? loadedCompressionStartedAt
                 adoptLoadedStreamingAssistantMessage(streamID: streamID)
                 isConnectionSuspended = true
                 restoreSnapshotIfAvailable(streamID: streamID)
@@ -350,6 +356,7 @@ public final class ChatStreamCoordinator {
             if let streamID {
                 activeStreamID = streamID
                 seedActiveRunStart(runStartedAt)
+                compressionStartedAt = compressionStartedAt ?? loadedCompressionStartedAt
                 adoptLoadedStreamingAssistantMessage(streamID: streamID)
                 restoreSnapshotIfAvailable(streamID: streamID)
                 if delegate?.streamCoordinatorStreamingAssistantMessageID == nil {
@@ -755,6 +762,7 @@ public final class ChatStreamCoordinator {
             }
             liveTokensPerSecond = payload.displayableTokensPerSecond
         case .done(let payload):
+            compressionStartedAt = nil
             let hasCompletedTranscript = delegate?.streamCoordinatorApplyDone(payload) == true
             completeCurrentResponse(needsTranscriptRefresh: !hasCompletedTranscript, terminalState: payload.terminalState)
         case .approvalPending(let update):
@@ -777,6 +785,12 @@ public final class ChatStreamCoordinator {
             markProgress()
         case .notices(let event):
             delegate?.streamCoordinatorApplyNotices(event)
+        case .compressing(let startedAt):
+            compressionStartedAt = startedAt
+            markProgress()
+        case .compressed:
+            compressionStartedAt = nil
+            markProgress()
         case .streamEnd:
             if !isCurrentRunTerminated {
                 liveActivityManager?.end(status: .complete, activity: String(localized: "Response complete"), errorSummary: nil)

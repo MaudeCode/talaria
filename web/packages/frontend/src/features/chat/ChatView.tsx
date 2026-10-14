@@ -13,7 +13,7 @@ import { useSettingsQuery, useWorkspacesQuery } from '../../app/queries'
 import type { Session, SessionsList } from '../../contracts'
 import { configureStream, cancelTurn, startTurn } from '../../stream/connection'
 import { dispatch } from '../../stream/store'
-import { isTerminal } from '../../stream/reducer'
+import { isTerminal, runStart } from '../../stream/reducer'
 import { useTranscript, type VisibleMessage } from './useTranscript'
 import { useEditMessage } from './useEditMessage'
 import { Transcript } from './Transcript'
@@ -157,14 +157,21 @@ export function ChatView({ sessionId }: { sessionId: string | null }) {
 
   // Manual compression: start, poll the job to done/error, then load the compacted session (a new id when the server forks).
   // Leaving the session unmounts this view and stops the poll, so it never navigates from the session shown next.
-  const [compressing, setCompressing] = useState(false)
+  // TAL-1006: when the job started (ms): this tab's click until the server's `started_at` arrives.
+  const [compressingSince, setCompressingSince] = useState<number | null>(null)
   const compression = useRef<AbortController | null>(null)
   useEffect(() => () => compression.current?.abort(), [])
-  const runCompression = useCallback(async (sid: string) => {
+  // The running job this view follows, by its server start, so a session still reporting it is not followed twice.
+  const followed = useRef<number | null>(null)
+  /** `start` starts or names the job and gives its server start (epoch seconds); the job is then polled to its end. */
+  const followCompression = useCallback(async (sid: string, start: () => Promise<number | null | undefined>) => {
     const { signal } = (compression.current = new AbortController())
-    setCompressing(true)
+    setCompressingSince(Date.now())
     try {
-      await api.compressSession(sid)
+      const startedAt = await start()
+      signal.throwIfAborted()
+      followed.current = startedAt ?? null
+      setCompressingSince(runStart(startedAt, Date.now(), Date.now()))
       for (let i = 0; i < 600; i++) {
         await new Promise((r) => setTimeout(r, 1000))
         signal.throwIfAborted()
@@ -184,9 +191,17 @@ export function ChatView({ sessionId }: { sessionId: string | null }) {
     } catch (e) {
       if (!signal.aborted) showToast(e instanceof Error ? e.message : String(e), 5000, 'error')
     } finally {
-      setCompressing(false)
+      setCompressingSince(null)
     }
   }, [qc, navigate, refresh])
+  const runCompression = useCallback((sid: string) => followCompression(sid, async () => (await api.compressSession(sid)).started_at), [followCompression])
+  // TAL-1006: a manual job the session reports running (started in another tab, or before this view opened) shows and
+  // is followed here as well.
+  const runningJob = session && !session.active_stream_id ? (session.compression_started_at ?? null) : null
+  useEffect(() => {
+    if (!sessionId || runningJob === null || compressingSince !== null || followed.current === runningJob) return
+    void followCompression(sessionId, () => Promise.resolve(runningJob))
+  }, [sessionId, runningJob, compressingSince, followCompression])
 
   const onLocalCommand = useCallback(async (name: string, args: string): Promise<boolean> => {
     switch (name) {
@@ -265,7 +280,7 @@ export function ChatView({ sessionId }: { sessionId: string | null }) {
     else if (readPersisted('hermes-webui-session-empty') === sessionId) removePersisted('hermes-webui-session-empty')
   }, [sessionId, query.isSuccess, rows.length])
 
-  const runtime = useRuntimeNotices({ live, onRetry: () => { void onRegenerate() }, compressing, agentNotices: session?.notices, goal: session?.goal })
+  const runtime = useRuntimeNotices({ live, onRetry: () => { void onRegenerate() }, compressingSince, agentNotices: session?.notices, goal: session?.goal })
   const notFound = query.isError && isApiError(query.error) && query.error.status === 404
   const otherProfile = query.isError && isApiError(query.error) && query.error.status === 409
 
@@ -382,7 +397,7 @@ export function ChatView({ sessionId }: { sessionId: string | null }) {
           yolo={yoloOn}
           onToggleYolo={onToggleYolo}
           queued={queued}
-          locked={compressing}
+          locked={compressingSince !== null}
           onQueue={(entry) => setQueued((q) => [...q, entry])}
           onQueueChange={setQueued}
           clarify={clarify}

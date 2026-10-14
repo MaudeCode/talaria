@@ -183,7 +183,67 @@ test('a manual compression shows in the top tab while it runs', async ({ page })
   await page.goto('/session/squeeze')
   await page.locator('#msg').fill('/compress')
   await page.locator('#btnSend').click()
-  await expect(page.locator('.composer-tab [data-notice="runtime:compressing"]')).toContainText('Compressing context…')
+  await expect(page.locator('.composer-tab [data-notice="runtime:compressing"]')).toContainText('Compressing context')
+})
+
+/** TAL-1006: coming back to a session whose manual compression still runs shows it from the server's start and follows it. */
+test('a manual compression still running when the session opens shows and clears with the job', async ({ page }) => {
+  let done = false
+  let starts = 0
+  const startedAt = Date.now() / 1000 - 75
+  await page.route('**/api/session?**', (route) => route.fulfill({ json: { session: { session_id: 'rejoin', title: 'Rejoin', messages: transcript('rejoin', 2), compression_started_at: done ? null : startedAt } } }))
+  await page.route('**/api/session/compress/start', (route) => { starts += 1; return route.fulfill({ json: { status: 'running' } }) })
+  await page.route('**/api/session/compress/status?**', (route) => route.fulfill({ json: done ? { status: 'done', session_id: 'rejoin' } : { status: 'running', started_at: startedAt } }))
+  await page.route('**/api/session/draft', (route) => route.fulfill({ json: { ok: true } }))
+  await page.goto('/session/rejoin')
+  const chip = page.locator('.composer-tab [data-notice="runtime:compressing"]')
+  await expect(chip).toHaveText('Compressing context1m')
+  done = true
+  await expect(chip).toHaveCount(0)
+  expect(starts).toBe(0)
+})
+
+/** TAL-1006: the Agent's automatic compression shows in the docked tab with its time since the server's start, never in the transcript. */
+test('an automatic compression shows in the top tab until the server closes it', async ({ page }, testInfo) => {
+  const sid = 'auto-compress'
+  const streamId = `${sid}-run`
+  let stream = null as ServerResponse | null
+  let seq = 0
+  const send = (event: string, data: unknown) => { stream!.write(`id: ${streamId}:${String(++seq)}\nevent: ${event}\ndata: ${JSON.stringify(data)}\n\n`) }
+  const server = createServer((_request, response) => {
+    response.writeHead(200, { 'Content-Type': 'text/event-stream', 'Access-Control-Allow-Origin': process.env.HERMES_E2E_BASE_URL!, 'Access-Control-Allow-Credentials': 'true' })
+    stream = response
+    send('reasoning', { text: 'Thinking about it' })
+  })
+  await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve))
+  const address = server.address()
+  if (!address || typeof address === 'string') throw new Error('Missing fixture port')
+  await page.route('**/api/session?**', (route) => route.fulfill({ json: { session: { session_id: sid, title: 'Long session', messages: transcript(sid, 2).concat({ role: 'user', id: 5, content: 'Keep going' }), active_stream_id: streamId, is_streaming: true } } }))
+  await page.route('**/api/chat/stream/status?**', (route) => route.fulfill({ json: { active: true, stream_id: streamId, replay_available: false } }))
+  await page.route('**/api/chat/stream?**', (route) => route.continue({ url: `http://127.0.0.1:${String(address.port)}${new URL(route.request().url()).search}` }))
+  await page.route('**/api/session/draft', (route) => route.fulfill({ json: { ok: true } }))
+  try {
+    await page.goto(`/session/${sid}`)
+    await expect(page.locator('.composer-tab .live-run-status')).toContainText('Working')
+    const chip = page.locator('.composer-tab [data-notice="runtime:compressing"]')
+    const startedAt = Date.now() / 1000 - 75
+    send('compressing', { session_id: sid, message: 'Compressing context', started_at: startedAt })
+    await expect(chip).toHaveText('Compressing context1m')
+    // A heartbeat repeats the span's start.
+    send('compressing', { session_id: sid, message: 'Compressing context', started_at: startedAt })
+    await expect(chip).toHaveText('Compressing context1m')
+    await expect(page.locator('#messages .compression-card')).toHaveCount(0)
+    const row = await chip.locator('.composer-tab-row').boundingBox()
+    expect(row!.height).toBeLessThan(40)
+    if (process.env.TAL1006_SHOTS) await page.screenshot({ path: `${process.env.TAL1006_SHOTS}/compressing-${testInfo.project.name}.png` })
+    send('compressed', { session_id: sid, message: 'Compression finished' })
+    await expect(chip).toHaveCount(0)
+    await expect(page.locator('.composer-tab .live-run-status')).toContainText('Working')
+    await expect(page.locator('#messages .compression-card')).toHaveCount(0)
+  } finally {
+    stream?.end()
+    await new Promise<void>((resolve) => server.close(() => { resolve() }))
+  }
 })
 
 test('the context ring opens the usage figures and Compress now starts compression (TAL-614)', async ({ page }, testInfo) => {
@@ -208,7 +268,7 @@ test('the context ring opens the usage figures and Compress now starts compressi
   await expect(details).toContainText('Cache: 72% hit (300,000 read / 12,000 write)')
   await page.screenshot({ path: testInfo.outputPath('context-details.png') })
   await details.getByRole('button', { name: 'Compress now' }).click()
-  await expect(page.locator('.composer-tab [data-notice="runtime:compressing"]')).toContainText('Compressing context…')
+  await expect(page.locator('.composer-tab [data-notice="runtime:compressing"]')).toContainText('Compressing context')
   await expect.poll(() => started).toBe(1)
   if (!phone) await expect(page.locator('#ctxPopup')).toHaveCount(0)
 })

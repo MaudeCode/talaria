@@ -28314,108 +28314,214 @@
         }
       }
     },
-    "Compressing context..." : {
+    "Compression is still running. Run /compress again to check on it." : {
       "localizations" : {
         "ar" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "جارٍ ضغط السياق..."
+            "value" : "لا يزال الضغط قيد التشغيل. شغّل /compress مرة أخرى للتحقق منه."
           }
         },
         "de" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "Kontext wird komprimiert …"
+            "value" : "Die Komprimierung läuft noch. Führe /compress erneut aus, um nachzusehen."
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "Comprimiendo contexto..."
+            "value" : "La compresión sigue en curso. Ejecuta /compress de nuevo para comprobarla."
           }
         },
         "fr" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "Compression du contexte…"
+            "value" : "La compression est toujours en cours. Relancez /compress pour la vérifier."
           }
         },
         "he" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "דוחס הקשר..."
+            "value" : "הדחיסה עדיין פועלת. הרץ /compress שוב כדי לבדוק אותה."
           }
         },
         "it" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "Compressione contesto in corso..."
+            "value" : "La compressione è ancora in corso. Esegui di nuovo /compress per controllarla."
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "コンテキストを圧縮中…"
+            "value" : "圧縮はまだ実行中です。確認するには /compress をもう一度実行してください。"
           }
         },
         "ko" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "컨텍스트 압축 중..."
+            "value" : "압축이 아직 실행 중입니다. 확인하려면 /compress를 다시 실행하세요."
           }
         },
         "nl" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "Context comprimeren..."
+            "value" : "Comprimeren loopt nog. Voer /compress opnieuw uit om het te controleren."
           }
         },
         "pl" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "Kompresowanie kontekstu..."
+            "value" : "Kompresja nadal trwa. Uruchom ponownie /compress, aby ją sprawdzić."
           }
         },
         "pt-BR" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "Comprimindo o contexto..."
+            "value" : "A compressão ainda está em andamento. Execute /compress novamente para verificar."
           }
         },
         "ru" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "Сжатие контекста..."
+            "value" : "Сжатие ещё выполняется. Запустите /compress ещё раз, чтобы проверить."
           }
         },
         "tr" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "Bağlam sıkıştırılıyor..."
+            "value" : "Sıkıştırma hâlâ çalışıyor. Kontrol etmek için /compress komutunu yeniden çalıştırın."
           }
         },
         "ur" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "سیاق سکیڑا جا رہا ہے..."
+            "value" : "سکیڑنا ابھی جاری ہے۔ جانچنے کے لیے /compress دوبارہ چلائیں۔"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "正在压缩上下文…"
+            "value" : "压缩仍在进行。再次运行 /compress 查看进度。"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "正在壓縮上下文…"
+            "value" : "壓縮仍在進行。再次執行 /compress 查看進度。"
           }
         },
         "zh-HK" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "正在壓縮上下文…"
+            "value" : "壓縮仍在進行。再次執行 /compress 查看進度。"
+          }
+        }
+      }
+    },
+    "Compressing context" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "جارٍ ضغط السياق"
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Kontext wird komprimiert"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Comprimiendo contexto"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Compression du contexte"
+          }
+        },
+        "he" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "דוחס הקשר"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Compressione contesto in corso"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "コンテキストを圧縮中"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "컨텍스트 압축 중"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Context comprimeren"
+          }
+        },
+        "pl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Kompresowanie kontekstu"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Comprimindo o contexto"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Сжатие контекста"
+          }
+        },
+        "tr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Bağlam sıkıştırılıyor"
+          }
+        },
+        "ur" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "سیاق سکیڑا جا رہا ہے"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "正在压缩上下文"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "正在壓縮上下文"
+          }
+        },
+        "zh-HK" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "正在壓縮上下文"
           }
         }
       }
@@ -50651,6 +50757,112 @@
           "stringUnit" : {
             "state" : "needs_review",
             "value" : "Hermes 檔案"
+          }
+        }
+      }
+    },
+    "%@ is compressing the context" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "%@ يضغط السياق"
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "%@ komprimiert den Kontext"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "%@ está comprimiendo el contexto"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "%@ compresse le contexte"
+          }
+        },
+        "he" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "%@ דוחס את ההקשר"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "%@ sta comprimendo il contesto"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "%@ がコンテキストを圧縮中"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "%@이(가) 컨텍스트를 압축하는 중"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "%@ comprimeert de context"
+          }
+        },
+        "pl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "%@ kompresuje kontekst"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "%@ está comprimindo o contexto"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "%@ сжимает контекст"
+          }
+        },
+        "tr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "%@ bağlamı sıkıştırıyor"
+          }
+        },
+        "ur" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "%@ سیاق سکیڑ رہا ہے"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "%@ 正在压缩上下文"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "%@ 正在壓縮上下文"
+          }
+        },
+        "zh-HK" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "%@ 正在壓縮上下文"
           }
         }
       }

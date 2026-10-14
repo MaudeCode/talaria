@@ -85,7 +85,6 @@ textarea#msg::placeholder{color:var(--muted)}
 /* Live-turn status: the first row of the composer's top tab (TAL-429), so it never floats over the transcript. */
 .live-run-status{display:flex;align-items:center;gap:6px;min-width:0;font-variant-numeric:tabular-nums;line-height:1}
 .live-run-status .live-laurel{width:18px;height:18px}
-.compression-card{margin-left:var(--msg-rail);max-width:var(--msg-max);border-radius:8px;overflow:hidden;background:var(--overlay-faint);border:1px solid var(--overlay)}
 .msg-time{font-size:10px;color:var(--muted);opacity:.6;margin-left:6px}
 .msg-role:hover .msg-time{opacity:1}
 .msg-body code{color:var(--strong);background:var(--code-inline-bg);font-size:var(--msg-code-size)}

@@ -87,21 +87,35 @@ final class APIClientSessionMutationTests: APIClientTestCase {
         XCTAssertEqual(response.parentSessionId, "abc123")
     }
 
-    func testCompressSessionBuildsExpectedBodyAndDecodesResponse() async throws {
+    func testStartSessionCompressionBuildsExpectedBodyAndDecodesTheJob() async throws {
         let client = makeClient { request in
-            XCTAssertEqual(request.url?.path, "/api/session/compress")
+            XCTAssertEqual(request.url?.path, "/api/session/compress/start")
             XCTAssertEqual(request.httpMethod, "POST")
-
             let body = try XCTUnwrap(apiTestBodyData(from: request))
             let json = try JSONSerialization.jsonObject(with: body) as? [String: Any]
             XCTAssertEqual(json?["session_id"] as? String, "abc123")
             XCTAssertEqual(json?["focus_topic"] as? String, "architecture notes")
             XCTAssertNil(json?["sessionId"])
             XCTAssertNil(json?["focusTopic"])
+            return apiTestJSONResponse(#"{"ok": true, "status": "running", "session_id": "abc123", "started_at": 1800000000.5}"#, for: request)
+        }
+
+        let response = try await client.startSessionCompression(id: "abc123", focusTopic: "architecture notes")
+
+        XCTAssertEqual(response.status, "running")
+        XCTAssertEqual(response.startedAt, 1_800_000_000.5)
+    }
+
+    func testSessionCompressionStatusDecodesTheFinishedJob() async throws {
+        let client = makeClient { request in
+            XCTAssertEqual(request.url?.path, "/api/session/compress/status")
+            XCTAssertEqual(request.httpMethod, "GET")
+            XCTAssertEqual(URLComponents(url: try XCTUnwrap(request.url), resolvingAgainstBaseURL: false)?.queryItems, [URLQueryItem(name: "session_id", value: "abc123")])
 
             return apiTestJSONResponse("""
             {
               "ok": true,
+              "status": "done",
               "focus_topic": "architecture notes",
               "summary": {
                 "headline": "Compressed: 8 -> 3 messages",
@@ -117,9 +131,10 @@ final class APIClientSessionMutationTests: APIClientTestCase {
             """, for: request)
         }
 
-        let response = try await client.compressSession(id: "abc123", focusTopic: "architecture notes")
+        let response = try await client.sessionCompressionStatus(id: "abc123")
 
         XCTAssertEqual(response.ok, true)
+        XCTAssertEqual(response.status, "done")
         XCTAssertEqual(response.focusTopic, "architecture notes")
         XCTAssertEqual(response.summary?.headline, "Compressed: 8 -> 3 messages")
         XCTAssertEqual(response.summary?.tokenLine, "Rough transcript estimate: ~1200 -> ~320 tokens")
@@ -148,7 +163,7 @@ final class APIClientSessionMutationTests: APIClientTestCase {
             """, for: request)
         }
 
-        let response = try await client.compressSession(id: "abc123", focusTopic: nil)
+        let response = try await client.sessionCompressionStatus(id: "abc123")
         let snapshot = ContextWindowSnapshot(session: try XCTUnwrap(response.session))
 
         XCTAssertEqual(ContextWindowIndicatorPresentation(snapshot: snapshot).percentageLabel, "10")

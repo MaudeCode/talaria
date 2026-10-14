@@ -168,6 +168,23 @@ final class ChatHostedTests: XCTestCase {
         XCTAssertNotNil(kept, "The clear hid the notice the server kept")
     }
 
+    /// A manual /compress shows in the run status chip, timed from the server's job start, leaves the composer's
+    /// placeholder alone, and clears its draft as it starts (TAL-1006).
+    func testManualCompressionShowsInTheRunStatusChip() async throws {
+        let window = try await hostFixtureChat()
+        try await sendFromComposer("/compress", in: window)
+        // The chip shows as the command is sent; its elapsed time follows once the server's job start arrives.
+        let chip = try await requireElement(in: window, "The chip never showed the time since the server's job start") {
+            $0.accessibilityLabel?.hasSuffix("is compressing the context") == true
+                && $0.accessibilityValue?.hasPrefix("running for 1 minute") == true
+        }
+        XCTAssertTrue(window.bounds.contains(window.convert(chip.accessibilityFrame, from: nil)), "The chip is off screen")
+        XCTAssertFalse(HostedAccessibility.labels(in: window).contains("Compressing context..."), "The composer placeholder still says it")
+        // A typed command leaves the composer when it is sent, not when it finishes (the job above is still running).
+        let draft = await composerTextView(in: window)
+        XCTAssertEqual(draft?.text, "", "The /compress draft stayed in the composer while the command ran")
+    }
+
     /// An edit or regenerate the server holds asks with the server's count, the edit only once its sheet has closed;
     /// Cancel keeps the transcript (TAL-929).
     func testHeldEditAndRegenerateAskWithTheServersCount() async throws {

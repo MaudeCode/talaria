@@ -1476,7 +1476,9 @@ struct ChatView: View {
             isCancellingStream: viewModel.isCancellingStream,
             isSyncingTranscript: showsSyncingPill,
             isBackgroundTurn: viewModel.isBackgroundTurnActive,
-            activeRunStartedAt: viewModel.activeRunStartedAt
+            activeRunStartedAt: viewModel.activeRunStartedAt,
+            isCompressing: viewModel.isCompressingSession,
+            compressionStartedAt: viewModel.compressionStartedAt
         )
     }
 
@@ -1796,6 +1798,11 @@ struct ChatView: View {
 
         if !sendsWithChosenBehavior, commandText.trimmingCharacters(in: .whitespacesAndNewlines).hasPrefix("/") {
             let parsedCommand = SlashCommandExecutor.parse(commandText, catalog: viewModel.agentCommands)?.command
+            // A typed command leaves the composer whatever its result, so it leaves as it is sent, like a message,
+            // rather than after a long one (/compress) finishes.
+            if command == nil, parsedCommand != nil {
+                reconcileConsumedDraft(submittedDraft, submittedDraftRevision: submittedDraftRevision)
+            }
             let result = await SlashCommandExecutor.execute(text: commandText, viewModel: viewModel)
             handleSlashExecutionResult(
                 result,

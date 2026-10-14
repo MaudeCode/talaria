@@ -84,12 +84,38 @@ describe('stream reducer: ordering and projection', () => {
     s = ev(s, 'context_status', { state: 'near_limit', message: 'x' })
     s = ev(s, 'steer_consumed', { steer_id: 's1', text: 'also do y' })
     s = ev(s, 'steer_consumed', { steer_id: 's1', text: 'also do y' })
-    s = ev(s, 'compressing', { new_session_id: 'n1' })
     const turn = s.turns[SID]!
     expect(turn.tps).toBe(21.5)
     expect(turn.contextStatus?.state).toBe('near_limit')
     expect(turn.segments.filter((seg) => seg.kind === 'steering')).toEqual([{ kind: 'steering', steerId: 's1', text: 'also do y' }])
-    expect(turn.compression).toEqual({ state: 'compressing', newSessionId: 'n1' })
+  })
+  it('keeps the compression span\'s server start across heartbeats, and closes it on compressed or the turn\'s end (TAL-1006)', () => {
+    let s = ev(started(), 'compressing', { session_id: SID, started_at: 900 }, { now: 960_000 })
+    expect(s.turns[SID]!.compressionStartedAt).toBe(900_000)
+    s = ev(s, 'compressing', { session_id: SID, started_at: 900 }, { now: 1_020_000 })
+    expect(s.turns[SID]!.compressionStartedAt).toBe(900_000)
+    s = ev(s, 'compressed', { session_id: SID })
+    expect(s.turns[SID]!.compressionStartedAt).toBeNull()
+    s = ev(s, 'compressing', { session_id: SID, started_at: 1_100 }, { now: 1_100_000 })
+    expect(s.turns[SID]!.compressionStartedAt).toBe(1_100_000)
+    s = ev(s, 'done', { terminal_state: 'completed' })
+    expect(s.turns[SID]!.compressionStartedAt).toBeNull()
+  })
+  it('takes an open span\'s start from the session when it attaches past the span\'s frames (TAL-1006)', () => {
+    const attach = (state: StreamState, serverCompressionStartedAt: number | null, now: number): StreamState =>
+      streamReducer(state, { type: 'attach', sessionId: SID, streamId: STREAM, now, replay: true, serverStartedAt: 800, serverCompressionStartedAt })
+    let s = attach(initialStreamState, 900, 960_000)
+    expect(s.turns[SID]!.compressionStartedAt).toBe(900_000)
+    // A reconnect keeps the start it knows; a session without a span leaves it to the stream.
+    s = attach(s, 950, 970_000)
+    expect(s.turns[SID]!.compressionStartedAt).toBe(900_000)
+    expect(attach(initialStreamState, null, 960_000).turns[SID]!.compressionStartedAt).toBeNull()
+  })
+  it('times a pre-upgrade compressing frame without its start from its first receipt, kept across heartbeats (TAL-1006)', () => {
+    let s = ev(started(), 'compressing', { session_id: SID }, { now: 5_000 })
+    expect(s.turns[SID]!.compressionStartedAt).toBe(5_000)
+    s = ev(s, 'compressing', { session_id: SID }, { now: 65_000 })
+    expect(s.turns[SID]!.compressionStartedAt).toBe(5_000)
   })
 })
 

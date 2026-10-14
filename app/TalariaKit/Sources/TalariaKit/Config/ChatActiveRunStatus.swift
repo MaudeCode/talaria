@@ -5,6 +5,8 @@ public enum ChatActiveRunStatusKind: Equatable {
     case active
     /// A background result started the running turn (TAL-460).
     case background
+    /// TAL-1006: the Agent is compressing the context; the elapsed time counts from the server's span start.
+    case compressing
     case checking
     case reconnecting
     case waitingForNetwork
@@ -20,6 +22,8 @@ public enum ChatActiveRunStatusKind: Equatable {
             return String(localized: "Working")
         case .background:
             return String(localized: "Working on background results")
+        case .compressing:
+            return String(localized: "Compressing context")
         case .checking:
             return String(localized: "Checking stream")
         case .reconnecting:
@@ -41,6 +45,8 @@ public enum ChatActiveRunStatusKind: Equatable {
             return String(localized: "\(agentName) is working on the response")
         case .background:
             return String(localized: "\(agentName) is working on background results")
+        case .compressing:
+            return String(localized: "\(agentName) is compressing the context")
         case .checking:
             return String(localized: "\(agentName) is checking the response stream")
         case .reconnecting:
@@ -57,15 +63,16 @@ public enum ChatActiveRunStatusKind: Equatable {
 
 public struct ChatActiveRunStatusPresentation: Equatable {
     let kind: ChatActiveRunStatusKind
-    /// When the run started, for the elapsed time after the label (TAL-446). Nil when the
-    /// start is unknown or the status is not about a run in progress.
+    /// When the run started, for the elapsed time after the label (TAL-446); for `.compressing`, when the
+    /// server's compression span started (TAL-1006). Nil when the start is unknown or the status is not
+    /// about a run in progress.
     public let runStartedAt: Date?
 
     /// `runStartedAt` is the stream's run start, seeded from the server's `pending_started_at`.
     public init(kind: ChatActiveRunStatusKind, runStartedAt: Date? = nil) {
         self.kind = kind
         switch kind {
-        case .active, .checking, .reconnecting:
+        case .active, .compressing, .checking, .reconnecting:
             self.runStartedAt = runStartedAt
         case .starting, .background, .waitingForNetwork, .stopping, .syncing:
             self.runStartedAt = nil
@@ -140,7 +147,9 @@ public enum ChatActiveRunStatusPolicy {
         isCancellingStream: Bool,
         isSyncingTranscript: Bool = false,
         isBackgroundTurn: Bool = false,
-        activeRunStartedAt: Date? = nil
+        activeRunStartedAt: Date? = nil,
+        isCompressing: Bool = false,
+        compressionStartedAt: Date? = nil
     ) -> ChatActiveRunStatusPresentation? {
         if isCancellingStream {
             return ChatActiveRunStatusPresentation(kind: .stopping)
@@ -159,6 +168,12 @@ public enum ChatActiveRunStatusPolicy {
             runStartedAt: activeRunStartedAt
         ) {
             return recovery
+        }
+
+        // TAL-1006: an open compression span, automatic or a manual /compress, stands in for Working. A manual one
+        // (`isCompressing`) shows as it is sent; its elapsed time follows once the server's job start arrives.
+        if isCompressing || compressionStartedAt != nil {
+            return ChatActiveRunStatusPresentation(kind: .compressing, runStartedAt: compressionStartedAt)
         }
 
         guard hasActiveStream else { return nil }

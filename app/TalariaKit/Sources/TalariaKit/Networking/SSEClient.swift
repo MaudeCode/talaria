@@ -136,6 +136,10 @@ public enum SSEEvent: Equatable {
     case steerWithdrawn(SteerWithdrawnEvent)
     /// TAL-831: the session's Agent notices changed; the list replaces the shown one.
     case notices(SessionNoticesEvent)
+    /// TAL-1006: the server's open compression span; `startedAt` is the span's start, the same on every heartbeat.
+    case compressing(startedAt: Date)
+    /// TAL-1006: the compression span closed; the run goes on.
+    case compressed
     case streamEnd
     /// The settled session an error or cancel frame carries, delivered just before that terminal event.
     case settledSession(SessionDetail)
@@ -457,6 +461,11 @@ struct SSEEventDecoder {
         case "notices":
             guard let payload = decodePayload(SessionNoticesEvent.self, eventType: eventType, from: eventData, decoder: snakeCaseDecoder) else { return .ignored }
             return .notices(payload)
+        case "compressing":
+            guard let payload = decodePayload(CompressingPayload.self, eventType: eventType, from: eventData, decoder: snakeCaseDecoder) else { return .ignored }
+            return .compressing(startedAt: Date(timeIntervalSince1970: payload.startedAt))
+        case "compressed":
+            return .compressed
         case "stream_end":
             return .streamEnd
         case "cancel":
@@ -610,6 +619,11 @@ private struct ErrorPayload: Decodable {
         case message
         case terminalState = "terminal_state"
     }
+}
+
+/// TAL-1006: `started_at` is the compression span's start in epoch seconds.
+private struct CompressingPayload: Decodable {
+    let startedAt: Double
 }
 
 private struct WarningPayload: Decodable {

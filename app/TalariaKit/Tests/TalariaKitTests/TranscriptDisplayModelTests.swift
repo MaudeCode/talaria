@@ -520,6 +520,46 @@ final class ChatActiveRunStatusPolicyTests: XCTestCase {
         }
     }
 
+    // TAL-1006: an open compression span takes the active run's place, timed from the span's start; recovery keeps its chip.
+    func testCompressionTakesTheActiveRunsPlace() {
+        let run = Date(timeIntervalSince1970: 1_000)
+        let span = Date(timeIntervalSince1970: 1_200)
+        func status(hasActiveStream: Bool = true, recovery: ActiveStreamRecoveryState = .idle, compressionStartedAt: Date?) -> ChatActiveRunStatusPresentation? {
+            ChatActiveRunStatusPolicy.presentation(
+                isStartingChat: false,
+                hasActiveStream: hasActiveStream,
+                activeStreamRecoveryState: recovery,
+                isCancellingStream: false,
+                activeRunStartedAt: run,
+                compressionStartedAt: compressionStartedAt
+            )
+        }
+
+        let compressing = status(compressionStartedAt: span)
+        XCTAssertEqual(compressing, ChatActiveRunStatusPresentation(kind: .compressing, runStartedAt: span))
+        XCTAssertEqual(compressing?.label(agentName: "Maude"), "Compressing context")
+        XCTAssertEqual(compressing?.elapsedTime(now: span.addingTimeInterval(75), locale: Locale(identifier: "en_US")), "1m")
+        // Manual /compress runs without a stream.
+        XCTAssertEqual(status(hasActiveStream: false, compressionStartedAt: span)?.kind, .compressing)
+        // Once the span closes the run is back to Working, timed from the run's start.
+        XCTAssertEqual(status(compressionStartedAt: nil), ChatActiveRunStatusPresentation(kind: .active, runStartedAt: run))
+        XCTAssertEqual(status(recovery: .reconnecting, compressionStartedAt: span)?.kind, .reconnecting)
+    }
+
+    // TAL-1006: a manual /compress shows its chip as it is sent; the elapsed time follows once the server's job start arrives.
+    func testManualCompressionShowsItsChipBeforeTheServersStart() {
+        let presentation = ChatActiveRunStatusPolicy.presentation(
+            isStartingChat: false,
+            hasActiveStream: false,
+            activeStreamRecoveryState: .idle,
+            isCancellingStream: false,
+            isCompressing: true
+        )
+        XCTAssertEqual(presentation, ChatActiveRunStatusPresentation(kind: .compressing))
+        XCTAssertEqual(presentation?.label(agentName: "Maude"), "Compressing context")
+        XCTAssertNil(presentation?.elapsedTime(now: Date()))
+    }
+
     func testStatusPrioritizesCancellationOverOtherStates() {
         let presentation = ChatActiveRunStatusPolicy.presentation(
             isStartingChat: true,

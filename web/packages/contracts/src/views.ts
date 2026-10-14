@@ -329,6 +329,7 @@ export const SessionSchema = z.looseObject({
   message_count: z.number().optional(), user_message_count: z.number().optional(), pinned: z.boolean().optional(), archived: z.boolean().optional(), project_id: NullableString.optional(), profile: NullableString.optional(),
   personality: NullableString.optional(), input_tokens: z.number().optional(), output_tokens: z.number().optional(), cache_read_tokens: z.number().optional(), cache_write_tokens: z.number().optional(),
   cache_hit_percent: NullableNumber.optional(), estimated_cost: NullableNumber.optional(), active_stream_id: ActiveStreamIdSchema, is_streaming: IsStreamingSchema, active_turn_origin: ActiveTurnOriginSchema, pending_steers: z.array(PendingSteerSchema).optional().describe('TAL-424: the active stream\'s pending steers, oldest first.'),
+  compression_started_at: NullableNumber.optional().describe('TAL-1006: when the compression clients show started (epoch seconds): the running manual job\'s, else the live run\'s open span; null when none runs.'),
   notices: z.array(SessionNoticeSchema).optional().describe('TAL-803: the Agent\'s active notices for the session, oldest first.'),
   goal: SessionGoalSchema.nullable().optional().describe('TAL-808: the standing /goal; null when none runs.'),
   automatic_turns_held: z.boolean().optional().describe('TAL-899: the user pressed Stop, so no automatic turn (background wakeup or goal continuation) starts until their next message.'), has_pending_user_message: z.boolean().optional(),

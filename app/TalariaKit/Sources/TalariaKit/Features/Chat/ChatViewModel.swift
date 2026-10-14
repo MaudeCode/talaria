@@ -46,6 +46,10 @@ public final class ChatViewModel {
     public private(set) var isEditingMessage = false
     public private(set) var isRegeneratingMessage = false
     public private(set) var isCompressingSession = false
+    /// TAL-1006: the server's start of this view's manual compression job.
+    private var manualCompressionStartedAt: Date?
+    /// TAL-1006: the open compression span the run status chip shows: the manual job's, else the live run's.
+    public var compressionStartedAt: Date? { manualCompressionStartedAt ?? streamCoordinator.compressionStartedAt }
     public private(set) var isCancellingStream = false
     public private(set) var isViewingCachedData = false
     public var activeStreamID: String? { streamCoordinator.activeStreamID }
@@ -1554,8 +1558,10 @@ public final class ChatViewModel {
                 preparation: streamLoadPreparation,
                 usedCacheFallback: false,
                 runStartedAt: Self.activeRunStartDate(pendingStartedAt: session?.pendingStartedAt, messages: messages),
+                compressionStartedAt: loadedActiveStreamID == nil ? nil : ChatStreamCoordinator.runStart(fromEpochSeconds: session?.compressionStartedAt),
                 transcriptSeq: session?.transcriptSeq
             )
+            followReportedCompressionJob(loadedActiveStreamID == nil ? session?.compressionStartedAt : nil)
             applyServerPendingSteers(session?.pendingSteers, changedAfter: steerChangesAtFetch, newerRows: newerSteerRows)
             latestSettledSessionLoadRequestGeneration = loadRequestGeneration
             isConfirmingRunState = false
@@ -3608,6 +3614,8 @@ public final class ChatViewModel {
         }
     }
 
+    static let compressionPollLimit = 600
+
     private func compressSessionFromSlashCommand(_ args: String) async -> SlashCommandExecutionResult {
         guard !isViewingCachedData else {
             return .unsupported(friendlyMessage: String(localized: "Reconnect to the server to compress context."))
@@ -3622,18 +3630,50 @@ public final class ChatViewModel {
         }
 
         let focusTopic = args.trimmingCharacters(in: .whitespacesAndNewlines)
+        return await followCompressionJob(sessionID: sessionID) { client in
+            try await client.startSessionCompression(id: sessionID, focusTopic: focusTopic.isEmpty ? nil : focusTopic)
+        }
+    }
 
+    /// TAL-1006: a manual job the session reports running (started on another device, or before this view opened)
+    /// shows in the chip and is followed to its end here too, without starting another.
+    private func followReportedCompressionJob(_ startedAt: Double?) {
+        guard startedAt != nil, !isCompressingSession, let sessionID else { return }
+        isCompressingSession = true
+        Task { [weak self] in
+            _ = await self?.followCompressionJob(sessionID: sessionID) { client in
+                try await client.sessionCompressionStatus(id: sessionID)
+            }
+        }
+    }
+
+    /// Runs `start` (start or read the job), polls the job to its end, and installs the compressed session.
+    private func followCompressionJob(
+        sessionID: String,
+        start: (APIClient) async throws -> SessionCompressResponse
+    ) async -> SlashCommandExecutionResult {
         isCompressingSession = true
         lastError = nil
         sendErrorMessage = nil
         messageActionErrorMessage = nil
-        defer { isCompressingSession = false }
+        defer {
+            isCompressingSession = false
+            manualCompressionStartedAt = nil
+        }
 
         do {
-            let response = try await client.compressSession(
-                id: sessionID,
-                focusTopic: focusTopic.isEmpty ? nil : focusTopic
-            )
+            var response = try await start(client)
+            manualCompressionStartedAt = response.startedAt.map { Date(timeIntervalSince1970: $0) }
+            var polls = 0
+            while response.status == "running" {
+                // As on Web, stop watching after about ten minutes; the job keeps running, and /compress joins it again.
+                guard polls < Self.compressionPollLimit else {
+                    return .unsupported(friendlyMessage: String(localized: "Compression is still running. Run /compress again to check on it."))
+                }
+                polls += 1
+                try await pollingIntervals.sleep(pollingIntervals.compressionNanoseconds)
+                response = try await client.sessionCompressionStatus(id: sessionID)
+            }
 
             if let error = response.error {
                 return .unsupported(friendlyMessage: error)
@@ -4926,7 +4966,8 @@ public final class ChatViewModel {
             activeBtwAnswer = "Error: \(message)"
             updateActiveBtwMessage(isLoading: false)
             finishBtwStream()
-        case .heartbeat, .ignored, .reasoning, .toolStarted, .toolCompleted, .title, .metering, .steerConsumed, .steerPending, .steerWithdrawn, .notices:
+        case .heartbeat, .ignored, .reasoning, .toolStarted, .toolCompleted, .title, .metering, .steerConsumed, .steerPending, .steerWithdrawn, .notices,
+             .compressing, .compressed:
             break
         }
     }

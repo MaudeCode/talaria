@@ -4526,6 +4526,17 @@
                           },
                           "description": "TAL-424: the active stream's pending steers, oldest first."
                         },
+                        "compression_started_at": {
+                          "anyOf": [
+                            {
+                              "type": "number"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "description": "TAL-1006: when the compression clients show started (epoch seconds): the running manual job's, else the live run's open span; null when none runs."
+                        },
                         "notices": {
                           "type": "array",
                           "items": {
@@ -7028,6 +7039,17 @@
                           },
                           "description": "TAL-424: the active stream's pending steers, oldest first."
                         },
+                        "compression_started_at": {
+                          "anyOf": [
+                            {
+                              "type": "number"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "description": "TAL-1006: when the compression clients show started (epoch seconds): the running manual job's, else the live run's open span; null when none runs."
+                        },
                         "notices": {
                           "type": "array",
                           "items": {
@@ -9275,6 +9297,17 @@
                             ]
                           },
                           "description": "TAL-424: the active stream's pending steers, oldest first."
+                        },
+                        "compression_started_at": {
+                          "anyOf": [
+                            {
+                              "type": "number"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "description": "TAL-1006: when the compression clients show started (epoch seconds): the running manual job's, else the live run's open span; null when none runs."
                         },
                         "notices": {
                           "type": "array",
@@ -12723,6 +12756,17 @@
                           },
                           "description": "TAL-424: the active stream's pending steers, oldest first."
                         },
+                        "compression_started_at": {
+                          "anyOf": [
+                            {
+                              "type": "number"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "description": "TAL-1006: when the compression clients show started (epoch seconds): the running manual job's, else the live run's open span; null when none runs."
+                        },
                         "notices": {
                           "type": "array",
                           "items": {
@@ -16044,6 +16088,17 @@
                             ]
                           },
                           "description": "TAL-424: the active stream's pending steers, oldest first."
+                        },
+                        "compression_started_at": {
+                          "anyOf": [
+                            {
+                              "type": "number"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "description": "TAL-1006: when the compression clients show started (epoch seconds): the running manual job's, else the live run's open span; null when none runs."
                         },
                         "notices": {
                           "type": "array",
@@ -20030,6 +20085,17 @@
                           },
                           "description": "TAL-424: the active stream's pending steers, oldest first."
                         },
+                        "compression_started_at": {
+                          "anyOf": [
+                            {
+                              "type": "number"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "description": "TAL-1006: when the compression clients show started (epoch seconds): the running manual job's, else the live run's open span; null when none runs."
+                        },
                         "notices": {
                           "type": "array",
                           "items": {
@@ -22302,6 +22368,17 @@
                             ]
                           },
                           "description": "TAL-424: the active stream's pending steers, oldest first."
+                        },
+                        "compression_started_at": {
+                          "anyOf": [
+                            {
+                              "type": "number"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "description": "TAL-1006: when the compression clients show started (epoch seconds): the running manual job's, else the live run's open span; null when none runs."
                         },
                         "notices": {
                           "type": "array",
@@ -24638,6 +24715,17 @@
                           },
                           "description": "TAL-424: the active stream's pending steers, oldest first."
                         },
+                        "compression_started_at": {
+                          "anyOf": [
+                            {
+                              "type": "number"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "description": "TAL-1006: when the compression clients show started (epoch seconds): the running manual job's, else the live run's open span; null when none runs."
+                        },
                         "notices": {
                           "type": "array",
                           "items": {
@@ -26959,6 +27047,17 @@
                             ]
                           },
                           "description": "TAL-424: the active stream's pending steers, oldest first."
+                        },
+                        "compression_started_at": {
+                          "anyOf": [
+                            {
+                              "type": "number"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "description": "TAL-1006: when the compression clients show started (epoch seconds): the running manual job's, else the live run's open span; null when none runs."
                         },
                         "notices": {
                           "type": "array",
@@ -37062,6 +37161,17 @@
                           },
                           "description": "TAL-424: the active stream's pending steers, oldest first."
                         },
+                        "compression_started_at": {
+                          "anyOf": [
+                            {
+                              "type": "number"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "description": "TAL-1006: when the compression clients show started (epoch seconds): the running manual job's, else the live run's open span; null when none runs."
+                        },
                         "notices": {
                           "type": "array",
                           "items": {
@@ -39482,6 +39592,17 @@
                           },
                           "description": "TAL-424: the active stream's pending steers, oldest first."
                         },
+                        "compression_started_at": {
+                          "anyOf": [
+                            {
+                              "type": "number"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "description": "TAL-1006: when the compression clients show started (epoch seconds): the running manual job's, else the live run's open span; null when none runs."
+                        },
                         "notices": {
                           "type": "array",
                           "items": {
@@ -41790,6 +41911,17 @@
                                 ]
                               },
                               "description": "TAL-424: the active stream's pending steers, oldest first."
+                            },
+                            "compression_started_at": {
+                              "anyOf": [
+                                {
+                                  "type": "number"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ],
+                              "description": "TAL-1006: when the compression clients show started (epoch seconds): the running manual job's, else the live run's open span; null when none runs."
                             },
                             "notices": {
                               "type": "array",

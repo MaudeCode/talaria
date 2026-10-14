@@ -163,7 +163,7 @@ under Hermes Agent's context-local home override (`talaria_sidecar/home.py`).
 | `process` | `drain`, `recover`, `requeue`, `mark_consumed`, `consumed`, `format_notification`, `list` | |
 | `usage` | `account`, `pool`, `pool_providers`, `balance` | |
 | `gateway` | `control`, `restart` | `control`, `restart`: `progress` |
-| `chat` | `start`, `interrupt`, `steer`, `evict_agent` | `start`: `token`, `reasoning`, `interim_assistant`, `tool`, `tool_complete`, `approval`, `clarify`, `clarify_resolved`, `compressing`, `warning`, `status`, `context_status`, `notice`, `notice_clear`, `notices_reset`, `rate_limit_wait`; the settled transcript, usage, and terminal status come back as the result |
+| `chat` | `start`, `interrupt`, `steer`, `evict_agent` | `start`: `token`, `reasoning`, `interim_assistant`, `tool`, `tool_complete`, `approval`, `clarify`, `clarify_resolved`, `compressing`, `compression_finished`, `warning`, `status`, `context_status`, `notice`, `notice_clear`, `notices_reset`, `rate_limit_wait`; the settled transcript, usage, and terminal status come back as the result |
 | `approval`, `clarify` | `approval.pending`, `approval.respond`, `approval.set_yolo`, `clarify.respond` | |
 | `worktree` | `create` | |
 | `checkpoints` | `list`, `diff`, `restore` | |

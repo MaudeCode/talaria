@@ -1125,7 +1125,12 @@ def _status_events(kind, text: str) -> list[str]:
     """Events for one Agent status line: compression, provider diagnostics, and the turn's terminal error."""
     lower = text.lower()
     events = ["terminal_error"] if "non-retryable error" in lower else []
-    if str(kind or "").strip().lower() == "lifecycle":
+    kind = str(kind or "").strip().lower()
+    # TAL-1006: the Agent's one terminal edge of a started compaction (``_emit_compaction_done``); an aborted attempt
+    # sends none and ends with the turn.
+    if kind == "compacted":
+        return ["compression_finished"]
+    if kind == "lifecycle":
         if _is_compression_start(lower):
             return events + ["compressing"]
         # The Agent's own compression retries ("Compressed N → M messages, retrying...") are not provider fallbacks.
@@ -1294,6 +1299,8 @@ def start(ctx: CallContext, params: dict) -> dict:  # noqa: PLR0915 - one turn, 
             for event in _status_events(kind, text):
                 if event == "compressing":
                     emit("compressing", {"session_id": session_id, "message": "Compressing context"})
+                elif event == "compression_finished":
+                    emit("compression_finished", {"session_id": session_id})
                 elif event == "warning":
                     emit("warning", {"type": "fallback", "message": text})
                 else:

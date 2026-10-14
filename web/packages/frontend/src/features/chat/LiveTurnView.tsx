@@ -29,7 +29,6 @@ export function LiveTurnView({ turn, name, mode, userVisible, omitToolIds }: { t
         <TurnActivityView activity={activity} mode={mode} />
         {turn.pendingSteers.map((steer) => <PendingSteerMessage key={steer.steerId} sessionId={turn.sessionId} steer={steer} />)}
         {turn.warning && <div className="mt-1 text-[12px] text-warning" role="status">{turn.warning}</div>}
-        {turn.compression && <div className="compression-card mt-2 rounded-md border border-border bg-surface px-3 py-2 text-[13px] text-muted" role="status">{turn.compression.state === 'compressing' ? m.live_compressing() : m.live_compressed()}{turn.compression.newSessionId && turn.compression.state === 'compressed' && <> <Link to="/session/$sessionId" params={{ sessionId: turn.compression.newSessionId }} className="text-accent-text underline">{m.live_continuation()}</Link></>}</div>}
         {turn.status === 'cancelled' && turn.cancelledMessage && <div className="status-card mt-2 text-[13px] text-muted">{turn.cancelledMessage}</div>}
         {turn.status === 'error' && turn.error && (
           <div className="status-card mt-2 rounded-md border border-error/40 bg-surface px-3 py-2 text-[13px]" role="alert">
@@ -109,7 +108,7 @@ function rateLimitLabel(wait: RateLimitWait, locale: string): string {
 
 /** Time since the run started in T3 Code's units (TAL-922): `42s`, then `5m`, then `1h 30m`. Redrawn each second and
  *  hidden from the live region so it is not announced every tick. */
-function RunElapsed({ since }: { since: number }) {
+export function RunElapsed({ since }: { since: number }) {
   const locale = useLocale()
   const [now, setNow] = useState(Date.now)
   useEffect(() => {

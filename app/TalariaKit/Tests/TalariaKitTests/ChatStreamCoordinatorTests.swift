@@ -1061,6 +1061,39 @@ final class ChatStreamCoordinatorTests: APIClientTestCase {
     }
 
     @MainActor
+    func testASessionLoadSeedsTheRunsOpenCompressionSpan() {
+        // TAL-1006: a load that resumes past the span's frames takes its start from the session.
+        let coordinator = makeCoordinator()
+        let start = Date(timeIntervalSince1970: 1_800_000_000)
+        coordinator.reconcileSessionLoad(
+            loadedActiveStreamID: "stream-load",
+            preparation: coordinator.prepareForSessionLoad(),
+            usedCacheFallback: false,
+            compressionStartedAt: start
+        )
+        XCTAssertEqual(coordinator.compressionStartedAt, start)
+    }
+
+    @MainActor
+    func testCompressionSpanFollowsTheServerUntilItClosesOrTheRunEnds() {
+        // TAL-1006: heartbeats keep the server's start; `compressed` closes the span mid-run, and the run's end closes it too.
+        let streamClient = CoordinatorSpySSEStreamingClient()
+        let coordinator = makeCoordinator(streamClient: streamClient)
+        let start = Date(timeIntervalSince1970: 1_800_000_000)
+        coordinator.start(streamID: "stream-compress")
+        streamClient.emit(.compressing(startedAt: start))
+        streamClient.emit(.compressing(startedAt: start))
+        XCTAssertEqual(coordinator.compressionStartedAt, start)
+        streamClient.emit(.compressed)
+        XCTAssertNil(coordinator.compressionStartedAt)
+        XCTAssertNotNil(coordinator.activeStreamID)
+        streamClient.emit(.compressing(startedAt: start.addingTimeInterval(90)))
+        XCTAssertEqual(coordinator.compressionStartedAt, start.addingTimeInterval(90))
+        streamClient.emit(.done(DoneStreamEvent()))
+        XCTAssertNil(coordinator.compressionStartedAt)
+    }
+
+    @MainActor
     func testCompletionErrorAndCancelFinalizeLiveActivity() async throws {
         let streamClient = CoordinatorSpySSEStreamingClient()
         let liveActivityManager = CoordinatorSpyLiveActivityManager()
