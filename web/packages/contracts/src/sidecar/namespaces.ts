@@ -503,10 +503,16 @@ export const ChatUsageSchema = z.object({ prompt_tokens: z.number().int(), compl
  * A completed `compressed` turn also carries `context_messages`, its `messages` with tool output pruned and capped for the model (row for row),
  * and `post_compression_context_tokens_estimate`, the next request's estimated size (TAL-539); both are null otherwise.
  */
+/**
+ * The turn agent's context figures (`context_length`, `threshold_tokens`, `last_prompt_tokens`, `compression_count`). TAL-1005:
+ * `next_turn_threshold_tokens` is the compression threshold the next turn runs under, the primary runtime's when a fallback ran
+ * this one (the Agent restores the primary each turn); absent when the Agent reports none.
+ */
+const ChatContextSchema = z.looseObject({ next_turn_threshold_tokens: z.number().int().positive().optional() })
 export const ChatStartResultSchema = z.object({
   status: z.enum(['completed', 'cancelled', 'error']), messages: z.array(Loose), context_messages: z.array(Loose).nullable().optional(), post_compression_context_tokens_estimate: z.number().int().nullable().optional(), final_response: z.string(), error: z.string().nullable(),
   failed: z.boolean(), partial: z.boolean(), compression_exhausted: z.boolean(),
-  tool_limit_reached: z.boolean(), max_iterations_summary_request: z.string(), usage: ChatUsageSchema, context: Loose, model: z.string(), provider: z.string(), compressed: z.boolean(), agent_session_id: z.string(),
+  tool_limit_reached: z.boolean(), max_iterations_summary_request: z.string(), usage: ChatUsageSchema, context: ChatContextSchema, model: z.string(), provider: z.string(), compressed: z.boolean(), agent_session_id: z.string(),
   token_sent: z.boolean(), pending_steer: z.string(), live_tool_calls: z.array(Loose),
 })
 const Text = z.object({ text: z.string() }).catchall(Json)

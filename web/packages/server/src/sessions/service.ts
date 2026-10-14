@@ -174,6 +174,8 @@ const isDict = (v: unknown): v is Record<string, unknown> => Boolean(v) && typeo
 export class SessionService {
   /** TAL-255: one manual compression worker per session, shared by every compress route. */
   private readonly compressionJobs: CompressionJobs
+  /** TAL-1005: the turns now waiting on their session's compression job before they read its history. */
+  private readonly compactionWaiters = new Set<string>()
 
   constructor(readonly deps: SessionServiceDeps) {
     this.compressionJobs = new CompressionJobs()
@@ -1299,8 +1301,8 @@ export class SessionService {
     if (this.deps.profileDeleting?.(profile)) throw new HttpFailure(409, `Profile '${str(profile)}' is being deleted.`)
     const release = this.deps.profileActivity?.(profile)
     const now = this.deps.now()
-    const job: CompressionJob = { session_id: sid, focus_topic: focusTopic, status: 'running', started_at: now, updated_at: now, done: Promise.resolve() }
-    job.done = this.compressSession(sid, focusTopic).finally(() => { release?.(); this.compressionJobs.expireLater(job) }).then(
+    const job: CompressionJob = { session_id: sid, focus_topic: focusTopic, status: 'running', started_at: now, updated_at: now, turns: new Set(), done: Promise.resolve() }
+    job.done = this.compressSession(job).finally(() => { release?.(); this.compressionJobs.expireLater(job) }).then(
       (result) => { Object.assign(job, { status: 'done', result, updated_at: this.deps.now() }) },
       (error: unknown) => {
         const known = error instanceof HttpFailure
@@ -1312,27 +1314,71 @@ export class SessionService {
     return job
   }
 
-  /** The session a compression may run on now, and the model history it compresses: the context a turn would send, so a
-   * repeat compression builds on the previous summary instead of re-reading the whole display transcript. */
-  private compressionTarget(sid: string): { s: Session; history: Message[] } {
-    this.rejectSubagent(sid, 'compressed')
-    const s = this.mutationTarget(sid, 'compressed')
-    return { s, history: this.compressionHistory(s) }
+  /**
+   * TAL-1005: compact the session in its joinable compression job before the next turn reads its history. A running job
+   * is always joined; a new one starts when the context is at or above the next turn's threshold (`thresholdApplies`
+   * false skips that check, for a turn on another model). `turn` is the waiting turn's stream: the job leaves its rows
+   * alone. `onWait` runs once a job is being waited on; an abort of `signal` (the turn's Stop) ends the wait but not the
+   * job. True when the job installed a compressed context. Never throws: a failed job leaves the Agent's own preflight.
+   */
+  async ensureCompacted(sid: string, opts: { turn?: string; signal?: AbortSignal; onWait?: () => void; thresholdApplies?: boolean } = {}): Promise<boolean> {
+    const { turn, signal } = opts
+    if (turn) this.compactionWaiters.add(turn)
+    try {
+      let job = this.compressionJobs.get(sid)
+      if (job?.status !== 'running') job = opts.thresholdApplies !== false && this.overCompactionThreshold(sid) ? await this.startCompression(sid, null) : undefined
+      if (!job || signal?.aborted) return false
+      if (turn) job.turns.add(turn)
+      opts.onWait?.()
+      const aborted = new Promise<void>((resolve) => { signal?.addEventListener('abort', () => { resolve() }, { once: true }) })
+      await Promise.race([job.done, aborted])
+      return !signal?.aborted && job.status === 'done'
+    } catch (error) {
+      this.deps.log(`[webui] compaction before the next turn of ${sid} did not run: ${(error as Error).message}`)
+      return false
+    } finally {
+      if (turn) this.compactionWaiters.delete(turn)
+    }
   }
 
-  /** The loaded session's own compression guards: no running turn and enough model history. */
-  private compressionHistory(s: Session, stateRows?: Message[]): Message[] {
-    if (s.active_stream_id) throw new HttpFailure(409, 'Session is still streaming; wait for the current turn to finish.')
-    const history = sanitizeMessagesForApi(this.modelContext(s, stateRows))
-    if (history.length < 4) throw new HttpFailure(400, 'Not enough conversation to compress (need at least 4 messages).')
-    return history
+  /** Whether the session's context (the post-compression estimate, else the last prompt) reached the next turn's threshold. */
+  private overCompactionThreshold(sid: string): boolean {
+    let s: Session
+    try { s = this.store.get(sid, { metadataOnly: true }) } catch { return false }
+    const positive = (v: unknown): number | null => { const n = Math.trunc(Number(v ?? 0)); return Number.isFinite(n) && n > 0 ? n : null }
+    const used = positive(s.post_compression_context_tokens_estimate) ?? positive(s.last_prompt_tokens)
+    const threshold = positive(s.next_turn_threshold_tokens) ?? positive(s.threshold_tokens)
+    return used !== null && threshold !== null && used >= threshold
+  }
+
+  /** The session a compression may run on now, and the model history it compresses: the context a turn would send, so a
+   * repeat compression builds on the previous summary instead of re-reading the whole display transcript. `context` is
+   * that history unsanitized and `stateRows` the state.db read it came from. */
+  private compressionTarget(sid: string): { s: Session; history: Message[]; context: Message[]; stateRows: Message[] } {
+    this.rejectSubagent(sid, 'compressed')
+    const s = this.mutationTarget(sid, 'compressed')
+    const stateRows = this.stateDbRows(s)
+    const context = this.compressionContext(s, stateRows)
+    return { s, history: sanitizeMessagesForApi(context), context, stateRows }
+  }
+
+  /**
+   * The loaded session's own compression guards: no running turn and enough model history. TAL-1005: a turn waiting on
+   * the compression has not read its history yet, so it does not block; the context leaves out its rows, as it does.
+   */
+  private compressionContext(s: Session, stateRows?: Message[]): Message[] {
+    const turn = s.active_stream_id
+    if (turn && !this.compactionWaiters.has(turn)) throw new HttpFailure(409, 'Session is still streaming; wait for the current turn to finish.')
+    const context = this.modelContext(s, stateRows).filter((m) => !turn || m._turn_id !== turn)
+    if (sanitizeMessagesForApi(context).length < 4) throw new HttpFailure(400, 'Not enough conversation to compress (need at least 4 messages).')
+    return context
   }
 
   /** TAL-614: whether a manual compression would start now: `compressionTarget`'s gates, with `readOnly` the wire flag. */
   private canCompress(s: Session, readOnly: boolean, stateRows: Message[]): boolean {
     if (readOnly || isClaudeCodeSessionId(s.session_id)) return false
     try {
-      this.compressionHistory(s, stateRows)
+      this.compressionContext(s, stateRows)
       return true
     } catch (error) {
       if (error instanceof HttpFailure) return false
@@ -1444,18 +1490,22 @@ export class SessionService {
 
   /**
    * Python `_handle_session_compress`: compress the sanitized transcript in the sidecar outside the lock, then under the
-   * session lock refuse a result the session moved past (stream state or transcript changed) and install it as the
+   * session lock refuse a result the session moved past (another stream, or a transcript changed) and install it as the
    * model context with the manual anchor and the #4836 boundary that keeps state.db from replaying compressed rows.
-   * The guards run again first: a stream may have started while the caller awaited the runtime check.
+   * The guards run again first: a stream may have started while the caller awaited the runtime check. TAL-1005: rows
+   * the job's waiting turns added meanwhile (a prompt, a Stop) stay after the compressed context.
    */
-  private async compressSession(sid: string, focusTopic: string | null): Promise<Record<string, unknown>> {
-    const { s, history } = this.compressionTarget(sid)
-    // The display transcript and the model context must both be where the compression found them; the key starts from
-    // the exact history sent, so a state.db row that lands after this read fails the commit instead of being dropped.
-    const transcriptKey = (x: Session, context: Message[]): string => JSON.stringify([sanitizeMessagesForApi(x.messages), context])
-    const historyKey = transcriptKey(s, history)
-    const streamState = (x: Session): string => JSON.stringify([x.active_stream_id ?? null, x.pending_user_message ?? null, x.pending_attachments ?? null, x.pending_started_at ?? null])
-    const streamBefore = streamState(s)
+  private async compressSession(job: CompressionJob): Promise<Record<string, unknown>> {
+    const { session_id: sid, focus_topic: focusTopic } = job
+    const { s, history, context, stateRows: seenRows } = this.compressionTarget(sid)
+    const ownRows = (m: Message): boolean => !s.active_stream_id || m._turn_id !== s.active_stream_id
+    // The display transcript and the model context must both still start where the compression found them, followed
+    // only by the waiting turns' rows; the context is the exact history sent, so a state.db row that lands after this
+    // read fails the commit instead of being dropped.
+    // A turn still waiting to join (it started its own start meanwhile) joins this job, so it counts as one of its turns.
+    const waited = (id: unknown): boolean => job.turns.has(str(id)) || this.compactionWaiters.has(str(id))
+    const sameRows = (a: Message[], b: Message[]): boolean => JSON.stringify(a) === JSON.stringify(b)
+    const turnTail = (rows: Message[], base: Message[]): Message[] | null => (sameRows(rows.slice(0, base.length), base) && rows.slice(base.length).every((m) => waited(m._turn_id)) ? rows.slice(base.length) : null)
     const sidecar = this.deps.sidecar?.()
     if (!sidecar) throw new HttpFailure(400, 'Compression failed: the Agent sidecar is not running')
     const [model, provider] = this.deps.modelStateFromRequest(s.model, s.model_provider, s.model_provider)
@@ -1478,31 +1528,36 @@ export class SessionService {
       const current = await this.store.withLock(sid, () => {
         let live: Session
         try { live = this.store.get(sid) } catch { throw new HttpFailure(404, 'Session not found') }
-        if (streamState(live) !== streamBefore) throw new HttpFailure(409, 'Session stream state changed during compression; please retry.')
+        const turn = live.active_stream_id
+        if (turn && !waited(turn)) throw new HttpFailure(409, 'Session stream state changed during compression; please retry.')
         // One state.db read serves the check, the kept display rows, and the boundary.
         const read = this.stateDbRead(live)
         const stateRows = read.rows
-        if (transcriptKey(live, sanitizeMessagesForApi(this.modelContext(live, stateRows))) !== historyKey) throw new HttpFailure(409, 'Session was modified during compression; please retry.')
+        const tail = turnTail(this.modelContext(live, stateRows).filter((m) => !turn || m._turn_id !== turn), context)
+        if (!tail || !turnTail(live.messages, s.messages)) throw new HttpFailure(409, 'Session was modified during compression; please retry.')
         // Rows the sidecar returns without a timestamp take the newest one this compression saw, never the clock: the
         // boundary then hides no state.db row the append-only merge would still show (it already drops rows at or
         // before the newest local row), so a CLI row committed after the read follows the compressed context.
-        const seen = [...live.messages, ...live.context_messages, ...stateRows].map((m) => Number(m.timestamp)).filter(Number.isFinite)
+        const seen = [...s.messages, ...s.context_messages, ...seenRows].filter(ownRows).map((m) => Number(m.timestamp)).filter(Number.isFinite)
         const stamp = seen.length ? Math.max(...seen) : this.deps.now()
         const compressed = copyJson(result.messages) as Message[]
         for (const m of compressed) m.timestamp ??= stamp
-        live.context_messages = compressed
-        live.active_stream_id = null
-        live.pending_user_message = null
-        live.pending_attachments = []
-        live.pending_started_at = null
-        live.pending_user_source = null
+        live.context_messages = [...compressed, ...copyJson(tail)]
+        if (!turn) {
+          live.pending_user_message = null
+          live.pending_attachments = []
+          live.pending_started_at = null
+          live.pending_user_source = null
+        }
         // The compressed history included any state.db-only continuation; the new boundary would hide those rows from
         // the display, so the transcript keeps them before it is applied (and the anchor counts them).
         const display = this.mergedTranscript(live, live.messages, stateRows)
         if (display.length > live.messages.length) live.messages = copyJson(display)
+        // The anchor is the newest row the compression covered: never a waiting turn's own.
         const visible = visibleMessagesForAnchor(live.messages)
-        live.compression_anchor_visible_idx = visible.length ? visible.length - 1 : null
-        live.compression_anchor_message_key = anchorMessageKey(visible.at(-1))
+        const anchor = visible.findLast((m) => !waited(m._turn_id))
+        live.compression_anchor_visible_idx = anchor ? visible.lastIndexOf(anchor) : null
+        live.compression_anchor_message_key = anchorMessageKey(anchor)
         live.compression_anchor_summary = anchorSummary(summary, compressed)
         live.compression_anchor_mode = 'manual'
         // #4836: an intentional-shrink boundary, so append-only state.db reconciliation does not replay compressed rows.

@@ -261,6 +261,19 @@ Agent's context-engine notification is two-phase: a compressed result carries a
 `commit_token`, and the server answers `chat.compress_finalize` with whether it
 installed the result (an unanswered token is discarded after ten minutes).
 
+The same job compacts an over-threshold session before its next turn (TAL-1005).
+`chat.start`'s `context` reports `next_turn_threshold_tokens`, the threshold the
+next turn runs under: the primary runtime's when a fallback ran this turn, since
+the Agent restores the primary at the next turn's start. A turn that settles with
+its context at or above that threshold starts the job in the background. A new
+turn joins a running job, or starts one when the session is over the threshold
+and the turn keeps the same model, and waits on it before it reads its history.
+Its stream shows `compressing` meanwhile. A Stop during that wait ends only the
+turn; the job keeps running, and the next send joins it. The commit accepts the
+rows waiting turns added meanwhile (their prompts and Stops) and keeps them after
+the compressed context. A failed, `lock_skipped`, or `nothing_to_do` job leaves
+the turn to the Agent's own preflight compression.
+
 Provider sign-in is `oauth.*` (TAL-398). `oauth.start` runs the Agent's own
 device-code request for Nous Portal, OpenAI Codex, xAI, or MiniMax under the
 profile home and returns the code to show. A sidecar thread waits for the

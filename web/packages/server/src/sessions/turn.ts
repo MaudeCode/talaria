@@ -441,6 +441,8 @@ export class TurnRunner {
     const attachments = opts.attachments ?? []
     // A background wakeup stays one in a forked session too (TAL-460).
     const source = opts.source !== 'process_wakeup' && str(s.source_tag).toLowerCase() === 'fork' ? 'fork' : (opts.source ?? 'webui')
+    // TAL-1005: the threshold the last turn reported holds for a turn on the same model only.
+    const sameRuntime = str(s.model) === str(opts.model) && str(s.model_provider) === str(opts.modelProvider)
     s.workspace = opts.workspace
     s.model = opts.model
     s.model_provider = opts.modelProvider
@@ -469,7 +471,7 @@ export class TurnRunner {
     const channel = this.registry.create(streamId, s.session_id)
     if (opts.goalRelated) this.registry.goalRelated.add(streamId)
     this.registry.registerActiveRun({ stream_id: streamId, session_id: s.session_id, started_at: this.deps.now(), phase: 'starting', workspace: opts.workspace, model: opts.model, provider: opts.modelProvider, ephemeral: Boolean(opts.ephemeral), origin: turnOrigin(source) })
-    const worker = this.run(s.session_id, streamId, channel, opts).catch((error: unknown) => {
+    const worker = this.run(s.session_id, streamId, channel, opts, sameRuntime).catch((error: unknown) => {
       this.deps.log(`[webui] ERROR turn ${streamId} crashed\n${error instanceof Error ? (error.stack ?? error.message) : String(error)}`)
     }).finally(() => { this.workers.delete(streamId) })
     this.workers.set(streamId, worker)
@@ -493,7 +495,7 @@ export class TurnRunner {
 
   // ── worker ───────────────────────────────────────────────────────────────
 
-  private async run(sessionId: string, streamId: string, channel: StreamChannel, opts: StartTurnOptions): Promise<void> {
+  private async run(sessionId: string, streamId: string, channel: StreamChannel, opts: StartTurnOptions, sameRuntime: boolean): Promise<void> {
     const { deps } = this
     let writer: RunJournalWriter | null = null
     try {
@@ -547,17 +549,32 @@ export class TurnRunner {
       return
     }
     const msgText = opts.msg
-    const previousMessages = structuredClone(s.messages)
-    // TAL-493: one state.db read builds the history and marks where this turn's own rows begin.
-    const startRead = deps.service().stateDbRead(s)
-    // TAL-578: an eager save already put this turn's prompt in the transcript; `user_message` carries it, so the history
-    // leaves it out.
-    const previousContext = structuredClone(deps.service().modelContext(s, startRead.rows)).filter((m) => m._turn_id !== streamId)
-    // Python `_sanitize_messages_for_agent`: the model never sees display-only rows or a replayed cancelled prompt, and
-    // the Agent gets back the exact bytes it sent (TAL-541).
-    const apiHistory = sanitizeMessagesForApi(previousContext, { preserveApiContent: true, issuedReasoningSince: s.reasoning_replay_from })
+    const history = (): { previousMessages: Message[]; previousContext: Message[]; apiHistory: Message[] } => {
+      const previousMessages = structuredClone(s.messages)
+      // TAL-493: one state.db read builds the history and marks where this turn's own rows begin.
+      const startRead = deps.service().stateDbRead(s)
+      // TAL-578: an eager save already put this turn's prompt in the transcript; `user_message` carries it, so the history
+      // leaves it out.
+      const previousContext = structuredClone(deps.service().modelContext(s, startRead.rows)).filter((m) => m._turn_id !== streamId)
+      // Python `_sanitize_messages_for_agent`: the model never sees display-only rows or a replayed cancelled prompt, and
+      // the Agent gets back the exact bytes it sent (TAL-541).
+      const apiHistory = sanitizeMessagesForApi(previousContext, { preserveApiContent: true, issuedReasoningSince: s.reasoning_replay_from })
+      this.stopContexts.set(streamId, { previousContext, historyLength: apiHistory.length, prompt: msgText, msgText, checkpointed: false, stateDbStartId: startRead.ok ? stateDbSeenId(startRead.rows) ?? 0 : null })
+      return { previousMessages, previousContext, apiHistory }
+    }
     // Before the first await: a Stop can land at any point after admission.
-    this.stopContexts.set(streamId, { previousContext, historyLength: apiHistory.length, prompt: msgText, msgText, checkpointed: false, stateDbStartId: startRead.ok ? stateDbSeenId(startRead.rows) ?? 0 : null })
+    let { previousMessages, previousContext, apiHistory } = history()
+    const controller = new AbortController()
+    this.abortControllers.set(streamId, controller)
+    // TAL-1005: an over-threshold session compacts in its joinable compression job before the turn reads its history, so
+    // a Stop ends only this wait and a resend joins the same job. The turn then reads the compacted session afresh. A
+    // `/btw` clone is thrown away after one answer, so it never starts one.
+    const compacted = await deps.service().ensureCompacted(sessionId, { turn: streamId, signal: controller.signal, thresholdApplies: sameRuntime && !opts.ephemeral, onWait: () => { put('compressing', { session_id: sessionId, message: 'Compressing context' }) } })
+    if (compacted) {
+      try { s = deps.store.get(sessionId) } catch { /* the cancel or error path below reports a deleted session */ }
+      ;({ previousMessages, previousContext, apiHistory } = history())
+      put('compressed', this.compressedFrame(s))
+    }
     const activeTurnToken = buildActiveTurnToken(streamId, s.pending_started_at)
     const sidecar = deps.sidecar()
     const partialText = this.registry.partialText.get(streamId) ?? []
@@ -595,8 +612,6 @@ export class TurnRunner {
     let heldText = ''
     const titles = new ReasoningTitleTracker()
     let capturedTerminalError: string | null = null
-    const controller = new AbortController()
-    this.abortControllers.set(streamId, controller)
     const attachments = opts.attachments ?? []
     // TAL-545: one image mode decides both this turn's upload and the replayed history, which a text-mode turn sends
     // without native images; only a turn with an image on either side asks for it.
@@ -899,14 +914,8 @@ export class TurnRunner {
       if (typeof result.context.context_length === 'number') s.context_length = result.context.context_length
       if (typeof result.context.threshold_tokens === 'number') s.threshold_tokens = result.context.threshold_tokens
       if (typeof result.context.last_prompt_tokens === 'number') s.last_prompt_tokens = result.context.last_prompt_tokens
-      if (result.compressed) {
-        // TAL-540, Python `_live_usage_snapshot`: the counters and the ring's post-compression figures, so clients update before `done`.
-        const usage = {
-          ...meteringUsage(s), context_length: s.context_length ?? 0, threshold_tokens: s.threshold_tokens ?? 0, last_prompt_tokens: s.last_prompt_tokens ?? 0,
-          post_compression_context_tokens_estimate: s.post_compression_context_tokens_estimate, ...contextUsage(s, () => deps.service().deps.contextLengthFor(s.model, s.model_provider)),
-        }
-        put('compressed', { session_id: sessionId, old_session_id: sessionId, new_session_id: sessionId, continuation_session_id: sessionId, message: 'Compression finished', usage })
-      }
+      s.next_turn_threshold_tokens = result.context.next_turn_threshold_tokens ?? null
+      if (result.compressed) put('compressed', this.compressedFrame(s))
       s.tool_calls = extractToolCallsFromMessages(s.messages, liveToolCalls, s.tool_calls)
       s.active_stream_id = null
       s.pending_user_message = null
@@ -1005,6 +1014,9 @@ export class TurnRunner {
       // worker before its daemon-thread title generation).
       this.registry.activeRuns.delete(streamId)
       this.settledStreams.add(streamId)
+      // TAL-1005: a turn that settled at or above the next turn's threshold starts the compaction now, so the next message
+      // usually finds the session compacted; a follow-up turn admitted meanwhile joins it.
+      void deps.service().ensureCompacted(sessionId)
       this.startSteerFollowUp(sessionId, leftovers)
       // Before the title work, so a generated title's own state.db sync lands after this one's provisional title.
       await deps.syncUsage?.(s, usedModel || null)
@@ -1141,6 +1153,16 @@ export class TurnRunner {
     payload.tool_calls = toolCallsForMessageWindow(s.tool_calls, offset, limited.length)
     payload.compression_reference = compressionReference(s, scened)
     return payload
+  }
+
+  /** TAL-540, Python `_live_usage_snapshot`: a finished compression's frame, with the counters and the ring's post-compression figures, so clients update before `done`. */
+  private compressedFrame(s: Session): Record<string, unknown> {
+    const usage = {
+      ...meteringUsage(s), context_length: s.context_length ?? 0, threshold_tokens: s.threshold_tokens ?? 0, last_prompt_tokens: s.last_prompt_tokens ?? 0,
+      post_compression_context_tokens_estimate: s.post_compression_context_tokens_estimate, ...contextUsage(s, () => this.deps.service().deps.contextLengthFor(s.model, s.model_provider)),
+    }
+    const sid = s.session_id
+    return { session_id: sid, old_session_id: sid, new_session_id: sid, continuation_session_id: sid, message: 'Compression finished', usage }
   }
 
   /** Python `_materialize_pending_user_turn_before_error` + error message append + save. */

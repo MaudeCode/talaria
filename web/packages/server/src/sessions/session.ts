@@ -41,7 +41,7 @@ export const METADATA_FIELDS = [
   'compression_anchor_summary', 'pre_compression_snapshot',
   'context_engine', 'compression_anchor_engine', 'compression_anchor_mode',
   'compression_anchor_details', 'context_engine_state',
-  'context_length', 'threshold_tokens', 'last_prompt_tokens',
+  'context_length', 'threshold_tokens', 'last_prompt_tokens', 'next_turn_threshold_tokens',
   'post_compression_context_tokens_estimate',
   'compression_recovery', 'recommended_recovery_action',
   'compression_recovery_source_session_id', 'compression_recovery_action',
@@ -253,6 +253,8 @@ export class Session {
   context_length: unknown
   threshold_tokens: unknown
   last_prompt_tokens: unknown
+  /** TAL-1005: the compression threshold the next turn runs under (the primary model's, after a fallback turn). */
+  next_turn_threshold_tokens: unknown
   post_compression_context_tokens_estimate: number | null
   compression_recovery: Record<string, unknown>
   recommended_recovery_action: unknown
@@ -372,6 +374,7 @@ export class Session {
     this.context_length = take('context_length', null)
     this.threshold_tokens = take('threshold_tokens', null)
     this.last_prompt_tokens = take('last_prompt_tokens', null)
+    this.next_turn_threshold_tokens = take('next_turn_threshold_tokens', null)
     const post = parseNonNegativeInt(take('post_compression_context_tokens_estimate', null))
     this.post_compression_context_tokens_estimate = post && post > 0 ? post : null
     const recovery = take('compression_recovery', null)
