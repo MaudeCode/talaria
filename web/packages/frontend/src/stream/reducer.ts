@@ -116,6 +116,8 @@ export interface StreamState {
 export const initialStreamState: StreamState = { turns: {} }
 
 const TERMINAL: ReadonlySet<TurnStatus> = new Set(['done', 'error', 'cancelled'])
+/** A settled turn waits on nothing: its approval, clarification and connect card go with it. */
+const NO_PROMPTS = { approval: null, clarify: null, connectCard: null } as const
 
 /** The settled session a terminal frame carries, which replaces the live view with the server's scenes. */
 function sessionOf(data: unknown): Session | null {
@@ -275,7 +277,7 @@ function reduceTurn(turn: LiveTurn, action: Extract<StreamAction, { type: 'event
       if (terminal) return stamped
       const session = event.data.session
       // ponytail: old-journal fallback — a `done` recorded before terminal_state shipped completed its turn.
-      return { ...stamped, status: 'done', terminalState: event.data.terminal_state ?? 'completed', doneAt: now, usage: event.data.usage ?? stamped.usage, doneSession: session && typeof session === 'object' ? (session as Session) : null, approval: null, clarify: null, connectCard: null }
+      return { ...stamped, status: 'done', terminalState: event.data.terminal_state ?? 'completed', doneAt: now, usage: event.data.usage ?? stamped.usage, doneSession: session && typeof session === 'object' ? (session as Session) : null, ...NO_PROMPTS }
     }
     case 'apperror':
     case 'error': {
@@ -291,15 +293,13 @@ function reduceTurn(turn: LiveTurn, action: Extract<StreamAction, { type: 'event
         error: cancelled ? null : { type, message: event.data.message ?? '', hint: event.data.hint, continuationSessionId: event.data.continuation_session_id ?? event.data.new_session_id },
         cancelledMessage: cancelled ? (event.data.message ?? '') : null,
         doneSession: sessionOf(event.data),
-        approval: null,
-        clarify: null,
-        connectCard: null,
+        ...NO_PROMPTS,
         streamEnded: true,
       }
     }
     case 'cancel': {
       if (terminal) return { ...stamped, streamEnded: true }
-      return { ...stamped, status: 'cancelled', terminalState: event.data.terminal_state, doneAt: now, cancelledMessage: '', doneSession: sessionOf(event.data), approval: null, clarify: null, connectCard: null, streamEnded: true }
+      return { ...stamped, status: 'cancelled', terminalState: event.data.terminal_state, doneAt: now, cancelledMessage: '', doneSession: sessionOf(event.data), ...NO_PROMPTS, streamEnded: true }
     }
     case 'stream_end':
       return { ...stamped, streamEnded: true }
@@ -348,7 +348,7 @@ export function streamReducer(state: StreamState, action: StreamAction): StreamS
     case 'settle': {
       const turn = state.turns[action.sessionId]
       if (turn?.streamId !== action.streamId || !turn) return state
-      if (!isTerminal(turn.status)) return { turns: { ...state.turns, [action.sessionId]: { ...turn, status: 'done', doneAt: turn.doneAt ?? Date.now(), doneSession: action.session ?? turn.doneSession, streamEnded: true, approval: null, clarify: null, connectCard: null } } }
+      if (!isTerminal(turn.status)) return { turns: { ...state.turns, [action.sessionId]: { ...turn, status: 'done', doneAt: turn.doneAt ?? Date.now(), doneSession: action.session ?? turn.doneSession, streamEnded: true, ...NO_PROMPTS } } }
       return { turns: { ...state.turns, [action.sessionId]: { ...turn, doneSession: action.session ?? turn.doneSession, streamEnded: true } } }
     }
     case 'teardown': {

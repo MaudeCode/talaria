@@ -108,7 +108,7 @@ describe('TAL-818: the Connectors page and connect card', () => {
   it('connects from the page: the link while it waits, skip only, and connected once the account is active', async () => {
     sidecar.respond('connectors.connect', () => pageConnect('initiated'))
     const started = await json(await post(s, '/api/connectors/gmail/connect', {}))
-    expect(started).toEqual({ op_id: 'op-page', settled: false, can_continue: false, tool_call_id: null, targets: [
+    expect(started).toEqual({ op_id: 'op-page', settled: false, outcome: null, can_continue: false, tool_call_id: null, targets: [
       { name: 'gmail', title: 'Gmail', kind: 'connector', state: 'initiated', detail: '', connect_url: 'https://vendor.example.test/authorize/conn-1', actions: ['skip'], env_fields: [] },
     ] })
     sidecar.respond('connectors.operation', () => pageConnect('initiated'))
@@ -119,7 +119,7 @@ describe('TAL-818: the Connectors page and connect card', () => {
 
     sidecar.respond('connectors.operation', () => pageConnect('connected', true))
     const done = await json(await s.get('/api/connectors/operations/op-page'))
-    expect(done).toMatchObject({ settled: true, targets: [{ state: 'connected', connect_url: null, actions: [] }] })
+    expect(done).toMatchObject({ settled: true, outcome: 'connected', targets: [{ state: 'connected', connect_url: null, actions: [] }] })
     for (const method of ['connectors.connect', 'connectors.operation'] as const) sidecar.respond(method, undefined)
   })
 
@@ -132,13 +132,15 @@ describe('TAL-818: the Connectors page and connect card', () => {
     let release: () => void = () => undefined
     sidecar.respond('connectors.operation', () => card)
     sidecar.respond('connectors.respond', (params) => { release(); return { ...card, settled: params.action === 'continue' } })
+    const asked: unknown[] = []
     sidecar.respond('chat.start', async (params, emit) => {
+      asked.push(params.connect_card)
       emit({ event: 'connection', data: card })
       await new Promise<void>((resolve) => { release = resolve })
       emit({ event: 'token', data: { text: 'continued' } })
       return { status: 'completed', messages: [{ role: 'user', content: str(params.user_message) }, { role: 'assistant', content: 'continued' }], final_response: 'continued', error: null, failed: false, partial: false, compression_exhausted: false, tool_limit_reached: false, max_iterations_summary_request: '', usage: { prompt_tokens: 1, completion_tokens: 1, cache_read_tokens: 0, cache_write_tokens: 0, estimated_cost_usd: 0 }, context: {}, model: 'm', provider: 'p', compressed: false, agent_session_id: 'x', token_sent: true, pending_steer: '', live_tool_calls: [] }
     })
-    const start = await json(await post(s, '/api/chat/start', { session_id: sid, message: 'connect gmail' }))
+    const start = await json(await post(s, '/api/chat/start', { session_id: sid, message: 'connect gmail', connect_card: true }))
     const frames = await s.sse(`/api/chat/stream?stream_id=${str(start.stream_id)}`, (f) => f.event === 'connect_card')
     const shown = frames.at(-1)?.data as Json
     expect(shown).toEqual(shared.connect_card)
@@ -148,6 +150,8 @@ describe('TAL-818: the Connectors page and connect card', () => {
     const continued = await json(await post(s, '/api/connectors/operations/op-chat', { action: 'continue' }))
     expect(continued.settled).toBe(true)
     await s.sse(`/api/chat/stream?stream_id=${str(start.stream_id)}&after_event_id=${str(start.stream_id)}:0`, (f) => f.event === 'stream_end')
+    // Only a client that draws the card asks the Agent for one; any other client keeps the Agent's plain links.
+    expect(asked).toEqual([true])
     for (const method of ['connectors.operation', 'connectors.respond', 'chat.start'] as const) sidecar.respond(method, undefined)
   })
 })

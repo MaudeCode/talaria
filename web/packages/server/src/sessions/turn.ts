@@ -18,7 +18,7 @@ import { HttpFailure, markSessionTitleGenerated } from './service.js'
 import type { SessionEventBus } from './events.js'
 import { StreamRegistry, SessionChannels, type StreamChannel } from './streams.js'
 import { ChatUsageSchema, ConnectorOperationSnapshotSchema, type ClarifyAnswers, type PendingSteer, type SessionGoal, type SessionNotice, type SidecarResult, type SteerWithdrawn, type SteerWithdrawRequest } from '@maudecode/talaria-web-contracts'
-import { connectorOperation } from '../tools/connectors.js'
+import { catalogNames, connectorOperation } from '../tools/connectors.js'
 import { PendingPrompts, clarifyReply } from './pending.js'
 import { RunJournal, type RunJournalWriter } from './journal.js'
 import { COMPRESSION_RECOVERY_ACTION_START_FOCUSED, COMPRESSION_RECOVERY_TERMINAL_STATE, CONTEXT_USAGE_FIELDS, Session, contextUsage, titleFrom, type Message } from './session.js'
@@ -131,6 +131,8 @@ export interface StartTurnOptions {
   ephemeral?: boolean
   /** TAL-801: a spoken turn, which the Agent runs on the profile's `auxiliary.voice_chat` slot. */
   voiceTurn?: boolean
+  /** TAL-818: the starting client renders `connect_card`; other turns keep the Agent's plain connect links. */
+  connectCard?: boolean
   /** The settled turn's answer: its last non-error assistant reply, or `` when it produced none. */
   onDone?: (answer: string) => void
   /** Runs on every other end: an error, a cancel, or a writeback another stream took over (Python background runner: `complete_background(..., "(background task failed)")`). */
@@ -645,6 +647,7 @@ export class TurnRunner {
         profile_home: deps.profileHome(s.profile), session_id: sessionId, stream_id: streamId, workspace: opts.workspace, model: opts.model ?? '', model_provider: opts.modelProvider,
         user_message: userMessage, ...turnContext, conversation_history: conversationHistory, enabled_toolsets: deps.toolsetsFor(s), ...(msgText ? { persist_user_message: msgText } : {}), ...(opts.ephemeral ? { ephemeral: true } : {}),
         ...(opts.voiceTurn ? { voice_turn: true } : {}),
+        ...(opts.connectCard ? { connect_card: true } : {}),
       }, {
         signal: controller.signal,
         timeoutMs: 0,
@@ -760,7 +763,7 @@ export class TurnRunner {
             // TAL-818: a `manage_connections` card opened; clients poll and answer the operation by its `op_id`.
             case 'connection': {
               const snapshot = ConnectorOperationSnapshotSchema.safeParse(data)
-              if (snapshot.success) put('connect_card', connectorOperation(snapshot.data))
+              if (snapshot.success) put('connect_card', connectorOperation(snapshot.data, catalogNames(deps.profileHome(s.profile))))
               return
             }
             case 'status':

@@ -113,7 +113,8 @@ export const renameProject = (project_id: string, name: string, color?: string) 
 export const deleteProject = (project_id: string) => orpc().projects.delete({ project_id })
 
 // Chat
-export const startChat = (body: ChatStartRequest) => orpc().chat.start(body, { signal: timeout(60_000) })
+/** Web draws the `connect_card`, so every turn it starts asks the Agent for one (TAL-818). */
+export const startChat = (body: ChatStartRequest) => orpc().chat.start({ ...body, connect_card: true }, { signal: timeout(60_000) })
 export const cancelChat = (stream_id: string) => orpc().chat.cancel({ stream_id })
 export const steerChat = (body: z.infer<typeof SteerRequestSchema>) => orpc().chat.steer(body)
 export const withdrawSteer = (body: SteerWithdrawRequest) => orpc().chat.steerWithdraw(body)
@@ -291,6 +292,6 @@ export const setConnectorRule = (connector: string, revision: string, change: { 
 export const connectConnector = (connector: string) => orpc().connectors.connect({ connector }, { signal: timeout(60_000) })
 export const removeConnectorAccount = (connection_id: string) => orpc().connectors.removeAccount({ connection_id })
 export const fetchConnectorOperation = (op_id: string) => orpc().connectors.operation({ op_id })
-export const respondConnectorOperation = (op_id: string, action: 'skip' | 'retry' | 'approve' | 'continue', target?: string, env?: Record<string, string>) =>
-  orpc().connectors.respond({ op_id, action, ...(target ? { target } : {}), ...(env ? { env } : {}) }, { signal: timeout(60_000) })
+export const respondConnectorOperation = (move: { op_id: string; action: 'skip' | 'retry' | 'approve' | 'continue'; target?: string; env?: Record<string, string> }) =>
+  orpc().connectors.respond(move, { signal: timeout(60_000) })
 export const shutdownServer = () => orpc().ops.shutdown({})

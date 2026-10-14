@@ -35,8 +35,8 @@
 .approval-btn.more[aria-expanded="true"]{color:var(--text);border-color:var(--accent-bg-strong);background:var(--hover-bg)}
 .clarify-card,.connect-card{position:absolute;left:0;right:0;bottom:-24px;max-width:var(--msg-max);margin:0 auto;box-sizing:border-box;width:100%;overflow:hidden;pointer-events:none;max-height:clamp(180px,min(68vh,calc(100vh - 220px)),420px)}
 .clarify-card.visible,.connect-card{pointer-events:auto}
-.connect-inner{max-height:clamp(180px,min(68vh,calc(100vh - 220px)),420px);overflow-y:auto;overscroll-behavior:contain;box-sizing:border-box}
-.clarify-card .clarify-inner{max-height:clamp(180px,min(68vh,calc(100vh - 220px)),420px);overflow-y:auto;overscroll-behavior:contain;-webkit-overflow-scrolling:touch;box-sizing:border-box;transform:translateY(100%);opacity:0;transition:transform .4s cubic-bezier(.32,.72,.16,1),opacity .25s ease,max-height .2s ease}
+.clarify-card .clarify-inner,.connect-inner{max-height:clamp(180px,min(68vh,calc(100vh - 220px)),420px);overflow-y:auto;overscroll-behavior:contain;-webkit-overflow-scrolling:touch;box-sizing:border-box}
+.clarify-card .clarify-inner{transform:translateY(100%);opacity:0;transition:transform .4s cubic-bezier(.32,.72,.16,1),opacity .25s ease,max-height .2s ease}
 @supports (height:100dvh){.clarify-card,.clarify-card .clarify-inner,.connect-card,.connect-inner{max-height:clamp(180px,min(68dvh,calc(100dvh - 220px)),420px)}}
 .clarify-card.visible .clarify-inner{transform:translateY(0);opacity:1}
 .clarify-inner,.connect-inner{background:var(--surface);backdrop-filter:blur(8px);border:1px solid var(--accent-bg-strong);border-radius:12px;padding:12px 14px 36px;box-shadow:0 1px 0 var(--overlay-faint) inset}

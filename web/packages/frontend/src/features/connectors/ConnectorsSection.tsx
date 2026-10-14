@@ -1,11 +1,12 @@
 import { useEffect, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import type { ConnectorOperationView, ConnectorView } from '@maudecode/talaria-web-contracts'
+import type { ConnectorOperationView, ConnectorToolsView, ConnectorView } from '@maudecode/talaria-web-contracts'
 import { ChevronDown, ChevronRight } from 'lucide-react'
 import { m } from '../../paraglide/messages.js'
 import * as api from '../../api/endpoints'
 import { keys } from '../../api/queryKeys'
 import { isApiError } from '../../contracts'
+import { Badge } from '../../ui/Badge'
 import { Button } from '../../ui/Button'
 import { ConfirmDialog } from '../../ui/Dialog'
 import { Switch } from '../../ui/Field'
@@ -14,6 +15,13 @@ import { showToast } from '../toast/toast'
 import { ConnectTargets, useConnectorOperation } from './ConnectTargets'
 
 type Rule = { enabled: boolean } | { tool: string; tool_enabled: boolean }
+
+const PROBLEM: Record<NonNullable<ConnectorView['accounts'][number]['problem']>, () => string> = {
+  pending: m.connectors_account_pending, failed: m.connectors_account_failed, expired: m.connectors_account_expired, revoked: m.connectors_account_revoked, inactive: m.connectors_account_inactive,
+}
+const FACET: Record<ConnectorToolsView['tools'][number]['facet'], () => string> = {
+  read: m.connectors_facet_read, write: m.connectors_facet_write, destructive: m.connectors_facet_destructive, unclassified: m.connectors_facet_unclassified,
+}
 
 /** The member-rule write every switch on the page makes; a stale revision reloads the page's rules. */
 function useRule() {
@@ -67,8 +75,8 @@ function ConnectorRow({ connector, ruleBusy, onRule }: { connector: ConnectorVie
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-center gap-1.5 text-sm">
             <span className="font-medium text-text">{connector.name}</span>
-            {connector.connected && <span className="rounded-full border border-success/50 px-1.5 text-[10px] uppercase tracking-wider text-success">{m.connectors_state_connected()}</span>}
-            {connector.org_locked && <span className="rounded-full border border-border px-1.5 text-[10px] uppercase tracking-wider text-muted">{m.connectors_org_locked()}</span>}
+            {connector.connected && <Badge tone="border-success/50 text-success">{m.connectors_state_connected()}</Badge>}
+            {connector.org_locked && <Badge tone="border-border text-muted">{m.connectors_org_locked()}</Badge>}
           </div>
           {connector.description && <div className="line-clamp-1 text-xs text-muted">{connector.description}</div>}
         </div>
@@ -82,7 +90,7 @@ function ConnectorRow({ connector, ruleBusy, onRule }: { connector: ConnectorVie
           {connector.accounts.map((account) => (
             <li key={account.connection_id} className="flex items-center gap-2 text-xs">
               <span className="min-w-0 flex-1 truncate text-text">{account.name}</span>
-              {account.problem && <span className="text-muted" title={account.status_reason ?? undefined}>{account.problem}</span>}
+              {account.problem && <span className="text-muted" title={account.status_reason ?? undefined}>{PROBLEM[account.problem]()}</span>}
               <Button variant="ghost" className="px-2 py-1 text-xs" disabled={remove.isPending} onClick={() => setRemoving({ id: account.connection_id, name: account.name })}>{m.connectors_disconnect()}</Button>
             </li>
           ))}
@@ -108,11 +116,10 @@ function ConnectorRow({ connector, ruleBusy, onRule }: { connector: ConnectorVie
 function PageConnect({ initial, name, onDone }: { initial: ConnectorOperationView; name: string; onDone: () => void }) {
   const { view, lost, move } = useConnectorOperation(initial)
   useEffect(() => {
-    if (!view.settled && !lost) return
-    const connected = view.targets.every((target) => target.state === 'connected')
-    if (view.settled) showToast(connected ? m.connectors_connected_toast({ name }) : m.connectors_not_connected_toast({ name }), 3000, connected ? 'info' : 'error')
+    if (!view.outcome && !lost) return
+    if (view.outcome) showToast(view.outcome === 'connected' ? m.connectors_connected_toast({ name }) : m.connectors_not_connected_toast({ name }), 3000, view.outcome === 'connected' ? 'info' : 'error')
     onDone()
-  }, [view.settled, lost]) // eslint-disable-line react-hooks/exhaustive-deps -- once, when it settles
+  }, [view.outcome, lost]) // eslint-disable-line react-hooks/exhaustive-deps -- once, when it settles
   return <div className="pl-9"><ConnectTargets view={view} move={move} /></div>
 }
 
@@ -127,7 +134,7 @@ function ToolList({ slug, busy, onRule }: { slug: string; busy: boolean; onRule:
           <div className="min-w-0 flex-1">
             <div className="flex flex-wrap items-center gap-1.5 text-sm">
               <span className="text-text">{tool.name}</span>
-              <span className="font-mono text-[11px] text-muted">{tool.facet}</span>
+              <span className="text-[11px] text-muted">{FACET[tool.facet]()}</span>
               {tool.locked && <span className="text-[11px] text-muted">{m.connectors_org_locked()}</span>}
             </div>
             {tool.description && <div className="line-clamp-1 text-[11px] text-muted">{tool.description}</div>}

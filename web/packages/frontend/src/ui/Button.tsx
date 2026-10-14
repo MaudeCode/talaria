@@ -15,8 +15,12 @@ export interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
   variant?: Variant
 }
 
+/** A button's classes, for a link that looks like one (an external authorization link). */
+export const buttonClass = (variant: Variant = 'default', className?: string): string =>
+  cn('inline-flex items-center justify-center gap-1.5 rounded-md font-medium leading-none transition-colors disabled:cursor-not-allowed disabled:opacity-50', VARIANT[variant], variant !== 'link' && 'px-3 py-1.5 text-sm', className)
+
 export function Button({ variant = 'default', className, type = 'button', ...props }: ButtonProps) {
-  return <button type={type} {...props} className={cn('inline-flex items-center justify-center gap-1.5 rounded-md font-medium leading-none transition-colors disabled:cursor-not-allowed disabled:opacity-50', VARIANT[variant], variant !== 'link' && 'px-3 py-1.5 text-sm', className)} />
+  return <button type={type} {...props} className={buttonClass(variant, className)} />
 }
 
 export interface IconButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {

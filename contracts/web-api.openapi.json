@@ -37843,6 +37843,9 @@
                   },
                   "voice_turn": {
                     "type": "boolean"
+                  },
+                  "connect_card": {
+                    "type": "boolean"
                   }
                 },
                 "required": [
@@ -53581,8 +53584,22 @@
                                 "name": {
                                   "type": "string"
                                 },
-                                "status": {
-                                  "type": "string"
+                                "problem": {
+                                  "anyOf": [
+                                    {
+                                      "enum": [
+                                        "pending",
+                                        "failed",
+                                        "expired",
+                                        "revoked",
+                                        "inactive"
+                                      ],
+                                      "type": "string"
+                                    },
+                                    {
+                                      "type": "null"
+                                    }
+                                  ]
                                 },
                                 "status_reason": {
                                   "anyOf": [
@@ -53604,7 +53621,7 @@
                               "required": [
                                 "connection_id",
                                 "name",
-                                "status",
+                                "problem",
                                 "status_reason",
                                 "active",
                                 "created_at"
@@ -53615,6 +53632,9 @@
                             "type": "boolean"
                           },
                           "org_locked": {
+                            "type": "boolean"
+                          },
+                          "rules_editable": {
                             "type": "boolean"
                           },
                           "tools_off": {
@@ -53633,6 +53653,7 @@
                           "accounts",
                           "enabled",
                           "org_locked",
+                          "rules_editable",
                           "tools_off"
                         ]
                       }
@@ -53713,6 +53734,12 @@
                             "type": "string"
                           },
                           "facet": {
+                            "enum": [
+                              "read",
+                              "write",
+                              "destructive",
+                              "unclassified"
+                            ],
                             "type": "string"
                           },
                           "deprecated": {
@@ -53723,6 +53750,9 @@
                           },
                           "locked": {
                             "type": "boolean"
+                          },
+                          "editable": {
+                            "type": "boolean"
                           }
                         },
                         "required": [
@@ -53732,7 +53762,8 @@
                           "facet",
                           "deprecated",
                           "enabled",
-                          "locked"
+                          "locked",
+                          "editable"
                         ]
                       }
                     }
@@ -53852,6 +53883,20 @@
                     "settled": {
                       "type": "boolean"
                     },
+                    "outcome": {
+                      "anyOf": [
+                        {
+                          "enum": [
+                            "connected",
+                            "not_connected"
+                          ],
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
                     "can_continue": {
                       "type": "boolean"
                     },
@@ -53923,7 +53968,7 @@
                                 "name": {
                                   "type": "string"
                                 },
-                                "prompt": {
+                                "label": {
                                   "type": "string"
                                 },
                                 "required": {
@@ -53935,7 +53980,7 @@
                               },
                               "required": [
                                 "name",
-                                "prompt",
+                                "label",
                                 "required",
                                 "secret"
                               ]
@@ -53958,6 +54003,7 @@
                   "required": [
                     "op_id",
                     "settled",
+                    "outcome",
                     "can_continue",
                     "tool_call_id",
                     "targets"
@@ -54040,6 +54086,20 @@
                     "settled": {
                       "type": "boolean"
                     },
+                    "outcome": {
+                      "anyOf": [
+                        {
+                          "enum": [
+                            "connected",
+                            "not_connected"
+                          ],
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
                     "can_continue": {
                       "type": "boolean"
                     },
@@ -54111,7 +54171,7 @@
                                 "name": {
                                   "type": "string"
                                 },
-                                "prompt": {
+                                "label": {
                                   "type": "string"
                                 },
                                 "required": {
@@ -54123,7 +54183,7 @@
                               },
                               "required": [
                                 "name",
-                                "prompt",
+                                "label",
                                 "required",
                                 "secret"
                               ]
@@ -54146,6 +54206,7 @@
                   "required": [
                     "op_id",
                     "settled",
+                    "outcome",
                     "can_continue",
                     "tool_call_id",
                     "targets"
@@ -54223,6 +54284,20 @@
                     "settled": {
                       "type": "boolean"
                     },
+                    "outcome": {
+                      "anyOf": [
+                        {
+                          "enum": [
+                            "connected",
+                            "not_connected"
+                          ],
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
                     "can_continue": {
                       "type": "boolean"
                     },
@@ -54294,7 +54369,7 @@
                                 "name": {
                                   "type": "string"
                                 },
-                                "prompt": {
+                                "label": {
                                   "type": "string"
                                 },
                                 "required": {
@@ -54306,7 +54381,7 @@
                               },
                               "required": [
                                 "name",
-                                "prompt",
+                                "label",
                                 "required",
                                 "secret"
                               ]
@@ -54329,6 +54404,7 @@
                   "required": [
                     "op_id",
                     "settled",
+                    "outcome",
                     "can_continue",
                     "tool_call_id",
                     "targets"

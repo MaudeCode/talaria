@@ -8,7 +8,7 @@ import type { ConnectorOperationView, ConnectorsPage } from '@maudecode/talaria-
 
 // The shared Web/App fixture the server suite composes (contracts/fixtures/connectors.json).
 const shared = JSON.parse(readFileSync(resolve(import.meta.dirname, '../../../../../../contracts/fixtures/connectors.json'), 'utf8')) as { page: ConnectorsPage; connect_card: ConnectorOperationView }
-const waiting: ConnectorOperationView = { op_id: 'op-page', settled: false, can_continue: false, tool_call_id: null, targets: [
+const waiting: ConnectorOperationView = { op_id: 'op-page', settled: false, outcome: null, can_continue: false, tool_call_id: null, targets: [
   { name: 'gmail', title: 'Gmail', kind: 'connector', state: 'initiated', detail: '', connect_url: 'https://vendor.example.test/authorize/conn-1', actions: ['skip'], env_fields: [] },
 ] }
 let operation = waiting
@@ -18,7 +18,7 @@ vi.mock('../../api/endpoints', () => ({
   setConnectorRule: vi.fn(() => Promise.resolve({ ok: true, revision: 'rev-8' })),
   connectConnector: vi.fn(() => Promise.resolve(waiting)),
   fetchConnectorOperation: vi.fn(() => Promise.resolve(operation)),
-  respondConnectorOperation: vi.fn((_op: string, action: string) => Promise.resolve({ ...operation, settled: action === 'continue' })),
+  respondConnectorOperation: vi.fn(({ action }: { action: string }) => Promise.resolve({ ...operation, settled: action === 'continue' })),
   removeConnectorAccount: vi.fn(() => Promise.resolve({ ok: true })),
 }))
 vi.mock('../toast/toast', () => ({ showToast: vi.fn() }))
@@ -53,7 +53,7 @@ describe('ConnectorsSection (TAL-818)', () => {
     const link = await within(row).findByRole('link', { name: 'Authorize' })
     expect(link).toHaveAttribute('href', 'https://vendor.example.test/authorize/conn-1')
     expect(within(row).getByText('Waiting for authorization')).toBeInTheDocument()
-    operation = { ...waiting, settled: true, targets: [{ ...waiting.targets[0]!, state: 'connected', connect_url: null, actions: [] }] }
+    operation = { ...waiting, settled: true, outcome: 'connected', targets: [{ ...waiting.targets[0]!, state: 'connected', connect_url: null, actions: [] }] }
     await waitFor(() => expect(showToast).toHaveBeenCalledWith('Gmail connected', 3000, 'info'), { timeout: 5000 })
     await waitFor(() => expect(within(row).queryByRole('link', { name: 'Authorize' })).not.toBeInTheDocument())
   })
@@ -70,7 +70,7 @@ describe('ConnectCard (TAL-818)', () => {
     await userEvent.type(within(card).getByLabelText('API key'), 'lin-key')
     expect(approve).toBeEnabled()
     await userEvent.click(within(card).getByRole('button', { name: 'Continue' }))
-    expect(api.respondConnectorOperation).toHaveBeenCalledWith('op-chat', 'continue', undefined, undefined)
+    expect(api.respondConnectorOperation).toHaveBeenCalledWith({ op_id: 'op-chat', action: 'continue' })
     await waitFor(() => expect(screen.queryByRole('region', { name: 'Connect apps' })).not.toBeInTheDocument())
   })
 })

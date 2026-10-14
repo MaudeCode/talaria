@@ -4,6 +4,7 @@ connected without a chat session."""
 
 from __future__ import annotations
 
+import json
 import time
 
 import pytest
@@ -171,12 +172,12 @@ chat._profile_fallback_chain = lambda: None
 chat._main_model_request_overrides = lambda model, provider, base_url="": None
 chat.checkpoint_kwargs = lambda: {}
 result = chat.start(Ctx(), {"profile_home": home, "session_id": "s-connect", "stream_id": "st-connect", "user_message": "Connect Gmail",
-                            "model": "m", "model_provider": "p"})
+                            "model": "m", "model_provider": "p", **({"connect_card": True} if sys.argv[2] == "card" else {})})
 print(json.dumps({"frames": [f for f in frames if f[0] == "connection"], "tool": tool_results, "answers": answers, "status": result["status"]}))
 '''
 
 
-def test_a_chat_connect_opens_the_card_frame_and_continue_returns_the_tool(tmp_path, portal):
+def run_chat_probe(tmp_path, portal, mode: str) -> dict:
     import json
     import subprocess
 
@@ -185,10 +186,14 @@ def test_a_chat_connect_opens_the_card_frame_and_continue_returns_the_tool(tmp_p
     home = tmp_path / "hermes"
     home.mkdir()
     with serve(portal) as origin:
-        run = subprocess.run([AGENT_PYTHON, "-c", CHAT_PROBE, str(AGENT_DIR)], env=isolated_env(home, **seed_identity(home, origin)),
+        run = subprocess.run([AGENT_PYTHON, "-c", CHAT_PROBE, str(AGENT_DIR), mode], env=isolated_env(home, **seed_identity(home, origin)),
                              capture_output=True, text=True, timeout=90)
     assert run.returncode == 0, run.stderr[-4000:]
-    observed = json.loads(run.stdout.strip().splitlines()[-1])
+    return json.loads(run.stdout.strip().splitlines()[-1])
+
+
+def test_a_chat_connect_opens_the_card_frame_and_continue_returns_the_tool(tmp_path, portal):
+    observed = run_chat_probe(tmp_path, portal, "card")
     [[_, frame]] = observed["frames"]
     assert frame["tool_call_id"] == "call-1" and frame["settled"] is False
     assert [(t["name"], t["state"], t["connect_url"]) for t in frame["targets"]] == [("gmail", "initiated", "https://vendor.example.test/authorize/conn-gmail-1")]
@@ -196,3 +201,11 @@ def test_a_chat_connect_opens_the_card_frame_and_continue_returns_the_tool(tmp_p
     [tool] = observed["tool"]
     assert tool["status"] == "settled" and tool["settled_by"] == "continue"
     assert [(t["name"], t["state"]) for t in tool["targets"]] == [("gmail", "not_connected")]
+
+
+def test_a_client_without_the_card_keeps_the_agents_plain_connect_link(tmp_path, portal):
+    """A client that does not draw the card (the App before it adopts it) never waits on one: the tool answers at once."""
+    observed = run_chat_probe(tmp_path, portal, "plain")
+    assert observed["frames"] == [] and observed["answers"] == []
+    [tool] = observed["tool"]
+    assert "https://vendor.example.test/authorize/conn-gmail-1" in json.dumps(tool)

@@ -14,7 +14,7 @@ import { ConfigUnavailable, type Config, type Dict } from '../config/agent-confi
 import { SidecarError } from '../sidecar/client.js'
 import { createPrompt, deletePrompt, externalNotesEnabled, loadPrompts, readMemory, writeMemory } from '../tools/memory.js'
 import { JoplinError, joplinNote, joplinSearch, notesSources, type JoplinDeps } from '../tools/mcp.js'
-import { connectorOperation, connectorsPage, connectorTools } from '../tools/connectors.js'
+import { catalogNames, connectorOperation, connectorsPage, connectorTools, rememberCatalogNames } from '../tools/connectors.js'
 import { resolveWikiLocation, wikiPages, type WikiLocation } from '../tools/wiki.js'
 import { buildInsights } from '../tools/insights.js'
 import { commandCatalog } from '../tools/commands.js'
@@ -112,6 +112,14 @@ async function connectorCall<M extends SidecarMethodName>(ctx: RequestContext, m
     throw error
   }
 }
+
+/** The catalog's app names for the active profile: the last page read's, else one catalog read; none when it fails. */
+async function connectorNames(ctx: RequestContext): Promise<Record<string, string>> {
+  return catalogNames(home(ctx)) ?? await connectorCall(ctx, 'connectors.catalog', {}).then((r) => rememberCatalogNames(home(ctx), r.connectors), () => ({}))
+}
+
+/** An operation as the contract shows it, with the apps' catalog names. */
+const operationView = async (ctx: RequestContext, snapshot: SidecarResult<'connectors.operation'>) => connectorOperation(snapshot, await connectorNames(ctx))
 
 /** The member rules, or null when they cannot be read (another layer's refusal): the page then shows them read-only. */
 const connectorPolicy = (ctx: RequestContext): Promise<SidecarResult<'connectors.policy.get'> | null> =>
@@ -533,6 +541,7 @@ export const toolsRouter = os.router({
     page: os.connectors.page.handler(({ context: { ctx } }) => run(async () => {
       if (!ctx.deps.sidecar() || !(await connectorCall(ctx, 'connectors.available', {})).available) return { available: false, connectors: [], policy_revision: null }
       const [catalog, accounts, policy] = await Promise.all([connectorCall(ctx, 'connectors.catalog', {}), connectorCall(ctx, 'connectors.accounts', {}), connectorPolicy(ctx)])
+      rememberCatalogNames(home(ctx), catalog.connectors)
       return connectorsPage(catalog.connectors, accounts.accounts, policy)
     })),
     tools: os.connectors.tools.handler(({ input, context: { ctx } }) => run(async () => {
@@ -546,18 +555,19 @@ export const toolsRouter = os.router({
       const { revision } = await connectorCall(ctx, 'connectors.policy.set', { connector: input.connector, expected_revision: input.revision, ...change })
       return { ok: true as const, revision }
     })),
-    connect: os.connectors.connect.handler(({ input, context: { ctx } }) => run(async () => connectorOperation(await connectorCall(ctx, 'connectors.connect', { connector: input.connector })))),
+    connect: os.connectors.connect.handler(({ input, context: { ctx } }) => run(async () => operationView(ctx, await connectorCall(ctx, 'connectors.connect', { connector: input.connector })))),
     removeAccount: os.connectors.removeAccount.handler(({ input, context: { ctx } }) => run(async () => {
       await connectorCall(ctx, 'connectors.remove', { connection_id: input.connection_id })
       return { ok: true as const }
     })),
-    operation: os.connectors.operation.handler(({ input, context: { ctx } }) => run(async () => connectorOperation(await connectorCall(ctx, 'connectors.operation', { op_id: input.op_id })))),
+    operation: os.connectors.operation.handler(({ input, context: { ctx } }) => run(async () => operationView(ctx, await connectorCall(ctx, 'connectors.operation', { op_id: input.op_id })))),
     respond: os.connectors.respond.handler(({ input, context: { ctx } }) => run(async () => {
       // Only a move the operation offers now reaches the Agent: the view decides, the sidecar applies.
       const view = connectorOperation(await connectorCall(ctx, 'connectors.operation', { op_id: input.op_id }))
-      const offered = input.action === 'continue' ? view.can_continue : view.targets.some((t) => t.name === input.target && t.actions.includes(input.action as 'skip'))
+      const { action } = input
+      const offered = action === 'continue' ? view.can_continue : view.targets.some((t) => t.name === input.target && t.actions.includes(action))
       if (!offered) throw new HttpError(409, 'That move is not open on this connection.', { code: 'operation_refused' })
-      return connectorOperation(await connectorCall(ctx, 'connectors.respond', { op_id: input.op_id, action: input.action, ...(input.target ? { target: input.target } : {}), ...(input.env ? { env: input.env } : {}) }))
+      return operationView(ctx, await connectorCall(ctx, 'connectors.respond', { op_id: input.op_id, action, ...(input.target ? { target: input.target } : {}), ...(input.env ? { env: input.env } : {}) }))
     })),
   },
   plugins: os.plugins.handler(({ context: { ctx } }) => run(async () => {

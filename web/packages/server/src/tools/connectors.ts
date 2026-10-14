@@ -23,6 +23,24 @@ function rulesOf(body: Body, revision: string): Rules {
   return { allowed: null, denied: new Set(body.disabled_connectors ?? []), tools, tags, revision }
 }
 
+const PROBLEMS = new Set(['pending', 'failed', 'expired', 'revoked', 'inactive'] as const)
+type Problem = typeof PROBLEMS extends Set<infer T> ? T : never
+/** An account's gateway status while it is not active; a status this server does not know reads as `inactive`. */
+const accountProblem = (status: string): Problem | null => status === 'active' ? null : PROBLEMS.has(status as Problem) ? status as Problem : 'inactive'
+
+const FACETS = new Set(['read', 'write', 'destructive', 'unclassified'] as const)
+type Facet = typeof FACETS extends Set<infer T> ? T : never
+const facetOf = (facet: string): Facet => FACETS.has(facet as Facet) ? facet as Facet : 'unclassified'
+
+/** Catalog names by profile home, kept from the last catalog read so a connect card names `github` GitHub. */
+const catalogNameCache = new Map<string, Record<string, string>>()
+export function rememberCatalogNames(home: string, catalog: Catalog): Record<string, string> {
+  const names = Object.fromEntries(catalog.map((row) => [row.slug, row.name]))
+  catalogNameCache.set(home, names)
+  return names
+}
+export const catalogNames = (home: string): Record<string, string> | undefined => catalogNameCache.get(home)
+
 const allows = (rules: Rules, slug: string): boolean => (rules.allowed === null || rules.allowed.has(slug)) && !rules.denied.has(slug)
 
 /** The member layer (null: none, so the rules are read-only) and every other layer. */
@@ -47,7 +65,7 @@ export function connectorsPage(catalog: Catalog, accounts: Accounts, policy: Pol
     return {
       slug, name: entry?.name || slug, description: entry?.description ?? '', category: entry?.category ?? '', logo_url: entry?.logo_url ?? null,
       connected: mine.length > 0,
-      accounts: mine.map((row) => ({ connection_id: row.connection_id, name: row.alias?.trim() || row.label, problem: row.status === 'active' ? null : row.status, status_reason: row.status_reason?.trim() || null, active: row.active, created_at: row.created_at })),
+      accounts: mine.map((row) => ({ connection_id: row.connection_id, name: row.alias?.trim() || row.label, problem: accountProblem(row.status), status_reason: row.status_reason?.trim() || null, active: row.active, created_at: row.created_at })),
       // The switch shows what Hermes gets: an app another layer locks off reads off, whatever the member rule says.
       enabled: (member === null || allows(member, slug)) && !orgLocked,
       org_locked: orgLocked,
@@ -72,14 +90,14 @@ export function connectorTools(listing: Tools, policy: Policy | null): Connector
     connector: slug, policy_revision: member?.revision ?? null,
     tools: listing.tools.map((tool) => {
       const isLocked = locked(tool)
-      return { slug: tool.slug, name: tool.name, description: tool.description, facet: tool.facet, deprecated: tool.deprecated, enabled: !off.has(tool.slug) && !isLocked, locked: isLocked, editable: appEditable && !isLocked }
+      return { slug: tool.slug, name: tool.name, description: tool.description, facet: facetOf(tool.facet), deprecated: tool.deprecated, enabled: !off.has(tool.slug) && !isLocked, locked: isLocked, editable: appEditable && !isLocked }
     }),
   }
 }
 
 const SKIPPABLE = new Set(['pending', 'initiated', 'failed', 'expired'])
 
-/** `google_calendar` → `Google Calendar`: a card names an app by its slug, as the operation carries no catalog name. */
+/** `google_calendar` → `Google Calendar`: the title of a target the catalog does not name (an MCP server, or before a catalog read). */
 export const connectorTitle = (slug: string): string => slug.split(/[_\s-]+/).filter(Boolean).map((word) => word[0]!.toUpperCase() + word.slice(1)).join(' ') || slug
 
 /**
@@ -87,10 +105,11 @@ export const connectorTitle = (slug: string): string => slug.split(/[_\s-]+/).fi
  * unresolved target, retry a failed or expired one, approve an MCP install the card holds. A settled operation is frozen.
  * Only a chat card continues: the model is waiting on it.
  */
-export function connectorOperation(snapshot: Snapshot): ConnectorOperationView {
+export function connectorOperation(snapshot: Snapshot, names: Record<string, string> = {}): ConnectorOperationView {
   const open = !snapshot.settled
   return {
     op_id: snapshot.op_id, settled: snapshot.settled, tool_call_id: snapshot.tool_call_id,
+    outcome: open ? null : snapshot.targets.every((target) => target.state === 'connected') ? 'connected' : 'not_connected',
     can_continue: open && snapshot.owner === 'session',
     targets: snapshot.targets.map((target) => {
       const local = target.kind !== 'connector'
@@ -99,11 +118,12 @@ export function connectorOperation(snapshot: Snapshot): ConnectorOperationView {
       if (open && (target.state === 'failed' || target.state === 'expired')) actions.push('retry')
       if (open && SKIPPABLE.has(target.state)) actions.push('skip')
       return {
-        name: target.name, title: connectorTitle(target.name), kind: target.kind, state: target.state, detail: target.detail,
-        connect_url: open && target.state === 'initiated' ? target.connect_url ?? null : null,
+        name: target.name, title: names[target.name] ?? connectorTitle(target.name), kind: target.kind, state: target.state, detail: target.detail,
+        // Only an https authorization link reaches a client; anything else is dropped rather than rendered as a link.
+        connect_url: open && target.state === 'initiated' && /^https:\/\//i.test(target.connect_url ?? '') ? target.connect_url! : null,
         actions,
         // An approval (or a failed install's retry) sends the credentials the install still needs.
-        env_fields: open && local && (target.state === 'pending' || target.state === 'failed') ? target.required_env : [],
+        env_fields: open && local && (target.state === 'pending' || target.state === 'failed') ? target.required_env.map((field) => ({ name: field.name, label: field.prompt.trim() || field.name, required: field.required, secret: field.secret })) : [],
       }
     }),
   }

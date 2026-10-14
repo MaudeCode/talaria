@@ -98,6 +98,7 @@
     "op_id": "op-chat",
     "settled": false,
     "tool_call_id": "call-1",
+    "outcome": null,
     "can_continue": true,
     "targets": [
       {
@@ -126,7 +127,7 @@
         "env_fields": [
           {
             "name": "LINEAR_API_KEY",
-            "prompt": "API key",
+            "label": "API key",
             "required": true,
             "secret": true
           }

@@ -8,6 +8,7 @@ registers its session operation here through ``remember_chat_operation``. Every 
 
 from __future__ import annotations
 
+import inspect
 import json
 import logging
 import threading
@@ -198,12 +199,14 @@ def connect(home: Path, connector: str) -> dict:
     from tools.connectors.contract import TargetState
     from tools.connectors.run import reissue
 
-    start = account.find_or_start_operation([connector], action="connect", profile_home=str(home))
+    # The gateway attributes each link to who asked; the Agent names its Connectors page ``desktop_page`` (v0.22.0).
+    page = {"initiator": "desktop_page"} if "initiator" in inspect.signature(account.find_or_start_operation).parameters else {}
+    start = account.find_or_start_operation([connector], action="connect", profile_home=str(home), **page)
     _remember(home, start.operation)
     if not start.started:
         target = start.operation.target(connector)
-        if target is not None and target.state in (TargetState.failed, TargetState.expired):
-            reissue(start.operation, [connector])
+        if target is not None and target.state in (TargetState.failed, TargetState.expired) and reissue(start.operation, [connector], **page):
+            raise RpcError("This connection cannot be started again.", condition="operation_refused")
         return operation_view(start.operation)
     if account.wait_for_prepare(start) and start.failed:
         raise RpcError("Connector request failed.", condition="connectors_failed")
@@ -213,6 +216,7 @@ def connect(home: Path, connector: str) -> dict:
 def respond(home: Path, op_id: str, action: str, target: str | None, env: dict) -> dict:
     """The card's move: Skip or Retry one target, Approve an MCP install with its credentials, or Continue."""
     from tools.connectors.contract import SettleReason
+    from tools.connectors.operation import IllegalTransition
     from tools.connectors.run import apply_answer, reissue
 
     operation = _operation(home, op_id)
@@ -221,14 +225,18 @@ def respond(home: Path, op_id: str, action: str, target: str | None, env: dict) 
     row = operation.target(target) if target else None
     if action != "continue" and row is None:
         raise InvalidParams("target must name a target of the operation")
-    if action == "continue":
-        apply_answer(operation, json.dumps({"settled_by": SettleReason.continue_.value}))
-    elif action == "retry" and row.kind == "connector":
-        if reissue(operation, [row.name]):
-            raise RpcError("This target cannot be run again.", condition="operation_refused")
-    else:
-        status = "skipped" if action == "skip" else "approved"
-        apply_answer(operation, json.dumps({"targets": [{"name": row.name, "status": status, "env": env}]}))
+    try:
+        if action == "continue":
+            apply_answer(operation, json.dumps({"settled_by": SettleReason.continue_.value}))
+        elif action == "retry" and row.kind == "connector":
+            if reissue(operation, [row.name]):
+                raise RpcError("This target cannot be run again.", condition="operation_refused")
+        else:
+            status = "skipped" if action == "skip" else "approved"
+            apply_answer(operation, json.dumps({"targets": [{"name": row.name, "status": status, "env": env}]}))
+    except IllegalTransition as exc:
+        # The operation moved between the server's check and this answer (the watcher connected the target meanwhile).
+        raise RpcError("That move is no longer open on this connection.", condition="operation_refused") from exc
     operation.settle_if_all_resolved()
     return operation_view(operation)
 
@@ -307,10 +315,16 @@ def register(registry_) -> None:
         home = profile_home_param(params)
         return page(params, lambda: connect(home, slug))
 
+    def gated() -> None:
+        # Reads and moves on an operation pass the availability gate too, without creating an identity.
+        if not available():
+            raise RpcError("Connectors are not available.", condition="connectors_unavailable")
+
     @registry_.method("connectors.operation")
     def operation_(ctx: CallContext, params: dict) -> dict:
         home = profile_home_param(params)
         with scoped_home(home):
+            gated()
             return operation_view(_operation(home, str(params.get("op_id") or "")))
 
     @registry_.method("connectors.respond")
@@ -324,4 +338,5 @@ def register(registry_) -> None:
         if not isinstance(env, dict) or not all(isinstance(k, str) and isinstance(v, str) for k, v in env.items()):
             raise InvalidParams("env must map names to strings")
         with scoped_home(home):
+            gated()
             return respond(home, str(params.get("op_id") or ""), action, target if isinstance(target, str) else None, env)

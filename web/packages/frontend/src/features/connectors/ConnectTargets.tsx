@@ -5,7 +5,7 @@ import { ExternalLink } from 'lucide-react'
 import { m } from '../../paraglide/messages.js'
 import * as api from '../../api/endpoints'
 import { keys } from '../../api/queryKeys'
-import { Button } from '../../ui/Button'
+import { Button, buttonClass } from '../../ui/Button'
 import { TextInput } from '../../ui/Field'
 import { showToast } from '../toast/toast'
 
@@ -38,7 +38,7 @@ export function useConnectorOperation(initial: ConnectorOperationView) {
     refetchInterval: (q) => (q.state.data?.settled || q.state.status === 'error' ? false : 2000),
   })
   const move = useMutation({
-    mutationFn: ({ action, target, env }: { action: Move; target?: string; env?: Record<string, string> }) => api.respondConnectorOperation(initial.op_id, action, target, env),
+    mutationFn: (move: { action: Move; target?: string; env?: Record<string, string> }) => api.respondConnectorOperation({ op_id: initial.op_id, ...move }),
     onSuccess: (view) => qc.setQueryData(keys.connectors.operation(initial.op_id), view),
     onError: (error) => showToast(error instanceof Error ? error.message : m.connectors_failed(), 5000, 'error'),
   })
@@ -66,7 +66,7 @@ function TargetRow({ target, busy, onMove }: { target: Target; busy: boolean; on
         </div>
         <div className="flex shrink-0 items-center gap-1">
         {target.connect_url && (
-          <a href={target.connect_url} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 rounded-md bg-accent px-3 py-1.5 text-sm font-medium text-accent-fg hover:bg-accent-hover">
+          <a href={target.connect_url} target="_blank" rel="noopener noreferrer" className={buttonClass('primary')}>
             {m.connectors_authorize()}<ExternalLink size={13} aria-hidden="true" />
           </a>
         )}
@@ -77,7 +77,7 @@ function TargetRow({ target, busy, onMove }: { target: Target; busy: boolean; on
       </div>
       {target.detail && <div className="text-xs text-muted">{target.detail}</div>}
       {target.env_fields.map((field) => (
-        <TextInput key={field.name} type={field.secret ? 'password' : 'text'} autoComplete="off" aria-label={field.prompt || field.name} placeholder={field.prompt || field.name}
+        <TextInput key={field.name} type={field.secret ? 'password' : 'text'} autoComplete="off" aria-label={field.label} placeholder={field.label}
           value={env[field.name] ?? ''} onChange={(e) => setEnv((current) => ({ ...current, [field.name]: e.target.value }))} />
       ))}
     </li>

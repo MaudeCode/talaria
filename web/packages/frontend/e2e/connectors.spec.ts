@@ -9,7 +9,7 @@ test.use({ serviceWorkers: 'block' })
 
 /** The views the server suite composes (contracts/fixtures/connectors.json). */
 const shared = JSON.parse(readFileSync(resolve(import.meta.dirname, '../../../../contracts/fixtures/connectors.json'), 'utf8')) as { page: ConnectorsPage; tools: ConnectorToolsView; connect_card: ConnectorOperationView }
-const waiting: ConnectorOperationView = { op_id: 'op-page', settled: false, can_continue: false, tool_call_id: null, targets: [
+const waiting: ConnectorOperationView = { op_id: 'op-page', settled: false, outcome: null, can_continue: false, tool_call_id: null, targets: [
   { name: 'gmail', title: 'Gmail', kind: 'connector', state: 'initiated', detail: '', connect_url: 'https://vendor.example.test/authorize/conn-1', actions: ['skip'], env_fields: [] },
 ] }
 
@@ -26,7 +26,7 @@ const waiting: ConnectorOperationView = { op_id: 'op-page', settled: false, can_
     await page.route('**/api/connectors/*/policy', async (route) => { rules.push(route.request().postDataJSON()); await route.fulfill({ json: { ok: true, revision: 'rev-8' } }) })
     await page.route('**/api/connectors/gmail/connect', (route) => route.fulfill({ json: waiting }))
     await page.route('**/api/connectors/operations/op-page', (route) => route.fulfill({ json: connected
-      ? { ...waiting, settled: true, targets: [{ ...waiting.targets[0]!, state: 'connected', connect_url: null, actions: [] }] }
+      ? { ...waiting, settled: true, outcome: 'connected', targets: [{ ...waiting.targets[0]!, state: 'connected', connect_url: null, actions: [] }] }
       : waiting }))
 
     await page.goto('/settings/connectors')

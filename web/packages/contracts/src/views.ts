@@ -406,6 +406,8 @@ export const ChatStartRequestSchema = z.looseObject({
   session_id: SessionIdSchema, message: z.string().optional(), model: z.string().nullable().optional(), model_provider: z.string().nullable().optional(), workspace: z.string().nullable().optional(), profile: z.string().nullable().optional(),
   explicit_model_pick: z.boolean().optional(), attachments: z.array(z.union([AttachmentSchema, z.string()])).optional(), moa_config: z.boolean().optional(), regenerate: z.boolean().optional(), regeneration_revision: z.string().optional(),
   voice_turn: z.boolean().optional(),
+  /** TAL-818: this client renders `connect_card`, so a `manage_connections` call waits on the card; without it the Agent answers with plain links. */
+  connect_card: z.boolean().optional(),
 })
 export type ChatStartRequest = z.infer<typeof ChatStartRequestSchema>
 /** Accepted turn. `stream_id` is the owner identity for the SSE connection. */
@@ -933,8 +935,8 @@ export const PluginSchema = z.looseObject({ key: z.string(), name: z.string().op
 export const PluginsSchema = z.looseObject({ plugins: z.array(PluginSchema), empty: z.boolean().optional(), read_only: z.boolean().optional(), supported_hooks: z.array(z.string()).optional(), unavailable: z.boolean().optional(), plugin_isolation_advisory: z.boolean().optional() })
 export const McpServerSchema = z.looseObject({ name: z.string(), id: z.string().optional(), transport: z.string().optional(), enabled: z.boolean().optional(), can_toggle: z.boolean().optional().describe('Whether PATCH can enable or disable this server; false for invalid config.'), active: z.boolean().optional(), status: z.string().optional(), tools: z.number().optional(), tool_count: z.number().int().nullable().optional(), health: z.string().optional(), health_detail: z.string().optional(), health_checked_at: Json.optional(), health_pending: z.boolean().optional() })
 export const McpServersSchema = z.looseObject({ servers: z.array(McpServerSchema), health_pending: z.boolean().optional(), reload_required: z.boolean().optional(), toggle_supported: z.boolean().optional() })
-/** TAL-818: one connected account of a Nous tool-gateway app; `name` is its alias, else the vendor label. `problem` is its gateway status while it is not active (`pending`, `failed`, `expired`, `revoked`, `inactive`), else null. */
-export const ConnectorAccountViewSchema = z.object({ connection_id: z.string(), name: z.string(), problem: z.string().nullable(), status_reason: z.string().nullable(), active: z.boolean(), created_at: z.string() })
+/** TAL-818: one connected account of a Nous tool-gateway app; `name` is its alias, else the vendor label. `problem` is its gateway status while it is not active, else null. */
+export const ConnectorAccountViewSchema = z.object({ connection_id: z.string(), name: z.string(), problem: z.enum(['pending', 'failed', 'expired', 'revoked', 'inactive']).nullable(), status_reason: z.string().nullable(), active: z.boolean(), created_at: z.string() })
 /**
  * TAL-818: one app on the Connectors page. `accounts` are its live accounts, active first. `enabled`: Hermes may use it (the
  * member rule allows it and no other layer locks it). `org_locked` means an organization or role rule keeps it off whatever the member rule says. `rules_editable`: the switch
@@ -956,26 +958,27 @@ export const ConnectorsPageSchema = z.object({ available: z.boolean(), connector
  */
 export const ConnectorToolsViewSchema = z.object({
   connector: z.string(), policy_revision: z.string().nullable(),
-  tools: z.array(z.object({ slug: z.string(), name: z.string(), description: z.string(), facet: z.string(), deprecated: z.boolean(), enabled: z.boolean(), locked: z.boolean(), editable: z.boolean() })),
+  tools: z.array(z.object({ slug: z.string(), name: z.string(), description: z.string(), facet: z.enum(['read', 'write', 'destructive', 'unclassified']), deprecated: z.boolean(), enabled: z.boolean(), locked: z.boolean(), editable: z.boolean() })),
 })
 /**
  * TAL-818: a connection operation, from the Connectors page's Connect or a chat's `manage_connections` card. Each target's
  * `connect_url` is the authorization link while it waits on one; `actions` are the moves the user may make on it now, and
- * `env_fields` the credentials an `approve` sends. `can_continue`: the card may end the wait for the rest (chat only).
+ * `env_fields` the credentials an `approve` sends, each with its `label`. `can_continue`: the card may end the wait for the
+ * rest (chat only). `outcome` is null while the operation is open, then `connected` when every target connected.
  */
 export const ConnectorOperationViewSchema = z.object({
-  op_id: z.string(), settled: z.boolean(), can_continue: z.boolean(), tool_call_id: z.string().nullable(),
+  op_id: z.string(), settled: z.boolean(), outcome: z.enum(['connected', 'not_connected']).nullable(), can_continue: z.boolean(), tool_call_id: z.string().nullable(),
   targets: z.array(z.object({
     name: z.string(), title: z.string(), kind: z.string(), state: z.enum(['pending', 'initiated', 'connected', 'skipped', 'failed', 'expired', 'not_connected']),
     detail: z.string(), connect_url: z.string().nullable(), actions: z.array(z.enum(['skip', 'retry', 'approve'])),
-    env_fields: z.array(z.object({ name: z.string(), prompt: z.string(), required: z.boolean(), secret: z.boolean() })),
+    env_fields: z.array(z.object({ name: z.string(), label: z.string(), required: z.boolean(), secret: z.boolean() })),
   })),
 })
 export type ConnectorsPage = z.infer<typeof ConnectorsPageSchema>
 export type ConnectorView = z.infer<typeof ConnectorViewSchema>
 export type ConnectorToolsView = z.infer<typeof ConnectorToolsViewSchema>
 export type ConnectorOperationView = z.infer<typeof ConnectorOperationViewSchema>
-export const McpToolsSchema =z.looseObject({ tools: z.array(z.looseObject({ name: z.string().optional(), server: z.string().optional(), description: z.string().optional() })), total: z.number().int().optional(), source: z.string().optional(), inventory_scope: z.string().optional(), unavailable_servers: z.array(z.string()).optional() })
+export const McpToolsSchema = z.looseObject({ tools: z.array(z.looseObject({ name: z.string().optional(), server: z.string().optional(), description: z.string().optional() })), total: z.number().int().optional(), source: z.string().optional(), inventory_scope: z.string().optional(), unavailable_servers: z.array(z.string()).optional() })
 export const NotesSourcesSchema = z.looseObject({ enabled: z.boolean().optional(), sources: z.array(Json).optional(), source: z.string().optional(), inventory_scope: z.string().optional(), recent_ai_notes: z.array(Json).optional(), attach_supported: z.boolean().optional(), automatic_recall_unchanged: z.boolean().optional() })
 /** Joplin search hit: bounded, redacted display text and a snippet around the query; `updated_time` is Joplin's raw value. */
 export const NoteSearchResultSchema = z.object({ id: z.string(), title: z.string(), snippet: z.string(), parent_id: z.string(), updated_time: Json, source: z.literal('joplin') })

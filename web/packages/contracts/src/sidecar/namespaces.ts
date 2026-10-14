@@ -563,6 +563,8 @@ export const CHAT_METHODS = {
       ephemeral: z.boolean().optional(),
       /** TAL-801: a spoken turn, which the Agent runs on the profile's `auxiliary.voice_chat` slot when it has that route. */
       voice_turn: z.boolean().optional(),
+      /** TAL-818: attach the Agent's `connection_callback`, so `manage_connections` streams a `connection` frame and waits on the card. */
+      connect_card: z.boolean().optional(),
     }),
     result: ChatStartResultSchema,
     stream: ChatStreamSchema,
