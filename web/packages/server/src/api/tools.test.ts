@@ -429,11 +429,12 @@ describe('skills, memory, prompts, commands, mcp, health, updates, diagnostics',
   })
 
   it('commands list merges the client-command table ahead of the Agent registry (TAL-314)', async () => {
-    const row = (name: string, extra: Json = {}) => ({ name, description: `agent ${name}`, category: 'Session', aliases: [], args_hint: '', subcommands: [], cli_only: false, gateway_only: false, exec: false, ...extra })
+    const row = (name: string, extra: Json = {}) => ({ name, description: `agent ${name}`, category: 'Session', aliases: [], args_hint: '', subcommands: [], cli_only: false, gateway_only: false, exec: false, prompt: null, ...extra })
     sidecar.respond('commands.registry', () => ({
       commands: [
         row('stop'), row('bg'), row('compress', { aliases: ['compact', 'squash'] }),
         row('reload-skills', { aliases: ['reload_skills'], exec: true }), row('history', { cli_only: true }), row('sethome', { gateway_only: true }),
+        row('initiate-setup', { aliases: ['initiate_setup'], prompt: 'expand' }), row('blueprint', { prompt: 'unsupported' }),
       ],
     }))
     try {
@@ -452,10 +453,14 @@ describe('skills, memory, prompts, commands, mcp, health, updates, diagnostics',
       expect(commands.find((c) => c.name === 'terminal')).toMatchObject({ clients: ['web'], unsupported_message: 'Terminal is not available in the mobile app.' })
       expect(commands.find((c) => c.name === 'usage')?.clients).toEqual(['web'])
       // Agent rows follow, run on every client unless CLI-only, and never list gateway-only commands.
-      expect(names.slice(-2)).toEqual(['reload-skills', 'history'])
+      expect(names.slice(-4)).toEqual(['reload-skills', 'history', 'initiate-setup', 'blueprint'])
       expect(commands.find((c) => c.name === 'reload-skills')).toMatchObject({ handler: 'agent', clients: ['web', 'ios'], aliases: ['reload_skills'], exec: true })
       expect(commands.find((c) => c.name === 'history')).toMatchObject({ handler: 'agent', clients: [], unsupported_message: '/history runs only in the Hermes CLI.', exec: false })
       expect(names).not.toContain('sethome')
+      // TAL-817: an Agent prompt built-in the sidecar expands runs everywhere as a prompt turn; one it cannot is offered nowhere.
+      expect(commands.find((c) => c.name === 'initiate-setup')).toMatchObject({ handler: 'prompt', clients: ['web', 'ios'], aliases: ['initiate_setup'] })
+      expect(commands.find((c) => c.name === 'initiate-setup')).not.toHaveProperty('unsupported_message')
+      expect(commands.find((c) => c.name === 'blueprint')).toMatchObject({ handler: 'agent', clients: [], unsupported_message: '/blueprint is not available in Talaria yet.' })
     } finally {
       const recorded = loadSidecarFixtures().get('commands.registry')?.[0]?.result
       sidecar.respond('commands.registry', () => recorded as never)

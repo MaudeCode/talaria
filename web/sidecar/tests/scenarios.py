@@ -30,6 +30,9 @@ SCENARIOS: list[tuple[str, dict]] = [
     ("commands.registry", {"profile_home": "{home}"}),
     ("commands.exec", {"profile_home": "{home}", "command": "/reload-skills"}),
     ("commands.moa_preset", {"profile_home": "{home}", "preset": None}),
+    # TAL-817: the first entry is FakeSidecar's default, so slash text in server tests stays the user's own message.
+    ("commands.expand_prompt", {"profile_home": "{home}", "command": "/etc/hosts looks wrong", "workspace": "{home}", "enabled_toolsets": None}),
+    ("commands.expand_prompt", {"profile_home": "{home}", "command": "/plan add a dark mode", "workspace": "{home}", "enabled_toolsets": None}),
     ("plugins.list", {"profile_home": "{home}"}),
     ("plugins.providers", {"profile_home": "{home}"}),
     # profiles

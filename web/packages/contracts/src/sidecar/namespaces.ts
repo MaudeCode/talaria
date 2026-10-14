@@ -49,6 +49,11 @@ export const CommandSchema = z.object({
   cli_only: z.boolean(), gateway_only: z.boolean(),
   /** `commands.exec` runs it: the sidecar's runtime commands and every plugin command (TAL-561). */
   exec: z.boolean(),
+  /**
+   * An Agent prompt built-in, which every Agent surface answers by sending its builder's prompt as the turn (TAL-817):
+   * `expand` when `commands.expand_prompt` can build it on this Agent, `unsupported` when it cannot; null for any other command.
+   */
+  prompt: z.enum(['expand', 'unsupported']).nullable(),
 })
 /**
  * A model-provider plugin installed and enabled in the profile (TAL-288); bundled providers are built-ins. `setup` is the Agent's
@@ -63,6 +68,12 @@ export const CommandBundleInvocationSchema = z.object({ name: z.string(), source
 export const COMMANDS_METHODS = {
   'commands.registry': { params: ProfileHomeParams, result: z.object({ commands: z.array(CommandSchema) }) },
   'commands.exec': { params: ProfileHomeParams.extend({ command: z.string().min(1) }), result: z.object({ output: z.string(), source: z.enum(['agent', 'plugin']) }) },
+  /**
+   * `/<prompt built-in> [args]` as the turn text (`message`) the Agent's builder writes for the session's profile, workspace and toolsets.
+   * `name` is the built-in's canonical name, null when the command is not one; `message` is null when this Agent has no builder for it.
+   * A failing builder errors `prompt_expand_failed`.
+   */
+  'commands.expand_prompt': { params: ProfileHomeParams.extend({ command: z.string().min(1), workspace: z.string(), enabled_toolsets: z.array(z.string()).nullable() }), result: z.object({ name: z.string().nullable(), message: z.string().nullable() }) },
   'commands.bundles': { params: ProfileHomeParams, result: z.object({ bundles: z.array(CommandBundleSchema) }) },
   'commands.bundle_resolve': { params: ProfileHomeParams.extend({ command: z.string().min(1) }), result: CommandBundleInvocationSchema },
   'commands.moa_preset': { params: ProfileHomeParams.extend({ preset: z.string().nullable().optional() }), result: z.object({ moa: Loose }) },

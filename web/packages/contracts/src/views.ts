@@ -718,11 +718,13 @@ export const PromptsSchema = z.looseObject({ prompts: z.array(PromptSchema) })
  * Clients suggest the entries listing them whose name or any alias starts with the typed text (case-insensitive), and
  * resolve a typed alias to the entry's `name`. `exec` marks an Agent entry `POST /api/commands/exec` runs: the client
  * posts the typed text there and shows the returned output instead of starting a chat turn (TAL-561).
+ * `handler: 'prompt'` marks an Agent prompt built-in: the client sends the typed text as a chat turn and the server starts the
+ * turn with the Agent's expansion of it (TAL-817).
  */
 export const CommandClientSchema = z.enum(['web', 'ios'])
 export const CommandRowSchema = z.looseObject({
   name: z.string(), description: z.string().optional(), aliases: z.array(z.string()), args_hint: z.string().optional(), category: z.string().optional(),
-  handler: z.enum(['client', 'agent']), clients: z.array(CommandClientSchema), unsupported_message: z.string().optional(),
+  handler: z.enum(['client', 'agent', 'prompt']), clients: z.array(CommandClientSchema), unsupported_message: z.string().optional(),
   cli_only: z.boolean().optional(), gateway_only: z.boolean().optional(), subcommands: z.array(Json).optional(), exec: z.boolean().optional(),
 })
 export const CommandsSchema = z.looseObject({ commands: z.array(CommandRowSchema) })

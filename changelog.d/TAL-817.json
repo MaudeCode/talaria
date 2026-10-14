@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Added",
+      "summary": "Agent prompt commands such as /initiate-setup, /plan, /learn and /init now run in Talaria Web and the app as they do in the Hermes CLI, instead of reaching the model as plain text. /blueprint is no longer offered, and typing it explains that it is not available in Talaria yet.",
+      "highlight": false,
+      "components": ["web"]
+    }
+  ]
+}

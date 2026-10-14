@@ -12,4 +12,4 @@ import os
 # Also protect direct Python entry points before any method imports the Agent.
 os.environ["HERMES_DISABLE_LAZY_INSTALLS"] = "1"
 
-SIDECAR_RPC_VERSION = 24
+SIDECAR_RPC_VERSION = 25

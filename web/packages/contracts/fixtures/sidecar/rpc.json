@@ -25,6 +25,7 @@
           "commands.bundle_resolve",
           "commands.bundles",
           "commands.exec",
+          "commands.expand_prompt",
           "commands.moa_preset",
           "commands.registry",
           "config.env_write",

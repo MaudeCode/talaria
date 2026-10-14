@@ -1,7 +1,7 @@
 /** Chat turn admission, control, approvals, clarify, goals, background tasks, and side questions. */
 import { GATEWAY_APPROVAL_RELAY_UNAVAILABLE, isGenericContinuationIntent } from '../sessions/turn.js'
 import { implement } from '@orpc/server'
-import { chatContract, MAX_CHAT_ATTACHMENTS } from '@maudecode/talaria-web-contracts'
+import { chatContract, MAX_CHAT_ATTACHMENTS, RPC_ERROR_CODES, type SidecarResult } from '@maudecode/talaria-web-contracts'
 import { randomUUID } from 'node:crypto'
 import { HttpError, type ApiContext } from './router.js'
 import { requestSessionIdGuard, streamOwnerSessionId, streamVisibleToRequest } from './session-visibility.js'
@@ -12,6 +12,9 @@ import type { Session } from '../sessions/session.js'
 import { compressionRecoveryPayload, isSafeSessionId } from '../sessions/session.js'
 import { messageText } from '../sessions/merge.js'
 import { str } from '../util.js'
+import { activeProfileName } from '../auth/gate.js'
+import { SidecarError } from '../sidecar/client.js'
+import { unsupportedPromptMessage } from '../tools/commands.js'
 import type { StartTurnOptions, TurnFailure, TurnRunner } from '../sessions/turn.js'
 
 const os = implement(chatContract).$context<ApiContext>().use(requestSessionIdGuard)
@@ -88,6 +91,32 @@ function visibleOrRetag(ctx: RequestContext, s: Session, requestedProfile: strin
   throw new HttpError(404, 'Session not found')
 }
 
+/**
+ * TAL-817: what the model gets for a typed Agent prompt built-in (`/plan`, `/initiate-setup`, …): the Agent's own expansion
+ * of it for this session's profile, workspace and toolsets, while the transcript keeps the typed text; null when `msg` is
+ * not one. One the Agent cannot expand is
+ * refused with the catalog's message instead of reaching the model raw. Without a sidecar the turn reports that itself.
+ */
+async function expandPromptBuiltin(ctx: RequestContext, s: Session, msg: string, workspace: unknown): Promise<string | null> {
+  const sidecar = ctx.deps.sidecar()
+  if (!msg.startsWith('/') || !sidecar) return null
+  // Only `/init` reads the workspace, and the sidecar refuses it without one; the turn reports a bad workspace itself.
+  let cwd = ''
+  try { cwd = ctx.deps.sessions.turnWorkspace(s, workspace) } catch { cwd = '' }
+  let expanded: SidecarResult<'commands.expand_prompt'>
+  try {
+    expanded = await sidecar.call('commands.expand_prompt', {
+      profile_home: ctx.deps.profileHome(s.profile ?? activeProfileName(ctx)), command: msg, workspace: cwd, enabled_toolsets: s.enabled_toolsets,
+    }, { timeoutMs: 120_000 })
+  } catch (error) {
+    if (!(error instanceof SidecarError)) throw error
+    const invalid = error.condition === 'invalid_params' || error.code === RPC_ERROR_CODES.invalidParams
+    throw new HttpError(invalid ? 400 : error.condition === 'sidecar_unavailable' ? 503 : 502, error.message)
+  }
+  if (expanded.name !== null && expanded.message === null) throw new HttpError(400, unsupportedPromptMessage(expanded.name))
+  return expanded.message
+}
+
 /** `chat.start`; a `chat.steer` sent while a background turn runs starts the user's turn through it too (TAL-460). */
 async function startChat(ctx: RequestContext, body: Record<string, unknown>, settle: Pick<StartTurnOptions, 'onDone' | 'onFailed'> = {}): Promise<Record<string, unknown>> {
   requireField(body, 'session_id')
@@ -121,10 +150,13 @@ async function startChat(ctx: RequestContext, body: Record<string, unknown>, set
   const attachments = normalizeChatAttachments(body.attachments).slice(0, MAX_CHAT_ATTACHMENTS)
   // TAL-276: an attached file alone makes a turn; one with neither text nor a file path is refused.
   if (!msg && !attachments.some((att) => str(att.path))) throw new HttpError(400, 'message is required')
+  const prompt = await expandPromptBuiltin(ctx, s, msg, body.workspace)
   // TAL-460: the user's message never joins a background turn; that turn stops quietly and this one takes its place.
-  if (await ctx.deps.turns.yieldBackgroundTurn(sid)) {
+  const yielded = await ctx.deps.turns.yieldBackgroundTurn(sid)
+  if (prompt !== null || yielded) {
     await ctx.deps.sessions.deps.warmSessionModelRepair?.()
     s = ctx.deps.sessionStore.get(sid)
+    visibleOrRetag(ctx, s, requestedProfile)
   }
   // Python `compression_recovery_payload_for_session` + `is_generic_continuation_intent`.
   if (compressionRecoveryPayload(s) && !attachments.length && isGenericContinuationIntent(msg)) {
@@ -133,7 +165,7 @@ async function startChat(ctx: RequestContext, body: Record<string, unknown>, set
   const workspace = ctx.deps.sessions.turnWorkspace(s, body.workspace)
   const [model, provider, normalized] = ctx.deps.sessions.turnModel(s, body)
   if (body.moa_config) throw new HttpError(503, 'MoA overrides need the Agent command registry (checkpoint 7).')
-  const response = ctx.deps.turns.start(s, { msg, attachments, workspace, model, modelProvider: provider, normalizedModel: normalized, source: 'webui', ...settle })
+  const response = ctx.deps.turns.start(s, { msg, ...(prompt === null ? {} : { prompt }), attachments, workspace, model, modelProvider: provider, normalizedModel: normalized, source: 'webui', ...settle })
   if (response._status !== undefined && response._status >= 400) throw new HttpError(response._status, response.error ?? 'chat start failed', response.active_stream_id ? { active_stream_id: response.active_stream_id } : {})
   return startPayload(response)
 }
@@ -191,7 +223,11 @@ export const chatRouter = os.router({
         const started = await startChat(ctx, { session_id: sid, message: text })
         return { accepted: true, fallback: null, stream_id: started.stream_id ? str(started.stream_id) : null, steer_id: steerId, started_turn: started }
       }
-      return ctx.deps.turns.steer(sid, text, display, steerId) as Promise<{ accepted: boolean; fallback: string | null; stream_id: string | null; steer_id?: string }>
+      // TAL-817: a prompt built-in steers with its expansion; the steer still shows as typed. A missing session is the steer's to report.
+      let target: Session | null = null
+      try { target = ctx.deps.sessionStore.get(sid, { metadataOnly: true }) } catch { target = null }
+      const prompt = target ? await expandPromptBuiltin(ctx, target, text, undefined) : null
+      return ctx.deps.turns.steer(sid, prompt ?? text, display || (prompt === null ? '' : text), steerId) as Promise<{ accepted: boolean; fallback: string | null; stream_id: string | null; steer_id?: string }>
     })),
     // TAL-424: Edit, Cancel and Send now on a pending steer; unknown or already-taken steers answer false.
     steerWithdraw: os.chat.steerWithdraw.handler(({ input, context: { ctx } }) => run(async () => {
