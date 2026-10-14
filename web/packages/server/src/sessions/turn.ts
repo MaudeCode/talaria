@@ -122,6 +122,8 @@ export interface StartTurnOptions {
   source?: string
   goalRelated?: boolean
   ephemeral?: boolean
+  /** TAL-801: a spoken turn, which the Agent runs on the profile's `auxiliary.voice_chat` slot. */
+  voiceTurn?: boolean
   /** The settled turn's answer: its last non-error assistant reply, or `` when it produced none. */
   onDone?: (answer: string) => void
   /** Runs on every other end: an error, a cancel, or a writeback another stream took over (Python background runner: `complete_background(..., "(background task failed)")`). */
@@ -582,6 +584,7 @@ export class TurnRunner {
       const result = await sidecar.call('chat.start', {
         profile_home: deps.profileHome(s.profile), session_id: sessionId, stream_id: streamId, workspace: opts.workspace, model: opts.model ?? '', model_provider: opts.modelProvider,
         user_message: userMessage, ...turnContext, conversation_history: conversationHistory, enabled_toolsets: deps.toolsetsFor(s), ...(msgText ? { persist_user_message: msgText } : {}), ...(opts.ephemeral ? { ephemeral: true } : {}),
+        ...(opts.voiceTurn ? { voice_turn: true } : {}),
       }, {
         signal: controller.signal,
         timeoutMs: 0,

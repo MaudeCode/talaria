@@ -178,6 +178,8 @@ extension ChatViewModelSendTests {
 
             let body = try XCTUnwrap(apiTestJSONBody(from: request))
             XCTAssertEqual(body["message"] as? String, "Keep working")
+            // A typed turn stays on the main model (TAL-801).
+            XCTAssertNil(body["voice_turn"])
 
             return apiTestJSONResponse("""
             {
@@ -204,6 +206,7 @@ extension ChatViewModelSendTests {
         let transcript = "Hello, hello, testing. Can you hear me?"
         var startMessage: String?
         var startAttachments: [[String: Any]]?
+        var startVoiceTurn: Bool?
         var requestedPaths: [String] = []
 
         let viewModel = try makeViewModel(streamClient: streamClient) { request in
@@ -231,6 +234,7 @@ extension ChatViewModelSendTests {
                 let body = try apiTestJSONBody(from: request)
                 startMessage = body["message"] as? String
                 startAttachments = body["attachments"] as? [[String: Any]]
+                startVoiceTurn = body["voice_turn"] as? Bool
                 return apiTestJSONResponse("""
                 {
                   "session_id": "session-abc",
@@ -256,6 +260,8 @@ extension ChatViewModelSendTests {
         // (transcribe) the clip itself instead of answering the transcript (#330).
         XCTAssertEqual(startMessage, transcript)
         XCTAssertFalse(try XCTUnwrap(startMessage).contains("[Attached files:"))
+        // A spoken turn: the Agent runs it on the profile's voice-chat model (TAL-801).
+        XCTAssertEqual(startVoiceTurn, true)
 
         // The clip still rides along as a display-only attachment so the inline
         // player renders and persists; the server strips this attachment metadata

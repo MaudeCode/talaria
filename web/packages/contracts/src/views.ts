@@ -375,9 +375,11 @@ export const SessionDeleteResultSchema = z.looseObject({ ok: z.literal(true), st
 
 // ── chat ─────────────────────────────────────────────────────────────────
 
+/** `voice_turn` (TAL-801): the turn was spoken (an App voice note), so the Agent runs it on `auxiliary.voice_chat`. */
 export const ChatStartRequestSchema = z.looseObject({
   session_id: SessionIdSchema, message: z.string().optional(), model: z.string().nullable().optional(), model_provider: z.string().nullable().optional(), workspace: z.string().nullable().optional(), profile: z.string().nullable().optional(),
   explicit_model_pick: z.boolean().optional(), attachments: z.array(z.union([AttachmentSchema, z.string()])).optional(), moa_config: z.boolean().optional(), regenerate: z.boolean().optional(), regeneration_revision: z.string().optional(),
+  voice_turn: z.boolean().optional(),
 })
 export type ChatStartRequest = z.infer<typeof ChatStartRequestSchema>
 /** Accepted turn. `stream_id` is the owner identity for the SSE connection. */

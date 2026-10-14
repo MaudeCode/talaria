@@ -108,6 +108,20 @@ describe('chat turns through the sidecar', () => {
     release()
   })
 
+  it('marks only a voice turn for the Agent\'s voice route (TAL-801)', async () => {
+    const sid = await newSession(s)
+    const marks: unknown[] = []
+    sidecar.respond('chat.start', (params) => {
+      marks.push(params.voice_turn)
+      return completed([{ role: 'user', content: str(params.user_message) }, { role: 'assistant', content: 'ok' }])
+    })
+    for (const body of [{ message: 'spoken', voice_turn: true }, { message: 'typed' }]) {
+      const start = await json(await post(s, '/api/chat/start', { session_id: sid, ...body }))
+      await s.sse(`/api/chat/stream?stream_id=${String(start.stream_id)}`, (f) => f.event === 'done')
+    }
+    expect(marks).toEqual([true, undefined])
+  })
+
   it('streams a turn, settles the transcript, journals every frame, and replays it after the run', async () => {
     const sid = await newSession(s)
     sidecar.respond('chat.start', (params, emit) => {

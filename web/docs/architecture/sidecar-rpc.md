@@ -239,6 +239,12 @@ first. A `/btw` side question
 (`ephemeral: true`) gets no handle, so its throwaway session never reaches
 `state.db`.
 
+A spoken turn (`voice_turn: true`, sent by the App for a voice note) sets the
+Agent's `_voice_turn_pending` mark, and every other turn clears it. The Agent
+then runs that one turn on the profile's `auxiliary.voice_chat` slot and
+records its usage under `voice_chat`; with no slot configured it stays on the
+main model. Agents without `agent.voice_turn_route` are left untouched.
+
 Manual `/compress` is `chat.compress`: a throwaway `AIAgent` runs the Agent's
 shared `compress_now` core over the history the server sends and returns the
 compressed messages and summary without persisting anything. The server

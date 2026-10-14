@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Added",
+      "summary": "Voice notes now run on the Voice chat model set under Auxiliary Models, with reasoning off by default, so spoken replies come back faster. Typed messages keep using the chat's model.",
+      "highlight": false,
+      "components": ["app", "web"]
+    }
+  ]
+}

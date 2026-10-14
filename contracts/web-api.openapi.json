@@ -36950,6 +36950,9 @@
                   },
                   "regeneration_revision": {
                     "type": "string"
+                  },
+                  "voice_turn": {
+                    "type": "boolean"
                   }
                 },
                 "required": [
