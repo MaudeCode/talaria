@@ -298,8 +298,9 @@ the session's profile sets `delegation.surface_child_process_notifications:
 true`, as in the Agent's CLI, gateway and TUI. `process.drain` marks each such
 event `child_process` with the Agent's `is_child_process_notification` (the same
 rule inline on Agents before 0.21.7); the server reads the owning profile's
-config and otherwise consumes the event without a wakeup. Async delegation
-results are never child notices.
+config and otherwise drops the event without a wakeup. It does not mark the
+exit consumed, so an exit nobody read still reaches the parent through the
+child's `unread_completions`. Async delegation results are never child notices.
 
 ## Process heartbeat progress
 

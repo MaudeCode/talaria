@@ -472,7 +472,7 @@ describe('subagent process notifications follow the owning profile (TAL-933)', (
   type Drained = SidecarResult<'process.drain'>['events'][number]
   const exit = (sid: string, id: string, child: boolean): Drained => ({ process_id: id, session_id: id, type: 'completion', command: 'npm test', exit_code: 0, output: 'ok', owner_task_id: child ? 'sa-0-abc' : '', session_key: sid, consumed: false, child_process: child })
 
-  it("consumes a subagent's process completion without waking the parent when the profile does not opt in", async () => {
+  it("drops a subagent's process completion without waking the parent when the profile does not opt in", async () => {
     // The active profile's opt-in does not count for a session owned by profile b.
     const { sid, drain, starts, consumed, requeued, notified } = await setup({ '/homes/a': optIn })
     sidecar.respond('process.drain', () => ({ events: [exit(sid, 'proc_child', true)] }))
@@ -480,7 +480,8 @@ describe('subagent process notifications follow the owning profile (TAL-933)', (
     await new Promise((r) => setTimeout(r, 100))
     expect(starts).toEqual([])
     expect(notified).toEqual([])
-    expect(consumed).toEqual(['proc_child'])
+    // Left unconsumed, so the child's teardown still reports an exit nobody read.
+    expect(consumed).toEqual([])
     expect(requeued).toEqual([])
     drain.stop()
   })

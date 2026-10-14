@@ -219,11 +219,9 @@ export class CompletionDrain {
     if (!sid) return false
     if (evt.consumed === true) return true
     // TAL-933 (Agent `should_surface_notification`): a subagent's own process notices stay out of the parent chat unless
-    // the session's profile opts in; its exit is consumed so a later teardown does not deliver it either.
-    if (evt.child_process === true && !(await this.surfacesChildProcesses(sid))) {
-      await this.markConsumed([{ process_id: processId, wakeup_prompt: '', event: evt }])
-      return true
-    }
+    // the session's profile opts in. Dropped, not consumed, as in the Agent: an exit nobody read still reaches the parent
+    // as the child's `unread_completions`.
+    if (evt.child_process === true && !(await this.surfacesChildProcesses(sid))) return true
     const seen = this.seen.get(sid) ?? new Set<string>()
     this.seen.set(sid, seen)
     // Only a per-process delivery can repeat: a watch event's key is unique, so remembering it would only grow `seen`.
