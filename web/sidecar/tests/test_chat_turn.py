@@ -276,6 +276,8 @@ def test_a_turn_on_a_busy_session_never_shares_the_live_agent(monkeypatch) -> No
     def init(self, **kwargs):
         orig_init(self, **kwargs)
         if len(FakeAgent.instances) == 1:
+            # A tool that ignores its interrupt: the stopped turn keeps running until the gate opens.
+            self.interrupt = lambda message, hard_cancel=False: self.interrupts.append((message, hard_cancel))
             self.block = gate
             started.set()
 
@@ -296,7 +298,9 @@ def test_a_turn_on_a_busy_session_never_shares_the_live_agent(monkeypatch) -> No
     assert started.wait(5)
     first_cb = registry.get("s-busy")
     assert first_cb is not None
-    # The first turn is still inside run_conversation; the second gets its own agent and does not clear its interrupt.
+    # The user stopped the first turn, which is still inside run_conversation; the second gets its own agent and does not
+    # clear its interrupt.
+    chat._run_for({"stream_id": "st-10"}).cancel.set()
     second_ctx = Ctx()
     blocker = threading.Event()
     second_started = threading.Event()
@@ -317,7 +321,7 @@ def test_a_turn_on_a_busy_session_never_shares_the_live_agent(monkeypatch) -> No
     # The stale first run unwinds now: it no longer owns the session registration, so it leaves it alone.
     gate.set()
     worker.join(5)
-    assert first["status"] == "completed"
+    assert first["status"] == "cancelled"
     assert registry.get("s-busy") is successor_cb
     blocker.set()
     successor.join(5)

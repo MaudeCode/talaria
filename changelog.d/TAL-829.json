@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "In Talaria Web, a message sent to a chat that is still answering the previous one now says the chat is busy right away instead of waiting silently for up to 30 minutes.",
+      "highlight": false,
+      "components": ["web"]
+    }
+  ]
+}
