@@ -278,6 +278,33 @@ def test_profile_deletion_refuses_once_when_a_review_cancel_fails(monkeypatch, t
     assert registry.methods["profiles.delete"](Ctx(), {"base_home": str(tmp_path), "name": "alpha"}) == {"ok": True}
 
 
+def test_concurrent_cancels_of_one_agent_both_settle(monkeypatch) -> None:
+    """Two teardowns (say a clear overlapping shutdown) cancel one agent: neither may cancel the other's held slot."""
+    _setup(monkeypatch)
+    _reviews(monkeypatch)
+    module = sys.modules["agent.background_review"]
+
+    def cancel(agent, *, message, tool_reason):
+        if (run := getattr(agent, "_background_review_run", None)) is not None:
+            run.cancel_requested.set()
+
+    def prepare(agent):
+        if (run := getattr(agent, "_background_review_run", None)) is not None and not run.request_done.is_set():
+            return None
+        run = agent._background_review_run = types.SimpleNamespace(cancel_requested=threading.Event(), request_done=threading.Event())
+        time.sleep(0.2)  # installed, not yet returned to the claimant
+        return run
+
+    monkeypatch.setattr(module, "cancel_background_review_for_live_turn", cancel)
+    monkeypatch.setattr(module, "prepare_background_review_run", prepare)
+    agent = types.SimpleNamespace()
+    threads = chat._cancel_background_reviews([(agent, "/tmp/unused")], "first") + chat._cancel_background_reviews([(agent, "/tmp/unused")], "second")
+    for thread in threads:
+        thread.join(3)
+    assert [thread.is_alive() for thread in threads] == [False, False]
+    assert not any(thread.failed for thread in threads)
+
+
 def test_shutdown_closes_turn_admission_before_cancelling_reviews(monkeypatch) -> None:
     """A turn admitted after the review owners were collected would fork a review nobody cancels."""
     _setup(monkeypatch)

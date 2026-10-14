@@ -786,22 +786,28 @@ def _cancel_background_reviews(entries, message: str) -> list[threading.Thread]:
     def cancel(agent) -> None:
         thread = threading.current_thread()
         try:
-            # A spawn that slipped in between the cancel and the slot claim is cancelled on the next pass.
-            for _ in range(3):
-                if getattr(agent, "_talaria_review_slot", None) is not None:
-                    return
-                cancel_background_review_for_live_turn(agent, message=message, tool_reason="session ended")
-                slot = prepare_background_review_run(agent)
-                if slot is not None:
-                    agent._talaria_review_slot = slot
-                    return
-                current = getattr(agent, "_background_review_run", None)
-                if current is None:
-                    return  # not an Agent with a review slot
-                if current.cancel_requested.is_set():
-                    # A cancelled fork past the Agent's wait may still write: wait for it to acknowledge, then claim the
-                    # slot before the Agent can requeue it.
-                    current.request_done.wait()
+            try:
+                # One cancel per agent at a time, so none mistakes another's freshly held slot for a review to cancel.
+                lock = vars(agent).setdefault("_talaria_review_cancel_lock", threading.Lock())
+            except TypeError:
+                return  # no instance attributes, so no review slot either
+            with lock:
+                # A spawn that slipped in between the cancel and the slot claim is cancelled on the next pass.
+                for _ in range(3):
+                    if getattr(agent, "_talaria_review_slot", None) is not None:
+                        return
+                    cancel_background_review_for_live_turn(agent, message=message, tool_reason="session ended")
+                    slot = prepare_background_review_run(agent)
+                    if slot is not None:
+                        agent._talaria_review_slot = slot
+                        return
+                    current = getattr(agent, "_background_review_run", None)
+                    if current is None:
+                        return  # not an Agent with a review slot
+                    if current.cancel_requested.is_set():
+                        # A cancelled fork past the Agent's wait may still write: wait for it to acknowledge, then claim
+                        # the slot before the Agent can requeue it.
+                        current.request_done.wait()
             log.warning("a background review kept restarting after its session ended")
             thread.failed = True
         except Exception:  # noqa: BLE001 - teardown continues without it
