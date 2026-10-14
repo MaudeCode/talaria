@@ -4,7 +4,7 @@
  * secrets map to the field's `.env` name, so a client can never name the variable it writes.
  */
 import { isDeepStrictEqual } from 'node:util'
-import type { PluginSettingField } from '@maudecode/talaria-web-contracts'
+import type { PluginSettingField, PluginSettingView } from '@maudecode/talaria-web-contracts'
 
 export class PluginSettingsInvalid extends Error {}
 
@@ -46,9 +46,9 @@ export interface PluginSettingsPlan {
   secrets: Record<string, string | null>
 }
 
-export function planPluginSettings(fields: PluginSettingField[], values: Record<string, unknown>, secrets: Record<string, string>): PluginSettingsPlan {
+export function planPluginSettings(fields: PluginSettingView[], values: Record<string, unknown>, secrets: Record<string, string>): PluginSettingsPlan {
   const byKey = new Map(fields.map((field) => [field.key, field]))
-  const declared = (key: string): PluginSettingField => {
+  const declared = (key: string): PluginSettingView => {
     const field = byKey.get(key)
     if (!field) throw new PluginSettingsInvalid(`'${key}' is not a setting this plugin declares`)
     return field
@@ -63,6 +63,7 @@ export function planPluginSettings(fields: PluginSettingField[], values: Record<
     const field = declared(key)
     const value = raw.trim()
     if (field.type !== 'secret' || !field.env) throw new PluginSettingsInvalid(`'${key}' is not a secret setting`)
+    if (field.locked) throw new PluginSettingsInvalid(`${field.label} is set by the server's environment (${field.env}), so it cannot be changed here`)
     // An emptied field clears the stored secret; there is nothing to clear when none is stored.
     if (value || field.has_value) plan.secrets[field.env] = value || null
   }
@@ -73,6 +74,11 @@ export function planPluginSettings(fields: PluginSettingField[], values: Record<
 // values no later save has written yet.
 // ponytail: one process-wide chain; per-plugin chains only if saves ever contend for throughput.
 let saves: Promise<unknown> = Promise.resolve()
+
+/** Fields as Settings shows them: a secret the launch environment supplies (`shadowed`) is `locked`. */
+export function pluginSettingsView(fields: PluginSettingField[], shadowed: (envVar: string) => boolean): PluginSettingView[] {
+  return fields.map((field) => field.type === 'secret' && field.env && shadowed(field.env) ? { ...field, locked: true } : field)
+}
 
 export function serializePluginSettingsSave<T>(save: () => Promise<T>): Promise<T> {
   const run = saves.then(save)

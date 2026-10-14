@@ -11,6 +11,7 @@ import type { SessionInfo } from '../auth/store.js'
 import { gatewayStatus } from '../tools/health.js'
 import type { GatewayMode } from '@maudecode/talaria-web-contracts'
 import { buildInsights } from '../tools/insights.js'
+import { homeDotenvKeys, setHomeDotenvKeys } from '../cli/dotenv.js'
 import { serverSummary, maskSecrets } from '../tools/mcp.js'
 import { readProjectContext } from '../tools/memory.js'
 import { toggleName, walkSkillFiles } from '../tools/skills.js'
@@ -531,6 +532,9 @@ describe('skills, memory, prompts, commands, mcp, health, updates, diagnostics',
       sidecar.respond('plugins.settings_save', undefined)
       sidecar.respond('plugins.list', undefined)
       if (state.home) rmSync(join(state.home, '.env'), { force: true })
+      // A save commits the secret to the process env and marks it `.env`-owned; later tests start without it.
+      Reflect.deleteProperty(s.deps.config.env, 'FAKE_SETTINGS_API_KEY')
+      setHomeDotenvKeys(s.deps.config.env, new Set([...homeDotenvKeys(s.deps.config.env)].filter((key) => key !== 'FAKE_SETTINGS_API_KEY')))
     }
     return { state, fields, save, envText, restore }
   }
@@ -647,6 +651,35 @@ describe('skills, memory, prompts, commands, mcp, health, updates, diagnostics',
       const res = await post(s, '/api/plugins/settings', { key: 'fake-settings', secrets: { api_key: 'sk-committed' } })
       expect(res.status).toBe(200)
       expect(((await json(res)).settings as Json[]).find((f) => f.key === 'api_key')).toMatchObject({ has_value: true })
+    } finally {
+      restore()
+    }
+  })
+
+  it('TAL-806: a secret the server\'s launch environment supplies is locked, not reported as saved', async () => {
+    const { state, envText, restore } = fakePlugin()
+    s.deps.config.env.FAKE_SETTINGS_API_KEY = 'sk-from-deployment'
+    try {
+      const body = await json(await s.get('/api/plugins'))
+      expect(((body.plugins as Json[])[0]!.settings as Json[]).find((f) => f.key === 'api_key')).toMatchObject({ locked: true })
+      const res = await post(s, '/api/plugins/settings', { key: 'fake-settings', secrets: { api_key: 'sk-ignored' } })
+      expect(res.status).toBe(400)
+      expect(envText()).not.toContain('sk-ignored')
+      expect(state.secretEnvs).toEqual([])
+    } finally {
+      restore()
+    }
+  })
+
+  it('TAL-806: a save whose outcome the sidecar never confirmed keeps its secrets and says so', async () => {
+    const { state, envText, restore } = fakePlugin()
+    try {
+      await s.get('/api/plugins')
+      writeFileSync(join(state.home, '.env'), 'FAKE_SETTINGS_API_KEY=sk-before\n')
+      sidecar.respond('plugins.settings_save', () => { throw new SidecarError('sidecar call plugins.settings_save timed out', { condition: 'sidecar_timeout' }) })
+      const res = await post(s, '/api/plugins/settings', { key: 'fake-settings', values: { limit: '6' }, secrets: { api_key: 'sk-after' } })
+      expect(res.status).toBe(503)
+      expect(envText()).toContain('FAKE_SETTINGS_API_KEY=sk-after')
     } finally {
       restore()
     }

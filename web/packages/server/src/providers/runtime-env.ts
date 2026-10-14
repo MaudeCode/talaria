@@ -23,12 +23,15 @@ export interface RuntimeEnvDeps { env: Record<string, string | undefined>; sidec
  * confirm); `commit` records it in the process environment after the file write; `rollback` restores the sidecar's
  * previous value if the write fails, recycling the child when even that cannot be confirmed.
  */
+/** A root-profile credential the process environment supplied explicitly: it keeps precedence over the file, as at startup. */
+export function credentialShadowed(env: Record<string, string | undefined>, rootProfile: boolean, envVar: string): boolean {
+  return rootProfile && !homeDotenvKeys(env).has(envVar) && env[envVar] !== undefined
+}
+
 export async function prepareRuntimeCredentialEdit(deps: RuntimeEnvDeps, rootProfile: boolean, envVar: string, apiKey: string | null): Promise<RuntimeCredentialEdit> {
   if (!rootProfile) return NO_EDIT
   const { env } = deps
-  const owned = homeDotenvKeys(env)
-  // A value the process environment supplied explicitly keeps precedence over the file, as it did at startup.
-  if (!owned.has(envVar) && env[envVar] !== undefined) return NO_EDIT
+  if (credentialShadowed(env, rootProfile, envVar)) return NO_EDIT
   const previous = env[envVar]
   const sidecar = deps.sidecar()
   if (sidecar) {

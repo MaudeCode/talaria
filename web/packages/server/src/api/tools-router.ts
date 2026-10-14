@@ -2,7 +2,7 @@
 import { implement } from '@orpc/server'
 import { createHash } from 'node:crypto'
 import { join } from 'node:path'
-import { toolsContract, type GatewayMode, type GatewayStatus } from '@maudecode/talaria-web-contracts'
+import { toolsContract, type GatewayMode, type GatewayStatus, type PluginSettingField } from '@maudecode/talaria-web-contracts'
 import { HttpError, requireFields, type ApiContext } from './router.js'
 import { requestSessionIdGuard } from './session-visibility.js'
 import type { RequestContext } from '../http/context.js'
@@ -20,8 +20,8 @@ import { commandCatalog } from '../tools/commands.js'
 import { agentHealth, applyDashboardConfig, dashboardConfig, dashboardStatus, gatewayStatus, parseDashboardConfig, readLogTail, remoteGatewayBaseUrl, systemHealth } from '../tools/health.js'
 import { restartGateway } from '../tools/gateway-restart.js'
 import { projectOsDashboard } from '../tools/project-os.js'
-import { PluginSettingsInvalid, planPluginSettings, serializePluginSettingsSave } from '../tools/plugin-settings.js'
-import { RuntimeCredentialError, writeRuntimeCredential } from '../providers/runtime-env.js'
+import { PluginSettingsInvalid, planPluginSettings, pluginSettingsView, serializePluginSettingsSave } from '../tools/plugin-settings.js'
+import { credentialShadowed, RuntimeCredentialError, writeRuntimeCredential } from '../providers/runtime-env.js'
 import { EnvWriteError, loadEnvFile } from '../providers/env-file.js'
 import { loadGatewaySessionIdentityMap } from '../sessions/list.js'
 import { gitBadge } from '../workspace/git.js'
@@ -70,8 +70,19 @@ function commandFailure(error: unknown, notFound: string, message: string): neve
 /** TAL-806: the active profile's plugins that declare settings; none on an Agent without the settings module. */
 async function pluginSettingsList(ctx: RequestContext) {
   const result = await runningSidecar(ctx).call('plugins.settings', { profile_home: home(ctx) })
-  return result.plugins
+  return result.plugins.map((entry) => ({ key: entry.key, fields: pluginSettingsFieldsView(ctx, entry.fields) }))
 }
+
+const pluginSettingsFieldsView = (ctx: RequestContext, fields: PluginSettingField[]) => {
+  const rootProfile = ctx.deps.isRootProfile(activeProfileName(ctx))
+  return pluginSettingsView(fields, (envVar) => credentialShadowed(ctx.deps.config.env, rootProfile, envVar))
+}
+
+/** A refusal that proves nothing was written; a timeout or a sidecar exit leaves the outcome unknown. */
+const definitiveRefusal = (error: unknown): boolean =>
+  error instanceof SidecarError ? ['plugin_settings_managed', 'plugin_settings_changed', 'plugin_not_found'].includes(error.condition) || error.code === -32602
+    : error instanceof EnvWriteError ? error.condition !== 'sidecar_unavailable'
+    : error instanceof RuntimeCredentialError
 
 const health = (ctx: RequestContext): Promise<Dict> => agentHealth({ env: ctx.deps.config.env, hermesHome: ctx.deps.config.hermesHome, profileHome: () => home(ctx), fetch: () => ctx.deps.fetch, now: ctx.deps.nowSeconds })
 
@@ -511,6 +522,9 @@ export const toolsRouter = os.router({
       }
       result = await sidecar.call('plugins.settings_save', { profile_home: home(ctx), key: input.key, values: plan.values, secret_envs: Object.fromEntries(secretFields.map((field) => [field.key, field.env!])) })
     } catch (error) {
+      if (!definitiveRefusal(error)) {
+        throw new HttpError(503, 'The Agent sidecar stopped before confirming the save, so it may be partly applied; reload Settings to see what was saved', { condition: 'plugin_settings_unconfirmed' })
+      }
       for (const envVar of applied.reverse()) {
         await credential(envVar, previous[envVar] ?? null).catch((restore: unknown) => { ctx.deps.log(`[plugins] could not restore ${envVar} after a failed settings save: ${str((restore as Error).message)}`) })
       }
@@ -522,7 +536,7 @@ export const toolsRouter = os.router({
       if (error instanceof EnvWriteError) throw new HttpError(error.status, `Failed to save a secret: ${error.message}`, { condition: error.condition })
       throw error
     }
-    return { ok: true as const, key: result.key, written: [...result.written, ...secretFields.map((field) => field.key)], settings: result.fields }
+    return { ok: true as const, key: result.key, written: [...result.written, ...secretFields.map((field) => field.key)], settings: pluginSettingsFieldsView(ctx, result.fields) }
   }))),
   updates: {
     check: os.updates.check.handler(({ context: { ctx } }) => run(() => {
