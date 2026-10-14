@@ -99,6 +99,7 @@ SCENARIOS: list[tuple[str, dict]] = [
     ("providers.registry", {"profile_home": "{home}"}),
     ("providers.auth_status", {"profile_home": "{home}", "provider": "anthropic"}),
     ("providers.model_ids", {"profile_home": "{home}", "provider": "anthropic"}),
+    ("providers.local_models", {"profile_home": "{home}"}),
     ("providers.credential_pool", {"profile_home": "{home}", "provider": "anthropic"}),
     ("models.speed_tiers", {"profile_home": "{home}", "routes": [
         {"model": "gpt-6-astra", "provider": "openai-codex", "base_url": "https://chatgpt.com/backend-api/codex"},

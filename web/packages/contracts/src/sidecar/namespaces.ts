@@ -229,11 +229,16 @@ export const CRON_METHODS = {
 } as const
 
 // ── providers / models ─────────────────────────────────────────────────
-/** `providers.model_ids` `fallback` (TAL-799): the Agent served its curated list because the live catalog was unreachable. */
+/**
+ * `providers.model_ids` `fallback` (TAL-799): the Agent served its curated list because the live catalog was unreachable.
+ * `providers.local_models` (TAL-798): the GGUFs staged for the Agent's managed llama.cpp provider `provider_id`, and the
+ * running server's base URL (`current_endpoint`, null while it is off).
+ */
 export const PROVIDERS_METHODS = {
   'providers.registry': { params: ProfileHomeParams, result: z.object({ providers: z.record(z.string(), z.object({ id: z.string(), name: z.string(), auth_type: z.string() }).catchall(Json)) }) },
   'providers.auth_status': { params: ProfileHomeParams.extend({ provider: z.string().nullable().optional() }), result: z.object({ status: z.object({ logged_in: z.boolean() }).catchall(Json) }) },
   'providers.model_ids': { params: ProfileHomeParams.extend({ provider: z.string().min(1), force_refresh: z.boolean().optional() }), result: z.object({ provider: z.string(), model_ids: z.array(z.string()), fallback: z.boolean().default(false) }) },
+  'providers.local_models': { params: ProfileHomeParams, result: z.object({ provider_id: z.string(), models: z.array(z.string()), current_endpoint: z.string().nullable() }) },
   'providers.resolve_runtime': { params: ProfileHomeParams.extend({ requested: z.string().nullable().optional(), api_key: z.string().nullable().optional(), base_url: z.string().nullable().optional(), target_model: z.string().nullable().optional() }), result: z.object({ runtime: Loose }) },
   'providers.credential_pool': { params: ProfileHomeParams.extend({ provider: z.string().min(1) }), result: z.object({ available: z.boolean(), strategy: z.string(), entries: z.array(Loose) }) },
   'models.speed_tiers': { params: ProfileHomeParams.extend({ routes: z.array(z.object({ model: z.string().min(1), provider: z.string(), base_url: z.string().optional() })) }), result: z.object({ tiers: z.array(z.array(SpeedTierSchema)) }) },

@@ -136,6 +136,28 @@ substitutes an API key provider for it.
   profile, so a plugin cannot load when another profile's plugin already uses
   its provider id or directory name.
 
+### Local models from Hermes Agent
+
+Hermes Agent v0.21.6 and later can download open models and run them on this
+machine through its own managed llama.cpp server. Download them with
+`hermes model` -> **Local models** (or the Agent desktop's Local Models pane).
+Talaria Web never downloads models or starts that server itself.
+
+- Every downloaded model appears in the model picker under **Local**, named by
+  its file (for example `Qwen3-4B-Instruct-Q4_K_M`). The list is read from the
+  Hermes root's `models` directory (`~/.hermes/models` by default), so every
+  profile sees the same models.
+- Picking one runs the chat on the Agent's `llamacpp` provider; `llama.cpp` and
+  `llama-cpp` in `config.yaml` mean the same provider. No API key is involved.
+  The Agent starts the server when the chat needs it, unless the local server is
+  turned off in Hermes.
+- If the server is off or still starting, the chat ends with **Local model server
+  unavailable** instead of an authentication error. See
+  [Troubleshooting](troubleshooting.md#local-model-server-unavailable).
+
+These models do not need a Base URL. The rules below are for model servers you
+run yourself.
+
 ## Base URL rules for local model servers
 
 For self-hosted providers, the Base URL should point to the OpenAI-compatible

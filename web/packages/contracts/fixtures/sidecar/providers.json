@@ -1199,6 +1199,18 @@
       }
     }
   ],
+  "providers.local_models": [
+    {
+      "params": {
+        "profile_home": "<home>"
+      },
+      "result": {
+        "provider_id": "llamacpp",
+        "models": [],
+        "current_endpoint": null
+      }
+    }
+  ],
   "providers.credential_pool": [
     {
       "params": {

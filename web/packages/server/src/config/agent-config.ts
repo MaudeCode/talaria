@@ -11,7 +11,7 @@ import { homedir } from 'node:os'
 import { join, resolve as resolvePath } from 'node:path'
 import type { SidecarResult } from '@maudecode/talaria-web-contracts'
 import type { SidecarLike } from '../sidecar/client.js'
-import { PORTAL_PROVIDERS, PROVIDER_ALIASES, PROVIDER_DISPLAY, PROVIDER_MODELS, VALID_REASONING_EFFORTS, AUXILIARY_TASK_CATALOG, RETIRED_AUX_TASK_SLOTS } from '../providers/tables.js'
+import { LOCAL_RUNTIME_PROVIDER, PORTAL_PROVIDERS, PROVIDER_ALIASES, PROVIDER_DISPLAY, PROVIDER_MODELS, VALID_REASONING_EFFORTS, AUXILIARY_TASK_CATALOG, RETIRED_AUX_TASK_SLOTS } from '../providers/tables.js'
 import { str } from '../util.js'
 
 export type SpeedTier = SidecarResult<'models.speed_tiers'>['tiers'][number][number]
@@ -187,7 +187,7 @@ export function canonicaliseProviderId(name: unknown): string {
   if (!raw) return ''
   if (raw in PROVIDER_DISPLAY || raw in PROVIDER_MODELS) return raw
   const resolved = resolveProviderAlias(raw)
-  if (resolved && (resolved in PROVIDER_DISPLAY || resolved in PROVIDER_MODELS)) return resolved
+  if (resolved && (resolved in PROVIDER_DISPLAY || resolved in PROVIDER_MODELS || resolved === LOCAL_RUNTIME_PROVIDER)) return resolved
   return raw
 }
 
