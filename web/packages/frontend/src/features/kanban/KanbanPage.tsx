@@ -284,7 +284,7 @@ function TaskDialog({ board, task, readOnly, onClose, onChanged }: { board: stri
                       const named = linked.get(id)
                       return (
                         <li key={id} className="flex items-center gap-1">
-                          {named ? <span className="min-w-0 truncate" title={id}>{named.title} <span className="text-muted">· {named.status}</span></span> : <span className="font-mono">{id}</span>}
+                          {named ? <span className="min-w-0 truncate" title={id}>{named.title} <span className="text-muted">· {statusLabel(named.status)}</span></span> : <span className="font-mono">{id}</span>}
                           {!readOnly && <IconButton label={m.kanban_remove_dependency_named({ a0: named ? `${named.title} (${id})` : id })} className="h-6 w-6" onClick={() => link.mutate({ ...pair(id), remove: true })}><X size={12} aria-hidden="true" /></IconButton>}
                         </li>
                       )
