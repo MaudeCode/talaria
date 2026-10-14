@@ -100,6 +100,43 @@ print(json.dumps({"status": result["status"], "elapsed": time.monotonic() - star
 """
 
 
+# ``mcp.reload`` in profile A while three sessions hold cached agents: two of A's (the first one's refresh fails) and
+# one of profile B's. Discovery changes a tool's description under the same name; the stand-in refresh records which
+# agent it ran for and the description it saw.
+RELOAD_REFRESH_PROBE = """
+import json, os, sys, types
+from pathlib import Path
+sys.path.append(sys.argv[1])
+import tools.mcp_tool_agent as mcp_agent
+import tools.mcp_tool_discovery as discovery
+from talaria_sidecar.methods import Registry, chat, mcp
+
+description = ["old"]
+refreshed = []
+
+def discover(*args, **kwargs):
+    description[0] = "new"
+    return []
+
+def refresh(agent, **kwargs):
+    refreshed.append([agent.name, description[0]])
+    if agent.name == "a-broken":
+        raise RuntimeError("refresh failed")
+
+discovery.discover_mcp_tools = discover
+mcp_agent.refresh_agent_mcp_tools = refresh
+launch = Path(os.environ["HERMES_HOME"])
+profile_a = launch / "profiles" / "a"
+profile_a.mkdir(parents=True)
+for session_id, name, home in (("s1", "a-broken", profile_a), ("s2", "b", launch), ("s3", "a", profile_a)):
+    chat._AGENT_CACHE[session_id] = (types.SimpleNamespace(name=name), "sig", home)
+registry = Registry(runtime=types.SimpleNamespace(load=lambda: None, ensure_current=lambda: None))
+mcp.register(registry)
+output = registry.methods["mcp.reload"](None, {"profile_home": str(profile_a)})["output"]
+print(json.dumps({"output": output, "refreshed": refreshed}))
+"""
+
+
 def _configure_stub(home: pathlib.Path, name: str, script: pathlib.Path) -> None:
     home.mkdir(parents=True, exist_ok=True)
     (home / "config.yaml").write_text(f"mcp_servers:\n  {name}:\n    command: {json.dumps(AGENT_PYTHON)}\n    args: [{json.dumps(str(script))}, {name}]\n")
@@ -191,6 +228,17 @@ def test_launch_reload_after_multiplexing_starts_replaces_its_earlier_unscoped_c
         assert _status(sidecar, named) == {"stub_b": "connected"}
     finally:
         sidecar.close()
+
+
+@requires_agent
+def test_reload_refreshes_only_the_reloaded_profiles_cached_agents(tmp_path) -> None:
+    root = tmp_path / ".hermes"
+    root.mkdir()
+    outcome = _probe(tmp_path, root, RELOAD_REFRESH_PROBE)
+    assert outcome["output"].startswith("Reloaded MCP servers"), outcome
+    # Both of profile A's agents see the rediscovered schema, the failed one does not stop the other, and profile B's
+    # agent is left alone.
+    assert outcome["refreshed"] == [["a-broken", "new"], ["a", "new"]], outcome
 
 
 @requires_agent

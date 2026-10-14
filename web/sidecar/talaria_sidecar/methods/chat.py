@@ -864,6 +864,23 @@ def drain_agents(timeout: float = _AGENT_RELEASE_TIMEOUT) -> None:
     _join(threads, deadline)
 
 
+def refresh_profile_agents_mcp_tools(home) -> None:
+    """MCP reload: republish the live registry's tools (a same-name schema change included) to the profile's cached
+    agents, like the gateway's ``_mcp_reload_refresh_cached_agents``. Each keeps its build-time toolset selection; one
+    agent's failure is logged and the rest still refresh."""
+    from tools.mcp_tool_agent import refresh_agent_mcp_tools
+
+    target = os.path.realpath(home)
+    with _AGENT_CACHE_LOCK:
+        for session_id, entry in list(_AGENT_CACHE.items()):
+            if os.path.realpath(entry[2]) != target:
+                continue
+            try:
+                refresh_agent_mcp_tools(entry[0], quiet_mode=True)
+            except Exception:  # noqa: BLE001
+                log.warning("Failed to refresh MCP tools for session %s", session_id, exc_info=True)
+
+
 def release_profile_agents(home) -> None:
     """Profile deletion: release the profile's cached agents, cancel their background reviews, and wait for both and
     every release running under its home. Fails rather than let the home go while a memory flush still runs under it."""
