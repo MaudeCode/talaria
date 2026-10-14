@@ -124,12 +124,15 @@ export class AgentConfig {
     }
   }
 
-  /** TAL-800: the profile's auxiliary slots as its Agent lists them (plugin tasks included); the static catalog only when it cannot. */
-  async auxiliarySlots(profileHome: string): Promise<AuxSlot[]> {
+  /**
+   * TAL-800: the profile's auxiliary slots as its Agent lists them (plugin tasks included), and the Agent's other
+   * `auxiliary.*` keys. The static catalog only when the Agent cannot list them; `reserved` is then unknown (null).
+   */
+  async auxiliarySlots(profileHome: string): Promise<{ slots: AuxSlot[]; reserved: string[] | null }> {
     const sidecar = this.deps.sidecar()
     // A failed listing offers the built-in table only, so a plugin slot is never assignable without the Agent vouching for it.
     const listed = sidecar ? await sidecar.call('aux.tasks', { profile_home: profileHome }).catch(() => null) : null
-    return listed?.tasks ?? AUXILIARY_TASK_CATALOG.map((slot) => ({ ...slot, inherit_from: null, reasoning_effort: null, effective: null }))
+    return listed ? { slots: listed.tasks, reserved: listed.reserved } : { slots: AUXILIARY_TASK_CATALOG.map((slot) => ({ ...slot, inherit_from: null, reasoning_effort: null, effective: null })), reserved: null }
   }
 
   invalidate(profileHome?: string): void {
@@ -514,7 +517,8 @@ function auxiliarySelection(providerRaw: string, modelRaw: string): [string, str
 const isCustomProvider = (provider: unknown): boolean => { const p = str(provider).trim(); return p === 'custom' || p.startsWith('custom:') }
 
 export async function setAuxiliaryModel(store: AgentConfig, home: string, task: string, providerRaw: string, modelRaw: string, advanced: unknown): Promise<{ ok: true; task: string; provider: string; model: string }> {
-  const slots = (await store.auxiliarySlots(home)).map((slot) => slot.key)
+  const listing = await store.auxiliarySlots(home)
+  const slots = listing.slots.map((slot) => slot.key)
   if (task !== '__reset__' && !slots.includes(task)) throw new Error(`Unknown auxiliary task slot: '${task}'. Valid: [${slots.map((s) => `'${s}'`).join(', ')}]`)
   const [provider, model] = task === '__reset__' ? ['auto', ''] : auxiliarySelection(providerRaw, modelRaw)
   await store.update(home, (config) => {
@@ -523,7 +527,11 @@ export async function setAuxiliaryModel(store: AgentConfig, home: string, task: 
     const autoSlot = (entry: unknown): Dict => { const slot: Dict = { ...dict(entry), provider: 'auto', model: '' }; Reflect.deleteProperty(slot, 'base_url'); return slot }
     if (task === '__reset__') {
       for (const retired of RETIRED_AUX_TASK_SLOTS) Reflect.deleteProperty(aux, retired)
-      for (const slot of slots) aux[slot] = autoSlot(aux[slot])
+      // A route block the Agent neither lists nor owns is a disabled or removed plugin's task: Reset All clears it too, so
+      // re-enabling the plugin does not bring back a pin the user reset. Unknown ownership (no listing) leaves it alone.
+      const { reserved } = listing
+      const orphans = reserved ? Object.keys(aux).filter((key) => isDict(aux[key]) && !slots.includes(key) && !reserved.includes(key)) : []
+      for (const slot of [...slots, ...orphans]) aux[slot] = autoSlot(aux[slot])
       config.auxiliary = aux
       return
     }

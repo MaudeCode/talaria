@@ -28,7 +28,10 @@ def _plugin(home: pathlib.Path, name: str, call: str) -> None:
 def _rows(sidecar: SidecarProcess, home: pathlib.Path) -> dict[str, dict]:
     result = sidecar.result("aux.tasks", {"profile_home": str(home)})
     assert validate(result, load_schema("aux.tasks")) == []
-    return {row["key"]: row for row in result["tasks"]}
+    rows = {row["key"]: row for row in result["tasks"]}
+    # The Agent's other auxiliary keys (settings and unlisted routes) are reported, and never overlap a slot.
+    assert {"goal_judge", "free_only"} <= set(result["reserved"]) and not set(result["reserved"]) & set(rows)
+    return rows
 
 
 @requires_agent

@@ -252,8 +252,9 @@ export const AUX_METHODS = {
   /**
    * TAL-800: the profile's auxiliary slots in Agent order (built-ins, then the profile's plugin tasks). `reasoning_effort`
    * is the slot's resolved effort (`''` = provider default); `effective` is the route an `inherit_from` task resolves to now.
+   * `reserved`: the Agent's other `auxiliary.*` keys (settings and unlisted routes); a reset never touches them.
    */
-  'aux.tasks': { params: ProfileHomeParams, result: z.object({ tasks: z.array(z.object({ key: z.string().min(1), label: z.string(), description: z.string(), inherit_from: z.string().nullable(), reasoning_effort: z.string(), effective: z.object({ provider: z.string(), model: z.string(), base_url: z.string() }).nullable() })) }) },
+  'aux.tasks': { params: ProfileHomeParams, result: z.object({ tasks: z.array(z.object({ key: z.string().min(1), label: z.string(), description: z.string(), inherit_from: z.string().nullable(), reasoning_effort: z.string(), effective: z.object({ provider: z.string(), model: z.string(), base_url: z.string() }).nullable() })), reserved: z.array(z.string()) }) },
   'aux.resolve': { params: ProfileHomeParams.extend({ task: z.string().min(1), main_runtime: Loose.nullable().optional() }), result: z.object({ configured: z.boolean(), model: z.string().nullable(), error: z.string().optional() }) },
 } as const
 export const TEXT_METHODS = {

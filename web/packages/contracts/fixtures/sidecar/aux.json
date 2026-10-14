@@ -130,6 +130,17 @@
             "reasoning_effort": "",
             "effective": null
           }
+        ],
+        "reserved": [
+          "background_review",
+          "free_only",
+          "goal_judge",
+          "moa_aggregator",
+          "moa_reference",
+          "monitor",
+          "openrouter_model",
+          "stream_only_base_urls",
+          "transient_retries"
         ]
       }
     }

@@ -765,17 +765,21 @@ describe('settings, profiles, models, providers, reasoning, onboarding', () => {
       expect((configs.get(s.state)?.auxiliary as Json).voice_chat).toEqual({ provider: 'anthropic', model: 'claude-opus-4-7' })
 
       // A plugin task exists only in the profile whose Agent lists it; while Auto it shows its base slot's model.
-      const builtins = (loadSidecarFixtures().get('aux.tasks')![0]!.result as SidecarResult<'aux.tasks'>).tasks
+      const { tasks: builtins, reserved } = loadSidecarFixtures().get('aux.tasks')![0]!.result as SidecarResult<'aux.tasks'>
+      expect(reserved).toContain('goal_judge')
       const sideTask = { key: 'side_task', label: 'Side model', description: 'side summaries', inherit_from: 'compression', reasoning_effort: '', effective: { provider: 'anthropic', model: 'claude-opus-4-7', base_url: '' } }
-      sidecar.respond('aux.tasks', (params) => ({ tasks: params.profile_home === s.state ? [...builtins, sideTask] : builtins }))
+      sidecar.respond('aux.tasks', (params) => ({ tasks: params.profile_home === s.state ? [...builtins, sideTask] : builtins, reserved }))
       const opus = (await json(await s.get('/api/models'))).groups as { provider_id: string; models: { id: string; label: string }[] }[]
       const opusLabel = opus.find((g) => g.provider_id === 'anthropic')!.models.find((m) => m.id.endsWith('claude-opus-4-7'))!.label
       expect(await task('side_task')).toMatchObject({ label: 'Side model', provider: 'auto', is_auto: true, inherit_from: 'compression', value_label: opusLabel })
       res = await post(s, '/api/model/set', { scope: 'auxiliary', task: 'side_task', provider: 'anthropic', model: 'claude-sonnet-4-6' })
       expect(res.status).toBe(200)
       expect(((dictOf((await json(res)).auxiliary).tasks ?? []) as Task[]).find((t) => t.task === 'side_task')).toMatchObject({ is_auto: false, model: 'claude-sonnet-4-6' })
+      // Reset All also clears a disabled plugin's leftover pin, never the Agent's own unlisted routes or settings.
+      const pinned = { provider: 'anthropic', model: 'claude-opus-4-7' }
+      reset({ ...configs.get(s.state), auxiliary: { ...dictOf(configs.get(s.state)?.auxiliary), gone_task: pinned, goal_judge: pinned, free_only: true } })
       res = await post(s, '/api/model/set', { scope: 'auxiliary', task: '__reset__', provider: 'auto', model: '' })
-      expect((configs.get(s.state)?.auxiliary as Json).side_task).toEqual({ provider: 'auto', model: '' })
+      expect(configs.get(s.state)?.auxiliary).toMatchObject({ side_task: { provider: 'auto', model: '' }, gone_task: { provider: 'auto', model: '' }, goal_judge: pinned, free_only: true })
       expect(await task('side_task')).toMatchObject({ is_auto: true, value_label: opusLabel })
 
       mkdirSync(profileHome, { recursive: true })
@@ -795,6 +799,10 @@ describe('settings, profiles, models, providers, reasoning, onboarding', () => {
       expect(fallback).toHaveLength(11)
       expect(fallback.find((t) => t.task === 'vision')).toMatchObject({ inherit_from: null, reasoning_effort: null })
       expect((await post(s, '/api/model/set', { scope: 'auxiliary', task: 'side_task', provider: 'anthropic', model: 'claude-sonnet-4-6' })).status).toBe(400)
+      // Without the Agent's word on which keys it owns, Reset All leaves every unlisted block alone.
+      reset({ ...configs.get(s.state), auxiliary: { ...dictOf(configs.get(s.state)?.auxiliary), gone_task: pinned } })
+      expect((await post(s, '/api/model/set', { scope: 'auxiliary', task: '__reset__', provider: 'auto', model: '' })).status).toBe(200)
+      expect((configs.get(s.state)?.auxiliary as Json).gone_task).toEqual(pinned)
     } finally {
       sidecar.respond('aux.tasks', undefined)
       sidecar.respond('profiles.list', () => ({ profiles: [{ name: 'default', path: s.state, is_default: true, gateway_running: false, model: null, provider: null, has_env: false, visible: true, skill_count: 0, enabled_skills: 0, total_skills: 0 }] }))

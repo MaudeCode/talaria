@@ -3735,10 +3735,17 @@
           ],
           "additionalProperties": false
         }
+      },
+      "reserved": {
+        "type": "array",
+        "items": {
+          "type": "string"
+        }
       }
     },
     "required": [
-      "tasks"
+      "tasks",
+      "reserved"
     ],
     "additionalProperties": false
   },

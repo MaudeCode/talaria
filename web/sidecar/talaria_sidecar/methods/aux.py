@@ -181,10 +181,12 @@ def _effort_word(task_cfg: dict) -> str:
     return "none" if raw is False else str(raw or "").strip().lower()
 
 
-def aux_tasks() -> list[dict]:
+def aux_tasks() -> dict:
     """TAL-800: the home's auxiliary slots in Agent order, the ``hermes model`` picker's built-ins then the home's plugin
-    tasks, each with its resolved reasoning effort and, for a task that inherits another slot, its effective route."""
+    tasks, each with its resolved reasoning effort and, for a task that inherits another slot, its effective route.
+    ``reserved`` names the Agent's other ``auxiliary.*`` keys (settings and unlisted routes), which are never slots."""
     from agent.auxiliary_client import _get_auxiliary_task_config
+    from hermes_cli.config import DEFAULT_CONFIG
     from hermes_cli.main_provider_setup import _AUX_TASKS
 
     rows = [{"key": key, "label": label, "description": description, "inherit_from": None} for key, label, description in _AUX_TASKS]
@@ -202,7 +204,8 @@ def aux_tasks() -> list[dict]:
         resolved = _get_auxiliary_task_config(row["key"])
         row["reasoning_effort"] = _effort_word(resolved)
         row["effective"] = {field: str(resolved.get(field) or "") for field in ("provider", "model", "base_url")} if row["inherit_from"] else None
-    return rows
+    listed = {row["key"] for row in rows}
+    return {"tasks": rows, "reserved": sorted(key for key in (DEFAULT_CONFIG.get("auxiliary") or {}) if key not in listed)}
 
 
 def register(registry) -> None:
@@ -223,7 +226,7 @@ def register(registry) -> None:
     @registry.method("aux.tasks")
     def tasks(ctx: CallContext, params: dict) -> dict:
         with scoped_home(profile_home_param(params)):
-            return {"tasks": aux_tasks()}
+            return aux_tasks()
 
     @registry.method("aux.resolve")
     def resolve(ctx: CallContext, params: dict) -> dict:
