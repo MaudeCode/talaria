@@ -29,6 +29,7 @@ from ..errors import InvalidParams, RpcError
 from ..home import profile_home_param, scoped_home, session_workspace
 from ..rpc import CallContext
 from .checkpoints import checkpoint_kwargs
+from .providers import runtime_failure
 from .toolsets import disabled_toolsets
 
 log = logging.getLogger("talaria_sidecar.chat")
@@ -518,7 +519,7 @@ def _resolve_runtime(provider: str | None, model: str) -> dict:
     try:
         runtime = resolve_runtime_provider(requested=provider or None, target_model=model or None)
     except Exception as exc:  # noqa: BLE001
-        raise RpcError(str(exc), condition="credential_missing", data={"error_type": type(exc).__name__}) from exc
+        raise runtime_failure(exc, provider) from exc
     if not isinstance(runtime, dict):
         runtime = dict(vars(runtime)) if hasattr(runtime, "__dict__") else {}
     return runtime

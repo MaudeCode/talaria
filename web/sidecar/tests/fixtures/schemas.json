@@ -3510,6 +3510,33 @@
     ],
     "additionalProperties": false
   },
+  "providers.local_models": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "properties": {
+      "provider_id": {
+        "type": "string"
+      },
+      "models": {
+        "type": "array",
+        "items": {
+          "type": "string"
+        }
+      },
+      "current_endpoint": {
+        "type": [
+          "string",
+          "null"
+        ]
+      }
+    },
+    "required": [
+      "provider_id",
+      "models",
+      "current_endpoint"
+    ],
+    "additionalProperties": false
+  },
   "providers.resolve_runtime": {
     "$schema": "https://json-schema.org/draft/2020-12/schema",
     "type": "object",

@@ -316,6 +316,55 @@ def model_ids(provider_id: str, *, force_refresh: bool) -> tuple[list[str], bool
         return [], False
 
 
+def _requests_local_runtime(requested: str | None) -> bool:
+    """Whether a resolution asks for the Agent's managed llama.cpp provider, by name or as the profile's provider."""
+    try:
+        from hermes_cli.providers import LLAMACPP_ALIASES
+    except Exception:  # noqa: BLE001 - an Agent without the local runtime
+        return False
+    name = str(requested or "").strip().lower()
+    if not name:
+        try:
+            from hermes_cli.config import load_config
+
+            model = load_config().get("model")
+        except Exception:  # noqa: BLE001
+            return False
+        name = str(model.get("provider") or "").strip().lower() if isinstance(model, dict) else ""
+    return name in LLAMACPP_ALIASES
+
+
+def runtime_failure(exc: Exception, requested: str | None, message: str | None = None) -> RpcError:
+    """The typed error for a runtime that did not resolve. The local llama.cpp provider has no credential to add: it
+    fails because its server is off or still starting, and the Agent's message says which (TAL-798)."""
+    condition = "local_runtime_unavailable" if _requests_local_runtime(requested) else "credential_missing"
+    return RpcError(message or str(exc), condition=condition, data={"error_type": type(exc).__name__})
+
+
+def local_models() -> dict:
+    """The Agent's managed llama.cpp runtime (TAL-798): the downloaded GGUFs, selectable before its server runs (a turn
+    on one boots it), and the endpoint the running server recorded. An Agent without the local runtime lists none."""
+    try:
+        from hermes_cli.local_runtime.bootstrap import staged_model_ids
+        from hermes_cli.providers import LLAMACPP_PROVIDER_ID
+    except Exception:  # noqa: BLE001 - predates the local runtime
+        return {"provider_id": "", "models": [], "current_endpoint": None}
+    try:
+        models = [str(m) for m in staged_model_ids() if m]
+    except Exception:  # noqa: BLE001 - an unreadable models directory lists none
+        log.debug("staged_model_ids failed", exc_info=True)
+        models = []
+    endpoint = None
+    try:
+        from hermes_cli.local_runtime.endpoint import _state_endpoint
+
+        state = _state_endpoint()
+        endpoint = str(state["base_url"]) if state else None
+    except Exception:  # noqa: BLE001 - no recorded server
+        log.debug("local runtime endpoint failed", exc_info=True)
+    return {"provider_id": str(LLAMACPP_PROVIDER_ID), "models": models, "current_endpoint": endpoint}
+
+
 def resolve_runtime(*, requested: str | None, api_key: str | None, base_url: str | None, target_model: str | None) -> dict:
     try:
         from hermes_cli.runtime_provider import format_runtime_provider_error, resolve_runtime_provider
@@ -328,7 +377,7 @@ def resolve_runtime(*, requested: str | None, api_key: str | None, base_url: str
             message = format_runtime_provider_error(exc)
         except Exception:  # noqa: BLE001
             message = str(exc)
-        raise RpcError(message, condition="credential_missing", data={"error_type": type(exc).__name__})
+        raise runtime_failure(exc, requested, message) from exc
     return _plain(runtime) if isinstance(runtime, dict) else {"runtime": _plain(runtime)}
 
 
@@ -455,6 +504,11 @@ def register(reg) -> None:
         with scoped_home(profile_home_param(params)):
             ids, fallback = model_ids(provider, force_refresh=bool(params.get("force_refresh", False)))
             return {"provider": provider, "model_ids": ids, "fallback": fallback}
+
+    @reg.method("providers.local_models")
+    def local(ctx: CallContext, params: dict) -> dict:
+        with scoped_home(profile_home_param(params)):
+            return local_models()
 
     @reg.method("providers.resolve_runtime")
     def runtime(ctx: CallContext, params: dict) -> dict:

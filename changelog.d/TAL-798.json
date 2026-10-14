@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Added",
+      "summary": "Local models you download through Hermes Agent appear under Local in the model picker, and a chat on one says when the local model server is off instead of asking for an API key.",
+      "highlight": false,
+      "components": ["web"]
+    }
+  ]
+}

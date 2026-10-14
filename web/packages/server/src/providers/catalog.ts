@@ -734,6 +734,22 @@ export class ProviderCatalog {
     }
   }
 
+  /**
+   * TAL-798: the GGUFs staged for the Agent's managed llama.cpp provider, selectable before its server runs (a turn boots
+   * it). Null when none are staged or the listing failed, so every other provider stays usable.
+   */
+  private async localModels(profileHome: string): Promise<SidecarResult<'providers.local_models'> | null> {
+    const sidecar = this.deps.sidecar()
+    if (!sidecar) return null
+    try {
+      const local = await sidecar.call('providers.local_models', { profile_home: profileHome }, { timeoutMs: PLUGIN_LIST_TIMEOUT_MS })
+      return local.provider_id && local.models.length ? local : null
+    } catch (error) {
+      this.deps.log(`[catalog] local models failed: ${str((error as Error).message)}`)
+      return null
+    }
+  }
+
   /** Python `get_providers`. */
   async providers(profileHome: string): Promise<{ providers: Dict[]; active_provider: string | null }> {
     return structuredClone((await this.providerRows(profileHome)).payload)
@@ -854,10 +870,14 @@ export class ProviderCatalog {
     const unconfirmed = new Set<string>()
     const config = await this.deps.config.read(profileHome)
     const envValues = loadEnvFile(join(profileHome, '.env'))
-    const active = activeProviderFromConfig(config)
     const model = modelSection(config)
     const defaultModel = effectiveDefaultModel(config, this.deps.env)
     const cfgBaseUrl = str(model.base_url).trim()
+    const local = await this.localModels(profileHome)
+    const configured = activeProviderFromConfig(config)
+    // A `custom` main model at the running local server's endpoint is that server: its Local group owns the selection.
+    const atLocalServer = configured === 'custom' && Boolean(cfgBaseUrl) && cfgBaseUrl.replace(/\/+$/, '') === str(local?.current_endpoint).replace(/\/+$/, '')
+    const active = local && atLocalServer ? local.provider_id : configured
     const detected = new Set<string>()
     const configuredIds = new Map<string, string[]>()
     const append = (pid: string, id: unknown): void => {
@@ -868,6 +888,7 @@ export class ProviderCatalog {
       configuredIds.set(pid, list)
     }
     if (active) detected.add(active)
+    if (local) detected.add(local.provider_id)
     const providersCfg = dict(config.providers)
     const rawKeyFor = new Map<string, string>()
     for (const [key, value] of Object.entries(providersCfg)) {
@@ -923,6 +944,11 @@ export class ProviderCatalog {
         const g = namedCustom.get(pid)
         const models = [...(g?.models ?? [])]
         if (models.length || pid === active) groups.push({ provider: g?.name ?? pid.replace('custom:', ''), provider_id: pid, models: applyProviderPrefix(models, pid, active) })
+        continue
+      }
+      if (pid === local?.provider_id) {
+        // A GGUF's id is its file name, quant tag included (`Q4_K_M`); prettifying would mangle it.
+        groups.push({ provider: 'Local', provider_id: pid, models: applyProviderPrefix(local.models.map((id) => ({ id, label: id })), pid, active) })
         continue
       }
       if (pid === 'custom') {
