@@ -659,7 +659,7 @@ export class TurnRunner {
       const persistentBefore = persistentStateSnapshot(deps.profileHome(s.profile))
       put('context_status', { session_id: sessionId, prefill: { status: 'not_configured', source: 'none', label: '', message_count: 0 } })
       const result = await sidecar.call('chat.start', {
-        profile_home: deps.profileHome(s.profile), session_id: sessionId, stream_id: streamId, workspace: opts.workspace, model: opts.model ?? '', model_provider: opts.modelProvider,
+        profile_home: deps.profileHome(s.profile), session_id: sessionId, stream_id: streamId, workspace: opts.workspace, workspace_local: deps.workspaces.profileSupportsLocalIo(s.profile), model: opts.model ?? '', model_provider: opts.modelProvider,
         user_message: userMessage, ...turnContext, conversation_history: conversationHistory, enabled_toolsets: deps.toolsetsFor(s), ...(msgText ? { persist_user_message: msgText } : {}), ...(opts.ephemeral ? { ephemeral: true } : {}),
         ...(opts.voiceTurn ? { voice_turn: true } : {}),
         ...(opts.connectCard ? { connect_card: true } : {}),

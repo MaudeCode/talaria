@@ -1,5 +1,5 @@
-"""TAL-903: a Web turn anchors the Agent's subdirectory-hint discovery at the session workspace, so a tool call under a
-project subdirectory loads that directory's AGENTS.md. Real sidecar, pinned Agent, disposable homes, stub model."""
+"""TAL-903: a Web turn anchors the Agent's subdirectory-hint discovery at the session workspace when the server marks it
+a host path, so a tool call under a project subdirectory loads that directory's AGENTS.md. Real sidecar, pinned Agent, disposable homes, stub model."""
 
 from __future__ import annotations
 
@@ -41,7 +41,7 @@ def _tool_results(bodies: list) -> list[str]:
 
 
 @requires_agent
-def test_a_turn_loads_the_workspace_subdirectory_hint_and_a_workspace_change_rebuilds_the_agent(hermes_home: pathlib.Path) -> None:
+def test_a_turn_loads_the_local_workspace_subdirectory_hint_and_a_workspace_change_rebuilds_the_agent(hermes_home: pathlib.Path) -> None:
     first = _project(hermes_home.parent, "alpha", "ALPHA-AREA-RULE")
     second = _project(hermes_home.parent, "beta", "BETA-AREA-RULE")
     stub = type("Stub", (_ReadFile,), {"target": "", "bodies": []})
@@ -49,16 +49,19 @@ def test_a_turn_loads_the_workspace_subdirectory_hint_and_a_workspace_change_reb
         (hermes_home / "config.yaml").write_text(f"model:\n  provider: custom\n  default: stub-model\n  base_url: {url}\n  api_key: sk-stub\n")
         proc = SidecarProcess(hermes_home)
         try:
-            for turn, (workspace, marker) in enumerate(((first, "ALPHA-AREA-RULE"), (second, "BETA-AREA-RULE"))):
+            # The third turn's workspace is a remote backend's target-side path that happens to exist on the host too.
+            turns = ((first, True, "ALPHA-AREA-RULE"), (second, True, "BETA-AREA-RULE"), (first, False, "ALPHA-AREA-RULE"))
+            for turn, (workspace, local, marker) in enumerate(turns):
                 stub.target = str(workspace / "sub" / "notes.txt")
                 stub.bodies.clear()
                 params = {"profile_home": str(hermes_home), "session_id": "web-hints", "stream_id": f"st-hints-{turn}", "user_message": "read the notes",
-                          "conversation_history": [], "model": "stub-model", "model_provider": "custom", "workspace": str(workspace), "enabled_toolsets": ["file"]}
+                          "conversation_history": [], "model": "stub-model", "model_provider": "custom", "workspace": str(workspace), "workspace_local": local,
+                          "enabled_toolsets": ["file"]}
                 result = proc.result("chat.start", params, timeout=120)
                 assert result["status"] == "completed", (result, proc.stderr_lines[-20:])
                 results = _tool_results(stub.bodies)
                 assert results and "plain notes" in results[0], results
-                assert marker in results[0], (turn, results[0])
+                assert (marker in results[0]) is local, (turn, results[0])
         finally:
             proc.close()
 
@@ -89,7 +92,7 @@ class Ctx:
 chat._agent_class = lambda: OlderAgent
 chat._resolve_runtime = lambda provider, model: {"model": "m", "provider": "p"}
 home = Path(os.environ["HERMES_HOME"])
-params = {"profile_home": str(home), "session_id": "s", "stream_id": "st", "user_message": "hi", "model": "m", "model_provider": "p", "enabled_toolsets": ["file"], "workspace": sys.argv[2]}
+params = {"profile_home": str(home), "session_id": "s", "stream_id": "st", "user_message": "hi", "model": "m", "model_provider": "p", "enabled_toolsets": ["file"], "workspace": sys.argv[2], "workspace_local": True}
 with scoped_home(home):
     result = chat.start(Ctx(), params)
 assert result["status"] == "completed", result
