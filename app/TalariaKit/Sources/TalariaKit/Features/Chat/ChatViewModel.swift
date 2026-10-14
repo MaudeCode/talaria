@@ -3150,7 +3150,7 @@ public final class ChatViewModel {
             attachments: requeuedAttachments ?? attachmentCoordinator.consumePendingAttachments(),
             steerID: unconfirmedSteerID
         )
-        return .executed(message: String(localized: "Steer was unavailable, so the message was queued for after this response."))
+        return .executed(message: String(localized: "Couldn't steer, so it's queued."))
     }
 
     private func interruptResponseFromSlashCommand(_ args: String) async -> SlashCommandExecutionResult {
@@ -3169,10 +3169,10 @@ public final class ChatViewModel {
         await cancelActiveStream()
 
         if activeStreamID != nil {
-            return .executed(message: String(localized: "Could not stop the current response yet, so the interrupt message was queued for the next turn."))
+            return .executed(message: String(localized: "Couldn't stop yet, so it's queued."))
         }
 
-        return .executed(message: String(localized: "Interrupted the current response and queued your message to send next."))
+        return .executed(message: String(localized: "Interrupted; your message sends next."))
     }
 
     private func statusMessageFromSlashCommand() -> String {
@@ -3276,7 +3276,7 @@ public final class ChatViewModel {
             }
 
             await refreshBackgroundTasks()
-            return .executed(message: String(localized: "Background task started. I'll add the result here when it completes."))
+            return .executed(message: String(localized: "Background task started."))
         } catch {
             lastError = error
             return .unsupported(friendlyMessage: error.localizedDescription)

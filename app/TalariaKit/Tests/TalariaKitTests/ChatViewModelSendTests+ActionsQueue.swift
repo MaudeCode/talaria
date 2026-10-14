@@ -1447,7 +1447,7 @@ extension ChatViewModelSendTests {
         XCTAssertTrue(didStart)
         let result = await viewModel.submitStreamingMessage("Use the focused test", behavior: .steer)
 
-        XCTAssertEqual(result, .executed(message: "Steer was unavailable, so the message was queued for after this response."))
+        XCTAssertEqual(result, .executed(message: "Couldn't steer, so it's queued."))
         XCTAssertEqual(log.cancelRequests, 0)
         XCTAssertEqual(viewModel.activeStreamID, "stream-1")
         XCTAssertFalse(viewModel.messages.contains(where: \.isLocalSteeringHint))
