@@ -120,9 +120,9 @@ def test_capability_reports_streaming_only_when_enabled(hermes_home):
     _seed(hermes_home, streaming=True)
     sidecar = SidecarProcess(hermes_home)
     try:
-        assert sidecar.result("stt.capability", {"profile_home": str(hermes_home)}) == {"available": True, "provider": "fake-live", "streaming": True}
+        assert sidecar.result("stt.capability", {"profile_home": str(hermes_home)}) == {"available": True, "provider": "fake-live", "streaming": True, "warm_supported": False}
         (hermes_home / "config.yaml").write_text(json.dumps({"plugins": {"enabled": ["fake_live"]}, "stt": {"provider": "fake-live", "streaming": False}}))
-        assert sidecar.result("stt.capability", {"profile_home": str(hermes_home)}) == {"available": True, "provider": "fake-live", "streaming": False}
+        assert sidecar.result("stt.capability", {"profile_home": str(hermes_home)}) == {"available": True, "provider": "fake-live", "streaming": False, "warm_supported": False}
     finally:
         sidecar.close()
 
