@@ -1065,6 +1065,7 @@ export class TurnRunner {
       // After persistence and teardown: a background route's failure cleanup deletes the hidden session, which must
       // not race the error writeback above (a re-saved session would resurface in the sidebar).
       if (!succeeded) opts.onFailed?.(failure)
+      if (!succeeded && !opts.ephemeral) void this.remeasureContext(sessionId)
       this.startSteerFollowUp(sessionId, followUp)
     }
   }
@@ -1156,6 +1157,31 @@ export class TurnRunner {
     payload.tool_calls = toolCallsForMessageWindow(s.tool_calls, offset, limited.length)
     payload.compression_reference = compressionReference(s, scened)
     return payload
+  }
+
+  /**
+   * TAL-1005: a turn that ended without its result (a Stop, an error) after a compaction it waited on leaves that job's
+   * estimate under a context its prompt and work may have grown. The context is measured again, unless another turn took
+   * the session meanwhile, and the idle trigger judges the new figure.
+   */
+  private async remeasureContext(sessionId: string): Promise<void> {
+    const { deps } = this
+    const sidecar = deps.sidecar()
+    let s: Session
+    try { s = deps.store.get(sessionId) } catch { return }
+    const before = s.post_compression_context_tokens_estimate
+    if (before === null || s.active_stream_id || !sidecar) return
+    let tokens: number
+    try { tokens = (await sidecar.call('models.estimate_tokens', { messages: deps.service().modelContext(s) })).tokens } catch { return }
+    const measured = await deps.store.withLock(sessionId, () => {
+      let live: Session
+      try { live = deps.store.get(sessionId) } catch { return false }
+      if (live.active_stream_id || live.post_compression_context_tokens_estimate !== before) return false
+      live.post_compression_context_tokens_estimate = Math.max(1, tokens)
+      deps.store.save(live, { touchUpdatedAt: false })
+      return true
+    })
+    if (measured) void deps.service().ensureCompacted(sessionId)
   }
 
   /** TAL-540, Python `_live_usage_snapshot`: a finished compression's frame, with the counters and the ring's post-compression figures, so clients update before `done`. */

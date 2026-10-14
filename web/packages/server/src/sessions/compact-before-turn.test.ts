@@ -234,6 +234,19 @@ describe('compaction before the next turn', () => {
     }
   })
 
+  it('measures the context again when a turn that waited on a job ends without its result', async () => {
+    const sid = await seeded(OVER)
+    // A compression that keeps every row leaves enough history for a second one.
+    sidecar.respond('chat.compress', (params) => { compressCalls += 1; return { ...compressed(params), messages: params.conversation_history } })
+    sidecar.respond('models.estimate_tokens', () => ({ tokens: 450 }))
+    sidecar.respond('chat.start', (params) => { turns.push(params.conversation_history); throw new SidecarError('provider down after a long tool run', { condition: 'sidecar_error' }) })
+    const { frames } = await turn(sid, 'fails')
+    expect(events(frames)).toEqual(expect.arrayContaining(['compressing', 'compressed', 'apperror']))
+    // The job's 120-token estimate gives way to the context the failed turn left, which is over the threshold again.
+    await vi.waitFor(() => { expect(compressCalls).toBe(2) })
+    sidecar.respond('models.estimate_tokens', undefined)
+  })
+
   it("leaves a turn on another model to the Agent's own preflight", async () => {
     const sid = await seeded({ ...OVER, model: 'old-model' })
     let model: unknown
