@@ -56,6 +56,10 @@ class _Run:
         self.lock = threading.Lock()
         # The Agent's transcript list from before this turn: a Stop while the Agent still holds it has no checkpoint.
         self.prior_messages = None
+        # TAL-897: the session ended (clear/delete) or the sidecar is draining, set under both cache and run locks; an
+        # agent this run binds afterwards forks no review and stays out of the cache.
+        self.session_ended = False
+        self.home = None  # the profile home its agent runs under, set by ``start``
 
 
 class _ClarifyEntry:
@@ -757,6 +761,73 @@ def _join(threads, deadline: float) -> None:
         thread.join(max(0.0, deadline - time.monotonic()))
 
 
+def _cancel_background_reviews(entries, message: str) -> list[threading.Thread]:
+    """TAL-897: stop the post-turn memory/skill review fork of each ``(agent, home)``, which no turn interrupt or release
+    reaches, so a deleted session or a stopping sidecar no longer pays for it. Each cancel then holds the agent's review
+    slot (a run token from the Agent's ``prepare_background_review_run``, never finished), so the Agent admits no later
+    review: not from a turn still running (a clear does not stop it), a spawn already under way, or a review deferred to
+    or requeued on the idle queue (managed local runtime). ``skip_background_review`` spares the turn finalizer queueing
+    one at all. Only a turn's start waits on a held slot, and an ended agent runs no further turn.
+
+    A cancel lasts until its fork acknowledges, which the Agent's own wait does not bound, and runs as a release under
+    ``home`` (``_RELEASES``): shutdown waits for it, and profile deletion, retries included, refuses while it runs or
+    once it failed."""
+    unique = {id(agent): (agent, home) for agent, home in entries if agent is not None}
+    for agent, _home in unique.values():
+        try:
+            agent.skip_background_review = True
+        except AttributeError:  # an object without instance attributes forks no reviews
+            pass
+    try:
+        from agent.background_review import cancel_background_review_for_live_turn, prepare_background_review_run
+    except ImportError:
+        return []
+
+    def cancel(agent) -> None:
+        thread = threading.current_thread()
+        try:
+            try:
+                # One cancel per agent at a time, so none mistakes another's freshly held slot for a review to cancel.
+                lock = vars(agent).setdefault("_talaria_review_cancel_lock", threading.Lock())
+            except TypeError:
+                return  # no instance attributes, so no review slot either
+            with lock:
+                # A spawn that slipped in between the cancel and the slot claim is cancelled on the next pass.
+                for _ in range(3):
+                    if getattr(agent, "_talaria_review_slot", None) is not None:
+                        return
+                    cancel_background_review_for_live_turn(agent, message=message, tool_reason="session ended")
+                    slot = prepare_background_review_run(agent)
+                    if slot is not None:
+                        agent._talaria_review_slot = slot
+                        return
+                    current = getattr(agent, "_background_review_run", None)
+                    if current is None:
+                        return  # not an Agent with a review slot
+                    if current.cancel_requested.is_set():
+                        # A cancelled fork past the Agent's wait may still write: wait for it to acknowledge, then claim
+                        # the slot before the Agent can requeue it.
+                        current.request_done.wait()
+            log.warning("a background review kept restarting after its session ended")
+            thread.failed = True
+        except Exception:  # noqa: BLE001 - teardown continues without it
+            log.warning("cancelling a background review failed", exc_info=True)
+            thread.failed = True
+        finally:
+            with _RELEASES_LOCK:
+                _RELEASES.pop(thread, None)
+
+    threads = []
+    for agent, home in unique.values():
+        thread = threading.Thread(target=cancel, args=(agent,), daemon=True, name="chat-review-cancel")
+        thread.failed = False  # type: ignore[attr-defined] - read by profile deletion
+        with _RELEASES_LOCK:
+            _RELEASES[thread] = home
+        thread.start()
+        threads.append(thread)
+    return threads
+
+
 def evict_all_agents() -> int:
     """Drop every cached agent (credentials or environment changed underneath them)."""
     with _AGENT_CACHE_LOCK:
@@ -770,10 +841,15 @@ def drain_agents(timeout: float = _AGENT_RELEASE_TIMEOUT) -> None:
     """Shutdown: release every cached agent, stop running turns (like a Stop) so each releases the agent it holds, and
     wait, bounded, for those turns and every release still running."""
     deadline = time.monotonic() + timeout
-    evict_all_agents()
-    with _RUNS_LOCK:
+    with _AGENT_CACHE_LOCK, _RUNS_LOCK:
+        # Admission closes with the snapshot, so no later turn forks a review outside it.
         _DRAINING.set()
         runs = list(_RUNS.values())
+        owners = [(entry[0], entry[2]) for entry in _AGENT_CACHE.values()] + [(run.agent, run.home) for run in runs]
+        for run in runs:
+            run.session_ended = True
+    _cancel_background_reviews(owners, "sidecar shutting down")
+    evict_all_agents()
     for run in runs:
         run.cancel.set()
     while time.monotonic() < deadline:
@@ -789,14 +865,16 @@ def drain_agents(timeout: float = _AGENT_RELEASE_TIMEOUT) -> None:
 
 
 def release_profile_agents(home) -> None:
-    """Profile deletion: release the profile's cached agents and wait for every release running under its home. Fails
-    rather than let the home go while a memory flush still runs under it."""
+    """Profile deletion: release the profile's cached agents, cancel their background reviews, and wait for both and
+    every release running under its home. Fails rather than let the home go while a memory flush still runs under it."""
     target = os.path.realpath(home)
     with _AGENT_CACHE_LOCK:
         entries = [_AGENT_CACHE.pop(sid) for sid, entry in list(_AGENT_CACHE.items()) if os.path.realpath(entry[2]) == target]
-        _release_agents_locked(entries)
+        started = _release_agents_locked(entries)
+    started += _cancel_background_reviews([(entry[0], entry[2]) for entry in entries], "profile deleted")
+    # The threads started here count even once they left ``_RELEASES``: a fast failure must still block the delete.
     with _RELEASES_LOCK:
-        threads = [thread for thread, owner in _RELEASES.items() if os.path.realpath(owner) == target]
+        threads = list(dict.fromkeys(started + [thread for thread, owner in _RELEASES.items() if owner is not None and os.path.realpath(owner) == target]))
     _join(threads, time.monotonic() + _PROFILE_RELEASE_TIMEOUT)
     if any(thread.is_alive() for thread in threads):
         raise RpcError("The profile is still saving memory from its chats. Retry in a moment.")
@@ -951,6 +1029,7 @@ def start(ctx: CallContext, params: dict) -> dict:  # noqa: PLR0915 - one turn, 
     system_message = params.get("system_message")
     home = profile_home_param(params)
     run = _Run(stream_id, session_id, ctx)
+    run.home = home
     with _RUNS_LOCK:
         if _DRAINING.is_set():
             raise RpcError("The sidecar is shutting down.", condition="sidecar_unavailable")
@@ -1196,6 +1275,8 @@ def start(ctx: CallContext, params: dict) -> dict:  # noqa: PLR0915 - one turn, 
             """Claim the agent for this run under ``_AGENT_CACHE_LOCK``, so an eviction never releases it mid-turn."""
             run.prior_messages = getattr(bound, "_session_messages", None)
             run.agent = bound
+            if run.session_ended:
+                bound.skip_background_review = True
 
         if not session_busy:
             with _AGENT_CACHE_LOCK:
@@ -1224,10 +1305,11 @@ def start(ctx: CallContext, params: dict) -> dict:  # noqa: PLR0915 - one turn, 
             agent._talaria_session_db = session_db  # released with the agent (``_release_agent``)
             with _AGENT_CACHE_LOCK:
                 bind(agent)
-                replaced = _AGENT_CACHE.pop(session_id, None)
-                _AGENT_CACHE[session_id] = (agent, signature, home)
-                _release_agents_locked([replaced] if replaced else [])
-                _evict_idle_agents_locked()
+                if not run.session_ended:
+                    replaced = _AGENT_CACHE.pop(session_id, None)
+                    _AGENT_CACHE[session_id] = (agent, signature, home)
+                    _release_agents_locked([replaced] if replaced else [])
+                    _evict_idle_agents_locked()
         # Predecessor ``agent.ephemeral_system_prompt``: personality, surface context, progress guidance, and delivery
         # hints travel as runtime instructions that are never persisted to history.
         ephemeral = params.get("ephemeral_system_prompt")
@@ -1580,17 +1662,22 @@ def register(registry) -> None:
     @registry.method("chat.evict_agent", requires_agent=False)
     def evict_(ctx: CallContext, params: dict) -> dict:
         """Drop a session's cached agent. Only delete/clear (``clear_session``) end its approval grants, parked
-        approvals and kernels; a model switch, truncate or compress leaves a running turn's agent in place."""
+        approvals, kernels and background review; a model switch, truncate or compress leaves a running turn's agent
+        in place."""
         session_id = str(params.get("session_id") or "").strip()
         end_session = params.get("clear_session") is True
         with _AGENT_CACHE_LOCK:
             with _RUNS_LOCK:
                 run = _RUNS.get(_RUNS_BY_SESSION.get(session_id) or "")
+                if end_session and run is not None:
+                    run.session_ended = True
             if not end_session and run is not None and not run.finished.is_set():
                 return {"evicted": False}
             entry = _AGENT_CACHE.pop(session_id, None)
             _release_agents_locked([entry] if entry else [])
         if end_session:
+            # The server does not wait for an eviction; the cancels finish on their own.
+            _cancel_background_reviews(([(entry[0], entry[2])] if entry else []) + ([(run.agent, run.home)] if run else []), "session deleted or cleared")
             try:
                 from tools.approval import clear_session
                 clear_session(session_id)

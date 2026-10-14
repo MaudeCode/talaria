@@ -5,6 +5,7 @@ release until the turn ends."""
 from __future__ import annotations
 
 import contextlib
+import sys
 import threading
 import time
 import types
@@ -55,6 +56,24 @@ def _setup(monkeypatch):
             _HOME.home = None
 
     monkeypatch.setattr(chat, "scoped_home", scoped)
+
+
+def _reviews(monkeypatch) -> None:
+    """TAL-897: the Agent's background-review canceller, recording which session's agent it reached and why."""
+    module = types.ModuleType("agent.background_review")
+    module.cancel_background_review_for_live_turn = lambda agent, *, message, tool_reason: EVENTS.append(("cancel_review", agent.kwargs["session_id"], message))
+    # The Agent admits a run token only while no unfinished review holds the slot.
+    module.prepare_background_review_run = lambda agent: None if (r := getattr(agent, "_background_review_run", None)) is not None and not r.request_done.is_set() else object()
+    monkeypatch.setitem(sys.modules, "agent", types.ModuleType("agent"))
+    monkeypatch.setitem(sys.modules, "agent.background_review", module)
+
+
+def _cancels(count: int = 0) -> list[tuple]:
+    """The review cancels so far, once ``count`` arrived (an eviction's cancels run on their own threads)."""
+    deadline = time.monotonic() + 2
+    while len(cancels := [e for e in EVENTS if e[0] == "cancel_review"]) < count and time.monotonic() < deadline:
+        time.sleep(0.01)
+    return cancels
 
 
 def _ended(session_id: str, timeout: float = 2.0) -> list[tuple]:
@@ -201,6 +220,164 @@ def test_profile_deletion_releases_that_profiles_agents_before_removing_its_home
     # The release finished, under the profile's own home, before the home was removed; other profiles keep theirs.
     assert seen == {"name": "alpha", "events": [("on_session_end", "alpha-chat", TRANSCRIPT, str(alpha)), ("release_clients", "alpha-chat")]}
     assert list(chat._AGENT_CACHE) == ["beta-chat"]
+
+
+def test_profile_deletion_cancels_that_profiles_background_reviews_before_removing_its_home(monkeypatch, tmp_path) -> None:
+    _setup(monkeypatch)
+    _reviews(monkeypatch)
+    alpha, beta = tmp_path / "profiles" / "alpha", tmp_path / "profiles" / "beta"
+    for sid, home in (("alpha-chat", alpha), ("beta-chat", beta)):
+        assert chat.start(Ctx(), {**_params(f"st-{sid}", sid), "profile_home": str(home)})["status"] == "completed"
+    seen: dict = {}
+    monkeypatch.setattr(profiles, "delete_profile", lambda base_home, name: seen.update(cancels=_cancels()))
+    registry = Registry(runtime=types.SimpleNamespace(load=lambda: None, ensure_current=lambda: None))  # type: ignore[arg-type]
+    profiles.register(registry)
+    assert registry.methods["profiles.delete"](Ctx(), {"base_home": str(tmp_path), "name": "alpha"}) == {"ok": True}
+    assert seen == {"cancels": [("cancel_review", "alpha-chat", "profile deleted")]}
+
+
+def test_profile_deletion_waits_for_a_cancelled_review_to_settle(monkeypatch, tmp_path) -> None:
+    """A review past the Agent's bounded cancel wait may still save memory: the home stays until it acknowledges."""
+    _setup(monkeypatch)
+    _reviews(monkeypatch)
+    monkeypatch.setattr(chat, "_PROFILE_RELEASE_TIMEOUT", 0.5)
+    alpha = tmp_path / "profiles" / "alpha"
+    assert chat.start(Ctx(), {**_params("st-slow", "slow"), "profile_home": str(alpha)})["status"] == "completed"
+    review = types.SimpleNamespace(cancel_requested=threading.Event(), request_done=threading.Event())
+    review.cancel_requested.set()
+    MemoryAgent.instances[-1]._background_review_run = review
+    deleted: list = []
+    monkeypatch.setattr(profiles, "delete_profile", lambda base_home, name: deleted.append(name))
+    registry = Registry(runtime=types.SimpleNamespace(load=lambda: None, ensure_current=lambda: None))  # type: ignore[arg-type]
+    profiles.register(registry)
+    for _attempt in range(2):  # a retry keeps waiting for the cancel the first attempt started
+        with pytest.raises(RpcError, match="still saving memory"):
+            registry.methods["profiles.delete"](Ctx(), {"base_home": str(tmp_path), "name": "alpha"})
+    assert deleted == []
+    review.request_done.set()
+    assert registry.methods["profiles.delete"](Ctx(), {"base_home": str(tmp_path), "name": "alpha"}) == {"ok": True}
+    assert deleted == ["alpha"]
+
+
+def test_profile_deletion_refuses_once_when_a_review_cancel_fails(monkeypatch, tmp_path) -> None:
+    _setup(monkeypatch)
+    _reviews(monkeypatch)
+
+    def fail(agent, *, message, tool_reason):
+        raise RuntimeError("cancel failed")
+
+    monkeypatch.setattr(sys.modules["agent.background_review"], "cancel_background_review_for_live_turn", fail)
+    assert chat.start(Ctx(), {**_params("st-fail", "fail"), "profile_home": str(tmp_path / "profiles" / "alpha")})["status"] == "completed"
+    deleted: list = []
+    monkeypatch.setattr(profiles, "delete_profile", lambda base_home, name: deleted.append(name))
+    registry = Registry(runtime=types.SimpleNamespace(load=lambda: None, ensure_current=lambda: None))  # type: ignore[arg-type]
+    profiles.register(registry)
+    with pytest.raises(RpcError, match="could not be saved"):
+        registry.methods["profiles.delete"](Ctx(), {"base_home": str(tmp_path), "name": "alpha"})
+    assert deleted == []
+    assert registry.methods["profiles.delete"](Ctx(), {"base_home": str(tmp_path), "name": "alpha"}) == {"ok": True}
+
+
+def test_concurrent_cancels_of_one_agent_both_settle(monkeypatch) -> None:
+    """Two teardowns (say a clear overlapping shutdown) cancel one agent: neither may cancel the other's held slot."""
+    _setup(monkeypatch)
+    _reviews(monkeypatch)
+    module = sys.modules["agent.background_review"]
+
+    def cancel(agent, *, message, tool_reason):
+        if (run := getattr(agent, "_background_review_run", None)) is not None:
+            run.cancel_requested.set()
+
+    def prepare(agent):
+        if (run := getattr(agent, "_background_review_run", None)) is not None and not run.request_done.is_set():
+            return None
+        run = agent._background_review_run = types.SimpleNamespace(cancel_requested=threading.Event(), request_done=threading.Event())
+        time.sleep(0.2)  # installed, not yet returned to the claimant
+        return run
+
+    monkeypatch.setattr(module, "cancel_background_review_for_live_turn", cancel)
+    monkeypatch.setattr(module, "prepare_background_review_run", prepare)
+    agent = types.SimpleNamespace()
+    threads = chat._cancel_background_reviews([(agent, "/tmp/unused")], "first") + chat._cancel_background_reviews([(agent, "/tmp/unused")], "second")
+    for thread in threads:
+        thread.join(3)
+    assert [thread.is_alive() for thread in threads] == [False, False]
+    assert not any(thread.failed for thread in threads)
+
+
+def test_shutdown_closes_turn_admission_before_cancelling_reviews(monkeypatch) -> None:
+    """A turn admitted after the review owners were collected would fork a review nobody cancels."""
+    _setup(monkeypatch)
+    assert chat.start(Ctx(), _params("st-adm", "admission"))["status"] == "completed"
+    seen: list = []
+    cancel = chat._cancel_background_reviews
+    monkeypatch.setattr(chat, "_cancel_background_reviews", lambda agents, message: seen.append(chat._DRAINING.is_set()) or cancel(agents, message))
+    chat.drain_agents(timeout=1)
+    assert seen == [True]
+
+
+def test_clearing_a_session_mid_turn_stops_its_agent_forking_a_review(monkeypatch) -> None:
+    """The server clears a session without stopping its turn; the Agent would fork that turn's review as it returns."""
+    _setup(monkeypatch)
+    _reviews(monkeypatch)
+    gate = threading.Event()
+    started = threading.Event()
+
+    class BlockingAgent(MemoryAgent):
+        def run_conversation(self, **kwargs):
+            started.set()
+            gate.wait(5)
+            return super().run_conversation(**kwargs)
+
+    monkeypatch.setattr(chat, "_agent_class", lambda: BlockingAgent)
+    registry = Registry(runtime=None)  # type: ignore[arg-type]
+    chat.register(registry)
+    worker = threading.Thread(target=chat.start, args=(Ctx(), _params("st-clear", "cleared")))
+    worker.start()
+    assert started.wait(5)
+    registry.methods["chat.evict_agent"](Ctx(), {"session_id": "cleared", "clear_session": True})
+    assert _cancels(1) == [("cancel_review", "cleared", "session deleted or cleared")]
+    assert BlockingAgent.instances[-1].skip_background_review is True
+    gate.set()
+    worker.join(5)
+
+
+def test_clearing_a_session_before_its_turn_binds_an_agent_fences_and_never_caches_that_agent(monkeypatch) -> None:
+    """A clear between the turn's registration and its agent's construction: the agent it builds is the old session's."""
+    _setup(monkeypatch)
+    _reviews(monkeypatch)
+    gate = threading.Event()
+    building = threading.Event()
+
+    class SlowAgent(MemoryAgent):
+        def __init__(self, **kwargs):
+            building.set()
+            gate.wait(5)
+            super().__init__(**kwargs)
+
+    monkeypatch.setattr(chat, "_agent_class", lambda: SlowAgent)
+    registry = Registry(runtime=None)  # type: ignore[arg-type]
+    chat.register(registry)
+    worker = threading.Thread(target=chat.start, args=(Ctx(), _params("st-early", "early")))
+    worker.start()
+    assert building.wait(5)
+    registry.methods["chat.evict_agent"](Ctx(), {"session_id": "early", "clear_session": True})
+    gate.set()
+    worker.join(5)
+    assert SlowAgent.instances[-1].skip_background_review is True
+    assert "early" not in chat._AGENT_CACHE
+    assert _ended("early") == _released("early")
+
+
+def test_a_turn_ending_without_a_clear_keeps_its_review(monkeypatch) -> None:
+    _setup(monkeypatch)
+    _reviews(monkeypatch)
+    assert chat.start(Ctx(), _params("st-kept", "kept"))["status"] == "completed"
+    registry = Registry(runtime=None)  # type: ignore[arg-type]
+    chat.register(registry)
+    registry.methods["chat.evict_agent"](Ctx(), {"session_id": "kept"})
+    assert _cancels() == []
+    assert not hasattr(MemoryAgent.instances[-1], "skip_background_review")
 
 
 def test_shutdown_releases_an_agent_a_running_turn_caches_after_the_first_eviction(monkeypatch) -> None:

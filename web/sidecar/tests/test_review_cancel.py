@@ -1,0 +1,39 @@
+"""TAL-897: deleting or clearing a session, and sidecar shutdown, cancel its agent's post-turn background review fork and
+stop the agent forking another, immediate, deferred or already under way; a model switch or truncate leaves its reviews alone."""
+
+from __future__ import annotations
+
+import json
+import subprocess
+from pathlib import Path
+
+from conftest import AGENT_DIR, AGENT_PYTHON, isolated_env, requires_agent
+
+pytestmark = requires_agent
+
+ENDED = ["session deleted or cleared", "session ended"]
+
+
+def test_delete_clear_and_shutdown_cancel_the_admitted_background_review(tmp_path: Path) -> None:
+    root = tmp_path / ".hermes"
+    root.mkdir()
+    probe = Path(__file__).with_name("review_cancel_probe.py")
+    run = subprocess.run([AGENT_PYTHON, str(probe), str(AGENT_DIR)], env=isolated_env(root), capture_output=True, text=True, timeout=120)
+    assert run.returncode == 0, run.stderr[-4000:]
+    out = json.loads(run.stdout.strip().splitlines()[-1])
+    # The eviction returns at once; the cancel waits for the fork on its own thread.
+    assert out.pop("wedged_seconds") <= 1
+    assert out == {
+        "switch": [],
+        "switch_review_live": True,
+        "switch_left": ["post-turn", "deferred", "in-flight"],
+        "deleted": [ENDED],
+        "deleted_left": [],
+        "running": [ENDED],
+        "running_left": [],
+        "wedged_evicted": True,
+        "wedged": [ENDED],
+        "wedged_left": [],
+        "drained": [["sidecar shutting down", "session ended"]],
+        "drained_left": [],
+    }
