@@ -148,6 +148,7 @@ public enum ChatActiveRunStatusPolicy {
         isSyncingTranscript: Bool = false,
         isBackgroundTurn: Bool = false,
         activeRunStartedAt: Date? = nil,
+        isCompressing: Bool = false,
         compressionStartedAt: Date? = nil
     ) -> ChatActiveRunStatusPresentation? {
         if isCancellingStream {
@@ -169,8 +170,9 @@ public enum ChatActiveRunStatusPolicy {
             return recovery
         }
 
-        // TAL-1006: an open compression span, automatic or a manual /compress, stands in for Working.
-        if let compressionStartedAt {
+        // TAL-1006: an open compression span, automatic or a manual /compress, stands in for Working. A manual one
+        // (`isCompressing`) shows as it is sent; its elapsed time follows once the server's job start arrives.
+        if isCompressing || compressionStartedAt != nil {
             return ChatActiveRunStatusPresentation(kind: .compressing, runStartedAt: compressionStartedAt)
         }
 

@@ -546,6 +546,20 @@ final class ChatActiveRunStatusPolicyTests: XCTestCase {
         XCTAssertEqual(status(recovery: .reconnecting, compressionStartedAt: span)?.kind, .reconnecting)
     }
 
+    // TAL-1006: a manual /compress shows its chip as it is sent; the elapsed time follows once the server's job start arrives.
+    func testManualCompressionShowsItsChipBeforeTheServersStart() {
+        let presentation = ChatActiveRunStatusPolicy.presentation(
+            isStartingChat: false,
+            hasActiveStream: false,
+            activeStreamRecoveryState: .idle,
+            isCancellingStream: false,
+            isCompressing: true
+        )
+        XCTAssertEqual(presentation, ChatActiveRunStatusPresentation(kind: .compressing))
+        XCTAssertEqual(presentation?.label(agentName: "Maude"), "Compressing context")
+        XCTAssertNil(presentation?.elapsedTime(now: Date()))
+    }
+
     func testStatusPrioritizesCancellationOverOtherStates() {
         let presentation = ChatActiveRunStatusPolicy.presentation(
             isStartingChat: true,

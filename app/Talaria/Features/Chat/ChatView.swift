@@ -1477,6 +1477,7 @@ struct ChatView: View {
             isSyncingTranscript: showsSyncingPill,
             isBackgroundTurn: viewModel.isBackgroundTurnActive,
             activeRunStartedAt: viewModel.activeRunStartedAt,
+            isCompressing: viewModel.isCompressingSession,
             compressionStartedAt: viewModel.compressionStartedAt
         )
     }
