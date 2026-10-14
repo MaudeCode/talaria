@@ -659,7 +659,7 @@ export class TurnRunner {
       const persistentBefore = persistentStateSnapshot(deps.profileHome(s.profile))
       put('context_status', { session_id: sessionId, prefill: { status: 'not_configured', source: 'none', label: '', message_count: 0 } })
       const result = await sidecar.call('chat.start', {
-        profile_home: deps.profileHome(s.profile), session_id: sessionId, stream_id: streamId, workspace: opts.workspace, workspace_local: deps.workspaces.profileSupportsLocalIo(s.profile), model: opts.model ?? '', model_provider: opts.modelProvider,
+        profile_home: deps.profileHome(s.profile), session_id: sessionId, stream_id: streamId, ...this.agentWorkspace(s, opts.workspace), model: opts.model ?? '', model_provider: opts.modelProvider,
         user_message: userMessage, ...turnContext, conversation_history: conversationHistory, enabled_toolsets: deps.toolsetsFor(s), ...(msgText ? { persist_user_message: msgText } : {}), ...(opts.ephemeral ? { ephemeral: true } : {}),
         ...(opts.voiceTurn ? { voice_turn: true } : {}),
         ...(opts.connectCard ? { connect_card: true } : {}),
@@ -1442,7 +1442,17 @@ export class TurnRunner {
     return (await sidecar.call('chat.refine', {
       profile_home: this.deps.profileHome(s.profile), session_id: s.session_id, messages, focus, model: model ?? '', model_provider: provider,
       enabled_toolsets: this.deps.toolsetsFor(s), ...agentBuildParams(cfg, 'webui', provider, this.deps.env ?? {}),
+      ...this.agentWorkspace(s, this.deps.service().turnWorkspace(s)),
     }, { timeoutMs: 120_000 })).output
+  }
+
+  /**
+   * TAL-903: the workspace a session's agent is built at, and whether it is a host path (the profile's terminal runs
+   * locally). Only then does the Agent anchor AGENTS.md discovery and its memory provider there; `chat.start` and
+   * `chat.refine` send the same pair, so the agent `/refine` builds is the one the next turn reuses.
+   */
+  private agentWorkspace(s: Session, workspace: string): { workspace: string; workspace_local: boolean } {
+    return { workspace, workspace_local: this.deps.workspaces.profileSupportsLocalIo(s.profile) }
   }
 
   /**

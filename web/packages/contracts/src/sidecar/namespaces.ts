@@ -629,6 +629,8 @@ export const CHAT_METHODS = {
       session_id: z.string().min(1), messages: z.array(Loose), focus: z.string(), model: z.string(), model_provider: z.string().nullable().optional(),
       enabled_toolsets: z.array(z.string()).nullable().optional(), max_iterations: z.number().int().nullable().optional(), max_tokens: z.number().int().nullable().optional(),
       reasoning_config: z.object({ enabled: z.boolean(), effort: z.string().optional() }).nullable().optional(),
+      /** TAL-903: the session's workspace, as `chat.start` sends it, so the agent built here is the one its next turn reuses. */
+      workspace: z.string().optional(), workspace_local: z.boolean().optional(),
     }),
     result: z.object({ output: z.string() }),
   },

@@ -35,7 +35,8 @@ def test_refine_reviews_the_conversation_on_the_session_agent_in_its_profile(tmp
     assert out["built"] == {
         "output": STARTED.format(""),
         "reviews": [{**review, "review_skills": False, "focus": None}],
-        "kwargs": {"model": "gpt-5.4", "provider": "openai-codex", "enabled_toolsets": ["memory"], "max_iterations": 7, "session_id": "fresh"},
+        "kwargs": {"model": "gpt-5.4", "provider": "openai-codex", "enabled_toolsets": ["memory"], "max_iterations": 7, "session_id": "fresh",
+                   "cwd": "/srv/project"},
         "cached_for_turn": True,
         "held": 0,
     }
