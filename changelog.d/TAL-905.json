@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Chats now start from the profile's prefill messages file, as the Agent's own apps do, and an edit to that file applies on the next message.",
+      "highlight": false,
+      "components": ["web"]
+    }
+  ]
+}
