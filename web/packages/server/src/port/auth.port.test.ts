@@ -12,7 +12,7 @@ import { bootTestServer, cookieHeader, type TestServer } from '../test/harness.j
 import { safeLoginRedirectPath } from '../auth/gate.js'
 import { AuthStore } from '../auth/store.js'
 import { readProjectContext } from '../tools/memory.js'
-import { writeEnvFile } from '../providers/env-file.js'
+import { writeEnvFile } from '../test/env-file.js'
 
 type Json = Record<string, unknown>
 const post = (s: TestServer, path: string, body: unknown, headers: Record<string, string> = {}): Promise<Response> => s.get(path, { method: 'POST', body: JSON.stringify(body), headers: { 'content-type': 'application/json', ...headers } })

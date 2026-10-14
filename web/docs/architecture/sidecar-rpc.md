@@ -163,18 +163,24 @@ under Hermes Agent's context-local home override (`talaria_sidecar/home.py`).
 | `worktree` | `create` | |
 | `checkpoints` | `list`, `diff`, `restore` | |
 | `memory` | `check`, `write` | |
-| `config` | `get`, `set` | |
+| `config` | `get`, `set`, `env_write` | |
 
 Chat lifecycle diagnostics beginning with ⚠ or ❌ emit `warning` frames regardless
 of their wording. Compression notices retain their existing classification, and
 non-retryable errors retain `status` with `kind: terminal_error`; they also warn
 when announcing a fallback. These diagnostic frames do not terminate a turn.
 
-What stays in the server, by design: WebUI files and `config.yaml` / `.env`
-writes, MCP config edits and HTTP/stdio health probes, skill file writes,
+What stays in the server, by design: WebUI files, `config.yaml` / `.env`
+policy, MCP config edits and HTTP/stdio health probes, skill file writes,
 kanban query parsing and the SSE poll loop, cron cross-profile merging and
 running-state display, provider catalog composition and caches, dashboard
 plugin manifests, `state.db` read-only projections.
+
+`.env` edits go through `config.env_write`, which applies them with the Agent's
+own `.env` line helpers under the `<.env>.lock` its `save_env_value` /
+`remove_env_value` take, so a concurrent Agent write never drops a Web-saved
+key. Unlike those two it never publishes into the sidecar's `os.environ`;
+`runtime.env` alone owns that. The server still reads `.env` directly.
 
 For `cron.create` targeting another profile, the sidecar resolves that execution
 profile's main model before writing to that profile's own cron store. It fills

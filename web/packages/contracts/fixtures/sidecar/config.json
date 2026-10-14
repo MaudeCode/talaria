@@ -11,5 +11,20 @@
         "config": {}
       }
     }
+  ],
+  "config.env_write": [
+    {
+      "params": {
+        "profile_home": "<home>",
+        "updates": {
+          "TALARIA_FIXTURE_KEY": "sk-fixture-1234",
+          "TALARIA_ABSENT_KEY": null
+        }
+      },
+      "result": {
+        "ok": true,
+        "path": "<home>/.env"
+      }
+    }
   ]
 }

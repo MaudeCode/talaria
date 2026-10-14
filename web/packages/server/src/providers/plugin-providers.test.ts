@@ -4,7 +4,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { FakeSidecar } from '../sidecar/fake.js'
 import { SidecarError } from '../sidecar/client.js'
 import { bootTestServer, type TestServer } from '../test/harness.js'
-import { writeEnvFile } from './env-file.js'
+import { writeEnvFile } from '../test/env-file.js'
 
 type Json = Record<string, unknown>
 interface Row { id: string; display_name?: string; has_key?: boolean; is_plugin_provider?: boolean; configurable?: boolean; is_oauth?: boolean; key_source?: string; removable?: boolean; auth_error?: string | null; models?: { id: string }[]; models_total?: number }

@@ -1,16 +1,20 @@
-"""``config.*`` and ``models.reasoning_efforts``: a profile's ``config.yaml`` and the
-Agent's per-model reasoning capability.
+"""``config.*`` and ``models.reasoning_efforts``: a profile's ``config.yaml`` and ``.env``,
+and the Agent's per-model reasoning capability.
 
 The TypeScript server owns every config.yaml *policy* (which keys mean what);
 the sidecar only parses and serialises YAML with the Agent's own parser so the
 Node side needs no YAML dependency. Writes are atomic and keep the file's mode.
+``.env`` edits use the Agent's own line helpers under the ``<.env>.lock`` the
+gateway, CLI and plugins also take, so concurrent writers never drop a key.
 """
 
 from __future__ import annotations
 
+import contextlib
 import importlib
 import logging
 import os
+import re
 import tempfile
 from pathlib import Path
 
@@ -116,6 +120,88 @@ def write_config(path: Path, config: dict) -> dict:
     return {"ok": True, "path": str(path)}
 
 
+_ENV_NAME = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
+
+
+def _env_refusal(agent_config, key: str, action: str) -> str | None:
+    """The Agent's ``.env`` write-lock refusal (package-managed install or administrator-managed key)."""
+    refusal = getattr(agent_config, "env_write_refusal", None)
+    if refusal is not None:
+        return refusal(key, action)
+    # Agent 0.21.5 only reports the refusal on stderr.
+    return f"Cannot {action} {key}: this Hermes installation manages it" if agent_config._env_write_blocked(key, action) else None
+
+
+def _env_lock(agent_config, path: Path):
+    """The Agent's ``<.env>.lock`` (Agent 0.21.6+); older Agents have none to share."""
+    lock = getattr(agent_config, "_env_write_lock", None)
+    return lock(path) if lock is not None else contextlib.nullcontext()
+
+
+def env_write(home: Path, updates) -> dict:
+    """Upsert ``updates`` into ``home``'s ``.env`` (``None`` removes a key) with the Agent's own line helpers, under
+    the lock its ``save_env_value`` / ``remove_env_value`` take, in one atomic replace.
+
+    Unlike those two, nothing is published into ``os.environ``: other threads (a gateway spawn snapshotting the
+    environment) must never see another profile's key, and ``runtime.env`` alone owns this process's environment.
+    Values are trimmed and an empty one is skipped; a value the Agent would strip or quote is refused. Every key is
+    checked against the Agent's refusals before the write, and the file ends 0600.
+    """
+    if not isinstance(updates, dict) or not all(isinstance(k, str) and _ENV_NAME.match(k) and (v is None or isinstance(v, str)) for k, v in updates.items()):
+        raise InvalidParams("updates must map variable names to strings or null")
+    changes: dict[str, str | None] = {}
+    for key, value in updates.items():
+        if value is not None:
+            value = value.strip()
+            if not value:
+                continue
+            if "\n" in value or "\r" in value:
+                raise InvalidParams("API key must not contain newline characters.")
+            # The Agent would strip non-ASCII and quote the rest; refused instead, so the running process and the
+            # server's reader see exactly the bytes the file holds.
+            if any(not "!" <= c <= "~" or c in "#\"'" for c in value):
+                raise InvalidParams("API key must not contain spaces, quotes, '#' or non-ASCII characters.")
+        changes[key] = value
+    from hermes_cli import config as agent_config
+
+    with scoped_home(home):
+        for key, value in changes.items():
+            refusal = _env_refusal(agent_config, key, "remove" if value is None else "set")
+            if refusal:
+                raise RpcError(refusal, condition="env_write_refused")
+        try:
+            agent_config.ensure_hermes_home()
+            path = agent_config.get_env_path()
+            with _env_lock(agent_config, path):
+                existed = path.exists()
+                lines = agent_config._read_env_lines(path) if existed else []
+                before = list(lines)
+                for key, value in changes.items():
+                    defines = agent_config._env_line_defines_key
+                    if value is None:
+                        lines = [line for line in lines if not defines(line, key)]
+                        continue
+                    agent_config.validate_env_var_name_for_write(key)
+                    entry = f"{key}={value}\n"
+                    at = next((i for i, line in enumerate(lines) if defines(line, key)), None)
+                    if at is not None:
+                        lines[at] = entry
+                    else:
+                        if lines and not lines[-1].endswith("\n"):
+                            lines[-1] += "\n"
+                        lines.append(entry)
+                if lines != before:
+                    agent_config._write_env_lines(path, lines, preserve_mode=existed)
+        except TimeoutError as exc:
+            raise RpcError(str(exc), condition="env_locked") from exc
+        except ValueError as exc:
+            raise RpcError(str(exc), condition="env_write_refused") from exc
+        agent_config.invalidate_env_cache()
+        if path.exists():
+            os.chmod(path, 0o600)
+    return {"ok": True, "path": str(path)}
+
+
 def reasoning_efforts(model: str, provider: str) -> dict:
     """Levels the Agent would offer for ``model`` on ``provider`` (``hermes_cli.main_provider_setup``)."""
     efforts: list[str] | None = None
@@ -145,6 +231,10 @@ def register(registry) -> None:
     @registry.method("config.set", requires_agent=False)
     def set_(ctx: CallContext, params: dict) -> dict:
         return write_config(config_path_param(params), params.get("config"))
+
+    @registry.method("config.env_write")
+    def env_write_(ctx: CallContext, params: dict) -> dict:
+        return env_write(profile_home_param(params), params.get("updates"))
 
     @registry.method("models.reasoning_efforts")
     def efforts(ctx: CallContext, params: dict) -> dict:

@@ -9,7 +9,8 @@ import { FakeSidecar } from '../sidecar/fake.js'
 import { SidecarError } from '../sidecar/client.js'
 import { AccountUsageSnapshotSchema, ProviderQuotaSchema, type SidecarResult } from '@maudecode/talaria-web-contracts'
 import { bootTestServer, type TestServer } from '../test/harness.js'
-import { loadEnvFile, writeEnvFile } from '../providers/env-file.js'
+import { loadEnvFile } from '../providers/env-file.js'
+import { writeEnvFile } from '../test/env-file.js'
 import { applyProviderPrefix, deduplicateModelIds, formatOllamaLabel, labelForModel, uniqueQuotaSources } from '../providers/catalog.js'
 import { coerceReasoningEffort, parseProviderQualifiedModel, customProviderSlug, type SpeedTier } from '../config/agent-config.js'
 import { splitProviderModel } from '../profiles/profiles.js'
@@ -227,6 +228,16 @@ describe('settings, profiles, models, providers, reasoning, onboarding', () => {
     res = await s.get('/api/providers')
     body = await json(res)
     expect((body.providers as { id: string; has_key: boolean }[]).find((p) => p.id === 'deepseek')?.has_key).toBe(false)
+  })
+
+  it('POST /api/providers refuses a key the Agent writer would rewrite and leaves no runtime copy (TAL-797)', async () => {
+    const res = await post(s, '/api/providers', { provider: 'deepseek', api_key: 'sk-caf\u00e9-12345' })
+    expect(res.status).toBe(400)
+    expect(loadEnvFile(join(s.state, '.env'))).not.toHaveProperty('DEEPSEEK_API_KEY')
+    expect(s.deps.config.env.DEEPSEEK_API_KEY).toBeUndefined()
+    // The sidecar was given the key before the write and has been told to drop it again.
+    const runtime = sidecar.calls.filter((c) => c.method === 'runtime.env').slice(-2).map((c) => c.params)
+    expect(runtime).toEqual([{ set: { DEEPSEEK_API_KEY: 'sk-caf\u00e9-12345' } }, { unset: ['DEEPSEEK_API_KEY'] }])
   })
 
   it('a credential copied from the default profile .env at startup never counts for a named profile, and removing it retires the runtime copy', async () => {
@@ -1304,21 +1315,6 @@ describe('OpenRouter cost history accrues on quota reads and ships server-comput
       const res = await s.get(`/api/provider/cost-history?provider=${provider}`)
       expect(ProviderCostHistorySchema.safeParse(await res.json()).success).toBe(true)
     }
-  })
-})
-
-describe('env file writer', () => {
-  it('preserves comments and order, removes keys, appends new ones, and refuses newlines', () => {
-    const dir = join(process.env.TMPDIR ?? '/tmp', `talaria-env-${String(process.pid)}-${String(Date.now())}`)
-    mkdirSync(dir, { recursive: true })
-    const path = join(dir, '.env')
-    writeFileSync(path, '# keep me\nA=1\n\nB=2\n')
-    chmodSync(path, 0o644)
-    writeEnvFile(path, { B: null, C: 'three', A: '"one"' })
-    expect(readFileSync(path, 'utf8')).toBe('# keep me\nA="one"\n\nC=three\n')
-    expect(loadEnvFile(path)).toEqual({ A: 'one', C: 'three' })
-    expect(statSync(path).mode & 0o777).toBe(0o600)
-    expect(() => { writeEnvFile(path, { D: 'x\ny' }) }).toThrow(/newline/)
   })
 })
 

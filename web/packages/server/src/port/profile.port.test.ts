@@ -14,7 +14,7 @@ import { ProjectStore } from '../projects.js'
 import { ProfileService, splitProviderModel } from '../profiles/profiles.js'
 import { jobForApi } from '../tools/crons.js'
 import { str } from '../util.js'
-import { writeEnvFile } from '../providers/env-file.js'
+import { writeEnvFile } from '../test/env-file.js'
 
 type Json = Record<string, unknown>
 const post = (s: TestServer, path: string, body: unknown, headers: Record<string, string> = {}): Promise<Response> => s.get(path, { method: 'POST', body: JSON.stringify(body), headers: { 'content-type': 'application/json', ...headers } })

@@ -10,7 +10,7 @@ import { join, resolve } from 'node:path'
 import type { SidecarLike } from '../sidecar/client.js'
 import type { AgentConfig, Dict } from '../config/agent-config.js'
 import { dict, modelSection, parseProviderQualifiedModel, providerIdentity } from '../config/agent-config.js'
-import { writeEnvFile } from '../providers/env-file.js'
+import { writeProfileEnv } from '../providers/env-file.js'
 import { providerEnvVar, type ModelsCatalog } from '../providers/catalog.js'
 import { str } from '../util.js'
 import { isWithin, resolvePathLikePython } from '../workspace/paths.js'
@@ -221,7 +221,7 @@ export class ProfileService {
       this.incomplete.add(opts.name)
       try {
         if (opts.base_url) await this.deps.config.update(target, (c) => { c.model = { ...modelSection(c), base_url: opts.base_url } })
-        if (opts.api_key) writeEnvFile(join(target, '.env'), { [profileEnvVarFor(provider)]: opts.api_key })
+        if (opts.api_key) await writeProfileEnv(this.deps.sidecar(), target, { [profileEnvVarFor(provider)]: opts.api_key })
         if (model || provider) await this.deps.config.update(target, (c) => { const m = modelSection(c); if (model) m.default = model; if (provider) m.provider = provider; c.model = m })
       } catch (error) {
         let rolledBack = false

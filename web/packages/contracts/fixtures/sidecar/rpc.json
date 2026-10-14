@@ -27,6 +27,7 @@
           "commands.exec",
           "commands.moa_preset",
           "commands.registry",
+          "config.env_write",
           "config.get",
           "config.set",
           "cron.create",

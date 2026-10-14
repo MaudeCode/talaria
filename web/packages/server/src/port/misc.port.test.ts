@@ -14,7 +14,7 @@ import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest'
 import { FakeSidecar } from '../sidecar/fake.js'
 import { SidecarError } from '../sidecar/client.js'
 import { bootTestServer, type TestServer } from '../test/harness.js'
-import { writeEnvFile } from '../providers/env-file.js'
+import { writeEnvFile } from '../test/env-file.js'
 import { projectRunnerEventPayload } from '../api/automation-raw.js'
 import { str } from '../util.js'
 

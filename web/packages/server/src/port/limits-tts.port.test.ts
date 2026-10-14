@@ -6,7 +6,7 @@ import { join } from 'node:path'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { FakeSidecar } from '../sidecar/fake.js'
 import { bootTestServer, type TestServer } from '../test/harness.js'
-import { writeEnvFile } from '../providers/env-file.js'
+import { writeEnvFile } from '../test/env-file.js'
 import { WindowLimiter } from '../api/tools-router.js'
 import { TOOL_ARG_CONTENT_CAP, TOOL_ARG_CONTENT_KEYS, truncateToolArgs } from '../sessions/merge.js'
 

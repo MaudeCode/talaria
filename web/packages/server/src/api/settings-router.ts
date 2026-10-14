@@ -2,7 +2,6 @@
 import { implement } from '@orpc/server'
 import { RuntimeCredentialError, writeRuntimeCredential } from '../providers/runtime-env.js'
 import { settingsContract } from '@maudecode/talaria-web-contracts'
-import { join } from 'node:path'
 import { HttpError, type ApiContext } from './router.js'
 import { requestSessionIdGuard } from './session-visibility.js'
 import type { RequestContext } from '../http/context.js'
@@ -16,7 +15,7 @@ import { SessionNotFound } from '../sessions/store.js'
 import { auxiliaryModels, modelSection, canonicaliseProviderId, ConfigUnavailable, maxTokensStatus, personalityPrompt, personalityRows, reasoningStatus, setAuxiliaryModel, setDefaultModel, setMaxTokens, validReasoningEffort, type Dict } from '../config/agent-config.js'
 import { ProfileError, validateProfileName } from '../profiles/profiles.js'
 import { OnboardingError } from '../onboarding.js'
-import { writeEnvFile } from '../providers/env-file.js'
+import { EnvWriteError } from '../providers/env-file.js'
 import { displayName, providerEnvVar, stampAuxiliarySelections } from '../providers/catalog.js'
 import { OAUTH_PROVIDERS, SUPPORTED_PROVIDER_SETUPS } from '../providers/tables.js'
 import { displayBotName, QUOTA_THRESHOLDS_BY_PROFILE_KEY, SETTINGS_SPEECH_KEYS, pyBool } from '../settings.js'
@@ -458,12 +457,12 @@ async function setProviderKey(ctx: RequestContext, pid: string, apiKey: string |
     if (apiKey.includes('\n') || apiKey.includes('\r')) throw new HttpError(400, 'API key must not contain newline characters.')
     if (apiKey.length < 8) throw new HttpError(400, 'API key appears too short.')
   }
-  const envPath = join(home(ctx), '.env')
   // The running sidecar must confirm the change first: a credential the file no longer holds may not linger in it.
   try {
-    await writeRuntimeCredential({ env: ctx.deps.config.env, sidecar: ctx.deps.sidecar, log: ctx.deps.log }, ctx.deps.isRootProfile(activeProfileName(ctx)), envVar, apiKey, () => { writeEnvFile(envPath, { [envVar]: apiKey }) })
+    await writeRuntimeCredential({ env: ctx.deps.config.env, sidecar: ctx.deps.sidecar, log: ctx.deps.log }, ctx.deps.isRootProfile(activeProfileName(ctx)), home(ctx), envVar, apiKey)
   } catch (error) {
     if (error instanceof RuntimeCredentialError) throw new HttpError(503, error.message)
+    if (error instanceof EnvWriteError) throw new HttpError(error.status, `Failed to save API key: ${error.message}`, { condition: error.condition })
     throw new HttpError(400, `Failed to save API key: ${str((error as Error).message)}`)
   }
   ctx.deps.catalog.invalidate()

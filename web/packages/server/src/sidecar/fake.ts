@@ -5,9 +5,10 @@
  * pass against a shape the real sidecar would reject.
  */
 import { readdirSync, readFileSync } from 'node:fs'
-import { resolve } from 'node:path'
-import { SIDECAR_METHODS, SIDECAR_RPC_VERSION, type RuntimeDescribe, type SidecarMethodName, type SidecarParams, type SidecarResult, type SidecarResultInput } from '@maudecode/talaria-web-contracts'
+import { join, resolve } from 'node:path'
+import { RPC_ERROR_CODES, SIDECAR_METHODS, SIDECAR_RPC_VERSION, type RuntimeDescribe, type SidecarMethodName, type SidecarParams, type SidecarResult, type SidecarResultInput } from '@maudecode/talaria-web-contracts'
 import { SidecarError, type CallOptions, type SidecarLike, type SidecarStatus, type StreamFrame } from './client.js'
+import { writeEnvFile } from '../test/env-file.js'
 
 type Responder<M extends SidecarMethodName> = (params: SidecarParams<M>, emit: (frame: Omit<StreamFrame, 'seq'>) => void, opts: CallOptions) => SidecarResultInput<M> | Promise<SidecarResultInput<M>>
 
@@ -43,6 +44,16 @@ export class FakeSidecar implements SidecarLike {
     if (handshake) this.describe = SIDECAR_METHODS['runtime.handshake'].result.parse(handshake.result)
     // Every settled turn asks the goal judge (TAL-396); a fresh fake has no goal, so it answers as the sidecar does then.
     this.respond('models.speed_tiers', (params) => ({ tiers: params.routes.map(() => []) }))
+    // Stands in for the Agent's locked `.env` writer so a test reads back what a save wrote.
+    this.respond('config.env_write', (params) => {
+      const path = join(params.profile_home, '.env')
+      try {
+        writeEnvFile(path, params.updates)
+      } catch (error) {
+        throw new SidecarError((error as Error).message, { code: RPC_ERROR_CODES.invalidParams, condition: 'invalid_params' })
+      }
+      return { ok: true as const, path }
+    })
     this.respond('goals.evaluate', () => ({ status: null, should_continue: false, continuation_prompt: null, verdict: 'inactive', reason: 'no active goal', message: '' }))
   }
 
