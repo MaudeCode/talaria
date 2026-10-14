@@ -7,13 +7,14 @@
  * redelivered at turn teardown with a bounded retry budget).
  */
 import { randomUUID } from 'node:crypto'
-import { existsSync } from 'node:fs'
+import { existsSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import type { SidecarLike } from '../sidecar/client.js'
 import type { SessionChannels, StreamRegistry } from './streams.js'
 import { SessionNotFound, type SessionStore } from './store.js'
 import type { Session } from './session.js'
 import { str } from '../util.js'
+import { parseDotenv } from '../cli/dotenv.js'
 import { isDict } from './merge.js'
 import { batchUpdate, recordBackgroundUpdate } from './background-updates.js'
 import type { BackgroundActivity } from './background-tasks.js'
@@ -51,7 +52,7 @@ export interface CompletionDrainDeps {
   background?: Pick<BackgroundActivity, 'recordEvent'>
   /** TAL-933: a profile's parsed config, for its `delegation.surface_child_process_notifications`. */
   readConfig?: (profileHome: string) => Promise<Dict>
-  /** TAL-907: the server environment, for `HERMES_BACKGROUND_NOTIFICATIONS`. */
+  /** TAL-907: the server environment, for a `HERMES_BACKGROUND_NOTIFICATIONS` no profile `.env` sets. */
   env?: Record<string, string | undefined>
 }
 
@@ -205,26 +206,35 @@ export class CompletionDrain {
     return (formatWakeupPrompt(evt) ?? '').trim()
   }
 
-  /** The session's owning profile config; empty when it cannot be read. */
-  private async profileConfig(sid: string): Promise<Dict> {
-    try {
-      const session = this.deps.store.get(sid, { metadataOnly: true, promote: false, cacheOnMiss: false })
-      return (await this.deps.readConfig?.(this.deps.profileHome(session.profile ?? this.deps.activeProfile()))) ?? {}
-    } catch { return {} }
+  /** The session's owning profile home; a session without a profile belongs to the root profile (`profilesMatch`). */
+  private ownerHome(session: Session): string { return this.deps.profileHome(session.profile ?? 'default') }
+
+  /** A profile's config; null when it cannot be read. */
+  private async profileConfig(home: string): Promise<Dict | null> {
+    try { return (await this.deps.readConfig?.(home)) ?? {} } catch { return null }
   }
 
   /** The owning profile's `delegation.surface_child_process_notifications`; off, the Agent's default, when it cannot be read. */
   private async surfacesChildProcesses(sid: string): Promise<boolean> {
-    const config = await this.profileConfig(sid)
-    return isDict(config.delegation) && config.delegation.surface_child_process_notifications === true
+    let config: Dict | null
+    try { config = await this.profileConfig(this.ownerHome(this.deps.store.get(sid, { metadataOnly: true, promote: false, cacheOnMiss: false }))) } catch { return false }
+    return isDict(config?.delegation) && config.delegation.surface_child_process_notifications === true
   }
 
-  /** TAL-907 (Agent `_load_background_notifications_mode`): `HERMES_BACKGROUND_NOTIFICATIONS`, else the owning profile's
-   * `display.background_process_notifications` (YAML `false` is off). Only `off` changes Web delivery. */
-  private async notificationsOff(sid: string): Promise<boolean> {
-    let mode: unknown = this.deps.env?.HERMES_BACKGROUND_NOTIFICATIONS?.trim()
+  /**
+   * TAL-907 (Agent `_load_background_notifications_mode`): `HERMES_BACKGROUND_NOTIFICATIONS` from the profile's `.env`
+   * (which overrides the shell, as in the Agent) or the server environment, else `display.background_process_notifications`
+   * (YAML `false` is off). Only `off` changes Web delivery; null when the setting cannot be read.
+   */
+  private async notificationsOff(home: string): Promise<boolean | null> {
+    let mode: unknown
+    try { mode = parseDotenv(readFileSync(join(home, '.env'), 'utf8')).HERMES_BACKGROUND_NOTIFICATIONS?.trim() } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== 'ENOENT') return null
+    }
+    mode ||= this.deps.env?.HERMES_BACKGROUND_NOTIFICATIONS?.trim()
     if (!mode) {
-      const config = await this.profileConfig(sid)
+      const config = await this.profileConfig(home)
+      if (!config) return null
       mode = isDict(config.display) ? config.display.background_process_notifications : undefined
     }
     return mode === false || str(mode).trim().toLowerCase() === 'off'
@@ -252,9 +262,6 @@ export class CompletionDrain {
     this.deps.background?.recordEvent(sid, evt, prompt)
     if (backgroundEventKind(evt) !== 'progress') this.emitCoalesced(sid, this.buildPayload(evt, sid, prompt))
     if (!prompt) return true
-    // TAL-907: `off` mutes process-driven wakeups; the record and status row above are the whole delivery. A subagent
-    // result is not a process notification and still lands, as in the Agent.
-    if (evt.type !== 'async_delegation' && await this.notificationsOff(sid)) return true
     const entry: Deferred = { process_id: deliveryKey(evt, processId), wakeup_prompt: prompt, event: evt }
     if (this.hasActiveTurn(sid)) this.defer(sid, entry)
     else await this.startWakeup(sid, [entry])
@@ -467,7 +474,8 @@ export class CompletionDrain {
   }
 
   /** Python `_start_server_side_wakeup_turn`: one batched turn; 409 re-defers, other failures re-defer with a timed retry. */
-  private async startWakeup(sid: string, batched: Deferred[]): Promise<boolean> {
+  private async startWakeup(sid: string, wakeups: Deferred[]): Promise<boolean> {
+    let batched = wakeups
     const redefer = (entries: Deferred[]): void => { for (const e of entries) this.defer(sid, e) }
     let session: Session
     try { session = this.deps.store.get(sid) } catch (error) {
@@ -478,7 +486,20 @@ export class CompletionDrain {
     if (session.pre_compression_snapshot) { redefer(batched); this.deps.log(`[webui] WARNING: automatic wakeup retained: sealed snapshot ${sid} cannot own a turn`); return false }
     // TAL-534: the delegation's ledger row lives in the session's own profile, whichever profile is active now.
     let home: string
-    try { home = this.deps.profileHome(session.profile ?? this.deps.activeProfile()) } catch (error) { redefer(batched); this.deps.log(`[webui] WARNING: server-side wakeup retained for session ${sid}: ${(error as Error).message}`); return false }
+    try { home = this.ownerHome(session) } catch (error) { redefer(batched); this.deps.log(`[webui] WARNING: server-side wakeup retained for session ${sid}: ${(error as Error).message}`); return false }
+    // TAL-907: `off` mutes process-driven wakeups at delivery, so a deferred or held wakeup follows the current setting; the
+    // drained event's record and status row are its whole delivery. A subagent result is not a process notification and
+    // still lands, as in the Agent. A setting that cannot be read retains the wakeups rather than start a turn.
+    const muted = batched.filter((e) => e.event?.type !== 'async_delegation')
+    if (muted.length) {
+      const off = await this.notificationsOff(home)
+      if (off === null) { redefer(batched); this.scheduleRetry(sid); this.deps.log(`[webui] WARNING: server-side wakeup retained for session ${sid}: background_process_notifications is unreadable; retrying`); return false }
+      if (off) {
+        this.release(sid, muted)
+        batched = batched.filter((e) => !muted.includes(e))
+        if (!batched.length) return false
+      }
+    }
     if (await this.holdWhilePaused(sid, session, home, batched)) return false
     const claimed = await this.claimBatch(home, batched)
     if (!claimed) { redefer(batched); this.scheduleRetry(sid); return false }
