@@ -6351,8 +6351,12 @@
       },
       "context": {
         "type": "object",
-        "propertyNames": {
-          "type": "string"
+        "properties": {
+          "next_turn_threshold_tokens": {
+            "type": "integer",
+            "exclusiveMinimum": 0,
+            "maximum": 9007199254740991
+          }
         },
         "additionalProperties": {}
       },
