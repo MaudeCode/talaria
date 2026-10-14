@@ -524,9 +524,30 @@ export const ProfileSwitchSchema = ProfilesSchema.extend({ is_default: z.boolean
 /** `/api/reasoning`: config.yaml agent.reasoning_effort / display.show_reasoning, resolved for a model. */
 export const ReasoningStatusSchema = z.looseObject({ show_reasoning: z.boolean().optional(), reasoning_effort: z.string().nullable().optional(), supported_efforts: z.array(z.string()).optional(), supports_reasoning_effort: z.boolean().optional(), supports_thinking_toggle: z.boolean().optional() })
 export type ReasoningStatus = z.infer<typeof ReasoningStatusSchema>
-/** TAL-301: `provider_id`/`bare_id` are the server's split of `id`; clients match a stored `(model, provider)` against them and send `id` back. */
-export const ModelEntrySchema = z.looseObject({ id: z.string(), label: z.string().optional(), provider: z.string().optional(), provider_id: z.string().optional(), bare_id: z.string().optional(), supports_fast_tier: z.boolean().optional(), supported_speed_tiers: z.array(SpeedTierSchema).optional() })
-export const ModelGroupSchema = z.looseObject({ provider: z.string(), provider_id: z.string().optional(), models: z.array(ModelEntrySchema), extra_models: z.array(ModelEntrySchema).optional() })
+export const QuotaLevelSchema = z.enum(['healthy', 'warning', 'critical', 'stale', 'unavailable'])
+export type QuotaLevel = z.infer<typeof QuotaLevelSchema>
+/**
+ * TAL-301: `provider_id`/`bare_id` are the server's split of `id`; clients match a stored `(model, provider)` against them and send `id` back.
+ * TAL-807: `limit` is present while the provider's credential pool cannot serve this model until `resets_at` (ISO-8601 UTC).
+ */
+export const ModelEntrySchema = z.looseObject({
+  id: z.string(), label: z.string().optional(), provider: z.string().optional(), provider_id: z.string().optional(), bare_id: z.string().optional(), supports_fast_tier: z.boolean().optional(), supported_speed_tiers: z.array(SpeedTierSchema).optional(),
+  limit: z.object({ scope: z.literal('model'), resets_at: z.string() }).optional(),
+})
+/** TAL-807: a group's rate limit: every pool account benched until `resets_at`, else the entry ids (`models`) cooling down until their reset. */
+export const ModelGroupLimitSchema = z.discriminatedUnion('scope', [
+  z.object({ scope: z.literal('account'), resets_at: z.string() }),
+  z.object({ scope: z.literal('models'), models: z.record(z.string(), z.string()) }),
+])
+/**
+ * TAL-807: `limit` is the provider's live pool rate limit; `quota_level` is the TAL-411 `remaining` level of the tightest
+ * account-scope window in the provider's last account-usage read (a model-family window never counts), absent without one
+ * and while the group is account-limited.
+ */
+export const ModelGroupSchema = z.looseObject({
+  provider: z.string(), provider_id: z.string().optional(), models: z.array(ModelEntrySchema), extra_models: z.array(ModelEntrySchema).optional(),
+  limit: ModelGroupLimitSchema.optional(), quota_level: QuotaLevelSchema.optional(),
+})
 export const ModelsSchema = z.looseObject({ active_provider: NullableString.optional(), default_model: z.string().optional(), default_provider_id: NullableString.optional(), default_bare_id: z.string().optional(), default_option_id: NullableString.optional(), groups: z.array(ModelGroupSchema), aliases: z.record(z.string(), Json).optional(), configured_model_badges: z.record(z.string(), Json).optional() })
 export type Models = z.infer<typeof ModelsSchema>
 /** TAL-603: where a card's credential comes from; `other` is a source the server cannot name, shown as its raw `key_source`. */
@@ -544,8 +565,6 @@ export const ProviderSchema = z.looseObject({
   is_active: z.boolean().optional(), key_source_kind: KeySourceKindSchema.nullable().optional(), removable: z.boolean().optional(),
 })
 export const ProvidersSchema = z.looseObject({ providers: z.array(ProviderSchema), active_provider: NullableString.optional() })
-export const QuotaLevelSchema = z.enum(['healthy', 'warning', 'critical', 'stale', 'unavailable'])
-export type QuotaLevel = z.infer<typeof QuotaLevelSchema>
 /** TAL-411: the server's classification per colour basis; `/api/provider/quotas` only, at the profile's thresholds. */
 export const QuotaUrgencySchema = z.looseObject({ remaining: QuotaLevelSchema, pace: QuotaLevelSchema.describe('Burn rate and pace tolerance; the remaining classification when the window has no pace.') })
 /** TAL-409: a window's pace as of the envelope's `computed_at`. Stale once `valid_until` (the window's reset) passes. */

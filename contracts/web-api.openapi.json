@@ -43452,6 +43452,21 @@
                                       "service_tier"
                                     ]
                                   }
+                                },
+                                "limit": {
+                                  "type": "object",
+                                  "properties": {
+                                    "scope": {
+                                      "const": "model"
+                                    },
+                                    "resets_at": {
+                                      "type": "string"
+                                    }
+                                  },
+                                  "required": [
+                                    "scope",
+                                    "resets_at"
+                                  ]
                                 }
                               },
                               "required": [
@@ -43512,6 +43527,21 @@
                                       "service_tier"
                                     ]
                                   }
+                                },
+                                "limit": {
+                                  "type": "object",
+                                  "properties": {
+                                    "scope": {
+                                      "const": "model"
+                                    },
+                                    "resets_at": {
+                                      "type": "string"
+                                    }
+                                  },
+                                  "required": [
+                                    "scope",
+                                    "resets_at"
+                                  ]
                                 }
                               },
                               "required": [
@@ -43519,6 +43549,56 @@
                               ],
                               "additionalProperties": {}
                             }
+                          },
+                          "limit": {
+                            "anyOf": [
+                              {
+                                "type": "object",
+                                "properties": {
+                                  "scope": {
+                                    "const": "account"
+                                  },
+                                  "resets_at": {
+                                    "type": "string"
+                                  }
+                                },
+                                "required": [
+                                  "scope",
+                                  "resets_at"
+                                ]
+                              },
+                              {
+                                "type": "object",
+                                "properties": {
+                                  "scope": {
+                                    "const": "models"
+                                  },
+                                  "models": {
+                                    "type": "object",
+                                    "propertyNames": {
+                                      "type": "string"
+                                    },
+                                    "additionalProperties": {
+                                      "type": "string"
+                                    }
+                                  }
+                                },
+                                "required": [
+                                  "scope",
+                                  "models"
+                                ]
+                              }
+                            ]
+                          },
+                          "quota_level": {
+                            "enum": [
+                              "healthy",
+                              "warning",
+                              "critical",
+                              "stale",
+                              "unavailable"
+                            ],
+                            "type": "string"
                           }
                         },
                         "required": [
@@ -43734,6 +43814,21 @@
                                           "service_tier"
                                         ]
                                       }
+                                    },
+                                    "limit": {
+                                      "type": "object",
+                                      "properties": {
+                                        "scope": {
+                                          "const": "model"
+                                        },
+                                        "resets_at": {
+                                          "type": "string"
+                                        }
+                                      },
+                                      "required": [
+                                        "scope",
+                                        "resets_at"
+                                      ]
                                     }
                                   },
                                   "required": [
@@ -43794,6 +43889,21 @@
                                           "service_tier"
                                         ]
                                       }
+                                    },
+                                    "limit": {
+                                      "type": "object",
+                                      "properties": {
+                                        "scope": {
+                                          "const": "model"
+                                        },
+                                        "resets_at": {
+                                          "type": "string"
+                                        }
+                                      },
+                                      "required": [
+                                        "scope",
+                                        "resets_at"
+                                      ]
                                     }
                                   },
                                   "required": [
@@ -43801,6 +43911,56 @@
                                   ],
                                   "additionalProperties": {}
                                 }
+                              },
+                              "limit": {
+                                "anyOf": [
+                                  {
+                                    "type": "object",
+                                    "properties": {
+                                      "scope": {
+                                        "const": "account"
+                                      },
+                                      "resets_at": {
+                                        "type": "string"
+                                      }
+                                    },
+                                    "required": [
+                                      "scope",
+                                      "resets_at"
+                                    ]
+                                  },
+                                  {
+                                    "type": "object",
+                                    "properties": {
+                                      "scope": {
+                                        "const": "models"
+                                      },
+                                      "models": {
+                                        "type": "object",
+                                        "propertyNames": {
+                                          "type": "string"
+                                        },
+                                        "additionalProperties": {
+                                          "type": "string"
+                                        }
+                                      }
+                                    },
+                                    "required": [
+                                      "scope",
+                                      "models"
+                                    ]
+                                  }
+                                ]
+                              },
+                              "quota_level": {
+                                "enum": [
+                                  "healthy",
+                                  "warning",
+                                  "critical",
+                                  "stale",
+                                  "unavailable"
+                                ],
+                                "type": "string"
                               }
                             },
                             "required": [
@@ -44450,6 +44610,21 @@
                                       "service_tier"
                                     ]
                                   }
+                                },
+                                "limit": {
+                                  "type": "object",
+                                  "properties": {
+                                    "scope": {
+                                      "const": "model"
+                                    },
+                                    "resets_at": {
+                                      "type": "string"
+                                    }
+                                  },
+                                  "required": [
+                                    "scope",
+                                    "resets_at"
+                                  ]
                                 }
                               },
                               "required": [
@@ -46328,6 +46503,21 @@
                                           "service_tier"
                                         ]
                                       }
+                                    },
+                                    "limit": {
+                                      "type": "object",
+                                      "properties": {
+                                        "scope": {
+                                          "const": "model"
+                                        },
+                                        "resets_at": {
+                                          "type": "string"
+                                        }
+                                      },
+                                      "required": [
+                                        "scope",
+                                        "resets_at"
+                                      ]
                                     }
                                   },
                                   "required": [
@@ -46388,6 +46578,21 @@
                                           "service_tier"
                                         ]
                                       }
+                                    },
+                                    "limit": {
+                                      "type": "object",
+                                      "properties": {
+                                        "scope": {
+                                          "const": "model"
+                                        },
+                                        "resets_at": {
+                                          "type": "string"
+                                        }
+                                      },
+                                      "required": [
+                                        "scope",
+                                        "resets_at"
+                                      ]
                                     }
                                   },
                                   "required": [
@@ -46395,6 +46600,56 @@
                                   ],
                                   "additionalProperties": {}
                                 }
+                              },
+                              "limit": {
+                                "anyOf": [
+                                  {
+                                    "type": "object",
+                                    "properties": {
+                                      "scope": {
+                                        "const": "account"
+                                      },
+                                      "resets_at": {
+                                        "type": "string"
+                                      }
+                                    },
+                                    "required": [
+                                      "scope",
+                                      "resets_at"
+                                    ]
+                                  },
+                                  {
+                                    "type": "object",
+                                    "properties": {
+                                      "scope": {
+                                        "const": "models"
+                                      },
+                                      "models": {
+                                        "type": "object",
+                                        "propertyNames": {
+                                          "type": "string"
+                                        },
+                                        "additionalProperties": {
+                                          "type": "string"
+                                        }
+                                      }
+                                    },
+                                    "required": [
+                                      "scope",
+                                      "models"
+                                    ]
+                                  }
+                                ]
+                              },
+                              "quota_level": {
+                                "enum": [
+                                  "healthy",
+                                  "warning",
+                                  "critical",
+                                  "stale",
+                                  "unavailable"
+                                ],
+                                "type": "string"
                               }
                             },
                             "required": [
@@ -46836,6 +47091,21 @@
                                           "service_tier"
                                         ]
                                       }
+                                    },
+                                    "limit": {
+                                      "type": "object",
+                                      "properties": {
+                                        "scope": {
+                                          "const": "model"
+                                        },
+                                        "resets_at": {
+                                          "type": "string"
+                                        }
+                                      },
+                                      "required": [
+                                        "scope",
+                                        "resets_at"
+                                      ]
                                     }
                                   },
                                   "required": [
@@ -46896,6 +47166,21 @@
                                           "service_tier"
                                         ]
                                       }
+                                    },
+                                    "limit": {
+                                      "type": "object",
+                                      "properties": {
+                                        "scope": {
+                                          "const": "model"
+                                        },
+                                        "resets_at": {
+                                          "type": "string"
+                                        }
+                                      },
+                                      "required": [
+                                        "scope",
+                                        "resets_at"
+                                      ]
                                     }
                                   },
                                   "required": [
@@ -46903,6 +47188,56 @@
                                   ],
                                   "additionalProperties": {}
                                 }
+                              },
+                              "limit": {
+                                "anyOf": [
+                                  {
+                                    "type": "object",
+                                    "properties": {
+                                      "scope": {
+                                        "const": "account"
+                                      },
+                                      "resets_at": {
+                                        "type": "string"
+                                      }
+                                    },
+                                    "required": [
+                                      "scope",
+                                      "resets_at"
+                                    ]
+                                  },
+                                  {
+                                    "type": "object",
+                                    "properties": {
+                                      "scope": {
+                                        "const": "models"
+                                      },
+                                      "models": {
+                                        "type": "object",
+                                        "propertyNames": {
+                                          "type": "string"
+                                        },
+                                        "additionalProperties": {
+                                          "type": "string"
+                                        }
+                                      }
+                                    },
+                                    "required": [
+                                      "scope",
+                                      "models"
+                                    ]
+                                  }
+                                ]
+                              },
+                              "quota_level": {
+                                "enum": [
+                                  "healthy",
+                                  "warning",
+                                  "critical",
+                                  "stale",
+                                  "unavailable"
+                                ],
+                                "type": "string"
                               }
                             },
                             "required": [

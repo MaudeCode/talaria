@@ -278,7 +278,7 @@ export const settingsRouter = os.router({
     list: os.models.list.handler(({ input, context: { ctx } }) => run(() => {
       const freshness = str(input.freshness).trim().toLowerCase()
       if (freshness && freshness !== 'session_visit') throw new HttpError(400, `unknown models freshness: ${freshness}`)
-      return ctx.deps.catalog.models(home(ctx))
+      return ctx.deps.catalog.pickerModels(home(ctx), activeProfileName(ctx))
     })),
     live: os.models.live.handler(({ input, context: { ctx } }) => run(() => ctx.deps.catalog.liveModels(home(ctx), str(input.provider)))),
     refresh: os.models.refresh.handler(({ input, context: { ctx } }) => run(async () => {
@@ -287,7 +287,7 @@ export const settingsRouter = os.router({
       ctx.deps.agentConfig.invalidate(home(ctx))
       // The Agent keeps its own catalog cache; a provider refresh reaches past it.
       if (provider) await ctx.deps.catalog.liveModelIds(home(ctx), provider, { force: true })
-      return { ok: true as const, provider, models: await ctx.deps.catalog.models(home(ctx)) }
+      return { ok: true as const, provider, models: await ctx.deps.catalog.pickerModels(home(ctx), activeProfileName(ctx)) }
     })),
     auxiliary: os.models.auxiliary.handler(({ context: { ctx } }) => run(() => auxiliaryState(ctx) as never)),
     set: os.models.set.handler(({ input, context: { ctx } }) => run(async () => {

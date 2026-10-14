@@ -26,9 +26,12 @@ import {
   modelSection, parseProviderQualifiedModel, providerIdentity, resolveProviderAlias, type AgentConfig, type Config, type Dict, type SpeedTier,
 } from '../config/agent-config.js'
 
-export interface ModelEntry { id: string; label: string; supports_fast_tier?: boolean; supported_speed_tiers?: SpeedTier[]; provider_id?: string; bare_id?: string }
+export interface ModelEntry { id: string; label: string; supports_fast_tier?: boolean; supported_speed_tiers?: SpeedTier[]; provider_id?: string; bare_id?: string; limit?: { scope: 'model'; resets_at: string } }
 type PluginProvider = SidecarResult<'plugins.providers'>['providers'][number]
-export interface ModelGroup { provider: string; provider_id: string; models: ModelEntry[]; extra_models?: ModelEntry[] }
+export interface ModelGroup {
+  provider: string; provider_id: string; models: ModelEntry[]; extra_models?: ModelEntry[]
+  limit?: { scope: 'account'; resets_at: string } | { scope: 'models'; models: Record<string, string> }; quota_level?: QuotaLevel
+}
 
 /** Python `_model_matches_picker_selection`: same bare id, and the routing hints agree when the selection names one. */
 function modelMatchesPickerSelection(modelId: string, selected: string, providerId: string): boolean {
@@ -182,6 +185,8 @@ const unqualifiedModelId = (id: string): string => parseProviderQualifiedModel(i
 const MODEL_PICKER_OVERFLOW_THRESHOLD = 25
 const MODEL_PICKER_VISIBLE_TARGET = 15
 const ACCOUNT_USAGE_CACHE_TTL_S = 45
+/** TAL-807: the oldest account-usage read the picker still shows a quota level from. */
+const PICKER_USAGE_MAX_AGE_S = 600
 const LIVE_TTL_S = 86_400
 /** TAL-799: the Agent's `_PROVIDER_MODELS_FALLBACK_TTL`; its placeholder for an unreachable catalog is re-probed soon. */
 const FALLBACK_TTL_S = 60
@@ -973,6 +978,66 @@ export class ProviderCatalog {
     }
     const stamped = kept.map((g) => ({ ...g, models: stampModelEntries(g.models, g.provider_id), ...(g.extra_models ? { extra_models: stampModelEntries(g.extra_models, g.provider_id) } : {}) }))
     return this.remember(profileHome, { source, unconfirmed }, { ...defaults, groups: stamped, aliases, configured_model_badges: this.badges(kept, active, defaultModel, fallbackCfg) })
+  }
+
+  /**
+   * TAL-807: the picker catalog (`/api/models`) with each group's live pool rate limit, read per request so an expired one
+   * is gone, and its quota level. The cached catalog holds neither; a failed read leaves them out.
+   */
+  async pickerModels(profileHome: string, profile: string): Promise<ModelsCatalog> {
+    const catalog = await this.models(profileHome)
+    const entries = (g: ModelGroup): ModelEntry[] => [...g.models, ...(g.extra_models ?? [])]
+    let limits: SidecarResult<'usage.limits'>['limits'] = {}
+    try {
+      const sidecar = this.deps.sidecar()
+      const providers = catalog.groups.map((g) => ({ slug: g.provider_id, models: entries(g).map((e) => e.bare_id ?? e.id) }))
+      if (sidecar) limits = (await sidecar.call('usage.limits', { profile_home: profileHome, providers })).limits
+    } catch (error) {
+      this.deps.log(`[catalog] pool limits failed: ${str((error as Error).message)}`)
+    }
+    const thresholds = this.deps.quotaThresholds?.(profile) ?? QUOTA_THRESHOLD_DEFAULTS
+    for (const g of catalog.groups) {
+      const limit = limits[g.provider_id]
+      if (limit?.scope === 'account') g.limit = limit
+      if (limit?.scope === 'models') {
+        // The sidecar answers by bare id; the picker names entries by id.
+        const cooled: Record<string, string> = {}
+        for (const e of entries(g)) {
+          const resetsAt = limit.models[e.bare_id ?? e.id]
+          if (resetsAt) { e.limit = { scope: 'model', resets_at: resetsAt }; cooled[e.id] = resetsAt }
+        }
+        if (Object.keys(cooled).length) g.limit = { scope: 'models', models: cooled }
+      }
+      // An account limit already says the login is out; the quota level would only repeat it.
+      const level = g.limit?.scope === 'account' ? null : this.pickerQuotaLevel(profileHome, g.provider_id, thresholds)
+      if (level) g.quota_level = level
+    }
+    return catalog
+  }
+
+  /** TAL-807: account-usage reads the picker started in the background, by `accountUsageCache` key. */
+  private readonly pickerUsageReads = new Set<string>()
+
+  /**
+   * TAL-807: the TAL-411 `remaining` level of the tightest account-scope window in the provider's cached account-usage
+   * read; a model-family window (Opus or Sonnet weekly) never counts. The picker never waits on a usage API: a read past
+   * the cache TTL starts one in the background, and one past `PICKER_USAGE_MAX_AGE_S` shows nothing.
+   */
+  private pickerQuotaLevel(profileHome: string, pid: string, t: QuotaThresholds): QuotaLevel | null {
+    if (!ACCOUNT_USAGE_PROVIDERS.has(pid)) return null
+    const key = `${profileHome}\0${pid}\0`
+    const cached = this.accountUsageCache.get(key)
+    const age = cached ? this.deps.now() - cached.at : Infinity
+    if (age > ACCOUNT_USAGE_CACHE_TTL_S && !this.pickerUsageReads.has(key)) {
+      this.pickerUsageReads.add(key)
+      void this.quota(profileHome, pid).catch(() => undefined).finally(() => this.pickerUsageReads.delete(key))
+    }
+    const limits = cached?.limits
+    if (!limits?.available || age > PICKER_USAGE_MAX_AGE_S) return null
+    const raw = (Array.isArray(limits.windows) ? limits.windows : []).filter((w) => isDict(w) && w.scope !== 'model')
+    const tightest = normalizeQuotaWindows(raw, this.deps.now()).windows
+      .reduce<QuotaWindow | undefined>((a, w) => (w.remaining_percent !== null && w.remaining_percent < (a?.remaining_percent ?? Infinity) ? w : a), undefined)
+    return tightest ? quotaLevel(tightest, limits.stale ? 'stale' : 'available', 'remaining', t) : null
   }
 
   /** Stamps the default's entry id and keeps the catalog for `modelOptionFor`. */

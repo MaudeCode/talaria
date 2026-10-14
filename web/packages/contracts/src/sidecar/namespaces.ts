@@ -324,11 +324,18 @@ export const BalanceResultSchema = z.object({
   windows: z.array(z.object({ key: z.enum(['rolling', 'weekly', 'monthly']), used_percent: z.number(), reset_at: z.string(), rate_limited: z.boolean() })),
 })
 const CredentialId = z.string().min(1).nullable().optional()
+/** TAL-807: the Agent's `CredentialPool.limit_state`: every live account benched until `resets_at`, else the given models no usable account serves until their ISO reset. */
+export const PoolLimitSchema = z.discriminatedUnion('scope', [
+  z.object({ scope: z.literal('account'), resets_at: z.string() }),
+  z.object({ scope: z.literal('models'), models: z.record(z.string(), z.string()) }),
+])
 export const USAGE_METHODS = {
   'usage.account': { params: ProfileHomeParams.extend({ provider: z.string().min(1), base_url: z.string().nullable().optional(), api_key: z.string().nullable().optional(), credential_id: CredentialId }), result: z.object({ snapshot: AccountUsageSnapshotSchema.nullable() }) },
   'usage.pool': { params: ProfileHomeParams.extend({ provider: z.string().min(1), api_key: z.string().nullable().optional() }), result: z.object({ entries: z.array(PoolEntrySchema) }) },
   /** TAL-548: the providers whose persisted credential pool holds an account the user added, keyed or not. */
   'usage.pool_providers': { params: ProfileHomeParams, result: z.object({ providers: z.array(z.string()) }) },
+  /** TAL-807: pool rate limits by provider slug, only for pooled providers that are limited; `models` are bare ids. */
+  'usage.limits': { params: ProfileHomeParams.extend({ providers: z.array(z.object({ slug: z.string().min(1), models: z.array(z.string()) })) }), result: z.object({ limits: z.record(z.string(), PoolLimitSchema) }) },
   'usage.balance': { params: ProfileHomeParams.extend({ provider: z.enum(['openrouter', 'deepseek', 'opencode-go']), credential_id: CredentialId, api_key: z.string().nullable().optional() }), result: BalanceResultSchema },
 } as const
 export const CONFIG_METHODS = {

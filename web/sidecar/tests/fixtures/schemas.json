@@ -4332,6 +4332,66 @@
     ],
     "additionalProperties": false
   },
+  "usage.limits": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "properties": {
+      "limits": {
+        "type": "object",
+        "propertyNames": {
+          "type": "string"
+        },
+        "additionalProperties": {
+          "oneOf": [
+            {
+              "type": "object",
+              "properties": {
+                "scope": {
+                  "type": "string",
+                  "const": "account"
+                },
+                "resets_at": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "scope",
+                "resets_at"
+              ],
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "properties": {
+                "scope": {
+                  "type": "string",
+                  "const": "models"
+                },
+                "models": {
+                  "type": "object",
+                  "propertyNames": {
+                    "type": "string"
+                  },
+                  "additionalProperties": {
+                    "type": "string"
+                  }
+                }
+              },
+              "required": [
+                "scope",
+                "models"
+              ],
+              "additionalProperties": false
+            }
+          ]
+        }
+      }
+    },
+    "required": [
+      "limits"
+    ],
+    "additionalProperties": false
+  },
   "usage.balance": {
     "$schema": "https://json-schema.org/draft/2020-12/schema",
     "type": "object",

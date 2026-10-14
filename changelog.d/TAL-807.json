@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Added",
+      "summary": "The model picker shows when a provider login or a single model is rate-limited and when it resets, and flags a provider whose account quota is running low; a per-model weekly cap such as Opus never marks the whole account.",
+      "highlight": false,
+      "components": ["web"]
+    }
+  ]
+}

@@ -89,6 +89,28 @@ describe('ModelChip', () => {
     await userEvent.click(within(await screen.findByRole('group', { name: 'Anthropic' })).getByRole('menuitemradio', { name: 'M' }))
     expect(onChange).toHaveBeenCalledWith('@custom:localhost:8080:m', 'custom:localhost:8080')
   })
+
+  it('shows the server\'s account limit, per-model cooldown and quota level with local reset times (TAL-807)', async () => {
+    const resetsAt = new Date(Date.now() + 60 * 60_000)
+    const time = resetsAt.toLocaleString('en', resetsAt.toDateString() === new Date().toDateString() ? { hour: 'numeric', minute: '2-digit' } : { weekday: 'short', hour: 'numeric', minute: '2-digit' })
+    const iso = resetsAt.toISOString()
+    catalog = { ...COLON_CATALOG, groups: [
+      { ...COLON_CATALOG.groups[0]!, limit: { scope: 'models', models: { 'claude-opus-4.7': iso } }, quota_level: 'warning', models: [{ ...COLON_CATALOG.groups[0]!.models[0]!, limit: { scope: 'model', resets_at: iso } }, COLON_CATALOG.groups[0]!.models[1]!] },
+      { ...COLON_CATALOG.groups[1]!, limit: { scope: 'account', resets_at: iso } },
+      { ...COLON_CATALOG.groups[2]!, quota_level: 'critical' },
+      { ...COLON_CATALOG.groups[3]!, quota_level: 'healthy' },
+    ] }
+    renderChip({ model: null, optionId: null })
+    await userEvent.click(screen.getByRole('button'))
+    const anthropic = await screen.findByRole('group', { name: /^Anthropic/ })
+    expect(within(anthropic).getByRole('menuitemradio', { name: /Claude Opus 4\.7/ })).toHaveTextContent(`Limited until ${time}`)
+    expect(within(anthropic).getByRole('menuitemradio', { name: 'M' })).not.toHaveTextContent('Limited')
+    expect(anthropic).toHaveTextContent('Low quota')
+    expect(screen.getByRole('group', { name: /^Gemini/ })).toHaveTextContent(`Limited until ${time}`)
+    expect(screen.getByRole('group', { name: /^Google/ })).toHaveTextContent('Quota nearly out')
+    // A healthy level shows nothing.
+    expect(screen.getByRole('group', { name: 'Ollama' })).not.toHaveTextContent(/quota|Limited/i)
+  })
 })
 
 describe('ToolsetsChip', () => {
