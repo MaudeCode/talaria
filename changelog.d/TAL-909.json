@@ -1,0 +1,12 @@
+{
+  "entries": [
+    {
+      "category": "Added",
+      "summary": "The App now shows added and removed lines for file rewrites and skill edits, as it does for patches, both live and after a reload.",
+      "highlight": false,
+      "components": [
+        "web"
+      ]
+    }
+  ]
+}

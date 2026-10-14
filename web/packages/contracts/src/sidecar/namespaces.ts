@@ -522,6 +522,8 @@ const Text = z.object({ text: z.string() }).catchall(Json)
  * (scalars as sent, text and nested values as capped text) or its capped text. The server decides `is_error` from it and never forwards it; `is_error` is only an older sidecar's `false`.
  * A `todo` tool's frame also carries `todo_result`, the tool's full result text, which the server turns into `todo_state` (TAL-397) and never forwards.
  * A result with a string `diff` also carries `result_diff`, that whole diff, which the server turns into `edit_diff` (TAL-448) and never forwards.
+ * TAL-909: `display_metadata` is the dict the sidecar returned for the Agent to persist on the tool-result row (a file edit's unified `diff`
+ * from the Agent's before-snapshot); the server turns its `diff` into `edit_diff` when the result has none, and never forwards it.
  */
 const ToolFrame = z.object({ event_type: z.string(), name: z.string().nullable().optional(), preview: Json.optional(), args: Loose.optional(), tid: z.string().optional(), is_error: z.boolean().optional() }).catchall(Json)
 export const ChatStreamSchema = z.discriminatedUnion('event', [

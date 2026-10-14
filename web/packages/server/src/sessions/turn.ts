@@ -723,12 +723,13 @@ export class TurnRunner {
             case 'tool_complete': {
               // TAL-313: the server decides failure from the sidecar's raw result, which never leaves the server; TAL-315: so
               // are its display sections, which keep the stderr and exit code the flat preview drops.
-              const { raw_result: rawResult, todo_result: todoResult, result_diff: resultDiff, ...complete } = data
+              const { raw_result: rawResult, todo_result: todoResult, result_diff: resultDiff, display_metadata: displayMetadata, ...complete } = data
               const outcome = toolOutcome(rawResult)
               complete.is_error = outcome.is_error
               if (rawResult !== undefined) complete.result_view = outcome.result_view
-              // TAL-448: a file edit's change, counted over the whole diff the sidecar forwards; redacted with the frame.
-              const editDiff = toolEditDiff(data.name, { diff: resultDiff })
+              // TAL-448: a file edit's change, counted over the whole diff the sidecar forwards; redacted with the frame. TAL-909:
+              // else the diff in the metadata the Agent persisted on the result row, which a reload reads the same way.
+              const editDiff = toolEditDiff(data.name, { diff: resultDiff }, displayMetadata)
               if (editDiff) complete.edit_diff = editDiff
               const tc = liveToolCalls[completedToolIndex(liveToolCalls, str(data.tid), data.name)]
               if (tc) {

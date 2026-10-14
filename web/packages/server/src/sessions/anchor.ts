@@ -396,7 +396,7 @@ export function buildTurnScene(turn: [Record<string, unknown>, number][], opts: 
       const clipped = shown?._content_truncated === true || (reply !== undefined && resultView !== null && viewCapped(resultView, toolResultView(reply.content, Infinity)))
       const name = str(call.name) || str(isDict(call.function) ? call.function.name : '') || 'tool'
       // TAL-448: a file edit's change, likewise from the full result.
-      const editDiff = reply ? toolEditDiff(name, reply.content) : decidedEditDiff(call.edit_diff)
+      const editDiff = reply ? toolEditDiff(name, reply.content, reply.display_metadata) : decidedEditDiff(call.edit_diff)
       push({ row_id: `tool:${id}`, role: 'tool', ...at, tool: {
         id, name, args: toolArgs(call),
         preview: str(call.preview) || null, result, result_view: resultView, ...(editDiff ? { edit_diff: editDiff } : {}), done: typeof call.done === 'boolean' ? call.done : true,

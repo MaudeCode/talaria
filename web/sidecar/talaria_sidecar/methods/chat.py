@@ -121,6 +121,31 @@ def _result_diff(raw: Any) -> str | None:
     return diff if isinstance(diff, str) else None
 
 
+def _edit_snapshot(name: str, args: Any, task_id: str) -> Any:
+    """TAL-909: the Agent's before-state of a file edit, through the task's terminal; None for a remote backend (the
+    Agent never diffs an unrelated local file), a non-edit tool, or any failure."""
+    try:
+        from agent.display import capture_local_edit_snapshot
+
+        return capture_local_edit_snapshot(name, args, task_id=task_id)
+    except Exception:  # noqa: BLE001
+        return None
+
+
+def _edit_metadata(name: str, args: Any, result: Any, snapshot: Any) -> dict:
+    """TAL-909: a tool-result row's ``display_metadata``: an edit's unified ``diff`` from its snapshot, which the server
+    turns into ``edit_diff``. Empty when the result carries its own ``diff`` (``patch``), which the server already reads."""
+    if snapshot is None or _result_diff(result) is not None:
+        return {}
+    try:
+        from agent.display import extract_edit_diff
+
+        diff = extract_edit_diff(name, result, function_args=args, snapshot=snapshot)
+    except Exception:  # noqa: BLE001
+        return {}
+    return {"diff": diff} if diff else {}
+
+
 def _raw_result(raw: Any, limit: int = _TOOL_RESULT_SNIPPET_MAX) -> Any:
     """The tool result as the server's outcome rule reads it, bounded: a dict (or JSON-object text) keeps its first
     ``_RAW_RESULT_MAX_KEYS`` top-level fields plus its outcome fields, scalars as they are, text and non-empty nested
@@ -1265,6 +1290,8 @@ def start(ctx: CallContext, params: dict) -> dict:  # noqa: PLR0915 - one turn, 
         live_tool_calls: list[dict] = []
         started_ids: set[str] = set()
         completed_ids: set[str] = set()
+        edit_snapshots: dict[str, Any] = {}
+        prepared_metadata: dict[str, dict] = {}
         token_sent = [False]
 
         def on_token(text):
@@ -1290,6 +1317,9 @@ def start(ctx: CallContext, params: dict) -> dict:  # noqa: PLR0915 - one turn, 
                 return
             if tid:
                 started_ids.add(tid)
+                snapshot = _edit_snapshot(name, args, session_id)
+                if snapshot is not None:
+                    edit_snapshots[tid] = snapshot
             live_tool_calls.append({"name": name, "args": args if isinstance(args, dict) else {}, "tid": tid, "done": False})
             emit("tool", {"event_type": "tool.started", "name": name, "preview": None, "args": _args_snapshot(args), "tid": tid})
 
@@ -1308,6 +1338,10 @@ def start(ctx: CallContext, params: dict) -> dict:  # noqa: PLR0915 - one turn, 
                     call["snippet"] = snippet
                     break
             payload = {"event_type": "tool.completed", "name": name, "preview": snippet, "args": _args_snapshot(args), "tid": tid, "raw_result": _raw_result(function_result)}
+            # TAL-909: the metadata the Agent persisted on the result row, or, from an Agent without the callback, live only.
+            metadata = prepared_metadata.pop(tid) if tid in prepared_metadata else _edit_metadata(name, args, function_result, edit_snapshots.pop(tid, None))
+            if metadata:
+                payload["display_metadata"] = metadata
             # TAL-397: ``raw_result`` caps nested values, so the todo tool's list travels whole for the server's ``todo_state``.
             if function_result is not None and _is_todo_tool(name):
                 payload["todo_result"] = function_result if isinstance(function_result, str) else json.dumps(function_result, default=str)
@@ -1323,6 +1357,14 @@ def start(ctx: CallContext, params: dict) -> dict:  # noqa: PLR0915 - one turn, 
                         call["cost_usd"] = cost
                         break
             emit("tool_complete", payload)
+
+        def on_tool_result_metadata(tool_call_id, name, args, function_result):
+            """TAL-909: called before the Agent appends and flushes the tool-result row, which keeps the returned dict as
+            its ``display_metadata``; the completion frame that follows carries the same dict."""
+            tid = str(tool_call_id or "")
+            metadata = _edit_metadata(name, args, function_result, edit_snapshots.pop(tid, None))
+            prepared_metadata[tid] = metadata
+            return metadata
 
         def on_tool(*cb_args, **cb_kwargs):
             # Structured callbacks carry tool cards; the progress callback only feeds reasoning text on older builds.
@@ -1479,6 +1521,7 @@ def start(ctx: CallContext, params: dict) -> dict:  # noqa: PLR0915 - one turn, 
             ("interim_assistant_callback", on_interim),
             ("tool_start_callback", on_tool_start),
             ("tool_complete_callback", on_tool_complete),
+            ("tool_result_metadata_callback", on_tool_result_metadata),
             ("status_callback", on_status),
             ("thinking_callback", on_thinking),
             ("notice_callback", on_notice),
@@ -1505,7 +1548,7 @@ def start(ctx: CallContext, params: dict) -> dict:  # noqa: PLR0915 - one turn, 
                     _AGENT_CACHE.move_to_end(session_id)
                     bind(agent)
         if agent is not None:
-            for name in ("stream_delta_callback", "reasoning_callback", "tool_progress_callback", "clarify_callback", "interim_assistant_callback", "tool_start_callback", "tool_complete_callback", "status_callback", "thinking_callback", "notice_callback", "notice_clear_callback"):
+            for name in ("stream_delta_callback", "reasoning_callback", "tool_progress_callback", "clarify_callback", "interim_assistant_callback", "tool_start_callback", "tool_complete_callback", "tool_result_metadata_callback", "status_callback", "thinking_callback", "notice_callback", "notice_clear_callback"):
                 if name in kwargs and hasattr(agent, name):
                     setattr(agent, name, kwargs[name])
             # A cached agent keeps the last turn's card callback; this turn's client decides afresh (TAL-818).

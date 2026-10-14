@@ -506,6 +506,38 @@ describe('chat turns through the sidecar', () => {
     }
   })
 
+  it('ships a write_file edit\'s diff from its display_metadata live and after reload, redacted, never the metadata (TAL-909)', async () => {
+    const secret = 'ghp_0123456789abcdefghijABCDEFGHIJ012345'
+    const diff = `--- a/app.env\n+++ b/app.env\n@@ -1,2 +1,2 @@\n KEEP=1\n-OLD=1\n+GITHUB_TOKEN=${secret}\n`
+    const metadata = { diff }
+    const writeResult = JSON.stringify({ bytes_written: 30 })
+    const sid = await newSession(s)
+    sidecar.respond('chat.start', (params, emit) => {
+      emit({ event: 'tool', data: { event_type: 'tool.started', name: 'write_file', args: { path: 'app.env' }, tid: 'call_write' } })
+      emit({ event: 'tool_complete', data: { event_type: 'tool.completed', name: 'write_file', preview: writeResult, args: { path: 'app.env' }, tid: 'call_write', raw_result: { bytes_written: 30 }, display_metadata: metadata } })
+      return completed([
+        { role: 'user', content: str(params.user_message) },
+        { role: 'assistant', content: '', tool_calls: [{ id: 'call_write', type: 'function', function: { name: 'write_file', arguments: JSON.stringify({ path: 'app.env' }) } }] },
+        { role: 'tool', tool_call_id: 'call_write', content: writeResult, display_metadata: metadata },
+        { role: 'assistant', content: 'Written.' },
+      ])
+    })
+    sidecar.respond('aux.complete', () => ({ model: 'aux', text: 'Title: "Write"', usage: null }))
+    const streamId = String((await json(await post(s, '/api/chat/start', { session_id: sid, message: 'write it' }))).stream_id)
+    const frames = (await s.sse(`/api/chat/stream?stream_id=${streamId}`, (f) => f.event === 'stream_end')).filter((f) => f.event === 'tool_complete').map((f) => f.data as Json)
+    const detail = (await json(await s.get(`/api/session?session_id=${sid}&messages=1`))).session as Json
+    const messages = detail.messages as Json[]
+    const scene = ((messages.at(-1)?._anchor_activity_scene as Json).activity_rows as Json[]).filter((row) => row.role === 'tool').map((row) => row.tool as Json)
+    const live = frames[0]?.edit_diff as Json
+    expect(live).toMatchObject({ added: 1, removed: 1, truncated: false })
+    expect(String(live.diff)).toContain('+GITHUB_TOKEN=')
+    for (const shown of [frames, messages[1]?.tool_calls as Json[], scene]) expect(shown.map((call) => call.edit_diff)).toEqual([live])
+    for (const shown of [frames, detail]) {
+      expect(JSON.stringify(shown)).not.toContain(secret)
+      expect(JSON.stringify(shown)).not.toContain('display_metadata')
+    }
+  })
+
   it('ships one canonical tool-call id on live, replayed and pre-change journal tool frames', async () => {
     const sid = await newSession(s)
     sidecar.respond('chat.start', (params, emit) => {

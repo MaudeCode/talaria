@@ -119,15 +119,13 @@ const EDIT_DIFF_MAX_CHARS = 64_000
 
 /**
  * TAL-448: a file-edit call's change, from its completed result's unified `diff` (the Agent's `patch` result): added and
- * removed lines counted over the whole diff's hunks, and the diff itself capped and parsed into `hunks`. Undefined for any
- * other call, or a result without a string `diff` (`write_file`). Callers redact the returned `diff` with the rest of the
- * call, which parses its `hunks` again from the redacted diff (`redactValue`).
+ * removed lines counted over the whole diff's hunks, and the diff itself capped and parsed into `hunks`. TAL-909: else the
+ * `diff` in the result row's `display_metadata`, which the sidecar computes from the Agent's before-snapshot of a
+ * `write_file`, `patch` or `skill_manage` edit. Undefined for any other call, or with neither. Callers redact the returned
+ * `diff` with the rest of the call, which parses its `hunks` again from the redacted diff (`redactValue`).
  */
-export function toolEditDiff(name: unknown, result: unknown): ToolEditDiff | undefined {
-  if (toolKind(name) !== 'write') return undefined
-  let data: unknown = Array.isArray(result) ? messageText(result) : result
-  if (typeof data === 'string') { try { data = JSON.parse(data) } catch { return undefined } }
-  const diff = isDict(data) ? data.diff : undefined
+export function toolEditDiff(name: unknown, result: unknown, displayMetadata?: unknown): ToolEditDiff | undefined {
+  const diff = resultDiff(name, result) ?? (isDict(displayMetadata) ? displayMetadata.diff : undefined)
   if (typeof diff !== 'string' || !diff.trim()) return undefined
   const [added, removed] = hunkTotals(diffHunks(diff))
   const lines = diff.replace(/\n$/, '').split('\n')
@@ -140,6 +138,15 @@ export function toolEditDiff(name: unknown, result: unknown): ToolEditDiff | und
     shown.push(line)
   }
   return withHunks({ added, removed, diff: shown.join('\n'), truncated: shown.length < lines.length })
+}
+
+/** A file-edit result's own unified `diff`. */
+function resultDiff(name: unknown, result: unknown): unknown {
+  if (toolKind(name) !== 'write') return undefined
+  let data: unknown = Array.isArray(result) ? messageText(result) : result
+  if (typeof data === 'string') { try { data = JSON.parse(data) } catch { return undefined } }
+  const diff = isDict(data) ? data.diff : undefined
+  return typeof diff === 'string' && diff.trim() ? diff : undefined
 }
 
 /** A decided `edit_diff` (one a live call or a built scene row already carries), kept only when well-formed. */
