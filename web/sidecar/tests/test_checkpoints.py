@@ -7,12 +7,10 @@ import json
 import pathlib
 import subprocess
 import textwrap
-import threading
-from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 import pytest
 
-from conftest import AGENT_DIR, AGENT_PYTHON, SidecarProcess, isolated_env, requires_agent
+from conftest import AGENT_DIR, AGENT_PYTHON, OneToolCallModel, SidecarProcess, isolated_env, requires_agent, serve_model
 
 pytestmark = requires_agent
 
@@ -108,51 +106,19 @@ def test_a_restore_over_an_uncaptured_nested_repository_is_refused(handshaken: S
     assert (workspace / "notes.txt").read_text() == "edited by the agent\n"
 
 
-class _WriteFileStub(BaseHTTPRequestHandler):
-    """An OpenAI-compatible model that answers the first request with one ``write_file`` call, then with text."""
+class _WriteFile(OneToolCallModel):
+    """Answers with one ``write_file`` call."""
 
     target = ""
 
-    def log_message(self, *args):  # noqa: D102 - quiet
-        pass
-
-    def do_GET(self):  # noqa: N802 - model probes: no metadata
-        self.send_response(404)
-        self.end_headers()
-
-    def do_POST(self):  # noqa: N802
-        body = json.loads(self.rfile.read(int(self.headers.get("Content-Length") or 0)) or b"{}")
-        answered = any(m.get("role") == "tool" for m in body.get("messages", []))
-        call = {"index": 0, "id": "call_1", "type": "function", "function": {"name": "write_file", "arguments": json.dumps({"path": self.target, "content": "written by the turn\n"})}}
-        delta, finish = ({"role": "assistant", "content": "done"}, "stop") if answered else ({"role": "assistant", "content": None, "tool_calls": [call]}, "tool_calls")
-        if body.get("stream"):
-            self.send_response(200)
-            self.send_header("Content-Type", "text/event-stream")
-            self.end_headers()
-            for chunk_delta, chunk_finish in ((delta, None), ({}, finish)):
-                chunk = {"id": "c1", "object": "chat.completion.chunk", "created": 0, "model": "stub", "choices": [{"index": 0, "delta": chunk_delta, "finish_reason": chunk_finish}]}
-                self.wfile.write(f"data: {json.dumps(chunk)}\n\n".encode())
-            self.wfile.write(b"data: [DONE]\n\n")
-            return
-        message = {k: v for k, v in delta.items()}
-        if "tool_calls" in message:
-            message["tool_calls"] = [{k: v for k, v in c.items() if k != "index"} for c in message["tool_calls"]]
-        payload = {"id": "c1", "object": "chat.completion", "created": 0, "model": "stub", "choices": [{"index": 0, "message": message, "finish_reason": finish}], "usage": {"prompt_tokens": 1, "completion_tokens": 1, "total_tokens": 2}}
-        data = json.dumps(payload).encode()
-        self.send_response(200)
-        self.send_header("Content-Type", "application/json")
-        self.send_header("Content-Length", str(len(data)))
-        self.end_headers()
-        self.wfile.write(data)
+    def first_call(self, body: dict) -> dict:
+        return {"name": "write_file", "arguments": json.dumps({"path": self.target, "content": "written by the turn\n"})}
 
 
 @pytest.fixture
 def llm(workspace: pathlib.Path):
-    handler = type("Stub", (_WriteFileStub,), {"target": str(workspace / "new.txt")})
-    server = ThreadingHTTPServer(("127.0.0.1", 0), handler)
-    threading.Thread(target=server.serve_forever, daemon=True).start()
-    yield f"http://127.0.0.1:{server.server_address[1]}/v1"
-    server.shutdown()
+    with serve_model(type("Stub", (_WriteFile,), {"target": str(workspace / "new.txt")})) as url:
+        yield url
 
 
 @pytest.mark.parametrize("section, taken", [("checkpoints:\n  enabled: true\n", True), ("checkpoints: true\n", True), ("", False), ("checkpoints:\n  enabled: 'false'\n", False)],

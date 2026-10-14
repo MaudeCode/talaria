@@ -3342,8 +3342,9 @@ describe('live metering and todo_state (TAL-397)', () => {
     const todoResult = JSON.stringify({ todos, summary: { total: 1, in_progress: 1 } })
     sidecar.respond('chat.start', (_params, emit) => {
       emit({ event: 'usage', data: spent })
-      emit({ event: 'tool', data: { event_type: 'tool.started', name: 'todo', args: {}, tid: 'call_todo' } })
-      emit({ event: 'tool_complete', data: { event_type: 'tool.completed', name: 'todo', preview: 'x', args: {}, tid: 'call_todo', raw_result: {}, todo_result: todoResult } })
+      // TAL-889: the Agent reports its canonical `todo_list`; the sidecar decides it is the todo tool by attaching `todo_result`.
+      emit({ event: 'tool', data: { event_type: 'tool.started', name: 'todo_list', args: {}, tid: 'call_todo' } })
+      emit({ event: 'tool_complete', data: { event_type: 'tool.completed', name: 'todo_list', preview: 'x', args: {}, tid: 'call_todo', raw_result: {}, todo_result: todoResult } })
       clock += 1
       return end()
     })

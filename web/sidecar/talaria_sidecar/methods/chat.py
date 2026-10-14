@@ -138,6 +138,18 @@ def _raw_result(raw: Any, limit: int = _TOOL_RESULT_SNIPPET_MAX) -> Any:
     return out
 
 
+_TODO_TOOL_NAMES = frozenset({"todo", "todo_list"})
+
+
+def _is_todo_tool(name: Any) -> bool:
+    """TAL-889: the Agent's own todo-tool predicate (canonical ``todo_list`` and legacy aliases); older Agents lack it."""
+    try:
+        from tools.todo_tool import is_todo_tool_name
+    except Exception:  # noqa: BLE001 - older Agent without the predicate
+        return isinstance(name, str) and name in _TODO_TOOL_NAMES
+    return bool(is_todo_tool_name(name))
+
+
 def _delegation_cost_usd(name: Any, raw: Any):
     """Predecessor ``_delegation_cost_usd``: total spend a ``delegate_task`` result reports, or None."""
     if str(name or "") != "delegate_task":
@@ -1004,7 +1016,7 @@ def start(ctx: CallContext, params: dict) -> dict:  # noqa: PLR0915 - one turn, 
                     break
             payload = {"event_type": "tool.completed", "name": name, "preview": snippet, "args": _args_snapshot(args), "tid": tid, "raw_result": _raw_result(function_result)}
             # TAL-397: ``raw_result`` caps nested values, so the todo tool's list travels whole for the server's ``todo_state``.
-            if name == "todo" and function_result is not None:
+            if function_result is not None and _is_todo_tool(name):
                 payload["todo_result"] = function_result if isinstance(function_result, str) else json.dumps(function_result, default=str)
             # TAL-448: likewise a result's unified ``diff``, so the server's ``edit_diff`` counts cover the whole change.
             diff = _result_diff(function_result)
