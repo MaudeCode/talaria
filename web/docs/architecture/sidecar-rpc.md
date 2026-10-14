@@ -235,7 +235,9 @@ callback and result shapes until the support window drops them.
 
 The Agent's password-manager prompts (master password, a login to save, a
 one-time code) are per-thread callbacks the sidecar binds on the turn's thread,
-with the session an unlock belongs to, and clears when the turn ends. Each
+with the session an unlock belongs to, and clears when the turn ends. The
+unlock prompt binds that session again on the thread that calls it, since the
+Agent copies the callbacks, not the session, onto its tool workers. Each
 parks like a clarify prompt with a `vault_*` `kind` and the Agent's own timeout
 (120 s to unlock, 180 s otherwise); an empty `clarify.respond` answer is its
 decline. Ending a session (`chat.evict_agent` with `clear_session`) locks the

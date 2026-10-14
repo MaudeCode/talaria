@@ -10,13 +10,14 @@ from conftest import AGENT_DIR, AGENT_PYTHON, isolated_env, requires_agent
 
 
 PROBE = r'''
-import json, os, sys
+import json, os, sys, threading
 sys.path.append(sys.argv[1])
 import agent.vault_backends as vault_backends
 import agent.vault_login_classifier as classifier
 import agent.vault_store as vault_store
 from agent.vault_backends import unlock
 from tools import browser_vault_tool as bvt
+from tools.thread_context import propagate_context_to_thread
 from talaria_sidecar.methods import Registry, chat
 
 tool, outcome = sys.argv[2:]
@@ -67,7 +68,10 @@ class Agent:
     def run_conversation(self, **kwargs):
         call = {"unlock": lambda: bvt.browser_vault_unlock("bitwarden"), "save_login": lambda: bvt.browser_vault_save_login(task_id="t"),
                 "code": lambda: bvt.browser_vault_enter_code(task_id="t")}[tool]
-        tool_results.append(json.loads(call()))
+        # The Agent runs tools on a worker thread that inherits the turn's prompt callbacks (its parallel tool path).
+        worker = threading.Thread(target=propagate_context_to_thread(lambda: tool_results.append(json.loads(call()))))
+        worker.start()
+        worker.join()
         return {"final_response": "ok", "messages": []}
 
 class Ctx:

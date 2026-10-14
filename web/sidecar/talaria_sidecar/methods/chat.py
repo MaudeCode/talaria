@@ -409,13 +409,22 @@ def _post_compression_context(agent: Any, messages: list, system_message: Any) -
 _VAULT_PROMPT_TIMEOUTS = {"vault_unlock": 120, "vault_save_login": 180, "vault_code": 180}
 
 
+def _set_vault_session(session_id) -> None:
+    """Bind the session an unlock made on this thread belongs to (released with it)."""
+    try:
+        from agent.vault_backends import unlock
+    except Exception:  # noqa: BLE001 - an Agent without the credential vault
+        return
+    unlock.set_current_session_id(session_id)
+
+
 def _set_vault_prompts(session_id, unlock_cb, save_login_cb, code_cb) -> None:
     """Bind (or with ``None``s clear) the Agent's per-thread vault prompts and the session an unlock belongs to."""
     try:
         from agent.vault_backends import unlock
     except Exception:  # noqa: BLE001 - an Agent without the credential vault
         return
-    unlock.set_current_session_id(session_id)
+    _set_vault_session(session_id)
     unlock.set_unlock_prompt_callback(unlock_cb)
     unlock.set_save_login_prompt_callback(save_login_cb)
     unlock.set_code_prompt_callback(code_cb)
@@ -1296,6 +1305,10 @@ def start(ctx: CallContext, params: dict) -> dict:  # noqa: PLR0915 - one turn, 
             return ask(data, timeout) or ""
 
         def vault_unlock_prompt(backend, display_name):
+            # The Agent stores the unlock right after this returns, on the thread that called it: a tool worker
+            # inherits this callback but not the turn's session, so bind it here too, or closing the session could
+            # not lock the manager again.
+            _set_vault_session(session_id)
             return ask_vault("vault_unlock", {"backend": str(backend), "display_name": str(display_name)})
 
         def vault_save_login_prompt(origin, site):
