@@ -5,7 +5,7 @@ import { Link } from '@tanstack/react-router'
 import { m } from '../../paraglide/messages.js'
 import type { LiveTurn } from '../../stream/reducer'
 import { isTerminal } from '../../stream/reducer'
-import { AssistantMessageRow, BackgroundUpdateRow, MarkerRow, NoticeRow, UserMessageRow, type RowActions } from './MessageRow'
+import { AssistantMessageRow, BackgroundUpdateRow, DeliveryRow, MarkerRow, NoticeRow, UserMessageRow, type RowActions } from './MessageRow'
 import { LiveTurnView } from './LiveTurnView'
 import { messageKey, type VisibleMessage } from './useTranscript'
 import { WorklogDisclosureProvider, type ActivityMode } from './blocks/Worklog'
@@ -68,7 +68,7 @@ export function Transcript(props: TranscriptProps) {
   // A live turn attached without replay continues the running scene the server shipped for its persisted rows (TAL-374).
   const continued = useMemo(() => (showLive && live && !live.claimsPersistedRows ? rows.find((row) => isReplyRow(row.message) && (row.turnKey === live.streamId || row.turnKey === live.turnId)) : undefined), [rows, live, showLive])
   const continuedTools = useMemo(() => (continued ? toolIdsOf(persistedActivity(continued)) : undefined), [continued])
-  const lastRowIsUser = rows.length > 0 && rows[rows.length - 1]?.message.role === 'user' && !rows[rows.length - 1]?.message._marker_kind
+  const lastRowIsUser = rows.length > 0 && rows[rows.length - 1]?.message.role === 'user' && !rows[rows.length - 1]?.message._marker_kind && !rows[rows.length - 1]?.message._delivery
   const showLiveUser = !!live && !isTerminal(live.status) && live.userText.trim() !== '' && !lastRowIsUser && !rows.some((r) => r.message.role === 'user' && messageKey(r.message) === live.userMessageId)
   // One slot for the user's newest text: the pending first send until the turn starts, then the live user row, so the
   // handover neither flashes nor duplicates.
@@ -186,6 +186,8 @@ export function Transcript(props: TranscriptProps) {
       ? <MarkerRow key={row.key} row={row} />
       : row.message._notice_kind
       ? <NoticeRow key={row.key} row={row} />
+      : row.message._delivery
+      ? <DeliveryRow key={row.key} row={row} />
       : row.message.role === 'user'
       ? <UserMessageRow key={row.key} row={row} renderMarkdown={renderUserMarkdown} sessionId={sessionId} actions={actions} />
       : <AssistantMessageRow sessionId={sessionId} scope={props.disclosureScope} key={row.key} row={row} name={assistantName} mode={mode} actions={actions} tts={tts} isLast={i === lastAssistantIndex && !showLive} continuation={row === continued ? live ?? undefined : undefined} />

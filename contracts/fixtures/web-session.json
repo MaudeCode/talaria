@@ -4600,5 +4600,142 @@
         }
       }
     ]
+  },
+  "delivery_session": {
+    "session_id": "contract-deliveries",
+    "session": {
+      "source_tag": "telegram",
+      "raw_source": "telegram",
+      "session_source": "messaging",
+      "source_label": "Telegram"
+    },
+    "stored": [
+      {
+        "role": "user",
+        "content": "Is Henderson playing this week?",
+        "message_id": "delivery-question",
+        "timestamp": 1770000700
+      },
+      {
+        "role": "assistant",
+        "content": "I'll let you know when the injury report lands.",
+        "message_id": "delivery-answer",
+        "timestamp": 1770000701
+      },
+      {
+        "role": "user",
+        "content": "[Webhook delivery: injury-report]\nHenderson OUT Wednesday (hamstring).",
+        "message_id": "delivery-webhook",
+        "timestamp": 1770000702
+      },
+      {
+        "role": "user",
+        "content": "[Cron delivery: Morning Brief]\n**Rain** until noon.\n\n- Standup at 9",
+        "message_id": "delivery-cron",
+        "timestamp": 1770000703
+      },
+      {
+        "role": "user",
+        "content": "So he is out?",
+        "message_id": "delivery-followup",
+        "timestamp": 1770000704
+      },
+      {
+        "role": "assistant",
+        "content": "Yes, he is out Wednesday.",
+        "message_id": "delivery-reply",
+        "timestamp": 1770000705
+      }
+    ],
+    "messages": [
+      {
+        "role": "user",
+        "content": "Is Henderson playing this week?",
+        "message_id": "delivery-question",
+        "timestamp": 1770000700,
+        "_turn_id": "legacy:0",
+        "_display": "row"
+      },
+      {
+        "role": "assistant",
+        "content": "I'll let you know when the injury report lands.",
+        "message_id": "delivery-answer",
+        "timestamp": 1770000701,
+        "_anchor_activity_scene": {
+          "version": "activity_scene_v1",
+          "activity_rows": [],
+          "final_answer": "I'll let you know when the injury report lands.",
+          "turn_duration": null,
+          "terminal_state": "completed",
+          "expanded_by_default": false,
+          "has_consumed_steering": false,
+          "file_changes": [],
+          "activity_rows_total": 0,
+          "activity_rows_offset": 0,
+          "activity_rows_complete": true,
+          "activity_rows_omitted": 0,
+          "activity_scene_ref": "1ba4eb14f6dd95d7556f3c7c2967af89a0877cec51a6e4a5ecca40a1f739de8d"
+        },
+        "_turn_id": "legacy:0",
+        "_display": "row"
+      },
+      {
+        "role": "user",
+        "content": "[Webhook delivery: injury-report]\nHenderson OUT Wednesday (hamstring).",
+        "message_id": "delivery-webhook",
+        "timestamp": 1770000702,
+        "_turn_id": "legacy:2",
+        "_delivery": {
+          "kind": "webhook",
+          "name": "injury-report",
+          "body": "Henderson OUT Wednesday (hamstring)."
+        },
+        "_display": "row"
+      },
+      {
+        "role": "user",
+        "content": "[Cron delivery: Morning Brief]\n**Rain** until noon.\n\n- Standup at 9",
+        "message_id": "delivery-cron",
+        "timestamp": 1770000703,
+        "_turn_id": "legacy:3",
+        "_delivery": {
+          "kind": "cron",
+          "name": "Morning Brief",
+          "body": "**Rain** until noon.\n\n- Standup at 9"
+        },
+        "_display": "row"
+      },
+      {
+        "role": "user",
+        "content": "So he is out?",
+        "message_id": "delivery-followup",
+        "timestamp": 1770000704,
+        "_turn_id": "legacy:4",
+        "_display": "row"
+      },
+      {
+        "role": "assistant",
+        "content": "Yes, he is out Wednesday.",
+        "message_id": "delivery-reply",
+        "timestamp": 1770000705,
+        "_anchor_activity_scene": {
+          "version": "activity_scene_v1",
+          "activity_rows": [],
+          "final_answer": "Yes, he is out Wednesday.",
+          "turn_duration": null,
+          "terminal_state": "completed",
+          "expanded_by_default": false,
+          "has_consumed_steering": false,
+          "file_changes": [],
+          "activity_rows_total": 0,
+          "activity_rows_offset": 0,
+          "activity_rows_complete": true,
+          "activity_rows_omitted": 0,
+          "activity_scene_ref": "d49c428c04f712e206313b41f633224f4252350a15c173ac6a5f6d3210dacb77"
+        },
+        "_turn_id": "legacy:4",
+        "_display": "row"
+      }
+    ]
   }
 }

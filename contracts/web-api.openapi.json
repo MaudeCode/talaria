@@ -4038,6 +4038,29 @@
                                 ],
                                 "type": "string"
                               },
+                              "_delivery": {
+                                "type": "object",
+                                "properties": {
+                                  "kind": {
+                                    "enum": [
+                                      "webhook",
+                                      "cron"
+                                    ],
+                                    "type": "string"
+                                  },
+                                  "name": {
+                                    "type": "string"
+                                  },
+                                  "body": {
+                                    "type": "string"
+                                  }
+                                },
+                                "required": [
+                                  "kind",
+                                  "name",
+                                  "body"
+                                ]
+                              },
                               "_background_reply": {
                                 "type": "boolean"
                               },
@@ -6517,6 +6540,29 @@
                                 ],
                                 "type": "string"
                               },
+                              "_delivery": {
+                                "type": "object",
+                                "properties": {
+                                  "kind": {
+                                    "enum": [
+                                      "webhook",
+                                      "cron"
+                                    ],
+                                    "type": "string"
+                                  },
+                                  "name": {
+                                    "type": "string"
+                                  },
+                                  "body": {
+                                    "type": "string"
+                                  }
+                                },
+                                "required": [
+                                  "kind",
+                                  "name",
+                                  "body"
+                                ]
+                              },
                               "_background_reply": {
                                 "type": "boolean"
                               },
@@ -8741,6 +8787,29 @@
                                   "failed_turn"
                                 ],
                                 "type": "string"
+                              },
+                              "_delivery": {
+                                "type": "object",
+                                "properties": {
+                                  "kind": {
+                                    "enum": [
+                                      "webhook",
+                                      "cron"
+                                    ],
+                                    "type": "string"
+                                  },
+                                  "name": {
+                                    "type": "string"
+                                  },
+                                  "body": {
+                                    "type": "string"
+                                  }
+                                },
+                                "required": [
+                                  "kind",
+                                  "name",
+                                  "body"
+                                ]
                               },
                               "_background_reply": {
                                 "type": "boolean"
@@ -12166,6 +12235,29 @@
                                 ],
                                 "type": "string"
                               },
+                              "_delivery": {
+                                "type": "object",
+                                "properties": {
+                                  "kind": {
+                                    "enum": [
+                                      "webhook",
+                                      "cron"
+                                    ],
+                                    "type": "string"
+                                  },
+                                  "name": {
+                                    "type": "string"
+                                  },
+                                  "body": {
+                                    "type": "string"
+                                  }
+                                },
+                                "required": [
+                                  "kind",
+                                  "name",
+                                  "body"
+                                ]
+                              },
                               "_background_reply": {
                                 "type": "boolean"
                               },
@@ -15464,6 +15556,29 @@
                                   "failed_turn"
                                 ],
                                 "type": "string"
+                              },
+                              "_delivery": {
+                                "type": "object",
+                                "properties": {
+                                  "kind": {
+                                    "enum": [
+                                      "webhook",
+                                      "cron"
+                                    ],
+                                    "type": "string"
+                                  },
+                                  "name": {
+                                    "type": "string"
+                                  },
+                                  "body": {
+                                    "type": "string"
+                                  }
+                                },
+                                "required": [
+                                  "kind",
+                                  "name",
+                                  "body"
+                                ]
                               },
                               "_background_reply": {
                                 "type": "boolean"
@@ -19427,6 +19542,29 @@
                                 ],
                                 "type": "string"
                               },
+                              "_delivery": {
+                                "type": "object",
+                                "properties": {
+                                  "kind": {
+                                    "enum": [
+                                      "webhook",
+                                      "cron"
+                                    ],
+                                    "type": "string"
+                                  },
+                                  "name": {
+                                    "type": "string"
+                                  },
+                                  "body": {
+                                    "type": "string"
+                                  }
+                                },
+                                "required": [
+                                  "kind",
+                                  "name",
+                                  "body"
+                                ]
+                              },
                               "_background_reply": {
                                 "type": "boolean"
                               },
@@ -21676,6 +21814,29 @@
                                   "failed_turn"
                                 ],
                                 "type": "string"
+                              },
+                              "_delivery": {
+                                "type": "object",
+                                "properties": {
+                                  "kind": {
+                                    "enum": [
+                                      "webhook",
+                                      "cron"
+                                    ],
+                                    "type": "string"
+                                  },
+                                  "name": {
+                                    "type": "string"
+                                  },
+                                  "body": {
+                                    "type": "string"
+                                  }
+                                },
+                                "required": [
+                                  "kind",
+                                  "name",
+                                  "body"
+                                ]
                               },
                               "_background_reply": {
                                 "type": "boolean"
@@ -23989,6 +24150,29 @@
                                 ],
                                 "type": "string"
                               },
+                              "_delivery": {
+                                "type": "object",
+                                "properties": {
+                                  "kind": {
+                                    "enum": [
+                                      "webhook",
+                                      "cron"
+                                    ],
+                                    "type": "string"
+                                  },
+                                  "name": {
+                                    "type": "string"
+                                  },
+                                  "body": {
+                                    "type": "string"
+                                  }
+                                },
+                                "required": [
+                                  "kind",
+                                  "name",
+                                  "body"
+                                ]
+                              },
                               "_background_reply": {
                                 "type": "boolean"
                               },
@@ -26287,6 +26471,29 @@
                                   "failed_turn"
                                 ],
                                 "type": "string"
+                              },
+                              "_delivery": {
+                                "type": "object",
+                                "properties": {
+                                  "kind": {
+                                    "enum": [
+                                      "webhook",
+                                      "cron"
+                                    ],
+                                    "type": "string"
+                                  },
+                                  "name": {
+                                    "type": "string"
+                                  },
+                                  "body": {
+                                    "type": "string"
+                                  }
+                                },
+                                "required": [
+                                  "kind",
+                                  "name",
+                                  "body"
+                                ]
                               },
                               "_background_reply": {
                                 "type": "boolean"
@@ -36367,6 +36574,29 @@
                                 ],
                                 "type": "string"
                               },
+                              "_delivery": {
+                                "type": "object",
+                                "properties": {
+                                  "kind": {
+                                    "enum": [
+                                      "webhook",
+                                      "cron"
+                                    ],
+                                    "type": "string"
+                                  },
+                                  "name": {
+                                    "type": "string"
+                                  },
+                                  "body": {
+                                    "type": "string"
+                                  }
+                                },
+                                "required": [
+                                  "kind",
+                                  "name",
+                                  "body"
+                                ]
+                              },
                               "_background_reply": {
                                 "type": "boolean"
                               },
@@ -38761,6 +38991,29 @@
                                 ],
                                 "type": "string"
                               },
+                              "_delivery": {
+                                "type": "object",
+                                "properties": {
+                                  "kind": {
+                                    "enum": [
+                                      "webhook",
+                                      "cron"
+                                    ],
+                                    "type": "string"
+                                  },
+                                  "name": {
+                                    "type": "string"
+                                  },
+                                  "body": {
+                                    "type": "string"
+                                  }
+                                },
+                                "required": [
+                                  "kind",
+                                  "name",
+                                  "body"
+                                ]
+                              },
                               "_background_reply": {
                                 "type": "boolean"
                               },
@@ -41046,6 +41299,29 @@
                                       "failed_turn"
                                     ],
                                     "type": "string"
+                                  },
+                                  "_delivery": {
+                                    "type": "object",
+                                    "properties": {
+                                      "kind": {
+                                        "enum": [
+                                          "webhook",
+                                          "cron"
+                                        ],
+                                        "type": "string"
+                                      },
+                                      "name": {
+                                        "type": "string"
+                                      },
+                                      "body": {
+                                        "type": "string"
+                                      }
+                                    },
+                                    "required": [
+                                      "kind",
+                                      "name",
+                                      "body"
+                                    ]
                                   },
                                   "_background_reply": {
                                     "type": "boolean"

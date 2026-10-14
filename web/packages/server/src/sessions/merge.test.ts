@@ -299,7 +299,7 @@ describe('compaction markers (TAL-305)', () => {
       { role: 'user', content: `  ${TASKS}\n- [ ] one\n- [x] two  ` },
       { role: 'assistant', content: 'Context compaction is fine.' },
     ]
-    const out = withMarkerKinds(rows) as Record<string, unknown>[]
+    const out = withMarkerKinds(rows, {}) as Record<string, unknown>[]
     expect(out[0]).toEqual({ ...rows[0], _marker_kind: 'context_compaction' })
     expect(out[1]).toEqual({ ...rows[1], _marker_kind: 'preserved_task_list', _marker_body: '- [ ] one\n- [x] two' })
     expect(out[2]).toBe(rows[2])
@@ -320,7 +320,7 @@ describe('compaction markers (TAL-305)', () => {
       // A typed `[System:` row is the Agent's timeline entry, not scaffolding.
       { role: 'user', content: '[System: The active model changed.]', display_kind: 'model_switch', _turn_id: 'cli' },
     ]
-    const out = withMarkerKinds(rows) as Record<string, unknown>[]
+    const out = withMarkerKinds(rows, {}) as Record<string, unknown>[]
     // Web's own error row already reports the web turn, so the Agent's copy is hidden there.
     expect(out[2]).toEqual({ ...rows[2], display_kind: 'hidden' })
     expect(out[2]).not.toHaveProperty('_notice_kind')

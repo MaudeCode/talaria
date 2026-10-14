@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Changed",
+      "summary": "In Telegram, Discord, Slack and other chat sessions, webhook and scheduled-job deliveries the agent records in the chat now show as delivery notices instead of messages you sent.",
+      "highlight": false,
+      "components": ["web"]
+    }
+  ]
+}
