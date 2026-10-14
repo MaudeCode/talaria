@@ -119,7 +119,8 @@ struct MemoryFileView: View {
                 section: section,
                 initialContent: viewModel.content(for: section),
                 isSaving: viewModel.isSaving,
-                errorMessage: viewModel.actionErrorMessage
+                errorMessage: viewModel.actionErrorMessage,
+                onReload: viewModel.hasSaveConflict ? { Task { await viewModel.reloadAfterConflict() } } : nil
             ) { content in
                 let didSave = await viewModel.save(section: section, content: content)
                 if let lastError = viewModel.lastError {

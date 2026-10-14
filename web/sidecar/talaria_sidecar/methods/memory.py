@@ -53,10 +53,11 @@ def write(home: Path, section: str, base: str, content: str) -> dict:
 
     if section not in ("memory", "user", "soul"):
         raise InvalidParams("section must be memory, user, or soul")
+    # The files the server read: SOUL.md in the profile home, MEMORY.md / USER.md in its memories folder.
     if section == "soul":
         path, lock = home / "SOUL.md", None
     else:
-        path = MemoryStore._path_for(section)
+        path = home / "memories" / ("USER.md" if section == "user" else "MEMORY.md")
         lock = getattr(MemoryStore, "_file_lock", None)
     try:
         with lock(path) if lock else contextlib.nullcontext():

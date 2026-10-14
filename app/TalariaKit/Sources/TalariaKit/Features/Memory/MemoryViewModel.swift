@@ -23,6 +23,8 @@ public final class MemoryViewModel {
     public private(set) var isSaving = false
     public private(set) var errorMessage: String?
     public private(set) var actionErrorMessage: String?
+    /// The last save was refused because the file changed since it loaded (TAL-784); the editor offers a reload.
+    public private(set) var hasSaveConflict = false
     public private(set) var lastError: Error?
 
     /// True while the screen shows the last saved memory rather than the server's (TAL-437).
@@ -70,6 +72,13 @@ public final class MemoryViewModel {
 
     public func clearActionError() {
         actionErrorMessage = nil
+        hasSaveConflict = false
+    }
+
+    /// Drops a refused edit's conflict and loads the server's current files.
+    public func reloadAfterConflict() async {
+        clearActionError()
+        await load()
     }
 
     /// The read-only project-context section only appears when the server sent a
@@ -113,7 +122,7 @@ public final class MemoryViewModel {
 
     public func save(section: MemorySection, content: String) async -> Bool {
         isSaving = true
-        actionErrorMessage = nil
+        clearActionError()
         lastError = nil
         defer { isSaving = false }
 
@@ -131,6 +140,10 @@ public final class MemoryViewModel {
             let refreshed = try await client.memory()
             apply(refreshed)
             return true
+        } catch let error as APIError where error.serverCode == "memory_conflict" {
+            actionErrorMessage = error.serverMessage ?? error.localizedDescription
+            hasSaveConflict = true
+            return false
         } catch {
             lastError = error
             actionErrorMessage = error.localizedDescription

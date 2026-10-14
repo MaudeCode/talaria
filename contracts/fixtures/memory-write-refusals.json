@@ -18,7 +18,7 @@
     "mask": "ghp_Ab...6789"
   },
   "conflict": {
-    "error": "MEMORY.md changed since this page loaded it. Not saved.",
+    "error": "MEMORY.md changed after you opened it. Not saved.",
     "code": "memory_conflict"
   }
 }

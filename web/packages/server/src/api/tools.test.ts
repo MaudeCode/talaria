@@ -330,7 +330,7 @@ describe('skills, memory, prompts, commands, mcp, health, updates, diagnostics',
     writeFileSync(join(s.state, 'SOUL.md'), 'Be brief and kind.')
     res = await post(s, '/api/memory/write', { section: 'soul', content: 'Be terse.', revision: soul.soul_revision })
     expect(res.status).toBe(409)
-    expect(String((await json(res)).error)).toBe('SOUL.md changed since this page loaded it. Not saved.')
+    expect(String((await json(res)).error)).toBe('SOUL.md changed after you opened it. Not saved.')
     expect(readFileSync(join(s.state, 'SOUL.md'), 'utf8')).toBe('Be brief and kind.')
     expect(readFileSync(file, 'utf8')).toBe(`${agent}\n§\nEntry C: typed in Web`)
   })

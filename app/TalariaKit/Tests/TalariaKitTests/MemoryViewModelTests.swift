@@ -54,7 +54,7 @@ final class MemoryViewModelTests: APIClientTestCase {
     }
 
     @MainActor
-    func testSaveSendsTheLoadedRevisionAndSurfacesAConflictWithoutReloading() async throws {
+    func testSaveSendsTheLoadedRevisionAndOffersAReloadOnConflict() async throws {
         var requestPaths: [String] = []
         let client = makeClient { request in
             requestPaths.append(request.url?.path ?? "")
@@ -65,7 +65,7 @@ final class MemoryViewModelTests: APIClientTestCase {
                 XCTAssertEqual(body?["revision"] as? String, "rev-memory")
                 return apiTestJSONResponse("""
                 {
-                  "error": "MEMORY.md changed since this page loaded it. Not saved.",
+                  "error": "MEMORY.md changed after you opened it. Not saved.",
                   "code": "memory_conflict"
                 }
                 """, statusCode: 409, for: request)
@@ -91,11 +91,16 @@ final class MemoryViewModelTests: APIClientTestCase {
 
         XCTAssertFalse(didSave)
         XCTAssertEqual(requestPaths, ["/api/memory", "/api/memory/write"])
-        XCTAssertEqual(
-            viewModel.actionErrorMessage,
-            "Server returned HTTP 409: MEMORY.md changed since this page loaded it. Not saved."
-        )
+        XCTAssertEqual(viewModel.actionErrorMessage, "MEMORY.md changed after you opened it. Not saved.")
+        XCTAssertTrue(viewModel.hasSaveConflict)
+        XCTAssertNil(viewModel.lastError)
         XCTAssertEqual(viewModel.memoryText, "Entry A")
+
+        await viewModel.reloadAfterConflict()
+
+        XCTAssertFalse(viewModel.hasSaveConflict)
+        XCTAssertNil(viewModel.actionErrorMessage)
+        XCTAssertEqual(requestPaths, ["/api/memory", "/api/memory/write", "/api/memory"])
     }
 
     @MainActor

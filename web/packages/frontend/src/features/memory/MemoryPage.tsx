@@ -30,8 +30,9 @@ export function MemoryPage() {
   // The server's message for a save it refused because the file changed since the edit started.
   const [conflict, setConflict] = useState<Record<string, string>>({})
   const write = useMutation({
-    mutationFn: ({ target, draft: d }: { target: Writable; draft: Draft }) => api.writeMemory({ section: target, content: d.text, revision: d.revision }),
-    onSuccess: (_r, vars) => { showToast(m.memory_saved()); setDraft((d) => without(d, vars.target)); void qc.invalidateQueries({ queryKey: keys.memory }) },
+    // The draft clears only once the refetch brings the new revision, so the next edit starts from it.
+    mutationFn: async ({ target, draft: d }: { target: Writable; draft: Draft }) => { await api.writeMemory({ section: target, content: d.text, revision: d.revision }); await qc.refetchQueries({ queryKey: keys.memory }) },
+    onSuccess: (_r, vars) => { showToast(m.memory_saved()); setDraft((d) => without(d, vars.target)) },
     onError: (e, vars) => {
       if (isApiError(e) && e.code === 'memory_conflict') setConflict((c) => ({ ...c, [vars.target]: e.message }))
       else showToast(e instanceof Error ? e.message : String(e), 4000, 'error')
@@ -70,7 +71,7 @@ export function MemoryPage() {
           </div>
           <textarea
             value={text}
-            readOnly={!current?.writable}
+            readOnly={!current?.writable || write.isPending}
             onChange={(e) => { const value = e.target.value; setDraft((d) => ({ ...d, [section]: { text: value, revision: d[section]?.revision ?? (section === 'project_context' ? '' : data[`${section}_revision`]) } })) }}
             rows={22}
             spellCheck={false}

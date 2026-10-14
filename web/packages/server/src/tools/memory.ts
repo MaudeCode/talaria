@@ -170,7 +170,7 @@ export async function writeMemory(profileHome: string, config: Config, section: 
   else throw new HttpFailure(400, 'section must be "memory", "user", or "soul"')
   try { if (lstatSync(target).isSymbolicLink()) throw new HttpFailure(400, 'Cannot write to a symlinked memory file') } catch (error) { if (error instanceof HttpFailure) throw error }
   const raw = readCurrent(target)
-  const conflict = (): HttpFailure => new HttpFailure(409, `${basename(target)} changed since this page loaded it. Not saved.`, { code: 'memory_conflict' })
+  const conflict = (): HttpFailure => new HttpFailure(409, `${basename(target)} changed after you opened it. Not saved.`, { code: 'memory_conflict' })
   if (memoryRevision(deps.key, raw) !== revision) throw conflict()
   const current = raw.toString()
   // Masks are rebuilt as redaction shows them even when it is off now: the page may have loaded while it was on.
@@ -188,7 +188,7 @@ export async function writeMemory(profileHome: string, config: Config, section: 
     if (!(error instanceof SidecarError && error.condition === 'memory_not_writable')) throw error
     let hint = ''
     try { hint = ` (mode ${(statSync(target).mode & 0o777).toString(8)})` } catch { /* none */ }
-    throw new HttpFailure(403, `${basename(target)} is not writable${hint}: ${target}. Run chmod 644 on the file or fix ownership on the shared volume.`)
+    throw new HttpFailure(403, `${basename(target)} is not writable${hint}: ${target}. The save replaces the file, so its folder must be writable too; fix ownership on the shared volume.`)
   }
   if (!written) throw conflict()
   return { ok: true, section, path: target }

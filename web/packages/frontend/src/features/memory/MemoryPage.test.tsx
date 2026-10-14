@@ -10,7 +10,7 @@ import * as api from '../../api/endpoints'
 import { MemoryPage } from './MemoryPage'
 
 const memory = (text: string, revision: string) => ({ memory: text, user: '', soul: '', memory_path: '/h/memories/MEMORY.md', user_path: '/h/memories/USER.md', soul_path: '/h/SOUL.md', memory_revision: revision, user_revision: 'u1', soul_revision: 's1' })
-const CONFLICT = 'MEMORY.md changed since this page loaded it. Not saved.'
+const CONFLICT = 'MEMORY.md changed after you opened it. Not saved.'
 
 beforeEach(() => {
   vi.mocked(api.fetchMemory).mockReset().mockResolvedValue(memory('Entry A', 'r1'))
@@ -35,5 +35,23 @@ describe('Memory page (TAL-784)', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Reload' }))
     await waitFor(() => expect(screen.getByRole('textbox', { name: 'Memory' })).toHaveValue('Entry A\n§\nEntry B'))
     expect(screen.queryByRole('alert')).toBeNull()
+  })
+
+  it('starts the next edit from the revision the save produced', async () => {
+    const qc = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } })
+    render(<QueryClientProvider client={qc}><MemoryPage /></QueryClientProvider>)
+    await userEvent.type(await screen.findByRole('textbox', { name: 'Memory' }), '!')
+    let refetched = (): void => undefined
+    vi.mocked(api.fetchMemory).mockReturnValue(new Promise((resolve) => { refetched = () => resolve(memory('Entry A!', 'r2')) }))
+    vi.mocked(api.writeMemory).mockResolvedValue({ ok: true, section: 'memory', path: '/h/memories/MEMORY.md' })
+    await userEvent.click(screen.getByRole('button', { name: 'Save' }))
+    // Until the refetch brings the new revision, the editor takes no edit that would carry the old one.
+    await waitFor(() => expect(api.fetchMemory).toHaveBeenCalledTimes(2))
+    expect(screen.getByRole('textbox', { name: 'Memory' })).toHaveAttribute('readonly')
+    refetched()
+    await waitFor(() => expect(screen.getByRole('textbox', { name: 'Memory' })).not.toHaveAttribute('readonly'))
+    await userEvent.type(screen.getByRole('textbox', { name: 'Memory' }), '?')
+    await userEvent.click(screen.getByRole('button', { name: 'Save' }))
+    await waitFor(() => expect(api.writeMemory).toHaveBeenLastCalledWith({ section: 'memory', content: 'Entry A!?', revision: 'r2' }))
   })
 })
