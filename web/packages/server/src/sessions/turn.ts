@@ -644,7 +644,8 @@ export class TurnRunner {
               const redacted = deps.redactEnabled()
               put('tool_complete', publicToolFrame(withToolId(complete, id), redacted), { redacted })
               // TAL-397: the todo tool's result is the session's new list; the settled session derives the same one.
-              const todos = data.name === 'todo' ? parseTodoToolResult(todoResult) : null
+              // TAL-889: the sidecar attaches `todo_result` only to the Agent's todo tool, so no name check here.
+              const todos = parseTodoToolResult(todoResult)
               if (todos) {
                 todos.ts = deps.now()
                 this.liveTodos.set(streamId, todos)

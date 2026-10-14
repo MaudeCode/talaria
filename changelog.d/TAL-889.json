@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "The todo list now updates live during a turn, and an errored or cancelled turn keeps its latest list.",
+      "highlight": false,
+      "components": ["web"]
+    }
+  ]
+}

@@ -7,6 +7,8 @@ import json
 import threading
 import time
 
+import pytest
+
 from talaria_sidecar.methods import chat
 
 
@@ -488,8 +490,11 @@ def test_a_result_diff_reaches_the_server_whole(monkeypatch) -> None:
     assert len(frames[0]["raw_result"]["diff"]) == 4000
 
 
-def test_usage_changes_and_the_full_todo_result_reach_the_server(monkeypatch) -> None:
-    """TAL-397: a counter change is reported before the next content frame; the todo tool's result travels whole."""
+@pytest.mark.parametrize("todo_name", ["todo_list", "todo"])
+def test_usage_changes_and_the_full_todo_result_reach_the_server(monkeypatch, todo_name) -> None:
+    """TAL-397: a counter change is reported before the next content frame; the todo tool's result travels whole.
+
+    TAL-889: the Agent reports the canonical ``todo_list``; the legacy ``todo`` alias still matches."""
     _patch(monkeypatch)
     todo = json.dumps({"todos": [{"id": str(i), "content": "c" * 200, "status": "pending"} for i in range(40)], "summary": {"total": 40}})
 
@@ -501,8 +506,8 @@ def test_usage_changes_and_the_full_todo_result_reach_the_server(monkeypatch) ->
         def run_conversation(self, **kwargs):
             self.kwargs["stream_delta_callback"]("a")
             self.session_prompt_tokens, self.session_completion_tokens, self.session_estimated_cost_usd = 100, 10, 0.5
-            self.kwargs["tool_start_callback"]("t1", "todo", {})
-            self.kwargs["tool_complete_callback"]("t1", "todo", {}, todo)
+            self.kwargs["tool_start_callback"]("t1", todo_name, {})
+            self.kwargs["tool_complete_callback"]("t1", todo_name, {}, todo)
             self.kwargs["stream_delta_callback"]("b")
             return super().run_conversation(**kwargs)
 
