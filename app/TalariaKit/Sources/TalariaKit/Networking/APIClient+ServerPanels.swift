@@ -29,9 +29,13 @@ extension APIClient {
         try await send(
             endpoint: .commandsExec,
             method: "POST",
-            body: CommandExecRequest(command: command, sessionId: sessionID)
+            body: CommandExecRequest(command: command, sessionId: sessionID),
+            timeout: Self.commandExecTimeout
         )
     }
+
+    /// The server gives a command up to 120s; wait past that so a slow command never fails here while it still runs.
+    private static let commandExecTimeout: TimeInterval = 150
 
     /// Saves the default model. Pass `provider` whenever the row names its
     /// provider (`provider_id` from the catalog group): Core persists
