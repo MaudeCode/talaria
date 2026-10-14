@@ -78,3 +78,29 @@ describe('useRuntimeNotices agent notices (TAL-803)', () => {
     expect(screen.getByText('Memory is off')).toBeTruthy()
   })
 })
+
+describe('useRuntimeNotices standing goal (TAL-808)', () => {
+  const base = { text: 'Ship the release notes', turns_used: 3, max_turns: 20, reason: null, parked_until: null }
+  const goalRow = (goal: Parameters<typeof useRuntimeNotices>[0]['goal']) => {
+    vi.mocked(api.fetchAgentHealth).mockResolvedValue({ alive: true, chat: { available: true, condition: null } })
+    const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    const wrapper = ({ children }: { children: ReactNode }) => createElement(QueryClientProvider, { client: qc }, children)
+    const { result } = renderHook(() => useRuntimeNotices({ live: null, compressing: false, goal }), { wrapper })
+    const row = result.current.notices.find((n) => n.id === 'runtime:goal')
+    if (!row) return null
+    const { container, unmount } = render(createElement(Fragment, null, row.content))
+    const text = container.textContent
+    unmount()
+    return { text, dismissible: row.onDismiss !== undefined }
+  }
+
+  it('shows the goal, its turns, and why it is paused or parked; none when no goal runs', () => {
+    expect(goalRow({ ...base, status: 'active' })).toEqual({ text: 'Goal · Ship the release notes3/20 turns', dismissible: false })
+    expect(goalRow({ ...base, status: 'paused', reason: 'turn budget exhausted' })?.text).toBe('Goal paused · turn budget exhausted · Ship the release notes3/20 turns')
+    expect(goalRow({ ...base, status: 'parked', reason: 'pid 4242' })?.text).toBe('Goal parked · pid 4242 · Ship the release notes3/20 turns')
+    const until = 1_770_000_600
+    const time = new Date(until * 1000).toLocaleTimeString(undefined, { timeStyle: 'short' })
+    expect(goalRow({ ...base, status: 'parked', reason: 'CI running', parked_until: until })?.text).toBe(`Goal parked · CI running · Ship the release notes3/20 · until ${time}`)
+    expect(goalRow(null)).toBeNull()
+  })
+})

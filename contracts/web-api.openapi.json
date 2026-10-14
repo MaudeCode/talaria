@@ -4544,6 +4544,69 @@
                           },
                           "description": "TAL-803: the Agent's active notices for the session, oldest first."
                         },
+                        "goal": {
+                          "anyOf": [
+                            {
+                              "type": "object",
+                              "properties": {
+                                "text": {
+                                  "type": "string"
+                                },
+                                "status": {
+                                  "enum": [
+                                    "active",
+                                    "paused",
+                                    "parked"
+                                  ],
+                                  "type": "string"
+                                },
+                                "turns_used": {
+                                  "type": "integer",
+                                  "minimum": 0,
+                                  "maximum": 9007199254740991
+                                },
+                                "max_turns": {
+                                  "type": "integer",
+                                  "minimum": 0,
+                                  "maximum": 9007199254740991
+                                },
+                                "reason": {
+                                  "anyOf": [
+                                    {
+                                      "type": "string"
+                                    },
+                                    {
+                                      "type": "null"
+                                    }
+                                  ]
+                                },
+                                "parked_until": {
+                                  "anyOf": [
+                                    {
+                                      "type": "number"
+                                    },
+                                    {
+                                      "type": "null"
+                                    }
+                                  ],
+                                  "description": "Unix seconds a timed park ends; null otherwise."
+                                }
+                              },
+                              "required": [
+                                "text",
+                                "status",
+                                "turns_used",
+                                "max_turns",
+                                "reason",
+                                "parked_until"
+                              ]
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "description": "TAL-808: the standing /goal; null when none runs."
+                        },
                         "automatic_turns_held": {
                           "type": "boolean",
                           "description": "TAL-899: the user pressed Stop, so no automatic turn (background wakeup or goal continuation) starts until their next message."
@@ -6960,6 +7023,69 @@
                           },
                           "description": "TAL-803: the Agent's active notices for the session, oldest first."
                         },
+                        "goal": {
+                          "anyOf": [
+                            {
+                              "type": "object",
+                              "properties": {
+                                "text": {
+                                  "type": "string"
+                                },
+                                "status": {
+                                  "enum": [
+                                    "active",
+                                    "paused",
+                                    "parked"
+                                  ],
+                                  "type": "string"
+                                },
+                                "turns_used": {
+                                  "type": "integer",
+                                  "minimum": 0,
+                                  "maximum": 9007199254740991
+                                },
+                                "max_turns": {
+                                  "type": "integer",
+                                  "minimum": 0,
+                                  "maximum": 9007199254740991
+                                },
+                                "reason": {
+                                  "anyOf": [
+                                    {
+                                      "type": "string"
+                                    },
+                                    {
+                                      "type": "null"
+                                    }
+                                  ]
+                                },
+                                "parked_until": {
+                                  "anyOf": [
+                                    {
+                                      "type": "number"
+                                    },
+                                    {
+                                      "type": "null"
+                                    }
+                                  ],
+                                  "description": "Unix seconds a timed park ends; null otherwise."
+                                }
+                              },
+                              "required": [
+                                "text",
+                                "status",
+                                "turns_used",
+                                "max_turns",
+                                "reason",
+                                "parked_until"
+                              ]
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "description": "TAL-808: the standing /goal; null when none runs."
+                        },
                         "automatic_turns_held": {
                           "type": "boolean",
                           "description": "TAL-899: the user pressed Stop, so no automatic turn (background wakeup or goal continuation) starts until their next message."
@@ -9121,6 +9247,69 @@
                             ]
                           },
                           "description": "TAL-803: the Agent's active notices for the session, oldest first."
+                        },
+                        "goal": {
+                          "anyOf": [
+                            {
+                              "type": "object",
+                              "properties": {
+                                "text": {
+                                  "type": "string"
+                                },
+                                "status": {
+                                  "enum": [
+                                    "active",
+                                    "paused",
+                                    "parked"
+                                  ],
+                                  "type": "string"
+                                },
+                                "turns_used": {
+                                  "type": "integer",
+                                  "minimum": 0,
+                                  "maximum": 9007199254740991
+                                },
+                                "max_turns": {
+                                  "type": "integer",
+                                  "minimum": 0,
+                                  "maximum": 9007199254740991
+                                },
+                                "reason": {
+                                  "anyOf": [
+                                    {
+                                      "type": "string"
+                                    },
+                                    {
+                                      "type": "null"
+                                    }
+                                  ]
+                                },
+                                "parked_until": {
+                                  "anyOf": [
+                                    {
+                                      "type": "number"
+                                    },
+                                    {
+                                      "type": "null"
+                                    }
+                                  ],
+                                  "description": "Unix seconds a timed park ends; null otherwise."
+                                }
+                              },
+                              "required": [
+                                "text",
+                                "status",
+                                "turns_used",
+                                "max_turns",
+                                "reason",
+                                "parked_until"
+                              ]
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "description": "TAL-808: the standing /goal; null when none runs."
                         },
                         "automatic_turns_held": {
                           "type": "boolean",
@@ -12483,6 +12672,69 @@
                           },
                           "description": "TAL-803: the Agent's active notices for the session, oldest first."
                         },
+                        "goal": {
+                          "anyOf": [
+                            {
+                              "type": "object",
+                              "properties": {
+                                "text": {
+                                  "type": "string"
+                                },
+                                "status": {
+                                  "enum": [
+                                    "active",
+                                    "paused",
+                                    "parked"
+                                  ],
+                                  "type": "string"
+                                },
+                                "turns_used": {
+                                  "type": "integer",
+                                  "minimum": 0,
+                                  "maximum": 9007199254740991
+                                },
+                                "max_turns": {
+                                  "type": "integer",
+                                  "minimum": 0,
+                                  "maximum": 9007199254740991
+                                },
+                                "reason": {
+                                  "anyOf": [
+                                    {
+                                      "type": "string"
+                                    },
+                                    {
+                                      "type": "null"
+                                    }
+                                  ]
+                                },
+                                "parked_until": {
+                                  "anyOf": [
+                                    {
+                                      "type": "number"
+                                    },
+                                    {
+                                      "type": "null"
+                                    }
+                                  ],
+                                  "description": "Unix seconds a timed park ends; null otherwise."
+                                }
+                              },
+                              "required": [
+                                "text",
+                                "status",
+                                "turns_used",
+                                "max_turns",
+                                "reason",
+                                "parked_until"
+                              ]
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "description": "TAL-808: the standing /goal; null when none runs."
+                        },
                         "automatic_turns_held": {
                           "type": "boolean",
                           "description": "TAL-899: the user pressed Stop, so no automatic turn (background wakeup or goal continuation) starts until their next message."
@@ -15718,6 +15970,69 @@
                             ]
                           },
                           "description": "TAL-803: the Agent's active notices for the session, oldest first."
+                        },
+                        "goal": {
+                          "anyOf": [
+                            {
+                              "type": "object",
+                              "properties": {
+                                "text": {
+                                  "type": "string"
+                                },
+                                "status": {
+                                  "enum": [
+                                    "active",
+                                    "paused",
+                                    "parked"
+                                  ],
+                                  "type": "string"
+                                },
+                                "turns_used": {
+                                  "type": "integer",
+                                  "minimum": 0,
+                                  "maximum": 9007199254740991
+                                },
+                                "max_turns": {
+                                  "type": "integer",
+                                  "minimum": 0,
+                                  "maximum": 9007199254740991
+                                },
+                                "reason": {
+                                  "anyOf": [
+                                    {
+                                      "type": "string"
+                                    },
+                                    {
+                                      "type": "null"
+                                    }
+                                  ]
+                                },
+                                "parked_until": {
+                                  "anyOf": [
+                                    {
+                                      "type": "number"
+                                    },
+                                    {
+                                      "type": "null"
+                                    }
+                                  ],
+                                  "description": "Unix seconds a timed park ends; null otherwise."
+                                }
+                              },
+                              "required": [
+                                "text",
+                                "status",
+                                "turns_used",
+                                "max_turns",
+                                "reason",
+                                "parked_until"
+                              ]
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "description": "TAL-808: the standing /goal; null when none runs."
                         },
                         "automatic_turns_held": {
                           "type": "boolean",
@@ -19618,6 +19933,69 @@
                           },
                           "description": "TAL-803: the Agent's active notices for the session, oldest first."
                         },
+                        "goal": {
+                          "anyOf": [
+                            {
+                              "type": "object",
+                              "properties": {
+                                "text": {
+                                  "type": "string"
+                                },
+                                "status": {
+                                  "enum": [
+                                    "active",
+                                    "paused",
+                                    "parked"
+                                  ],
+                                  "type": "string"
+                                },
+                                "turns_used": {
+                                  "type": "integer",
+                                  "minimum": 0,
+                                  "maximum": 9007199254740991
+                                },
+                                "max_turns": {
+                                  "type": "integer",
+                                  "minimum": 0,
+                                  "maximum": 9007199254740991
+                                },
+                                "reason": {
+                                  "anyOf": [
+                                    {
+                                      "type": "string"
+                                    },
+                                    {
+                                      "type": "null"
+                                    }
+                                  ]
+                                },
+                                "parked_until": {
+                                  "anyOf": [
+                                    {
+                                      "type": "number"
+                                    },
+                                    {
+                                      "type": "null"
+                                    }
+                                  ],
+                                  "description": "Unix seconds a timed park ends; null otherwise."
+                                }
+                              },
+                              "required": [
+                                "text",
+                                "status",
+                                "turns_used",
+                                "max_turns",
+                                "reason",
+                                "parked_until"
+                              ]
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "description": "TAL-808: the standing /goal; null when none runs."
+                        },
                         "automatic_turns_held": {
                           "type": "boolean",
                           "description": "TAL-899: the user pressed Stop, so no automatic turn (background wakeup or goal continuation) starts until their next message."
@@ -21804,6 +22182,69 @@
                             ]
                           },
                           "description": "TAL-803: the Agent's active notices for the session, oldest first."
+                        },
+                        "goal": {
+                          "anyOf": [
+                            {
+                              "type": "object",
+                              "properties": {
+                                "text": {
+                                  "type": "string"
+                                },
+                                "status": {
+                                  "enum": [
+                                    "active",
+                                    "paused",
+                                    "parked"
+                                  ],
+                                  "type": "string"
+                                },
+                                "turns_used": {
+                                  "type": "integer",
+                                  "minimum": 0,
+                                  "maximum": 9007199254740991
+                                },
+                                "max_turns": {
+                                  "type": "integer",
+                                  "minimum": 0,
+                                  "maximum": 9007199254740991
+                                },
+                                "reason": {
+                                  "anyOf": [
+                                    {
+                                      "type": "string"
+                                    },
+                                    {
+                                      "type": "null"
+                                    }
+                                  ]
+                                },
+                                "parked_until": {
+                                  "anyOf": [
+                                    {
+                                      "type": "number"
+                                    },
+                                    {
+                                      "type": "null"
+                                    }
+                                  ],
+                                  "description": "Unix seconds a timed park ends; null otherwise."
+                                }
+                              },
+                              "required": [
+                                "text",
+                                "status",
+                                "turns_used",
+                                "max_turns",
+                                "reason",
+                                "parked_until"
+                              ]
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "description": "TAL-808: the standing /goal; null when none runs."
                         },
                         "automatic_turns_held": {
                           "type": "boolean",
@@ -24054,6 +24495,69 @@
                           },
                           "description": "TAL-803: the Agent's active notices for the session, oldest first."
                         },
+                        "goal": {
+                          "anyOf": [
+                            {
+                              "type": "object",
+                              "properties": {
+                                "text": {
+                                  "type": "string"
+                                },
+                                "status": {
+                                  "enum": [
+                                    "active",
+                                    "paused",
+                                    "parked"
+                                  ],
+                                  "type": "string"
+                                },
+                                "turns_used": {
+                                  "type": "integer",
+                                  "minimum": 0,
+                                  "maximum": 9007199254740991
+                                },
+                                "max_turns": {
+                                  "type": "integer",
+                                  "minimum": 0,
+                                  "maximum": 9007199254740991
+                                },
+                                "reason": {
+                                  "anyOf": [
+                                    {
+                                      "type": "string"
+                                    },
+                                    {
+                                      "type": "null"
+                                    }
+                                  ]
+                                },
+                                "parked_until": {
+                                  "anyOf": [
+                                    {
+                                      "type": "number"
+                                    },
+                                    {
+                                      "type": "null"
+                                    }
+                                  ],
+                                  "description": "Unix seconds a timed park ends; null otherwise."
+                                }
+                              },
+                              "required": [
+                                "text",
+                                "status",
+                                "turns_used",
+                                "max_turns",
+                                "reason",
+                                "parked_until"
+                              ]
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "description": "TAL-808: the standing /goal; null when none runs."
+                        },
                         "automatic_turns_held": {
                           "type": "boolean",
                           "description": "TAL-899: the user pressed Stop, so no automatic turn (background wakeup or goal continuation) starts until their next message."
@@ -26289,6 +26793,69 @@
                             ]
                           },
                           "description": "TAL-803: the Agent's active notices for the session, oldest first."
+                        },
+                        "goal": {
+                          "anyOf": [
+                            {
+                              "type": "object",
+                              "properties": {
+                                "text": {
+                                  "type": "string"
+                                },
+                                "status": {
+                                  "enum": [
+                                    "active",
+                                    "paused",
+                                    "parked"
+                                  ],
+                                  "type": "string"
+                                },
+                                "turns_used": {
+                                  "type": "integer",
+                                  "minimum": 0,
+                                  "maximum": 9007199254740991
+                                },
+                                "max_turns": {
+                                  "type": "integer",
+                                  "minimum": 0,
+                                  "maximum": 9007199254740991
+                                },
+                                "reason": {
+                                  "anyOf": [
+                                    {
+                                      "type": "string"
+                                    },
+                                    {
+                                      "type": "null"
+                                    }
+                                  ]
+                                },
+                                "parked_until": {
+                                  "anyOf": [
+                                    {
+                                      "type": "number"
+                                    },
+                                    {
+                                      "type": "null"
+                                    }
+                                  ],
+                                  "description": "Unix seconds a timed park ends; null otherwise."
+                                }
+                              },
+                              "required": [
+                                "text",
+                                "status",
+                                "turns_used",
+                                "max_turns",
+                                "reason",
+                                "parked_until"
+                              ]
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "description": "TAL-808: the standing /goal; null when none runs."
                         },
                         "automatic_turns_held": {
                           "type": "boolean",
@@ -36306,6 +36873,69 @@
                           },
                           "description": "TAL-803: the Agent's active notices for the session, oldest first."
                         },
+                        "goal": {
+                          "anyOf": [
+                            {
+                              "type": "object",
+                              "properties": {
+                                "text": {
+                                  "type": "string"
+                                },
+                                "status": {
+                                  "enum": [
+                                    "active",
+                                    "paused",
+                                    "parked"
+                                  ],
+                                  "type": "string"
+                                },
+                                "turns_used": {
+                                  "type": "integer",
+                                  "minimum": 0,
+                                  "maximum": 9007199254740991
+                                },
+                                "max_turns": {
+                                  "type": "integer",
+                                  "minimum": 0,
+                                  "maximum": 9007199254740991
+                                },
+                                "reason": {
+                                  "anyOf": [
+                                    {
+                                      "type": "string"
+                                    },
+                                    {
+                                      "type": "null"
+                                    }
+                                  ]
+                                },
+                                "parked_until": {
+                                  "anyOf": [
+                                    {
+                                      "type": "number"
+                                    },
+                                    {
+                                      "type": "null"
+                                    }
+                                  ],
+                                  "description": "Unix seconds a timed park ends; null otherwise."
+                                }
+                              },
+                              "required": [
+                                "text",
+                                "status",
+                                "turns_used",
+                                "max_turns",
+                                "reason",
+                                "parked_until"
+                              ]
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "description": "TAL-808: the standing /goal; null when none runs."
+                        },
                         "automatic_turns_held": {
                           "type": "boolean",
                           "description": "TAL-899: the user pressed Stop, so no automatic turn (background wakeup or goal continuation) starts until their next message."
@@ -38637,6 +39267,69 @@
                           },
                           "description": "TAL-803: the Agent's active notices for the session, oldest first."
                         },
+                        "goal": {
+                          "anyOf": [
+                            {
+                              "type": "object",
+                              "properties": {
+                                "text": {
+                                  "type": "string"
+                                },
+                                "status": {
+                                  "enum": [
+                                    "active",
+                                    "paused",
+                                    "parked"
+                                  ],
+                                  "type": "string"
+                                },
+                                "turns_used": {
+                                  "type": "integer",
+                                  "minimum": 0,
+                                  "maximum": 9007199254740991
+                                },
+                                "max_turns": {
+                                  "type": "integer",
+                                  "minimum": 0,
+                                  "maximum": 9007199254740991
+                                },
+                                "reason": {
+                                  "anyOf": [
+                                    {
+                                      "type": "string"
+                                    },
+                                    {
+                                      "type": "null"
+                                    }
+                                  ]
+                                },
+                                "parked_until": {
+                                  "anyOf": [
+                                    {
+                                      "type": "number"
+                                    },
+                                    {
+                                      "type": "null"
+                                    }
+                                  ],
+                                  "description": "Unix seconds a timed park ends; null otherwise."
+                                }
+                              },
+                              "required": [
+                                "text",
+                                "status",
+                                "turns_used",
+                                "max_turns",
+                                "reason",
+                                "parked_until"
+                              ]
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "description": "TAL-808: the standing /goal; null when none runs."
+                        },
                         "automatic_turns_held": {
                           "type": "boolean",
                           "description": "TAL-899: the user pressed Stop, so no automatic turn (background wakeup or goal continuation) starts until their next message."
@@ -40859,6 +41552,69 @@
                                 ]
                               },
                               "description": "TAL-803: the Agent's active notices for the session, oldest first."
+                            },
+                            "goal": {
+                              "anyOf": [
+                                {
+                                  "type": "object",
+                                  "properties": {
+                                    "text": {
+                                      "type": "string"
+                                    },
+                                    "status": {
+                                      "enum": [
+                                        "active",
+                                        "paused",
+                                        "parked"
+                                      ],
+                                      "type": "string"
+                                    },
+                                    "turns_used": {
+                                      "type": "integer",
+                                      "minimum": 0,
+                                      "maximum": 9007199254740991
+                                    },
+                                    "max_turns": {
+                                      "type": "integer",
+                                      "minimum": 0,
+                                      "maximum": 9007199254740991
+                                    },
+                                    "reason": {
+                                      "anyOf": [
+                                        {
+                                          "type": "string"
+                                        },
+                                        {
+                                          "type": "null"
+                                        }
+                                      ]
+                                    },
+                                    "parked_until": {
+                                      "anyOf": [
+                                        {
+                                          "type": "number"
+                                        },
+                                        {
+                                          "type": "null"
+                                        }
+                                      ],
+                                      "description": "Unix seconds a timed park ends; null otherwise."
+                                    }
+                                  },
+                                  "required": [
+                                    "text",
+                                    "status",
+                                    "turns_used",
+                                    "max_turns",
+                                    "reason",
+                                    "parked_until"
+                                  ]
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ],
+                              "description": "TAL-808: the standing /goal; null when none runs."
                             },
                             "automatic_turns_held": {
                               "type": "boolean",

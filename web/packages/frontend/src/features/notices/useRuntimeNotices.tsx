@@ -5,21 +5,30 @@ import { m } from '../../paraglide/messages.js'
 import * as api from '../../api/endpoints'
 import { keys } from '../../api/queryKeys'
 import { isApiError } from '../../contracts/common'
-import type { ChatReadiness, SessionNotice } from '@maudecode/talaria-web-contracts'
+import type { ChatReadiness, SessionGoal, SessionNotice } from '@maudecode/talaria-web-contracts'
 import type { LiveTurn } from '../../stream/reducer'
 import type { ComposerNotice } from '../composer/ComposerTab'
 
 type AgentHealth = Awaited<ReturnType<typeof api.fetchAgentHealth>>
 
-type Kind = 'thread_error' | 'server_unreachable' | 'offline' | 'agent_unavailable' | 'provider_failure' | 'agent_notice' | 'compressing'
-interface Notice { id?: string; kind: Kind; tone: 'error' | 'warning' | 'info'; title: string; detail?: string | undefined; /** A short state shown on the right, keeping the row to one line. */ status?: React.ReactNode; action?: { label: string; run: () => void } | undefined; dismissible: boolean }
+type Kind = 'thread_error' | 'server_unreachable' | 'offline' | 'agent_unavailable' | 'provider_failure' | 'agent_notice' | 'compressing' | 'goal'
+interface Notice { id?: string; kind: Kind; tone: 'error' | 'warning' | 'info'; title: string; detail?: string | undefined; /** A short state shown on the right, keeping the row to one line. */ status?: React.ReactNode; action?: { label: string; run: () => void } | undefined; dismissible: boolean; oneLine?: boolean }
 const CHAT_CONDITION: Record<NonNullable<ChatReadiness['condition']>, () => string> = {
   sidecar_unavailable: m.notice_agent_sidecar_unavailable,
   agent_incompatible: m.notice_agent_incompatible,
   agent_runtime_stale: m.notice_agent_runtime_stale,
 }
-const PRIORITY: Kind[] = ['thread_error', 'server_unreachable', 'offline', 'agent_unavailable', 'provider_failure', 'agent_notice', 'compressing']
+const PRIORITY: Kind[] = ['thread_error', 'server_unreachable', 'offline', 'agent_unavailable', 'provider_failure', 'agent_notice', 'compressing', 'goal']
 const NOTICE_TONE: Record<SessionNotice['level'], Notice['tone']> = { error: 'error', warn: 'warning', info: 'info', success: 'info' }
+
+/** TAL-808: the standing goal's row: its state, why it is paused or what it waits on, its text, and the turns used. */
+function goalNotice(goal: SessionGoal): Notice {
+  const title = goal.status === 'paused' ? m.goal_chip_paused() : goal.status === 'parked' ? m.goal_chip_parked() : m.goal_chip_active()
+  const turns = { turns: goal.turns_used, max_turns: goal.max_turns }
+  const status = goal.parked_until === null ? m.goal_chip_turns(turns) : m.goal_chip_turns_until({ ...turns, time: new Date(goal.parked_until * 1000).toLocaleTimeString(undefined, { timeStyle: 'short' }) })
+  // One line on a phone: the goal text truncates and its tooltip carries it whole.
+  return { kind: 'goal', tone: 'info', title, detail: [goal.reason, goal.text].filter(Boolean).join(' · '), status, dismissible: false, oneLine: true }
+}
 
 /** Wait before the next probe of an unreachable server: 1 s after the first failure, doubling to a 30 s cap. */
 export function retryDelay(failures: number): number {
@@ -107,9 +116,9 @@ export function recheckServer(qc: QueryClient): void {
 /**
  * Connection and runtime state as composer top-tab entries (legacy HWEB-11, moved into the tab by TAL-429): thread
  * error, unreachable Talaria server, offline, agent unavailable, provider failure, the session's Agent notices (TAL-803),
- * manual compression. A live turn's reconnect is the live row's own label.
+ * manual compression, the standing goal (TAL-808). A live turn's reconnect is the live row's own label.
  */
-export function useRuntimeNotices({ live, onRetry, compressing, agentNotices = [] }: { live: LiveTurn | null; onRetry?: (() => void) | undefined; compressing: boolean; agentNotices?: SessionNotice[] | undefined }): { notices: ComposerNotice[]; announcement: Announcement | null } {
+export function useRuntimeNotices({ live, onRetry, compressing, agentNotices = [], goal = null }: { live: LiveTurn | null; onRetry?: (() => void) | undefined; compressing: boolean; agentNotices?: SessionNotice[] | undefined; goal?: SessionGoal | null | undefined }): { notices: ComposerNotice[]; announcement: Announcement | null } {
   const { online, probe, failures, retry } = useServerProbe()
   const [dismissed, setDismissed] = useState<Set<string>>(new Set())
   const health = probe.data?.health
@@ -123,6 +132,7 @@ export function useRuntimeNotices({ live, onRetry, compressing, agentNotices = [
   if (live?.status === 'error' && live.error) list.push({ kind: 'thread_error', tone: 'error', title: m.live_error(), detail: live.error.message, action: onRetry ? { label: m.retry(), run: onRetry } : undefined, dismissible: true })
   for (const n of agentNotices) list.push({ id: `runtime:agent_notice:${n.key}`, kind: 'agent_notice', tone: NOTICE_TONE[n.level], title: n.text, dismissible: true })
   if (compressing) list.push({ kind: 'compressing', tone: 'info', title: m.live_compressing(), dismissible: false })
+  if (goal) list.push(goalNotice(goal))
   const visible = list.filter((n) => !dismissed.has(`${n.kind}:${n.title}`)).sort((a, b) => PRIORITY.indexOf(a.kind) - PRIORITY.indexOf(b.kind))
   const first = visible[0]
   const notices: ComposerNotice[] = visible.map((n) => ({
@@ -132,7 +142,7 @@ export function useRuntimeNotices({ live, onRetry, compressing, agentNotices = [
       <>
         {n.kind === 'compressing' && <Loader2 size={13} className="animate-spin" aria-hidden="true" />}
         {/* One sentence that wraps (two lines at most) rather than a title and detail squeezed into columns. */}
-        <span className="min-w-0 line-clamp-2 leading-snug" title={n.detail ? `${n.title} · ${n.detail}` : undefined}><span className="font-medium">{n.title}</span>{n.detail && <span className="opacity-80"> · {n.detail}</span>}</span>
+        <span className={`min-w-0 leading-snug ${n.oneLine ? 'truncate' : 'line-clamp-2'}`} title={n.detail ? `${n.title} · ${n.detail}` : undefined}><span className="font-medium">{n.title}</span>{n.detail && <span className="opacity-80"> · {n.detail}</span>}</span>
         {n.status && <span className="ms-auto shrink-0 ps-2 opacity-80">{n.status}</span>}
       </>
     ),

@@ -316,6 +316,8 @@ export const chatRouter = os.router({
     try { const cfg = await ctx.deps.agentConfig.read(profileHome); const goals = cfg.goals; const raw = goals && typeof goals === 'object' && !Array.isArray(goals) ? (goals as Record<string, unknown>).max_turns : undefined; const n = Number.parseInt(str(raw ?? 20), 10); if (Number.isFinite(n)) defaultMaxTurns = Math.max(1, n || 20) } catch { defaultMaxTurns = 20 }
     const snapshot = await sidecar.call('goals.snapshot', { session_id: sid, profile_home: profileHome, default_max_turns: defaultMaxTurns })
     const payload = await sidecar.call('goals.command', { session_id: sid, profile_home: profileHome, args, stream_running: streamRunning, default_max_turns: defaultMaxTurns, workspace: str(s.workspace) || undefined }) as Record<string, unknown>
+    // TAL-808: the session `goal` follows the command before the client reloads the session.
+    await ctx.deps.turns.refreshGoal(s)
     if (payload.ok === false) {
       // Clients show the body's `error`, so the Agent's reason replaces the sidecar's code there.
       const reason = str(payload.message || payload.error || 'goal command failed')
@@ -330,6 +332,7 @@ export const chatRouter = os.router({
       const started = ctx.deps.turns.start(s, { msg: kickoff, attachments: [], workspace, model, modelProvider: provider, normalizedModel: normalized, source: 'webui', goalRelated: true })
       if (started._status !== undefined && started._status >= 400) {
         try { await sidecar.call('goals.restore', { session_id: sid, profile_home: profileHome, snapshot: snapshot.snapshot }) } catch { /* best effort */ }
+        await ctx.deps.turns.refreshGoal(s)
         throw new HttpError(started._status, started.error ?? 'goal kickoff failed', { ...payload, ok: false })
       }
       Object.assign(payload, startPayload(started))

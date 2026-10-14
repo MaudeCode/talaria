@@ -74,6 +74,10 @@ function applySideEffects(sessionId: string, event: ChatEvent): void {
     case 'notices':
       queryClient?.setQueryData<{ session: Session }>(keys.sessions.detail(sessionId), (old) => (old ? { ...old, session: { ...old.session, notices: event.data.notices } } : old))
       break
+    // TAL-808: the standing goal changed; the cached session shows the new one until its next load.
+    case 'session_goal':
+      queryClient?.setQueryData<{ session: Session }>(keys.sessions.detail(sessionId), (old) => (old ? { ...old, session: { ...old.session, goal: event.data.goal } } : old))
+      break
     case 'title':
       if (event.data.title && queryClient) void queryClient.invalidateQueries({ queryKey: keys.sessions.all })
       break

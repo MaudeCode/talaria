@@ -94,6 +94,13 @@ describe('shared monorepo contracts', () => {
     expect(fixture.notices_session!.events.map((event) => ChatEventSchema.parse(event).event)).toEqual(['notices', 'notices'])
   })
 
+  it('accepts the standing goal in each status and its stream event (TAL-808)', () => {
+    const fixture = JSON.parse(readFileSync(resolve(import.meta.dirname, '../../../../../contracts/fixtures/web-session.json'), 'utf8')) as Record<string, { events: unknown[] }>
+    expect(SessionSchema.parse(fixture.goal_session).goal).toMatchObject({ status: 'active', turns_used: 3, max_turns: 20 })
+    const goals = fixture.goal_session!.events.map((event) => { const parsed = ChatEventSchema.parse(event); return parsed.event === 'session_goal' ? parsed.data.goal : 'other' })
+    expect(goals.map((goal) => goal === 'other' ? goal : goal === null ? null : [goal.status, goal.reason, goal.parked_until])).toEqual([['active', null, null], ['parked', 'CI running', 1770000600], ['parked', 'pid 4242', null], ['paused', 'turn budget exhausted', null], null])
+  })
+
   it('carries the server streaming and read-only flags on every session example (TAL-312)', () => {
     const fixture = JSON.parse(readFileSync(resolve(import.meta.dirname, '../../../../../contracts/fixtures/web-session.json'), 'utf8')) as Record<string, unknown>
     expect(SessionSchema.parse(fixture.session)).toMatchObject({ is_streaming: true, active_stream_id: 'contract-run-f', read_only: false })

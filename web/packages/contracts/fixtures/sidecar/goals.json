@@ -8,6 +8,7 @@
       "result": {
         "goal": null,
         "active": false,
+        "parked": null,
         "message": "No active goal. Set one with /goal <text>.",
         "message_key": "goal_status_none"
       }

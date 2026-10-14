@@ -293,6 +293,7 @@ function reduceTurn(turn: LiveTurn, action: Extract<StreamAction, { type: 'event
       return { ...stamped, streamEnded: true }
     case 'todo_state':
     case 'notices':
+    case 'session_goal':
     case 'bg_task_complete':
     case 'state_saved':
     case 'hello':

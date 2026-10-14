@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Added",
+      "summary": "Chat shows a running /goal above the composer between turns: its text, turns used out of the budget, and whether it is paused or parked, with the reason and, for a timed park, until when.",
+      "highlight": false,
+      "components": ["web"]
+    }
+  ]
+}

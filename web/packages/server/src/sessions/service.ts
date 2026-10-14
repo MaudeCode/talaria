@@ -3,7 +3,7 @@
  * detail payload, list and search, and every mutation with its guards.
  * Runtime concerns owned by other domains arrive through `SessionServiceDeps`.
  */
-import type { AgentStorage, ChatReadiness, PendingSteer, RecoveryAudit, SessionNotice, RecoveryRepair, SidecarResult } from '@maudecode/talaria-web-contracts'
+import type { AgentStorage, ChatReadiness, PendingSteer, RecoveryAudit, SessionGoal, SessionNotice, RecoveryRepair, SidecarResult } from '@maudecode/talaria-web-contracts'
 import type { RunJournal } from './journal.js'
 import { str } from '../util.js'
 import { randomUUID } from 'node:crypto'
@@ -116,6 +116,7 @@ export interface SessionServiceDeps {
     /** TAL-899: whether a Stop holds the session's automatic turns until the user's next turn. */
     automaticTurnsHeld?: (sid: string) => boolean
     sessionNotices?: (sid: string) => SessionNotice[]
+    sessionGoal?: (sid: string) => SessionGoal | null
     /** Drop the session's cached agent; `endSession` (delete/clear) also ends its approval grants and parked approvals. */
     evictAgent: (sid: string, endSession?: boolean) => void
     closeTerminal: (sid: string) => void
@@ -759,6 +760,7 @@ export class SessionService {
     raw.pending_steers = raw.active_stream_id ? (this.deps.runtime.pendingSteers?.(str(raw.active_stream_id)) ?? []) : []
     raw.automatic_turns_held = this.deps.runtime.automaticTurnsHeld?.(s.session_id) ?? false
     raw.notices = this.deps.runtime.sessionNotices?.(s.session_id) ?? []
+    raw.goal = this.deps.runtime.sessionGoal?.(s.session_id) ?? null
     return redactSessionData(raw, this.deps.redactEnabled())
   }
 

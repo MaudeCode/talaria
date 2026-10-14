@@ -132,6 +132,15 @@ def _decision_payload(decision: dict, state: Any) -> dict:
     return decision
 
 
+def _parked(mgr: _Manager) -> dict | None:
+    """TAL-808: an active goal's live wait barrier, as the Agent's own ``is_waiting`` (which clears a satisfied one) sees it."""
+    if not mgr.is_waiting():
+        return None
+    state = mgr.state
+    until = float(getattr(state, "waiting_until", 0.0) or 0.0)
+    return {"reason": getattr(state, "waiting_reason", None) or None, "until": until or None}
+
+
 def _inactive(reason: str, status=None) -> dict:
     return {"status": status, "should_continue": False, "continuation_prompt": None, "verdict": "inactive", "reason": reason, "message": ""}
 
@@ -183,7 +192,8 @@ def register(registry) -> None:
     def get(ctx: CallContext, params: dict) -> dict:
         mgr = _manager_from(params)
         state = mgr.state
-        return {"goal": _state_payload(state), "active": bool(state is not None and getattr(state, "status", None) == "active"), **_status_payload(state)}
+        active = bool(state is not None and getattr(state, "status", None) == "active")
+        return {"goal": _state_payload(state), "active": active, "parked": _parked(mgr) if active else None, **_status_payload(state)}
 
     @registry.method("goals.command")
     def command(ctx: CallContext, params: dict) -> dict:

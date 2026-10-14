@@ -26,7 +26,9 @@ export const GoalStateSchema = z.object({
   last_verdict: z.string().nullable(), last_reason: z.string().nullable(), paused_reason: z.string().nullable(),
 })
 const GoalSession = ProfileHomeParams.extend({ session_id: z.string().min(1), default_max_turns: z.number().int().positive().optional() })
-export const GoalStatusSchema = z.object({ goal: GoalStateSchema.nullable(), active: z.boolean(), message: z.string(), message_key: z.string().optional(), message_args: z.array(Json).optional() })
+/** TAL-808: `parked` is an active goal's live wait barrier: its reason and, for a timed wait, the Unix-seconds deadline. */
+export const GoalParkedSchema = z.object({ reason: z.string().nullable(), until: z.number().nullable() })
+export const GoalStatusSchema = z.object({ goal: GoalStateSchema.nullable(), active: z.boolean(), parked: GoalParkedSchema.nullable(), message: z.string(), message_key: z.string().optional(), message_args: z.array(Json).optional() })
 export const GoalCommandResultSchema = z.object({
   ok: z.boolean(), action: z.string(), message: z.string(), goal: GoalStateSchema.nullable(), error: z.string().optional(), kickoff_prompt: z.string().optional(),
   message_key: z.string().optional(), message_args: z.array(Json).optional(),

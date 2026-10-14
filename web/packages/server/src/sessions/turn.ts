@@ -17,7 +17,7 @@ import type { StateDbRead } from './state-db.js'
 import { HttpFailure, markSessionTitleGenerated } from './service.js'
 import type { SessionEventBus } from './events.js'
 import { StreamRegistry, SessionChannels, type StreamChannel } from './streams.js'
-import { ChatUsageSchema, type ClarifyAnswers, type PendingSteer, type SessionNotice, type SidecarResult, type SteerWithdrawn, type SteerWithdrawRequest } from '@maudecode/talaria-web-contracts'
+import { ChatUsageSchema, type ClarifyAnswers, type PendingSteer, type SessionGoal, type SessionNotice, type SidecarResult, type SteerWithdrawn, type SteerWithdrawRequest } from '@maudecode/talaria-web-contracts'
 import { PendingPrompts, clarifyReply } from './pending.js'
 import { RunJournal, type RunJournalWriter } from './journal.js'
 import { COMPRESSION_RECOVERY_ACTION_START_FOCUSED, COMPRESSION_RECOVERY_TERMINAL_STATE, CONTEXT_USAGE_FIELDS, Session, contextUsage, titleFrom, type Message } from './session.js'
@@ -28,6 +28,7 @@ import { ReasoningTitleTracker, reasoningEventPayload } from './reasoning-titles
 import { messageWindowForDisplay, messagesForLimitedPayload, toolCallsForMessageWindow } from './window.js'
 import { UNSETTLED_TODO_KEY, attachTodoState, parseTodoToolResult } from './todo.js'
 import { SessionNotices } from './notices.js'
+import { SessionGoals } from './goals.js'
 import { withSessionWireFlags } from './list.js'
 import { hydrateAnchorActivityScenes, turnTerminalState, withTurnIds } from './anchor.js'
 import { persistentStateChanges, persistentStateSnapshot } from './state-saved.js'
@@ -317,6 +318,7 @@ export class TurnRunner {
   /** TAL-899: sessions whose user pressed Stop; no automatic turn starts in them until the user's next turn is admitted. */
   private readonly stopHeld = new Set<string>()
   private readonly notices = new SessionNotices(() => this.deps.now())
+  private readonly goals = new SessionGoals(() => this.deps.now())
 
   constructor(readonly deps: TurnRunnerDeps) {}
 
@@ -335,11 +337,46 @@ export class TurnRunner {
     return this.notices.list(sessionId).map((n) => ({ ...n, text: redactString(n.text, redact) }))
   }
 
-  /** Hygiene sweep: a deleted session's hold and notices go with it (TAL-899, TAL-803). */
+  /** TAL-808: the session's standing goal (session `goal`). */
+  sessionGoal(sessionId: string): SessionGoal | null {
+    const goal = this.goals.view(sessionId)
+    if (!goal) return null
+    const redact = this.deps.redactEnabled()
+    return { ...goal, text: redactString(goal.text, redact), reason: goal.reason === null ? null : redactString(goal.reason, redact) }
+  }
+
+  /**
+   * TAL-808: reads the session's goal from the Agent and sends `session_goal` when its view changed, on `put` or else to
+   * the session's live stream. A failed read keeps the last one.
+   */
+  async refreshGoal(s: Pick<Session, 'session_id' | 'profile'>, put: (event: string, data: Record<string, unknown>) => void = (event, data) => { this.emitToSession(s.session_id, event, data) }): Promise<void> {
+    const sidecar = this.deps.sidecar()
+    if (!sidecar) return
+    let status: SidecarResult<'goals.get'>
+    try {
+      // Short: a session's first load waits on it.
+      status = await sidecar.call('goals.get', { session_id: s.session_id, profile_home: this.deps.profileHome(s.profile) }, { timeoutMs: 3_000 })
+    } catch (error) {
+      this.deps.log(`[webui] WARNING: goal read failed for ${s.session_id}: ${(error as Error).message}`)
+      return
+    }
+    if (this.goals.set(s.session_id, status)) put('session_goal', { session_id: s.session_id, goal: this.sessionGoal(s.session_id) })
+  }
+
+  /** TAL-808: a session's first detail after a restart reads its goal before answering. */
+  async loadGoal(sessionId: string): Promise<void> {
+    if (this.goals.has(sessionId)) return
+    let s: Session
+    try { s = this.deps.store.get(sessionId, { metadataOnly: true }) } catch { return }
+    await this.refreshGoal(s)
+  }
+
+  /** Hygiene sweep: a deleted session's hold, notices and goal go with it (TAL-899, TAL-803, TAL-808). */
   sweep(): void {
     const exists = (sid: string): boolean => existsSync(this.deps.store.pathFor(sid))
     for (const sid of this.stopHeld) if (!exists(sid)) this.stopHeld.delete(sid)
     this.notices.sweep(exists)
+    this.goals.sweep(exists)
   }
 
   /**
@@ -1052,6 +1089,7 @@ export class TurnRunner {
     payload.workspace_name = this.deps.service().workspaceNames()(s)
     payload.automatic_turns_held = this.stopHeld.has(s.session_id)
     payload.notices = this.sessionNotices(s.session_id)
+    payload.goal = this.sessionGoal(s.session_id)
     const service = this.deps.service()
     const scened = service.backgroundLinked(s, hydrateAnchorActivityScenes(withToolCallOutcomes(withBackgroundUpdates(withMarkerKinds(withTurnIds(withAttachmentObjects(s.messages))), s), s.tool_calls, s.active_stream_id), s.anchor_activity_scenes, { activeTurnId: s.active_stream_id, clipToolResults: true }))
     const [window, offset] = messageWindowForDisplay(scened, TERMINAL_SSE_VISIBLE_MESSAGE_LIMIT, null)
@@ -1731,6 +1769,8 @@ export class TurnRunner {
       if (goalTurn) put('goal', { session_id: sessionId, state: 'idle', decision: 'error', message: '' })
       return
     }
+    // The judgement moved the goal on (turns, park, pause, done); an inactive one only matters if a goal still shows.
+    if (decision.verdict !== 'inactive' || this.goals.view(sessionId)) await this.refreshGoal(s, put)
     if (!goalTurn && decision.verdict === 'inactive') return
     const prompt = str(decision.continuation_prompt).trim()
     const proceed = decision.should_continue && Boolean(prompt)
