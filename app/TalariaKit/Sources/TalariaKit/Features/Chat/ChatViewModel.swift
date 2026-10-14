@@ -3612,6 +3612,8 @@ public final class ChatViewModel {
         }
     }
 
+    static let compressionPollLimit = 600
+
     private func compressSessionFromSlashCommand(_ args: String) async -> SlashCommandExecutionResult {
         guard !isViewingCachedData else {
             return .unsupported(friendlyMessage: String(localized: "Reconnect to the server to compress context."))
@@ -3642,8 +3644,14 @@ public final class ChatViewModel {
                 focusTopic: focusTopic.isEmpty ? nil : focusTopic
             )
             manualCompressionStartedAt = response.startedAt.map { Date(timeIntervalSince1970: $0) }
+            var polls = 0
             while response.status == "running" {
-                try await Task.sleep(for: .seconds(1))
+                // As on Web, stop watching after about ten minutes; the job keeps running, and /compress joins it again.
+                guard polls < Self.compressionPollLimit else {
+                    return .unsupported(friendlyMessage: String(localized: "Compression is still running. Run /compress again to check on it."))
+                }
+                polls += 1
+                try await pollingIntervals.sleep(pollingIntervals.compressionNanoseconds)
                 response = try await client.sessionCompressionStatus(id: sessionID)
             }
 

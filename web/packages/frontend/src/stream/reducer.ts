@@ -255,7 +255,8 @@ function reduceTurn(turn: LiveTurn, action: Extract<StreamAction, { type: 'event
     case 'steer_withdrawn':
       return event.data.steer_id ? closeSteer(stamped, event.data.steer_id) : stamped
     case 'compressing':
-      return terminal ? stamped : { ...stamped, compressionStartedAt: runStart(event.data.started_at, now, now) }
+      // A heartbeat repeats the open span's start, so the first frame's stands; a frame without one is timed from its arrival.
+      return terminal ? stamped : { ...stamped, compressionStartedAt: stamped.compressionStartedAt ?? runStart(event.data.started_at, now, now) }
     case 'compressed':
       return { ...stamped, compressionStartedAt: null }
     case 'rate_limit_wait':

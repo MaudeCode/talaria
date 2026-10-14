@@ -101,6 +101,12 @@ describe('stream reducer: ordering and projection', () => {
     s = ev(s, 'done', { terminal_state: 'completed' })
     expect(s.turns[SID]!.compressionStartedAt).toBeNull()
   })
+  it('times a pre-upgrade compressing frame without its start from its first receipt, kept across heartbeats (TAL-1006)', () => {
+    let s = ev(started(), 'compressing', { session_id: SID }, { now: 5_000 })
+    expect(s.turns[SID]!.compressionStartedAt).toBe(5_000)
+    s = ev(s, 'compressing', { session_id: SID }, { now: 65_000 })
+    expect(s.turns[SID]!.compressionStartedAt).toBe(5_000)
+  })
 })
 
 describe('stream reducer: consumed steering', () => {

@@ -28314,6 +28314,112 @@
         }
       }
     },
+    "Compression is still running. Run /compress again to check on it." : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "لا يزال الضغط قيد التشغيل. شغّل /compress مرة أخرى للتحقق منه."
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Die Komprimierung läuft noch. Führe /compress erneut aus, um nachzusehen."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "La compresión sigue en curso. Ejecuta /compress de nuevo para comprobarla."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "La compression est toujours en cours. Relancez /compress pour la vérifier."
+          }
+        },
+        "he" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "הדחיסה עדיין פועלת. הרץ /compress שוב כדי לבדוק אותה."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "La compressione è ancora in corso. Esegui di nuovo /compress per controllarla."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "圧縮はまだ実行中です。確認するには /compress をもう一度実行してください。"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "압축이 아직 실행 중입니다. 확인하려면 /compress를 다시 실행하세요."
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Comprimeren loopt nog. Voer /compress opnieuw uit om het te controleren."
+          }
+        },
+        "pl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Kompresja nadal trwa. Uruchom ponownie /compress, aby ją sprawdzić."
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "A compressão ainda está em andamento. Execute /compress novamente para verificar."
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Сжатие ещё выполняется. Запустите /compress ещё раз, чтобы проверить."
+          }
+        },
+        "tr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Sıkıştırma hâlâ çalışıyor. Kontrol etmek için /compress komutunu yeniden çalıştırın."
+          }
+        },
+        "ur" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "سکیڑنا ابھی جاری ہے۔ جانچنے کے لیے /compress دوبارہ چلائیں۔"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "压缩仍在进行。再次运行 /compress 查看进度。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "壓縮仍在進行。再次執行 /compress 查看進度。"
+          }
+        },
+        "zh-HK" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "壓縮仍在進行。再次執行 /compress 查看進度。"
+          }
+        }
+      }
+    },
     "Compressing context" : {
       "localizations" : {
         "ar" : {
