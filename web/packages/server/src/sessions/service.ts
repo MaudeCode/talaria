@@ -7,7 +7,7 @@ import type { ChatReadiness, PendingSteer, RecoveryAudit, RecoveryRepair } from 
 import type { RunJournal } from './journal.js'
 import { str } from '../util.js'
 import { randomUUID } from 'node:crypto'
-import { rmSync } from 'node:fs'
+import { existsSync, rmSync } from 'node:fs'
 import { buildActiveTurnToken, copyJson, redactSessionData, redactValue, stripPublicInternalFields, withSceneToolDisplay } from '../redact.js'
 import type { DraftStore } from './drafts.js'
 import { DraftVersionConflict, normalizeDraftVersion } from './drafts.js'
@@ -1212,10 +1212,11 @@ export class SessionService {
   // ── transcript mutations ─────────────────────────────────────────────────
 
   /**
-   * TAL-929: a cut that discards more than one user turn changes nothing and answers with its counts, unless `confirmToken`
-   * is the token of the rows it would remove now: a transcript that grew or changed since the confirmation asks again.
+   * TAL-929: under a `hold`, a cut that discards more than one user turn changes nothing and answers with its counts,
+   * unless `confirmToken` is the token of the rows it would remove now: a transcript that changed since asks again.
+   * Without one (a released App, which asked on the device) the cut proceeds as before.
    */
-  async truncate(sid: string, keepRaw: unknown, confirmToken: string | null = null): Promise<Record<string, unknown>> {
+  async truncate(sid: string, keepRaw: unknown, hold: { confirmToken: string | null } | null = null): Promise<Record<string, unknown>> {
     this.rejectSubagent(sid, 'modified')
     if (keepRaw === null || keepRaw === undefined) throw new HttpFailure(400, 'Missing required field(s): keep_count')
     const s = this.mutationTarget(sid, 'modified')
@@ -1229,8 +1230,12 @@ export class SessionService {
     const refused = await this.store.withLock(sid, () => {
       // One state.db read decides and marks the boundary, so a row committed meanwhile is neither counted nor hidden.
       const read = this.stateDbRead(s)
-      const held = this.heldCut(s, keep, read.rows)
-      if (held && held.confirm_token !== confirmToken) return held
+      if (hold) {
+        // A failed read of a state.db this session has rows in cannot say what the cut removes: fail closed.
+        if (!read.ok && (existsSync(this.stateDbPath(s.profile)) || (s.state_db_seen_id ?? 0) > 0)) throw new HttpFailure(503, 'The session history could not be read. Please try again in a moment.')
+        const held = this.heldCut(s, keep, read.rows)
+        if (held && held.confirm_token !== hold.confirmToken) return held
+      }
       // A cut inside the state.db continuation keeps the continuation's rows before it: the boundary below hides every
       // row this read saw, so those rows join the stored transcript and model history first.
       if (keep > s.messages.length) {

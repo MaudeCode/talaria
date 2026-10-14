@@ -323,7 +323,7 @@ class Probe:
             ("session pin", "/api/session/pin", {"session_id": session_id, "pinned": True}),
             ("session archive", "/api/session/archive", {"session_id": session_id, "archived": True}),
             ("session move", "/api/session/move", {"session_id": session_id, "project_id": None}),
-            ("session truncate", "/api/session/truncate", {"session_id": session_id, "keep_count": 0}),
+            ("session truncate", "/api/session/truncate", {"session_id": session_id, "keep_count": 0, "confirm_deep_truncate": False}),
         )
         for boundary, path, body in mutation_checks:
             result = self.request(

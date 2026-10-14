@@ -12882,7 +12882,7 @@
     "/api/session/truncate": {
       "post": {
         "operationId": "session.truncate",
-        "description": "TAL-929: a cut that discards more than one user turn changes nothing and answers `confirm_required` with the counts to confirm, until resent with `confirm_deep_truncate` and the `confirm_token` of those same rows.",
+        "description": "TAL-929: a cut that discards more than one user turn changes nothing and answers `confirm_required` with the counts to confirm, until resent with `confirm_deep_truncate` and the `confirm_token` of those same rows. A body without `confirm_deep_truncate` (a released App, which asks on the device) cuts at once; 503 when the session's state.db rows cannot be read.",
         "tags": [
           "sessions"
         ],
