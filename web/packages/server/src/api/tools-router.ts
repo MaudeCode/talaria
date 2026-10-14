@@ -425,10 +425,9 @@ export const toolsRouter = os.router({
       if (SESSION_EXEC_COMMANDS.has(name.toLowerCase())) {
         return { output: await ctx.deps.turns.refine(sessionId ? ctx.deps.sessionStore.get(sessionId) : null, args.trim()) }
       }
-      // TAL-904: a chat's command runs under that chat's session and the workspace its next turn would use.
-      let workspace = ''
-      if (sessionId) try { workspace = ctx.deps.sessions.turnWorkspace(ctx.deps.sessionStore.get(sessionId, { metadataOnly: true })) } catch { /* the session id alone still binds */ }
-      const chat = sessionId ? { session_id: sessionId, workspace } : {}
+      // TAL-904: a chat's command runs under that chat's session and the workspace its next turn would use. An unknown
+      // chat (404) or a workspace that turn would refuse (400) refuses the command rather than run it half-bound.
+      const chat = sessionId ? { session_id: sessionId, workspace: ctx.deps.sessions.turnWorkspace(ctx.deps.sessionStore.get(sessionId, { metadataOnly: true })) } : {}
       try {
         return { output: (await runningSidecar(ctx).call('commands.exec', { profile_home: home(ctx), command, ...chat }, { timeoutMs: 120_000 })).output }
       } catch (error) {
