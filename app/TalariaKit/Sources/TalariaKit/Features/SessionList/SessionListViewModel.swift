@@ -356,6 +356,8 @@ public final class SessionListViewModel {
             }
         }
 
+        // Resolved before the request, so a list in flight across a profile switch cannot cache for the new profile.
+        let agentStorageEntry = responseCache?.entry(ResponseCache.Kind.agentStorage)
         do {
             let response = try await client.sessions(visibility: .showAll)
             guard generation == loadGeneration else { return true }
@@ -374,7 +376,7 @@ public final class SessionListViewModel {
             automatedSessionCounts = response.automatedSessionCounts
             agentStorage = response.agentStorage
             if let data = try? JSONEncoder().encode(response.agentStorage) {
-                responseCache?.entry(ResponseCache.Kind.agentStorage).save(data)
+                agentStorageEntry?.save(data)
             }
             isViewingCachedData = false
             isShowingCachedPaint = false

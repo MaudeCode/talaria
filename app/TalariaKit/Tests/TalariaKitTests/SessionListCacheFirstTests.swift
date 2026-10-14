@@ -119,6 +119,25 @@ extension SessionListMutationTests {
         XCTAssertEqual(relaunch.agentStorage, AgentStorage(state: .ok, reason: nil), "The server's answer replaces the cached state")
     }
 
+    /// A list that was in flight across a profile switch keeps its storage state out of the new profile's cache.
+    func testAListInFlightAcrossAProfileSwitchDoesNotCacheItsStorageStateForTheNewProfile() async throws {
+        let server = try XCTUnwrap(URL(string: "https://tal830-profile-switch.test"))
+        ActiveServerProfile.record("before", for: server)
+        addTeardownBlock { ActiveServerProfile.record(nil, for: server) }
+        let cache = makeResponseCache(server: server)
+        let client = try makeClient(server: server) { request in
+            ActiveServerProfile.record("after", for: server)
+            return apiTestJSONResponse(
+                #"{"sessions": [], "agent_storage": {"state": "corrupt", "reason": "state.db is damaged"}}"#,
+                for: request
+            )
+        }
+
+        await SessionListViewModel(server: server, client: client, responseCache: cache).load()
+
+        XCTAssertNil(cache.entry(ResponseCache.Kind.agentStorage).load(AgentStorage.self), "The previous profile's state reached the new one's cache")
+    }
+
     func testRunningChatsNeverOpenedHereArePrefetchedOncePerRun() async throws {
         let context = try makeContext()
         let server = try XCTUnwrap(URL(string: "https://example.test"))
