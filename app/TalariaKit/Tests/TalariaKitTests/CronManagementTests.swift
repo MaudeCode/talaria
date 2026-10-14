@@ -39,6 +39,63 @@ final class CronManagementModelTests: XCTestCase {
         XCTAssertEqual(job.toastNotifications, true)
     }
 
+    /// TAL-835: the TAL-810 fields decode when present and leave an older server's list as it was.
+    func testCronListDecodesStoreHealthLastFailureAndRunningWithAndWithoutTheFields() throws {
+        let decoder = JSONDecoder.cronTestDecoder
+        let current = try decoder.decode(CronJobsResponse.self, from: Data("""
+        {
+          "jobs": [
+            {"id": "job-a", "name": "Digest", "last_status": "ok", "running": true,
+             "last_failure": {"at": 1777892400, "detail": "Provider timed out"}},
+            {"id": "job-b", "name": "Unparsed time", "last_failure": {"at": null, "detail": "Disk full"}},
+            {"id": "job-c", "name": "Healthy", "running": false, "last_failure": null}
+          ],
+          "unwritable_stores": [
+            {"profile": "work", "store": "/synthetic/work/cron", "error": "[Errno 13] Permission denied",
+             "fix": "Make the store writable.", "since": 1777800000},
+            {"profile": "home", "store": "/synthetic/home/cron", "error": "Read-only file system",
+             "fix": "Remount it read-write.", "since": null},
+            {"profile": "broken"}
+          ]
+        }
+        """.utf8))
+
+        let jobs = try XCTUnwrap(current.jobs)
+        XCTAssertEqual(jobs[0].running, true)
+        XCTAssertEqual(jobs[0].lastFailure?.detail, "Provider timed out")
+        XCTAssertEqual(jobs[0].lastFailure?.at?.timeIntervalSince1970, 1_777_892_400)
+        XCTAssertEqual(jobs[1].lastFailure?.detail, "Disk full")
+        XCTAssertNil(jobs[1].lastFailure?.at)
+        XCTAssertEqual(jobs[2].running, false)
+        XCTAssertNil(jobs[2].lastFailure)
+
+        let stores = try XCTUnwrap(current.unwritableStores)
+        XCTAssertEqual(stores.map(\.store), ["/synthetic/work/cron", "/synthetic/home/cron"], "A store without a path is skipped")
+        XCTAssertEqual(stores[0].profile, "work")
+        XCTAssertEqual(stores[0].error, "[Errno 13] Permission denied")
+        XCTAssertEqual(stores[0].fix, "Make the store writable.")
+        XCTAssertEqual(stores[0].since?.timeIntervalSince1970, 1_777_800_000)
+        XCTAssertNil(stores[1].since)
+
+        let older = try decoder.decode(CronJobsResponse.self, from: Data(#"{"jobs": [{"id": "job-a", "name": "Digest"}]}"#.utf8))
+        XCTAssertNil(older.unwritableStores)
+        XCTAssertNil(older.jobs?.first?.running)
+        XCTAssertNil(older.jobs?.first?.lastFailure)
+    }
+
+    func testCronMutationResponseDecodesAlreadyRunning() throws {
+        let decoder = JSONDecoder.cronTestDecoder
+        let refused = try decoder.decode(
+            CronMutationResponse.self,
+            from: Data(#"{"ok": false, "job_id": "job-a", "status": "already_running", "elapsed": 12.5}"#.utf8)
+        )
+        XCTAssertEqual(refused.ok, false)
+        XCTAssertEqual(refused.status, "already_running")
+
+        let started = try decoder.decode(CronMutationResponse.self, from: Data(#"{"ok": true}"#.utf8))
+        XCTAssertNil(started.status)
+    }
+
     func testPausedRecurringJobWithStaleErrorRendersServerPausedState() throws {
         let job = try JSONDecoder.cronTestDecoder.decode(CronJob.self, from: Data("""
         {
@@ -730,6 +787,95 @@ final class CronManagementViewModelTests: APIClientTestCase {
             return
         }
         XCTAssertEqual(updatedJob.jobId, "job123")
+    }
+
+    /// TAL-835: the list carries the server's unwritable stores, and a job another process runs reads as running
+    /// although the status poll, which sees only this server's runs, omits it.
+    @MainActor
+    func testTasksViewModelShowsUnwritableStoresAndJobsRunningElsewhere() async throws {
+        var listJSON = """
+        {"ordered": true, "jobs": [
+          {"id": "job-elsewhere", "name": "Gateway run", "running": true},
+          {"id": "job-here", "name": "Server run", "running": true},
+          {"id": "job-idle", "name": "Idle", "running": false}
+        ], "unwritable_stores": [
+          {"profile": "default", "store": "/synthetic/cron", "error": "No space left on device", "fix": "Free disk space.", "since": null}
+        ]}
+        """
+        let client = makeClient { request in
+            switch request.url?.path {
+            case "/api/crons":
+                return apiTestJSONResponse(listJSON, for: request)
+            case "/api/crons/status":
+                return apiTestJSONResponse(#"{"running": {"job-here": 3}}"#, for: request)
+            case "/api/crons/delivery-options":
+                return apiTestJSONResponse(#"{"platforms": []}"#, for: request)
+            default:
+                XCTFail("Unexpected request: \(request.url?.path ?? "nil")")
+                return apiTestJSONResponse("{}", for: request)
+            }
+        }
+        let viewModel = TasksViewModel(server: try XCTUnwrap(URL(string: "https://example.test")), client: client)
+
+        await viewModel.load()
+
+        XCTAssertEqual(viewModel.unwritableStores.map(\.error), ["No space left on device"])
+        let jobs = Dictionary(uniqueKeysWithValues: viewModel.jobs.map { ($0.id, $0) })
+        XCTAssertTrue(viewModel.isRunning(try XCTUnwrap(jobs["job-elsewhere"])))
+        XCTAssertNil(viewModel.runningElapsed(for: try XCTUnwrap(jobs["job-elsewhere"])), "Another process's run has no elapsed time here")
+        XCTAssertTrue(viewModel.isRunning(try XCTUnwrap(jobs["job-here"])))
+        XCTAssertEqual(viewModel.runningElapsed(for: try XCTUnwrap(jobs["job-here"])), 3)
+        XCTAssertFalse(viewModel.isRunning(try XCTUnwrap(jobs["job-idle"])))
+        XCTAssertEqual(viewModel.activeRunningCount, 2)
+
+        listJSON = #"{"ordered": true, "jobs": [{"id": "job-idle", "name": "Idle"}], "unwritable_stores": []}"#
+        await viewModel.load()
+
+        XCTAssertEqual(viewModel.unwritableStores, [], "A healthy store shows no banner")
+    }
+
+    /// TAL-835: run-now answers `already_running` when another process holds the job; the detail says so and shows it
+    /// running instead of a generic failure, and a refresh tracks the server's running state.
+    @MainActor
+    func testTaskDetailRunNowShowsAlreadyRunningAndRefreshTracksRunsElsewhere() async throws {
+        var listedRunning = true
+        let client = makeClient { request in
+            switch request.url?.path {
+            case "/api/crons/run":
+                return apiTestJSONResponse(#"{"ok": false, "job_id": "job123", "status": "already_running", "elapsed": 40}"#, for: request)
+            case "/api/crons/status":
+                return apiTestJSONResponse(#"{"job_id": "job123", "running": false, "elapsed": 0}"#, for: request)
+            case "/api/crons":
+                return apiTestJSONResponse(#"{"jobs": [{"id": "job123", "name": "Digest", "running": \#(listedRunning)}]}"#, for: request)
+            case "/api/crons/output":
+                return apiTestJSONResponse(#"{"outputs": []}"#, for: request)
+            case "/api/crons/history":
+                return apiTestJSONResponse(#"{"job_id": "job123", "runs": [], "total": 0, "offset": 0}"#, for: request)
+            default:
+                XCTFail("Unexpected request: \(request.url?.path ?? "nil")")
+                throw URLError(.badURL)
+            }
+        }
+        let viewModel = TaskDetailViewModel(
+            job: try decodeCronJob(#"{"id": "job123", "name": "Digest"}"#),
+            runningElapsed: nil,
+            server: try XCTUnwrap(URL(string: "https://example.test")),
+            client: client
+        )
+        XCTAssertFalse(viewModel.isRunning)
+
+        let didRun = await viewModel.runNow()
+
+        XCTAssertFalse(didRun)
+        XCTAssertTrue(viewModel.isRunning)
+        XCTAssertEqual(viewModel.actionErrorMessage, "This task is already running.")
+
+        await viewModel.refresh()
+        XCTAssertTrue(viewModel.isRunning, "The list still reports the run another process owns")
+
+        listedRunning = false
+        await viewModel.refresh()
+        XCTAssertFalse(viewModel.isRunning, "The run elsewhere finished")
     }
 
     @MainActor

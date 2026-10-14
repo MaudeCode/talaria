@@ -6,6 +6,7 @@ struct SessionListBanner: View {
     let systemImage: String
     let title: LocalizedStringKey
     var detail: String?
+    var detailLineLimit: Int? = 3
 
     var body: some View {
         HStack(alignment: .firstTextBaseline, spacing: 8) {
@@ -21,7 +22,7 @@ struct SessionListBanner: View {
                 if let detail {
                     Text(verbatim: detail)
                         .font(.footnote)
-                        .lineLimit(3)
+                        .lineLimit(detailLineLimit)
                 }
             }
 

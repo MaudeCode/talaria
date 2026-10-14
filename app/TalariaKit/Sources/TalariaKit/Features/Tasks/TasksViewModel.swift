@@ -12,6 +12,11 @@ public final class TasksViewModel {
     private var loadGeneration = 0
     public private(set) var jobs: [CronJob] = []
     private(set) var runningJobs: [String: Double] = [:]
+    /// Jobs the last live list reports running (TAL-835), including runs another process such as the gateway
+    /// scheduler owns, which the status poll cannot see. Never read from the cache.
+    private var listedRunningJobs: Set<String> = []
+    /// TAL-810: listed cron stores whose scheduler skips every run until the store is writable again.
+    public private(set) var unwritableStores: [CronStoreHealth] = []
     /// Server-provided deliver targets; `nil` while unknown or when the
     /// endpoint is unavailable (the editor then falls back to free text).
     public private(set) var deliveryOptions: [CronDeliveryOption]?
@@ -65,6 +70,7 @@ public final class TasksViewModel {
             let deliveryOptions = await deliveryOptionsResponse?.platforms
             guard generation == loadGeneration else { return }
             runningJobs = statusResult.runningJobs ?? [:]
+            listedRunningJobs = Set((jobsResult.jobs ?? []).filter { $0.running == true }.compactMap(\.jobId))
             setJobs(from: jobsResult)
             self.deliveryOptions = deliveryOptions
         } catch {
@@ -93,6 +99,11 @@ public final class TasksViewModel {
     public func runningElapsed(for job: CronJob) -> Double? {
         guard let jobID = job.jobId else { return nil }
         return runningJobs[jobID]
+    }
+
+    public func isRunning(_ job: CronJob) -> Bool {
+        guard let jobID = job.jobId else { return false }
+        return runningJobs[jobID] != nil || listedRunningJobs.contains(jobID)
     }
 
     public func clearActionError() {
@@ -148,11 +159,12 @@ public final class TasksViewModel {
         case .delete(let jobID):
             jobs.removeAll { $0.jobId == jobID }
             runningJobs.removeValue(forKey: jobID)
+            listedRunningJobs.remove(jobID)
         }
     }
 
     public var activeRunningCount: Int {
-        runningJobs.count
+        listedRunningJobs.union(runningJobs.keys).count
     }
 
     private func upsert(_ job: CronJob) {
@@ -176,15 +188,12 @@ public final class TasksViewModel {
     private func setJobs(from response: CronJobsResponse) {
         sortsLocally = response.ordered != true
         jobs = sortsLocally ? (response.jobs ?? []).sorted(by: sortJobs) : response.jobs ?? []
+        unwritableStores = response.unwritableStores ?? []
     }
 
     private func sortJobs(_ left: CronJob, _ right: CronJob) -> Bool {
-        if runningElapsed(for: left) != nil, runningElapsed(for: right) == nil {
-            return true
-        }
-
-        if runningElapsed(for: left) == nil, runningElapsed(for: right) != nil {
-            return false
+        if isRunning(left) != isRunning(right) {
+            return isRunning(left)
         }
 
         switch (left.nextRunAt?.date, right.nextRunAt?.date) {

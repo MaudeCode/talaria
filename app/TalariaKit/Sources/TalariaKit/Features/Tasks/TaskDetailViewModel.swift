@@ -6,6 +6,8 @@ import Observation
 public final class TaskDetailViewModel {
     public private(set) var job: CronJob
     public private(set) var runningElapsed: Double?
+    /// The server's list says the job runs (TAL-835), possibly in another process the status poll cannot see.
+    private var isListedRunning: Bool
 
     public private(set) var outputs: [CronOutputItem] = []
     /// Server-provided deliver targets; `nil` while unknown or when the
@@ -39,10 +41,15 @@ public final class TaskDetailViewModel {
     /// Shared with the task editor so its catalog loads use the same scope.
     public let client: APIClient
 
-    public init(job: CronJob, runningElapsed: Double?, server: URL, client: APIClient? = nil) {
+    public init(job: CronJob, runningElapsed: Double?, isRunning: Bool = false, server: URL, client: APIClient? = nil) {
         self.job = job
         self.runningElapsed = runningElapsed
+        isListedRunning = isRunning
         self.client = client ?? APIClient(baseURL: server)
+    }
+
+    public var isRunning: Bool {
+        runningElapsed != nil || isListedRunning
     }
 
     public func load() async {
@@ -89,6 +96,7 @@ public final class TaskDetailViewModel {
         }
         if let latest = await jobsResponse?.jobs?.first(where: { $0.jobId == jobID }) {
             job = latest
+            isListedRunning = latest.running == true
         }
         if let output = await outputResponse {
             outputs = output.outputs ?? []
@@ -175,11 +183,18 @@ public final class TaskDetailViewModel {
     }
 
     public func runNow() async -> Bool {
+        var alreadyRunning = false
         let success = await mutateJob { jobID in
-            try await client.runCron(jobID: jobID)
+            let response = try await client.runCron(jobID: jobID)
+            alreadyRunning = response.status == "already_running"
+            return response
         }
         if success {
             runningElapsed = 0
+        } else if alreadyRunning {
+            // TAL-835: the server refused because the job runs, possibly in another process.
+            isListedRunning = true
+            actionErrorMessage = String(localized: "This task is already running.")
         }
         return success
     }

@@ -845,6 +845,7 @@ struct SessionListView: View {
                     TaskDetailView(
                         job: job,
                         runningElapsed: tasks.runningElapsed(for: job),
+                        isRunning: tasks.isRunning(job),
                         server: server,
                         onAPIError: handleAPIError,
                         onMutation: { tasks.apply($0) }
