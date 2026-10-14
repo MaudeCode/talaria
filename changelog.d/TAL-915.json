@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Worktrees of a repository that lists folders such as node_modules in .worktreeinclude no longer show as dirty with untracked files, and removing one no longer needs force; real untracked files still count.",
+      "highlight": false,
+      "components": ["web"]
+    }
+  ]
+}
