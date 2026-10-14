@@ -1,4 +1,4 @@
-import { mkdtempSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { expect, test } from './fixtures'
@@ -6,6 +6,8 @@ import { expect, test } from './fixtures'
 test.use({ serviceWorkers: 'block' })
 
 const owned: string[] = []
+// A checkpoint's hash changes with every re-recording, so read the one the replay sidecar answers with.
+const recorded = (JSON.parse(readFileSync(join(import.meta.dirname, '../../contracts/fixtures/sidecar/checkpoints.json'), 'utf8')) as { 'checkpoints.list': { result: { checkpoints: { hash: string }[] } }[] })['checkpoints.list'][0]!.result.checkpoints[0]!.hash
 test.afterEach(() => { for (const path of owned.splice(0)) rmSync(path, { recursive: true, force: true }) })
 
 /**
@@ -28,7 +30,7 @@ test('the Checkpoints page lists, diffs and restores a workspace checkpoint', as
   await expect(tab).toBeVisible()
   await tab.click()
   const entry = page.getByRole('list', { name: 'Checkpoints' }).getByRole('listitem').filter({ hasText: 'before write_file' })
-  await expect(entry).toContainText('5950449d0e45')
+  await expect(entry).toContainText(recorded.slice(0, 12))
   await expect(entry).toContainText('Files: 0')
   if (process.env.TAL571_SHOTS) await page.screenshot({ path: `${process.env.TAL571_SHOTS}/list-${testInfo.project.name}.png` })
 
