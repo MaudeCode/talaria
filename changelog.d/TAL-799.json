@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Changed",
+      "summary": "The model picker lists Hermes Agent's current models for providers you have not signed in to, and a placeholder list shown while a provider's catalog is unreachable is checked again within a minute instead of being kept for a day.",
+      "highlight": false,
+      "components": ["web"]
+    }
+  ]
+}

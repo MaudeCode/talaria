@@ -117,6 +117,65 @@ describe('live model ids without a sidecar (TAL-542)', () => {
   })
 })
 
+describe('curated and fallback model lists (TAL-799)', () => {
+  const setup = (config: Json, modelIds: (provider: string) => { model_ids: string[]; fallback?: boolean }) => {
+    const home = mkdtempSync(join(tmpdir(), 'talaria-catalog-'))
+    let clock = 1_800_000_000
+    const sidecar = new FakeSidecar()
+    sidecar.respond('config.get', (p) => ({ path: join(p.profile_home, 'config.yaml'), exists: true, config }))
+    sidecar.respond('providers.auth_status', (p) => ({ status: { logged_in: false, provider: p.provider ?? '' } }))
+    sidecar.respond('plugins.providers', () => ({ providers: [] }))
+    sidecar.respond('providers.model_ids', (p) => ({ provider: p.provider, ...modelIds(p.provider) }))
+    writeFileSync(join(home, 'config.yaml'), '# cfg\n')
+    const catalog = new ProviderCatalog({ sidecar: () => sidecar, config: new AgentConfig({ sidecar: () => sidecar, env: {} }), env: {}, now: () => clock, log: () => undefined, costBudget: () => null, isRootProfileHome: () => true })
+    const lookups = (provider: string): number => sidecar.calls.filter((c) => c.method === 'providers.model_ids' && (c.params as Json).provider === provider).length
+    return { home, catalog, lookups, tick: (s: number) => { clock += s } }
+  }
+
+  it('lists the Agent\'s curated ids for a provider without credentials, and never repairs onto them', async () => {
+    const { home, catalog } = setup(
+      { model: { provider: 'anthropic', default: 'claude-fable-5.1' }, providers: { ollama: { base_url: 'http://ollama.test/v1', models: ['llama3.2'] } } },
+      (provider) => (provider === 'anthropic' ? { model_ids: ['claude-fable-5.1', 'claude-opus-5-5'], fallback: true } : { model_ids: [] }),
+    )
+    try {
+      const groups = (await catalog.models(home)).groups
+      expect(groups.find((g) => g.provider_id === 'anthropic')?.models.map((m) => m.id)).toEqual(['claude-fable-5.1', 'claude-opus-5-5'])
+      await catalog.warmSessionModelRepair(home)
+      expect(catalog.sessionModelRepair(home, 'claude-opus-5-5', 'ollama')).toBeNull()
+    } finally {
+      rmSync(home, { recursive: true, force: true })
+    }
+  })
+
+  it('keeps an Agent fallback list unconfirmed and looks the catalog up again after the short TTL', async () => {
+    let fallback = true
+    const { home, catalog, lookups, tick } = setup(
+      { model: { provider: 'anthropic', default: 'claude-sonnet-4' }, providers: { ollama: { base_url: 'http://ollama.test/v1', models: ['llama3.2'] }, deepseek: { api_key: 'sk-deepseek-12345' } } },
+      (provider) => (provider === 'deepseek' ? { model_ids: ['ds-curated'], fallback } : { model_ids: [] }),
+    )
+    try {
+      await catalog.warmSessionModelRepair(home)
+      expect(catalog.sessionModelRepair(home, 'ds-curated', 'ollama')).toBeNull()
+      expect(await catalog.liveModels(home, 'deepseek')).toMatchObject({ source: 'fallback', count: 1 })
+      const first = lookups('deepseek')
+      // Within the short TTL a rebuilt catalog reuses the fallback answer and still does not trust it.
+      tick(31)
+      await catalog.warmSessionModelRepair(home)
+      expect(lookups('deepseek')).toBe(first)
+      expect(catalog.sessionModelRepair(home, 'ds-curated', 'ollama')).toBeNull()
+      // Past it, the next build asks again; a live answer confirms the group.
+      fallback = false
+      tick(31)
+      await catalog.warmSessionModelRepair(home)
+      expect(lookups('deepseek')).toBe(first + 1)
+      expect(catalog.sessionModelRepair(home, 'ds-curated', 'ollama')).toEqual(['ds-curated', 'deepseek'])
+      expect(await catalog.liveModels(home, 'deepseek')).toMatchObject({ source: 'live', count: 1 })
+    } finally {
+      rmSync(home, { recursive: true, force: true })
+    }
+  })
+})
+
 describe('keyless self-hosted providers (TAL-570)', () => {
   it('count an endpoint as configured, list its live models, and refresh them', async () => {
     const home = mkdtempSync(join(tmpdir(), 'talaria-catalog-'))
