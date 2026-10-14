@@ -343,6 +343,20 @@ export const toolsRouter = os.router({
       })
     })),
   },
+  pendingWrites: {
+    list: os.pendingWrites.list.handler(({ input, context: { ctx } }) => run(async () => {
+      // Without the Agent nothing can be reviewed, so the page shows no panel (the Agent's own status reports it down).
+      const sidecar = ctx.deps.sidecar()
+      const { enabled, items } = sidecar ? await sidecar.call('write_approval.pending', { profile_home: home(ctx), kind: input.kind }) : { enabled: false, items: [] }
+      return { kind: input.kind, visible: items.length > 0, enabled, items }
+    })),
+    approve: os.pendingWrites.approve.handler(({ input, context: { ctx } }) => run(() =>
+      runningSidecar(ctx).call('write_approval.approve', { profile_home: home(ctx), kind: input.kind, ids: input.ids }),
+    )),
+    reject: os.pendingWrites.reject.handler(({ input, context: { ctx } }) => run(() =>
+      runningSidecar(ctx).call('write_approval.reject', { profile_home: home(ctx), kind: input.kind, ids: input.ids }),
+    )),
+  },
   prompts: {
     list: os.prompts.list.handler(({ context: { ctx } }) => run(() => ({ prompts: loadPrompts(home(ctx)) }))),
     create: os.prompts.create.handler(({ input, context: { ctx } }) => run(() => ({ ok: true as const, prompt: createPrompt(home(ctx), str(input.text), str(input.label), ctx.deps.nowSeconds()) }))),

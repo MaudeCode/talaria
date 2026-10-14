@@ -328,6 +328,28 @@ export const MEMORY_METHODS = {
   'memory.check': { params: ProfileHomeParams.extend({ target: z.enum(['memory', 'user']), content: z.string() }), result: z.object({ count: z.number().int(), limit: z.number().int() }) },
   'memory.write': { params: ProfileHomeParams.extend({ section: z.enum(['memory', 'user', 'soul']), base: z.string(), content: z.string() }), result: z.object({ written: z.boolean() }) },
 } as const
+/**
+ * TAL-819: one write the Agent staged for approval (`skills.write_approval` / `memory.write_approval`). `target` is the skill
+ * name(s), or `memory` / `user` for the memory store; `op` the staged action; `diff` the unified diff an approval would apply
+ * (a skill create shows the new file, a write that would fail says why).
+ */
+export const PendingWriteSchema = z.object({
+  id: z.string().regex(/^[A-Za-z0-9_-]{1,64}$/), kind: z.enum(['skills', 'memory']), target: z.string(), op: z.string(), summary: z.string(),
+  origin: z.string(), created_at: z.number(), diff: z.string(),
+})
+export type PendingWrite = z.infer<typeof PendingWriteSchema>
+const WriteApprovalParams = ProfileHomeParams.extend({ kind: z.enum(['skills', 'memory']), ids: z.array(z.string().regex(/^[A-Za-z0-9_-]{1,64}$/)).min(1) })
+const WriteApprovalResult = z.object({ results: z.array(z.object({ id: z.string(), done: z.boolean(), message: z.string() })) })
+/**
+ * TAL-819: the profile's staged writes of `kind`, oldest first, and whether its gate is on; `supported` is false on an Agent
+ * without the review handlers. `approve` / `reject` run the Agent's `/skills` or `/memory` handler per id; `done` is true
+ * once the record is gone (applied or dropped) and `message` is the handler's text.
+ */
+export const WRITE_APPROVAL_METHODS = {
+  'write_approval.pending': { params: ProfileHomeParams.extend({ kind: z.enum(['skills', 'memory']) }), result: z.object({ supported: z.boolean(), enabled: z.boolean(), items: z.array(PendingWriteSchema) }) },
+  'write_approval.approve': { params: WriteApprovalParams, result: WriteApprovalResult },
+  'write_approval.reject': { params: WriteApprovalParams, result: WriteApprovalResult },
+} as const
 export const ProcessEventSchema = z.object({ process_id: z.string(), consumed: z.boolean(), type: z.string().optional(), session_key: z.string().optional(), origin_ui_session_id: z.string().optional(), child_process: z.boolean().optional() }).catchall(Json)
 export const PROCESS_METHODS = {
   'process.drain': { params: ProfileHomeParams.extend({ max_events: z.number().int().positive().optional() }), result: z.object({ events: z.array(ProcessEventSchema) }) },

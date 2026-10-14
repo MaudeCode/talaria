@@ -9,6 +9,7 @@ import { ErrorState, LoadingState, formatDate } from '../../ui/States'
 import { showToast } from '../toast/toast'
 import { isApiError } from '../../contracts/common'
 import { cn } from '../../ui/cn'
+import { PendingWritesPanel } from '../pending-writes/PendingWritesPanel'
 
 type Section = 'memory' | 'user' | 'soul' | 'project_context'
 type Writable = Exclude<Section, 'project_context'>
@@ -62,6 +63,7 @@ export function MemoryPage() {
         </div>
       }
     >
+      <PendingWritesPanel kind="memory" />
       {memory.isPending && <LoadingState />}
       {memory.isError && <ErrorState error={memory.error} onRetry={() => { void memory.refetch() }} />}
       {data && (

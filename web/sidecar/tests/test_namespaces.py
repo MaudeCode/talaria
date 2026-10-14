@@ -14,6 +14,7 @@ import pytest
 from conftest import AGENT_DIR, AGENT_PYTHON, SidecarProcess, assert_matches, isolated_env, load_schema, requires_agent
 from scenarios import SCENARIOS, UNEXERCISED
 from talaria_sidecar import SIDECAR_RPC_VERSION
+from test_write_approval import create_skill, set_gates
 
 
 def _seed_state_db(home: pathlib.Path) -> None:
@@ -114,6 +115,18 @@ def run_scenarios(proc: SidecarProcess, home: pathlib.Path):
     for method in ("checkpoints.diff", "checkpoints.restore"):
         message, frames = proc.call(method, checkpoint, timeout=60)
         yield method, checkpoint, message, frames
+    # TAL-819: a profile with both write gates on, whose skill writes the Agent's own tool stages.
+    review = home / "profiles" / "review"
+    review.mkdir(parents=True, exist_ok=True)
+    set_gates(review, True)
+    for verb in ("approve", "reject"):
+        create_skill(review)
+        pending = {"profile_home": str(review), "kind": "skills"}
+        message, frames = proc.call("write_approval.pending", pending, timeout=60)
+        yield "write_approval.pending", pending, message, frames
+        params = {**pending, "ids": [item["id"] for item in message["result"]["items"]]}
+        message, frames = proc.call(f"write_approval.{verb}", params, timeout=60)
+        yield f"write_approval.{verb}", params, message, frames
 
 
 @requires_agent

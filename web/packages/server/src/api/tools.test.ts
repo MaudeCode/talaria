@@ -539,6 +539,34 @@ describe('skills, memory, prompts, commands, mcp, health, updates, diagnostics',
     return { state, fields, save, envText, restore }
   }
 
+  it('TAL-819: staged writes list with diffs and a panel flag, and approve and reject forward their ids', async () => {
+    const calls: Json[] = []
+    const restore = sidecar.responderFor('write_approval.pending')
+    try {
+      // The recorded fixture holds one staged skill create.
+      let body = await json(await s.get('/api/pending-writes?kind=skills'))
+      expect(body).toMatchObject({ kind: 'skills', visible: true, enabled: true })
+      expect((body.items as Json[])[0]).toMatchObject({ kind: 'skills', target: 'demo-skill', op: 'create' })
+      expect(String((body.items as Json[])[0]!.diff)).toContain('name: demo-skill')
+      sidecar.respond('write_approval.pending', (params) => { calls.push(params); return { supported: true, enabled: false, items: [] } })
+      body = await json(await s.get('/api/pending-writes?kind=memory'))
+      expect(body).toEqual({ kind: 'memory', visible: false, enabled: false, items: [] })
+      expect(calls[0]).toMatchObject({ kind: 'memory', profile_home: s.deps.profileHome('default') })
+
+      sidecar.respond('write_approval.reject', (params) => { calls.push(params); return { results: params.ids.map((id) => ({ id, done: true, message: 'Rejected' })) } })
+      let res = await post(s, '/api/pending-writes/reject', { kind: 'skills', ids: ['494239e0'] })
+      expect(res.status).toBe(200)
+      expect(await json(res)).toEqual({ results: [{ id: '494239e0', done: true, message: 'Rejected' }] })
+      expect(calls[1]).toMatchObject({ kind: 'skills', ids: ['494239e0'] })
+      res = await post(s, '/api/pending-writes/approve', { kind: 'skills', ids: ['../../config'] })
+      expect(res.status).toBe(400)
+      expect(calls).toHaveLength(2)
+    } finally {
+      sidecar.respond('write_approval.pending', restore)
+      sidecar.respond('write_approval.reject', undefined)
+    }
+  })
+
   it('TAL-806: plugin settings ship as fields and save non-secrets to config, secrets to .env', async () => {
     const { state, envText, restore } = fakePlugin()
     try {

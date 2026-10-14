@@ -5113,6 +5113,138 @@
     ],
     "additionalProperties": false
   },
+  "write_approval.pending": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "properties": {
+      "supported": {
+        "type": "boolean"
+      },
+      "enabled": {
+        "type": "boolean"
+      },
+      "items": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "properties": {
+            "id": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9_-]{1,64}$"
+            },
+            "kind": {
+              "type": "string",
+              "enum": [
+                "skills",
+                "memory"
+              ]
+            },
+            "target": {
+              "type": "string"
+            },
+            "op": {
+              "type": "string"
+            },
+            "summary": {
+              "type": "string"
+            },
+            "origin": {
+              "type": "string"
+            },
+            "created_at": {
+              "type": "number"
+            },
+            "diff": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "id",
+            "kind",
+            "target",
+            "op",
+            "summary",
+            "origin",
+            "created_at",
+            "diff"
+          ],
+          "additionalProperties": false
+        }
+      }
+    },
+    "required": [
+      "supported",
+      "enabled",
+      "items"
+    ],
+    "additionalProperties": false
+  },
+  "write_approval.approve": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "properties": {
+      "results": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "properties": {
+            "id": {
+              "type": "string"
+            },
+            "done": {
+              "type": "boolean"
+            },
+            "message": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "id",
+            "done",
+            "message"
+          ],
+          "additionalProperties": false
+        }
+      }
+    },
+    "required": [
+      "results"
+    ],
+    "additionalProperties": false
+  },
+  "write_approval.reject": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "properties": {
+      "results": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "properties": {
+            "id": {
+              "type": "string"
+            },
+            "done": {
+              "type": "boolean"
+            },
+            "message": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "id",
+            "done",
+            "message"
+          ],
+          "additionalProperties": false
+        }
+      }
+    },
+    "required": [
+      "results"
+    ],
+    "additionalProperties": false
+  },
   "checkpoints.list": {
     "$schema": "https://json-schema.org/draft/2020-12/schema",
     "type": "object",

@@ -4,7 +4,7 @@
  * `delete_profile_api`). Rows come from the sidecar (`profiles.*`, the Agent's
  * own per-profile readers); the per-request active profile stays a cookie.
  */
-import { existsSync, lstatSync, readFileSync, realpathSync, statSync } from 'node:fs'
+import { existsSync, lstatSync, readdirSync, readFileSync, realpathSync, statSync } from 'node:fs'
 import { atomicWriteText } from '../fs/atomic.js'
 import { join, resolve } from 'node:path'
 import type { SidecarLike } from '../sidecar/client.js'
@@ -67,6 +67,15 @@ export function validateProfileName(name: string): void {
   if (!PROFILE_ID_RE.test(name)) throw new ProfileError(`Invalid profile name '${name}'. Must match [a-z0-9][a-z0-9_-]{0,63}`, 400)
 }
 
+/** TAL-819: skill and memory writes the Agent staged for approval (`<home>/pending/<kind>/<id>.json`), for a badge. */
+export function pendingWrites(home: string): number {
+  let count = 0
+  for (const kind of ['skills', 'memory']) {
+    try { count += readdirSync(join(home, 'pending', kind)).filter((file) => file.endsWith('.json')).length } catch { /* none staged */ }
+  }
+  return count
+}
+
 export class ProfileService {
   private cache: { at: number; rows: Dict[] } | null = null
 
@@ -110,7 +119,7 @@ export class ProfileService {
       const home = this.deps.baseHome
       let stats = { enabled: 0, total: 0 }
       try { stats = await this.sidecar().call('profiles.skills_stats', { profile_home: home }) } catch { /* fall back to zeros */ }
-      return [{ name, path: home, is_default: name === 'default', is_active: true, gateway_running: false, gateway_mode: 'stopped', model: null, provider: null, has_env: existsSync(join(home, '.env')), visible: true, skill_count: stats.enabled, enabled_skills: stats.enabled, total_skills: stats.total, display_name: '', description: '', has_avatar: false, canonical_session: null }]
+      return [{ name, path: home, is_default: name === 'default', is_active: true, gateway_running: false, gateway_mode: 'stopped', model: null, provider: null, has_env: existsSync(join(home, '.env')), visible: true, skill_count: stats.enabled, enabled_skills: stats.enabled, total_skills: stats.total, display_name: '', description: '', has_avatar: false, canonical_session: null, pending_writes: pendingWrites(home) }]
     }
     let rows: Dict[]
     if (this.cache && this.now() - this.cache.at < 5) rows = this.cache.rows
@@ -120,7 +129,7 @@ export class ProfileService {
       this.rootAliases = new Set(rows.filter((r) => r.is_default === true && typeof r.name === 'string' && r.name).map((r) => r.name as string))
       this.rootAliasesLoaded = true
     }
-    return rows.map((r) => ({ ...r, is_active: str(r.name) === active }))
+    return rows.map((r) => ({ ...r, is_active: str(r.name) === active, pending_writes: pendingWrites(str(r.path)) }))
   }
 
   activePayload(active: string): Dict {

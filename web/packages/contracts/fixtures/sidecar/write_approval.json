@@ -1,0 +1,88 @@
+{
+  "write_approval.pending": [
+    {
+      "params": {
+        "profile_home": "<home>/profiles/review",
+        "kind": "skills"
+      },
+      "result": {
+        "supported": true,
+        "enabled": true,
+        "items": [
+          {
+            "id": "494239e0",
+            "kind": "skills",
+            "target": "demo-skill",
+            "op": "create",
+            "summary": "create 'demo-skill' — Staged by the test (68 chars)",
+            "origin": "foreground",
+            "created_at": 1791970929.3589709,
+            "diff": "---\nname: demo-skill\ndescription: Staged by the test\n---\n\nStep one.\n"
+          }
+        ]
+      }
+    },
+    {
+      "params": {
+        "profile_home": "<home>/profiles/review",
+        "kind": "skills"
+      },
+      "result": {
+        "supported": true,
+        "enabled": true,
+        "items": [
+          {
+            "id": "858452ee",
+            "kind": "skills",
+            "target": "demo-skill",
+            "op": "create",
+            "summary": "create 'demo-skill' — Staged by the test (68 chars)",
+            "origin": "foreground",
+            "created_at": 1791970929.9558551,
+            "diff": "---\nname: demo-skill\ndescription: Staged by the test\n---\n\nStep one.\n"
+          }
+        ]
+      }
+    }
+  ],
+  "write_approval.approve": [
+    {
+      "params": {
+        "profile_home": "<home>/profiles/review",
+        "kind": "skills",
+        "ids": [
+          "494239e0"
+        ]
+      },
+      "result": {
+        "results": [
+          {
+            "id": "494239e0",
+            "done": true,
+            "message": "Approved 1 skills write(s)."
+          }
+        ]
+      }
+    }
+  ],
+  "write_approval.reject": [
+    {
+      "params": {
+        "profile_home": "<home>/profiles/review",
+        "kind": "skills",
+        "ids": [
+          "858452ee"
+        ]
+      },
+      "result": {
+        "results": [
+          {
+            "id": "858452ee",
+            "done": true,
+            "message": "Rejected pending skills write '858452ee'."
+          }
+        ]
+      }
+    }
+  ]
+}

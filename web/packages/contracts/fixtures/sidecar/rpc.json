@@ -144,7 +144,10 @@
           "usage.limits",
           "usage.pool",
           "usage.pool_providers",
-          "worktree.create"
+          "worktree.create",
+          "write_approval.approve",
+          "write_approval.pending",
+          "write_approval.reject"
         ]
       }
     }

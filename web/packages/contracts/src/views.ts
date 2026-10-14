@@ -560,6 +560,8 @@ export const ProfileSchema = z.looseObject({
   display_name: z.string().optional(), description: z.string().optional(), has_avatar: z.boolean().optional(),
   /** TAL-213: present only when the profile has a canonical Bot Chat; clients open `tip_session_id` after switching to the profile. */
   canonical_session: CanonicalBotChatSchema.nullable().optional(),
+  /** TAL-819: skill and memory writes the Agent staged for approval, reviewed on the Skills and Memory pages. */
+  pending_writes: z.number().int().optional(),
 })
 export const ProfilesSchema = z.looseObject({ profiles: z.array(ProfileSchema), active: z.string(), single_profile_mode: z.boolean().optional() })
 export type Profiles = z.infer<typeof ProfilesSchema>
