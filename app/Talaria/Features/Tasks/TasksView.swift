@@ -67,7 +67,7 @@ struct TasksView: View {
                     Task { await loadTasks() }
                 }
             }
-        } else if viewModel.jobs.isEmpty, viewModel.recentCompletions.isEmpty {
+        } else if viewModel.jobs.isEmpty, viewModel.recentCompletions.isEmpty, viewModel.unwritableStores.isEmpty {
             ContentUnavailableView {
                 Label("No Tasks", systemImage: "calendar.badge.clock")
             } description: {
@@ -75,6 +75,8 @@ struct TasksView: View {
             }
         } else {
             SidebarList {
+                CronStoreHealthBanner(stores: viewModel.unwritableStores)
+                    .sessionsScreenListRow()
                 taskRows
             }
             .refreshable {
@@ -145,11 +147,41 @@ private extension TasksView {
                 SectionSelectionRow(item: .task(id: job.id), selection: $selection) {
                     CronJobRowView(
                         job: job,
+                        isRunning: viewModel.isRunning(job),
                         runningElapsed: viewModel.runningElapsed(for: job)
                     )
                 }
             }
         }
+    }
+}
+
+/// The server's unwritable cron stores (TAL-810): their schedulers skip every run until the store is writable again.
+/// A healthy list shows nothing.
+struct CronStoreHealthBanner: View {
+    let stores: [CronStoreHealth]
+
+    var body: some View {
+        if !stores.isEmpty {
+            SessionListBanner(
+                systemImage: "exclamationmark.triangle",
+                title: "Scheduled tasks can't run",
+                detail: stores.map(Self.detail).joined(separator: "\n\n"),
+                detailLineLimit: nil
+            )
+        }
+    }
+
+    private static func detail(_ store: CronStoreHealth) -> String {
+        let since = store.since.map { String(localized: "Last saved \($0.formatted(date: .abbreviated, time: .shortened))") }
+        return [
+            [store.profile, store.error].compactMap { $0 }.joined(separator: ": "),
+            store.fix,
+            since,
+        ]
+        .compactMap { $0 }
+        .filter { !$0.isEmpty }
+        .joined(separator: "\n")
     }
 }
 

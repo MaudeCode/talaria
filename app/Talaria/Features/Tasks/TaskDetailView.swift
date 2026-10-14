@@ -14,6 +14,7 @@ struct TaskDetailView: View {
     init(
         job: CronJob,
         runningElapsed: Double?,
+        isRunning: Bool,
         server: URL,
         onAPIError: @escaping (Error) -> Void,
         onMutation: @escaping (CronJobListMutation) -> Void = { _ in }
@@ -21,7 +22,7 @@ struct TaskDetailView: View {
         self.server = server
         self.onAPIError = onAPIError
         self.onMutation = onMutation
-        _viewModel = State(initialValue: TaskDetailViewModel(job: job, runningElapsed: runningElapsed, server: server))
+        _viewModel = State(initialValue: TaskDetailViewModel(job: job, runningElapsed: runningElapsed, isRunning: isRunning, server: server))
     }
 
     var body: some View {
@@ -134,7 +135,7 @@ struct TaskDetailView: View {
                 deliveryOptions: viewModel.deliveryOptions
             ) { draft in
                 let didUpdate = await viewModel.update(from: draft)
-                handleActionResult(didUpdate)
+                handleActionResult()
                 return didUpdate
             }
         }
@@ -154,7 +155,7 @@ struct TaskDetailView: View {
         }
         .refreshesLive(
             on: .cronRun,
-            every: viewModel.runningElapsed == nil ? .seconds(30) : .seconds(5),
+            every: viewModel.isRunning ? .seconds(5) : .seconds(30),
             showsStatus: true
         ) {
             await viewModel.refresh()
@@ -172,7 +173,7 @@ struct TaskDetailView: View {
                 Spacer(minLength: 8)
 
                 StatusBadge(
-                    text: viewModel.runningElapsed == nil ? viewModel.job.status.label : String(localized: "Running"),
+                    text: viewModel.isRunning ? String(localized: "Running") : viewModel.job.status.label,
                     color: statusColor
                 )
             }
@@ -256,6 +257,10 @@ struct TaskDetailView: View {
                 CronJobMetadataRow(title: String(localized: "Error"), value: error)
                     .foregroundStyle(.red)
             }
+
+            if let failure = viewModel.job.lastFailure {
+                CronJobMetadataRow(title: String(localized: "Failed"), value: failure.displayText)
+            }
         }
         .font(.footnote)
     }
@@ -299,7 +304,7 @@ struct TaskDetailView: View {
     }
 
     private var statusColor: Color {
-        if viewModel.runningElapsed != nil {
+        if viewModel.isRunning {
             return .blue
         }
 
@@ -352,35 +357,35 @@ struct TaskDetailView: View {
     }
 
     private func runNow() async {
-        let didRun = await viewModel.runNow()
-        handleActionResult(didRun)
+        _ = await viewModel.runNow()
+        handleActionResult()
     }
 
     private func togglePauseResume() async {
-        let didMutate: Bool
         if shouldResume {
-            didMutate = await viewModel.resume()
+            _ = await viewModel.resume()
         } else {
-            didMutate = await viewModel.pause()
+            _ = await viewModel.pause()
         }
-        handleActionResult(didMutate)
+        handleActionResult()
     }
 
     private func deleteTask() async {
         let didDelete = await viewModel.delete()
-        handleActionResult(didDelete)
+        handleActionResult()
 
         if didDelete {
             dismiss()
         }
     }
 
-    private func handleActionResult(_ success: Bool) {
+    private func handleActionResult() {
         if let lastError = viewModel.lastError {
             onAPIError(lastError)
         }
 
-        guard success, let mutation = viewModel.lastMutation else {
+        // An already-running refusal fails yet still tells the list the job runs (TAL-835).
+        guard let mutation = viewModel.lastMutation else {
             return
         }
 

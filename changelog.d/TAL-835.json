@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Added",
+      "summary": "Tasks warns when scheduled tasks can't run because the server's cron store can't be saved, keeps each task's last failure after a later success, and shows a task as running when another process runs it.",
+      "highlight": false,
+      "components": ["app"]
+    }
+  ]
+}

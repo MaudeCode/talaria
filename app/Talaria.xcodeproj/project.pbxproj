@@ -54,6 +54,7 @@
 		D857C2EF4A4AC8281AF12845 /* StreamHostedTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D856C2EF4A4AC8281AF12845 /* StreamHostedTests.swift */; };
 		D857728B73FCE582FDD1DFB3 /* ChatHostedTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D856728B73FCE582FDD1DFB3 /* ChatHostedTests.swift */; };
 		D857001159F0B34BD088CA04 /* SessionListHostedTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D856001159F0B34BD088CA04 /* SessionListHostedTests.swift */; };
+		D857083559F0B34BD088CA04 /* TasksHostedTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D856083559F0B34BD088CA04 /* TasksHostedTests.swift */; };
 		D857297464F3055587B2ACEF /* TranscriptHostedTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D856297464F3055587B2ACEF /* TranscriptHostedTests.swift */; };
 		D857E7989860057E41C369DF /* HostedViewTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D856E7989860057E41C369DF /* HostedViewTests.swift */; };
 		D857DB3766E41DE9EB67A261 /* FixtureApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = D856DB3766E41DE9EB67A261 /* FixtureApp.swift */; };
@@ -326,6 +327,7 @@
 		C107L0000000000000000026 /* KanbanCardDetailContent.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107L0000000000000000126 /* KanbanCardDetailContent.swift */; };
 		C06900000000000000000001 /* UITestFixture.swift in Sources */ = {isa = PBXBuildFile; fileRef = C06900000000000000000002 /* UITestFixture.swift */; };
 		C06900000000000000000003 /* UITestFixture+Kanban.swift in Sources */ = {isa = PBXBuildFile; fileRef = C06900000000000000000004 /* UITestFixture+Kanban.swift */; };
+		C06900000000000000000836 /* UITestFixture+Crons.swift in Sources */ = {isa = PBXBuildFile; fileRef = C06900000000000000000835 /* UITestFixture+Crons.swift */; };
 		22AB000000000000000000B2 /* WorkspaceManagerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 22AB000000000000000000F2 /* WorkspaceManagerView.swift */; };
 		C03120000000000000B004 /* GitWorkspaceView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C03120000000000000F004 /* GitWorkspaceView.swift */; };
 		C03120000000000000B005 /* GitDiffView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C03120000000000000F005 /* GitDiffView.swift */; };
@@ -487,6 +489,7 @@
 		D856C2EF4A4AC8281AF12845 /* StreamHostedTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StreamHostedTests.swift; sourceTree = "<group>"; };
 		D856728B73FCE582FDD1DFB3 /* ChatHostedTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatHostedTests.swift; sourceTree = "<group>"; };
 		D856001159F0B34BD088CA04 /* SessionListHostedTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SessionListHostedTests.swift; sourceTree = "<group>"; };
+		D856083559F0B34BD088CA04 /* TasksHostedTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TasksHostedTests.swift; sourceTree = "<group>"; };
 		D856297464F3055587B2ACEF /* TranscriptHostedTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TranscriptHostedTests.swift; sourceTree = "<group>"; };
 		D856E7989860057E41C369DF /* HostedViewTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HostedViewTests.swift; sourceTree = "<group>"; };
 		D856DB3766E41DE9EB67A261 /* FixtureApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FixtureApp.swift; sourceTree = "<group>"; };
@@ -745,6 +748,7 @@
 		C107L0000000000000000126 /* KanbanCardDetailContent.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KanbanCardDetailContent.swift; sourceTree = "<group>"; };
 		C06900000000000000000002 /* UITestFixture.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UITestFixture.swift; sourceTree = "<group>"; };
 		C06900000000000000000004 /* UITestFixture+Kanban.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "UITestFixture+Kanban.swift"; sourceTree = "<group>"; };
+		C06900000000000000000835 /* UITestFixture+Crons.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "UITestFixture+Crons.swift"; sourceTree = "<group>"; };
 		22AB000000000000000000F2 /* WorkspaceManagerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorkspaceManagerView.swift; sourceTree = "<group>"; };
 		C03120000000000000F004 /* GitWorkspaceView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GitWorkspaceView.swift; sourceTree = "<group>"; };
 		C03120000000000000F005 /* GitDiffView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GitDiffView.swift; sourceTree = "<group>"; };
@@ -945,6 +949,7 @@
 				D856C2EF4A4AC8281AF12845 /* StreamHostedTests.swift */,
 				D856728B73FCE582FDD1DFB3 /* ChatHostedTests.swift */,
 				D856001159F0B34BD088CA04 /* SessionListHostedTests.swift */,
+				D856083559F0B34BD088CA04 /* TasksHostedTests.swift */,
 				D856297464F3055587B2ACEF /* TranscriptHostedTests.swift */,
 				D856E7989860057E41C369DF /* HostedViewTests.swift */,
 				D856DB3766E41DE9EB67A261 /* FixtureApp.swift */,
@@ -1309,6 +1314,7 @@
 			children = (
 				C06900000000000000000002 /* UITestFixture.swift */,
 				C06900000000000000000004 /* UITestFixture+Kanban.swift */,
+				C06900000000000000000835 /* UITestFixture+Crons.swift */,
 				4F9EB4168ADAD8328E21CCDF /* AppIconChoice+Current.swift */,
 			);
 			path = Config;
@@ -1837,6 +1843,7 @@
 				C107L0000000000000000026 /* KanbanCardDetailContent.swift in Sources */,
 				C06900000000000000000001 /* UITestFixture.swift in Sources */,
 				C06900000000000000000003 /* UITestFixture+Kanban.swift in Sources */,
+				C06900000000000000000836 /* UITestFixture+Crons.swift in Sources */,
 				C09300000000000000000001 /* HapticButton.swift in Sources */,
 				C43600000000000000000001 /* StatusChip.swift in Sources */,
 				C48300000000000000000001 /* RefreshToolbarButton.swift in Sources */,
@@ -1980,6 +1987,7 @@
 				D857C2EF4A4AC8281AF12845 /* StreamHostedTests.swift in Sources */,
 				D857728B73FCE582FDD1DFB3 /* ChatHostedTests.swift in Sources */,
 				D857001159F0B34BD088CA04 /* SessionListHostedTests.swift in Sources */,
+				D857083559F0B34BD088CA04 /* TasksHostedTests.swift in Sources */,
 				D857297464F3055587B2ACEF /* TranscriptHostedTests.swift in Sources */,
 				D857E7989860057E41C369DF /* HostedViewTests.swift in Sources */,
 				D857DB3766E41DE9EB67A261 /* FixtureApp.swift in Sources */,

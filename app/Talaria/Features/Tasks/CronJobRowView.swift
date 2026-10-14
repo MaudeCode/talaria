@@ -3,6 +3,7 @@ import TalariaKit
 
 struct CronJobRowView: View {
     let job: CronJob
+    let isRunning: Bool
     let runningElapsed: Double?
 
     var body: some View {
@@ -15,7 +16,7 @@ struct CronJobRowView: View {
                 Spacer(minLength: 8)
 
                 StatusBadge(
-                    text: runningElapsed == nil ? job.status.label : String(localized: "Running"),
+                    text: isRunning ? String(localized: "Running") : job.status.label,
                     color: statusColor
                 )
             }
@@ -75,6 +76,10 @@ struct CronJobRowView: View {
                     CronJobMetadataRow(title: String(localized: "Error"), value: error)
                         .foregroundStyle(.red)
                 }
+
+                if let failure = job.lastFailure {
+                    CronJobMetadataRow(title: String(localized: "Failed"), value: failure.displayText)
+                }
             }
             .font(.footnote)
         }
@@ -83,7 +88,7 @@ struct CronJobRowView: View {
     }
 
     private var statusColor: Color {
-        if runningElapsed != nil {
+        if isRunning {
             return .blue
         }
 

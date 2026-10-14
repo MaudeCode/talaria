@@ -4,12 +4,62 @@ public struct CronJobsResponse: Decodable, Equatable {
     public let jobs: [CronJob]?
     /// `true` when `jobs` arrive in the server's display order (TAL-601).
     public let ordered: Bool?
+    /// TAL-810: listed cron stores whose writes fail, so their schedulers skip every run. Absent from older servers.
+    public let unwritableStores: [CronStoreHealth]?
+
+    enum CodingKeys: String, CodingKey {
+        case jobs
+        case ordered
+        case unwritableStores
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        jobs = try container.decodeIfPresent([CronJob].self, forKey: .jobs)
+        ordered = container.decodeLossyBoolIfPresent(forKey: .ordered)
+        unwritableStores = container.decodeLossyArrayIfPresent(CronStoreHealth.self, forKey: .unwritableStores)
+    }
+}
+
+/// TAL-810: a listed profile's cron store whose writes fail (full disk, read-only mount, permissions). `error` and
+/// `fix` are the Agent's text.
+public struct CronStoreHealth: Decodable, Equatable, Identifiable {
+    public var id: String { store }
+
+    public let profile: String?
+    public let store: String
+    public let error: String?
+    public let fix: String?
+    /// The last write that landed; `nil` when unknown.
+    public let since: Date?
+
+    enum CodingKeys: String, CodingKey {
+        case profile
+        case store
+        case error
+        case fix
+        case since
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        guard let store = container.decodeLossyStringIfPresent(forKey: .store), !store.isEmpty else {
+            throw DecodingError.dataCorruptedError(forKey: .store, in: container, debugDescription: "Store names no path")
+        }
+        self.store = store
+        profile = container.decodeLossyStringIfPresent(forKey: .profile)
+        error = container.decodeLossyStringIfPresent(forKey: .error)
+        fix = container.decodeLossyStringIfPresent(forKey: .fix)
+        since = container.decodeLossyDoubleIfPresent(forKey: .since).map { Date(timeIntervalSince1970: $0) }
+    }
 }
 
 public struct CronMutationResponse: Decodable, Equatable {
     public let ok: Bool?
     public let job: CronJob?
     public let error: String?
+    /// `already_running` when run-now found the job already running, here or in another process (TAL-810).
+    public let status: String?
 }
 
 public struct CronStatusResponse: Decodable, Equatable {
@@ -62,11 +112,15 @@ public struct CronJob: Decodable, Equatable, Identifiable {
     public let modelOptionID: String?
     public let profile: String?
     public let toastNotifications: Bool?
-    /// Server-derived (TAL-296): the status, attention flag, and Resume/Pause choice. Running state comes only from
-    /// the live status poll, never from a (possibly cached) job row.
+    /// Server-derived (TAL-296): the status, attention flag, and Resume/Pause choice. Running state comes from the
+    /// live status poll and a live list's `running`, never from a (possibly cached) job row.
     let derivedState: String?
     public let needsAttention: Bool?
     public let resumable: Bool?
+    /// TAL-810: the server's running state, including a run another process (the gateway scheduler) owns.
+    let running: Bool?
+    /// TAL-810: the job's latest failed run, kept after later successes.
+    public let lastFailure: CronJobFailure?
 
     enum CodingKeys: String, CodingKey {
         case id
@@ -90,6 +144,8 @@ public struct CronJob: Decodable, Equatable, Identifiable {
         case derivedState
         case needsAttention
         case resumable
+        case running
+        case lastFailure
     }
 
     public init(from decoder: Decoder) throws {
@@ -115,6 +171,8 @@ public struct CronJob: Decodable, Equatable, Identifiable {
         derivedState = container.decodeLossyStringIfPresent(forKey: .derivedState)
         needsAttention = container.decodeLossyBoolIfPresent(forKey: .needsAttention)
         resumable = container.decodeLossyBoolIfPresent(forKey: .resumable)
+        running = container.decodeLossyBoolIfPresent(forKey: .running)
+        lastFailure = (try? container.decodeIfPresent(CronJobFailure.self, forKey: .lastFailure)) ?? nil
     }
 
     public var displayName: String {
@@ -144,6 +202,31 @@ public struct CronJob: Decodable, Equatable, Identifiable {
         case "active": return .active
         default: return .unknown
         }
+    }
+}
+
+/// TAL-810: when a job last failed (`nil` when the server could not read the time) and why.
+public struct CronJobFailure: Decodable, Equatable {
+    public let at: Date?
+    public let detail: String
+
+    enum CodingKeys: String, CodingKey {
+        case at
+        case detail
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        guard let detail = container.decodeLossyStringIfPresent(forKey: .detail) else {
+            throw DecodingError.dataCorruptedError(forKey: .detail, in: container, debugDescription: "Failure has no detail")
+        }
+        self.detail = detail
+        at = container.decodeLossyDoubleIfPresent(forKey: .at).map { Date(timeIntervalSince1970: $0) }
+    }
+
+    /// "<when> · <detail>", or the detail alone when the time is unknown.
+    public var displayText: String {
+        [at?.formatted(date: .abbreviated, time: .shortened), detail].compactMap { $0 }.joined(separator: " · ")
     }
 }
 

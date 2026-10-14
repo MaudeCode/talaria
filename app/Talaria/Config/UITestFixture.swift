@@ -45,6 +45,8 @@ struct UITestFixtureEnvironment {
     /// Reports the Agent's session storage as corrupt on `/api/sessions` (TAL-830).
     nonisolated static let corruptAgentStorageArgument = "--ui-test-corrupt-agent-storage"
     nonisolated static let corruptAgentStorageReason = "Agent session storage (state.db) is damaged: database disk image is malformed."
+    /// Serves Tasks with an unwritable cron store, a recovered job's last failure and a job another process runs (TAL-835).
+    nonisolated static let unwritableCronStoreArgument = "--ui-test-unwritable-cron-store"
 
     /// The fixture's response-cache directory, emptied once per launch.
     nonisolated static let responseCacheRoot: URL? = {
@@ -82,6 +84,9 @@ struct UITestFixtureEnvironment {
         let warning: [String: Any] = ["key": "startup-warning.fixture", "level": "warn", "text": "Memory provider 'honcho' could not be loaded; memory is off.", "expires_at": NSNull()]
         let band: [String: Any] = ["key": "credits.usage_band", "level": "info", "text": "You've used 90% of your credits.", "expires_at": NSNull()]
         return clearingWarning ? [band] : [warning, band]
+    }
+    nonisolated static var hasUnwritableCronStore: Bool {
+        ProcessInfo.processInfo.arguments.contains(unwritableCronStoreArgument)
     }
     nonisolated static let serverURL = UITestFixtureLaunch.serverURL
 
@@ -730,7 +735,11 @@ final class UITestFixtureURLProtocol: URLProtocol, @unchecked Sendable {
         case "/api/chat/stream", "/api/approval/stream", "/api/clarify/stream", "/api/kanban/events/stream":
             return Data("event: stream_end\ndata: {}\n\n".utf8)
         default:
-            return url.path.hasPrefix("/api/kanban/") ? kanbanResponseData(for: url) : json([:])
+            if url.path.hasPrefix("/api/kanban/") { return kanbanResponseData(for: url) }
+            if url.path.hasPrefix("/api/crons"), UITestFixtureEnvironment.hasUnwritableCronStore {
+                return cronResponseData(for: request)
+            }
+            return json([:])
         }
     }
 
