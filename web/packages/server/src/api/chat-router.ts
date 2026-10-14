@@ -315,8 +315,12 @@ export const chatRouter = os.router({
     let defaultMaxTurns = 20
     try { const cfg = await ctx.deps.agentConfig.read(profileHome); const goals = cfg.goals; const raw = goals && typeof goals === 'object' && !Array.isArray(goals) ? (goals as Record<string, unknown>).max_turns : undefined; const n = Number.parseInt(str(raw ?? 20), 10); if (Number.isFinite(n)) defaultMaxTurns = Math.max(1, n || 20) } catch { defaultMaxTurns = 20 }
     const snapshot = await sidecar.call('goals.snapshot', { session_id: sid, profile_home: profileHome, default_max_turns: defaultMaxTurns })
-    const payload = await sidecar.call('goals.command', { session_id: sid, profile_home: profileHome, args, stream_running: streamRunning, default_max_turns: defaultMaxTurns }) as Record<string, unknown>
-    if (payload.ok === false) throw new HttpError(payload.error === 'agent_running' ? 409 : 400, str(payload.message || payload.error || 'goal command failed'), payload)
+    const payload = await sidecar.call('goals.command', { session_id: sid, profile_home: profileHome, args, stream_running: streamRunning, default_max_turns: defaultMaxTurns, workspace: str(s.workspace) || undefined }) as Record<string, unknown>
+    if (payload.ok === false) {
+      // Clients show the body's `error`, so the Agent's reason replaces the sidecar's code there.
+      const reason = str(payload.message || payload.error || 'goal command failed')
+      throw new HttpError(payload.error === 'agent_running' ? 409 : 400, reason, { ...payload, error: reason })
+    }
     const kickoff = str(payload.kickoff_prompt).trim()
     if (kickoff) {
       // TAL-542: after the goal RPCs, so the stale-model check reads a catalog for the profile the session now runs under.

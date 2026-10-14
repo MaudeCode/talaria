@@ -382,7 +382,10 @@ export function Composer(props: ComposerProps) {
     const cmd = parsed && { ...parsed, name: entry?.name ?? parsed.name }
     if (cmd) {
       if (cmd.name === 'theme') { const v = ThemeSchema.safeParse(cmd.args); if (v.success) setTheme(v.data); setText(''); return }
-      if (await onLocalCommand(cmd.name, cmd.args)) { setText(''); return }
+      // A refused command (e.g. `/goal gate add` without a goal) shows the server's reason and keeps the text.
+      let handled: boolean
+      try { handled = await onLocalCommand(cmd.name, cmd.args) } catch (e) { showToast(e instanceof Error ? e.message : String(e), 5000, 'error'); return }
+      if (handled) { setText(''); return }
       // TAL-372: `/background` runs the prompt in a hidden session; its record and result show in the background card.
       if (cmd.name === 'background') {
         if (!cmd.args) { showToast(m.bg_usage(), 2000); return }

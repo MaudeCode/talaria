@@ -262,3 +262,23 @@ def scoped_home(home: Path):
                 os.environ.pop("HERMES_HOME", None)
             else:
                 os.environ["HERMES_HOME"] = previous
+
+
+@contextlib.contextmanager
+def session_workspace(workspace: str | None):
+    """Bind the session's declared workspace (the Agent's ``_SESSION_CWD``), so terminals, AGENTS.md discovery and goal
+    gates run there instead of the sidecar's launch directory. No workspace keeps the Agent's own resolution. A context
+    variable, so concurrent calls never share it; a missing Agent surface is logged, not fatal."""
+    try:
+        from agent.runtime_cwd import _SESSION_CWD
+    except Exception:  # noqa: BLE001
+        log.debug("session cwd bind unavailable", exc_info=True)
+        _SESSION_CWD = None
+    if not workspace or _SESSION_CWD is None:
+        yield
+        return
+    token = _SESSION_CWD.set(str(workspace))
+    try:
+        yield
+    finally:
+        _SESSION_CWD.reset(token)

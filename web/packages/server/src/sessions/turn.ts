@@ -1712,7 +1712,8 @@ export class TurnRunner {
     if (goalTurn) put('goal', { session_id: sessionId, state: 'evaluating', message: 'Evaluating goal progress…', message_key: 'goal_evaluating_progress' })
     let decision: SidecarResult<'goals.evaluate'>
     try {
-      decision = await sidecar.call('goals.evaluate', { session_id: sessionId, profile_home: this.deps.profileHome(s.profile), last_response: lastResponse, user_initiated: true })
+      // The workspace the turn ran in, unrecovered: the Agent pauses the goal rather than run its gates anywhere else.
+      decision = await sidecar.call('goals.evaluate', { session_id: sessionId, profile_home: this.deps.profileHome(s.profile), last_response: lastResponse, user_initiated: true, workspace: str(s.workspace) || undefined })
     } catch (error) {
       this.deps.log(`[webui] WARNING: goal evaluation failed for ${sessionId}: ${(error as Error).message}`)
       if (goalTurn) put('goal', { session_id: sessionId, state: 'idle', decision: 'error', message: '' })

@@ -1,7 +1,8 @@
 """``goals.*``: Hermes persistent session goals (ported from api/goals.py).
 
-The server passes the session's ``profile_home`` and the configured turn
-budget; the sidecar never reads WebUI settings itself.
+The server passes the session's ``profile_home``, its workspace and the configured
+turn budget; the sidecar never reads WebUI settings itself. ``/goal`` parses through
+the Agent's own ``dispatch_goal_command``, like its CLI, gateway and TUI.
 """
 
 from __future__ import annotations
@@ -14,7 +15,7 @@ from pathlib import Path
 from typing import Any
 
 from ..errors import InvalidParams, RpcError
-from ..home import profile_home_param, scoped_home
+from ..home import profile_home_param, scoped_home, session_workspace
 from ..rpc import CallContext
 
 log = logging.getLogger("talaria_sidecar.goals")
@@ -29,17 +30,18 @@ def _native():
 
 
 class _Manager:
-    """Native GoalManager scoped to one profile home."""
+    """Native GoalManager scoped to one profile home and the session's workspace, where its gates run."""
 
-    def __init__(self, session_id: str, profile_home: Path, default_max_turns: int):
+    def __init__(self, session_id: str, profile_home: Path, default_max_turns: int, workspace: str | None = None):
         _, default, GoalManager, _, _ = _native()
         self.session_id = session_id
         self.profile_home = profile_home
+        self.workspace = workspace
         with scoped_home(profile_home):
             self._manager = GoalManager(session_id=session_id, default_max_turns=int(default_max_turns or default or 20))
 
     def scoped(self, func, *args, **kwargs):
-        with scoped_home(self.profile_home):
+        with scoped_home(self.profile_home), session_workspace(self.workspace):
             return func(*args, **kwargs)
 
     @property
@@ -123,7 +125,7 @@ def _decision_payload(decision: dict, state: Any) -> dict:
         turns_used, max_turns = _turns_from_message(str(decision.get("message") or ""))
     if status == "done":
         return {**decision, "message_key": "goal_achieved", "message_args": [reason]}
-    if status == "paused":
+    if status == "paused" and str(getattr(state, "paused_reason", "") or "").startswith("turn budget exhausted"):
         return {**decision, "message_key": "goal_paused_budget_exhausted", "message_args": [turns_used, max_turns]}
     if decision.get("should_continue"):
         return {**decision, "message_key": "goal_continuing", "message_args": [turns_used, max_turns, reason]}
@@ -139,7 +141,41 @@ def _manager_from(params: dict) -> _Manager:
     if not session_id:
         raise InvalidParams("session_id is required")
     max_turns = params.get("default_max_turns") or 20
-    return _Manager(session_id, profile_home_param(params), int(max_turns))
+    return _Manager(session_id, profile_home_param(params), int(max_turns), str(params.get("workspace") or "") or None)
+
+
+#: Older Agents run gates in their launch directory, where a gate checks another project and can pass for it.
+_GATES_NEED_WORKSPACE = "Goal gates need Hermes Agent 0.21.6 or later, which runs them in the session workspace."
+
+
+def _gates_run_in_workspace() -> bool:
+    from hermes_cli import goals as agent_goals
+
+    return hasattr(agent_goals, "_gate_workspace")
+
+
+#: The response ``action`` of each control verb the Agent dispatches; any other command sets the goal.
+_CONTROL_ACTIONS = {
+    "": "status", "status": "status", "show": "show", "pause": "pause", "resume": "resume", "continue": "resume",
+    "unpause": "resume", "clear": "clear", "stop": "clear", "done": "clear", "unwait": "unwait", "wait": "wait", "gate": "gate",
+}
+
+
+def _localized(action: str, state: Any, had_goal: bool) -> dict:
+    """``message_key``/``message_args`` for the verbs Web already localizes; other verbs show the Agent's text."""
+    status = str(getattr(state, "status", "") or "")
+    goal = str(getattr(state, "goal", "") or "")
+    if action == "status":
+        return {k: v for k, v in _status_payload(state).items() if k != "message"}
+    if action == "set":
+        return {"message_key": "goal_set", "message_args": [int(getattr(state, "max_turns", 0) or 0), goal]}
+    if action == "pause":
+        return {"message_key": "goal_paused", "message_args": [goal]} if had_goal and status == "paused" else {"message_key": "goal_no_goal"}
+    if action == "resume":
+        return {"message_key": "goal_resumed", "message_args": [goal]} if had_goal and status == "active" else {"message_key": "goal_no_goal"}
+    if action == "clear":
+        return {"message_key": "goal_cleared" if had_goal else "goal_no_goal"}
+    return {}
 
 
 def register(registry) -> None:
@@ -151,41 +187,30 @@ def register(registry) -> None:
 
     @registry.method("goals.command")
     def command(ctx: CallContext, params: dict) -> dict:
-        """/goal <args> with the same semantics as the gateway command."""
+        """/goal <args> through the Agent's ``dispatch_goal_command``, as its TUI runs it."""
         mgr = _manager_from(params)
-        text = str(params.get("args") or "").strip()
-        lower = text.lower()
-        stream_running = bool(params.get("stream_running", False))
-        if not text or lower == "status":
-            state = mgr.state
-            return _payload(action="status", state=state, **_status_payload(state))
-        if lower == "pause":
-            state = mgr.pause(reason="user-paused")
-            if state is None:
-                return _payload(ok=False, action="pause", error="no_goal", message="No goal set.", message_key="goal_no_goal")
-            return _payload(action="pause", message=f"⏸ Goal paused: {state.goal}", message_key="goal_paused", message_args=[str(state.goal)], state=state)
-        if lower == "resume":
-            state = mgr.resume()
-            if state is None:
-                return _payload(ok=False, action="resume", error="no_goal", message="No goal to resume.", message_key="goal_no_goal")
-            return _payload(action="resume", message=f"▶ Goal resumed: {state.goal}\nSend a new message, or type continue, to kick it off.", message_key="goal_resumed", message_args=[str(state.goal)], state=state)
-        if lower in ("clear", "stop", "done"):
-            had = bool(mgr.has_goal())
-            mgr.clear()
-            return _payload(action="clear", message="Goal cleared." if had else "No active goal.", message_key="goal_cleared" if had else "goal_no_goal", state=mgr.state)
-        if stream_running:
-            return _payload(ok=False, action="set", error="agent_running", message="Agent is running — use /goal status / pause / clear mid-run, or /stop before setting a new goal.")
         try:
-            state = mgr.set(text)
-        except ValueError as exc:
-            return _payload(ok=False, action="set", error="invalid_goal", message=f"Invalid goal: {exc}")
-        return _payload(
-            action="set",
-            message=(f"⊙ Goal set ({state.max_turns}-turn budget): {state.goal}\n"
-                     "I'll keep working until the goal is done, you pause/clear it, or the budget is exhausted.\n"
-                     "Controls: /goal status · /goal pause · /goal resume · /goal clear"),
-            message_key="goal_set", message_args=[state.max_turns, state.goal], state=state, kickoff_prompt=state.goal,
-        )
+            from hermes_cli import goals as agent_goals
+            from hermes_cli.goal_command import dispatch_goal_command, is_goal_control
+        except Exception as exc:  # noqa: BLE001
+            raise RpcError(f"Hermes goals unavailable: {exc}", condition="goals_unavailable")
+        text = str(params.get("args") or "").strip()
+        tokens = text.lower().split()
+        action = _CONTROL_ACTIONS.get(tokens[0] if tokens else "", "set") if is_goal_control(text) else "set"
+        if action == "set" and params.get("stream_running"):
+            return _payload(ok=False, action="set", error="agent_running", message="Agent is running — use /goal status / pause / clear mid-run, or /stop before setting a new goal.")
+        if tokens[:2] == ["gate", "add"] and not _gates_run_in_workspace():
+            return _payload(ok=False, action="gate", error="gates_unsupported", state=mgr.state, message=_GATES_NEED_WORKSPACE)
+        had_goal = bool(mgr.has_goal())
+        # Only goal-setting text reads it: a re-pasted goal kicks off without repeating itself.
+        last_user_message = mgr.scoped(agent_goals.last_user_message_from_db, mgr.session_id) if action == "set" else None
+        result = mgr.scoped(dispatch_goal_command, mgr._manager, text, authorize_gate=lambda: None, last_user_message=last_user_message)
+        state = mgr.state
+        if result.error:
+            return _payload(ok=False, action=action, error="invalid_goal" if action == "set" else "invalid_command", message=result.output, state=state)
+        # A running turn's judge continues a resumed goal itself.
+        kickoff = result.prompt if result.prompt and not params.get("stream_running") else None
+        return _payload(action=action, message=result.output, state=state, kickoff_prompt=kickoff, **_localized(action, state, had_goal))
 
     @registry.method("goals.snapshot")
     def snapshot(ctx: CallContext, params: dict) -> dict:
@@ -212,6 +237,11 @@ def register(registry) -> None:
         try:
             if not mgr.is_active():
                 return _inactive("no active goal", getattr(mgr.state, "status", None) if mgr.state is not None else None)
+            # Gates set on a newer Agent persist across a channel switch; this one would run them outside the workspace.
+            if getattr(mgr.state, "gates", None) and not _gates_run_in_workspace():
+                mgr.pause(reason="gates need Hermes Agent 0.21.6 or later")
+                return {"status": "paused", "should_continue": False, "continuation_prompt": None, "verdict": "gate_failed", "reason": "gates not run",
+                        "message": f"⏸ Goal paused — quality gates not run. {_GATES_NEED_WORKSPACE} /goal gate clear, then /goal resume."}
             decision = mgr.evaluate_after_turn(str(params.get("last_response") or ""), user_initiated=bool(params.get("user_initiated", True)))
         except Exception as exc:  # noqa: BLE001 - never fail a turn on goal evaluation
             log.debug("goal evaluation failed", exc_info=True)

@@ -74,7 +74,11 @@ describe('/goal continuation after a goal turn settles (TAL-396)', () => {
     expect(second[1]?.[1]).toMatchObject({ decision: 'done', message: '✓ Goal achieved: notes shipped', message_key: 'goal_achieved' })
     await idle(sid)
     expect(calls('chat.start').map((p) => str(p.user_message).split('\n').pop())).toEqual([GOAL, 'Continue toward the goal.'])
-    expect(calls('goals.evaluate')).toEqual([expect.objectContaining({ session_id: sid, last_response: 'answer 1' }), expect.objectContaining({ session_id: sid, last_response: 'answer 2' })])
+    // TAL-882: the Agent runs goal gates in the session's workspace.
+    const workspace = s.deps.sessionStore.get(sid).workspace
+    expect(workspace).toBeTruthy()
+    expect(calls('goals.command')).toEqual([expect.objectContaining({ session_id: sid, args: GOAL, workspace })])
+    expect(calls('goals.evaluate')).toEqual([expect.objectContaining({ session_id: sid, last_response: 'answer 1', workspace }), expect.objectContaining({ session_id: sid, last_response: 'answer 2', workspace })])
   })
 
   it.each([true, false])('admits a goal continuation after workspace deletion (TAL-729, fallback available: %s)', async (recoverable) => {
