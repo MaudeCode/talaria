@@ -544,9 +544,12 @@ def plugin_settings() -> dict:
     return {"supported": True, "plugins": rows}
 
 
-def save_plugin_settings(key: str, values: Any) -> dict:
-    """Write manifest-declared, non-secret settings through the Agent's locked writer; returns the refreshed fields."""
-    if not key or not isinstance(values, dict):
+def save_plugin_settings(key: str, values: Any, secret_envs: Any = None) -> dict:
+    """Write manifest-declared, non-secret settings through the Agent's locked writer; returns the refreshed fields.
+
+    ``secret_envs`` (secret key -> ``.env`` name the caller wrote) must still match the manifest before anything is written.
+    """
+    if not key or not isinstance(values, dict) or not isinstance(secret_envs or {}, dict):
         raise InvalidParams("plugins.settings_save requires a 'key' and a 'values' mapping")
     modules = _plugin_settings_modules()
     if modules is None:
@@ -556,6 +559,11 @@ def save_plugin_settings(key: str, values: Any) -> dict:
     if found is None:
         raise RpcError(f"plugin {key!r} not found", condition="plugin_not_found")
     plugin_dir = pathlib.Path(str(found[4])) if found[4] else None
+    current = {field["key"]: field for field in plugins_settings.plugin_settings_fields(found[5], plugin_dir)}
+    for secret, env in (secret_envs or {}).items():
+        field = current.get(str(secret))
+        if field is None or field.get("type") != "secret" or field.get("env") != env:
+            raise RpcError(f"{secret!r} is no longer stored in {env}", condition="plugin_settings_changed")
     try:
         written = plugins_settings.save_plugin_settings(found[5], plugin_dir, values)
     except PermissionError as exc:
@@ -622,4 +630,4 @@ def register(registry) -> None:
     @registry.method("plugins.settings_save")
     def settings_save(ctx: CallContext, params: dict) -> dict:
         with scoped_home(profile_home_param(params)):
-            return save_plugin_settings(str(params.get("key") or "").strip(), params.get("values"))
+            return save_plugin_settings(str(params.get("key") or "").strip(), params.get("values"), params.get("secret_envs"))

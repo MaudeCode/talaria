@@ -94,8 +94,10 @@ export const COMMANDS_METHODS = {
   /**
    * TAL-806: write non-secret `values` through the Agent's locked plugin-state writer and return the refreshed fields.
    * An undeclared key, a secret or a type mismatch is invalid params; a managed install or key errors `plugin_settings_managed`.
+   * `secret_envs` (secret key → `.env` name the caller wrote) is checked against the current manifest before anything is
+   * written; a key that is no longer a secret stored under that name errors `plugin_settings_changed`.
    */
-  'plugins.settings_save': { params: ProfileHomeParams.extend({ key: z.string().min(1), values: z.record(z.string(), Json) }), result: z.object({ key: z.string(), written: z.array(z.string()), fields: z.array(PluginSettingFieldSchema) }) },
+  'plugins.settings_save': { params: ProfileHomeParams.extend({ key: z.string().min(1), values: z.record(z.string(), Json), secret_envs: z.record(z.string(), z.string()).optional() }), result: z.object({ key: z.string(), written: z.array(z.string()), fields: z.array(PluginSettingFieldSchema) }) },
 } as const
 
 // ── kanban ─────────────────────────────────────────────────────────────

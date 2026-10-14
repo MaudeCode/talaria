@@ -68,3 +68,14 @@ export function planPluginSettings(fields: PluginSettingField[], values: Record<
   }
   return plan
 }
+
+// One save at a time: each holds its field lookup, `.env` snapshot, writes and rollback, so a failed save can only restore
+// values no later save has written yet.
+// ponytail: one process-wide chain; per-plugin chains only if saves ever contend for throughput.
+let saves: Promise<unknown> = Promise.resolve()
+
+export function serializePluginSettingsSave<T>(save: () => Promise<T>): Promise<T> {
+  const run = saves.then(save)
+  saves = run.catch(() => undefined)
+  return run
+}

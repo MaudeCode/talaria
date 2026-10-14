@@ -20,7 +20,7 @@ import { commandCatalog } from '../tools/commands.js'
 import { agentHealth, applyDashboardConfig, dashboardConfig, dashboardStatus, gatewayStatus, parseDashboardConfig, readLogTail, remoteGatewayBaseUrl, systemHealth } from '../tools/health.js'
 import { restartGateway } from '../tools/gateway-restart.js'
 import { projectOsDashboard } from '../tools/project-os.js'
-import { PluginSettingsInvalid, planPluginSettings } from '../tools/plugin-settings.js'
+import { PluginSettingsInvalid, planPluginSettings, serializePluginSettingsSave } from '../tools/plugin-settings.js'
 import { RuntimeCredentialError, writeRuntimeCredential } from '../providers/runtime-env.js'
 import { EnvWriteError, loadEnvFile } from '../providers/env-file.js'
 import { loadGatewaySessionIdentityMap } from '../sessions/list.js'
@@ -485,7 +485,7 @@ export const toolsRouter = os.router({
       return { plugins: [], empty: true, supported_hooks: hooks, read_only: true, unavailable: true }
     }
   })),
-  pluginSettings: os.pluginSettings.handler(({ input, context: { ctx } }) => run(async () => {
+  pluginSettings: os.pluginSettings.handler(({ input, context: { ctx } }) => run(() => serializePluginSettingsSave(async () => {
     const sidecar = runningSidecar(ctx)
     const fields = (await pluginSettingsList(ctx)).find((entry) => entry.key === input.key)?.fields
     if (!fields) throw new HttpError(404, `Plugin '${input.key}' declares no settings`)
@@ -496,33 +496,34 @@ export const toolsRouter = os.router({
       if (error instanceof PluginSettingsInvalid) throw new HttpError(400, error.message)
       throw error
     }
+    const secretFields = fields.filter((field) => field.env && field.env in plan.secrets)
     // Secrets never reach config.yaml: each goes to the profile `.env` under the name the manifest field declares. They are
-    // written first and restored if a later write fails, so a refused save changes neither file.
+    // written first and restored if a later write fails, so a refused save changes neither file. The save call always runs:
+    // it resolves the plugin again and refuses (before writing) when a secret's `.env` name no longer matches its manifest.
     const credential = (envVar: string, value: string | null) => writeRuntimeCredential({ env: ctx.deps.config.env, sidecar: ctx.deps.sidecar, log: ctx.deps.log }, ctx.deps.isRootProfile(activeProfileName(ctx)), home(ctx), envVar, value)
     const previous = loadEnvFile(join(home(ctx), '.env'))
     const applied: string[] = []
-    let result = { key: input.key, written: [] as string[], fields }
+    let result
     try {
       for (const [envVar, value] of Object.entries(plan.secrets)) {
         await credential(envVar, value)
         applied.push(envVar)
       }
-      if (Object.keys(plan.values).length) result = await sidecar.call('plugins.settings_save', { profile_home: home(ctx), key: input.key, values: plan.values })
+      result = await sidecar.call('plugins.settings_save', { profile_home: home(ctx), key: input.key, values: plan.values, secret_envs: Object.fromEntries(secretFields.map((field) => [field.key, field.env!])) })
     } catch (error) {
       for (const envVar of applied.reverse()) {
         await credential(envVar, previous[envVar] ?? null).catch((restore: unknown) => { ctx.deps.log(`[plugins] could not restore ${envVar} after a failed settings save: ${str((restore as Error).message)}`) })
       }
       if (error instanceof SidecarError && error.condition === 'plugin_settings_managed') throw new HttpError(403, error.message, { condition: error.condition })
+      if (error instanceof SidecarError && error.condition === 'plugin_settings_changed') throw new HttpError(409, `${error.message}; reload and try again`, { condition: error.condition })
       if (error instanceof SidecarError && error.condition === 'plugin_not_found') throw new HttpError(404, error.message)
       if (error instanceof SidecarError && error.code === -32602) throw new HttpError(400, error.message)
       if (error instanceof RuntimeCredentialError) throw new HttpError(503, error.message)
       if (error instanceof EnvWriteError) throw new HttpError(error.status, `Failed to save a secret: ${error.message}`, { condition: error.condition })
       throw error
     }
-    const written = [...result.written, ...fields.filter((field) => field.env && field.env in plan.secrets).map((field) => field.key)]
-    const settings = Object.keys(plan.secrets).length ? ((await pluginSettingsList(ctx)).find((entry) => entry.key === result.key)?.fields ?? result.fields) : result.fields
-    return { ok: true as const, key: result.key, written, settings }
-  })),
+    return { ok: true as const, key: result.key, written: [...result.written, ...secretFields.map((field) => field.key)], settings: result.fields }
+  }))),
   updates: {
     check: os.updates.check.handler(({ context: { ctx } }) => run(() => {
       const settings = ctx.deps.settings.load()

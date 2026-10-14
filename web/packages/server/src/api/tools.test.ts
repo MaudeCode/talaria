@@ -505,21 +505,38 @@ describe('skills, memory, prompts, commands, mcp, health, updates, diagnostics',
     expect(res.status).toBe(404)
   })
 
-  it('TAL-806: plugin settings ship as fields and save non-secrets to config, secrets to .env', async () => {
+  /** TAL-806: one synthetic plugin whose settings the fake sidecar keeps in memory; `.env` writes go through the fake's real file writer. */
+  const fakePlugin = () => {
+    const state = { home: '', saves: [] as Json[], secretEnvs: [] as Json[], current: { endpoint: 'https://example.invalid', limit: 5, verbose: null, mode: 'fast', rules: null } as Json }
     const fields = (): Json[] => [
-      { key: 'endpoint', type: 'string', label: 'Endpoint', description: '', required: false, value: current.endpoint },
-      { key: 'limit', type: 'number', label: 'limit', description: '', required: false, default: 5, value: current.limit },
-      { key: 'verbose', type: 'boolean', label: 'verbose', description: '', required: false, value: current.verbose },
-      { key: 'mode', type: 'enum', label: 'mode', description: '', required: false, choices: ['fast', 'careful'], default: 'fast', value: current.mode },
-      { key: 'rules', type: 'json', label: 'rules', description: '', required: false, value: current.rules },
-      { key: 'api_key', type: 'secret', label: 'API key', description: '', required: false, env: 'FAKE_SETTINGS_API_KEY', has_value: existsSync(join(home, '.env')) },
+      { key: 'endpoint', type: 'string', label: 'Endpoint', description: '', required: false, value: state.current.endpoint },
+      { key: 'limit', type: 'number', label: 'limit', description: '', required: false, default: 5, value: state.current.limit },
+      { key: 'verbose', type: 'boolean', label: 'verbose', description: '', required: false, value: state.current.verbose },
+      { key: 'mode', type: 'enum', label: 'mode', description: '', required: false, choices: ['fast', 'careful'], default: 'fast', value: state.current.mode },
+      { key: 'rules', type: 'json', label: 'rules', description: '', required: false, value: state.current.rules },
+      { key: 'api_key', type: 'secret', label: 'API key', description: '', required: false, env: 'FAKE_SETTINGS_API_KEY', has_value: state.home !== '' && existsSync(join(state.home, '.env')) && readFileSync(join(state.home, '.env'), 'utf8').includes('FAKE_SETTINGS_API_KEY=') },
     ]
-    const current: Json = { endpoint: 'https://example.invalid', limit: 5, verbose: null, mode: 'fast', rules: null }
-    let home = ''
-    const saves: Json[] = []
+    const save = (params: { key: string; values: Json; secret_envs?: Record<string, string> | undefined }) => {
+      if (Object.keys(params.values).length) state.saves.push(params.values)
+      state.secretEnvs.push(params.secret_envs ?? {})
+      Object.assign(state.current, params.values)
+      return { key: params.key, written: Object.keys(params.values), fields: fields() as never }
+    }
     sidecar.respond('plugins.list', () => ({ plugins: [{ name: 'fake-settings', key: 'fake-settings', version: '1', description: '', enabled: true, kind: 'standalone', activation: 'enabled', hooks: [] }], supported_hooks: [] }))
-    sidecar.respond('plugins.settings', (params) => { home = params.profile_home; return { supported: true, plugins: [{ key: 'fake-settings', fields: fields() as never }] } })
-    sidecar.respond('plugins.settings_save', (params) => { saves.push(params.values); Object.assign(current, params.values); return { key: params.key, written: Object.keys(params.values), fields: fields() as never } })
+    sidecar.respond('plugins.settings', (params) => { state.home = params.profile_home; return { supported: true, plugins: [{ key: 'fake-settings', fields: fields() as never }] } })
+    sidecar.respond('plugins.settings_save', save)
+    const envText = () => existsSync(join(state.home, '.env')) ? readFileSync(join(state.home, '.env'), 'utf8') : ''
+    const restore = () => {
+      sidecar.respond('plugins.settings', undefined)
+      sidecar.respond('plugins.settings_save', undefined)
+      sidecar.respond('plugins.list', undefined)
+      if (state.home) rmSync(join(state.home, '.env'), { force: true })
+    }
+    return { state, fields, save, envText, restore }
+  }
+
+  it('TAL-806: plugin settings ship as fields and save non-secrets to config, secrets to .env', async () => {
+    const { state, envText, restore } = fakePlugin()
     try {
       let body = await json(await s.get('/api/plugins'))
       expect(body).toMatchObject({ read_only: false })
@@ -529,49 +546,109 @@ describe('skills, memory, prompts, commands, mcp, health, updates, diagnostics',
       let res = await post(s, '/api/plugins/settings', { key: 'fake-settings', values: { endpoint: 'https://api.example.invalid', limit: ' 9 ', verbose: true, mode: 'careful', rules: '{"a": [1]}' }, secrets: { api_key: ' sk-synthetic-plugin ' } })
       body = await json(res)
       expect(res.status).toBe(200)
-      expect(saves).toEqual([{ endpoint: 'https://api.example.invalid', limit: 9, verbose: true, mode: 'careful', rules: { a: [1] } }])
+      expect(state.saves).toEqual([{ endpoint: 'https://api.example.invalid', limit: 9, verbose: true, mode: 'careful', rules: { a: [1] } }])
       expect(body).toMatchObject({ ok: true, key: 'fake-settings', written: ['endpoint', 'limit', 'verbose', 'mode', 'rules', 'api_key'] })
-      expect(readFileSync(join(home, '.env'), 'utf8')).toContain('FAKE_SETTINGS_API_KEY=sk-synthetic-plugin')
+      expect(envText()).toContain('FAKE_SETTINGS_API_KEY=sk-synthetic-plugin')
       expect(((body.settings as Json[]).find((f) => f.key === 'api_key'))).toMatchObject({ has_value: true })
-      expect(JSON.stringify(saves)).not.toContain('sk-synthetic-plugin')
+      expect(JSON.stringify(state.saves)).not.toContain('sk-synthetic-plugin')
 
       // An unchanged form writes nothing.
       res = await post(s, '/api/plugins/settings', { key: 'fake-settings', values: { limit: '9', mode: 'careful' } })
       expect(await json(res)).toMatchObject({ written: [] })
-      expect(saves).toHaveLength(1)
+      expect(state.saves).toHaveLength(1)
 
       for (const bad of [{ values: { api_key: 'sk-x' } }, { values: { mode: 'reckless' } }, { values: { nope: 1 } }, { values: { limit: 'abc' } }, { values: { rules: '"text"' } }, { secrets: { limit: 'x' } }, { secrets: { nope: 'x' } }]) {
         res = await post(s, '/api/plugins/settings', { key: 'fake-settings', ...bad })
         expect(res.status, JSON.stringify(bad)).toBe(400)
       }
-      expect(saves).toHaveLength(1)
+      expect(state.saves).toHaveLength(1)
       expect((await post(s, '/api/plugins/settings', { key: 'other', values: { limit: '1' } })).status).toBe(404)
 
       // An emptied secret field clears the stored secret.
       res = await post(s, '/api/plugins/settings', { key: 'fake-settings', secrets: { api_key: '' } })
       expect(res.status).toBe(200)
       expect(await json(res)).toMatchObject({ written: ['api_key'] })
-      expect(readFileSync(join(home, '.env'), 'utf8')).not.toContain('FAKE_SETTINGS_API_KEY')
+      expect(envText()).not.toContain('FAKE_SETTINGS_API_KEY')
 
       // A refused secret leaves config.yaml untouched.
       const envWrite = sidecar.responderFor('config.env_write')
       sidecar.respond('config.env_write', () => { throw new SidecarError('Cannot set FAKE_SETTINGS_API_KEY: this Hermes installation manages it', { condition: 'env_write_refused' }) })
       res = await post(s, '/api/plugins/settings', { key: 'fake-settings', values: { limit: '4' }, secrets: { api_key: 'sk-refused' } })
       expect(res.status).toBe(409)
-      expect(saves).toHaveLength(1)
+      expect(state.saves).toHaveLength(1)
       sidecar.respond('config.env_write', envWrite)
 
       // A refused config write restores the secrets written before it.
-      writeFileSync(join(home, '.env'), 'FAKE_SETTINGS_API_KEY=sk-before\n')
+      writeFileSync(join(state.home, '.env'), 'FAKE_SETTINGS_API_KEY=sk-before\n')
       sidecar.respond('plugins.settings_save', () => { throw new SidecarError('Plugin settings cannot be changed in a managed install', { condition: 'plugin_settings_managed' }) })
       res = await post(s, '/api/plugins/settings', { key: 'fake-settings', values: { limit: '3' }, secrets: { api_key: 'sk-after' } })
       expect(res.status).toBe(403)
-      expect(readFileSync(join(home, '.env'), 'utf8')).toContain('FAKE_SETTINGS_API_KEY=sk-before')
+      expect(envText()).toContain('FAKE_SETTINGS_API_KEY=sk-before')
     } finally {
-      sidecar.respond('plugins.settings', undefined)
-      sidecar.respond('plugins.settings_save', undefined)
-      sidecar.respond('plugins.list', undefined)
-      rmSync(join(home, '.env'), { force: true })
+      restore()
+    }
+  })
+
+  it('TAL-806: overlapping saves of one secret run one at a time, so a failed save cannot restore over a later one', async () => {
+    const { state, save, envText, restore } = fakePlugin()
+    try {
+      await s.get('/api/plugins')
+      writeFileSync(join(state.home, '.env'), 'FAKE_SETTINGS_API_KEY=sk-before\n')
+      let release!: () => void
+      const gate = new Promise<void>((resolve) => { release = resolve })
+      let calls = 0
+      sidecar.respond('plugins.settings_save', async (params) => {
+        calls += 1
+        if (calls === 1) { await gate; throw new SidecarError('Plugin settings cannot be changed in a managed install', { condition: 'plugin_settings_managed' }) }
+        return save(params)
+      })
+      const first = post(s, '/api/plugins/settings', { key: 'fake-settings', values: { limit: '7' }, secrets: { api_key: 'sk-first' } })
+      await vi.waitFor(() => { expect(calls).toBe(1) })
+      const second = post(s, '/api/plugins/settings', { key: 'fake-settings', secrets: { api_key: 'sk-second' } })
+      await new Promise((resolve) => setTimeout(resolve, 150))
+      release()
+      expect((await first).status).toBe(403)
+      expect((await second).status).toBe(200)
+      expect(envText()).toContain('FAKE_SETTINGS_API_KEY=sk-second')
+    } finally {
+      restore()
+    }
+  })
+
+  it('TAL-806: a secret-only save is checked against the current manifest, and a stale mapping is restored', async () => {
+    const { state, envText, restore } = fakePlugin()
+    try {
+      await s.get('/api/plugins')
+      writeFileSync(join(state.home, '.env'), 'FAKE_SETTINGS_API_KEY=sk-before\n')
+      sidecar.respond('plugins.settings_save', (params) => {
+        state.secretEnvs.push(params.secret_envs ?? {})
+        throw new SidecarError("'api_key' is no longer stored in FAKE_SETTINGS_API_KEY", { condition: 'plugin_settings_changed' })
+      })
+      const res = await post(s, '/api/plugins/settings', { key: 'fake-settings', secrets: { api_key: 'sk-stale' } })
+      expect(res.status).toBe(409)
+      expect(state.secretEnvs).toEqual([{ api_key: 'FAKE_SETTINGS_API_KEY' }])
+      expect(envText()).toContain('FAKE_SETTINGS_API_KEY=sk-before')
+    } finally {
+      restore()
+    }
+  })
+
+  it('TAL-806: a save reports success once its writes commit, with the fields the write returned', async () => {
+    const { restore } = fakePlugin()
+    const lookup = sidecar.responderFor('plugins.settings')!
+    try {
+      await s.get('/api/plugins')
+      let lookups = 0
+      sidecar.respond('plugins.settings', (params, emit, opts) => {
+        lookups += 1
+        if (lookups > 1) throw new SidecarError('sidecar exited', { condition: 'sidecar_unavailable' })
+        return lookup(params, emit, opts)
+      })
+      const res = await post(s, '/api/plugins/settings', { key: 'fake-settings', secrets: { api_key: 'sk-committed' } })
+      expect(res.status).toBe(200)
+      expect(((await json(res)).settings as Json[]).find((f) => f.key === 'api_key')).toMatchObject({ has_value: true })
+    } finally {
+      restore()
     }
   })
 

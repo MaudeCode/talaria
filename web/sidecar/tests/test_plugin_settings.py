@@ -91,3 +91,16 @@ def test_managed_install_refuses_plugin_settings(handshaken: SidecarProcess, her
 def test_unknown_plugin_is_not_found(handshaken: SidecarProcess, hermes_home: pathlib.Path) -> None:
     missing, _ = handshaken.call("plugins.settings_save", {"profile_home": str(hermes_home), "key": "no-such-plugin", "values": {"x": 1}})
     assert missing["error"]["data"]["condition"] == "plugin_not_found", missing
+
+
+@requires_agent
+def test_secret_mapping_is_checked_before_anything_is_written(handshaken: SidecarProcess, hermes_home: pathlib.Path) -> None:
+    _seed(hermes_home)
+    key, _fields_ = _fields(handshaken, hermes_home)
+    stale, _ = handshaken.call("plugins.settings_save", {"profile_home": str(hermes_home), "key": key, "values": {"limit": 3}, "secret_envs": {"api_key": "RENAMED_API_KEY"}})
+    assert stale["error"]["data"]["condition"] == "plugin_settings_changed", stale
+    not_secret, _ = handshaken.call("plugins.settings_save", {"profile_home": str(hermes_home), "key": key, "values": {}, "secret_envs": {"limit": "FAKE_SETTINGS_LIMIT"}})
+    assert not_secret["error"]["data"]["condition"] == "plugin_settings_changed", not_secret
+    assert "limit" not in ((hermes_home / "config.yaml").read_text() if (hermes_home / "config.yaml").exists() else "")
+    saved = handshaken.result("plugins.settings_save", {"profile_home": str(hermes_home), "key": key, "values": {"limit": 3}, "secret_envs": {"api_key": "FAKE_SETTINGS_API_KEY"}})
+    assert saved["written"] == ["limit"]
