@@ -438,7 +438,7 @@ describe('async delegation delivery claims (TAL-459)', () => {
   })
 })
 
-describe('subagent process notifications follow the owning profile (TAL-933)', () => {
+describe('process notifications follow the owning profile (TAL-933, TAL-907)', () => {
   let s: TestServer
   let sidecar: FakeSidecar
   beforeAll(async () => {
@@ -447,26 +447,29 @@ describe('subagent process notifications follow the owning profile (TAL-933)', (
   })
   afterAll(() => s.close())
 
-  /** A session on profile `b` while `a` is active; only the owning profile's `delegation` section counts. */
-  const setup = async (configs: Record<string, Json>): Promise<{ sid: string; drain: CompletionDrain; starts: string[]; consumed: string[]; requeued: Json[]; notified: string[] }> => {
+  /** A session on profile `b` while `a` is active; only the owning profile's config counts. An `Error` config is unreadable. */
+  const setup = async (configs: Record<string, Json | Error>, opts: { env?: Record<string, string>; root?: string; profile?: string | null; fail?: () => boolean } = {}): Promise<{ sid: string; drain: CompletionDrain; starts: string[]; consumed: string[]; requeued: Json[]; notified: string[]; recorded: string[]; logs: string[] }> => {
     const sid = String(((await json(await post(s, '/api/session/new', {}))).session as Json).session_id)
     const session = s.deps.sessionStore.get(sid)
-    session.profile = 'b'
+    session.profile = opts.profile === undefined ? 'b' : opts.profile
     session.messages = [{ role: 'user', content: 'delegate the build' }]
     s.deps.sessionStore.save(session)
     const starts: string[] = []
     const consumed: string[] = []
     const requeued: Json[] = []
     const notified: string[] = []
+    const recorded: string[] = []
+    const logs: string[] = []
     sidecar.respond('process.mark_consumed', (params) => { consumed.push(str(params.process_id)); return { ok: true } })
     sidecar.respond('process.requeue', (params) => { requeued.push(...(params.events as Json[])); return { requeued: params.events.length } })
     const channels = { emit: (_sid: string, name: string, payload: Json) => { if (name === 'bg_task_complete') notified.push(str(payload.task_id)); return 1 } } as unknown as SessionChannels
     const drain = new CompletionDrain({
-      sidecar: () => sidecar, baseHome: '/homes', profileHome: (profile) => `/homes/${profile ?? 'default'}`, activeProfile: () => 'a', store: s.deps.sessionStore, channels, registry: s.deps.registry,
-      readConfig: (home: string) => Promise.resolve(configs[home] ?? {}),
-      startTurn: (_session, prompt) => { starts.push(prompt); return { stream_id: 'run' } }, now: () => Date.now() / 1000, log: () => undefined,
+      sidecar: () => sidecar, baseHome: opts.root ?? '/homes', profileHome: (profile) => `${opts.root ?? '/homes'}/${profile ?? 'default'}`, activeProfile: () => 'a', store: s.deps.sessionStore, channels, registry: s.deps.registry,
+      readConfig: (home: string) => { const config = configs[home]; return config instanceof Error ? Promise.reject(config) : Promise.resolve(config ?? {}) }, env: opts.env ?? {},
+      background: { recordEvent: (_sid, evt) => { recorded.push(str(evt.process_id)) } },
+      startTurn: (_session, prompt) => { if (opts.fail?.()) return { _status: 500, error: 'down' }; starts.push(prompt); return { stream_id: 'run' } }, now: () => Date.now() / 1000, log: (line) => { logs.push(line) },
     })
-    return { sid, drain, starts, consumed, requeued, notified }
+    return { sid, drain, starts, consumed, requeued, notified, recorded, logs }
   }
   const optIn = { delegation: { surface_child_process_notifications: true } }
   type Drained = SidecarResult<'process.drain'>['events'][number]
@@ -506,6 +509,122 @@ describe('subagent process notifications follow the owning profile (TAL-933)', (
     expect(starts.join('\n')).toContain('Background process proc_own completed')
     expect(starts.join('\n')).toContain('ASYNC DELEGATION COMPLETE — deleg_sa')
     expect(requeued.map((e) => e.process_id)).toEqual(['deleg_elsewhere'])
+    drain.stop()
+  })
+
+  const notifications = (mode: unknown): Json => ({ display: { background_process_notifications: mode } })
+  const watch = (sid: string, id: string): Drained => ({ process_id: id, session_id: id, type: 'watch_match', pattern: 'ERR', command: 'tail', output: 'ERR', session_key: sid, consumed: false })
+  const beat = (sid: string, id: string): Drained => ({ process_id: id, session_id: id, type: 'heartbeat', session_key: sid, consumed: false })
+
+  it('settles every process event without waking the session when the owning profile sets background_process_notifications: off', async () => {
+    // The active profile's `all` does not count for a session owned by profile b.
+    const { sid, drain, starts, notified, recorded } = await setup({ '/homes/a': notifications('all'), '/homes/b': notifications('off') })
+    sidecar.respond('process.format_notification', () => ({ text: '[IMPORTANT: still running]' }))
+    for (const evt of [exit(sid, 'proc_off', false), watch(sid, 'proc_watch'), beat(sid, 'proc_beat')]) expect(await drain.processOne(evt)).toBe(true)
+    expect(starts).toEqual([])
+    expect(drain.deferredCount(sid)).toBe(0)
+    // The background record settles and the status row still reaches the session.
+    expect(recorded).toEqual(['proc_off', 'proc_watch', 'proc_beat'])
+    expect(notified).toEqual(['proc_off'])
+    drain.stop()
+  })
+
+  it.each(['concise', 'all', 'result', undefined])('wakes the session as before when the owning profile sets %s', async (mode) => {
+    const { sid, drain, starts } = await setup({ '/homes/a': notifications('off'), '/homes/b': notifications(mode) })
+    expect(await drain.processOne(exit(sid, `proc_${String(mode)}`, false))).toBe(true)
+    expect(starts).toHaveLength(1)
+    drain.stop()
+  })
+
+  it('treats a YAML false as off and lets HERMES_BACKGROUND_NOTIFICATIONS override the config', async () => {
+    const yamlOff = await setup({ '/homes/b': notifications(false) })
+    expect(await yamlOff.drain.processOne(exit(yamlOff.sid, 'proc_false', false))).toBe(true)
+    expect(yamlOff.starts).toEqual([])
+    yamlOff.drain.stop()
+    const envOff = await setup({ '/homes/b': notifications('all') }, { env: { HERMES_BACKGROUND_NOTIFICATIONS: ' OFF ' } })
+    expect(await envOff.drain.processOne(exit(envOff.sid, 'proc_env', false))).toBe(true)
+    expect(envOff.starts).toEqual([])
+    envOff.drain.stop()
+    const envOn = await setup({ '/homes/b': notifications('off') }, { env: { HERMES_BACKGROUND_NOTIFICATIONS: 'all' } })
+    expect(await envOn.drain.processOne(exit(envOn.sid, 'proc_env_on', false))).toBe(true)
+    expect(envOn.starts).toHaveLength(1)
+    envOn.drain.stop()
+  })
+
+  it("honours HERMES_BACKGROUND_NOTIFICATIONS from the owning profile's .env over the server environment", async () => {
+    const root = mkdtempSync(join(tmpdir(), 'tal907-'))
+    try {
+      mkdirSync(join(root, 'b'))
+      // The Agent's dotenv load expands references against the file's earlier values, then the environment.
+      for (const dotenv of ['HERMES_BACKGROUND_NOTIFICATIONS=off', 'MODE=off\nHERMES_BACKGROUND_NOTIFICATIONS=${MODE}', 'HERMES_BACKGROUND_NOTIFICATIONS="${UNSET:-off}"', 'HERMES_BACKGROUND_NOTIFICATIONS=${SHELL_MODE}']) {
+        writeFileSync(join(root, 'b', '.env'), `${dotenv}\n`)
+        const { sid, drain, starts } = await setup({ [`${root}/b`]: notifications('all') }, { root, env: { HERMES_BACKGROUND_NOTIFICATIONS: 'all', SHELL_MODE: 'off' } })
+        expect(await drain.processOne(exit(sid, 'proc_profile_env', false))).toBe(true)
+        expect(starts, dotenv).toEqual([])
+        drain.stop()
+      }
+    } finally { rmSync(root, { recursive: true, force: true }) }
+  })
+
+  it('reads a session without a profile from the root profile, not the active one', async () => {
+    const { sid, drain, starts } = await setup({ '/homes/default': notifications('off'), '/homes/a': notifications('all') }, { profile: null })
+    expect(await drain.processOne(exit(sid, 'proc_root', false))).toBe(true)
+    expect(starts).toEqual([])
+    drain.stop()
+  })
+
+  it('applies off switched on while the wakeup waited for the active turn', async () => {
+    const configs: Record<string, Json> = { '/homes/b': notifications('all') }
+    const { sid, drain, starts } = await setup(configs)
+    s.deps.registry.activeRuns.set('busy-907', { session_id: sid } as never)
+    try {
+      expect(await drain.processOne(exit(sid, 'proc_deferred', false))).toBe(true)
+      expect(drain.deferredCount(sid)).toBe(1)
+    } finally { s.deps.registry.activeRuns.delete('busy-907') }
+    configs['/homes/b'] = notifications('off')
+    expect(await drain.drainDeferred(sid)).toBe(0)
+    expect(starts).toEqual([])
+    expect(drain.deferredCount(sid)).toBe(0)
+    drain.stop()
+  })
+
+  it('a muted wakeup resets the retry budget a failing provider spent', async () => {
+    const configs: Record<string, Json> = { '/homes/b': notifications('all') }
+    let failing = true
+    const { sid, drain, logs } = await setup(configs, { fail: () => failing })
+    for (let i = 0; i < 6; i += 1) await drain.processOne(exit(sid, `proc_fail_${String(i)}`, false))
+    expect(logs.filter((l) => l.includes('retry budget exhausted'))).toHaveLength(1)
+    configs['/homes/b'] = notifications('off')
+    await drain.processOne(exit(sid, 'proc_muted', false))
+    configs['/homes/b'] = notifications('all')
+    await drain.processOne(exit(sid, 'proc_after', false))
+    // A fresh failure after notifications came back gets its timed retry again.
+    expect(logs.filter((l) => l.includes('retry budget exhausted'))).toHaveLength(1)
+    failing = false
+    drain.stop()
+  })
+
+  it('retains the wakeup without starting a turn while the setting is unreadable', async () => {
+    const configs: Record<string, Json | Error> = { '/homes/b': new Error('config.yaml is being replaced') }
+    const { sid, drain, starts } = await setup(configs)
+    expect(await drain.processOne(exit(sid, 'proc_unreadable', false))).toBe(true)
+    expect(starts).toEqual([])
+    expect(drain.deferredCount(sid)).toBe(1)
+    configs['/homes/b'] = notifications('concise')
+    await drain.drainDeferred(sid)
+    expect(starts).toHaveLength(1)
+    drain.stop()
+  })
+
+  it('still delivers and acknowledges a subagent result when notifications are off', async () => {
+    const { sid, drain, starts } = await setup({ '/homes/b': notifications('off') })
+    const ledger: string[] = []
+    sidecar.respond('process.format_notification', () => ({ text: '[ASYNC DELEGATION COMPLETE — deleg_off]' }))
+    sidecar.respond('process.claim_delivery', () => { ledger.push('claim'); return { claim_id: 'c' } })
+    sidecar.respond('process.complete_delivery', () => { ledger.push('complete'); return { ok: true } })
+    expect(await drain.processOne({ process_id: 'deleg_off', delegation_id: 'deleg_off', type: 'async_delegation', origin_ui_session_id: sid, consumed: false })).toBe(true)
+    expect(starts).toEqual(['[ASYNC DELEGATION COMPLETE — deleg_off]'])
+    expect(ledger).toEqual(['claim', 'complete'])
     drain.stop()
   })
 })

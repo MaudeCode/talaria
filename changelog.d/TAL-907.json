@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Setting background process notifications to off now stops finished or watched background commands from starting a new agent turn in Web and App chats; finished subagent results still arrive.",
+      "highlight": false,
+      "components": ["web"]
+    }
+  ]
+}

@@ -76,6 +76,17 @@ export function parseDotenv(text: string): Record<string, string> {
   return out
 }
 
+/**
+ * python-dotenv `resolve_variables` with override, as the Agent loads a profile `.env`: `${NAME}` and `${NAME:-default}`
+ * resolve against the file's earlier values, then `env`.
+ */
+export function expandDotenv(values: Record<string, string>, env: Record<string, string | undefined>): Record<string, string> {
+  const out: Record<string, string> = {}
+  const lookup = (name: string): string | undefined => (Object.hasOwn(out, name) ? out[name] : Object.hasOwn(env, name) ? env[name] : undefined)
+  for (const [key, value] of Object.entries(values)) out[key] = value.replace(/\$\{([^}:]*)(?::-([^}]*))?\}/g, (_match, name: string, fallback?: string) => lookup(name) ?? fallback ?? '')
+  return out
+}
+
 export interface DotenvOptions {
   env: Record<string, string | undefined>
   /** The checkout `.env` (a git checkout of `web/`); absent for npm installs. */
