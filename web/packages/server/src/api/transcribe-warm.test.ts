@@ -51,7 +51,7 @@ describe('local STT warm-up (TAL-916)', () => {
       await loading
       return { provider: 'local', warmed: true, action: 'loaded' }
     })
-    sidecar.respond('stt.transcribe', () => ({ transcript: 'hot' }))
+    sidecar.respond('stt.transcribe', () => ({ transcript: 'hot', filtered: false }))
     try {
       const started = await within(warm(s))
       expect(started).not.toBe('blocked')
@@ -63,7 +63,7 @@ describe('local STT warm-up (TAL-916)', () => {
       expect(warms).toHaveLength(1)
       const transcribed = await within(transcribe(s))
       expect(transcribed).not.toBe('blocked')
-      expect(await (transcribed as Response).json()).toEqual({ ok: true, transcript: 'hot' })
+      expect(await (transcribed as Response).json()).toEqual({ ok: true, transcript: 'hot', filtered: false })
     } finally {
       finish()
     }
