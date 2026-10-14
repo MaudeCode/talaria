@@ -19,7 +19,7 @@ describe('contracts package', () => {
   it('parses the shared model picker limits (TAL-807, TAL-935)', () => {
     const groups = ModelsSchema.parse(shared('fixtures/models-limits.json')).groups
     expect(groups.map((g) => [g.limit?.scope ?? null, g.quota_level ?? null])).toEqual([['models', 'warning'], ['account', null], [null, 'critical']])
-    expect(groups[0].models.map((e) => e.limit?.resets_at ?? null)).toEqual([null, '2026-10-14T16:30:00Z'])
+    expect(groups[0]?.models.map((e) => e.limit?.resets_at ?? null)).toEqual([null, '2026-10-14T16:30:00Z'])
   })
   it('exports an integer sidecar RPC version', () => {
     expect(Number.isInteger(SIDECAR_RPC_VERSION)).toBe(true)
