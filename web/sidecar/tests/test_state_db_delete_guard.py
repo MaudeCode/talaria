@@ -10,13 +10,10 @@ import subprocess
 import textwrap
 from contextlib import closing
 
-import pytest
-
 from conftest import AGENT_DIR, AGENT_PYTHON, SidecarProcess, assert_matches, isolated_env, requires_agent
 
-# An Agent without the guard (before v0.21.6) keeps the unguarded delete.
-pytestmark = [requires_agent, pytest.mark.skipif(
-    AGENT_DIR is None or "def _guarded_ids" not in (AGENT_DIR / "hermes_state_maintenance.py").read_text(), reason="Agent without the user-delete write guard")]
+# Every supported Agent guards: v0.21.6+ through ``_guarded_ids``, older ones through ``_write_guards_reject``.
+pytestmark = requires_agent
 
 # An unstructured holder is never probed as a pid, so it stays live until its TTL (another process's turn).
 OTHER_PROCESS = "other-terminal-turn"

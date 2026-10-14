@@ -334,12 +334,28 @@ def _delete_locked(sid: str, home: Path, include_lineage: bool) -> bool:
     if agent_db is None:
         return False
     try:
-        return _delete_rows(sid, include_lineage, home, db_path, getattr(agent_db, "_guarded_ids", None)) and stale_complete
+        guarded = _write_guard_check(agent_db)
+        if guarded is None:  # fail closed: without the Agent's guard, a live writer's rows cannot be told apart
+            log.warning("Agent has no session write-guard check; state.db rows are kept")
+            return False
+        return _delete_rows(sid, include_lineage, home, db_path, guarded) and stale_complete
     finally:
         _close(agent_db)
 
 
-def _delete_rows(requested: str, include_lineage: bool, home: Path, db_path: Path, guarded_ids) -> bool:
+def _write_guard_check(agent_db):
+    """The Agent's own user-delete guard, ``(conn, ids) -> bool``: true when a live turn lease or compression lock protects
+    any id; expired or dead-holder guards are reclaimed. ``_guarded_ids`` from v0.21.6, the per-row check before it."""
+    guarded_ids = getattr(agent_db, "_guarded_ids", None)
+    if guarded_ids is not None:
+        return lambda conn, ids: bool(guarded_ids(conn, ids))
+    rejects = getattr(agent_db, "_write_guards_reject", None)
+    if rejects is not None:
+        return lambda conn, ids: any(rejects(conn, i, allow_closed_compression_parent=True) for i in ids)
+    return None
+
+
+def _delete_rows(requested: str, include_lineage: bool, home: Path, db_path: Path, guarded) -> bool:
     with closing(sqlite3.connect(str(db_path))) as conn:
         conn.row_factory = sqlite3.Row
         conn.execute("PRAGMA foreign_keys = ON")
@@ -423,9 +439,9 @@ def _delete_rows(requested: str, include_lineage: bool, home: Path, db_path: Pat
         sids = _compression_lineage(records, requested) if include_lineage else [requested]
         plan = [(sid, delegates_of(sid)) for sid in reversed(sids)]
         all_removed = list(dict.fromkeys(i for sid, delegate_ids in plan for i in (sid, *delegate_ids)))
-        # The Agent's own user-delete guard (Agent v0.21.6+), checked over every row before any is removed. A live
-        # writer's turn lease or compression lock refuses the whole delete; expired or dead-holder guards are reclaimed.
-        if guarded_ids is not None and guarded_ids(conn, all_removed):
+        # The Agent's own user-delete guard, checked over every row before any is removed. A live writer's turn lease or
+        # compression lock refuses the whole delete; expired or dead-holder guards are reclaimed.
+        if guarded(conn, all_removed):
             raise _ActiveWriteGuard
         placeholders = ",".join("?" * len(all_removed))
         for sid, delegate_ids in plan:
