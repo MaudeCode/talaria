@@ -4,7 +4,17 @@
       "category": "Changed",
       "summary": "Chat notices such as \"it stays pending\" or a slash command's result now show as one small chip above the composer that goes away on its own or when tapped, instead of stacking cards that stayed until the run ended and then became transcript rows.",
       "highlight": false,
-      "components": ["app"]
+      "components": [
+        "app"
+      ]
+    },
+    {
+      "category": "Changed",
+      "summary": "Background work in a chat now shows as one \"Background tasks\" chip with a count above the composer; tapping it opens a sheet listing each task's status, with a finished task's full result and Dismiss.",
+      "highlight": false,
+      "components": [
+        "app"
+      ]
     }
   ]
 }

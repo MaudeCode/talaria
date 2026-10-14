@@ -17635,108 +17635,108 @@
         }
       }
     },
-    "Background task started." : {
+    "Background tasks · %lld" : {
       "localizations" : {
         "ar" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "بدأت المهمة في الخلفية."
+            "value" : "المهام في الخلفية · %lld"
           }
         },
         "de" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "Hintergrundaufgabe gestartet."
+            "value" : "Hintergrundaufgaben · %lld"
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "Tarea en segundo plano iniciada."
+            "value" : "Tareas en segundo plano · %lld"
           }
         },
         "fr" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "Tâche en arrière-plan lancée."
+            "value" : "Tâches en arrière-plan · %lld"
           }
         },
         "he" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "משימת הרקע התחילה."
+            "value" : "משימות רקע · %lld"
           }
         },
         "it" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "Attività in background avviata."
+            "value" : "Attività in background · %lld"
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "バックグラウンドタスクを開始しました。"
+            "value" : "バックグラウンドタスク · %lld"
           }
         },
         "ko" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "백그라운드 작업을 시작했습니다."
+            "value" : "백그라운드 작업 · %lld"
           }
         },
         "nl" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "Achtergrondtaak gestart."
+            "value" : "Achtergrondtaken · %lld"
           }
         },
         "pl" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "Zadanie w tle rozpoczęte."
+            "value" : "Zadania w tle · %lld"
           }
         },
         "pt-BR" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "Tarefa em segundo plano iniciada."
+            "value" : "Tarefas em segundo plano · %lld"
           }
         },
         "ru" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "Фоновая задача запущена."
+            "value" : "Фоновые задачи · %lld"
           }
         },
         "tr" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "Arka plan görevi başlatıldı."
+            "value" : "Arka plan görevleri · %lld"
           }
         },
         "ur" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "پس منظر کا کام شروع ہو گیا۔"
+            "value" : "پس منظر کے کام · %lld"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "后台任务已开始。"
+            "value" : "后台任务 · %lld"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "背景工作已開始。"
+            "value" : "背景工作 · %lld"
           }
         },
         "zh-HK" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "背景工作已開始。"
+            "value" : "背景工作 · %lld"
           }
         }
       }
@@ -137747,48 +137747,48 @@
         }
       }
     },
-    "Background work" : {
+    "Background tasks" : {
       "localizations" : {
         "ar" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "العمل في الخلفية"
+            "value" : "المهام في الخلفية"
           }
         },
         "de" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "Hintergrundarbeit"
+            "value" : "Hintergrundaufgaben"
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "Trabajo en segundo plano"
+            "value" : "Tareas en segundo plano"
           }
         },
         "fr" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "Travail en arrière-plan"
+            "value" : "Tâches en arrière-plan"
           }
         },
         "he" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "עבודה ברקע"
+            "value" : "משימות רקע"
           }
         },
         "it" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "Lavoro in background"
+            "value" : "Attività in background"
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "バックグラウンド作業"
+            "value" : "バックグラウンドタスク"
           }
         },
         "ko" : {
@@ -137800,37 +137800,37 @@
         "nl" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "Achtergrondwerk"
+            "value" : "Achtergrondtaken"
           }
         },
         "pl" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "Praca w tle"
+            "value" : "Zadania w tle"
           }
         },
         "pt-BR" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "Trabalho em segundo plano"
+            "value" : "Tarefas em segundo plano"
           }
         },
         "ru" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "Фоновая работа"
+            "value" : "Фоновые задачи"
           }
         },
         "tr" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "Arka plan işleri"
+            "value" : "Arka plan görevleri"
           }
         },
         "ur" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "پس منظر کا کام"
+            "value" : "پس منظر کے کام"
           }
         },
         "zh-HK" : {
@@ -137842,7 +137842,7 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "后台工作"
+            "value" : "后台任务"
           }
         },
         "zh-Hant" : {

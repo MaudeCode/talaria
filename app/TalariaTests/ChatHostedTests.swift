@@ -47,30 +47,36 @@ final class ChatHostedTests: XCTestCase {
         XCTAssertNotNil(composer, "The composer went away")
     }
 
-    /// The background-work card shows the server's records, a delegation row its subagents' progress, the full
-    /// result on request, and a shared Dismiss that removes only finished work (TAL-372).
-    func testTheCardShowsTheServersRecordsAndADelegationRowItsProgress() async throws {
+    /// Background work shows as one count chip above the composer (TAL-1001); its sheet lists the server's records, a
+    /// delegation its subagents' progress, the full result on request, and a Dismiss that removes only finished work
+    /// (TAL-372).
+    func testBackgroundWorkChipOpensTheServersRecordsWithResultAndDismiss() async throws {
         let window = try await hostFixtureChat(["--ui-test-background-updates"])
-        _ = try await requireElement(in: window, label: "Background work", "The background card is missing")
         let containing: (String) -> (NSObject) -> Bool = { text in { $0.accessibilityLabel?.contains(text) == true } }
-        let running = await awaitElement(in: window, where: containing("Fix CI"))
-        XCTAssertNotNil(running, "The running delegation is missing")
-        XCTAssertTrue(HostedAccessibility.elements(in: window).contains(where: containing("Summarize the repo")), "The finished /background task is missing")
+        // A sheet row reads its title with its kind and status; the transcript names the same work in its own rows.
+        let finishedRow: (NSObject) -> Bool = { containing("Summarize the repo")($0) && containing("Background task · ")($0) }
+        let chip = await awaitElement(in: window, where: containing("Background tasks · 2"))
+        XCTAssertFalse(HostedAccessibility.elements(in: window).contains(where: finishedRow), "A task row shows outside the sheet")
 
         HostedAccessibility.activate(try XCTUnwrap(elements(named: "Worked", in: window).first, "The delegation row has no Worked disclosure"))
         let progress = await awaitElement(in: window, where: containing("2 of 3 done · 1 failed"))
         XCTAssertNotNil(progress, "The delegation row does not show its subagents' progress")
 
-        HostedAccessibility.activate(try await requireElement(in: window, label: "Show result"))
-        _ = try await requireElement(in: window, label: "The repo has three packages.", "The full result did not load")
-        HostedAccessibility.activate(try await requireElement(in: window, label: "Done"))
-        let closed = await awaitNoElement(in: window) { $0.accessibilityLabel == "The repo has three packages." }
-        XCTAssertTrue(closed, "The result sheet did not close")
+        HostedAccessibility.activate(try XCTUnwrap(chip, "The background tasks chip is missing"))
+        let running = await awaitElement(in: window, where: containing("Fix CI"))
+        XCTAssertNotNil(running, "The running delegation is missing from the sheet")
+        let finished = try XCTUnwrap(
+            HostedAccessibility.elements(in: window).first(where: finishedRow),
+            "The finished /background task is missing from the sheet"
+        )
 
+        HostedAccessibility.activate(finished)
+        _ = try await requireElement(in: window, label: "The repo has three packages.", "The full result did not load")
         HostedAccessibility.activate(try await requireElement(in: window, label: "Dismiss"))
-        let dismissed = await awaitNoElement(in: window, where: containing("Summarize the repo"))
-        XCTAssertTrue(dismissed, "Dismiss left the finished task in the card")
-        XCTAssertTrue(HostedAccessibility.elements(in: window).contains(where: containing("Fix CI")), "Dismiss removed running work")
+        let dismissed = await awaitNoElement(in: window, where: finishedRow)
+        XCTAssertTrue(dismissed, "Dismiss left the finished task in the sheet")
+        let remaining = await awaitElement(in: window) { containing("Fix CI")($0) && containing("Agent · ")($0) }
+        XCTAssertNotNil(remaining, "Dismiss removed running work")
     }
 
     /// The session's standing `/goal` shows as one chip above the composer, worded from the server's field (TAL-833).

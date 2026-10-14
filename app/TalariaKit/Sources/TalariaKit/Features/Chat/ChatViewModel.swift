@@ -3276,7 +3276,8 @@ public final class ChatViewModel {
             }
 
             await refreshBackgroundTasks()
-            return .executed(message: String(localized: "Background task started."))
+            // The composer's background tasks chip shows it; a notice would say the same twice (TAL-1001).
+            return .executed(message: nil)
         } catch {
             lastError = error
             return .unsupported(friendlyMessage: error.localizedDescription)

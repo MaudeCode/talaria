@@ -1022,7 +1022,7 @@ extension ChatViewModelSendTests {
             try XCTUnwrap(SlashCommandCatalog.command(named: "background")),
             args: "audit tests"
         )
-        XCTAssertEqual(result, .executed(message: "Background task started."))
+        XCTAssertEqual(result, .executed(message: nil))
 
         // Every loop has polled and is parked, so no request is in flight.
         try await waitUntil { hold.parkedLoops == 3 }

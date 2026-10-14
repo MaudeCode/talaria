@@ -66,107 +66,70 @@ struct NoticeChip: View {
 }
 
 /// TAL-372: the session's background work the server pins (running work, and a finished `/background` result until
-/// dismissed), with each status, the full result on request, and Dismiss where the server offers it.
-struct BackgroundWorkCard: View {
+/// dismissed), opened from the composer's background tasks chip (TAL-1001): each task's status, the full result on
+/// request, and Dismiss where the server offers it. The sheet closes once nothing is pinned.
+struct BackgroundWorkSheet: View {
     let tasks: [BackgroundWorkTask]
     let loadResult: (String) async -> String?
     let dismiss: (String) async -> Void
-    @State private var presentedResult: PresentedResult?
 
-    private struct PresentedResult: Identifiable {
-        let id: String
-        let title: String
-        var text: String?
-    }
+    @Environment(\.dismiss) private var close
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text("Background work")
-                .font(.caption.weight(.semibold))
-                .foregroundStyle(.secondary)
-            ForEach(tasks) { task in
+        NavigationStack {
+            List(tasks) { task in
                 row(task)
+                    .swipeActions(edge: .trailing) {
+                        if task.dismissible {
+                            Button(role: .destructive) { Task { await dismiss(task.taskId) } } label: {
+                                Label("Dismiss", systemImage: "xmark")
+                            }
+                        }
+                    }
+            }
+            .navigationTitle(String(localized: "Background tasks"))
+            .navigationBarTitleDisplayMode(.inline)
+            .navigationDestination(for: String.self) { taskID in
+                BackgroundWorkResultView(
+                    task: tasks.first { $0.taskId == taskID },
+                    loadResult: { await loadResult(taskID) },
+                    dismiss: { await dismiss(taskID) }
+                )
+            }
+            .toolbar {
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Done") { close() }
+                }
             }
         }
-        .padding(12)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(.ultraThinMaterial)
-        .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
-        .overlay(
-            RoundedRectangle(cornerRadius: 10, style: .continuous)
-                .stroke(Color(.separator).opacity(0.45), lineWidth: 0.5)
-        )
-        .shadow(color: Color.black.opacity(0.12), radius: 10, y: 4)
-        .sheet(item: $presentedResult) { result in
-            NavigationStack {
-                ScrollView {
-                    if let text = result.text {
-                        Text(text)
-                            .font(.body)
-                            .textSelection(.enabled)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                            .padding()
-                    } else {
-                        ProgressView()
-                            .padding()
-                    }
-                }
-                .navigationTitle(result.title)
-                .navigationBarTitleDisplayMode(.inline)
-                .toolbar {
-                    ToolbarItem(placement: .confirmationAction) {
-                        Button(String(localized: "Done")) { presentedResult = nil }
-                    }
-                }
-            }
-            .presentationDetents([.medium, .large])
+        // Initially too: the work can finish and be dismissed between the chip's tap and the sheet appearing.
+        .onChange(of: tasks.isEmpty, initial: true) { _, isEmpty in
+            if isEmpty { close() }
         }
     }
 
+    @ViewBuilder
     private func row(_ task: BackgroundWorkTask) -> some View {
-        VStack(alignment: .leading, spacing: 6) {
-            HStack(alignment: .firstTextBaseline, spacing: 8) {
-                Image(systemName: Self.icon(task.status))
-                    .font(.footnote.weight(.semibold))
-                    .foregroundStyle(Self.tint(task.status))
-                    .accessibilityHidden(true)
-                (Text(Self.kindLabel(task.kind)).foregroundStyle(.secondary) + Text(" ") + Text(task.title))
-                    .font(.footnote)
-                    .lineLimit(1)
-                    .truncationMode(.tail)
-                Spacer(minLength: 4)
-                Text(Self.detail(task))
-                    .font(.caption)
+        let label = HStack(alignment: .firstTextBaseline, spacing: 10) {
+            Image(systemName: Self.icon(task.status))
+                .font(.footnote.weight(.semibold))
+                .foregroundStyle(Self.tint(task.status))
+                .accessibilityHidden(true)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(task.title)
+                    .font(AppFont.body())
+                    .lineLimit(2)
+                Text(Self.kindLabel(task.kind) + " · " + Self.detail(task))
+                    .font(AppFont.footnote())
                     .foregroundStyle(.secondary)
-                    .lineLimit(1)
-            }
-            .accessibilityElement(children: .combine)
-            if task.resultAvailable || task.dismissible {
-                HStack(spacing: 16) {
-                    if task.resultAvailable {
-                        Button(String(localized: "Show result")) {
-                            showResult(task)
-                        }
-                    }
-                    if task.dismissible {
-                        Button(String(localized: "Dismiss")) {
-                            Task { await dismiss(task.taskId) }
-                        }
-                    }
-                }
-                .font(.caption.weight(.semibold))
-                .buttonStyle(.borderless)
-                .frame(minHeight: 44)
             }
         }
-    }
-
-    /// The full result opens in a sheet: it can be long, and the card stays one line per task.
-    private func showResult(_ task: BackgroundWorkTask) {
-        presentedResult = PresentedResult(id: task.taskId, title: task.title, text: nil)
-        Task {
-            let text = await loadResult(task.taskId) ?? String(localized: "The result is no longer available.")
-            if presentedResult?.id == task.taskId { presentedResult?.text = text }
+        .accessibilityElement(children: .combine)
+        if task.resultAvailable {
+            NavigationLink(value: task.taskId) { label }
+                .accessibilityHint(String(localized: "Show result"))
+        } else {
+            label
         }
     }
 
@@ -177,7 +140,7 @@ struct BackgroundWorkCard: View {
         return statusLabel(task.status)
     }
 
-    /// "2 of 3 done · 1 failed": a delegation's subagents, in the card and in place on its row.
+    /// "2 of 3 done · 1 failed": a delegation's subagents, in the sheet and in place on its row.
     static func agentsSummary(_ agents: BackgroundWorkTask.Agents) -> String {
         var parts = [String(localized: "\(agents.completed) of \(agents.total) done")]
         if agents.failed > 0 {
@@ -221,6 +184,48 @@ struct BackgroundWorkCard: View {
         case .attention, .failed: .orange
         case .completed: .green
         case .cancelled, .unknown: .secondary
+        }
+    }
+}
+
+/// A finished background task's full result, loaded on open, with Dismiss where the server offers it.
+private struct BackgroundWorkResultView: View {
+    let task: BackgroundWorkTask?
+    let loadResult: () async -> String?
+    let dismiss: () async -> Void
+
+    @State private var text: String?
+    @Environment(\.dismiss) private var back
+
+    var body: some View {
+        ScrollView {
+            if let text {
+                Text(text)
+                    .font(AppFont.body())
+                    .textSelection(.enabled)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding()
+            } else {
+                ProgressView()
+                    .padding()
+            }
+        }
+        .navigationTitle(task?.title ?? "")
+        .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            if task?.dismissible == true {
+                ToolbarItem(placement: .primaryAction) {
+                    Button(String(localized: "Dismiss"), role: .destructive) {
+                        Task {
+                            await dismiss()
+                            back()
+                        }
+                    }
+                }
+            }
+        }
+        .task {
+            text = await loadResult() ?? String(localized: "The result is no longer available.")
         }
     }
 }
