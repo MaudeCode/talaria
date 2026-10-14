@@ -250,12 +250,32 @@ def test_profile_deletion_waits_for_a_cancelled_review_to_settle(monkeypatch, tm
     monkeypatch.setattr(profiles, "delete_profile", lambda base_home, name: deleted.append(name))
     registry = Registry(runtime=types.SimpleNamespace(load=lambda: None, ensure_current=lambda: None))  # type: ignore[arg-type]
     profiles.register(registry)
-    with pytest.raises(RpcError, match="still saving memory"):
-        registry.methods["profiles.delete"](Ctx(), {"base_home": str(tmp_path), "name": "alpha"})
+    for _attempt in range(2):  # a retry keeps waiting for the cancel the first attempt started
+        with pytest.raises(RpcError, match="still saving memory"):
+            registry.methods["profiles.delete"](Ctx(), {"base_home": str(tmp_path), "name": "alpha"})
     assert deleted == []
     review.request_done.set()
     assert registry.methods["profiles.delete"](Ctx(), {"base_home": str(tmp_path), "name": "alpha"}) == {"ok": True}
     assert deleted == ["alpha"]
+
+
+def test_profile_deletion_refuses_once_when_a_review_cancel_fails(monkeypatch, tmp_path) -> None:
+    _setup(monkeypatch)
+    _reviews(monkeypatch)
+
+    def fail(agent, *, message, tool_reason):
+        raise RuntimeError("cancel failed")
+
+    monkeypatch.setattr(sys.modules["agent.background_review"], "cancel_background_review_for_live_turn", fail)
+    assert chat.start(Ctx(), {**_params("st-fail", "fail"), "profile_home": str(tmp_path / "profiles" / "alpha")})["status"] == "completed"
+    deleted: list = []
+    monkeypatch.setattr(profiles, "delete_profile", lambda base_home, name: deleted.append(name))
+    registry = Registry(runtime=types.SimpleNamespace(load=lambda: None, ensure_current=lambda: None))  # type: ignore[arg-type]
+    profiles.register(registry)
+    with pytest.raises(RpcError, match="could not be saved"):
+        registry.methods["profiles.delete"](Ctx(), {"base_home": str(tmp_path), "name": "alpha"})
+    assert deleted == []
+    assert registry.methods["profiles.delete"](Ctx(), {"base_home": str(tmp_path), "name": "alpha"}) == {"ok": True}
 
 
 def test_shutdown_closes_turn_admission_before_cancelling_reviews(monkeypatch) -> None:
