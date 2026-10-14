@@ -197,8 +197,24 @@ export const MCP_METHODS = {
 
 // ── stt ────────────────────────────────────────────────────────────────
 export const STT_METHODS = {
-  'stt.capability': { params: ProfileHomeParams, result: z.object({ available: z.boolean(), provider: z.string() }) },
+  /** `streaming` (TAL-802): `stt.streaming` is on and the provider has a live wire with credentials, so `stt.stream` would open. */
+  'stt.capability': { params: ProfileHomeParams, result: z.object({ available: z.boolean(), provider: z.string(), streaming: z.boolean() }) },
   'stt.transcribe': { params: ProfileHomeParams.extend({ audio_b64: z.string().min(1), suffix: z.string().optional() }), result: z.object({ transcript: z.string() }) },
+  /**
+   * TAL-802: one live dictation. Opens the profile's streaming session for s16le mono PCM at `sample_rate` (the sidecar
+   * resamples), emits `ready` with the `stream_id` that `stt.stream_audio` feeds, then `partial` text as the provider
+   * recognizes it, and returns the session's final transcript once audio ends. Cancelling the call cancels the session.
+   */
+  'stt.stream': {
+    params: ProfileHomeParams.extend({ sample_rate: z.number().int().min(8000).max(48000) }),
+    result: z.object({ transcript: z.string(), provider: z.string() }),
+    stream: z.discriminatedUnion('event', [
+      z.object({ event: z.literal('ready'), data: z.object({ stream_id: z.string() }) }),
+      z.object({ event: z.literal('partial'), data: z.object({ text: z.string() }) }),
+    ]),
+  },
+  /** TAL-802: feed one PCM chunk to an open `stt.stream`, in order; `end` marks the end of speech. */
+  'stt.stream_audio': { params: z.object({ stream_id: z.string().min(1), audio_b64: z.string().optional(), end: z.boolean().optional() }), result: z.object({ ok: z.literal(true) }) },
 } as const
 
 // ── cron ───────────────────────────────────────────────────────────────

@@ -130,6 +130,8 @@
           "state_db.sync_title",
           "state_db.sync_usage",
           "stt.capability",
+          "stt.stream",
+          "stt.stream_audio",
           "stt.transcribe",
           "text.image_mode",
           "text.portal_tags",

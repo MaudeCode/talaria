@@ -2750,11 +2750,15 @@
       },
       "provider": {
         "type": "string"
+      },
+      "streaming": {
+        "type": "boolean"
       }
     },
     "required": [
       "available",
-      "provider"
+      "provider",
+      "streaming"
     ],
     "additionalProperties": false
   },
@@ -2768,6 +2772,37 @@
     },
     "required": [
       "transcript"
+    ],
+    "additionalProperties": false
+  },
+  "stt.stream": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "properties": {
+      "transcript": {
+        "type": "string"
+      },
+      "provider": {
+        "type": "string"
+      }
+    },
+    "required": [
+      "transcript",
+      "provider"
+    ],
+    "additionalProperties": false
+  },
+  "stt.stream_audio": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "properties": {
+      "ok": {
+        "type": "boolean",
+        "const": true
+      }
+    },
+    "required": [
+      "ok"
     ],
     "additionalProperties": false
   },
