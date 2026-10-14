@@ -185,7 +185,7 @@ async function settleFromServer(sessionId: string, streamId: string): Promise<vo
       const st = await api.fetchStreamStatus(streamId).catch(() => null)
       if (st?.active) {
         const replay = resumeFrom(sessionId, streamId, session.transcript_seq)
-        dispatch({ type: 'attach', sessionId, streamId, now: Date.now(), replay: replay !== null, serverStartedAt: session.pending_started_at })
+        dispatch({ type: 'attach', sessionId, streamId, now: Date.now(), replay: replay !== null, serverStartedAt: session.pending_started_at, serverCompressionStartedAt: session.compression_started_at })
         open(sessionId, streamId, replay)
         return
       }
@@ -220,7 +220,7 @@ export function adoptTurn(sessionId: string, message: string, res: ChatStartResp
 }
 
 /** Re-attach to a run the server reports as active (hard refresh, tab restore, sidebar switch). */
-export async function attachToStream(sessionId: string, streamId: string, run: Pick<Session, 'transcript_seq' | 'pending_steers' | 'pending_started_at'> = {}): Promise<void> {
+export async function attachToStream(sessionId: string, streamId: string, run: Pick<Session, 'transcript_seq' | 'pending_steers' | 'pending_started_at' | 'compression_started_at'> = {}): Promise<void> {
   const existing = live.get(sessionId)
   if (existing?.streamId === streamId && existing.handle.readyState() !== SSE_CLOSED) return
   const st = await api.fetchStreamStatus(streamId)
@@ -229,7 +229,7 @@ export async function attachToStream(sessionId: string, streamId: string, run: P
     return
   }
   const replay = resumeFrom(sessionId, streamId, run.transcript_seq ?? null)
-  dispatch({ type: 'attach', sessionId, streamId, now: Date.now(), replay: replay !== null, serverStartedAt: run.pending_started_at })
+  dispatch({ type: 'attach', sessionId, streamId, now: Date.now(), replay: replay !== null, serverStartedAt: run.pending_started_at, serverCompressionStartedAt: run.compression_started_at })
   dispatch({ type: 'pending_steers', sessionId, streamId, steers: run.pending_steers ?? [] })
   open(sessionId, streamId, replay)
 }

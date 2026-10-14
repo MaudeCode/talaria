@@ -874,6 +874,9 @@ public struct SessionDetail: Decodable, Equatable, Identifiable {
     let pendingUserMessage: String?
     let pendingAttachments: [JSONValue]?
     public let pendingStartedAt: Double?
+    /// TAL-1006: when the compression the chip shows started (epoch seconds): the running manual job's, else the
+    /// live run's open span; nil when none runs or from an older server.
+    public let compressionStartedAt: Double?
     let worktreePath: String?
     public let thresholdTokens: Int?
     /// The context ring's server figures (TAL-299); nil when unknown or from an older server.
@@ -945,6 +948,7 @@ public struct SessionDetail: Decodable, Equatable, Identifiable {
         case pendingUserMessage
         case pendingAttachments
         case pendingStartedAt
+        case compressionStartedAt
         case worktreePath
         case thresholdTokens
         case contextUsedTokens
@@ -1012,6 +1016,7 @@ public struct SessionDetail: Decodable, Equatable, Identifiable {
         pendingUserMessage = container.decodeLossyStringIfPresent(forKey: .pendingUserMessage)
         pendingAttachments = try? container.decodeIfPresent([JSONValue].self, forKey: .pendingAttachments)
         pendingStartedAt = container.decodeLossyDoubleIfPresent(forKey: .pendingStartedAt)
+        compressionStartedAt = container.decodeLossyDoubleIfPresent(forKey: .compressionStartedAt)
         worktreePath = container.decodeLossyStringIfPresent(forKey: .worktreePath)
         thresholdTokens = container.decodeLossyIntIfPresent(forKey: .thresholdTokens)
         contextUsedTokens = container.decodeLossyIntIfPresent(forKey: .contextUsedTokens)

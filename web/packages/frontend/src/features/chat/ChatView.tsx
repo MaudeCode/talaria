@@ -161,13 +161,17 @@ export function ChatView({ sessionId }: { sessionId: string | null }) {
   const [compressingSince, setCompressingSince] = useState<number | null>(null)
   const compression = useRef<AbortController | null>(null)
   useEffect(() => () => compression.current?.abort(), [])
-  const runCompression = useCallback(async (sid: string) => {
+  // The running job this view follows, by its server start, so a session still reporting it is not followed twice.
+  const followed = useRef<number | null>(null)
+  /** `start` starts or names the job and gives its server start (epoch seconds); the job is then polled to its end. */
+  const followCompression = useCallback(async (sid: string, start: () => Promise<number | null | undefined>) => {
     const { signal } = (compression.current = new AbortController())
     setCompressingSince(Date.now())
     try {
-      const job = await api.compressSession(sid)
+      const startedAt = await start()
       signal.throwIfAborted()
-      setCompressingSince(runStart(job.started_at, Date.now(), Date.now()))
+      followed.current = startedAt ?? null
+      setCompressingSince(runStart(startedAt, Date.now(), Date.now()))
       for (let i = 0; i < 600; i++) {
         await new Promise((r) => setTimeout(r, 1000))
         signal.throwIfAborted()
@@ -190,6 +194,14 @@ export function ChatView({ sessionId }: { sessionId: string | null }) {
       setCompressingSince(null)
     }
   }, [qc, navigate, refresh])
+  const runCompression = useCallback((sid: string) => followCompression(sid, async () => (await api.compressSession(sid)).started_at), [followCompression])
+  // TAL-1006: a manual job the session reports running (started in another tab, or before this view opened) shows and
+  // is followed here as well.
+  const runningJob = session && !session.active_stream_id ? (session.compression_started_at ?? null) : null
+  useEffect(() => {
+    if (!sessionId || runningJob === null || compressingSince !== null || followed.current === runningJob) return
+    void followCompression(sessionId, () => Promise.resolve(runningJob))
+  }, [sessionId, runningJob, compressingSince, followCompression])
 
   const onLocalCommand = useCallback(async (name: string, args: string): Promise<boolean> => {
     switch (name) {

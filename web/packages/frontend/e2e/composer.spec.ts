@@ -186,6 +186,23 @@ test('a manual compression shows in the top tab while it runs', async ({ page })
   await expect(page.locator('.composer-tab [data-notice="runtime:compressing"]')).toContainText('Compressing context')
 })
 
+/** TAL-1006: coming back to a session whose manual compression still runs shows it from the server's start and follows it. */
+test('a manual compression still running when the session opens shows and clears with the job', async ({ page }) => {
+  let done = false
+  let starts = 0
+  const startedAt = Date.now() / 1000 - 75
+  await page.route('**/api/session?**', (route) => route.fulfill({ json: { session: { session_id: 'rejoin', title: 'Rejoin', messages: transcript('rejoin', 2), compression_started_at: done ? null : startedAt } } }))
+  await page.route('**/api/session/compress/start', (route) => { starts += 1; return route.fulfill({ json: { status: 'running' } }) })
+  await page.route('**/api/session/compress/status?**', (route) => route.fulfill({ json: done ? { status: 'done', session_id: 'rejoin' } : { status: 'running', started_at: startedAt } }))
+  await page.route('**/api/session/draft', (route) => route.fulfill({ json: { ok: true } }))
+  await page.goto('/session/rejoin')
+  const chip = page.locator('.composer-tab [data-notice="runtime:compressing"]')
+  await expect(chip).toHaveText('Compressing context1m')
+  done = true
+  await expect(chip).toHaveCount(0)
+  expect(starts).toBe(0)
+})
+
 /** TAL-1006: the Agent's automatic compression shows in the docked tab with its time since the server's start, never in the transcript. */
 test('an automatic compression shows in the top tab until the server closes it', async ({ page }, testInfo) => {
   const sid = 'auto-compress'

@@ -3049,6 +3049,34 @@ describe('the compression span (TAL-1006)', () => {
   })
 })
 
+describe('the compression span on the session (TAL-1006)', () => {
+  it('names the live run\'s open span on the session detail until it closes', async () => {
+    let clock = 1_800_000_000
+    const sidecar = new FakeSidecar()
+    const s = await bootTestServer({ sidecar, now: () => clock })
+    try {
+      const sid = await newSession(s)
+      let emitFrame!: (frame: Json) => void
+      let finish!: () => void
+      sidecar.respond('chat.start', (_params, emit) => new Promise((resolve) => {
+        emitFrame = (frame) => { emit(frame as never) }
+        finish = () => { resolve(completed([{ role: 'user', content: 'go' }, { role: 'assistant', content: 'ok' }])) }
+        emitFrame({ event: 'compressing', data: { session_id: sid, message: 'Compressing context' } })
+      }))
+      const streamId = String((await json(await post(s, '/api/chat/start', { session_id: sid, message: 'go' }))).stream_id)
+      await s.sse(`/api/chat/stream?stream_id=${streamId}`, (f) => f.event === 'compressing')
+      const shownStart = async (): Promise<unknown> => ((await json(await s.get(`/api/session?session_id=${sid}`))).session as Json).compression_started_at
+      clock += 30
+      expect(await shownStart()).toBe(1_800_000_000)
+      emitFrame({ event: 'compression_finished', data: { session_id: sid } })
+      await s.sse(`/api/chat/stream?stream_id=${streamId}&after_event_id=${streamId}:0`, (f) => f.event === 'compressed')
+      expect(await shownStart()).toBeNull()
+      finish()
+      await s.sse(`/api/chat/stream?stream_id=${streamId}&after_event_id=${streamId}:0`, (f) => f.event === 'stream_end')
+    } finally { await s.close() }
+  })
+})
+
 describe('stale session models after an Agent sign-in change (TAL-542)', () => {
   it('re-reads a catalog older than the providers listing before repairing', async () => {
     let clock = 1_800_000_000

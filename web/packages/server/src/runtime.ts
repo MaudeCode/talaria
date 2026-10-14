@@ -338,6 +338,7 @@ export function createDeps(opts: CreateDepsOptions): AppDeps {
       activeRunStream: (sid) => registry.activeRunStreamForSession(sid),
       journalDegraded: (streamId) => registry.degradedJournals.has(streamId),
       pendingSteers: (streamId: string): PendingSteer[] => turns.pendingSteers(streamId),
+      compressionStartedAt: (streamId: string): number | null => turns.compressionStartedAt(streamId),
       automaticTurnsHeld: (sid: string): boolean => turns.automaticTurnsHeld(sid),
       sessionNotices: (sid: string): SessionNotice[] => turns.sessionNotices(sid),
       sessionGoal: (sid: string): SessionGoal | null => turns.sessionGoal(sid),

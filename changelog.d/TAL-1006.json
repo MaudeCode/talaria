@@ -2,7 +2,7 @@
   "entries": [
     {
       "category": "Fixed",
-      "summary": "While the Agent compresses a long conversation's context, the status above the composer says Compressing context and how long it has run, instead of an endless Working, and goes back to Working when compression finishes.",
+      "summary": "While the Agent compresses a long conversation's context, the status above the composer says Compressing context and how long it has run, instead of an endless Working, goes back to Working when compression finishes, and still shows it when you leave the chat and come back.",
       "highlight": false,
       "components": ["app", "web"]
     },

@@ -1558,8 +1558,10 @@ public final class ChatViewModel {
                 preparation: streamLoadPreparation,
                 usedCacheFallback: false,
                 runStartedAt: Self.activeRunStartDate(pendingStartedAt: session?.pendingStartedAt, messages: messages),
+                compressionStartedAt: loadedActiveStreamID == nil ? nil : ChatStreamCoordinator.runStart(fromEpochSeconds: session?.compressionStartedAt),
                 transcriptSeq: session?.transcriptSeq
             )
+            followReportedCompressionJob(loadedActiveStreamID == nil ? session?.compressionStartedAt : nil)
             applyServerPendingSteers(session?.pendingSteers, changedAfter: steerChangesAtFetch, newerRows: newerSteerRows)
             latestSettledSessionLoadRequestGeneration = loadRequestGeneration
             isConfirmingRunState = false
@@ -3628,7 +3630,28 @@ public final class ChatViewModel {
         }
 
         let focusTopic = args.trimmingCharacters(in: .whitespacesAndNewlines)
+        return await followCompressionJob(sessionID: sessionID) { client in
+            try await client.startSessionCompression(id: sessionID, focusTopic: focusTopic.isEmpty ? nil : focusTopic)
+        }
+    }
 
+    /// TAL-1006: a manual job the session reports running (started on another device, or before this view opened)
+    /// shows in the chip and is followed to its end here too, without starting another.
+    private func followReportedCompressionJob(_ startedAt: Double?) {
+        guard startedAt != nil, !isCompressingSession, let sessionID else { return }
+        isCompressingSession = true
+        Task { [weak self] in
+            _ = await self?.followCompressionJob(sessionID: sessionID) { client in
+                try await client.sessionCompressionStatus(id: sessionID)
+            }
+        }
+    }
+
+    /// Runs `start` (start or read the job), polls the job to its end, and installs the compressed session.
+    private func followCompressionJob(
+        sessionID: String,
+        start: (APIClient) async throws -> SessionCompressResponse
+    ) async -> SlashCommandExecutionResult {
         isCompressingSession = true
         lastError = nil
         sendErrorMessage = nil
@@ -3639,10 +3662,7 @@ public final class ChatViewModel {
         }
 
         do {
-            var response = try await client.startSessionCompression(
-                id: sessionID,
-                focusTopic: focusTopic.isEmpty ? nil : focusTopic
-            )
+            var response = try await start(client)
             manualCompressionStartedAt = response.startedAt.map { Date(timeIntervalSince1970: $0) }
             var polls = 0
             while response.status == "running" {

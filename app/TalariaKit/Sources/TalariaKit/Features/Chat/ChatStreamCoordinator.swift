@@ -317,6 +317,8 @@ public final class ChatStreamCoordinator {
         preparation: ChatStreamLoadPreparation,
         usedCacheFallback: Bool,
         runStartedAt: Date? = nil,
+        // TAL-1006: the session's open span, whose frames the resumed stream may begin past.
+        compressionStartedAt loadedCompressionStartedAt: Date? = nil,
         transcriptSeq: TranscriptSeq? = nil
     ) {
         hasCompletedCurrentResponse = false
@@ -338,6 +340,7 @@ public final class ChatStreamCoordinator {
             if let streamID = loadedActiveStreamID, !streamID.isEmpty {
                 activeStreamID = streamID
                 seedActiveRunStart(runStartedAt)
+                compressionStartedAt = compressionStartedAt ?? loadedCompressionStartedAt
                 adoptLoadedStreamingAssistantMessage(streamID: streamID)
                 isConnectionSuspended = true
                 restoreSnapshotIfAvailable(streamID: streamID)
@@ -353,6 +356,7 @@ public final class ChatStreamCoordinator {
             if let streamID {
                 activeStreamID = streamID
                 seedActiveRunStart(runStartedAt)
+                compressionStartedAt = compressionStartedAt ?? loadedCompressionStartedAt
                 adoptLoadedStreamingAssistantMessage(streamID: streamID)
                 restoreSnapshotIfAvailable(streamID: streamID)
                 if delegate?.streamCoordinatorStreamingAssistantMessageID == nil {

@@ -101,6 +101,16 @@ describe('stream reducer: ordering and projection', () => {
     s = ev(s, 'done', { terminal_state: 'completed' })
     expect(s.turns[SID]!.compressionStartedAt).toBeNull()
   })
+  it('takes an open span\'s start from the session when it attaches past the span\'s frames (TAL-1006)', () => {
+    const attach = (state: StreamState, serverCompressionStartedAt: number | null, now: number): StreamState =>
+      streamReducer(state, { type: 'attach', sessionId: SID, streamId: STREAM, now, replay: true, serverStartedAt: 800, serverCompressionStartedAt })
+    let s = attach(initialStreamState, 900, 960_000)
+    expect(s.turns[SID]!.compressionStartedAt).toBe(900_000)
+    // A reconnect keeps the start it knows; a session without a span leaves it to the stream.
+    s = attach(s, 950, 970_000)
+    expect(s.turns[SID]!.compressionStartedAt).toBe(900_000)
+    expect(attach(initialStreamState, null, 960_000).turns[SID]!.compressionStartedAt).toBeNull()
+  })
   it('times a pre-upgrade compressing frame without its start from its first receipt, kept across heartbeats (TAL-1006)', () => {
     let s = ev(started(), 'compressing', { session_id: SID }, { now: 5_000 })
     expect(s.turns[SID]!.compressionStartedAt).toBe(5_000)

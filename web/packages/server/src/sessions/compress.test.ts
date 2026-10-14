@@ -277,6 +277,9 @@ describe('manual session compression', () => {
     sidecar.respond('chat.compress_finalize', async () => { await finalizeGate; return { finalized: true } })
     const first = await json(await post(s, '/api/session/compress/start', { session_id: sid, focus_topic: 'slow' }))
     expect(first).toMatchObject({ ok: true, status: 'running', session_id: sid, focus_topic: 'slow' })
+    // TAL-1006: the session names the running job's start, so a client that comes back shows the same chip.
+    const shownStart = async (): Promise<unknown> => ((await json(await s.get(`/api/session?session_id=${sid}`))).session as Json).compression_started_at
+    expect(await shownStart()).toBe(first.started_at)
     // A repeat start, a stale runtime meanwhile, and the iOS route all join the running job instead of starting another.
     staleRuntime()
     expect(await json(await post(s, '/api/session/compress/start', { session_id: sid, focus_topic: 'slow' }))).toMatchObject({ status: 'running', focus_topic: 'slow' })
@@ -290,6 +293,7 @@ describe('manual session compression', () => {
     expect((await sync).status).toBe(200)
     const done = await waitForTerminal(s, sid)
     expect(done).toMatchObject({ ok: true, status: 'done', summary: { headline: 'Compressed: 4 → 2 messages' }, focus_topic: 'slow' })
+    expect(await shownStart()).toBeNull()
     expect(((done.session as Json).messages as Json[]).length).toBe(4)
     expect(calls).toBe(1)
     // Every open tab polling the finished job reads the same result until the TTL drops it.

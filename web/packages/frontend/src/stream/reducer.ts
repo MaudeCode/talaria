@@ -97,7 +97,8 @@ export interface LiveTurn {
 export type StreamAction =
   /** `serverStartedAt`: the server's `pending_started_at` (epoch seconds), which starts the turn clock. */
   | { type: 'start'; sessionId: string; streamId: string; turnId: string | null; userMessageId: string | null; userText: string; now: number; serverStartedAt?: number | null | undefined }
-  | { type: 'attach'; sessionId: string; streamId: string; now: number; replay: boolean; serverStartedAt?: number | null | undefined }
+  /** `serverCompressionStartedAt`: the session's `compression_started_at`, an open span whose frames the attach may resume past. */
+  | { type: 'attach'; sessionId: string; streamId: string; now: number; replay: boolean; serverStartedAt?: number | null | undefined; serverCompressionStartedAt?: number | null | undefined }
   | { type: 'connection'; sessionId: string; streamId: string; status: 'open' | 'error' | 'reconnecting' }
   | { type: 'event'; sessionId: string; streamId: string; event: ChatEvent; lastEventId: string; now: number }
   | { type: 'settle'; sessionId: string; streamId: string; session: Session | null }
@@ -327,10 +328,11 @@ export function streamReducer(state: StreamState, action: StreamAction): StreamS
     }
     case 'attach': {
       const existing = state.turns[action.sessionId]
+      const span = (known: number | null): number | null => known ?? (action.serverCompressionStartedAt ? runStart(action.serverCompressionStartedAt, action.now, action.now) : null)
       if (existing?.streamId === action.streamId && existing && !isTerminal(existing.status)) {
-        return { turns: { ...state.turns, [action.sessionId]: { ...existing, status: 'reconnecting', replayed: action.replay, startedAt: runStart(action.serverStartedAt, existing.startedAt, action.now) } } }
+        return { turns: { ...state.turns, [action.sessionId]: { ...existing, status: 'reconnecting', replayed: action.replay, startedAt: runStart(action.serverStartedAt, existing.startedAt, action.now), compressionStartedAt: span(existing.compressionStartedAt) } } }
       }
-      return { turns: { ...state.turns, [action.sessionId]: { ...newTurn(action.sessionId, action.streamId, action.now, action.serverStartedAt), status: 'connecting', replayed: action.replay, claimsPersistedRows: action.replay } } }
+      return { turns: { ...state.turns, [action.sessionId]: { ...newTurn(action.sessionId, action.streamId, action.now, action.serverStartedAt), status: 'connecting', replayed: action.replay, claimsPersistedRows: action.replay, compressionStartedAt: span(null) } } }
     }
     case 'connection': {
       const turn = state.turns[action.sessionId]
