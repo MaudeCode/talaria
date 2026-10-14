@@ -4,6 +4,8 @@ stops before it saves, delivers, or records anything."""
 from __future__ import annotations
 
 import contextlib
+import os
+import signal
 import sys
 import time
 import types
@@ -23,6 +25,17 @@ def _answer_late(job, execution_home, result_queue):
 
     _time.sleep(15)
     result_queue.put(("ok", (True, "output", "response", None)))
+
+
+def _ignore_terminate(job, execution_home, result_queue):
+    import os as _os
+    import signal as _signal
+    import time as _time
+
+    _signal.signal(_signal.SIGTERM, _signal.SIG_IGN)
+    with open(job["pid_file"], "w", encoding="utf-8") as handle:
+        handle.write(str(_os.getpid()))
+    _time.sleep(60)
 
 
 def _answer_now(job, execution_home, result_queue):
@@ -95,3 +108,31 @@ def test_completion_is_fenced_by_the_claim_owner(monkeypatch, tmp_path) -> None:
     assert "claim" in str(outcome.get("error")), outcome
     assert calls["saved"] == []
     assert all(owner == "owner-1" for _, _, owner in calls["marked"]), calls["marked"]
+
+
+def test_a_worker_that_ignores_terminate_is_killed_before_the_run_ends(monkeypatch, tmp_path) -> None:
+    pid_file = tmp_path / "worker.pid"
+
+    def lost_once_the_worker_ignores_terminate(job_id, *, expected_owner) -> bool:
+        deadline = time.monotonic() + 30
+        while not pid_file.exists() and time.monotonic() < deadline:
+            time.sleep(0.05)
+        return False
+
+    _stub_jobs(monkeypatch, heartbeat=lost_once_the_worker_ignores_terminate)
+    monkeypatch.setattr(cron, "_child_main", _ignore_terminate)
+    monkeypatch.setattr(cron, "_CLAIM_HEARTBEAT_SECONDS", 0.0)
+    monkeypatch.setattr(cron, "_CLAIM_MISS_CONFIRM_SECONDS", 0.0)
+    outcome = cron.run_tracked({"id": "job-1", "name": "Job", "pid_file": str(pid_file)}, tmp_path, None, _Ctx(), "owner-1")
+    pid = int(pid_file.read_text(encoding="utf-8"))
+    try:
+        assert "claim" in str(outcome.get("error")), outcome
+        alive = True
+        try:
+            os.kill(pid, 0)
+        except ProcessLookupError:
+            alive = False
+        assert alive is False, f"worker {pid} still running after the run ended"
+    finally:
+        with contextlib.suppress(ProcessLookupError):
+            os.kill(pid, signal.SIGKILL)

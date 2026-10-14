@@ -348,6 +348,16 @@ def _result_timeout(job) -> float:
     return 6 * 60 * 60.0
 
 
+def _stop(process) -> None:
+    """End a run's worker and return only once it has exited: a worker that ignores SIGTERM is killed, so nothing it
+    started keeps running after the run gives up its claim or its running guard."""
+    process.terminate()
+    process.join(timeout=5)
+    if process.is_alive():
+        process.kill()
+        process.join()
+
+
 def _run_in_child(job, execution_home, ctx: CallContext, heartbeat=None):
     ctx_mp = multiprocessing.get_context("spawn")
     result_queue = ctx_mp.Queue(maxsize=1)
@@ -365,12 +375,10 @@ def _run_in_child(job, execution_home, ctx: CallContext, heartbeat=None):
                 if heartbeat is not None and time.monotonic() >= next_beat:
                     next_beat = time.monotonic() + _CLAIM_HEARTBEAT_SECONDS
                     if not heartbeat():
-                        process.terminate()
-                        process.join(timeout=5)
+                        _stop(process)
                         raise _ClaimLost()
                 if ctx.cancelled:
-                    process.terminate()
-                    process.join(timeout=5)
+                    _stop(process)
                     status, payload = "cancelled", ["cancelled", ""]
                     break
                 if not process.is_alive():
@@ -381,14 +389,12 @@ def _run_in_child(job, execution_home, ctx: CallContext, heartbeat=None):
                         payload = [f"cron run subprocess exited with code {process.exitcode} without producing a result", ""]
                     break
                 if time.monotonic() >= deadline:
-                    process.terminate()
-                    process.join(timeout=5)
+                    _stop(process)
                     payload = [f"cron run subprocess produced no result within {_result_timeout(job):g}s and was terminated", ""]
                     break
         process.join(timeout=5)
         if process.is_alive():
-            process.terminate()
-            process.join(timeout=5)
+            _stop(process)
     finally:
         result_queue.close()
         result_queue.join_thread()
