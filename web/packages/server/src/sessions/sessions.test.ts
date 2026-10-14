@@ -14,6 +14,7 @@ import { str } from '../util.js'
 import { diffHunks } from '../text/diff.js'
 import { withPendingUserTurn, withoutRunningTurnOutput } from './merge.js'
 import { RunJournalWriter } from './journal.js'
+import typedRows from '../test/fixtures/agent-typed-rows.json' with { type: 'json' }
 
 type Json = Record<string, unknown>
 const post = (s: TestServer, path: string, body: unknown): Promise<Response> => s.get(path, { method: 'POST', body: JSON.stringify(body), headers: { 'content-type': 'application/json' } })
@@ -1823,6 +1824,58 @@ describe('session detail marks background wakeups as updates (TAL-371)', () => {
     session.messages = (fixture.messages as Json[]).map((m) => { const stored = { ...m }; delete stored._background_update; return stored })
     session.extra.background_updates = fixture.background_updates
     s.deps.sessionStore.save(session)
+    const served = ((await json(await s.get(`/api/session?session_id=${sid}&messages=1&msg_limit=50`))).session as Json).messages
+    expect(served).toEqual(fixture.messages)
+  })
+})
+
+describe('session detail classifies the rows the Agent types for display (TAL-815)', () => {
+  let s: TestServer
+  beforeAll(async () => { s = await bootTestServer() })
+  afterAll(() => s.close())
+
+  /** The served rows of a session whose rows the released Agent wrote to state.db, in order. */
+  const servedRows = async (query = ''): Promise<Json[]> => {
+    const sid = String((await newSession(s)).session_id)
+    writeMessages(s, sid, [])
+    const db = new DatabaseSync(join(s.state, 'state.db'))
+    db.exec(['DROP TABLE IF EXISTS messages; DROP TABLE IF EXISTS system_prompts; DROP TABLE IF EXISTS sessions;', ...typedRows.schema, ...typedRows.inserts].join('\n').replaceAll(`'${typedRows.sessionId}'`, `'${sid}'`))
+    db.close()
+    return ((await json(await s.get(`/api/session?session_id=${sid}&messages=1${query}`))).session as Json).messages as Json[]
+  }
+  /** The full served transcript, keyed by stored timestamp. */
+  const served = async (): Promise<Map<number, Json>> => new Map((await servedRows()).map((m) => [Number(m.timestamp), m]))
+
+  it('shows a failed turn\'s boundary as a notice and never shows a hidden or untyped [System: row', async () => {
+    const rows = await served()
+    // The stream-cut nudge is the Agent's scaffold, not the user's message: never shown, and it opens no turn.
+    expect.soft(rows.get(1003)).toMatchObject({ role: 'user', _display: 'hidden' })
+    expect.soft(rows.get(1003)?._turn_id).toBe(rows.get(1000)?._turn_id)
+    // The failed turn's boundary is a notice, not the reply; the turn's scene stays on its last real assistant row.
+    for (const at of [1004, 1010]) {
+      expect.soft(rows.get(at)).toMatchObject({ role: 'assistant', _display: 'row', _notice_kind: 'failed_turn' })
+      expect.soft(rows.get(at)).not.toHaveProperty('_anchor_activity_scene')
+    }
+    expect.soft(rows.get(1001)?._anchor_activity_scene).toMatchObject({ terminal_state: 'no_response' })
+    // The interrupt placeholder is empty and hidden; its turn's scene sits on the tool call it closed.
+    expect.soft(rows.get(1008)).toMatchObject({ role: 'assistant', content: '', _display: 'hidden' })
+    expect.soft(rows.get(1008)).not.toHaveProperty('_anchor_activity_scene')
+    expect.soft(rows.get(1006)?._anchor_activity_scene).toBeDefined()
+    // Typed prompts stay ordinary user rows.
+    for (const at of [1000, 1005, 1009]) expect.soft(rows.get(at)).toMatchObject({ role: 'user', _display: 'row' })
+  })
+
+  it('fills a limited window with rows the reader sees, never with a hidden scaffold', async () => {
+    // The page before the first boundary (full index 4) ends on the hidden `[System:` row; one visible row is still due.
+    const rows = await servedRows('&msg_limit=1&msg_before=4')
+    expect(rows.filter((m) => m._display !== 'hidden' && m._display !== 'in_scene').map((m) => m.timestamp)).toEqual([1001])
+  })
+
+  it('serves the shared notice example exactly as the contract fixture records it', async () => {
+    const fixture = (JSON.parse(readFileSync(join(import.meta.dirname, '../../../../../contracts/fixtures/web-session.json'), 'utf8')) as Json).notice_session as Json
+    const sid = String((await newSession(s)).session_id)
+    // The stored rows carry only the Agent's own kinds; everything else is what the server adds on the way out.
+    writeMessages(s, sid, (fixture.stored as Json[]))
     const served = ((await json(await s.get(`/api/session?session_id=${sid}&messages=1&msg_limit=50`))).session as Json).messages
     expect(served).toEqual(fixture.messages)
   })

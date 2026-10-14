@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "When a turn fails, the agent's \"did not complete\" note now shows as a notice instead of a reply, and its internal recovery prompts no longer appear as your messages.",
+      "highlight": false,
+      "components": ["web"]
+    }
+  ]
+}

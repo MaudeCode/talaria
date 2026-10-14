@@ -4315,5 +4315,202 @@
         }
       }
     ]
+  },
+  "notice_session": {
+    "session_id": "contract-notices",
+    "stored": [
+      {
+        "role": "user",
+        "content": "Run the migration.",
+        "message_id": "notice-prompt",
+        "timestamp": 1770000600
+      },
+      {
+        "role": "assistant",
+        "content": "",
+        "tool_calls": [
+          {
+            "id": "call_migrate",
+            "type": "function",
+            "function": {
+              "name": "terminal",
+              "arguments": "{\"command\": \"make migrate\"}"
+            }
+          }
+        ],
+        "message_id": "notice-call",
+        "timestamp": 1770000601
+      },
+      {
+        "role": "tool",
+        "content": "migrated",
+        "tool_call_id": "call_migrate",
+        "message_id": "notice-result",
+        "timestamp": 1770000602
+      },
+      {
+        "role": "user",
+        "content": "[System: Your previous response was truncated by the output length limit. Continue exactly where you left off. Do not restart or repeat prior text. Finish the answer directly.]",
+        "message_id": "notice-scaffold",
+        "timestamp": 1770000603
+      },
+      {
+        "role": "assistant",
+        "content": "This turn did not complete. Some actions may already have run; verify their effects before resending.",
+        "display_kind": "failed_turn",
+        "message_id": "notice-failed-turn",
+        "timestamp": 1770000604
+      },
+      {
+        "role": "user",
+        "content": "Deploy it.",
+        "message_id": "notice-deploy",
+        "timestamp": 1770000605
+      },
+      {
+        "role": "assistant",
+        "content": "",
+        "display_kind": "hidden",
+        "api_content": "[interrupt: no assistant output for this turn]",
+        "message_id": "notice-interrupt",
+        "timestamp": 1770000606
+      },
+      {
+        "role": "user",
+        "content": "Try once more.",
+        "message_id": "notice-retry",
+        "timestamp": 1770000607
+      }
+    ],
+    "messages": [
+      {
+        "role": "user",
+        "content": "Run the migration.",
+        "message_id": "notice-prompt",
+        "timestamp": 1770000600,
+        "_turn_id": "legacy:0",
+        "_display": "row"
+      },
+      {
+        "role": "assistant",
+        "content": "",
+        "message_id": "notice-call",
+        "timestamp": 1770000601,
+        "tool_calls": [
+          {
+            "kind": "shell",
+            "target": "make migrate",
+            "function": {
+              "name": "terminal",
+              "arguments": "{\"command\":\"make migrate\"}"
+            },
+            "id": "call_migrate",
+            "done": true,
+            "is_error": false,
+            "result": "migrated",
+            "result_view": {
+              "text": "migrated"
+            },
+            "duration": null,
+            "type": "function"
+          }
+        ],
+        "_anchor_activity_scene": {
+          "version": "activity_scene_v1",
+          "activity_rows": [
+            {
+              "row_id": "tool:call_migrate",
+              "order_index": 0,
+              "role": "tool",
+              "created_at": 1770000601,
+              "tool": {
+                "id": "call_migrate",
+                "name": "terminal",
+                "kind": "shell",
+                "target": "make migrate",
+                "args": {
+                  "command": "make migrate"
+                },
+                "preview": null,
+                "result": "migrated",
+                "result_view": {
+                  "text": "migrated"
+                },
+                "done": true,
+                "is_error": false,
+                "duration": null,
+                "cost_usd": null
+              }
+            }
+          ],
+          "final_answer": "",
+          "turn_duration": null,
+          "terminal_state": "no_response",
+          "expanded_by_default": true,
+          "has_consumed_steering": false,
+          "file_changes": [],
+          "activity_rows_total": 1,
+          "activity_rows_offset": 0,
+          "activity_rows_complete": true,
+          "activity_rows_omitted": 0,
+          "activity_scene_ref": "3d4187eb8109b8422d0e63039df40a851f5d604a4a68f46eb39c134d3029fc5c"
+        },
+        "_turn_id": "legacy:0",
+        "_display": "row"
+      },
+      {
+        "role": "tool",
+        "content": "migrated",
+        "message_id": "notice-result",
+        "timestamp": 1770000602,
+        "tool_call_id": "call_migrate",
+        "_turn_id": "legacy:0",
+        "_display": "in_scene"
+      },
+      {
+        "role": "user",
+        "content": "[System: Your previous response was truncated by the output length limit. Continue exactly where you left off. Do not restart or repeat prior text. Finish the answer directly.]",
+        "message_id": "notice-scaffold",
+        "timestamp": 1770000603,
+        "_turn_id": "legacy:0",
+        "_display": "hidden",
+        "display_kind": "hidden"
+      },
+      {
+        "role": "assistant",
+        "content": "This turn did not complete. Some actions may already have run; verify their effects before resending.",
+        "message_id": "notice-failed-turn",
+        "timestamp": 1770000604,
+        "_turn_id": "legacy:0",
+        "_notice_kind": "failed_turn",
+        "_display": "row",
+        "display_kind": "failed_turn"
+      },
+      {
+        "role": "user",
+        "content": "Deploy it.",
+        "message_id": "notice-deploy",
+        "timestamp": 1770000605,
+        "_turn_id": "legacy:5",
+        "_display": "row"
+      },
+      {
+        "role": "assistant",
+        "content": "",
+        "message_id": "notice-interrupt",
+        "timestamp": 1770000606,
+        "_turn_id": "legacy:5",
+        "_display": "hidden",
+        "display_kind": "hidden"
+      },
+      {
+        "role": "user",
+        "content": "Try once more.",
+        "message_id": "notice-retry",
+        "timestamp": 1770000607,
+        "_turn_id": "legacy:7",
+        "_display": "row"
+      }
+    ]
   }
 }

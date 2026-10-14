@@ -6,7 +6,7 @@
  */
 import { str } from '../util.js'
 import { createHash } from 'node:crypto'
-import { agentSteerText, isReasoningBlock, markerKind, messageText, normalizeAssistantDisplay, normalizeUserDisplay, reasoningBlockText, reasoningFieldsText, splitDisplayText, stripToolCallXml, decidedResultView, toolResultView, type ToolResultView } from './merge.js'
+import { agentRowKind, agentSteerText, isReasoningBlock, markerKind, messageText, normalizeAssistantDisplay, normalizeUserDisplay, reasoningBlockText, reasoningFieldsText, splitDisplayText, stripToolCallXml, decidedResultView, toolResultView, type ToolResultView } from './merge.js'
 import type { Session } from './session.js'
 import { toolMessageForLimitedPayload } from './window.js'
 import { decidedEditDiff, toolArgs, toolEditDiff } from './tool-display.js'
@@ -485,11 +485,15 @@ function withStoredOutcome(preview: Record<string, unknown>, built: Record<strin
   return next
 }
 
-/** Rows of the full transcript grouped by `_turn_id` (see withTurnIds), with their absolute indexes. Marker rows render as their own cards, so no scene is built from or attached to one. */
+/**
+ * Rows of the full transcript grouped by `_turn_id` (see withTurnIds), with their absolute indexes. Marker rows render as
+ * their own cards, and the Agent's notice and hidden assistant rows are no reply (TAL-815), so no scene is built from or
+ * attached to one.
+ */
 function turnsOf(messages: unknown[]): Map<string, [Record<string, unknown>, number][]> {
   const turns = new Map<string, [Record<string, unknown>, number][]>()
   messages.forEach((m, index) => {
-    if (!isDict(m) || markerKind(m)) return
+    if (!isDict(m) || markerKind(m) || (m.role === 'assistant' && agentRowKind(m))) return
     const id = str(m._turn_id)
     if (!id) return
     const rows = turns.get(id) ?? []
@@ -620,9 +624,9 @@ export function readAnchorSceneRows(session: Session, query: { messageRef: strin
   return { scene_ref: sceneRef, rows: rows.slice(start, before), start, end: before, total, complete: start === 0 }
 }
 
-/** A turn opens at a user message the reader sees (text or attachments); hidden prompts and marker rows do not. */
+/** A turn opens at a user message the reader sees (text or attachments); hidden prompts, the Agent's hidden rows and marker rows do not. */
 function opensTurn(m: Record<string, unknown>): boolean {
-  if (m.role !== 'user' || markerKind(m) || isDict(m._steer)) return false
+  if (m.role !== 'user' || markerKind(m) || isDict(m._steer) || agentRowKind(m)) return false
   return messageText(m.content).trim() !== '' || (Array.isArray(m.attachments) && m.attachments.length > 0)
 }
 

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { BODY_EXCERPT_LIMIT, extractToolCallsFromMessages, markerKind, mergeDisplayMessagesAfterAgentResult, mergeSessionMessagesAppendOnly, normalizeAssistantDisplay, splitDisplayText, stripToolCallXml, toolOutcome, withBodyExcerpts, withDisplayMedia, withMarkerKinds, withToolCallOutcomes } from './merge.js'
+import { BODY_EXCERPT_LIMIT, assistantReplyAddedAfterCurrentTurn, extractToolCallsFromMessages, markerKind, mergeDisplayMessagesAfterAgentResult, mergeSessionMessagesAppendOnly, normalizeAssistantDisplay, sessionLacksFinalAssistantAnswer, splitDisplayText, stripToolCallXml, toolOutcome, withBodyExcerpts, withDisplayMedia, withMarkerKinds, withToolCallOutcomes } from './merge.js'
 
 describe('toolOutcome (TAL-313)', () => {
   it('fails a result that reports an error, a non-zero exit code, or success false, in any persisted shape', () => {
@@ -304,6 +304,36 @@ describe('compaction markers (TAL-305)', () => {
     expect(out[1]).toEqual({ ...rows[1], _marker_kind: 'preserved_task_list', _marker_body: '- [ ] one\n- [x] two' })
     expect(out[2]).toBe(rows[2])
     expect(rows[0]).not.toHaveProperty('_marker_kind')
+  })
+
+  it('stamps the Agent\'s failed-turn boundary as a notice once per turn and hides its scaffold rows (TAL-815)', () => {
+    const partial = 'This turn did not complete. Some actions may already have run; verify their effects before resending.'
+    const rows = [
+      { role: 'user', content: 'web turn', _turn_id: 'web' },
+      { role: 'assistant', content: '**Error:** boom', _error: true, _turn_id: 'web' },
+      { role: 'assistant', content: partial, display_kind: 'failed_turn', _turn_id: 'web' },
+      { role: 'user', content: 'cli turn', _turn_id: 'cli' },
+      { role: 'user', content: '  [System: continue]', _turn_id: 'cli' },
+      // A boundary written before the Agent typed it is recognized by its exact copy, as the Agent's own read side does.
+      { role: 'assistant', content: ` ${partial} `, _turn_id: 'cli' },
+      { role: 'assistant', content: `Quoting: ${partial}`, _turn_id: 'cli' },
+      // A typed `[System:` row is the Agent's timeline entry, not scaffolding.
+      { role: 'user', content: '[System: The active model changed.]', display_kind: 'model_switch', _turn_id: 'cli' },
+    ]
+    const out = withMarkerKinds(rows) as Record<string, unknown>[]
+    // Web's own error row already reports the web turn, so the Agent's copy is hidden there.
+    expect(out[2]).toEqual({ ...rows[2], display_kind: 'hidden' })
+    expect(out[2]).not.toHaveProperty('_notice_kind')
+    expect(out[4]).toEqual({ ...rows[4], display_kind: 'hidden' })
+    expect(out[5]).toEqual({ ...rows[5], _notice_kind: 'failed_turn' })
+    for (const i of [0, 1, 3, 6, 7]) expect(out[i]).toBe(rows[i])
+  })
+
+  it('never counts the Agent\'s failed-turn boundary as the turn\'s answer (TAL-815)', () => {
+    const boundary = { role: 'assistant', content: 'Your request was not processed. Send it again if you still want me to carry it out.', display_kind: 'failed_turn' }
+    expect(assistantReplyAddedAfterCurrentTurn([{ role: 'user', content: 'go' }, boundary], [], 'go')).toBe(false)
+    expect(sessionLacksFinalAssistantAnswer([{ role: 'user', content: 'go' }, boundary])).toBe(true)
+    expect(assistantReplyAddedAfterCurrentTurn([{ role: 'user', content: 'go' }, { role: 'assistant', content: 'Done.' }, boundary], [], 'go')).toBe(true)
   })
 
   it('drops bracketed markers of either case from the settled display', () => {

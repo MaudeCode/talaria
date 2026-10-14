@@ -147,6 +147,30 @@ describe('compaction markers (TAL-305)', () => {
   })
 })
 
+describe('Agent notices (TAL-815)', () => {
+  const fixture = (): Message[] => (JSON.parse(readFileSync(resolve(import.meta.dirname, '../../../../../../contracts/fixtures/web-session.json'), 'utf8')) as { notice_session: { messages: Message[] } }).notice_session.messages
+
+  it('shows a failed turn\'s boundary as a notice after the turn it closes, and nothing the server hides', () => {
+    Object.defineProperty(HTMLElement.prototype, 'scrollTo', { configurable: true, value: vi.fn() })
+    const messages = fixture()
+    const view = render(<Transcript rows={projectMessages(messages)} live={null} assistantName="Assistant" mode="compact_worklog" renderUserMarkdown={false} autoFollow={false} sessionId="s" actions={{}} tts={false} truncated={false} loadedFrom={0} onLoadOlder={() => undefined} loadingOlder={false} emptyState={null} showJumpButtons={false} virtualizeLongTranscripts={false} />)
+    const keyOf = (id: string) => projectMessages(messages).find((r) => r.message.message_id === id)?.key ?? `missing:${id}`
+    const order = [...view.container.querySelectorAll('[data-message-key]')].map((el) => `${el.getAttribute('data-role') ?? ''}:${el.getAttribute('data-message-key') ?? ''}`)
+    expect(order).toEqual([`user:${keyOf('notice-prompt')}`, `assistant:${keyOf('notice-call')}`, `notice:${keyOf('notice-failed-turn')}`, `user:${keyOf('notice-deploy')}`, `user:${keyOf('notice-retry')}`])
+    expect(screen.getByRole('note')).toHaveTextContent(messages.find((m) => m.message_id === 'notice-failed-turn')?.content as string)
+    expect(view.container).not.toHaveTextContent('[System:')
+  })
+
+  it('keeps a notice out of the turn around it', () => {
+    const rows = groupAssistantTurns(projectMessages([
+      { role: 'user', content: 'Go', _turn_id: 't' },
+      { role: 'assistant', id: 1, content: 'One', _turn_id: 't' },
+      { role: 'assistant', id: 2, content: 'This turn did not complete.', _turn_id: 't', _notice_kind: 'failed_turn' },
+    ]))
+    expect(rows.map((row) => [row.message._notice_kind ?? row.message.role, (row.assistantRows ?? []).length])).toEqual([['user', 0], ['assistant', 1], ['failed_turn', 0]])
+  })
+})
+
 describe('server media references (TAL-186)', () => {
   const fixture = JSON.parse(readFileSync(resolve(import.meta.dirname, '../../../../../../contracts/fixtures/web-session.json'), 'utf8')) as { media_session: { messages: Message[] } }
 

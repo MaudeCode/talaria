@@ -15,7 +15,8 @@ export function parseMsgLimit(raw: string | null | undefined): number | null {
 
 export function messageCountsAsRenderable(message: unknown): boolean {
   if (!isDict(message)) return false
-  if (isEmptyPartialActivityMessage(message)) return false
+  // A row classified hidden (the Agent's hidden and scaffold rows, TAL-815) takes no visible slot.
+  if (isEmptyPartialActivityMessage(message) || message.display_kind === 'hidden') return false
   const role = str(message.role).trim().toLowerCase()
   return Boolean(role) && role !== 'tool'
 }

@@ -4002,6 +4002,12 @@
                               "_marker_body": {
                                 "type": "string"
                               },
+                              "_notice_kind": {
+                                "enum": [
+                                  "failed_turn"
+                                ],
+                                "type": "string"
+                              },
                               "_background_reply": {
                                 "type": "boolean"
                               },
@@ -6408,6 +6414,12 @@
                               "_marker_body": {
                                 "type": "string"
                               },
+                              "_notice_kind": {
+                                "enum": [
+                                  "failed_turn"
+                                ],
+                                "type": "string"
+                              },
                               "_background_reply": {
                                 "type": "boolean"
                               },
@@ -8558,6 +8570,12 @@
                                 "type": "string"
                               },
                               "_marker_body": {
+                                "type": "string"
+                              },
+                              "_notice_kind": {
+                                "enum": [
+                                  "failed_turn"
+                                ],
                                 "type": "string"
                               },
                               "_background_reply": {
@@ -11911,6 +11929,12 @@
                               "_marker_body": {
                                 "type": "string"
                               },
+                              "_notice_kind": {
+                                "enum": [
+                                  "failed_turn"
+                                ],
+                                "type": "string"
+                              },
                               "_background_reply": {
                                 "type": "boolean"
                               },
@@ -15093,6 +15117,12 @@
                                 "type": "string"
                               },
                               "_marker_body": {
+                                "type": "string"
+                              },
+                              "_notice_kind": {
+                                "enum": [
+                                  "failed_turn"
+                                ],
                                 "type": "string"
                               },
                               "_background_reply": {
@@ -18984,6 +19014,12 @@
                               "_marker_body": {
                                 "type": "string"
                               },
+                              "_notice_kind": {
+                                "enum": [
+                                  "failed_turn"
+                                ],
+                                "type": "string"
+                              },
                               "_background_reply": {
                                 "type": "boolean"
                               },
@@ -21159,6 +21195,12 @@
                                 "type": "string"
                               },
                               "_marker_body": {
+                                "type": "string"
+                              },
+                              "_notice_kind": {
+                                "enum": [
+                                  "failed_turn"
+                                ],
                                 "type": "string"
                               },
                               "_background_reply": {
@@ -23400,6 +23442,12 @@
                               "_marker_body": {
                                 "type": "string"
                               },
+                              "_notice_kind": {
+                                "enum": [
+                                  "failed_turn"
+                                ],
+                                "type": "string"
+                              },
                               "_background_reply": {
                                 "type": "boolean"
                               },
@@ -25624,6 +25672,12 @@
                                 "type": "string"
                               },
                               "_marker_body": {
+                                "type": "string"
+                              },
+                              "_notice_kind": {
+                                "enum": [
+                                  "failed_turn"
+                                ],
                                 "type": "string"
                               },
                               "_background_reply": {
@@ -35632,6 +35686,12 @@
                               "_marker_body": {
                                 "type": "string"
                               },
+                              "_notice_kind": {
+                                "enum": [
+                                  "failed_turn"
+                                ],
+                                "type": "string"
+                              },
                               "_background_reply": {
                                 "type": "boolean"
                               },
@@ -37950,6 +38010,12 @@
                               "_marker_body": {
                                 "type": "string"
                               },
+                              "_notice_kind": {
+                                "enum": [
+                                  "failed_turn"
+                                ],
+                                "type": "string"
+                              },
                               "_background_reply": {
                                 "type": "boolean"
                               },
@@ -40161,6 +40227,12 @@
                                     "type": "string"
                                   },
                                   "_marker_body": {
+                                    "type": "string"
+                                  },
+                                  "_notice_kind": {
+                                    "enum": [
+                                      "failed_turn"
+                                    ],
                                     "type": "string"
                                   },
                                   "_background_reply": {
