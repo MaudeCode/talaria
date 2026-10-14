@@ -5,6 +5,8 @@ struct MemoryEditSheet: View {
     let section: MemorySection
     let isSaving: Bool
     let errorMessage: String?
+    /// Set when the save was refused because the file changed since it loaded (TAL-784).
+    let onReload: (() -> Void)?
     let onSave: (String) async -> Bool
 
     @State private var content: String
@@ -15,11 +17,13 @@ struct MemoryEditSheet: View {
         initialContent: String,
         isSaving: Bool,
         errorMessage: String?,
+        onReload: (() -> Void)? = nil,
         onSave: @escaping (String) async -> Bool
     ) {
         self.section = section
         self.isSaving = isSaving
         self.errorMessage = errorMessage
+        self.onReload = onReload
         self.onSave = onSave
         _content = State(initialValue: initialContent)
     }
@@ -42,6 +46,12 @@ struct MemoryEditSheet: View {
                         Text(errorMessage)
                             .font(.footnote)
                             .foregroundStyle(.red)
+                        if let onReload {
+                            Button("Reload") {
+                                dismiss()
+                                onReload()
+                            }
+                        }
                     }
                 }
             }

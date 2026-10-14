@@ -102,6 +102,8 @@ SCENARIOS: list[tuple[str, dict]] = [
     ("text.image_mode", {"profile_home": "{home}", "provider": "anthropic", "model": "claude-sonnet-4-5"}),
     ("memory.check", {"profile_home": "{home}", "target": "memory", "content": "User prefers tabs\n§\nDeploy box is 10.0.0.5"}),
     ("memory.check", {"profile_home": "{home}", "target": "user", "content": "x" * 1400}),
+    # TAL-784: a save over a USER.md that does not exist yet (the SHA-256 of no bytes).
+    ("memory.write", {"profile_home": "{home}", "section": "user", "base": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855", "content": "User prefers tabs"}),
     ("process.drain", {"profile_home": "{home}"}),
     ("process.list", {"profile_home": "{home}"}),
     ("process.format_notification", {"event": {"type": "completion", "session_id": "proc_1", "command": "ls", "exit_code": 0, "output": "ok"}}),

@@ -11,6 +11,7 @@ public final class MemoryViewModel {
     private(set) var memoryMtime: Date?
     private(set) var userMtime: Date?
     private(set) var soulMtime: Date?
+    private var loaded: MemoryResponse?
     public private(set) var projectContextText: String?
     private(set) var projectContextName: String?
     private(set) var projectContextWorkspace: String?
@@ -22,6 +23,8 @@ public final class MemoryViewModel {
     public private(set) var isSaving = false
     public private(set) var errorMessage: String?
     public private(set) var actionErrorMessage: String?
+    /// The last save was refused because the file changed since it loaded (TAL-784); the editor offers a reload.
+    public private(set) var hasSaveConflict = false
     public private(set) var lastError: Error?
 
     /// True while the screen shows the last saved memory rather than the server's (TAL-437).
@@ -69,6 +72,7 @@ public final class MemoryViewModel {
 
     public func clearActionError() {
         actionErrorMessage = nil
+        hasSaveConflict = false
     }
 
     /// The read-only project-context section only appears when the server sent a
@@ -112,12 +116,16 @@ public final class MemoryViewModel {
 
     public func save(section: MemorySection, content: String) async -> Bool {
         isSaving = true
-        actionErrorMessage = nil
+        clearActionError()
         lastError = nil
         defer { isSaving = false }
 
         do {
-            let writeResponse = try await client.writeMemory(section: section, content: content)
+            let writeResponse = try await client.writeMemory(
+                section: section,
+                content: content,
+                revision: loaded?.revision(for: section)
+            )
             guard writeResponse.ok != false else {
                 actionErrorMessage = writeResponse.error ?? String(localized: "Could not save memory.")
                 return false
@@ -126,6 +134,10 @@ public final class MemoryViewModel {
             let refreshed = try await client.memory()
             apply(refreshed)
             return true
+        } catch let error as APIError where error.serverCode == "memory_conflict" {
+            actionErrorMessage = error.serverMessage ?? error.localizedDescription
+            hasSaveConflict = true
+            return false
         } catch {
             lastError = error
             actionErrorMessage = error.localizedDescription
@@ -134,6 +146,7 @@ public final class MemoryViewModel {
     }
 
     private func apply(_ response: MemoryResponse) {
+        loaded = response
         memoryText = response.memory
         userText = response.user
         soulText = response.soul

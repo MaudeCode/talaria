@@ -22,5 +22,29 @@
         "limit": 1375
       }
     }
+  ],
+  "memory.write": [
+    {
+      "params": {
+        "profile_home": "<home>",
+        "section": "user",
+        "base": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "content": "User prefers tabs"
+      },
+      "result": {
+        "written": true
+      }
+    },
+    {
+      "params": {
+        "profile_home": "<home>",
+        "section": "user",
+        "base": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "content": "Stale save"
+      },
+      "result": {
+        "written": false
+      }
+    }
   ]
 }

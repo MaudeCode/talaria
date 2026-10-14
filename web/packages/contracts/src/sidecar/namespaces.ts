@@ -246,9 +246,14 @@ export const TEXT_METHODS = {
   'text.image_mode': { params: ProfileHomeParams.extend({ provider: z.string(), model: z.string(), cfg: Loose.nullable().optional(), requested_provider: z.string().optional() }), result: z.object({ mode: z.enum(['native', 'text']), reason: z.string(), supports_vision: z.boolean().nullable() }) },
   'text.portal_tags': { params: ProfileHomeParams, result: z.object({ client_tag: z.string().nullable(), conversation_tag: z.string().nullable(), tags: z.union([z.array(z.string()), Loose]) }) },
 } as const
-/** TAL-886: the Agent's `MemoryStore` reading of a MEMORY.md / USER.md body: its char count and the profile's limit for that store. */
+/**
+ * TAL-886: the Agent's `MemoryStore` reading of a MEMORY.md / USER.md body: its char count and the profile's limit for that store.
+ * TAL-784: `memory.write` replaces a memory page file with `content` only while its bytes still hash (SHA-256 hex) to `base`,
+ * holding the Agent's per-file lock (`<file>.lock`); `written: false` means the file changed and is untouched.
+ */
 export const MEMORY_METHODS = {
   'memory.check': { params: ProfileHomeParams.extend({ target: z.enum(['memory', 'user']), content: z.string() }), result: z.object({ count: z.number().int(), limit: z.number().int() }) },
+  'memory.write': { params: ProfileHomeParams.extend({ section: z.enum(['memory', 'user', 'soul']), base: z.string(), content: z.string() }), result: z.object({ written: z.boolean() }) },
 } as const
 export const ProcessEventSchema = z.object({ process_id: z.string(), consumed: z.boolean(), type: z.string().optional(), session_key: z.string().optional(), origin_ui_session_id: z.string().optional() }).catchall(Json)
 export const PROCESS_METHODS = {
