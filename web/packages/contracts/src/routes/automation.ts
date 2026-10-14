@@ -11,7 +11,8 @@ const tags = ['automation']
 const Ok = z.object({ ok: z.literal(true) })
 
 const JobId = z.object({ job_id: z.string().optional() })
-const PolicyTaskSchema = KanbanTaskSchema.extend(KanbanTaskPolicyShape)
+// The Agent move table a task arrives with stays on the server; clients get `available_actions` (TAL-796).
+const PolicyTaskSchema = KanbanTaskSchema.omit({ agent_move_targets: true }).extend(KanbanTaskPolicyShape)
 /** The newest Block or Unblock in the task's events (TAL-557); a client whose write outcome was lost compares `event_id` with the cursor it held when writing. */
 const KanbanLastCardActionSchema = z.object({ action: z.enum(['block', 'unblock']), event_id: z.number().int() }).nullable()
 export const TaskEnvelopeSchema = z.object({ task: PolicyTaskSchema, read_only: z.boolean() })

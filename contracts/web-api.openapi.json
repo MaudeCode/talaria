@@ -58897,6 +58897,9 @@
                           "name": {
                             "type": "string"
                           },
+                          "label": {
+                            "type": "string"
+                          },
                           "tasks": {
                             "type": "array",
                             "items": {
@@ -59014,6 +59017,7 @@
                         },
                         "required": [
                           "name",
+                          "label",
                           "tasks"
                         ],
                         "additionalProperties": {}
@@ -59057,6 +59061,12 @@
                         "type": "string"
                       }
                     },
+                    "create_statuses": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    },
                     "lane_by_profile": {
                       "type": "boolean"
                     },
@@ -59086,6 +59096,9 @@
                               "type": "object",
                               "properties": {
                                 "name": {
+                                  "type": "string"
+                                },
+                                "label": {
                                   "type": "string"
                                 },
                                 "tasks": {
@@ -59205,6 +59218,7 @@
                               },
                               "required": [
                                 "name",
+                                "label",
                                 "tasks"
                               ],
                               "additionalProperties": {}
@@ -59221,6 +59235,7 @@
                   },
                   "required": [
                     "bulk_move_targets",
+                    "create_statuses",
                     "lane_by_profile"
                   ],
                   "additionalProperties": {}

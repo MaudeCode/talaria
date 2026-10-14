@@ -39,17 +39,22 @@ export function kanbanFailure(error: unknown): never {
   throw error
 }
 
-/** Where a Move may take a task, by its current status (TAL-557). Block, Unblock, Complete, and Archive are separate actions;
- * the gates mirror the Agent's `kanban_db` transitions (`block_task` takes running/ready, `complete_task` running/ready/blocked
- * with stored evidence, `unblock_task` blocked), so a client never offers a write the Agent refuses. `running` is reachable only
- * through the dispatcher. */
+/** Where a Move may take a task, by its current status (TAL-557): Talaria's policy, narrowed further by the Agent's manual move
+ * table (TAL-796). Block, Unblock, Complete, and Archive are separate actions; the gates mirror the Agent's `kanban_db` transitions
+ * (`block_task` takes running/ready, `complete_task` running/ready/blocked with stored evidence or review as an approval,
+ * `unblock_task` blocked), so a client never offers a write the Agent refuses. `running` is reachable only through the dispatcher,
+ * `scheduled` and `review` only through Agent verbs that need a wake time or a reviewer. */
 const MOVE_TARGETS: Record<string, string[]> = {
-  triage: ['todo', 'ready'], todo: ['triage', 'ready'], ready: ['triage', 'todo'], running: ['triage', 'todo', 'ready'],
-  // Ready from blocked is Unblock, which re-gates on parents.
-  blocked: ['triage', 'todo'], done: ['triage', 'todo', 'ready'], archived: ['triage', 'todo', 'ready'],
+  // Ready from scheduled is the Agent's unblock, which re-gates on parents.
+  triage: ['todo', 'ready'], todo: ['triage', 'ready'], scheduled: ['triage', 'todo', 'ready'], ready: ['triage', 'todo'], running: ['triage', 'todo', 'ready'],
+  // Ready from blocked is Unblock, which re-gates on parents. Ready from review is the Agent's reopen; the sidecar refuses todo,
+  // where that reopen would land in ready anyway.
+  blocked: ['triage', 'todo'], review: ['ready'], done: ['triage', 'todo', 'ready'], archived: ['triage', 'todo', 'ready'],
 }
 /** Every board column except `running`; the sidecar applies each row through the same transitions. */
 export const KANBAN_BULK_MOVE_TARGETS = ['triage', 'todo', 'ready', 'blocked', 'done']
+/** Where a new task may start: a fresh task carries no result for Complete, and `running`, `scheduled` and `review` need Agent verbs. */
+export const KANBAN_CREATE_STATUSES = ['triage', 'todo', 'ready', 'blocked']
 
 export interface KanbanTaskActions { block: boolean; unblock: boolean; complete: boolean; archive: boolean; move_to: string[] }
 
@@ -59,20 +64,24 @@ export function kanbanTaskActions(task: Dict): KanbanTaskActions {
   // Block and a direct status change release a live worker's claim without stopping it, and the Agent refuses to complete
   // under a live claim, so such a card offers only Archive, which terminates the worker. Unknown liveness counts as live.
   const live = s === 'running' && task.claim_live !== false
+  // The Agent's manual moves from this status; only an Agent before 0.21.6 (`null`) leaves Talaria's policy alone.
+  const agent = task.agent_move_targets === null ? null : Array.isArray(task.agent_move_targets) ? task.agent_move_targets : []
   return {
     block: !live && (s === 'ready' || s === 'running'),
     unblock: s === 'blocked',
-    complete: !live && task.has_completion_evidence === true && (s === 'ready' || s === 'running' || s === 'blocked'),
+    complete: !live && (s === 'review' || (task.has_completion_evidence === true && (s === 'ready' || s === 'running' || s === 'blocked'))),
     archive: s in MOVE_TARGETS && s !== 'archived',
-    move_to: live ? [] : [...(MOVE_TARGETS[s] ?? [])],
+    move_to: live ? [] : (MOVE_TARGETS[s] ?? []).filter((t) => !agent || agent.includes(t)),
   }
 }
 
-/** One task with its server-owned card policy. */
+/** One task with its server-owned card policy; the Agent's move table it was computed from stays on the server. */
 export function withTaskPolicy(task: unknown): unknown {
   if (!task || typeof task !== 'object' || Array.isArray(task)) return task
-  const t = task as Dict
-  return { ...t, available_actions: kanbanTaskActions(t), requires_running_exit_confirmation: str(t.status) === 'running' }
+  const t: Dict = { ...(task as Dict) }
+  const available_actions = kanbanTaskActions(t)
+  delete t.agent_move_targets
+  return { ...t, available_actions, requires_running_exit_confirmation: str(t.status) === 'running' }
 }
 
 /** Agent event kinds a Block or Unblock writes (`block_task` routes a block to `blocked`, or to `triage`/`todo` with its own kind). */
@@ -100,9 +109,6 @@ export function withKanbanPolicy<T>(payload: T): T {
   return out as T
 }
 
-/** The Agent's board columns (`kanban_db.BOARD_COLUMNS`), the order stats and lanes follow. */
-const BOARD_COLUMNS = ['triage', 'todo', 'ready', 'running', 'blocked', 'done', 'archived']
-
 interface Column { name: string; tasks: Dict[] }
 
 /** Columns keeping only the tasks whose id, title, body (or description/prompt), assignee or tenant contains `query` (case-insensitive). */
@@ -124,12 +130,14 @@ export function profileLanes(columns: Column[]): { assignee: string | null; coun
   })
 }
 
-/** Stats with the total and the per-status counts in board-column order, unknown statuses after by name. */
+/** Stats with the total and the per-status counts in the Agent's board-column order (the sidecar's `column_order`), unknown statuses after by name. */
 export function withStatsTotals(stats: Dict): Dict {
-  const byStatus = dict(stats.by_status) as Record<string, unknown>
-  const rank = (s: string) => { const i = BOARD_COLUMNS.indexOf(s); return i === -1 ? BOARD_COLUMNS.length : i }
+  const { column_order, ...rest } = stats
+  const order = Array.isArray(column_order) ? column_order.map(str) : []
+  const byStatus = dict(rest.by_status) as Record<string, unknown>
+  const rank = (s: string) => { const i = order.indexOf(s); return i === -1 ? order.length : i }
   const status_counts = Object.entries(byStatus).map(([status, n]) => ({ status, count: Number(n) || 0 })).sort((a, b) => rank(a.status) - rank(b.status) || a.status.localeCompare(b.status))
-  return { ...stats, by_status: byStatus, total: status_counts.reduce((n, c) => n + c.count, 0), status_counts }
+  return { ...rest, by_status: byStatus, total: status_counts.reduce((n, c) => n + c.count, 0), status_counts }
 }
 
 /** A board slug from a display name, within the Agent's `^[a-z0-9][a-z0-9\-_]{0,63}$`. A name with no ASCII letters or digits
@@ -155,7 +163,7 @@ export class KanbanService {
     const onlyMine = truthyQuery(q.only_mine)
     const board = await this.sidecar().call('kanban.board', { profile_home: home, board: str(q.board).trim() || null, tenant: str(q.tenant).trim() || null, assignee: onlyMine ? null : str(q.assignee).trim() || null, include_archived: truthyQuery(q.include_archived), only_mine: onlyMine, since, profile: activeProfile || 'default' }).catch(kanbanFailure)
     const lane_by_profile = await this.laneByProfile(home)
-    const out: Dict = { ...withKanbanPolicy(board), bulk_move_targets: [...KANBAN_BULK_MOVE_TARGETS], lane_by_profile }
+    const out: Dict = { ...withKanbanPolicy(board), bulk_move_targets: [...KANBAN_BULK_MOVE_TARGETS], create_statuses: [...KANBAN_CREATE_STATUSES], lane_by_profile }
     if (!Array.isArray(out.columns)) return out
     out.columns = searchColumns(out.columns as Column[], str(q.search))
     if (lane_by_profile) out.lanes = profileLanes(out.columns as Column[])

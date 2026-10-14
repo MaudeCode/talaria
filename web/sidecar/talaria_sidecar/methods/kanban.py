@@ -7,17 +7,20 @@ server; the sidecar receives typed params.
 
 from __future__ import annotations
 
+import functools
 import json
 import secrets
 import time
 from dataclasses import asdict, is_dataclass
-from typing import Any
+from typing import Any, NamedTuple
 
 from ..errors import InvalidParams, RpcError
 from ..home import profile_home_param, scoped_home
 from ..rpc import CallContext
 
-BOARD_COLUMNS = ["triage", "todo", "ready", "running", "blocked", "done"]
+# Agent 2026.9.24 predates ``kanban_workflow``; its ``VALID_STATUSES`` set holds these columns, in this board order.
+# Delete with that release's entry in ``agent_support.json``.
+_LEGACY_COLUMNS = ("triage", "todo", "scheduled", "ready", "running", "blocked", "review", "done")
 
 
 class NotFound(RpcError):
@@ -36,6 +39,27 @@ def _kb():
     except Exception as exc:  # noqa: BLE001
         raise RpcError(f"kanban unavailable: {exc}", condition="kanban_unavailable") from exc
     return kb
+
+
+class _Workflow(NamedTuple):
+    columns: tuple[tuple[str, str], ...]  # (key, label) in board order
+    manual: dict | None  # src -> [dst]; None on an Agent without a move table
+
+
+@functools.cache
+def _workflow() -> _Workflow:
+    """The Agent's board columns and manual move table from ``kanban_workflow.DEFAULT_WORKFLOW`` (Agent 0.21.6+, TAL-796)."""
+    try:
+        from hermes_cli.kanban_workflow import DEFAULT_WORKFLOW
+    except ImportError:
+        statuses = getattr(_kb(), "VALID_STATUSES", _LEGACY_COLUMNS)
+        return _Workflow(tuple((key, key.title()) for key in _LEGACY_COLUMNS if key in statuses), None)
+    workflow = DEFAULT_WORKFLOW.to_dict()
+    return _Workflow(tuple((c["key"], c["label"]) for c in workflow["columns"]), workflow["manual"])
+
+
+def _columns() -> list[str]:
+    return [key for key, _ in _workflow().columns]
 
 
 def _board(params: dict):
@@ -204,6 +228,8 @@ def _task_dict(task, conn):
     # stored or supplied evidence, and refuses to release a live worker's claim.
     data["claim_live"] = data.get("status") == "running" and _claim_live(conn, data.get("id"))
     data["has_completion_evidence"] = bool(str(data.get("result") or "").strip())
+    manual = _workflow().manual
+    data["agent_move_targets"] = None if manual is None else list(manual.get(data.get("status"), []))
     try:
         age = _kb().task_age(task)
     except Exception:  # noqa: BLE001
@@ -244,8 +270,13 @@ def _comment_counts(conn):
 
 def _validate_status(status: str) -> str:
     value = str(status or "").strip().lower()
-    if value not in set(BOARD_COLUMNS) | {"archived"}:
+    if value not in {*_columns(), "archived"}:
         raise InvalidParams(f"invalid status: {value}")
+    if value == "running":
+        raise InvalidParams("Cannot set status to 'running' directly; use the dispatcher/claim path")
+    if value in ("scheduled", "review"):
+        # The Agent reaches these through verbs with extra input (a wake time, a reviewer), which Talaria does not offer.
+        raise InvalidParams(f"Cannot set status to {value!r} directly")
     return value
 
 
@@ -334,19 +365,21 @@ def _patch_task(conn, task_id: str, body: dict) -> None:
     elif status == "archived":
         if not _fenced(conn, task_id, lambda: kb.archive_task(conn, task_id), confirm_running_exit=confirm, releases_claim=False):
             raise NotFound("task not found")
-    elif status == "running":
-        raise InvalidParams("Cannot set status to 'running' directly; use the dispatcher/claim path")
-    elif status == "ready":
+    else:
         current = kb.get_task(conn, task_id)
         if not current:
             raise NotFound("task not found")
-        if current.status == "blocked":
-            if not kb.unblock_task(conn, task_id):
-                raise NotFound("task not found")
-        elif not _set_status_direct(conn, task_id, "ready", confirm_running_exit=confirm):
-            raise NotFound("task not found")
-    elif status in ("triage", "todo"):
-        if not _set_status_direct(conn, task_id, status, confirm_running_exit=confirm):
+        # Like the Agent's dashboard: leaving review reopens it, and blocked/scheduled -> ready unblocks; both re-gate on
+        # parents. Triage is a direct write there too. The reopen lands in ready whatever the target, so todo is refused.
+        if current.status == "review" and status == "todo":
+            raise Conflict("A task in review reopens to ready")
+        if current.status == "review" and status == "ready":
+            ok = kb.reopen_review_task(conn, task_id)
+        elif status == "ready" and current.status in ("blocked", "scheduled"):
+            ok = kb.unblock_task(conn, task_id)
+        else:
+            ok = _set_status_direct(conn, task_id, status, confirm_running_exit=confirm)
+        if not ok:
             raise NotFound("task not found")
 
 
@@ -456,9 +489,9 @@ def board_payload(params: dict) -> dict:
             data["comment_count"] = comment_counts.get(task.id, 0)
             return data
 
-        columns = [{"name": name, "tasks": [row(t) for t in tasks if t.status == name]} for name in BOARD_COLUMNS]
+        columns = [{"name": key, "label": label, "tasks": [row(t) for t in tasks if t.status == key]} for key, label in _workflow().columns]
         if include_archived:
-            columns.append({"name": "archived", "tasks": [row(t) for t in tasks if t.status == "archived"]})
+            columns.append({"name": "archived", "label": "Archived", "tasks": [row(t) for t in tasks if t.status == "archived"]})
         return {
             "columns": columns,
             "tenants": sorted({t.tenant for t in tasks if getattr(t, "tenant", None)}),
@@ -479,6 +512,8 @@ def create_task_payload(params: dict) -> dict:
         priority = int(body.get("priority") or 0)
     except (TypeError, ValueError):
         raise InvalidParams("priority must be an integer")
+    # Checked before the insert, so a refused status leaves no task behind.
+    status = _validate_status(body.get("status")) if body.get("status") else None
     kb = _kb()
     with _conn(board=_board(params)) as conn:
         task_id = kb.create_task(
@@ -487,8 +522,8 @@ def create_task_payload(params: dict) -> dict:
             workspace_kind=body.get("workspace_kind") or "scratch", workspace_path=body.get("workspace_path") or None,
             idempotency_key=body.get("idempotency_key") or None, max_runtime_seconds=body.get("max_runtime_seconds") or None, skills=body.get("skills") or None,
         )
-        if body.get("status"):
-            _patch_task(conn, task_id, {"status": body.get("status")})
+        if status:
+            _patch_task(conn, task_id, {"status": status})
         return {"task": _task_dict(kb.get_task(conn, task_id), conn), "read_only": False}
 
 
@@ -590,13 +625,17 @@ def config_payload(params: dict) -> dict:
         cfg = {}
     k = ((cfg.get("dashboard") or {}).get("kanban") or {})
     return {
-        "columns": BOARD_COLUMNS, "assignees": assignees, "default_tenant": k.get("default_tenant") or "",
+        "columns": _columns(), "assignees": assignees, "default_tenant": k.get("default_tenant") or "",
         "lane_by_profile": bool(k.get("lane_by_profile", True)), "include_archived_by_default": bool(k.get("include_archived_by_default", False)),
         "render_markdown": bool(k.get("render_markdown", True)), "read_only": False,
     }
 
 
 def stats_payload(params: dict) -> dict:
+    return {**_stats(params), "column_order": _columns()}
+
+
+def _stats(params: dict) -> dict:
     kb = _kb()
     with _conn(board=_board(params)) as conn:
         if hasattr(kb, "board_stats"):

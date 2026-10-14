@@ -7,9 +7,9 @@ test.use({ serviceWorkers: 'block' })
 // Server output shapes (TAL-567): the server filters, searches, groups lanes and counts; the page renders those fields.
 const actions = { block: false, unblock: false, complete: false, archive: true, move_to: ['triage', 'ready'] }
 const task = (id: string, status: string, assignee?: string) => ({ id, title: `Task ${id}`, status, priority: 0, ...(assignee ? { assignee } : {}), available_actions: actions, requires_running_exit_confirmation: false })
-const column = (name: string, tasks: ReturnType<typeof task>[]) => ({ name, tasks })
+const column = (name: string, tasks: ReturnType<typeof task>[]) => ({ name, label: name, tasks })
 const board = (columns: ReturnType<typeof column>[], extra: Record<string, unknown> = {}) => ({
-  changed: true, latest_event_id: 4, read_only: false, tenants: ['acme'], assignees: ['builder', 'reviewer'], bulk_move_targets: ['triage', 'todo', 'ready', 'blocked', 'done'],
+  changed: true, latest_event_id: 4, read_only: false, tenants: ['acme'], assignees: ['builder', 'reviewer'], bulk_move_targets: ['triage', 'todo', 'ready', 'blocked', 'done'], create_statuses: ['triage', 'todo', 'ready', 'blocked'],
   filters: {}, lane_by_profile: false, columns, ...extra,
 })
 const boards = { boards: [{ slug: 'default', name: 'Default', is_current: false, total: 1, removable: false }, { slug: 'ops', name: 'Ops', is_current: true, total: 3, removable: true }], current: 'ops', read_only: false }
