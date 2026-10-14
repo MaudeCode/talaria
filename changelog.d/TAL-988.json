@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Reload MCP now updates the tools in chats that are already open, so their next message uses each server's current tool descriptions.",
+      "highlight": false,
+      "components": ["web"]
+    }
+  ]
+}
