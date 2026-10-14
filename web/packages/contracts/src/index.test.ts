@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { z } from 'zod'
-import { MemoryWriteRefusalSchema, ModelsSchema, SIDECAR_RPC_VERSION, SkillsSchema, UpdateNotificationsSchema } from './index.js'
+import { MemoryWriteRefusalSchema, ModelsSchema, SIDECAR_RPC_VERSION, SkillsSchema, TranscribeStreamEndSchema, TranscribeStreamEventSchema, TranscribeStreamStartSchema, UpdateNotificationsSchema } from './index.js'
 
 const shared = (path: string): unknown => JSON.parse(readFileSync(resolve(import.meta.dirname, '../../../../contracts', path), 'utf8'))
 
@@ -20,6 +20,14 @@ describe('contracts package', () => {
     const groups = ModelsSchema.parse(shared('fixtures/models-limits.json')).groups
     expect(groups.map((g) => [g.limit?.scope ?? null, g.quota_level ?? null])).toEqual([['models', 'warning'], ['account', null], [null, 'critical']])
     expect(groups[0]?.models.map((e) => e.limit?.resets_at ?? null)).toEqual([null, '2026-10-14T16:30:00Z'])
+  })
+  it('parses the shared live dictation exchange (TAL-802)', () => {
+    const fixture = shared('fixtures/transcribe-stream.json') as { start: unknown; end: unknown; events: unknown[]; unavailable: unknown }
+    expect(TranscribeStreamStartSchema.parse(fixture.start).sample_rate).toBe(48000)
+    expect(TranscribeStreamEndSchema.parse(fixture.end).eos).toBe(true)
+    expect(fixture.events.map((event) => TranscribeStreamEventSchema.parse(event).type)).toEqual(['partial', 'partial', 'final'])
+    expect(TranscribeStreamEventSchema.parse(fixture.unavailable).type).toBe('error')
+    expect(TranscribeStreamStartSchema.safeParse({ sample_rate: 96000 }).success).toBe(false)
   })
   it('exports an integer sidecar RPC version', () => {
     expect(Number.isInteger(SIDECAR_RPC_VERSION)).toBe(true)

@@ -56114,12 +56114,16 @@
                     },
                     "provider": {
                       "type": "string"
+                    },
+                    "streaming": {
+                      "type": "boolean"
                     }
                   },
                   "required": [
                     "ok",
                     "available",
-                    "provider"
+                    "provider",
+                    "streaming"
                   ],
                   "additionalProperties": {}
                 }

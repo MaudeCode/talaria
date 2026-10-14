@@ -28,6 +28,7 @@ import { pythonPrettyJson, renderSessionHtml, renderSessionMarkdown } from '../s
 import type { Session } from '../sessions/session.js'
 import { handleCspReport, handleTranscribe, handleTts } from './tools-raw.js'
 import { handleOidcCallback, handleOidcStart } from './auth-raw.js'
+import { handleTranscribeStream } from './transcribe-stream.js'
 
 const SANDBOX_CSP = 'sandbox allow-scripts allow-popups allow-popups-to-escape-sandbox'
 const DANGEROUS_TYPES = new Set(['text/html', 'application/xhtml+xml', 'image/svg+xml'])
@@ -42,6 +43,7 @@ export const RAW_GET_ROUTES: Record<string, RawHandler> = {
   '/api/media': handleMedia,
   '/api/folder/download': handleFolderDownload,
   '/api/session/export': handleSessionExport,
+  '/api/transcribe/stream': handleTranscribeStream,
   '/api/approval/inject_test': testHook(handleApprovalInject),
   '/api/clarify/inject_test': testHook(handleClarifyInject),
 }

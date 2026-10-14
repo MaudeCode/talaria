@@ -168,3 +168,21 @@ clients that display CLI/TUI/messaging sessions.
   Tornado-based `jupyter-server-proxy`) can set `HERMES_WEBUI_SSE_CHUNKED=1`
   to frame each event as an HTTP/1.1 chunk. The default wire format is
   unchanged when the flag is unset.
+
+## Live dictation WebSocket
+
+`GET /api/transcribe/stream` is the one WebSocket route (TAL-802). It is
+offered when `GET /api/transcribe/capability` reports `streaming: true`: the
+profile sets `stt.streaming: true` and its STT provider has a live wire with
+credentials. The client sends `{"sample_rate": N}` (8000-48000), binary s16le
+mono PCM frames, then `{"eos": true}`; the server answers `partial` text events,
+then one `final` or `error`, and closes. A close before `final` cancels the
+provider session. The frames are `TranscribeStream*Schema` in
+`packages/contracts/src/transcribe-stream.ts`, with an example exchange in
+`contracts/fixtures/transcribe-stream.json`.
+
+The handshake passes the same authentication and profile cookie as every
+`/api/*` route, plus the same-origin browser check. The provider session and
+its keys stay on the server. A reverse proxy must forward WebSocket upgrades
+for live text; without them the browser keeps its local recording and
+transcribes it through `POST /api/transcribe`.

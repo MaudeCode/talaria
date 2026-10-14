@@ -526,12 +526,12 @@ export const toolsRouter = os.router({
   },
   transcribeCapability: os.transcribeCapability.handler(({ context: { ctx } }) => run(async () => {
     const sidecar = ctx.deps.sidecar()
-    if (!sidecar) return { ok: true as const, available: false, provider: 'none' }
+    if (!sidecar) return { ok: true as const, available: false, provider: 'none', streaming: false }
     try {
       const cap = await sidecar.call('stt.capability', { profile_home: home(ctx) })
-      return { ok: true as const, available: cap.available, provider: cap.provider || 'none' }
+      return { ok: true as const, available: cap.available, provider: cap.provider || 'none', streaming: cap.available && cap.streaming }
     } catch {
-      return { ok: true as const, available: false, provider: 'none' }
+      return { ok: true as const, available: false, provider: 'none', streaming: false }
     }
   })),
   clientEvents: os.clientEvents.handler(({ input, context: { ctx } }) => run(() => {
