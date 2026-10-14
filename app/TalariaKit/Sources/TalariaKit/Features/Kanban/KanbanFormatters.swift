@@ -2,7 +2,7 @@ import SwiftUI
 
 public enum KanbanAgeFormatter {
     public static func abbreviated(_ seconds: Double) -> String { format(seconds, style: .abbreviated) }
-    static func full(_ seconds: Double) -> String { format(seconds, style: .full) }
+    public static func full(_ seconds: Double) -> String { format(seconds, style: .full) }
 
     private static func format(_ seconds: Double, style: DateComponentsFormatter.UnitsStyle) -> String {
         let formatter = switch (style, seconds) {

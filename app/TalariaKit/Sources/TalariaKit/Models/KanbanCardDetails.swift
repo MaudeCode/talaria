@@ -123,6 +123,24 @@ public struct KanbanDependencyLinks: Decodable, Equatable, Sendable {
     }
 }
 
+public struct KanbanLinkedCard: Decodable, Equatable, Sendable {
+    public let cardID: String?
+    public let title: String?
+    public let status: String?
+
+    enum CodingKeys: String, CodingKey {
+        case cardID = "id"
+        case title, status
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        cardID = container.decodeLossyStringIfPresent(forKey: .cardID)
+        title = container.decodeLossyStringIfPresent(forKey: .title)
+        status = container.decodeLossyStringIfPresent(forKey: .status)
+    }
+}
+
 public struct KanbanDispatchRun: Decodable, Equatable, Sendable {
     public let runID: String?
     public let status: String?

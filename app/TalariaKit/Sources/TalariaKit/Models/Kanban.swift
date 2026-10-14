@@ -227,6 +227,8 @@ public struct KanbanCard: Decodable, Equatable, Sendable {
     public let skills: [String]?
     public let maxRuntimeSeconds: Int?
     public let currentRunID: String?
+    /// When the active run started, in seconds since 1970; nil without an active run (TAL-809).
+    public let currentRunStartedAt: Double?
     public let claimLock: String?
     public let claimExpires: String?
     public let workerID: String?
@@ -241,6 +243,7 @@ public struct KanbanCard: Decodable, Equatable, Sendable {
         case assignee
         case createdAt, updatedAt, workspaceKind, workspacePath, skills, maxRuntimeSeconds
         case currentRunID = "currentRunId"
+        case currentRunStartedAt
         case claimLock, claimExpires
         case workerID = "workerPid"
         case availableActions, requiresRunningExitConfirmation
@@ -268,7 +271,8 @@ public struct KanbanCard: Decodable, Equatable, Sendable {
         claimExpires: String?,
         workerID: String?,
         availableActions: KanbanCardActions? = nil,
-        requiresRunningExitConfirmation: Bool = false
+        requiresRunningExitConfirmation: Bool = false,
+        currentRunStartedAt: Double? = nil
     ) {
         self.cardID = cardID
         self.title = title
@@ -287,6 +291,7 @@ public struct KanbanCard: Decodable, Equatable, Sendable {
         self.skills = skills
         self.maxRuntimeSeconds = maxRuntimeSeconds
         self.currentRunID = currentRunID
+        self.currentRunStartedAt = currentRunStartedAt
         self.claimLock = claimLock
         self.claimExpires = claimExpires
         self.workerID = workerID
@@ -313,6 +318,7 @@ public struct KanbanCard: Decodable, Equatable, Sendable {
         skills = try? container.decodeIfPresent([String].self, forKey: .skills)
         maxRuntimeSeconds = container.decodeLossyIntIfPresent(forKey: .maxRuntimeSeconds)
         currentRunID = container.decodeLossyStringIfPresent(forKey: .currentRunID)
+        currentRunStartedAt = container.decodeLossyDoubleIfPresent(forKey: .currentRunStartedAt)
         claimLock = container.decodeLossyStringIfPresent(forKey: .claimLock)
         claimExpires = container.decodeLossyStringIfPresent(forKey: .claimExpires)
         workerID = container.decodeLossyStringIfPresent(forKey: .workerID)
@@ -360,7 +366,8 @@ public struct KanbanCard: Decodable, Equatable, Sendable {
             claimExpires: status == "running" ? claimExpires : nil,
             workerID: status == "running" ? workerID : nil,
             availableActions: unchanged ? availableActions : nil,
-            requiresRunningExitConfirmation: unchanged && requiresRunningExitConfirmation
+            requiresRunningExitConfirmation: unchanged && requiresRunningExitConfirmation,
+            currentRunStartedAt: status == "running" ? currentRunStartedAt : nil
         )
     }
 }
@@ -370,6 +377,8 @@ public struct KanbanCardDetailEnvelope: Decodable, Equatable, Sendable {
     public let comments: [KanbanComment]?
     public let events: [KanbanDetailEvent]?
     public let links: KanbanDependencyLinks?
+    /// The linked Cards the server could name (TAL-809); a deleted one is absent.
+    public let linkedCards: [KanbanLinkedCard]?
     public let runs: [KanbanDispatchRun]?
     let readOnly: Bool?
     /// The newest Block or Unblock the server recorded for the Card (TAL-557).
@@ -378,6 +387,7 @@ public struct KanbanCardDetailEnvelope: Decodable, Equatable, Sendable {
     enum CodingKeys: String, CodingKey {
         case card = "task"
         case comments, events, links, runs, readOnly, lastCardAction
+        case linkedCards = "linkTasks"
     }
 
     public init(from decoder: Decoder) throws {
@@ -386,6 +396,7 @@ public struct KanbanCardDetailEnvelope: Decodable, Equatable, Sendable {
         comments = try? container.decodeIfPresent([KanbanComment].self, forKey: .comments)
         events = try? container.decodeIfPresent([KanbanDetailEvent].self, forKey: .events)
         links = try? container.decodeIfPresent(KanbanDependencyLinks.self, forKey: .links)
+        linkedCards = try? container.decodeIfPresent([KanbanLinkedCard].self, forKey: .linkedCards)
         runs = try? container.decodeIfPresent([KanbanDispatchRun].self, forKey: .runs)
         readOnly = container.decodeLossyBoolIfPresent(forKey: .readOnly)
         lastCardAction = try? container.decodeIfPresent(KanbanLastCardAction.self, forKey: .lastCardAction)
