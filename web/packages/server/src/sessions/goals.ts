@@ -2,6 +2,9 @@ import type { SessionGoal, SidecarResult } from '@maudecode/talaria-web-contract
 
 type GoalStatus = SidecarResult<'goals.get'>
 
+/** Past the deadline, so the Agent's own clock agrees the park ended. */
+const PARK_END_MARGIN_MS = 500
+
 /**
  * TAL-808: the session `goal` view of the Agent's `goals.get`. A timed park whose deadline passed is active again (the
  * Agent lifts it at its next judgement); a done, cleared or absent goal is null.
@@ -23,6 +26,9 @@ export function sessionGoalView(status: GoalStatus, now: number): SessionGoal | 
  */
 export class SessionGoals {
   private readonly bySession = new Map<string, GoalStatus>()
+  private readonly parkTimers = new Map<string, NodeJS.Timeout>()
+  /** The view each session last reported, so a park that lapsed since counts as a change. */
+  private readonly reported = new Map<string, string>()
 
   constructor(private readonly now: () => number) {}
 
@@ -35,14 +41,37 @@ export class SessionGoals {
     return status ? sessionGoalView(status, this.now()) : null
   }
 
-  /** Stores the session's status; true when its view changed. */
+  /** Stores the session's status; true when its view differs from the one it last reported. */
   set(sessionId: string, status: GoalStatus): boolean {
-    const before = JSON.stringify(this.view(sessionId))
     this.bySession.set(sessionId, status)
-    return JSON.stringify(this.view(sessionId)) !== before
+    const view = JSON.stringify(this.view(sessionId))
+    // A session that never had one starts with none.
+    if ((this.reported.get(sessionId) ?? 'null') === view) return false
+    this.reported.set(sessionId, view)
+    return true
+  }
+
+  /**
+   * Runs `reread` just after the session's timed park ends, replacing any earlier one. A timer that fires early finds the
+   * park still running, and the re-read schedules the next one.
+   */
+  rereadAfterPark(sessionId: string, reread: () => void): void {
+    clearTimeout(this.parkTimers.get(sessionId))
+    this.parkTimers.delete(sessionId)
+    const until = this.view(sessionId)?.parked_until
+    if (until === null || until === undefined) return
+    const timer = setTimeout(() => { this.parkTimers.delete(sessionId); reread() }, Math.max(0, until - this.now()) * 1000 + PARK_END_MARGIN_MS)
+    timer.unref()
+    this.parkTimers.set(sessionId, timer)
   }
 
   sweep(exists: (sessionId: string) => boolean): void {
-    for (const sid of this.bySession.keys()) if (!exists(sid)) this.bySession.delete(sid)
+    for (const sid of this.bySession.keys()) {
+      if (exists(sid)) continue
+      this.bySession.delete(sid)
+      this.reported.delete(sid)
+      clearTimeout(this.parkTimers.get(sid))
+      this.parkTimers.delete(sid)
+    }
   }
 }

@@ -311,6 +311,23 @@ describe('/goal continuation after a goal turn settles (TAL-396)', () => {
     expect(((await json(await s.get(`/api/session?session_id=${sid}`))).session as Json).goal).toBeNull()
   })
 
+  it('re-reads a timed park once its deadline passes and tells idle clients to reload the session (TAL-808)', async () => {
+    const sid = await newSession()
+    const until = Date.now() / 1000 + 0.3
+    // The Agent's `is_waiting` lifts the barrier once its deadline passes.
+    sidecar.respond('goals.get', () => ({ goal: state, active: true, parked: Date.now() / 1000 < until ? { reason: 'CI running', until } : null, message: '' }))
+    const publish = vi.spyOn(s.deps.events, 'publish')
+    try {
+      sidecar.respond('goals.command', () => ({ ok: true, action: 'status', message: 'status', goal: state }))
+      expect((await post(s, '/api/goal', { session_id: sid, args: 'status' })).status).toBe(200)
+      expect(publish).toHaveBeenCalledWith('goal', expect.objectContaining({ sessionId: sid }))
+      publish.mockClear()
+      await vi.waitFor(() => { expect(publish).toHaveBeenCalledWith('goal', expect.objectContaining({ sessionId: sid })) }, { timeout: 4_000 })
+      expect(calls('goals.get').length).toBeGreaterThanOrEqual(2)
+      expect(((await json(await s.get(`/api/session?session_id=${sid}`))).session as Json).goal).toMatchObject({ status: 'active', parked_until: null })
+    } finally { publish.mockRestore() }
+  })
+
   it('a resumed or persisted goal continues from the next user message', async () => {
     const sid = await newSession()
     let turn = 0

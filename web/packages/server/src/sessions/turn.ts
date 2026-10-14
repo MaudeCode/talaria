@@ -346,29 +346,38 @@ export class TurnRunner {
   }
 
   /**
-   * TAL-808: reads the session's goal from the Agent and sends `session_goal` when its view changed, on `put` or else to
-   * the session's live stream. A failed read keeps the last one.
+   * TAL-808: reads the session's goal from the Agent and, when its view changed, sends `session_goal` on `put` (else the
+   * session's live stream) and `sessions_changed`, which reloads the session for a client between turns.
    */
   async refreshGoal(s: Pick<Session, 'session_id' | 'profile'>, put: (event: string, data: Record<string, unknown>) => void = (event, data) => { this.emitToSession(s.session_id, event, data) }): Promise<void> {
+    if (!(await this.readGoal(s))) return
+    put('session_goal', { session_id: s.session_id, goal: this.sessionGoal(s.session_id) })
+    this.deps.events.publish('goal', { profile: s.profile, sessionId: s.session_id })
+  }
+
+  /** TAL-808: a session's first detail after a restart reads its goal before answering, so it tells no one else. */
+  async loadGoal(sessionId: string): Promise<void> {
+    if (this.goals.has(sessionId)) return
+    let s: Session
+    try { s = this.deps.store.get(sessionId, { metadataOnly: true }) } catch { return }
+    await this.readGoal(s)
+  }
+
+  /** The Agent's `goals.get` into the cache, and a re-read when a timed park ends; whether the view changed. A failed read keeps the last one. */
+  private async readGoal(s: Pick<Session, 'session_id' | 'profile'>): Promise<boolean> {
     const sidecar = this.deps.sidecar()
-    if (!sidecar) return
+    if (!sidecar) return false
     let status: SidecarResult<'goals.get'>
     try {
       // Short: a session's first load waits on it.
       status = await sidecar.call('goals.get', { session_id: s.session_id, profile_home: this.deps.profileHome(s.profile) }, { timeoutMs: 3_000 })
     } catch (error) {
       this.deps.log(`[webui] WARNING: goal read failed for ${s.session_id}: ${(error as Error).message}`)
-      return
+      return false
     }
-    if (this.goals.set(s.session_id, status)) put('session_goal', { session_id: s.session_id, goal: this.sessionGoal(s.session_id) })
-  }
-
-  /** TAL-808: a session's first detail after a restart reads its goal before answering. */
-  async loadGoal(sessionId: string): Promise<void> {
-    if (this.goals.has(sessionId)) return
-    let s: Session
-    try { s = this.deps.store.get(sessionId, { metadataOnly: true }) } catch { return }
-    await this.refreshGoal(s)
+    const changed = this.goals.set(s.session_id, status)
+    this.goals.rereadAfterPark(s.session_id, () => { void this.refreshGoal({ session_id: s.session_id, profile: s.profile }) })
+    return changed
   }
 
   /** Hygiene sweep: a deleted session's hold, notices and goal go with it (TAL-899, TAL-803, TAL-808). */
