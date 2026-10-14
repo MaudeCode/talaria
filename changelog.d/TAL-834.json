@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Added",
+      "summary": "Kanban Card details name each Prerequisite and Dependent with its title and status instead of its ID, and show how long the current run has been going.",
+      "highlight": false,
+      "components": ["app"]
+    }
+  ]
+}

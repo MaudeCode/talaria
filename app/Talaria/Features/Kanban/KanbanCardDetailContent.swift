@@ -144,6 +144,13 @@ struct KanbanCardDetailContent: View {
             if let updated = KanbanDetailDateFormatter.format(card.updatedAt) {
                 LabeledContent("Updated") { Text(verbatim: updated) }
             }
+            if card.currentRunStartedAt != nil {
+                TimelineView(.everyMinute) { context in
+                    if let elapsed = card.currentRunElapsed(at: context.date) {
+                        LabeledContent("Elapsed") { Text(KanbanAgeFormatter.full(elapsed)) }
+                    }
+                }
+            }
             if let skills = card.skills, !skills.isEmpty {
                 LabeledContent("Skills") {
                     Text(verbatim: skills.joined(separator: ", ")).textSelection(.enabled)
@@ -264,22 +271,20 @@ struct KanbanCardDetailContent: View {
             let ids = featureModel.displayedPrerequisites(for: cardID, canonical: canonicalIDs)
             VStack(alignment: .leading, spacing: 8) {
                 Text(title).font(.headline)
-                ForEach(ids, id: \.self) { prerequisiteID in
+                ForEach(linkPresentations(ids), id: \.cardID) { link in
                     HStack {
-                        Text(verbatim: prerequisiteID)
-                            .font(.body.monospaced())
-                            .textSelection(.enabled)
+                        linkLabel(link)
                         Spacer()
                         Button("Remove", systemImage: "minus.circle", role: .destructive) {
                             Task {
-                                await featureModel.removePrerequisite(prerequisiteID, from: card)
+                                await featureModel.removePrerequisite(link.cardID, from: card)
                                 await state.refresh()
                             }
                         }
                         .labelStyle(.iconOnly)
                         .frame(minWidth: 44, minHeight: 44)
                         .disabled(!featureModel.canMutateCard(card) || featureModel.isMutatingCard(cardID))
-                        .accessibilityLabel(Text("Remove \(prerequisiteID) as Prerequisite"))
+                        .accessibilityLabel(Text("Remove \(link.accessibilityName) as Prerequisite"))
                     }
                 }
 
@@ -415,15 +420,35 @@ struct KanbanCardDetailContent: View {
     private func dependencyGroup(title: String, ids: [String]) -> some View {
         VStack(alignment: .leading) {
             Text(title).font(.headline)
-            if !ids.isEmpty {
-                ForEach(ids, id: \.self) { id in
-                    Text(verbatim: id)
-                        .font(.body.monospaced())
-                        .textSelection(.enabled)
-                }
+            ForEach(linkPresentations(ids), id: \.cardID) { link in
+                linkLabel(link)
             }
         }
         .accessibilityElement(children: .contain)
+    }
+
+    private func linkPresentations(_ ids: [String]) -> [KanbanLinkPresentation] {
+        state.detail?.linkPresentations(ids) ?? []
+    }
+
+    /// A Card the server could not name (since deleted) shows its ID.
+    @ViewBuilder
+    private func linkLabel(_ link: KanbanLinkPresentation) -> some View {
+        if let title = link.title {
+            VStack(alignment: .leading) {
+                Text(verbatim: title)
+                if let status = link.statusTitle {
+                    Text(status)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            }
+            .accessibilityElement(children: .combine)
+        } else {
+            Text(verbatim: link.cardID)
+                .font(.body.monospaced())
+                .textSelection(.enabled)
+        }
     }
 
     private var operationalHistorySection: some View {

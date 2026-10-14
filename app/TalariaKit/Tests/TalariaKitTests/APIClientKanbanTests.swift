@@ -677,6 +677,37 @@ final class APIClientKanbanTests: APIClientTestCase {
         XCTAssertThrowsError(try KanbanCardDetailValidator.validate(missingIdentity, requestedCardID: "CARD-1"))
     }
 
+    func testCardDetailDecodesLinkedCardsAndCurrentRunStartWhenPresent() throws {
+        let decoder = JSONDecoder()
+        decoder.keyDecodingStrategy = .convertFromSnakeCase
+        let detail = try decoder.decode(KanbanCardDetailEnvelope.self, from: Data(Self.namedLinksDetailJSON.utf8))
+
+        XCTAssertEqual(detail.linkedCards?.map(\.cardID), ["CARD-0", "CARD-2"])
+        XCTAssertEqual(detail.linkedCards?.first?.title, "Plan the release")
+        XCTAssertEqual(detail.linkedCards?.first?.status, "done")
+        XCTAssertEqual(detail.card?.currentRunStartedAt, 1_700_000_500)
+
+        let older = try decoder.decode(KanbanCardDetailEnvelope.self, from: Data(Self.detailJSON.utf8))
+        XCTAssertNil(older.linkedCards)
+        XCTAssertNil(older.card?.currentRunStartedAt)
+    }
+
+    func testLinkRowsNameServerTitlesFallBackToIDsAndElapsedCountsFromTheCurrentRun() throws {
+        let decoder = JSONDecoder()
+        decoder.keyDecodingStrategy = .convertFromSnakeCase
+        let detail = try decoder.decode(KanbanCardDetailEnvelope.self, from: Data(Self.namedLinksDetailJSON.utf8))
+
+        let rows = detail.linkPresentations(["CARD-0", "CARD-9"])
+        XCTAssertEqual(rows.map(\.title), ["Plan the release", nil])
+        XCTAssertEqual(rows.map(\.statusTitle), [KanbanStatusPresentation("done").title, nil])
+        XCTAssertEqual(rows.map(\.accessibilityName), ["Plan the release (CARD-0)", "CARD-9"])
+
+        // `started_at` (the first-ever start, 1_700_000_000) is not the run clock.
+        let now = Date(timeIntervalSince1970: 1_700_000_800)
+        XCTAssertEqual(detail.card?.currentRunElapsed(at: now), 300)
+        XCTAssertNil(detail.card?.replacingStatus("ready").currentRunElapsed(at: now))
+    }
+
     func testMissingCardAndNonJSONCommentResponseRemainTypedFailures() async throws {
         let missingClient = makeClient { request in
             let response = HTTPURLResponse(
@@ -928,6 +959,21 @@ final class APIClientKanbanTests: APIClientTestCase {
       }],
       "read_only":false,
       "future_envelope_field":{"nested":true}
+    }
+    """
+
+    private static let namedLinksDetailJSON = """
+    {
+      "task": {
+        "id":"CARD-1","title":"Detail","status":"running",
+        "started_at":1700000000,"current_run_started_at":1700000500
+      },
+      "links":{"parents":["CARD-0","CARD-9"],"children":["CARD-2"]},
+      "link_tasks":[
+        {"id":"CARD-0","title":"Plan the release","status":"done"},
+        {"id":"CARD-2","title":"Ship it","status":"todo"}
+      ],
+      "read_only":false
     }
     """
 }
