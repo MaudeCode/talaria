@@ -29,6 +29,7 @@ import { sanitizeError } from '../workspace/media.js'
 import { normalizeChannel, updatesCheckView } from '../tools/updates.js'
 import { pyBool } from '../settings.js'
 import { str } from '../util.js'
+import { redactString } from '../redact.js'
 import { GATEWAY_RESTART_NOW, type UpdateNotificationScope, type UpdateNotificationTarget } from '../tools/update-notifications.js'
 import type { SessionInfo } from '../auth/store.js'
 
@@ -300,6 +301,12 @@ async function wikiLocation(ctx: RequestContext): Promise<WikiLocation> {
   return resolveWikiLocation(ctx.deps.config.env, profileHome, config, ctx.deps.config.homeDir)
 }
 
+/** TAL-819: the Agent's review handler per write; its message can quote the entry text an approval replaced or removed. */
+async function reviewPendingWrites(ctx: RequestContext, verb: 'approve' | 'reject', input: { kind: 'skills' | 'memory'; writes: { id: string; revision: string }[] }) {
+  const { results } = await runningSidecar(ctx).call(`write_approval.${verb}`, { profile_home: home(ctx), kind: input.kind, writes: input.writes })
+  return { results: results.map((r) => ({ ...r, message: redactString(r.message, ctx.deps.sessions.deps.redactEnabled()) })) }
+}
+
 export const toolsRouter = os.router({
   toolsetsCatalog: os.toolsetsCatalog.handler(({ input, context: { ctx } }) => run(() =>
     runningSidecar(ctx).call('toolsets.catalog', { profile_home: home(ctx), enabled_toolsets: input.toolsets }),
@@ -348,14 +355,12 @@ export const toolsRouter = os.router({
       // Without the Agent nothing can be reviewed, so the page shows no panel (the Agent's own status reports it down).
       const sidecar = ctx.deps.sidecar()
       const { enabled, items } = sidecar ? await sidecar.call('write_approval.pending', { profile_home: home(ctx), kind: input.kind }) : { enabled: false, items: [] }
-      return { kind: input.kind, visible: items.length > 0, enabled, items }
+      const redact = (text: string): string => redactString(text, ctx.deps.sessions.deps.redactEnabled())
+      // Display text is redacted like the memory page; `revision` stays the sidecar's hash of the raw diff it rechecks.
+      return { kind: input.kind, visible: items.length > 0, enabled, items: items.map((item) => ({ ...item, summary: redact(item.summary), diff: redact(item.diff) })) }
     })),
-    approve: os.pendingWrites.approve.handler(({ input, context: { ctx } }) => run(() =>
-      runningSidecar(ctx).call('write_approval.approve', { profile_home: home(ctx), kind: input.kind, writes: input.writes }),
-    )),
-    reject: os.pendingWrites.reject.handler(({ input, context: { ctx } }) => run(() =>
-      runningSidecar(ctx).call('write_approval.reject', { profile_home: home(ctx), kind: input.kind, writes: input.writes }),
-    )),
+    approve: os.pendingWrites.approve.handler(({ input, context: { ctx } }) => run(() => reviewPendingWrites(ctx, 'approve', input))),
+    reject: os.pendingWrites.reject.handler(({ input, context: { ctx } }) => run(() => reviewPendingWrites(ctx, 'reject', input))),
   },
   prompts: {
     list: os.prompts.list.handler(({ context: { ctx } }) => run(() => ({ prompts: loadPrompts(home(ctx)) }))),

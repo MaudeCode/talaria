@@ -568,6 +568,27 @@ describe('skills, memory, prompts, commands, mcp, health, updates, diagnostics',
     }
   })
 
+  it('TAL-819: staged write diffs, summaries and review messages are redacted like the memory page', async () => {
+    const token = `ghp_${'a1B2c3D4e5'.repeat(4)}`
+    const restore = sidecar.responderFor('write_approval.pending')
+    sidecar.respond('write_approval.pending', () => ({ supported: true, enabled: true, items: [{ id: 'abcd1234', kind: 'memory', target: 'memory', op: 'remove', summary: `remove from memory: ${token}`, origin: 'foreground', created_at: 1, diff: `--- a/MEMORY.md\n+++ b/MEMORY.md\n@@ -1 +0,0 @@\n-GitHub token ${token}\n`, approvable: true, revision: 'r'.repeat(64) }] }))
+    sidecar.respond('write_approval.approve', (params) => ({ results: params.writes.map(({ id }) => ({ id, done: true, message: `Approved 1 memory write(s).\nRemoved entry (re-add anything you still need):\n  ${id}: GitHub token ${token}` })) }))
+    try {
+      const body = await json(await s.get('/api/pending-writes?kind=memory'))
+      const item = (body.items as Json[])[0]!
+      expect(JSON.stringify(body)).not.toContain(token)
+      expect(String(item.diff)).toContain('-GitHub token ghp_')
+      expect(item.revision).toBe('r'.repeat(64))
+      const res = await post(s, '/api/pending-writes/approve', { kind: 'memory', writes: [{ id: 'abcd1234', revision: 'r'.repeat(64) }] })
+      const reviewed = JSON.stringify(await json(res))
+      expect(reviewed).toContain('Removed entry')
+      expect(reviewed).not.toContain(token)
+    } finally {
+      sidecar.respond('write_approval.pending', restore)
+      sidecar.respond('write_approval.approve', undefined)
+    }
+  })
+
   it('TAL-806: plugin settings ship as fields and save non-secrets to config, secrets to .env', async () => {
     const { state, envText, restore } = fakePlugin()
     try {

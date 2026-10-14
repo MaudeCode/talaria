@@ -49923,7 +49923,7 @@
     "/api/pending-writes": {
       "get": {
         "operationId": "pendingWrites.list",
-        "summary": "TAL-819: the active profile's skill or memory writes the Agent staged for approval, oldest first, each with the diff approving it applies. `visible` is whether the page shows its review panel (any write pending); `enabled` is the profile's `<kind>.write_approval` gate. An Agent without the review handlers, or no running Agent, lists none.",
+        "summary": "TAL-819: the active profile's skill or memory writes the Agent staged for approval, oldest first, each with the diff approving it applies. `visible` is whether the page shows its review panel (any write pending); `enabled` is the profile's `<kind>.write_approval` gate. `summary` and `diff` are redacted like the memory page (`api_redact_enabled`); `revision` is the hash of the raw diff. An Agent without the review handlers, or no running Agent, lists none.",
         "tags": [
           "tools"
         ],
@@ -50036,7 +50036,7 @@
     "/api/pending-writes/approve": {
       "post": {
         "operationId": "pendingWrites.approve",
-        "summary": "TAL-819: apply each staged write through the Agent's `/skills` or `/memory approve`. Each write carries the `revision` the user reviewed; a write whose diff changed since is refused unapplied. `done` is false when the write was not applied (its record stays pending); `message` is the Agent's text either way.",
+        "summary": "TAL-819: apply each staged write through the Agent's `/skills` or `/memory approve`. Each write carries the `revision` the user reviewed; a write whose diff changed since is refused unapplied. `done` is false when the write was not applied (its record stays pending); `message` is the Agent's text either way, redacted.",
         "tags": [
           "tools"
         ],
