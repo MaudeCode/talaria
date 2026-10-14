@@ -81,6 +81,7 @@ SCENARIOS: list[tuple[str, dict]] = [
     ("mcp.status", {"profile_home": "{home}"}),
     ("mcp.registry_tools", {"profile_home": "{home}"}),
     ("stt.capability", {"profile_home": "{home}"}),
+    ("stt.warm", {"profile_home": "{home}"}),
     ("usage.account", {"profile_home": "{home}", "provider": "zai"}),
     ("usage.pool", {"profile_home": "{home}", "provider": "deepseek"}),
     ("usage.pool_providers", {"profile_home": "{home}"}),

@@ -479,7 +479,7 @@ private struct NativeOIDCCancelRequest: Encodable {
     let state: String
 }
 
-private struct EmptyBody: Encodable {}
+struct EmptyBody: Encodable {}
 
 /// A `URLSession` redirect guard that removes the user's custom request headers
 /// when the server redirects a **same-origin** request to a **cross-origin** host.

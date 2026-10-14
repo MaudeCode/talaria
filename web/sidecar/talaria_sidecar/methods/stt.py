@@ -62,6 +62,29 @@ def dictation(transcript: str) -> dict:
     return {"transcript": transcript, "filtered": False}
 
 
+def _agent_warmer():
+    """The Agent's ``warm_stt_provider``, or None on an Agent without ``tools.stt_lease``."""
+    try:
+        from tools.stt_lease import warm_stt_provider
+    except ImportError:
+        return None
+    return warm_stt_provider
+
+
+def warm() -> dict:
+    """Pre-load the profile's local engine so the next ``stt.transcribe`` starts hot (TAL-916); a no-op for remote providers.
+
+    Blocking: a first use downloads and loads the model. The Agent's warmer never raises."""
+    warmer = _agent_warmer()
+    if warmer is None:
+        return {"provider": capability()[1], "warmed": False, "action": "unsupported"}
+    result = warmer()
+    out = {"provider": str(result.get("provider") or "none"), "warmed": bool(result.get("warmed")), "action": str(result.get("action") or "noop")}
+    if result.get("error"):
+        out["error"] = str(result["error"])
+    return out
+
+
 # Open live sessions by stream id: the ``stt.stream`` call owns each entry and removes it on every exit.
 _STREAMS: dict[str, tuple[object, threading.Event]] = {}
 _STREAMS_LOCK = threading.Lock()
@@ -158,7 +181,14 @@ def register(registry) -> None:
         with scoped_home(profile_home_param(params)):
             available, provider = capability()
             streaming = available and streaming_available()
-        return {"available": bool(available), "provider": provider, "streaming": bool(streaming)}
+        # Only the local engine has anything resident to load; the Agent's warmer no-ops every other provider.
+        warm_supported = bool(available) and provider == "local" and _agent_warmer() is not None
+        return {"available": bool(available), "provider": provider, "streaming": bool(streaming), "warm_supported": warm_supported}
+
+    @registry.method("stt.warm")
+    def warm_(ctx: CallContext, params: dict) -> dict:
+        with scoped_home(profile_home_param(params)):
+            return warm()
 
     @registry.method("stt.transcribe")
     def transcribe_(ctx: CallContext, params: dict) -> dict:

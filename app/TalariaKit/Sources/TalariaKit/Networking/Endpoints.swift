@@ -160,6 +160,8 @@ public enum Endpoint {
     case toggleSkill
     case upload
     case transcribe
+    case transcribeCapability
+    case transcribeWarm
     case tts
     case speechPrepare
 
@@ -466,6 +468,10 @@ public enum Endpoint {
             return "/api/upload"
         case .transcribe:
             return "/api/transcribe"
+        case .transcribeCapability:
+            return "/api/transcribe/capability"
+        case .transcribeWarm:
+            return "/api/transcribe/warm"
         case .tts:
             return "/api/tts"
         case .speechPrepare:

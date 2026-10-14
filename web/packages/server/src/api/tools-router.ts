@@ -57,6 +57,9 @@ async function run<T>(fn: () => Promise<T> | T): Promise<never> {
 
 const home = (ctx: RequestContext): string => ctx.deps.profileHome(activeProfileName(ctx))
 
+/** Profile homes with an `stt.warm` in flight (TAL-916). */
+const warmingHomes = new Set<string>()
+
 function runningSidecar(ctx: RequestContext): NonNullable<ReturnType<RequestContext['deps']['sidecar']>> {
   const sidecar = ctx.deps.sidecar()
   if (!sidecar) throw new HttpError(503, 'Hermes Agent sidecar is not running')
@@ -698,18 +701,37 @@ export const toolsRouter = os.router({
     })),
   },
   transcribeCapability: os.transcribeCapability.handler(({ context: { ctx } }) => run(async () => {
+    const unavailable = { ok: true as const, available: false, provider: 'none', streaming: false, warm_supported: false }
     const sidecar = ctx.deps.sidecar()
-    if (!sidecar) return { ok: true as const, available: false, provider: 'none', streaming: false }
+    if (!sidecar) return unavailable
     try {
       const cap = await sidecar.call('stt.capability', { profile_home: home(ctx) })
-      return { ok: true as const, available: cap.available, provider: cap.provider || 'none', streaming: cap.available && cap.streaming }
+      return { ok: true as const, available: cap.available, provider: cap.provider || 'none', streaming: cap.available && cap.streaming, warm_supported: cap.available && cap.warm_supported }
     } catch {
-      return { ok: true as const, available: false, provider: 'none', streaming: false }
+      return unavailable
     }
   })),
   speech: {
     prepare: os.speech.prepare.handler(({ input, context: { ctx } }) => run(async () => ({ spoken_text: await spokenText(ctx, input.text.trim()) }))),
   },
+  transcribeWarm: os.transcribeWarm.handler(({ context: { ctx } }) => run(() => {
+    const sidecar = ctx.deps.sidecar()
+    const profileHome = home(ctx)
+    // One load per profile at a time: a record start during a running load joins it rather than holding another sidecar slot.
+    if (sidecar && !warmingHomes.has(profileHome)) {
+      warmingHomes.add(profileHome)
+      // The load outlives this request's write lease: it is the profile's activity until it settles, so the profile
+      // cannot be deleted under it. Taken while the request's lease still refuses a deletion in progress.
+      const release = ctx.deps.profileActivity(activeProfileName(ctx))
+      // A first use downloads the model, and the Agent's load cannot be cancelled, so the call has no deadline: the entry
+      // lives exactly as long as the sidecar worker (a sidecar exit rejects it). Nobody waits on it.
+      void sidecar.call('stt.warm', { profile_home: profileHome }, { timeoutMs: 0 })
+        .then((result) => { if (result.action === 'error') ctx.deps.log(`[stt] warm-up failed (${result.provider}): ${str(result.error)}`) })
+        .catch((error: unknown) => { ctx.deps.log(`[stt] warm-up failed: ${str((error as Error).message)}`) })
+        .finally(() => { warmingHomes.delete(profileHome); release() })
+    }
+    return { ok: true as const }
+  })),
   clientEvents: os.clientEvents.handler(({ input, context: { ctx } }) => run(() => {
     if (ctx.deps.clientEventLimiter.limited(ctx.peer || 'unknown')) throw new HttpError(429, 'rate_limited', { ok: false })
     const payload = sanitizeClientEvent(input)

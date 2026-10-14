@@ -148,6 +148,7 @@
           "stt.stream",
           "stt.stream_audio",
           "stt.transcribe",
+          "stt.warm",
           "text.image_mode",
           "text.portal_tags",
           "text.spoken",

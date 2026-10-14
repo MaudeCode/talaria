@@ -3711,12 +3711,40 @@
       },
       "streaming": {
         "type": "boolean"
+      },
+      "warm_supported": {
+        "type": "boolean"
       }
     },
     "required": [
       "available",
       "provider",
-      "streaming"
+      "streaming",
+      "warm_supported"
+    ],
+    "additionalProperties": false
+  },
+  "stt.warm": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "properties": {
+      "provider": {
+        "type": "string"
+      },
+      "warmed": {
+        "type": "boolean"
+      },
+      "action": {
+        "type": "string"
+      },
+      "error": {
+        "type": "string"
+      }
+    },
+    "required": [
+      "provider",
+      "warmed",
+      "action"
     ],
     "additionalProperties": false
   },

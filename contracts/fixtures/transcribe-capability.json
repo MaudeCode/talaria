@@ -1,0 +1,4 @@
+{
+  "warmable": { "ok": true, "available": true, "provider": "local", "streaming": false, "warm_supported": true },
+  "unwarmable": { "ok": true, "available": true, "provider": "openai", "streaming": true, "warm_supported": false }
+}

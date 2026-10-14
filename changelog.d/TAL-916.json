@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "The first dictation with a local speech-to-text model no longer times out while the model loads: it starts loading as soon as you begin recording.",
+      "highlight": false,
+      "components": ["app", "web"]
+    }
+  ]
+}
