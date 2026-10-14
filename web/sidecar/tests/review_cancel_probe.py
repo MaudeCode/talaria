@@ -1,12 +1,14 @@
 """Run on the Agent interpreter: evict and drain agents whose post-turn background review fork the Agent admitted.
 
-Prints one JSON line: the interrupts each admitted review fork received after a cache-only eviction, a delete/clear
-eviction of a cached and of a running turn's agent, a shutdown drain, and how long a delete/clear eviction waited on a
-review that never acknowledges.
+Prints one JSON line: per scenario (a cache-only eviction, a delete/clear eviction of a cached and of a running turn's
+agent, a shutdown drain), the interrupts the admitted review fork received and whether the agent can still fork a
+review: a post-turn one (``skip_background_review``) or a deferred one the Agent's idle queue dispatches. Also how
+long a delete/clear eviction waited on a review that never acknowledges.
 """
 
 from __future__ import annotations
 
+import contextvars
 import json
 import os
 import sys
@@ -16,6 +18,7 @@ import types
 sys.path.append(sys.argv[1])
 
 from agent.background_review import finish_background_review_run, prepare_background_review_run  # noqa: E402
+from agent.review_idle_queue import QUEUE, _PendingReview  # noqa: E402
 
 from talaria_sidecar.methods import Registry, chat  # noqa: E402
 
@@ -38,8 +41,25 @@ class Review:
             finish_background_review_run(self.parent, self.run)
 
 
+class Parent:
+    """The parent agent: ``_spawn_background_review_now`` is what the idle queue calls for a deferred review."""
+
+    def __init__(self):
+        self.spawned = []
+
+    def _spawn_background_review_now(self, **kwargs):
+        self.spawned.append(kwargs)
+
+
+def reviews_left(parent) -> list:
+    """Which reviews ``parent`` can still fork: a post-turn one, and a deferred one the idle queue dispatches."""
+    left = [] if getattr(parent, "skip_background_review", False) else ["post-turn"]
+    QUEUE._dispatch(_PendingReview(parent, "probe", {}, 0.0, contextvars.copy_context()))
+    return left + (["deferred"] if parent.spawned else [])
+
+
 def admitted(acknowledge: bool = True):
-    parent = types.SimpleNamespace()
+    parent = Parent()
     run = prepare_background_review_run(parent)
     review = Review(parent, run, acknowledge)
     assert run.begin_request(review)
@@ -61,12 +81,14 @@ evict(None, {"session_id": "switch"})
 time.sleep(0.3)
 out["switch"] = review.interrupts
 out["switch_review_live"] = parent._background_review_run is not None
+out["switch_left"] = reviews_left(parent)
 
 # Delete / clear of an idle session.
 parent, review = admitted()
 chat._AGENT_CACHE["deleted"] = (parent, "sig", HOME)
 evict(None, {"session_id": "deleted", "clear_session": True})
 out["deleted"] = settled(review)
+out["deleted_left"] = reviews_left(parent)
 
 # Delete / clear while a turn still runs on the session's agent.
 parent, review = admitted()
@@ -75,6 +97,7 @@ run.agent = parent
 chat._RUNS["running-stream"], chat._RUNS_BY_SESSION["running"] = run, "running-stream"
 evict(None, {"session_id": "running", "clear_session": True})
 out["running"] = settled(review)
+out["running_left"] = reviews_left(parent)
 run.finished.set()
 chat._RUNS.pop("running-stream"), chat._RUNS_BY_SESSION.pop("running")
 
@@ -91,4 +114,5 @@ parent, review = admitted()
 chat._AGENT_CACHE["drained"] = (parent, "sig", HOME)
 chat.drain_agents()
 out["drained"] = settled(review)
+out["drained_left"] = reviews_left(parent)
 print(json.dumps(out))

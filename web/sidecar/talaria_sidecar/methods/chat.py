@@ -56,8 +56,6 @@ class _Run:
         self.lock = threading.Lock()
         # The Agent's transcript list from before this turn: a Stop while the Agent still holds it has no checkpoint.
         self.prior_messages = None
-        # TAL-897: the session was cleared mid-turn (set under ``_RUNS_LOCK``); the review this turn forks is cancelled.
-        self.session_ended = False
 
 
 class _ClarifyEntry:
@@ -759,13 +757,20 @@ def _join(threads, deadline: float) -> None:
         thread.join(max(0.0, deadline - time.monotonic()))
 
 
-_SESSION_ENDED = "session deleted or cleared"
-
-
 def _cancel_background_reviews(agents, message: str) -> list[threading.Thread]:
     """TAL-897: stop each agent's post-turn memory/skill review fork, which no turn interrupt or release reaches, so a
-    deleted session or a stopping sidecar no longer pays for it. Returns the cancels running side by side for the
-    caller to join; the Agent bounds each one's wait for the fork's acknowledgement."""
+    deleted session or a stopping sidecar no longer pays for it. Each agent first stops forking reviews: the turn
+    finalizer skips one (a turn still running, which a clear does not stop, ends without one), and a review deferred
+    to the idle queue (managed local runtime), including the one a cancelled fork requeues, dispatches into nothing.
+    Returns the cancels running side by side for the caller to join; the Agent bounds each one's wait for the fork's
+    acknowledgement."""
+    unique = {id(agent): agent for agent in agents if agent is not None}
+    for agent in unique.values():
+        try:
+            agent.skip_background_review = True
+            agent._spawn_background_review_now = lambda **_kwargs: None
+        except AttributeError:  # an object without instance attributes forks no reviews
+            pass
     try:
         from agent.background_review import cancel_background_review_for_live_turn
     except ImportError:
@@ -777,7 +782,6 @@ def _cancel_background_reviews(agents, message: str) -> list[threading.Thread]:
         except Exception:  # noqa: BLE001 - teardown continues without it
             log.warning("cancelling a background review failed", exc_info=True)
 
-    unique = {id(agent): agent for agent in agents if agent is not None}
     threads = [threading.Thread(target=cancel, args=(agent,), daemon=True, name="chat-review-cancel") for agent in unique.values()]
     for thread in threads:
         thread.start()
@@ -1387,8 +1391,6 @@ def start(ctx: CallContext, params: dict) -> dict:  # noqa: PLR0915 - one turn, 
                     _RUNS_BY_SESSION.pop(session_id, None)
             # An agent evicted or replaced while this turn held it is released now that the turn is over.
             _release_if_dropped_locked(run.agent, home)
-        if run.session_ended:
-            _join(_cancel_background_reviews([run.agent], _SESSION_ENDED), time.monotonic() + _AGENT_RELEASE_TIMEOUT)
 
 
 def _checkpoint_required() -> bool:
@@ -1620,14 +1622,12 @@ def register(registry) -> None:
         with _AGENT_CACHE_LOCK:
             with _RUNS_LOCK:
                 run = _RUNS.get(_RUNS_BY_SESSION.get(session_id) or "")
-                if end_session and run is not None:
-                    run.session_ended = True
             if not end_session and run is not None and not run.finished.is_set():
                 return {"evicted": False}
             entry = _AGENT_CACHE.pop(session_id, None)
             _release_agents_locked([entry] if entry else [])
         if end_session:
-            cancels = _cancel_background_reviews([entry and entry[0], run and run.agent], _SESSION_ENDED)
+            cancels = _cancel_background_reviews([entry and entry[0], run and run.agent], "session deleted or cleared")
             _join(cancels, time.monotonic() + _AGENT_RELEASE_TIMEOUT)
             try:
                 from tools.approval import clear_session

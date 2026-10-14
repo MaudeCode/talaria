@@ -230,8 +230,8 @@ def test_profile_deletion_cancels_that_profiles_background_reviews_before_removi
     assert seen == {"cancels": [("cancel_review", "alpha-chat", "profile deleted")]}
 
 
-def test_clearing_a_session_mid_turn_cancels_the_review_its_turn_starts_on_ending(monkeypatch) -> None:
-    """The server clears a session without stopping its turn; the Agent forks that turn's review as it returns."""
+def test_clearing_a_session_mid_turn_stops_its_agent_forking_a_review(monkeypatch) -> None:
+    """The server clears a session without stopping its turn; the Agent would fork that turn's review as it returns."""
     _setup(monkeypatch)
     _reviews(monkeypatch)
     gate = threading.Event()
@@ -251,9 +251,9 @@ def test_clearing_a_session_mid_turn_cancels_the_review_its_turn_starts_on_endin
     assert started.wait(5)
     registry.methods["chat.evict_agent"](Ctx(), {"session_id": "cleared", "clear_session": True})
     assert _cancels() == [("cancel_review", "cleared", "session deleted or cleared")]
+    assert BlockingAgent.instances[-1].skip_background_review is True
     gate.set()
     worker.join(5)
-    assert _cancels() == [("cancel_review", "cleared", "session deleted or cleared")] * 2
 
 
 def test_a_turn_ending_without_a_clear_keeps_its_review(monkeypatch) -> None:
@@ -264,6 +264,7 @@ def test_a_turn_ending_without_a_clear_keeps_its_review(monkeypatch) -> None:
     chat.register(registry)
     registry.methods["chat.evict_agent"](Ctx(), {"session_id": "kept"})
     assert _cancels() == []
+    assert not hasattr(MemoryAgent.instances[-1], "skip_background_review")
 
 
 def test_shutdown_releases_an_agent_a_running_turn_caches_after_the_first_eviction(monkeypatch) -> None:
