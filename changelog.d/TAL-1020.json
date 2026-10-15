@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Deleted chats clear their finished tasks from Live Activities after interrupted delivery or a Web restart.",
+      "highlight": false,
+      "components": ["web"]
+    }
+  ]
+}
