@@ -572,12 +572,13 @@ def _has_retained_runtime_history(conn, records: list[dict], removed_ids: list[s
         for child in records:
             parent = by_id.get(child["parent_id"])
             if parent and (child['id'] in targets or parent['id'] in targets):
-                # Continuations may inherit markers naming an older ancestor, rather than this edge's parent.
-                edge = {**child, **{k: None for k in ('branched_from', 'delegate_from', 'reset_from') if child[k] != parent['id']}}
+                # Only markers actually copied from this parent are known to be inherited.
+                edge = {**child, **{k: None for k in ('branched_from', 'delegate_from', 'reset_from') if child[k] == parent[k]}}
                 if _is_continuation(parent, edge):
                     connected.update((parent['id'], child['id']))
-            if child['delegate_from'] in targets or (child['source'] == 'subagent' and child['parent_id'] in targets
-                    and child['model_config_known'] and child['branched_from'] is None):
+            if child['branched_from'] is None and child['reset_from'] is None and (child['delegate_from'] in targets
+                    or (child['delegate_from'] is None and child['source'] == 'subagent' and child['parent_id'] in targets
+                        and child['model_config_known'])):
                 connected.add(child['id'])
         if connected.issubset(targets):
             break

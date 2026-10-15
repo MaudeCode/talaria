@@ -42,15 +42,18 @@ def _rows(home, sql: str) -> list:
         return [row[0] for row in db.execute(sql).fetchall()]
 
 
+def _load_retained_runtime(home):
+    data = json.loads((Path(__file__).parent / 'fixtures/terminal-runtime.json').read_text())
+    with closing(sqlite3.connect(home / 'state.db')) as db:
+        db.executescript('\n'.join(data['sql']))
+
+
 @pytest.mark.skipif(AGENT_DIR is None or (AGENT_DIR / 'hermes_state_mutation_retirement.py').exists(), reason='requires a legacy Agent without canonical retirement')
 @pytest.mark.parametrize('target', ['cli-root', 'cli-tip', 'worker-child', 'worker-only-parent', 'reset', 'compressed', 'empty', 'multiple', 'malformed'])
 def test_legacy_agent_refuses_retained_runtime_history(hermes_home, target):
     """Real v0.22.1 writes survive deletion attempts by an unmodified older/candidate Agent."""
-    fixture_dir = Path(__file__).parent / 'fixtures'
     if target.startswith(('cli-', 'worker-')):
-        data = json.loads((fixture_dir / 'terminal-runtime.json').read_text())
-        with closing(sqlite3.connect(hermes_home / 'state.db')) as db:
-            db.executescript('\n'.join(data['sql']))
+        _load_retained_runtime(hermes_home)
         sid = target
     else:
         _agent(hermes_home, 'pass')
@@ -93,6 +96,31 @@ def test_legacy_agent_refuses_retained_runtime_history(hermes_home, target):
         assert _delete(proc, hermes_home, 'fresh-legacy') == {'ok': True}
     finally:
         proc.close()
+
+
+@pytest.mark.skipif(AGENT_DIR is None or (AGENT_DIR / 'hermes_state_mutation_retirement.py').exists(), reason='requires a legacy Agent without canonical retirement')
+@pytest.mark.parametrize('marker', ['_branched_from', '_delegate_from', '_reset_from'])
+@pytest.mark.parametrize('source', ['cli', 'subagent'])
+def test_legacy_deletion_keeps_mismatched_marker_history_separate(hermes_home, marker, source):
+    _load_retained_runtime(hermes_home)
+    _agent(hermes_home, f'''
+        db.create_session('separate-parent', source={source!r})
+        db.end_session('separate-parent', 'compression')
+        db._execute_write(lambda conn: conn.execute(
+            "UPDATE sessions SET parent_session_id=?, source=?, model_config=?, started_at=(SELECT ended_at FROM sessions WHERE id='separate-parent') WHERE id=?",
+            ('separate-parent', {source!r}, '{{"{marker}":"another-owner"}}', 'cli-root')))
+    ''')
+    with closing(sqlite3.connect(hermes_home / 'state.db')) as db:
+        before = {table: db.execute(f'SELECT * FROM {table}').fetchall() for table in ('session_admissions', 'worker_executions', 'worker_receipts')}
+    proc = SidecarProcess(hermes_home)
+    try:
+        result = proc.result('state_db.delete_cli_session', {'profile_home': str(hermes_home), 'session_id': 'separate-parent', 'include_compression_lineage': True})
+        assert result == {'ok': True, 'deleted_ids': ['separate-parent']}
+    finally:
+        proc.close()
+    assert 'cli-root' in _rows(hermes_home, 'SELECT id FROM sessions')
+    with closing(sqlite3.connect(hermes_home / 'state.db')) as db:
+        assert {table: db.execute(f'SELECT * FROM {table}').fetchall() for table in before} == before
 
 
 def _delete(proc: SidecarProcess, home, session_id: str, *, lineage: bool = False) -> dict:
