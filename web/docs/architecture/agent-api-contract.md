@@ -99,6 +99,21 @@ budget demonstrated by v0.22.1. A candidate with a deadline finding must not
 enter `agent_support.json` or become the active pin. Repairing an external Agent
 regression is separate work; the gate does not patch or vendor that Agent.
 
+The same probe observes structural compression backoff with a real compressor
+and turn-start preflight. After a two-message structural no-op, unchanged
+history stays blocked, while growth to ten messages must rearm compression
+when the baseline proves that guarantee. Synthetic clocks and token counts
+also check expiry, completed-compaction clearing, and a summary-failure
+cooldown that remains active even after history growth. The compression
+callback records admission without invoking a provider. The receipt's
+`compressionBackoff` records the baseline identity and both observations,
+and a regression fails with a named case before promotion. Release images
+must reproduce the source observations.
+
+Supported v0.21.7 and v0.22.0 explicitly retain their historical growth block;
+v0.22.1 proves rearming. The exact v0.22.2 candidate loses that guarantee and
+fails the `grown` case. The gate changes neither Agent code nor the pin.
+
 The compatibility gate proves Talaria's existing calls still work; it cannot see
 new Agent capabilities. For what a release or `main` SHA adds, modifies,
 deprecates or removes, run the

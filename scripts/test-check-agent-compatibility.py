@@ -36,6 +36,19 @@ def approval_report(relative_gate=True):
     } for tool in ("write", "edit") for path in ("absolute", "relative") for decision in ("deny", "allow")}
 
 
+def compression_report(growth=True):
+    return {
+        "structuralNoOp": {"unchanged": True, "reason": "structural_backoff:300", "ineffectiveCount": 0},
+        "unchanged": {"compressionCalls": 0, "blockedReasons": ["structural_backoff:300"]},
+        "grown": {"compressionCalls": int(growth), "blockedReasons": [] if growth else ["structural_backoff:300"]},
+        "expired": {"compressionCalls": 1, "blockedReasons": []},
+        "success": {"shouldCompress": True, "blockReason": None},
+        "failureUnchanged": {"compressionCalls": 0, "blockedReasons": ["cooldown:120"]},
+        "failureGrown": {"compressionCalls": 0, "blockedReasons": ["cooldown:120"]},
+        "failureExpired": {"compressionCalls": 1, "blockedReasons": []},
+    }
+
+
 class FakeTools:
     """Answers the checker's subprocesses and records what it ran."""
 
@@ -45,6 +58,7 @@ class FakeTools:
         self.requires_python = ">=3.11, <3.14"
         self.sidecar_failures = 0
         self.approval_reports = {}
+        self.compression_reports = {}
         self.probe_findings = {}
         self.probe_revisions = []
         self.published = {"draft": False, "prerelease": False}
@@ -73,6 +87,7 @@ class FakeTools:
             self.probe_revisions.append(kwargs["env"].get("TALARIA_AGENT_PROBE_REVISION"))
             findings = self.probe_findings.get(version, [])
             Path(report).write_text(json.dumps({"sshConfigApproval": self.approval_reports.get(version, approval_report()),
+                                               "compressionBackoff": self.compression_reports.get(version, compression_report()),
                                                "checks": [], "findings": findings}))
             if findings:
                 raise subprocess.CalledProcessError(1, command)
@@ -229,7 +244,8 @@ class CheckerTests(unittest.TestCase):
             "kind": "supported", **{key: RELEASES[0][key] for key in checker.IDENTITY}, "webRevision": "e" * 40,
             "python": "3.13.7", "tests": {"passed": 39, "failed": 0, "skipped": 1}, "imageVerified": True,
             "result": "success", "diagnostics": "result.junit.xml",
-            "sshConfigApproval": {"observations": approval_report()}, "agentProbe": {"checks": [], "findings": []}})
+            "sshConfigApproval": {"observations": approval_report()},
+            "compressionBackoff": {"observations": compression_report()}, "agentProbe": {"checks": [], "findings": []}})
         # The release tag lands as a local tag so git-derived Agent versions can resolve it.
         self.assertEqual(self.tools.refspec, "+refs/tags/v2026.9.14:refs/tags/v2026.9.14")
         probe = next(command for command in self.tools.commands if command[-2:] == [str(self.root / "releases/agent_probe.py"), "0.21.3"])
@@ -342,6 +358,57 @@ class CheckerTests(unittest.TestCase):
         self.assertEqual(contract["candidate"]["write/relative/deny"],
                          {"gateCalls": 0, "mutated": True, "expectedContent": True})
         self.assertIn("write/relative/deny", self.last["failure"])
+
+    def test_candidate_rejects_compression_growth_regression_with_receipt(self):
+        self.tools.compression_reports[CANDIDATE["version"]] = compression_report(growth=False)
+        with self.assertRaisesRegex(RuntimeError, "compression backoff failed: grown"):
+            self.receipt("--identity", json.dumps(CANDIDATE), "--skip-docker", "--skip-sidecar-tests")
+        self.assertEqual(self.last["result"], "failure")
+        contract = self.last["compressionBackoff"]
+        self.assertEqual(contract["baseline"]["sourceRevision"], RELEASES[-1]["sourceRevision"])
+        self.assertEqual(contract["candidate"]["grown"]["compressionCalls"], 0)
+
+    def test_compression_receipt_survives_another_probe_failure(self):
+        self.tools.compression_reports[CANDIDATE["version"]] = compression_report(growth=False)
+        findings = [{"name": "mcp_execution_deadline", "case": "explicit/sequential"}]
+        self.tools.probe_findings[CANDIDATE["version"]] = findings
+        with self.assertRaises(Exception) as failure:
+            self.receipt("--identity", json.dumps(CANDIDATE), "--skip-docker", "--skip-sidecar-tests")
+        self.assertIsInstance(failure.exception, RuntimeError)
+        self.assertRegex(str(failure.exception), "compression backoff failed: grown")
+        self.assertEqual(self.last["compressionBackoff"]["candidate"]["grown"]["compressionCalls"], 0)
+        self.assertEqual(self.last["agentProbe"]["findings"], findings)
+
+    def test_each_compression_transition_is_enforced(self):
+        for case in compression_report():
+            with self.subTest(case=case):
+                report = compression_report()
+                report[case] = {"compressionCalls": 99}
+                with self.assertRaisesRegex(RuntimeError, case):
+                    checker.validate_compression_backoff(report, baseline=compression_report())
+                del report[case]
+                with self.assertRaisesRegex(RuntimeError, case):
+                    checker.validate_compression_backoff(report)
+
+    def test_historical_compression_expectations_do_not_weaken_candidates(self):
+        for version in ("0.21.7", "0.22.0"):
+            checker.validate_compression_backoff(compression_report(growth=False), supported_version=version)
+            with self.assertRaisesRegex(RuntimeError, "grown"):
+                checker.validate_compression_backoff(compression_report(), supported_version=version)
+        with self.assertRaisesRegex(RuntimeError, "grown"):
+            checker.validate_compression_backoff(compression_report(growth=False), supported_version="0.22.1")
+        checker.validate_compression_backoff(compression_report(), baseline=compression_report(growth=False))
+
+    def test_broken_compression_baseline_cannot_authorize_candidate(self):
+        self.tools.compression_reports[RELEASES[-1]["version"]] = compression_report(growth=False)
+        with self.assertRaisesRegex(RuntimeError, "compression backoff failed: grown"):
+            self.receipt("--identity", json.dumps(CANDIDATE), "--skip-docker", "--skip-sidecar-tests")
+        self.assertNotIn("candidate", self.last["compressionBackoff"])
+
+    def test_release_image_must_reproduce_compression_observations(self):
+        self.receipt("--release", RELEASES[-1]["releaseTag"])
+        run = next(command for command in self.tools.ran("docker") if command[:2] == ["docker", "run"])
+        self.assertIn("TALARIA_AGENT_COMPRESSION_EXPECTED=" + json.dumps(compression_report()), run)
 
     def test_each_write_edit_path_and_approval_outcome_is_enforced(self):
         for case in approval_report():
