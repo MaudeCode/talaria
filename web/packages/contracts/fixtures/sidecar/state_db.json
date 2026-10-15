@@ -72,7 +72,10 @@
         "session_id": "missing"
       },
       "result": {
-        "ok": true
+        "ok": true,
+        "deleted_ids": [
+          "missing"
+        ]
       }
     }
   ]

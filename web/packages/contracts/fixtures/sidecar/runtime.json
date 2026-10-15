@@ -9,11 +9,11 @@
         "python": "<python>",
         "python_version": "3.14.7",
         "agent_dir": "<agent>",
-        "agent_revision": "e06df9c2eae6901f4c88f464e0ae6e753c0428b8",
-        "agent_version": "0.22.0",
-        "pinned_revision": "e06df9c2eae6901f4c88f464e0ae6e753c0428b8",
-        "pinned_version": "0.22.0",
-        "pinned_image": "docker.io/nousresearch/hermes-agent@sha256:c69536a39e885b8943329bda68cdf44492458b96aa74a212239bde9d2aeb406a",
+        "agent_revision": "297552a9d646119871391d202509822cd86330df",
+        "agent_version": "0.22.1",
+        "pinned_revision": "297552a9d646119871391d202509822cd86330df",
+        "pinned_version": "0.22.1",
+        "pinned_image": "docker.io/nousresearch/hermes-agent@sha256:861c9756ed6c558530c73d5c27860343b00c0d5efd6997a1d8ec6416c8a2b485",
         "compatible": true,
         "stale": false,
         "update_state": "unverified",
@@ -29,11 +29,11 @@
         "python": "<python>",
         "python_version": "3.14.7",
         "agent_dir": "<agent>",
-        "agent_revision": "e06df9c2eae6901f4c88f464e0ae6e753c0428b8",
-        "agent_version": "0.22.0",
-        "pinned_revision": "e06df9c2eae6901f4c88f464e0ae6e753c0428b8",
-        "pinned_version": "0.22.0",
-        "pinned_image": "docker.io/nousresearch/hermes-agent@sha256:c69536a39e885b8943329bda68cdf44492458b96aa74a212239bde9d2aeb406a",
+        "agent_revision": "297552a9d646119871391d202509822cd86330df",
+        "agent_version": "0.22.1",
+        "pinned_revision": "297552a9d646119871391d202509822cd86330df",
+        "pinned_version": "0.22.1",
+        "pinned_image": "docker.io/nousresearch/hermes-agent@sha256:861c9756ed6c558530c73d5c27860343b00c0d5efd6997a1d8ec6416c8a2b485",
         "compatible": true,
         "stale": false,
         "update_state": "unverified",
@@ -46,7 +46,7 @@
       "params": {},
       "result": {
         "current": true,
-        "agent_revision": "e06df9c2eae6901f4c88f464e0ae6e753c0428b8"
+        "agent_revision": "297552a9d646119871391d202509822cd86330df"
       }
     }
   ],
