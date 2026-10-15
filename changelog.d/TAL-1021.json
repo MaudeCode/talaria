@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Recovered background agent results wake their parent chat once and keep unknown outcomes accurate.",
+      "highlight": false,
+      "components": ["web"]
+    }
+  ]
+}

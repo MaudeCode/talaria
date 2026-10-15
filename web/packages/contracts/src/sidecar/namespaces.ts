@@ -411,7 +411,7 @@ export const WRITE_APPROVAL_METHODS = {
   'write_approval.approve': { params: WriteApprovalParams, result: WriteApprovalResult },
   'write_approval.reject': { params: WriteApprovalParams, result: WriteApprovalResult },
 } as const
-export const ProcessEventSchema = z.object({ process_id: z.string(), consumed: z.boolean(), type: z.string().optional(), session_key: z.string().optional(), origin_ui_session_id: z.string().optional(), child_process: z.boolean().optional() }).catchall(Json)
+export const ProcessEventSchema = z.object({ process_id: z.string(), consumed: z.boolean(), type: z.string().optional(), session_key: z.string().optional(), origin_ui_session_id: z.string().optional(), child_process: z.boolean().optional(), reconciliation_profile_home: z.string().optional() }).catchall(Json)
 export const PROCESS_METHODS = {
   'process.drain': { params: ProfileHomeParams.extend({ max_events: z.number().int().positive().optional() }), result: z.object({ events: z.array(ProcessEventSchema) }) },
   /** TAL-533: re-adopt the base home's and every named profile's checkpointed background processes in a fresh sidecar. */
@@ -421,7 +421,7 @@ export const PROCESS_METHODS = {
   /** TAL-532: the subset the agent already holds from its own turn (consumed via wait/log, or poll-observed). */
   'process.consumed': { params: z.object({ process_ids: z.array(z.string().min(1)) }), result: z.object({ consumed: z.array(z.string()) }) },
   /** TAL-459: the Agent's durable delivery ledger. A null claim means another consumer delivered (or holds) it; "" means nothing durable to acknowledge. */
-  'process.claim_delivery': { params: ProfileHomeParams.extend({ event: Loose, consumer: z.string().min(1) }), result: z.object({ claim_id: z.string().nullable() }) },
+  'process.claim_delivery': { params: ProfileHomeParams.extend({ event: Loose, consumer: z.string().min(1) }), result: z.object({ claim_id: z.string().nullable(), retryable: z.boolean().optional() }) },
   'process.complete_delivery': { params: ProfileHomeParams.extend({ event: Loose, claim_id: z.string() }), result: Ok },
   'process.release_delivery': { params: ProfileHomeParams.extend({ event: Loose, claim_id: z.string() }), result: Ok },
   /** Hands back a claim the busy target never admitted, without spending one of the Agent's delivery attempts. */

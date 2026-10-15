@@ -29,6 +29,14 @@ def test_handshake_rejects_another_rpc_version(sidecar: SidecarProcess) -> None:
 
 
 @requires_agent
+def test_handshake_rejects_pre_receipt_delivery_protocol(sidecar: SidecarProcess) -> None:
+    message, _ = sidecar.call("runtime.handshake", {"rpc_version": 37})
+    assert "error" in message, "pre-receipt servers must not admit reconciled deliveries"
+    assert message["error"]["data"]["condition"] == "sidecar_rpc_version_mismatch"
+    assert sidecar.close() == 3
+
+
+@requires_agent
 def test_status_before_handshake_reports_nothing_loaded(sidecar: SidecarProcess) -> None:
     result = sidecar.result("runtime.status")
     assert result["compatible"] is False

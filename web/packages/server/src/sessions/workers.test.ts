@@ -1,4 +1,4 @@
-import { appendFileSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, utimesSync, writeFileSync, existsSync } from 'node:fs'
+import { appendFileSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, statSync, utimesSync, writeFileSync, existsSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
@@ -13,6 +13,7 @@ import { configFingerprint, McpHealthProber, probeServer } from '../tools/mcp-he
 import { agentHealth, processStartTime, remoteGatewayBaseUrl, runtimeStatusIsFresh } from '../tools/health.js'
 import { RunJournal } from './journal.js'
 import { str } from '../util.js'
+import { withBackgroundUpdates } from './background-updates.js'
 
 type Json = Record<string, unknown>
 const json = async (res: Response): Promise<Json> => (await res.json()) as Json
@@ -209,10 +210,10 @@ describe('async delegation delivery claims (TAL-459)', () => {
   })
 
   it('hands the claim back when the wakeup turn cannot start, so the row stays pending', async () => {
-    const sid = await newSid()
     const state = ledger()
     // A busy session (409) never admitted the delivery, so it costs no attempt; a failed start (500) spends one.
     for (const [status, handBack] of [[409, 'defer'], [500, 'release']] as const) {
+      const sid = await newSid()
       state.calls.length = 0
       const drain = drainWith(() => ({ _status: status }))
       expect(await drain.processOne(delegation(sid, `deleg_${String(status)}`))).toBe(true)
@@ -220,6 +221,7 @@ describe('async delegation delivery claims (TAL-459)', () => {
       expect(state.delivered.has(`deleg_${String(status)}`)).toBe(false)
       expect(drain.deferredCount(sid)).toBe(1)
       drain.stop()
+      s.deps.sessionStore.deleteFiles(sid)
     }
   })
 
@@ -1517,6 +1519,26 @@ describe('a Stop holds automatic turns until the next user message (TAL-899)', (
     await settled()
   }
 
+  it.each(['load', 'save'] as const)('still interrupts when the Stop hold cannot %s', async (operation) => {
+    const sid = await newSid()
+    stoppableThenAnswer()
+    const stream = await startAndStop(sid)
+    const before = sidecar.calls.filter((call) => call.method === 'chat.interrupt').length
+    const spy = vi.spyOn(s.deps.sessionStore, operation === 'load' ? 'get' : 'save').mockImplementation(() => { throw new Error('synthetic storage failure') })
+    try {
+      const outcome = await s.deps.turns.cancel(stream).catch(() => null)
+      const after = sidecar.calls.filter((call) => call.method === 'chat.interrupt').length
+      expect(after - before, 'Stop must reach the Agent despite a failed durable hold write').toBe(1)
+      expect(outcome).toMatchObject({ cancelled: true })
+      expect(s.deps.turns.automaticTurnsHeld(sid)).toBe(true)
+    } finally {
+      spy.mockRestore()
+      await s.deps.turns.cancel(stream)
+      await s.deps.turns.finished(stream)
+      await settled()
+    }
+  })
+
   it('a completion deferred during a stopped turn waits for the next user turn to end', async () => {
     const sid = await newSid()
     stoppableThenAnswer()
@@ -1584,4 +1606,204 @@ describe('a Stop holds automatic turns until the next user message (TAL-899)', (
     await settled()
     expect(await held(sid)).toBe(false)
   })
+})
+
+describe('durable parent admission for delivered delegation notifications (TAL-1021)', () => {
+  it('admits exactly once across drain restart and persists the receipt with the pending turn', async () => {
+    const sidecar = new FakeSidecar()
+    const s = await bootTestServer({ sidecar })
+    let restart: TestServer | undefined
+    let release = (): void => undefined
+    try {
+      const sid = String(((await json(await post(s, '/api/session/new', {}))).session as Json).session_id)
+      const session = s.deps.sessionStore.get(sid)
+      session.messages = [{ role: 'user', content: 'dispatch work' }]
+      s.deps.sessionStore.save(session)
+      const event = { type: 'async_delegation', process_id: 'deleg_unknown', delegation_id: 'deleg_unknown', origin_ui_session_id: sid, status: 'unknown', error: 'owner exited; outcome unknown', consumed: false, reconciliation_profile_home: s.state }
+      // The sidecar verified the typed delivered notification. No global ledger claim is reopened.
+      sidecar.respond('process.claim_delivery', () => ({ claim_id: '' }))
+      sidecar.respond('process.format_notification', () => ({ text: '[Delegation deleg_unknown: outcome unknown]' }))
+      const starts: string[] = []
+      sidecar.respond('chat.start', (params) => {
+        starts.push(str(params.user_message))
+        return new Promise((resolve) => { release = () => { resolve(completed('Handled.')) } })
+      })
+      await Promise.all([s.deps.completions.processOne(event), s.deps.completions.processOne(event)])
+      await vi.waitFor(() => { expect(starts).toHaveLength(1) })
+      const disk = JSON.parse(readFileSync(s.deps.sessionStore.pathFor(sid), 'utf8')) as Json
+      expect(disk.completion_acceptances, 'admission receipt is durable before the worker finishes').toEqual({
+        [JSON.stringify([realpathSync(s.state), 'deleg_unknown'])]: disk.active_stream_id,
+      })
+      release()
+      await s.deps.turns.finished(str(disk.active_stream_id))
+      restart = await bootTestServer({ sidecar, env: { HERMES_HOME: s.state, HERMES_WEBUI_STATE_DIR: s.state, HERMES_WEBUI_DEFAULT_WORKSPACE: join(s.state, 'workspace') } })
+      await restart.deps.completions.processOne(event)
+      expect(starts).toHaveLength(1)
+    } finally {
+      release()
+      await restart?.close()
+      await s.close()
+    }
+  })
+
+  it('uses the authoritative unknown result instead of the Agent completed_count shortcut', async () => {
+    const sidecar = new FakeSidecar()
+    const s = await bootTestServer({ sidecar })
+    try {
+      const sid = String(((await json(await post(s, '/api/session/new', {}))).session as Json).session_id)
+      const session = s.deps.sessionStore.get(sid)
+      const notification = { role: 'user', content: 'Recovered delegation result', display_kind: 'async_delegation_complete', display_metadata: { delegation_id: 'deleg_unknown', completed_count: 1, failed_count: 0 } }
+      session.messages = [notification]
+      session.pre_compression_snapshot = true
+      s.deps.sessionStore.save(session)
+      sidecar.respond('process.format_notification', () => ({ text: '[Outcome unknown]' }))
+      await s.deps.completions.processOne({ type: 'async_delegation', process_id: 'deleg_unknown', delegation_id: 'deleg_unknown', origin_ui_session_id: sid, consumed: false, status: 'unknown', error: 'owner exited' })
+      const rows = withBackgroundUpdates(session.messages, session)
+      expect(rows[0]).toMatchObject({ _background_update: { attention: true, lines: [{ kind: 'other', status: 'notice', label: 'owner exited' }] } })
+      expect((JSON.parse(readFileSync(join(s.deps.sessionStore.sessionDir, '_wakeup_held.json'), 'utf8')) as Json)[sid]).toHaveLength(1)
+    } finally { await s.close() }
+  })
+
+  it('keeps a claimed result pending and never crosses profiles during reconciliation', async () => {
+    const sidecar = new FakeSidecar()
+    const s = await bootTestServer({ sidecar })
+    try {
+      const sid = String(((await json(await post(s, '/api/session/new', {}))).session as Json).session_id)
+      const session = s.deps.sessionStore.get(sid)
+      session.messages = [{ role: 'user', content: 'dispatch' }]
+      s.deps.sessionStore.save(session)
+      const event = { type: 'async_delegation', process_id: 'same-id', delegation_id: 'same-id', origin_ui_session_id: sid, consumed: false }
+      sidecar.respond('process.format_notification', () => ({ text: '[Result]' }))
+      let claims = 0
+      sidecar.respond('process.claim_delivery', () => { claims += 1; return { claim_id: null, retryable: true } })
+      expect(await s.deps.completions.processOne({ ...event, reconciliation_profile_home: join(s.state, 'profiles', 'foreign') })).toBe(false)
+      expect(claims).toBe(0)
+      await s.deps.completions.processOne(event)
+      expect(claims).toBe(1)
+      expect(s.deps.completions.deferredCount(sid)).toBe(1)
+      expect(session.active_stream_id).toBeNull()
+      sidecar.respond('process.claim_delivery', () => ({ claim_id: '' }))
+      await s.deps.completions.drainDeferred(sid)
+      expect(session.active_stream_id).toBeTruthy()
+      await s.deps.turns.finished(session.active_stream_id!)
+    } finally { await s.close() }
+  })
+
+  it('preserves a Stop hold across restart and releases the durable result after a user turn', async () => {
+    const sidecar = new FakeSidecar()
+    const s = await bootTestServer({ sidecar })
+    let restart: TestServer | undefined
+    try {
+      const sid = String(((await json(await post(s, '/api/session/new', {}))).session as Json).session_id)
+      sidecar.respond('chat.start', (_params, emit, opts) => new Promise((resolve) => {
+        emit({ event: 'token', data: { text: 'working' } })
+        opts.signal?.addEventListener('abort', () => { resolve({ ...completed(''), status: 'cancelled' }) })
+      }))
+      const first = str((await json(await post(s, '/api/chat/start', { session_id: sid, message: 'dispatch' }))).stream_id)
+      await s.sse(`/api/chat/stream?stream_id=${first}`, (f) => f.event === 'token')
+      await s.deps.turns.cancel(first)
+      await s.deps.turns.finished(first)
+      sidecar.respond('chat.start', (params) => ({ ...completed('Handled.'), messages: [{ role: 'user', content: str(params.user_message) }, { role: 'assistant', content: 'Handled.' }] }))
+      expect(s.deps.turns.automaticTurnsHeld(sid)).toBe(true)
+      sidecar.respond('process.format_notification', () => ({ text: '[Result deleg_held]' }))
+      sidecar.respond('process.claim_delivery', () => ({ claim_id: '' }))
+      await s.deps.completions.processOne({ type: 'async_delegation', process_id: 'deleg_held', delegation_id: 'deleg_held', origin_ui_session_id: sid, consumed: false })
+      restart = await bootTestServer({ sidecar, env: { HERMES_HOME: s.state, HERMES_WEBUI_STATE_DIR: s.state, HERMES_WEBUI_DEFAULT_WORKSPACE: join(s.state, 'workspace') } })
+      await restart.deps.completions.drainOnce()
+      await restart.deps.completions.drainDeferred(sid)
+      expect(restart.deps.turns.automaticTurnsHeld(sid)).toBe(true)
+      expect(restart.deps.sessionStore.get(sid).active_stream_id).toBeNull()
+      const userResponse = await json(await post(restart, '/api/chat/start', { session_id: sid, message: 'continue' }))
+      expect(userResponse.stream_id, JSON.stringify(userResponse)).toBeTruthy()
+      const user = str(userResponse.stream_id)
+      await restart.deps.turns.finished(user)
+      await vi.waitFor(() => { expect(restart!.deps.sessionStore.get(sid).extra.completion_acceptances).toBeDefined() })
+      const receipts = restart.deps.sessionStore.get(sid).extra.completion_acceptances as Json
+      expect(Object.keys(receipts)).toEqual([JSON.stringify([realpathSync(s.state), 'deleg_held'])])
+      await restart.deps.turns.finished(str(Object.values(receipts)[0]))
+    } finally { await restart?.close(); await s.close() }
+  })
+
+  it('finishes a saved admission handshake without rerunning its parent turn', async () => {
+    const sidecar = new FakeSidecar()
+    const s = await bootTestServer({ sidecar })
+    try {
+      const session = s.deps.sessionStore.newSession()
+      session.messages = [{ role: 'user', content: 'dispatch' }]
+      session.extra.completion_acceptances = { [JSON.stringify([realpathSync(s.state), 'deleg_ack'])]: 'accepted-before-crash' }
+      s.deps.sessionStore.save(session)
+      sidecar.respond('process.format_notification', () => ({ text: '[Result deleg_ack]' }))
+      let acknowledgements = 0
+      sidecar.respond('process.claim_delivery', () => ({ claim_id: 'retry-claim' }))
+      sidecar.respond('process.complete_delivery', () => { acknowledgements += 1; return { ok: true } })
+      let starts = 0
+      sidecar.respond('chat.start', () => { starts += 1; return completed('unexpected') })
+      await s.deps.completions.processOne({ type: 'async_delegation', process_id: 'deleg_ack', delegation_id: 'deleg_ack', origin_ui_session_id: session.session_id, consumed: false })
+      expect(acknowledgements).toBe(1)
+      expect(starts).toBe(0)
+      expect((JSON.parse(readFileSync(join(s.deps.sessionStore.sessionDir, '_wakeup_held.json'), 'utf8')) as Json)[session.session_id]).toBeUndefined()
+    } finally { await s.close() }
+  })
+
+  it('recognizes a proven legacy Web turn and keeps identical result text scoped to its owning session', async () => {
+    const sidecar = new FakeSidecar()
+    const s = await bootTestServer({ sidecar })
+    try {
+      const prompt = '[Result deleg_legacy]'
+      sidecar.respond('process.format_notification', () => ({ text: prompt }))
+      sidecar.respond('process.claim_delivery', () => ({ claim_id: '' }))
+      let starts = 0
+      sidecar.respond('chat.start', (params) => { starts += 1; return { ...completed('Handled'), messages: [{ role: 'user', content: str(params.user_message) }, { role: 'assistant', content: 'Handled' }] } })
+      for (const accepted of [true, false]) {
+        const session = s.deps.sessionStore.newSession()
+        session.messages = [{ role: 'user', content: prompt, ...(accepted ? { _source: 'process_wakeup', _turn_id: 'legacy-admission' } : { display_kind: 'async_delegation_complete', display_metadata: { delegation_id: 'deleg_legacy' } }) }]
+        s.deps.sessionStore.save(session)
+        await s.deps.completions.processOne({ type: 'async_delegation', process_id: 'deleg_legacy', delegation_id: 'deleg_legacy', origin_ui_session_id: session.session_id, consumed: false, reconciliation_profile_home: s.state })
+        if (session.active_stream_id) await s.deps.turns.finished(session.active_stream_id)
+        expect(starts).toBe(accepted ? 0 : 1)
+      }
+    } finally { await s.close() }
+  })
+  it.each(['held file', 'session save'] as const)('retries a live delegation automatically after a failed %s', async (failure) => {
+    const sidecar = new FakeSidecar()
+    const s = await bootTestServer({ sidecar })
+    const heldPath = join(s.deps.sessionStore.sessionDir, '_wakeup_held.json')
+    let restore = (): void => undefined
+    let drain: CompletionDrain | undefined
+    try {
+      const session = s.deps.sessionStore.newSession()
+      session.messages = [{ role: 'user', content: 'dispatch' }]
+      s.deps.sessionStore.save(session)
+      const event = { type: 'async_delegation', process_id: 'deleg_retry', delegation_id: 'deleg_retry', origin_ui_session_id: session.session_id, consumed: false }
+      let offered = false
+      sidecar.respond('process.drain', () => { const events = offered ? [] : [event]; offered = true; return { events } })
+      sidecar.respond('process.format_notification', () => ({ text: '[Result deleg_retry]' }))
+      sidecar.respond('process.claim_delivery', () => ({ claim_id: '' }))
+      if (failure === 'held file') {
+        mkdirSync(heldPath)
+        restore = () => { rmSync(heldPath, { recursive: true, force: true }) }
+      } else {
+        const spy = vi.spyOn(s.deps.sessionStore, 'save').mockImplementation(() => { throw new Error('synthetic session write failure') })
+        restore = () => { spy.mockRestore() }
+      }
+      let starts = 0
+      drain = new CompletionDrain({ sidecar: () => sidecar, baseHome: s.state, profileHome: () => s.state, activeProfile: () => 'default', store: s.deps.sessionStore,
+        channels: s.deps.channels, registry: s.deps.registry, startTurn: () => { starts += 1; return { stream_id: 'retry-admitted' } }, now: () => Date.now() / 1000, log: () => undefined })
+      vi.useFakeTimers()
+      const routed = await drain.drainOnce()
+      expect(drain.deferredCount(session.session_id), 'the drained live event remains retained').toBe(1)
+      expect(routed).toBe(1)
+      expect(starts).toBe(0)
+      restore()
+      await vi.advanceTimersByTimeAsync(30_000)
+      expect(starts, 'retry admits the retained result without a user turn or Agent orphan sweep').toBe(1)
+      expect(drain.deferredCount(session.session_id)).toBe(0)
+    } finally {
+      drain?.stop()
+      vi.useRealTimers()
+      restore()
+      await s.close()
+    }
+  })
+
 })

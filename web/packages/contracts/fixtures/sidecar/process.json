@@ -111,6 +111,20 @@
       "result": {
         "claim_id": ""
       }
+    },
+    {
+      "params": {
+        "profile_home": "<home>",
+        "event": {
+          "type": "async_delegation",
+          "delegation_id": "deleg_claimed"
+        },
+        "consumer": "webui"
+      },
+      "result": {
+        "claim_id": null,
+        "retryable": true
+      }
     }
   ],
   "process.complete_delivery": [

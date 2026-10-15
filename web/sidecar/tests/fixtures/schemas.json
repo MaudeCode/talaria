@@ -5099,6 +5099,9 @@
             },
             "child_process": {
               "type": "boolean"
+            },
+            "reconciliation_profile_home": {
+              "type": "string"
             }
           },
           "required": [
@@ -5182,6 +5185,9 @@
           "string",
           "null"
         ]
+      },
+      "retryable": {
+        "type": "boolean"
       }
     },
     "required": [

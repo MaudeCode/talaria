@@ -195,3 +195,140 @@ print(json.dumps({'first': first, 'retry': retry, 'repeated': repeated}))
     assert sorted(e["process_id"] for e in result["first"]) == ["deleg_launch", "live-process"]
     assert [e["process_id"] for e in result["retry"]] == ["deleg_named"]
     assert result["repeated"] == []
+
+
+def _seed_typed_delivery(hermes_home):
+    # Reproduce the real transcript-only consumer, not a fabricated delivered flag.
+    _agent(hermes_home, """
+from hermes_state import SessionDB
+db = SessionDB()
+db.create_session('agent-parent', source='api_server')
+ad._persist_dispatch({'delegation_id': 'deleg_unknown', 'dispatched_at': time.time(),
+                      'session_key': 'web-parent', 'origin_ui_session_id': 'web-parent',
+                      'parent_session_id': 'agent-parent', 'origin_session_id': 'agent-parent'})
+""")
+    _agent(hermes_home, """
+import asyncio
+from hermes_state import SessionDB
+from gateway.wake import persist_delegation_delivery
+ad.recover_abandoned_delegations()
+with ad._DB_LOCK, ad._transaction() as conn:
+    event = json.loads(conn.execute("SELECT event_json FROM async_delegations WHERE delegation_id='deleg_unknown'").fetchone()[0])
+class Adapter:
+    def _ensure_session_db(self):
+        return SessionDB()
+claim = ad.claim_event_delivery(event, 'synthetic-transcript-consumer')
+assert claim
+asyncio.run(persist_delegation_delivery(Adapter(), text='Recovered outcome unknown', session_id='agent-parent', evt=event))
+ad.complete_event_delivery(event, claim)
+print(json.dumps(ad.get_durable_delegation('deleg_unknown')))
+""")
+    return hermes_home
+
+
+@pytest.fixture
+def typed_delivery(hermes_home):
+    return _seed_typed_delivery(hermes_home)
+
+
+@requires_agent
+def test_delivered_unknown_notification_is_reconciled_without_reopening_the_agent_ledger(hermes_home, typed_delivery):
+    sidecar = _start(hermes_home)
+    try:
+        events = _drain(sidecar, hermes_home)
+        assert [(e['process_id'], e['origin_ui_session_id'], e['status']) for e in events] == [
+            ('deleg_unknown', 'web-parent', 'unknown'),
+        ], 'typed delivered result must reach the Web admission path'
+        params = {'profile_home': str(hermes_home), 'event': events[0], 'consumer': 'webui'}
+        assert sidecar.result('process.claim_delivery', params)['claim_id'] == ''
+        live = {k: v for k, v in events[0].items() if k != 'reconciliation_profile_home'}
+        assert sidecar.result('process.claim_delivery', {**params, 'event': live})['claim_id'] == ''
+        # Neither the global delivered state nor its attempt budget is reset.
+        row = json.loads(_agent(hermes_home, "print(json.dumps(ad.get_durable_delegation('deleg_unknown')))"))
+        assert row['delivery_state'] == 'delivered'
+        assert row['delivery_attempts'] == 1
+    finally:
+        sidecar.close()
+
+
+@requires_agent
+@pytest.mark.parametrize('alteration', [
+    "DELETE FROM messages",
+    "UPDATE messages SET session_id='other-parent'",
+    "UPDATE messages SET display_kind='hidden'",
+    "UPDATE messages SET display_metadata=json_set(display_metadata, '$.delivery_notice', 'task_failure:0')",
+    "UPDATE async_delegations SET delivery_state='pending', delivery_claim='another-consumer', delivery_claimed_at=strftime('%s','now')",
+    "UPDATE async_delegations SET delivered_at=1",
+])
+def test_reconciliation_requires_current_typed_final_delivery_in_the_exact_parent(hermes_home, typed_delivery, alteration):
+    _agent(hermes_home, "with ad._DB_LOCK, ad._transaction() as conn: conn.execute(sys.argv[2])", alteration)
+    sidecar = _start(hermes_home)
+    try:
+        assert not [e for e in _drain(sidecar, hermes_home) if e.get('reconciliation_profile_home')]
+        forged = {'type': 'async_delegation', 'delegation_id': 'deleg_unknown',
+                  'origin_ui_session_id': 'web-parent', 'reconciliation_profile_home': str(hermes_home.resolve())}
+        assert sidecar.result('process.claim_delivery', {'profile_home': str(hermes_home), 'event': forged, 'consumer': 'webui'})['claim_id'] is None
+    finally:
+        sidecar.close()
+
+
+@requires_agent
+def test_pending_cross_consumer_claim_is_retryable_not_a_delivered_receipt(handshaken, hermes_home):
+    _seed(hermes_home, 'deleg_claimed', 'web-parent')
+    event = {'type': 'async_delegation', 'delegation_id': 'deleg_claimed'}
+    params = {'profile_home': str(hermes_home), 'event': event}
+    assert handshaken.result('process.claim_delivery', {**params, 'consumer': 'another-consumer'})['claim_id']
+    assert handshaken.result('process.claim_delivery', {**params, 'consumer': 'webui'}) == {'claim_id': None, 'retryable': True}
+
+
+@requires_agent
+def test_typed_deliveries_reconcile_in_each_owning_profile_after_sidecar_restart(hermes_home, typed_delivery):
+    named = hermes_home / 'profiles' / 'work'
+    named.mkdir(parents=True)
+    _seed_typed_delivery(named)  # Identical unit/session IDs and text in separate ledgers.
+    for _ in range(2):
+        sidecar = _start(hermes_home)
+        try:
+            sidecar.result('process.recover', {'base_home': str(hermes_home)})
+            events = _drain(sidecar, hermes_home)
+            assert sorted(e['reconciliation_profile_home'] for e in events) == sorted([str(hermes_home.resolve()), str(named.resolve())])
+            for event in events:
+                params = {'profile_home': event['reconciliation_profile_home'], 'event': event, 'consumer': 'webui'}
+                assert sidecar.result('process.claim_delivery', params)['claim_id'] == ''
+                other = str(named if params['profile_home'] == str(hermes_home.resolve()) else hermes_home)
+                assert sidecar.result('process.claim_delivery', {**params, 'profile_home': other})['claim_id'] is None
+            assert _drain(sidecar, hermes_home) == []
+        finally:
+            sidecar.close()
+
+
+@requires_agent
+def test_reconciliation_advances_past_the_first_page_of_accepted_deliveries(hermes_home):
+    _agent(hermes_home, """
+from hermes_state import SessionDB
+db = SessionDB()
+db.create_session('agent-parent', source='api_server')
+# All dispatches precede completion, so normal dispatch pruning cannot reduce the terminal batch.
+for i in range(201):
+    ad._persist_dispatch({'delegation_id': f'deleg_{i:03}', 'dispatched_at': time.time(),
+                          'session_key': 'web-parent', 'origin_ui_session_id': 'web-parent',
+                          'parent_session_id': 'agent-parent', 'origin_session_id': 'agent-parent'})
+for i in range(201):
+    event = {'type': 'async_delegation', 'delegation_id': f'deleg_{i:03}', 'status': 'unknown',
+             'origin_ui_session_id': 'web-parent', 'session_key': 'web-parent',
+             'parent_session_id': 'agent-parent', 'origin_session_id': 'agent-parent'}
+    ad._persist_completion(event, {'status': 'unknown'})
+    db.append_delegation_delivery('agent-parent', 'Synthetic result', {'delegation_id': event['delegation_id']})
+    claim = ad.claim_event_delivery(event, 'synthetic-transcript-consumer')
+    assert claim
+    ad.complete_event_delivery(event, claim)
+""")
+    result = json.loads(_agent(hermes_home, """
+from talaria_sidecar.methods import process
+process._DELIVERY_RECONCILE_INTERVAL_S = 0
+first = process.drain(256)
+second = process.drain(256)
+print(json.dumps({'first': [e['process_id'] for e in first], 'second': [e['process_id'] for e in second]}))
+"""))
+    assert result['first'] == [f'deleg_{i:03}' for i in range(200)]
+    assert result['second'] == ['deleg_200'], 'later deliveries must reach admission even while accepted rows remain eligible'
