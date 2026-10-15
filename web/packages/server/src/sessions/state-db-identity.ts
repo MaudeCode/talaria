@@ -9,12 +9,14 @@ export function stateDbRowId(message: Message): number | null {
 }
 
 /** Direct and absorbed durable identities; text and timestamps are never absorption witnesses. */
-export function stateDbIdentityKeys(message: Message, includeUids = true): string[] {
+export function stateDbIdentityKeys(message: Message, includeUids = true, fallbackGeneration: string | null = null): string[] {
   const keys: string[] = []
+  const generation = '_state_db_generation' in message ? message._state_db_generation : fallbackGeneration
+  const numericKey = (id: number): string => `id:${JSON.stringify([typeof generation === 'string' ? generation : null, id])}`
   const id = stateDbRowId(message)
-  if (id !== null) keys.push(`id:${String(id)}`)
+  if (id !== null) keys.push(numericKey(id))
   for (const absorbed of Array.isArray(message._absorbed_row_ids) ? message._absorbed_row_ids : []) {
-    if (typeof absorbed === 'number' && Number.isFinite(absorbed)) keys.push(`id:${String(absorbed)}`)
+    if (typeof absorbed === 'number' && Number.isFinite(absorbed)) keys.push(numericKey(absorbed))
   }
   // A reused UID does not vouch for an authored edit: the archive reader gives that generation its own row id.
   if (includeUids && message._state_db_authored_change !== true) {

@@ -1,5 +1,5 @@
 import { spawn } from 'node:child_process'
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, realpathSync, renameSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
@@ -51,7 +51,7 @@ describe('absorbed durable identity (TAL-1019)', () => {
       const insert = (uid: string, content: string, timestamp: number) => db.prepare('INSERT INTO messages (session_id, role, content, timestamp, message_uid) VALUES (?, ?, ?, ?, ?)').run(sid, 'user', content, timestamp, uid)
       const absorbedId = Number(insert('absorbed', text, 200).lastInsertRowid)
       const prompt = { role: 'user', content: `Earlier merged prefix\n${text}`, timestamp: 100, _turn_id: 'turn',
-        ...(identity === 'numeric' ? { _absorbed_row_ids: [absorbedId] } : { _absorbed_message_uids: ['absorbed'] }),
+        ...(identity === 'numeric' ? { _absorbed_row_ids: [absorbedId], _state_db_generation: stateDbSessionRead(path, sid).rows[0]!._state_db_generation } : { _absorbed_message_uids: ['absorbed'] }),
         ...(background ? { _source: 'process_wakeup' } : {}) }
       const reply = { role: 'assistant', content: 'Verified the result.', timestamp: 101, _turn_id: 'turn' }
       const session = new Session({ session_id: sid, messages: [prompt, reply], context_messages: [prompt, reply] }, { workspace: s.state, model: null })
@@ -85,6 +85,42 @@ describe('absorbed durable identity (TAL-1019)', () => {
         expect([...(head.messages as Json[]), ...(tail.messages as Json[])].map((m) => m.content)).toEqual(expected)
       }
     } finally { db.close(); await s.close() }
+  })
+
+  it.each([false, true])('preserves reused numeric IDs after replacement with failed boundary read=%s', async (failedBoundary) => {
+    const s = await bootTestServer()
+    const path = join(s.state, 'state.db')
+    const sid = 'absorbed-generation'
+    const create = (content: string, timestamp: number, target = path): void => {
+      const db = createStateDb(target)
+      try {
+        insertSession(db, { id: sid, source: 'webui', started_at: 100 })
+        db.prepare('INSERT INTO messages (session_id, role, content, timestamp) VALUES (?, ?, ?, ?)').run(sid, 'user', content, timestamp)
+      } finally { db.close() }
+    }
+    try {
+      create('absorbed old prompt', 100)
+      const prompt = { role: 'user', content: 'Merged old prompt', timestamp: 90, _absorbed_row_ids: [1] }
+      const reply = { role: 'assistant', content: 'Old answer', timestamp: 101 }
+      const session = new Session({ session_id: sid, messages: [prompt, reply], context_messages: [prompt, reply] }, { workspace: s.state, model: null })
+      s.deps.sessions.markStateDbSeen(session)
+      s.deps.sessionStore.save(session)
+      if (failedBoundary) s.deps.sessions.markStateDbSeen(session, { rows: [], ok: false, idCapable: false, reason: 'synthetic failed read' }, { boundary: true })
+      create('New CLI request', 200, `${path}.new`)
+      renameSync(`${path}.new`, path)
+      const expected = [prompt.content, reply.content, 'New CLI request']
+      expect(s.deps.sessions.mergedTranscript(session).map((m) => m.content)).toEqual(expected)
+      expect(s.deps.sessions.modelContext(session).map((m) => m.content)).toEqual(expected)
+      // Settlement must not rebind the persisted carrier to the replacement's generation.
+      s.deps.sessions.settleStateDb(session, { turnId: 'later', previousContext: [prompt, reply], agentRows: [prompt, reply], startId: 1 })
+      expect(session.messages.map((m) => m.content)).toEqual(expected)
+      s.deps.sessionStore.save(session)
+      s.deps.sessionStore.sessions.delete(sid)
+      for (let reopen = 0; reopen < 2; reopen += 1) {
+        const detail = (await json(await s.get(`/api/session?session_id=${sid}`))).session as Json
+        expect((detail.messages as Json[]).map((m) => m.content)).toEqual(expected)
+      }
+    } finally { await s.close() }
   })
 })
 

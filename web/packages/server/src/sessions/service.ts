@@ -397,7 +397,7 @@ export class SessionService {
    */
   mergedTranscript(s: Session, local: Message[] = s.messages, stateRows: Message[] = this.stateDbRows(s)): Message[] {
     if (!stateRows.length) return local
-    return mergeSessionMessagesAppendOnly(local, stateRows, { truncationWatermark: s.truncation_watermark, compressedWatermark: s.truncation_watermark_compressed, stateDbSeenId: currentStateDbSeenId(s, stateRows) })
+    return mergeSessionMessagesAppendOnly(local, stateRows, { truncationWatermark: s.truncation_watermark, compressedWatermark: s.truncation_watermark_compressed, stateDbSeenId: currentStateDbSeenId(s, stateRows), stateDbGeneration: markedStateDbGeneration(s) })
   }
 
   /**
@@ -406,6 +406,13 @@ export class SessionService {
    * fields are set: the marker holds only while they and the row it names stay as recorded.
    */
   markStateDbSeen(s: Session, read: StateDbRead = this.stateDbRead(s), opts: { boundary?: boolean } = {}): void {
+    // Freeze numeric provenance before replacing the marker, including after a database replacement.
+    const priorGeneration = markedStateDbGeneration(s)
+    if (priorGeneration !== null) {
+      for (const m of [...s.messages, ...s.context_messages]) {
+        if (!('_state_db_generation' in m) && stateDbIdentityKeys(m, false).length) m._state_db_generation = priorGeneration
+      }
+    }
     // A failed read says nothing. A settlement keeps the marker; a boundary drops it (fail closed): it may cut rows the
     // marker still admits without moving a field, and the timestamp rules honour its watermark.
     if (!read.ok) {
@@ -428,21 +435,25 @@ export class SessionService {
    */
   settleStateDb(s: Session, turn: { turnId: string; previousContext: Message[]; agentRows?: Message[] | null; startId?: number | null; read?: StateDbRead }): void {
     const read = turn.read ?? this.stateDbRead(s)
+    const startGeneration = turn.previousContext.findLast((m) => typeof m._state_db_generation === 'string')?._state_db_generation
+    const generation = markedStateDbGeneration(s) ?? (typeof startGeneration === 'string' ? startGeneration : null)
+    const readGeneration = read.rows[0]?._state_db_generation
+    const generationChanged = generation !== null && typeof readGeneration === 'string' && generation !== readGeneration
     const includeUids = read.rows.some((m) => stateDbIdentityKeys(m).some((id) => id.startsWith('uid:')))
-    const identities = (m: Message): string[] => stateDbIdentityKeys(m, includeUids)
+    const identities = (m: Message): string[] => stateDbIdentityKeys(m, includeUids, generation)
     const startedWith = new Set(turn.previousContext.flatMap(identities))
     const wasInContext = (m: Message): boolean => identities(m).some((id) => startedWith.has(id))
-    const earlier = mergeSessionMessagesAppendOnly(s.messages, read.rows.filter(wasInContext), { stateDbSeenId: -1 }).slice(s.messages.length)
+    const earlier = mergeSessionMessagesAppendOnly(s.messages, read.rows.filter(wasInContext), { stateDbSeenId: -1, stateDbGeneration: generation }).slice(s.messages.length)
     const added = new Map<string, number>()
     const agentAdded = withoutRows(turn.agentRows ?? [], turn.previousContext)
     const addedIds = new Set(agentAdded.flatMap(identities))
     for (const m of agentAdded) {
       if (!identities(m).length) added.set(settledIdentity(m), (added.get(settledIdentity(m)) ?? 0) + 1)
     }
-    const ownWorkAfter = turn.agentRows?.length ? null : turn.startId ?? null
+    const ownWorkAfter = turn.agentRows?.length || generationChanged ? null : turn.startId ?? null
     // Without a current marker, the turn's own starting read is the baseline: rows committed after it are judged here.
-    const seenId = currentStateDbSeenId(s, read.rows) ?? turn.startId ?? null
-    const shown = read.rows.length ? mergeSessionMessagesAppendOnly(s.messages, read.rows, { truncationWatermark: s.truncation_watermark, compressedWatermark: s.truncation_watermark_compressed, stateDbSeenId: seenId }) : s.messages
+    const seenId = currentStateDbSeenId(s, read.rows) ?? (generationChanged ? null : turn.startId ?? null)
+    const shown = read.rows.length ? mergeSessionMessagesAppendOnly(s.messages, read.rows, { truncationWatermark: s.truncation_watermark, compressedWatermark: s.truncation_watermark_compressed, stateDbSeenId: seenId, stateDbGeneration: generation }) : s.messages
     const fresh = new Set(shown.slice(s.messages.length))
     // The turn's own rows the merge already matched to their local copies use up their share before any shown row can.
     if (seenId !== null) {
@@ -2249,6 +2260,17 @@ function stateDbMarkKey(s: Session, stateRows: Message[], seenId: number | null)
 function currentStateDbSeenId(s: Session, stateRows: Message[]): number | null {
   const seenId = s.state_db_seen_id
   return seenId !== null && s.state_db_seen_stamp === s.updated_at && s.state_db_seen_boundary === stateDbMarkKey(s, stateRows, seenId) ? seenId : null
+}
+
+/** The last recorded database generation remains the numeric identity's owner when a marker becomes stale. */
+function markedStateDbGeneration(s: Session): string | null {
+  if (!s.state_db_seen_boundary) return null
+  try {
+    const boundary: unknown = JSON.parse(s.state_db_seen_boundary)
+    if (!Array.isArray(boundary) || !Array.isArray(boundary[4])) return null
+    const anchor: unknown[] = boundary[4]
+    return typeof anchor[2] === 'string' ? anchor[2] : null
+  } catch { return null }
 }
 
 function truncationWatermarkFor(messages: unknown[]): number {

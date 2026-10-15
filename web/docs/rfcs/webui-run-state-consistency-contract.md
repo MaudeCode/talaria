@@ -81,6 +81,10 @@ work, so those occurrences cannot become concurrent external rows or consume a
 text match belonging to a separate submission. Databases without UID columns keep
 their existing exact-copy fallback. The reader's UID alias stays internal, and
 archive-proven authored edits still require their own numeric identity.
+Numeric identity includes the database generation. An untagged carrier can use
+the last recorded marker's generation, which settlement preserves on the carrier
+before replacing or clearing that marker. Recreated databases cannot inherit old
+absorbed IDs; durable UIDs can still identify an occurrence across replacement.
 Tool results retain their existing tool-call/timestamp compaction rule; tables
 without UIDs retain the legacy timestamp rule. This requires no Agent changes,
 new database fields, release pins or server-side database writes.

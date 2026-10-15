@@ -943,18 +943,19 @@ export function normalizeAssistantDisplay<T>(message: T): T {
  * sidecar is appended, even one a writer stamped before the newest local row or the watermark but committed later.
  * Direct and absorbed durable identities cover merged Agent prompts even when their text and timestamp changed.
  */
-export function mergeSessionMessagesAppendOnly(sidecar: Message[], state: Message[], opts: { truncationWatermark?: unknown; compressedWatermark?: boolean; stateDbSeenId?: number | null } = {}): Message[] {
+export function mergeSessionMessagesAppendOnly(sidecar: Message[], state: Message[], opts: { truncationWatermark?: unknown; compressedWatermark?: boolean; stateDbSeenId?: number | null; stateDbGeneration?: string | null } = {}): Message[] {
   const watermark = Number(opts.truncationWatermark)
   const hasWatermark = opts.truncationWatermark !== null && opts.truncationWatermark !== undefined && Number.isFinite(watermark)
   if (!state.length) return sidecar
   const ts = (m: Message): number | null => { const n = Number(m.timestamp); return Number.isFinite(n) ? n : null }
   const key = stateDbMessageKey
+  const seenId = opts.stateDbSeenId
+  const generation = opts.stateDbGeneration ?? null
   const includeUids = state.some((m) => stateDbIdentityKeys(m).some((id) => id.startsWith('uid:')))
-  const identities = (m: Message): string[] => stateDbIdentityKeys(m, includeUids)
+  const identities = (m: Message): string[] => stateDbIdentityKeys(m, includeUids, generation)
   const representedIds = new Set(sidecar.flatMap(identities))
   const isRepresented = (m: Message): boolean => identities(m).some((id) => representedIds.has(id))
   const rememberIds = (m: Message): void => { for (const id of identities(m)) representedIds.add(id) }
-  const seenId = opts.stateDbSeenId
   if (typeof seenId === 'number' && Number.isFinite(seenId) && state.some((m) => stateDbRowId(m) !== null)) {
     // A row with durable provenance represents those identities; an unidentified row matches one exact copy.
     const localKeys = new Map<string, number>()

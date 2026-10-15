@@ -378,6 +378,17 @@ describe('absorbed durable identity (TAL-1019)', () => {
     const copy = { role: 'user', content: 'continue', timestamp: 100, _state_db_row_id: 43 }
     expect(mergeSessionMessagesAppendOnly([prompt], [copy], { stateDbSeenId: 42 })).toEqual([prompt])
   })
+
+  it('scopes numeric absorption to a generation while UIDs survive database replacement', () => {
+    const prompt = { role: 'user', content: 'merged', timestamp: 100, _absorbed_row_ids: [1], _absorbed_message_uids: ['absorbed'], _state_db_generation: 'old' }
+    const newRow = { role: 'user', content: 'new CLI', timestamp: 200, _state_db_row_id: 1, _state_db_generation: 'new' }
+    const sameOccurrence = { ...newRow, _state_db_message_uid: 'absorbed' }
+    expect(mergeSessionMessagesAppendOnly([prompt], [newRow])).toEqual([prompt, newRow])
+    expect(mergeSessionMessagesAppendOnly([prompt], [sameOccurrence])).toEqual([prompt])
+    expect(mergeSessionMessagesAppendOnly([prompt], [{ ...newRow, _state_db_generation: 'old' }])).toEqual([prompt])
+    const unknownGeneration = { ...prompt, _state_db_generation: undefined }
+    expect(mergeSessionMessagesAppendOnly([unknownGeneration], [newRow], { stateDbSeenId: 0 })).toEqual([unknownGeneration, newRow])
+  })
 })
 
 describe('mergeSessionMessagesAppendOnly by state.db row id (TAL-493)', () => {
