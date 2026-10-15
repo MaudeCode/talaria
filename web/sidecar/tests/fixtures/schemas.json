@@ -2307,7 +2307,8 @@
       "refused": {
         "type": "string",
         "enum": [
-          "active_turn"
+          "active_turn",
+          "runtime_history_unsupported"
         ]
       },
       "deleted_ids": {

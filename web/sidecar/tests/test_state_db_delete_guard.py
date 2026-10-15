@@ -5,10 +5,12 @@ sidecar, pinned Agent."""
 
 from __future__ import annotations
 
+import json
 import sqlite3
 import subprocess
 import textwrap
 from contextlib import closing
+from pathlib import Path
 
 import pytest
 
@@ -38,6 +40,87 @@ def _seed(home, session_id: str, *, delegate: str | None = None) -> None:
 def _rows(home, sql: str) -> list:
     with closing(sqlite3.connect(home / "state.db")) as db:
         return [row[0] for row in db.execute(sql).fetchall()]
+
+
+def _load_retained_runtime(home):
+    data = json.loads((Path(__file__).parent / 'fixtures/terminal-runtime.json').read_text())
+    with closing(sqlite3.connect(home / 'state.db')) as db:
+        db.executescript('\n'.join(data['sql']))
+
+
+@pytest.mark.skipif(AGENT_DIR is None or (AGENT_DIR / 'hermes_state_mutation_retirement.py').exists(), reason='requires a legacy Agent without canonical retirement')
+@pytest.mark.parametrize('target', ['cli-root', 'cli-tip', 'worker-child', 'worker-only-parent', 'reset', 'compressed', 'empty', 'multiple', 'malformed'])
+def test_legacy_agent_refuses_retained_runtime_history(hermes_home, target):
+    """Real v0.22.1 writes survive deletion attempts by an unmodified older/candidate Agent."""
+    if target.startswith(('cli-', 'worker-')):
+        _load_retained_runtime(hermes_home)
+        sid = target
+    else:
+        _agent(hermes_home, 'pass')
+        fixture = SIDECAR_ROOT.parent / 'packages/server/src/test/fixtures/local-reset.json'
+        data = json.loads(fixture.read_text())['snapshots']['multiple' if target == 'malformed' else target]
+        with closing(sqlite3.connect(hermes_home / 'state.db')) as db, db:
+            for table, records in [('sessions', data['sessions']), ('messages', data['messages']), ('state_meta', data['meta'])]:
+                keys = list(records[0])
+                db.executemany(f"INSERT INTO {table} ({','.join(keys)}) VALUES ({','.join('?' for _ in keys)})", [tuple(r.values()) for r in records])
+            if target == 'malformed':
+                db.execute("UPDATE state_meta SET value='{malformed' WHERE key GLOB 'gateway.local_policy.v1:*'")
+        sid = data['sessions'][-1]['id']
+    # Account for the installed Agent's normal open-time schema reconciliation before comparison.
+    _agent(hermes_home, 'pass')
+    def snapshot():
+        with closing(sqlite3.connect(hermes_home / 'state.db')) as db:
+            tables = [r[0] for r in db.execute("SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE '%fts%' ORDER BY name")]
+            return {table: db.execute(f'SELECT * FROM "{table}"').fetchall() for table in tables}
+    sessions = hermes_home / 'sessions'
+    sessions.mkdir(exist_ok=True)
+    artifact = sessions / f'{sid}.json'
+    artifact.write_text('synthetic transcript')
+    proc = SidecarProcess(hermes_home)
+    try:
+        # Open through the real sidecar so normal Agent FTS initialization precedes the snapshot.
+        assert proc.result('state_db.sync_start', {'profile_home': str(hermes_home), 'session_id': sid}) == {'ok': True}
+        before = snapshot()
+        result = proc.result('state_db.delete_cli_session', {'profile_home': str(hermes_home), 'session_id': sid, 'include_compression_lineage': True})
+        assert result == {'ok': False, 'refused': 'runtime_history_unsupported'}
+        assert_matches('state_db.delete_cli_session', result)
+    finally:
+        proc.close()
+    assert snapshot() == before
+    assert artifact.read_text() == 'synthetic transcript'
+    assert list(sessions.glob('.cleanup_manifest*')) == []
+    # Unrelated fresh legacy sessions remain deletable even in an upgraded database.
+    _seed(hermes_home, 'fresh-legacy')
+    proc = SidecarProcess(hermes_home)
+    try:
+        assert _delete(proc, hermes_home, 'fresh-legacy') == {'ok': True}
+    finally:
+        proc.close()
+
+
+@pytest.mark.skipif(AGENT_DIR is None or (AGENT_DIR / 'hermes_state_mutation_retirement.py').exists(), reason='requires a legacy Agent without canonical retirement')
+@pytest.mark.parametrize('marker', ['_branched_from', '_delegate_from', '_reset_from'])
+@pytest.mark.parametrize('source', ['cli', 'subagent'])
+def test_legacy_deletion_keeps_mismatched_marker_history_separate(hermes_home, marker, source):
+    _load_retained_runtime(hermes_home)
+    _agent(hermes_home, f'''
+        db.create_session('separate-parent', source={source!r})
+        db.end_session('separate-parent', 'compression')
+        db._execute_write(lambda conn: conn.execute(
+            "UPDATE sessions SET parent_session_id=?, source=?, model_config=?, started_at=(SELECT ended_at FROM sessions WHERE id='separate-parent') WHERE id=?",
+            ('separate-parent', {source!r}, '{{"{marker}":"another-owner"}}', 'cli-root')))
+    ''')
+    with closing(sqlite3.connect(hermes_home / 'state.db')) as db:
+        before = {table: db.execute(f'SELECT * FROM {table}').fetchall() for table in ('session_admissions', 'worker_executions', 'worker_receipts')}
+    proc = SidecarProcess(hermes_home)
+    try:
+        result = proc.result('state_db.delete_cli_session', {'profile_home': str(hermes_home), 'session_id': 'separate-parent', 'include_compression_lineage': True})
+        assert result == {'ok': True, 'deleted_ids': ['separate-parent']}
+    finally:
+        proc.close()
+    assert 'cli-root' in _rows(hermes_home, 'SELECT id FROM sessions')
+    with closing(sqlite3.connect(hermes_home / 'state.db')) as db:
+        assert {table: db.execute(f'SELECT * FROM {table}').fetchall() for table in before} == before
 
 
 def _delete(proc: SidecarProcess, home, session_id: str, *, lineage: bool = False) -> dict:

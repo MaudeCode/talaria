@@ -1,0 +1,12 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Deleting a chat preserves its data when the installed Agent cannot safely remove its retained history.",
+      "highlight": false,
+      "components": [
+        "web"
+      ]
+    }
+  ]
+}

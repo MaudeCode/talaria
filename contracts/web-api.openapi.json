@@ -2809,7 +2809,8 @@
                           },
                           "refused": {
                             "enum": [
-                              "active_turn"
+                              "active_turn",
+                              "runtime_history_unsupported"
                             ],
                             "type": "string"
                           }
@@ -10037,7 +10038,7 @@
     "/api/session/delete": {
       "post": {
         "operationId": "session.delete",
-        "summary": "Delete a session and its Agent state.db rows. 409 with `refused: active_turn` while another Agent process runs or compresses it; the session is kept.",
+        "summary": "Delete a session and its Agent state.db rows. 409 with `refused: active_turn` while another Agent process runs or compresses it, or `runtime_history_unsupported` when this Agent cannot retire retained history; the session is kept.",
         "tags": [
           "sessions"
         ],

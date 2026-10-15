@@ -451,3 +451,10 @@ serialization; this does not introduce multi-server shared-state support.
 The existing background-update projection uses the structured delegation event
 to render an unknown result as a notice needing attention. A typed Agent row's
 `completed_count` alone is not evidence of success.
+
+RPC v39 extends the existing session-delete refusal enum with
+`runtime_history_unsupported`. Older Agents may open state written by a newer
+Agent, but cannot retire its canonical runtime history or local-reset receipts.
+The guarded legacy path detects that retained state inside its write transaction
+and refuses without deleting rows or artifacts. Single and bulk HTTP deletion
+return the same actionable conflict before Web cleanup.
