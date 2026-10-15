@@ -1235,6 +1235,57 @@ describe('state.db rows past the last read merge by row id (TAL-493)', () => {
   }
   const FOUR: Row[] = [['user', 'u1', 100], ['assistant', 'a1', 101], ['user', 'u2', 102], ['assistant', 'a2', 103]]
 
+  it.each(['existing', 'replaced', 'failed-replaced'])('keeps numeric-only absorbed rows represented after an empty starting read with %s database (TAL-1019)', async (mode) => {
+    const sidecar = new FakeSidecar()
+    const fresh = await bootTestServer({ sidecar, now: () => 1000 })
+    const sid = String((await newSession(fresh)).session_id)
+    const path = join(fresh.state, 'state.db')
+    const db = new DatabaseSync(path)
+    try {
+      db.exec('CREATE TABLE messages (id INTEGER PRIMARY KEY AUTOINCREMENT, session_id TEXT, role TEXT, content TEXT, timestamp REAL)')
+      sidecar.respond('chat.start', (params) => {
+        expect(params.conversation_history).toEqual([])
+        const insert = db.prepare('INSERT INTO messages (session_id, role, content, timestamp) VALUES (?, ?, ?, ?)')
+        const id = Number(insert.run(sid, 'user', 'continue', 200).lastInsertRowid)
+        if (mode === 'existing') {
+          insert.run(sid, 'user', 'continue', 202)
+          insert.run(sid, 'user', 'Unrelated CLI work', 203)
+        } else {
+          const replacement = new DatabaseSync(`${path}.new`)
+          try {
+            replacement.exec('CREATE TABLE messages (id INTEGER PRIMARY KEY AUTOINCREMENT, session_id TEXT, role TEXT, content TEXT, timestamp REAL)')
+            replacement.prepare('INSERT INTO messages (session_id, role, content, timestamp) VALUES (?, ?, ?, ?)').run(sid, 'user', 'Unrelated CLI work', 1200)
+          } finally { replacement.close() }
+          renameSync(`${path}.new`, path)
+          if (mode === 'failed-replaced') throw new SidecarError('sidecar exited', { condition: 'sidecar_unavailable' })
+        }
+        return { ...completedTurn([
+          { role: 'user', content: 'continue', timestamp: 100, _absorbed_row_ids: [id] },
+          { role: 'assistant', content: 'Verified the result.', timestamp: 201 },
+        ]), agent_session_id: sid }
+      })
+      const start = await json(await post(fresh, '/api/chat/start', { session_id: sid, message: 'continue' }))
+      await fresh.sse(`/api/chat/stream?stream_id=${String(start.stream_id)}`, (frame) => frame.event === 'stream_end')
+      const expected = ['continue', 'Verified the result.', ...(mode === 'existing' ? ['continue'] : []), 'Unrelated CLI work']
+      for (let reopen = 0; reopen < 2; reopen += 1) {
+        fresh.deps.sessionStore.sessions.delete(sid)
+        const detail = (await json(await fresh.get(`/api/session?session_id=${sid}`))).session as Json
+        const shown = detail.messages as Json[]
+        const context = fresh.deps.sessions.modelContext(fresh.deps.sessionStore.get(sid))
+        if (mode === 'failed-replaced') {
+          expect(shown).toHaveLength(3)
+          expect(shown[0]?.content).toBe('continue')
+          expect(shown[1]?._error).toBe(true)
+          expect(shown[2]?.content).toBe('Unrelated CLI work')
+          expect(context.filter((m) => m.content === 'Unrelated CLI work')).toHaveLength(1)
+        } else {
+          expect(shown.map((m) => m.content)).toEqual(expected)
+          expect(context.map((m) => m.content)).toEqual(expected)
+        }
+      }
+    } finally { db.close(); await fresh.close() }
+  })
+
   it('a truncate covers the rows it read; a later row stamped before the cut still appears', async () => {
     const sid = await seeded(FOUR)
     expect((await post(s, '/api/session/truncate', { session_id: sid, keep_count: 2 })).status).toBe(200)

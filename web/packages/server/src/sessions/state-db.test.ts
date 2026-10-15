@@ -47,11 +47,12 @@ describe('absorbed durable identity (TAL-1019)', () => {
       if (identity === 'legacy-uid') db.exec('DROP TABLE messages; CREATE TABLE messages (session_id TEXT, role TEXT, content TEXT, timestamp REAL, message_uid TEXT)')
       const sid = `absorbed-${identity}-${String(background)}`
       insertSession(db, { id: sid, source: 'webui', started_at: 100 })
+      const startRead = stateDbSessionRead(path, sid)
       const text = background ? 'Background task completed' : 'continue'
       const insert = (uid: string, content: string, timestamp: number) => db.prepare('INSERT INTO messages (session_id, role, content, timestamp, message_uid) VALUES (?, ?, ?, ?, ?)').run(sid, 'user', content, timestamp, uid)
       const absorbedId = Number(insert('absorbed', text, 200).lastInsertRowid)
       const prompt = { role: 'user', content: `Earlier merged prefix\n${text}`, timestamp: 100, _turn_id: 'turn',
-        ...(identity === 'numeric' ? { _absorbed_row_ids: [absorbedId], _state_db_generation: stateDbSessionRead(path, sid).rows[0]!._state_db_generation } : { _absorbed_message_uids: ['absorbed'] }),
+        ...(identity === 'numeric' ? { _absorbed_row_ids: [absorbedId] } : { _absorbed_message_uids: ['absorbed'] }),
         ...(background ? { _source: 'process_wakeup' } : {}) }
       const reply = { role: 'assistant', content: 'Verified the result.', timestamp: 101, _turn_id: 'turn' }
       const session = new Session({ session_id: sid, messages: [prompt, reply], context_messages: [prompt, reply] }, { workspace: s.state, model: null })
@@ -60,7 +61,7 @@ describe('absorbed durable identity (TAL-1019)', () => {
       insert('independent', prompt.content, 202)
       insert('cli', 'Unrelated CLI work', 203)
       const expected = [prompt.content, reply.content, prompt.content, 'Unrelated CLI work']
-      s.deps.sessions.settleStateDb(session, { turnId: 'turn', previousContext: [], agentRows: [prompt, reply], startId: identity === 'legacy-uid' ? null : 0 })
+      s.deps.sessions.settleStateDb(session, { turnId: 'turn', previousContext: [], agentRows: [prompt, reply], startId: identity === 'legacy-uid' ? null : 0, startGeneration: startRead.generation })
       expect(session.messages.map((m) => m.content)).toEqual(expected)
       expect(session.context_messages.map((m) => m.content)).toEqual(expected)
       expect(s.deps.sessions.mergedTranscript(session).map((m) => m.content)).toEqual(expected)
@@ -91,11 +92,11 @@ describe('absorbed durable identity (TAL-1019)', () => {
     const s = await bootTestServer()
     const path = join(s.state, 'state.db')
     const sid = 'absorbed-generation'
-    const create = (content: string, timestamp: number, target = path): void => {
+    const create = (content: string | null, timestamp: number, target = path): void => {
       const db = createStateDb(target)
       try {
         insertSession(db, { id: sid, source: 'webui', started_at: 100 })
-        db.prepare('INSERT INTO messages (session_id, role, content, timestamp) VALUES (?, ?, ?, ?)').run(sid, 'user', content, timestamp)
+        if (content !== null) db.prepare('INSERT INTO messages (session_id, role, content, timestamp) VALUES (?, ?, ?, ?)').run(sid, 'user', content, timestamp)
       } finally { db.close() }
     }
     try {
@@ -104,16 +105,24 @@ describe('absorbed durable identity (TAL-1019)', () => {
       const reply = { role: 'assistant', content: 'Old answer', timestamp: 101 }
       const session = new Session({ session_id: sid, messages: [prompt, reply], context_messages: [prompt, reply] }, { workspace: s.state, model: null })
       s.deps.sessions.markStateDbSeen(session)
+      s.deps.sessions.markStateDbSeen(session)
       s.deps.sessionStore.save(session)
-      if (failedBoundary) s.deps.sessions.markStateDbSeen(session, { rows: [], ok: false, idCapable: false, reason: 'synthetic failed read' }, { boundary: true })
-      create('New CLI request', 200, `${path}.new`)
+      if (failedBoundary) s.deps.sessions.markStateDbSeen(session, { rows: [], ok: false, idCapable: false, reason: 'synthetic failed read', generation: null }, { boundary: true })
+      create(null, 0, `${path}.new`)
       renameSync(`${path}.new`, path)
+      const startRead = stateDbSessionRead(path, sid)
+      const previousContext = structuredClone(session.context_messages)
+      const rawHistory = previousContext.map((m) => { const raw = { ...m }; delete raw._state_db_generation; return raw })
+      session.context_messages = rawHistory
+      const concurrent = new DatabaseSync(path)
+      try { concurrent.prepare('INSERT INTO messages (session_id, role, content, timestamp) VALUES (?, ?, ?, ?)').run(sid, 'user', 'New CLI request', 200) } finally { concurrent.close() }
       const expected = [prompt.content, reply.content, 'New CLI request']
       expect(s.deps.sessions.mergedTranscript(session).map((m) => m.content)).toEqual(expected)
       expect(s.deps.sessions.modelContext(session).map((m) => m.content)).toEqual(expected)
       // Settlement must not rebind the persisted carrier to the replacement's generation.
-      s.deps.sessions.settleStateDb(session, { turnId: 'later', previousContext: [prompt, reply], agentRows: [prompt, reply], startId: 1 })
+      s.deps.sessions.settleStateDb(session, { turnId: 'later', previousContext, agentRows: rawHistory, startId: 0, startGeneration: startRead.generation })
       expect(session.messages.map((m) => m.content)).toEqual(expected)
+      expect(s.deps.sessions.modelContext(session).map((m) => m.content)).toEqual(expected)
       s.deps.sessionStore.save(session)
       s.deps.sessionStore.sessions.delete(sid)
       for (let reopen = 0; reopen < 2; reopen += 1) {

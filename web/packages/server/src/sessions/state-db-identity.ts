@@ -28,6 +28,13 @@ export function stateDbIdentityKeys(message: Message, includeUids = true, fallba
   return keys
 }
 
+/** Bind newly observed numeric provenance once; even an unknown generation must never be rebound to a new database. */
+export function stampStateDbGeneration(rows: Message[], generation: string | null): void {
+  for (const message of rows) {
+    if (!('_state_db_generation' in message) && stateDbIdentityKeys(message, false).length) message._state_db_generation = generation
+  }
+}
+
 /** The append-only merge's role/timestamp/content comparison, shared with archived-source matching. */
 export function stateDbMessageKey(message: Message): string {
   const timestamp = Number(message.timestamp)

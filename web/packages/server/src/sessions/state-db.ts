@@ -823,7 +823,7 @@ function replayIdentities(db: DatabaseSync, chain: string[], rows: Dict[], avail
 }
 
 /** `reason`: why a failed read failed (TAL-785). */
-export interface StateDbRead { rows: Dict[]; idCapable: boolean; ok: boolean; reason: string | null }
+export interface StateDbRead { rows: Dict[]; idCapable: boolean; ok: boolean; reason: string | null; generation: string | null }
 
 export function stateDbSessionMessages(dbPath: string, sid: string, opts: { stitch?: boolean } = {}): Dict[] {
   return stateDbSessionRead(dbPath, sid, opts).rows
@@ -834,7 +834,7 @@ export function stateDbSessionMessages(dbPath: string, sid: string, opts: { stit
  * (TAL-493: an empty id-capable read is a baseline of 0; a missing database or a failed read says nothing).
  */
 export function stateDbSessionRead(dbPath: string, sid: string, opts: { stitch?: boolean; lineage?: string[] | null } = {}): StateDbRead {
-  const none: StateDbRead = { rows: [], idCapable: false, ok: false, reason: null }
+  const none: StateDbRead = { rows: [], idCapable: false, ok: false, reason: null, generation: null }
   const id = sid.trim()
   if (!id || !existsSync(dbPath)) return none
   let db: DatabaseSync
@@ -898,11 +898,11 @@ export function stateDbSessionRead(dbPath: string, sid: string, opts: { stitch?:
       }
     }
     // TAL-493: the database file's identity, so a marker taken in a replaced state.db is never applied to its successor.
+    const generation = stateDbGeneration(dbPath)
     if (hasId) {
-      const generation = stateDbGeneration(dbPath)
       for (const m of projected) m._state_db_generation = generation
     }
-    return { rows: projected, idCapable: hasId, ok: true, reason: null }
+    return { rows: projected, idCapable: hasId, ok: true, reason: null, generation }
   } catch (error) {
     return { ...none, reason: stateDbReadFailure(error).reason }
   } finally {

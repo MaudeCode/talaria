@@ -85,6 +85,11 @@ Numeric identity includes the database generation. An untagged carrier can use
 the last recorded marker's generation, which settlement preserves on the carrier
 before replacing or clearing that marker. Recreated databases cannot inherit old
 absorbed IDs; durable UIDs can still identify an occurrence across replacement.
+The starting read captures its generation even when it has no message rows.
+Turn settlement shares one forwarding path for successful, failed and stopped
+turns, binding new Agent numeric witnesses to that starting generation. Existing
+transcript witnesses keep their prior generation, including an explicit unknown
+generation, and a replacement during the turn cannot inherit them.
 Tool results retain their existing tool-call/timestamp compaction rule; tables
 without UIDs retain the legacy timestamp rule. This requires no Agent changes,
 new database fields, release pins or server-side database writes.
