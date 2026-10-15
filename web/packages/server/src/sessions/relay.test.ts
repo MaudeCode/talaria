@@ -278,6 +278,80 @@ describe('Talaria relay pairing and publishing', () => {
 })
 
 describe('relay publisher failure handling', () => {
+  it.each(['write failure', 'corrupt outbox'])('preserves the session for retry after an outbox %s', async (failure) => {
+    const s = await bootTestServer()
+    const relay = fakeRelay()
+    s.deps.fetch = relay.fetch
+    let restore = (): void => undefined
+    try {
+      await s.deps.relay.pair({ relay_url: RELAY, publisher_id: 'https://pub.example', publisher_invitation: 'x' }, 'default', true)
+      const sid = String(((await json(await post(s, '/api/session/new', { title: 'Retryable delete' }))).session as Json).session_id)
+      s.deps.sessionStore.save(s.deps.sessionStore.get(sid))
+      const outbox = join(s.state, 'talaria-relay-deleted.json')
+      if (failure === 'corrupt outbox') writeFileSync(outbox, '{"version":1,"views":[{"sessionId":"pending"}]}')
+      else {
+        const write = atomic.atomicWriteText
+        const spy = vi.spyOn(atomic, 'atomicWriteText').mockImplementation((path, text, opts) => {
+          if (path === outbox) throw new Error('synthetic disk-full failure')
+          write(path, text, opts)
+        })
+        restore = () => { spy.mockRestore() }
+      }
+      expect((await post(s, '/api/session/delete', { session_id: sid })).status).toBe(500)
+      expect(existsSync(s.deps.sessionStore.pathFor(sid))).toBe(true)
+      expect(s.deps.sessionStore.get(sid).profile).toBe('default')
+      expect(relay.views().some((call) => call.url.includes(sid))).toBe(false)
+      restore()
+      if (failure === 'corrupt outbox') rmSync(outbox)
+      expect((await post(s, '/api/session/delete', { session_id: sid })).status).toBe(200)
+      await vi.waitFor(() => { expect(relay.views().some((call) => call.url.includes(sid))).toBe(true) })
+      await vi.waitFor(() => { expect(deletedViews(s)).toEqual([]) })
+    } finally {
+      restore()
+      s.deps.relay.stop()
+      await s.close()
+    }
+  })
+
+  it('holds a staged deletion through failed removal and Web restart, then covers the successful retry cutoff', async () => {
+    let clock = 1_800_000_000
+    const s = await bootTestServer({ now: () => clock })
+    const relay = fakeRelay()
+    s.deps.fetch = relay.fetch
+    let restarted: TestServer | undefined
+    try {
+      await s.deps.relay.pair({ relay_url: RELAY, publisher_id: 'https://pub.example', publisher_invitation: 'x' }, 'default', true)
+      const sid = String(((await json(await post(s, '/api/session/new', { title: 'Failed removal' }))).session as Json).session_id)
+      s.deps.sessionStore.save(s.deps.sessionStore.get(sid))
+      const remove = vi.spyOn(s.deps.sessionStore, 'deleteFiles').mockReturnValueOnce(false)
+      try { expect((await post(s, '/api/session/delete', { session_id: sid })).status).toBe(500) } finally { remove.mockRestore() }
+      expect(deletedViews(s)).toHaveLength(1)
+      expect(deletedViews(s)[0]!.through).toBe(clock * 1000)
+      s.deps.relay.stop()
+      restarted = await bootTestServer({
+        env: { HERMES_HOME: s.state, HERMES_WEBUI_STATE_DIR: s.state }, now: () => clock,
+        deps: (deps) => { deps.fetch = relay.fetch },
+      })
+      expect(restarted.deps.relay.start()).toBe(true)
+      const marker = String(((await json(await post(restarted, '/api/session/new', { title: 'Replay barrier' }))).session as Json).session_id)
+      await post(restarted, '/api/talaria/viewed', { session_id: marker })
+      await vi.waitFor(() => { expect(relay.views().some((call) => call.url.includes(marker))).toBe(true) })
+      expect(relay.views().some((call) => call.url.includes(sid))).toBe(false)
+      expect(existsSync(s.deps.sessionStore.pathFor(sid))).toBe(true)
+      clock += 600
+      expect((await post(restarted, '/api/session/delete', { session_id: sid })).status).toBe(200)
+      await vi.waitFor(() => { expect(deletedViews(s)).toEqual([]) })
+      const calls = relay.views().filter((call) => call.url.includes(sid))
+      expect(calls).toHaveLength(1)
+      expect(calls[0]!.body.through).toBe(clock * 1000)
+    } finally {
+      restarted?.deps.relay.stop()
+      await restarted?.close()
+      s.deps.relay.stop()
+      await s.close()
+    }
+  })
+
   it('replays deleted-session cleanup after a failed delivery and a Web restart with the original cutoff', async () => {
     let clock = 1_800_000_000
     const s = await bootTestServer({ now: () => clock })

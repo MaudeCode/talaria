@@ -70,9 +70,12 @@ skills, memories) are read and written as file formats by the server; `state.db`
 `delete_cli_session` transaction go through the sidecar.
 
 Deleted-session relay acknowledgements live in `talaria-relay-deleted.json` under the Web state directory.
-`RelayService` persists the session, canonical originating profile, identity and completion cutoff before
-deletion returns success, including while the publisher is unavailable. `RelayPublisher` replays this
-outbox at startup and replacement through the existing signed viewed route after publishing snapshots.
+`RelayService` stages the session, canonical originating profile, identity and completion cutoff before
+the session file is removed, including while the publisher is unavailable. A failed outbox write leaves
+the session available for retry. A staged entry waits while session data still exists, including after
+a failed removal or restart; a later deletion attempt advances its cutoff to cover the final deletion.
+`RelayPublisher` replays this outbox at startup and replacement through the existing signed viewed route
+after publishing snapshots.
 An entry binds once to its relay origin, publisher and profile ID, and stays pending through failures,
 disabled or unavailable profiles, and shutdown until a successful response. Replays keep the cutoff and
 use fresh signing nonces. Reads and acknowledgement removals reload the file synchronously, so an

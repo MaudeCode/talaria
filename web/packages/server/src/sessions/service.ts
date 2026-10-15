@@ -1875,9 +1875,9 @@ export class SessionService {
         if (!isMessaging && !orphaned) stateDbCleanupFailed = await this.deleteStateDbRows(eventProfile, sid)
         // A public share outlives its session file, and revokeShare needs the session, so revoke it first.
         try { this.deps.shares.revoke(this.store.get(sid, { metadataOnly: true })) } catch (error) { if (!(error instanceof SessionNotFound)) throw error }
-        if (!this.store.deleteFiles(sid)) throw new HttpFailure(500, 'Failed to delete session data')
-        // Persist relay cleanup before deletion can be reported as successful. Bulk deletion uses this same path.
+        // Stage cleanup while the originating profile is still recoverable; publication waits for removal.
         if (hadSidecar) this.deps.clearRelayCompletions?.(sid, eventProfile)
+        if (!this.store.deleteFiles(sid)) throw new HttpFailure(500, 'Failed to delete session data')
       }, { timeoutMs: 5000 })
     } catch (error) {
       if (error instanceof SessionBusy) throw new HttpFailure(503, 'Session busy, try again')

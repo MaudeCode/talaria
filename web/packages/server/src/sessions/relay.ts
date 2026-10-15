@@ -98,6 +98,11 @@ interface QueuedView { profile: string | null; through: number; deleted?: Delete
 const DeletedViewsSchema = z.object({ version: z.literal(1), views: z.array(DeletedViewSchema) })
 const deletedViewsPath = (stateDir: string): string => join(stateDir, 'talaria-relay-deleted.json')
 
+// A staged deletion cannot clear a session that survived a failed removal or a restart before removal.
+function hasSessionData(store: SessionStore, sid: string): boolean {
+  return store.sessions.has(sid) || existsSync(store.pathFor(sid))
+}
+
 function loadDeletedViews(stateDir: string): DeletedView[] {
   let raw: string
   try { raw = readFileSync(deletedViewsPath(stateDir), 'utf8') } catch (error) {
@@ -290,12 +295,13 @@ export class RelayPublisher {
       changed = true
     }
     if (changed) saveDeletedViews(this.deps.stateDir, views)
-    return views
+    return views.filter((view) => !hasSessionData(this.deps.store, view.sessionId))
   }
 
   /** Send the views queued before the snapshot just published, so the relay already holds every outcome they saw. */
   private async flushViews(ready: readonly (readonly [string, QueuedView])[]): Promise<void> {
     for (const [sid, view] of ready) {
+      if (view.deleted && hasSessionData(this.deps.store, sid)) continue
       let accepted = false
       for (const [profile, cfg] of Object.entries(this.config.profiles)) {
         if (!this.deps.profilesMatch(view.profile, profile) || !this.publishes(profile, cfg)) continue
@@ -313,7 +319,7 @@ export class RelayPublisher {
         }
       }
       if (view.deleted) {
-        if (accepted) saveDeletedViews(this.deps.stateDir, loadDeletedViews(this.deps.stateDir).filter((entry) => entry.id !== view.deleted!.id))
+        if (accepted) saveDeletedViews(this.deps.stateDir, loadDeletedViews(this.deps.stateDir).filter((entry) => entry.id !== view.deleted!.id || entry.through !== view.through))
       } else if (this.views.get(sid) === view) this.views.delete(sid)
     }
   }
@@ -622,9 +628,14 @@ export class RelayService {
     const publisher = this.publisher ?? this.candidate
     const name = this.deps.canonicalProfile(profile ?? 'default')
     const key = JSON.stringify([name, sid])
-    if (this.clearedDeleted.has(key)) return
+    const live = hasSessionData(this.deps.store, sid)
+    if (!live && this.clearedDeleted.has(key)) return
     const views = loadDeletedViews(this.deps.stateDir)
-    if (!views.some((view) => view.sessionId === sid && view.profile === name)) {
+    const queued = views.find((view) => view.sessionId === sid && view.profile === name)
+    if (queued && live) {
+      const through = Math.max(queued.through, Math.floor(this.deps.now() * 1000))
+      if (through !== queued.through) { queued.through = through; saveDeletedViews(this.deps.stateDir, views) }
+    } else if (!queued) {
       let config = publisher?.config ?? null
       if (!config) {
         try { config = loadRelayConfig(this.deps.stateDir) } catch { /* preserve unconfigured cleanup */ }
