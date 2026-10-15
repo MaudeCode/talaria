@@ -131,12 +131,22 @@ describe('crons, kanban, extensions, terminal', () => {
     sidecar.respond('cron.get', () => ({ job: snapshot }))
     sidecar.respond('cron.status', (params) => params.job_id ? { job_id: params.job_id, running: false, elapsed: 0 } : { running: {} })
     let recoveries = 0
-    sidecar.respond('cron.run', () => { recoveries++; throw new SidecarError('Manual task execution is unverified', { condition: 'cron_execution_unverified' }) })
+    let rejectRecovery: ((error: Error) => void) | undefined
+    sidecar.respond('cron.run', (params, emit) => {
+      recoveries++
+      emit({ event: 'started', data: { job_id: params.job_id } })
+      return new Promise((_resolve, reject) => { rejectRecovery = reject })
+    })
+    const feed = s.deps.events.subscribe()
+    onTestFinished(() => { rejectRecovery?.(new Error('test cleanup')); feed.close() })
     expect(await json(await s.get('/api/crons'))).toMatchObject({ jobs: [{ id: snapshot.id, owner_profile: 'default', read_only: false }] })
     for (let attempt = 0; attempt < 2; attempt++) {
       const response = await post(s, '/api/crons/run', { job_id: snapshot.id })
-      expect(response.status).toBe(500)
-      expect(await json(response)).toMatchObject({ error: 'Manual task execution is unverified' })
+      expect(response.status).toBe(200)
+      expect(await json(response)).toMatchObject({ ok: true, status: 'running' })
+      expect(s.deps.sessions.deps.runtime.runningCronJobs.has(snapshot.id)).toBe(true)
+      rejectRecovery!(new SidecarError('Manual task execution is unverified', { condition: 'cron_execution_unverified' }))
+      expect((await feed.next(AbortSignal.timeout(2000)))?.reason).toBe('cron_complete')
       expect(s.deps.sessions.deps.runtime.runningCronJobs.has(snapshot.id)).toBe(false)
     }
     expect(recoveries).toBe(2)

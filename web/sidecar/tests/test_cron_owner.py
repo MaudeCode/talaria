@@ -260,7 +260,8 @@ def test_owner_disconnect_and_restart_leave_unknown_guarded_without_resubmission
         assert blocked.get("error", {}).get("data", {}).get("condition") == "cron_execution_unverified", blocked
     model.restart_gateway()
     model.wait_ready()
-    retry, _ = sidecar.call("cron.run", params)
+    retry, frames = sidecar.call("cron.run", params)
+    assert [frame["event"] for frame in frames] == ["started"], "Web must acknowledge accepted recovery before its terminal outcome"
     assert retry.get("error", {}).get("data", {}).get("condition") == "cron_execution_unverified", retry
     assert json.loads(record_path.read_text())["execution_id"] == identity
     [after] = admissions(home)

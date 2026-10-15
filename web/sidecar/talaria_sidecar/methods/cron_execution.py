@@ -244,6 +244,8 @@ def run(job, home, execution_home, ctx, owner, *, recovery_only=False):
             cron._RUNNING.setdefault(job["id"], time.time())
         try:
             execution.prepare(recovery_only=recovery_only)
+            if recovery_only:
+                ctx.emit("started", {"job_id": job["id"]})
             heartbeat = cron._heartbeat(home, execution.job["id"], execution.owner) if execution.owner else None
             if execution.record.get("result") is not None:
                 result = execution.record["result"]
