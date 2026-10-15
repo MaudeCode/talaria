@@ -19,7 +19,7 @@ import { SessionBusy, SessionNotFound, statSignature, type SessionStore } from '
 import { UNSETTLED_TODO_KEY, attachTodoState } from './todo.js'
 import { isClaudeCodeSessionId, type ClaudeCodeSessionSource } from './claude-code.js'
 import { auditSessionRecovery, repairSafeSessionRecovery, type RecoveryDeps } from './recovery.js'
-import { agentSessionRowsExisting, agentSessionRowsExistingAsync, CONVERSATION_ROUND_THRESHOLD, countConversationRounds, stateDbCompressionLineage, stateDbTailToolContent, stateDbLineageReport, stateDbSessionMessages, stateDbSessionRead, stateDbSessionRow, stateDbSessionSources, stateDbSessionSourcesAsync, stateDbTimestampSeconds, type StateDbRead } from './state-db.js'
+import { agentSessionRowsExisting, agentSessionRowsExistingAsync, CONVERSATION_ROUND_THRESHOLD, countConversationRounds, stateDbCompressionLineage, stateDbTailToolContent, stateDbLineageReport, stateDbLocalTarget, stateDbSessionMessages, stateDbSessionRead, stateDbSessionRow, stateDbSessionSources, stateDbSessionSourcesAsync, stateDbTimestampSeconds, type StateDbRead } from './state-db.js'
 import { completionIncomplete, fallbackHandoffSummary, HANDOFF_SYSTEM_PROMPT, handoffMarker, handoffPayload, handoffTranscript, messageHandoffPayload, sameHandoff } from './handoff.js'
 import { anchorMessageKey, anchorSummary, CompressionJobs, compressionReference, visibleMessagesForAnchor, type CompressionJob } from './compress.js'
 import { chatReadiness, SidecarError, type SidecarLike } from '../sidecar/client.js'
@@ -353,6 +353,7 @@ export class SessionService {
   }
 
   private get404(sid: string, opts: { metadataOnly?: boolean } = {}): Session {
+    sid = stateDbLocalTarget(this.stateDbPath(null), sid)
     try {
       return this.store.get(sid, opts)
     } catch (error) {
@@ -559,13 +560,14 @@ export class SessionService {
     if (!isSafeSessionId(sid)) return { session: null, reason: 'invalid_sid' }
     const profile = this.deps.activeProfile()
     const dbPath = join(this.deps.profileHome(profile), 'state.db')
+    sid = stateDbLocalTarget(dbPath, sid)
     const row = stateDbSessionRow(dbPath, sid)
     const stateDbSource = str(row?.source).trim().toLowerCase()
     const subagentChild = stateDbSource === 'subagent'
     if ((this.indexMarksWasWebui(sid) || (this.store.wasDeleted(sid) && ['', 'webui', 'fork'].includes(stateDbSource))) && !subagentChild) return { session: null, reason: 'was_webui' }
     const msgs = isClaudeCodeSessionId(sid) ? this.deps.claudeCode?.messages(sid) ?? [] : stateDbSessionMessages(dbPath, sid, { stitch: true })
-    if (!msgs.length) return { session: null, reason: 'no_foreign_state' }
     const meta: Row = { ...(metaIn ?? this.lookupCliMeta(sid) ?? {}) }
+    if (!msgs.length && !(meta._lineage_root_id && meta._lineage_tip_id)) return { session: null, reason: 'no_foreign_state' }
     if (row) {
       if (!meta.source_tag && stateDbSource) meta.source_tag = stateDbSource
       if (!meta.raw_source && stateDbSource) meta.raw_source = stateDbSource
@@ -673,6 +675,7 @@ export class SessionService {
   /** Python `_handle_session_get` on the WebUI sidecar (state.db merge pending). */
   detail(sid: string, query: { messages?: string | null | undefined; msg_limit?: string | null | undefined; msg_before?: string | null | undefined; resolve_model?: string | null | undefined }): Record<string, unknown> {
     if (!sid) throw new HttpFailure(400, 'session_id is required')
+    sid = stateDbLocalTarget(this.stateDbPath(null), sid)
     const loadMessages = (query.messages ?? '1') !== '0'
     const msgLimit = parseMsgLimit(query.msg_limit ?? null)
     const msgBeforeRaw = query.msg_before
@@ -820,6 +823,7 @@ export class SessionService {
 
   /** A session without a sidecar, synthesized from state.db for this profile; 404/409 like the detail. */
   private foreignSession(sid: string): { synth: Session; meta: Row | null } {
+    sid = stateDbLocalTarget(this.stateDbPath(null), sid)
     const meta = this.lookupCliMeta(sid)
     const profile = str(meta?.profile) || null
     const profileAgnostic = str(meta?.source_tag || meta?.raw_source).trim().toLowerCase() === 'claude_code'

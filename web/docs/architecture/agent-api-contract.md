@@ -112,6 +112,23 @@ If an integer anywhere in the payload exceeds JavaScript's safe range, the
 server preserves the payload as JSON text instead of rounding it. Ordinary
 multimodal arrays continue to decode as parts.
 
+## Local reset lineage
+
+Agent v0.22.1 local policy receipts retain a logical owner while reset and
+compression move the physical transcript. The read-only state.db projection
+validates those receipts before collapsing the physical rows. List and search
+show the current target once, including an empty reset target, under the
+existing lineage identity. Detail and reopen resolve old segment IDs to that
+target. Transcript reads stop at the latest reset boundary, even when a saved
+Talaria record contains an older compression lineage.
+
+Deletion resolves the whole receipt lineage on its write transaction through
+the installed Agent's validator. Invalid or unsupported receipts refuse a
+delete; they never authorize removal of an unrelated conversation. Agents
+without receipts retain the legacy compression and CLI-close projection.
+The shared `local-reset.json` fixture records real v0.22.1 reset/compression API
+output and is consumed by both server projection and sidecar target-plan tests.
+
 ## Skill catalog identities
 
 On Agents with the resolved skill catalog, `skills.list` uses the Agent's search

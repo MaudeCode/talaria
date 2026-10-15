@@ -653,6 +653,8 @@ export function capRecentCliSessions(rows: Row[], cap = CLI_VISIBLE_SESSION_CAP)
 }
 
 function sessionHasServerVisibleMessages(row: Row): boolean {
+  // A validated local reset keeps its empty current target discoverable under the existing lineage identity.
+  if (row._lineage_root_id && row._lineage_tip_id) return true
   // A worktree chat owns a directory on disk from creation; its row is where the user removes it (TAL-605).
   if (sidebarMessageCount(row) > 0 || row.worktree_path) return true
   const attention = row.attention

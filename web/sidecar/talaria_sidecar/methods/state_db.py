@@ -296,6 +296,8 @@ def _is_continuation(parent: dict, child: dict) -> bool:
     lower = lambda v: str(v or "").strip().lower()  # noqa: E731
     if lower(child.get("session_source")) == "fork":
         return False
+    if child.get("source") == "tool" or any(child.get(k) is not None for k in ("branched_from", "delegate_from", "reset_from")):
+        return False
     if lower(parent.get("source")) and lower(child.get("source")) and lower(parent.get("source")) != lower(child.get("source")):
         return False
     if parent.get("end_reason") not in ("compression", "cli_close"):
@@ -311,6 +313,39 @@ def _is_continuation(parent: dict, child: dict) -> bool:
 
 # The Agent's ``_CHAIN_CAP`` and the server's ``COMPRESSION_CHAIN_CAP``: the most hops a compression-chain walk takes.
 _COMPRESSION_CHAIN_CAP = 1000
+
+
+def _local_lineage(conn, sid: str) -> list[str] | None:
+    """Use the Agent's receipt validator on the caller's transaction; never infer ownership from a reset edge."""
+    tables = {r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type='table'")}
+    columns = {r[1] for r in conn.execute("PRAGMA table_info(sessions)")}
+    if "state_meta" not in tables or "chat_id" not in columns:
+        return None
+    row = conn.execute("SELECT chat_id FROM sessions WHERE id=?", (sid,)).fetchone()
+    owner = row[0] if row and row[0] else sid
+    saved = conn.execute("SELECT value FROM state_meta WHERE key=?", ("gateway.local_policy.v1:" + owner,)).fetchone()
+    if saved is None:
+        return None
+    # An unavailable validator or malformed receipt refuses the delete rather than stranding an owned continuation.
+    from hermes_state_local_lineage import validate_local_lineage
+    receipt = json.loads(saved[0])
+    ids = receipt.get("lineage", [owner])
+    if (receipt.get("session_id") != owner or not isinstance(ids, list) or not ids
+            or len(ids) > _COMPRESSION_CHAIN_CAP or not all(isinstance(i, str) and i for i in ids)):
+        raise ValueError("invalid local lineage")
+    validate_local_lineage(conn, receipt)
+    if sid not in ids:
+        return None  # An explicit branch may carry chat_id but is outside the owner's receipt.
+    for index, member in enumerate(ids):
+        row = conn.execute("SELECT chat_id,user_id,session_key FROM sessions WHERE id=?", (member,)).fetchone()
+        if row is None or tuple(row) != (owner, receipt["principal_id"], receipt["route"]):
+            raise ValueError("local lineage owner mismatch")
+        if index:
+            child = conn.execute("SELECT source,model_config FROM sessions WHERE id=?", (member,)).fetchone()
+            config = json.loads(child[1] or '{}')
+            if child[0] == 'tool' or any(config.get(k) is not None for k in ('_branched_from', '_delegate_from')):
+                raise ValueError("explicit child is not a local continuation")
+    return ids
 
 
 def _compression_lineage(records: list[dict], sid: str) -> list[str]:
@@ -440,6 +475,7 @@ def _delete_rows(requested: str, include_lineage: bool, home: Path, db_path: Pat
             records.append({
                 "id": row["id"], "parent_id": row["parent_session_id"], "delegate_from": model_config.get("_delegate_from"),
                 "branched_from": model_config.get("_branched_from"), "model_config_known": known, "source": row["source"], "session_source": row["session_source"],
+                "reset_from": model_config.get("_reset_from"),
                 "end_reason": row["end_reason"], "started_at": row["started_at"], "ended_at": row["ended_at"],
             })
         by_id = {r["id"]: r for r in records}
@@ -496,7 +532,7 @@ def _delete_rows(requested: str, include_lineage: bool, home: Path, db_path: Pat
 
         # TAL-792: the compression continuations are resolved here, in the delete transaction, so one that a compression
         # finished after the caller looked is guarded and removed too; one transaction removes them all, tip first.
-        sids = _compression_lineage(records, requested) if include_lineage else [requested]
+        sids = _local_lineage(conn, requested) or (_compression_lineage(records, requested) if include_lineage else [requested])
         plan = [(sid, delegates_of(sid)) for sid in reversed(sids)]
         all_removed = list(dict.fromkeys(i for sid, delegate_ids in plan for i in (sid, *delegate_ids)))
         # The Agent's own user-delete guard, checked over every row before any is removed. A live writer's turn lease or
