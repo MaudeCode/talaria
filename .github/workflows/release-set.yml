@@ -598,6 +598,13 @@ jobs:
         git show "${GITHUB_WORKFLOW_SHA}:releases/publish.py" > "$RUNNER_TEMP/publish.py"
         PYTHONPATH="$PWD/releases" "$RELEASE_PYTHON" "$RUNNER_TEMP/publish.py" web-npm --plan "$RUNNER_TEMP/release-plan/plan.json" \
           --build "$RUNNER_TEMP/web-build/receipt.json" --directory "$RUNNER_TEMP/web-build"
+    - name: Install and boot the published npm package
+      run: |
+        set -euo pipefail
+        # The Stable server resolves its contracts from the registry, so only the published version can boot. A failure
+        # stops web-publish, and the updater never offers a release set that publish-set did not complete.
+        git show "${GITHUB_WORKFLOW_SHA}:releases/smoke_npm.py" > "$RUNNER_TEMP/smoke_npm.py"
+        "$RELEASE_PYTHON" "$RUNNER_TEMP/smoke_npm.py" "$(jq -r .npm "$RUNNER_TEMP/web-build/receipt.json")"
     - name: Confirm the npm readback, publish the OCI bytes and verify their readback
       env:
         GH_TOKEN: ${{ github.token }}

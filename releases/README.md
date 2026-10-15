@@ -155,6 +155,9 @@ One `web-publish` job publishes Web: npm first, through the OIDC token npm
 trusted publishing accepts, then the GHCR image once npm's readback matches the
 built tarballs. It runs the workflow's own `publish.py`, as Relay does, so a
 publication fix applies to an existing release.
+Between the two, the workflow's own `smoke_npm.py` installs the published
+`@maudecode/talaria-web@<version>` and requires it to boot; a failure stops the
+job, so `publish-set` never completes the set and no updater offers it.
 
 Release handoffs are GitHub Actions artifacts of the release run, kept 30 days
 (the recovery window). A run step cannot reach the artifact service, so the
@@ -199,6 +202,12 @@ Preparation in dry-run mode may create ephemeral signed tags in a disposable
 local clone. These signatures validate the rehearsal only. Production requires
 the existing tags' GitHub-verified signatures. Neither mode pushes tags.
 
+`smoke_npm.py SPEC` installs an npm spec (a tarball path or
+`@maudecode/talaria-web@<version>`) with the updater's `npm install --global
+--prefix` command, starts its bin in the foreground with the e2e suite's isolated
+environment and the package's own replay sidecar, and fails with the server log
+tail unless `/health` answers 200 within 60 seconds.
+
 `build.py COMPONENT --plan PLAN --output NEW_DIRECTORY` builds without publishing:
 an unsigned App archive with verified bundle versions, the Web contracts and
 server npm tarballs plus a multi-platform OCI archive, or checked Relay functions validated against an
@@ -212,7 +221,8 @@ package for the Experimental channel from `HEAD`, without a plan or Docker image
 version `<latest web-v tag>-exp.<12-hex source>`, tag `web-exp-v<version>`, and
 the contracts package bundled so installs never look it up. The bundle also carries
 each direct dependency the contracts closure peer-depends on (`ws`), which npm would
-otherwise install as an empty directory. `experimental.py push
+otherwise install as an empty directory. Before writing `build-result.json` it runs
+`smoke_npm.py` on the final tarball. `experimental.py push
 BUILD_DIRECTORY` pushes that tarball to `ghcr.io/maudecode/talaria-web-experimental`
 as `sha-<source>`. `experimental.py advance SOURCE` moves `experimental` forward to the newest
 published `sha-` commit on `main`, never behind its current revision, then keeps the newest 50 package versions plus

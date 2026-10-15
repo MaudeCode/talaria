@@ -12,6 +12,7 @@ from pathlib import Path
 
 from cli import ROOT, load, receipt, run_url, write
 from plan import VERSION, git
+from smoke_npm import smoke
 
 CONTRACTS = "@maudecode/talaria-web-contracts"
 
@@ -135,6 +136,8 @@ def main():
             if len(tarballs) != 1:
                 raise ValueError("npm pack must produce one Experimental server tarball")
             require_bundled_contracts(tarballs[0], component["version"])
+            # Install and boot the exact bytes users get: workspace checks never see a broken pack (TAL-1011).
+            smoke(tarballs[0])
             write(output / "build-result.json", {"component": name, "sourceRevision": component["sourceRevision"], "result": "success",
                                                  "tag": component["tag"], "version": component["version"], "tarball": tarballs[0].name})
             return
