@@ -157,7 +157,7 @@ def remote_tag_commit(tag):
     return refs.get(f"refs/tags/{tag}^{{}}", refs.get(f"refs/tags/{tag}"))
 
 
-def verify_image(identity, sha):
+def verify_image(identity, sha, observations):
     image, release_tag, version = identity["image"], identity["releaseTag"], identity["version"]
     # Docker needs the caller's daemon context, but the container receives only
     # these synthetic environment values, read-only code and temporary state.
@@ -189,6 +189,8 @@ def verify_image(identity, sha):
             "docker", "run", "--rm", "--name", name, "--network", "none", "--read-only",
             "--tmpfs", "/tmp", "--tmpfs", "/opt/data", "--entrypoint", "/opt/hermes/.venv/bin/python",
             "-e", "HOME=/tmp/home", "-e", "HERMES_HOME=/tmp/home/hermes", "-e", "PYTHONPATH=/web/sidecar:/opt/hermes",
+            "-e", "HERMES_WEBUI_AGENT_DIR=/opt/hermes",
+            "-e", "TALARIA_AGENT_SSH_EXPECTED=" + json.dumps(observations),
             "-v", f"{ROOT / 'web'}:/web:ro", "-v", f"{ROOT / 'releases/agent_probe.py'}:/probe.py:ro",
             image, "/probe.py", version,
         ], check=True)
@@ -297,14 +299,22 @@ def check(args, kind, identity, receipt, junit):
         for key in ("LD_LIBRARY_PATH", "PLAYWRIGHT_BROWSERS_PATH"):
             if key in os.environ:
                 env[key] = os.environ[key]
+        baseline = None
+        if kind == "candidate":
+            baseline_identity = max(supported_releases(ROOT), key=lambda release: tuple(map(int, release["version"].split("."))))
+            baseline_env = env.copy()
+            with agent_checkout(args, "supported", baseline_identity, baseline_env) as agent:
+                baseline = probe_agent(agent, baseline_identity, baseline_env)
+            receipt["sshConfigApproval"] = {"baseline": {**baseline_identity, "observations": baseline}}
+            validate_ssh_approval(baseline, baseline_identity["version"])
         with agent_checkout(args, kind, identity, env) as agent:
             agent_python = agent / ".venv/bin/python"
             receipt["python"] = subprocess.check_output([str(agent_python), "-c", "import platform; print(platform.python_version())"],
                                                         env=env, text=True).strip()
             env.update(HERMES_WEBUI_AGENT_DIR=str(agent), HERMES_WEBUI_PYTHON=str(agent_python), HERMES_WEBUI_TEST_PYTHON=sys.executable)
-            # A canary has no release version to require; the probe still exercises imports and SessionDB.
-            subprocess.run([str(agent_python), str(ROOT / "releases/agent_probe.py"), *([identity["version"]] if kind != "canary" else [])],
-                           cwd=agent, env={**env, "PYTHONPATH": str(ROOT / "web/sidecar")}, check=True)
+            observations = probe_agent(agent, identity, env)
+            receipt.setdefault("sshConfigApproval", {})["candidate" if kind == "candidate" else "observations"] = observations
+            validate_ssh_approval(observations, identity.get("version") if kind in ("active", "supported") else None, baseline)
             if not args.skip_sidecar_tests:
                 # The sidecar suite spawns `python -m talaria_sidecar` on this venv with disposable homes.
                 try:
@@ -319,8 +329,39 @@ def check(args, kind, identity, receipt, junit):
                 if command.returncode:
                     raise SystemExit(command.returncode)
     if not args.skip_docker and kind != "canary":
-        verify_image(identity, identity["sourceRevision"])
+        verify_image(identity, identity["sourceRevision"], observations)
         receipt["imageVerified"] = True
+
+
+def probe_agent(agent, identity, env):
+    # Separate disposable state for each baseline/candidate, including the real file tools' task cwd.
+    with tempfile.TemporaryDirectory(prefix="talaria-agent-probe-") as directory:
+        state = Path(directory)
+        report = state / "ssh-approval.json"
+        probe_env = {**env, "HOME": str(state), "HERMES_HOME": str(state / "hermes"),
+                     "TALARIA_AGENT_PROBE_REPORT": str(report), "PYTHONPATH": str(ROOT / "web/sidecar"),
+                     "HERMES_WEBUI_AGENT_DIR": str(agent)}
+        subprocess.run([str(agent / ".venv/bin/python"), str(ROOT / "releases/agent_probe.py"),
+                        *([identity["version"]] if "version" in identity else [])], cwd=agent, env=probe_env, check=True)
+        return json.loads(report.read_text())
+
+
+def validate_ssh_approval(observations, supported_version=None, baseline=None):
+    # These supported releases predate task-relative approval. Do not claim a guarantee they never had.
+    historical = supported_version in {"0.21.7", "0.22.0"}
+    for tool in ("write", "edit"):
+        for spelling in ("absolute", "relative"):
+            for decision in ("deny", "allow"):
+                case = f"{tool}/{spelling}/{decision}"
+                result = observations.get(case)
+                expected_gate = not (historical and spelling == "relative")
+                if baseline is not None:
+                    # Candidates may add a guarantee, but never remove one the baseline proves.
+                    expected_gate = baseline[case]["gateCalls"] > 0 or (isinstance(result, dict) and result.get("gateCalls") == 1)
+                expected_mutation = decision == "allow" or not expected_gate
+                if result != {"gateCalls": int(expected_gate), "mutated": expected_mutation,
+                              "expectedContent": expected_mutation}:
+                    raise RuntimeError(f"task-relative SSH configuration approval failed: {case}: {result}")
 
 
 def main():
