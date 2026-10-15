@@ -12,14 +12,14 @@ import { buildActiveTurnToken, copyJson, redactSessionData, redactValue, stripPu
 import type { DraftStore } from './drafts.js'
 import { DraftVersionConflict, normalizeDraftVersion } from './drafts.js'
 import type { SessionEventBus } from './events.js'
-import { allSessions, buildSessionListPayload, CLI_IDENTITY_FIELDS, isClaimableCliSource, isMessagingSessionRecord, ownerLockCandidates, withOwnerLocks, withSessionWireFlags, lineageRootId, mergeCliSidebarMetadata, sessionListResponse, sessionSearchMatches, sessionSearchMessageText, sessionSearchPreview, sessionSearchTerms, type ListParams, type ListResponse, type Row, type RuntimeOverlay } from './list.js'
+import { allSessions, buildSessionListPayload, reconcileLocalSessionRows, sessionLineageIds, CLI_IDENTITY_FIELDS, isClaimableCliSource, isMessagingSessionRecord, ownerLockCandidates, withOwnerLocks, withSessionWireFlags, lineageRootId, mergeCliSidebarMetadata, sessionListResponse, sessionSearchMatches, sessionSearchMessageText, sessionSearchPreview, sessionSearchTerms, type ListParams, type ListResponse, type Row, type RuntimeOverlay } from './list.js'
 import { anchorSceneIntOrNull, fullToolResult, hydrateAnchorActivityScenes, normalizeAnchorSceneMessageRef, readAnchorSceneRows, storeAnchorScene, withTurnIds } from './anchor.js'
 import { COMPRESSION_RECOVERY_ACTION_START_FOCUSED, compressionRecoveryPayload, forgetContextFigures, isSafeSessionId, lastMessageTimestamp, Session, sharePath, stripAttachedFilesMarker, titleFrom, type Message } from './session.js'
 import { SessionBusy, SessionNotFound, statSignature, type SessionStore } from './store.js'
 import { UNSETTLED_TODO_KEY, attachTodoState } from './todo.js'
 import { isClaudeCodeSessionId, type ClaudeCodeSessionSource } from './claude-code.js'
 import { auditSessionRecovery, repairSafeSessionRecovery, type RecoveryDeps } from './recovery.js'
-import { agentSessionRowsExisting, agentSessionRowsExistingAsync, CONVERSATION_ROUND_THRESHOLD, countConversationRounds, stateDbCompressionLineage, stateDbTailToolContent, stateDbLineageReport, stateDbSessionMessages, stateDbSessionRead, stateDbSessionRow, stateDbSessionSources, stateDbSessionSourcesAsync, stateDbTimestampSeconds, type StateDbRead } from './state-db.js'
+import { agentSessionRowsExisting, agentSessionRowsExistingAsync, CONVERSATION_ROUND_THRESHOLD, countConversationRounds, stateDbCompressionLineage, stateDbTailToolContent, stateDbLineageReport, stateDbLocalTarget, stateDbSessionMessages, stateDbSessionRead, stateDbSessionRow, stateDbSessionSources, stateDbSessionSourcesAsync, stateDbTimestampSeconds, type StateDbRead } from './state-db.js'
 import { completionIncomplete, fallbackHandoffSummary, HANDOFF_SYSTEM_PROMPT, handoffMarker, handoffPayload, handoffTranscript, messageHandoffPayload, sameHandoff } from './handoff.js'
 import { anchorMessageKey, anchorSummary, CompressionJobs, compressionReference, visibleMessagesForAnchor, type CompressionJob } from './compress.js'
 import { chatReadiness, SidecarError, type SidecarLike } from '../sidecar/client.js'
@@ -157,9 +157,9 @@ export interface SessionServiceDeps {
   yolo: { isEnabled: (sid: string) => boolean; set: (sid: string, enabled: boolean) => void }
   /** state.db sidebar rows for a profile (Python `get_cli_sessions`); null when the projection is unavailable. */
   /** `truncated`: source kinds whose rows stopped at the per-kind window on this read (TAL-482). */
-  cliSessions: (profile: string, opts: { sourceFilter: string | null }) => Promise<{ rows: Row[]; truncated: ReadonlySet<string>; storage: AgentStorage }>
+  cliSessions: (profile: string, opts: { sourceFilter: string | null; sessionIds?: readonly string[] }) => Promise<{ rows: Row[]; truncated: ReadonlySet<string>; storage: AgentStorage }>
   /** `cliSessions` read on this thread, for the synchronous single-session lookups. */
-  cliSessionsSync: (profile: string, opts: { sourceFilter: string | null }) => { rows: Row[]; truncated: ReadonlySet<string> }
+  cliSessionsSync: (profile: string, opts: { sourceFilter: string | null; sessionIds?: readonly string[] }) => { rows: Row[]; truncated: ReadonlySet<string> }
   /** TAL-551: read-only Claude Code transcripts, listed with the CLI rows when both toggles are on. */
   claudeCode?: ClaudeCodeSessionSource
   profileHome: (profile: string) => string
@@ -267,6 +267,9 @@ export class SessionService {
     return this.visibleToActiveProfile(session.profile)
   }
 
+  /** One receipt-backed physical target for every operation on a local conversation alias. */
+  resolveSessionId(sid: string): string { return stateDbLocalTarget(this.stateDbPath(null), sid) }
+
   /** Python `_lookup_cli_session_metadata(...).get('read_only')` plus the persisted sidecar flag and a not-claimable foreign owner. */
   private isReadOnlyImport(sid: string): boolean {
     try {
@@ -354,6 +357,7 @@ export class SessionService {
   }
 
   private get404(sid: string, opts: { metadataOnly?: boolean } = {}): Session {
+    sid = this.resolveSessionId(sid)
     try {
       return this.store.get(sid, opts)
     } catch (error) {
@@ -553,7 +557,9 @@ export class SessionService {
   private lookupCliMeta(sid: string): Row | null {
     try {
       if (isClaudeCodeSessionId(sid)) return this.claudeCodeRows().find((r) => str(r.session_id) === sid) ?? null
-      return this.deps.cliSessionsSync(this.deps.activeProfile(), { sourceFilter: null }).rows.find((r) => str(r.session_id) === sid) ?? null
+      const profile = this.deps.activeProfile()
+      return this.deps.cliSessionsSync(profile, { sourceFilter: null }).rows.find((r) => str(r.session_id) === sid)
+        ?? this.deps.cliSessionsSync(profile, { sourceFilter: null, sessionIds: [sid] }).rows[0] ?? null
     } catch {
       return null
     }
@@ -586,13 +592,14 @@ export class SessionService {
     if (!isSafeSessionId(sid)) return { session: null, reason: 'invalid_sid' }
     const profile = this.deps.activeProfile()
     const dbPath = join(this.deps.profileHome(profile), 'state.db')
+    sid = this.resolveSessionId(sid)
     const row = stateDbSessionRow(dbPath, sid)
     const stateDbSource = str(row?.source).trim().toLowerCase()
     const subagentChild = stateDbSource === 'subagent'
     if ((this.indexMarksWasWebui(sid) || (this.store.wasDeleted(sid) && ['', 'webui', 'fork'].includes(stateDbSource))) && !subagentChild) return { session: null, reason: 'was_webui' }
     const msgs = isClaudeCodeSessionId(sid) ? this.deps.claudeCode?.messages(sid) ?? [] : stateDbSessionMessages(dbPath, sid, { stitch: true })
-    if (!msgs.length) return { session: null, reason: 'no_foreign_state' }
     const meta: Row = { ...(metaIn ?? this.lookupCliMeta(sid) ?? {}) }
+    if (!msgs.length && !(meta._lineage_root_id && meta._lineage_tip_id)) return { session: null, reason: 'no_foreign_state' }
     if (row) {
       if (!meta.source_tag && stateDbSource) meta.source_tag = stateDbSource
       if (!meta.raw_source && stateDbSource) meta.raw_source = stateDbSource
@@ -607,9 +614,12 @@ export class SessionService {
     const claimable = owners !== null && isClaimableCliSource(meta, owners.get(sid) || stateDbSource)
     const workspace = str(meta.workspace || meta.cwd).trim() || this.deps.workspaces.lastWorkspace(profile)
     const defaults = this.store.deps.defaults(profile)
+    const context = Array.isArray(meta._lineage_ids) ? stateDbSessionMessages(dbPath, sid, { stitch: false }) : null
     const session = new Session({
       session_id: sid, title: str(meta.title) || 'CLI Session', workspace, model: str(meta.model) || 'unknown', model_provider: str(meta.model_provider) || null,
       messages: msgs, created_at: Number(meta.created_at) || 0, updated_at: Number(meta.updated_at) || 0, profile: str(meta.profile) || null,
+      pinned: Boolean(meta.pinned), archived: Boolean(meta.archived),
+      ...(context ? { context_messages: context } : {}),
       is_cli_session: claimable ? true : !subagentChild, source_tag: str(meta.source_tag) || null, raw_source: str(meta.raw_source) || null,
       session_source: str(meta.session_source) || null, source_label: str(meta.source_label) || null, read_only: !claimable,
       // Python `import_cli_session`: the claimed sidecar keeps the row's lineage, background project and channel identity
@@ -700,6 +710,7 @@ export class SessionService {
   /** Python `_handle_session_get` on the WebUI sidecar (state.db merge pending). */
   detail(sid: string, query: { messages?: string | null | undefined; msg_limit?: string | null | undefined; msg_before?: string | null | undefined; resolve_model?: string | null | undefined }): Record<string, unknown> {
     if (!sid) throw new HttpFailure(400, 'session_id is required')
+    sid = this.resolveSessionId(sid)
     const loadMessages = (query.messages ?? '1') !== '0'
     const msgLimit = parseMsgLimit(query.msg_limit ?? null)
     const msgBeforeRaw = query.msg_before
@@ -847,6 +858,7 @@ export class SessionService {
 
   /** A session without a sidecar, synthesized from state.db for this profile; 404/409 like the detail. */
   private foreignSession(sid: string): { synth: Session; meta: Row | null } {
+    sid = this.resolveSessionId(sid)
     const meta = this.lookupCliMeta(sid)
     const profile = str(meta?.profile) || null
     const profileAgnostic = str(meta?.source_tag || meta?.raw_source).trim().toLowerCase() === 'claude_code'
@@ -953,26 +965,43 @@ export class SessionService {
 
   // ── list / search ────────────────────────────────────────────────────────
 
+  /** Expand saved aliases in one worker query independently of the bounded native sidebar window. */
+  private async persistedAliasMetadata(rows: Row[], existing: Row[] = []): Promise<{ rows: Row[]; storage?: AgentStorage }> {
+    const profile = this.deps.activeProfile()
+    const represented = new Set(existing.flatMap((row) => [...sessionLineageIds(row)]))
+    const ids = rows.filter((row) => this.deps.profilesMatch(str(row.profile) || null, profile) && !isClaudeCodeSessionId(str(row.session_id)) && !represented.has(str(row.session_id))).map((row) => str(row.session_id))
+    if (!ids.length) return { rows: existing }
+    const extra = await this.deps.cliSessions(profile, { sourceFilter: null, sessionIds: ids })
+    return { rows: [...new Map([...existing, ...extra.rows].map((row) => [str(row.session_id), row])).values()], storage: extra.storage }
+  }
+
   async list(params: Omit<ListParams, 'activeProfile' | 'isolatedProfileMode' | 'profilesMatch' | 'cliRows' | 'gatewayIdentity' | 'stateDbSources' | 'truncatedSources' | 'agentStorage' | 'pruneOrphanedImports' | 'webuiRows'>): Promise<{ body: ListResponse; etag: string }> {
     const activeProfile = this.deps.activeProfile()
+    const webuiRows = allSessions(this.store, { sidebarMetadataOnly: true })
     const wantState = params.showCliSessions || params.showCronSessions || params.showWebhookSessions || params.showKanbanSessions
     // Python reads every profile's state.db under all_profiles; this port projects the active profile only.
     const cliRead = wantState ? await this.deps.cliSessions(activeProfile, { sourceFilter: params.sourceFilter ?? null }) : undefined
     const claudeCodeRows = params.showCliSessions && params.showClaudeCodeSessions ? this.claudeCodeRows() : []
-    const cliRows = cliRead ? [...cliRead.rows, ...claudeCodeRows] : undefined
+    let cliRows = cliRead ? [...cliRead.rows, ...claudeCodeRows] : undefined
     const gatewayIdentity = loadGatewaySessionIdentityMap(join(this.deps.profileHome(activeProfile), 'sessions', 'sessions.json'))
     const truncatedSources = cliRead?.truncated
-    const agentStorage = cliRead?.storage
-    const webuiRows = allSessions(this.store, { sidebarMetadataOnly: true })
-    const lookups = await this.listStateDbLookups(webuiRows, (cliRead?.rows ?? []).map((r) => str(r.session_id)))
+    let agentStorage = cliRead?.storage
+    if (cliRows) {
+      const expanded = await this.persistedAliasMetadata(webuiRows, cliRows)
+      cliRows = expanded.rows
+      if (expanded.storage && (expanded.storage.state === 'corrupt' || agentStorage?.state === 'ok')) agentStorage = expanded.storage
+    }
+    const lookups = await this.listStateDbLookups(webuiRows, (cliRows ?? []).map((r) => str(r.session_id)))
     const payload = buildSessionListPayload(this.store, { ...params, ...(cliRows ? { cliRows } : {}), ...(truncatedSources ? { truncatedSources } : {}), ...(agentStorage ? { agentStorage } : {}), gatewayIdentity, ...lookups, webuiRows, activeProfile, isolatedProfileMode: this.deps.isolatedProfileMode(), profilesMatch: this.deps.profilesMatch })
     return sessionListResponse(payload, this.deps.runtime, this.deps.redactEnabled(), this.deps.now(), this.workspaceNames())
   }
 
-  search(q: string, opts: { content: boolean; depth: number; allProfiles: boolean }): Record<string, unknown> {
+  async search(q: string, opts: { content: boolean; depth: number; allProfiles: boolean }): Promise<Record<string, unknown>> {
     const activeProfile = this.deps.activeProfile()
     let sessions = allSessions(this.store)
     if (!opts.allProfiles) sessions = sessions.filter((r) => this.deps.profilesMatch(str(r.profile) || null, activeProfile))
+    const metadata = await this.persistedAliasMetadata(sessions)
+    sessions = reconcileLocalSessionRows(sessions, metadata.rows, this.deps.profilesMatch)
     sessions = withOwnerLocks(sessions, this.stateDbSources)
     const redact = this.deps.redactEnabled()
     const workspaceName = this.workspaceNames()
@@ -1887,46 +1916,63 @@ export class SessionService {
     if (this.isSubagentViewOnly(sid)) throw new HttpFailure(400, 'Subagent sessions are view-only and cannot be deleted from WebUI')
     const retained = (() => { try { return worktreeRetainedPayload(this.store.get(sid, { metadataOnly: true })) } catch { return {} } })()
     let eventProfile: string | null = null
-    let hadSidecar = true
-    try { eventProfile = this.store.get(sid, { metadataOnly: true }).profile } catch { eventProfile = null; hadSidecar = false }
+    try { eventProfile = this.store.get(sid, { metadataOnly: true }).profile } catch { eventProfile = null }
     // Python `_is_messaging_session_id`: decided before the JSON is gone, from WebUI metadata or the Agent's row.
     const isMessaging = this.isMessagingSession(sid)
-    if (this.activeRunBlocking(sid)) throw new HttpFailure(409, 'Session has an active run; stop it before deleting')
+    const knownIds = !isMessaging && !orphaned ? stateDbCompressionLineage(this.stateDbPath(eventProfile), sid) : [sid]
+    const assertIdle = () => { if (knownIds.some((id) => this.activeRunBlocking(id))) throw new HttpFailure(409, 'Session has an active run; stop it before deleting') }
+    assertIdle()
     let stateDbCleanupFailed = false
+    let removedIds = [sid]
     try {
       await this.store.withLock(sid, async () => {
-        if (this.activeRunBlocking(sid)) throw new HttpFailure(409, 'Session has an active run; stop it before deleting')
+        assertIdle()
         // TAL-792: state.db goes first, so another Agent process running or compressing the session refuses the delete
         // before anything of Talaria's is removed. Python: the Agent/CLI transcript goes too (else a claimable CLI row
         // resurfaces in the sidebar), but a messaging channel's memory is never erased from the WebUI.
-        if (!isMessaging && !orphaned) stateDbCleanupFailed = await this.deleteStateDbRows(eventProfile, sid)
-        // A public share outlives its session file, and revokeShare needs the session, so revoke it first.
-        try { this.deps.shares.revoke(this.store.get(sid, { metadataOnly: true })) } catch (error) { if (!(error instanceof SessionNotFound)) throw error }
-        // Stage cleanup while the originating profile is still recoverable; publication waits for removal.
-        if (hadSidecar) this.deps.clearRelayCompletions?.(sid, eventProfile)
-        if (!this.store.deleteFiles(sid)) throw new HttpFailure(500, 'Failed to delete session data')
+        if (!isMessaging && !orphaned) {
+          const result = await this.deleteStateDbRows(eventProfile, sid)
+          stateDbCleanupFailed = !result.ok
+          removedIds = [...new Set([sid, ...(result.deleted_ids ?? (result.ok ? knownIds : []))])]
+        }
+        if (removedIds.some((id) => !isSafeSessionId(id))) throw new HttpFailure(503, 'Session cleanup could not finish because the Agent returned invalid session IDs.')
+        removedIds = removedIds.filter((id) => {
+          try { return this.deps.profilesMatch(this.store.get(id, { metadataOnly: true }).profile, eventProfile ?? this.deps.activeProfile()) } catch { return true }
+        })
+        for (const id of removedIds) {
+          // Revoke before removing each persisted alias; UI cleanup follows the Agent's committed target set.
+          try {
+            const session = this.store.get(id, { metadataOnly: true })
+            if (!Object.keys(retained).length) Object.assign(retained, worktreeRetainedPayload(session))
+            this.deps.shares.revoke(session)
+            this.deps.clearRelayCompletions?.(id, session.profile)
+          } catch (error) { if (!(error instanceof SessionNotFound)) throw error }
+          if (!this.store.deleteFiles(id)) throw new HttpFailure(500, 'Failed to delete session data')
+        }
       }, { timeoutMs: 5000 })
     } catch (error) {
       if (error instanceof SessionBusy) throw new HttpFailure(503, 'Session busy, try again')
       throw error
     }
-    this.deps.runtime.evictAgent(sid, true)
-    try { rmSync(this.deps.attachmentDir(sid), { recursive: true, force: true }) } catch { /* ignore */ }
-    // Python `delete_run_journal` (#3802): a deleted session leaves no replayable run journal behind.
-    try { this.deps.journal?.deleteSession(sid) } catch { /* ignore */ }
-    this.deps.runtime.closeTerminal(sid)
+    for (const id of removedIds) {
+      this.deps.runtime.evictAgent(id, true)
+      try { rmSync(this.deps.attachmentDir(id), { recursive: true, force: true }) } catch { /* ignore */ }
+      // Python `delete_run_journal` (#3802): a deleted session leaves no replayable run journal behind.
+      try { this.deps.journal?.deleteSession(id) } catch { /* ignore */ }
+      this.deps.runtime.closeTerminal(id)
+    }
     this.publish('session_delete', eventProfile)
     return { ok: true, state_db_cleanup_failed: stateDbCleanupFailed, ...retained }
   }
 
-  /** The session's state.db rows; resolves whether cleanup failed, and throws 409 `refused` when an Agent process holds a row. */
-  private async deleteStateDbRows(profile: string | null, sid: string): Promise<boolean> {
+  /** The committed Agent deletion targets and cleanup outcome; throws 409 `refused` while an Agent process holds a row. */
+  private async deleteStateDbRows(profile: string | null, sid: string): Promise<SidecarResult<'state_db.delete_cli_session'>> {
     // TAL-529: the compression continuations go too; the Agent's delete keeps and detaches them otherwise. TAL-792: the
     // sidecar resolves them inside its delete transaction, so a guard on any of them refuses before anything is removed.
     let result: SidecarResult<'state_db.delete_cli_session'>
-    try { result = await this.deps.runtime.deleteCliSession(profile, sid) } catch { return true }
+    try { result = await this.deps.runtime.deleteCliSession(profile, sid) } catch { return { ok: false } }
     if (result.refused) throw new HttpFailure(409, 'In use by another Agent process. Try again later.', { refused: result.refused })
-    return !result.ok
+    return result
   }
 
   cleanup(zeroOnly: boolean): Record<string, unknown> {

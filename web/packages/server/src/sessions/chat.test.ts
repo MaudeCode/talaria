@@ -108,6 +108,38 @@ describe('chat turns through the sidecar', () => {
     release()
   })
 
+  it.each(['live', 'late'])('eventually clears a TTL notice for a %s subscriber after an early timer (TAL-992)', async (subscription) => {
+    let now = 1000
+    const clockSidecar = new FakeSidecar()
+    const clockServer = await bootTestServer({ sidecar: clockSidecar, now: () => now })
+    let release: (() => void) | undefined
+    try {
+      const sid = await newSession(clockServer)
+      clockSidecar.respond('chat.start', (_params, emit) => new Promise((resolve) => {
+        // Control the timer independently of the server clock: the first callback is deliberately early.
+        vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
+        emit({ event: 'notice', data: { key: 'band', kind: 'ttl', ttl_ms: 200, text: 'Usage at 90%' } })
+        release = () => { resolve(completed([{ role: 'user', content: 'go' }, { role: 'assistant', content: 'ok' }])) }
+      }))
+      const start = await json(await post(clockServer, '/api/chat/start', { session_id: sid, message: 'go' }))
+      const channel = clockServer.deps.registry.peek(String(start.stream_id))!
+      const live = subscription === 'live' ? channel.subscribeWithSnapshot()[0] : null
+      now = 1000.199
+      await vi.advanceTimersByTimeAsync(201)
+      expect(clockServer.deps.turns.sessionNotices(sid).map((n) => n.key)).toEqual(['band'])
+      now = 1000.201
+      await vi.advanceTimersByTimeAsync(5)
+      const subscriber = live ?? channel.subscribeWithSnapshot()[0]
+      const notices = subscriber.queue.filter(([event]) => event === 'notices').map(([, data]) => ((data as Json).notices as Json[]).map((n) => n.key))
+      expect(notices.at(-1)).toEqual([])
+      channel.unsubscribe(subscriber)
+    } finally {
+      vi.useRealTimers()
+      release?.()
+      await clockServer.close()
+    }
+  })
+
   it('ships a rate-limit wait as a run-status frame, cleared by the next token, ended with the turn (TAL-821)', async () => {
     const sid = await newSession(s)
     const until = 1_800_000_600

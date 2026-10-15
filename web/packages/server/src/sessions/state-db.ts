@@ -7,6 +7,7 @@
  */
 import { existsSync, openSync, readSync, closeSync, statSync } from 'node:fs'
 import { DatabaseSync } from 'node:sqlite'
+import { createHash } from 'node:crypto'
 import { Worker } from 'node:worker_threads'
 import type { AgentStorage } from '@maudecode/talaria-web-contracts'
 import { str } from '../util.js'
@@ -82,6 +83,7 @@ export function isCliSessionRow(row: Dict): boolean {
 /** Python `is_cli_session_row_visible`. */
 export function isCliSessionRowVisible(row: Dict): boolean {
   if (!isCliSessionRow(row)) return true
+  if (row._lineage_root_id && row._lineage_tip_id) return true
   const actual = positiveInt(row.actual_message_count)
   const messageCount = actual || positiveInt(row.message_count)
   if (messageCount <= 0) return false
@@ -101,6 +103,7 @@ const COMPRESSION_CHAIN_CAP = 1000
 
 function isContinuationSession(parent: Dict | undefined, child: Dict | undefined): boolean {
   if (!parent || !child) return false
+  if (lower(child.source) === 'tool' || explicitForkMarkers(child, true).length > 0) return false
   if (lower(child.session_source) === 'fork') return false
   const parentSource = lower(parent.source)
   const childSource = lower(child.source)
@@ -182,6 +185,7 @@ export function projectAgentSessionRows(rows: Dict[]): Dict[] {
   }
   const projected: Dict[] = []
   for (const row of rows) {
+    if (row._lineage_root_id && row._lineage_tip_id) { projected.push({ ...row }); continue }
     if (continuationChildIds.has(str(row.id))) continue
     let segments = 1
     let tip: Dict | null = row
@@ -218,6 +222,86 @@ export function openStateDbReadonly(dbPath: string, busyTimeoutMs = STATE_DB_BUS
 /** The table's columns; a failed read throws, so an unreadable database is never mistaken for an older schema (TAL-785). */
 function tableColumns(db: DatabaseSync, table: string): Set<string> {
   return new Set((db.prepare(`PRAGMA table_info(${table})`).all() as { name: string }[]).map((r) => r.name))
+}
+
+interface LocalLineage { owner: string; ids: string[]; context: string[]; rows: Dict[]; title: unknown }
+const LOCAL_POLICY_PREFIX = 'gateway.local_policy.v1:'
+
+/** Read-only equivalent of Agent validate_local_lineage. A receipt, never a reset edge alone, proves ownership. */
+function localLineages(db: DatabaseSync, sid?: string): Map<string, LocalLineage> {
+  const result = new Map<string, LocalLineage>()
+  if (!tableColumns(db, 'state_meta').has('value')) return result
+  const cols = tableColumns(db, 'sessions')
+  if (!['chat_id', 'user_id', 'session_key', 'model_config', 'parent_session_id', 'end_reason'].every((c) => cols.has(c))) return result
+  const meta = db.prepare('SELECT value FROM state_meta WHERE key = ?')
+  const fetch = db.prepare('SELECT * FROM sessions WHERE id IN (SELECT value FROM json_each(?))')
+  const messageCols = tableColumns(db, 'messages')
+  const lastMessage = ['session_id', 'timestamp'].every((c) => messageCols.has(c)) ? '(SELECT MAX(m.timestamp) FROM messages m WHERE m.session_id = s.id)' : 'NULL'
+  const activity = `MAX(COALESCE(${cols.has('last_activity_at') ? 's.last_activity_at' : 'NULL'}, 0), COALESCE(${lastMessage}, 0), COALESCE(s.started_at, 0))`
+  // Agent _CHAIN_STEP_SQL prefers a compression child, then a live child, then recency and id.
+  const children = db.prepare(`SELECT s.* FROM sessions s WHERE s.parent_session_id = ? ORDER BY CASE WHEN s.end_reason = 'compression' THEN 0 WHEN s.ended_at IS NULL THEN 1 ELSE 2 END, ${activity} DESC, s.started_at DESC, s.id DESC`)
+  const explicitChild = (child: Dict, includeReset: boolean): boolean => {
+    return lower(child.source) === 'tool' || lower(child.session_source) === 'fork'
+      || explicitForkMarkers(child, includeReset).length > 0
+  }
+  const compressionChildren = (parent: Dict): Dict[] => str(parent.end_reason) === 'compression'
+    ? (children.all(str(parent.id)) as Dict[]).filter((child) => !explicitChild(child, true)) : []
+  const owner = sid ? (db.prepare('SELECT chat_id FROM sessions WHERE id = ?').get(sid) as Dict | undefined)?.chat_id || sid : null
+  const receipts = owner
+    ? db.prepare('SELECT key, value FROM state_meta WHERE key = ?').all(`${LOCAL_POLICY_PREFIX}${str(owner)}`)
+    : db.prepare('SELECT key, value FROM state_meta WHERE key GLOB ?').iterate(`${LOCAL_POLICY_PREFIX}*`)
+  for (const saved of receipts as Iterable<{ key: string; value: string }>) {
+    try {
+      if (saved.value.length > 1_000_000) continue
+      const receipt = JSON.parse(saved.value) as Dict
+      const owner = saved.key.slice(LOCAL_POLICY_PREFIX.length)
+      const ids = receipt.lineage
+      const entry = receipt.entry as Dict | undefined
+      if (receipt.session_id !== owner || !Array.isArray(ids) || ids.length < 2 || ids.length > COMPRESSION_CHAIN_CAP
+        || !ids.every((id): id is string => typeof id === 'string' && Boolean(id)) || new Set(ids).size !== ids.length
+        || ids[0] !== owner || ids.at(-1) !== entry?.session_id) continue
+      if (!['profile_id', 'principal_id', 'request_id', 'route'].every((key) => typeof receipt[key] === 'string' && receipt[key])) continue
+      if ('legacy_session_id' in receipt) {
+        const legacy = meta.get(`gateway.local_legacy.v1:${owner}`) as { value: string } | undefined
+        if (receipt.legacy_session_id !== owner || !legacy) continue
+        const binding = JSON.parse(legacy.value) as Dict
+        if (!['session_id', 'profile_id', 'principal_id', 'legacy_session_id'].every((key) => binding[key] === receipt[key])) continue
+      } else {
+        // Python json.dumps uses ensure_ascii=True, including UTF-16 surrogate pairs.
+        const identity = JSON.stringify([receipt.profile_id, receipt.principal_id, receipt.request_id]).replace(/[\u007f-\uffff]/g, (c) => `\\u${c.charCodeAt(0).toString(16).padStart(4, '0')}`)
+        if (owner !== `local-${createHash('sha256').update(identity).digest('hex')}`) continue
+      }
+      const byId = new Map((fetch.all(JSON.stringify(ids)) as Dict[]).map((row) => [str(row.id), row]))
+      const rows = ids.map((id) => byId.get(id))
+      if (!rows.every((row): row is Dict => Boolean(row) && row!.chat_id === owner && row!.user_id === receipt.principal_id && row!.session_key === receipt.route)) continue
+      let contextStart = 0
+      let valid = true
+      for (let i = 1; i < rows.length; i += 1) {
+        const parent = rows[i - 1]!, child = rows[i]!
+        if (child.parent_session_id !== parent.id || explicitChild(child, false)) { valid = false; break }
+        if (parent.end_reason === 'session_reset') {
+          const config = jsonLoadsIfString(child.model_config) as Dict | null
+          if (!config || config._reset_from !== parent.id) { valid = false; break }
+          contextStart = i
+        } else {
+          const next = compressionChildren(parent)
+          if (next[0]?.id !== child.id) { valid = false; break }
+        }
+      }
+      if (!valid || compressionChildren(rows.at(-1)!).length) continue
+      const lineage = { owner, ids, context: ids.slice(contextStart), rows, title: [...rows].reverse().find((row) => row.title)?.title ?? null }
+      for (const id of ids) result.set(id, lineage)
+    } catch { /* Malformed receipts cannot attach history to another conversation. */ }
+  }
+  return result
+}
+
+/** The validated receipt's current physical target, or the original id on old Agents / unproven metadata. */
+export function stateDbLocalTarget(dbPath: string, sid: string): string {
+  if (!existsSync(dbPath)) return sid
+  let db: DatabaseSync
+  try { db = openStateDbReadonly(dbPath) } catch { return sid }
+  try { db.exec('BEGIN'); return localLineages(db, sid).get(sid)?.ids.at(-1) ?? sid } catch { return sid } finally { db.close() }
 }
 
 export const AGENT_STORAGE_OK: AgentStorage = Object.freeze({ state: 'ok', reason: null })
@@ -264,6 +348,8 @@ export function stateDbStorage(dbPath: string): AgentStorage {
 
 export interface ReadRowsOptions {
   limit?: number | null
+  /** A direct metadata lookup uses the same projection without the sidebar's recency window. */
+  sessionIds?: readonly string[]
   excludeSources?: readonly string[] | null
   includeSources?: readonly string[] | null
   log?: (line: string) => void
@@ -291,6 +377,8 @@ export function readImportableAgentSessionRows(dbPath: string, opts: ReadRowsOpt
   if (readDelayMs > 0) Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, readDelayMs)
   const db = openStateDbReadonly(dbPath)
   try {
+    db.exec('BEGIN') // Receipt and physical rows must belong to the same committed generation.
+    const local = localLineages(db, opts.sessionIds?.length === 1 ? opts.sessionIds[0] : undefined)
     const sessionCols = tableColumns(db, 'sessions')
     const messageCols = tableColumns(db, 'messages')
     if (!sessionCols.has('source')) {
@@ -344,6 +432,12 @@ export function readImportableAgentSessionRows(dbPath: string, opts: ReadRowsOpt
     let candidateOrder = 'ORDER BY s.started_at DESC'
     const where = ['s.source IS NOT NULL']
     const params: string[] = []
+    if (opts.sessionIds !== undefined) {
+      where.push('s.id IN (SELECT value FROM json_each(?))')
+      params.push(JSON.stringify(opts.sessionIds.map((id) => local.get(id)?.ids.at(-1) ?? id)))
+    }
+    const superseded = [...local].filter(([id, lineage]) => id !== lineage.ids.at(-1)).map(([id]) => id)
+    if (superseded.length) { where.push('s.id NOT IN (SELECT value FROM json_each(?))'); params.push(JSON.stringify(superseded)) }
     const included = (include ?? []).map(String).filter(Boolean)
     if (included.length) { where.push(`s.source IN (${included.map(() => '?').join(', ')})`); params.push(...included) }
     const excluded = (exclude ?? []).map(String).filter(Boolean)
@@ -357,7 +451,7 @@ export function readImportableAgentSessionRows(dbPath: string, opts: ReadRowsOpt
       orderBy = messagesIndexPresent ? 'ORDER BY COALESCE(last_activity, s.started_at) DESC' : 'ORDER BY COALESCE(MAX(m.timestamp), s.started_at) DESC'
       candidateOrder = 'ORDER BY COALESCE((SELECT MAX(mx.timestamp) FROM messages mx WHERE mx.session_id = s.id), s.started_at) DESC, s.started_at DESC'
     }
-    const selectSql = `SELECT s.id, s.title, s.model, s.message_count, s.started_at, s.source, ${['session_source', 'user_id', 'chat_id', 'chat_type', 'thread_id', 'session_key', 'origin_chat_id', 'origin_user_id', 'platform', 'parent_session_id', 'ended_at', 'end_reason'].map(col).join(', ')}, ${actualCountExpr} AS actual_message_count, ${userCountExpr} AS actual_user_message_count, ${lastActivityExpr} AS last_activity`
+    const selectSql = `SELECT s.id, s.title, s.model, s.message_count, s.started_at, s.source, ${['model_config', 'session_source', 'user_id', 'chat_id', 'chat_type', 'thread_id', 'session_key', 'origin_chat_id', 'origin_user_id', 'platform', 'parent_session_id', 'ended_at', 'end_reason'].map(col).join(', ')}, ${actualCountExpr} AS actual_message_count, ${userCountExpr} AS actual_user_message_count, ${lastActivityExpr} AS last_activity`
     let raw: Dict[]
     if (limit !== null) {
       const resultLimit = Math.max(0, Math.trunc(limit))
@@ -370,8 +464,18 @@ export function readImportableAgentSessionRows(dbPath: string, opts: ReadRowsOpt
     } else {
       raw = db.prepare(`${selectSql} FROM sessions s ${joinClause} WHERE ${where.join(' AND ')} ${groupByClause} ${orderBy}`).all(...params)
     }
-    let projected = projectAgentSessionRows(raw.map((r) => ({ ...r })))
-    projected = projected.map((r) => ({ ...r, ...normalizeAgentSessionSource(r.source) }))
+    let projected = projectAgentSessionRows(raw.map((r) => {
+      const lineage = local.get(str(r.id))
+      if (!lineage) return { ...r }
+      const root = lineage.rows[0]!
+      const title = lineage.title || r.title
+      return { ...r, title, started_at: root.started_at, last_activity: r.last_activity ?? r.started_at, parent_session_id: root.parent_session_id,
+        _lineage_root_id: lineage.owner, _lineage_tip_id: r.id, _lineage_ids: [...lineage.ids], _compression_segment_count: lineage.ids.length }
+    }))
+    projected = projected.map((r) => {
+      const parent = local.get(str(r.parent_session_id))
+      return { ...r, ...normalizeAgentSessionSource(r.source), ...(parent ? { _parent_lineage_root_id: parent.owner, parent_title: parent.title, parent_source: parent.rows.at(-1)?.source ?? null } : {}) }
+    })
     projected = projected.filter(isCliSessionRowVisible)
     if (limit === null) return projected
     const selected = projected.slice(0, Math.max(0, Math.trunc(limit)))
@@ -479,16 +583,21 @@ export function stateDbSessionSources(dbPath: string, sessionIds: Iterable<strin
   }
 }
 
+/** The same marker parser serves conservative history boundaries and exact-parent ownership walks. */
+function explicitForkMarkers(row: Dict, includeReset: boolean): unknown[] {
+  let cfg: unknown = row.model_config
+  if (typeof cfg === 'string') { try { cfg = JSON.parse(cfg) } catch { return [] } }
+  if (!cfg || typeof cfg !== 'object' || Array.isArray(cfg)) return []
+  const c = cfg as Dict
+  return [c._branched_from, c._delegate_from, ...(includeReset ? [c._reset_from] : [])].filter((m) => m !== undefined && m !== null)
+}
+
 /** Python `_is_explicit_fork_child_row`: a tool child, or a branch/delegate (`includeReset`: also reset) fork of its parent. */
 function isExplicitForkChild(row: Dict, includeReset: boolean): boolean {
   if (str(row.source) === 'tool') return true
-  let cfg: unknown = row.model_config
-  if (typeof cfg === 'string') { try { cfg = JSON.parse(cfg) } catch { return false } }
-  if (!cfg || typeof cfg !== 'object' || Array.isArray(cfg)) return false
-  const c = cfg as Dict
-  const markers = [c._branched_from, c._delegate_from, ...(includeReset ? [c._reset_from] : [])]
+  const markers = explicitForkMarkers(row, includeReset)
   const parentId = row.parent_session_id
-  return parentId ? markers.includes(parentId) : markers.some((m) => m !== undefined && m !== null)
+  return parentId ? markers.includes(parentId) : markers.length > 0
 }
 
 /**
@@ -846,11 +955,13 @@ export function stateDbSessionRead(dbPath: string, sid: string, opts: { stitch?:
     const hasId = available.has('id')
     const selected = [...(hasId ? ['id'] : []), ...(available.has('message_uid') ? ['message_uid'] : []), 'role', 'content', 'timestamp', ...OPTIONAL_MESSAGE_COLUMNS.filter((c) => available.has(c))]
     // TAL-529: an explicit lineage (the session and its compression continuations) replaces the parent walk.
-    const chain = opts.lineage?.length ? [...opts.lineage] : [id]
-    if (!opts.lineage?.length && (opts.stitch ?? true)) {
+    const local = localLineages(db, id).get(id)
+    const chain = local ? (opts.stitch === false ? [local.ids.at(-1) ?? id] : [...local.context]) : opts.lineage?.length ? [...opts.lineage] : [id]
+    if (!local && !opts.lineage?.length && (opts.stitch ?? true)) {
       const sessionCols = tableColumns(db, 'sessions')
       if (['parent_session_id', 'end_reason', 'started_at', 'source'].every((c) => sessionCols.has(c))) {
-        const select = db.prepare('SELECT id, source, started_at, parent_session_id, ended_at, end_reason FROM sessions WHERE id = ?')
+        const extra = ['model_config', 'session_source'].map((c) => sessionCols.has(c) ? c : `NULL AS ${c}`).join(', ')
+        const select = db.prepare(`SELECT id, source, started_at, parent_session_id, ended_at, end_reason, ${extra} FROM sessions WHERE id = ?`)
         let current = select.get(id) as Dict | undefined
         const seen = new Set([id])
         for (let hop = 0; hop < COMPRESSION_CHAIN_CAP && current; hop += 1) {
@@ -886,7 +997,7 @@ export function stateDbSessionRead(dbPath: string, sid: string, opts: { stitch?:
       }
     }
     if (hasId && ['message_uid', 'active', 'compacted'].every((c) => available.has(c))) {
-      const identities = replayIdentities(db, chain, rows, available)
+      const identities = replayIdentities(db, local?.context ?? chain, rows, available)
       for (const [i, row] of rows.entries()) {
         const identity = identities.get(Number(row.id))
         // A known changed generation overrides even a coincidental legacy timestamp twin.
@@ -921,10 +1032,14 @@ export function stateDbCompressionLineage(dbPath: string, sid: string): string[]
   let db: DatabaseSync
   try { db = openStateDbReadonly(dbPath) } catch { return lineage }
   try {
+    db.exec('BEGIN')
+    const local = localLineages(db, lineage[0]).get(lineage[0])
+    if (local) return [...local.ids]
     const sessionCols = tableColumns(db, 'sessions')
     if (!['id', 'parent_session_id', 'end_reason', 'ended_at', 'started_at', 'source'].every((c) => sessionCols.has(c))) return lineage
     const sessionSource = sessionCols.has('session_source') ? 'session_source' : 'NULL AS session_source'
-    const cols = `id, source, ${sessionSource}, started_at, parent_session_id, ended_at, end_reason`
+    const modelConfig = sessionCols.has('model_config') ? 'model_config' : 'NULL AS model_config'
+    const cols = `id, source, ${sessionSource}, started_at, parent_session_id, ended_at, end_reason, ${modelConfig}`
     let current = db.prepare(`SELECT ${cols} FROM sessions WHERE id = ?`).get(lineage[0]) as Dict | undefined
     const children = db.prepare(`SELECT ${cols} FROM sessions WHERE parent_session_id = ?`)
     for (let hop = 0; hop < COMPRESSION_CHAIN_CAP && current; hop += 1) {
@@ -966,6 +1081,8 @@ export function stateDbLineageReport(dbPath: string, rawSid: string, maxHops = C
   let db: DatabaseSync
   try { db = openStateDbReadonly(dbPath) } catch { return emptyLineageReport(sid) }
   try {
+    db.exec('BEGIN')
+    const local = localLineages(db, sid).get(sid)
     const cols = tableColumns(db, 'sessions')
     if (!['id', 'parent_session_id', 'end_reason'].every((c) => cols.has(c))) return emptyLineageReport(sid)
     const col = (name: string, fallback = 'NULL'): string => (cols.has(name) ? `s.${name}` : `${fallback} AS ${name}`)
@@ -974,10 +1091,10 @@ export function stateDbLineageReport(dbPath: string, rawSid: string, maxHops = C
     const fetch = (id: unknown): Dict | null => (id ? (byId.get(str(id)) as Dict | undefined) ?? null : null)
     const target = fetch(sid)
     if (!target) return emptyLineageReport(sid)
-    const segments = [target]
-    const seen = new Set([sid])
-    let manualReview = true
-    for (let hop = 0; hop < maxHops; hop += 1) {
+    const segments = local ? [...local.rows].reverse().slice(0, Math.max(1, maxHops)) : [target]
+    const seen = new Set(segments.map((row) => str(row.id)))
+    let manualReview = local ? local.ids.length > maxHops : true
+    for (let hop = 0; !local && hop < maxHops; hop += 1) {
       const current = segments[segments.length - 1]!
       const parentId = str(current.parent_session_id)
       const parent = fetch(parentId)

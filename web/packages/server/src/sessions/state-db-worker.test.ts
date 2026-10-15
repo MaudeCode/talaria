@@ -124,7 +124,7 @@ describe('session list state.db reads off the event loop (TAL-920)', () => {
     // The crash request runs first, so the worker exits with the sidebar read still queued behind it.
     const crash = crashStateDbWorkerForTests().catch((error: unknown) => error as Error)
     const logs: string[] = []
-    const source = new CliSessionSource({ store: s.deps.sessionStore, profileHome: () => s.state, lastWorkspace: () => s.state, now: () => Date.now() / 1000, log: (line) => logs.push(line) })
+    const source = new CliSessionSource({ store: s.deps.sessionStore, profilesMatch: s.deps.profilesMatch, profileHome: () => s.state, lastWorkspace: () => s.state, now: () => Date.now() / 1000, log: (line) => logs.push(line) })
     expect((await source.read('default')).rows).toEqual([])
     expect(((await crash) as Error).message).toMatch(/state\.db worker exited/)
     expect(logs).toEqual([expect.stringMatching(/^\[webui\] get_cli_sessions\(\) failed; check state\.db schema or path .*state\.db worker exited/) as unknown])
@@ -137,7 +137,7 @@ describe('session list state.db reads off the event loop (TAL-920)', () => {
     db.exec("CREATE TABLE sessions (id TEXT PRIMARY KEY, source TEXT); INSERT INTO sessions VALUES ('x', 'cli')")
     db.close()
     const brokenLogs: string[] = []
-    const brokenSource = new CliSessionSource({ store: s.deps.sessionStore, profileHome: () => broken, lastWorkspace: () => broken, now: () => Date.now() / 1000, log: (line) => brokenLogs.push(line) })
+    const brokenSource = new CliSessionSource({ store: s.deps.sessionStore, profilesMatch: s.deps.profilesMatch, profileHome: () => broken, lastWorkspace: () => broken, now: () => Date.now() / 1000, log: (line) => brokenLogs.push(line) })
     expect((await brokenSource.read('default')).rows).toEqual([])
     expect(brokenLogs).toEqual([expect.stringMatching(/^\[webui\] get_cli_sessions\(\) failed; check state\.db schema or path .*: no such column/) as unknown])
     expect((await readImportableAgentSessionRowsAsync(dbPath)).map((r) => r.id)).toContain('tg-a')

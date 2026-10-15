@@ -44,7 +44,7 @@ def _delete(proc: SidecarProcess, home, session_id: str, *, lineage: bool = Fals
     params = {"profile_home": str(home), "session_id": session_id, **({"include_compression_lineage": True} if lineage else {})}
     result = proc.result("state_db.delete_cli_session", params)
     assert_matches("state_db.delete_cli_session", result)
-    return result
+    return {key: value for key, value in result.items() if key != "deleted_ids"}
 
 
 def test_a_live_turn_lease_or_compression_lock_refuses_the_delete(hermes_home) -> None:
@@ -346,7 +346,7 @@ def test_receipt_backed_reset_conversation_deletes_from_either_end(hermes_home, 
 
 
 @requires_ledger
-@pytest.mark.parametrize("failure", ["manifest", "artifact"])
+@pytest.mark.parametrize("failure", ["manifest", "artifact", "media"])
 def test_runtime_delete_cleanup_failure_recovers_after_restart(hermes_home, failure) -> None:
     _seed(hermes_home, "cli-a")
     _settled(hermes_home)
@@ -365,13 +365,21 @@ def test_runtime_delete_cleanup_failure_recovers_after_restart(hermes_home, fail
                     raise OSError("injected manifest failure")
                 return original(path, *args, **kwargs)
             Path.write_text = fail_manifest
-        else:
+        elif {failure!r} == "artifact":
             state_db._clean_artifacts = lambda *args, **kwargs: False
-        assert state_db.delete_cli_session(Path({str(hermes_home)!r}), "cli-a") == {{"ok": False}}
+        else:
+            import hermes_state_media
+            def fail_media(db):
+                raise OSError("injected media failure")
+            hermes_state_media.collect_retired_media = fail_media
+        result = state_db.delete_cli_session(Path({str(hermes_home)!r}), "cli-a")
+        assert result["ok"] is False
+        if {failure!r} != "manifest":
+            assert result["deleted_ids"] == ["cli-a"]
     """)
     assert artifact.exists()
     assert bool(_rows(hermes_home, "SELECT id FROM sessions")) == (failure == "manifest")
-    assert bool(list(sessions.glob(".cleanup_manifest_*.json"))) == (failure == "artifact")
+    assert bool(list(sessions.glob(".cleanup_manifest_*.json"))) == (failure in ("artifact", "media"))
     proc = SidecarProcess(hermes_home)
     try:
         assert _delete(proc, hermes_home, "cli-a") == {"ok": True}

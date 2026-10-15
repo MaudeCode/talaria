@@ -296,6 +296,8 @@ def _is_continuation(parent: dict, child: dict) -> bool:
     lower = lambda v: str(v or "").strip().lower()  # noqa: E731
     if lower(child.get("session_source")) == "fork":
         return False
+    if child.get("source") == "tool" or any(child.get(k) is not None for k in ("branched_from", "delegate_from", "reset_from")):
+        return False
     if lower(parent.get("source")) and lower(child.get("source")) and lower(parent.get("source")) != lower(child.get("source")):
         return False
     if parent.get("end_reason") not in ("compression", "cli_close"):
@@ -336,28 +338,28 @@ class _ActiveWriteGuard(Exception):
     """Another Agent process holds a live turn lease or compression lock on a row the delete would remove."""
 
 
-def _delete_locked(sid: str, home: Path, include_lineage: bool) -> bool:
+def _delete_locked(sid: str, home: Path, include_lineage: bool) -> dict:
     stale_complete = _process_stale_manifests(home)
     db_path = home / "state.db"
     if not db_path.exists():
-        return False
+        return {"ok": False}
     agent_db = _session_db(home)
     if agent_db is None:
-        return False
+        return {"ok": False}
     try:
         guarded = _write_guard_check(agent_db)
         if guarded is None:  # fail closed: without the Agent's guard, a live writer's rows cannot be told apart
             log.warning("Agent has no session write-guard check; state.db rows are kept")
-            return False
+            return {"ok": False}
         try:
             from hermes_state_mutation_retirement import delete_in_transaction
         except ModuleNotFoundError as exc:
             if exc.name != "hermes_state_mutation_retirement":
                 raise
-            complete = _delete_rows(sid, include_lineage, home, db_path, guarded)
+            result = _delete_rows(sid, include_lineage, home, db_path, guarded)
         else:
-            complete = _delete_runtime_rows(sid, home, agent_db, guarded, delete_in_transaction)
-        return complete and stale_complete
+            result = _delete_runtime_rows(sid, home, agent_db, guarded, delete_in_transaction)
+        return {**result, "ok": result["ok"] and stale_complete}
     finally:
         _close(agent_db)
 
@@ -387,7 +389,7 @@ def _write_cleanup_manifest(home: Path, removed_ids: list[str]) -> None:
         raise
 
 
-def _delete_runtime_rows(requested: str, home: Path, agent_db, guarded, delete_in_transaction) -> bool:
+def _delete_runtime_rows(requested: str, home: Path, agent_db, guarded, delete_in_transaction) -> dict:
     """Extend the legacy delete with the Agent's canonical target/retirement transaction.
 
     Compression and receipt-backed reset segments are one conversation, even when the caller names its tip.
@@ -398,6 +400,29 @@ def _delete_runtime_rows(requested: str, home: Path, agent_db, guarded, delete_i
     from hermes_state_media import collect_retired_media
 
     def write(conn):
+        # The Agent's owner lookup falls back to the physical id on an unreadable receipt; refuse before that loses its owner.
+        row = conn.execute("SELECT chat_id FROM sessions WHERE id=?", (requested,)).fetchone()
+        owner = row[0] if row else None
+        saved = conn.execute("SELECT value FROM state_meta WHERE key=?", ("gateway.local_policy.v1:" + owner,)).fetchone() if owner else None
+        if saved is not None:
+            from hermes_state_local_lineage import validate_local_lineage
+            raw = saved[0]
+            if len(raw) > 1_000_000:
+                raise ValueError("local receipt exceeds read budget")
+            receipt = json.loads(raw)
+            ids = receipt.get("lineage", [owner])
+            if (receipt.get("session_id") != owner or not isinstance(ids, list) or not ids
+                    or len(ids) > _COMPRESSION_CHAIN_CAP or not all(isinstance(sid, str) and sid for sid in ids)):
+                raise ValueError("invalid local receipt")
+            validate_local_lineage(conn, receipt)
+            members = conn.execute("SELECT id,chat_id,user_id,session_key,source,model_config FROM sessions WHERE id IN (SELECT value FROM json_each(?))",
+                                   (json.dumps(ids),)).fetchall()
+            if len(members) != len(ids) or any(tuple(member)[1:4] != (owner, receipt["principal_id"], receipt["route"]) for member in members):
+                raise ValueError("local receipt owner mismatch")
+            for member in members:
+                config = json.loads(member[5] or '{}')
+                if member[0] != owner and (member[4] == 'tool' or any(config.get(key) is not None for key in ('_branched_from', '_delegate_from'))):
+                    raise ValueError("explicit child is not a local continuation")
         # Preserve the older user-delete guard over the complete canonical set, including closed ancestors.
         if guarded(conn, delete_targets(conn, requested)):
             raise _ActiveWriteGuard
@@ -409,20 +434,25 @@ def _delete_runtime_rows(requested: str, home: Path, agent_db, guarded, delete_i
             raise
         # Publish cleanup intent before the database commit; a failed manifest rolls back retirement too.
         _write_cleanup_manifest(home, result["deleted_ids"])
+        return result["deleted_ids"]
 
-    agent_db._execute_write(write)
-    collect_retired_media(agent_db)
-    return _process_stale_manifests(home)
+    deleted_ids = agent_db._execute_write(write)
+    try:
+        collect_retired_media(agent_db)
+    except Exception:  # noqa: BLE001 - retirement committed; retain its targets for caller cleanup and manifest retry
+        log.warning("Failed to collect retired session media", exc_info=True)
+        return {"ok": False, "deleted_ids": deleted_ids}
+    return {"ok": _process_stale_manifests(home), "deleted_ids": deleted_ids}
 
 
-def _delete_rows(requested: str, include_lineage: bool, home: Path, db_path: Path, guarded) -> bool:
+def _delete_rows(requested: str, include_lineage: bool, home: Path, db_path: Path, guarded) -> dict:
     with closing(sqlite3.connect(str(db_path))) as conn:
         conn.row_factory = sqlite3.Row
         conn.execute("PRAGMA foreign_keys = ON")
         conn.execute("BEGIN IMMEDIATE")
         columns = {row[1] for row in conn.execute("PRAGMA table_info(sessions)").fetchall()}
         if not {"id", "parent_session_id"}.issubset(columns):
-            return False
+            return {"ok": False}
         selected = ["id", "parent_session_id"] + [c if c in columns else f"NULL AS {c}" for c in ("model_config", "source", "session_source", "end_reason", "started_at", "ended_at")]
         rows = conn.execute(f"SELECT {', '.join(selected)} FROM sessions").fetchall()
         records = []
@@ -440,6 +470,7 @@ def _delete_rows(requested: str, include_lineage: bool, home: Path, db_path: Pat
             records.append({
                 "id": row["id"], "parent_id": row["parent_session_id"], "delegate_from": model_config.get("_delegate_from"),
                 "branched_from": model_config.get("_branched_from"), "model_config_known": known, "source": row["source"], "session_source": row["session_source"],
+                "reset_from": model_config.get("_reset_from"),
                 "end_reason": row["end_reason"], "started_at": row["started_at"], "ended_at": row["ended_at"],
             })
         by_id = {r["id"]: r for r in records}
@@ -523,15 +554,15 @@ def _delete_rows(requested: str, include_lineage: bool, home: Path, db_path: Pat
         except OSError:
             log.warning("Failed to write cleanup manifest", exc_info=True)
             conn.rollback()
-            return False
+            return {"ok": False}
         conn.commit()
-        return _process_stale_manifests(home)
+        return {"ok": _process_stale_manifests(home), "deleted_ids": all_removed}
 
 
 def delete_cli_session(home: Path, sid: str, include_lineage: bool = False) -> dict:
     try:
         with _thread_lock(home), _process_lock(home):
-            return {"ok": _delete_locked(sid, home, include_lineage)}
+            return _delete_locked(sid, home, include_lineage)
     except _ActiveWriteGuard:  # the uncommitted transaction rolls back on close: nothing is removed
         return {"ok": False, "refused": "active_turn"}
     except Exception:  # noqa: BLE001

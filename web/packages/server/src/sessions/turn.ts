@@ -825,7 +825,15 @@ export class TurnRunner {
               if (!notice) return
               put('notices', { session_id: sessionId, notices: this.sessionNotices(sessionId) })
               // ponytail: the expiry reaches a client only while a turn streams; an idle tab drops it on its next session load.
-              if (notice.expires_at !== null) setTimeout(() => { this.emitToSession(sessionId, 'notices', { session_id: sessionId, notices: this.sessionNotices(sessionId) }) }, (notice.expires_at - deps.now()) * 1000).unref()
+              if (notice.expires_at !== null) {
+                const expiresAt = notice.expires_at
+                const emitAfterExpiry = (): void => {
+                  // Timers can run before the wall clock expires the notice. Let SessionNotices decide, then retry.
+                  if (this.notices.list(sessionId).includes(notice)) setTimeout(emitAfterExpiry, Math.max(1, Math.ceil((expiresAt - deps.now()) * 1000))).unref()
+                  else this.emitToSession(sessionId, 'notices', { session_id: sessionId, notices: this.sessionNotices(sessionId) })
+                }
+                emitAfterExpiry()
+              }
               return
             }
             case 'notice_clear':

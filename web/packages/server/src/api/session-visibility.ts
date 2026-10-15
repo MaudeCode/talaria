@@ -19,17 +19,25 @@ export function sessionIdVisibleToRequest(ctx: RequestContext, sid: unknown): bo
 
 /** Pre-dispatch query guard for every `/api/` request (raw, SSE, and contract routes). */
 export function guardQuerySessionId(ctx: RequestContext): boolean {
+  const sid = ctx.query.get('session_id')
+  if (sessionIdVisibleToRequest(ctx, sid)) {
+    if (sid) ctx.query.set('session_id', ctx.deps.sessions.resolveSessionId(sid))
+    return true
+  }
   if (ctx.method === 'GET' && ctx.path === '/api/session') return true
-  if (sessionIdVisibleToRequest(ctx, ctx.query.get('session_id'))) return true
   ctx.json({ error: 'Session not found' }, { status: 404 })
   return false
 }
 
 /** Contract-route guard for the parsed input (query or JSON body) of every procedure. */
 export const requestSessionIdGuard = orpcBase.$context<ApiContext>().middleware(({ context: { ctx }, path, next }, input: unknown) => {
-  if (!EXEMPT_PROCEDURES.has(path.join('.'))) {
-    const sid = input && typeof input === 'object' && !Array.isArray(input) ? (input as Record<string, unknown>).session_id : undefined
-    if (!sessionIdVisibleToRequest(ctx, sid)) throw new HttpError(404, 'Session not found')
+  const body = input && typeof input === 'object' && !Array.isArray(input) ? input as Record<string, unknown> : null
+  const sid = body?.session_id
+  const visible = sessionIdVisibleToRequest(ctx, sid)
+  if (!EXEMPT_PROCEDURES.has(path.join('.')) && !visible) throw new HttpError(404, 'Session not found')
+  // Normalize once before handlers choose locks, runtime keys or files; an imported document keeps its own IDs.
+  if (body && typeof sid === 'string' && visible && path.join('.') !== 'session.import') {
+    body.session_id = ctx.deps.sessions.resolveSessionId(sid)
   }
   return next()
 })
