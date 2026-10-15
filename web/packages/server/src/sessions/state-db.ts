@@ -1019,7 +1019,7 @@ export function stateDbCompressionLineage(dbPath: string, sid: string): string[]
   try { db = openStateDbReadonly(dbPath) } catch { return lineage }
   try {
     db.exec('BEGIN')
-    const local = localLineages(db, lineage[0]!).get(lineage[0]!)
+    const local = localLineages(db, lineage[0]).get(lineage[0])
     if (local) return [...local.ids]
     const sessionCols = tableColumns(db, 'sessions')
     if (!['id', 'parent_session_id', 'end_reason', 'ended_at', 'started_at', 'source'].every((c) => sessionCols.has(c))) return lineage
