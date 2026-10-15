@@ -20,6 +20,17 @@ import { UpdateService, type UpdateServiceDeps } from '../tools/updates.js'
 type Json = Record<string, unknown>
 const post = (s: TestServer, path: string, body: unknown, method = 'POST'): Promise<Response> => s.get(path, { method, body: JSON.stringify(body), headers: { 'content-type': 'application/json' } })
 const json = async (res: Response): Promise<Json> => (await res.json()) as Json
+function holdUpdate(updates: UpdateService) {
+  const original = updates.apply.bind(updates)
+  let enter!: () => void
+  let finish!: () => void
+  let calls = 0
+  const admitted = new Promise<void>((resolve) => { enter = resolve })
+  const gate = new Promise<void>((resolve) => { finish = resolve })
+  updates.apply = async () => { calls += 1; enter(); await gate; return { ok: false, message: 'fixture failure' } }
+  return { admitted, calls: () => calls, finish, restore: () => { finish(); updates.apply = original } }
+}
+
 /** TAL-784: a memory page save carrying the revision the server reads for its section now. */
 const save = async (s: TestServer, body: Json): Promise<Response> => {
   const revision = (await json(await s.get('/api/memory')))[`${String(body.section ?? body.target)}_revision`]
@@ -1186,45 +1197,36 @@ describe('skills, memory, prompts, commands, mcp, health, updates, diagnostics',
   })
 
   it('deduplicates concurrent update requests onto one server lifecycle record', async () => {
-    const originalApply = s.deps.updates.apply.bind(s.deps.updates)
-    let finish!: () => void
-    const gate = new Promise<void>((resolve) => { finish = resolve })
-    let calls = 0
-    s.deps.updates.apply = async () => { calls += 1; await gate; return { ok: false, message: 'fixture failure' } }
+    const held = holdUpdate(s.deps.updates)
     try {
       const first = post(s, '/api/updates/apply', { target: 'webui' })
-      for (let attempt = 0; attempt < 20 && calls === 0; attempt += 1) await new Promise<void>((resolve) => { setImmediate(resolve) })
-      expect(calls).toBe(1)
+      await held.admitted
+      expect(held.calls()).toBe(1)
       const cleared = await json(await post(s, '/api/update-notifications/clear', { clear: true }))
       expect(cleared.notifications).toEqual([])
       const duplicate = await json(await post(s, '/api/updates/apply', { target: 'webui' }))
       expect(duplicate).toMatchObject({ ok: false, status: 'already_in_progress' })
       expect(typeof duplicate.notification_id).toBe('string')
-      expect(calls).toBe(1)
-      finish()
+      expect(held.calls()).toBe(1)
+      held.finish()
       const completed = await json(await first)
       expect(completed.notification_id).toBe(duplicate.notification_id)
       const listed = await json(await s.get('/api/update-notifications'))
       expect((listed.notifications as Json[]).filter((row) => row.id === completed.notification_id)).toHaveLength(0)
     } finally {
-      finish()
-      s.deps.updates.apply = originalApply
+      held.restore()
     }
   })
 
   it('names the update operation each tab started, even once cleared, and never an automatic one', async () => {
-    const originalApply = s.deps.updates.apply.bind(s.deps.updates)
-    let finish!: () => void
-    const gate = new Promise<void>((resolve) => { finish = resolve })
-    let calls = 0
-    s.deps.updates.apply = async () => { calls += 1; await gate; return { ok: false, message: 'fixture failure' } }
+    const held = holdUpdate(s.deps.updates)
     const tabUpdate = async (tab: string) => (await json(await s.get(`/api/update-notifications?tab_id=${tab}`))).tab_update as Json | null
     try {
       const automatic = s.deps.updateNotifications.begin({ owner: '*', profile: 'default', serverOwner: true }, 'agent')
       s.deps.updateNotifications.transition(automatic.id, 'succeeded')
       expect(await tabUpdate('tab-starter')).toBeNull()
       const first = post(s, '/api/updates/apply', { target: 'webui', tab_id: 'tab-starter' })
-      for (let attempt = 0; attempt < 20 && calls === 0; attempt += 1) await new Promise<void>((resolve) => { setImmediate(resolve) })
+      await held.admitted
       const started = await tabUpdate('tab-starter')
       expect(started).toMatchObject({ kind: 'update', target: 'webui', phase: 'applying', active: true })
       expect(await tabUpdate('tab-bystander')).toBeNull()
@@ -1233,13 +1235,12 @@ describe('skills, memory, prompts, commands, mcp, health, updates, diagnostics',
       expect(rejoined).toMatchObject({ status: 'already_in_progress', notification_id: started!.id })
       expect((await tabUpdate('tab-rejoiner'))?.id).toBe(started!.id)
       await post(s, '/api/update-notifications/clear', { clear: true })
-      finish()
+      held.finish()
       expect((await json(await first)).notification_id).toBe(started!.id)
       expect(await tabUpdate('tab-starter')).toMatchObject({ id: started!.id, phase: 'failed', active: false, detail: 'fixture failure' })
       expect((await post(s, '/api/updates/apply', { target: 'webui', tab_id: 'x' })).status).toBe(400)
     } finally {
-      finish()
-      s.deps.updates.apply = originalApply
+      held.restore()
     }
   })
 

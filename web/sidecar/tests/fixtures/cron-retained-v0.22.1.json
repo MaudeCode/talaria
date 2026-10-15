@@ -1,0 +1,25 @@
+{
+  "agentRevision": "297552a9d646119871391d202509822cd86330df",
+  "manual": {
+    "job": {
+      "id": "job-original"
+    },
+    "owner": "owner-original",
+    "execution_home": "/synthetic/execution",
+    "execution_id": "execution-original",
+    "cancel_reason": null,
+    "tail_started": false
+  },
+  "botChat": {
+    "id": "delivery-original",
+    "status": "queued",
+    "job": {
+      "id": "job-original",
+      "name": "Synthetic task"
+    },
+    "content": "Synthetic output",
+    "home": "/synthetic/target",
+    "for_failure": false,
+    "sequence": 1792058846588319000
+  }
+}

@@ -124,6 +124,22 @@ describe('crons, kanban, extensions, terminal', () => {
     expect(listed).toMatchObject({ model: 'm', provider: 'custom:localhost:8080' })
   })
 
+  it('refuses manual cron admission during an update before reading or dispatching cron state', async () => {
+    const job = { id: 'update-guard-job', name: 'Synthetic task', profile: null, toast_notifications: true, monitor: '', continuity: false }
+    sidecar.respond('cron.list', (params) => ({ jobs: params.profile_home === s.deps.config.hermesHome ? [job] : [] }))
+    sidecar.respond('cron.get', () => ({ job }))
+    sidecar.respond('cron.status', (params) => params.job_id ? { job_id: params.job_id, running: false, elapsed: 0 } : { running: {} })
+    sidecar.respond('cron.run', (params) => ({ job_id: params.job_id, status: 'completed', success: true, error: null, delivery_error: null }))
+    const guard = vi.spyOn(s.deps.updates, 'blocksNewWork').mockReturnValue(true)
+    const before = sidecar.calls.length
+    try {
+      const response = await post(s, '/api/crons/run', { job_id: job.id })
+      expect(response.status).toBe(503)
+      expect(sidecar.calls.slice(before).filter((call) => call.method.startsWith('cron.'))).toEqual([])
+      expect(s.deps.sessions.deps.runtime.runningCronJobs.has(job.id)).toBe(false)
+    } finally { guard.mockRestore() }
+  })
+
   it('routes retained deleted-job recovery through HTTP lookups and permits another unverified retry', async () => {
     const snapshot = { id: 'retained-job', name: 'Retained task', profile: null, toast_notifications: true, monitor: '', continuity: false,
       state: 'paused', enabled: false, running_elsewhere: false, last_run_at: null, last_status: 'error', last_error: 'Manual task outcome is unverified' }

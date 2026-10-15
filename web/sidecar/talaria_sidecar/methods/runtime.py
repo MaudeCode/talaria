@@ -20,6 +20,11 @@ from ..rpc import CallContext
 def register(registry) -> None:
     runtime = registry.runtime
 
+    @registry.method("runtime.agent_mutation", requires_agent=False)
+    def agent_mutation(ctx: CallContext, params: dict) -> dict:
+        from ..agent_mutation import call
+        return call(runtime, ctx, params)
+
     @registry.method("runtime.sync_dependencies", requires_agent=False)
     def sync_dependencies(ctx: CallContext, params: dict) -> dict:
         # Source has already advanced; loading it or checking the old revision would prevent repair.
@@ -123,7 +128,9 @@ def register(registry) -> None:
         if not isinstance(code, int):
             raise InvalidParams("exit_code must be an integer")
         from .chat import drain_agents
+        from ..agent_mutation import close_all
 
+        close_all()
         drain_agents()
         ctx.server.request_shutdown(exit_code=code)
         return {"ok": True}

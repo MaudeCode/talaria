@@ -155,6 +155,6 @@ DYNAMIC: list[tuple[str, str]] = [
 
 # Methods deliberately not exercised here: they need credentials, the
 # network, a running gateway, or a real audio file.
-UNEXERCISED = {"runtime.sync_dependencies", "runtime.handshake", "runtime.shutdown", "goals.restore", "commands.exec",
+UNEXERCISED = {"runtime.agent_mutation", "runtime.sync_dependencies", "runtime.handshake", "runtime.shutdown", "goals.restore", "commands.exec",
                "providers.resolve_runtime", "oauth.start", "oauth.poll", "oauth.cancel", "aux.complete", "stt.transcribe", "stt.stream", "stt.stream_audio", "gateway.control", "gateway.restart", "mcp.reload", "cron.run",
                "worktree.create", "chat.start", "chat.interrupt", "chat.steer", "chat.steer_withdraw", "chat.steer_now", "chat.evict_agent", "chat.commit_memory", "chat.refine", "chat.compress", "chat.compress_finalize", "approval.respond", "approval.pending", "approval.set_yolo", "clarify.respond", "config.set"}

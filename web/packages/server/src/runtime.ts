@@ -5,7 +5,7 @@
 import type { PendingSteer, SessionGoal, SessionNotice } from '@maudecode/talaria-web-contracts'
 import { AsyncLocalStorage } from 'node:async_hooks'
 import { pinnedFetch, systemDnsLookup } from './http/pinned.js'
-import { mkdirSync, readFileSync } from 'node:fs'
+import { mkdirSync, readdirSync, readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { AuthStore } from './auth/store.js'
 import { OidcService } from './auth/oidc.js'
@@ -165,6 +165,13 @@ export function createDeps(opts: CreateDepsOptions): AppDeps {
     const contained = containedProfileHome(baseHome, name)
     if (contained === null) throw new ProfileError(escapedProfileMessage(name), 400)
     return contained
+  }
+  const agentHomes = (): string[] => {
+    if (isolatedProfileMode()) return [baseHome]
+    let names: string[]
+    try { names = readdirSync(join(baseHome, 'profiles')) }
+    catch (error) { if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error; names = [] }
+    return [...new Set([baseHome, ...names.filter((name) => PROFILE_RE.test(name)).map(profileHome)])]
   }
   const attachmentRoot = (): string => {
     const override = (env.HERMES_WEBUI_ATTACHMENT_DIR ?? '').trim()
@@ -688,6 +695,7 @@ export function createDeps(opts: CreateDepsOptions): AppDeps {
       log,
       publishSessionsChanged: (reason, profile) => { events.publish(reason, { profile }) },
       runningJobs: runningCronJobs,
+      updateInProgress: () => deps.updates.blocksNewWork(),
       modelOptionFor: async (home, model, provider) => { await catalog.warmModelOptions(home); return catalog.modelOptionFor(home, model, provider) },
     }),
     kanban: new KanbanService({ sidecar: () => sidecar, config: agentConfig }),
@@ -728,6 +736,29 @@ export function createDeps(opts: CreateDepsOptions): AppDeps {
       return deps.version
     },
     agentDir: () => sidecar?.describe?.agent_dir ?? null,
+    agentHomes,
+    agentMutation: async (path, revision, mutate) => {
+      if (!sidecar) throw new Error('Hermes Agent sidecar is unavailable')
+      const begin = await sidecar.call('runtime.agent_mutation', { action: 'begin', agent_dir: path, revision, homes: agentHomes() }, { timeoutMs: 330_000 })
+      if (!begin.ok || !begin.token) throw new Error(begin.detail || 'Agent writer quiescence was not verified.')
+      const token = begin.token
+      const leasedGit: import('./tools/updates.js').GitRun = async (args, cwd, timeoutMs = 10_000) => {
+        if (resolve(cwd) !== resolve(path)) throw new Error('Agent writer lease cannot mutate another checkout.')
+        const result = await sidecar.call('runtime.agent_mutation', { action: 'git', agent_dir: path, token, args, timeout_ms: timeoutMs }, { timeoutMs: 330_000 })
+        return { ok: result.ok, out: result.detail }
+      }
+      let result: Record<string, unknown>
+      try {
+        result = await mutate(leasedGit, () => sidecar.call('runtime.agent_mutation', { action: 'sync', agent_dir: path, token }, { timeoutMs: 330_000 }))
+      } catch (error) {
+        try { await sidecar.call('runtime.agent_mutation', { action: 'finish', agent_dir: path, token }, { timeoutMs: 330_000 }) }
+        catch { /* The native pause journal retains any unverified recovery obligation. */ }
+        throw error
+      }
+      const resumed = await sidecar.call('runtime.agent_mutation', { action: 'finish', agent_dir: path, token }, { timeoutMs: 330_000 })
+      return resumed.ok ? { ...result, ...(result.gateway_restart === 'waiting_for_idle' ? { gateway_restart: 'resumed' } : {}) }
+        : { ...result, ok: false, restart_scheduled: false, message: resumed.detail || 'Agent writer resume remains unverified; its recovery obligation is retained.' }
+    },
     agentSync: async (agentDir) => {
       if (!sidecar) throw new Error('Hermes Agent sidecar is unavailable')
       return sidecar.call('runtime.sync_dependencies', { agent_dir: agentDir }, { timeoutMs: 330_000 })

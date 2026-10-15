@@ -86,5 +86,64 @@
         "detail": "synthetic sync failure"
       }
     }
+  ],
+  "runtime.agent_mutation": [
+    {
+      "params": {
+        "action": "begin",
+        "agent_dir": "<agent>",
+        "revision": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "homes": [
+          "<home>"
+        ]
+      },
+      "result": {
+        "ok": true,
+        "skipped": false,
+        "detail": "",
+        "token": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      }
+    },
+    {
+      "params": {
+        "agent_dir": "<agent>",
+        "token": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "action": "git",
+        "args": [
+          "rev-parse",
+          "HEAD"
+        ],
+        "timeout_ms": 10000
+      },
+      "result": {
+        "ok": true,
+        "skipped": false,
+        "detail": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+      }
+    },
+    {
+      "params": {
+        "agent_dir": "<agent>",
+        "token": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "action": "sync"
+      },
+      "result": {
+        "ok": true,
+        "skipped": true,
+        "detail": ""
+      }
+    },
+    {
+      "params": {
+        "agent_dir": "<agent>",
+        "token": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "action": "finish"
+      },
+      "result": {
+        "ok": true,
+        "skipped": false,
+        "detail": ""
+      }
+    }
   ]
 }

@@ -35,3 +35,11 @@ export const RpcMethodsResultSchema = z.object({ methods: z.array(z.string()) })
 /** Explicit update repair, bound to the sidecar's configured checkout, without importing updated Agent code. */
 export const RuntimeSyncDependenciesParamsSchema = z.object({ agent_dir: z.string().min(1) })
 export const RuntimeSyncDependenciesResultSchema = z.object({ ok: z.boolean(), skipped: z.boolean(), detail: z.string() })
+
+/** A held writer lease spans compatibility inspection, source mutation, repair, and durable resume. */
+export const RuntimeAgentMutationParamsSchema = z.discriminatedUnion('action', [
+  z.object({ action: z.literal('begin'), agent_dir: z.string().min(1), revision: z.string().regex(/^[a-f0-9]{40}$/), homes: z.array(z.string().min(1)).min(1) }),
+  z.object({ action: z.literal('git'), agent_dir: z.string().min(1), token: z.string().regex(/^[a-f0-9]{32}$/), args: z.array(z.string().max(65536)).min(1).max(1000), timeout_ms: z.number().int().min(100).max(300000) }),
+  z.object({ action: z.enum(['sync', 'finish']), agent_dir: z.string().min(1), token: z.string().regex(/^[a-f0-9]{32}$/) }),
+])
+export const RuntimeAgentMutationResultSchema = RuntimeSyncDependenciesResultSchema.extend({ token: z.string().regex(/^[a-f0-9]{32}$/).optional() })

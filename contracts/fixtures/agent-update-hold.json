@@ -1,0 +1,9 @@
+{
+  "ok": false,
+  "target": "agent",
+  "recovery_compatibility": {
+    "manual_execution": false,
+    "bot_chat_delivery": false
+  },
+  "message": "The target Agent cannot reconcile retained manual task recovery and pending Bot Chat delivery. Reconcile these records with a capable Agent before retrying the update."
+}

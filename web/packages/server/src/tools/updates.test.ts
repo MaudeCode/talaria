@@ -3,6 +3,7 @@
  * repositories and manifests.
  */
 import { execFileSync } from 'node:child_process'
+import { createHash } from 'node:crypto'
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -14,7 +15,8 @@ vi.mock('node:fs', async (original) => {
 })
 import type { Dict } from '../config/agent-config.js'
 import { detectWebuiVersion, developmentInfo } from '../release.js'
-import { WEB_ROOT } from '../test/harness.js'
+import { bootTestServer, WEB_ROOT } from '../test/harness.js'
+import { FakeSidecar } from '../sidecar/fake.js'
 import { RESTART_EXIT_CODE, supervise } from '../cli/supervise.js'
 import {
   applyAgentUpdate, applyWebUpdate, CACHE_TTL_S, checkAgentUpdate, checkWebUpdate, forceAgentUpdate, githubJson, inventoryLocks, npmInstallInfo, publishedWebRelease, ReleaseUnavailable,
@@ -681,6 +683,227 @@ describe('published release sets (test_tal203_published_releases.py)', () => {
 })
 
 describe('Agent checkout updates', () => {
+  const retained = JSON.parse(readFileSync(join(WEB_ROOT, 'sidecar/tests/fixtures/cron-retained-v0.22.1.json'), 'utf8')) as { manual: Dict; botChat: Dict }
+
+  const obligations = (['apply', 'force'] as const).flatMap((action) => ['default', 'named'].flatMap((profile) => ['stored-result', 'unknown-result', 'bot-chat'].map((kind) => ({ action, profile, kind }))))
+  it.each(['apply', 'force'] as const)('holds external writers through the %s preflight and every checkout operation', async (action) => {
+    const a = agentInstall()
+    const home = tmp()
+    const file = join(home, 'cron/bot_chat_pending/delivery-original.json')
+    let held = false
+    let attempted = false
+    let heldAtIntent = false
+    const racingGit: GitRun = async (args, cwd, timeout) => {
+      if ((action === 'apply' && args[0] === 'status') || (action === 'force' && args[0] === 'checkout')) {
+        attempted = true
+        if (!held) write(file, JSON.stringify(retained.botChat))
+      }
+      return runGit(args, cwd, timeout)
+    }
+    const policy = {
+      supportedRevisions: [a.v2], supportedRevision: a.v2, supportedVersion: '2.0.0', retainedStateHomes: () => [home],
+      beforeMutation: () => { heldAtIntent = held; return Promise.resolve() },
+      withMutation: async (_path: string, _revision: string, mutate: (git: GitRun) => Promise<Dict>) => {
+        held = true
+        try { return await mutate(racingGit) } finally { held = false }
+      },
+    }
+    expect(action === 'apply' ? await applyAgentUpdate(a.agent, racingGit, 'stable', policy) : await forceAgentUpdate(a.agent, racingGit, () => undefined, 'stable', policy)).toMatchObject({ ok: true })
+    expect(attempted).toBe(true)
+    expect(heldAtIntent).toBe(true)
+    expect(existsSync(file)).toBe(false)
+    expect(held).toBe(false)
+  })
+
+  it.each([false, true])('keeps the runtime writer lease through dependency repair and verifies resume before restart, failure=%s', async (resumeFailure) => {
+    const a = agentInstall(true)
+    const sidecar = new FakeSidecar()
+    sidecar.describe = { ...sidecar.describe!, agent_dir: a.agent }
+    const events: string[] = []
+    let held = false
+    sidecar.respond('runtime.agent_mutation', async (params) => {
+      if (params.action === 'begin') { held = true; events.push('begin'); return { ok: true, skipped: false, detail: '', token: 'a'.repeat(32) } }
+      if (params.action === 'git') {
+        if (!held) throw new Error('unfenced Git command')
+        const result = await runGit(params.args, a.agent, params.timeout_ms)
+        return { ok: result.ok, skipped: false, detail: result.out }
+      }
+      if (params.action === 'sync') { events.push(held ? 'sync-held' : 'sync-unfenced'); return { ok: true, skipped: false, detail: '' } }
+      events.push('resume'); held = false
+      return { ok: !resumeFailure, skipped: false, detail: resumeFailure ? 'resume unverified, native recovery retained' : '' }
+    })
+    const server = await bootTestServer({ sidecar })
+    try {
+      const wired = (server.deps.updates as unknown as { deps: UpdateServiceDeps }).deps
+      wired.scheduleRestart = () => { events.push(held ? 'restart-unfenced' : 'restart') }
+      const result = await server.deps.updates.apply('agent', null, () => true, { confirmedRevision: a.v2 })
+      expect(result).toMatchObject({ ok: !resumeFailure, verified_revision: a.v2, restart_scheduled: !resumeFailure })
+      expect(events).toEqual(resumeFailure ? ['begin', 'sync-held', 'resume'] : ['begin', 'sync-held', 'resume', 'restart'])
+      const marker = join(server.state, 'agent-dependency-sync', createHash('sha256').update(a.agent).digest('hex'))
+      expect(existsSync(marker)).toBe(resumeFailure)
+      expect(server.deps.updates.blocksNewWork()).toBe(!resumeFailure)
+      if (!resumeFailure) expect(result.gateway_restart).toBe('resumed')
+      expect(sidecar.calls.some((call) => call.method === 'runtime.sync_dependencies')).toBe(false)
+    } finally { await server.close() }
+  })
+
+  it.each(['apply', 'force'] as const)('refuses a source revision changed while acquiring the %s writer lease', async (action) => {
+    const a = agentInstall()
+    let changed = ''
+    const intent = vi.fn(() => Promise.resolve())
+    const policy = {
+      supportedRevisions: [a.v2], supportedRevision: a.v2, supportedVersion: '2.0.0', beforeMutation: intent,
+      withMutation: async (_path: string, _revision: string, mutate: (git: GitRun) => Promise<Dict>) => {
+        git(a.agent, 'commit', '--allow-empty', '-m', 'a concurrent updater won the lease first')
+        changed = git(a.agent, 'rev-parse', 'HEAD')
+        return mutate(runGit)
+      },
+    }
+    const result = action === 'apply' ? await applyAgentUpdate(a.agent, runGit, 'stable', policy) : await forceAgentUpdate(a.agent, runGit, () => undefined, 'stable', policy)
+    expect(result.ok).toBe(false)
+    expect(result.message).toContain('source changed')
+    expect(intent).not.toHaveBeenCalled()
+    expect(git(a.agent, 'rev-parse', 'HEAD')).toBe(changed)
+  })
+
+  it.each([false, true])('keeps checks read-only and recovers interrupted local edits only under the writer lease, installed=%s', async (installed) => {
+    const a = agentInstall()
+    writeFileSync(join(a.agent, 'README'), 'local note\n')
+    const saved = git(a.agent, 'stash', 'create', 'interrupted update')
+    git(a.agent, 'update-ref', `refs/talaria/autostash/pending/${saved}`, saved)
+    git(a.agent, 'checkout', '--', 'README')
+    if (installed) { git(a.agent, 'fetch', 'origin', '--tags'); git(a.agent, 'reset', '--hard', a.v2) }
+    const before = readFileSync(join(a.agent, 'README'), 'utf8')
+    const checked = await checkAgentUpdate(a.agent, runGit)
+    expect(readFileSync(join(a.agent, 'README'), 'utf8')).toBe(before)
+    expect(checked.metadata_repair).toBe(true)
+    let held = false
+    const unfenced: string[] = []
+    const observed: GitRun = (args, cwd, timeout) => {
+      if (['apply', 'merge', 'reset', 'checkout'].includes(args[0]!) && !held) unfenced.push(args[0]!)
+      return runGit(args, cwd, timeout)
+    }
+    const policy = { supportedRevisions: [a.v2], supportedRevision: a.v2, supportedVersion: '2.0.0',
+      withMutation: async (_path: string, _revision: string, mutate: (git: GitRun) => Promise<Dict>) => {
+        held = true
+        try { return await mutate(observed) } finally { held = false }
+      } }
+    const result = await applyAgentUpdate(a.agent, observed, 'stable', policy)
+    expect(result.ok).toBe(true)
+    expect(readFileSync(join(a.agent, 'README'), 'utf8')).toBe('local note\n')
+    expect(unfenced).toEqual([])
+    expect(git(a.agent, 'for-each-ref', '--format=%(refname)', 'refs/talaria/autostash/pending')).toBe('')
+  })
+
+  it.each(obligations)('retained cron obligations stop $action for $profile/$kind before source, stash, or dependency intent changes', async ({ action, profile, kind }) => {
+    const a = agentInstall(true)
+    const home = join(tmp(), profile === 'default' ? 'home' : 'home/profiles/named')
+    const file = join(home, 'cron', kind === 'bot-chat' ? 'bot_chat_pending/delivery-original.json' : 'manual_runs/job-original.json')
+    const record = kind === 'bot-chat' ? retained.botChat : { ...retained.manual, ...(kind === 'stored-result' ? { result: [true, 'output', 'answer', null] } : {}) }
+    write(file, JSON.stringify(record))
+    write(join(a.agent, 'README'), 'local change\n')
+    write(join(a.agent, 'untracked'), 'local untracked\n')
+    git(a.agent, 'stash', 'push', '-m', 'preexisting')
+    write(join(a.agent, 'README'), 'another local change\n')
+    const before = { head: git(a.agent, 'rev-parse', 'HEAD'), status: git(a.agent, 'status', '--porcelain'), stash: stashes(a.agent), record: readFileSync(file, 'utf8') }
+    const intent = vi.fn(() => Promise.resolve())
+    const policy = { supportedRevisions: [a.v2], supportedRevision: a.v2, supportedVersion: '2.0.0', retainedStateHomes: () => [home], beforeMutation: intent }
+    const result = action === 'apply' ? await applyAgentUpdate(a.agent, runGit, 'stable', policy) : await forceAgentUpdate(a.agent, runGit, () => undefined, 'stable', policy)
+    expect(result, `${profile}/${kind}`).toMatchObject({ ok: false, recovery_compatibility: { manual_execution: kind === 'bot-chat', bot_chat_delivery: kind !== 'bot-chat' } })
+    expect(result.message).toContain('Reconcile')
+    expect(intent).not.toHaveBeenCalled()
+    expect({ head: git(a.agent, 'rev-parse', 'HEAD'), status: git(a.agent, 'status', '--porcelain'), stash: stashes(a.agent), record: readFileSync(file, 'utf8') }).toEqual(before)
+  })
+
+  it.each(['apply', 'force'] as const)('allows %s with empty state, completed delivery evidence, or a matching legacy format', async (action) => {
+    for (const state of ['empty', 'settled', 'legacy']) {
+      const a = agentInstall()
+      write(join(a.origin, 'cron/bot_chat_delivery.py'), 'def drain():\n    pass\n')
+      git(a.origin, 'add', '.')
+      git(a.origin, 'commit', '-m', 'legacy reader')
+      git(a.origin, 'tag', '-f', 'v2.0.0')
+      const target = git(a.origin, 'rev-parse', 'HEAD')
+      const home = tmp()
+      if (state !== 'empty') write(join(home, 'cron/bot_chat_pending/delivery-original.json'), JSON.stringify({ ...retained.botChat, ...(state === 'settled' ? { status: 'transferred' } : { profile: '' }) }))
+      const policy = { supportedRevisions: [target], supportedRevision: target, supportedVersion: '2.0.0', retainedStateHomes: () => [home] }
+      expect(action === 'apply' ? await applyAgentUpdate(a.agent, runGit, 'stable', policy) : await forceAgentUpdate(a.agent, runGit, () => undefined, 'stable', policy)).toMatchObject({ ok: true, verified_revision: target })
+    }
+  })
+
+  it('allows retained obligations with compatible canonical target readers, inspecting only target blobs', async () => {
+    const a = agentInstall()
+    for (const [file, names] of [
+      ['cron/scheduler_authority.py', ['journal_path', '_lift_pause']], ['cron/scheduler_bookkeeping.py', ['fail_empty_response', 'finish_completed_run']],
+      ['hermes_cli/gateway_client.py', ['connect_gateway']], ['hermes_cli/gateway_runtime.py', ['discover_gateway_endpoint']],
+      ['cron/executions.py', ['give_up_execution', 'recover_receipted_execution']], ['cron/bot_chat_legacy.py', ['drain_legacy_pending']],
+    ] as const) write(join(a.origin, file), `raise AssertionError('candidate must never be imported')\n${names.map((name) => `def ${name}():\n    pass\n`).join('')}`)
+    git(a.origin, 'add', '.')
+    git(a.origin, 'commit', '-m', 'canonical readers')
+    git(a.origin, 'tag', '-f', 'v2.0.0')
+    const target = git(a.origin, 'rev-parse', 'HEAD')
+    const home = tmp()
+    write(join(home, 'cron/manual_runs/job-original.json'), JSON.stringify(retained.manual))
+    write(join(home, 'cron/bot_chat_pending/delivery-original.json'), JSON.stringify(retained.botChat))
+    expect(await applyAgentUpdate(a.agent, runGit, 'stable', { supportedRevisions: [target], supportedRevision: target, supportedVersion: '2.0.0', retainedStateHomes: () => [home] })).toMatchObject({ ok: true, verified_revision: target })
+  })
+
+  it('holds on unreadable evidence, failed target inspection, and explicit acknowledgement of an incompatible revision', async () => {
+    const a = agentInstall(true)
+    const home = tmp()
+    const file = join(home, 'cron/bot_chat_pending/delivery-original.json')
+    const intent = vi.fn(() => Promise.resolve())
+    const policy = { supportedRevisions: [a.v1], supportedRevision: a.v1, supportedVersion: '1.0.0', confirmedRevision: a.v2, retainedStateHomes: () => [home], beforeMutation: intent }
+    write(file, 'broken json')
+    const unreadable = await applyAgentUpdate(a.agent, runGit, 'stable', policy)
+    expect(unreadable.ok).toBe(false)
+    expect(unreadable.message).toContain('could not be verified')
+    write(file, JSON.stringify(retained.botChat))
+    const failedTree: GitRun = (args, cwd, timeout) => args[0] === 'ls-tree' ? Promise.resolve({ ok: false, out: 'unreadable tree' }) : runGit(args, cwd, timeout)
+    const unverified = await forceAgentUpdate(a.agent, failedTree, () => undefined, 'stable', policy)
+    expect(unverified.ok).toBe(false)
+    expect(unverified.message).toContain('could not be verified')
+    expect(await applyAgentUpdate(a.agent, runGit, 'stable', policy)).toMatchObject({ ok: false, recovery_compatibility: { bot_chat_delivery: false } })
+    expect(intent).not.toHaveBeenCalled()
+    expect(git(a.agent, 'rev-parse', 'HEAD')).toBe(a.v1)
+    expect(readFileSync(file, 'utf8')).toBe(JSON.stringify(retained.botChat))
+  })
+
+  it('checks retained compatibility before repairing an already-installed Agent dependency marker', async () => {
+    const a = agentInstall(true)
+    const events: string[] = []
+    const stateDir = tmp()
+    const home = tmp()
+    const sync = vi.fn(() => Promise.resolve({ ok: false, skipped: false, detail: 'retry' }))
+    const svc = agentService(a.agent, runGit, events, sync, stateDir, () => [home])
+    const failed = await svc.apply('agent', null, () => true, { confirmedRevision: a.v2 })
+    expect(failed.ok).toBe(false)
+    expect(failed.message).toContain('dependency sync failed')
+    const marker = join(stateDir, 'agent-dependency-sync', createHash('sha256').update(a.agent).digest('hex'))
+    const original = readFileSync(marker, 'utf8')
+    sync.mockClear()
+    write(join(home, 'cron/manual_runs/job-original.json'), JSON.stringify(retained.manual))
+    expect(await svc.apply('agent')).toMatchObject({ ok: false, recovery_compatibility: { manual_execution: false } })
+    expect(readFileSync(marker, 'utf8')).toBe(original)
+    expect(sync).not.toHaveBeenCalled()
+    expect(events).toEqual([])
+  })
+
+  it.each([false, true])('resolves shared profile homes at the runtime boundary, isolated=%s', async (isolated) => {
+    const a = agentInstall()
+    const base = tmp()
+    const named = join(base, 'profiles/named')
+    mkdirSync(named, { recursive: true })
+    const recordHome = isolated ? base : named
+    write(join(recordHome, 'cron/manual_runs/job-original.json'), JSON.stringify(retained.manual))
+    const server = await bootTestServer({ sidecar: null, env: { HERMES_HOME: isolated ? named : base, HERMES_WEBUI_ISOLATED_PROFILE: isolated ? '1' : '0' } })
+    try {
+      const wired = (server.deps.updates as unknown as { deps: UpdateServiceDeps }).deps
+      const homes = wired.agentHomes!()
+      expect(homes).toEqual(isolated ? [named] : [base, named])
+      expect(await applyAgentUpdate(a.agent, runGit, 'stable', { supportedRevisions: [a.v2], supportedRevision: a.v2, supportedVersion: '2.0.0', retainedStateHomes: () => homes })).toMatchObject({ ok: isolated })
+    } finally { await server.close() }
+  })
+
   it('counts actual commits, not release gaps, and keeps Experimental distinct from Stable', async () => {
     const a = agentInstall()
     for (let i = 0; i < 4; i++) git(a.origin, 'commit', '--allow-empty', '-m', `unreleased ${i}`)
@@ -1088,11 +1311,12 @@ describe('Agent checkout updates', () => {
     expect(calls).toBe(2)
   })
 
-  function agentService(agent: string, git: GitRun, events: string[], agentSync?: UpdateServiceDeps['agentSync'], stateDir = join(agent, '../web-state')): UpdateService {
+  function agentService(agent: string, git: GitRun, events: string[], agentSync?: UpdateServiceDeps['agentSync'], stateDir = join(agent, '../web-state'), agentHomes?: UpdateServiceDeps['agentHomes']): UpdateService {
     return new UpdateService({
       webRoot: join(tmp(), 'web'), git, getJson: noReleases, identity: { release: () => DEV, stamped: () => DEV, runningSourceRevision: () => null }, webuiVersion: 'x',
       agentDir: () => agent, channel: () => 'stable', includeAgent: () => true, blockers: () => ({ active_streams: 0, active_runs: 0, blocking_stream_ids: [], blocking_run_ids: [], restart_blocked: false }),
       ...(agentSync ? { agentSync } : {}),
+      ...(agentHomes ? { agentHomes } : {}),
       stateDir,
       scheduleRestart: () => events.push('restart'), log: () => undefined,
     })
@@ -1157,6 +1381,20 @@ describe('Agent checkout updates', () => {
     expect(git(a.agent, 'rev-parse', 'HEAD')).toBe(a.v2)
     const restarted = await agentService(a.agent, runGit, []).check(true)
     expect(updateTargetView('agent', restarted.agent as Dict, false)).toMatchObject({ behind: 0, state: 'finish', can_apply: true })
+  })
+
+  it('finishes pending Agent recovery before attempting a newer available release', async () => {
+    const a = agentInstall(true)
+    let fail = true
+    const svc = agentService(a.agent, runGit, [], () => Promise.resolve({ ok: !fail, skipped: false, detail: fail ? 'repair interrupted' : '' }))
+    expect((await svc.apply('agent', null, () => true, { confirmedRevision: a.v2 })).ok).toBe(false)
+    git(a.origin, 'commit', '--allow-empty', '-m', 'another release')
+    git(a.origin, 'tag', 'v3.0.0')
+    const next = git(a.origin, 'rev-parse', 'HEAD')
+    fail = false
+    const result = await svc.apply('agent', null, () => true, { confirmedRevision: next })
+    expect(result).toMatchObject({ ok: true, verified_revision: a.v2, restart_scheduled: true })
+    expect(git(a.agent, 'rev-parse', 'HEAD')).toBe(a.v2)
   })
 
   it.each([false, true])('refuses sync intent inside the Agent checkout before force-clean (symlink=%s)', async (symlink) => {
@@ -1348,14 +1586,17 @@ describe('Agent checkout updates', () => {
     ['reverted them', true, null, 'local note\n', 0],
     ['reverted them, and the file changed again', true, 'edited again\n', 'edited again\n', 1],
     ['reverted nothing', false, null, 'local note\n', 0],
-  ])('the next check recovers the changes of an interrupted update that %s', async (_, reverted, later, expected, listed) => {
+  ])('the next apply recovers the changes of an interrupted update that %s', async (_, reverted, later, expected, listed) => {
     const a = agentInstall()
     writeFileSync(join(a.agent, 'README'), 'local note\n')
     const sha = git(a.agent, 'stash', 'create', 'hermes-update-autostash')
     git(a.agent, 'update-ref', `refs/talaria/autostash/pending/${sha}`, sha) // the server stopped here or later
     if (reverted) git(a.agent, 'checkout', '--', 'README')
     if (later) writeFileSync(join(a.agent, 'README'), later)
+    const before = readFileSync(join(a.agent, 'README'), 'utf8')
     await checkAgentUpdate(a.agent, runGit)
+    expect(readFileSync(join(a.agent, 'README'), 'utf8')).toBe(before)
+    expect(await applyAgentUpdate(a.agent, runGit, 'stable', { supportedRevisions: [a.v2], supportedRevision: a.v2, supportedVersion: '2.0.0' })).toMatchObject({ ok: true })
     expect(readFileSync(join(a.agent, 'README'), 'utf8')).toBe(expected)
     expect(git(a.agent, 'for-each-ref', '--format=%(refname)', 'refs/talaria/autostash/pending')).toBe('')
     expect(stashes(a.agent)).toHaveLength(listed)

@@ -119,3 +119,56 @@ def test_a_result_that_is_not_json_becomes_an_error_answer_instead_of_a_dropped_
         threading.Event().wait(0.01)
     assert replies[0]["id"] == 7 and replies[0]["error"]["code"] == -32603
     assert "JSON" in replies[0]["error"]["message"]
+
+
+def test_shutdown_wakes_an_open_input_reader_and_flushes_its_final_reply() -> None:
+    read_fd, write_fd = os.pipe()
+    waiting, release = threading.Event(), threading.Event()
+    pipe = os.fdopen(read_fd, 'rb')
+    class Input:
+        reads = 0
+        def readline(self):
+            self.reads += 1
+            if self.reads == 2:
+                waiting.set()
+            return pipe.readline()
+    def shutdown(ctx, params):
+        assert release.wait(5)
+        ctx.server.request_shutdown(exit_code=3)
+        return {'ok': True}
+    output = io.BytesIO()
+    server = RpcServer({'runtime.shutdown': shutdown}, stdin=Input(), stdout=output)
+    result = []
+    reader = threading.Thread(target=lambda: result.append(server.serve_forever()), daemon=True)
+    reader.start()
+    try:
+        os.write(write_fd, b'{"jsonrpc":"2.0","id":7,"method":"runtime.shutdown"}\n')
+        assert waiting.wait(5), 'reader never waited for another input line'
+        release.set()
+        reader.join(1)
+        assert not reader.is_alive(), 'shutdown must not wait for the caller to close stdin'
+        assert result == [3]
+        assert json.loads(output.getvalue())['result'] == {'ok': True}
+    finally:
+        release.set()
+        os.close(write_fd)
+        reader.join(5)
+        pipe.close()
+
+
+def test_unbuffered_input_preserves_a_large_utf8_frame_across_os_reads() -> None:
+    read_fd, write_fd = os.pipe()
+    output = io.BytesIO()
+    text = 'synthetic-🌲\n' * 30000
+    server = RpcServer({'echo': lambda ctx, params: {'length': len(params['text']), 'matches': params['text'] == text}},
+                       stdin=os.fdopen(read_fd, 'rb'), stdout=output, max_calls=1)
+    reader = threading.Thread(target=server.serve_forever, daemon=True)
+    reader.start()
+    with os.fdopen(write_fd, 'wb') as pipe:
+        pipe.write(json.dumps({'jsonrpc': '2.0', 'id': 8, 'method': 'echo', 'params': {'text': text}}, ensure_ascii=False).encode() + b'\n')
+    reader.join(5)
+    for _ in range(100):
+        if output.getvalue():
+            break
+        threading.Event().wait(.01)
+    assert json.loads(output.getvalue())['result'] == {'length': len(text), 'matches': True}

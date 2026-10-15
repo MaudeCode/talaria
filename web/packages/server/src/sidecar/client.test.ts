@@ -131,6 +131,13 @@ describe('FakeSidecar', () => {
     expect(sidecarSpawnEnv(opts)).not.toHaveProperty('OPENAI_API_KEY')
   })
 
+  it('binds the repair-intent directory before changing the sidecar working directory', () => {
+    const base = { hermesHome: '/synthetic/hermes', agentDir: '/agent', sidecarDir: '/sidecar' }
+    expect(sidecarSpawnEnv({ ...base, env: { HERMES_WEBUI_STATE_DIR: 'relative-web-state' } }).TALARIA_SIDECAR_WEB_STATE_DIR).toBe(resolve('relative-web-state'))
+    expect(sidecarSpawnEnv({ ...base, env: { HOME: '/synthetic', HERMES_WEBUI_STATE_DIR: '~/web-state' } }).TALARIA_SIDECAR_WEB_STATE_DIR).toBe(resolve('/synthetic/web-state'))
+    expect(sidecarSpawnEnv(base).TALARIA_SIDECAR_WEB_STATE_DIR).toBe(resolve('/synthetic/hermes/webui'))
+  })
+
   it('keeps Web operator secrets out of the sidecar environment', () => {
     const env = sidecarSpawnEnv({
       env: {

@@ -8,7 +8,8 @@
  * incompatible, calls fail closed with a `SidecarError` whose `condition` the
  * HTTP layer forwards as the 503 `condition` field.
  */
-import { delimiter } from 'node:path'
+import { delimiter, resolve } from 'node:path'
+import { homedir } from 'node:os'
 import { spawn, type ChildProcess } from 'node:child_process'
 import { createInterface } from 'node:readline'
 import {
@@ -101,12 +102,15 @@ const isWebOnlyKey = (key: string) =>
 /** The configured environment (credentials, proxies, CA bundles) flows through as it did in-process in Python, minus Web-only keys; the sidecar identity keys win. */
 export function sidecarSpawnEnv(opts: Pick<SidecarSpawnOptions, 'env' | 'hermesHome' | 'agentDir' | 'sidecarDir'>): Record<string, string> {
   const env = typeof opts.env === 'function' ? opts.env() : opts.env
+  const home = env?.HOME ?? process.env.HOME ?? homedir()
+  const state = (env?.HERMES_WEBUI_STATE_DIR ?? '').trim().replace(/^~(?=$|\/)/, home)
   return {
     PATH: process.env.PATH ?? '',
     HOME: process.env.HOME ?? '',
     ...Object.fromEntries(Object.entries(env ?? {}).filter(([key]) => !isWebOnlyKey(key))),
     ...AGENT_IMPORT_ENV,
     HERMES_HOME: opts.hermesHome,
+    TALARIA_SIDECAR_WEB_STATE_DIR: resolve(state || resolve(opts.hermesHome, 'webui')),
     TALARIA_SIDECAR_AGENT_DIR: opts.agentDir,
     PYTHONPATH: env?.PYTHONPATH ? `${opts.sidecarDir}${delimiter}${env.PYTHONPATH}` : opts.sidecarDir,
     PYTHONUNBUFFERED: '1',

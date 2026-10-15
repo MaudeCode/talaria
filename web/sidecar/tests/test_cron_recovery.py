@@ -6,10 +6,38 @@ import json
 import sys
 import threading
 import types
+from pathlib import Path
 
 import pytest
 
 from talaria_sidecar.methods import cron, cron_execution
+
+
+@pytest.mark.parametrize("result", [None, [True, "output", "answer", None]])
+@pytest.mark.parametrize("missing", ["cron.scheduler_authority", "hermes_cli.gateway_client"])
+def test_incompatible_retained_recovery_is_unverified_before_any_record_write(monkeypatch, tmp_path, result, missing):
+    _tail(monkeypatch, tmp_path)
+    monkeypatch.setattr(sys.modules["cron"].jobs, "is_job_runnable", lambda job: False, raising=False)
+    record = json.loads((Path(__file__).parent / "fixtures/cron-retained-v0.22.1.json").read_text())["manual"]
+    if result is not None:
+        record["result"] = result
+    file = cron_execution.path(tmp_path, "job-original")
+    file.parent.mkdir(parents=True, exist_ok=True)
+    file.write_text(json.dumps(record))
+    before = file.read_bytes()
+    # The release-line Agent lacks the recovery owner, even though cron.jobs exists.
+    monkeypatch.setitem(sys.modules, missing, None)
+    writes = []
+    monkeypatch.setattr(cron_execution.ManualExecution, "save", lambda self: writes.append("save"))
+    def child(*args):
+        writes.append("submit")
+        return True, "output", "answer", None
+    monkeypatch.setattr(cron, "_run_in_child", child)
+    with pytest.raises(cron_execution.Unverified, match="unsupported recovery protocol.*Reconcile") as error:
+        cron.run_tracked(record["job"], tmp_path, tmp_path, types.SimpleNamespace())
+    assert error.value.data["condition"] == "cron_execution_unverified"
+    assert file.read_bytes() == before
+    assert writes == []
 
 
 def _gateway(monkeypatch, states, *, disconnect=False):
@@ -157,6 +185,10 @@ def _tail(monkeypatch, tmp_path, *, owns=True, booked=False, interrupt=False):
     executions = types.SimpleNamespace(get_execution=lambda eid: {"status": "unknown"},
                                        finish_execution=finish_ledger, recover_receipted_execution=finish_ledger)
     monkeypatch.setitem(sys.modules, "cron", types.SimpleNamespace(jobs=jobs, scheduler=scheduler, executions=executions))
+    monkeypatch.setattr(executions, "give_up_execution", lambda *args, **kwargs: None, raising=False)
+    monkeypatch.setitem(sys.modules, "cron.executions", executions)
+    monkeypatch.setitem(sys.modules, "hermes_cli.gateway_client", types.SimpleNamespace(connect_gateway=lambda: None))
+    monkeypatch.setitem(sys.modules, "hermes_cli.gateway_runtime", types.SimpleNamespace(discover_gateway_endpoint=lambda: None))
     monkeypatch.setitem(sys.modules, "cron.scheduler_authority", types.SimpleNamespace(
         journal_path=lambda jid, eid: tmp_path / "admission.json", _lift_pause=lambda *args: calls.append(("resume", "execution-original"))))
     monkeypatch.setitem(sys.modules, "cron.scheduler_bookkeeping", types.SimpleNamespace(

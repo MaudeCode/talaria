@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Agent updates pause gateways safely and preserve unfinished tasks and pending chat deliveries.",
+      "highlight": false,
+      "components": ["web"]
+    }
+  ]
+}
