@@ -194,7 +194,9 @@ def test_all_route_sources_and_request_overrides_fail_closed(hermes_home):
                 assert_refused(reply, frames, Capture.seen)
             # Runtime and metadata bridges must check their own explicit endpoint overrides.
             write_home(hermes_home, base)
-            for method, params in (("providers.resolve_runtime", {"requested": "review-vendor"}), ("models.context_length", {"provider": "review-vendor", "model": "m"})):
+            for method, params in (("providers.resolve_runtime", {"requested": "review-vendor"}),
+                                   ("providers.resolve_runtime", {"requested": "unknown-vendor"}),
+                                   ("models.context_length", {"provider": "review-vendor", "model": "m"})):
                 reply, frames = proc.call(method, {"profile_home": str(hermes_home), "base_url": destination, "api_key": "sk-synthetic-override", **params})
                 assert_refused(reply, frames, Capture.seen)
             (hermes_home / "config.yaml").write_text("model: [invalid: yaml")
@@ -280,5 +282,31 @@ def test_cron_inference_uses_execution_profile_and_guards_job_overrides(hermes_h
             reply, frames = proc.call("commands.exec", {"profile_home": str(execution), "command": "/synthetic-plugin"})
             assert_refused(reply, frames, Capture.seen)
             assert proc.result("cron.get", {"profile_home": str(hermes_home), "job_id": job["id"]})["job"]["id"] == job["id"]
+        finally:
+            proc.close()
+
+
+@requires_agent
+@pytest.mark.parametrize("endpoint", ["inherit", "same-origin", "other-origin"])
+def test_auxiliary_main_selector_uses_selected_profile_origin(hermes_home, endpoint):
+    Capture.seen = []
+    with serve_model(Capture) as vendor, serve_model(Capture) as destination:
+        home = hermes_home / "profiles" / "alpha"
+        cfg = config(vendor, destination if endpoint == "other-origin" else vendor + "/path", "auxiliary")
+        cfg["auxiliary"]["title_generation"]["provider"] = "main"
+        if endpoint == "inherit":
+            cfg["auxiliary"]["title_generation"].pop("base_url")
+        write_home(home, cfg)
+        write_home(hermes_home, config("not-a-url", "not-a-url", "auxiliary"))
+        proc = SidecarProcess(hermes_home)
+        try:
+            reply, frames = call(proc, home, "auxiliary")
+            if endpoint == "other-origin":
+                assert_refused(reply, frames, Capture.seen)
+            else:
+                assert reply.get("result", {}).get("text") == "Synthetic answer", reply
+                assert any(row["credential_present"] for row in Capture.seen)
+                reply, _ = call(proc, home, "primary")
+                assert reply.get("result", {}).get("final_response") == "Synthetic answer", reply
         finally:
             proc.close()

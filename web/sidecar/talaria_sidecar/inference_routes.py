@@ -91,6 +91,10 @@ def _preflight(params: dict) -> None:
         identities = [route.get(key) for key in ("requested_provider", "model_provider", "requested", "provider") if route.get(key)]
         for identity in identities or [default_provider]:
             provider = str(identity).strip().lower().replace(" ", "-")
+            if provider == "main":
+                from agent.auxiliary_client import _normalize_aux_provider
+
+                provider = _normalize_aux_provider(provider)
             if not provider or provider == "auto" or _shadowed_by_builtin(provider):
                 continue
             match = next(((aliases, endpoint) for aliases, endpoint in entries if provider in aliases), None)
@@ -99,8 +103,9 @@ def _preflight(params: dict) -> None:
                 destination = route.get("base_url") or match[1]
                 if _origin(destination) != configured:
                     _refuse()
-            elif provider != "custom" and (provider.startswith("custom:") or get_provider(provider, allow_network=False) is None):
+            elif provider.startswith("custom:") or (provider != "custom" and route.get("base_url") and get_provider(provider, allow_network=False) is None):
                 _refuse()
+            # A bare provider without an endpoint stays with Agent capability/admission checks.
         for field in ("fallback_providers", "fallback_model", "fallback_chain"):
             chain = route.get(field)
             if chain is None:

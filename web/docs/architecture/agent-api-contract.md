@@ -236,7 +236,8 @@ provider's destination must have its configured scheme, hostname and effective
 port. Paths can differ; explicit override credentials do not waive the check,
 since Agent retry can reattach a pool. Invalid or unresolved named endpoints
 fail closed. The guard reuses Agent provider aliases and auxiliary inheritance;
-it neither resolves clients nor copies credentials.
+it resolves the auxiliary `main` selector through the Agent's own profile-scoped
+normalizer, without resolving clients or copying credentials.
 
 Refusal uses the existing RPC error envelope with
 `condition: inference_route_unsafe` and generic repair instructions, without
