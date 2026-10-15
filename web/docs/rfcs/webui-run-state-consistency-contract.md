@@ -138,7 +138,13 @@ new database fields, release pins or server-side database writes.
    provider changes, the pool's earliest retry deadline passes, or a turn
    succeeds. A held wakeup leaves the file only once a turn admits it; the drain
    rechecks held sessions at least every five minutes, and its first pass after
-   a restart resumes them.
+   a restart resumes them. Delegation deferrals use this store before admission,
+   including busy, sealed and Stop holds. A Stop's additive session metadata
+   survives restart until the next admitted user turn. Completion acceptance is a
+   session/profile-scoped delegation-to-stream receipt saved atomically with the
+   pending automatic turn. A global Agent delivered flag or typed transcript row
+   alone is not Web admission. Typed delivered results without a receipt reconcile
+   through the existing drain, without resetting the Agent ledger.
 9. **Observation has a degraded path.** Long-running or many-session
    observation exposes heartbeat or degraded status so the UI does not appear
    silent and ordinary APIs do not stall behind active streams.

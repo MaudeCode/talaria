@@ -371,3 +371,36 @@ tier. Agents with the older resolver signature offer Fast only. Without a
 resolver, the legacy GPT-5/o-series gate applies only on first-party OpenAI
 routes. Failed lookups offer no paid tiers and block writes that would otherwise
 erase a saved tier. Chat uses the same helper against its resolved runtime URL.
+
+### Parent admission for transcript-only delegation deliveries
+
+The Agent can persist an `async_delegation_complete` notification and acknowledge
+its global ledger without starting the Web parent. `process.drain` reconciles
+these typed deliveries across the same contained profile homes as pending replay.
+It requires a delivered final ledger event, a matching notification in the exact
+parent's compression lineage, and a delivery within the Agent replay window.
+Interim notices, presentation suppression, unrelated transcripts, pending claims,
+and arbitrary delivered ledger rows do not qualify. Reconciliation reads Agent
+SQLite state only; it never resets a delivered flag or runs a child again.
+
+Candidates use the normal completion queue, routing, deferral and turn admission.
+Their `reconciliation_profile_home` must match the Web session's owning home.
+`process.claim_delivery` rechecks the typed proof at admission and returns an
+empty claim for these already globally delivered results. A pending claim owned
+by another consumer returns `retryable: true`, retaining the Web wakeup.
+
+Web stores `completion_acceptances` in the owning session, keyed by canonical
+profile home and delegation ID. Each value is the admitted stream ID, written in
+the same atomic save as the pending prompt, before the worker starts. The drain
+checks these durable receipts before replay; a legacy Web prompt with an exact
+matching body, `process_wakeup` source and turn ID also proves admission.
+Delegation payloads extend the existing `_wakeup_held.json` mechanism across busy,
+Stop, sealed-snapshot and provider-pause deferrals. Deleted sessions discard their
+held payloads. Stop's `automatic_turns_stop_held` session metadata survives restart
+and clears when the user's next turn is admitted. Existing Stable readers ignore
+the additive metadata. Both instances share one Web server's per-session drain
+serialization; this does not introduce multi-server shared-state support.
+
+The existing background-update projection uses the structured delegation event
+to render an unknown result as a notice needing attention. A typed Agent row's
+`completed_count` alone is not evidence of success.

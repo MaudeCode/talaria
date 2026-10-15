@@ -70,8 +70,11 @@ export function eventLines(evt: Dict, prompt: string): BackgroundLine[] {
   if (kind === 'delegation') {
     const results = Array.isArray(evt.results) ? evt.results.filter(isDict) : []
     const goals = Array.isArray(evt.goals) ? evt.goals : []
-    if (!results.length) return [{ kind: 'agent', status: eventUpdate(evt).attention ? 'failed' : 'completed', label: label(evt.goal) || backgroundUpdateSummary(prompt) }]
-    return results.map((r, i) => ({ kind: 'agent', status: DELEGATION_DONE.has(str(r.status)) ? 'completed' : 'failed', label: label(goals[i] ?? r.goal ?? evt.goal) }))
+    return (results.length ? results : [evt]).map((r, i) => {
+      // Both clients already render an opaque notice verbatim; an unknown outcome is not an agent success line.
+      if (r.status === 'unknown') return { kind: 'other', status: 'notice', label: label(r.error ?? evt.error) || 'Outcome unknown' }
+      return { kind: 'agent', status: (results.length ? DELEGATION_DONE.has(str(r.status)) : !eventUpdate(evt).attention) ? 'completed' : 'failed', label: label(goals[i] ?? r.goal ?? evt.goal) || (results.length ? '' : backgroundUpdateSummary(prompt)) }
+    })
   }
   if (kind === 'completion') {
     const exit = evt.exit_code === undefined || evt.exit_code === null ? null : Number(evt.exit_code)
@@ -85,7 +88,7 @@ export function eventUpdate(evt: Dict): { kind: BackgroundUpdateKind; attention:
   const kind = backgroundEventKind(evt)
   if (kind === 'delegation') {
     const results = Array.isArray(evt.results) ? evt.results.filter(isDict) : []
-    const failed = Boolean(evt.task_failure_notice) || Boolean(evt.error) || results.some((r) => !DELEGATION_DONE.has(str(r.status)))
+    const failed = evt.status === 'unknown' || Boolean(evt.task_failure_notice) || Boolean(evt.error) || results.some((r) => !DELEGATION_DONE.has(str(r.status)))
     return { kind: 'delegation', attention: failed }
   }
   if (kind === 'completion') return { kind: 'process', attention: evt.exit_code !== undefined && evt.exit_code !== null && Number(evt.exit_code) !== 0 }
@@ -133,6 +136,12 @@ export function recordBackgroundUpdate(session: Session, turnId: string, update:
   session.extra[RECORD_KEY] = Object.fromEntries(entries.slice(-RECORD_LIMIT))
 }
 
+/** Admission writes these receipts in the same session save as its pending turn, before a worker starts. */
+export function completionAccepted(session: Session, key: string): boolean {
+  const receipts = session.extra.completion_acceptances
+  return Boolean(key && isDict(receipts) && typeof receipts[key] === 'string' && receipts[key])
+}
+
 function recordedUpdate(recorded: Dict, turnId: unknown): BackgroundUpdate | null {
   const raw = recorded[str(turnId)]
   if (!isDict(raw)) return null
@@ -143,11 +152,16 @@ function recordedUpdate(recorded: Dict, turnId: unknown): BackgroundUpdate | nul
   return { ...update, count: Math.max(1, Number(raw.count) || 1), lines: Array.isArray(raw.lines) && raw.lines.length ? (raw.lines.filter(isDict) as unknown as BackgroundLine[]) : update.lines }
 }
 
-function agentUpdate(m: Dict): BackgroundUpdate | null {
+function agentUpdate(m: Dict, recorded: Dict): BackgroundUpdate | null {
   const kind = AGENT_UPDATE_KINDS[str(m.display_kind)]
   if (!kind) return null
   const meta = isDict(m.display_metadata) ? m.display_metadata : {}
-  return summaryUpdate(kind, Number(meta.failed_count) > 0, backgroundUpdateSummary(messageText(m.content)))
+  const authoritative = recordedUpdate(recorded, `delegation:${str(meta.delegation_id)}`)
+  if (authoritative) return authoritative
+  const update = summaryUpdate(kind, Number(meta.failed_count) > 0, backgroundUpdateSummary(messageText(m.content)))
+  // Agent completed_count also counts recovered unknown outcomes. Only an event proves success.
+  if (kind === 'delegation' && !update.attention) update.lines = update.lines.map((line) => ({ ...line, status: 'notice' }))
+  return update
 }
 
 /**
@@ -164,7 +178,7 @@ export function withBackgroundUpdates<T>(messages: T[], session: Session): T[] {
     if (!isDict(m) || m.role !== 'user') return m
     const update: BackgroundUpdate | null = m._source === BACKGROUND_SOURCE
       ? recordedUpdate(recorded, m._turn_id) ?? summaryUpdate('other', false, backgroundUpdateSummary(messageText(m.content)))
-      : agentUpdate(m)
+      : agentUpdate(m, recorded)
     if (!update) return m
     backgroundTurns.add(str(m._turn_id))
     return { ...m, _background_update: update }

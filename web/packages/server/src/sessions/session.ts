@@ -61,7 +61,7 @@ export const METADATA_FIELDS = [
   'worktree_path', 'worktree_branch', 'worktree_repo_root', 'worktree_created_at',
   'is_cli_session', 'source_tag', 'raw_source', 'session_source', 'source_label', 'read_only',
   'enabled_toolsets', 'composer_draft',
-  'process_wakeup_pause',
+  'process_wakeup_pause', 'automatic_turns_stop_held',
   'share_token', 'share_created_at',
 ] as const
 
@@ -307,6 +307,7 @@ export class Session {
   composer_draft: Record<string, unknown>
   anchor_activity_scenes: Record<string, unknown>
   process_wakeup_pause: unknown
+  automatic_turns_stop_held: boolean
   share_token: string | null
   share_created_at: number | null
   /** Persisted keys the model does not know (`user_id`, `chat_id`, `last_usage`, ...). */
@@ -442,6 +443,7 @@ export class Session {
     this.anchorSceneIndex = anchorSceneIndexFromRecords(this.anchor_activity_scenes)
     const pause = take('process_wakeup_pause', null)
     this.process_wakeup_pause = isDict(pause) ? pause : null
+    this.automatic_turns_stop_held = take('automatic_turns_stop_held', false) === true
     const shareToken = take('share_token', null)
     this.share_token = shareToken ? str(shareToken) : null
     const shareCreated = take('share_created_at', null)

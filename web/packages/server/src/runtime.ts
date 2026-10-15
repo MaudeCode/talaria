@@ -550,12 +550,12 @@ export function createDeps(opts: CreateDepsOptions): AppDeps {
       },
     }
   }
-  completions = new CompletionDrain({ sidecar: () => sidecar, configPath: (home) => agentConfig.path(home), readConfig: (home) => agentConfig.read(home), env, baseHome, profileHome: (p) => profileHome(p ?? activeProfile()), activeProfile, store, channels, registry, startTurn: async (session, prompt) => {
+  completions = new CompletionDrain({ sidecar: () => sidecar, configPath: (home) => agentConfig.path(home), readConfig: (home) => agentConfig.read(home), env, baseHome, profileHome: (p) => profileHome(p ?? activeProfile()), activeProfile, store, channels, registry, startTurn: async (session, prompt, completionKeys) => {
     // TAL-577: a wakeup passes the user-turn admission; a stale runtime answers a retryable 409, which defers it on a retry timer.
     // TAL-542: its model repair reads the cached catalog only (Python `prefer_cached_catalog`), never waiting on a build.
     try {
       await ensureAgentRuntimeCurrent(sidecar)
-      return turns.startServerTurn(session, { msg: prompt, source: 'process_wakeup' })
+      return turns.startServerTurn(session, { msg: prompt, source: 'process_wakeup', completionKeys })
     } catch (error) {
       if (error instanceof HttpFailure) return { _status: error.status, error: error.message, retryable: error.extra.retryable === true }
       throw error

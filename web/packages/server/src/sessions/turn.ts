@@ -128,6 +128,8 @@ export interface StartTurnOptions {
   normalizedModel?: boolean
   source?: string
   goalRelated?: boolean
+  /** Durable delegation identities acknowledged by this automatic turn. */
+  completionKeys?: string[]
   ephemeral?: boolean
   /** TAL-801: a spoken turn, which the Agent runs on the profile's `auxiliary.voice_chat` slot. */
   voiceTurn?: boolean
@@ -338,7 +340,8 @@ export class TurnRunner {
 
   /** TAL-899: whether a Stop holds the session's automatic turns (session `automatic_turns_held`). */
   automaticTurnsHeld(sessionId: string): boolean {
-    return this.stopHeld.has(sessionId)
+    if (this.stopHeld.has(sessionId)) return true
+    try { return this.deps.store.get(sessionId, { metadataOnly: true }).automatic_turns_stop_held } catch { return false }
   }
 
   /** TAL-803: the Agent's active notices for the session (session `notices`). */
@@ -402,8 +405,8 @@ export class TurnRunner {
    * Admit automatic turns through the same workspace recovery and model resolution as user turns. After the user's Stop
    * none starts (TAL-899): the answer is a `held` 409, and the caller keeps its work for the user's next turn.
    */
-  startServerTurn(session: Session, opts: Pick<StartTurnOptions, 'msg' | 'source' | 'goalRelated'>): AdmissionResult {
-    if (this.stopHeld.has(session.session_id)) return { _status: 409, error: 'automatic turns are held after Stop', held: true }
+  startServerTurn(session: Session, opts: Pick<StartTurnOptions, 'msg' | 'source' | 'goalRelated' | 'completionKeys'>): AdmissionResult {
+    if (this.automaticTurnsHeld(session.session_id)) return { _status: 409, error: 'automatic turns are held after Stop', held: true }
     try {
       const service = this.deps.service()
       const workspace = service.turnWorkspace(session)
@@ -417,13 +420,13 @@ export class TurnRunner {
 
   /** A user's turn; admitting it releases the hold a Stop put on automatic turns (TAL-899). */
   start(session: Session, opts: StartTurnOptions): AdmissionResult {
-    const response = this.admit(session, opts)
+    const response = this.admit(session, opts, true)
     if (response._status === undefined) this.stopHeld.delete(session.session_id)
     return response
   }
 
   /** Python `_start_chat_stream_for_session`: persist pending state, register the channel, launch the worker. */
-  private admit(session: Session, opts: StartTurnOptions): AdmissionResult {
+  private admit(session: Session, opts: StartTurnOptions, releaseStopHold = false): AdmissionResult {
     const s = session
     if (this.deps.updateInProgress?.()) return { error: 'Web is updating. Retry after it restarts.', _status: 503 }
     if (this.deps.profileDeleting?.(s.profile ?? null)) return { error: `Profile '${str(s.profile)}' is being deleted.`, _status: 409 }
@@ -437,6 +440,10 @@ export class TurnRunner {
     } else {
       const blocking = this.registry.activeRunStreamForSession(s.session_id)
       if (blocking) return { error: 'session already has an active stream', active_stream_id: blocking, _status: 409 }
+    }
+    const accepted = isDict(s.extra.completion_acceptances) ? s.extra.completion_acceptances : {}
+    if (opts.completionKeys?.length && opts.completionKeys.every((key) => typeof accepted[key] === 'string' && accepted[key])) {
+      return { stream_id: str(accepted[opts.completionKeys[0]!]), session_id: s.session_id }
     }
     const streamId = randomUUID().replace(/-/g, '')
     const wasHiddenEmpty = !s.messages.length && !s.context_messages.length && !s.hasPendingPrompt
@@ -468,7 +475,15 @@ export class TurnRunner {
       if (provisional && !['', 'Untitled', 'New Chat'].includes(provisional.trim())) s.title = provisional
     }
     if (this.deps.saveMode() === 'eager') this.checkpointUserMessage(s, opts.msg, attachments, s.pending_started_at, source, streamId)
-    this.deps.store.save(s)
+    const previousStopHold = s.automatic_turns_stop_held
+    if (releaseStopHold) s.automatic_turns_stop_held = false
+    const previousAcceptances = s.extra.completion_acceptances
+    if (opts.completionKeys?.length) s.extra.completion_acceptances = { ...accepted, ...Object.fromEntries(opts.completionKeys.map((key) => [key, streamId])) }
+    try { this.deps.store.save(s) } catch (error) {
+      s.extra.completion_acceptances = previousAcceptances
+      s.automatic_turns_stop_held = previousStopHold
+      throw error
+    }
     this.registry.writebackOwners.set(s.session_id, streamId)
     // A new chat appears in the list; every turn tells open clients a run started (TAL-434).
     this.deps.events.publish(wasHiddenEmpty ? 'session_new' : 'turn_started', { profile: s.profile, sessionId: s.session_id })
@@ -1162,7 +1177,7 @@ export class TurnRunner {
     const payload = withSessionWireFlags(s.compact({ contextLengthFor: this.deps.service().deps.contextLengthFor, modelOptionFor: this.deps.service().deps.modelOptionFor }), this.registry.liveIds)
     payload.assistant_name = this.deps.service().assistantName(s)
     payload.workspace_name = this.deps.service().workspaceNames()(s)
-    payload.automatic_turns_held = this.stopHeld.has(s.session_id)
+    payload.automatic_turns_held = this.automaticTurnsHeld(s.session_id)
     payload.notices = this.sessionNotices(s.session_id)
     payload.goal = this.sessionGoal(s.session_id)
     const service = this.deps.service()
@@ -1610,7 +1625,12 @@ export class TurnRunner {
     // TAL-899: the user's Stop holds automatic turns, even one that lands after `done`, unless a newer turn already
     // took the session: a late or retried Stop for a turn the user followed holds nothing.
     const owner = this.registry.ownerSessionId(streamId) ?? this.registry.activeRuns.get(streamId)?.session_id
-    if (owner && this.registry.writebackOwners.get(owner) === streamId) this.stopHeld.add(owner)
+    if (owner && this.registry.writebackOwners.get(owner) === streamId) {
+      this.stopHeld.add(owner)
+      const session = this.deps.store.get(owner)
+      session.automatic_turns_stop_held = true
+      this.deps.store.save(session, { touchUpdatedAt: false })
+    }
     return this.stop(streamId)
   }
 
