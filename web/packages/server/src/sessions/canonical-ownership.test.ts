@@ -1,4 +1,4 @@
-import { mkdirSync, readFileSync, rmSync } from 'node:fs'
+import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
@@ -82,6 +82,102 @@ describe('canonical Agent ownership (TAL-1036)', () => {
     expect(current.pending_user_message).toBe('unsettled Talaria prompt')
     expect(current.messages).toEqual(session.messages)
     expect(sidecar.calls.filter((c) => ['chat.start', 'state_db.sync_usage', 'state_db.sync_title'].includes(c.method))).toEqual([])
+  })
+
+  it.each(['incoming', 'formatter', 'deferred', 'claim'] as const)('leaves canonical delegation completion writes to the owner at %s', async (phase) => {
+    const sid = fixture.sessions.cli!
+    if (phase !== 'incoming') makeLegacy(sid)
+    cache(sid)
+    const path = join(s.state, 'sessions', `${sid}.json`)
+    let file = readFileSync(path, 'utf8')
+    let before = stored()
+    const adoptAndCapture = (): void => { adopt(sid); file = readFileSync(path, 'utf8'); before = stored() }
+    const event = { type: 'async_delegation', process_id: 'deleg_owned', delegation_id: 'deleg_owned', origin_ui_session_id: sid, consumed: false }
+    sidecar.respond('process.format_notification', () => { if (phase === 'formatter') adoptAndCapture(); return { text: '[Result deleg_owned]' } })
+    sidecar.respond('process.claim_delivery', () => { if (phase === 'claim') adoptAndCapture(); return { claim_id: 'owned-claim' } })
+    sidecar.respond('process.defer_delivery', () => ({ ok: true }))
+    sidecar.respond('process.requeue', () => ({ requeued: 1 }))
+    if (phase === 'deferred') {
+      s.deps.completions.recordDeferred(sid, 'deleg_owned', '[Result deleg_owned]', event)
+      adoptAndCapture()
+      expect(await s.deps.completions.drainDeferred(sid)).toBe(0)
+    } else await s.deps.completions.processOne(event)
+    expect(readFileSync(path, 'utf8')).toBe(file)
+    expect(stored()).toEqual(before)
+    expect(s.deps.completions.deferredCount(sid)).toBe(0)
+    expect(sidecar.calls.filter((c) => c.method === 'chat.start' || c.method === 'process.complete_delivery')).toEqual([])
+    if (phase !== 'claim') expect(sidecar.calls.filter((c) => c.method === 'process.claim_delivery')).toEqual([])
+  })
+
+  it.each(['live', 'orphan', 'materialize'] as const)('keeps canonical %s recovery candidates unsafe and unchanged', async (kind) => {
+    const sid = fixture.sessions.cli!
+    const session = cache(sid)
+    const path = join(s.state, 'sessions', `${sid}.json`)
+    const file = readFileSync(path, 'utf8')
+    const backup = JSON.stringify({ ...session.toDocument(), messages: [...session.messages, { role: 'assistant', content: 'longer backup' }] })
+    if (kind !== 'materialize') writeFileSync(`${path}.bak`, backup)
+    if (kind !== 'live') { rmSync(path); s.deps.sessionStore.sessions.delete(sid) }
+    if (kind === 'materialize') db.prepare("UPDATE sessions SET source = 'webui' WHERE id = ?").run(sid)
+    const before = stored()
+    const response = await post(s, '/api/session/recovery/repair-safe', {})
+    expect(kind === 'live' ? readFileSync(path, 'utf8') : existsSync(path)).toBe(kind === 'live' ? file : false)
+    expect(response.status).toBe(409)
+    const result = await json(response)
+    expect((result.after as { items: Record<string, unknown>[] }).items).toContainEqual(expect.objectContaining({ session_id: sid, category: 'unsafe_to_repair', recommendation: 'manual_review' }))
+    expect(stored()).toEqual(before)
+    if (kind !== 'materialize') expect(readFileSync(`${path}.bak`, 'utf8')).toBe(backup)
+  })
+
+  it('rechecks safe recovery ownership after its session lock wait', async () => {
+    const sid = fixture.sessions.cli!
+    makeLegacy(sid)
+    const session = cache(sid)
+    const path = join(s.state, 'sessions', `${sid}.json`)
+    const file = readFileSync(path, 'utf8')
+    writeFileSync(`${path}.bak`, JSON.stringify({ ...session.toDocument(), messages: [...session.messages, { role: 'assistant', content: 'longer backup' }] }))
+    let entered!: () => void
+    let release!: () => void
+    const acquired = new Promise<void>((resolve) => { entered = resolve })
+    const held = new Promise<void>((resolve) => { release = resolve })
+    const lock = s.deps.sessionStore.withLock(sid, () => { entered(); return held })
+    await acquired
+    const pending = s.deps.sessions.recoveryRepairSafe()
+    try {
+      await Promise.resolve()
+      adopt(sid)
+      release()
+      await lock
+      await pending
+      expect(readFileSync(path, 'utf8')).toBe(file)
+    } finally { release(); await lock; await pending }
+  })
+
+  it.each(['cleanup', 'cleanup_zero_message'])('keeps canonical sidecars during %s maintenance', async (action) => {
+    const sid = fixture.sessions.cli!
+    const session = cache(sid)
+    session.title = 'Untitled'
+    session.messages = []
+    s.deps.sessionStore.save(session)
+    const path = join(s.state, 'sessions', `${sid}.json`)
+    const file = readFileSync(path, 'utf8')
+    expect((await post(s, `/api/sessions/${action}`, {})).status).toBe(200)
+    expect(existsSync(path)).toBe(true)
+    expect(readFileSync(path, 'utf8')).toBe(file)
+  })
+
+  it('does not prune a canonical read-only import whose transcript row was retired', async () => {
+    const sid = fixture.sessions.cli!
+    const session = cache(sid)
+    session.read_only = true
+    s.deps.sessionStore.save(session)
+    db.prepare('DELETE FROM session_admissions WHERE target_session_id = ?').run(sid)
+    db.prepare('DELETE FROM messages WHERE session_id = ?').run(sid)
+    db.prepare('DELETE FROM sessions WHERE id = ?').run(sid)
+    const path = join(s.state, 'sessions', `${sid}.json`)
+    const file = readFileSync(path, 'utf8')
+    expect((await s.get('/api/sessions')).status).toBe(200)
+    expect(existsSync(path)).toBe(true)
+    expect(readFileSync(path, 'utf8')).toBe(file)
   })
 
   it('refuses the real candidate queued-local reproduction before independent chat dispatch', async () => {

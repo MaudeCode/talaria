@@ -305,11 +305,12 @@ export class SessionService {
    * nothing (`agentSessionRowsExisting`); another profile's session or one with a run the runtime still holds is never
    * an orphan, while a stream id a crash left behind does not count as one.
    */
-  private orphanedImports(rows: Row[]): Set<string> {
+  private orphanedImports(rows: Row[], existing?: Set<string>, owners?: Map<string, StateDbSessionSource> | null): Set<string> {
     const candidates = this.orphanCandidates(rows)
     if (!candidates.length) return new Set()
-    const existing = agentSessionRowsExisting(this.stateDbPath(null), candidates)
-    return new Set(candidates.filter((sid) => !existing.has(sid)))
+    existing ??= agentSessionRowsExisting(this.stateDbPath(null), candidates)
+    if (owners === undefined) owners = this.stateDbSources(candidates)
+    return new Set(candidates.filter((sid) => !existing.has(sid) && owners !== null && typeof owners.get(sid) !== 'object'))
   }
 
   private orphanCandidates(rows: Row[]): string[] {
@@ -340,7 +341,7 @@ export class SessionService {
       stateDbSources: (_ids, profile = activeProfile) => owners.get(profile) ?? null,
       pruneOrphanedImports: (current) => {
         // Only an id the worker checked can be an orphan; a row that became a candidate meanwhile waits for the next list.
-        const orphans = new Set(this.orphanCandidates(current).filter((sid) => checked.has(sid) && !existing.has(sid)))
+        const orphans = this.orphanedImports(current.filter((r) => checked.has(str(r.session_id))), existing, owners.get(activeProfile) ?? null)
         for (const sid of orphans) this.store.deleteFiles(sid)
         return orphans
       },
@@ -1883,7 +1884,7 @@ export class SessionService {
 
   /** TAL-259: recovery reads the active profile's state.db, and a recovered sidecar joins that profile. */
   private recoveryDeps(): RecoveryDeps {
-    return { store: this.store, stateDbPath: this.stateDbPath(null), profile: this.deps.activeProfile(), stampingSince: this.deps.recoveryStampingSince(), log: this.deps.log }
+    return { store: this.store, stateDbPath: this.stateDbPath(null), profile: this.deps.activeProfile(), stampingSince: this.deps.recoveryStampingSince(), isReadOnly: (sid, profile) => Boolean(withOwnerLocks([{ session_id: sid, profile }], this.stateDbSources)[0]?.read_only), log: this.deps.log }
   }
 
   recoveryAudit(): RecoveryAudit {
@@ -2040,7 +2041,7 @@ export class SessionService {
     const removed = new Set<string>()
     for (const s of this.store.scanAll()) {
       const shouldDelete = zeroOnly ? s.messages.length === 0 : s.title === 'Untitled' && s.messages.length === 0
-      if (!shouldDelete) continue
+      if (!shouldDelete || this.isReadOnly(s)) continue
       // A cleared session keeps its share; keep the session (and its revoke route) if the share cannot be revoked.
       try { this.deps.shares.revoke(s) } catch { continue }
       this.store.sessions.delete(s.session_id)
