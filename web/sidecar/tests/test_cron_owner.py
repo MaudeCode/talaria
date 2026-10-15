@@ -10,9 +10,11 @@ import signal
 import socket
 import sqlite3
 import subprocess
+import sys
 import threading
 import time
 from http.server import ThreadingHTTPServer
+from types import SimpleNamespace
 
 import pytest
 
@@ -173,9 +175,43 @@ def test_started_cancel_waits_for_exact_owner_terminal_before_releasing_run(owne
 
 
 def workers(sidecar):
-    rows = subprocess.run(["ps", "-axo", "pid=,ppid=,command="], capture_output=True, text=True, check=True).stdout.splitlines()
+    # Long CI interpreter paths must not hide spawn_main at the terminal's column limit.
+    rows = subprocess.run(["ps", "-axwwo", "pid=,ppid=,command="], capture_output=True, text=True, check=True).stdout.splitlines()
     return [int(pid) for line in rows if len(parts := line.split(None, 2)) == 3
             for pid, parent, command in [parts] if int(parent) == sidecar.proc.pid and "spawn_main" in command]
+
+
+@pytest.mark.skipif(os.name != "posix", reason="worker lookup uses POSIX process tables")
+def test_workers_finds_long_interpreter_commands_at_narrow_terminal_width(tmp_path, monkeypatch):
+    monkeypatch.setenv("COLUMNS", "80")
+    executable = tmp_path / ("runtime-" + "x" * 100) / "python"
+    executable.parent.mkdir()
+    executable.symlink_to(sys.executable)
+    ready = tmp_path / "ready"
+    script = tmp_path / "worker.py"
+    script.write_text("""
+import multiprocessing, os, pathlib, sys
+
+def work(ready, stop):
+    pathlib.Path(ready).write_text(str(os.getpid()))
+    stop.wait(15)
+
+if __name__ == '__main__':
+    ctx = multiprocessing.get_context('spawn')
+    stop = ctx.Event()
+    child = ctx.Process(target=work, args=(sys.argv[1], stop))
+    child.start()
+    sys.stdin.read()
+    stop.set()
+    child.join(5)
+""")
+    parent = subprocess.Popen([str(executable), str(script), str(ready)], stdin=subprocess.PIPE,
+                              stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, env=isolated_env(tmp_path))
+    try:
+        child = wait_for(lambda: int(ready.read_text() or "0") if ready.exists() else None, 10)
+        assert workers(SimpleNamespace(proc=parent)) == [child]
+    finally:
+        parent.communicate(timeout=10)
 
 
 @requires_agent
