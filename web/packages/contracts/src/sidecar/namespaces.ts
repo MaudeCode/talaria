@@ -152,8 +152,8 @@ export const KANBAN_METHODS = {
 } as const
 
 // ── state_db ───────────────────────────────────────────────────────────
-/** Why a session delete was refused: `active_turn` is another Agent process running or compressing it (TAL-792). */
-export const SessionDeleteRefusedSchema = z.enum(['active_turn'])
+/** Busy Agent work, or retained canonical history that this Agent cannot safely retire. */
+export const SessionDeleteRefusedSchema = z.enum(['active_turn', 'runtime_history_unsupported'])
 export type SessionDeleteRefused = z.infer<typeof SessionDeleteRefusedSchema>
 const Session = ProfileHomeParams.extend({ session_id: z.string().min(1) })
 export const STATE_DB_METHODS = {
@@ -164,7 +164,7 @@ export const STATE_DB_METHODS = {
   /**
    * TAL-792: `include_compression_lineage` also removes the session's compression continuations, resolved and removed in the
    * same transaction (tip first). `refused` when another Agent process holds a live turn lease or compression lock on any
-   * row the delete would remove; nothing is removed. `deleted_ids` is the transaction's committed target set,
+   * row the delete would remove, or the Agent lacks retirement APIs for retained canonical history; nothing is removed. `deleted_ids` is the transaction's committed target set,
    * including continuations/delegates; it remains present when only post-commit artifact cleanup failed.
    */
   'state_db.delete_cli_session': { params: Session.extend({ include_compression_lineage: z.boolean().optional() }), result: Ok.extend({ refused: SessionDeleteRefusedSchema.optional(), deleted_ids: z.array(z.string().min(1)).optional() }) },

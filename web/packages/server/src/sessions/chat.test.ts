@@ -2448,7 +2448,8 @@ describe('chat turns through the sidecar', () => {
     expect(deletes).toEqual([sid])
   })
 
-  it('TAL-792: a session another Agent process is running or compressing answers 409 refused and stays; bulk delete skips it', async () => {
+  it.each(['active_turn', 'runtime_history_unsupported'] as const)('keeps every cleanup side effect behind a %s refusal, including bulk delete', async (refused) => {
+    const error = refused === 'active_turn' ? 'In use by another Agent process. Try again later.' : 'This Agent cannot retire the session\'s retained runtime history. Use an Agent that supports retiring this history, or explicitly restore a pre-upgrade backup before deleting it.'
     const persisted = async (): Promise<string> => {
       const sid = await newSession(s)
       const stored = s.deps.sessionStore.get(sid)
@@ -2458,21 +2459,36 @@ describe('chat turns through the sidecar', () => {
     }
     const [guarded, free] = [await persisted(), await persisted()]
     const file = (sid: string): string => join(s.state, 'sessions', `${sid}.json`)
-    sidecar.respond('state_db.delete_cli_session', (params) => (params.session_id === guarded ? { ok: false, refused: 'active_turn' } : { ok: true }))
+    sidecar.respond('state_db.delete_cli_session', (params) => (params.session_id === guarded ? { ok: false, refused } : { ok: true }))
+    const before = readFileSync(file(guarded), 'utf8')
+    const attachmentDir = s.deps.sessions.deps.attachmentDir(guarded)
+    mkdirSync(attachmentDir, { recursive: true })
+    const attachment = join(attachmentDir, 'synthetic.txt')
+    writeFileSync(attachment, 'retained attachment')
+    const revoke = vi.spyOn(s.deps.sessions.deps.shares, 'revoke')
+    const evict = vi.spyOn(s.deps.sessions.deps.runtime, 'evictAgent')
+    const terminal = vi.spyOn(s.deps.sessions.deps.runtime, 'closeTerminal')
+    const journal = vi.spyOn(s.deps.journal, 'deleteSession')
+    const relay = vi.spyOn(s.deps.sessions.deps, 'clearRelayCompletions')
     try {
       const res = await post(s, '/api/session/delete', { session_id: guarded })
       expect(res.status).toBe(409)
-      expect(await json(res)).toEqual({ error: 'In use by another Agent process. Try again later.', refused: 'active_turn' })
+      expect(await json(res)).toEqual({ error, refused })
       expect(existsSync(file(guarded))).toBe(true)
       expect((await s.get(`/api/session?session_id=${guarded}`)).status).toBe(200)
 
       const bulk = await json(await post(s, '/api/sessions/bulk', { action: 'delete', session_ids: [guarded, free] }))
       expect(bulk.results).toEqual([
-        { session_id: guarded, ok: false, status: 409, error: 'In use by another Agent process. Try again later.', refused: 'active_turn' },
+        { session_id: guarded, ok: false, status: 409, error, refused },
         { session_id: free, ok: true, state_db_cleanup_failed: false },
       ])
       expect([existsSync(file(guarded)), existsSync(file(free))]).toEqual([true, false])
+      expect(readFileSync(file(guarded), 'utf8')).toBe(before)
+      expect(readFileSync(attachment, 'utf8')).toBe('retained attachment')
+      expect(revoke.mock.calls.every(([session]) => session.session_id !== guarded)).toBe(true)
+      for (const spy of [evict, terminal, journal, relay]) expect(spy.mock.calls.every(([sid]) => sid !== guarded)).toBe(true)
     } finally {
+      for (const spy of [revoke, evict, terminal, journal, relay]) spy.mockRestore()
       sidecar.respond('state_db.delete_cli_session', () => ({ ok: true }))
     }
   })

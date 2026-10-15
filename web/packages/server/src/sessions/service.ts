@@ -2035,7 +2035,12 @@ export class SessionService {
     // sidecar resolves them inside its delete transaction, so a guard on any of them refuses before anything is removed.
     let result: SidecarResult<'state_db.delete_cli_session'>
     try { result = await this.deps.runtime.deleteCliSession(profile, sid) } catch { return { ok: false } }
-    if (result.refused) throw new HttpFailure(409, 'In use by another Agent process. Try again later.', { refused: result.refused })
+    if (result.refused) {
+      const message = result.refused === 'runtime_history_unsupported'
+        ? 'This Agent cannot retire the session\'s retained runtime history. Use an Agent that supports retiring this history, or explicitly restore a pre-upgrade backup before deleting it.'
+        : 'In use by another Agent process. Try again later.'
+      throw new HttpFailure(409, message, { refused: result.refused })
+    }
     return result
   }
 

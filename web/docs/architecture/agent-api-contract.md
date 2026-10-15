@@ -188,7 +188,14 @@ turn/compression guards refuse the whole operation with `refused: active_turn`.
 Terminal admission and worker receipts retire with the session, retaining retry
 evidence without transcript copies. The Agent's tombstones prevent late accounting
 from recreating deleted sessions. Older supported Agents retain the guarded legacy
-deletion path.
+deletion path for fresh legacy sessions. If their deletion target retains canonical
+runtime rows or receipts, they return `refused: runtime_history_unsupported` before
+any Agent rows or transcript artifacts are removed. The HTTP server returns 409
+with recovery wording before revoking shares, removing Web metadata/attachments or
+journals, evicting runtimes, closing terminals, or clearing relay completions.
+Recovery requires an Agent capable of retiring that history, or an explicitly
+chosen pre-upgrade backup. No ledger/trigger edits or partial reset-tip deletion
+are used to bypass retirement.
 
 Talaria writes its transcript cleanup manifest inside the same database transaction,
 before commit. A manifest failure rolls back deletion and retirement. File cleanup

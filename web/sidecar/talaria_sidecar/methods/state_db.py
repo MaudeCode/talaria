@@ -453,7 +453,7 @@ def _delete_rows(requested: str, include_lineage: bool, home: Path, db_path: Pat
         columns = {row[1] for row in conn.execute("PRAGMA table_info(sessions)").fetchall()}
         if not {"id", "parent_session_id"}.issubset(columns):
             return {"ok": False}
-        selected = ["id", "parent_session_id"] + [c if c in columns else f"NULL AS {c}" for c in ("model_config", "source", "session_source", "end_reason", "started_at", "ended_at")]
+        selected = ["id", "parent_session_id"] + [c if c in columns else f"NULL AS {c}" for c in ("model_config", "source", "session_source", "end_reason", "started_at", "ended_at", "chat_id")]
         rows = conn.execute(f"SELECT {', '.join(selected)} FROM sessions").fetchall()
         records = []
         for row in rows:
@@ -470,7 +470,7 @@ def _delete_rows(requested: str, include_lineage: bool, home: Path, db_path: Pat
             records.append({
                 "id": row["id"], "parent_id": row["parent_session_id"], "delegate_from": model_config.get("_delegate_from"),
                 "branched_from": model_config.get("_branched_from"), "model_config_known": known, "source": row["source"], "session_source": row["session_source"],
-                "reset_from": model_config.get("_reset_from"),
+                "reset_from": model_config.get("_reset_from"), "chat_id": row["chat_id"],
                 "end_reason": row["end_reason"], "started_at": row["started_at"], "ended_at": row["ended_at"],
             })
         by_id = {r["id"]: r for r in records}
@@ -530,6 +530,8 @@ def _delete_rows(requested: str, include_lineage: bool, home: Path, db_path: Pat
         sids = _compression_lineage(records, requested) if include_lineage else [requested]
         plan = [(sid, delegates_of(sid)) for sid in reversed(sids)]
         all_removed = list(dict.fromkeys(i for sid, delegate_ids in plan for i in (sid, *delegate_ids)))
+        if _has_retained_runtime_history(conn, records, all_removed):
+            return {"ok": False, "refused": "runtime_history_unsupported"}
         # The Agent's own user-delete guard, checked over every row before any is removed. A live writer's turn lease or
         # compression lock refuses the whole delete; expired or dead-holder guards are reclaimed.
         if guarded(conn, all_removed):
@@ -557,6 +559,57 @@ def _delete_rows(requested: str, include_lineage: bool, home: Path, db_path: Pat
             return {"ok": False}
         conn.commit()
         return {"ok": _process_stale_manifests(home), "deleted_ids": all_removed}
+
+
+def _has_retained_runtime_history(conn, records: list[dict], removed_ids: list[str]) -> bool:
+    """Read-only downgrade fence, never a replacement for the Agent's retirement/receipt validator."""
+    targets = set(removed_ids)
+    by_id = {r["id"]: r for r in records}
+    # Inspect the logical family, including compressed delegates the legacy plan would detach.
+    # This only refuses deletion; the installed Agent remains the sole canonical retirement implementation.
+    while True:
+        connected = set()
+        for child in records:
+            parent = by_id.get(child["parent_id"])
+            if parent and (child['id'] in targets or parent['id'] in targets):
+                # Continuations may inherit markers naming an older ancestor, rather than this edge's parent.
+                edge = {**child, **{k: None for k in ('branched_from', 'delegate_from', 'reset_from') if child[k] != parent['id']}}
+                if _is_continuation(parent, edge):
+                    connected.update((parent['id'], child['id']))
+            if child['delegate_from'] in targets or (child['source'] == 'subagent' and child['parent_id'] in targets
+                    and child['model_config_known'] and child['branched_from'] is None):
+                connected.add(child['id'])
+        if connected.issubset(targets):
+            break
+        targets.update(connected)
+    tables = {r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type='table'")}
+    placeholders = ','.join('?' for _ in targets)
+    for table, column in (("session_admissions", "target_session_id"), ("worker_executions", "session_id")):
+        if table in tables and conn.execute(f"SELECT 1 FROM {table} WHERE {column} IN ({placeholders}) LIMIT 1", tuple(targets)).fetchone():
+            return True
+    if 'state_meta' not in tables:
+        return False
+    # The key and stored chat owner still identify a reset receipt when its JSON is unreadable.
+    owners = targets | {r["chat_id"] for r in records if r["id"] in targets and isinstance(r["chat_id"], str)}
+    for key, raw in conn.execute("SELECT key,value FROM state_meta WHERE key GLOB 'gateway.*'"):
+        if key.startswith('gateway.local_policy.v1:') and key.removeprefix('gateway.local_policy.v1:') in owners:
+            return True
+        if key.startswith('gateway.retired_session.v1.') and key.removeprefix('gateway.retired_session.v1.') in targets:
+            return True
+        try:
+            receipt = json.loads(raw)
+        except (TypeError, ValueError):
+            continue
+        if not isinstance(receipt, dict):
+            continue
+        lineage = receipt.get('lineage')
+        entry = receipt.get('entry')
+        ids = [receipt.get('session_id'), receipt.get('target_session_id'),
+               entry.get('session_id') if isinstance(entry, dict) else None,
+               *(lineage if isinstance(lineage, list) else [])]
+        if any(isinstance(sid, str) and sid in targets for sid in ids):
+            return True
+    return False
 
 
 def delete_cli_session(home: Path, sid: str, include_lineage: bool = False) -> dict:
