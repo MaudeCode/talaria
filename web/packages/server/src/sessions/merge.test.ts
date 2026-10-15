@@ -344,6 +344,42 @@ describe('compaction markers (TAL-305)', () => {
   })
 })
 
+describe('absorbed durable identity (TAL-1019)', () => {
+  it.each([42, null])('keeps absorbed numeric rows represented with seen marker %s', (stateDbSeenId) => {
+    const prompt = { role: 'user', content: 'Background prefix\ncontinue', timestamp: 100, _absorbed_row_ids: [43, 44] }
+    const reply = { role: 'assistant', content: 'Done', timestamp: 101 }
+    const duplicate = { role: 'user', content: 'continue', timestamp: 200, _state_db_row_id: 43 }
+    const secondAbsorbed = { ...duplicate, _state_db_row_id: 44 }
+    const repeated = { ...duplicate, timestamp: 201, _state_db_row_id: 45 }
+    const concurrent = { role: 'user', content: 'CLI work', timestamp: 201, _state_db_row_id: 46 }
+    const local = [prompt, reply]
+    expect(mergeSessionMessagesAppendOnly(local, [duplicate, secondAbsorbed, repeated, concurrent], { stateDbSeenId })).toEqual([...local, repeated, concurrent])
+  })
+
+  it.each([42, null])('keeps absorbed UID rows represented with seen marker %s', (stateDbSeenId) => {
+    const prompt = { role: 'user', content: 'Notification prefix', timestamp: 100, message_uid: 'carrier', _absorbed_message_uids: ['absorbed'] }
+    const reply = { role: 'assistant', content: 'Verified', timestamp: 101 }
+    const duplicate = { role: 'user', content: 'Background result', timestamp: 200, _state_db_message_uid: 'absorbed', _state_db_row_id: 43 }
+    const repeated = { ...duplicate, timestamp: 201, _state_db_message_uid: 'independent', _state_db_row_id: 44 }
+    expect(mergeSessionMessagesAppendOnly([prompt, reply], [duplicate, repeated], { stateDbSeenId })).toEqual([prompt, reply, repeated])
+    // Older databases can supply a UID without numeric row IDs.
+    const uidOnly = { ...duplicate, _state_db_row_id: undefined }
+    expect(mergeSessionMessagesAppendOnly([prompt, reply], [uidOnly], { stateDbSeenId })).toEqual([prompt, reply])
+  })
+
+  it('preserves authored edits and ignores malformed absorption metadata', () => {
+    const local = [{ role: 'user', content: 'old', timestamp: 100, _absorbed_row_ids: ['43', null], _absorbed_message_uids: [null, 7, ''], message_uid: 'same' }]
+    const changed = { role: 'user', content: 'edited', timestamp: 200, _state_db_row_id: 43, _state_db_message_uid: 'same', _state_db_authored_change: true }
+    expect(mergeSessionMessagesAppendOnly(local, [changed], { stateDbSeenId: 42 })).toEqual([...local, changed])
+  })
+
+  it('retains exact-copy matching when an older database cannot supply UIDs', () => {
+    const prompt = { role: 'user', content: 'continue', timestamp: 100, message_uid: 'agent-only' }
+    const copy = { role: 'user', content: 'continue', timestamp: 100, _state_db_row_id: 43 }
+    expect(mergeSessionMessagesAppendOnly([prompt], [copy], { stateDbSeenId: 42 })).toEqual([prompt])
+  })
+})
+
 describe('mergeSessionMessagesAppendOnly by state.db row id (TAL-493)', () => {
   const row = (id: number, role: string, content: string, timestamp: number) => ({ role, content, timestamp, _state_db_row_id: id })
   const contents = (rows: { content?: unknown }[]) => rows.map((m) => m.content)

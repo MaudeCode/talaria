@@ -10,6 +10,7 @@ import type { SidecarResult } from '@maudecode/talaria-web-contracts'
 import { SessionSchema } from '@maudecode/talaria-web-contracts'
 import { str } from '../util.js'
 import { Session } from './session.js'
+import { recordBackgroundUpdate } from './background-updates.js'
 import { agentSessionRowsExisting, cheapChangeFingerprint, latestCronSessionInfo, isCliSessionRowVisible, normalizeAgentSessionSource, projectAgentSessionRows, readImportableAgentSessionRows, stateDbCompressionLineage, stateDbHasSession, stateDbLineageReport, stateDbSessionRead, stateDbSessionSources } from './state-db.js'
 import { GatewayWatcher, snapshotHash } from './gateway-watcher.js'
 import { capRecentCliSessions, keepLatestMessagingSessionPerSource, mergeCliSidebarMetadata, withOwnerLocks, type GatewayIdentity } from './list.js'
@@ -35,6 +36,57 @@ function insertSession(db: DatabaseSync, row: { id: string; source: string; star
     .run(row.id, row.source, row.started_at, row.title ?? null, row.model ?? null, messages.length, row.parent ?? null, row.ended_at ?? null, row.end_reason ?? null, row.chat_id ?? null)
   for (const [role, ts] of messages) db.prepare('INSERT INTO messages (session_id, role, content, timestamp) VALUES (?, ?, ?, ?)').run(row.id, role, `${role} says`, ts)
 }
+
+describe('absorbed durable identity (TAL-1019)', () => {
+  it.each((['numeric', 'uid', 'legacy-uid'] as const).flatMap((identity) => [false, true].map((background) => [identity, background] as const)))('settles and reopens by %s with background=%s', async (identity, background) => {
+    const s = await bootTestServer()
+    const path = join(s.state, 'state.db')
+    const db = createStateDb(path)
+    try {
+      db.exec('ALTER TABLE messages ADD COLUMN message_uid TEXT')
+      if (identity === 'legacy-uid') db.exec('DROP TABLE messages; CREATE TABLE messages (session_id TEXT, role TEXT, content TEXT, timestamp REAL, message_uid TEXT)')
+      const sid = `absorbed-${identity}-${String(background)}`
+      insertSession(db, { id: sid, source: 'webui', started_at: 100 })
+      const text = background ? 'Background task completed' : 'continue'
+      const insert = (uid: string, content: string, timestamp: number) => db.prepare('INSERT INTO messages (session_id, role, content, timestamp, message_uid) VALUES (?, ?, ?, ?, ?)').run(sid, 'user', content, timestamp, uid)
+      const absorbedId = Number(insert('absorbed', text, 200).lastInsertRowid)
+      const prompt = { role: 'user', content: `Earlier merged prefix\n${text}`, timestamp: 100, _turn_id: 'turn',
+        ...(identity === 'numeric' ? { _absorbed_row_ids: [absorbedId] } : { _absorbed_message_uids: ['absorbed'] }),
+        ...(background ? { _source: 'process_wakeup' } : {}) }
+      const reply = { role: 'assistant', content: 'Verified the result.', timestamp: 101, _turn_id: 'turn' }
+      const session = new Session({ session_id: sid, messages: [prompt, reply], context_messages: [prompt, reply] }, { workspace: s.state, model: null })
+      if (background) recordBackgroundUpdate(session, 'turn', { kind: 'delegation', attention: false, count: 1, summary: text, lines: [{ kind: 'agent', status: 'completed', label: 'Synthetic delegated task' }] })
+      // A genuine concurrent submission can equal the merged model prompt exactly.
+      insert('independent', prompt.content, 202)
+      insert('cli', 'Unrelated CLI work', 203)
+      const expected = [prompt.content, reply.content, prompt.content, 'Unrelated CLI work']
+      s.deps.sessions.settleStateDb(session, { turnId: 'turn', previousContext: [], agentRows: [prompt, reply], startId: identity === 'legacy-uid' ? null : 0 })
+      expect(session.messages.map((m) => m.content)).toEqual(expected)
+      expect(session.context_messages.map((m) => m.content)).toEqual(expected)
+      expect(s.deps.sessions.mergedTranscript(session).map((m) => m.content)).toEqual(expected)
+      expect(s.deps.sessions.modelContext(session).map((m) => m.content)).toEqual(expected)
+      s.deps.sessionStore.save(session)
+      s.deps.sessionStore.sessions.delete(sid)
+      for (let reopen = 0; reopen < 2; reopen += 1) {
+        const detail = (await json(await s.get(`/api/session?session_id=${sid}`))).session as Json
+        const rows = detail.messages as Json[]
+        expect(rows.map((m) => m.content)).toEqual(expected)
+        expect(rows.filter((m) => m._source === 'process_wakeup')).toHaveLength(background ? 1 : 0)
+        expect(rows.filter((m) => m._background_update)).toHaveLength(background ? 1 : 0)
+        if (background) {
+          expect(rows[0]?._background_update).toMatchObject({ kind: 'delegation', count: 1, lines: [{ kind: 'agent', status: 'completed', label: 'Synthetic delegated task' }] })
+          expect(rows[1]).toMatchObject({ content: reply.content, _background_reply: true })
+          expect(rows[1]).not.toHaveProperty('_background_silent')
+        }
+        expect(rows.slice(2).every((m) => !m._background_update && !m._background_reply)).toBe(true)
+        expect(rows.every((m) => !('_state_db_message_uid' in m))).toBe(true)
+        const tail = (await json(await s.get(`/api/session?session_id=${sid}&msg_limit=2`))).session as Json
+        const head = (await json(await s.get(`/api/session?session_id=${sid}&msg_limit=2&msg_before=${String(tail._messages_offset)}`))).session as Json
+        expect([...(head.messages as Json[]), ...(tail.messages as Json[])].map((m) => m.content)).toEqual(expected)
+      }
+    } finally { db.close(); await s.close() }
+  })
+})
 
 describe('latestCronSessionInfo', () => {
   let dir: string

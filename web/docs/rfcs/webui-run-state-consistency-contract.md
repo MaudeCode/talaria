@@ -73,6 +73,14 @@ an older identical local row. A fixed-width fingerprint of a verified copy's
 archived source also lets older sidecars match replays without a seen marker. The remaining rows still pass
 through the existing timestamp, clear, truncation and compression gates. Both
 internal markers are stripped from public messages.
+The append-only merge also honors the Agent's explicit `_absorbed_row_ids` and
+`_absorbed_message_uids` witnesses. A merged prompt represents those durable
+occurrences even when it keeps an earlier timestamp or a different model-facing
+prefix. Settlement uses the same identities for starting context and Agent-owned
+work, so those occurrences cannot become concurrent external rows or consume a
+text match belonging to a separate submission. Databases without UID columns keep
+their existing exact-copy fallback. The reader's UID alias stays internal, and
+archive-proven authored edits still require their own numeric identity.
 Tool results retain their existing tool-call/timestamp compaction rule; tables
 without UIDs retain the legacy timestamp rule. This requires no Agent changes,
 new database fields, release pins or server-side database writes.

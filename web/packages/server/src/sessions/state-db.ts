@@ -741,6 +741,7 @@ function projectStateDbMessage(row: Dict, hasId: boolean): Dict {
   }
   // TAL-493: the merge tells rows committed after the session's last read by this id.
   if (hasId && row.id !== null && row.id !== undefined) msg._state_db_row_id = row.id
+  if (typeof row.message_uid === 'string' && row.message_uid.length) msg._state_db_message_uid = row.message_uid
   if (msg.role === 'tool' && msg.tool_name && !msg.name) msg.name = msg.tool_name
   return msg
 }

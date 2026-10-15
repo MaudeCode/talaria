@@ -6,7 +6,7 @@
 import { buildActiveTurnToken, completedToolIndex } from '../redact.js'
 import { RunJournal, type JournalEvent } from './journal.js'
 import { str } from '../util.js'
-import { stateDbMessageKey, stateDbMessageFingerprint } from './state-db-identity.js'
+import { stateDbMessageKey, stateDbMessageFingerprint, stateDbRowId, stateDbIdentityKeys } from './state-db-identity.js'
 import { stripAttachedFilesMarker, stripWorkspacePrefix, type Message } from './session.js'
 
 export { WORKSPACE_PREFIX_RE, stripWorkspacePrefix } from './session.js'
@@ -941,8 +941,7 @@ export function normalizeAssistantDisplay<T>(message: T): T {
  * TAL-493: once a boundary or settled turn recorded the highest state.db id it read (`stateDbSeenId`) and the rows carry
  * ids, identity replaces the timestamp rules: rows up to that id are covered, and every newer row not already in the
  * sidecar is appended, even one a writer stamped before the newest local row or the watermark but committed later.
- * ponytail: the Python identity memo (api_content sidecars, message ids, workspace-prefix normalisation) is not ported;
- * add it if a mixed WebUI/CLI transcript shows duplicated turns.
+ * Direct and absorbed durable identities cover merged Agent prompts even when their text and timestamp changed.
  */
 export function mergeSessionMessagesAppendOnly(sidecar: Message[], state: Message[], opts: { truncationWatermark?: unknown; compressedWatermark?: boolean; stateDbSeenId?: number | null } = {}): Message[] {
   const watermark = Number(opts.truncationWatermark)
@@ -950,23 +949,27 @@ export function mergeSessionMessagesAppendOnly(sidecar: Message[], state: Messag
   if (!state.length) return sidecar
   const ts = (m: Message): number | null => { const n = Number(m.timestamp); return Number.isFinite(n) ? n : null }
   const key = stateDbMessageKey
+  const includeUids = state.some((m) => stateDbIdentityKeys(m).some((id) => id.startsWith('uid:')))
+  const identities = (m: Message): string[] => stateDbIdentityKeys(m, includeUids)
+  const representedIds = new Set(sidecar.flatMap(identities))
+  const isRepresented = (m: Message): boolean => identities(m).some((id) => representedIds.has(id))
+  const rememberIds = (m: Message): void => { for (const id of identities(m)) representedIds.add(id) }
   const seenId = opts.stateDbSeenId
   if (typeof seenId === 'number' && Number.isFinite(seenId) && state.some((m) => stateDbRowId(m) !== null)) {
-    // Each local row stands for at most one new state.db row: a persisted copy by its id, any other by its key.
-    const localIds = new Set(sidecar.map(stateDbRowId))
+    // A row with durable provenance represents those identities; an unidentified row matches one exact copy.
     const localKeys = new Map<string, number>()
-    for (const m of sidecar) if (stateDbRowId(m) === null) localKeys.set(key(m), (localKeys.get(key(m)) ?? 0) + 1)
+    for (const m of sidecar) if (!identities(m).length) localKeys.set(key(m), (localKeys.get(key(m)) ?? 0) + 1)
     const merged = [...sidecar]
     for (const m of state) {
       const id = stateDbRowId(m)
-      if (id !== null && localIds.has(id)) continue
+      if (isRepresented(m)) continue
       // In state.db order, so a covered row matches its own local copy before a newer duplicate can.
       const left = localKeys.get(key(m)) ?? 0
       // An archive-proven edit is a new occurrence even when an older local row has identical text.
       // Covered edits still consume their local match before later ordinary copies are considered.
-      if (left > 0 && (m._state_db_authored_change !== true || id === null || id <= seenId)) { localKeys.set(key(m), left - 1); if (id !== null) localIds.add(id); continue }
+      if (left > 0 && (m._state_db_authored_change !== true || id === null || id <= seenId)) { localKeys.set(key(m), left - 1); rememberIds(m); continue }
       if (id === null || id <= seenId) continue
-      localIds.add(id)
+      rememberIds(m)
       merged.push(m)
     }
     return merged
@@ -981,9 +984,11 @@ export function mergeSessionMessagesAppendOnly(sidecar: Message[], state: Messag
   }
   for (const message of sidecar) remember(message)
   state = state.filter((message) => {
+    if (isRepresented(message)) return false
     const sourceKey = message._state_db_source_key
     if (typeof sourceKey === 'string' && represented.has(sourceKey)) return false
     remember(message)
+    rememberIds(message)
     return true
   })
   if (!sidecar.length) {
@@ -1007,12 +1012,6 @@ export function mergeSessionMessagesAppendOnly(sidecar: Message[], state: Messag
     merged.push(m)
   }
   return merged
-}
-
-/** The state.db row id a row was read with (a compaction copy reads as the row it copies; TAL-709), or null for a database without the column. */
-function stateDbRowId(m: Message): number | null {
-  const id = m._state_db_row_id
-  return typeof id === 'number' && Number.isFinite(id) ? id : null
 }
 
 /** TAL-493: the `state_db_seen_id` after reading `rows`: their highest id, or null when they carry none. */

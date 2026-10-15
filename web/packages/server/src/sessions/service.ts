@@ -25,6 +25,7 @@ import { anchorMessageKey, anchorSummary, CompressionJobs, compressionReference,
 import { chatReadiness, SidecarError, type SidecarLike } from '../sidecar/client.js'
 import { agentSteerText, attachedFilesPrompt, attachmentObjects, checkpointTurnStart, dedupeContext, isContextCompressionMarker, journalOutputRows, looksLikeCurrentUserTurn, stoppedTurnContext, mergeSessionMessagesAppendOnly, messageIdentity, pendingUserRow, reasoningFieldsText, sanitizeMessagesForApi, stateDbSeenId, stripWorkspacePrefix, withAttachmentObjects, withBodyExcerpts, withDisplayMedia, withMarkerKinds, withMirrorSources, withSceneRowMedia, withPendingUserTurn, withToolCallOutcomes, withoutRunningTurnOutput, type ToolResultView } from './merge.js'
 import { withBackgroundUpdates } from './background-updates.js'
+import { stateDbIdentityKeys } from './state-db-identity.js'
 import { sourceKind } from './source-kind.js'
 import { withBackgroundLinks, type Receipt } from './background-tasks.js'
 import { messagesForLimitedPayload, messageWindowForDisplay, MAX_MSG_LIMIT, parseMsgLimit, toolCallsForMessageWindow } from './window.js'
@@ -427,10 +428,17 @@ export class SessionService {
    */
   settleStateDb(s: Session, turn: { turnId: string; previousContext: Message[]; agentRows?: Message[] | null; startId?: number | null; read?: StateDbRead }): void {
     const read = turn.read ?? this.stateDbRead(s)
-    const startedWith = new Set(turn.previousContext.flatMap((m) => (typeof m._state_db_row_id === 'number' ? [m._state_db_row_id] : [])))
-    const earlier = mergeSessionMessagesAppendOnly(s.messages, read.rows.filter((m) => typeof m._state_db_row_id === 'number' && startedWith.has(m._state_db_row_id)), { stateDbSeenId: -1 }).slice(s.messages.length)
+    const includeUids = read.rows.some((m) => stateDbIdentityKeys(m).some((id) => id.startsWith('uid:')))
+    const identities = (m: Message): string[] => stateDbIdentityKeys(m, includeUids)
+    const startedWith = new Set(turn.previousContext.flatMap(identities))
+    const wasInContext = (m: Message): boolean => identities(m).some((id) => startedWith.has(id))
+    const earlier = mergeSessionMessagesAppendOnly(s.messages, read.rows.filter(wasInContext), { stateDbSeenId: -1 }).slice(s.messages.length)
     const added = new Map<string, number>()
-    for (const m of withoutRows(turn.agentRows ?? [], turn.previousContext)) added.set(settledIdentity(m), (added.get(settledIdentity(m)) ?? 0) + 1)
+    const agentAdded = withoutRows(turn.agentRows ?? [], turn.previousContext)
+    const addedIds = new Set(agentAdded.flatMap(identities))
+    for (const m of agentAdded) {
+      if (!identities(m).length) added.set(settledIdentity(m), (added.get(settledIdentity(m)) ?? 0) + 1)
+    }
     const ownWorkAfter = turn.agentRows?.length ? null : turn.startId ?? null
     // Without a current marker, the turn's own starting read is the baseline: rows committed after it are judged here.
     const seenId = currentStateDbSeenId(s, read.rows) ?? turn.startId ?? null
@@ -440,14 +448,15 @@ export class SessionService {
     if (seenId !== null) {
       for (const m of read.rows) {
         const id = m._state_db_row_id
-        if (typeof id !== 'number' || id <= seenId || startedWith.has(id) || fresh.has(m)) continue
+        if (typeof id !== 'number' || id <= seenId || wasInContext(m) || fresh.has(m)) continue
         const left = added.get(settledIdentity(m)) ?? 0
         if (left > 0) added.set(settledIdentity(m), left - 1)
       }
     }
     const missed = [...fresh].filter((m) => {
       const id = m._state_db_row_id
-      if (typeof id === 'number' && startedWith.has(id)) return false
+      if (wasInContext(m)) return false
+      if (identities(m).some((identity) => addedIds.has(identity))) return false
       const key = settledIdentity(m)
       const left = added.get(key) ?? 0
       if (left > 0) { added.set(key, left - 1); return false }
