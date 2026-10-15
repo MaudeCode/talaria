@@ -166,6 +166,13 @@ export function createDeps(opts: CreateDepsOptions): AppDeps {
     if (contained === null) throw new ProfileError(escapedProfileMessage(name), 400)
     return contained
   }
+  const agentHomes = (): string[] => {
+    if (isolatedProfileMode()) return [baseHome]
+    let names: string[]
+    try { names = readdirSync(join(baseHome, 'profiles')) }
+    catch (error) { if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error; names = [] }
+    return [...new Set([baseHome, ...names.filter((name) => PROFILE_RE.test(name)).map(profileHome)])]
+  }
   const attachmentRoot = (): string => {
     const override = (env.HERMES_WEBUI_ATTACHMENT_DIR ?? '').trim()
     return resolvePathLikePython(override ? override.replace(/^~(?=$|\/)/, home) : join(config.stateDir, 'attachments'))
@@ -729,12 +736,28 @@ export function createDeps(opts: CreateDepsOptions): AppDeps {
       return deps.version
     },
     agentDir: () => sidecar?.describe?.agent_dir ?? null,
-    agentHomes: () => {
-      if (isolatedProfileMode()) return [baseHome]
-      let names: string[]
-      try { names = readdirSync(join(baseHome, 'profiles')) }
-      catch (error) { if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error; names = [] }
-      return [...new Set([baseHome, ...names.filter((name) => PROFILE_RE.test(name)).map(profileHome)])]
+    agentHomes,
+    agentMutation: async (path, revision, mutate) => {
+      if (!sidecar) throw new Error('Hermes Agent sidecar is unavailable')
+      const begin = await sidecar.call('runtime.agent_mutation', { action: 'begin', agent_dir: path, revision, homes: agentHomes() }, { timeoutMs: 330_000 })
+      if (!begin.ok || !begin.token) throw new Error(begin.detail || 'Agent writer quiescence was not verified.')
+      const token = begin.token
+      const leasedGit: import('./tools/updates.js').GitRun = async (args, cwd, timeoutMs = 10_000) => {
+        if (resolve(cwd) !== resolve(path)) throw new Error('Agent writer lease cannot mutate another checkout.')
+        const result = await sidecar.call('runtime.agent_mutation', { action: 'git', agent_dir: path, token, args, timeout_ms: timeoutMs }, { timeoutMs: 330_000 })
+        return { ok: result.ok, out: result.detail }
+      }
+      let result: Record<string, unknown>
+      try {
+        result = await mutate(leasedGit, () => sidecar.call('runtime.agent_mutation', { action: 'sync', agent_dir: path, token }, { timeoutMs: 330_000 }))
+      } catch (error) {
+        try { await sidecar.call('runtime.agent_mutation', { action: 'finish', agent_dir: path, token }, { timeoutMs: 330_000 }) }
+        catch { /* The native pause journal retains any unverified recovery obligation. */ }
+        throw error
+      }
+      const resumed = await sidecar.call('runtime.agent_mutation', { action: 'finish', agent_dir: path, token }, { timeoutMs: 330_000 })
+      return resumed.ok ? { ...result, ...(result.gateway_restart === 'waiting_for_idle' ? { gateway_restart: 'resumed' } : {}) }
+        : { ...result, ok: false, restart_scheduled: false, message: resumed.detail || 'Agent writer resume remains unverified; its recovery obligation is retained.' }
     },
     agentSync: async (agentDir) => {
       if (!sidecar) throw new Error('Hermes Agent sidecar is unavailable')

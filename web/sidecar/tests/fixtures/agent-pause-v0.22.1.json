@@ -1,0 +1,43 @@
+{
+  "agentRevision": "297552a9d646119871391d202509822cd86330df",
+  "record": {
+    "install_root": "/synthetic/agent",
+    "owner": {
+      "ct": null,
+      "pid": 0
+    },
+    "schema": 1,
+    "token": {
+      "baselines": [],
+      "identities": {
+        "99999999": "ct:1.000"
+      },
+      "pause_id": "synthetic-native-pause",
+      "platform": "posix",
+      "posix_units": [],
+      "profiles": {},
+      "resume_needed": true,
+      "stop_requested": [
+        99999999
+      ],
+      "stop_sent": [
+        99999999
+      ],
+      "unmapped": [
+        {
+          "argv": [
+            "hermes",
+            "gateway",
+            "run"
+          ],
+          "ct": 1.0,
+          "home": "/synthetic/home",
+          "pid": 99999999
+        }
+      ],
+      "unmapped_pids": [
+        99999999
+      ]
+    }
+  }
+}

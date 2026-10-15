@@ -122,17 +122,53 @@ The probe runs the installed target's real manual recovery and pending Bot Chat
 drain with disposable homes, no live owner, and network access denied. A target
 that imports successfully but cannot reconcile either format fails this gate.
 
-Both Agent update paths inspect immutable target Git blobs and retained
-`cron/manual_runs` and `cron/bot_chat_pending` records before creating dependency
-repair intent, stashing, or changing source. They inspect the resolved root and
-named-profile homes, or only the pinned home in isolated-profile mode. Manual
-recovery and deferred delivery have separate compatibility verdicts in
-`updates.apply` and `updates.force`; clients render the existing error message.
-Unreadable state or target evidence holds the update. Reconcile retained work
-with a capable Agent and retry. Web never rewrites Agent pending formats or
-discards the records to make an update pass. An already-incompatible install
-returns `cron_execution_unverified` before manual recovery can write evidence,
-settle the task, or resubmit it.
+Both Agent update paths acquire the Agent's native checkout lock and durably
+record a cooperative gateway pause before the compatibility scan. Unknown
+owners, foreign profile homes, unreadable identity evidence, or an unacknowledged
+drain refuse the update. Gateways exit through their own drain; the updater does
+not force-kill them. Attested supervisors are stopped only after the owned
+gateway exits, and their original identities and resume commands stay in the
+Agent's paused-gateway journal.
+
+`runtime.agent_mutation` extends the dependency-sync supervisor's lifetime-lease
+and child-reaping design across the existing Web updater's operations:
+
+| Action | Result |
+| --- | --- |
+| `begin` | Acquire native custody, adopt prior pause debt, prove writer quiescence, return a private lease token. |
+| `git` | Execute the existing updater's command under that custody and the native checkout journal gate. |
+| `sync` | Repair dependencies while writers remain paused. |
+| `finish` | Verify the tree and repair, resume the recorded owners, then release custody. |
+
+The supervisor owns every Git/dependency child. Cancellation or a lost sidecar
+pipe stops and reaps an active writer before recovery is judged. A killed
+supervisor leaves the native journal adoptable, and a mutator inherits the
+native checkout lock. Torn source, failed repair, or unverified resume retains
+the obligation. Patch paths are recorded before atomic local restores; a HEAD
+that did not move cannot certify an interrupted patch. A successful atomic
+restore gets a verified native baseline checkpoint. A paused broken environment
+can repair without importing its main runtime first; verified resume then uses
+the current Agent interpreter and its canonical recovery reader.
+
+Within the held lease, the server inspects immutable target Git blobs and
+retained `cron/manual_runs` and `cron/bot_chat_pending` records, before dependency
+repair intent or source changes. It checks resolved root and named-profile
+homes, or the pinned home in isolated-profile mode. Manual recovery and deferred
+delivery have separate compatibility verdicts in `updates.apply` and
+`updates.force`; clients render the existing error message. Web never imports
+target Python into the live sidecar, rewrites pending cron formats, discards
+records, or resubmits a retained task. Already-incompatible recovery returns
+`cron_execution_unverified` before any retained-record write.
+
+Web's existing repair-intent marker stays present through verified gateway
+resume, even when HEAD is unchanged. The sidecar's common Agent admission guard
+refuses new work while that marker remains; repair RPCs remain available. Web
+restart is scheduled only after verified resume, and new admission stays closed
+until that restart. A pending repair finishes the installed revision first; an
+explicitly confirmed legacy release without a sync entry point retains the
+existing recovery escape, still behind the same writer and compatibility gates.
+Update checks do not restore stashes or mutate source. Interrupted local changes
+are reconciled only on an explicit apply within the writer lease.
 
 The compatibility gate proves Talaria's existing calls still work; it cannot see
 new Agent capabilities. For what a release or `main` SHA adds, modifies,

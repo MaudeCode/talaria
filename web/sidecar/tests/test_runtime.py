@@ -3,10 +3,28 @@
 from __future__ import annotations
 
 import subprocess
+import hashlib
+import pytest
 
 from conftest import AGENT_DIR, SidecarProcess, assert_matches, requires_agent
 from talaria_sidecar import SIDECAR_RPC_VERSION
 from talaria_sidecar.runtime import read_pin
+
+
+def test_same_revision_agent_work_is_blocked_until_durable_web_repair_intent_is_cleared(tmp_path, monkeypatch):
+    from talaria_sidecar.runtime import AgentRuntime, AgentRuntimeStale
+    root, home, state = tmp_path / 'agent', tmp_path / 'home', tmp_path / 'web-state'
+    root.mkdir(); home.mkdir()
+    runtime = AgentRuntime(home, root)
+    monkeypatch.setattr(runtime, 'is_stale', lambda: False)
+    monkeypatch.setenv('HERMES_WEBUI_STATE_DIR', str(state))
+    marker = state / 'agent-dependency-sync' / hashlib.sha256(str(root.resolve()).encode()).hexdigest()
+    marker.parent.mkdir(parents=True)
+    marker.write_text('pending\n')
+    with pytest.raises(AgentRuntimeStale, match='Finish the Agent update'):
+        runtime.ensure_current()
+    marker.unlink()
+    runtime.ensure_current()
 
 
 @requires_agent

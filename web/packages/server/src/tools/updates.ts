@@ -794,6 +794,8 @@ export interface AgentUpdatePolicy {
   confirmedRevision?: string
   /** Resolved main and named-profile homes sharing this Agent installation. Read again for every attempt. */
   retainedStateHomes?: () => readonly string[]
+  repairPending?: boolean
+  withMutation?: (path: string, revision: string, mutate: (git: GitRun) => Promise<Dict>) => Promise<Dict>
   beforeMutation?: (path: string, revision: string) => Promise<void>
 }
 /** `version` (TAL-946) names a listed Stable release `ref` for either target; omitted, an update takes the newest. */
@@ -836,8 +838,11 @@ export async function checkAgentUpdate(path: string | null, git: GitRun, channel
     const message = fetched.out ? `fetch failed: ${sanitizeGitDiagnostic(fetched.out)}` : 'fetch failed'
     return { name: 'agent', channel, behind: null, error: message, stale_check: true, dirty: await isDirty(path, git) }
   }
-  await recoverInterruptedAutostash(path, git)
-  try { return { ...await agentTarget(path, git, channel, undefined, published), dirty: await isDirty(path, git) } }
+  try {
+    const pending = await pendingAutostashes(path, git)
+    return { ...await agentTarget(path, git, channel, undefined, published), dirty: await isDirty(path, git),
+      ...(pending.length ? { metadata_repair: true, message: 'Local Agent changes need recovery. Apply the update again to finish it.' } : {}) }
+  }
   catch (error) { return { name: 'agent', channel, behind: null, error: (error as Error).message } }
 }
 
@@ -888,8 +893,8 @@ async function retainedCronCompatibility(path: string, revision: string, git: Gi
 }
 
 /** Both update paths check retained obligations before repair intent, stash, cleanup, or source mutation. */
-async function prepareAgentMutation(path: string, info: Dict, git: GitRun, policy?: AgentUpdatePolicy, noMutation = false): Promise<Dict | null> {
-  const warning = noMutation ? null : confirmAgent(info, policy)
+async function prepareAgentMutation(path: string, info: Dict, git: GitRun, policy?: AgentUpdatePolicy, mode: 'source' | 'repair' | 'local-recovery' = 'source'): Promise<Dict | null> {
+  const warning = mode === 'source' ? confirmAgent(info, policy) : null
   if (warning) return warning
   try {
     const compatibility = await retainedCronCompatibility(path, str(info.latest_sha), git, policy?.retainedStateHomes?.() ?? [])
@@ -899,9 +904,24 @@ async function prepareAgentMutation(path: string, info: Dict, git: GitRun, polic
         message: `The target Agent cannot reconcile retained ${obligations}. Reconcile these records with a capable Agent before retrying the update.` }
     }
   } catch (error) { return { ok: false, target: 'agent', message: `Agent recovery compatibility could not be verified: ${sanitizeGitDiagnostic((error as Error).message)}` } }
-  try { if (!noMutation) await policy?.beforeMutation?.(path, str(info.latest_sha)) }
+  try { if (mode !== 'repair') await policy?.beforeMutation?.(path, str(info.latest_sha)) }
   catch (error) { return { ok: false, target: 'agent', message: `Agent update could not prepare dependency sync: ${sanitizeGitDiagnostic((error as Error).message)}` } }
   return null
+}
+
+/** One held writer boundary covers the scan, every Git step, repair, and verified resume. */
+async function withAgentMutation(path: string, info: Dict, git: GitRun, policy: AgentUpdatePolicy | undefined, mutate: (git: GitRun) => Promise<Dict>, mode: 'source' | 'repair' | 'local-recovery' = 'source'): Promise<Dict> {
+  const warning = mode === 'source' ? confirmAgent(info, policy) : null
+  if (warning) return warning
+  const guarded = async (leasedGit: GitRun): Promise<Dict> => {
+    const current = await leasedGit(['rev-parse', 'HEAD'], path)
+    if (!current.ok || current.out !== info.current_sha) return { ok: false, target: 'agent', message: 'Agent source changed while its writers were being quiesced. Check for updates and retry.' }
+    const held = await prepareAgentMutation(path, info, leasedGit, policy, mode)
+    return held ?? mutate(leasedGit)
+  }
+  if (!policy?.withMutation) return guarded(git)
+  try { return await policy.withMutation(path, str(info.latest_sha), guarded) }
+  catch (error) { return { ok: false, target: 'agent', message: `Agent update could not safely quiesce or resume its writers: ${sanitizeGitDiagnostic((error as Error).message)}` } }
 }
 
 /** Fetch, confirm the immutable Agent target, stash, fast-forward, and restore the stash. */
@@ -915,45 +935,53 @@ export async function applyAgentUpdate(path: string | null, git: GitRun, channel
   let info: Dict
   try { info = await agentTarget(path, git, channel, version, published) } catch (error) { return { ok: false, message: (error as Error).message } }
   if (info.current_sha === info.latest_sha) {
-    const held = await prepareAgentMutation(path, info, git, policy, true)
-    if (held) return held
-    const verified = await verifiedAgentIdentity(path, str(info.latest_sha), git)
-    if (!verified) return { ok: false, message: 'The installed Agent revision could not be verified.' }
-    return { ok: true, up_to_date: true, target: 'agent', message: 'Agent is up to date.', ...verified }
+    const pending = await pendingAutostashes(path, git)
+    let recovered = false
+    const verify = async (leasedGit: GitRun): Promise<Dict> => {
+      const verified = await verifiedAgentIdentity(path, str(info.latest_sha), leasedGit)
+      if (!verified) return { ok: false, message: 'The installed Agent revision could not be verified.' }
+      return { ok: true, up_to_date: !recovered, target: 'agent', message: recovered ? 'Retained local Agent changes were recovered.' : 'Agent is up to date.', ...verified }
+    }
+    if (policy?.repairPending || pending.length) return withAgentMutation(path, info, git, policy, async (leasedGit) => {
+      if (pending.length) recovered = await recoverInterruptedAutostash(path, leasedGit)
+      return verify(leasedGit)
+    }, pending.length ? 'local-recovery' : 'repair')
+    const held = await prepareAgentMutation(path, info, git, policy, 'repair')
+    return held ?? verify(git)
   }
   if (info.manual_update || info.error) return { ...info, ok: false, message: info.message ?? info.error }
-  const warning = await prepareAgentMutation(path, info, git, policy)
-  if (warning) return warning
-  const ref = str(info.branch)
-  const revision = str(info.latest_sha)
-  await recoverInterruptedAutostash(path, git)
-  const status = await git(['status', '--porcelain', '--untracked-files=no'], path)
-  if (!status.ok) {
-    if (isGitLockError(status.out)) return { ok: false, message: `Failed to inspect repo status due to a repository lock: ${status.out.trim()}`, lock_conflict: true }
-    return { ok: false, message: `Failed to inspect repo status: ${status.out.slice(0, 200)}` }
-  }
-  if (status.out.split('\n').some((line) => ['DD', 'AU', 'UD', 'UA', 'DU', 'AA', 'UU'].includes(line.slice(0, 2)))) {
-    return { ok: false, message: `The local agent repo has unresolved merge conflicts. To reset to the latest remote version run: git -C ${path} checkout . && git -C ${path} pull --ff-only`, conflict: true }
-  }
-  let saved: Autostash | null = null
-  if (status.out) {
-    const result = await saveLocalChanges(path, git)
-    if (typeof result === 'string') return { ok: false, message: result }
-    saved = result
-  }
-  // Merge the immutable commit that was checked/acknowledged, never re-fetch a moving ref here.
-  const pulled = await git(['merge', '--ff-only', revision], path, 30_000)
-  if (!pulled.ok) {
+  return withAgentMutation(path, info, git, policy, async (git) => {
+    const ref = str(info.branch)
+    const revision = str(info.latest_sha)
+    await recoverInterruptedAutostash(path, git)
+    const status = await git(['status', '--porcelain', '--untracked-files=no'], path)
+    if (!status.ok) {
+      if (isGitLockError(status.out)) return { ok: false, message: `Failed to inspect repo status due to a repository lock: ${status.out.trim()}`, lock_conflict: true }
+      return { ok: false, message: `Failed to inspect repo status: ${status.out.slice(0, 200)}` }
+    }
+    if (status.out.split('\n').some((line) => ['DD', 'AU', 'UD', 'UA', 'DU', 'AA', 'UU'].includes(line.slice(0, 2)))) {
+      return { ok: false, message: `The local agent repo has unresolved merge conflicts. To reset to the latest remote version run: git -C ${path} checkout . && git -C ${path} pull --ff-only`, conflict: true }
+    }
+    let saved: Autostash | null = null
+    if (status.out) {
+      const result = await saveLocalChanges(path, git)
+      if (typeof result === 'string') return { ok: false, message: result }
+      saved = result
+    }
+    // Merge the immutable commit that was checked/acknowledged, never re-fetch a moving ref here.
+    const pulled = await git(['merge', '--ff-only', revision], path, 30_000)
+    if (!pulled.ok) {
+      const restored = saved ? await restoreLocalChanges(path, git, saved) : null
+      const note = restored ? ` ${restored.note}` : ''
+      const conflict = restored && !restored.applied ? { stash_conflict: true } : {}
+      if (isGitLockError(pulled.out)) return { ok: false, message: `Pull failed due to a repository lock: ${pulled.out.trim()}.${note}`, lock_conflict: true, ...conflict }
+      return { ok: false, message: `Pull failed: ${sanitizeGitDiagnostic(pulled.out)}.${note}`, ...conflict }
+    }
     const restored = saved ? await restoreLocalChanges(path, git, saved) : null
-    const note = restored ? ` ${restored.note}` : ''
-    const conflict = restored && !restored.applied ? { stash_conflict: true } : {}
-    if (isGitLockError(pulled.out)) return { ok: false, message: `Pull failed due to a repository lock: ${pulled.out.trim()}.${note}`, lock_conflict: true, ...conflict }
-    return { ok: false, message: `Pull failed: ${sanitizeGitDiagnostic(pulled.out)}.${note}`, ...conflict }
-  }
-  const restored = saved ? await restoreLocalChanges(path, git, saved) : null
-  const verified = await verifiedAgentIdentity(path, revision, git)
-  if (!verified) return { ok: false, message: 'The Agent update completed, but the installed revision could not be verified.', target: 'agent' }
-  return { ok: true, message: `agent updated to ${ref}.${restored ? ` ${restored.note}` : ''}`, target: 'agent', ref, ...verified, ...(restored && !restored.applied ? { stash_conflict: true } : {}) }
+    const verified = await verifiedAgentIdentity(path, revision, git)
+    if (!verified) return { ok: false, message: 'The Agent update completed, but the installed revision could not be verified.', target: 'agent' }
+    return { ok: true, message: `agent updated to ${ref}.${restored ? ` ${restored.note}` : ''}`, target: 'agent', ref, ...verified, ...(restored && !restored.applied ? { stash_conflict: true } : {}) }
+  })
 }
 
 interface Autostash { sha: string; ref: string; dir: string; patch: string }
@@ -1009,18 +1037,25 @@ async function restoreLocalChanges(path: string, git: GitRun, saved: Autostash):
 }
 
 /** Finish an update the server stopped mid-way: its saved changes return to the tree, or are kept and listed in the git stash if they no longer apply. */
-async function recoverInterruptedAutostash(path: string, git: GitRun): Promise<void> {
+async function pendingAutostashes(path: string, git: GitRun): Promise<string[]> {
   const refs = await git(['for-each-ref', '--format=%(objectname)', PENDING_AUTOSTASH_REFS], path)
-  if (!refs.ok) return
-  for (const sha of refs.out.split('\n').filter((line) => SHA.test(line))) {
+  if (!refs.ok) throw new Error('Retained local Agent changes could not be inspected.')
+  return refs.out.split('\n').filter((line) => SHA.test(line))
+}
+
+async function recoverInterruptedAutostash(path: string, git: GitRun): Promise<boolean> {
+  let recovered = false
+  for (const sha of await pendingAutostashes(path, git)) {
     const saved = await autostashPatch(path, git, sha)
-    if (!saved) continue
+    if (!saved) throw new Error('Retained local Agent changes could not be read safely.')
+    recovered = true
     // Stopped before the revert or after the restore: the changes are already in the tree.
     if (lstatSync(saved.patch).size === 0 || (await git(['apply', '-R', '--check', saved.patch], path)).ok) {
       rmSync(saved.dir, { recursive: true, force: true })
       await git(['update-ref', '-d', saved.ref, sha], path)
     } else await restoreLocalChanges(path, git, saved)
   }
+  return recovered
 }
 
 /** Python `apply_force_update` (agent branch): fetch, refuse a pure-ancestor rewind, `checkout . && clean -fd && reset --hard`. */
@@ -1035,15 +1070,15 @@ export async function forceAgentUpdate(path: string | null, git: GitRun, log: (l
   if ((await headContainsRef(path, revision, git)) && !(await canFastForwardTo(path, revision, git))) {
     return { ok: false, message: `agent is already ahead of the ${channel} channel (${ref}); refusing to rewind the checkout. Switching to a slower channel keeps your current version until that channel catches up.`, target: 'agent', channel, refused_rewind: true }
   }
-  const warning = await prepareAgentMutation(path, info, git, policy)
-  if (warning) return warning
-  await git(['checkout', '.'], path)
-  const cleaned = await git(['clean', '-fd'], path)
-  if (!cleaned.ok) log(`[updates] force update: git clean -fd failed (continuing to reset --hard): ${cleaned.out}`)
-  if (!(await git(['reset', '--hard', revision], path)).ok) return { ok: false, message: `Force reset to ${ref} failed` }
-  const verified = await verifiedAgentIdentity(path, revision, git)
-  if (!verified) return { ok: false, message: 'The Agent force update completed, but the installed revision could not be verified.', target: 'agent' }
-  return { ok: true, message: `agent force-updated to ${ref}`, target: 'agent', ref, ...verified }
+  return withAgentMutation(path, info, git, policy, async (git) => {
+    await git(['checkout', '.'], path)
+    const cleaned = await git(['clean', '-fd'], path)
+    if (!cleaned.ok) log(`[updates] force update: git clean -fd failed (continuing to reset --hard): ${cleaned.out}`)
+    if (!(await git(['reset', '--hard', revision], path)).ok) return { ok: false, message: `Force reset to ${ref} failed` }
+    const verified = await verifiedAgentIdentity(path, revision, git)
+    if (!verified) return { ok: false, message: 'The Agent force update completed, but the installed revision could not be verified.', target: 'agent' }
+    return { ok: true, message: `agent force-updated to ${ref}`, target: 'agent', ref, ...verified }
+  })
 }
 
 /** Python `_inventory_locks`: report `.git/**\/*.lock` without touching any of them. */
@@ -1221,12 +1256,12 @@ function recordPendingAgentSync(path: string, stateDir: string | undefined): voi
 }
 
 /** Older Agents have no PM sync entry point. Newer ones must finish it before restart. */
-async function syncAgentDependencies(path: string | null, revision: string, sync: UpdateServiceDeps['agentSync'], stateDir: string | undefined, git: GitRun): Promise<GitOutcome | null> {
+async function syncAgentDependencies(path: string | null, revision: string, sync: UpdateServiceDeps['agentSync'], stateDir: string | undefined, git: GitRun, clearIntent = true): Promise<GitOutcome | null> {
   const marker = agentSyncMarker(path, stateDir)
   try {
     if (!path) throw new Error('Agent checkout is unavailable.')
     if (!await agentHasDependencySync(path, revision, git)) {
-      if (marker) rmSync(marker, { force: true })
+      if (marker && clearIntent) rmSync(marker, { force: true })
       return null
     }
     recordPendingAgentSync(path, stateDir)
@@ -1237,7 +1272,7 @@ async function syncAgentDependencies(path: string | null, revision: string, sync
     const response = await sync(path)
     result = { ok: response.ok && !response.skipped, out: sanitizeGitDiagnostic(response.skipped ? 'The installed Agent is missing its required dependency-sync entry point.' : response.detail) }
   } catch (error) { return { ok: false, out: sanitizeGitDiagnostic((error as Error).message) } }
-  if (result.ok && marker) {
+  if (result.ok && marker && clearIntent) {
     try { rmSync(marker, { force: true }) } catch (error) { return { ok: false, out: `Could not clear pending dependency sync: ${sanitizeGitDiagnostic((error as Error).message)}` } }
   }
   return result
@@ -1264,6 +1299,7 @@ export interface UpdateServiceDeps {
   refreshWebuiVersion?: () => string
   agentDir: () => string | null
   agentHomes?: () => readonly string[]
+  agentMutation?: (path: string, revision: string, mutate: (git: GitRun, sync: UpdateServiceDeps['agentSync']) => Promise<Dict>) => Promise<Dict>
   /** Repair dependencies through the sidecar even while its imported Agent is stale. */
   agentSync?: (agentDir: string) => Promise<SidecarResult<'runtime.sync_dependencies'>>
   channel: () => Channel
@@ -1320,12 +1356,26 @@ export class UpdateService {
   }
   private agentPolicy(confirmedRevision?: string): AgentUpdatePolicy {
     const supported = dict(this.deps.identity.release().compatibleAgent)
+    const marker = agentSyncMarker(this.deps.agentDir(), this.deps.stateDir)
     return {
       supportedRevisions: supportedAgents(this.deps.webRoot).map((agent) => agent.sourceRevision),
       supportedRevision: str(supported.sourceRevision), supportedVersion: str(supported.version), ...(confirmedRevision ? { confirmedRevision } : {}),
       ...(this.deps.agentHomes ? { retainedStateHomes: this.deps.agentHomes } : {}),
+      repairPending: Boolean(marker && existsSync(marker)),
+      ...(this.deps.agentMutation ? { withMutation: async (path: string, revision: string, mutate: (git: GitRun) => Promise<Dict>) => {
+        const result = await this.deps.agentMutation!(path, revision, async (git, sync) => {
+          const applied = await mutate(git)
+          return applied.ok ? this.finishAgent(applied, path, sync, false) : applied
+        })
+        if (result.ok) {
+          const intent = agentSyncMarker(path, this.deps.stateDir)
+          try { if (intent) rmSync(intent, { force: true }) }
+          catch (error) { return { ...result, ok: false, restart_scheduled: false, message: `Agent writers resumed, but recovery intent could not be cleared: ${sanitizeGitDiagnostic((error as Error).message)}` } }
+        }
+        return result
+      } } : {}),
       beforeMutation: async (path, revision) => {
-        if (await agentHasDependencySync(path, revision, this.git)) recordPendingAgentSync(path, this.deps.stateDir)
+        if (this.deps.agentMutation || await agentHasDependencySync(path, revision, this.git)) recordPendingAgentSync(path, this.deps.stateDir)
       },
     }
   }
@@ -1365,7 +1415,7 @@ export class UpdateService {
         const agent = includeAgent ? this.keepLastGood('agent', agentChannel, await checkAgentUpdate(agentDir, this.git, agentChannel, this.publishedTag)) : ignoredAgent()
         const marker = agentSyncMarker(agentDir, this.deps.stateDir)
         if (includeAgent && marker && existsSync(marker)) {
-          Object.assign(agent, { metadata_repair: true, message: 'Agent dependency sync is incomplete. Apply the update again to finish it.' })
+          Object.assign(agent, { metadata_repair: true, message: 'Agent update recovery is incomplete. Apply the update again to finish it.' })
         }
         const policy = this.agentPolicy()
         if (agent.latest_sha) Object.assign(agent, agentWarning(agent, policy))
@@ -1492,22 +1542,56 @@ export class UpdateService {
       return result
     }
     if (target !== 'agent') return { ok: false, message: `Unknown target: ${target}` }
-    const path = this.deps.agentDir()
-    const result = await applyAgentUpdate(path, this.git, options.agentChannel ?? this.agentChannel(), this.agentPolicy(options.confirmedRevision), options.version, this.publishedTag)
-    if (!result.ok) return result
-    return this.finishAgent(result, path)
+    return this.updateAgent(options)
   }
 
-  private async finishAgent(result: Dict, path: string | null): Promise<Dict> {
+  private async updateAgent(options: UpdateOptions, force = false): Promise<Dict> {
+    const path = this.deps.agentDir()
+    const marker = agentSyncMarker(path, this.deps.stateDir)
+    let result: Dict
+    let repairCurrent = Boolean(path && marker && existsSync(marker))
+    // Preserve the explicit legacy-release escape when the installed environment cannot run its sync entry point.
+    if (repairCurrent && path && options.confirmedRevision) {
+      const fetched = await this.git(['fetch', 'origin', '--quiet', '--tags', '--force'], path, 15_000)
+      if (fetched.ok) {
+        try {
+          const chosen = await agentTarget(path, this.git, options.agentChannel ?? this.agentChannel(), options.version, this.publishedTag)
+          if (chosen.latest_sha !== chosen.current_sha && chosen.latest_sha === options.confirmedRevision && !await agentHasDependencySync(path, options.confirmedRevision, this.git)) repairCurrent = false
+        } catch { /* An unverified replacement cannot bypass recovery of the installed revision. */ }
+      }
+    }
+    if (path && repairCurrent) {
+      const current = await this.git(['rev-parse', 'HEAD'], path)
+      if (!current.ok || !SHA.test(current.out)) return { ok: false, message: 'The installed Agent revision is unverified; recovery is retained.' }
+      const info = { current_sha: current.out, latest_sha: current.out }
+      result = await withAgentMutation(path, info, this.git, this.agentPolicy(), async (git) => {
+        await recoverInterruptedAutostash(path, git)
+        const verified = await verifiedAgentIdentity(path, current.out, git)
+        return verified ? { ok: true, target: 'agent', up_to_date: false, message: 'Agent update recovery completed.', ...verified }
+          : { ok: false, message: 'Agent recovery could not verify the current source.' }
+      }, 'repair')
+    } else {
+      result = force
+        ? await forceAgentUpdate(path, this.git, this.deps.log, options.agentChannel ?? this.agentChannel(), this.agentPolicy(options.confirmedRevision), options.version, this.publishedTag)
+        : await applyAgentUpdate(path, this.git, options.agentChannel ?? this.agentChannel(), this.agentPolicy(options.confirmedRevision), options.version, this.publishedTag)
+    }
+    if (this.deps.agentMutation) {
+      if (result.ok && result.restart_scheduled) { this.autoRestartScheduled = true; this.stopAutoApply(); this.deps.scheduleRestart() }
+      return result
+    }
+    return result.ok ? this.finishAgent(result, path) : result
+  }
+
+  private async finishAgent(result: Dict, path: string | null, sync = this.deps.agentSync, restart = true): Promise<Dict> {
     this.cache.checked_at = 0
     const marker = agentSyncMarker(path, this.deps.stateDir)
     if (result.up_to_date === true && (!marker || !existsSync(marker))) return result
     // A failed sync leaves Git advanced: an explicit retry still owes the sync and restart.
-    const synced = await syncAgentDependencies(path, str(result.verified_revision), this.deps.agentSync, this.deps.stateDir, this.git)
+    const synced = await syncAgentDependencies(path, str(result.verified_revision), sync, this.deps.stateDir, this.git, restart)
     if (synced && !synced.ok) return { ...result, ok: false, up_to_date: false, message: `Agent source updated, but dependency sync failed: ${synced.out}` }
     if (!synced && result.up_to_date) return result
     // TAL-953: the gateway restarts once its own work drains (`GatewayRestartQueue`); Web's restart does not wait for it.
-    this.deps.scheduleRestart()
+    if (restart) this.deps.scheduleRestart()
     return { ...result, ...(synced ? { up_to_date: false } : {}), restart_scheduled: true, gateway_restart: 'waiting_for_idle' }
   }
 
@@ -1521,9 +1605,7 @@ export class UpdateService {
     if (blocked) return Promise.resolve(blocked)
     return this.locked(async () => {
       if (target !== 'agent') return { ok: false, message: `Unknown target: ${target}` }
-      const path = this.deps.agentDir()
-      const result = await forceAgentUpdate(path, this.git, this.deps.log, options.agentChannel ?? this.agentChannel(), this.agentPolicy(options.confirmedRevision), options.version, this.publishedTag)
-      return result.ok ? this.finishAgent(result, path) : result
+      return this.updateAgent(options, true)
     })
   }
 

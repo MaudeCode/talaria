@@ -2,7 +2,7 @@
   "entries": [
     {
       "category": "Fixed",
-      "summary": "Agent updates wait until retained task recovery and pending chat deliveries can be handled safely.",
+      "summary": "Agent updates pause gateways safely and preserve unfinished tasks and pending chat deliveries.",
       "highlight": false,
       "components": ["web"]
     }

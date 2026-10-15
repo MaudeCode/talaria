@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import errno
 import importlib
+import hashlib
 import json
 import math
 import os
@@ -42,11 +43,11 @@ _MARKER_SAFE_OPEN_AVAILABLE = bool(_O_NOFOLLOW) and bool(_O_NONBLOCK)
 
 
 class AgentRuntimeStale(RpcError):
-    def __init__(self, update_state: str | None):
+    def __init__(self, update_state: str | None, message: str = _RESTART_REQUIRED_MESSAGE):
         data = {"retryable": True, "restart_scheduled": False}
         if update_state is not None:
             data["agent_update_state"] = update_state
-        super().__init__(_RESTART_REQUIRED_MESSAGE, condition="agent_runtime_stale", data=data)
+        super().__init__(message, condition="agent_runtime_stale", data=data)
 
 
 class AgentIncompatible(RpcError):
@@ -325,7 +326,10 @@ class AgentRuntime:
         live = _read_live_agent_update(self.hermes_home / _AGENT_UPDATE_MARKER)
         if live == "unknown":
             return "unknown"
-        recovery = False
+        repair = self.web_repair_state()
+        if repair == "unknown":
+            return "unknown"
+        recovery = repair == "present"
         for root in self._install_roots():
             for name in _AGENT_RECOVERY_MARKERS:
                 presence = _marker_presence(root / name)
@@ -335,6 +339,14 @@ class AgentRuntime:
         if recovery:
             return "incomplete"
         return "unverified" if live == "absent" else live
+
+    def web_repair_state(self) -> str:
+        if self.agent_dir is None:
+            return "absent"
+        state = os.environ.get("TALARIA_SIDECAR_WEB_STATE_DIR") or os.environ.get("HERMES_WEBUI_STATE_DIR", "").strip()
+        root = Path(state).expanduser() if state else self.hermes_home / "webui"
+        key = hashlib.sha256(str(self.agent_dir.resolve()).encode()).hexdigest()
+        return _marker_presence(root / "agent-dependency-sync" / key)
 
     def is_stale(self) -> bool:
         """True when the checkout revision no longer matches the loaded module.
@@ -362,7 +374,11 @@ class AgentRuntime:
             return self._stale
 
     def ensure_current(self) -> None:
-        """Raise ``agent_runtime_stale`` when the checkout changed since import."""
+        """Refuse Agent work until source drift or a durable Web update obligation is reconciled."""
+        repair = self.web_repair_state()
+        if repair != "absent":
+            raise AgentRuntimeStale("unknown" if repair == "unknown" else "incomplete",
+                                    "Agent update recovery is incomplete. Finish the Agent update before starting new work.")
         if self.is_stale():
             raise AgentRuntimeStale(self.update_transaction_state())
 

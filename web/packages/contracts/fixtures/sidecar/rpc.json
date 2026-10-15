@@ -130,6 +130,7 @@
           "providers.resolve_runtime",
           "rpc.cancel",
           "rpc.methods",
+          "runtime.agent_mutation",
           "runtime.ensure_current",
           "runtime.env",
           "runtime.handshake",

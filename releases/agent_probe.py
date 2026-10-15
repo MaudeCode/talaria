@@ -37,6 +37,19 @@ for name in ("run_agent", "hermes_cli.runtime_provider", "agent.auxiliary_client
     module = importlib.import_module(name)
     if agent := os.environ.get("HERMES_WEBUI_AGENT_DIR"):
         assert Path(module.__file__).resolve().is_relative_to(Path(agent).resolve()), (name, module.__file__)
+for module, names in {
+    "update_lock": ("UpdateLock",),
+    "update_custody": ("popen", "git_argv"),
+    "update_cmd_posix_pause": ("_empty_token", "_discover_systemd", "_discover_launchd", "_discover_bare", "_ask_to_drain", "_alive", "_disarm"),
+    "update_pause_record": ("adopt_orphans", "record_pause", "tree_state", "tree_is_whole", "write", "recover", "identity_is_live"),
+    "update_cmd_pause_gate": ("_checkout_move",),
+    "update_cmd_windows": ("_resume_windows_gateways_after_update",),
+    "process_identity": ("_read_ledger", "_ledger_path", "_pid_alive_matches", "install_id"),
+}.items():
+    native = importlib.import_module("hermes_cli." + module)
+    assert all(callable(getattr(native, name, None)) for name in names), f"Agent native update protocol missing in {module}"
+    if agent := os.environ.get("HERMES_WEBUI_AGENT_DIR"):
+        assert Path(native.__file__).resolve().is_relative_to(Path(agent).resolve()), (module, native.__file__)
 import sqlite3
 
 from hermes_state import SessionDB
@@ -322,6 +335,11 @@ def probe_retained_cron():
     """Replay records written by v0.22.1's real writers; discovery and delivery never leave this fixture."""
     from talaria_sidecar.methods import cron, cron_execution
     fixture = json.loads((Path(__file__).resolve().parent.parent / "web/sidecar/tests/fixtures/cron-retained-v0.22.1.json").read_text())
+    from hermes_cli import update_pause_record
+    paused = json.loads((Path(__file__).resolve().parent.parent / "web/sidecar/tests/fixtures/agent-pause-v0.22.1.json").read_text())["record"]
+    journal = home / "synthetic-native-pause.json"
+    journal.write_text(json.dumps(paused))
+    assert update_pause_record.read(journal) == paused, "target cannot read the base-written gateway resume obligation"
     compatible = cron_execution.supported({}, recovery=True)
     failures = []
     # Observe the original receipt synchronously, so this probe cannot submit or spawn a replacement turn.

@@ -269,6 +269,31 @@
     ],
     "additionalProperties": false
   },
+  "runtime.agent_mutation": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "properties": {
+      "ok": {
+        "type": "boolean"
+      },
+      "skipped": {
+        "type": "boolean"
+      },
+      "detail": {
+        "type": "string"
+      },
+      "token": {
+        "type": "string",
+        "pattern": "^[a-f0-9]{32}$"
+      }
+    },
+    "required": [
+      "ok",
+      "skipped",
+      "detail"
+    ],
+    "additionalProperties": false
+  },
   "goals.get": {
     "$schema": "https://json-schema.org/draft/2020-12/schema",
     "type": "object",

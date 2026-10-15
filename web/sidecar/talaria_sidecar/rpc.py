@@ -13,6 +13,9 @@ from __future__ import annotations
 
 import json
 import logging
+import os
+import queue
+import time
 import sys
 import threading
 import traceback
@@ -185,12 +188,38 @@ class RpcServer:
 
     def serve_forever(self) -> int:
         """Read requests until stdin closes or shutdown is requested."""
+        incoming = queue.Queue(maxsize=1)
+        def read_input():
+            try:
+                try:
+                    fd = self._in.fileno()
+                except (AttributeError, OSError, ValueError):
+                    fd = None
+                if fd is None:
+                    while raw := self._in.readline():
+                        incoming.put(raw)
+                else:
+                    # An unbuffered OS read cannot hold sys.stdin's Python buffer lock at interpreter exit.
+                    pending = []
+                    while chunk := os.read(fd, 65536):
+                        lines = chunk.split(b"\n")
+                        pending.append(lines[0])
+                        for line in lines[1:]:
+                            incoming.put(b"".join(pending))
+                            pending = [line]
+                    if pending:
+                        incoming.put(b"".join(pending))
+            except (OSError, ValueError):
+                pass
+            finally:
+                incoming.put(None)
+        threading.Thread(target=read_input, name="rpc-input", daemon=True).start()
         while not self._closed.is_set():
             try:
-                raw = self._in.readline()
-            except (OSError, ValueError):
-                break
-            if not raw:
+                raw = incoming.get(timeout=.1)
+            except queue.Empty:
+                continue
+            if raw is None or self._closed.is_set():
                 break
             raw = raw.strip()
             if not raw:
@@ -212,6 +241,15 @@ class RpcServer:
                 continue
             ctx = self._register(request)
             threading.Thread(target=self._dispatch_slot, args=(request, ctx), name=f"rpc-{request.get('method')}", daemon=True).start()
+        if self._closed.is_set():
+            # Let the terminal reply reach stdout before the process returns its final exit code.
+            deadline = time.monotonic() + 5
+            while time.monotonic() < deadline:
+                with self._active_lock:
+                    terminal_reply = any(ctx.method in {"runtime.shutdown", "runtime.handshake"} for ctx in self._active.values())
+                if not terminal_reply:
+                    break
+                threading.Event().wait(.01)
         return self.exit_code
 
     def _dispatch_slot(self, request: dict, ctx: CallContext | None) -> None:
