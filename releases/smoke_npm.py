@@ -5,6 +5,7 @@ Self-contained (stdlib only): release-set.yml runs the workflow's own copy again
 """
 
 import argparse
+import http.client
 import json
 import os
 import signal
@@ -29,7 +30,7 @@ def healthy(port):
     try:
         with urllib.request.urlopen(f"http://127.0.0.1:{port}/health", timeout=2) as response:
             return response.status == 200
-    except OSError:
+    except (OSError, http.client.HTTPException):
         return False
 
 
