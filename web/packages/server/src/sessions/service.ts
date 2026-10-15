@@ -268,7 +268,9 @@ export class SessionService {
   }
 
   /** One receipt-backed physical target for every operation on a local conversation alias. */
-  resolveSessionId(sid: string): string { return stateDbLocalTarget(this.stateDbPath(null), sid) }
+  resolveSessionId(sid: string): string {
+    try { return stateDbLocalTarget(this.stateDbPath(null), sid) } catch { return sid }
+  }
 
   /** Python `_lookup_cli_session_metadata(...).get('read_only')` plus the persisted sidecar flag and a not-claimable foreign owner. */
   private isReadOnlyImport(sid: string): boolean {
@@ -1970,6 +1972,7 @@ export class SessionService {
   async delete(sid: string): Promise<Record<string, unknown>> {
     if (!sid) throw new HttpFailure(400, 'session_id is required')
     if (!isSafeSessionId(sid)) throw new HttpFailure(400, 'Invalid session_id')
+    this.rejectViewOnly(sid, 'deleted')
     // Python: a read-only import (persisted sidecar flag, sidebar metadata, or a foreign state.db owner such as a
     // Claude Code session) is never deleted — that would erase the owner's authoritative transcript. An orphan has none.
     const orphaned = this.isOrphanedImport(sid)

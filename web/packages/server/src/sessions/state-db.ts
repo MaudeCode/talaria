@@ -439,7 +439,7 @@ export function readImportableAgentSessionRows(dbPath: string, opts: ReadRowsOpt
     const superseded = [...local].filter(([id, lineage]) => id !== lineage.ids.at(-1)).map(([id]) => id)
     if (superseded.length) { where.push('s.id NOT IN (SELECT value FROM json_each(?))'); params.push(JSON.stringify(superseded)) }
     const hasPolicies = Boolean(db.prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'state_meta'").get())
-    const policySource = (id: string): string => `(SELECT CASE WHEN json_valid(value) THEN json_extract(value, '$.policy.source') END FROM state_meta WHERE key = 'gateway.local_policy.v1:' || ${id})`
+    const policySource = (id: string): string => `(SELECT CASE WHEN json_valid(value) THEN json_extract(value, '$.policy.source') END FROM state_meta WHERE key = '${LOCAL_POLICY_PREFIX}' || ${id})`
     const sourceSql = hasPolicies ? `COALESCE(${policySource('s.id')}, ${sessionCols.has('chat_id') ? policySource('s.chat_id') : 'NULL'}, s.source)` : 's.source'
     const included = (include ?? []).map(String).filter(Boolean)
     if (included.length) { where.push(`${sourceSql} IN (${included.map(() => '?').join(', ')})`); params.push(...included) }
@@ -567,7 +567,7 @@ export const OWNERSHIP_UNAVAILABLE_REASON = 'Agent session ownership could not b
 export const RETIRED_READ_ONLY_REASON = 'The Agent has retired this session identity. Open or import a new conversation to continue.'
 export type StateDbSessionSource = string | { source: string; canonical: true; reason?: string }
 
-/** Resolve on the caller's read snapshot; absence of newer tables is the legacy schema, a failed read is not. */
+/** Ownership fences outlive the fully validated localLineages history: even a pruned or broken receipt cannot release a writer. */
 function sessionSources(db: DatabaseSync, cols: Set<string>, ids: string[]): Map<string, StateDbSessionSource> {
   const sources = new Map<string, StateDbSessionSource>()
   const canReadRows = cols.has('id') && cols.has('source')
@@ -602,7 +602,7 @@ function sessionSources(db: DatabaseSync, cols: Set<string>, ids: string[]): Map
   if (tables.has('state_meta')) {
     const read = db.prepare('SELECT value FROM state_meta WHERE key = ?')
     for (const owner of candidates) {
-      const raw = read.get(`gateway.local_policy.v1:${owner}`) as { value: string } | undefined
+      const raw = read.get(`${LOCAL_POLICY_PREFIX}${owner}`) as { value: string } | undefined
       if (raw) rememberPolicy(owner, policyValue(raw.value))
       if (read.get(`gateway.retired_session.v1.${owner}`)) retired.add(owner)
       if (read.get(`gateway.api.binding.v1.${owner}`)) bindings.add(owner)
@@ -629,12 +629,12 @@ function sessionSources(db: DatabaseSync, cols: Set<string>, ids: string[]): Map
   }
   // Pruned/reset segments can survive only in a receipt, without a row or chat_id to follow.
   if (tables.has('state_meta') && segments.some((id) => !receiptOwners.has(id) && !ledgerIds.has(id) && !retired.has(id) && !bindings.has(id))) {
-    for (const raw of db.prepare("SELECT key, value FROM state_meta WHERE key GLOB 'gateway.local_policy.v1:*'").iterate() as Iterable<{ key: string; value: string }>) {
+    for (const raw of db.prepare('SELECT key, value FROM state_meta WHERE key GLOB ?').iterate(`${LOCAL_POLICY_PREFIX}*`) as Iterable<{ key: string; value: string }>) {
       const policy = policyValue(raw.value)
       const entry = policy?.entry
       const target = entry && typeof entry === 'object' && !Array.isArray(entry) ? (entry as Dict).session_id : null
       if (!policy || typeof policy.session_id !== 'string' || typeof target !== 'string' || (policy.lineage !== undefined && (!Array.isArray(policy.lineage) || !policy.lineage.length || !policy.lineage.every((id) => typeof id === 'string')))) throw new Error('Unreadable Agent ownership receipt')
-      const owner = raw.key.slice('gateway.local_policy.v1:'.length)
+      const owner = raw.key.slice(LOCAL_POLICY_PREFIX.length)
       if (!owner) throw new Error('Unreadable Agent ownership receipt')
       rememberPolicy(owner, policy)
     }
