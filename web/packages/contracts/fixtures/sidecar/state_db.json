@@ -60,7 +60,10 @@
         "session_id": "cli-1"
       },
       "result": {
-        "ok": true
+        "ok": true,
+        "deleted_ids": [
+          "cli-1"
+        ]
       }
     },
     {

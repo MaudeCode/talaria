@@ -1,4 +1,4 @@
-import { mkdtempSync, rmSync } from 'node:fs'
+import { existsSync, mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
@@ -134,5 +134,27 @@ describe('Agent v0.22.1 receipt-backed local reset', () => {
     expect(list.sessions).toHaveLength(1)
     expect(list.sessions[0]).toMatchObject({ session_id: 'reset-empty', title: 'Current saved title', pinned: true, message_count: 1 })
     expect(list.sessions[0]).not.toHaveProperty('_lineage_ids')
+  })
+
+  it.each(['root', 'all', 'late-tip'] as const)('deletes persisted %s aliases with the projected conversation', async (persisted) => {
+    const sidecar = new FakeSidecar()
+    const server = await bootTestServer({ sidecar })
+    onTestFinished(async () => { await server.close() })
+    db.close(); path = join(server.state, 'state.db'); db = new DatabaseSync(path); load('multiple')
+    const ids = fixture.snapshots.multiple.sessions.map((row) => row.id)
+    const save = (id: string) => { server.deps.sessionStore.save(new Session({ session_id: id, profile: 'default', source_tag: 'cli', messages: [{ role: 'user', content: 'first old turn' }, { role: 'assistant', content: 'old answer' }, { role: 'user', content: 'second old turn' }] }, server.deps.sessionStore.deps.defaults('default'))) }
+    for (const id of persisted === 'all' ? ids : [fixture.owner]) save(id)
+    sidecar.respond('state_db.delete_cli_session', () => {
+      if (persisted === 'late-tip') save('late-tip')
+      db.exec('DELETE FROM messages; DELETE FROM sessions; DELETE FROM state_meta')
+      return { ok: true, deleted_ids: persisted === 'late-tip' ? [...ids, 'late-tip'] : ids }
+    })
+    const response = await server.get('/api/session/delete', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ session_id: 'reset-empty' }) })
+    expect(response.status, await response.text()).toBe(200)
+    for (const id of [...ids, 'late-tip']) expect(existsSync(server.deps.sessionStore.pathFor(id)), id).toBe(false)
+    await server.deps.settings.save({ show_cli_sessions: true })
+    server.deps.cliSessions.invalidate()
+    const list = await (await server.get('/api/sessions')).json() as { sessions: Record<string, unknown>[] }
+    expect(list.sessions).toEqual([])
   })
 })

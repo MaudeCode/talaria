@@ -1867,46 +1867,63 @@ export class SessionService {
     if (this.isSubagentViewOnly(sid)) throw new HttpFailure(400, 'Subagent sessions are view-only and cannot be deleted from WebUI')
     const retained = (() => { try { return worktreeRetainedPayload(this.store.get(sid, { metadataOnly: true })) } catch { return {} } })()
     let eventProfile: string | null = null
-    let hadSidecar = true
-    try { eventProfile = this.store.get(sid, { metadataOnly: true }).profile } catch { eventProfile = null; hadSidecar = false }
+    try { eventProfile = this.store.get(sid, { metadataOnly: true }).profile } catch { eventProfile = null }
     // Python `_is_messaging_session_id`: decided before the JSON is gone, from WebUI metadata or the Agent's row.
     const isMessaging = this.isMessagingSession(sid)
-    if (this.activeRunBlocking(sid)) throw new HttpFailure(409, 'Session has an active run; stop it before deleting')
+    const knownIds = !isMessaging && !orphaned ? stateDbCompressionLineage(this.stateDbPath(eventProfile), sid) : [sid]
+    const assertIdle = () => { if (knownIds.some((id) => this.activeRunBlocking(id))) throw new HttpFailure(409, 'Session has an active run; stop it before deleting') }
+    assertIdle()
     let stateDbCleanupFailed = false
+    let removedIds = [sid]
     try {
       await this.store.withLock(sid, async () => {
-        if (this.activeRunBlocking(sid)) throw new HttpFailure(409, 'Session has an active run; stop it before deleting')
+        assertIdle()
         // TAL-792: state.db goes first, so another Agent process running or compressing the session refuses the delete
         // before anything of Talaria's is removed. Python: the Agent/CLI transcript goes too (else a claimable CLI row
         // resurfaces in the sidebar), but a messaging channel's memory is never erased from the WebUI.
-        if (!isMessaging && !orphaned) stateDbCleanupFailed = await this.deleteStateDbRows(eventProfile, sid)
-        // A public share outlives its session file, and revokeShare needs the session, so revoke it first.
-        try { this.deps.shares.revoke(this.store.get(sid, { metadataOnly: true })) } catch (error) { if (!(error instanceof SessionNotFound)) throw error }
-        // Stage cleanup while the originating profile is still recoverable; publication waits for removal.
-        if (hadSidecar) this.deps.clearRelayCompletions?.(sid, eventProfile)
-        if (!this.store.deleteFiles(sid)) throw new HttpFailure(500, 'Failed to delete session data')
+        if (!isMessaging && !orphaned) {
+          const result = await this.deleteStateDbRows(eventProfile, sid)
+          stateDbCleanupFailed = !result.ok
+          removedIds = [...new Set([sid, ...(result.deleted_ids ?? (result.ok ? knownIds : []))])]
+        }
+        if (removedIds.some((id) => !isSafeSessionId(id))) throw new HttpFailure(503, 'Session cleanup could not finish because the Agent returned invalid session IDs.')
+        removedIds = removedIds.filter((id) => {
+          try { return this.deps.profilesMatch(this.store.get(id, { metadataOnly: true }).profile, eventProfile ?? this.deps.activeProfile()) } catch { return true }
+        })
+        for (const id of removedIds) {
+          // Revoke before removing each persisted alias; UI cleanup follows the Agent's committed target set.
+          try {
+            const session = this.store.get(id, { metadataOnly: true })
+            if (!Object.keys(retained).length) Object.assign(retained, worktreeRetainedPayload(session))
+            this.deps.shares.revoke(session)
+            this.deps.clearRelayCompletions?.(id, session.profile)
+          } catch (error) { if (!(error instanceof SessionNotFound)) throw error }
+          if (!this.store.deleteFiles(id)) throw new HttpFailure(500, 'Failed to delete session data')
+        }
       }, { timeoutMs: 5000 })
     } catch (error) {
       if (error instanceof SessionBusy) throw new HttpFailure(503, 'Session busy, try again')
       throw error
     }
-    this.deps.runtime.evictAgent(sid, true)
-    try { rmSync(this.deps.attachmentDir(sid), { recursive: true, force: true }) } catch { /* ignore */ }
-    // Python `delete_run_journal` (#3802): a deleted session leaves no replayable run journal behind.
-    try { this.deps.journal?.deleteSession(sid) } catch { /* ignore */ }
-    this.deps.runtime.closeTerminal(sid)
+    for (const id of removedIds) {
+      this.deps.runtime.evictAgent(id, true)
+      try { rmSync(this.deps.attachmentDir(id), { recursive: true, force: true }) } catch { /* ignore */ }
+      // Python `delete_run_journal` (#3802): a deleted session leaves no replayable run journal behind.
+      try { this.deps.journal?.deleteSession(id) } catch { /* ignore */ }
+      this.deps.runtime.closeTerminal(id)
+    }
     this.publish('session_delete', eventProfile)
     return { ok: true, state_db_cleanup_failed: stateDbCleanupFailed, ...retained }
   }
 
-  /** The session's state.db rows; resolves whether cleanup failed, and throws 409 `refused` when an Agent process holds a row. */
-  private async deleteStateDbRows(profile: string | null, sid: string): Promise<boolean> {
+  /** The committed Agent deletion targets and cleanup outcome; throws 409 `refused` while an Agent process holds a row. */
+  private async deleteStateDbRows(profile: string | null, sid: string): Promise<SidecarResult<'state_db.delete_cli_session'>> {
     // TAL-529: the compression continuations go too; the Agent's delete keeps and detaches them otherwise. TAL-792: the
     // sidecar resolves them inside its delete transaction, so a guard on any of them refuses before anything is removed.
     let result: SidecarResult<'state_db.delete_cli_session'>
-    try { result = await this.deps.runtime.deleteCliSession(profile, sid) } catch { return true }
+    try { result = await this.deps.runtime.deleteCliSession(profile, sid) } catch { return { ok: false } }
     if (result.refused) throw new HttpFailure(409, 'In use by another Agent process. Try again later.', { refused: result.refused })
-    return !result.ok
+    return result
   }
 
   cleanup(zeroOnly: boolean): Record<string, unknown> {

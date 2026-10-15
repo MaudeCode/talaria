@@ -125,9 +125,13 @@ target. Transcript reads stop at the latest reset boundary, even when a saved
 Talaria record contains an older compression lineage.
 
 Deletion resolves the whole receipt lineage on its write transaction through
-the installed Agent's validator. Invalid or unsupported receipts refuse a
-delete; they never authorize removal of an unrelated conversation. Agents
-without receipts retain the legacy compression and CLI-close projection.
+the installed Agent's validator and retirement API. Invalid receipts refuse a
+delete; they never authorize removal of an unrelated conversation. The sidecar
+returns the committed `deleted_ids` so the server removes every matching
+Talaria sidecar and its runtime artifacts, including continuations published
+after deletion started. Those IDs remain available when only post-commit
+artifact cleanup fails; the existing cleanup manifest can retry the artifacts.
+Agents without receipts retain the legacy compression and CLI-close projection.
 The shared `local-reset.json` fixture records real v0.22.1 reset/compression API
 output and is consumed by both server projection and sidecar target-plan tests.
 

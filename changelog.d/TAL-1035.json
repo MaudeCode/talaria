@@ -1,1 +1,1 @@
-{"entries":[{"category":"Fixed","summary":"Agent conversations stay together after a local reset and reopen at the current session.","highlight":false,"components":["web"]}]}
+{"entries":[{"category":"Fixed","summary":"Agent conversations stay together after local resets, reopen correctly, and no longer reappear after deletion.","highlight":false,"components":["web"]}]}
