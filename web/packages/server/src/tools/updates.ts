@@ -97,6 +97,19 @@ const runNpmCommand = (args: string[], cwd: string, timeoutMs: number, env: Node
 
 export const runPackageNpm: BuildRun = (args, cwd, timeoutMs) => runNpmCommand(args, cwd, timeoutMs, process.env)
 
+const SELF_CHECK_TIMEOUT_MS = 30_000
+
+/** `talaria-web self-check` in a candidate package under this node: loads its server code without binding, spawning, or touching state (TAL-1012). */
+const runSelfCheck = (candidate: string, timeoutMs: number): Promise<GitOutcome> =>
+  new Promise((done) => {
+    // The candidate resolves its own Web root, and Node warnings stay out of the reported error.
+    execFile(process.execPath, [join(candidate, 'dist/bin/talaria-web.js'), 'self-check'], { cwd: candidate, encoding: 'utf8', timeout: timeoutMs, killSignal: 'SIGKILL', maxBuffer: 16 * 1024 * 1024, env: { ...process.env, TALARIA_WEB_ROOT: undefined, NODE_NO_WARNINGS: '1' } }, (error, stdout, stderr) => {
+      if (!error) { done({ out: '', ok: true }); return }
+      if ((error as { killed?: boolean }).killed) { done({ out: `talaria-web self-check timed out after ${String(timeoutMs / 1000)}s`, ok: false }); return }
+      done({ out: stderr.trim() || stdout.trim() || `talaria-web self-check exited with status ${String(error.code)}`, ok: false })
+    })
+  })
+
 export const isGitLockError = (output: string): boolean => { const l = output.toLowerCase(); return GIT_LOCK_SIGNATURES.some((s) => l.includes(s)) }
 
 /** Python `_sanitize_git_diagnostic`: strip URL userinfo, GitHub token shapes, and secret query values. */
@@ -550,8 +563,8 @@ export async function checkWebUpdate(webRoot: string | null, currentVersion: str
   }
 }
 
-/** Packaged-install collaborators: the Experimental registry and Web's state dir for channel-switch backups. */
-export interface PackagedUpdateOptions { registry?: ExperimentalRegistry | undefined; stateDir?: string | undefined }
+/** Packaged-install collaborators: the Experimental registry, Web's state dir for channel-switch backups, and the candidate self-check timeout. */
+export interface PackagedUpdateOptions { registry?: ExperimentalRegistry | undefined; stateDir?: string | undefined; selfCheckTimeoutMs?: number | undefined }
 
 export const CHANNEL_SWITCH_BACKUPS = 5
 /** Web's persisted stores (`settings.json`, the project store, the workspace store) as seen from the state dir. */
@@ -643,6 +656,9 @@ async function applyNpmWebUpdate(webRoot: string | null, channel: Channel, getJs
     // npm can leave a dependency as an empty directory; swapping that in crash-loops the server (TAL-1010).
     const missing = Object.keys(dict(metadata.dependencies)).filter((name) => !existsSync(join(candidate, 'node_modules', name, 'package.json')))
     if (missing.length) return { ok: false, verification_failed: true, target: 'webui', channel, message: `The downloaded npm package is missing ${missing.join(', ')}. The installed package was preserved.` }
+    // Metadata checks cannot see a broken nested dependency, native binding, or dist file; loading the server code can (TAL-1012).
+    const selfCheck = await runSelfCheck(candidate, packaged.selfCheckTimeoutMs ?? SELF_CHECK_TIMEOUT_MS)
+    if (!selfCheck.ok) return { ok: false, verification_failed: true, target: 'webui', channel, message: `The downloaded npm package failed its self-check: ${sanitizeGitDiagnostic(selfCheck.out, 1000)}. The installed package was preserved.` }
     const recheck = await npmInstallInfo(webRoot, npmRun)
     if (!canApply() || recheck?.packageRoot !== installed.packageRoot || recheck.version !== installed.version) return { ok: false, message: 'The npm installation or update settings changed; retry the update.' }
     if (switching) {

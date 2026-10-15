@@ -321,7 +321,7 @@ describe('Web source updates (test_tal203_source_update.py)', () => {
   })
 
   /** `runtimeOf` stamps the installed package of each requested version; by default every install is `s.release`. */
-  function npmPackageInstall(s: Install, initial: 'success' | 'failure' | 'bad-stamp' | 'empty-dependency' = 'success', runtimeOf?: (version: string) => Dict) {
+  function npmPackageInstall(s: Install, initial: 'success' | 'failure' | 'bad-stamp' | 'empty-dependency' | 'self-check-fails' | 'self-check-hangs' = 'success', runtimeOf?: (version: string) => Dict) {
     const mode = { outcome: initial }
     const globalRoot = join(tmp(), 'lib/node_modules')
     const packageRoot = join(globalRoot, '@maudecode/talaria-web')
@@ -343,7 +343,10 @@ describe('Web source updates (test_tal203_source_update.py)', () => {
         if (mode.outcome !== 'empty-dependency') write(join(candidate, 'node_modules/ws/package.json'), '{}')
         write(join(candidate, 'sidecar/agent_dependency.json'), JSON.stringify(PIN))
         write(join(candidate, 'contract_versions.json'), JSON.stringify(VERSIONS))
-        write(join(candidate, 'dist/bin/talaria-web.js'), '// fixture')
+        write(join(candidate, 'dist/bin/talaria-web.js'), {
+          'self-check-fails': "console.error('[self-check] ERROR: synthetic native binding mismatch'); process.exit(1)",
+          'self-check-hangs': "process.on('SIGTERM', () => undefined); setInterval(() => undefined, 1000)",
+        }[mode.outcome as string] ?? "process.exit(process.argv[2] === 'self-check' ? 0 : 2)")
         write(join(candidate, 'dist/bin/talaria-web-mcp.js'), '// fixture')
         if (mode.outcome !== 'bad-stamp') writeFileSync(join(candidate, '_release.json'), JSON.stringify(runtimeOf?.(version) ?? s.release.runtime))
         return Promise.resolve({ ok: true, out: '' })
@@ -395,6 +398,18 @@ describe('Web source updates (test_tal203_source_update.py)', () => {
     const result = await applyWebUpdate(n.packageRoot, 'stable', s.run, s.getJson, s.identity, n.npm)
     expect(result.ok).toBe(false)
     expect(result[outcome === 'failure' ? 'install_failed' : 'verification_failed']).toBe(true)
+    expect((JSON.parse(readFileSync(join(n.packageRoot, 'package.json'), 'utf8')) as { version: string }).version).toBe('1.0.0')
+  })
+
+  it.each([
+    ['self-check-fails', 'synthetic native binding mismatch'],
+    ['self-check-hangs', 'timed out after 1s'],
+  ] as const)('fails closed when the candidate %s (TAL-1012)', async (outcome, detail) => {
+    const s = sourceInstall()
+    const n = npmPackageInstall(s, outcome)
+    const result = await applyWebUpdate(n.packageRoot, 'stable', s.run, s.getJson, s.identity, n.npm, () => true, { selfCheckTimeoutMs: 1000 })
+    expect(result).toMatchObject({ ok: false, verification_failed: true })
+    expect(result.message).toContain(detail)
     expect((JSON.parse(readFileSync(join(n.packageRoot, 'package.json'), 'utf8')) as { version: string }).version).toBe('1.0.0')
   })
 

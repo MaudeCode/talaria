@@ -37,6 +37,7 @@ See GitHub's [release permissions](https://docs.github.com/en/rest/releases/rele
 and [asset download API](https://docs.github.com/en/rest/releases/assets#get-a-release-asset).
 
 An npm update stages the new package beside the installed one, verifies its name, bins and release identity,
+runs its `talaria-web self-check` (which loads the server code and native terminal binding under the running Node),
 and swaps it in only if the update settings are unchanged; any failure keeps the installed package. It then
 schedules a Web restart: once active work
 drains and embedded terminals are closed, the server worker exits with code 75 and the
@@ -134,8 +135,9 @@ requires the package root to match the global root reported by the npm executabl
 beside the running Node process. It installs the exact
 `@maudecode/talaria-web@<version>` recorded by the completed release manifest into
 a temporary global prefix beside the running package. It verifies the version,
-CLI files, baked release metadata and that every dependency installed, then renames
-the replacement into place.
+CLI files, baked release metadata and that every dependency installed, runs the
+replacement's `talaria-web self-check` with a 30-second limit, then renames the
+replacement into place.
 Dependencies move with the package and the existing global CLI links keep working.
 Failed installation or verification preserves the previous package. The service
 user needs write access to the installation directory and room for both versions;

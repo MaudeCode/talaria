@@ -38,7 +38,7 @@ function writePackage(root: string, version: string, stamp: Dict | null): void {
   write(join(root, 'package.json'), JSON.stringify({ name: '@maudecode/talaria-web', version, bin: { 'talaria-web': 'dist/bin/talaria-web.js', 'talaria-web-mcp': 'dist/bin/talaria-web-mcp.js' } }))
   write(join(root, 'sidecar/agent_dependency.json'), JSON.stringify(PIN))
   write(join(root, 'contract_versions.json'), JSON.stringify(VERSIONS))
-  write(join(root, 'dist/bin/talaria-web.js'), '// fixture')
+  write(join(root, 'dist/bin/talaria-web.js'), "process.exit(process.argv[2] === 'self-check' ? 0 : 2)")
   write(join(root, 'dist/bin/talaria-web-mcp.js'), '// fixture')
   if (stamp) write(join(root, '_release.json'), JSON.stringify(stamp))
 }

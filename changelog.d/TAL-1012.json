@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Web updates now load the new version's server code before switching to it, so a version that cannot start leaves the current one running.",
+      "highlight": false,
+      "components": ["web"]
+    }
+  ]
+}
