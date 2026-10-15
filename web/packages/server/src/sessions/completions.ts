@@ -280,11 +280,18 @@ export class CompletionDrain {
     // The formatter awaits the sidecar; another drain may have retained this event meanwhile.
     if (processId && deliveredPerProcess(evt) && seen.has(processId)) return true
     const entry: Deferred = { process_id: deliveryKey(evt, processId), wakeup_prompt: prompt, event: evt }
+    if (prompt && evt.type === 'async_delegation') this.defer(sid, entry)
     if (prompt && evt.type === 'async_delegation' && !evt.task_failure_notice) {
-      // Busy, Stop, sealed and provider-paused entries survive either process restarting.
-      this.heldWakeups.hold(sid, [entry])
-      recordBackgroundUpdate(owner, `delegation:${str(evt.delegation_id)}`, batchUpdate([{ event: evt, prompt }]))
-      this.deps.store.save(owner, { touchUpdatedAt: false })
+      try {
+        // Busy, Stop, sealed and provider-paused entries survive either process restarting.
+        this.heldWakeups.hold(sid, [entry])
+        recordBackgroundUpdate(owner, `delegation:${str(evt.delegation_id)}`, batchUpdate([{ event: evt, prompt }]))
+        this.deps.store.save(owner, { touchUpdatedAt: false })
+      } catch (error) {
+        this.scheduleRetry(sid)
+        this.deps.log(`[webui] WARNING: failed to persist delegation wakeup for session ${sid}; retained in memory for retry: ${(error as Error).message}`)
+        return true
+      }
     }
     if (processId && deliveredPerProcess(evt)) seen.add(processId)
     this.pendingSessions.add(sid)
@@ -292,7 +299,6 @@ export class CompletionDrain {
     if (backgroundEventKind(evt) !== 'progress') this.emitCoalesced(sid, this.buildPayload(evt, sid, prompt))
     if (!prompt) return true
     if (evt.type === 'async_delegation') {
-      this.defer(sid, entry)
       if (!this.hasActiveTurn(sid)) await this.drainDeferred(sid)
     } else if (this.hasActiveTurn(sid)) this.defer(sid, entry)
     else await this.startWakeup(sid, [entry])

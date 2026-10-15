@@ -1764,4 +1764,46 @@ describe('durable parent admission for delivered delegation notifications (TAL-1
       }
     } finally { await s.close() }
   })
+  it.each(['held file', 'session save'] as const)('retries a live delegation automatically after a failed %s', async (failure) => {
+    const sidecar = new FakeSidecar()
+    const s = await bootTestServer({ sidecar })
+    const heldPath = join(s.deps.sessionStore.sessionDir, '_wakeup_held.json')
+    let restore = (): void => undefined
+    let drain: CompletionDrain | undefined
+    try {
+      const session = s.deps.sessionStore.newSession()
+      session.messages = [{ role: 'user', content: 'dispatch' }]
+      s.deps.sessionStore.save(session)
+      const event = { type: 'async_delegation', process_id: 'deleg_retry', delegation_id: 'deleg_retry', origin_ui_session_id: session.session_id, consumed: false }
+      let offered = false
+      sidecar.respond('process.drain', () => { const events = offered ? [] : [event]; offered = true; return { events } })
+      sidecar.respond('process.format_notification', () => ({ text: '[Result deleg_retry]' }))
+      sidecar.respond('process.claim_delivery', () => ({ claim_id: '' }))
+      if (failure === 'held file') {
+        mkdirSync(heldPath)
+        restore = () => { rmSync(heldPath, { recursive: true, force: true }) }
+      } else {
+        const spy = vi.spyOn(s.deps.sessionStore, 'save').mockImplementation(() => { throw new Error('synthetic session write failure') })
+        restore = () => { spy.mockRestore() }
+      }
+      let starts = 0
+      drain = new CompletionDrain({ sidecar: () => sidecar, baseHome: s.state, profileHome: () => s.state, activeProfile: () => 'default', store: s.deps.sessionStore,
+        channels: s.deps.channels, registry: s.deps.registry, startTurn: () => { starts += 1; return { stream_id: 'retry-admitted' } }, now: () => Date.now() / 1000, log: () => undefined })
+      vi.useFakeTimers()
+      const routed = await drain.drainOnce()
+      expect(drain.deferredCount(session.session_id), 'the drained live event remains retained').toBe(1)
+      expect(routed).toBe(1)
+      expect(starts).toBe(0)
+      restore()
+      await vi.advanceTimersByTimeAsync(30_000)
+      expect(starts, 'retry admits the retained result without a user turn or Agent orphan sweep').toBe(1)
+      expect(drain.deferredCount(session.session_id)).toBe(0)
+    } finally {
+      drain?.stop()
+      vi.useRealTimers()
+      restore()
+      await s.close()
+    }
+  })
+
 })

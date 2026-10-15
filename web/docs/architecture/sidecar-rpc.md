@@ -400,7 +400,10 @@ profile home and delegation ID. Each value is the admitted stream ID, written in
 the same atomic save as the pending prompt, before the worker starts. The drain
 checks these durable receipts before replay; a legacy Web prompt with an exact
 matching body, `process_wakeup` source and turn ID also proves admission.
-Delegation payloads extend the existing `_wakeup_held.json` mechanism across busy,
+Delegation payloads enter the in-memory deferred queue before persistence. A failed
+held-file write or session save retains that entry and schedules the existing retry
+timer, so a live result does not depend on an Agent orphan sweep. Payloads extend
+the existing `_wakeup_held.json` mechanism across busy,
 Stop, sealed-snapshot and provider-pause deferrals. Deleted sessions discard their
 held payloads. Stop's `automatic_turns_stop_held` session metadata survives restart
 and clears when the user's next turn is admitted. A failed hold write keeps the
