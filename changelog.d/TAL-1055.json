@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Security",
+      "summary": "Block new Agent releases that bypass approval for SSH configuration changes.",
+      "highlight": false,
+      "components": ["web"]
+    }
+  ]
+}

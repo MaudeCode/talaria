@@ -64,6 +64,23 @@ not a requirement that independently installed Agent or peer component versions
 be equal. Unreleased Agent `main` canaries never change this pin or the
 support record.
 
+Candidate checks also compare SSH configuration approval against the newest
+supported release, using the same real-Agent probe for both identities. The
+probe registers a local task workspace different from the process cwd and
+exercises write and edit tools with absolute and relative `.ssh/config` paths,
+both denied and allowed. Only the human decision is synthetic; Agent path
+resolution, guards, and file mutation are real. Each probe owns a fresh HOME,
+denies network access, and verifies its Agent imports come from the selected
+checkout. The receipt's `sshConfigApproval` contains the baseline identity and
+both sets of observations; a missing approval or incorrect file mutation fails
+the check before promotion. Release images must reproduce the source observations.
+
+Historical supported v0.21.7 and v0.22.0 checks explicitly record their missing
+task-relative approval rather than claiming that guarantee. v0.22.1 proves it.
+The exact v0.22.2 candidate loses it and cannot be promoted until an upstream
+repair passes this behavioral gate. This check does not patch the Agent or
+change the current deployment pin.
+
 The compatibility gate proves Talaria's existing calls still work; it cannot see
 new Agent capabilities. For what a release or `main` SHA adds, modifies,
 deprecates or removes, run the

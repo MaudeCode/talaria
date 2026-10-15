@@ -28,6 +28,14 @@ RELEASES = [release("v2026.9.14", "0.21.3", "a"), release("v2026.9.21", "0.21.4"
 CANDIDATE = {key: value for key, value in release("v0.21.6", "0.21.6", "d").items() if key != "validatedBy"}
 
 
+def approval_report(relative_gate=True):
+    return {f"{tool}/{path}/{decision}": {
+        "gateCalls": int(path == "absolute" or relative_gate),
+        "mutated": decision == "allow" or (path == "relative" and not relative_gate),
+        "expectedContent": decision == "allow" or (path == "relative" and not relative_gate),
+    } for tool in ("write", "edit") for path in ("absolute", "relative") for decision in ("deny", "allow")}
+
+
 class FakeTools:
     """Answers the checker's subprocesses and records what it ran."""
 
@@ -36,6 +44,7 @@ class FakeTools:
         self.head = {}  # fetched ref -> commit it resolves to
         self.requires_python = ">=3.11, <3.14"
         self.sidecar_failures = 0
+        self.approval_reports = {}
         self.published = {"draft": False, "prerelease": False}
         self.image_revision = None  # defaults to the tested source
         self.tag_digest = None  # defaults to the recorded image digest
@@ -56,6 +65,10 @@ class FakeTools:
     def run(self, command, **kwargs):
         command = [str(part) for part in command]
         self.commands.append(command)
+        report = kwargs.get("env", {}).get("TALARIA_AGENT_PROBE_REPORT")
+        if report and str(self.root / "releases/agent_probe.py") in command:
+            version = command[-1]
+            Path(report).write_text(json.dumps(self.approval_reports.get(version, approval_report())))
         if command[:2] == ["git", "init"]:
             Path(command[-1]).mkdir(parents=True)
         if command[:2] == ["git", "-C"] and command[3] == "fetch":
@@ -208,7 +221,8 @@ class CheckerTests(unittest.TestCase):
         self.assertEqual(receipt, {
             "kind": "supported", **{key: RELEASES[0][key] for key in checker.IDENTITY}, "webRevision": "e" * 40,
             "python": "3.13.7", "tests": {"passed": 39, "failed": 0, "skipped": 1}, "imageVerified": True,
-            "result": "success", "diagnostics": "result.junit.xml"})
+            "result": "success", "diagnostics": "result.junit.xml",
+            "sshConfigApproval": {"observations": approval_report()}})
         # The release tag lands as a local tag so git-derived Agent versions can resolve it.
         self.assertEqual(self.tools.refspec, "+refs/tags/v2026.9.14:refs/tags/v2026.9.14")
         probe = next(command for command in self.tools.commands if command[-2:] == [str(self.root / "releases/agent_probe.py"), "0.21.3"])
@@ -308,6 +322,43 @@ class CheckerTests(unittest.TestCase):
             self.main("--identity", json.dumps({**CANDIDATE, "sourceRevision": "main"}), "--skip-docker")
         self.assertEqual(self.tools.commands, [])
 
+    def test_candidate_rejects_task_relative_ssh_approval_regression_with_receipt(self):
+        self.tools.approval_reports[CANDIDATE["version"]] = approval_report(relative_gate=False)
+        with self.assertRaisesRegex(RuntimeError, "task-relative SSH configuration approval"):
+            self.receipt("--identity", json.dumps(CANDIDATE), "--skip-docker", "--skip-sidecar-tests")
+        self.assertEqual(self.last["result"], "failure")
+        contract = self.last["sshConfigApproval"]
+        self.assertEqual(contract["baseline"]["sourceRevision"], RELEASES[-1]["sourceRevision"])
+        self.assertEqual(contract["candidate"]["write/relative/deny"],
+                         {"gateCalls": 0, "mutated": True, "expectedContent": True})
+        self.assertIn("write/relative/deny", self.last["failure"])
+
+    def test_each_write_edit_path_and_approval_outcome_is_enforced(self):
+        for case in approval_report():
+            for field in ("gateCalls", "mutated", "expectedContent"):
+                with self.subTest(case=case, field=field):
+                    report = approval_report()
+                    report[case][field] = not report[case][field]
+                    with self.assertRaisesRegex(RuntimeError, case):
+                        checker.validate_ssh_approval(report, baseline=approval_report())
+        with self.assertRaisesRegex(RuntimeError, "write/absolute/deny"):
+            checker.validate_ssh_approval({})
+
+    def test_historical_supported_releases_report_the_missing_relative_guarantee(self):
+        for version in ("0.21.7", "0.22.0"):
+            with self.subTest(version=version):
+                checker.validate_ssh_approval(approval_report(relative_gate=False), supported_version=version)
+        with self.assertRaisesRegex(RuntimeError, "write/relative/deny"):
+            checker.validate_ssh_approval(approval_report(relative_gate=False), supported_version="0.22.1")
+        checker.validate_ssh_approval(approval_report(), baseline=approval_report(relative_gate=False))
+
+    def test_a_broken_baseline_cannot_authorize_a_candidate(self):
+        self.tools.approval_reports[RELEASES[-1]["version"]] = approval_report(relative_gate=False)
+        with self.assertRaisesRegex(RuntimeError, "write/relative/deny"):
+            self.receipt("--identity", json.dumps(CANDIDATE), "--skip-docker", "--skip-sidecar-tests")
+        self.assertNotIn("candidate", self.last["sshConfigApproval"])
+        self.assertEqual(self.tools.fetched, "refs/tags/" + RELEASES[-1]["releaseTag"])
+
     def test_main_canary_uses_an_exact_commit_and_its_own_python(self):
         self.write([], RELEASES[1])  # A canary never depends on, or enters, the stable record.
         receipt = self.receipt("--main", "9" * 40, "--python", "3.14")
@@ -381,7 +432,7 @@ class CheckerTests(unittest.TestCase):
         self.receipt("--identity", json.dumps(CANDIDATE), "--skip-docker")
         self.write([], RELEASES[1])
         self.receipt("--main", "9" * 40)
-        checkouts = self.provisioned()
+        checkouts = [checkout for checkout in self.provisioned() if not Path(checkout).is_relative_to(self.cache)]
         self.assertEqual(len(checkouts), 2)
         for checkout in checkouts:
             self.assertFalse(Path(checkout).exists())
