@@ -374,6 +374,10 @@ erase a saved tier. Chat uses the same helper against its resolved runtime URL.
 
 ### Parent admission for transcript-only delegation deliveries
 
+RPC v38 introduces these completion claim and reconciliation semantics. Both
+protocol constants and the recorded runtime fixture advance together, so a v37
+server cannot connect and replay delivered results without admission receipts.
+
 The Agent can persist an `async_delegation_complete` notification and acknowledge
 its global ledger without starting the Web parent. `process.drain` reconciles
 these typed deliveries across the same contained profile homes as pending replay.
