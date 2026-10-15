@@ -1,0 +1,117 @@
+#!/usr/bin/env python3
+"""Exercise the simulator runner with disposable state and fake platform tools."""
+import os
+from pathlib import Path
+import signal
+import subprocess
+import tempfile
+import time
+
+SOURCE = Path(__file__).with_name('run-ios')
+UDID = '11111111-2222-3333-4444-555555555555'
+FAKE_TOOL = '''#!/usr/bin/env python3
+import os, pathlib, sys, time
+tool = pathlib.Path(sys.argv[0]).name
+with open(os.environ['CALL_LOG'], 'a') as log:
+    log.write(' '.join([tool, *sys.argv[1:]]) + '\\n')
+if tool == 'plutil':
+    print('dev.kil.talaria.xctest')
+if tool == 'xcode-select':
+    print(os.environ['FAKE_DEVELOPER_DIR'])
+if tool == 'shlock':
+    pathlib.Path(sys.argv[sys.argv.index('-f') + 1]).write_text('synthetic lock')
+if tool == 'sleep':
+    pathlib.Path(os.environ['READY']).touch()
+    time.sleep(0.05)
+if tool == os.environ.get('FAIL_TOOL'):
+    sys.exit(42)
+if tool == 'xcrun' and sys.argv[1:3] == ['simctl', 'launch'] and os.environ.get('FAIL_LAUNCH'):
+    sys.exit(43)
+'''
+FAKE_POOL = '''lease_dir="$repo_root/leases"
+simulator_id=""
+ios_pool_acquire() {
+    simulator_id="11111111-2222-3333-4444-555555555555"
+    print acquire >> "$CALL_LOG"
+    touch "$lease_dir/$simulator_id.lock"
+}
+ios_pool_release() {
+    print release >> "$CALL_LOG"
+    rm -f "$lease_dir/$simulator_id.lock"
+}
+'''
+
+
+def run(options=(), *, failure=None, fail_launch=False):
+    with tempfile.TemporaryDirectory(prefix='talaria-run-ios-') as directory:
+        work = Path(directory)
+        repo, tools = work / 'repo', work / 'bin'
+        scripts = repo / 'scripts'
+        scripts.mkdir(parents=True)
+        tools.mkdir()
+        for name in ('xcodebuild', 'xcrun', 'codesign', 'plutil', 'shlock', 'xcode-select', 'open', 'sleep'):
+            tool = tools / name
+            tool.write_text(FAKE_TOOL)
+            tool.chmod(0o755)
+        # The runner pins these system paths; replace them only in the test copy.
+        runner = SOURCE.read_text()
+        for name in ('codesign', 'plutil', 'shlock'):
+            runner = runner.replace(f'/usr/bin/{name}', str(tools / name))
+        (scripts / 'run-ios').write_text(runner)
+        (scripts / 'ios-simulator-pool').write_text(FAKE_POOL)
+        developer = work / 'Developer'
+        (developer / 'Applications' / 'Simulator.app').mkdir(parents=True)
+        log, ready = work / 'calls', work / 'ready'
+        env = dict(os.environ, PATH=f'{tools}:{os.environ["PATH"]}',
+                   CALL_LOG=str(log), READY=str(ready), FAKE_DEVELOPER_DIR=str(developer))
+        env.pop('FAIL_TOOL', None)
+        env.pop('FAIL_LAUNCH', None)
+        if failure:
+            env['FAIL_TOOL'] = failure
+        if fail_launch:
+            env['FAIL_LAUNCH'] = '1'
+        with subprocess.Popen(['zsh', str(scripts / 'run-ios'), *options], env=env,
+                              stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True) as process:
+            try:
+                deadline = time.monotonic() + 10
+                while process.poll() is None and not ready.exists() and time.monotonic() < deadline:
+                    time.sleep(0.01)
+                if ready.exists() and process.poll() is None:
+                    process.send_signal(signal.SIGTERM)
+                stdout, stderr = process.communicate(timeout=5)
+            finally:
+                if process.poll() is None:
+                    process.kill()
+                    process.wait()
+        calls = log.read_text().splitlines() if log.exists() else []
+        assert not list(repo.glob('leases/*.lock')), calls
+        assert not (repo / '.codex-tmp/run-ios/runner.lock').exists(), calls
+        return process.returncode, stdout + stderr, calls, (repo / '.codex-tmp').exists()
+
+
+for options in (('--unknown',), ('--no-open', '--unknown')):
+    status, output, calls, created_state = run(options)
+    assert status == 64 and 'Usage:' in output, (status, output)
+    assert calls == [] and not created_state, calls
+
+for options in ((), ('--no-open',)):
+    status, output, calls, _ = run(options)
+    assert status == 130 and 'deterministic fixture is running' in output, (status, output)
+    assert [call for call in calls if call in ('acquire', 'release')] == ['acquire', 'release'], calls
+    assert any('APP_IDENTIFIER_SUFFIX=.xctest' in call for call in calls), calls
+    assert any(call.startswith('codesign --verify --deep --strict ') for call in calls), calls
+    assert any(call.startswith(f'xcrun simctl install {UDID} ') for call in calls), calls
+    assert f'xcrun simctl launch {UDID} dev.kil.talaria.xctest --ui-test-fixture' in calls, calls
+    opened = [call for call in calls if call.startswith('open ')]
+    assert len(opened) == (0 if options else 1), calls
+    if opened:
+        assert f'Simulator.app --args -CurrentDeviceUDID {UDID}' in opened[0], opened
+
+for failure in ('xcodebuild', 'codesign'):
+    status, output, calls, _ = run(('--no-open',), failure=failure)
+    assert status == 42 and calls[-1] == 'release', (status, output, calls)
+    assert not any(call.startswith('xcrun simctl launch ') for call in calls), calls
+
+status, output, calls, _ = run(('--no-open',), fail_launch=True)
+assert status == 43 and calls[-1] == 'release', (status, output, calls)
+print('PASS: simulator runner opening, fixture, argument rejection, and lease cleanup')
