@@ -215,6 +215,31 @@ be recreated before Web can manually run or resume it. Pause and delete remain
 available. The Agent's existing scheduled records are unchanged until the user
 recreates them.
 
+Manual agent-backed runs on Agents with canonical cron ownership allocate the
+Agent execution-ledger identity before spawning their submitter. Cancellation,
+timeout and fire-claim loss share a multiprocessing cancellation event. The
+submitter passes that event and identity to `run_job`; a cancellation ACK is
+never treated as terminal proof. A lost submitter uses `cron.recover` with the
+original job/request identity, then only `cron.cancel` and `cron.status` with
+that admission's receipt. Recovery observes a ready gateway and never starts one.
+
+The additive `cron/manual_runs/<job-id>.json` record preserves cancellation
+intent and bookkeeping ownership. A runnable schedule is paused before dispatch
+so a crashed sidecar cannot let its expiring claim start another run. Only that
+exact pause is lifted after settlement; operator pauses and successor claims
+are never overwritten. Unverified outcomes retain the record, pause and running
+projection and return `cron_execution_unverified`, rather than reporting a
+cancelled task. An explicit sidecar `cron.run` for a retained record reconciles
+that execution and never submits a replacement. An unknown owner admission
+requires owner-side recovery before it can settle.
+
+The Agent's output/delivery and owner-fenced bookkeeping helpers own the
+terminal tail. Before those side effects, Web persists an at-most-once barrier
+and retires the Agent's generic orphan journal, preventing two recovery paths
+from replaying it. An interrupted tail without a durable completion receipt
+stays unverified for operator reconciliation; it never repeats delivery or
+bookkeeping. Older Agents and script-only jobs retain process-group stopping.
+
 Chat turns use the Agent's in-process callback model inside the sidecar:
 `AIAgent` is constructed with signature-gated
 kwargs, callbacks translate to stream frames, `interrupt()` is `chat.interrupt`,

@@ -317,12 +317,20 @@ def _snippet(text: str, limit: int = 600) -> str:
 
 # ── manual runs ───────────────────────────────────────────────────────────
 
-def _child_main(job, execution_home, result_queue):
+def _child_main(job, execution_home, result_queue, cancel_event=None, execution_id=None, recovering=False):
     try:
         from cron.scheduler import run_job
 
+        def execute():
+            if recovering:
+                from .cron_execution import recover
+                return recover(job, execution_id, cancel_event)
+            if execution_id is not None:
+                return run_job(job, cancel_event=cancel_event, execution_id=execution_id)
+            return run_job(job)
+
         if execution_home is None:
-            result = run_job(job)
+            result = execute()
         else:
             from talaria_sidecar.home import scoped_home as _scoped
 
@@ -330,8 +338,8 @@ def _child_main(job, execution_home, result_queue):
 
             os.environ["HERMES_HOME"] = str(execution_home)
             with _scoped(Path(execution_home)):
-                result = run_job(job)
-        result_queue.put(("ok", result))
+                result = execute()
+        result_queue.put(("ok", result, {key: job[key] for key in ("_model_unreachable", "_quota_hold_seconds") if key in job}))
     except BaseException as exc:  # noqa: BLE001 - surfaced in the parent
         import traceback
 
@@ -381,47 +389,106 @@ def _stop(process) -> None:
     process.join()
 
 
-def _run_in_child(job, execution_home, ctx: CallContext, heartbeat=None):
+def _run_in_child(job, execution_home, ctx: CallContext, heartbeat=None, execution=None):
+    from .cron_execution import SETTLEMENT_SECONDS, Unverified
+
     ctx_mp = multiprocessing.get_context("spawn")
     result_queue = ctx_mp.Queue(maxsize=1)
-    process = ctx_mp.Process(target=_worker, args=(_child_main, job, str(execution_home) if execution_home else None, result_queue))
-    process.start()
+    cancel_event = ctx_mp.Event() if execution is not None else None
+
+    def start(recovering=False):
+        args = (job, str(execution_home) if execution_home else None, result_queue)
+        if execution is not None:
+            args += (cancel_event, execution.execution_id, recovering)
+        child = ctx_mp.Process(target=_worker, args=(_child_main, *args))
+        child.start()
+        return child
+
+    process = start(execution.recovering if execution else False)
     deadline = time.monotonic() + _result_timeout(job)
     next_beat = time.monotonic() + _CLAIM_HEARTBEAT_SECONDS
     status, payload = "error", ["cron run subprocess failed before producing a result", ""]
+    settling = None
+    recovery_started = bool(execution and execution.recovering)
+
+    def cancel(reason):
+        nonlocal settling
+        if execution is None:
+            return
+        execution.cancel(reason)
+        cancel_event.set()
+        if settling is None:
+            settling = time.monotonic() + SETTLEMENT_SECONDS
+
+    def recover_child(detail):
+        nonlocal process, recovery_started, result_queue
+        process.join(timeout=5)
+        if process.is_alive():
+            _stop(process)
+        if recovery_started:
+            raise Unverified(detail)
+        recovery_started = True
+        cancel("submitter interrupted")
+        # A killed queue writer can leave a partial frame. Recovery gets a fresh pipe.
+        result_queue.close()
+        result_queue.join_thread()
+        result_queue = ctx_mp.Queue(maxsize=1)
+        process = start(True)
+
+    if execution and execution.record["cancel_reason"]:
+        cancel(execution.record["cancel_reason"])
     try:
         while True:
             try:
                 status, *payload = result_queue.get(timeout=1.0)
-                break
+                if execution is None or status == "ok":
+                    break
+                # A transport failure is not a failed task. Recover the original identity once.
+                recover_child(payload[0])
             except queue.Empty:
                 if heartbeat is not None and time.monotonic() >= next_beat:
                     next_beat = time.monotonic() + _CLAIM_HEARTBEAT_SECONDS
                     if not heartbeat():
-                        _stop(process)
-                        raise _ClaimLost()
+                        if execution is None:
+                            _stop(process)
+                            raise _ClaimLost()
+                        cancel("claim_lost")
+                        heartbeat = None
                 if ctx.cancelled:
-                    _stop(process)
-                    status, payload = "cancelled", ["cancelled", ""]
-                    break
+                    if execution is None:
+                        _stop(process)
+                        status, payload = "cancelled", ["cancelled", ""]
+                        break
+                    cancel("cancelled")
                 if not process.is_alive():
                     # The child may have put its result just before exiting; otherwise it died (OOM, signal) without one.
                     try:
                         status, *payload = result_queue.get_nowait()
                     except queue.Empty:
                         payload = [f"cron run subprocess exited with code {process.exitcode} without producing a result", ""]
+                    if execution is not None and status != "ok":
+                        recover_child(payload[0])
+                        continue
                     break
                 if time.monotonic() >= deadline:
-                    _stop(process)
-                    payload = [f"cron run subprocess produced no result within {_result_timeout(job):g}s and was terminated", ""]
-                    break
+                    if execution is None:
+                        _stop(process)
+                        payload = [f"cron run subprocess produced no result within {_result_timeout(job):g}s and was terminated", ""]
+                        break
+                    cancel("Manual task timed out")
+                if settling is not None and time.monotonic() >= settling:
+                    raise Unverified("The owner has not provided a terminal receipt.")
         process.join(timeout=5)
         if process.is_alive():
             _stop(process)
     finally:
+        if process.is_alive():
+            _stop(process)
         result_queue.close()
         result_queue.join_thread()
     if status == "ok":
+        if execution is not None and len(payload) > 1:
+            execution.job.update(payload[1])
         return payload[0]
     if status == "cancelled":
         raise RpcError("cancelled", condition="cancelled")
@@ -452,7 +519,32 @@ def _delivery_home(scheduler, home: Path):
                 pass
 
 
+def _heartbeat(store_home, job_id, claim_owner):
+    jobs = _jobs()
+    last_beat = time.monotonic()
+
+    def heartbeat() -> bool:
+        """Refresh only this fire's claim, giving transient store errors less than a lease to recover."""
+        nonlocal last_beat
+        try:
+            with _store(store_home):
+                owned = jobs.heartbeat_fire_claim(job_id, expected_owner=claim_owner) is not False
+                if not owned:
+                    time.sleep(_CLAIM_MISS_CONFIRM_SECONDS)
+                    owned = jobs.heartbeat_fire_claim(job_id, expected_owner=claim_owner) is not False
+        except Exception:  # noqa: BLE001
+            log.warning("Fire claim heartbeat failed for job %s", job_id, exc_info=True)
+            return time.monotonic() - last_beat < _CLAIM_HEARTBEAT_GRACE_SECONDS
+        if owned:
+            last_beat = time.monotonic()
+        return owned
+    return heartbeat
+
+
 def run_tracked(job: dict, store_home: Path, execution_home: Path | None, ctx: CallContext, claim_owner: str | None = None) -> dict:
+    from . import cron_execution
+    if cron_execution.path(store_home, job["id"]).exists() or cron_execution.supported(job):
+        return cron_execution.run(job, store_home, execution_home, ctx, claim_owner)
     jobs = _jobs()
     scheduler = importlib.import_module("cron.scheduler")
     silent_marker = getattr(scheduler, "SILENT_MARKER", "[SILENT]")
@@ -461,24 +553,7 @@ def run_tracked(job: dict, store_home: Path, execution_home: Path | None, ctx: C
     execution_home = execution_home or store_home
     outcome: dict = {"job_id": job_id, "status": "completed"}
     try:
-        last_beat = time.monotonic()
-
-        def heartbeat() -> bool:
-            """Refresh the claim; ``False`` once another process provably holds it or no refresh has landed for most of the lease."""
-            nonlocal last_beat
-            try:
-                with _store(store_home):
-                    owned = jobs.heartbeat_fire_claim(job_id, expected_owner=claim_owner) is not False
-                    if not owned:
-                        time.sleep(_CLAIM_MISS_CONFIRM_SECONDS)
-                        owned = jobs.heartbeat_fire_claim(job_id, expected_owner=claim_owner) is not False
-            except Exception:  # noqa: BLE001 - a missed beat only shortens the lease
-                log.warning("Fire claim heartbeat failed for job %s", job_id, exc_info=True)
-                return time.monotonic() - last_beat < _CLAIM_HEARTBEAT_GRACE_SECONDS
-            if owned:
-                last_beat = time.monotonic()
-            return owned
-
+        heartbeat = _heartbeat(store_home, job_id, claim_owner)
         success, output, final_response, error = _run_in_child(job, execution_home, ctx, heartbeat if claim_owner else None)
         with _store(store_home), _owner_fence(jobs, job_id, claim_owner) as owns, contextlib.ExitStack() as delivery:
             if not owns:
@@ -532,8 +607,10 @@ def register(registry) -> None:
             if params.get("probe_store"):
                 result["store_health"] = _store_health(jobs.get_cron_output_dir().parent)
         live = _live_executions(home, [str(job.get("id") or "") for job in listed])
+        from .cron_execution import path
         for job in listed:
-            job["running_elsewhere"] = str(job.get("id") or "") in live
+            jid = str(job.get("id") or "")
+            job["running_elsewhere"] = jid in live or bool(_JOB_ID_RE.fullmatch(jid) and path(home, jid).exists())
         return result
 
     @registry.method("cron.get")
@@ -656,6 +733,9 @@ def register(registry) -> None:
             job = _jobs().get_job(job_id)
         if not job:
             raise RpcError("Job not found", condition="not_found")
+        from .cron_execution import path
+        if path(store_home, job_id).exists():
+            return run_tracked(job, store_home, execution_home, ctx)
         foreign = _live_executions(store_home, [job_id], strict=True).get(job_id)
         if foreign is not None:
             return {"job_id": job_id, "status": "already_running", "elapsed": _elapsed(foreign)}
