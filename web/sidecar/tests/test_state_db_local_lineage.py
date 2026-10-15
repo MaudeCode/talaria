@@ -12,7 +12,7 @@ FIXTURE = Path(__file__).parents[2] / 'packages/server/src/test/fixtures/local-r
 
 
 @requires_agent
-@pytest.mark.parametrize('stage', ['reset', 'empty', 'multiple'])
+@pytest.mark.parametrize('stage', ['reset', 'compressed', 'empty', 'multiple'])
 def test_reset_target_plan_matches_server_fixture(hermes_home, stage):
     if not (AGENT_DIR / 'hermes_state_local_lineage.py').exists():
         pytest.skip('release predates canonical local reset receipts; legacy deletion suites apply')

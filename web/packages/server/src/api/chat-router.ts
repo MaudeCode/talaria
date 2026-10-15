@@ -17,13 +17,7 @@ import { SidecarError } from '../sidecar/client.js'
 import { unsupportedPromptMessage } from '../tools/commands.js'
 import type { StartTurnOptions, TurnFailure, TurnRunner } from '../sessions/turn.js'
 
-const os = implement(chatContract).$context<ApiContext>().use(requestSessionIdGuard).use(({ context: { ctx }, next }, input: unknown) => {
-  if (input && typeof input === 'object' && !Array.isArray(input)) {
-    const body = input as Record<string, unknown>
-    if (typeof body.session_id === 'string') body.session_id = ctx.deps.sessions.resolveSessionId(body.session_id)
-  }
-  return next()
-})
+const os = implement(chatContract).$context<ApiContext>().use(requestSessionIdGuard)
 const STEER_ID_RE = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/
 const PROFILE_ID_RE = /^[a-z0-9][a-z0-9_-]{0,63}$/
 

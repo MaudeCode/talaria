@@ -103,7 +103,7 @@ const COMPRESSION_CHAIN_CAP = 1000
 
 function isContinuationSession(parent: Dict | undefined, child: Dict | undefined): boolean {
   if (!parent || !child) return false
-  if (isExplicitForkChild(child, true)) return false
+  if (lower(child.source) === 'tool' || explicitForkMarkers(child, true).length > 0) return false
   if (lower(child.session_source) === 'fork') return false
   const parentSource = lower(parent.source)
   const childSource = lower(child.source)
@@ -224,7 +224,7 @@ function tableColumns(db: DatabaseSync, table: string): Set<string> {
   return new Set((db.prepare(`PRAGMA table_info(${table})`).all() as { name: string }[]).map((r) => r.name))
 }
 
-interface LocalLineage { owner: string; ids: string[]; context: string[]; rows: Dict[] }
+interface LocalLineage { owner: string; ids: string[]; context: string[]; rows: Dict[]; title: unknown }
 const LOCAL_POLICY_PREFIX = 'gateway.local_policy.v1:'
 
 /** Read-only equivalent of Agent validate_local_lineage. A receipt, never a reset edge alone, proves ownership. */
@@ -241,9 +241,8 @@ function localLineages(db: DatabaseSync, sid?: string): Map<string, LocalLineage
   // Agent _CHAIN_STEP_SQL prefers a compression child, then a live child, then recency and id.
   const children = db.prepare(`SELECT s.* FROM sessions s WHERE s.parent_session_id = ? ORDER BY CASE WHEN s.end_reason = 'compression' THEN 0 WHEN s.ended_at IS NULL THEN 1 ELSE 2 END, ${activity} DESC, s.started_at DESC, s.id DESC`)
   const explicitChild = (child: Dict, includeReset: boolean): boolean => {
-    const config = jsonLoadsIfString(child.model_config) as Dict | null
     return lower(child.source) === 'tool' || lower(child.session_source) === 'fork'
-      || Boolean(config && ['_branched_from', '_delegate_from', ...(includeReset ? ['_reset_from'] : [])].some((key) => config[key] != null))
+      || explicitForkMarkers(child, includeReset).length > 0
   }
   const compressionChildren = (parent: Dict): Dict[] => str(parent.end_reason) === 'compression'
     ? (children.all(str(parent.id)) as Dict[]).filter((child) => !explicitChild(child, true)) : []
@@ -290,7 +289,7 @@ function localLineages(db: DatabaseSync, sid?: string): Map<string, LocalLineage
         }
       }
       if (!valid || compressionChildren(rows.at(-1)!).length) continue
-      const lineage = { owner, ids, context: ids.slice(contextStart), rows }
+      const lineage = { owner, ids, context: ids.slice(contextStart), rows, title: [...rows].reverse().find((row) => row.title)?.title ?? null }
       for (const id of ids) result.set(id, lineage)
     } catch { /* Malformed receipts cannot attach history to another conversation. */ }
   }
@@ -349,6 +348,8 @@ export function stateDbStorage(dbPath: string): AgentStorage {
 
 export interface ReadRowsOptions {
   limit?: number | null
+  /** A direct metadata lookup uses the same projection without the sidebar's recency window. */
+  sessionId?: string
   excludeSources?: readonly string[] | null
   includeSources?: readonly string[] | null
   log?: (line: string) => void
@@ -377,7 +378,7 @@ export function readImportableAgentSessionRows(dbPath: string, opts: ReadRowsOpt
   const db = openStateDbReadonly(dbPath)
   try {
     db.exec('BEGIN') // Receipt and physical rows must belong to the same committed generation.
-    const local = localLineages(db)
+    const local = localLineages(db, opts.sessionId)
     const sessionCols = tableColumns(db, 'sessions')
     const messageCols = tableColumns(db, 'messages')
     if (!sessionCols.has('source')) {
@@ -431,6 +432,7 @@ export function readImportableAgentSessionRows(dbPath: string, opts: ReadRowsOpt
     let candidateOrder = 'ORDER BY s.started_at DESC'
     const where = ['s.source IS NOT NULL']
     const params: string[] = []
+    if (opts.sessionId !== undefined) { where.push('s.id = ?'); params.push(local.get(opts.sessionId)?.ids.at(-1) ?? opts.sessionId) }
     const superseded = [...local].filter(([id, lineage]) => id !== lineage.ids.at(-1)).map(([id]) => id)
     if (superseded.length) { where.push('s.id NOT IN (SELECT value FROM json_each(?))'); params.push(JSON.stringify(superseded)) }
     const included = (include ?? []).map(String).filter(Boolean)
@@ -463,11 +465,14 @@ export function readImportableAgentSessionRows(dbPath: string, opts: ReadRowsOpt
       const lineage = local.get(str(r.id))
       if (!lineage) return { ...r }
       const root = lineage.rows[0]!
-      const title = [...lineage.rows].reverse().find((row) => row.title)?.title ?? r.title
+      const title = lineage.title || r.title
       return { ...r, title, started_at: root.started_at, last_activity: r.last_activity ?? r.started_at, parent_session_id: root.parent_session_id,
         _lineage_root_id: lineage.owner, _lineage_tip_id: r.id, _lineage_ids: [...lineage.ids], _compression_segment_count: lineage.ids.length }
     }))
-    projected = projected.map((r) => ({ ...r, ...normalizeAgentSessionSource(r.source) }))
+    projected = projected.map((r) => {
+      const parent = local.get(str(r.parent_session_id))
+      return { ...r, ...normalizeAgentSessionSource(r.source), ...(parent ? { _parent_lineage_root_id: parent.owner, parent_title: parent.title, parent_source: parent.rows.at(-1)?.source ?? null } : {}) }
+    })
     projected = projected.filter(isCliSessionRowVisible)
     if (limit === null) return projected
     const selected = projected.slice(0, Math.max(0, Math.trunc(limit)))
@@ -575,16 +580,21 @@ export function stateDbSessionSources(dbPath: string, sessionIds: Iterable<strin
   }
 }
 
+/** The same marker parser serves conservative history boundaries and exact-parent ownership walks. */
+function explicitForkMarkers(row: Dict, includeReset: boolean): unknown[] {
+  let cfg: unknown = row.model_config
+  if (typeof cfg === 'string') { try { cfg = JSON.parse(cfg) } catch { return [] } }
+  if (!cfg || typeof cfg !== 'object' || Array.isArray(cfg)) return []
+  const c = cfg as Dict
+  return [c._branched_from, c._delegate_from, ...(includeReset ? [c._reset_from] : [])].filter((m) => m !== undefined && m !== null)
+}
+
 /** Python `_is_explicit_fork_child_row`: a tool child, or a branch/delegate (`includeReset`: also reset) fork of its parent. */
 function isExplicitForkChild(row: Dict, includeReset: boolean): boolean {
   if (str(row.source) === 'tool') return true
-  let cfg: unknown = row.model_config
-  if (typeof cfg === 'string') { try { cfg = JSON.parse(cfg) } catch { return false } }
-  if (!cfg || typeof cfg !== 'object' || Array.isArray(cfg)) return false
-  const c = cfg as Dict
-  const markers = [c._branched_from, c._delegate_from, ...(includeReset ? [c._reset_from] : [])]
+  const markers = explicitForkMarkers(row, includeReset)
   const parentId = row.parent_session_id
-  return parentId ? markers.includes(parentId) : markers.some((m) => m !== undefined && m !== null)
+  return parentId ? markers.includes(parentId) : markers.length > 0
 }
 
 /**
@@ -942,7 +952,7 @@ export function stateDbSessionRead(dbPath: string, sid: string, opts: { stitch?:
     const selected = [...(hasId ? ['id'] : []), ...(available.has('message_uid') ? ['message_uid'] : []), 'role', 'content', 'timestamp', ...OPTIONAL_MESSAGE_COLUMNS.filter((c) => available.has(c))]
     // TAL-529: an explicit lineage (the session and its compression continuations) replaces the parent walk.
     const local = localLineages(db, id).get(id)
-    const chain = local ? [...local.context] : opts.lineage?.length ? [...opts.lineage] : [id]
+    const chain = local ? (opts.stitch === false ? [local.ids.at(-1) ?? id] : [...local.context]) : opts.lineage?.length ? [...opts.lineage] : [id]
     if (!local && !opts.lineage?.length && (opts.stitch ?? true)) {
       const sessionCols = tableColumns(db, 'sessions')
       if (['parent_session_id', 'end_reason', 'started_at', 'source'].every((c) => sessionCols.has(c))) {
@@ -983,7 +993,7 @@ export function stateDbSessionRead(dbPath: string, sid: string, opts: { stitch?:
       }
     }
     if (hasId && ['message_uid', 'active', 'compacted'].every((c) => available.has(c))) {
-      const identities = replayIdentities(db, chain, rows, available)
+      const identities = replayIdentities(db, local?.context ?? chain, rows, available)
       for (const [i, row] of rows.entries()) {
         const identity = identities.get(Number(row.id))
         // A known changed generation overrides even a coincidental legacy timestamp twin.

@@ -229,7 +229,7 @@ export function createDeps(opts: CreateDepsOptions): AppDeps {
   const shares = new ShareStore(resolve(config.stateDir, 'shares'), now)
   const yoloSessions = new Set<string>()
   const attachmentDir = (sid: string): string => join(attachmentRoot(), (sid || 'session').replace(/[^\w.-]/g, '_').slice(0, 120))
-  const cliSessions = new CliSessionSource({ store, profileHome, lastWorkspace: (p) => workspaces.lastWorkspace(p), backgroundProjectId: (kind, p) => projects.ensureSystemProject(kind, p, { create: kind === 'webhook' || projects.hasUserProjects(p) }), now, log })
+  const cliSessions = new CliSessionSource({ store, profileHome, profilesMatch, lastWorkspace: (p) => workspaces.lastWorkspace(p), backgroundProjectId: (kind, p) => projects.ensureSystemProject(kind, p, { create: kind === 'webhook' || projects.hasUserProjects(p) }), now, log })
   const gatewayWatchers = new GatewayWatcherRegistry({ profileHome, now, log, ...(opts.gatewayPollMs !== undefined ? { pollIntervalMs: opts.gatewayPollMs } : {}) })
   const journal = new RunJournal(config.sessionDir, env)
   const contextLengths = new Map<string, number | null>()

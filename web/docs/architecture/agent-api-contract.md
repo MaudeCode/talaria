@@ -120,8 +120,14 @@ validates those receipts before collapsing the physical rows. List and search
 show the current target once, including an empty reset target, under the
 existing lineage identity. Saved sidecar aliases reconcile to that target
 before list deduplication, preserving the newest sidecar's UI metadata.
-Detail, reopen and chat operations resolve old segment IDs to that
-target. Transcript reads stop at the latest reset boundary, even when a saved
+The common request boundary resolves old segment IDs before handlers choose
+locks, runtime keys or files. Listing and materialization select the same
+newest saved member for UI metadata, preserving its title, pin, archive state,
+project and workspace. Display history includes compression segments since the
+latest reset; model restoration uses the current physical handoff. Replay
+identity still follows that reset's ancestry so carried rows keep their IDs.
+Direct metadata lookups use the same projection outside the sidebar window.
+Transcript reads stop at the latest reset boundary, even when a saved
 Talaria record contains an older compression lineage.
 
 Deletion resolves the whole receipt lineage on its write transaction through

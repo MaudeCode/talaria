@@ -1,4 +1,4 @@
-"""Regenerate local-reset.json on the exact v0.22.1 Agent interpreter with its checkout on PYTHONPATH."""
+"""Regenerate local-reset.json with isolated HERMES_HOME on the exact v0.22.1 Agent interpreter and checkout on PYTHONPATH."""
 import json, tempfile
 from pathlib import Path
 from dataclasses import asdict
@@ -30,10 +30,14 @@ with tempfile.TemporaryDirectory() as directory:
         with db._read_ctx() as c:
             snapshots[name] = {'sessions':[dict(r) for r in c.execute('SELECT id,source,user_id,session_key,chat_id,model,title,started_at,last_activity_at,message_count,parent_session_id,ended_at,end_reason,model_config FROM sessions ORDER BY rowid')], 'messages':[dict(r) for r in c.execute('SELECT id,session_id,role,content,timestamp FROM messages ORDER BY id')], 'meta':[dict(r) for r in c.execute("SELECT key,value FROM state_meta WHERE key GLOB 'gateway.local*'")]}
         snapshots[name]['listedIds']=[r['id'] for r in db.list_sessions_rich(limit=50)]
+        tip = json.loads(snapshots[name]['meta'][0]['value'])['entry']['session_id']
+        snapshots[name]['modelContents'] = [m['content'] for m in db.get_messages_as_conversation(tip)]
+        snapshots[name]['displayContents'] = [m['content'] for m in db.get_messages_as_conversation(tip, include_ancestors=True)]
     reset(owner,'reset-one')
     db.append_message('reset-one','user','after reset',timestamp=1002)
     snapshot('reset')
     db.publish_compression_child(parent_session_id='reset-one', child_session_id='compressed',source='cli',messages=[{'role':'user','content':'compressed context','timestamp':1003}],require_compression_lease=False)
+    snapshot('compressed')
     reset('compressed','reset-empty')
     snapshot('empty')
     db.append_message('reset-empty','user','latest context',timestamp=1004)

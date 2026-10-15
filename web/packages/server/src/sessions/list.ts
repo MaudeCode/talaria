@@ -578,18 +578,28 @@ function sessionLineageIds(row: Row): Set<string> {
   return ids
 }
 
-/** Receipt members are aliases of the current target. Keep the newest sidecar's UI metadata, never its old transcript counts. */
-function reconcileLocalSessionRows(rows: Row[], cli: Row[], profilesMatch: ListParams['profilesMatch']): Row[] {
-  const members = new Map<string, Row>()
-  for (const meta of cli) if (Array.isArray(meta._lineage_ids)) for (const id of meta._lineage_ids) if (typeof id === 'string') members.set(id, meta)
-  const chosen = new Map<string, { row: Row; meta: Row; rank: number }>()
-  const other: Row[] = []
-  for (const row of rows) {
-    const sid = str(row.session_id), meta = members.get(sid)
-    if (!meta || !profilesMatch(str(row.profile) || null, str(meta.profile) || null)) { other.push(row); continue }
-    const target = str(meta.session_id), rank = (meta._lineage_ids as string[]).indexOf(sid)
-    if ((chosen.get(target)?.rank ?? -1) < rank) chosen.set(target, { row, meta, rank })
+/** The newest saved physical member owns UI metadata; listing and materialization use this same selection. */
+export function latestLineageSidecar(ids: readonly string[], profile: string | null, lookup: (id: string) => Row | undefined, profilesMatch: ListParams['profilesMatch']): Row | undefined {
+  for (let i = ids.length - 1; i >= 0; i -= 1) {
+    const row = lookup(ids[i]!)
+    if (row && profilesMatch(str(row.profile) || null, profile)) return row
   }
+  return undefined
+}
+
+/** Receipt members are aliases of the current target. Keep UI metadata, never an old member's transcript counts. */
+function reconcileLocalSessionRows(rows: Row[], cli: Row[], profilesMatch: ListParams['profilesMatch']): Row[] {
+  const byId = new Map(rows.map((row) => [str(row.session_id), row]))
+  const members = new Map<string, Row>()
+  const chosen = new Map<string, { row: Row; meta: Row }>()
+  for (const meta of cli) {
+    if (!Array.isArray(meta._lineage_ids)) continue
+    const ids = meta._lineage_ids.filter((id): id is string => typeof id === 'string')
+    for (const id of ids) members.set(id, meta)
+    const row = latestLineageSidecar(ids, str(meta.profile) || null, (id) => byId.get(id), profilesMatch)
+    if (row) chosen.set(str(meta.session_id), { row, meta })
+  }
+  const other = rows.filter((row) => { const meta = members.get(str(row.session_id)); return !meta || !profilesMatch(str(row.profile) || null, str(meta.profile) || null) })
   for (const [target, { row, meta }] of chosen) {
     const merged = mergeCliSidebarMetadata(row, meta)
     if (str(row.session_id) !== target) {

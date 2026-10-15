@@ -1,8 +1,8 @@
-import { existsSync, mkdtempSync, rmSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
-import { afterEach, beforeEach, describe, expect, it, onTestFinished } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, onTestFinished, vi } from 'vitest'
 import fixture from '../test/fixtures/local-reset.json' with { type: 'json' }
 import { readImportableAgentSessionRows, stateDbCompressionLineage, stateDbLineageReport, stateDbLocalTarget, stateDbSessionMessages, stateDbSessionRead } from './state-db.js'
 import { bootTestServer } from '../test/harness.js'
@@ -53,6 +53,25 @@ describe('Agent v0.22.1 receipt-backed local reset', () => {
     expect(stateDbLineageReport(path, fixture.owner)).toMatchObject({ lineage_key: fixture.owner, tip_session_id: 'reset-empty', total_segments: 4, manual_review: false })
   })
 
+  it('matches the candidate display and model histories after a reset then compression', async () => {
+    const sidecar = new FakeSidecar()
+    const server = await bootTestServer({ sidecar })
+    onTestFinished(async () => { await server.close() })
+    db.close(); path = join(server.state, 'state.db'); db = new DatabaseSync(path); load('compressed')
+    const stage = fixture.snapshots.compressed
+    expect(stateDbSessionMessages(path, fixture.owner).map((m) => m.content)).toEqual(stage.displayContents)
+    expect(stateDbSessionMessages(path, fixture.owner, { stitch: false }).map((m) => m.content)).toEqual(stage.modelContents)
+    const detail = await (await server.get(`/api/session?session_id=${fixture.owner}`)).json() as { session: { messages: { content: string }[] } }
+    expect(detail.session.messages.map((m) => m.content)).toEqual(stage.displayContents)
+    const response = await server.get('/api/chat/start', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ session_id: fixture.owner, message: 'continue compressed context' }) })
+    const started = await response.json() as { session_id: string; stream_id: string }
+    expect(response.status, JSON.stringify(started)).toBe(200)
+    expect(started.session_id).toBe('compressed')
+    await server.sse(`/api/chat/stream?stream_id=${started.stream_id}`, (frame) => frame.event === 'stream_end')
+    const call = sidecar.calls.find((call) => call.method === 'chat.start')?.params as { conversation_history: { content: string }[] }
+    expect(call.conversation_history.map((m) => m.content)).toEqual(stage.modelContents)
+  })
+
   it.each(['missing', 'malformed', 'cycle', 'budget', 'foreign', 'fork'] as const)('fails conservatively with a %s receipt', (damage) => {
     const key = `gateway.local_policy.v1:${fixture.owner}`
     const receipt = JSON.parse(fixture.snapshots.reset.meta[0]!.value) as Record<string, unknown>
@@ -74,6 +93,24 @@ describe('Agent v0.22.1 receipt-backed local reset', () => {
     db.exec("INSERT INTO messages VALUES (99, 'separate', 'user', 'separate child', 1005)")
     expect(readImportableAgentSessionRows(path).map((r) => r.id).sort()).toEqual(['reset-one', 'separate'])
     expect(stateDbSessionMessages(path, 'separate').map((m) => m.content)).toEqual(['separate child'])
+  })
+
+  it.each(['_branched_from', '_delegate_from', '_reset_from'] as const)('keeps a mismatched %s marker separate without a receipt', (marker) => {
+    db.exec("DELETE FROM state_meta; UPDATE sessions SET end_reason = 'compression' WHERE parent_session_id IS NULL")
+    db.prepare('UPDATE sessions SET model_config = ? WHERE id = ?').run(JSON.stringify({ [marker]: 'another-logical-owner' }), 'reset-one')
+    expect(readImportableAgentSessionRows(path).map((row) => row.id).sort()).toEqual([fixture.owner, 'reset-one'].sort())
+    expect(stateDbSessionMessages(path, 'reset-one').map((m) => m.content)).toEqual(['after reset'])
+    expect(stateDbCompressionLineage(path, fixture.owner)).toEqual([fixture.owner])
+  })
+
+  it('keeps an explicit branch separate while naming its logical parent after multiple resets', () => {
+    load('multiple')
+    db.prepare("INSERT INTO sessions (id, source, started_at, message_count, parent_session_id, model_config) VALUES ('separate', 'cli', 1005, 1, ?, ?)").run('compressed', JSON.stringify({ _branched_from: 'compressed' }))
+    db.exec("INSERT INTO messages VALUES (99, 'separate', 'user', 'branch context', 1005)")
+    const rows = readImportableAgentSessionRows(path)
+    expect(rows.map((row) => row.id).sort()).toEqual(['reset-empty', 'separate'])
+    expect(rows.find((row) => row.id === 'separate')).toMatchObject({ relationship_type: 'child_session', _parent_lineage_root_id: fixture.owner, parent_title: 'Reset conversation', parent_source: 'cli' })
+    expect(stateDbSessionMessages(path, 'separate').map((m) => m.content)).toEqual(['branch context'])
   })
 
   it.each(['reset', 'empty', 'multiple'] as const)('serves %s once through list, count, search, detail and reopen', async (stage) => {
@@ -156,5 +193,69 @@ describe('Agent v0.22.1 receipt-backed local reset', () => {
     server.deps.cliSessions.invalidate()
     const list = await (await server.get('/api/sessions')).json() as { sessions: Record<string, unknown>[] }
     expect(list.sessions).toEqual([])
+  })
+
+  it.each([false, true])('preserves saved UI metadata when materializing the tip outside sidebar=%s', async (outside) => {
+    const server = await bootTestServer()
+    onTestFinished(async () => { await server.close() })
+    db.close(); path = join(server.state, 'state.db'); db = new DatabaseSync(path); load('multiple')
+    if (outside) for (let i = 0; i < 25; i += 1) {
+      const id = `recent-${i}`
+      db.prepare('INSERT INTO sessions (id, source, title, started_at, message_count) VALUES (?, ?, ?, ?, ?)').run(id, 'cli', id, 3_000_000_000 + i, 1)
+      db.prepare('INSERT INTO messages (id, session_id, role, content, timestamp) VALUES (?, ?, ?, ?, ?)').run(100 + i, id, 'user', 'recent prompt', 3_000_000_001 + i)
+    }
+    const saved = { title: 'User saved title', pinned: true, archived: true, project_id: 'saved-project' }
+    server.deps.sessionStore.save(new Session({ session_id: fixture.owner, profile: 'default', source_tag: 'cli', ...saved, messages: [{ role: 'user', content: 'old prompt' }] }, server.deps.sessionStore.deps.defaults('default')))
+    await server.deps.settings.save({ show_cli_sessions: true })
+    server.deps.cliSessions.invalidate()
+    const response = await server.get('/api/session/update', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ session_id: fixture.owner }) })
+    const result = await response.json() as { session: Record<string, unknown> }
+    expect(response.status, JSON.stringify(result)).toBe(200)
+    expect(result.session).toMatchObject({ session_id: 'reset-empty', ...saved })
+    expect(server.deps.sessionStore.get('reset-empty').compact()).toMatchObject(saved)
+    if (!outside) {
+      const listed = await (await server.get('/api/sessions?include_archived=1')).json() as { sessions: Record<string, unknown>[] }
+      expect(listed.sessions).toHaveLength(1)
+      expect(listed.sessions[0]).toMatchObject({ session_id: 'reset-empty', ...saved })
+    }
+    const reopened = await (await server.get(`/api/session?session_id=${fixture.owner}`)).json() as { session: Record<string, unknown> }
+    expect(reopened.session).toMatchObject({ session_id: 'reset-empty', ...saved })
+  })
+
+  it('locks and evicts the current target when a mutation names an old member', async () => {
+    const server = await bootTestServer({ sidecar: new FakeSidecar() })
+    onTestFinished(async () => { await server.close() })
+    db.close(); path = join(server.state, 'state.db'); db = new DatabaseSync(path); load('multiple')
+    const workspace = join(server.state, 'workspace', 'updated-workspace'); mkdirSync(workspace)
+    let release!: () => void
+    const gate = new Promise<void>((resolve) => { release = resolve })
+    const held = server.deps.sessionStore.withLock('reset-empty', () => gate)
+    const lock = vi.spyOn(server.deps.sessionStore, 'withLock')
+    const evict = vi.spyOn(server.deps.sessions.deps.runtime, 'evictAgent')
+    const terminal = vi.spyOn(server.deps.sessions.deps.runtime, 'closeTerminal')
+    const response = server.get('/api/session/update', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ session_id: fixture.owner, workspace, model: 'test-model' }) })
+    try {
+      await vi.waitFor(() => { expect(lock).toHaveBeenCalled() })
+      expect(lock.mock.calls[0]?.[0]).toBe('reset-empty')
+      expect(evict).not.toHaveBeenCalled()
+      expect(terminal).not.toHaveBeenCalled()
+    } finally { release(); await held; await response }
+    const result = await response
+    expect(result.status, await result.text()).toBe(200)
+    expect(evict).toHaveBeenCalledWith('reset-empty')
+    expect(terminal).toHaveBeenCalledWith('reset-empty')
+  })
+
+  it('keeps the profile guard when an alias resolves to a sidecar owned by another profile', async () => {
+    const server = await bootTestServer({ sidecar: new FakeSidecar() })
+    onTestFinished(async () => { await server.close() })
+    db.close(); path = join(server.state, 'state.db'); db = new DatabaseSync(path); load('multiple')
+    for (const [id, profile] of [[fixture.owner, 'default'], ['reset-empty', 'other']] as const) {
+      server.deps.sessionStore.save(new Session({ session_id: id, profile, source_tag: 'cli', title: profile, messages: [{ role: 'user', content: 'synthetic profile history' }] }, server.deps.sessionStore.deps.defaults(profile)))
+    }
+    const response = await server.get('/api/session/update', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ session_id: fixture.owner }) })
+    expect(response.status, await response.text()).toBe(404)
+    expect(server.deps.sessionStore.get('reset-empty').profile).toBe('other')
+    expect((await server.get(`/api/session?session_id=${fixture.owner}`)).status).toBe(409)
   })
 })

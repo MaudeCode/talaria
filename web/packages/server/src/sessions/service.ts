@@ -158,7 +158,7 @@ export interface SessionServiceDeps {
   /** `truncated`: source kinds whose rows stopped at the per-kind window on this read (TAL-482). */
   cliSessions: (profile: string, opts: { sourceFilter: string | null }) => Promise<{ rows: Row[]; truncated: ReadonlySet<string>; storage: AgentStorage }>
   /** `cliSessions` read on this thread, for the synchronous single-session lookups. */
-  cliSessionsSync: (profile: string, opts: { sourceFilter: string | null }) => { rows: Row[]; truncated: ReadonlySet<string> }
+  cliSessionsSync: (profile: string, opts: { sourceFilter: string | null; sessionId?: string }) => { rows: Row[]; truncated: ReadonlySet<string> }
   /** TAL-551: read-only Claude Code transcripts, listed with the CLI rows when both toggles are on. */
   claudeCode?: ClaudeCodeSessionSource
   profileHome: (profile: string) => string
@@ -530,7 +530,9 @@ export class SessionService {
   private lookupCliMeta(sid: string): Row | null {
     try {
       if (isClaudeCodeSessionId(sid)) return this.claudeCodeRows().find((r) => str(r.session_id) === sid) ?? null
-      return this.deps.cliSessionsSync(this.deps.activeProfile(), { sourceFilter: null }).rows.find((r) => str(r.session_id) === sid) ?? null
+      const profile = this.deps.activeProfile()
+      return this.deps.cliSessionsSync(profile, { sourceFilter: null }).rows.find((r) => str(r.session_id) === sid)
+        ?? this.deps.cliSessionsSync(profile, { sourceFilter: null, sessionId: sid }).rows[0] ?? null
     } catch {
       return null
     }
@@ -585,9 +587,12 @@ export class SessionService {
     const claimable = owners !== null && isClaimableCliSource(meta, owners.get(sid) || stateDbSource)
     const workspace = str(meta.workspace || meta.cwd).trim() || this.deps.workspaces.lastWorkspace(profile)
     const defaults = this.store.deps.defaults(profile)
+    const context = Array.isArray(meta._lineage_ids) ? stateDbSessionMessages(dbPath, sid, { stitch: false }) : null
     const session = new Session({
       session_id: sid, title: str(meta.title) || 'CLI Session', workspace, model: str(meta.model) || 'unknown', model_provider: str(meta.model_provider) || null,
       messages: msgs, created_at: Number(meta.created_at) || 0, updated_at: Number(meta.updated_at) || 0, profile: str(meta.profile) || null,
+      pinned: Boolean(meta.pinned), archived: Boolean(meta.archived),
+      ...(context ? { context_messages: context } : {}),
       is_cli_session: claimable ? true : !subagentChild, source_tag: str(meta.source_tag) || null, raw_source: str(meta.raw_source) || null,
       session_source: str(meta.session_source) || null, source_label: str(meta.source_label) || null, read_only: !claimable,
       // Python `import_cli_session`: the claimed sidecar keeps the row's lineage, background project and channel identity

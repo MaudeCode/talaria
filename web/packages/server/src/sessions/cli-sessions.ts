@@ -11,9 +11,10 @@ import { existsSync, readFileSync, statSync } from 'node:fs'
 import { join } from 'node:path'
 import { AGENT_STORAGE_OK, isCliSessionRow, normalizeAgentSessionSource, readImportableAgentSessionRows, readImportableAgentSessionRowsAsync, stateDbReadFailure, stateDbStorage, stateDbStorageAsync, type Dict, type ReadRowsOptions } from './state-db.js'
 import type { AgentStorage } from '@maudecode/talaria-web-contracts'
-import { sanitizeSessionRow } from './list.js'
+import { latestLineageSidecar, sanitizeSessionRow, type ListParams } from './list.js'
 import type { SessionStore } from './store.js'
 import { str } from '../util.js'
+import { looksLikeDefaultCliTitle } from './titles.js'
 
 export const CLI_VISIBLE_SESSION_LIMIT = 20
 const BACKGROUND_PROJECT_CHIP_LIMIT = 200
@@ -24,6 +25,7 @@ export interface CliSessionsDeps {
   store: SessionStore
   profileHome: (profile: string) => string
   lastWorkspace: (profile: string) => string
+  profilesMatch: ListParams['profilesMatch']
   /** Python `_state_row_project_id`: the profile's Cron Jobs / Webhooks chip, or null when the profile has not opted into projects. */
   backgroundProjectId?: (kind: 'cron' | 'webhook', profile: string) => string | null
   now: () => number
@@ -32,6 +34,7 @@ export interface CliSessionsDeps {
 
 export interface CliLoadOptions {
   sourceFilter?: string | null
+  sessionId?: string
 }
 
 export interface CliSessionRead {
@@ -45,7 +48,7 @@ function dbStamp(path: string): string {
   try { const st = statSync(path, { bigint: true }); return `${st.size.toString()}:${st.mtimeNs.toString()}:${st.ino.toString()}` } catch { return 'missing' }
 }
 
-interface CacheSlot { cacheKey: string; key: string; dbPath: string; sourceFilter: string | null }
+interface CacheSlot { cacheKey: string; key: string; dbPath: string; sourceFilter: string | null; sessionId: string | null }
 /** One sidebar build's state.db reads: the interactive window (`kind` null), then each background kind when unfiltered. */
 interface ListingQuery { kind: string | null; opts: ReadRowsOptions }
 /** A query's rows, or the error a background kind's read failed with. */
@@ -112,10 +115,12 @@ export class CliSessionSource {
   private slot(profile: string, opts: CliLoadOptions): CacheSlot {
     const dbPath = this.dbPath(profile)
     const sourceFilter = str(opts.sourceFilter).trim().toLowerCase() || null
-    return { cacheKey: `${profile}\n${sourceFilter ?? ''}`, key: `${dbPath}\n${dbStamp(dbPath)}\n${dbStamp(`${dbPath}-wal`)}`, dbPath, sourceFilter }
+    const sessionId = opts.sessionId ?? null
+    return { cacheKey: `${profile}\n${sourceFilter ?? ''}\n${sessionId ?? ''}`, key: `${dbPath}\n${dbStamp(dbPath)}\n${dbStamp(`${dbPath}-wal`)}\n${dbStamp(this.deps.store.indexFile)}`, dbPath, sourceFilter, sessionId }
   }
 
   private cached(slot: CacheSlot): CliSessionRead | null {
+    if (slot.sessionId !== null) return null
     const hit = this.cache.get(slot.cacheKey)
     if (hit?.key !== slot.key || hit.until <= this.deps.now()) return null
     return { rows: hit.rows.map((r) => ({ ...r })), truncated: hit.truncated, storage: hit.storage }
@@ -139,13 +144,14 @@ export class CliSessionSource {
       this.deps.log(`[webui] get_cli_sessions() failed; check state.db schema or path (${slot.dbPath}): ${(error as Error).message}`)
       rows = []
     }
-    this.cache.set(slot.cacheKey, { key: slot.key, until: now + CACHE_TTL_S, rows, truncated, storage })
+    if (slot.sessionId === null) this.cache.set(slot.cacheKey, { key: slot.key, until: now + CACHE_TTL_S, rows, truncated, storage })
     return { rows: rows.map((r) => ({ ...r })), truncated, storage }
   }
 
   private queries(slot: CacheSlot): ListingQuery[] {
     const { sourceFilter } = slot
     const log = this.deps.log
+    if (slot.sessionId !== null) return [{ kind: null, opts: { sessionId: slot.sessionId, limit: null, excludeSources: ['webui'], log } }]
     const interactiveLimit = sourceFilter === null ? CLI_VISIBLE_SESSION_LIMIT : BACKGROUND_PROJECT_CHIP_LIMIT
     // A filtered read takes one row past its window too, so a single-source list knows more exist (TAL-482).
     const out: ListingQuery[] = [{ kind: null, opts: { limit: sourceFilter === null ? interactiveLimit : interactiveLimit + 1, excludeSources: sourceFilter === null ? [...BACKGROUND_KINDS] : null, includeSources: sourceFilter === null ? null : [sourceFilter], log } }]
@@ -155,26 +161,25 @@ export class CliSessionSource {
   }
 
   /**
-   * The UI-owned title and archived flag of each state.db row's WebUI sidecar, from the session index parsed once per
+   * UI-owned metadata of saved WebUI sidecars, from the session index parsed once per
    * build; only a sidecar file the index does not list is read (TAL-920).
    */
-  private sidecarMetaLookup(): (sid: string) => { title: string | null; archived: boolean } {
+  private sidecarMetaLookup(): (sid: string) => Dict | undefined {
     const store = this.deps.store
     let persisted: Set<string> | null = null
     let indexed: Map<string, Dict> | null = null
     return (sid) => {
       persisted ??= store.persistedIds()
-      if (!persisted.has(sid)) return { title: null, archived: false }
+      if (!persisted.has(sid)) return undefined
       if (indexed === null) {
         let entries: Dict[] = []
         try { entries = store.readIndexEntries() } catch { /* every sidecar falls back to its file */ }
         indexed = new Map(entries.flatMap((entry) => { const row = sanitizeSessionRow(entry, store, '_index.json'); return row ? [[str(row.session_id), row] as const] : [] }))
       }
       const entry = indexed.get(sid)
-      if (entry) return { title: (str(entry.title) || 'Untitled').trim() || null, archived: Boolean(entry.archived) }
+      if (entry) return entry
       const session = store.loadMetadataOnly(sid)
-      if (!session) return { title: null, archived: false }
-      return { title: str(session.title).trim() || null, archived: session.archived }
+      return session?.compact()
     }
   }
 
@@ -217,13 +222,14 @@ export class CliSessionSource {
       const meta = normalizeAgentSessionSource(row.source || sourceTag)
       let title = str(row.title) || null
       if (!title && sourceTag === 'cron') title = cronTitle(sid) ?? title
-      const sidecar = sidecarMeta(sid)
-      if (sidecar.title) title = sidecar.title
+      const lineage = Array.isArray(row._lineage_ids) ? row._lineage_ids.filter((id): id is string => typeof id === 'string') : null
+      const sidecar = latestLineageSidecar(lineage ?? [sid], profile, sidecarMeta, this.deps.profilesMatch)
+      if (sidecar?.title && (!lineage || !title || !looksLikeDefaultCliTitle(sidecar))) title = str(sidecar.title)
       return {
-        session_id: sid, title: title ?? defaultTitle, workspace: cliWorkspace(), model: row.model || null,
+        session_id: sid, title: title ?? defaultTitle, workspace: (lineage && str(sidecar?.workspace)) || cliWorkspace(), model: row.model || null,
         message_count: Number(row.message_count) || Number(row.actual_message_count) || 0,
-        created_at: row.started_at, updated_at: row.last_activity ?? row.started_at, pinned: false, archived: sidecar.archived,
-        project_id: sourceTag === 'cron' || sourceTag === 'webhook' ? projectFor(sourceTag) : null, profile, source_tag: sourceTag, raw_source: row.raw_source ?? meta.raw_source,
+        created_at: row.started_at, updated_at: row.last_activity ?? row.started_at, pinned: Boolean(sidecar?.pinned), archived: Boolean(sidecar?.archived),
+        project_id: sourceTag === 'cron' || sourceTag === 'webhook' ? projectFor(sourceTag) : lineage ? str(sidecar?.project_id) || null : null, profile, source_tag: sourceTag, raw_source: row.raw_source ?? meta.raw_source,
         user_id: row.user_id ?? null, chat_id: row.chat_id ?? row.origin_chat_id ?? null, chat_type: row.chat_type ?? null, thread_id: row.thread_id ?? null,
         session_key: row.session_key ?? null, platform: row.platform ?? null,
         session_source: row.session_source ?? meta.session_source, source_label: row.source_label ?? meta.source_label,
