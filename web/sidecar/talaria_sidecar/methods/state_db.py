@@ -349,7 +349,15 @@ def _delete_locked(sid: str, home: Path, include_lineage: bool) -> bool:
         if guarded is None:  # fail closed: without the Agent's guard, a live writer's rows cannot be told apart
             log.warning("Agent has no session write-guard check; state.db rows are kept")
             return False
-        return _delete_rows(sid, include_lineage, home, db_path, guarded) and stale_complete
+        try:
+            from hermes_state_mutation_retirement import delete_in_transaction
+        except ModuleNotFoundError as exc:
+            if exc.name != "hermes_state_mutation_retirement":
+                raise
+            complete = _delete_rows(sid, include_lineage, home, db_path, guarded)
+        else:
+            complete = _delete_runtime_rows(sid, home, agent_db, guarded, delete_in_transaction)
+        return complete and stale_complete
     finally:
         _close(agent_db)
 
@@ -364,6 +372,47 @@ def _write_guard_check(agent_db):
     if rejects is not None:
         return lambda conn, ids: any(rejects(conn, i, allow_closed_compression_parent=True) for i in ids)
     return None
+
+
+def _write_cleanup_manifest(home: Path, removed_ids: list[str]) -> None:
+    sessions_dir = home / "sessions"
+    sessions_dir.mkdir(parents=True, exist_ok=True)
+    base = f".cleanup_manifest_{uuid.uuid4().hex}"
+    manifest, tmp = sessions_dir / f"{base}.json", sessions_dir / f"{base}.tmp"
+    try:
+        tmp.write_text(json.dumps(sorted(removed_ids)), encoding="utf-8")
+        tmp.rename(manifest)
+    except OSError:
+        tmp.unlink(missing_ok=True)
+        raise
+
+
+def _delete_runtime_rows(requested: str, home: Path, agent_db, guarded, delete_in_transaction) -> bool:
+    """Extend the legacy delete with the Agent's canonical target/retirement transaction.
+
+    Compression and receipt-backed reset segments are one conversation, even when the caller names its tip.
+    The Agent owns delegate/fork boundaries, live-ledger refusals, receipt compaction and tombstones.
+    """
+    from hermes_state_mutation_guards import delete_targets
+    from hermes_state_runtime import RuntimeStoreError
+    from hermes_state_media import collect_retired_media
+
+    def write(conn):
+        # Preserve the older user-delete guard over the complete canonical set, including closed ancestors.
+        if guarded(conn, delete_targets(conn, requested)):
+            raise _ActiveWriteGuard
+        try:
+            _, result = delete_in_transaction(agent_db, conn, requested, {})
+        except RuntimeStoreError as exc:
+            if exc.reason in ("session_busy", "unknown_execution"):
+                raise _ActiveWriteGuard from exc
+            raise
+        # Publish cleanup intent before the database commit; a failed manifest rolls back retirement too.
+        _write_cleanup_manifest(home, result["deleted_ids"])
+
+    agent_db._execute_write(write)
+    collect_retired_media(agent_db)
+    return _process_stale_manifests(home)
 
 
 def _delete_rows(requested: str, include_lineage: bool, home: Path, db_path: Path, guarded) -> bool:
@@ -469,27 +518,14 @@ def _delete_rows(requested: str, include_lineage: bool, home: Path, db_path: Pat
         for table in ("compression_locks", "session_model_usage", "telegram_dm_topic_bindings"):
             if table in tables:
                 conn.execute(f"DELETE FROM {table} WHERE session_id IN ({placeholders})", all_removed)
-        sessions_dir = home / "sessions"
-        sessions_dir.mkdir(parents=True, exist_ok=True)
-        base = f".cleanup_manifest_{uuid.uuid4().hex}"
-        manifest, tmp = sessions_dir / f"{base}.json", sessions_dir / f"{base}.tmp"
         try:
-            tmp.write_text(json.dumps(sorted(str(i) for i in all_removed)), encoding="utf-8")
-            tmp.rename(manifest)
+            _write_cleanup_manifest(home, all_removed)
         except OSError:
             log.warning("Failed to write cleanup manifest", exc_info=True)
-            tmp.unlink(missing_ok=True)
             conn.rollback()
             return False
         conn.commit()
-
-        def alive_after_commit(c, ids):
-            try:
-                return _alive_set(c, ids)
-            except Exception:  # noqa: BLE001 - fail closed: treat as alive
-                return set(ids)
-
-        return _process_manifests(conn, sessions_dir, alive_query=alive_after_commit)
+        return _process_stale_manifests(home)
 
 
 def delete_cli_session(home: Path, sid: str, include_lineage: bool = False) -> dict:

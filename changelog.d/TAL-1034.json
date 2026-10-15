@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Completed Agent chats stay deleted, including compressed and reset conversations.",
+      "highlight": false,
+      "components": ["web"]
+    }
+  ]
+}
