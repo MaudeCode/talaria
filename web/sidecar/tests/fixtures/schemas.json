@@ -3835,6 +3835,9 @@
             },
             "running_elsewhere": {
               "type": "boolean"
+            },
+            "recovery_only": {
+              "type": "boolean"
             }
           },
           "required": [
@@ -3919,6 +3922,9 @@
               },
               "running_elsewhere": {
                 "type": "boolean"
+              },
+              "recovery_only": {
+                "type": "boolean"
               }
             },
             "required": [
@@ -3974,6 +3980,9 @@
           },
           "running_elsewhere": {
             "type": "boolean"
+          },
+          "recovery_only": {
+            "type": "boolean"
           }
         },
         "required": [
@@ -4023,6 +4032,9 @@
             "type": "boolean"
           },
           "running_elsewhere": {
+            "type": "boolean"
+          },
+          "recovery_only": {
             "type": "boolean"
           }
         },

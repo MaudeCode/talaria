@@ -139,7 +139,7 @@ def _tail(monkeypatch, tmp_path, *, owns=True, booked=False, interrupt=False):
         yield owns
     def finish_ledger(execution_id, **kwargs):
         calls.append(("ledger", execution_id))
-    jobs = types.SimpleNamespace(use_cron_store=lambda home: contextlib.nullcontext(),
+    jobs = types.SimpleNamespace(use_cron_store=lambda home: contextlib.nullcontext(), _fire_job_lock=lambda jid: contextlib.nullcontext(True),
                                  fire_claim_fence=fence, get_job=lambda job_id: current)
     def save(delivery, *args, **kwargs):
         calls.append(("output", delivery.job["execution_id"]))
@@ -178,6 +178,15 @@ def test_terminal_prior_admission_never_stamps_or_delivers_over_a_successor_clai
     assert result["status"] == "failed" and "claim" in result["error"]
     assert calls == [("ledger", "execution-original")]
     assert execution.settled and not execution.file.exists()
+
+
+def test_an_originally_unclaimed_run_never_stamps_a_new_fire_claim(monkeypatch, tmp_path):
+    execution, calls = _tail(monkeypatch, tmp_path)
+    execution.owner = None
+    sys.modules["cron"].jobs.get_job("job-original")["fire_claim"] = {"by": "successor-owner"}
+    result = execution.finish((False, "old output", "", "cancelled"))
+    assert result["status"] == "failed" and "claim" in result["error"]
+    assert calls == [("ledger", "execution-original")]
 
 
 def test_a_claim_lost_before_dispatch_never_submits_a_task(monkeypatch, tmp_path):
@@ -239,7 +248,7 @@ def test_recovery_remains_reachable_after_the_job_was_removed(monkeypatch, tmp_p
             return lambda fn: methods.setdefault(name, fn)
     monkeypatch.setattr(cron, "_store", lambda home: contextlib.nullcontext())
     monkeypatch.setattr(cron, "_jobs", lambda: types.SimpleNamespace(get_job=lambda jid: None))
-    monkeypatch.setattr(cron, "run_tracked", lambda job, *args: recovered.append(job["id"]) or {"status": "failed"})
+    monkeypatch.setattr(cron, "run_tracked", lambda job, *args, **kwargs: recovered.append(job["id"]) or {"status": "failed"})
     cron.register(Registry())
     result = methods["cron.run"](types.SimpleNamespace(), {"profile_home": str(tmp_path), "job_id": "job-original"})
     assert recovered == ["job-original"] and result["status"] == "failed"
@@ -272,3 +281,41 @@ def test_a_crash_after_pausing_recovers_the_exact_pause_before_retiring_the_reco
     assert recovered.record.get("pause") == {"paused_at": "pause-instant", "reason": current["paused_reason"]}
     recovered.finish((False, "output", "", "cancelled"))
     assert ("resume", "execution-original") in calls
+
+
+def test_a_recovery_record_retired_during_admission_never_becomes_a_new_submission(monkeypatch, tmp_path):
+    execution, calls = _tail(monkeypatch, tmp_path)
+    agent = sys.modules["cron"]
+    def allocate(*args, **kwargs):
+        calls.append(("allocated-replacement", "execution-original"))
+        return {"id": "replacement"}
+    monkeypatch.setattr(agent.executions, "create_execution", allocate, raising=False)
+    monkeypatch.setattr(agent.executions, "mark_execution_running", lambda eid: None, raising=False)
+    monkeypatch.setattr(agent.jobs, "is_job_runnable", lambda job: False, raising=False)
+    monkeypatch.setattr(cron_execution.ManualExecution, "save", lambda self: self.file.write_text(json.dumps(self.record)))
+    acquire = cron_execution.ManualExecution.acquire
+    @contextlib.contextmanager
+    def retire_before_admission(self):
+        with acquire(self):
+            self.file.unlink(missing_ok=True)
+            yield
+    monkeypatch.setattr(cron_execution.ManualExecution, "acquire", retire_before_admission)
+    monkeypatch.setattr(cron, "_run_in_child", lambda *args, **kwargs: (True, "output", "answer", None))
+    methods = {}
+    class Registry:
+        def method(self, name, **kwargs):
+            return lambda fn: methods.setdefault(name, fn)
+    cron.register(Registry())
+    with pytest.raises(cron_execution.Unverified, match="no longer available"):
+        methods["cron.run"](types.SimpleNamespace(cancelled=False), {"profile_home": str(tmp_path), "job_id": "job-original"})
+    assert calls == [], "a recovery retry must never allocate or deliver a replacement"
+
+
+@pytest.mark.parametrize("content", ["[]", "invalid json", '{"job":{"id":"another-job"}}'])
+def test_pending_job_projection_refuses_unreadable_or_mismatched_records(tmp_path, content):
+    record = cron_execution.path(tmp_path, "job-original")
+    record.parent.mkdir(parents=True)
+    record.write_text(content)
+    with pytest.raises(cron_execution.Unverified):
+        cron_execution.pending_job(tmp_path, "job-original")
+    assert record.read_text() == content

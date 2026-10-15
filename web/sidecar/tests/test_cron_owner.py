@@ -201,8 +201,11 @@ def test_lost_submitter_recovers_same_admission_without_another_run(owner, resta
                            cwd=AGENT_DIR, env=isolated_env(home), check=True, capture_output=True, text=True, timeout=30)
         if restart_sidecar:
             replacement = SidecarProcess(home, env={"OPENAI_API_KEY": "loopback-only", "OPENAI_BASE_URL": f"http://127.0.0.1:{model.server_port}/v1"})
-            if not remove_job:
-                assert replacement.result("cron.list", {"profile_home": str(home)})["jobs"][0]["running_elsewhere"] is True
+            listed = replacement.result("cron.list", {"profile_home": str(home)})["jobs"]
+            assert len(listed) == 1 and listed[0]["id"] == job["id"], "Web store resolution must still find a retained deleted job"
+            assert listed[0]["running_elsewhere"] is False
+            assert "unverified" in listed[0]["last_error"]
+            assert replacement.result("cron.get", params)["job"]["id"] == job["id"], "Web preflight must receive the retained job snapshot"
             request = replacement.request("cron.run", params)
         wait_for(lambda: json.loads(record_path.read_text()).get("cancel_reason"))
         # Recovery must be active before the original inference is released.
@@ -243,9 +246,15 @@ def test_owner_disconnect_and_restart_leave_unknown_guarded_without_resubmission
     model.gateway.wait(timeout=10)
     reply = wait_for(lambda: (message if message.get("id") == request else None) if (message := sidecar.next_message(timeout=60)) else None)
     assert reply.get("error", {}).get("data", {}).get("condition") == "cron_execution_unverified", reply
-    assert sidecar.result("cron.list", {"profile_home": str(home)})["jobs"][0]["running_elsewhere"] is True
+    assert sidecar.result("cron.status", {"job_id": job["id"]})["running"] is False, "the Web preflight must allow an explicit recovery retry"
+    retained = sidecar.result("cron.list", {"profile_home": str(home)})["jobs"][0]
+    assert retained["running_elsewhere"] is False and "unverified" in retained["last_error"]
     stored = sidecar.result("cron.get", params)["job"]
     assert stored["state"] == "paused" and stored.get("fire_claim") and not stored.get("last_run_at"), stored
+    subprocess.run([AGENT_PYTHON, "-c", "import sys; from cron.jobs import update_job; assert update_job(sys.argv[1], {'profile':'edited-profile'})", job["id"]],
+                   cwd=AGENT_DIR, env=isolated_env(home), check=True, capture_output=True, text=True, timeout=30)
+    assert sidecar.result("cron.list", {"profile_home": str(home)})["jobs"][0]["profile"] == job["profile"]
+    assert sidecar.result("cron.get", params)["job"]["profile"] == job["profile"], "Web recovery preflight must use the frozen execution profile"
     for method, extra in (("cron.resume", {}), ("cron.delete", {}), ("cron.update", {"updates": {"enabled": True}})):
         blocked, _ = sidecar.call(method, {**params, **extra})
         assert blocked.get("error", {}).get("data", {}).get("condition") == "cron_execution_unverified", blocked

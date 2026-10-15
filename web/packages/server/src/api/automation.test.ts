@@ -124,6 +124,24 @@ describe('crons, kanban, extensions, terminal', () => {
     expect(listed).toMatchObject({ model: 'm', provider: 'custom:localhost:8080' })
   })
 
+  it('routes retained deleted-job recovery through HTTP lookups and permits another unverified retry', async () => {
+    const snapshot = { id: 'retained-job', name: 'Retained task', profile: null, toast_notifications: true, monitor: '', continuity: false,
+      state: 'paused', enabled: false, running_elsewhere: false, last_run_at: null, last_status: 'error', last_error: 'Manual task outcome is unverified' }
+    sidecar.respond('cron.list', (params) => ({ jobs: params.profile_home === s.deps.config.hermesHome ? [snapshot] : [] }))
+    sidecar.respond('cron.get', () => ({ job: snapshot }))
+    sidecar.respond('cron.status', (params) => params.job_id ? { job_id: params.job_id, running: false, elapsed: 0 } : { running: {} })
+    let recoveries = 0
+    sidecar.respond('cron.run', () => { recoveries++; throw new SidecarError('Manual task execution is unverified', { condition: 'cron_execution_unverified' }) })
+    expect(await json(await s.get('/api/crons'))).toMatchObject({ jobs: [{ id: snapshot.id, owner_profile: 'default', read_only: false }] })
+    for (let attempt = 0; attempt < 2; attempt++) {
+      const response = await post(s, '/api/crons/run', { job_id: snapshot.id })
+      expect(response.status).toBe(500)
+      expect(await json(response)).toMatchObject({ error: 'Manual task execution is unverified' })
+      expect(s.deps.sessions.deps.runtime.runningCronJobs.has(snapshot.id)).toBe(false)
+    }
+    expect(recoveries).toBe(2)
+  })
+
   it('crons list merges profiles, create/update translate the form fields, and run-now answers on started', async () => {
     const jobs = new Map<string, Json>()
     sidecar.respond('cron.list', () => ({ jobs: [...jobs.values()] as never[] }))

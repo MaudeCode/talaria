@@ -238,6 +238,12 @@ executions, so schedule controls cannot remove the recovery barrier. Recovery
 loads its persisted job snapshot even if another Agent process removed the job.
 It also recovers a missing pause receipt from the execution-specific pause
 reason, including a crash between the schedule write and the receipt write.
+The live `cron.status` registry contains only active calls, so a retained
+obligation cannot block Web's retry preflight. List/get project retained job
+snapshots when the Agent record was removed, preserving profile ownership and
+the existing Web lookup path without recreating the scheduled job.
+The internal `recovery_only` flag excludes retained snapshots from new task
+context choices and validation. The server strips it from public job views.
 
 The Agent's output/delivery and owner-fenced bookkeeping helpers own the
 terminal tail. Before those side effects, Web persists an at-most-once barrier

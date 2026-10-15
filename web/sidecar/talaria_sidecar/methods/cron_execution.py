@@ -10,6 +10,7 @@ import contextlib
 import importlib
 import json
 import os
+import time
 from pathlib import Path
 
 from ..dependency_sync import _lock
@@ -21,12 +22,46 @@ SETTLEMENT_SECONDS = 30.0
 
 class Unverified(RpcError):
     def __init__(self, detail):
-        super().__init__(f"Manual task execution is unverified; exact-execution recovery is required. {detail}",
+        self.detail = str(detail)
+        super().__init__(f"Task outcome is unverified. {detail}",
                          condition="cron_execution_unverified")
 
 
 def path(home, job_id):
     return Path(home) / "cron" / "manual_runs" / (job_id + ".json")
+
+
+def _read_record(home, job_id):
+    try:
+        record = json.loads(path(home, job_id).read_text())
+    except FileNotFoundError:
+        return None
+    except (OSError, ValueError) as exc:
+        raise Unverified("The retained task record could not be read.") from exc
+    job = record.get("job") if isinstance(record, dict) else None
+    if not isinstance(job, dict) or job.get("id") != job_id:
+        raise Unverified("Recovery identity does not match this task.")
+    return record
+
+
+def pending_job(home, job_id):
+    """The frozen job keeps an externally deleted execution reachable through Web's list/get preflight."""
+    record = _read_record(home, job_id)
+    if record is None:
+        return None
+    job = record["job"]
+    return dict(job, recovery_only=True, state="paused", enabled=False, last_run_at=None, last_status="error",
+                last_error="Task outcome is unverified. Use Run now to check it.")
+
+
+def pending_jobs(home):
+    from .cron import _job_id
+    result = []
+    for file in sorted((Path(home) / "cron" / "manual_runs").glob("*.json")):
+        job = pending_job(home, _job_id({"job_id": file.stem}))
+        if job is not None:
+            result.append(job)
+    return result
 
 
 def supported(job):
@@ -98,16 +133,16 @@ class ManualExecution:
                 raise RpcError("This manual task is still being reconciled", condition="cron_execution_unverified") from exc
             yield
 
-    def prepare(self):
+    def prepare(self, *, recovery_only=False):
         from cron import executions, jobs
-        if self.file.exists():
-            self.record = json.loads(self.file.read_text())
+        self.record = _read_record(self.home, self.job["id"])
+        if self.record is not None:
             self.job, self.owner = self.record["job"], self.record["owner"]
-            if self.job["id"] != self.file.stem:
-                raise Unverified("Recovery identity does not match this task.")
             self.execution_home = Path(self.record["execution_home"])
             self.recovering = True
         else:
+            if recovery_only:
+                raise Unverified("The retained task record is no longer available. Refresh its status.")
             with scoped_home(self.execution_home):
                 row = executions.create_execution(self.job["id"], source="web-manual")
                 executions.mark_execution_running(row["id"])
@@ -122,7 +157,7 @@ class ManualExecution:
         # Only this exact pause is lifted. Existing operator pauses are never changed.
         with jobs.use_cron_store(self.home):
             from .cron import _owner_fence
-            with _owner_fence(jobs, self.job["id"], self.owner) as owns:
+            with _owner_fence(jobs, self.job["id"], self.owner, protect_unclaimed=True) as owns:
                 current = jobs.get_job(self.job["id"])
                 if not owns and not self.recovering:
                     self.cancel("claim_lost")
@@ -147,7 +182,7 @@ class ManualExecution:
         from .cron import _delivery_home, _owner_fence, _ClaimLost
 
         success, output, answer, error = result
-        with scoped_home(self.execution_home), jobs.use_cron_store(self.home), _owner_fence(jobs, self.job["id"], self.owner) as owns:
+        with scoped_home(self.execution_home), jobs.use_cron_store(self.home), _owner_fence(jobs, self.job["id"], self.owner, protect_unclaimed=True) as owns:
             current = jobs.get_job(self.job["id"]) or {}
             row = executions.get_execution(self.execution_id)
             marked = self.execution_id in current.get("canonical_completions", [])
@@ -201,12 +236,14 @@ class ManualExecution:
         finish(self.execution_id, success=success, error=error, **kwargs)
 
 
-def run(job, home, execution_home, ctx, owner):
+def run(job, home, execution_home, ctx, owner, *, recovery_only=False):
     from . import cron
     execution = ManualExecution(home, execution_home, job, owner)
     with execution.acquire():
+        with cron._RUNNING_LOCK:
+            cron._RUNNING.setdefault(job["id"], time.time())
         try:
-            execution.prepare()
+            execution.prepare(recovery_only=recovery_only)
             heartbeat = cron._heartbeat(home, execution.job["id"], execution.owner) if execution.owner else None
             if execution.record.get("result") is not None:
                 result = execution.record["result"]
@@ -229,6 +266,6 @@ def run(job, home, execution_home, ctx, owner):
                 raise
             raise Unverified(str(exc)) from exc
         finally:
-            if execution.settled or execution.record is None:
-                with cron._RUNNING_LOCK:
-                    cron._RUNNING.pop(job["id"], None)
+            # The durable record guards an unverified owner; this map guards only an active call.
+            with cron._RUNNING_LOCK:
+                cron._RUNNING.pop(job["id"], None)

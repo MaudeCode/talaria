@@ -230,9 +230,16 @@ def _claim_fire(store_home: Path, job: dict) -> dict | bool | None:
     return {key: value for key, value in claimed.items() if key != "_scheduled_instant"}
 
 
-def _owner_fence(jobs, job_id: str, owner: str | None):
-    """Held while a claimed run saves, delivers, and records: yields whether ``owner`` still holds the fire claim."""
-    return jobs.fire_claim_fence(job_id, expected_owner=owner) if owner else contextlib.nullcontext(True)
+@contextlib.contextmanager
+def _owner_fence(jobs, job_id: str, owner: str | None, *, protect_unclaimed=False):
+    """Hold the Agent fire fence across side effects; canonical unclaimed runs also exclude a successor claim."""
+    if owner is None and protect_unclaimed:
+        with jobs._fire_job_lock(job_id) as locked:
+            current = jobs.get_job(job_id) if locked else None
+            yield bool(current) and not current.get("fire_claim")
+    else:
+        with jobs.fire_claim_fence(job_id, expected_owner=owner) if owner else contextlib.nullcontext(True) as owns:
+            yield owns
 
 
 def _mark_run(jobs, job_id: str, success: bool, error, owner: str | None, delivery_error=None) -> None:
@@ -362,8 +369,12 @@ def _child_main(job, execution_home, result_queue, cancel_event=None, execution_
         result_queue.put(("ok", result, {key: job[key] for key in ("_model_unreachable", "_quota_hold_seconds") if key in job}))
     except BaseException as exc:  # noqa: BLE001 - surfaced in the parent
         import traceback
+        from .cron_execution import Unverified
 
-        result_queue.put(("error", f"{type(exc).__name__}: {exc}", traceback.format_exc()))
+        if isinstance(exc, Unverified):
+            result_queue.put(("unverified", exc.detail))
+        else:
+            result_queue.put(("error", f"{type(exc).__name__}: {exc}", traceback.format_exc()))
 
 
 def _result_timeout(job) -> float:
@@ -461,6 +472,8 @@ def _run_in_child(job, execution_home, ctx: CallContext, heartbeat=None, executi
         while True:
             try:
                 status, *payload = result_queue.get(timeout=1.0)
+                if execution is not None and status == "unverified":
+                    raise Unverified(payload[0])
                 if execution is None or status == "ok":
                     break
                 # A transport failure is not a failed task. Recover the original identity once.
@@ -561,10 +574,10 @@ def _heartbeat(store_home, job_id, claim_owner):
     return heartbeat
 
 
-def run_tracked(job: dict, store_home: Path, execution_home: Path | None, ctx: CallContext, claim_owner: str | None = None) -> dict:
+def run_tracked(job: dict, store_home: Path, execution_home: Path | None, ctx: CallContext, claim_owner: str | None = None, *, recovery_only=False) -> dict:
     from . import cron_execution
-    if cron_execution.path(store_home, job["id"]).exists() or cron_execution.supported(job):
-        return cron_execution.run(job, store_home, execution_home, ctx, claim_owner)
+    if recovery_only or cron_execution.path(store_home, job["id"]).exists() or cron_execution.supported(job):
+        return cron_execution.run(job, store_home, execution_home, ctx, claim_owner, recovery_only=recovery_only)
     jobs = _jobs()
     scheduler = importlib.import_module("cron.scheduler")
     silent_marker = getattr(scheduler, "SILENT_MARKER", "[SILENT]")
@@ -622,21 +635,32 @@ def register(registry) -> None:
         jobs = _jobs()
         home = profile_home_param(params)
         with _store(home):
-            listed = [job_for_api(job) for job in jobs.list_jobs(include_disabled=True)]
+            from .cron_execution import pending_jobs
+            pending = {job["id"]: job for job in pending_jobs(home)}
+            stored = jobs.list_jobs(include_disabled=True)
+            ids = {job["id"] for job in stored}
+            stored.extend(job for jid, job in pending.items() if jid not in ids)
+            listed = [job_for_api(job) for job in stored]
             result: dict = {"jobs": listed}
             if params.get("probe_store"):
                 result["store_health"] = _store_health(jobs.get_cron_output_dir().parent)
         live = _live_executions(home, [str(job.get("id") or "") for job in listed])
-        from .cron_execution import path
-        for job in listed:
+        with _RUNNING_LOCK:
+            active = set(_RUNNING)
+        for index, job in enumerate(listed):
             jid = str(job.get("id") or "")
-            job["running_elsewhere"] = jid in live or bool(_JOB_ID_RE.fullmatch(jid) and path(home, jid).exists())
+            if jid in pending and jid not in live and jid not in active:
+                # Web preflight must use the accepted fire's profile, even after external job edits.
+                job = listed[index] = job_for_api(pending[jid])
+            job["running_elsewhere"] = jid in live
         return result
 
     @registry.method("cron.get")
     def get(ctx: CallContext, params: dict) -> dict:
-        with _store(profile_home_param(params)):
-            job = _jobs().get_job(_job_id(params))
+        from .cron_execution import pending_job
+        home, job_id = profile_home_param(params), _job_id(params)
+        with _store(home):
+            job = pending_job(home, job_id) or _jobs().get_job(job_id)
         return {"job": job_for_api(job) if job else None}
 
     @registry.method("cron.create")
@@ -754,7 +778,7 @@ def register(registry) -> None:
         job_id = _job_id(params)
         from .cron_execution import path
         if path(store_home, job_id).exists():
-            return run_tracked({"id": job_id}, store_home, execution_home, ctx)
+            return run_tracked({"id": job_id}, store_home, execution_home, ctx, recovery_only=True)
         with _store(store_home):
             job = _jobs().get_job(job_id)
         if not job:
