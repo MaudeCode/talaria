@@ -287,7 +287,7 @@ export class SessionService {
   /** Python `_session_is_subagent_view_only`: a delegated child by any signal — the persisted sidecar or the state.db row. */
   isSubagentViewOnly(sid: string): boolean {
     try {
-      const s = this.store.get(sid)
+      const s = this.store.get(sid, { metadataOnly: true, cacheOnMiss: false, promote: false })
       if (str(s.source_tag || s.raw_source || s.session_source).trim().toLowerCase() === 'subagent') return true
     } catch { /* no sidecar */ }
     const meta = this.lookupCliMeta(sid)
@@ -351,7 +351,7 @@ export class SessionService {
   readOnlyReason(s: Session | string, profile?: string): string | null {
     let raw: Row = { session_id: typeof s === 'string' ? s : s.session_id, profile: this.deps.activeProfile() }
     if (typeof s === 'string') {
-      try { s = this.store.get(s, { metadataOnly: true }) } catch (error) {
+      try { s = this.store.get(s, { metadataOnly: true, cacheOnMiss: false, promote: false }) } catch (error) {
         if (!(error instanceof SessionNotFound)) return OWNERSHIP_UNAVAILABLE_REASON
       }
     }
@@ -692,7 +692,7 @@ export class SessionService {
     sid = sid.trim()
     this.rejectClaudeCode(sid, verb)
     let profile = this.deps.activeProfile()
-    try { profile = this.store.get(sid, { metadataOnly: true }).profile || 'default' } catch { /* foreign row */ }
+    try { profile = this.store.get(sid, { metadataOnly: true, cacheOnMiss: false, promote: false }).profile || 'default' } catch { /* foreign row */ }
     const owners = this.stateDbSources([sid], profile)
     const owner = owners?.get(sid)
     if (!owners || typeof owner === 'object') throw new HttpFailure(403, typeof owner === 'object' ? owner.reason ?? CANONICAL_READ_ONLY_REASON : OWNERSHIP_UNAVAILABLE_REASON)
