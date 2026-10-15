@@ -572,9 +572,10 @@ function sessionSourceIsWebui(row: Row): boolean {
   return ['source_tag', 'raw_source', 'session_source', 'source'].some((k) => str(row[k]).trim().toLowerCase() === 'webui')
 }
 
-function sessionLineageIds(row: Row): Set<string> {
+export function sessionLineageIds(row: Row): Set<string> {
   const ids = new Set<string>()
   for (const key of ['session_id', '_lineage_root_id', '_lineage_tip_id']) if (row[key]) ids.add(str(row[key]))
+  if (Array.isArray(row._lineage_ids)) for (const id of row._lineage_ids) if (typeof id === 'string') ids.add(id)
   return ids
 }
 
@@ -588,7 +589,7 @@ export function latestLineageSidecar(ids: readonly string[], profile: string | n
 }
 
 /** Receipt members are aliases of the current target. Keep UI metadata, never an old member's transcript counts. */
-function reconcileLocalSessionRows(rows: Row[], cli: Row[], profilesMatch: ListParams['profilesMatch']): Row[] {
+export function reconcileLocalSessionRows(rows: Row[], cli: Row[], profilesMatch: ListParams['profilesMatch']): Row[] {
   const byId = new Map(rows.map((row) => [str(row.session_id), row]))
   const members = new Map<string, Row>()
   const chosen = new Map<string, { row: Row; meta: Row }>()

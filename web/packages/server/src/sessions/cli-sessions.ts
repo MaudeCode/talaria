@@ -34,7 +34,7 @@ export interface CliSessionsDeps {
 
 export interface CliLoadOptions {
   sourceFilter?: string | null
-  sessionId?: string
+  sessionIds?: readonly string[]
 }
 
 export interface CliSessionRead {
@@ -48,7 +48,7 @@ function dbStamp(path: string): string {
   try { const st = statSync(path, { bigint: true }); return `${st.size.toString()}:${st.mtimeNs.toString()}:${st.ino.toString()}` } catch { return 'missing' }
 }
 
-interface CacheSlot { cacheKey: string; key: string; dbPath: string; sourceFilter: string | null; sessionId: string | null }
+interface CacheSlot { cacheKey: string; key: string; dbPath: string; sourceFilter: string | null; sessionIds: readonly string[] | null }
 /** One sidebar build's state.db reads: the interactive window (`kind` null), then each background kind when unfiltered. */
 interface ListingQuery { kind: string | null; opts: ReadRowsOptions }
 /** A query's rows, or the error a background kind's read failed with. */
@@ -115,12 +115,12 @@ export class CliSessionSource {
   private slot(profile: string, opts: CliLoadOptions): CacheSlot {
     const dbPath = this.dbPath(profile)
     const sourceFilter = str(opts.sourceFilter).trim().toLowerCase() || null
-    const sessionId = opts.sessionId ?? null
-    return { cacheKey: `${profile}\n${sourceFilter ?? ''}\n${sessionId ?? ''}`, key: `${dbPath}\n${dbStamp(dbPath)}\n${dbStamp(`${dbPath}-wal`)}\n${dbStamp(this.deps.store.indexFile)}`, dbPath, sourceFilter, sessionId }
+    const sessionIds = opts.sessionIds ?? null
+    return { cacheKey: `${profile}\n${sourceFilter ?? ''}`, key: `${dbPath}\n${dbStamp(dbPath)}\n${dbStamp(`${dbPath}-wal`)}\n${dbStamp(this.deps.store.indexFile)}`, dbPath, sourceFilter, sessionIds }
   }
 
   private cached(slot: CacheSlot): CliSessionRead | null {
-    if (slot.sessionId !== null) return null
+    if (slot.sessionIds !== null) return null
     const hit = this.cache.get(slot.cacheKey)
     if (hit?.key !== slot.key || hit.until <= this.deps.now()) return null
     return { rows: hit.rows.map((r) => ({ ...r })), truncated: hit.truncated, storage: hit.storage }
@@ -144,14 +144,14 @@ export class CliSessionSource {
       this.deps.log(`[webui] get_cli_sessions() failed; check state.db schema or path (${slot.dbPath}): ${(error as Error).message}`)
       rows = []
     }
-    if (slot.sessionId === null) this.cache.set(slot.cacheKey, { key: slot.key, until: now + CACHE_TTL_S, rows, truncated, storage })
+    if (slot.sessionIds === null) this.cache.set(slot.cacheKey, { key: slot.key, until: now + CACHE_TTL_S, rows, truncated, storage })
     return { rows: rows.map((r) => ({ ...r })), truncated, storage }
   }
 
   private queries(slot: CacheSlot): ListingQuery[] {
     const { sourceFilter } = slot
     const log = this.deps.log
-    if (slot.sessionId !== null) return [{ kind: null, opts: { sessionId: slot.sessionId, limit: null, excludeSources: ['webui'], log } }]
+    if (slot.sessionIds !== null) return [{ kind: null, opts: { sessionIds: slot.sessionIds, limit: null, excludeSources: ['webui'], log } }]
     const interactiveLimit = sourceFilter === null ? CLI_VISIBLE_SESSION_LIMIT : BACKGROUND_PROJECT_CHIP_LIMIT
     // A filtered read takes one row past its window too, so a single-source list knows more exist (TAL-482).
     const out: ListingQuery[] = [{ kind: null, opts: { limit: sourceFilter === null ? interactiveLimit : interactiveLimit + 1, excludeSources: sourceFilter === null ? [...BACKGROUND_KINDS] : null, includeSources: sourceFilter === null ? null : [sourceFilter], log } }]

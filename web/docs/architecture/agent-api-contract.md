@@ -127,6 +127,8 @@ project and workspace. Display history includes compression segments since the
 latest reset; model restoration uses the current physical handoff. Replay
 identity still follows that reset's ancestry so carried rows keep their IDs.
 Direct metadata lookups use the same projection outside the sidebar window.
+List and search supplement saved aliases with a single worker batch when
+their native conversation is outside that window.
 Transcript reads stop at the latest reset boundary, even when a saved
 Talaria record contains an older compression lineage.
 

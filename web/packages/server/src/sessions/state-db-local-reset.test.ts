@@ -258,4 +258,25 @@ describe('Agent v0.22.1 receipt-backed local reset', () => {
     expect(server.deps.sessionStore.get('reset-empty').profile).toBe('other')
     expect((await server.get(`/api/session?session_id=${fixture.owner}`)).status).toBe(409)
   })
+
+  it('reconciles saved aliases outside the CLI window before list and search', async () => {
+    const server = await bootTestServer()
+    onTestFinished(async () => { await server.close() })
+    db.close(); path = join(server.state, 'state.db'); db = new DatabaseSync(path); load('multiple')
+    for (let i = 0; i < 25; i += 1) {
+      const id = `recent-${i}`
+      db.prepare('INSERT INTO sessions (id, source, title, started_at, message_count) VALUES (?, ?, ?, ?, ?)').run(id, 'cli', id, 5000 + i, 1)
+      db.prepare('INSERT INTO messages (id, session_id, role, content, timestamp) VALUES (?, ?, ?, ?, ?)').run(100 + i, id, 'user', 'recent prompt', 5001 + i)
+    }
+    server.deps.sessionStore.save(new Session({ session_id: fixture.owner, profile: 'default', source_tag: 'cli', title: 'Saved outside conversation', messages: [{ role: 'user', content: 'old first' }, { role: 'assistant', content: 'old answer' }, { role: 'user', content: 'old second' }] }, server.deps.sessionStore.deps.defaults('default')))
+    await server.deps.settings.save({ show_cli_sessions: true })
+    server.deps.cliSessions.invalidate()
+    const list = await (await server.get('/api/sessions')).json() as { sessions: Record<string, unknown>[] }
+    expect(list.sessions.map((row) => row.session_id)).not.toContain(fixture.owner)
+    const search = await (await server.get('/api/sessions/search?q=Saved%20outside&show_cli_sessions=1')).json() as { sessions: Record<string, unknown>[] }
+    expect(search.sessions.map((row) => row.session_id)).not.toContain(fixture.owner)
+    const global = await (await server.get('/api/sessions/search?q=Saved%20outside')).json() as { sessions: Record<string, unknown>[] }
+    expect(global.sessions).toHaveLength(1)
+    expect(global.sessions[0]).toMatchObject({ session_id: 'reset-empty', title: 'Saved outside conversation' })
+  })
 })

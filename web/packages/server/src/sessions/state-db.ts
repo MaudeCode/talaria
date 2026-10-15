@@ -349,7 +349,7 @@ export function stateDbStorage(dbPath: string): AgentStorage {
 export interface ReadRowsOptions {
   limit?: number | null
   /** A direct metadata lookup uses the same projection without the sidebar's recency window. */
-  sessionId?: string
+  sessionIds?: readonly string[]
   excludeSources?: readonly string[] | null
   includeSources?: readonly string[] | null
   log?: (line: string) => void
@@ -378,7 +378,7 @@ export function readImportableAgentSessionRows(dbPath: string, opts: ReadRowsOpt
   const db = openStateDbReadonly(dbPath)
   try {
     db.exec('BEGIN') // Receipt and physical rows must belong to the same committed generation.
-    const local = localLineages(db, opts.sessionId)
+    const local = localLineages(db, opts.sessionIds?.length === 1 ? opts.sessionIds[0] : undefined)
     const sessionCols = tableColumns(db, 'sessions')
     const messageCols = tableColumns(db, 'messages')
     if (!sessionCols.has('source')) {
@@ -432,7 +432,10 @@ export function readImportableAgentSessionRows(dbPath: string, opts: ReadRowsOpt
     let candidateOrder = 'ORDER BY s.started_at DESC'
     const where = ['s.source IS NOT NULL']
     const params: string[] = []
-    if (opts.sessionId !== undefined) { where.push('s.id = ?'); params.push(local.get(opts.sessionId)?.ids.at(-1) ?? opts.sessionId) }
+    if (opts.sessionIds !== undefined) {
+      where.push('s.id IN (SELECT value FROM json_each(?))')
+      params.push(JSON.stringify(opts.sessionIds.map((id) => local.get(id)?.ids.at(-1) ?? id)))
+    }
     const superseded = [...local].filter(([id, lineage]) => id !== lineage.ids.at(-1)).map(([id]) => id)
     if (superseded.length) { where.push('s.id NOT IN (SELECT value FROM json_each(?))'); params.push(JSON.stringify(superseded)) }
     const included = (include ?? []).map(String).filter(Boolean)

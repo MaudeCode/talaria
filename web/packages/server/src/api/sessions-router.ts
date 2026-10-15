@@ -133,7 +133,7 @@ export const sessionsRouter = os.router({
       if (SIDEBAR_SEARCH_KEYS.some((k) => input[k] !== undefined)) {
         return await ctx.deps.sessions.sidebarSearch(input.q ?? '', sidebarListParams(ctx, input), { ...opts, projectId: input.project_id?.trim() || null }) as { sessions: Record<string, unknown>[]; all_profiles: boolean; active_profile: string; query?: string; count?: number }
       }
-      return ctx.deps.sessions.search(input.q ?? '', opts) as { sessions: Record<string, unknown>[]; all_profiles: boolean; active_profile: string; query?: string; count?: number }
+      return await ctx.deps.sessions.search(input.q ?? '', opts) as { sessions: Record<string, unknown>[]; all_profiles: boolean; active_profile: string; query?: string; count?: number }
     })),
     cleanup: os.sessions.cleanup.handler(({ context: { ctx } }) => run(() => ctx.deps.sessions.cleanup(false) as { ok: true; cleaned: number })),
     cleanupZeroMessage: os.sessions.cleanupZeroMessage.handler(({ context: { ctx } }) => run(() => ctx.deps.sessions.cleanup(true) as { ok: true; cleaned: number })),
