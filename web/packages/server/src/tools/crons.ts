@@ -22,6 +22,7 @@ export interface CronDeps {
   modelOptionFor?: (home: string, model: string | null, provider: string | null) => Promise<string | null>
   /** Python `_RUNNING_CRON_JOBS`: job id → start time, read by the session list's `cron_running` stamp. */
   runningJobs?: Map<string, number>
+  updateInProgress?: () => boolean
 }
 
 const JOB_ID_RE = /^[A-Za-z0-9_-][A-Za-z0-9_.-]{0,63}$/
@@ -507,6 +508,7 @@ export class CronService {
   /** Python `_handle_cron_run`: answer once the sidecar emits `started`; the run itself continues in the background. */
   async runNow(home: string, jobId: string): Promise<Dict> {
     if (!jobId) throw new HttpFailure(400, 'job_id required')
+    if (this.deps.updateInProgress?.()) throw new HttpFailure(503, 'Web is updating. Retry after it restarts.')
     const running = this.deps.runningJobs
     const existing = running?.get(jobId)
     if (existing !== undefined) return { ok: false, job_id: jobId, status: 'already_running', elapsed: Math.max(0, Date.now() / 1000 - existing) }

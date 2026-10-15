@@ -263,6 +263,15 @@ class CheckerTests(unittest.TestCase):
         self.assertEqual(self.receipt("--skip-docker")["releaseTag"], "v2026.9.21")
         self.assertEqual(self.last["kind"], "active")
 
+    def test_release_image_runs_the_same_retained_state_probe_as_source(self):
+        promoted = [*RELEASES[:2], release("v0.22.2", "0.22.2", "c")]
+        self.write(promoted, promoted[-1])
+        with patch.dict(globals(), RELEASES=promoted):
+            self.receipt("--release", "v0.22.2")
+        image_probe = next(command for command in self.tools.commands if command[:2] == ["docker", "run"])
+        self.assertIn("TALARIA_AGENT_UPGRADE_PROBE=1", image_probe)
+        self.assertEqual(self.tools.probe_envs[-1]["TALARIA_AGENT_UPGRADE_PROBE"], "1")
+
     def test_moved_tag_fails_with_a_receipt(self):
         self.tools.head["refs/tags/v2026.9.24"] = "f" * 40
         with self.assertRaisesRegex(RuntimeError, "tag moved"):

@@ -688,6 +688,7 @@ export function createDeps(opts: CreateDepsOptions): AppDeps {
       log,
       publishSessionsChanged: (reason, profile) => { events.publish(reason, { profile }) },
       runningJobs: runningCronJobs,
+      updateInProgress: () => deps.updates.blocksNewWork(),
       modelOptionFor: async (home, model, provider) => { await catalog.warmModelOptions(home); return catalog.modelOptionFor(home, model, provider) },
     }),
     kanban: new KanbanService({ sidecar: () => sidecar, config: agentConfig }),

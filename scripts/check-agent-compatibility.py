@@ -157,7 +157,7 @@ def remote_tag_commit(tag):
     return refs.get(f"refs/tags/{tag}^{{}}", refs.get(f"refs/tags/{tag}"))
 
 
-def verify_image(identity, sha, observations, compression):
+def verify_image(identity, sha, observations, compression, *, retained_cron):
     image, release_tag, version = identity["image"], identity["releaseTag"], identity["version"]
     # Docker needs the caller's daemon context, but the container receives only
     # these synthetic environment values, read-only code and temporary state.
@@ -191,6 +191,7 @@ def verify_image(identity, sha, observations, compression):
             "-e", "HOME=/tmp/home", "-e", "HERMES_HOME=/tmp/home/hermes", "-e", "PYTHONPATH=/web/sidecar:/opt/hermes",
             "-e", "HERMES_WEBUI_AGENT_DIR=/opt/hermes",
             "-e", f"TALARIA_AGENT_PROBE_REVISION={sha}",
+            "-e", "TALARIA_AGENT_UPGRADE_PROBE=" + ("1" if retained_cron else "0"),
             "-e", "TALARIA_AGENT_SSH_EXPECTED=" + json.dumps(observations),
             "-e", "TALARIA_AGENT_COMPRESSION_EXPECTED=" + json.dumps(compression),
             "-v", f"{ROOT / 'web'}:/web:ro", "-v", f"{ROOT / 'releases/agent_probe.py'}:/probe.py:ro",
@@ -331,7 +332,7 @@ def check(args, kind, identity, receipt, junit):
                 if command.returncode:
                     raise SystemExit(command.returncode)
     if not args.skip_docker and kind != "canary":
-        verify_image(identity, identity["sourceRevision"], observations, receipt["compressionBackoff"]["observations"])
+        verify_image(identity, identity["sourceRevision"], observations, receipt["compressionBackoff"]["observations"], retained_cron=retained_cron)
         receipt["imageVerified"] = True
 
 
