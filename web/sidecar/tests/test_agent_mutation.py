@@ -28,7 +28,8 @@ def native_agent(tmp_path):
     (root / 'writer.py').write_text('''import os, sys, time
 from pathlib import Path
 home=Path(sys.argv[1])
-(home/'active').write_text(str(os.getpid()))
+(home/'active.tmp').write_text(str(os.getpid()))
+(home/'active.tmp').replace(home/'active')
 while not (home/'stop').exists() and not (home/'pause').exists():
     if (home/'write-request').exists(): (home/'external-write').write_text('unsafe')
     time.sleep(.01)
@@ -66,7 +67,9 @@ from pathlib import Path
 HOME=Path(os.environ['HERMES_HOME']); UNOWNED='unowned'
 def file(): return HOME/'pause-record.json'
 def identity(pid=None): return {'ct':1}
-def identity_is_live(ident): return (HOME/'active').exists() and int((HOME/'active').read_text())==ident['pid']
+def identity_is_live(ident):
+ from .update_cmd_posix_pause import _active_pid
+ return _active_pid()==ident['pid']
 def adopt_orphans():
  if file().exists(): return json.loads(file().read_text()),[]
  return None,[]
@@ -113,8 +116,12 @@ def _empty_token(): return {'platform':'posix','resume_needed':False,'profiles':
 def _discover_systemd(): return []
 def _discover_launchd(): return []
 def _left_running(units,jobs): return units,jobs,[]
+def _active_pid():
+ try: return int((HOME/'active').read_text())
+ except FileNotFoundError: return None
 def _discover_bare(pids):
- return ([{'pid':int((HOME/'active').read_text()),'argv':['synthetic-writer'],'home':str(HOME)}] if (HOME/'active').exists() else []),[]
+ pid=_active_pid()
+ return ([{'pid':pid,'argv':['synthetic-writer'],'home':str(HOME)}] if pid is not None else []),[]
 def _ask_to_drain(entry):
  (HOME/'stop-asked').touch()
  record=json.loads((HOME/'pause-record.json').read_text())
@@ -122,7 +129,7 @@ def _ask_to_drain(entry):
  if (HOME/'refuse-drain').exists(): return False
  (HOME/'pause').touch(); return True
 def _drain_budget(): return .2
-def _alive(pid,ct): return (HOME/'active').exists() and int((HOME/'active').read_text())==pid
+def _alive(pid,ct): return _active_pid()==pid
 def _disarm(entry): pass
 ''',
         'update_cmd_windows': '''import os, subprocess, sys, time
@@ -202,8 +209,8 @@ def native_journal_owner(tmp_path):
         file.write('''
 def process_create_time(pid): return 1
 def incarnation_live(pid,ct):
- home=Path(os.environ['HERMES_HOME'])
- return pid==os.getpid() or ((home/'active').exists() and int((home/'active').read_text())==pid)
+ from .update_cmd_posix_pause import _active_pid
+ return pid==os.getpid() or _active_pid()==pid
 def _try_lock(fd):
  try: fcntl.flock(fd,fcntl.LOCK_EX|fcntl.LOCK_NB); return True
  except OSError: return False
@@ -313,6 +320,38 @@ def test_unverified_tree_or_resume_keeps_the_native_recovery_record(owned, failu
     result = rpc(sidecar, root, 'finish', token=begun['token'])
     assert result['ok'] is False
     assert json.loads((home / 'pause-record.json').read_text())['resume_needed'] is True
+
+
+@pytest.mark.parametrize('probe', ['alive', 'identity', 'discovery'])
+def test_synthetic_owner_disappearing_during_probe_is_not_live(tmp_path, probe):
+    root, home, _, _ = native_agent(tmp_path)
+    (home / 'active').write_text('123')
+    script = """
+import json, sys
+from pathlib import Path
+from unittest.mock import patch
+from hermes_cli import update_cmd_posix_pause as pause, update_pause_record as records
+active = Path(sys.argv[1]) / 'active'
+read = Path.read_text
+def disappear(path, *args, **kwargs):
+    if path == active:
+        active.unlink(missing_ok=True)
+    return read(path, *args, **kwargs)
+with patch.object(Path, 'read_text', disappear):
+    try:
+        result = {'alive': lambda: pause._alive(123, 1),
+                  'identity': lambda: records.identity_is_live({'pid': 123, 'ct': 1}),
+                  'discovery': lambda: pause._discover_bare(set())}[sys.argv[2]]()
+    except FileNotFoundError:
+        result = {'error': 'owner disappeared during probe'}
+print(json.dumps(result))
+"""
+    child = subprocess.run([sys.executable, '-c', script, str(home), probe], cwd=root,
+                           env={**os.environ, 'HERMES_HOME': str(home), 'PYTHONPATH': str(root)},
+                           text=True, capture_output=True, timeout=10)
+    assert child.returncode == 0, child.stderr
+    expected = [[], []] if probe == 'discovery' else False
+    assert json.loads(child.stdout) == expected, 'a vanished synthetic owner must be reported absent'
 
 
 def test_failed_git_step_resumes_old_source_without_dropping_work(owned):
