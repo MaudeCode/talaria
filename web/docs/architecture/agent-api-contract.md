@@ -130,6 +130,25 @@ local file through the same lookup and retain anchored filesystem protections;
 they never mutate a shadowed local copy in place of a project skill.
 Older Agents without these helpers retain the legacy list and lookup shapes.
 
+## Session deletion
+
+`state_db.delete_cli_session` uses the installed Agent's canonical deletion transaction
+when runtime-ledger retirement is available. The Agent resolves compression segments
+in both directions, receipt-backed local resets, and owned delegates; independent
+branches and reset forks survive. Queued, executing or unknown ledger work and live
+turn/compression guards refuse the whole operation with `refused: active_turn`.
+Terminal admission and worker receipts retire with the session, retaining retry
+evidence without transcript copies. The Agent's tombstones prevent late accounting
+from recreating deleted sessions. Older supported Agents retain the guarded legacy
+deletion path.
+
+Talaria writes its transcript cleanup manifest inside the same database transaction,
+before commit. A manifest failure rolls back deletion and retirement. File cleanup
+runs only after commit and retries pending manifests on the next delete, including
+after a sidecar restart. Cleanup checks surviving session IDs before removing files.
+The mutated state layers are the Agent database and its transcript artifacts; the
+HTTP server removes its session projection only after the sidecar's busy check.
+
 ## Toolset policy
 
 `toolsets.catalog` discovers the scoped profile's plugins and MCP servers before resolving its
