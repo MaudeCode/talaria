@@ -8,8 +8,9 @@
  */
 import { readCapped } from '../http/capped.js'
 import { createHash, createPrivateKey, generateKeyPairSync, randomUUID, sign as cryptoSign, type KeyObject } from 'node:crypto'
-import { existsSync, mkdirSync, readFileSync } from 'node:fs'
+import { existsSync, lstatSync, mkdirSync, readFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
+import { z } from 'zod'
 import { atomicWriteText } from '../fs/atomic.js'
 import type { ActiveRun, StreamRegistry } from './streams.js'
 import type { PendingPrompts } from './pending.js'
@@ -84,6 +85,41 @@ export function saveRelayConfig(stateDir: string, config: RelayConfig): void {
 
 function sortedProfiles(profiles: Record<string, RelayProfile>): Record<string, RelayProfile> {
   return Object.fromEntries(Object.keys(profiles).sort().map((k) => [k, { identity: profiles[k]!.identity, profile_id: profiles[k]!.profile_id }]))
+}
+
+// The started ledger records announcements; deletions need a separate, non-expiring delivery outbox.
+const DeletedViewSchema = z.object({
+  id: z.string().min(1), sessionId: z.string().min(1), profile: z.string().min(1),
+  through: z.number().int().nonnegative(), identity: z.string().nullable(),
+  scope: z.object({ url: z.string(), publisherId: z.string(), profileId: z.string() }).nullable(),
+})
+type DeletedView = z.infer<typeof DeletedViewSchema>
+interface QueuedView { profile: string | null; through: number; deleted?: DeletedView }
+const DeletedViewsSchema = z.object({ version: z.literal(1), views: z.array(DeletedViewSchema) })
+const deletedViewsPath = (stateDir: string): string => join(stateDir, 'talaria-relay-deleted.json')
+
+// A staged deletion cannot clear a session that survived a failed removal or a restart before removal.
+function hasSessionData(store: SessionStore, sid: string): boolean {
+  if (store.sessions.has(sid)) return true
+  try { lstatSync(store.pathFor(sid)); return true } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return false
+    throw error
+  }
+}
+
+function loadDeletedViews(stateDir: string): DeletedView[] {
+  let raw: string
+  try { raw = readFileSync(deletedViewsPath(stateDir), 'utf8') } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return []
+    throw error
+  }
+  // Corrupt or unreadable pending state must never be overwritten with an empty queue.
+  return DeletedViewsSchema.parse(JSON.parse(raw)).views
+}
+
+function saveDeletedViews(stateDir: string, views: DeletedView[]): void {
+  mkdirSync(stateDir, { recursive: true })
+  atomicWriteText(deletedViewsPath(stateDir), JSON.stringify({ version: 1, views }) + '\n', { mode: 0o600 })
 }
 
 /** Python `_profile_identity`: a persistent `pfi_<32 hex>` per profile home, minted on first use (0600). */
@@ -162,6 +198,7 @@ export class PresenceLeases {
 // ── publisher ─────────────────────────────────────────────────────────────
 
 export interface RelayPublisherDeps {
+  stateDir: string
   registry: StreamRegistry
   pending: PendingPrompts
   store: SessionStore
@@ -189,7 +226,7 @@ export class RelayPublisher {
   private lastRevision = 0
   private terminal = new Map<string, ActiveRun & { relay_phase: string; terminal_at: number }>()
   private readonly disabledProfiles = new Set<string>()
-  private readonly views = new Map<string, { profile: string | null; through: number }>()
+  private readonly views = new Map<string, QueuedView>()
   private viewedUnsupportedLogged = false
   private alertEligibilitySupported = true
   private stopped = false
@@ -221,7 +258,7 @@ export class RelayPublisher {
   start(publishInitial = true): void {
     if (this.loop) return
     this.loop = this.run()
-    if (publishInitial) this.changed()
+    if (publishInitial || loadDeletedViews(this.deps.stateDir).length) this.changed()
   }
 
   stop(): void {
@@ -249,14 +286,34 @@ export class RelayPublisher {
     this.changed()
   }
 
+  /** Bind an unconfigured deletion once, before sending, so retries cannot cross relay or profile identities. */
+  private pendingDeleted(): DeletedView[] {
+    const views = loadDeletedViews(this.deps.stateDir)
+    let changed = false
+    for (const view of views) {
+      if (view.scope) continue
+      const cfg = this.config.profiles[view.profile]
+      if (!cfg || (view.identity !== null && cfg.identity !== view.identity) || !this.publishes(view.profile, cfg)) continue
+      view.identity = cfg.identity
+      view.scope = { url: this.config.url, publisherId: this.config.publisher_id, profileId: cfg.profile_id }
+      changed = true
+    }
+    if (changed) saveDeletedViews(this.deps.stateDir, views)
+    return views.filter((view) => !hasSessionData(this.deps.store, view.sessionId))
+  }
+
   /** Send the views queued before the snapshot just published, so the relay already holds every outcome they saw. */
-  private async flushViews(ready: Map<string, { profile: string | null; through: number }>): Promise<void> {
+  private async flushViews(ready: readonly (readonly [string, QueuedView])[]): Promise<void> {
     for (const [sid, view] of ready) {
+      if (view.deleted && hasSessionData(this.deps.store, sid)) continue
+      let accepted = false
       for (const [profile, cfg] of Object.entries(this.config.profiles)) {
         if (!this.deps.profilesMatch(view.profile, profile) || !this.publishes(profile, cfg)) continue
+        if (view.deleted && (view.deleted.identity !== cfg.identity || view.deleted.scope?.url !== this.config.url || view.deleted.scope.publisherId !== this.config.publisher_id || view.deleted.scope.profileId !== cfg.profile_id)) continue
         const path = `/v1/publishers/${encodeURIComponent(this.config.publisher_id)}/profiles/${encodeURIComponent(cfg.profile_id)}/sessions/${encodeURIComponent(sid)}/viewed`
         try {
           await this.put(path, JSON.stringify({ through: view.through }))
+          accepted = true
         } catch (error) {
           if (!(error instanceof RelayHttpError) || error.retryable) throw error
           if (error.status === 404 && !this.viewedUnsupportedLogged) {
@@ -265,7 +322,9 @@ export class RelayPublisher {
           } else if (error.status !== 404) this.deps.log(`[relay] Talaria relay rejected a viewed acknowledgement (HTTP ${String(error.status)})`)
         }
       }
-      if (this.views.get(sid) === view) this.views.delete(sid)
+      if (view.deleted) {
+        if (accepted) saveDeletedViews(this.deps.stateDir, loadDeletedViews(this.deps.stateDir).filter((entry) => entry.id !== view.deleted!.id || entry.through !== view.through))
+      } else if (this.views.get(sid) === view) this.views.delete(sid)
     }
   }
 
@@ -288,7 +347,7 @@ export class RelayPublisher {
       if (this.stopped) return
       this.dirty = false
       try {
-        const ready = new Map(this.views)
+        const ready: (readonly [string, QueuedView])[] = [...this.views, ...this.pendingDeleted().map((view) => [view.sessionId, { profile: view.profile, through: view.through, deleted: view }] as const)]
         await this.publishSnapshot(true)
         await this.flushViews(ready)
         await this.publishStarted()
@@ -506,7 +565,6 @@ export class RelayPublisher {
 // ── pairing and lifecycle ─────────────────────────────────────────────────
 
 export interface RelayServiceDeps extends RelayPublisherDeps {
-  stateDir: string
   env: Record<string, string | undefined>
   canonicalProfile: (profile: string) => string
   addListener: (listener: () => void) => () => void
@@ -569,16 +627,36 @@ export class RelayService {
     publisher?.markViewed(sid, this.deps.store.get(sid, { metadataOnly: true }).profile)
   }
 
-  /**
-   * A deleted session can never be viewed, so its finished runs are cleared once, under the profile it had (the
-   * store no longer knows it). Later lookups of the same id do not resend.
-   */
+  /** Persist before reporting successful deletion, even when publication is unavailable. */
   clearDeleted(sid: string, profile: string | null): void {
     const publisher = this.publisher ?? this.candidate
-    if (!publisher || this.clearedDeleted.has(sid)) return
-    // ponytail: grows by one id per deleted session per process; reset on restart is fine because the relay ack is idempotent.
-    this.clearedDeleted.add(sid)
-    publisher.markViewed(sid, profile)
+    const name = this.deps.canonicalProfile(profile ?? 'default')
+    const key = JSON.stringify([name, sid])
+    const live = hasSessionData(this.deps.store, sid)
+    if (!live && this.clearedDeleted.has(key)) return
+    const views = loadDeletedViews(this.deps.stateDir)
+    const queued = views.find((view) => view.sessionId === sid && view.profile === name)
+    if (queued && live) {
+      const through = Math.max(queued.through, Math.floor(this.deps.now() * 1000))
+      if (through !== queued.through) { queued.through = through; saveDeletedViews(this.deps.stateDir, views) }
+    } else if (!queued) {
+      let config = publisher?.config ?? null
+      if (!config) {
+        try { config = loadRelayConfig(this.deps.stateDir) } catch { /* preserve unconfigured cleanup */ }
+      }
+      const cfg = config?.profiles[name]
+      let identity = cfg?.identity ?? null
+      if (identity === null) {
+        try { identity = profileIdentity(this.deps.profileHome(name)) } catch { /* bind when this profile becomes available */ }
+      }
+      views.push({
+        id: randomUUID(), sessionId: sid, profile: name, through: Math.floor(this.deps.now() * 1000), identity,
+        scope: config && cfg ? { url: config.url, publisherId: config.publisher_id, profileId: cfg.profile_id } : null,
+      })
+      saveDeletedViews(this.deps.stateDir, views)
+    }
+    this.clearedDeleted.add(key)
+    publisher?.changed()
   }
 
   /** Terminal turn events reach the relay even mid-swap (Python `note_talaria_terminal`). */

@@ -23,6 +23,7 @@ const started = (): Sent[] => sent.filter((s) => s.url.endsWith('/started'))
 
 function publisher(): RelayPublisher {
   const deps = {
+    stateDir: home,
     registry: new StreamRegistry(), presence: new PresenceLeases(() => clock), now: () => clock, log: vi.fn(),
     pending: { approvalPending: () => ({ pending: null, pending_count: 0 }), clarifyPending: () => ({ pending: null, pending_count: 0 }) },
     store: { get: () => { throw new Error('unused') }, readIndexEntries: () => index },

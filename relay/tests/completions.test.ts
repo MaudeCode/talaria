@@ -283,6 +283,19 @@ it("acknowledges a session's completions when its signed publisher reports it vi
       states: [{ sessionId: "skewed-session", streamId: "run-skewed", eventId: "skewed", revision: 99, title: "Skewed", phase: "completed", updatedAt: ahead, deepLink: "/sessions/skewed-session" }],
     });
     expect(await (await viewed(ahead + 1, "skewed-view", { sessionId: "skewed-session" })).json()).toEqual({ status: "accepted", acknowledged: 1 });
+
+    // A delayed deletion retry uses a fresh nonce but the same cutoff. It cannot resurrect a row or send an alert.
+    const alertCount = await backend.run(async (ctx) => (await ctx.db.query("deliveryJobs").collect()).filter((job) => job.kind === "notification").length);
+    expect(await (await viewed(now + 120_000, "viewed-retry")).json()).toEqual({ status: "accepted", acknowledged: 0 });
+    await backend.mutation(internal.delivery.recompute, { userId: "user" });
+    const remainingJobs = await backend.run((ctx) => ctx.db.query("deliveryJobs").collect());
+    const aggregate = JSON.parse(remainingJobs.at(-1)!.request.payloadJson).aps["content-state"];
+    expect(aggregate.rows.map((row: { sessionId: string }) => row.sessionId)).toEqual(["other-session"]);
+    expect(remainingJobs.filter((job) => job.kind === "notification")).toHaveLength(alertCount);
+    expect(await (await viewed(now + 120_000, "other-deleted", { sessionId: "other-session" })).json()).toEqual({ status: "accepted", acknowledged: 1 });
+    await backend.mutation(internal.delivery.recompute, { userId: "user" });
+    expect((await list())!.completions).toEqual([]);
+    expect((await backend.run((ctx) => ctx.db.query("deliveryJobs").collect())).at(-1)?.kind).toBe("live_activity_end");
   } finally { vi.useRealTimers(); }
 });
 
