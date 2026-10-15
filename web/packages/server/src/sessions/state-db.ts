@@ -704,8 +704,8 @@ export async function stopStateDbWorker(): Promise<void> {
 
 const STATE_DB_CONTENT_JSON_PREFIX = '\0json:'
 // `display_kind` / `display_metadata`: the Agent's own tag for rows it writes itself (steers, delivered notifications; TAL-371).
-const OPTIONAL_MESSAGE_COLUMNS = ['tool_call_id', 'tool_calls', 'tool_name', 'reasoning', 'reasoning_details', 'codex_reasoning_items', 'reasoning_content', 'codex_message_items', 'api_content', 'display_kind', 'display_metadata'] as const
-const JSON_MESSAGE_COLUMNS = new Set(['tool_calls', 'reasoning_details', 'codex_reasoning_items', 'codex_message_items', 'display_metadata'])
+const OPTIONAL_MESSAGE_COLUMNS = ['tool_call_id', 'tool_calls', 'tool_name', 'reasoning', 'reasoning_details', 'codex_reasoning_items', 'reasoning_content', 'codex_message_items', 'api_content', 'display_kind', 'display_metadata', 'absorbed_message_uids'] as const
+const JSON_MESSAGE_COLUMNS = new Set(['tool_calls', 'reasoning_details', 'codex_reasoning_items', 'codex_message_items', 'display_metadata', 'absorbed_message_uids'])
 
 /** Python `_decode_state_db_content`: the Agent's sentinel-prefixed structured content, left untouched otherwise. */
 function decodeStateDbContent(value: unknown): unknown {
@@ -737,10 +737,11 @@ function projectStateDbMessage(row: Dict, hasId: boolean): Dict {
     if (!(col in row)) continue
     const value = row[col]
     if (value === null || value === undefined || value === '') continue
-    msg[col] = JSON_MESSAGE_COLUMNS.has(col) ? jsonLoadsIfString(value) : value
+    msg[col === 'absorbed_message_uids' ? '_absorbed_message_uids' : col] = JSON_MESSAGE_COLUMNS.has(col) ? jsonLoadsIfString(value) : value
   }
   // TAL-493: the merge tells rows committed after the session's last read by this id.
   if (hasId && row.id !== null && row.id !== undefined) msg._state_db_row_id = row.id
+  if (typeof row.message_uid === 'string' && row.message_uid.length) msg._state_db_message_uid = row.message_uid
   if (msg.role === 'tool' && msg.tool_name && !msg.name) msg.name = msg.tool_name
   return msg
 }
@@ -822,7 +823,7 @@ function replayIdentities(db: DatabaseSync, chain: string[], rows: Dict[], avail
 }
 
 /** `reason`: why a failed read failed (TAL-785). */
-export interface StateDbRead { rows: Dict[]; idCapable: boolean; ok: boolean; reason: string | null }
+export interface StateDbRead { rows: Dict[]; idCapable: boolean; ok: boolean; reason: string | null; generation: string | null }
 
 export function stateDbSessionMessages(dbPath: string, sid: string, opts: { stitch?: boolean } = {}): Dict[] {
   return stateDbSessionRead(dbPath, sid, opts).rows
@@ -833,7 +834,7 @@ export function stateDbSessionMessages(dbPath: string, sid: string, opts: { stit
  * (TAL-493: an empty id-capable read is a baseline of 0; a missing database or a failed read says nothing).
  */
 export function stateDbSessionRead(dbPath: string, sid: string, opts: { stitch?: boolean; lineage?: string[] | null } = {}): StateDbRead {
-  const none: StateDbRead = { rows: [], idCapable: false, ok: false, reason: null }
+  const none: StateDbRead = { rows: [], idCapable: false, ok: false, reason: null, generation: null }
   const id = sid.trim()
   if (!id || !existsSync(dbPath)) return none
   let db: DatabaseSync
@@ -897,11 +898,11 @@ export function stateDbSessionRead(dbPath: string, sid: string, opts: { stitch?:
       }
     }
     // TAL-493: the database file's identity, so a marker taken in a replaced state.db is never applied to its successor.
+    const generation = stateDbGeneration(dbPath)
     if (hasId) {
-      const generation = stateDbGeneration(dbPath)
       for (const m of projected) m._state_db_generation = generation
     }
-    return { rows: projected, idCapable: hasId, ok: true, reason: null }
+    return { rows: projected, idCapable: hasId, ok: true, reason: null, generation }
   } catch (error) {
     return { ...none, reason: stateDbReadFailure(error).reason }
   } finally {

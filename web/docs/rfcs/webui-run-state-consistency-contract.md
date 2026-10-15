@@ -73,6 +73,29 @@ an older identical local row. A fixed-width fingerprint of a verified copy's
 archived source also lets older sidecars match replays without a seen marker. The remaining rows still pass
 through the existing timestamp, clear, truncation and compression gates. Both
 internal markers are stripped from public messages.
+The append-only merge also honors the Agent's explicit `_absorbed_row_ids` and
+`_absorbed_message_uids` witnesses. A merged prompt represents those durable
+occurrences even when it keeps an earlier timestamp or a different model-facing
+prefix. Settlement uses the same identities for starting context and Agent-owned
+work, so those occurrences cannot become concurrent external rows or consume a
+text match belonging to a separate submission. Databases without UID columns keep
+their existing exact-copy fallback. The reader's UID alias stays internal, and
+archive-proven authored edits still require their own numeric identity.
+Numeric identity includes the database generation. An untagged carrier can use
+the last recorded marker's generation, which settlement preserves on the carrier
+before replacing or clearing that marker. Recreated databases cannot inherit old
+absorbed IDs; durable UIDs can still identify an occurrence across replacement.
+The starting read captures its generation even when it has no message rows.
+Turn settlement shares one forwarding path for successful, failed and stopped
+turns, binding new Agent numeric witnesses to that starting generation. Existing
+transcript witnesses keep their prior generation, including an explicit unknown
+generation, and a replacement during the turn cannot inherit them.
+Database-restored carriers retain the JSON `absorbed_message_uids` witness as
+internal `_absorbed_message_uids`, including when the carrier itself was edited.
+An incoming carrier is covered only when its own identity and every declared
+constituent are represented; partial overlap cannot hide new work. Tool rows
+never match by message UID, because their existing tool-call/timestamp rule owns
+their compaction identity. Absorbed UID witnesses are stripped from public rows.
 Tool results retain their existing tool-call/timestamp compaction rule; tables
 without UIDs retain the legacy timestamp rule. This requires no Agent changes,
 new database fields, release pins or server-side database writes.

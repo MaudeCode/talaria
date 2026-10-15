@@ -25,6 +25,7 @@ import { anchorMessageKey, anchorSummary, CompressionJobs, compressionReference,
 import { chatReadiness, SidecarError, type SidecarLike } from '../sidecar/client.js'
 import { agentSteerText, attachedFilesPrompt, attachmentObjects, checkpointTurnStart, dedupeContext, isContextCompressionMarker, journalOutputRows, looksLikeCurrentUserTurn, stoppedTurnContext, mergeSessionMessagesAppendOnly, messageIdentity, pendingUserRow, reasoningFieldsText, sanitizeMessagesForApi, stateDbSeenId, stripWorkspacePrefix, withAttachmentObjects, withBodyExcerpts, withDisplayMedia, withMarkerKinds, withMirrorSources, withSceneRowMedia, withPendingUserTurn, withToolCallOutcomes, withoutRunningTurnOutput, type ToolResultView } from './merge.js'
 import { withBackgroundUpdates } from './background-updates.js'
+import { stateDbIdentityKeys, stampStateDbGeneration, stateDbMessageRepresented } from './state-db-identity.js'
 import { sourceKind } from './source-kind.js'
 import { withBackgroundLinks, type Receipt } from './background-tasks.js'
 import { messagesForLimitedPayload, messageWindowForDisplay, MAX_MSG_LIMIT, parseMsgLimit, toolCallsForMessageWindow } from './window.js'
@@ -379,10 +380,16 @@ export class SessionService {
 
   /** `stateDbRows` and whether the read succeeded on a state.db whose messages carry ids (TAL-493). */
   stateDbRead(s: Session): StateDbRead {
-    if (str(s.source_tag || s.raw_source || s.session_source).trim().toLowerCase() === 'subagent') return { rows: [], idCapable: false, ok: false, reason: null }
+    if (str(s.source_tag || s.raw_source || s.session_source).trim().toLowerCase() === 'subagent') return { rows: [], idCapable: false, ok: false, reason: null, generation: null }
     // TAL-529: after a compression rotation the Agent writes to the continuation, so the read follows the recorded lineage.
     const lineage = s.state_db_lineage?.[0] === s.session_id ? s.state_db_lineage : null
     return stateDbSessionRead(this.stateDbPath(s.profile), s.session_id, { stitch: false, lineage })
+  }
+
+  /** Preserve existing transcript provenance before a turn adds Agent rows from its starting database read. */
+  beginStateDbTurn(s: Session): StateDbRead {
+    stampStateDbGeneration([...s.messages, ...s.context_messages], markedStateDbGeneration(s))
+    return this.stateDbRead(s)
   }
 
   private stateDbPath(profile: string | null | undefined): string {
@@ -396,7 +403,7 @@ export class SessionService {
    */
   mergedTranscript(s: Session, local: Message[] = s.messages, stateRows: Message[] = this.stateDbRows(s)): Message[] {
     if (!stateRows.length) return local
-    return mergeSessionMessagesAppendOnly(local, stateRows, { truncationWatermark: s.truncation_watermark, compressedWatermark: s.truncation_watermark_compressed, stateDbSeenId: currentStateDbSeenId(s, stateRows) })
+    return mergeSessionMessagesAppendOnly(local, stateRows, { truncationWatermark: s.truncation_watermark, compressedWatermark: s.truncation_watermark_compressed, stateDbSeenId: currentStateDbSeenId(s, stateRows), stateDbGeneration: markedStateDbGeneration(s) })
   }
 
   /**
@@ -405,6 +412,9 @@ export class SessionService {
    * fields are set: the marker holds only while they and the row it names stay as recorded.
    */
   markStateDbSeen(s: Session, read: StateDbRead = this.stateDbRead(s), opts: { boundary?: boolean } = {}): void {
+    // Freeze numeric provenance before replacing the marker, including after a database replacement.
+    const priorGeneration = markedStateDbGeneration(s)
+    if (priorGeneration !== null) stampStateDbGeneration([...s.messages, ...s.context_messages], priorGeneration)
     // A failed read says nothing. A settlement keeps the marker; a boundary drops it (fail closed): it may cut rows the
     // marker still admits without moving a field, and the timestamp rules honour its watermark.
     if (!read.ok) {
@@ -425,29 +435,46 @@ export class SessionService {
    * `startId` (the highest id the turn read when it started) are its own unreported work: covered, never shown. Rows the
    * turn started from but the transcript lacks (a CLI continuation read into its context) are kept before the turn.
    */
-  settleStateDb(s: Session, turn: { turnId: string; previousContext: Message[]; agentRows?: Message[] | null; startId?: number | null; read?: StateDbRead }): void {
+  settleStateDb(s: Session, turn: { turnId: string; previousContext: Message[]; agentRows?: Message[] | null; startId?: number | null; startGeneration?: string | null; read?: StateDbRead }): void {
     const read = turn.read ?? this.stateDbRead(s)
-    const startedWith = new Set(turn.previousContext.flatMap((m) => (typeof m._state_db_row_id === 'number' ? [m._state_db_row_id] : [])))
-    const earlier = mergeSessionMessagesAppendOnly(s.messages, read.rows.filter((m) => typeof m._state_db_row_id === 'number' && startedWith.has(m._state_db_row_id)), { stateDbSeenId: -1 }).slice(s.messages.length)
+    const agentAdded = withoutRows(turn.agentRows ?? [], turn.previousContext)
+    const contextAdded = withoutRows(s.context_messages, turn.previousContext)
+    if (typeof turn.startGeneration === 'string') {
+      stampStateDbGeneration(s.messages.filter((m) => m._turn_id !== turn.turnId), markedStateDbGeneration(s))
+      stampStateDbGeneration([...s.messages.filter((m) => m._turn_id === turn.turnId), ...contextAdded, ...agentAdded], turn.startGeneration)
+    }
+    const startGeneration = turn.previousContext.findLast((m) => typeof m._state_db_generation === 'string')?._state_db_generation
+    const generation = turn.startGeneration ?? markedStateDbGeneration(s) ?? (typeof startGeneration === 'string' ? startGeneration : null)
+    const readGeneration = read.generation
+    const generationChanged = generation !== null && typeof readGeneration === 'string' && generation !== readGeneration
+    const includeUids = read.rows.some((m) => stateDbIdentityKeys(m).some((id) => id.startsWith('uid:')))
+    const identities = (m: Message): string[] => stateDbIdentityKeys(m, includeUids, generation)
+    const startedWith = new Set(turn.previousContext.flatMap((m) => identities(m)))
+    const wasInContext = (m: Message): boolean => stateDbMessageRepresented(m, startedWith, includeUids, generation)
+    const earlier = mergeSessionMessagesAppendOnly(s.messages, read.rows.filter(wasInContext), { stateDbSeenId: -1, stateDbGeneration: generation }).slice(s.messages.length)
     const added = new Map<string, number>()
-    for (const m of withoutRows(turn.agentRows ?? [], turn.previousContext)) added.set(settledIdentity(m), (added.get(settledIdentity(m)) ?? 0) + 1)
-    const ownWorkAfter = turn.agentRows?.length ? null : turn.startId ?? null
+    const addedIds = new Set(agentAdded.flatMap((m) => identities(m)))
+    for (const m of agentAdded) {
+      if (!identities(m).length) added.set(settledIdentity(m), (added.get(settledIdentity(m)) ?? 0) + 1)
+    }
+    const ownWorkAfter = turn.agentRows?.length || generationChanged ? null : turn.startId ?? null
     // Without a current marker, the turn's own starting read is the baseline: rows committed after it are judged here.
-    const seenId = currentStateDbSeenId(s, read.rows) ?? turn.startId ?? null
-    const shown = read.rows.length ? mergeSessionMessagesAppendOnly(s.messages, read.rows, { truncationWatermark: s.truncation_watermark, compressedWatermark: s.truncation_watermark_compressed, stateDbSeenId: seenId }) : s.messages
+    const seenId = currentStateDbSeenId(s, read.rows) ?? (generationChanged ? null : turn.startId ?? null)
+    const shown = read.rows.length ? mergeSessionMessagesAppendOnly(s.messages, read.rows, { truncationWatermark: s.truncation_watermark, compressedWatermark: s.truncation_watermark_compressed, stateDbSeenId: seenId, stateDbGeneration: generation }) : s.messages
     const fresh = new Set(shown.slice(s.messages.length))
     // The turn's own rows the merge already matched to their local copies use up their share before any shown row can.
     if (seenId !== null) {
       for (const m of read.rows) {
         const id = m._state_db_row_id
-        if (typeof id !== 'number' || id <= seenId || startedWith.has(id) || fresh.has(m)) continue
+        if (typeof id !== 'number' || id <= seenId || wasInContext(m) || fresh.has(m)) continue
         const left = added.get(settledIdentity(m)) ?? 0
         if (left > 0) added.set(settledIdentity(m), left - 1)
       }
     }
     const missed = [...fresh].filter((m) => {
       const id = m._state_db_row_id
-      if (typeof id === 'number' && startedWith.has(id)) return false
+      if (wasInContext(m)) return false
+      if (stateDbMessageRepresented(m, addedIds, includeUids, generation)) return false
       const key = settledIdentity(m)
       const left = added.get(key) ?? 0
       if (left > 0) { added.set(key, left - 1); return false }
@@ -459,7 +486,7 @@ export class SessionService {
     }
     if (missed.length) {
       s.messages.push(...copyJson(missed))
-      if (s.context_messages.length) s.context_messages.push(...copyJson(missed))
+      if (s.context_messages.length) s.context_messages = mergeSessionMessagesAppendOnly(s.context_messages, copyJson(missed), { stateDbSeenId: -1, stateDbGeneration: generation })
     }
     this.markStateDbSeen(s, read)
     // TAL-529: a compression rotation moved the Agent to a continuation, whose first rows restate the compressed context.
@@ -2216,11 +2243,22 @@ function settledIdentity(m: Message): string {
   return messageIdentity(m, Infinity) ?? JSON.stringify([m.role ?? null, m.content ?? null, reasoningFieldsText(m)])
 }
 
-/** `rows` minus one occurrence of each row of `base`, by `settledIdentity`. */
+/** `rows` minus one occurrence of each base row, retaining its numeric provenance on the Agent's history copy. */
 function withoutRows(rows: Message[], base: Message[]): Message[] {
-  const left = new Map<string, number>()
-  for (const m of base) left.set(settledIdentity(m), (left.get(settledIdentity(m)) ?? 0) + 1)
-  return rows.filter((m) => { const key = settledIdentity(m); const n = left.get(key) ?? 0; if (n > 0) left.set(key, n - 1); return n === 0 })
+  const left = new Map<string, { rows: Message[]; at: number }>()
+  for (const m of base) {
+    const key = settledIdentity(m)
+    const entry = left.get(key) ?? { rows: [], at: 0 }
+    entry.rows.push(m)
+    left.set(key, entry)
+  }
+  return rows.filter((m) => {
+    const entry = left.get(settledIdentity(m))
+    if (!entry || entry.at === entry.rows.length) return true
+    const original = entry.rows[entry.at++]!
+    if (!('_state_db_generation' in m) && '_state_db_generation' in original) m._state_db_generation = original._state_db_generation
+    return false
+  })
 }
 
 /**
@@ -2240,6 +2278,17 @@ function stateDbMarkKey(s: Session, stateRows: Message[], seenId: number | null)
 function currentStateDbSeenId(s: Session, stateRows: Message[]): number | null {
   const seenId = s.state_db_seen_id
   return seenId !== null && s.state_db_seen_stamp === s.updated_at && s.state_db_seen_boundary === stateDbMarkKey(s, stateRows, seenId) ? seenId : null
+}
+
+/** The last recorded database generation remains the numeric identity's owner when a marker becomes stale. */
+function markedStateDbGeneration(s: Session): string | null {
+  if (!s.state_db_seen_boundary) return null
+  try {
+    const boundary: unknown = JSON.parse(s.state_db_seen_boundary)
+    if (!Array.isArray(boundary) || !Array.isArray(boundary[4])) return null
+    const anchor: unknown[] = boundary[4]
+    return typeof anchor[2] === 'string' ? anchor[2] : null
+  } catch { return null }
 }
 
 function truncationWatermarkFor(messages: unknown[]): number {

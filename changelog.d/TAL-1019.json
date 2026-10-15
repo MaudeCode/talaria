@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Reopening a chat no longer repeats merged prompts or background completion notices after their replies.",
+      "highlight": false,
+      "components": ["web"]
+    }
+  ]
+}
