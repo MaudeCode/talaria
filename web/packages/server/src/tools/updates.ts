@@ -99,16 +99,25 @@ export const runPackageNpm: BuildRun = (args, cwd, timeoutMs) => runNpmCommand(a
 
 const SELF_CHECK_TIMEOUT_MS = 30_000
 
-/** `talaria-web self-check` in a candidate package under this node: loads its server code without binding, spawning, or touching state (TAL-1012). */
-const runSelfCheck = (candidate: string, timeoutMs: number): Promise<GitOutcome> =>
+/** Runs this node in a candidate package; the candidate resolves its own Web root, and Node warnings stay out of the reported error. */
+const runCandidateNode = (candidate: string, args: string[], timeoutMs: number): Promise<GitOutcome> =>
   new Promise((done) => {
-    // The candidate resolves its own Web root, and Node warnings stay out of the reported error.
-    execFile(process.execPath, [join(candidate, 'dist/bin/talaria-web.js'), 'self-check'], { cwd: candidate, encoding: 'utf8', timeout: timeoutMs, killSignal: 'SIGKILL', maxBuffer: 16 * 1024 * 1024, env: { ...process.env, TALARIA_WEB_ROOT: undefined, NODE_NO_WARNINGS: '1' } }, (error, stdout, stderr) => {
+    execFile(process.execPath, args, { cwd: candidate, encoding: 'utf8', timeout: timeoutMs, killSignal: 'SIGKILL', maxBuffer: 16 * 1024 * 1024, env: { ...process.env, TALARIA_WEB_ROOT: undefined, NODE_NO_WARNINGS: '1' } }, (error, stdout, stderr) => {
       if (!error) { done({ out: '', ok: true }); return }
       if ((error as { killed?: boolean }).killed) { done({ out: `talaria-web self-check timed out after ${String(timeoutMs / 1000)}s`, ok: false }); return }
       done({ out: stderr.trim() || stdout.trim() || `talaria-web self-check exited with status ${String(error.code)}`, ok: false })
     })
   })
+
+/** `talaria-web self-check` loads a candidate's server code and node-pty binding without binding, spawning, or touching state (TAL-1012). */
+async function runSelfCheck(candidate: string, timeoutMs: number): Promise<GitOutcome> {
+  const outcome = await runCandidateNode(candidate, [join(candidate, 'dist/bin/talaria-web.js'), 'self-check'], timeoutMs)
+  // A Stable package from before TAL-1012 (an Experimental-to-Stable switch) rejects the subcommand only after its bin's
+  // static imports loaded the serve graph, so only its node-pty binding is left to load.
+  // ponytail: delete once every installable Stable release ships self-check.
+  if (!outcome.ok && outcome.out.split('\n').includes('[bootstrap] ERROR: unknown argument: self-check')) return runCandidateNode(candidate, ['-e', "require('node-pty')"], timeoutMs)
+  return outcome
+}
 
 export const isGitLockError = (output: string): boolean => { const l = output.toLowerCase(); return GIT_LOCK_SIGNATURES.some((s) => l.includes(s)) }
 

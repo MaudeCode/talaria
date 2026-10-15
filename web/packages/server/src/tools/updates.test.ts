@@ -321,7 +321,7 @@ describe('Web source updates (test_tal203_source_update.py)', () => {
   })
 
   /** `runtimeOf` stamps the installed package of each requested version; by default every install is `s.release`. */
-  function npmPackageInstall(s: Install, initial: 'success' | 'failure' | 'bad-stamp' | 'empty-dependency' | 'self-check-fails' | 'self-check-hangs' = 'success', runtimeOf?: (version: string) => Dict) {
+  function npmPackageInstall(s: Install, initial: 'success' | 'failure' | 'bad-stamp' | 'empty-dependency' | 'self-check-fails' | 'self-check-hangs' | 'legacy-bin' | 'legacy-bin-broken-pty' = 'success', runtimeOf?: (version: string) => Dict) {
     const mode = { outcome: initial }
     const globalRoot = join(tmp(), 'lib/node_modules')
     const packageRoot = join(globalRoot, '@maudecode/talaria-web')
@@ -346,7 +346,11 @@ describe('Web source updates (test_tal203_source_update.py)', () => {
         write(join(candidate, 'dist/bin/talaria-web.js'), {
           'self-check-fails': "console.error('[self-check] ERROR: synthetic native binding mismatch'); process.exit(1)",
           'self-check-hangs': "process.on('SIGTERM', () => undefined); setInterval(() => undefined, 1000)",
+          // A bin from before TAL-1012 loads its server code, then rejects the subcommand.
+          'legacy-bin': "console.error('[bootstrap] ERROR: unknown argument: self-check'); process.exit(1)",
+          'legacy-bin-broken-pty': "console.error('[bootstrap] ERROR: unknown argument: self-check'); process.exit(1)",
         }[mode.outcome as string] ?? "process.exit(process.argv[2] === 'self-check' ? 0 : 2)")
+        write(join(candidate, 'node_modules/node-pty/index.js'), mode.outcome === 'legacy-bin-broken-pty' ? "throw new Error('synthetic pty ABI mismatch')" : 'module.exports = {}')
         write(join(candidate, 'dist/bin/talaria-web-mcp.js'), '// fixture')
         if (mode.outcome !== 'bad-stamp') writeFileSync(join(candidate, '_release.json'), JSON.stringify(runtimeOf?.(version) ?? s.release.runtime))
         return Promise.resolve({ ok: true, out: '' })
@@ -411,6 +415,18 @@ describe('Web source updates (test_tal203_source_update.py)', () => {
     expect(result).toMatchObject({ ok: false, verification_failed: true })
     expect(result.message).toContain(detail)
     expect((JSON.parse(readFileSync(join(n.packageRoot, 'package.json'), 'utf8')) as { version: string }).version).toBe('1.0.0')
+  })
+
+  it('accepts a Stable candidate from before self-check once its node-pty binding loads (TAL-1012)', async () => {
+    const s = sourceInstall()
+    const n = npmPackageInstall(s, 'legacy-bin')
+    expect(await applyWebUpdate(n.packageRoot, 'stable', s.run, s.getJson, s.identity, n.npm)).toMatchObject({ ok: true })
+    expect((JSON.parse(readFileSync(join(n.packageRoot, 'package.json'), 'utf8')) as { version: string }).version).toBe('2.0.0')
+    const t = sourceInstall()
+    const broken = npmPackageInstall(t, 'legacy-bin-broken-pty')
+    const result = await applyWebUpdate(broken.packageRoot, 'stable', t.run, t.getJson, t.identity, broken.npm)
+    expect(result).toMatchObject({ ok: false, verification_failed: true })
+    expect(result.message).toContain('synthetic pty ABI mismatch')
   })
 
   it('refuses Experimental npm updates and mismatched global package roots', async () => {
