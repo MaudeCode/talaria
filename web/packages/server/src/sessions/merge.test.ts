@@ -345,6 +345,20 @@ describe('compaction markers (TAL-305)', () => {
 })
 
 describe('absorbed durable identity (TAL-1019)', () => {
+  it.each([1, null])('keeps distinct tool results that reuse a UID with marker %s', (stateDbSeenId) => {
+    const prior = { role: 'tool', content: 'old result', timestamp: 100, tool_call_id: 'call-old', _state_db_row_id: 1, _state_db_message_uid: 'reused' }
+    const next = { ...prior, content: 'new result', timestamp: 200, tool_call_id: 'call-new', _state_db_row_id: 2 }
+    expect(mergeSessionMessagesAppendOnly([prior], [next], { stateDbSeenId })).toEqual([prior, next])
+  })
+
+  it('does not discard a new carrier just because one absorbed constituent is already local', () => {
+    const prior = { role: 'user', content: 'earlier prefix', timestamp: 100, message_uid: 'already' }
+    const next = { role: 'user', content: 'new request', timestamp: 200, _state_db_row_id: 2, _state_db_message_uid: 'carrier', _absorbed_message_uids: ['already'] }
+    expect(mergeSessionMessagesAppendOnly([prior], [next], { stateDbSeenId: 1 })).toEqual([prior, next])
+    const extended = { ...next, _state_db_message_uid: 'already', _absorbed_message_uids: ['new-occurrence'] }
+    expect(mergeSessionMessagesAppendOnly([prior], [extended], { stateDbSeenId: 1 })).toEqual([prior, extended])
+  })
+
   it.each([42, null])('keeps absorbed numeric rows represented with seen marker %s', (stateDbSeenId) => {
     const prompt = { role: 'user', content: 'Background prefix\ncontinue', timestamp: 100, _absorbed_row_ids: [43, 44] }
     const reply = { role: 'assistant', content: 'Done', timestamp: 101 }

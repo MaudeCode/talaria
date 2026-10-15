@@ -6,7 +6,7 @@
 import { buildActiveTurnToken, completedToolIndex } from '../redact.js'
 import { RunJournal, type JournalEvent } from './journal.js'
 import { str } from '../util.js'
-import { stateDbMessageKey, stateDbMessageFingerprint, stateDbRowId, stateDbIdentityKeys } from './state-db-identity.js'
+import { stateDbMessageKey, stateDbMessageFingerprint, stateDbRowId, stateDbIdentityKeys, stateDbMessageRepresented } from './state-db-identity.js'
 import { stripAttachedFilesMarker, stripWorkspacePrefix, type Message } from './session.js'
 
 export { WORKSPACE_PREFIX_RE, stripWorkspacePrefix } from './session.js'
@@ -953,8 +953,8 @@ export function mergeSessionMessagesAppendOnly(sidecar: Message[], state: Messag
   const generation = opts.stateDbGeneration ?? null
   const includeUids = state.some((m) => stateDbIdentityKeys(m).some((id) => id.startsWith('uid:')))
   const identities = (m: Message): string[] => stateDbIdentityKeys(m, includeUids, generation)
-  const representedIds = new Set(sidecar.flatMap(identities))
-  const isRepresented = (m: Message): boolean => identities(m).some((id) => representedIds.has(id))
+  const representedIds = new Set(sidecar.flatMap((m) => identities(m)))
+  const isRepresented = (m: Message): boolean => stateDbMessageRepresented(m, representedIds, includeUids, generation)
   const rememberIds = (m: Message): void => { for (const id of identities(m)) representedIds.add(id) }
   if (typeof seenId === 'number' && Number.isFinite(seenId) && state.some((m) => stateDbRowId(m) !== null)) {
     // A row with durable provenance represents those identities; an unidentified row matches one exact copy.

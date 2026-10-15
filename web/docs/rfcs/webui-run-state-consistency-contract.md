@@ -90,6 +90,12 @@ Turn settlement shares one forwarding path for successful, failed and stopped
 turns, binding new Agent numeric witnesses to that starting generation. Existing
 transcript witnesses keep their prior generation, including an explicit unknown
 generation, and a replacement during the turn cannot inherit them.
+Database-restored carriers retain the JSON `absorbed_message_uids` witness as
+internal `_absorbed_message_uids`, including when the carrier itself was edited.
+An incoming carrier is covered only when its own identity and every declared
+constituent are represented; partial overlap cannot hide new work. Tool rows
+never match by message UID, because their existing tool-call/timestamp rule owns
+their compaction identity. Absorbed UID witnesses are stripped from public rows.
 Tool results retain their existing tool-call/timestamp compaction rule; tables
 without UIDs retain the legacy timestamp rule. This requires no Agent changes,
 new database fields, release pins or server-side database writes.

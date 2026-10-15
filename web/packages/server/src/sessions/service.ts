@@ -25,7 +25,7 @@ import { anchorMessageKey, anchorSummary, CompressionJobs, compressionReference,
 import { chatReadiness, SidecarError, type SidecarLike } from '../sidecar/client.js'
 import { agentSteerText, attachedFilesPrompt, attachmentObjects, checkpointTurnStart, dedupeContext, isContextCompressionMarker, journalOutputRows, looksLikeCurrentUserTurn, stoppedTurnContext, mergeSessionMessagesAppendOnly, messageIdentity, pendingUserRow, reasoningFieldsText, sanitizeMessagesForApi, stateDbSeenId, stripWorkspacePrefix, withAttachmentObjects, withBodyExcerpts, withDisplayMedia, withMarkerKinds, withMirrorSources, withSceneRowMedia, withPendingUserTurn, withToolCallOutcomes, withoutRunningTurnOutput, type ToolResultView } from './merge.js'
 import { withBackgroundUpdates } from './background-updates.js'
-import { stateDbIdentityKeys, stampStateDbGeneration } from './state-db-identity.js'
+import { stateDbIdentityKeys, stampStateDbGeneration, stateDbMessageRepresented } from './state-db-identity.js'
 import { sourceKind } from './source-kind.js'
 import { withBackgroundLinks, type Receipt } from './background-tasks.js'
 import { messagesForLimitedPayload, messageWindowForDisplay, MAX_MSG_LIMIT, parseMsgLimit, toolCallsForMessageWindow } from './window.js'
@@ -449,11 +449,11 @@ export class SessionService {
     const generationChanged = generation !== null && typeof readGeneration === 'string' && generation !== readGeneration
     const includeUids = read.rows.some((m) => stateDbIdentityKeys(m).some((id) => id.startsWith('uid:')))
     const identities = (m: Message): string[] => stateDbIdentityKeys(m, includeUids, generation)
-    const startedWith = new Set(turn.previousContext.flatMap(identities))
-    const wasInContext = (m: Message): boolean => identities(m).some((id) => startedWith.has(id))
+    const startedWith = new Set(turn.previousContext.flatMap((m) => identities(m)))
+    const wasInContext = (m: Message): boolean => stateDbMessageRepresented(m, startedWith, includeUids, generation)
     const earlier = mergeSessionMessagesAppendOnly(s.messages, read.rows.filter(wasInContext), { stateDbSeenId: -1, stateDbGeneration: generation }).slice(s.messages.length)
     const added = new Map<string, number>()
-    const addedIds = new Set(agentAdded.flatMap(identities))
+    const addedIds = new Set(agentAdded.flatMap((m) => identities(m)))
     for (const m of agentAdded) {
       if (!identities(m).length) added.set(settledIdentity(m), (added.get(settledIdentity(m)) ?? 0) + 1)
     }
@@ -474,7 +474,7 @@ export class SessionService {
     const missed = [...fresh].filter((m) => {
       const id = m._state_db_row_id
       if (wasInContext(m)) return false
-      if (identities(m).some((identity) => addedIds.has(identity))) return false
+      if (stateDbMessageRepresented(m, addedIds, includeUids, generation)) return false
       const key = settledIdentity(m)
       const left = added.get(key) ?? 0
       if (left > 0) { added.set(key, left - 1); return false }

@@ -38,6 +38,38 @@ function insertSession(db: DatabaseSync, row: { id: string; source: string; star
 }
 
 describe('absorbed durable identity (TAL-1019)', () => {
+  it.each([false, true])('keeps absorbed UID provenance on a reconstructed database carrier with edit=%s', async (edited) => {
+    const s = await bootTestServer()
+    const path = join(s.state, 'state.db')
+    const db = createStateDb(path)
+    const sid = 'database-carrier'
+    try {
+      db.exec('ALTER TABLE messages ADD COLUMN message_uid TEXT; ALTER TABLE messages ADD COLUMN absorbed_message_uids TEXT; ALTER TABLE messages ADD COLUMN active INTEGER DEFAULT 1; ALTER TABLE messages ADD COLUMN compacted INTEGER DEFAULT 0')
+      insertSession(db, { id: sid, source: 'webui', started_at: 100 })
+      const insert = db.prepare('INSERT INTO messages(session_id, role, content, timestamp, message_uid, absorbed_message_uids, active, compacted) VALUES (?, ?, ?, ?, ?, ?, ?, ?)')
+      if (edited) insert.run(sid, 'user', 'older prefix', 100, 'carrier', null, 0, 1)
+      insert.run(sid, 'user', 'Merged prefix\ncontinue', 100, 'carrier', JSON.stringify(['absorbed']), 1, 0)
+      const carrier = stateDbSessionRead(path, sid).rows[0]!
+      const session = new Session({ session_id: sid, messages: [carrier], context_messages: [carrier] }, { workspace: s.state, model: null })
+      // The recovered carrier precedes the later durable copies it already represents.
+      insert.run(sid, 'user', 'continue', 200, 'absorbed', null, 1, 0)
+      insert.run(sid, 'assistant', 'Verified the result.', 201, 'reply', null, 1, 0)
+      insert.run(sid, 'user', 'continue', 202, 'independent', null, 1, 0)
+      const expected = [carrier.content, 'Verified the result.', 'continue']
+      expect(s.deps.sessions.mergedTranscript(session).map((m) => m.content)).toEqual(expected)
+      expect(s.deps.sessions.modelContext(session).map((m) => m.content)).toEqual(expected)
+      expect(carrier._absorbed_message_uids).toEqual(['absorbed'])
+      if (edited) expect(carrier._state_db_authored_change).toBe(true)
+      s.deps.sessionStore.save(session)
+      for (let reopen = 0; reopen < 2; reopen += 1) {
+        s.deps.sessionStore.sessions.delete(sid)
+        const detail = (await json(await s.get(`/api/session?session_id=${sid}`))).session as Json
+        expect((detail.messages as Json[]).map((m) => m.content)).toEqual(expected)
+        expect((detail.messages as Json[]).every((m) => !('_absorbed_message_uids' in m))).toBe(true)
+      }
+    } finally { db.close(); await s.close() }
+  })
+
   it.each((['numeric', 'uid', 'legacy-uid'] as const).flatMap((identity) => [false, true].map((background) => [identity, background] as const)))('settles and reopens by %s with background=%s', async (identity, background) => {
     const s = await bootTestServer()
     const path = join(s.state, 'state.db')

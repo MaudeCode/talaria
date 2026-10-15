@@ -704,8 +704,8 @@ export async function stopStateDbWorker(): Promise<void> {
 
 const STATE_DB_CONTENT_JSON_PREFIX = '\0json:'
 // `display_kind` / `display_metadata`: the Agent's own tag for rows it writes itself (steers, delivered notifications; TAL-371).
-const OPTIONAL_MESSAGE_COLUMNS = ['tool_call_id', 'tool_calls', 'tool_name', 'reasoning', 'reasoning_details', 'codex_reasoning_items', 'reasoning_content', 'codex_message_items', 'api_content', 'display_kind', 'display_metadata'] as const
-const JSON_MESSAGE_COLUMNS = new Set(['tool_calls', 'reasoning_details', 'codex_reasoning_items', 'codex_message_items', 'display_metadata'])
+const OPTIONAL_MESSAGE_COLUMNS = ['tool_call_id', 'tool_calls', 'tool_name', 'reasoning', 'reasoning_details', 'codex_reasoning_items', 'reasoning_content', 'codex_message_items', 'api_content', 'display_kind', 'display_metadata', 'absorbed_message_uids'] as const
+const JSON_MESSAGE_COLUMNS = new Set(['tool_calls', 'reasoning_details', 'codex_reasoning_items', 'codex_message_items', 'display_metadata', 'absorbed_message_uids'])
 
 /** Python `_decode_state_db_content`: the Agent's sentinel-prefixed structured content, left untouched otherwise. */
 function decodeStateDbContent(value: unknown): unknown {
@@ -737,7 +737,7 @@ function projectStateDbMessage(row: Dict, hasId: boolean): Dict {
     if (!(col in row)) continue
     const value = row[col]
     if (value === null || value === undefined || value === '') continue
-    msg[col] = JSON_MESSAGE_COLUMNS.has(col) ? jsonLoadsIfString(value) : value
+    msg[col === 'absorbed_message_uids' ? '_absorbed_message_uids' : col] = JSON_MESSAGE_COLUMNS.has(col) ? jsonLoadsIfString(value) : value
   }
   // TAL-493: the merge tells rows committed after the session's last read by this id.
   if (hasId && row.id !== null && row.id !== undefined) msg._state_db_row_id = row.id
