@@ -425,6 +425,7 @@ export const toolsRouter = os.router({
       if (!command) throw new HttpError(400, 'command is required')
       const [, name = '', args = ''] = /^\/?(\S*)\s*([\s\S]*)$/.exec(command) ?? []
       const sessionId = str(input.session_id).trim()
+      if (sessionId) ctx.deps.sessions.assertWritable(sessionId)
       // TAL-902: a session command runs on the chat's own agent (the request guard already checked the chat's profile).
       if (SESSION_EXEC_COMMANDS.has(name.toLowerCase())) {
         return { output: await ctx.deps.turns.refine(sessionId ? ctx.deps.sessionStore.get(sessionId) : null, args.trim()) }

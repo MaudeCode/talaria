@@ -278,7 +278,7 @@ export function createDeps(opts: CreateDepsOptions): AppDeps {
   const mediaAccess: MediaAccessDeps = { home: config.homeDir, hermesHome: config.hermesHome, extraRoots: env.MEDIA_ALLOWED_ROOTS ?? '', activeWorkspace: mediaActiveWorkspace, policy: mediaPolicy }
   // TAL-259: record when this server started stamping deliberate shrinks; older backups go to manual review.
   try { recoveryStampingSince(config.stateDir) } catch (error) { log(`[webui] WARNING: could not record recovery_stamping_since: ${(error as Error).message}`) }
-  const sessions = new SessionService({
+  const sessions: SessionService = new SessionService({
     recoveryStampingSince: () => recoveryStampingSince(config.stateDir),
     sidecar: () => sidecar,
     media: { access: mediaAccess, localIo: (profile) => workspaces.profileSupportsLocalIo(profile) },
@@ -298,8 +298,12 @@ export function createDeps(opts: CreateDepsOptions): AppDeps {
       if (!sidecar) return
       let profile: string | null = null
       try { profile = store.get(sid, { metadataOnly: true }).profile ?? null } catch { profile = null }
-      const release = profileActivity(profile)
-      void Promise.resolve().then(() => sidecar.call('chat.commit_memory', { profile_home: profileHome(profile ?? activeProfile()), session_id: sid }))
+      const targetProfile = profile ?? activeProfile()
+      const release = profileActivity(targetProfile)
+      void Promise.resolve().then(() => {
+        sessions.assertWritable(sid, targetProfile)
+        return sidecar.call('chat.commit_memory', { profile_home: profileHome(targetProfile), session_id: sid })
+      })
         .catch((error: unknown) => { log(`[webui] memory commit for ${sid} failed: ${(error as Error).message}`) })
         .finally(release)
     },
@@ -342,11 +346,13 @@ export function createDeps(opts: CreateDepsOptions): AppDeps {
       automaticTurnsHeld: (sid: string): boolean => turns.automaticTurnsHeld(sid),
       sessionNotices: (sid: string): SessionNotice[] => turns.sessionNotices(sid),
       sessionGoal: (sid: string): SessionGoal | null => turns.sessionGoal(sid),
-      evictAgent: (sid, endSession) => { if (sidecar) sidecar.call('chat.evict_agent', endSession ? { session_id: sid, clear_session: true } : { session_id: sid }).catch(() => undefined) },
+      evictAgent: (sid, endSession) => { if (sidecar && (!endSession || !sessions.readOnlyReason(sid))) sidecar.call('chat.evict_agent', endSession ? { session_id: sid, clear_session: true } : { session_id: sid }).catch(() => undefined) },
       closeTerminal: (sid) => { deps.terminals.close(sid) },
       deleteCliSession: async (profile, sid) => {
         if (!sidecar) return { ok: false }
-        return await sidecar.call('state_db.delete_cli_session', { profile_home: profileHome(profile ?? activeProfile()), session_id: sid, include_compression_lineage: true })
+        const targetProfile = profile ?? activeProfile()
+        sessions.assertWritable(sid, targetProfile)
+        return await sidecar.call('state_db.delete_cli_session', { profile_home: profileHome(targetProfile), session_id: sid, include_compression_lineage: true })
       },
     },
     attachmentDir,
@@ -357,7 +363,9 @@ export function createDeps(opts: CreateDepsOptions): AppDeps {
       if (!sidecar || !pyBool(settings.load().sync_to_insights)) return
       // Awaited by callers: the rename/regenerate response and the title stream's teardown follow the state.db write.
       try {
-        await sidecar.call('state_db.sync_title', { profile_home: profileHome(session.profile ?? activeProfile()), session_id: session.session_id, title: session.title, manual: manual === true })
+        const targetProfile = session.profile ?? activeProfile()
+        sessions.assertWritable(session, targetProfile)
+        await sidecar.call('state_db.sync_title', { profile_home: profileHome(targetProfile), session_id: session.session_id, title: session.title, manual: manual === true })
       } catch (error) {
         log(`[webui] state.db title sync failed for ${session.session_id}: ${(error as Error).message}`)
       }
@@ -433,8 +441,10 @@ export function createDeps(opts: CreateDepsOptions): AppDeps {
     syncUsage: async (session, model) => {
       if (!sidecar || !pyBool(settings.load().sync_to_insights)) return
       try {
+        const targetProfile = session.profile ?? activeProfile()
+        sessions.assertWritable(session, targetProfile)
         await sidecar.call('state_db.sync_usage', {
-          profile_home: profileHome(session.profile ?? activeProfile()), session_id: session.session_id,
+          profile_home: profileHome(targetProfile), session_id: session.session_id,
           input_tokens: session.input_tokens || 0, output_tokens: session.output_tokens || 0, estimated_cost: typeof session.estimated_cost === 'number' ? session.estimated_cost : null,
           cache_read_tokens: session.cache_read_tokens || 0, cache_write_tokens: session.cache_write_tokens || 0,
           model, title: session.title, message_count: session.messages.length,

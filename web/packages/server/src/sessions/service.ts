@@ -346,9 +346,23 @@ export class SessionService {
   }
 
   /** The persisted flag folded with the state.db owner lock (TAL-358): the one read-only rule for mutation gates and the wire. */
-  readOnlyReason(s: Session): string | null {
-    const row = withOwnerLocks([{ session_id: s.session_id, profile: s.profile, source_tag: s.source_tag, raw_source: s.raw_source, session_source: s.session_source, read_only: s.read_only }], this.stateDbSources)[0]!
+  readOnlyReason(s: Session | string, profile?: string): string | null {
+    let raw: Row = { session_id: typeof s === 'string' ? s : s.session_id, profile: this.deps.activeProfile() }
+    if (typeof s === 'string') {
+      try { s = this.store.get(s, { metadataOnly: true }) } catch (error) {
+        if (!(error instanceof SessionNotFound)) return OWNERSHIP_UNAVAILABLE_REASON
+      }
+    }
+    if (typeof s !== 'string') raw = { session_id: s.session_id, profile: s.profile, source_tag: s.source_tag, raw_source: s.raw_source, session_source: s.session_source, read_only: s.read_only }
+    if (profile !== undefined) raw = this.deps.profilesMatch(str(raw.profile) || null, profile) ? { ...raw, profile } : { session_id: raw.session_id, profile }
+    const row = withOwnerLocks([raw], this.stateDbSources)[0]!
     return row.read_only ? str(row.read_only_reason) || 'Read-only imported sessions cannot be modified from WebUI' : null
+  }
+
+  /** No sidecar is materialized for an id; an explicit profile binds a callback to the home it will write. */
+  assertWritable(session: Session | string, profile?: string): void {
+    const reason = this.readOnlyReason(session, profile)
+    if (reason) throw new HttpFailure(403, reason)
   }
 
   isReadOnly(s: Session): boolean { return this.readOnlyReason(s) !== null }
@@ -357,8 +371,7 @@ export class SessionService {
   getForMutation(sid: string): Session {
     let s = this.get404(sid)
     s = this.store.ensureFull(sid, s)
-    const reason = this.readOnlyReason(s)
-    if (reason) throw new HttpFailure(403, reason)
+    this.assertWritable(s)
     if (str(s.source_tag || s.raw_source).trim().toLowerCase() === 'subagent') throw new HttpFailure(403, 'Read-only subagent child session')
     return s
   }
@@ -2247,6 +2260,7 @@ export class SessionService {
 
   setYolo(sid: string, enabled: boolean): Record<string, unknown> {
     if (!sid) throw new HttpFailure(400, 'Missing required field(s): session_id')
+    this.assertWritable(sid)
     this.deps.yolo.set(sid, enabled)
     return { ok: true, yolo_enabled: this.deps.yolo.isEnabled(sid) }
   }
