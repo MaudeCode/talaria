@@ -293,8 +293,8 @@ export const STT_METHODS = {
 } as const
 
 // ── cron ───────────────────────────────────────────────────────────────
-/** `running_elsewhere` (TAL-810): the job's latest attempt is claimed or running under a live owner, such as the gateway scheduler. */
-export const CronJobSchema = z.object({ id: z.string(), name: z.string().nullable().optional(), profile: z.string().nullable(), toast_notifications: z.boolean(), monitor: z.string(), continuity: z.boolean(), running_elsewhere: z.boolean().optional() }).catchall(Json)
+/** `running_elsewhere`: a live execution owner. `recovery_only`: a retained snapshot, not a source for new task context. */
+export const CronJobSchema = z.object({ id: z.string(), name: z.string().nullable().optional(), profile: z.string().nullable(), toast_notifications: z.boolean(), monitor: z.string(), continuity: z.boolean(), running_elsewhere: z.boolean().optional(), recovery_only: z.boolean().optional() }).catchall(Json)
 const CronJob = ProfileHomeParams.extend({ job_id: z.string().min(1) })
 const JobEnvelope = z.object({ job: CronJobSchema })
 export const CronUsageSchema = z.object({ model: z.string().optional(), provider: z.string().optional(), estimated_cost_usd: z.number().optional(), duration_seconds: z.number().optional(), input_tokens: z.number().int().nullable().optional(), output_tokens: z.number().int().nullable().optional(), total_tokens: z.number().int().nullable().optional() })

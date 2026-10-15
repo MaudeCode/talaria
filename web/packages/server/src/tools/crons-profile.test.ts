@@ -45,6 +45,22 @@ function setup() {
 }
 
 describe('cross-profile cron ownership', () => {
+  it('keeps recovery-only rows visible but excludes them from new task context', async () => {
+    const { service, homes, stores } = setup()
+    stores.get(homes.default)?.push({ id: 'retained', name: 'Retained task', profile: null, toast_notifications: true, monitor: '', continuity: false, recovery_only: true })
+    expect(await service.list('default', false)).toMatchObject({ jobs: [{ id: 'retained' }] })
+    expect(((await service.list('default', false)).jobs as Dict[])[0]).not.toHaveProperty('recovery_only')
+    expect(await service.contextSources(homes.default, {})).toEqual({ profile: 'default', sources: [] })
+    expect(await service.contextSources(homes.default, { selected_refs: ['retained'] })).toEqual({ profile: 'default', sources: [{ job_id: 'retained', label: 'Retained task', selectable: false }] })
+  })
+
+  it('refuses a recovery-only context before creating another job', async () => {
+    const { service, homes, stores } = setup()
+    stores.get(homes.default)?.push({ id: 'retained', profile: null, toast_notifications: true, monitor: '', continuity: false, recovery_only: true })
+    await expect(service.create(homes.default, { schedule: 'every 1h', prompt: 'x', context_from: ['retained'] })).rejects.toMatchObject({ status: 400 })
+    expect(stores.get(homes.default)).toHaveLength(1)
+  })
+
   it('computes context choices in the execution store and keeps invalid selections remove-only', async () => {
     const { service, homes, stores } = setup()
     const base = { toast_notifications: true, monitor: '', continuity: false }

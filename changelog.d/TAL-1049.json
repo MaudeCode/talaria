@@ -1,0 +1,1 @@
+{"entries":[{"category":"Fixed","summary":"Stopping a manual task waits for its gateway execution to finish cancelling and preserves uncertain runs for recovery.","highlight":false,"components":["web"]}]}

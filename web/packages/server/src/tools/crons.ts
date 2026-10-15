@@ -27,6 +27,7 @@ export interface CronDeps {
 const JOB_ID_RE = /^[A-Za-z0-9_-][A-Za-z0-9_.-]{0,63}$/
 const PASSTHROUGH_FIELDS = ['script', 'no_agent', 'context_from', 'reasoning_effort']
 interface StoredJob { home: string; profile: string; job: Dict; managed: boolean }
+const isContextSource = (job: Dict): boolean => job.recovery_only !== true
 
 /** TAL-301: a picked catalog id (`@provider:model`) names its own provider, exactly as a chat request does; a bare id keeps the explicit one. */
 function modelSelection(model: unknown, provider: unknown): [string | null, string | null] {
@@ -55,6 +56,7 @@ export function jobForApi(job: Dict, running = false): Dict {
   // TAL-810: a run the gateway scheduler (or any other live process) owns reads as running too.
   payload.running = running || job.running === true || job.running_elsewhere === true
   delete payload.running_elsewhere
+  delete payload.recovery_only
   payload.last_failure = lastFailure(job.last_failure)
   Object.assign(payload, scheduleText(job))
   return payload
@@ -314,7 +316,7 @@ export class CronService {
   private async validateContext(home: string, fields: Dict): Promise<void> {
     const refs = continuityRefs(fields.context_from, false)
     if (!refs.length) return
-    const ids = new Set((await this.sidecar().call('cron.list', { profile_home: home })).jobs.map((job) => job.id))
+    const ids = new Set((await this.sidecar().call('cron.list', { profile_home: home })).jobs.filter(isContextSource).map((job) => job.id))
     if (refs.some((ref) => !ids.has(str(ref)))) throw new HttpFailure(400, 'Context jobs must belong to the execution profile')
   }
 
@@ -346,7 +348,7 @@ export class CronService {
     const included = new Set<string>()
     for (const row of inStore) {
       const id = str(row.job.id).trim()
-      if (!row.managed || !id || id === excludeId || counts.get(id) !== 1) continue
+      if (!row.managed || !isContextSource(row.job) || !id || id === excludeId || counts.get(id) !== 1) continue
       sources.push({ job_id: id, label: str(row.job.name).trim() || id, selectable: true })
       included.add(id)
     }

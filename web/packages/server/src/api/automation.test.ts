@@ -124,6 +124,34 @@ describe('crons, kanban, extensions, terminal', () => {
     expect(listed).toMatchObject({ model: 'm', provider: 'custom:localhost:8080' })
   })
 
+  it('routes retained deleted-job recovery through HTTP lookups and permits another unverified retry', async () => {
+    const snapshot = { id: 'retained-job', name: 'Retained task', profile: null, toast_notifications: true, monitor: '', continuity: false,
+      state: 'paused', enabled: false, running_elsewhere: false, last_run_at: null, last_status: 'error', last_error: 'Manual task outcome is unverified' }
+    sidecar.respond('cron.list', (params) => ({ jobs: params.profile_home === s.deps.config.hermesHome ? [snapshot] : [] }))
+    sidecar.respond('cron.get', () => ({ job: snapshot }))
+    sidecar.respond('cron.status', (params) => params.job_id ? { job_id: params.job_id, running: false, elapsed: 0 } : { running: {} })
+    let recoveries = 0
+    let rejectRecovery: ((error: Error) => void) | undefined
+    sidecar.respond('cron.run', (params, emit) => {
+      recoveries++
+      emit({ event: 'started', data: { job_id: params.job_id } })
+      return new Promise((_resolve, reject) => { rejectRecovery = reject })
+    })
+    const feed = s.deps.events.subscribe()
+    onTestFinished(() => { rejectRecovery?.(new Error('test cleanup')); feed.close() })
+    expect(await json(await s.get('/api/crons'))).toMatchObject({ jobs: [{ id: snapshot.id, owner_profile: 'default', read_only: false }] })
+    for (let attempt = 0; attempt < 2; attempt++) {
+      const response = await post(s, '/api/crons/run', { job_id: snapshot.id })
+      expect(response.status).toBe(200)
+      expect(await json(response)).toMatchObject({ ok: true, status: 'running' })
+      expect(s.deps.sessions.deps.runtime.runningCronJobs.has(snapshot.id)).toBe(true)
+      rejectRecovery!(new SidecarError('Manual task execution is unverified', { condition: 'cron_execution_unverified' }))
+      expect((await feed.next(AbortSignal.timeout(2000)))?.reason).toBe('cron_complete')
+      expect(s.deps.sessions.deps.runtime.runningCronJobs.has(snapshot.id)).toBe(false)
+    }
+    expect(recoveries).toBe(2)
+  })
+
   it('crons list merges profiles, create/update translate the form fields, and run-now answers on started', async () => {
     const jobs = new Map<string, Json>()
     sidecar.respond('cron.list', () => ({ jobs: [...jobs.values()] as never[] }))
