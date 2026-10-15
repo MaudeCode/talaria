@@ -578,6 +578,30 @@ function sessionLineageIds(row: Row): Set<string> {
   return ids
 }
 
+/** Receipt members are aliases of the current target. Keep the newest sidecar's UI metadata, never its old transcript counts. */
+function reconcileLocalSessionRows(rows: Row[], cli: Row[], profilesMatch: ListParams['profilesMatch']): Row[] {
+  const members = new Map<string, Row>()
+  for (const meta of cli) if (Array.isArray(meta._lineage_ids)) for (const id of meta._lineage_ids) if (typeof id === 'string') members.set(id, meta)
+  const chosen = new Map<string, { row: Row; meta: Row; rank: number }>()
+  const other: Row[] = []
+  for (const row of rows) {
+    const sid = str(row.session_id), meta = members.get(sid)
+    if (!meta || !profilesMatch(str(row.profile) || null, str(meta.profile) || null)) { other.push(row); continue }
+    const target = str(meta.session_id), rank = (meta._lineage_ids as string[]).indexOf(sid)
+    if ((chosen.get(target)?.rank ?? -1) < rank) chosen.set(target, { row, meta, rank })
+  }
+  for (const [target, { row, meta }] of chosen) {
+    const merged = mergeCliSidebarMetadata(row, meta)
+    if (str(row.session_id) !== target) {
+      merged.message_count = meta.message_count ?? 0
+      merged.user_message_count = meta.user_message_count ?? 0
+      merged.last_message_at = meta.last_message_at ?? meta.updated_at
+    }
+    other.push({ ...merged, session_id: target })
+  }
+  return other
+}
+
 /** Python `_dedupe_cli_sidebar_sessions_for_api`: additive state rows, keeping project-hidden background rows addressable. */
 export function dedupeCliSidebarSessions(cli: Row[], represented: Set<string>, opts: { showCli: boolean; showCron: boolean; showWebhook: boolean; showKanban: boolean; sourceFilter: string | null; requestVisibilityOverrides: boolean }): Row[] {
   const sf = str(opts.sourceFilter).trim().toLowerCase()
@@ -716,6 +740,7 @@ export function buildSessionListPayload(store: SessionStore, params: ListParams)
   let dedupedCli: Row[] = []
   if (params.cliRows) {
     const cliRows = params.cliRows.flatMap((r) => { const clean = sanitizeSessionRow(r, store, 'state.db'); return clean ? [clean] : [] })
+    webuiSessions = reconcileLocalSessionRows(webuiSessions, cliRows, params.profilesMatch)
     const cliById = new Map(cliRows.map((r) => [str(r.session_id), r]))
     webuiSessions = webuiSessions.map((s) => {
       const meta = cliById.get(str(s.session_id))

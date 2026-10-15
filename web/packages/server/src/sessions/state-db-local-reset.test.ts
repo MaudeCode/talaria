@@ -7,6 +7,7 @@ import fixture from '../test/fixtures/local-reset.json' with { type: 'json' }
 import { readImportableAgentSessionRows, stateDbCompressionLineage, stateDbLineageReport, stateDbLocalTarget, stateDbSessionMessages, stateDbSessionRead } from './state-db.js'
 import { bootTestServer } from '../test/harness.js'
 import { Session } from './session.js'
+import { FakeSidecar } from '../sidecar/fake.js'
 
 describe('Agent v0.22.1 receipt-backed local reset', () => {
   let dir: string
@@ -81,13 +82,13 @@ describe('Agent v0.22.1 receipt-backed local reset', () => {
     db.close(); path = join(server.state, 'state.db'); db = new DatabaseSync(path); load(stage)
     await server.deps.settings.save({ show_cli_sessions: true })
     server.deps.cliSessions.invalidate()
+    server.deps.sessionStore.save(new Session({ session_id: fixture.owner, profile: 'default', source_tag: 'cli', messages: [{ role: 'user', content: 'stale sidecar context' }, { role: 'assistant', content: 'old reply' }, { role: 'user', content: 'another old turn' }] }, server.deps.sessionStore.deps.defaults('default')))
     const list = await (await server.get('/api/sessions')).json() as { sessions: Record<string, unknown>[]; cli_session_count: number }
     expect(list.sessions.map((r) => r.session_id)).toEqual(fixture.snapshots[stage].listedIds)
     expect(list.cli_session_count).toBe(1)
     const search = await (await server.get('/api/sessions/search?q=Reset%20conversation&show_cli_sessions=1')).json() as { sessions: Record<string, unknown>[] }
     expect(search.sessions.map((r) => r.session_id)).toEqual(fixture.snapshots[stage].listedIds)
     // A saved pre-reset Talaria sidecar must not resurrect its old model context on reopen.
-    server.deps.sessionStore.save(new Session({ session_id: fixture.owner, profile: 'default', source_tag: 'cli', messages: [{ role: 'user', content: 'stale sidecar context' }] }, server.deps.sessionStore.deps.defaults('default')))
     const expected = stage === 'empty' ? [] : stage === 'reset' ? ['after reset'] : ['latest context']
     for (const row of fixture.snapshots[stage].sessions) {
       const response = await server.get(`/api/session?session_id=${row.id}`)
@@ -98,5 +99,40 @@ describe('Agent v0.22.1 receipt-backed local reset', () => {
     }
     const reopened = await (await server.get('/api/sessions')).json() as { sessions: Record<string, unknown>[] }
     expect(reopened.sessions.map((r) => r.session_id)).toEqual(fixture.snapshots[stage].listedIds)
+  })
+
+  it.each([false, true])('starts a turn at the current target from an old segment with persisted sidecar=%s', async (persisted) => {
+    const sidecar = new FakeSidecar()
+    const server = await bootTestServer({ sidecar })
+    onTestFinished(async () => { await server.close() })
+    db.close(); path = join(server.state, 'state.db'); db = new DatabaseSync(path); load('multiple')
+    if (persisted) server.deps.sessionStore.save(new Session({ session_id: fixture.owner, profile: 'default', source_tag: 'cli', messages: [{ role: 'user', content: 'stale sidecar context' }, { role: 'assistant', content: 'old reply' }, { role: 'user', content: 'another old turn' }] }, server.deps.sessionStore.deps.defaults('default')))
+    const response = await server.get('/api/chat/start', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ session_id: fixture.owner, message: 'continue after reset' }) })
+    const started = await response.json() as { session_id: string; stream_id: string }
+    expect(response.status, JSON.stringify(started)).toBe(200)
+    expect(started.session_id).toBe('reset-empty')
+    await server.sse(`/api/chat/stream?stream_id=${started.stream_id}`, (frame) => frame.event === 'stream_end')
+    const call = sidecar.calls.find((call) => call.method === 'chat.start')?.params as { session_id: string; conversation_history: { content: string }[] }
+    expect(call.session_id).toBe('reset-empty')
+    expect(call.conversation_history.map((m) => m.content)).toEqual(['latest context'])
+  })
+
+  it('collapses all persisted receipt members while keeping the current sidecar metadata', async () => {
+    const server = await bootTestServer()
+    onTestFinished(async () => { await server.close() })
+    db.close(); path = join(server.state, 'state.db'); db = new DatabaseSync(path); load('multiple')
+    await server.deps.settings.save({ show_cli_sessions: true })
+    for (const row of [...fixture.snapshots.multiple.sessions].reverse()) {
+      const current = row.id === 'reset-empty'
+      server.deps.sessionStore.save(new Session({ session_id: row.id, profile: 'default', source_tag: 'cli', title: current ? 'Current saved title' : 'Old saved title', pinned: current,
+        messages: current ? [{ role: 'user', content: 'latest context' }] : [{ role: 'user', content: 'old first' }, { role: 'assistant', content: 'old answer' }, { role: 'user', content: 'old second' }],
+      }, server.deps.sessionStore.deps.defaults('default')))
+    }
+    server.deps.cliSessions.invalidate()
+    const list = await (await server.get('/api/sessions')).json() as { sessions: Record<string, unknown>[]; cli_session_count: number }
+    expect(list.cli_session_count).toBe(1)
+    expect(list.sessions).toHaveLength(1)
+    expect(list.sessions[0]).toMatchObject({ session_id: 'reset-empty', title: 'Current saved title', pinned: true, message_count: 1 })
+    expect(list.sessions[0]).not.toHaveProperty('_lineage_ids')
   })
 })

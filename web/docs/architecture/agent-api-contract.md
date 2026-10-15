@@ -118,7 +118,9 @@ Agent v0.22.1 local policy receipts retain a logical owner while reset and
 compression move the physical transcript. The read-only state.db projection
 validates those receipts before collapsing the physical rows. List and search
 show the current target once, including an empty reset target, under the
-existing lineage identity. Detail and reopen resolve old segment IDs to that
+existing lineage identity. Saved sidecar aliases reconcile to that target
+before list deduplication, preserving the newest sidecar's UI metadata.
+Detail, reopen and chat operations resolve old segment IDs to that
 target. Transcript reads stop at the latest reset boundary, even when a saved
 Talaria record contains an older compression lineage.
 

@@ -266,6 +266,9 @@ export class SessionService {
     return this.visibleToActiveProfile(session.profile)
   }
 
+  /** One receipt-backed physical target for every operation on a local conversation alias. */
+  resolveSessionId(sid: string): string { return stateDbLocalTarget(this.stateDbPath(null), sid) }
+
   /** Python `_lookup_cli_session_metadata(...).get('read_only')` plus the persisted sidecar flag and a not-claimable foreign owner. */
   private isReadOnlyImport(sid: string): boolean {
     try {
@@ -353,7 +356,7 @@ export class SessionService {
   }
 
   private get404(sid: string, opts: { metadataOnly?: boolean } = {}): Session {
-    sid = stateDbLocalTarget(this.stateDbPath(null), sid)
+    sid = this.resolveSessionId(sid)
     try {
       return this.store.get(sid, opts)
     } catch (error) {
@@ -560,7 +563,7 @@ export class SessionService {
     if (!isSafeSessionId(sid)) return { session: null, reason: 'invalid_sid' }
     const profile = this.deps.activeProfile()
     const dbPath = join(this.deps.profileHome(profile), 'state.db')
-    sid = stateDbLocalTarget(dbPath, sid)
+    sid = this.resolveSessionId(sid)
     const row = stateDbSessionRow(dbPath, sid)
     const stateDbSource = str(row?.source).trim().toLowerCase()
     const subagentChild = stateDbSource === 'subagent'
@@ -675,7 +678,7 @@ export class SessionService {
   /** Python `_handle_session_get` on the WebUI sidecar (state.db merge pending). */
   detail(sid: string, query: { messages?: string | null | undefined; msg_limit?: string | null | undefined; msg_before?: string | null | undefined; resolve_model?: string | null | undefined }): Record<string, unknown> {
     if (!sid) throw new HttpFailure(400, 'session_id is required')
-    sid = stateDbLocalTarget(this.stateDbPath(null), sid)
+    sid = this.resolveSessionId(sid)
     const loadMessages = (query.messages ?? '1') !== '0'
     const msgLimit = parseMsgLimit(query.msg_limit ?? null)
     const msgBeforeRaw = query.msg_before
@@ -823,7 +826,7 @@ export class SessionService {
 
   /** A session without a sidecar, synthesized from state.db for this profile; 404/409 like the detail. */
   private foreignSession(sid: string): { synth: Session; meta: Row | null } {
-    sid = stateDbLocalTarget(this.stateDbPath(null), sid)
+    sid = this.resolveSessionId(sid)
     const meta = this.lookupCliMeta(sid)
     const profile = str(meta?.profile) || null
     const profileAgnostic = str(meta?.source_tag || meta?.raw_source).trim().toLowerCase() === 'claude_code'

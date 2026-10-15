@@ -465,7 +465,7 @@ export function readImportableAgentSessionRows(dbPath: string, opts: ReadRowsOpt
       const root = lineage.rows[0]!
       const title = [...lineage.rows].reverse().find((row) => row.title)?.title ?? r.title
       return { ...r, title, started_at: root.started_at, last_activity: r.last_activity ?? r.started_at, parent_session_id: root.parent_session_id,
-        _lineage_root_id: lineage.owner, _lineage_tip_id: r.id, _compression_segment_count: lineage.ids.length }
+        _lineage_root_id: lineage.owner, _lineage_tip_id: r.id, _lineage_ids: [...lineage.ids], _compression_segment_count: lineage.ids.length }
     }))
     projected = projected.map((r) => ({ ...r, ...normalizeAgentSessionSource(r.source) }))
     projected = projected.filter(isCliSessionRowVisible)

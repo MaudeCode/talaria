@@ -231,6 +231,7 @@ export class CliSessionSource {
         relationship_type: row.relationship_type ?? null, _parent_lineage_root_id: row._parent_lineage_root_id ?? null,
         end_reason: row.end_reason ?? null, actual_message_count: row.actual_message_count ?? null, user_message_count: row.actual_user_message_count ?? null,
         _lineage_root_id: row._lineage_root_id ?? null, _lineage_tip_id: row._lineage_tip_id ?? null, _compression_segment_count: row._compression_segment_count ?? null,
+        _lineage_ids: row._lineage_ids ?? null,
         is_cli_session: isCliSessionRow({ ...row, ...meta }),
       }
     }
