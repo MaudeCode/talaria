@@ -20,6 +20,7 @@ import signal
 import threading
 import time
 from datetime import datetime
+from functools import wraps
 from pathlib import Path
 
 from ..errors import InvalidParams, RpcError
@@ -110,6 +111,25 @@ def _job_ref(params: dict, key: str = "job_id") -> str:
     if not ref or any(ch in ref for ch in "\x00\r\n"):
         raise InvalidParams("invalid job_id")
     return ref
+
+
+def _settled_mutation(method):
+    """Fence schedule edits against manual execution, including its retained recovery obligation."""
+    @wraps(method)
+    def guarded(ctx, params):
+        from .cron_execution import ManualExecution, Unverified
+        home, jobs = profile_home_param(params), _jobs()
+        with _store(home):
+            job = getattr(jobs, "resolve_job_ref", jobs.get_job)(_job_ref(params))
+        if job is None:
+            return method(ctx, params)
+        job_id = _job_id({"job_id": job["id"]})
+        execution = ManualExecution(home, home, {"id": job_id}, None)
+        with execution.acquire():
+            if execution.file.exists():
+                raise Unverified("Schedule edits and deletion are blocked until the manual execution is reconciled.")
+            return method(ctx, dict(params, job_id=job_id))
+    return guarded
 
 
 # ── job payload shaping ───────────────────────────────────────────────────
@@ -668,6 +688,7 @@ def register(registry) -> None:
         return {"job": job_for_api(job)}
 
     @registry.method("cron.update")
+    @_settled_mutation
     def update(ctx: CallContext, params: dict) -> dict:
         jobs = _jobs()
         job_id = _job_ref(params)
@@ -696,6 +717,7 @@ def register(registry) -> None:
         return {"job": job_for_api(job)}
 
     @registry.method("cron.delete")
+    @_settled_mutation
     def delete(ctx: CallContext, params: dict) -> dict:
         job_id = _job_ref(params)
         with _store(profile_home_param(params)):
@@ -713,6 +735,7 @@ def register(registry) -> None:
         return {"job": dict(job)}
 
     @registry.method("cron.resume")
+    @_settled_mutation
     def resume(ctx: CallContext, params: dict) -> dict:
         with _store(profile_home_param(params)):
             try:
@@ -729,13 +752,13 @@ def register(registry) -> None:
         store_home = profile_home_param(params)
         execution_home = Path(params["execution_home"]).expanduser() if params.get("execution_home") else None
         job_id = _job_id(params)
+        from .cron_execution import path
+        if path(store_home, job_id).exists():
+            return run_tracked({"id": job_id}, store_home, execution_home, ctx)
         with _store(store_home):
             job = _jobs().get_job(job_id)
         if not job:
             raise RpcError("Job not found", condition="not_found")
-        from .cron_execution import path
-        if path(store_home, job_id).exists():
-            return run_tracked(job, store_home, execution_home, ctx)
         foreign = _live_executions(store_home, [job_id], strict=True).get(job_id)
         if foreign is not None:
             return {"job_id": job_id, "status": "already_running", "elapsed": _elapsed(foreign)}

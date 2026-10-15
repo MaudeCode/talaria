@@ -204,8 +204,9 @@ def test_a_crash_during_the_tail_never_replays_output_delivery_or_bookkeeping(mo
     assert execution.file.exists() and not execution.settled
 
 
-def test_a_durable_bookkeeping_receipt_retires_recovery_without_repeating_side_effects(monkeypatch, tmp_path):
-    execution, calls = _tail(monkeypatch, tmp_path, booked=True)
+@pytest.mark.parametrize("owns", [True, False])
+def test_a_durable_bookkeeping_receipt_retires_recovery_without_repeating_side_effects(monkeypatch, tmp_path, owns):
+    execution, calls = _tail(monkeypatch, tmp_path, booked=True, owns=owns)
     execution.record["tail_started"] = True
     with pytest.raises(cron.RpcError) as error:
         execution.finish((False, "output", "", "cancelled"))
@@ -226,3 +227,48 @@ def test_only_one_process_can_reconcile_an_execution_at_a_time(tmp_path):
     with first.acquire(), pytest.raises(cron.RpcError, match="still being reconciled"):
         with second.acquire():
             pytest.fail("two recovery owners acquired the same execution")
+
+
+def test_recovery_remains_reachable_after_the_job_was_removed(monkeypatch, tmp_path):
+    record = cron_execution.path(tmp_path, "job-original")
+    record.parent.mkdir(parents=True)
+    record.write_text("{}")
+    methods, recovered = {}, []
+    class Registry:
+        def method(self, name, **kwargs):
+            return lambda fn: methods.setdefault(name, fn)
+    monkeypatch.setattr(cron, "_store", lambda home: contextlib.nullcontext())
+    monkeypatch.setattr(cron, "_jobs", lambda: types.SimpleNamespace(get_job=lambda jid: None))
+    monkeypatch.setattr(cron, "run_tracked", lambda job, *args: recovered.append(job["id"]) or {"status": "failed"})
+    cron.register(Registry())
+    result = methods["cron.run"](types.SimpleNamespace(), {"profile_home": str(tmp_path), "job_id": "job-original"})
+    assert recovered == ["job-original"] and result["status"] == "failed"
+
+
+def test_a_crash_after_pausing_recovers_the_exact_pause_before_retiring_the_record(monkeypatch, tmp_path):
+    execution, calls = _tail(monkeypatch, tmp_path)
+    execution.file.unlink()
+    agent = sys.modules["cron"]
+    monkeypatch.setattr(agent.executions, "create_execution", lambda *args, **kwargs: {"id": "execution-original"}, raising=False)
+    monkeypatch.setattr(agent.executions, "mark_execution_running", lambda eid: None, raising=False)
+    current = agent.jobs.get_job("job-original")
+    current.update(state="scheduled", enabled=True)
+    monkeypatch.setattr(agent.jobs, "is_job_runnable", lambda job: job["state"] == "scheduled" and job["enabled"], raising=False)
+    def pause(job_id, *, reason):
+        current.update(state="paused", enabled=False, paused_at="pause-instant", paused_reason=reason)
+        return current
+    monkeypatch.setattr(agent.jobs, "pause_job", pause, raising=False)
+    def crash_after_pause():
+        if execution.record.get("pause"):
+            raise OSError("record write interrupted after schedule pause")
+        execution.file.write_text(json.dumps(execution.record))
+    monkeypatch.setattr(execution, "save", crash_after_pause)
+    with pytest.raises(OSError, match="after schedule pause"):
+        execution.prepare()
+    assert "pause" not in json.loads(execution.file.read_text())
+    recovered = cron_execution.ManualExecution(tmp_path, tmp_path, {"id": "job-original"}, "owner-original")
+    monkeypatch.setattr(recovered, "save", lambda: recovered.file.write_text(json.dumps(recovered.record)))
+    recovered.prepare()
+    assert recovered.record.get("pause") == {"paused_at": "pause-instant", "reason": current["paused_reason"]}
+    recovered.finish((False, "output", "", "cancelled"))
+    assert ("resume", "execution-original") in calls

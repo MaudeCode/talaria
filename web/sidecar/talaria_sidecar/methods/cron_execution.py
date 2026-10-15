@@ -129,8 +129,11 @@ class ManualExecution:
                     self.record["result"] = [False, "", "", "Fire claim lost before submission"]
                     self.save()
                 if owns and current and jobs.is_job_runnable(current) and not self.recovering:
-                    paused = jobs.pause_job(self.job["id"], reason=f"Manual execution pending: {self.execution_id}")
-                    self.record["pause"] = {"paused_at": paused["paused_at"], "reason": paused["paused_reason"]}
+                    current = jobs.pause_job(self.job["id"], reason=f"Manual execution pending: {self.execution_id}")
+                # The job write may have committed before the submitter died saving its pause receipt.
+                if (current and current.get("state") == "paused" and not self.record.get("pause")
+                        and current.get("paused_reason") == f"Manual execution pending: {self.execution_id}"):
+                    self.record["pause"] = {"paused_at": current["paused_at"], "reason": current["paused_reason"]}
                     self.save()
 
     def cancel(self, reason):
@@ -147,7 +150,10 @@ class ManualExecution:
         with scoped_home(self.execution_home), jobs.use_cron_store(self.home), _owner_fence(jobs, self.job["id"], self.owner) as owns:
             current = jobs.get_job(self.job["id"]) or {}
             row = executions.get_execution(self.execution_id)
-            booked = self.execution_id in current.get("canonical_completions", []) or (row and row["status"] in {"completed", "failed"})
+            marked = self.execution_id in current.get("canonical_completions", [])
+            booked = marked or (row and row["status"] in {"completed", "failed"})
+            # Our own mark releases the claim before pause cleanup. A successor's claim never qualifies.
+            may_finish = bool(current) and (owns or (marked and not current.get("fire_claim")))
             if not booked and self.record["tail_started"]:
                 raise Unverified("Bookkeeping was interrupted; its side effects will not be repeated.")
             # Stop the Agent's orphan journal reader from replaying OUR tail after a crash.
@@ -155,7 +161,7 @@ class ManualExecution:
             self.record["result"] = list(result)
             self.save()
             journal_path(self.job["id"], self.execution_id).unlink(missing_ok=True)
-            if not owns:
+            if not may_finish:
                 self._finish_ledger(False, "Fire claim ownership lost before terminal completion.")
             elif booked:
                 self._finish_ledger(success, error)
@@ -174,13 +180,13 @@ class ManualExecution:
                         raise Unverified("A prior submitter still owns this execution's bookkeeping.")
                     success, error = delivery.success, delivery.error
             pause = self.record.get("pause")
-            if owns and pause:
+            if may_finish and pause:
                 from cron.scheduler_authority import _lift_pause
                 _lift_pause(self.job["id"], pause)
             self.file.unlink()
             self.settled = True
         reason = self.record["cancel_reason"]
-        if not owns or reason == "claim_lost":
+        if not may_finish or reason == "claim_lost":
             return {"job_id": self.job["id"], "status": "failed", "success": False, "error": str(_ClaimLost())}
         if reason == "cancelled" and not success:
             raise RpcError("cancelled", condition="cancelled")

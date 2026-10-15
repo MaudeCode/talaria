@@ -233,6 +233,12 @@ cancelled task. An explicit sidecar `cron.run` for a retained record reconciles
 that execution and never submits a replacement. An unknown owner admission
 requires owner-side recovery before it can settle.
 
+Resume, edits and deletion share the manual-run lock and reject retained
+executions, so schedule controls cannot remove the recovery barrier. Recovery
+loads its persisted job snapshot even if another Agent process removed the job.
+It also recovers a missing pause receipt from the execution-specific pause
+reason, including a crash between the schedule write and the receipt write.
+
 The Agent's output/delivery and owner-fenced bookkeeping helpers own the
 terminal tail. Before those side effects, Web persists an at-most-once barrier
 and retires the Agent's generic orphan journal, preventing two recovery paths

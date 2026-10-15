@@ -180,8 +180,8 @@ def workers(sidecar):
 
 @requires_agent
 @canonical_agent
-@pytest.mark.parametrize("restart_sidecar", [False, True])
-def test_lost_submitter_recovers_same_admission_without_another_run(owner, restart_sidecar):
+@pytest.mark.parametrize("restart_sidecar,remove_job", [(False, False), (True, False), (True, True)])
+def test_lost_submitter_recovers_same_admission_without_another_run(owner, restart_sidecar, remove_job):
     home, model, sidecar, job = owner
     params = {"profile_home": str(home), "job_id": job["id"]}
     request = sidecar.request("cron.run", params)
@@ -196,9 +196,13 @@ def test_lost_submitter_recovers_same_admission_without_another_run(owner, resta
             sidecar.proc.kill()
             sidecar.proc.wait(timeout=10)
         os.kill(child, signal.SIGKILL)
+        if remove_job:
+            subprocess.run([AGENT_PYTHON, "-c", "import sys; from cron.jobs import remove_job; assert remove_job(sys.argv[1])", job["id"]],
+                           cwd=AGENT_DIR, env=isolated_env(home), check=True, capture_output=True, text=True, timeout=30)
         if restart_sidecar:
             replacement = SidecarProcess(home, env={"OPENAI_API_KEY": "loopback-only", "OPENAI_BASE_URL": f"http://127.0.0.1:{model.server_port}/v1"})
-            assert replacement.result("cron.list", {"profile_home": str(home)})["jobs"][0]["running_elsewhere"] is True
+            if not remove_job:
+                assert replacement.result("cron.list", {"profile_home": str(home)})["jobs"][0]["running_elsewhere"] is True
             request = replacement.request("cron.run", params)
         wait_for(lambda: json.loads(record_path.read_text()).get("cancel_reason"))
         # Recovery must be active before the original inference is released.
@@ -211,11 +215,15 @@ def test_lost_submitter_recovers_same_admission_without_another_run(owner, resta
         assert after["admission_id"] == before["admission_id"] and after["status"] == "terminal", after
         assert len(model.requests) == 1
         stored = active.result("cron.get", params)["job"]
-        assert stored["canonical_completions"] == [record["execution_id"]]
-        assert stored["repeat"]["completed"] == 1
-        assert stored["state"] == "scheduled"
         assert not record_path.exists()
-        assert len(active.result("cron.output", params)["outputs"]) == 1
+        if remove_job:
+            assert stored is None
+            assert active.result("cron.output", params)["outputs"] == []
+        else:
+            assert stored["canonical_completions"] == [record["execution_id"]]
+            assert stored["repeat"]["completed"] == 1
+            assert stored["state"] == "scheduled"
+            assert len(active.result("cron.output", params)["outputs"]) == 1
     finally:
         if replacement:
             replacement.close()
@@ -238,6 +246,9 @@ def test_owner_disconnect_and_restart_leave_unknown_guarded_without_resubmission
     assert sidecar.result("cron.list", {"profile_home": str(home)})["jobs"][0]["running_elsewhere"] is True
     stored = sidecar.result("cron.get", params)["job"]
     assert stored["state"] == "paused" and stored.get("fire_claim") and not stored.get("last_run_at"), stored
+    for method, extra in (("cron.resume", {}), ("cron.delete", {}), ("cron.update", {"updates": {"enabled": True}})):
+        blocked, _ = sidecar.call(method, {**params, **extra})
+        assert blocked.get("error", {}).get("data", {}).get("condition") == "cron_execution_unverified", blocked
     model.restart_gateway()
     model.wait_ready()
     retry, _ = sidecar.call("cron.run", params)
@@ -270,3 +281,22 @@ def test_successful_manual_run_books_once_and_preserves_operator_schedule_state(
     assert len(model.requests) == 1
     assert len(admissions(home)) == 1
     assert not (home / "cron/manual_runs" / (job["id"] + ".json")).exists()
+
+
+@requires_agent
+@canonical_agent
+@pytest.mark.parametrize("method,extra", [
+    ("cron.resume", {}),
+    ("cron.update", {"updates": {"state": "scheduled", "enabled": True}}),
+    ("cron.delete", {}),
+])
+def test_schedule_mutations_cannot_remove_a_manual_execution_recovery_barrier(owner, method, extra):
+    home, model, sidecar, job = owner
+    params = {"profile_home": str(home), "job_id": job["id"]}
+    sidecar.request("cron.run", params)
+    assert model.started.wait(60), sidecar.stderr_lines[-20:]
+    answer, _ = sidecar.call(method, {**params, **extra})
+    assert answer.get("error", {}).get("data", {}).get("condition") == "cron_execution_unverified", answer
+    stored = sidecar.result("cron.get", params)["job"]
+    assert stored["state"] == "paused" and stored.get("fire_claim")
+    assert (home / "cron/manual_runs" / (job["id"] + ".json")).exists()
