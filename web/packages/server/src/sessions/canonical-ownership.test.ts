@@ -52,6 +52,38 @@ describe('canonical Agent ownership (TAL-1036)', () => {
   }
 
 
+  it.each(['detail', 'metadata', 'status', 'direct'] as const)('keeps canonical stale-run recovery read-only through %s', async (route) => {
+    const sid = fixture.sessions.cli!
+    const session = cache(sid)
+    const stream = 'dead-owned-stream'
+    session.active_stream_id = stream
+    session.pending_user_message = 'unsettled Talaria prompt'
+    session.pending_started_at = s.deps.sessions.deps.now() - 120
+    s.deps.sessionStore.save(session)
+    const writer = s.deps.journal.writer(sid, stream)
+    writer.appendSseEvent('token', { text: 'unsettled Talaria output' })
+    writer.close()
+    const before = stored()
+    const file = readFileSync(join(s.state, 'sessions', `${sid}.json`), 'utf8')
+    s.deps.sessionStore.sessions.delete(sid)
+    if (route === 'direct') expect(s.deps.sessions.clearStaleStreamState(s.deps.sessionStore.get(sid))).toBe(false)
+    else {
+      const response = await s.get(route === 'status' ? `/api/session/status?session_id=${sid}` : `/api/session?session_id=${sid}${route === 'metadata' ? '&messages=0' : ''}`)
+      expect(response.status).toBe(200)
+      const body = await json(response)
+      const row = route === 'status' ? body : body.session as Record<string, unknown>
+      expect(row).toMatchObject({ read_only: true })
+      expect(row.read_only_reason).toContain('gateway')
+    }
+    expect(readFileSync(join(s.state, 'sessions', `${sid}.json`), 'utf8')).toBe(file)
+    expect(stored()).toEqual(before)
+    const current = s.deps.sessionStore.get(sid)
+    expect(current.active_stream_id).toBe(stream)
+    expect(current.pending_user_message).toBe('unsettled Talaria prompt')
+    expect(current.messages).toEqual(session.messages)
+    expect(sidecar.calls.filter((c) => ['chat.start', 'state_db.sync_usage', 'state_db.sync_title'].includes(c.method))).toEqual([])
+  })
+
   it('refuses the real candidate queued-local reproduction before independent chat dispatch', async () => {
     const sid = fixture.sessions.cli!
     const before = stored()

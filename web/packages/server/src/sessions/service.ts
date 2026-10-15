@@ -945,6 +945,8 @@ export class SessionService {
     if (this.deps.runtime.activeRunStream(session.session_id)) return false
     const pendingAge = session.pending_started_at ? this.deps.now() - session.pending_started_at : null
     if (session.hasPendingPrompt && pendingAge !== null && pendingAge < 30) return false
+    // Reading a display-only session must not settle the previous Talaria worker's transcript.
+    if (this.isReadOnly(session)) return false
     let target = session
     if (session.loadedMetadataOnly) {
       const full = this.store.load(session.session_id)
