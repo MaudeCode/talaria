@@ -2,11 +2,18 @@ import { describe, expect, it } from 'vitest'
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { z } from 'zod'
-import { ChatEventSchema, ClarifyPendingEnvelopeSchema, MemoryWriteRefusalSchema, ModelsSchema, SIDECAR_RPC_VERSION, SkillsSchema, SpeechPrepareSchema, TranscribeResponseSchema, TranscribeStreamEndSchema, TranscribeStreamEventSchema, TranscribeStreamStartSchema, UpdateNotificationsSchema } from './index.js'
+import { ChatEventSchema, ClarifyPendingEnvelopeSchema, MemoryWriteRefusalSchema, ModelsSchema, SIDECAR_RPC_VERSION, SkillsSchema, SpeechPrepareSchema, TranscribeResponseSchema, TranscribeStreamEndSchema, TranscribeStreamEventSchema, TranscribeStreamStartSchema, UpdateNotificationsSchema, UpdateApplySchema } from './index.js'
 
 const shared = (path: string): unknown => JSON.parse(readFileSync(resolve(import.meta.dirname, '../../../../contracts', path), 'utf8'))
 
 describe('contracts package', () => {
+  it('preserves the shared Agent update hold and its separate recovery verdicts', () => {
+    const hold = UpdateApplySchema.parse(shared('fixtures/agent-update-hold.json'))
+    expect(hold.ok).toBe(false)
+    expect(hold.recovery_compatibility).toEqual({ manual_execution: false, bot_chat_delivery: false })
+    expect(hold.message).toContain('Reconcile')
+    expect(UpdateApplySchema.safeParse({ ...hold, recovery_compatibility: { manual_execution: 'false', bot_chat_delivery: false } }).success).toBe(false)
+  })
   it('preserves resolved duplicate skill identities in the shared fixture', () => {
     const parsed = SkillsSchema.parse(shared('fixtures/skills.json'))
     expect(parsed.skills.map((row) => row.name)).toEqual(['a/one', 'b/two'])

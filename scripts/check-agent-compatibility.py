@@ -313,7 +313,9 @@ def check(args, kind, identity, receipt, junit):
             receipt["python"] = subprocess.check_output([str(agent_python), "-c", "import platform; print(platform.python_version())"],
                                                         env=env, text=True).strip()
             env.update(HERMES_WEBUI_AGENT_DIR=str(agent), HERMES_WEBUI_PYTHON=str(agent_python), HERMES_WEBUI_TEST_PYTHON=sys.executable)
-            observations = probe_agent(agent, identity, env, receipt, "candidate" if kind == "candidate" else "observations")
+            # The retained formats first shipped in 0.22.1; promotion must not bypass their probe.
+            retained_cron = kind in ("candidate", "canary") or tuple(map(int, identity["version"].split("."))) >= (0, 22, 1)
+            observations = probe_agent(agent, identity, {**env, "TALARIA_AGENT_UPGRADE_PROBE": "1" if retained_cron else "0"}, receipt, "candidate" if kind == "candidate" else "observations")
             validate_ssh_approval(observations, identity.get("version") if kind in ("active", "supported") else None, baseline)
             if not args.skip_sidecar_tests:
                 # The sidecar suite spawns `python -m talaria_sidecar` on this venv with disposable homes.

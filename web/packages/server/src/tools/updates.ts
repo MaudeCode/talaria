@@ -792,6 +792,8 @@ export interface AgentUpdatePolicy {
   supportedRevision: string
   supportedVersion: string
   confirmedRevision?: string
+  /** Resolved main and named-profile homes sharing this Agent installation. Read again for every attempt. */
+  retainedStateHomes?: () => readonly string[]
   beforeMutation?: (path: string, revision: string) => Promise<void>
 }
 /** `version` (TAL-946) names a listed Stable release `ref` for either target; omitted, an update takes the newest. */
@@ -839,11 +841,65 @@ export async function checkAgentUpdate(path: string | null, git: GitRun, channel
   catch (error) { return { name: 'agent', channel, behind: null, error: (error as Error).message } }
 }
 
-/** Both update paths establish durable repair intent after confirmation and before touching source. */
-async function prepareAgentMutation(path: string, info: Dict, policy?: AgentUpdatePolicy): Promise<Dict | null> {
-  const warning = confirmAgent(info, policy)
+/** Read immutable target blobs, never import candidate Python into the running sidecar. */
+async function retainedCronCompatibility(path: string, revision: string, git: GitRun, homes: readonly string[]): Promise<{ manual_execution: boolean; bot_chat_delivery: boolean }> {
+  const files = (home: string, kind: string): string[] => {
+    try { return readdirSync(join(home, 'cron', kind)).filter((name) => name.endsWith('.json')).map((name) => join(home, 'cron', kind, name)) }
+    catch (error) { if ((error as NodeJS.ErrnoException).code === 'ENOENT') return []; throw error }
+  }
+  const manual = homes.flatMap((home) => files(home, 'manual_runs'))
+  const pending = homes.flatMap((home) => files(home, 'bot_chat_pending')).map((file) => {
+    let record: unknown
+    try { record = JSON.parse(readFileSync(file, 'utf8').replace(/^\uFEFF/, '')) }
+    catch { throw new Error('Retained Bot Chat records could not be read.') }
+    if (!record || typeof record !== 'object' || Array.isArray(record)) throw new Error('Unreadable retained Bot Chat record.')
+    return record as Dict
+  }).filter((record) => !['transferred', 'settled', 'suppressed', 'ambiguous'].includes(str(record.status)))
+  const result = { manual_execution: true, bot_chat_delivery: true }
+  if (!manual.length && !pending.length) return result
+  if (!SHA.test(revision)) throw new Error('Agent revision is unverified.')
+  const tree = await git(['ls-tree', '-r', '--name-only', revision], path)
+  if (!tree.ok) throw new Error('Could not inspect the target Agent recovery protocols.')
+  const entries = new Set(tree.out.split('\n'))
+  const defines = async (file: string, symbols: string[]): Promise<boolean> => {
+    if (!entries.has(file)) return false
+    const blob = await git(['show', `${revision}:${file}`], path)
+    if (!blob.ok) throw new Error('Could not read the target Agent recovery protocol.')
+    return symbols.every((symbol) => new RegExp(`^(?:async )?def ${symbol}\\(`, 'm').test(blob.out))
+  }
+  if (manual.length) {
+    for (const [file, symbols] of [
+      ['cron/scheduler_authority.py', ['journal_path', '_lift_pause']],
+      ['cron/scheduler_bookkeeping.py', ['fail_empty_response', 'finish_completed_run']],
+      ['hermes_cli/gateway_client.py', ['connect_gateway']],
+      ['hermes_cli/gateway_runtime.py', ['discover_gateway_endpoint']],
+      ['cron/executions.py', ['give_up_execution', 'recover_receipted_execution']],
+    ] as const) result.manual_execution = await defines(file, [...symbols]) && result.manual_execution
+  }
+  if (pending.length) {
+    const canonical = await defines('cron/bot_chat_legacy.py', ['drain_legacy_pending'])
+    const legacy = await defines('cron/bot_chat_delivery.py', ['drain'])
+    result.bot_chat_delivery = canonical || (legacy && pending.every((record) =>
+      typeof record.profile === 'string' && ['id', 'home', 'content'].every((key) => typeof record[key] === 'string')
+      && record.job !== null && typeof record.job === 'object' && !Array.isArray(record.job)
+      && typeof record.sequence === 'number' && Number.isFinite(record.sequence) && ['queued', 'claimed'].includes(str(record.status))))
+  }
+  return result
+}
+
+/** Both update paths check retained obligations before repair intent, stash, cleanup, or source mutation. */
+async function prepareAgentMutation(path: string, info: Dict, git: GitRun, policy?: AgentUpdatePolicy, noMutation = false): Promise<Dict | null> {
+  const warning = noMutation ? null : confirmAgent(info, policy)
   if (warning) return warning
-  try { await policy?.beforeMutation?.(path, str(info.latest_sha)) }
+  try {
+    const compatibility = await retainedCronCompatibility(path, str(info.latest_sha), git, policy?.retainedStateHomes?.() ?? [])
+    if (!compatibility.manual_execution || !compatibility.bot_chat_delivery) {
+      const obligations = [!compatibility.manual_execution && 'manual task recovery', !compatibility.bot_chat_delivery && 'pending Bot Chat delivery'].filter(Boolean).join(' and ')
+      return { ok: false, target: 'agent', recovery_compatibility: compatibility,
+        message: `The target Agent cannot reconcile retained ${obligations}. Reconcile these records with a capable Agent before retrying the update.` }
+    }
+  } catch (error) { return { ok: false, target: 'agent', message: `Agent recovery compatibility could not be verified: ${sanitizeGitDiagnostic((error as Error).message)}` } }
+  try { if (!noMutation) await policy?.beforeMutation?.(path, str(info.latest_sha)) }
   catch (error) { return { ok: false, target: 'agent', message: `Agent update could not prepare dependency sync: ${sanitizeGitDiagnostic((error as Error).message)}` } }
   return null
 }
@@ -859,12 +915,14 @@ export async function applyAgentUpdate(path: string | null, git: GitRun, channel
   let info: Dict
   try { info = await agentTarget(path, git, channel, version, published) } catch (error) { return { ok: false, message: (error as Error).message } }
   if (info.current_sha === info.latest_sha) {
+    const held = await prepareAgentMutation(path, info, git, policy, true)
+    if (held) return held
     const verified = await verifiedAgentIdentity(path, str(info.latest_sha), git)
     if (!verified) return { ok: false, message: 'The installed Agent revision could not be verified.' }
     return { ok: true, up_to_date: true, target: 'agent', message: 'Agent is up to date.', ...verified }
   }
   if (info.manual_update || info.error) return { ...info, ok: false, message: info.message ?? info.error }
-  const warning = await prepareAgentMutation(path, info, policy)
+  const warning = await prepareAgentMutation(path, info, git, policy)
   if (warning) return warning
   const ref = str(info.branch)
   const revision = str(info.latest_sha)
@@ -977,7 +1035,7 @@ export async function forceAgentUpdate(path: string | null, git: GitRun, log: (l
   if ((await headContainsRef(path, revision, git)) && !(await canFastForwardTo(path, revision, git))) {
     return { ok: false, message: `agent is already ahead of the ${channel} channel (${ref}); refusing to rewind the checkout. Switching to a slower channel keeps your current version until that channel catches up.`, target: 'agent', channel, refused_rewind: true }
   }
-  const warning = await prepareAgentMutation(path, info, policy)
+  const warning = await prepareAgentMutation(path, info, git, policy)
   if (warning) return warning
   await git(['checkout', '.'], path)
   const cleaned = await git(['clean', '-fd'], path)
@@ -1205,6 +1263,7 @@ export interface UpdateServiceDeps {
   /** Re-derive the installed Web version after a check (tags can arrive after startup); returns the current label. */
   refreshWebuiVersion?: () => string
   agentDir: () => string | null
+  agentHomes?: () => readonly string[]
   /** Repair dependencies through the sidecar even while its imported Agent is stale. */
   agentSync?: (agentDir: string) => Promise<SidecarResult<'runtime.sync_dependencies'>>
   channel: () => Channel
@@ -1264,6 +1323,7 @@ export class UpdateService {
     return {
       supportedRevisions: supportedAgents(this.deps.webRoot).map((agent) => agent.sourceRevision),
       supportedRevision: str(supported.sourceRevision), supportedVersion: str(supported.version), ...(confirmedRevision ? { confirmedRevision } : {}),
+      ...(this.deps.agentHomes ? { retainedStateHomes: this.deps.agentHomes } : {}),
       beforeMutation: async (path, revision) => {
         if (await agentHasDependencySync(path, revision, this.git)) recordPendingAgentSync(path, this.deps.stateDir)
       },

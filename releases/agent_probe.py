@@ -9,6 +9,8 @@ import socket
 import sys
 import tempfile
 import time
+import threading
+import types
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
@@ -314,3 +316,68 @@ finally:
     print(json.dumps(report))
 assert not report["findings"], report["findings"]
 print(f"PASS Agent {__version__}: real MCP registration and executor deadlines")
+
+
+def probe_retained_cron():
+    """Replay records written by v0.22.1's real writers; discovery and delivery never leave this fixture."""
+    from talaria_sidecar.methods import cron, cron_execution
+    fixture = json.loads((Path(__file__).resolve().parent.parent / "web/sidecar/tests/fixtures/cron-retained-v0.22.1.json").read_text())
+    compatible = cron_execution.supported({}, recovery=True)
+    failures = []
+    # Observe the original receipt synchronously, so this probe cannot submit or spawn a replacement turn.
+    cron._run_in_child = lambda job, execution_home, ctx, heartbeat, execution: cron_execution.recover(
+        job, execution.execution_id, threading.Event())
+    ctx = types.SimpleNamespace(emit=lambda *args: None, cancelled=False)
+    for stored_result in (False, True):
+        record = {**fixture["manual"], "execution_home": str(home)}
+        if stored_result:
+            record["result"] = [True, "synthetic output", "synthetic answer", None]
+        file = cron_execution.path(home, record["job"]["id"])
+        file.parent.mkdir(parents=True, exist_ok=True)
+        file.write_text(json.dumps(record))
+        before = file.read_bytes()
+        try:
+            cron.run_tracked(record["job"], home, home, ctx, recovery_only=True)
+            assert compatible, "incompatible recovery fabricated a completion"
+        except cron_execution.Unverified as exc:
+            if not compatible:
+                assert "unsupported recovery protocol" in str(exc), exc
+                assert file.read_bytes() == before, "unsupported recovery rewrote retained evidence"
+            else:
+                assert not stored_result, f"stored manual result could not be reconciled: {exc}"
+                assert "owning gateway is unavailable" in str(exc), exc
+                assert file.exists(), "unknown manual result lost its retained evidence"
+        if not compatible:
+            failures.append(f"manual recovery ({'stored' if stored_result else 'unknown'} result) is unsupported")
+        file.unlink(missing_ok=True)
+
+    from tools import bot_live_delivery
+    bot_live_delivery.find_canonical_live_owner = lambda *args: None
+    if hasattr(bot_live_delivery, "find_canonical_owner"):
+        bot_live_delivery.find_canonical_owner = lambda *args: None
+    from cron import scheduler_delivery
+    scheduler_delivery._deliver_to_bot_chat = deny_network
+    root = home / "cron/bot_chat_pending"
+    root.mkdir(parents=True, exist_ok=True)
+    file = root / "delivery-original.json"
+    record = {**fixture["botChat"], "home": str(home)}
+    file.write_text(json.dumps(record))
+    before = file.read_bytes()
+    try:
+        try:
+            from cron.bot_chat_legacy import drain_legacy_pending
+        except ModuleNotFoundError:
+            from cron.bot_chat_delivery import drain
+            drain(root)
+        else:
+            drain_legacy_pending()
+    except Exception as exc:
+        failures.append(f"pending Bot Chat drain failed: {type(exc).__name__}: {exc}")
+    if file.read_bytes() != before:
+        failures.append("pending Bot Chat drain changed a base-written record without a live owner")
+    assert not failures, "; ".join(failures)
+    print(f"PASS Agent {__version__}: retained v0.22.1 manual recovery and Bot Chat delivery formats")
+
+
+if os.environ.get("TALARIA_AGENT_UPGRADE_PROBE") == "1":
+    probe_retained_cron()

@@ -54,6 +54,7 @@ class FakeTools:
 
     def __init__(self, test, root):
         self.root, self.commands = root, []
+        self.probe_envs = []
         self.head = {}  # fetched ref -> commit it resolves to
         self.requires_python = ">=3.11, <3.14"
         self.sidecar_failures = 0
@@ -91,6 +92,8 @@ class FakeTools:
                                                "checks": [], "findings": findings}))
             if findings:
                 raise subprocess.CalledProcessError(1, command)
+        if any(part.endswith('/releases/agent_probe.py') for part in command):
+            self.probe_envs.append(kwargs['env'])
         if command[:2] == ["git", "init"]:
             Path(command[-1]).mkdir(parents=True)
         if command[:2] == ["git", "-C"] and command[3] == "fetch":
@@ -447,6 +450,19 @@ class CheckerTests(unittest.TestCase):
         self.assertEqual(self.last["sshConfigApproval"]["candidate"], approval_report())
         self.assertEqual(self.tools.ran("docker"), [])
         self.assertFalse(any(command[0].endswith("test.sh") for command in self.tools.commands))
+
+    def test_candidate_and_canary_require_retained_state_probes_even_without_sidecar_tests(self):
+        for selector in (["--identity", json.dumps(CANDIDATE)], ["--main", "9" * 40]):
+            with self.subTest(selector=selector):
+                self.main(*selector, "--skip-docker", "--skip-sidecar-tests")
+                self.assertEqual(self.tools.probe_envs[-1].get("TALARIA_AGENT_UPGRADE_PROBE"), "1")
+        self.main("--skip-docker", "--skip-sidecar-tests")
+        self.assertEqual(self.tools.probe_envs[-1].get("TALARIA_AGENT_UPGRADE_PROBE"), "0")
+        promoted = [*RELEASES[:2], release("v0.22.2", "0.22.2", "c")]
+        self.write(promoted, promoted[-1])
+        with patch.dict(globals(), RELEASES=promoted):
+            self.main("--release", "v0.22.2", "--skip-docker", "--skip-sidecar-tests")
+        self.assertEqual(self.tools.probe_envs[-1].get("TALARIA_AGENT_UPGRADE_PROBE"), "1")
 
     def test_main_canary_uses_an_exact_commit_and_its_own_python(self):
         self.write([], RELEASES[1])  # A canary never depends on, or enters, the stable record.

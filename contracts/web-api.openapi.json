@@ -56392,6 +56392,22 @@
                 "schema": {
                   "type": "object",
                   "properties": {
+                    "recovery_compatibility": {
+                      "type": "object",
+                      "properties": {
+                        "manual_execution": {
+                          "type": "boolean"
+                        },
+                        "bot_chat_delivery": {
+                          "type": "boolean"
+                        }
+                      },
+                      "required": [
+                        "manual_execution",
+                        "bot_chat_delivery"
+                      ],
+                      "description": "Whether the target Agent can reconcile retained manual execution and pending Bot Chat records. A false value blocks the update before any source or repair-intent change."
+                    },
                     "ok": {
                       "type": "boolean"
                     },
@@ -56520,6 +56536,22 @@
                 "schema": {
                   "type": "object",
                   "properties": {
+                    "recovery_compatibility": {
+                      "type": "object",
+                      "properties": {
+                        "manual_execution": {
+                          "type": "boolean"
+                        },
+                        "bot_chat_delivery": {
+                          "type": "boolean"
+                        }
+                      },
+                      "required": [
+                        "manual_execution",
+                        "bot_chat_delivery"
+                      ],
+                      "description": "Whether the target Agent can reconcile retained manual execution and pending Bot Chat records. A false value blocks the update before any source or repair-intent change."
+                    },
                     "ok": {
                       "type": "boolean"
                     },
@@ -56648,6 +56680,22 @@
                 "schema": {
                   "type": "object",
                   "properties": {
+                    "recovery_compatibility": {
+                      "type": "object",
+                      "properties": {
+                        "manual_execution": {
+                          "type": "boolean"
+                        },
+                        "bot_chat_delivery": {
+                          "type": "boolean"
+                        }
+                      },
+                      "required": [
+                        "manual_execution",
+                        "bot_chat_delivery"
+                      ],
+                      "description": "Whether the target Agent can reconcile retained manual execution and pending Bot Chat records. A false value blocks the update before any source or repair-intent change."
+                    },
                     "ok": {
                       "type": "boolean"
                     },

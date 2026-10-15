@@ -64,13 +64,20 @@ def pending_jobs(home):
     return result
 
 
-def supported(job):
+def supported(job, *, recovery=False):
     if job.get("no_agent"):
         return False
     try:
-        importlib.import_module("cron.scheduler_authority")
-    except ModuleNotFoundError as exc:
-        if exc.name in {"cron.scheduler_authority", "cron"}:
+        authority = importlib.import_module("cron.scheduler_authority")
+        if recovery:
+            surfaces = ((authority, ("journal_path", "_lift_pause")),
+                        (importlib.import_module("cron.scheduler_bookkeeping"), ("fail_empty_response", "finish_completed_run")),
+                        (importlib.import_module("cron.executions"), ("give_up_execution", "recover_receipted_execution")),
+                        (importlib.import_module("hermes_cli.gateway_client"), ("connect_gateway",)),
+                        (importlib.import_module("hermes_cli.gateway_runtime"), ("discover_gateway_endpoint",)))
+            return all(callable(getattr(module, name, None)) for module, names in surfaces for name in names)
+    except ImportError as exc:
+        if recovery or (isinstance(exc, ModuleNotFoundError) and exc.name in {"cron.scheduler_authority", "cron"}):
             return False
         raise
     return True
@@ -238,6 +245,10 @@ class ManualExecution:
 
 def run(job, home, execution_home, ctx, owner, *, recovery_only=False):
     from . import cron
+    # Refuse before prepare/cancel can rewrite retained evidence or cleanup can enter a removed owner API.
+    if (recovery_only or path(home, job["id"]).exists()) and not supported({}, recovery=True):
+        raise Unverified("This Agent has an unsupported recovery protocol. Reconcile the retained manual task "
+                         "with a capable Agent before retrying. No task was resubmitted or settled.")
     execution = ManualExecution(home, execution_home, job, owner)
     with execution.acquire():
         with cron._RUNNING_LOCK:

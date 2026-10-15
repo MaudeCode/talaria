@@ -114,6 +114,26 @@ Supported v0.21.7 and v0.22.0 explicitly retain their historical growth block;
 v0.22.1 proves rearming. The exact v0.22.2 candidate loses that guarantee and
 fails the `grown` case. The gate changes neither Agent code nor the pin.
 
+Candidate and canary probes, and supported releases from v0.22.1 onward, also
+replay retained cron records written by the v0.22.1 Agent and Web manual-execution
+writers. The fixture at
+`sidecar/tests/fixtures/cron-retained-v0.22.1.json` records that base revision.
+The probe runs the installed target's real manual recovery and pending Bot Chat
+drain with disposable homes, no live owner, and network access denied. A target
+that imports successfully but cannot reconcile either format fails this gate.
+
+Both Agent update paths inspect immutable target Git blobs and retained
+`cron/manual_runs` and `cron/bot_chat_pending` records before creating dependency
+repair intent, stashing, or changing source. They inspect the resolved root and
+named-profile homes, or only the pinned home in isolated-profile mode. Manual
+recovery and deferred delivery have separate compatibility verdicts in
+`updates.apply` and `updates.force`; clients render the existing error message.
+Unreadable state or target evidence holds the update. Reconcile retained work
+with a capable Agent and retry. Web never rewrites Agent pending formats or
+discards the records to make an update pass. An already-incompatible install
+returns `cron_execution_unverified` before manual recovery can write evidence,
+settle the task, or resubmit it.
+
 The compatibility gate proves Talaria's existing calls still work; it cannot see
 new Agent capabilities. For what a release or `main` SHA adds, modifies,
 deprecates or removes, run the

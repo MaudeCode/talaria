@@ -5,7 +5,7 @@
 import type { PendingSteer, SessionGoal, SessionNotice } from '@maudecode/talaria-web-contracts'
 import { AsyncLocalStorage } from 'node:async_hooks'
 import { pinnedFetch, systemDnsLookup } from './http/pinned.js'
-import { mkdirSync, readFileSync } from 'node:fs'
+import { mkdirSync, readdirSync, readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { AuthStore } from './auth/store.js'
 import { OidcService } from './auth/oidc.js'
@@ -728,6 +728,13 @@ export function createDeps(opts: CreateDepsOptions): AppDeps {
       return deps.version
     },
     agentDir: () => sidecar?.describe?.agent_dir ?? null,
+    agentHomes: () => {
+      if (isolatedProfileMode()) return [baseHome]
+      let names: string[]
+      try { names = readdirSync(join(baseHome, 'profiles')) }
+      catch (error) { if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error; names = [] }
+      return [...new Set([baseHome, ...names.filter((name) => PROFILE_RE.test(name)).map(profileHome)])]
+    },
     agentSync: async (agentDir) => {
       if (!sidecar) throw new Error('Hermes Agent sidecar is unavailable')
       return sidecar.call('runtime.sync_dependencies', { agent_dir: agentDir }, { timeoutMs: 330_000 })

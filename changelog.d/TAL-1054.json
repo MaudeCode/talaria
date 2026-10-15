@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Agent updates wait until retained task recovery and pending chat deliveries can be handled safely.",
+      "highlight": false,
+      "components": ["web"]
+    }
+  ]
+}
