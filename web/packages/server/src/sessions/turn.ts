@@ -2078,7 +2078,7 @@ export class TurnRunner {
   // ── approvals / clarify ──────────────────────────────────────────────────
 
   async respondApproval(sessionId: string, choice: string, approvalId: string, enableYolo: boolean): Promise<Record<string, unknown>> {
-    this.deps.service().assertWritable(sessionId)
+    sessionId = this.deps.service().idForMutation(sessionId)
     // Python `_enable_session_yolo_and_release_pending`: a stale card id while another approval is parked
     // must not commit YOLO for the whole session — fail closed with the relay envelope instead.
     if (enableYolo && approvalId && !this.deps.pending.hasApprovalId(sessionId, approvalId) && this.deps.pending.hasPendingApproval(sessionId)) {
@@ -2153,7 +2153,7 @@ export class TurnRunner {
 
   private withYoloLock<T>(sessionId: string, fn: () => Promise<T>): Promise<T> {
     const run = (this.yoloChains.get(sessionId) ?? Promise.resolve()).then(() => {
-      this.deps.service().assertWritable(sessionId)
+      sessionId = this.deps.service().idForMutation(sessionId)
       return fn()
     })
     const settled = run.catch(() => undefined).then(() => { if (this.yoloChains.get(sessionId) === settled) this.yoloChains.delete(sessionId) })
@@ -2162,7 +2162,8 @@ export class TurnRunner {
   }
 
   /** Python `set_session_yolo_enabled(False)`: the sidecar must drop its per-session YOLO state before the local flag clears. */
-  disableYolo(sessionId: string): Promise<Record<string, unknown>> {
+  async disableYolo(sessionId: string): Promise<Record<string, unknown>> {
+    sessionId = this.deps.service().idForMutation(sessionId)
     return this.withYoloLock(sessionId, async () => {
       const sidecar = this.deps.sidecar()
       if (sidecar) {
@@ -2180,7 +2181,7 @@ export class TurnRunner {
    * did not acknowledge (prompt retained).
    */
   async respondClarify(sessionId: string, clarifyId: string, reply: string | ClarifyAnswers | null): Promise<{ ok: boolean; response?: string; stale?: boolean; invalid?: boolean; error?: string }> {
-    this.deps.service().assertWritable(sessionId)
+    sessionId = this.deps.service().idForMutation(sessionId)
     const entry = this.deps.pending.peekClarify(sessionId, clarifyId)
     if (!entry) return { ok: false, stale: true }
     // TAL-887: a password-manager answer goes to the Agent and nowhere else; `null` (a decline) is its empty reply.

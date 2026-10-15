@@ -6,8 +6,8 @@ import { bootTestServer, type TestServer } from '../test/harness.js'
 import { FakeSidecar } from '../sidecar/fake.js'
 import type { SidecarResult } from '@maudecode/talaria-web-contracts'
 import { Session } from './session.js'
-import { stampCompressionExhaustedRecovery } from './turn.js'
-import { readImportableAgentSessionRows, stateDbSessionSources } from './state-db.js'
+import { HttpFailure, stampCompressionExhaustedRecovery } from './turn.js'
+import { CONVERSATION_ROUND_THRESHOLD, readImportableAgentSessionRows, stateDbSessionSources } from './state-db.js'
 
 const fixture = JSON.parse(readFileSync(new URL('../test/fixtures/canonical-ownership.json', import.meta.url), 'utf8')) as {
   sessions: Record<string, string>; schema: string[]; inserts: string[]
@@ -307,6 +307,178 @@ describe('canonical Agent ownership (TAL-1036)', () => {
     await s.deps.sessions.deps.runtime.deleteCliSession('default', sid).catch(() => undefined)
     expect(sidecar.calls.filter((c) => c.method === 'state_db.delete_cli_session')).toHaveLength(1)
     expect(s.deps.sessions.isReadOnly(session)).toBe(true)
+  })
+
+  it.each(['rename', 'pin', 'archive', 'toolsets', 'personality', 'truncate', 'clear', 'retry', 'undo', 'delete', 'update'] as const)('rechecks %s ownership after acquiring its mutation lock', async (action) => {
+    const sid = fixture.sessions.cli!
+    makeLegacy(sid)
+    const session = cache(sid)
+    mkdirSync(join(s.state, 'workspace', 'next'), { recursive: true })
+    const saved = readFileSync(join(s.state, 'sessions', `${sid}.json`), 'utf8')
+    let entered!: () => void
+    let release!: () => void
+    const acquired = new Promise<void>((resolve) => { entered = resolve })
+    const held = new Promise<void>((resolve) => { release = resolve })
+    const lock = s.deps.sessionStore.withLock(sid, () => { entered(); return held })
+    await acquired
+    const actions: Record<typeof action, () => Promise<unknown>> = {
+      rename: () => s.deps.sessions.rename(sid, 'changed'), pin: () => s.deps.sessions.pin(sid, true), archive: () => s.deps.sessions.archive(sid, true),
+      toolsets: () => s.deps.sessions.setToolsets(sid, ['terminal']), personality: () => s.deps.sessions.setPersonality(sid, 'helper'),
+      truncate: () => s.deps.sessions.truncate(sid, 0), clear: () => s.deps.sessions.clear(sid), retry: () => s.deps.sessions.retry(sid),
+      undo: () => s.deps.sessions.undo(sid), delete: () => s.deps.sessions.delete(sid), update: () => s.deps.sessions.update(sid, { workspace: join(s.state, 'workspace', 'next') }),
+    }
+    const pending = actions[action]().then(() => 200, (error: unknown) => error instanceof HttpFailure ? error.status : 500)
+    try {
+      await Promise.resolve()
+      adopt(sid)
+      const before = stored()
+      release()
+      await lock
+      expect(await pending).toBe(403)
+      expect(stored()).toEqual(before)
+      expect(readFileSync(join(s.state, 'sessions', `${sid}.json`), 'utf8')).toBe(saved)
+      expect(session.messages).toEqual([{ role: 'user', content: 'earlier question' }, { role: 'assistant', content: 'earlier answer' }])
+    } finally { release(); await lock; await pending }
+  })
+
+  it.each([true, false])('rechecks handoff ownership after its model await (materialized=%s)', async (materialized) => {
+    const sid = fixture.sessions.cli!
+    makeLegacy(sid)
+    if (materialized) cache(sid)
+    for (let i = 0; i <= CONVERSATION_ROUND_THRESHOLD; i += 1) {
+      db.prepare('INSERT INTO messages(session_id,role,content,timestamp) VALUES (?,?,?,?)').run(sid, 'user', `question ${i}`, 2000 + i * 2)
+      db.prepare('INSERT INTO messages(session_id,role,content,timestamp) VALUES (?,?,?,?)').run(sid, 'assistant', `answer ${i}`, 2001 + i * 2)
+    }
+    let entered!: () => void
+    let release!: () => void
+    const setup = new Promise<void>((resolve) => { entered = resolve })
+    const held = new Promise<void>((resolve) => { release = resolve })
+    sidecar.respond('aux.complete', async () => { entered(); await held; return { model: 'fixture', usage: null, text: '- Summary.', finish_reason: 'stop' } })
+    sidecar.respond('state_db.append_message', () => ({ ok: true }))
+    const file = materialized ? readFileSync(join(s.state, 'sessions', `${sid}.json`), 'utf8') : null
+    const pending = post(s, '/api/session/handoff-summary', { session_id: sid })
+    try {
+      await setup
+      adopt(sid)
+      const before = stored()
+      release()
+      expect((await pending).status).toBe(403)
+      expect(sidecar.calls.filter((c) => c.method === 'state_db.append_message')).toEqual([])
+      expect(stored()).toEqual(before)
+      if (file !== null) expect(readFileSync(join(s.state, 'sessions', `${sid}.json`), 'utf8')).toBe(file)
+    } finally { release(); await pending }
+  })
+
+  it.each(['receipt', 'physical-alias', 'terminal-ledger', 'retired', 'api-binding'] as const)('retains %s ownership without a sessions row', async (kind) => {
+    const root = fixture.sessions.cli!
+    const sid = kind === 'physical-alias' ? 'pruned-canonical-tip' : root
+    cache(sid)
+    if (kind === 'physical-alias') {
+      db.prepare("UPDATE state_meta SET value = json_set(value, '$.lineage', json(?), '$.entry.session_id', ?) WHERE key = ?").run(JSON.stringify([root, sid]), sid, `gateway.local_policy.v1:${root}`)
+    } else {
+      if (kind === 'terminal-ledger') {
+        db.exec('PRAGMA foreign_keys=OFF')
+        db.prepare("UPDATE session_admissions SET status = 'terminal' WHERE target_session_id = ?").run(sid)
+      } else db.prepare('DELETE FROM session_admissions WHERE target_session_id = ?').run(sid)
+      db.prepare('DELETE FROM messages WHERE session_id = ?').run(sid)
+      db.prepare('DELETE FROM sessions WHERE id = ?').run(sid)
+      if (kind !== 'receipt') db.prepare('DELETE FROM state_meta WHERE key = ?').run(`gateway.local_policy.v1:${sid}`)
+      // Agent retire_routes keeps this identity fence outside the deleted transcript.
+      if (kind === 'retired') db.prepare('INSERT INTO state_meta(key,value) VALUES (?,?)').run(`gateway.retired_session.v1.${sid}`, JSON.stringify({ retired_at: 1000 }))
+      if (kind === 'api-binding') db.prepare('INSERT INTO state_meta(key,value) VALUES (?,?)').run(`gateway.api.binding.v1.${sid}`, JSON.stringify({ session_id: sid, profile_id: 'fixture' }))
+    }
+    const before = stored()
+    const response = await post(s, '/api/chat/start', { session_id: sid, message: 'must stay display-only' })
+    expect(response.status).toBe(403)
+    expect(sidecar.calls.filter((c) => c.method === 'chat.start')).toEqual([])
+    expect(stored()).toEqual(before)
+  })
+
+  it('rechecks model-update ownership after context lookup without mutating the cached session', async () => {
+    const sid = fixture.sessions.cli!
+    makeLegacy(sid)
+    const session = cache(sid)
+    const beforeModel = session.model
+    const file = readFileSync(join(s.state, 'sessions', `${sid}.json`), 'utf8')
+    let entered!: () => void
+    let release!: () => void
+    const setup = new Promise<void>((resolve) => { entered = resolve })
+    const held = new Promise<void>((resolve) => { release = resolve })
+    const previous = s.deps.sessions.deps.resolveContextLength
+    s.deps.sessions.deps.resolveContextLength = async () => { entered(); await held; return 1000 }
+    const pending = s.deps.sessions.update(sid, { model: 'changed-model', model_provider: 'custom' }).then(() => 200, (error: unknown) => error instanceof HttpFailure ? error.status : 500)
+    try {
+      await Promise.race([setup, pending.then((status) => { throw new Error(`Update did not reach context lookup: ${status}`) })])
+      adopt(sid)
+      release()
+      expect(await pending).toBe(403)
+      expect(session.model).toBe(beforeModel)
+      expect(readFileSync(join(s.state, 'sessions', `${sid}.json`), 'utf8')).toBe(file)
+    } finally {
+      release(); await pending
+      if (previous) s.deps.sessions.deps.resolveContextLength = previous; else delete s.deps.sessions.deps.resolveContextLength
+    }
+  })
+
+  it('aborts prepared compression if ownership changes before external finalization', async () => {
+    const sid = fixture.sessions.cli!
+    makeLegacy(sid)
+    cache(sid)
+    sidecar.respond('chat.compress', (params) => ({
+      status: 'compressed', messages: [params.conversation_history[0]!, params.conversation_history.at(-1)!], before_tokens: 400, after_tokens: 120,
+      message: null, agent_session_id: sid, commit_token: 'owned-compression', summary: { noop: false, headline: 'Compressed', token_line: '400 to 120', note: null },
+    }))
+    let entered!: () => void
+    let release!: () => void
+    const setup = new Promise<void>((resolve) => { entered = resolve })
+    const held = new Promise<void>((resolve) => { release = resolve })
+    sidecar.respond('chat.evict_agent', async () => { entered(); await held; return { evicted: true } })
+    const finalized: boolean[] = []
+    sidecar.respond('chat.compress_finalize', (params) => { finalized.push(params.committed); return { finalized: true } })
+    const pending = post(s, '/api/session/compress', { session_id: sid })
+    try {
+      await Promise.race([setup, pending.then(async (response) => { throw new Error(`Compression did not reach finalization: ${response.status} ${await response.text()}`) })])
+      adopt(sid)
+      const before = stored()
+      release()
+      await pending
+      expect(finalized).toEqual([false])
+      expect(stored()).toEqual(before)
+    } finally { release(); await pending }
+  })
+
+  it('keeps a directly recorded chat owner locked without receipt lineage aliases', async () => {
+    const root = fixture.sessions.cli!
+    const sid = 'owner-hinted-tip'
+    db.prepare('DELETE FROM session_admissions WHERE target_session_id = ?').run(root)
+    db.prepare("INSERT INTO sessions(id,source,chat_id,started_at,message_count) VALUES (?, 'cli', ?, 2000, 0)").run(sid, root)
+    cache(sid)
+    expect((await post(s, '/api/chat/start', { session_id: sid, message: 'must remain display-only' })).status).toBe(403)
+    expect(sidecar.calls.filter((c) => c.method === 'chat.start')).toEqual([])
+  })
+
+  it('reports an unreadable ownership home without dispatching or changing the transcript', async () => {
+    const sid = fixture.sessions.cli!
+    cache(sid)
+    const previous = s.deps.sessions.deps.profileHome
+    s.deps.sessions.deps.profileHome = () => { throw new Error('Ownership home is unavailable') }
+    try {
+      const response = await post(s, '/api/chat/start', { session_id: sid, message: 'must refuse' })
+      expect(response.status).toBe(403)
+      const status = await json(await s.get(`/api/session/status?session_id=${sid}`))
+      expect(status.read_only_reason).toContain('ownership')
+      expect(sidecar.calls.filter((c) => c.method === 'chat.start')).toEqual([])
+    } finally { s.deps.sessions.deps.profileHome = previous }
+  })
+
+  it('rejects padded canonical control ids before the sidecar can normalize them', async () => {
+    const sid = fixture.sessions.cli!
+    cache(sid)
+    sidecar.respond('approval.set_yolo', (params) => ({ yolo_enabled: params.enabled, released: 1 }))
+    const response = await post(s, '/api/approval/respond', { session_id: ` ${sid} `, choice: 'once', yolo: true })
+    expect(response.status).toBe(403)
+    expect(sidecar.calls.filter((c) => c.method === 'approval.set_yolo')).toEqual([])
+    expect(s.deps.sessions.yolo(sid).yolo_enabled).toBe(false)
   })
 
   it('refuses a steer into an already-materialized live sidecar before sidecar dispatch', async () => {

@@ -495,8 +495,8 @@ export function withOwnerLocks(rows: Row[], stateDbSources: (ids: string[], prof
   const ownersByProfile = new Map([...byProfile].map(([profile, ids]) => [profile, stateDbSources([...ids], profile)]))
   return rows.map((r) => {
     const owners = ownersByProfile.get(str(r.profile) || 'default')
-    const owner = owners?.get(str(r.session_id))
-    if (typeof owner === 'object') return { ...r, ...normalizeAgentSessionSource(owner.source), source_tag: owner.source, read_only: true, read_only_reason: CANONICAL_READ_ONLY_REASON }
+    const owner = owners?.get(str(r.session_id).trim())
+    if (typeof owner === 'object') return { ...r, ...(owner.source ? { ...normalizeAgentSessionSource(owner.source), source_tag: owner.source } : {}), read_only: true, read_only_reason: owner.reason ?? CANONICAL_READ_ONLY_REASON }
     const webui = ['source_tag', 'raw_source', 'session_source'].some((k) => ['webui', 'fork'].includes(str(r[k]).trim().toLowerCase()))
     if (!owners || (!webui && owner && !isClaimableCliSource({ source_tag: owner, ...normalizeAgentSessionSource(owner) }, owner))) return { ...r, read_only: true, ...(!owners ? { read_only_reason: OWNERSHIP_UNAVAILABLE_REASON } : {}) }
     return r
@@ -509,7 +509,7 @@ export function ownerLockCandidates(rows: Row[]): Map<string, Set<string>> {
   for (const row of rows) {
     const profile = str(row.profile) || 'default'
     const ids = byProfile.get(profile) ?? new Set<string>()
-    ids.add(str(row.session_id))
+    ids.add(str(row.session_id).trim())
     byProfile.set(profile, ids)
   }
   return byProfile
@@ -778,7 +778,7 @@ export function buildSessionListPayload(store: SessionStore, params: ListParams)
     const owners = params.stateDbSources ? params.stateDbSources(dedupedCli.map((r) => str(r.session_id))) : new Map<string, string>()
     // A sidecar-less foreign row whose owner refuses claiming is read-only, as its detail and mutations are; an
     // unreadable owner read (null) locks every row, as it locks sidecars.
-    dedupedCli = dedupedCli.map((r) => ({ ...r, read_only: !owners || !isClaimableCliSource(r, owners.get(str(r.session_id)) || str(r.source)), read_only_reason: !owners ? OWNERSHIP_UNAVAILABLE_REASON : typeof owners.get(str(r.session_id)) === 'object' ? CANONICAL_READ_ONLY_REASON : null, can_duplicate: false }))
+    dedupedCli = withOwnerLocks(dedupedCli.map((r) => ({ ...r, read_only: !owners || !isClaimableCliSource(r, owners.get(str(r.session_id)) || str(r.source)), can_duplicate: false })), () => owners)
   } else {
     webuiSessions = webuiSessions.filter((r) => !isCliSessionForSettings(r))
   }

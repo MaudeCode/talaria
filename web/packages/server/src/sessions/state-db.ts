@@ -564,32 +564,48 @@ export function latestCronSessionInfo(dbPath: string, jobIds: Iterable<string>, 
 /** A source label remains display metadata; canonical receipts and ledgers independently retain write ownership. */
 export const CANONICAL_READ_ONLY_REASON = 'This session is owned by the Agent gateway and is display-only in Talaria.'
 export const OWNERSHIP_UNAVAILABLE_REASON = 'Agent session ownership could not be verified. The session is read-only until storage is readable.'
-export type StateDbSessionSource = string | { source: string; canonical: true }
+export const RETIRED_READ_ONLY_REASON = 'The Agent has retired this session identity. Open or import a new conversation to continue.'
+export type StateDbSessionSource = string | { source: string; canonical: true; reason?: string }
 
 /** Resolve on the caller's read snapshot; absence of newer tables is the legacy schema, a failed read is not. */
 function sessionSources(db: DatabaseSync, cols: Set<string>, ids: string[]): Map<string, StateDbSessionSource> {
   const sources = new Map<string, StateDbSessionSource>()
-  if (!cols.has('id') || !cols.has('source')) return sources
+  const canReadRows = cols.has('id') && cols.has('source')
   const tables = new Set((db.prepare("SELECT name FROM sqlite_master WHERE type = 'table'").all() as { name: string }[]).map((r) => r.name))
-  const walk = resumeLineageWalker(db, cols)
+  const walk = canReadRows ? resumeLineageWalker(db, cols) : (sid: string): string[] => [sid]
   const lineages = new Map(ids.map((id) => [id, walk(id)]))
   const segments = [...new Set([...lineages.values()].flat())]
   const rows = new Map<string, Dict>()
-  for (let i = 0; i < segments.length; i += 400) {
+  for (let i = 0; canReadRows && i < segments.length; i += 400) {
     const chunk = segments.slice(i, i + 400)
     for (const row of db.prepare(`SELECT id, source, ${cols.has('chat_id') ? 'chat_id' : 'NULL AS chat_id'} FROM sessions WHERE id IN (${chunk.map(() => '?').join(',')})`).all(...chunk) as Dict[]) rows.set(str(row.id), row)
   }
   const candidates = [...new Set([...segments, ...[...rows.values()].map((r) => str(r.chat_id)).filter(Boolean)])]
+  const candidateSet = new Set(candidates)
   const policies = new Map<string, Dict | null>()
+  const receiptOwners = new Map<string, string>()
+  const retired = new Set<string>()
+  const bindings = new Set<string>()
+  const wanted = new Set(segments)
+  const policyValue = (value: unknown): Dict | null => {
+    try { const parsed: unknown = JSON.parse(str(value)); return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed as Dict : null } catch { return null }
+  }
+  const rememberPolicy = (owner: string, policy: Dict | null): void => {
+    const entry = policy?.entry
+    const target = entry && typeof entry === 'object' && !Array.isArray(entry) ? (entry as Dict).session_id : null
+    const lineage: unknown[] = Array.isArray(policy?.lineage) ? policy.lineage as unknown[] : []
+    const aliases = [owner, policy?.session_id, policy?.legacy_session_id, target, ...lineage]
+    if (!candidateSet.has(owner) && !aliases.some((id) => typeof id === 'string' && wanted.has(id))) return
+    policies.set(owner, policy)
+    for (const id of aliases) if (typeof id === 'string' && wanted.has(id) && !receiptOwners.has(id)) receiptOwners.set(id, owner)
+  }
   if (tables.has('state_meta')) {
     const read = db.prepare('SELECT value FROM state_meta WHERE key = ?')
     for (const owner of candidates) {
       const raw = read.get(`gateway.local_policy.v1:${owner}`) as { value: string } | undefined
-      if (!raw) continue
-      try {
-        const parsed: unknown = JSON.parse(raw.value)
-        policies.set(owner, parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed as Dict : null)
-      } catch { policies.set(owner, null) }
+      if (raw) rememberPolicy(owner, policyValue(raw.value))
+      if (read.get(`gateway.retired_session.v1.${owner}`)) retired.add(owner)
+      if (read.get(`gateway.api.binding.v1.${owner}`)) bindings.add(owner)
     }
   }
   const ledgerIds = new Set<string>()
@@ -611,16 +627,29 @@ function sessionSources(db: DatabaseSync, cols: Set<string>, ids: string[]): Map
       }
     }
   }
+  // Pruned/reset segments can survive only in a receipt, without a row or chat_id to follow.
+  if (tables.has('state_meta') && segments.some((id) => !receiptOwners.has(id) && !ledgerIds.has(id) && !retired.has(id) && !bindings.has(id))) {
+    for (const raw of db.prepare("SELECT key, value FROM state_meta WHERE key GLOB 'gateway.local_policy.v1:*'").iterate() as Iterable<{ key: string; value: string }>) {
+      const policy = policyValue(raw.value)
+      const entry = policy?.entry
+      const target = entry && typeof entry === 'object' && !Array.isArray(entry) ? (entry as Dict).session_id : null
+      if (!policy || typeof policy.session_id !== 'string' || typeof target !== 'string' || (policy.lineage !== undefined && (!Array.isArray(policy.lineage) || !policy.lineage.length || !policy.lineage.every((id) => typeof id === 'string')))) throw new Error('Unreadable Agent ownership receipt')
+      const owner = raw.key.slice('gateway.local_policy.v1:'.length)
+      if (!owner) throw new Error('Unreadable Agent ownership receipt')
+      rememberPolicy(owner, policy)
+    }
+  }
   const kanban = new Set(kanbanOwnedIds(db, cols, ids.filter((id) => rows.has(id))))
   for (const id of ids) {
     const row = rows.get(id)
-    if (!row) continue
-    let source = kanban.has(id) ? 'kanban' : str(row.source)
+    let source = kanban.has(id) ? 'kanban' : str(row?.source)
     let canonical = false
+    let retiredId = false
     for (const segment of lineages.get(id) ?? [id]) {
       const chatId = str(rows.get(segment)?.chat_id)
-      for (const owner of new Set([segment, chatId].filter(Boolean))) {
-        if (ledgerIds.has(owner)) canonical = true
+      for (const owner of new Set([segment, chatId, receiptOwners.get(segment)].filter((v): v is string => Boolean(v)))) {
+        if (retired.has(owner)) retiredId = true
+        if (ledgerIds.has(owner) || bindings.has(owner)) canonical = true
         if (!policies.has(owner)) continue
         const policy = policies.get(owner)
         // A broken receipt never releases its owner or a physical row naming that owner.
@@ -629,9 +658,11 @@ function sessionSources(db: DatabaseSync, cols: Set<string>, ids: string[]): Map
         if (origin && typeof origin === 'object' && !Array.isArray(origin) && str((origin as Dict).source)) source = str((origin as Dict).source)
       }
     }
+    const authority = canonical
     // LOCAL is the canonical transport. Missing receipts cannot prove it safe to claim.
     if (lower(source) === 'local') canonical = true
-    sources.set(id, canonical ? { source, canonical: true } : source)
+    if (!row && !canonical && !retiredId) continue
+    sources.set(id, retiredId && !authority ? { source, canonical: true, reason: RETIRED_READ_ONLY_REASON } : canonical ? { source, canonical: true } : source)
   }
   return sources
 }

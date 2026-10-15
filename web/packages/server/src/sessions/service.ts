@@ -295,7 +295,9 @@ export class SessionService {
   }
 
   /** TAL-358: batched `sessions.source` owners from the active profile's state.db. */
-  readonly stateDbSources = (ids: string[], profile = this.deps.activeProfile()): Map<string, StateDbSessionSource> | null => stateDbSessionSources(this.stateDbPath(profile), ids)
+  readonly stateDbSources = (ids: string[], profile = this.deps.activeProfile()): Map<string, StateDbSessionSource> | null => {
+    try { return stateDbSessionSources(this.stateDbPath(profile), ids) } catch { return null }
+  }
 
   /**
    * TAL-590 (Python #3238): the read-only CLI or API-server imports among `rows` whose active-profile state.db row is
@@ -365,7 +367,24 @@ export class SessionService {
     if (reason) throw new HttpFailure(403, reason)
   }
 
+  /** Controls can exist without a local session file; use the same id the sidecar will address. */
+  idForMutation(sid: string): string {
+    sid = sid.trim()
+    if (!sid) throw new HttpFailure(400, 'Missing required field(s): session_id')
+    this.assertWritable(sid)
+    return sid
+  }
+
   isReadOnly(s: Session): boolean { return this.readOnlyReason(s) !== null }
+
+  /** Recheck after the mutex wait; legacy local metadata/handoff actions keep their existing read-only allowance. */
+  private withMutationLock<T>(sid: string, fn: () => Promise<T> | T, opts: { timeoutMs?: number; allowReadOnly?: boolean } = {}): Promise<T> {
+    return this.store.withLock(sid, () => {
+      if (opts.allowReadOnly) this.rejectViewOnly(sid, 'modified')
+      else this.assertWritable(sid)
+      return fn()
+    }, opts)
+  }
 
   /** Full session for mutation, refusing read-only imports (Python `_get_or_materialize_session`). */
   getForMutation(sid: string): Session {
@@ -669,13 +688,16 @@ export class SessionService {
     if (isClaudeCodeSessionId(sid)) throw new HttpFailure(400, `Claude Code sessions are view-only and cannot be ${verb} from WebUI`)
   }
 
-  private rejectViewOnly(sid: string, verb: string): void {
+  private rejectViewOnly(sid: string, verb: string): string {
+    sid = sid.trim()
     this.rejectClaudeCode(sid, verb)
     let profile = this.deps.activeProfile()
     try { profile = this.store.get(sid, { metadataOnly: true }).profile || 'default' } catch { /* foreign row */ }
     const owners = this.stateDbSources([sid], profile)
-    if (!owners || typeof owners.get(sid) === 'object') throw new HttpFailure(403, owners ? CANONICAL_READ_ONLY_REASON : OWNERSHIP_UNAVAILABLE_REASON)
+    const owner = owners?.get(sid)
+    if (!owners || typeof owner === 'object') throw new HttpFailure(403, typeof owner === 'object' ? owner.reason ?? CANONICAL_READ_ONLY_REASON : OWNERSHIP_UNAVAILABLE_REASON)
     if (this.isSubagentViewOnly(sid)) throw new HttpFailure(400, `Subagent sessions are view-only and cannot be ${verb} from WebUI`)
+    return sid
   }
 
   /** TAL-372: each delegation row of a turn's scene carries the status of the work it started. */
@@ -1167,7 +1189,7 @@ export class SessionService {
     let current: Session
     try { current = this.store.get(sid) } catch { throw new HttpFailure(404, 'Session not found') }
     if (this.isReadOnly(current)) throw new HttpFailure(403, `Session ${sid} is read-only`)
-    await this.store.withLock(sid, () => {
+    await this.withMutationLock(sid, () => {
       current.title = title
       markSessionTitleGenerated(current)
       this.store.save(current, { touchUpdatedAt: false })
@@ -1180,7 +1202,7 @@ export class SessionService {
 
   async rename(sid: string, rawTitle: unknown): Promise<Record<string, unknown>> {
     const s = this.mutationTarget(sid, 'renamed')
-    await this.store.withLock(sid, () => {
+    await this.withMutationLock(sid, () => {
       applySessionTitleRename(s, rawTitle)
       this.store.save(s)
     })
@@ -1213,10 +1235,10 @@ export class SessionService {
       const limit = this.deps.pinnedSessionsLimit()
       if (pinnedLineages.size >= limit) throw new HttpFailure(400, `Up to ${limit} sessions can be pinned. Unpin one before pinning another.`)
     }
-    await this.store.withLock(sid, () => {
+    await this.withMutationLock(sid, () => {
       s.pinned = pinRequested
       this.store.save(s)
-    })
+    }, { allowReadOnly: true })
     this.publish('session_pin', s.profile, s.session_id)
     return { ok: true, session: this.wireRow(s) }
   }
@@ -1225,11 +1247,11 @@ export class SessionService {
     this.rejectViewOnly(sid, 'archived')
     let s = this.get404(sid)
     s = this.store.ensureFull(sid, s)
-    await this.store.withLock(sid, () => {
+    await this.withMutationLock(sid, () => {
       s.archived = archived
       if (archived) s.pinned = false
       this.store.save(s, { touchUpdatedAt: false })
-    })
+    }, { allowReadOnly: true })
     this.publish('session_archive', s.profile, s.session_id)
     return { ok: true, session: this.wireRow(s), ...worktreeRetainedPayload(s) }
   }
@@ -1242,7 +1264,7 @@ export class SessionService {
       if (!target || !this.deps.profilesMatch(target.profile ?? null, sessionProfile)) throw new HttpFailure(404, 'Project not found')
     }
     try {
-      await this.store.withLock(sid, () => {
+      await this.withMutationLock(sid, () => {
         s.project_id = targetProjectId
         this.store.save(s)
       }, { timeoutMs: 5000 })
@@ -1265,14 +1287,19 @@ export class SessionService {
     } catch (error) {
       throw new HttpFailure(400, (error as Error).message)
     }
-    await this.store.withLock(sid, async () => {
+    await this.withMutationLock(sid, async () => {
+      const hasModel = 'model' in body || 'model_provider' in body
+      const [model, provider] = hasModel ? this.deps.modelStateFromRequest('model' in body ? body.model : s.model, 'model_provider' in body ? body.model_provider : undefined, s.model_provider) : [s.model, s.model_provider]
+      const nextModel = model ?? s.model
+      const changed = hasModel && (str(oldModel) !== str(nextModel) || str(oldProvider) !== str(provider))
+      const contextLength = changed ? (this.deps.resolveContextLength ? await this.deps.resolveContextLength(nextModel, provider, s.profile) : this.deps.contextLengthFor(nextModel, provider)) : s.context_length
+      this.assertWritable(s)
       s.workspace = newWs
-      if ('model' in body || 'model_provider' in body) {
-        const [model, provider] = this.deps.modelStateFromRequest('model' in body ? body.model : s.model, 'model_provider' in body ? body.model_provider : undefined, s.model_provider)
-        if (model !== null) s.model = model
+      if (hasModel) {
+        s.model = nextModel
         s.model_provider = provider
-        if (str(oldModel) !== str(s.model) || str(oldProvider) !== str(s.model_provider)) {
-          s.context_length = this.deps.resolveContextLength ? await this.deps.resolveContextLength(s.model, s.model_provider, s.profile) : this.deps.contextLengthFor(s.model, s.model_provider)
+        if (changed) {
+          s.context_length = contextLength
           forgetContextFigures(s)
           this.deps.runtime.evictAgent(sid)
         }
@@ -1288,7 +1315,7 @@ export class SessionService {
     this.rejectViewOnly(sid, 'modified')
     const cleaned = this.validateToolsetsShape(toolsets)
     const s = this.mutationTarget(sid, 'modified')
-    await this.store.withLock(sid, () => {
+    await this.withMutationLock(sid, () => {
       s.enabled_toolsets = cleaned
       this.store.save(s)
     })
@@ -1299,7 +1326,7 @@ export class SessionService {
   async setPersonality(sid: string, name: string | null): Promise<string | null> {
     this.rejectViewOnly(sid, 'modified')
     const s = this.mutationTarget(sid, 'modified')
-    await this.store.withLock(sid, () => {
+    await this.withMutationLock(sid, () => {
       s.personality = name
       this.store.save(s)
     })
@@ -1324,7 +1351,7 @@ export class SessionService {
     else keep = /^[+-]?\d+$/.test(str(keepRaw).trim()) ? Number.parseInt(str(keepRaw).trim(), 10) : Number.NaN
     if (!Number.isInteger(keep)) throw new HttpFailure(400, 'keep_count must be an integer')
     if (keep < 0) throw new HttpFailure(400, 'keep_count must be non-negative')
-    const refused = await this.store.withLock(sid, () => {
+    const refused = await this.withMutationLock(sid, () => {
       // One state.db read decides and marks the boundary, so a row committed meanwhile is neither counted nor hidden.
       const read = this.stateDbRead(s)
       if (hold) {
@@ -1441,7 +1468,7 @@ export class SessionService {
     return this.store.withLock(sid, () => {
       let live: Session
       try { live = this.store.get(sid) } catch { return false }
-      if (live.active_stream_id || live.post_compression_context_tokens_estimate !== before) return false
+      if (live.active_stream_id || live.post_compression_context_tokens_estimate !== before || this.isReadOnly(live)) return false
       live.post_compression_context_tokens_estimate = Math.max(1, tokens)
       this.store.save(live, { touchUpdatedAt: false })
       return true
@@ -1497,6 +1524,7 @@ export class SessionService {
 
   /** TAL-258: the session's WebUI record (absent for a CLI or gateway session) and the profile whose state.db holds its rows. */
   private handoffTarget(sid: string): { local: Session | null; profile: string; dbPath: string } {
+    sid = sid.trim()
     let local: Session | null = null
     try { local = this.store.get(sid) } catch { /* a foreign session without a WebUI record */ }
     const profile = local?.profile ?? this.deps.activeProfile()
@@ -1515,7 +1543,7 @@ export class SessionService {
    * back to a deterministic local summary rather than an error.
    */
   async handoffSummary(sid: string, since: number | null): Promise<{ ok: true; summary: string; message_count: number; rounds: number; fallback: boolean; warning?: string }> {
-    this.rejectViewOnly(sid, 'summarized')
+    sid = this.rejectViewOnly(sid, 'summarized')
     const { local, profile, dbPath } = this.handoffTarget(sid)
     const rounds = countConversationRounds(dbPath, sid, since)
     if (rounds < CONVERSATION_ROUND_THRESHOLD) throw new HttpFailure(400, 'Not enough conversation rounds to generate a summary.')
@@ -1563,6 +1591,7 @@ export class SessionService {
   private async persistHandoffMarker(sid: string, profile: string, marker: Message): Promise<void> {
     const card = messageHandoffPayload(marker)
     const toStateDb = async (): Promise<boolean> => {
+      this.rejectViewOnly(sid, 'summarized')
       if (sameHandoff(handoffPayload(stateDbTailToolContent(this.stateDbPath(profile), sid)), card)) return true
       const sidecar = this.deps.sidecar?.()
       if (!sidecar) return false
@@ -1572,12 +1601,13 @@ export class SessionService {
         return false
       }
     }
-    await this.store.withLock(sid, async () => {
+    await this.withMutationLock(sid, async () => {
       let live: Session | null = null
       try { live = this.store.get(sid) } catch { /* no WebUI record */ }
       // A turn that started while the summary was generated would drop the card when it settles.
       if (live?.active_stream_id) throw new HttpFailure(409, 'Session is still streaming; wait for the current turn to finish.')
       const toLocal = (): boolean => {
+        this.rejectViewOnly(sid, 'summarized')
         if (!live) return false
         if (sameHandoff(messageHandoffPayload(live.messages.at(-1)), card)) return true
         live.messages.push(marker)
@@ -1588,7 +1618,7 @@ export class SessionService {
       const saved = messaging ? [await toStateDb(), toLocal()].some(Boolean) : toLocal() || await toStateDb()
       // The caller may switch away on success, so a card saved nowhere is an error, not a summary.
       if (!saved) throw new HttpFailure(503, 'The handoff summary could not be saved; please retry.')
-    })
+    }, { allowReadOnly: true })
   }
 
   /** The session's compression job; a deleted session's finished result is dropped rather than served. */
@@ -1635,7 +1665,7 @@ export class SessionService {
     let committed = false
     let keptTurnRows = false
     try {
-      const current = await this.store.withLock(sid, () => {
+      const current = await this.withMutationLock(sid, () => {
         let live: Session
         try { live = this.store.get(sid) } catch { throw new HttpFailure(404, 'Session not found') }
         const turn = live.active_stream_id
@@ -1697,7 +1727,10 @@ export class SessionService {
     } finally {
       // Second phase: the Agent's context-engine notification fires only for a result the session now holds.
       if (result.commit_token) {
+        const readOnly = committed ? this.readOnlyReason(s) : null
+        if (readOnly) committed = false
         try { await sidecar.call('chat.compress_finalize', { commit_token: result.commit_token, committed }) } catch (error) { this.deps.log(`[webui] compression finalize for ${sid} failed: ${(error as Error).message}`) }
+        if (readOnly) throw new HttpFailure(403, readOnly)
       }
     }
   }
@@ -1705,7 +1738,7 @@ export class SessionService {
   async clear(sid: string): Promise<Record<string, unknown>> {
     this.rejectViewOnly(sid, 'modified')
     const s = this.mutationTarget(sid, 'modified')
-    await this.store.withLock(sid, () => {
+    await this.withMutationLock(sid, () => {
       const hadMessages = s.messages.length > 0
       truncateSessionAtKeep(s, 0)
       s.tool_calls = []
@@ -1735,7 +1768,7 @@ export class SessionService {
 
   async retry(sid: string): Promise<Record<string, unknown>> {
     this.rejectViewOnly(sid, 'modified')
-    return this.store.withLock(sid, () => {
+    return this.withMutationLock(sid, () => {
       const s = this.mutationTarget(sid, 'modified')
       const history = s.messages
       const lastUser = findLastUserIndex(history)
@@ -1758,7 +1791,7 @@ export class SessionService {
 
   async undo(sid: string): Promise<Record<string, unknown>> {
     this.rejectViewOnly(sid, 'modified')
-    return this.store.withLock(sid, () => {
+    return this.withMutationLock(sid, () => {
       const s = this.mutationTarget(sid, 'modified')
       const history = s.messages
       const lastUser = findLastUserIndex(history)
@@ -1868,9 +1901,8 @@ export class SessionService {
     if (this.isSubagentViewOnly(sid)) throw new HttpFailure(400, 'Subagent sessions are view-only and cannot start compression recovery from WebUI')
     const action = COMPRESSION_RECOVERY_ACTION_START_FOCUSED
     let created = false
-    const child = await this.store.withLock(sid, () => {
+    const child = await this.withMutationLock(sid, () => {
       // Validated under the lock: a delete that won it leaves no source to fork.
-      this.rejectViewOnly(sid, 'used for compression recovery')
       const source = this.store.get(sid)
       if (!this.visibleToActiveProfile(source.profile)) throw new HttpFailure(404, 'Session not found')
       if (!compressionRecoveryPayload(source)) throw new HttpFailure(409, 'Session does not have a compression recovery action.')
@@ -1897,7 +1929,7 @@ export class SessionService {
       this.store.touch(fresh)
       created = true
       return fresh
-    })
+    }, { allowReadOnly: true })
     if (created) this.publish('session_compression_recovery', child.profile, child.session_id)
     return {
       ok: true, session: this.publicSession(child), source_session_id: sid, recommended_recovery_action: action,
@@ -1951,7 +1983,7 @@ export class SessionService {
     let stateDbCleanupFailed = false
     let removedIds = [sid]
     try {
-      await this.store.withLock(sid, async () => {
+      await this.withMutationLock(sid, async () => {
         assertIdle()
         // TAL-792: state.db goes first, so another Agent process running or compressing the session refuses the delete
         // before anything of Talaria's is removed. Python: the Agent/CLI transcript goes too (else a claimable CLI row
@@ -1975,7 +2007,7 @@ export class SessionService {
           } catch (error) { if (!(error instanceof SessionNotFound)) throw error }
           if (!this.store.deleteFiles(id)) throw new HttpFailure(500, 'Failed to delete session data')
         }
-      }, { timeoutMs: 5000 })
+      }, { timeoutMs: 5000, allowReadOnly: orphaned })
     } catch (error) {
       if (error instanceof SessionBusy) throw new HttpFailure(503, 'Session busy, try again')
       throw error
@@ -2155,7 +2187,7 @@ export class SessionService {
       throw error
     }
     if (!this.visibleToActiveProfile(s.profile)) throw new HttpFailure(404, 'Session not found')
-    return this.store.withLock(sid, () => {
+    return this.withMutationLock(sid, () => {
       let placement
       try {
         placement = storeAnchorScene(s, body, this.deps.now())
