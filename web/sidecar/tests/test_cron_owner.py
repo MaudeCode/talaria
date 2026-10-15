@@ -79,6 +79,7 @@ def owner(tmp_path):
     model = ThreadingHTTPServer(("127.0.0.1", 0), HeldModel)
     model.daemon_threads = True
     model.started, model.release, model.requests = threading.Event(), threading.Event(), []
+    model.cancel_received = tmp_path / "owner-cancellation.json"
     threading.Thread(target=model.serve_forever, daemon=True).start()
     origin = f"http://127.0.0.1:{model.server_port}/v1"
     (home / "config.yaml").write_text(json.dumps({
@@ -89,13 +90,36 @@ def owner(tmp_path):
     }))
     (home / ".env").write_text("OPENAI_API_KEY=loopback-only\n")
     env = isolated_env(home, home=tmp_path, OPENAI_API_KEY="loopback-only", OPENAI_BASE_URL=origin,
-                       TALARIA_SIDECAR_AGENT_DIR=str(AGENT_DIR), PYTHONUNBUFFERED="1")
+                       TALARIA_SIDECAR_AGENT_DIR=str(AGENT_DIR), PYTHONUNBUFFERED="1",
+                       TALARIA_TEST_CANCEL_MARKER=str(model.cancel_received))
+    gateway_code = """
+import json, os
+from pathlib import Path
+from gateway import session_cron
+from gateway.run import main
+
+real_operation = session_cron.operation
+marker = Path(os.environ['TALARIA_TEST_CANCEL_MARKER'])
+
+async def observe_cancel(authority, name, params, actor=None):
+    result = await real_operation(authority, name, params, actor)
+    if name == 'cancel':
+        event = getattr(authority, '_cron_cancellations', {}).get(params['admission_id'])
+        if event is not None and event.is_set():
+            pending = marker.with_suffix('.tmp')
+            pending.write_text(json.dumps(params))
+            pending.replace(marker)
+    return result
+
+session_cron.operation = observe_cancel
+main()
+"""
     log_path = tmp_path / "gateway.log"
     with log_path.open("w") as log:
         gateway = None
         def start_gateway():
             nonlocal gateway
-            gateway = subprocess.Popen([AGENT_PYTHON, "-m", "gateway.run"], cwd=AGENT_DIR, env=env,
+            gateway = subprocess.Popen([AGENT_PYTHON, "-c", gateway_code], cwd=AGENT_DIR, env=env,
                                        stdin=subprocess.DEVNULL, stdout=log, stderr=subprocess.STDOUT)
             model.gateway = gateway
         start_gateway()
@@ -244,8 +268,11 @@ def test_lost_submitter_recovers_same_admission_without_another_run(owner, resta
             assert replacement.result("cron.get", params)["job"]["id"] == job["id"], "Web preflight must receive the retained job snapshot"
             request = replacement.request("cron.run", params)
         wait_for(lambda: json.loads(record_path.read_text()).get("cancel_reason"))
-        # Recovery must be active before the original inference is released.
-        time.sleep(.5)
+        # The local intent precedes worker startup; wait for the real owner to latch cancellation.
+        wait_for(model.cancel_received.exists)
+        assert json.loads(model.cancel_received.read_text()) == {
+            "session_id": before["target_session_id"], "admission_id": before["admission_id"],
+        }
         model.release.set()
         active = replacement or sidecar
         reply = wait_for(lambda: (message if message.get("id") == request else None) if (message := active.next_message(timeout=60)) else None)
