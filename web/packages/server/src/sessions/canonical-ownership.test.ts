@@ -4,7 +4,7 @@ import { DatabaseSync } from 'node:sqlite'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { bootTestServer, type TestServer } from '../test/harness.js'
 import { FakeSidecar } from '../sidecar/fake.js'
-import type { SidecarResult } from '@maudecode/talaria-web-contracts'
+import type { SidecarParams, SidecarResult } from '@maudecode/talaria-web-contracts'
 import { Session } from './session.js'
 import { HttpFailure, stampCompressionExhaustedRecovery } from './turn.js'
 import { CONVERSATION_ROUND_THRESHOLD, readImportableAgentSessionRows, stateDbSessionSources } from './state-db.js'
@@ -39,6 +39,12 @@ describe('canonical Agent ownership (TAL-1036)', () => {
   const adopt = (sid: string): void => {
     for (const sql of fixture.inserts.filter((sql) => sql.startsWith('INSERT INTO "state_meta"') && sql.includes(sid))) db.exec(sql)
   }
+  const completed = (sid: string, message: SidecarParams<'chat.start'>['user_message']): SidecarResult<'chat.start'> => ({
+    status: 'completed', messages: [{ role: 'user', content: message }, { role: 'assistant', content: 'done' }], final_response: 'done', error: null,
+    failed: false, partial: false, compression_exhausted: false, tool_limit_reached: false, max_iterations_summary_request: '',
+    usage: { prompt_tokens: 1, completion_tokens: 1, cache_read_tokens: 0, cache_write_tokens: 0, estimated_cost_usd: null }, context: { context_length: 1000 },
+    model: 'fixture', provider: 'custom', compressed: false, agent_session_id: sid, token_sent: true, pending_steer: '', live_tool_calls: [],
+  })
   const cache = (sid: string): Session => {
     const session = new Session({ session_id: sid, title: 'Saved conversation', source_tag: 'cli', messages: [{ role: 'user', content: 'earlier question' }, { role: 'assistant', content: 'earlier answer' }] }, { workspace: join(s.state, 'workspace'), model: 'fixture' })
     s.deps.sessionStore.save(session)
@@ -225,19 +231,75 @@ describe('canonical Agent ownership (TAL-1036)', () => {
     expect(stored()).toEqual(before)
   })
 
+  it.each(['initial', 'refresh'] as const)('does not dispatch %s title work after a turn becomes canonical-owned', async (kind) => {
+    const sid = fixture.sessions.cli!
+    makeLegacy(sid)
+    const session = cache(sid)
+    const title = kind === 'initial' ? 'CLI Session' : 'Earlier generated title'
+    session.title = title
+    session.llm_title_generated = kind === 'refresh'
+    s.deps.sessionStore.save(session)
+    s.deps.turns.deps.titleRefreshEvery = () => 1
+    sidecar.respond('chat.start', (params) => { adopt(sid); return completed(sid, params.user_message) })
+    sidecar.respond('aux.complete', () => ({ model: 'fixture', usage: null, text: 'New generated title', finish_reason: 'stop' }))
+    const response = await post(s, '/api/chat/start', { session_id: sid, message: 'a permitted legacy turn' })
+    expect(response.status).toBe(200)
+    await s.deps.turns.finished(String((await json(response)).stream_id))
+    expect(sidecar.calls.filter((c) => c.method === 'aux.complete')).toEqual([])
+    expect(s.deps.sessionStore.get(sid).title).toBe(title)
+  })
+
+  it.each(['initial', 'refresh'] as const)('does not save a %s title after adoption during its model await', async (kind) => {
+    const sid = fixture.sessions.cli!
+    makeLegacy(sid)
+    const session = cache(sid)
+    const title = kind === 'initial' ? 'CLI Session' : 'Earlier generated title'
+    session.title = title
+    session.llm_title_generated = kind === 'refresh'
+    s.deps.sessionStore.save(session)
+    s.deps.turns.deps.titleRefreshEvery = () => 1
+    sidecar.respond('chat.start', (params) => completed(sid, params.user_message))
+    let entered!: () => void
+    let release!: () => void
+    const setup = new Promise<void>((resolve) => { entered = resolve })
+    const held = new Promise<void>((resolve) => { release = resolve })
+    sidecar.respond('aux.complete', async () => { entered(); await held; return { model: 'fixture', usage: null, text: 'New generated title', finish_reason: 'stop' } })
+    const response = await post(s, '/api/chat/start', { session_id: sid, message: 'a permitted legacy turn' })
+    expect(response.status).toBe(200)
+    const pending = s.deps.turns.finished(String((await json(response)).stream_id))
+    try {
+      await Promise.race([setup, pending.then(() => { throw new Error('Turn did not reach title generation') })])
+      adopt(sid)
+      const before = stored()
+      const file = readFileSync(join(s.state, 'sessions', `${sid}.json`), 'utf8')
+      release()
+      await pending
+      expect(s.deps.sessionStore.get(sid).title).toBe(title)
+      expect(readFileSync(join(s.state, 'sessions', `${sid}.json`), 'utf8')).toBe(file)
+      expect(stored()).toEqual(before)
+      expect(sidecar.calls.filter((c) => c.method === 'state_db.sync_title')).toEqual([])
+    } finally { release(); await pending }
+  })
+
+  it('does not retry a title prompt after adoption during an empty model response', async () => {
+    const sid = fixture.sessions.cli!
+    makeLegacy(sid)
+    const session = cache(sid)
+    const title = session.title
+    sidecar.respond('aux.complete', () => { adopt(sid); return { model: 'fixture', usage: null, text: '', finish_reason: 'stop' } })
+    const response = await post(s, '/api/session/title/regenerate', { session_id: sid })
+    expect(response.status).toBe(403)
+    expect(sidecar.calls.filter((c) => c.method === 'aux.complete')).toHaveLength(1)
+    expect(s.deps.sessionStore.get(sid).title).toBe(title)
+  })
+
   it('does not judge goals after the completed turn becomes canonical-owned', async () => {
     const sid = fixture.sessions.cli!
     makeLegacy(sid)
     cache(sid)
     sidecar.respond('chat.start', (params) => {
       adopt(sid)
-      const result: SidecarResult<'chat.start'> = {
-        status: 'completed', messages: [{ role: 'user', content: params.user_message }, { role: 'assistant', content: 'done' }], final_response: 'done', error: null,
-        failed: false, partial: false, compression_exhausted: false, tool_limit_reached: false, max_iterations_summary_request: '',
-        usage: { prompt_tokens: 1, completion_tokens: 1, cache_read_tokens: 0, cache_write_tokens: 0, estimated_cost_usd: null }, context: { context_length: 1000 },
-        model: 'fixture', provider: 'custom', compressed: false, agent_session_id: sid, token_sent: true, pending_steer: '', live_tool_calls: [],
-      }
-      return result
+      return completed(sid, params.user_message)
     })
     const response = await post(s, '/api/chat/start', { session_id: sid, message: 'a permitted legacy turn' })
     expect(response.status).toBe(200)

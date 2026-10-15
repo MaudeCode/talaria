@@ -1469,6 +1469,7 @@ export class TurnRunner {
     const [qa, prompts] = titlePrompts(userText, assistantText)
     let status = 'llm_error_aux'
     for (const [idx, prompt] of prompts.entries()) {
+      if (this.deps.service().isReadOnly(s)) return { title: '', status: 'read_only', rawPreview: '' }
       let raw = ''
       try {
         const result = await sidecar.call('aux.complete', { profile_home: this.deps.profileHome(s.profile), task: 'title_generation', messages: [{ role: 'system', content: prompt }, { role: 'user', content: qa }], max_tokens: 64 }, { timeoutMs: 15_000 })
@@ -1531,6 +1532,7 @@ export class TurnRunner {
     let llmStatus = 'empty_assistant_message'
     let rawPreview = ''
     if (assistantText) ({ title: next, status: llmStatus, rawPreview } = await this.llmTitle(s, userText, assistantText))
+    this.deps.service().assertWritable(s)
     if (next) return { title: next, status: llmStatus, rawPreview }
     const fallback = fallbackTitleFromExchange(userText, assistantText)
     if (fallback && !isGenericFallbackTitle(fallback)) return { title: fallback, status: `local_summary:${llmStatus}`, rawPreview }
@@ -1568,6 +1570,7 @@ export class TurnRunner {
     if (!titleGenerationEnabled(cfg)) { status('skipped', 'title_generation_disabled', placeholder); return }
     const generated = await this.llmTitle(s, userText, assistantText)
     const { status: llmStatus, rawPreview } = generated
+    if (llmStatus === 'read_only') { status('skipped', 'read_only', placeholder); return }
     let next = generated.title
     let source = llmStatus
     if (!next) {
@@ -1581,6 +1584,7 @@ export class TurnRunner {
       if (this.deps.store.wasDeleted(sessionId)) return
       current = s
     }
+    if (this.deps.service().isReadOnly(current)) { status('skipped', 'read_only', str(current.title).trim()); return }
     let effective = str(current.title).trim()
     let wrote = false
     if (next) {
@@ -1635,6 +1639,7 @@ export class TurnRunner {
     const current = read()
     // The user may have renamed the session while the title prompt ran.
     if (current.manual_title || str(current.title).trim() !== placeholder) { status('skipped', 'manual_title', str(current.title).trim()); return }
+    if (this.deps.service().isReadOnly(current)) { status('refresh_skipped', 'read_only', str(current.title).trim()); return }
     current.title = next
     markSessionTitleGenerated(current)
     this.deps.store.save(current, { touchUpdatedAt: false })
