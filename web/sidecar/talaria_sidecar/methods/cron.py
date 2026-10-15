@@ -49,6 +49,27 @@ class _ClaimLost(RuntimeError):
         super().__init__(_CLAIM_LOST)
 
 
+def _inference_params(params: dict, *, snapshot: bool = False) -> dict | None:
+    """Resolve a job's inference home before the registry preflight, without taking a fire claim."""
+    home = profile_home_param(params)
+    if snapshot:
+        job = params.get("job") or {}
+        if not (job.get("profile") and params.get("execution_home")) or job.get("no_agent") or all(str(job.get(key) or "").strip() for key in ("model", "provider")):
+            return None
+        # Creation only resolves the execution profile's default, not the saved job overrides.
+        return {"profile_home": params["execution_home"]}
+    from .cron_execution import path
+
+    job_id = _job_id(params)
+    if path(home, job_id).exists():
+        return None  # Recovery observes an existing execution; it starts no new inference.
+    with _store(home):
+        job = _jobs().get_job(job_id)
+    if not job or job.get("no_agent"):
+        return None
+    return {**job, "profile_home": params.get("execution_home") or str(home)}
+
+
 def _main_model_pin() -> tuple[str | None, str | None]:
     """``(provider, model)`` the scoped profile's main agent runs on: the Agent's own ``cron.jobs._main_model_pin``.
 
@@ -663,7 +684,7 @@ def register(registry) -> None:
             job = pending_job(home, job_id) or _jobs().get_job(job_id)
         return {"job": job_for_api(job) if job else None}
 
-    @registry.method("cron.create")
+    @registry.method("cron.create", inference=lambda params: _inference_params(params, snapshot=True))
     def create(ctx: CallContext, params: dict) -> dict:
         body = params.get("job") or {}
         if not body.get("schedule"):
@@ -770,7 +791,7 @@ def register(registry) -> None:
             raise RpcError("Job not found", condition="not_found")
         return {"job": dict(job)}
 
-    @registry.method("cron.run")
+    @registry.method("cron.run", inference=_inference_params)
     def run(ctx: CallContext, params: dict) -> dict:
         """Run one job now in a child process; streams ``started`` then returns the outcome."""
         store_home = profile_home_param(params)

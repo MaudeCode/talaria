@@ -241,7 +241,7 @@ def register(registry) -> None:
         mgr.restore(state)
         return {"goal": _state_payload(state)}
 
-    @registry.method("goals.evaluate")
+    @registry.method("goals.evaluate", inference=True)
     def evaluate(ctx: CallContext, params: dict) -> dict:
         mgr = _manager_from(params)
         try:

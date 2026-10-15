@@ -213,3 +213,33 @@ Session-not-found, authentication, transport, server, and decoding failures reta
 Both chat and manual compression forward the profile's parsed `agent.disabled_toolsets` to
 `AIAgent`. The cached chat Agent identity includes this policy so changing it replaces the Agent
 on the next turn. The Agent's filter also scopes deferred tool search and calls.
+
+## Named inference destinations
+
+Inference-capable RPC handlers declare `inference=True` on the shared method
+registry. The registry runs one route preflight inside the selected profile's
+`scoped_home` before calling the handler. This includes chat, compression,
+review, memory commit, goal evaluation, auxiliary completion/resolution, and
+the runtime and model-metadata bridges, plugin commands, and cron execution.
+Cron metadata selects the execution profile and saved job overrides before a
+fire claim is taken; profile-default snapshots on cron creation use that same
+registry gate. Script-only jobs, retained execution recovery and local repair
+commands do not start inference and remain available. The existing runtime resolver is too
+late for this check: it can probe metadata, and it does not own the Agent's
+internal auxiliary and fallback resolution.
+
+Preflight reads the selected profile's effective config and rejects an
+unreadable document even when the Agent has a last-known-good cache. It checks
+primary, auxiliary, plugin task defaults/inheritance, both main fallback chain
+spellings, task fallback chains and request runtime overrides. A named custom
+provider's destination must have its configured scheme, hostname and effective
+port. Paths can differ; explicit override credentials do not waive the check,
+since Agent retry can reattach a pool. Invalid or unresolved named endpoints
+fail closed. The guard reuses Agent provider aliases and auxiliary inheritance;
+it neither resolves clients nor copies credentials.
+
+Refusal uses the existing RPC error envelope with
+`condition: inference_route_unsafe` and generic repair instructions, without
+endpoint or credential details. Configure a distinct provider identity for a
+different origin, or use a supported anonymous custom route with its own key.
+Config read/write and non-inference recovery/catalog methods remain available.

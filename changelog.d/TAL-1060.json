@@ -1,0 +1,1 @@
+{"entries":[{"category":"Security","summary":"Refuse named provider routes that could send their credentials to another server.","highlight":false,"components":["web"]}]}

@@ -1959,7 +1959,7 @@ def _run_for(params: dict) -> _Run | None:
 
 
 def register(registry) -> None:
-    @registry.method("chat.start")
+    @registry.method("chat.start", inference=True)
     def start_(ctx: CallContext, params: dict) -> dict:
         session_id = str(params.get("session_id") or "").strip()
         workspace = params.get("workspace")
@@ -1969,12 +1969,12 @@ def register(registry) -> None:
             with _turn_identity(session_id, workspace):
                 return start(ctx, params)
 
-    @registry.method("chat.compress")
+    @registry.method("chat.compress", inference=True)
     def compress_(ctx: CallContext, params: dict) -> dict:
         with scoped_home(profile_home_param(params)):
             return compress(ctx, params)
 
-    @registry.method("chat.refine")
+    @registry.method("chat.refine", inference=True)
     def refine_(ctx: CallContext, params: dict) -> dict:
         with scoped_home(profile_home_param(params)):
             return {"output": refine(params)}
@@ -2071,7 +2071,7 @@ def register(registry) -> None:
             _release_vault_session(session_id)
         return {"evicted": entry is not None}
 
-    @registry.method("chat.commit_memory", requires_agent=False)
+    @registry.method("chat.commit_memory", requires_agent=False, inference=True)
     def commit_memory_(ctx: CallContext, params: dict) -> dict:
         """Predecessor ``commit_session_memory``: flush the cached Agent's memory for a session the user just left.
         Providers get the session's transcript and run under its profile's ``scoped_home``."""

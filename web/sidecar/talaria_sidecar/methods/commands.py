@@ -595,7 +595,7 @@ def register(registry) -> None:
         with scoped_home(profile_home_param(params)):
             return {"commands": list_commands()}
 
-    @registry.method("commands.exec")
+    @registry.method("commands.exec", inference=lambda params: None if parse_slash_command(str(params.get("command") or ""))[0] in _ALLOWED else params)
     def exec_(ctx: CallContext, params: dict) -> dict:
         command = str(params.get("command") or "")
         with scoped_home(profile_home_param(params)):

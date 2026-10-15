@@ -279,7 +279,7 @@ def aux_tasks() -> dict:
 
 
 def register(registry) -> None:
-    @registry.method("aux.complete")
+    @registry.method("aux.complete", inference=True)
     def complete_(ctx: CallContext, params: dict) -> dict:
         task = str(params.get("task") or "").strip()
         messages = params.get("messages")
@@ -298,7 +298,7 @@ def register(registry) -> None:
         with scoped_home(profile_home_param(params)):
             return aux_tasks()
 
-    @registry.method("aux.resolve")
+    @registry.method("aux.resolve", inference=True)
     def resolve(ctx: CallContext, params: dict) -> dict:
         """Which model would serve ``task`` (no call made)."""
         task = str(params.get("task") or "").strip()

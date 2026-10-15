@@ -17,7 +17,7 @@ import subprocess
 import sys
 import threading
 import time
-from contextlib import contextmanager
+from contextlib import contextmanager, nullcontext
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 import pytest
@@ -306,3 +306,15 @@ def validate(value, schema: dict, path: str = "$") -> list[str]:
 def assert_matches(method: str, value) -> None:
     errors = validate(value, load_schema(method))
     assert not errors, f"{method} result does not match the contract schema: {errors}"
+
+
+@pytest.fixture
+def stub_inference_preflight(monkeypatch):
+    """Unit tests of a recording Agent do not import Agent config or profile scopes.
+
+    Real route/profile policy is exercised separately by test_inference_routes over stdio.
+    """
+    from talaria_sidecar import home, inference_routes
+
+    monkeypatch.setattr(home, "scoped_home", nullcontext)
+    monkeypatch.setattr(inference_routes, "preflight", lambda params: None)

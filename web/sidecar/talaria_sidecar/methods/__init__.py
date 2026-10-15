@@ -13,12 +13,21 @@ class Registry:
         self.runtime = runtime
         self.methods: dict[str, Handler] = {}
 
-    def method(self, name: str, *, requires_agent: bool = True) -> Callable[[Callable], Callable]:
+    def method(self, name: str, *, requires_agent: bool = True, inference: bool | Callable[[dict], dict | None] = False) -> Callable[[Callable], Callable]:
         def register(func: Callable) -> Callable:
             def handler(ctx: CallContext, params: dict):
                 if requires_agent:
                     self.runtime.load()
                     self.runtime.ensure_current()
+                if inference:
+                    from ..home import profile_home_param, scoped_home
+                    from ..inference_routes import preflight
+
+                    route_params = inference(params) if callable(inference) else params
+                    if route_params is not None:
+                        with scoped_home(profile_home_param(route_params)):
+                            preflight(route_params)
+                            return func(ctx, params)
                 return func(ctx, params)
 
             self.methods[name] = handler

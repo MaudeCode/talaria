@@ -436,6 +436,7 @@ def test_profile_deletion_is_refused_while_a_release_is_still_running(monkeypatc
     assert deleted == ["alpha"] and EVENTS == [("on_session_end", "slow", TRANSCRIPT, str(alpha)), ("release_clients", "slow")]
 
 
+@pytest.mark.usefixtures("stub_inference_preflight")
 def test_an_agent_evicted_during_a_memory_commit_is_released_after_the_commit(monkeypatch) -> None:
     _setup(monkeypatch)
     committing = threading.Event()

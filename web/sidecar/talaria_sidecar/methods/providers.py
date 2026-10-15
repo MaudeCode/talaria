@@ -507,7 +507,7 @@ def register(reg) -> None:
         with scoped_home(profile_home_param(params)):
             return local_models()
 
-    @reg.method("providers.resolve_runtime")
+    @reg.method("providers.resolve_runtime", inference=True)
     def runtime(ctx: CallContext, params: dict) -> dict:
         with scoped_home(profile_home_param(params)):
             return {"runtime": resolve_runtime(requested=params.get("requested"), api_key=params.get("api_key"), base_url=params.get("base_url"), target_model=params.get("target_model"))}
@@ -520,7 +520,7 @@ def register(reg) -> None:
         with scoped_home(profile_home_param(params)):
             return credential_pool(provider)
 
-    @reg.method("models.context_length")
+    @reg.method("models.context_length", inference=True)
     def ctx_len(ctx: CallContext, params: dict) -> dict:
         model = str(params.get("model") or "").strip()
         if not model:

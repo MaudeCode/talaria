@@ -175,6 +175,7 @@ def test_no_api_key_is_refused_before_an_agent_exists(agent_env, monkeypatch) ->
     assert ThrowawayAgent.instances == []
 
 
+@pytest.mark.usefixtures("stub_inference_preflight")
 def test_registered_method_scopes_the_profile_home(agent_env, monkeypatch) -> None:
     from talaria_sidecar.methods import Registry
 
