@@ -402,6 +402,7 @@ describe('profiles, crons, workspaces, skills, and sessions across profiles', ()
       await s.deps.completions.processOne({ process_id: 'drift_1', session_id: 'drift_1', type: 'completion', command: 'make', exit_code: 0, output: 'ok', session_key: sid, origin_ui_session_id: sid, consumed: false })
       await new Promise((r) => setTimeout(r, 200))
       expect(homes).toEqual([])
+      expect(s.deps.completions.deferredCount(sid)).toBe(1)
       expect(s.logs.some((line) => line.includes(`wakeup retained for session ${sid}`) && line.includes('outside the profiles directory'))).toBe(true)
     } finally {
       rmSync(home, { force: true })

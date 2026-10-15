@@ -1519,6 +1519,26 @@ describe('a Stop holds automatic turns until the next user message (TAL-899)', (
     await settled()
   }
 
+  it.each(['load', 'save'] as const)('still interrupts when the Stop hold cannot %s', async (operation) => {
+    const sid = await newSid()
+    stoppableThenAnswer()
+    const stream = await startAndStop(sid)
+    const before = sidecar.calls.filter((call) => call.method === 'chat.interrupt').length
+    const spy = vi.spyOn(s.deps.sessionStore, operation === 'load' ? 'get' : 'save').mockImplementation(() => { throw new Error('synthetic storage failure') })
+    try {
+      const outcome = await s.deps.turns.cancel(stream).catch(() => null)
+      const after = sidecar.calls.filter((call) => call.method === 'chat.interrupt').length
+      expect(after - before, 'Stop must reach the Agent despite a failed durable hold write').toBe(1)
+      expect(outcome).toMatchObject({ cancelled: true })
+      expect(s.deps.turns.automaticTurnsHeld(sid)).toBe(true)
+    } finally {
+      spy.mockRestore()
+      await s.deps.turns.cancel(stream)
+      await s.deps.turns.finished(stream)
+      await settled()
+    }
+  })
+
   it('a completion deferred during a stopped turn waits for the next user turn to end', async () => {
     const sid = await newSid()
     stoppableThenAnswer()

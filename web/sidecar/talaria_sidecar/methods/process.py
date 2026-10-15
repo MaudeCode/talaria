@@ -152,22 +152,24 @@ def _restore_and_sweep_completions(registry) -> None:
 
 _DELIVERY_RECONCILE_INTERVAL_S = 30
 _LAST_DELIVERY_RECONCILE: dict[Path, float] = {}
+_DELIVERY_RECONCILE_CURSOR: dict[Path, str] = {}
+_DELIVERY_RECONCILE_PAGE_SIZE = 200
 
 
-def _delivered_notifications(home: Path, delegation_id: str | None = None) -> list[dict]:
+def _delivered_notifications(home: Path, delegation_id: str | None = None, after: str = "") -> tuple[list[dict], str]:
     """Only typed transcript deliveries, never every delivered ledger row. No Agent state is changed."""
     db_path = home / "state.db"
     if not db_path.exists():
-        return []
+        return [], ""
     with closing(sqlite3.connect(f"{db_path.resolve().as_uri()}?mode=ro", uri=True, timeout=5)) as conn:
         tables = {r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type='table'")}
         if not {"async_delegations", "messages", "sessions"} <= tables:
-            return []
+            return [], ""
         rows = conn.execute("""WITH RECURSIVE candidates AS (
             SELECT delegation_id, origin_ui_session_id, parent_session_id, origin_session_id, event_json
             FROM async_delegations WHERE delivery_state='delivered' AND state NOT IN ('running','finalizing')
             AND event_json IS NOT NULL AND origin_ui_session_id != '' AND delivered_at >= ?
-            AND (? IS NULL OR delegation_id=?)
+            AND (? IS NULL OR delegation_id=?) AND delegation_id > ?
         ), lineage(delegation_id, id) AS (
             SELECT delegation_id, parent_session_id FROM candidates WHERE parent_session_id != ''
             UNION SELECT delegation_id, origin_session_id FROM candidates WHERE origin_session_id != ''
@@ -182,14 +184,14 @@ def _delivered_notifications(home: Path, delegation_id: str | None = None) -> li
         AND json_extract(m.display_metadata, '$.delegation_id')=c.delegation_id
         AND coalesce(json_extract(m.display_metadata, '$.delivery_notice'), '')=''
         AND coalesce(json_extract(m.display_metadata, '$.presentation_suppressed'), 0)=0
-        ORDER BY c.delegation_id LIMIT 200""", (time.time() - 48 * 3600, delegation_id, delegation_id)).fetchall()
+        ORDER BY c.delegation_id LIMIT ?""", (time.time() - 48 * 3600, delegation_id, delegation_id, after, _DELIVERY_RECONCILE_PAGE_SIZE)).fetchall()
     events = []
     for did, owner, payload in rows:
         event = _json(payload)
         if event.get("type") != "async_delegation" or event.get("delegation_id") != did or event.get("origin_ui_session_id") != owner or event.get("task_failure_notice"):
             continue
         events.append({**event, "reconciliation_profile_home": str(home.resolve())})
-    return events
+    return events, rows[-1][0] if len(rows) == _DELIVERY_RECONCILE_PAGE_SIZE else ""
 
 
 def _reconcile_delivered_notifications() -> list[dict]:
@@ -199,7 +201,9 @@ def _reconcile_delivered_notifications() -> list[dict]:
         if now - _LAST_DELIVERY_RECONCILE.get(home, -float("inf")) < _DELIVERY_RECONCILE_INTERVAL_S:
             continue
         try:
-            out.extend(_delivered_notifications(home))
+            events, cursor = _delivered_notifications(home, after=_DELIVERY_RECONCILE_CURSOR.get(home, ""))
+            out.extend(events)
+            _DELIVERY_RECONCILE_CURSOR[home] = cursor
             _LAST_DELIVERY_RECONCILE[home] = now
         except Exception:  # retry unreadable homes; never block live queue delivery
             log.warning("Failed to reconcile typed delegation deliveries for %s", home, exc_info=True)
@@ -316,7 +320,7 @@ def claim_delivery(evt: dict, consumer: str) -> str | None:
         if evt.get("reconciliation_profile_home", str(home)) == str(home):
             # A live queue copy can race the transcript-only consumer too. Recheck the same proof here.
             transport = {"process_id", "consumed", "child_process", "restored", "reconciliation_profile_home"}
-            for candidate in _delivered_notifications(home, str(evt.get("delegation_id") or "")):
+            for candidate in _delivered_notifications(home, str(evt.get("delegation_id") or ""))[0]:
                 if {k: v for k, v in candidate.items() if k not in transport} == {k: v for k, v in evt.items() if k not in transport}:
                     return ""  # Web's session receipt acknowledges this admission, not the Agent ledger.
     return None if claim_id is None else str(claim_id)

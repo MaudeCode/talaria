@@ -300,3 +300,35 @@ def test_typed_deliveries_reconcile_in_each_owning_profile_after_sidecar_restart
             assert _drain(sidecar, hermes_home) == []
         finally:
             sidecar.close()
+
+
+@requires_agent
+def test_reconciliation_advances_past_the_first_page_of_accepted_deliveries(hermes_home):
+    _agent(hermes_home, """
+from hermes_state import SessionDB
+db = SessionDB()
+db.create_session('agent-parent', source='api_server')
+# All dispatches precede completion, so normal dispatch pruning cannot reduce the terminal batch.
+for i in range(201):
+    ad._persist_dispatch({'delegation_id': f'deleg_{i:03}', 'dispatched_at': time.time(),
+                          'session_key': 'web-parent', 'origin_ui_session_id': 'web-parent',
+                          'parent_session_id': 'agent-parent', 'origin_session_id': 'agent-parent'})
+for i in range(201):
+    event = {'type': 'async_delegation', 'delegation_id': f'deleg_{i:03}', 'status': 'unknown',
+             'origin_ui_session_id': 'web-parent', 'session_key': 'web-parent',
+             'parent_session_id': 'agent-parent', 'origin_session_id': 'agent-parent'}
+    ad._persist_completion(event, {'status': 'unknown'})
+    db.append_delegation_delivery('agent-parent', 'Synthetic result', {'delegation_id': event['delegation_id']})
+    claim = ad.claim_event_delivery(event, 'synthetic-transcript-consumer')
+    assert claim
+    ad.complete_event_delivery(event, claim)
+""")
+    result = json.loads(_agent(hermes_home, """
+from talaria_sidecar.methods import process
+process._DELIVERY_RECONCILE_INTERVAL_S = 0
+first = process.drain(256)
+second = process.drain(256)
+print(json.dumps({'first': [e['process_id'] for e in first], 'second': [e['process_id'] for e in second]}))
+"""))
+    assert result['first'] == [f'deleg_{i:03}' for i in range(200)]
+    assert result['second'] == ['deleg_200'], 'later deliveries must reach admission even while accepted rows remain eligible'

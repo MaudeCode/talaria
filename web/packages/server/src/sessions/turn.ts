@@ -1627,9 +1627,13 @@ export class TurnRunner {
     const owner = this.registry.ownerSessionId(streamId) ?? this.registry.activeRuns.get(streamId)?.session_id
     if (owner && this.registry.writebackOwners.get(owner) === streamId) {
       this.stopHeld.add(owner)
-      const session = this.deps.store.get(owner)
-      session.automatic_turns_stop_held = true
-      this.deps.store.save(session, { touchUpdatedAt: false })
+      try {
+        const session = this.deps.store.get(owner)
+        session.automatic_turns_stop_held = true
+        this.deps.store.save(session, { touchUpdatedAt: false })
+      } catch (error) {
+        this.deps.log(`[webui] WARNING: failed to persist Stop hold for session ${owner}; interrupting with the in-memory hold: ${(error as Error).message}`)
+      }
     }
     return this.stop(streamId)
   }

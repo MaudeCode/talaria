@@ -379,7 +379,9 @@ its global ledger without starting the Web parent. `process.drain` reconciles
 these typed deliveries across the same contained profile homes as pending replay.
 It requires a delivered final ledger event, a matching notification in the exact
 parent's compression lineage, and a delivery within the Agent replay window.
-Interim notices, presentation suppression, unrelated transcripts, pending claims,
+The bounded scan advances a separate cursor per profile and wraps after the final
+page, so accepted rows cannot starve later deliveries. Interim notices, presentation
+suppression, unrelated transcripts, pending claims,
 and arbitrary delivered ledger rows do not qualify. Reconciliation reads Agent
 SQLite state only; it never resets a delivered flag or runs a child again.
 
@@ -397,7 +399,8 @@ matching body, `process_wakeup` source and turn ID also proves admission.
 Delegation payloads extend the existing `_wakeup_held.json` mechanism across busy,
 Stop, sealed-snapshot and provider-pause deferrals. Deleted sessions discard their
 held payloads. Stop's `automatic_turns_stop_held` session metadata survives restart
-and clears when the user's next turn is admitted. Existing Stable readers ignore
+and clears when the user's next turn is admitted. A failed hold write keeps the
+in-memory Stop hold and still interrupts the Agent. Existing Stable readers ignore
 the additive metadata. Both instances share one Web server's per-session drain
 serialization; this does not introduce multi-server shared-state support.
 

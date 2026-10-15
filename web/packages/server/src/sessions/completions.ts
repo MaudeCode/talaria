@@ -249,11 +249,10 @@ export class CompletionDrain {
     if (!sid) return false
     let owner: Session
     let home: string
-    try {
-      owner = this.deps.store.get(sid)
-      home = this.ownerHome(owner)
-    } catch { return false }
-    if (evt.reconciliation_profile_home && canonicalHome(str(evt.reconciliation_profile_home)) !== canonicalHome(home)) return false
+    try { owner = this.deps.store.get(sid) } catch { return false }
+    try { home = this.ownerHome(owner) } catch { home = '' }
+    // Reconciliation needs positive profile proof; live events retain the existing admission deferral on home errors.
+    if (evt.reconciliation_profile_home && (!home || canonicalHome(str(evt.reconciliation_profile_home)) !== canonicalHome(home))) return false
     if (evt.reconciliation_profile_home && completionAccepted(owner, completionKey(home, evt))) return true
     if (evt.consumed === true) return true
     // TAL-933 (Agent `should_surface_notification`): a subagent's own process notices stay out of the parent chat unless
