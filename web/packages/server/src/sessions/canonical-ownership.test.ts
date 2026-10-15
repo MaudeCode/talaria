@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { bootTestServer, type TestServer } from '../test/harness.js'
 import { FakeSidecar } from '../sidecar/fake.js'
 import { Session } from './session.js'
+import { stampCompressionExhaustedRecovery } from './turn.js'
 import { readImportableAgentSessionRows, stateDbSessionSources } from './state-db.js'
 
 const fixture = JSON.parse(readFileSync(new URL('../test/fixtures/canonical-ownership.json', import.meta.url), 'utf8')) as {
@@ -74,6 +75,60 @@ describe('canonical Agent ownership (TAL-1036)', () => {
       expect(readFileSync(join(s.state, 'sessions', `${sid}.json`), 'utf8')).toBe(file)
     }
     expect(sidecar.calls.filter((c) => ['chat.start', 'chat.compress', 'sessions.clear', 'sessions.truncate'].includes(c.method))).toEqual([])
+  })
+
+  it.each(['deferred', 'eager'] as const)('rechecks ownership after asynchronous setup and retires the %s pending turn without transcript writes', async (mode) => {
+    const sid = fixture.sessions.cli!
+    db.prepare('DELETE FROM state_meta WHERE key = ?').run(`gateway.local_policy.v1:${sid}`)
+    db.prepare('DELETE FROM session_admissions WHERE target_session_id = ?').run(sid)
+    db.prepare("UPDATE sessions SET source = 'cli' WHERE id = ?").run(sid)
+    const messages = [{ role: 'user', content: 'earlier question', timestamp: 1 }, { role: 'assistant', content: 'earlier answer', timestamp: 2 }]
+    s.deps.sessionStore.save(new Session({ session_id: sid, source_tag: 'cli', messages }, { workspace: join(s.state, 'workspace'), model: 'fixture' }))
+    s.deps.turns.deps.saveMode = () => mode
+    let entered!: () => void
+    let release!: () => void
+    const setup = new Promise<void>((resolve) => { entered = resolve })
+    const held = new Promise<void>((resolve) => { release = resolve })
+    sidecar.respond('approval.set_yolo', async () => { entered(); await held; return { yolo_enabled: false, released: 0 } })
+    let stream = ''
+    try {
+      const response = await post(s, '/api/chat/start', { session_id: sid, message: 'must never reach the Agent' })
+      expect(response.status).toBe(200)
+      stream = String((await json(response)).stream_id)
+      await setup
+      // The gateway adopts this id while Talaria awaits its final asynchronous setup operation.
+      for (const sql of fixture.inserts.filter((sql) => sql.startsWith('INSERT INTO "state_meta"') && sql.includes(sid))) db.exec(sql)
+      const before = stored()
+      release()
+      await s.deps.turns.finished(stream)
+      expect(sidecar.calls.filter((c) => c.method === 'chat.start')).toEqual([])
+      expect(stored()).toEqual(before)
+      const session = s.deps.sessionStore.get(sid)
+      expect(session.messages).toEqual(messages)
+      expect(session.active_stream_id).toBeNull()
+      expect(session.hasPendingPrompt).toBe(false)
+      expect(s.deps.registry.activeRuns.has(stream)).toBe(false)
+      expect(s.deps.registry.writebackOwners.has(sid)).toBe(false)
+      const frames = await s.sse(`/api/chat/stream?stream_id=${stream}`, (f) => ['done', 'apperror', 'cancel'].includes(f.event))
+      const terminal = frames.find((f) => f.event === 'apperror')
+      expect((terminal?.data as Record<string, unknown>)?.session).toMatchObject({ read_only: true })
+    } finally { release(); if (stream) await s.deps.turns.finished(stream) }
+  })
+
+  it.each([false, true])('refuses compression recovery of a canonical sidecar before creating or reopening a child (existing=%s)', async (existing) => {
+    const sid = fixture.sessions.cli!
+    const source = new Session({ session_id: sid, source_tag: 'cli' }, { workspace: join(s.state, 'workspace'), model: 'fixture' })
+    stampCompressionExhaustedRecovery(source, 'Context length exceeded.', '')
+    s.deps.sessionStore.save(source)
+    if (existing) s.deps.sessionStore.save(new Session({ session_id: 'earlier-recovery-child', session_source: 'fork', compression_recovery_source_session_id: sid, compression_recovery_action: 'start_focused_continuation' }, { workspace: join(s.state, 'workspace'), model: 'fixture' }))
+    const ids = [...s.deps.sessionStore.persistedIds()]
+    const before = stored()
+    const saved = readFileSync(join(s.state, 'sessions', `${sid}.json`), 'utf8')
+    const response = await post(s, '/api/session/compression-recovery/start', { session_id: sid })
+    expect(response.status).toBe(403)
+    expect([...s.deps.sessionStore.persistedIds()]).toEqual(ids)
+    expect(stored()).toEqual(before)
+    expect(readFileSync(join(s.state, 'sessions', `${sid}.json`), 'utf8')).toBe(saved)
   })
 
   it('refuses a steer into an already-materialized live sidecar before sidecar dispatch', async () => {

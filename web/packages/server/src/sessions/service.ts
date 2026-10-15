@@ -1857,6 +1857,7 @@ export class SessionService {
     let created = false
     const child = await this.store.withLock(sid, () => {
       // Validated under the lock: a delete that won it leaves no source to fork.
+      this.rejectViewOnly(sid, 'used for compression recovery')
       const source = this.store.get(sid)
       if (!this.visibleToActiveProfile(source.profile)) throw new HttpFailure(404, 'Session not found')
       if (!compressionRecoveryPayload(source)) throw new HttpFailure(409, 'Session does not have a compression recovery action.')
