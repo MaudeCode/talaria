@@ -30,6 +30,7 @@ export interface RecoveryDeps {
   stateDbPath: string
   profile: string
   stampingSince: number
+  isReadOnly: (sid: string, profile: string) => boolean
   log: (line: string) => void
 }
 
@@ -315,6 +316,13 @@ function scan(deps: RecoveryDeps): Scan {
   return { dir, liveIds: ids('.json'), backupIds: ids('.json.bak'), db: readStateDb(deps.stateDbPath, dir), tombstoned: deps.store.loadDeletedTombstone() }
 }
 
+/** The document's actual home is also the ownership home for orphan backups. */
+function readOnlyRecovery(deps: RecoveryDeps, sid: string): boolean {
+  const path = deps.store.pathFor(sid)
+  const doc = readDoc(path) ?? readDoc(`${path}.bak`)
+  return deps.isReadOnly(sid, doc ? str(doc.profile) || 'default' : deps.profile)
+}
+
 /** Python `audit_session_recovery`: a read-only classification of every recovery finding. */
 export function auditSessionRecovery(deps: RecoveryDeps): RecoveryAudit {
   const s = scan(deps)
@@ -350,6 +358,7 @@ export function auditSessionRecovery(deps: RecoveryDeps): RecoveryAudit {
   }
   if (s.db.unreadable) items.push(item('', 'state_db_unreadable', 'unsafe_to_repair', 'manual_review'))
   for (const [sid, events] of readTurnJournals(s.dir)) items.push(...pendingJournalTurns(s.dir, sid, events))
+  for (const finding of items) if (['restore_from_bak', 'materialize_from_state_db'].includes(finding.recommendation) && readOnlyRecovery(deps, finding.session_id)) { finding.category = 'unsafe_to_repair'; finding.recommendation = 'manual_review' }
   const summary = { ok: s.liveIds.length, repairable: 0, unsafe_to_repair: 0 }
   for (const i of items) summary[i.category] += 1
   return { status: summary.unsafe_to_repair ? 'needs_manual_review' : summary.repairable ? 'warn' : 'ok', summary, items }
@@ -389,6 +398,7 @@ async function restoreBackups(deps: RecoveryDeps, s: Scan): Promise<RecoveryRepa
       const path = store.pathFor(sid)
       if (status.recommend !== 'restore' || (!existsSync(path) && store.wasDeleted(sid))) return
       const counts = { live_messages: status.live_messages, bak_messages: status.bak_messages }
+      if (readOnlyRecovery(deps, sid)) { result.details.push({ session_id: sid, restored: false, ...counts, skipped: 'read_only' }); return }
       if (busy(store, sid)) { result.details.push({ session_id: sid, restored: false, ...counts, skipped: 'session_active' }); return }
       try {
         if (!publish(path, readFileSync(`${path}.bak`, 'utf8'), !existsSync(path))) { result.details.push({ session_id: sid, restored: false, ...counts, skipped: 'sidecar_appeared' }); return }
@@ -414,6 +424,7 @@ async function materializeSidecars(deps: RecoveryDeps, s: Scan): Promise<Recover
   for (const row of rows) {
     await store.withLock(row.id, () => {
       if (store.wasDeleted(row.id)) return
+      if (readOnlyRecovery(deps, row.id)) { result.details.push({ session_id: row.id, materialized: false, skipped: 'read_only' }); return }
       if (busy(store, row.id)) { result.details.push({ session_id: row.id, materialized: false, skipped: 'session_active' }); return }
       try {
         mkdirSync(s.dir, { recursive: true })

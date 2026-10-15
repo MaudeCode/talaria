@@ -53,7 +53,7 @@ describe('Agent v0.22.1 receipt-backed local reset', () => {
     expect(stateDbLineageReport(path, fixture.owner)).toMatchObject({ lineage_key: fixture.owner, tip_session_id: 'reset-empty', total_segments: 4, manual_review: false })
   })
 
-  it('matches the candidate display and model histories after a reset then compression', async () => {
+  it('preserves candidate display and model histories while refusing independent execution', async () => {
     const sidecar = new FakeSidecar()
     const server = await bootTestServer({ sidecar })
     onTestFinished(async () => { await server.close() })
@@ -64,12 +64,8 @@ describe('Agent v0.22.1 receipt-backed local reset', () => {
     const detail = await (await server.get(`/api/session?session_id=${fixture.owner}`)).json() as { session: { messages: { content: string }[] } }
     expect(detail.session.messages.map((m) => m.content)).toEqual(stage.displayContents)
     const response = await server.get('/api/chat/start', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ session_id: fixture.owner, message: 'continue compressed context' }) })
-    const started = await response.json() as { session_id: string; stream_id: string }
-    expect(response.status, JSON.stringify(started)).toBe(200)
-    expect(started.session_id).toBe('compressed')
-    await server.sse(`/api/chat/stream?stream_id=${started.stream_id}`, (frame) => frame.event === 'stream_end')
-    const call = sidecar.calls.find((call) => call.method === 'chat.start')?.params as { conversation_history: { content: string }[] }
-    expect(call.conversation_history.map((m) => m.content)).toEqual(stage.modelContents)
+    expect(response.status, await response.text()).toBe(403)
+    expect(sidecar.calls.filter((call) => call.method === 'chat.start')).toEqual([])
   })
 
   it.each(['missing', 'malformed', 'cycle', 'budget', 'foreign', 'fork'] as const)('fails conservatively with a %s receipt', (damage) => {
@@ -138,20 +134,20 @@ describe('Agent v0.22.1 receipt-backed local reset', () => {
     expect(reopened.sessions.map((r) => r.session_id)).toEqual(fixture.snapshots[stage].listedIds)
   })
 
-  it.each([false, true])('starts a turn at the current target from an old segment with persisted sidecar=%s', async (persisted) => {
+  it.each([false, true])('refuses canonical turns from every reset alias with persisted sidecar=%s', async (persisted) => {
     const sidecar = new FakeSidecar()
     const server = await bootTestServer({ sidecar })
     onTestFinished(async () => { await server.close() })
     db.close(); path = join(server.state, 'state.db'); db = new DatabaseSync(path); load('multiple')
     if (persisted) server.deps.sessionStore.save(new Session({ session_id: fixture.owner, profile: 'default', source_tag: 'cli', messages: [{ role: 'user', content: 'stale sidecar context' }, { role: 'assistant', content: 'old reply' }, { role: 'user', content: 'another old turn' }] }, server.deps.sessionStore.deps.defaults('default')))
-    const response = await server.get('/api/chat/start', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ session_id: fixture.owner, message: 'continue after reset' }) })
-    const started = await response.json() as { session_id: string; stream_id: string }
-    expect(response.status, JSON.stringify(started)).toBe(200)
-    expect(started.session_id).toBe('reset-empty')
-    await server.sse(`/api/chat/stream?stream_id=${started.stream_id}`, (frame) => frame.event === 'stream_end')
-    const call = sidecar.calls.find((call) => call.method === 'chat.start')?.params as { session_id: string; conversation_history: { content: string }[] }
-    expect(call.session_id).toBe('reset-empty')
-    expect(call.conversation_history.map((m) => m.content)).toEqual(['latest context'])
+    const before = db.prepare('SELECT * FROM messages').all()
+    for (const row of fixture.snapshots.multiple.sessions) {
+      const response = await server.get('/api/chat/start', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ session_id: row.id, message: 'continue after reset' }) })
+      expect(response.status, await response.text()).toBe(403)
+    }
+    expect(sidecar.calls.filter((call) => call.method === 'chat.start')).toEqual([])
+    expect(db.prepare('SELECT * FROM messages').all()).toEqual(before)
+    expect(existsSync(server.deps.sessionStore.pathFor('reset-empty'))).toBe(false)
   })
 
   it('collapses all persisted receipt members while keeping the current sidecar metadata', async () => {
@@ -173,7 +169,7 @@ describe('Agent v0.22.1 receipt-backed local reset', () => {
     expect(list.sessions[0]).not.toHaveProperty('_lineage_ids')
   })
 
-  it.each(['root', 'all', 'late-tip'] as const)('deletes persisted %s aliases with the projected conversation', async (persisted) => {
+  it.each(['root', 'all', 'late-tip'] as const)('preserves canonical persisted %s aliases when deletion is refused', async (persisted) => {
     const sidecar = new FakeSidecar()
     const server = await bootTestServer({ sidecar })
     onTestFinished(async () => { await server.close() })
@@ -187,15 +183,13 @@ describe('Agent v0.22.1 receipt-backed local reset', () => {
       return { ok: true, deleted_ids: persisted === 'late-tip' ? [...ids, 'late-tip'] : ids }
     })
     const response = await server.get('/api/session/delete', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ session_id: 'reset-empty' }) })
-    expect(response.status, await response.text()).toBe(200)
-    for (const id of [...ids, 'late-tip']) expect(existsSync(server.deps.sessionStore.pathFor(id)), id).toBe(false)
-    await server.deps.settings.save({ show_cli_sessions: true })
-    server.deps.cliSessions.invalidate()
-    const list = await (await server.get('/api/sessions')).json() as { sessions: Record<string, unknown>[] }
-    expect(list.sessions).toEqual([])
+    expect(response.status, await response.text()).toBe(403)
+    expect(sidecar.calls.filter((call) => call.method === 'state_db.delete_cli_session')).toEqual([])
+    for (const id of persisted === 'all' ? ids : [fixture.owner]) expect(existsSync(server.deps.sessionStore.pathFor(id)), id).toBe(true)
+    expect(db.prepare('SELECT id FROM sessions').all()).toHaveLength(ids.length)
   })
 
-  it.each([false, true])('preserves saved UI metadata when materializing the tip outside sidebar=%s', async (outside) => {
+  it.each([false, true])('preserves saved UI metadata in the read-only tip outside sidebar=%s', async (outside) => {
     const server = await bootTestServer()
     onTestFinished(async () => { await server.close() })
     db.close(); path = join(server.state, 'state.db'); db = new DatabaseSync(path); load('multiple')
@@ -208,11 +202,11 @@ describe('Agent v0.22.1 receipt-backed local reset', () => {
     server.deps.sessionStore.save(new Session({ session_id: fixture.owner, profile: 'default', source_tag: 'cli', ...saved, messages: [{ role: 'user', content: 'old prompt' }] }, server.deps.sessionStore.deps.defaults('default')))
     await server.deps.settings.save({ show_cli_sessions: true })
     server.deps.cliSessions.invalidate()
-    const response = await server.get('/api/session/update', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ session_id: fixture.owner }) })
+    const response = await server.get(`/api/session?session_id=${fixture.owner}`)
     const result = await response.json() as { session: Record<string, unknown> }
     expect(response.status, JSON.stringify(result)).toBe(200)
-    expect(result.session).toMatchObject({ session_id: 'reset-empty', ...saved })
-    expect(server.deps.sessionStore.get('reset-empty').compact()).toMatchObject(saved)
+    expect(result.session).toMatchObject({ session_id: 'reset-empty', ...saved, read_only: true })
+    expect(existsSync(server.deps.sessionStore.pathFor('reset-empty'))).toBe(false)
     if (!outside) {
       const listed = await (await server.get('/api/sessions?include_archived=1')).json() as { sessions: Record<string, unknown>[] }
       expect(listed.sessions).toHaveLength(1)
@@ -222,7 +216,7 @@ describe('Agent v0.22.1 receipt-backed local reset', () => {
     expect(reopened.session).toMatchObject({ session_id: 'reset-empty', ...saved })
   })
 
-  it('locks and evicts the current target when a mutation names an old member', async () => {
+  it('refuses a canonical alias mutation before waiting on its lock or evicting its runtime', async () => {
     const server = await bootTestServer({ sidecar: new FakeSidecar() })
     onTestFinished(async () => { await server.close() })
     db.close(); path = join(server.state, 'state.db'); db = new DatabaseSync(path); load('multiple')
@@ -235,15 +229,12 @@ describe('Agent v0.22.1 receipt-backed local reset', () => {
     const terminal = vi.spyOn(server.deps.sessions.deps.runtime, 'closeTerminal')
     const response = server.get('/api/session/update', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ session_id: fixture.owner, workspace, model: 'test-model' }) })
     try {
-      await vi.waitFor(() => { expect(lock).toHaveBeenCalled() })
-      expect(lock.mock.calls[0]?.[0]).toBe('reset-empty')
+      const result = await response
+      expect(result.status, await result.text()).toBe(403)
+      expect(lock).not.toHaveBeenCalled()
       expect(evict).not.toHaveBeenCalled()
       expect(terminal).not.toHaveBeenCalled()
     } finally { release(); await held; await response }
-    const result = await response
-    expect(result.status, await result.text()).toBe(200)
-    expect(evict).toHaveBeenCalledWith('reset-empty')
-    expect(terminal).toHaveBeenCalledWith('reset-empty')
   })
 
   it('keeps the profile guard when an alias resolves to a sidecar owned by another profile', async () => {

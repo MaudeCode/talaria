@@ -30,7 +30,6 @@ import { messageWindowForDisplay, messagesForLimitedPayload, toolCallsForMessage
 import { UNSETTLED_TODO_KEY, attachTodoState, parseTodoToolResult } from './todo.js'
 import { SessionNotices } from './notices.js'
 import { SessionGoals } from './goals.js'
-import { withSessionWireFlags } from './list.js'
 import { hydrateAnchorActivityScenes, turnTerminalState, withTurnIds } from './anchor.js'
 import { persistentStateChanges, persistentStateSnapshot } from './state-saved.js'
 import { agentBuildParams, webuiEphemeralSystemPrompt, workspaceSystemMessage } from './turn-context.js'
@@ -428,6 +427,8 @@ export class TurnRunner {
   /** Python `_start_chat_stream_for_session`: persist pending state, register the channel, launch the worker. */
   private admit(session: Session, opts: StartTurnOptions, releaseStopHold = false): AdmissionResult {
     const s = session
+    const readOnly = this.deps.service().readOnlyReason(s)
+    if (readOnly) return { error: readOnly, _status: 403 }
     if (this.deps.updateInProgress?.()) return { error: 'Web is updating. Retry after it restarts.', _status: 503 }
     if (this.deps.profileDeleting?.(s.profile ?? null)) return { error: `Profile '${str(s.profile)}' is being deleted.`, _status: 409 }
     if (this.deps.workspaceBusy?.(opts.workspace)) return { error: WORKSPACE_BUSY_MESSAGE, _status: 409 }
@@ -651,6 +652,8 @@ export class TurnRunner {
     if (activeRun) activeRun.phase = 'running'
     const settledAt = { value: false }
     let succeeded = false
+    let ownershipRefused = false
+    let agentDispatched = false
     // TAL-424: steers an errored turn ended without taking, sent as one follow-up turn once this one is torn down.
     let followUp: string[] = []
     try {
@@ -683,6 +686,9 @@ export class TurnRunner {
       // context frame always reports the not-configured shape.
       const persistentBefore = persistentStateSnapshot(deps.profileHome(s.profile))
       put('context_status', { session_id: sessionId, prefill: { status: 'not_configured', source: 'none', label: '', message_count: 0 } })
+      // Setup awaits can outlive a gateway adoption; no await separates this read from dispatch.
+      deps.service().assertWritable(s)
+      agentDispatched = true
       const result = await sidecar.call('chat.start', {
         profile_home: deps.profileHome(s.profile), session_id: sessionId, stream_id: streamId, ...this.agentWorkspace(s, opts.workspace), model: opts.model ?? '', model_provider: opts.modelProvider,
         user_message: userMessage, ...turnContext, conversation_history: conversationHistory, enabled_toolsets: deps.toolsetsFor(s), ...(msgText ? { persist_user_message: msgText } : {}), ...(opts.ephemeral ? { ephemeral: true } : {}),
@@ -961,11 +967,7 @@ export class TurnRunner {
       s.next_turn_threshold_tokens = result.context.next_turn_threshold_tokens ?? null
       if (result.compressed) put('compressed', this.compressedFrame(s))
       s.tool_calls = extractToolCallsFromMessages(s.messages, liveToolCalls, s.tool_calls)
-      s.active_stream_id = null
-      s.pending_user_message = null
-      s.pending_attachments = []
-      s.pending_started_at = null
-      s.pending_user_source = null
+      this.clearPendingTurn(s)
       // TAL-576: a turn that ran means the provider has usable credentials again.
       s.process_wakeup_pause = null
       const attachments = opts.attachments ?? []
@@ -1071,6 +1073,19 @@ export class TurnRunner {
       succeeded = true
       opts.onDone?.(lastAnswer(s.messages))
     } catch (error) {
+      const readOnly = !agentDispatched ? deps.service().readOnlyReason(s) : null
+      if (readOnly) {
+        ownershipRefused = true
+        if (this.registry.writebackOwners.get(sessionId) === streamId && s.active_stream_id === streamId) {
+          // Cancellation persists the prompt and a Stop row; an unstarted, refused turn must add neither.
+          s.messages = s.messages.filter((m) => !(m.role === 'user' && m._turn_id === streamId))
+          this.clearPendingTurn(s)
+          if (isDict(s.extra.completion_acceptances)) s.extra.completion_acceptances = Object.fromEntries(Object.entries(s.extra.completion_acceptances).filter(([, value]) => value !== streamId))
+          deps.store.save(s, { touchUpdatedAt: false })
+        }
+        put('apperror', { type: 'error', terminal_state: 'error', message: readOnly, session_id: sessionId, session: this.publicTerminalSession(s) })
+        return
+      }
       if (settledAt.value && !(error instanceof SidecarError)) {
         deps.log(`[webui] ERROR settling turn ${streamId}\n${error instanceof Error ? (error.stack ?? error.message) : String(error)}`)
       }
@@ -1108,7 +1123,7 @@ export class TurnRunner {
       if (!succeeded) opts.onFailed?.(failure)
       // TAL-1005: a Stop or an error after the turn ran on a compaction's result left that job's estimate under a context
       // its prompt and work may have grown; the idle trigger judges the context measured again.
-      if (!succeeded && !opts.ephemeral) void deps.service().remeasureContext(sessionId).then((measured) => { if (measured) void deps.service().ensureCompacted(sessionId) })
+      if (!succeeded && !ownershipRefused && !opts.ephemeral) void deps.service().remeasureContext(sessionId).then((measured) => { if (measured) void deps.service().ensureCompacted(sessionId) })
       this.startSteerFollowUp(sessionId, followUp)
     }
   }
@@ -1182,9 +1197,7 @@ export class TurnRunner {
    * msg_limit=` (renderable rows, limited payload shape, windowed tool calls, todo state) with the full count.
    */
   private terminalSessionPayload(s: Session): Record<string, unknown> {
-    const payload = withSessionWireFlags(s.compact({ contextLengthFor: this.deps.service().deps.contextLengthFor, modelOptionFor: this.deps.service().deps.modelOptionFor }), this.registry.liveIds)
-    payload.assistant_name = this.deps.service().assistantName(s)
-    payload.workspace_name = this.deps.service().workspaceNames()(s)
+    const payload = this.deps.service().wireRow(s)
     payload.automatic_turns_held = this.automaticTurnsHeld(s.session_id)
     payload.notices = this.sessionNotices(s.session_id)
     payload.goal = this.sessionGoal(s.session_id)
@@ -1212,6 +1225,15 @@ export class TurnRunner {
     return { session_id: sid, old_session_id: sid, new_session_id: sid, continuation_session_id: sid, message: 'Compression finished', usage }
   }
 
+  /** Release only the pending admission metadata; transcript settlement belongs to the caller. */
+  private clearPendingTurn(s: Session): void {
+    s.active_stream_id = null
+    s.pending_user_message = null
+    s.pending_attachments = []
+    s.pending_started_at = null
+    s.pending_user_source = null
+  }
+
   /** Python `_materialize_pending_user_turn_before_error` + error message append + save. */
   /** `runtimeProvider`: the provider the Agent resolved for the turn, when it reported one. */
   private persistError(s: Session, streamId: string, label: string, payload: Record<string, unknown>, activeTurnToken: string | null, agentRows: Message[] = [], runtimeProvider = ''): void {
@@ -1225,11 +1247,7 @@ export class TurnRunner {
     }
     this.materializePendingUserTurn(s, activeTurnToken, streamId)
     const duration = typeof startedAt === 'number' && startedAt > 0 ? Math.max(0, this.deps.now() - startedAt) : null
-    s.active_stream_id = null
-    s.pending_user_message = null
-    s.pending_attachments = []
-    s.pending_started_at = null
-    s.pending_user_source = null
+    this.clearPendingTurn(s)
     this.appendPartialSnapshot(s, streamId)
     const hint = str(payload.hint)
     const errorMessage: Message = { role: 'assistant', content: `**${label}:** ${str(payload.message) || label}${hint ? `\n\n*${hint}*` : ''}`, timestamp: Math.trunc(this.deps.now()), _error: true, _turn_id: streamId }
@@ -1381,11 +1399,7 @@ export class TurnRunner {
     const read = this.deps.service().stateDbRead(current)
     const context = settle(read)
     if (context) current.context_messages = dedupeContext(context)
-    current.active_stream_id = null
-    current.pending_user_message = null
-    current.pending_attachments = []
-    current.pending_started_at = null
-    current.pending_user_source = null
+    this.clearPendingTurn(current)
     if (!quiet) {
       this.appendPartialSnapshot(current, streamId)
       current.messages.push({ role: 'assistant', content: '', _error: true, _terminal_state: 'cancelled', timestamp: Math.trunc(this.deps.now()), _turn_id: streamId })
@@ -1455,6 +1469,7 @@ export class TurnRunner {
     const [qa, prompts] = titlePrompts(userText, assistantText)
     let status = 'llm_error_aux'
     for (const [idx, prompt] of prompts.entries()) {
+      if (this.deps.service().isReadOnly(s)) return { title: '', status: 'read_only', rawPreview: '' }
       let raw = ''
       try {
         const result = await sidecar.call('aux.complete', { profile_home: this.deps.profileHome(s.profile), task: 'title_generation', messages: [{ role: 'system', content: prompt }, { role: 'user', content: qa }], max_tokens: 64 }, { timeoutMs: 15_000 })
@@ -1489,6 +1504,7 @@ export class TurnRunner {
     if (!sidecar) throw new SidecarError('The Agent sidecar is not running; /refine is unavailable until it starts.', { condition: 'sidecar_unavailable' })
     const [model, provider] = this.deps.service().turnModel(s)
     const cfg = (await this.deps.profileConfig?.(s.profile ?? null)) ?? {}
+    this.deps.service().assertWritable(s)
     return (await sidecar.call('chat.refine', {
       profile_home: this.deps.profileHome(s.profile), session_id: s.session_id, messages, focus, model: model ?? '', model_provider: provider,
       enabled_toolsets: this.deps.toolsetsFor(s), ...agentBuildParams(cfg, 'webui', provider, this.deps.env ?? {}),
@@ -1516,6 +1532,7 @@ export class TurnRunner {
     let llmStatus = 'empty_assistant_message'
     let rawPreview = ''
     if (assistantText) ({ title: next, status: llmStatus, rawPreview } = await this.llmTitle(s, userText, assistantText))
+    this.deps.service().assertWritable(s)
     if (next) return { title: next, status: llmStatus, rawPreview }
     const fallback = fallbackTitleFromExchange(userText, assistantText)
     if (fallback && !isGenericFallbackTitle(fallback)) return { title: fallback, status: `local_summary:${llmStatus}`, rawPreview }
@@ -1553,6 +1570,7 @@ export class TurnRunner {
     if (!titleGenerationEnabled(cfg)) { status('skipped', 'title_generation_disabled', placeholder); return }
     const generated = await this.llmTitle(s, userText, assistantText)
     const { status: llmStatus, rawPreview } = generated
+    if (llmStatus === 'read_only') { status('skipped', 'read_only', placeholder); return }
     let next = generated.title
     let source = llmStatus
     if (!next) {
@@ -1566,6 +1584,7 @@ export class TurnRunner {
       if (this.deps.store.wasDeleted(sessionId)) return
       current = s
     }
+    if (this.deps.service().isReadOnly(current)) { status('skipped', 'read_only', str(current.title).trim()); return }
     let effective = str(current.title).trim()
     let wrote = false
     if (next) {
@@ -1620,6 +1639,7 @@ export class TurnRunner {
     const current = read()
     // The user may have renamed the session while the title prompt ran.
     if (current.manual_title || str(current.title).trim() !== placeholder) { status('skipped', 'manual_title', str(current.title).trim()); return }
+    if (this.deps.service().isReadOnly(current)) { status('refresh_skipped', 'read_only', str(current.title).trim()); return }
     current.title = next
     markSessionTitleGenerated(current)
     this.deps.store.save(current, { touchUpdatedAt: false })
@@ -1732,7 +1752,7 @@ export class TurnRunner {
     if (!sidecar) return { accepted: false, fallback: 'no_cached_agent', stream_id: null }
     // Register provisionally before the RPC: the Agent may apply the steer and finish the turn before the steer
     // reply arrives, and the turn's finalisation must then already see the record. A rejection removes it again.
-    return this.withSteerChain(activeStreamId, () => this.steerInto(sidecar, sessionId, activeStreamId, text, displayText, steerId))
+    return this.withSteerChain(activeStreamId, sessionId, () => this.steerInto(sidecar, sessionId, activeStreamId, text, displayText, steerId))
   }
 
   private async steerInto(sidecar: SidecarLike, sessionId: string, activeStreamId: string, text: string, displayText: string, steerId: string): Promise<Record<string, unknown>> {
@@ -1919,6 +1939,7 @@ export class TurnRunner {
     let decision: SidecarResult<'goals.evaluate'>
     try {
       // The workspace the turn ran in, unrecovered: the Agent pauses the goal rather than run its gates anywhere else.
+      this.deps.service().assertWritable(s)
       decision = await sidecar.call('goals.evaluate', { session_id: sessionId, profile_home: this.deps.profileHome(s.profile), last_response: lastResponse, user_initiated: true, workspace: str(s.workspace) || undefined })
     } catch (error) {
       this.deps.log(`[webui] WARNING: goal evaluation failed for ${sessionId}: ${(error as Error).message}`)
@@ -1969,8 +1990,11 @@ export class TurnRunner {
     return (this.steers.get(streamId) ?? []).map((r) => this.pendingSteerView(r))
   }
 
-  private withSteerChain<T>(streamId: string, fn: () => Promise<T>): Promise<T> {
-    const run = (this.steerChains.get(streamId) ?? Promise.resolve()).then(fn)
+  private withSteerChain<T>(streamId: string, sessionId: string, fn: () => Promise<T>): Promise<T> {
+    const run = (this.steerChains.get(streamId) ?? Promise.resolve()).then(() => {
+      this.deps.service().getForMutation(sessionId)
+      return fn()
+    })
     const settled = run.catch(() => undefined).then(() => { if (this.steerChains.get(streamId) === settled) this.steerChains.delete(streamId) })
     this.steerChains.set(streamId, settled)
     return run
@@ -1987,7 +2011,7 @@ export class TurnRunner {
     const streamId = s?.active_stream_id
     const sidecar = this.deps.sidecar()
     if (!streamId || !sidecar) return fallback
-    return this.withSteerChain(streamId, async () => {
+    return this.withSteerChain(streamId, sessionId, async () => {
       const records = this.steers.get(streamId) ?? []
       const index = records.findIndex((r) => r.steer_id === steerId)
       if (index < 0 || records[index]!.state !== 'pending') return fallback
@@ -2059,6 +2083,7 @@ export class TurnRunner {
   // ── approvals / clarify ──────────────────────────────────────────────────
 
   async respondApproval(sessionId: string, choice: string, approvalId: string, enableYolo: boolean): Promise<Record<string, unknown>> {
+    sessionId = this.deps.service().idForMutation(sessionId)
     // Python `_enable_session_yolo_and_release_pending`: a stale card id while another approval is parked
     // must not commit YOLO for the whole session — fail closed with the relay envelope instead.
     if (enableYolo && approvalId && !this.deps.pending.hasApprovalId(sessionId, approvalId) && this.deps.pending.hasPendingApproval(sessionId)) {
@@ -2132,14 +2157,18 @@ export class TurnRunner {
   }
 
   private withYoloLock<T>(sessionId: string, fn: () => Promise<T>): Promise<T> {
-    const run = (this.yoloChains.get(sessionId) ?? Promise.resolve()).then(fn)
+    const run = (this.yoloChains.get(sessionId) ?? Promise.resolve()).then(() => {
+      sessionId = this.deps.service().idForMutation(sessionId)
+      return fn()
+    })
     const settled = run.catch(() => undefined).then(() => { if (this.yoloChains.get(sessionId) === settled) this.yoloChains.delete(sessionId) })
     this.yoloChains.set(sessionId, settled)
     return run
   }
 
   /** Python `set_session_yolo_enabled(False)`: the sidecar must drop its per-session YOLO state before the local flag clears. */
-  disableYolo(sessionId: string): Promise<Record<string, unknown>> {
+  async disableYolo(sessionId: string): Promise<Record<string, unknown>> {
+    sessionId = this.deps.service().idForMutation(sessionId)
     return this.withYoloLock(sessionId, async () => {
       const sidecar = this.deps.sidecar()
       if (sidecar) {
@@ -2157,6 +2186,7 @@ export class TurnRunner {
    * did not acknowledge (prompt retained).
    */
   async respondClarify(sessionId: string, clarifyId: string, reply: string | ClarifyAnswers | null): Promise<{ ok: boolean; response?: string; stale?: boolean; invalid?: boolean; error?: string }> {
+    sessionId = this.deps.service().idForMutation(sessionId)
     const entry = this.deps.pending.peekClarify(sessionId, clarifyId)
     if (!entry) return { ok: false, stale: true }
     // TAL-887: a password-manager answer goes to the Agent and nowhere else; `null` (a decline) is its empty reply.

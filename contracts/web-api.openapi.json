@@ -1502,17 +1502,28 @@
                             "type": "boolean",
                             "description": "The session cannot be modified from Web: a read-only import, a view-only subagent child, or a foreign session whose owner refuses claiming."
                           },
+                          "read_only_reason": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ],
+                            "description": "Server-owned reason this session is display-only or its ownership cannot be verified."
+                          },
                           "can_branch": {
                             "type": "boolean",
-                            "description": "Web may branch this session: never a subagent child, and a read-only session only when it is a cron run."
+                            "description": "Web may branch this session: never a subagent child or an ownership-locked session; other read-only sessions only when they are cron runs."
                           },
                           "can_pin": {
                             "type": "boolean",
-                            "description": "Web may pin or unpin this session: never a subagent child."
+                            "description": "Web may pin or unpin this session: never a subagent child or a session locked by canonical ownership or unreadable ownership storage."
                           },
                           "can_archive": {
                             "type": "boolean",
-                            "description": "Web may archive or unarchive this session: never a subagent child."
+                            "description": "Web may archive or unarchive this session: never a subagent child or a session locked by canonical ownership or unreadable ownership storage."
                           },
                           "can_delete": {
                             "type": "boolean",
@@ -1520,7 +1531,7 @@
                           },
                           "can_duplicate": {
                             "type": "boolean",
-                            "description": "Web may duplicate this session: it has a WebUI copy and is not a subagent child."
+                            "description": "Web may duplicate this session: it has a WebUI copy, is not a subagent child, and is not locked by canonical ownership or unreadable ownership storage."
                           },
                           "attention": {
                             "anyOf": [
@@ -1837,17 +1848,28 @@
                             "type": "boolean",
                             "description": "The session cannot be modified from Web: a read-only import, a view-only subagent child, or a foreign session whose owner refuses claiming."
                           },
+                          "read_only_reason": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ],
+                            "description": "Server-owned reason this session is display-only or its ownership cannot be verified."
+                          },
                           "can_branch": {
                             "type": "boolean",
-                            "description": "Web may branch this session: never a subagent child, and a read-only session only when it is a cron run."
+                            "description": "Web may branch this session: never a subagent child or an ownership-locked session; other read-only sessions only when they are cron runs."
                           },
                           "can_pin": {
                             "type": "boolean",
-                            "description": "Web may pin or unpin this session: never a subagent child."
+                            "description": "Web may pin or unpin this session: never a subagent child or a session locked by canonical ownership or unreadable ownership storage."
                           },
                           "can_archive": {
                             "type": "boolean",
-                            "description": "Web may archive or unarchive this session: never a subagent child."
+                            "description": "Web may archive or unarchive this session: never a subagent child or a session locked by canonical ownership or unreadable ownership storage."
                           },
                           "can_delete": {
                             "type": "boolean",
@@ -1855,7 +1877,7 @@
                           },
                           "can_duplicate": {
                             "type": "boolean",
-                            "description": "Web may duplicate this session: it has a WebUI copy and is not a subagent child."
+                            "description": "Web may duplicate this session: it has a WebUI copy, is not a subagent child, and is not locked by canonical ownership or unreadable ownership storage."
                           },
                           "attention": {
                             "anyOf": [
@@ -2447,17 +2469,28 @@
                             "type": "boolean",
                             "description": "The session cannot be modified from Web: a read-only import, a view-only subagent child, or a foreign session whose owner refuses claiming."
                           },
+                          "read_only_reason": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ],
+                            "description": "Server-owned reason this session is display-only or its ownership cannot be verified."
+                          },
                           "can_branch": {
                             "type": "boolean",
-                            "description": "Web may branch this session: never a subagent child, and a read-only session only when it is a cron run."
+                            "description": "Web may branch this session: never a subagent child or an ownership-locked session; other read-only sessions only when they are cron runs."
                           },
                           "can_pin": {
                             "type": "boolean",
-                            "description": "Web may pin or unpin this session: never a subagent child."
+                            "description": "Web may pin or unpin this session: never a subagent child or a session locked by canonical ownership or unreadable ownership storage."
                           },
                           "can_archive": {
                             "type": "boolean",
-                            "description": "Web may archive or unarchive this session: never a subagent child."
+                            "description": "Web may archive or unarchive this session: never a subagent child or a session locked by canonical ownership or unreadable ownership storage."
                           },
                           "can_delete": {
                             "type": "boolean",
@@ -2465,7 +2498,7 @@
                           },
                           "can_duplicate": {
                             "type": "boolean",
-                            "description": "Web may duplicate this session: it has a WebUI copy and is not a subagent child."
+                            "description": "Web may duplicate this session: it has a WebUI copy, is not a subagent child, and is not locked by canonical ownership or unreadable ownership storage."
                           },
                           "attention": {
                             "anyOf": [
@@ -4862,17 +4895,28 @@
                           "type": "boolean",
                           "description": "The session cannot be modified from Web: a read-only import, a view-only subagent child, or a foreign session whose owner refuses claiming."
                         },
+                        "read_only_reason": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "description": "Server-owned reason this session is display-only or its ownership cannot be verified."
+                        },
                         "can_branch": {
                           "type": "boolean",
-                          "description": "Web may branch this session: never a subagent child, and a read-only session only when it is a cron run."
+                          "description": "Web may branch this session: never a subagent child or an ownership-locked session; other read-only sessions only when they are cron runs."
                         },
                         "can_pin": {
                           "type": "boolean",
-                          "description": "Web may pin or unpin this session: never a subagent child."
+                          "description": "Web may pin or unpin this session: never a subagent child or a session locked by canonical ownership or unreadable ownership storage."
                         },
                         "can_archive": {
                           "type": "boolean",
-                          "description": "Web may archive or unarchive this session: never a subagent child."
+                          "description": "Web may archive or unarchive this session: never a subagent child or a session locked by canonical ownership or unreadable ownership storage."
                         },
                         "can_delete": {
                           "type": "boolean",
@@ -4880,7 +4924,7 @@
                         },
                         "can_duplicate": {
                           "type": "boolean",
-                          "description": "Web may duplicate this session: it has a WebUI copy and is not a subagent child."
+                          "description": "Web may duplicate this session: it has a WebUI copy, is not a subagent child, and is not locked by canonical ownership or unreadable ownership storage."
                         },
                         "source_tag": {
                           "anyOf": [
@@ -5255,6 +5299,17 @@
                     "read_only": {
                       "type": "boolean",
                       "description": "The session cannot be modified from Web: a read-only import, a view-only subagent child, or a foreign session whose owner refuses claiming."
+                    },
+                    "read_only_reason": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ],
+                      "description": "Server-owned reason this session is display-only or its ownership cannot be verified."
                     },
                     "message_count": {
                       "type": "number"
@@ -7375,17 +7430,28 @@
                           "type": "boolean",
                           "description": "The session cannot be modified from Web: a read-only import, a view-only subagent child, or a foreign session whose owner refuses claiming."
                         },
+                        "read_only_reason": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "description": "Server-owned reason this session is display-only or its ownership cannot be verified."
+                        },
                         "can_branch": {
                           "type": "boolean",
-                          "description": "Web may branch this session: never a subagent child, and a read-only session only when it is a cron run."
+                          "description": "Web may branch this session: never a subagent child or an ownership-locked session; other read-only sessions only when they are cron runs."
                         },
                         "can_pin": {
                           "type": "boolean",
-                          "description": "Web may pin or unpin this session: never a subagent child."
+                          "description": "Web may pin or unpin this session: never a subagent child or a session locked by canonical ownership or unreadable ownership storage."
                         },
                         "can_archive": {
                           "type": "boolean",
-                          "description": "Web may archive or unarchive this session: never a subagent child."
+                          "description": "Web may archive or unarchive this session: never a subagent child or a session locked by canonical ownership or unreadable ownership storage."
                         },
                         "can_delete": {
                           "type": "boolean",
@@ -7393,7 +7459,7 @@
                         },
                         "can_duplicate": {
                           "type": "boolean",
-                          "description": "Web may duplicate this session: it has a WebUI copy and is not a subagent child."
+                          "description": "Web may duplicate this session: it has a WebUI copy, is not a subagent child, and is not locked by canonical ownership or unreadable ownership storage."
                         },
                         "source_tag": {
                           "anyOf": [
@@ -9634,17 +9700,28 @@
                           "type": "boolean",
                           "description": "The session cannot be modified from Web: a read-only import, a view-only subagent child, or a foreign session whose owner refuses claiming."
                         },
+                        "read_only_reason": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "description": "Server-owned reason this session is display-only or its ownership cannot be verified."
+                        },
                         "can_branch": {
                           "type": "boolean",
-                          "description": "Web may branch this session: never a subagent child, and a read-only session only when it is a cron run."
+                          "description": "Web may branch this session: never a subagent child or an ownership-locked session; other read-only sessions only when they are cron runs."
                         },
                         "can_pin": {
                           "type": "boolean",
-                          "description": "Web may pin or unpin this session: never a subagent child."
+                          "description": "Web may pin or unpin this session: never a subagent child or a session locked by canonical ownership or unreadable ownership storage."
                         },
                         "can_archive": {
                           "type": "boolean",
-                          "description": "Web may archive or unarchive this session: never a subagent child."
+                          "description": "Web may archive or unarchive this session: never a subagent child or a session locked by canonical ownership or unreadable ownership storage."
                         },
                         "can_delete": {
                           "type": "boolean",
@@ -9652,7 +9729,7 @@
                         },
                         "can_duplicate": {
                           "type": "boolean",
-                          "description": "Web may duplicate this session: it has a WebUI copy and is not a subagent child."
+                          "description": "Web may duplicate this session: it has a WebUI copy, is not a subagent child, and is not locked by canonical ownership or unreadable ownership storage."
                         },
                         "source_tag": {
                           "anyOf": [
@@ -10153,17 +10230,28 @@
                           "type": "boolean",
                           "description": "The session cannot be modified from Web: a read-only import, a view-only subagent child, or a foreign session whose owner refuses claiming."
                         },
+                        "read_only_reason": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "description": "Server-owned reason this session is display-only or its ownership cannot be verified."
+                        },
                         "can_branch": {
                           "type": "boolean",
-                          "description": "Web may branch this session: never a subagent child, and a read-only session only when it is a cron run."
+                          "description": "Web may branch this session: never a subagent child or an ownership-locked session; other read-only sessions only when they are cron runs."
                         },
                         "can_pin": {
                           "type": "boolean",
-                          "description": "Web may pin or unpin this session: never a subagent child."
+                          "description": "Web may pin or unpin this session: never a subagent child or a session locked by canonical ownership or unreadable ownership storage."
                         },
                         "can_archive": {
                           "type": "boolean",
-                          "description": "Web may archive or unarchive this session: never a subagent child."
+                          "description": "Web may archive or unarchive this session: never a subagent child or a session locked by canonical ownership or unreadable ownership storage."
                         },
                         "can_delete": {
                           "type": "boolean",
@@ -10171,7 +10259,7 @@
                         },
                         "can_duplicate": {
                           "type": "boolean",
-                          "description": "Web may duplicate this session: it has a WebUI copy and is not a subagent child."
+                          "description": "Web may duplicate this session: it has a WebUI copy, is not a subagent child, and is not locked by canonical ownership or unreadable ownership storage."
                         },
                         "attention": {
                           "anyOf": [
@@ -10536,17 +10624,28 @@
                           "type": "boolean",
                           "description": "The session cannot be modified from Web: a read-only import, a view-only subagent child, or a foreign session whose owner refuses claiming."
                         },
+                        "read_only_reason": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "description": "Server-owned reason this session is display-only or its ownership cannot be verified."
+                        },
                         "can_branch": {
                           "type": "boolean",
-                          "description": "Web may branch this session: never a subagent child, and a read-only session only when it is a cron run."
+                          "description": "Web may branch this session: never a subagent child or an ownership-locked session; other read-only sessions only when they are cron runs."
                         },
                         "can_pin": {
                           "type": "boolean",
-                          "description": "Web may pin or unpin this session: never a subagent child."
+                          "description": "Web may pin or unpin this session: never a subagent child or a session locked by canonical ownership or unreadable ownership storage."
                         },
                         "can_archive": {
                           "type": "boolean",
-                          "description": "Web may archive or unarchive this session: never a subagent child."
+                          "description": "Web may archive or unarchive this session: never a subagent child or a session locked by canonical ownership or unreadable ownership storage."
                         },
                         "can_delete": {
                           "type": "boolean",
@@ -10554,7 +10653,7 @@
                         },
                         "can_duplicate": {
                           "type": "boolean",
-                          "description": "Web may duplicate this session: it has a WebUI copy and is not a subagent child."
+                          "description": "Web may duplicate this session: it has a WebUI copy, is not a subagent child, and is not locked by canonical ownership or unreadable ownership storage."
                         },
                         "attention": {
                           "anyOf": [
@@ -10926,17 +11025,28 @@
                           "type": "boolean",
                           "description": "The session cannot be modified from Web: a read-only import, a view-only subagent child, or a foreign session whose owner refuses claiming."
                         },
+                        "read_only_reason": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "description": "Server-owned reason this session is display-only or its ownership cannot be verified."
+                        },
                         "can_branch": {
                           "type": "boolean",
-                          "description": "Web may branch this session: never a subagent child, and a read-only session only when it is a cron run."
+                          "description": "Web may branch this session: never a subagent child or an ownership-locked session; other read-only sessions only when they are cron runs."
                         },
                         "can_pin": {
                           "type": "boolean",
-                          "description": "Web may pin or unpin this session: never a subagent child."
+                          "description": "Web may pin or unpin this session: never a subagent child or a session locked by canonical ownership or unreadable ownership storage."
                         },
                         "can_archive": {
                           "type": "boolean",
-                          "description": "Web may archive or unarchive this session: never a subagent child."
+                          "description": "Web may archive or unarchive this session: never a subagent child or a session locked by canonical ownership or unreadable ownership storage."
                         },
                         "can_delete": {
                           "type": "boolean",
@@ -10944,7 +11054,7 @@
                         },
                         "can_duplicate": {
                           "type": "boolean",
-                          "description": "Web may duplicate this session: it has a WebUI copy and is not a subagent child."
+                          "description": "Web may duplicate this session: it has a WebUI copy, is not a subagent child, and is not locked by canonical ownership or unreadable ownership storage."
                         },
                         "attention": {
                           "anyOf": [
@@ -13092,17 +13202,28 @@
                           "type": "boolean",
                           "description": "The session cannot be modified from Web: a read-only import, a view-only subagent child, or a foreign session whose owner refuses claiming."
                         },
+                        "read_only_reason": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "description": "Server-owned reason this session is display-only or its ownership cannot be verified."
+                        },
                         "can_branch": {
                           "type": "boolean",
-                          "description": "Web may branch this session: never a subagent child, and a read-only session only when it is a cron run."
+                          "description": "Web may branch this session: never a subagent child or an ownership-locked session; other read-only sessions only when they are cron runs."
                         },
                         "can_pin": {
                           "type": "boolean",
-                          "description": "Web may pin or unpin this session: never a subagent child."
+                          "description": "Web may pin or unpin this session: never a subagent child or a session locked by canonical ownership or unreadable ownership storage."
                         },
                         "can_archive": {
                           "type": "boolean",
-                          "description": "Web may archive or unarchive this session: never a subagent child."
+                          "description": "Web may archive or unarchive this session: never a subagent child or a session locked by canonical ownership or unreadable ownership storage."
                         },
                         "can_delete": {
                           "type": "boolean",
@@ -13110,7 +13231,7 @@
                         },
                         "can_duplicate": {
                           "type": "boolean",
-                          "description": "Web may duplicate this session: it has a WebUI copy and is not a subagent child."
+                          "description": "Web may duplicate this session: it has a WebUI copy, is not a subagent child, and is not locked by canonical ownership or unreadable ownership storage."
                         },
                         "source_tag": {
                           "anyOf": [
@@ -13644,17 +13765,28 @@
                               "type": "boolean",
                               "description": "The session cannot be modified from Web: a read-only import, a view-only subagent child, or a foreign session whose owner refuses claiming."
                             },
+                            "read_only_reason": {
+                              "anyOf": [
+                                {
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ],
+                              "description": "Server-owned reason this session is display-only or its ownership cannot be verified."
+                            },
                             "can_branch": {
                               "type": "boolean",
-                              "description": "Web may branch this session: never a subagent child, and a read-only session only when it is a cron run."
+                              "description": "Web may branch this session: never a subagent child or an ownership-locked session; other read-only sessions only when they are cron runs."
                             },
                             "can_pin": {
                               "type": "boolean",
-                              "description": "Web may pin or unpin this session: never a subagent child."
+                              "description": "Web may pin or unpin this session: never a subagent child or a session locked by canonical ownership or unreadable ownership storage."
                             },
                             "can_archive": {
                               "type": "boolean",
-                              "description": "Web may archive or unarchive this session: never a subagent child."
+                              "description": "Web may archive or unarchive this session: never a subagent child or a session locked by canonical ownership or unreadable ownership storage."
                             },
                             "can_delete": {
                               "type": "boolean",
@@ -13662,7 +13794,7 @@
                             },
                             "can_duplicate": {
                               "type": "boolean",
-                              "description": "Web may duplicate this session: it has a WebUI copy and is not a subagent child."
+                              "description": "Web may duplicate this session: it has a WebUI copy, is not a subagent child, and is not locked by canonical ownership or unreadable ownership storage."
                             },
                             "attention": {
                               "anyOf": [
@@ -14057,17 +14189,28 @@
                           "type": "boolean",
                           "description": "The session cannot be modified from Web: a read-only import, a view-only subagent child, or a foreign session whose owner refuses claiming."
                         },
+                        "read_only_reason": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "description": "Server-owned reason this session is display-only or its ownership cannot be verified."
+                        },
                         "can_branch": {
                           "type": "boolean",
-                          "description": "Web may branch this session: never a subagent child, and a read-only session only when it is a cron run."
+                          "description": "Web may branch this session: never a subagent child or an ownership-locked session; other read-only sessions only when they are cron runs."
                         },
                         "can_pin": {
                           "type": "boolean",
-                          "description": "Web may pin or unpin this session: never a subagent child."
+                          "description": "Web may pin or unpin this session: never a subagent child or a session locked by canonical ownership or unreadable ownership storage."
                         },
                         "can_archive": {
                           "type": "boolean",
-                          "description": "Web may archive or unarchive this session: never a subagent child."
+                          "description": "Web may archive or unarchive this session: never a subagent child or a session locked by canonical ownership or unreadable ownership storage."
                         },
                         "can_delete": {
                           "type": "boolean",
@@ -14075,7 +14218,7 @@
                         },
                         "can_duplicate": {
                           "type": "boolean",
-                          "description": "Web may duplicate this session: it has a WebUI copy and is not a subagent child."
+                          "description": "Web may duplicate this session: it has a WebUI copy, is not a subagent child, and is not locked by canonical ownership or unreadable ownership storage."
                         },
                         "attention": {
                           "anyOf": [
@@ -16425,17 +16568,28 @@
                           "type": "boolean",
                           "description": "The session cannot be modified from Web: a read-only import, a view-only subagent child, or a foreign session whose owner refuses claiming."
                         },
+                        "read_only_reason": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "description": "Server-owned reason this session is display-only or its ownership cannot be verified."
+                        },
                         "can_branch": {
                           "type": "boolean",
-                          "description": "Web may branch this session: never a subagent child, and a read-only session only when it is a cron run."
+                          "description": "Web may branch this session: never a subagent child or an ownership-locked session; other read-only sessions only when they are cron runs."
                         },
                         "can_pin": {
                           "type": "boolean",
-                          "description": "Web may pin or unpin this session: never a subagent child."
+                          "description": "Web may pin or unpin this session: never a subagent child or a session locked by canonical ownership or unreadable ownership storage."
                         },
                         "can_archive": {
                           "type": "boolean",
-                          "description": "Web may archive or unarchive this session: never a subagent child."
+                          "description": "Web may archive or unarchive this session: never a subagent child or a session locked by canonical ownership or unreadable ownership storage."
                         },
                         "can_delete": {
                           "type": "boolean",
@@ -16443,7 +16597,7 @@
                         },
                         "can_duplicate": {
                           "type": "boolean",
-                          "description": "Web may duplicate this session: it has a WebUI copy and is not a subagent child."
+                          "description": "Web may duplicate this session: it has a WebUI copy, is not a subagent child, and is not locked by canonical ownership or unreadable ownership storage."
                         },
                         "source_tag": {
                           "anyOf": [
@@ -17092,17 +17246,28 @@
                           "type": "boolean",
                           "description": "The session cannot be modified from Web: a read-only import, a view-only subagent child, or a foreign session whose owner refuses claiming."
                         },
+                        "read_only_reason": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "description": "Server-owned reason this session is display-only or its ownership cannot be verified."
+                        },
                         "can_branch": {
                           "type": "boolean",
-                          "description": "Web may branch this session: never a subagent child, and a read-only session only when it is a cron run."
+                          "description": "Web may branch this session: never a subagent child or an ownership-locked session; other read-only sessions only when they are cron runs."
                         },
                         "can_pin": {
                           "type": "boolean",
-                          "description": "Web may pin or unpin this session: never a subagent child."
+                          "description": "Web may pin or unpin this session: never a subagent child or a session locked by canonical ownership or unreadable ownership storage."
                         },
                         "can_archive": {
                           "type": "boolean",
-                          "description": "Web may archive or unarchive this session: never a subagent child."
+                          "description": "Web may archive or unarchive this session: never a subagent child or a session locked by canonical ownership or unreadable ownership storage."
                         },
                         "can_delete": {
                           "type": "boolean",
@@ -17110,7 +17275,7 @@
                         },
                         "can_duplicate": {
                           "type": "boolean",
-                          "description": "Web may duplicate this session: it has a WebUI copy and is not a subagent child."
+                          "description": "Web may duplicate this session: it has a WebUI copy, is not a subagent child, and is not locked by canonical ownership or unreadable ownership storage."
                         },
                         "attention": {
                           "anyOf": [
@@ -17473,17 +17638,28 @@
                           "type": "boolean",
                           "description": "The session cannot be modified from Web: a read-only import, a view-only subagent child, or a foreign session whose owner refuses claiming."
                         },
+                        "read_only_reason": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "description": "Server-owned reason this session is display-only or its ownership cannot be verified."
+                        },
                         "can_branch": {
                           "type": "boolean",
-                          "description": "Web may branch this session: never a subagent child, and a read-only session only when it is a cron run."
+                          "description": "Web may branch this session: never a subagent child or an ownership-locked session; other read-only sessions only when they are cron runs."
                         },
                         "can_pin": {
                           "type": "boolean",
-                          "description": "Web may pin or unpin this session: never a subagent child."
+                          "description": "Web may pin or unpin this session: never a subagent child or a session locked by canonical ownership or unreadable ownership storage."
                         },
                         "can_archive": {
                           "type": "boolean",
-                          "description": "Web may archive or unarchive this session: never a subagent child."
+                          "description": "Web may archive or unarchive this session: never a subagent child or a session locked by canonical ownership or unreadable ownership storage."
                         },
                         "can_delete": {
                           "type": "boolean",
@@ -17491,7 +17667,7 @@
                         },
                         "can_duplicate": {
                           "type": "boolean",
-                          "description": "Web may duplicate this session: it has a WebUI copy and is not a subagent child."
+                          "description": "Web may duplicate this session: it has a WebUI copy, is not a subagent child, and is not locked by canonical ownership or unreadable ownership storage."
                         },
                         "attention": {
                           "anyOf": [
@@ -20421,17 +20597,28 @@
                           "type": "boolean",
                           "description": "The session cannot be modified from Web: a read-only import, a view-only subagent child, or a foreign session whose owner refuses claiming."
                         },
+                        "read_only_reason": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "description": "Server-owned reason this session is display-only or its ownership cannot be verified."
+                        },
                         "can_branch": {
                           "type": "boolean",
-                          "description": "Web may branch this session: never a subagent child, and a read-only session only when it is a cron run."
+                          "description": "Web may branch this session: never a subagent child or an ownership-locked session; other read-only sessions only when they are cron runs."
                         },
                         "can_pin": {
                           "type": "boolean",
-                          "description": "Web may pin or unpin this session: never a subagent child."
+                          "description": "Web may pin or unpin this session: never a subagent child or a session locked by canonical ownership or unreadable ownership storage."
                         },
                         "can_archive": {
                           "type": "boolean",
-                          "description": "Web may archive or unarchive this session: never a subagent child."
+                          "description": "Web may archive or unarchive this session: never a subagent child or a session locked by canonical ownership or unreadable ownership storage."
                         },
                         "can_delete": {
                           "type": "boolean",
@@ -20439,7 +20626,7 @@
                         },
                         "can_duplicate": {
                           "type": "boolean",
-                          "description": "Web may duplicate this session: it has a WebUI copy and is not a subagent child."
+                          "description": "Web may duplicate this session: it has a WebUI copy, is not a subagent child, and is not locked by canonical ownership or unreadable ownership storage."
                         },
                         "source_tag": {
                           "anyOf": [
@@ -22705,17 +22892,28 @@
                           "type": "boolean",
                           "description": "The session cannot be modified from Web: a read-only import, a view-only subagent child, or a foreign session whose owner refuses claiming."
                         },
+                        "read_only_reason": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "description": "Server-owned reason this session is display-only or its ownership cannot be verified."
+                        },
                         "can_branch": {
                           "type": "boolean",
-                          "description": "Web may branch this session: never a subagent child, and a read-only session only when it is a cron run."
+                          "description": "Web may branch this session: never a subagent child or an ownership-locked session; other read-only sessions only when they are cron runs."
                         },
                         "can_pin": {
                           "type": "boolean",
-                          "description": "Web may pin or unpin this session: never a subagent child."
+                          "description": "Web may pin or unpin this session: never a subagent child or a session locked by canonical ownership or unreadable ownership storage."
                         },
                         "can_archive": {
                           "type": "boolean",
-                          "description": "Web may archive or unarchive this session: never a subagent child."
+                          "description": "Web may archive or unarchive this session: never a subagent child or a session locked by canonical ownership or unreadable ownership storage."
                         },
                         "can_delete": {
                           "type": "boolean",
@@ -22723,7 +22921,7 @@
                         },
                         "can_duplicate": {
                           "type": "boolean",
-                          "description": "Web may duplicate this session: it has a WebUI copy and is not a subagent child."
+                          "description": "Web may duplicate this session: it has a WebUI copy, is not a subagent child, and is not locked by canonical ownership or unreadable ownership storage."
                         },
                         "source_tag": {
                           "anyOf": [
@@ -25051,17 +25249,28 @@
                           "type": "boolean",
                           "description": "The session cannot be modified from Web: a read-only import, a view-only subagent child, or a foreign session whose owner refuses claiming."
                         },
+                        "read_only_reason": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "description": "Server-owned reason this session is display-only or its ownership cannot be verified."
+                        },
                         "can_branch": {
                           "type": "boolean",
-                          "description": "Web may branch this session: never a subagent child, and a read-only session only when it is a cron run."
+                          "description": "Web may branch this session: never a subagent child or an ownership-locked session; other read-only sessions only when they are cron runs."
                         },
                         "can_pin": {
                           "type": "boolean",
-                          "description": "Web may pin or unpin this session: never a subagent child."
+                          "description": "Web may pin or unpin this session: never a subagent child or a session locked by canonical ownership or unreadable ownership storage."
                         },
                         "can_archive": {
                           "type": "boolean",
-                          "description": "Web may archive or unarchive this session: never a subagent child."
+                          "description": "Web may archive or unarchive this session: never a subagent child or a session locked by canonical ownership or unreadable ownership storage."
                         },
                         "can_delete": {
                           "type": "boolean",
@@ -25069,7 +25278,7 @@
                         },
                         "can_duplicate": {
                           "type": "boolean",
-                          "description": "Web may duplicate this session: it has a WebUI copy and is not a subagent child."
+                          "description": "Web may duplicate this session: it has a WebUI copy, is not a subagent child, and is not locked by canonical ownership or unreadable ownership storage."
                         },
                         "source_tag": {
                           "anyOf": [
@@ -27384,17 +27593,28 @@
                           "type": "boolean",
                           "description": "The session cannot be modified from Web: a read-only import, a view-only subagent child, or a foreign session whose owner refuses claiming."
                         },
+                        "read_only_reason": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "description": "Server-owned reason this session is display-only or its ownership cannot be verified."
+                        },
                         "can_branch": {
                           "type": "boolean",
-                          "description": "Web may branch this session: never a subagent child, and a read-only session only when it is a cron run."
+                          "description": "Web may branch this session: never a subagent child or an ownership-locked session; other read-only sessions only when they are cron runs."
                         },
                         "can_pin": {
                           "type": "boolean",
-                          "description": "Web may pin or unpin this session: never a subagent child."
+                          "description": "Web may pin or unpin this session: never a subagent child or a session locked by canonical ownership or unreadable ownership storage."
                         },
                         "can_archive": {
                           "type": "boolean",
-                          "description": "Web may archive or unarchive this session: never a subagent child."
+                          "description": "Web may archive or unarchive this session: never a subagent child or a session locked by canonical ownership or unreadable ownership storage."
                         },
                         "can_delete": {
                           "type": "boolean",
@@ -27402,7 +27622,7 @@
                         },
                         "can_duplicate": {
                           "type": "boolean",
-                          "description": "Web may duplicate this session: it has a WebUI copy and is not a subagent child."
+                          "description": "Web may duplicate this session: it has a WebUI copy, is not a subagent child, and is not locked by canonical ownership or unreadable ownership storage."
                         },
                         "source_tag": {
                           "anyOf": [
@@ -29265,17 +29485,28 @@
                           "type": "boolean",
                           "description": "The session cannot be modified from Web: a read-only import, a view-only subagent child, or a foreign session whose owner refuses claiming."
                         },
+                        "read_only_reason": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "description": "Server-owned reason this session is display-only or its ownership cannot be verified."
+                        },
                         "can_branch": {
                           "type": "boolean",
-                          "description": "Web may branch this session: never a subagent child, and a read-only session only when it is a cron run."
+                          "description": "Web may branch this session: never a subagent child or an ownership-locked session; other read-only sessions only when they are cron runs."
                         },
                         "can_pin": {
                           "type": "boolean",
-                          "description": "Web may pin or unpin this session: never a subagent child."
+                          "description": "Web may pin or unpin this session: never a subagent child or a session locked by canonical ownership or unreadable ownership storage."
                         },
                         "can_archive": {
                           "type": "boolean",
-                          "description": "Web may archive or unarchive this session: never a subagent child."
+                          "description": "Web may archive or unarchive this session: never a subagent child or a session locked by canonical ownership or unreadable ownership storage."
                         },
                         "can_delete": {
                           "type": "boolean",
@@ -29283,7 +29514,7 @@
                         },
                         "can_duplicate": {
                           "type": "boolean",
-                          "description": "Web may duplicate this session: it has a WebUI copy and is not a subagent child."
+                          "description": "Web may duplicate this session: it has a WebUI copy, is not a subagent child, and is not locked by canonical ownership or unreadable ownership storage."
                         },
                         "attention": {
                           "anyOf": [
@@ -29645,17 +29876,28 @@
                           "type": "boolean",
                           "description": "The session cannot be modified from Web: a read-only import, a view-only subagent child, or a foreign session whose owner refuses claiming."
                         },
+                        "read_only_reason": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "description": "Server-owned reason this session is display-only or its ownership cannot be verified."
+                        },
                         "can_branch": {
                           "type": "boolean",
-                          "description": "Web may branch this session: never a subagent child, and a read-only session only when it is a cron run."
+                          "description": "Web may branch this session: never a subagent child or an ownership-locked session; other read-only sessions only when they are cron runs."
                         },
                         "can_pin": {
                           "type": "boolean",
-                          "description": "Web may pin or unpin this session: never a subagent child."
+                          "description": "Web may pin or unpin this session: never a subagent child or a session locked by canonical ownership or unreadable ownership storage."
                         },
                         "can_archive": {
                           "type": "boolean",
-                          "description": "Web may archive or unarchive this session: never a subagent child."
+                          "description": "Web may archive or unarchive this session: never a subagent child or a session locked by canonical ownership or unreadable ownership storage."
                         },
                         "can_delete": {
                           "type": "boolean",
@@ -29663,7 +29905,7 @@
                         },
                         "can_duplicate": {
                           "type": "boolean",
-                          "description": "Web may duplicate this session: it has a WebUI copy and is not a subagent child."
+                          "description": "Web may duplicate this session: it has a WebUI copy, is not a subagent child, and is not locked by canonical ownership or unreadable ownership storage."
                         },
                         "attention": {
                           "anyOf": [
@@ -37497,17 +37739,28 @@
                           "type": "boolean",
                           "description": "The session cannot be modified from Web: a read-only import, a view-only subagent child, or a foreign session whose owner refuses claiming."
                         },
+                        "read_only_reason": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "description": "Server-owned reason this session is display-only or its ownership cannot be verified."
+                        },
                         "can_branch": {
                           "type": "boolean",
-                          "description": "Web may branch this session: never a subagent child, and a read-only session only when it is a cron run."
+                          "description": "Web may branch this session: never a subagent child or an ownership-locked session; other read-only sessions only when they are cron runs."
                         },
                         "can_pin": {
                           "type": "boolean",
-                          "description": "Web may pin or unpin this session: never a subagent child."
+                          "description": "Web may pin or unpin this session: never a subagent child or a session locked by canonical ownership or unreadable ownership storage."
                         },
                         "can_archive": {
                           "type": "boolean",
-                          "description": "Web may archive or unarchive this session: never a subagent child."
+                          "description": "Web may archive or unarchive this session: never a subagent child or a session locked by canonical ownership or unreadable ownership storage."
                         },
                         "can_delete": {
                           "type": "boolean",
@@ -37515,7 +37768,7 @@
                         },
                         "can_duplicate": {
                           "type": "boolean",
-                          "description": "Web may duplicate this session: it has a WebUI copy and is not a subagent child."
+                          "description": "Web may duplicate this session: it has a WebUI copy, is not a subagent child, and is not locked by canonical ownership or unreadable ownership storage."
                         },
                         "source_tag": {
                           "anyOf": [
@@ -39928,17 +40181,28 @@
                           "type": "boolean",
                           "description": "The session cannot be modified from Web: a read-only import, a view-only subagent child, or a foreign session whose owner refuses claiming."
                         },
+                        "read_only_reason": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "description": "Server-owned reason this session is display-only or its ownership cannot be verified."
+                        },
                         "can_branch": {
                           "type": "boolean",
-                          "description": "Web may branch this session: never a subagent child, and a read-only session only when it is a cron run."
+                          "description": "Web may branch this session: never a subagent child or an ownership-locked session; other read-only sessions only when they are cron runs."
                         },
                         "can_pin": {
                           "type": "boolean",
-                          "description": "Web may pin or unpin this session: never a subagent child."
+                          "description": "Web may pin or unpin this session: never a subagent child or a session locked by canonical ownership or unreadable ownership storage."
                         },
                         "can_archive": {
                           "type": "boolean",
-                          "description": "Web may archive or unarchive this session: never a subagent child."
+                          "description": "Web may archive or unarchive this session: never a subagent child or a session locked by canonical ownership or unreadable ownership storage."
                         },
                         "can_delete": {
                           "type": "boolean",
@@ -39946,7 +40210,7 @@
                         },
                         "can_duplicate": {
                           "type": "boolean",
-                          "description": "Web may duplicate this session: it has a WebUI copy and is not a subagent child."
+                          "description": "Web may duplicate this session: it has a WebUI copy, is not a subagent child, and is not locked by canonical ownership or unreadable ownership storage."
                         },
                         "source_tag": {
                           "anyOf": [
@@ -42248,17 +42512,28 @@
                               "type": "boolean",
                               "description": "The session cannot be modified from Web: a read-only import, a view-only subagent child, or a foreign session whose owner refuses claiming."
                             },
+                            "read_only_reason": {
+                              "anyOf": [
+                                {
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ],
+                              "description": "Server-owned reason this session is display-only or its ownership cannot be verified."
+                            },
                             "can_branch": {
                               "type": "boolean",
-                              "description": "Web may branch this session: never a subagent child, and a read-only session only when it is a cron run."
+                              "description": "Web may branch this session: never a subagent child or an ownership-locked session; other read-only sessions only when they are cron runs."
                             },
                             "can_pin": {
                               "type": "boolean",
-                              "description": "Web may pin or unpin this session: never a subagent child."
+                              "description": "Web may pin or unpin this session: never a subagent child or a session locked by canonical ownership or unreadable ownership storage."
                             },
                             "can_archive": {
                               "type": "boolean",
-                              "description": "Web may archive or unarchive this session: never a subagent child."
+                              "description": "Web may archive or unarchive this session: never a subagent child or a session locked by canonical ownership or unreadable ownership storage."
                             },
                             "can_delete": {
                               "type": "boolean",
@@ -42266,7 +42541,7 @@
                             },
                             "can_duplicate": {
                               "type": "boolean",
-                              "description": "Web may duplicate this session: it has a WebUI copy and is not a subagent child."
+                              "description": "Web may duplicate this session: it has a WebUI copy, is not a subagent child, and is not locked by canonical ownership or unreadable ownership storage."
                             },
                             "source_tag": {
                               "anyOf": [

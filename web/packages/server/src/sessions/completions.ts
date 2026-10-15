@@ -39,6 +39,8 @@ export interface CompletionDrainDeps {
   profileHome: (profile: string | null) => string
   activeProfile: () => string
   store: SessionStore
+  /** The shared session ownership gate, including the owning profile home. */
+  isReadOnly?: (session: Session) => boolean
   channels: SessionChannels
   registry: StreamRegistry
   /** Start a server-side turn; `_status` 409 means a turn is already active, or with `retryable` that the Agent runtime is stale. */
@@ -242,6 +244,32 @@ export class CompletionDrain {
     return mode === false || str(mode).trim().toLowerCase() === 'off'
   }
 
+  private isReadOnly(session: Session): boolean { return this.deps.isReadOnly?.(session) ?? session.read_only }
+
+  /** Hand durable results back without acknowledging delivery or mutating the canonical session. */
+  private async relinquish(sid: string, session: Session, entries: Deferred[], claims: HeldClaim[] = []): Promise<void> {
+    try {
+      if (!(await this.settleClaims(this.ownerHome(session), 'process.defer_delivery', claims))) throw new Error('delivery claim could not be returned')
+      const events = entries.flatMap((e) => e.event?.type === 'async_delegation' ? [e.event] : [])
+      if (events.length) {
+        const sidecar = this.deps.sidecar()
+        if (!sidecar) throw new Error('sidecar unavailable')
+        await sidecar.call('process.requeue', { events })
+      }
+      this.deferred.delete(sid)
+      this.pendingSessions.delete(sid)
+      this.retryAttempts.delete(sid)
+      const timer = this.retryTimers.get(sid)
+      if (timer) clearTimeout(timer)
+      this.retryTimers.delete(sid)
+      this.release(sid)
+    } catch (error) {
+      for (const entry of entries) this.defer(sid, entry)
+      this.scheduleRetry(sid)
+      this.deps.log(`[webui] WARNING: completion hand-back failed for ${sid}: ${(error as Error).message}`)
+    }
+  }
+
   /** Python `_process_one`; returns false when the event has no owning WebUI session. */
   async processOne(evt: Dict): Promise<boolean> {
     const processId = str(evt.process_id).trim()
@@ -249,8 +277,10 @@ export class CompletionDrain {
     if (!sid) return false
     let owner: Session
     let home: string
+    let homeError = ''
     try { owner = this.deps.store.get(sid) } catch { return false }
-    try { home = this.ownerHome(owner) } catch { home = '' }
+    try { home = this.ownerHome(owner) } catch (error) { home = ''; homeError = (error as Error).message }
+    if (home && this.isReadOnly(owner)) return false
     // Reconciliation needs positive profile proof; live events retain the existing admission deferral on home errors.
     if (evt.reconciliation_profile_home && (!home || canonicalHome(str(evt.reconciliation_profile_home)) !== canonicalHome(home))) return false
     if (evt.reconciliation_profile_home && completionAccepted(owner, completionKey(home, evt))) return true
@@ -266,6 +296,13 @@ export class CompletionDrain {
       if (seen.has(processId)) return true
     }
     const prompt = await this.wakeupPrompt(evt)
+    if (this.isReadOnly(owner)) {
+      if (home) return false
+      this.defer(sid, { process_id: deliveryKey(evt, processId), wakeup_prompt: prompt, event: evt })
+      this.scheduleRetry(sid)
+      this.deps.log(`[webui] WARNING: server-side wakeup retained for session ${sid}: ${homeError || 'ownership home unavailable'}; retrying`)
+      return true
+    }
     if (evt.reconciliation_profile_home && evt.delegation_id && prompt.includes(str(evt.delegation_id))) {
       // Upgrade a proven pre-receipt Web turn; typed Agent bookkeeping alone never qualifies.
       const previous = owner.messages.find((m) => m._source === 'process_wakeup' && m._turn_id && messageText(m.content) === prompt)
@@ -376,10 +413,11 @@ export class CompletionDrain {
    * another consumer delivered (or holds) it, so it leaves the batch; a sidecar failure returns null so the caller keeps
    * every entry pending. Claims are taken at delivery, never while deferred, so a long turn cannot outlive the lease.
    */
-  private async claimBatch(home: string, batched: Deferred[]): Promise<{ deliver: Deferred[]; held: HeldClaim[] } | null> {
+  private async claimBatch(home: string, batched: Deferred[], session: Session): Promise<{ deliver: Deferred[]; held: HeldClaim[] } | null> {
     const deliver: Deferred[] = []
     const held: HeldClaim[] = []
     for (const entry of batched) {
+      if (this.isReadOnly(session)) break
       if (entry.event?.type !== 'async_delegation') { deliver.push(entry); continue }
       const sidecar = this.deps.sidecar()
       let claimId: string | null
@@ -486,6 +524,7 @@ export class CompletionDrain {
    * Returns whether the wakeup is handled here (held, or dropped with its deleted session).
    */
   private async holdWhilePaused(sid: string, session: Session, home: string, batched: Deferred[]): Promise<boolean> {
+    if (this.isReadOnly(session)) { await this.relinquish(sid, session, batched); return true }
     const pause = session.process_wakeup_pause
     if (!wakeupPaused(session, home, this.deps.configPath?.(home))) {
       if (pause !== session.process_wakeup_pause) this.saveSession(sid, session)
@@ -497,6 +536,7 @@ export class CompletionDrain {
     let current: Session | null = null
     try { current = this.deps.store.get(sid) } catch (error) { if (this.deleted(sid, error)) { this.release(sid); return true } }
     if (current) {
+      if (this.isReadOnly(current)) { await this.relinquish(sid, current, batched); return true }
       const before = current.process_wakeup_pause
       if (recovery === true) current.process_wakeup_pause = null
       if (recovery === true || !wakeupPaused(current, home, this.deps.configPath?.(home))) {
@@ -528,10 +568,12 @@ export class CompletionDrain {
     // TAL-534: the delegation's ledger row lives in the session's own profile, whichever profile is active now.
     let home: string
     try { home = this.ownerHome(session) } catch (error) { redefer(batched); this.deps.log(`[webui] WARNING: server-side wakeup retained for session ${sid}: ${(error as Error).message}`); return false }
+    if (this.isReadOnly(session)) { await this.relinquish(sid, session, batched); return false }
     const accepted = batched.filter((e) => completionAccepted(session, completionKey(home, e.event ?? {})))
     if (accepted.length) {
       // A crash may have saved admission before acknowledging the Agent. Finish that handshake without a new turn.
-      const claims = await this.claimBatch(home, accepted)
+      const claims = await this.claimBatch(home, accepted, session)
+      if (claims && this.isReadOnly(session)) { await this.relinquish(sid, session, batched, claims.held); return false }
       if (!claims || !(await this.settleClaims(home, 'process.complete_delivery', claims.held))) { redefer(batched); this.scheduleRetry(sid); return false }
       this.release(sid, accepted)
       batched = batched.filter((e) => !accepted.includes(e))
@@ -551,9 +593,10 @@ export class CompletionDrain {
       }
     }
     if (await this.holdWhilePaused(sid, session, home, batched)) return false
-    const claimed = await this.claimBatch(home, batched)
+    const claimed = await this.claimBatch(home, batched, session)
     if (!claimed) { redefer(batched); this.scheduleRetry(sid); return false }
     const { deliver, held } = claimed
+    if (this.isReadOnly(session)) { await this.relinquish(sid, session, batched, held); return false }
     // Entries another consumer already delivered are done here too.
     if (!deliver.length) { this.release(sid, batched); await this.markConsumed(batched); return true }
     // A wakeup that does not start hands its claims back, so those rows stay pending for the retry or the next restart.
@@ -561,6 +604,7 @@ export class CompletionDrain {
     const prompt = deliver.length === 1 ? deliver[0]!.wakeup_prompt : deliver.map((e) => e.wakeup_prompt).join('\n\n')
     let resp: StartedTurn
     try { resp = await this.deps.startTurn(session, prompt, deliver.map((e) => completionKey(home, e.event ?? {})).filter(Boolean)) } catch (error) { await giveBack(); this.scheduleRetry(sid); this.deps.log(`[webui] WARNING: server-side wakeup turn raised for session ${sid}: ${(error as Error).message}`); return false }
+    if (this.isReadOnly(session)) { await this.relinquish(sid, session, batched, held); return false }
     const status = resp._status ?? (resp.stream_id ? 200 : 500)
     // A busy session redelivers at its turn teardown; a stale runtime admits no turn, so it is retried on a timer (TAL-577).
     if (status === 409) { await giveBack('process.defer_delivery'); if (resp.retryable) this.scheduleRetry(sid); return false }

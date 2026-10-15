@@ -11,7 +11,7 @@ import { redactText } from '../redact.js'
 import { CONTEXT_USAGE_FIELDS, Session, contextUsage, sharePath, stripSidebarHeavyMetadata } from './session.js'
 import type { SessionStore } from './store.js'
 import { existsSync, readFileSync, statSync } from 'node:fs'
-import { AGENT_STORAGE_OK, isCliSessionRow as isStateDbCliRow, isCliSessionRowVisible, normalizeAgentSessionSource } from './state-db.js'
+import { AGENT_STORAGE_OK, CANONICAL_READ_ONLY_REASON, OWNERSHIP_UNAVAILABLE_REASON, isCliSessionRow as isStateDbCliRow, isCliSessionRowVisible, normalizeAgentSessionSource, type StateDbSessionSource } from './state-db.js'
 import { MESSAGING_SOURCES, sourceKind } from './source-kind.js'
 import { SessionRowSchema, type AgentStorage } from '@maudecode/talaria-web-contracts'
 
@@ -356,7 +356,7 @@ export const SIDEBAR_SESSION_RESPONSE_FIELDS = new Set([
   'is_cli_session', 'is_messaging_session', 'is_streaming', 'cron_running', 'active_stream_id', 'has_pending_user_message', 'pending_started_at', 'default_hidden',
   'worktree_path', 'worktree_branch', 'parent_session_id', 'parent_title', 'parent_source', 'relationship_type', 'pre_compression_snapshot', '_lineage_root_id',
   '_lineage_tip_id', '_compression_segment_count', '_lineage_collapsed_count', '_parent_lineage_root_id', '_parent_lineage_tip_id', '_cross_surface_child_session',
-  'match_type', 'match_preview', 'read_only', 'can_branch', 'can_pin', 'can_archive', 'can_delete', 'can_duplicate', 'gateway_routing', 'share_url',
+  'match_type', 'match_preview', 'read_only', 'read_only_reason', 'can_branch', 'can_pin', 'can_archive', 'can_delete', 'can_duplicate', 'gateway_routing', 'share_url',
 ])
 
 export function isCliSessionRow(row: Row): boolean {
@@ -412,7 +412,7 @@ export interface ListParams {
   gatewayIdentity?: Map<string, GatewayIdentity>
   sourceFilter?: string | null
   /** TAL-358: batched active-profile state.db owner lookup (`stateDbSessionSources`) for the sidecar owner lock and the `cliRows` claim gate. */
-  stateDbSources?: (ids: string[]) => Map<string, string> | null
+  stateDbSources?: (ids: string[], profile?: string) => Map<string, StateDbSessionSource> | null
   /** TAL-482: background kinds whose state.db rows stopped at the per-kind cap, so more exist than `cliRows` holds. */
   truncatedSources?: ReadonlySet<string>
   /** TAL-785: the state.db storage health `cliRows` came from; omitted when no Agent source is shown. */
@@ -471,8 +471,8 @@ export function isMessagingSessionRecord(row: Row): boolean {
  * Python `_is_claimable_cli_source`: a denylist of foreign families that own their sessions. A `kanban` state.db owner
  * (`stateDbSessionSources` folds in the lineage's `created_source`) refuses whatever the row's tag says (TAL-793).
  */
-export function isClaimableCliSource(meta: Row, stateDbSource: string): boolean {
-  if (meta.read_only) return false
+export function isClaimableCliSource(meta: Row, stateDbSource: StateDbSessionSource): boolean {
+  if (typeof stateDbSource === 'object' || meta.read_only) return false
   if (stateDbSource.trim().toLowerCase() === 'kanban') return false
   const sessionSource = str(meta.session_source).trim().toLowerCase()
   if (['messaging', 'external_agent'].includes(sessionSource)) return false
@@ -487,25 +487,32 @@ export function isClaimableCliSource(meta: Row, stateDbSource: string): boolean 
 /**
  * TAL-358: marks read-only each WebUI sidecar row whose active-profile state.db owner (`sessions.source`) refuses
  * claiming, as a sidecar-less row from that owner is. A sidecar persisted as WebUI- or fork-born stays WebUI-owned
- * whatever state.db mirrors for its id. `stateDbSources` reads every candidate's owner in one batch, not per row; an
+ * for legacy source tags, but cannot override a canonical receipt or ledger. Owners are batched per profile; an
  * unreadable state.db (null) locks every candidate, since an unknown owner is not a released one.
  */
-export function withOwnerLocks(rows: Row[], stateDbSources: (ids: string[]) => Map<string, string> | null): Row[] {
-  const candidates = ownerLockCandidates(rows)
-  if (!candidates.length) return rows
-  const owners = stateDbSources(candidates)
-  const locked = new Set(candidates.filter((sid) => {
-    if (!owners) return true
-    const source = str(owners.get(sid)).trim().toLowerCase()
-    return Boolean(source) && !isClaimableCliSource({ source_tag: source, ...normalizeAgentSessionSource(source) }, source)
-  }))
-  return locked.size ? rows.map((r) => (locked.has(str(r.session_id)) ? { ...r, read_only: true } : r)) : rows
+export function withOwnerLocks(rows: Row[], stateDbSources: (ids: string[], profile?: string) => Map<string, StateDbSessionSource> | null): Row[] {
+  const byProfile = ownerLockCandidates(rows)
+  const ownersByProfile = new Map([...byProfile].map(([profile, ids]) => [profile, stateDbSources([...ids], profile)]))
+  return rows.map((r) => {
+    const owners = ownersByProfile.get(str(r.profile) || 'default')
+    const owner = owners?.get(str(r.session_id).trim())
+    if (typeof owner === 'object') return { ...r, ...(owner.source ? { ...normalizeAgentSessionSource(owner.source), source_tag: owner.source } : {}), read_only: true, read_only_reason: owner.reason ?? CANONICAL_READ_ONLY_REASON }
+    const webui = ['source_tag', 'raw_source', 'session_source'].some((k) => ['webui', 'fork'].includes(str(r[k]).trim().toLowerCase()))
+    if (!owners || (!webui && owner && !isClaimableCliSource({ source_tag: owner, ...normalizeAgentSessionSource(owner) }, owner))) return { ...r, read_only: true, ...(!owners ? { read_only_reason: OWNERSHIP_UNAVAILABLE_REASON } : {}) }
+    return r
+  })
 }
 
-/** The ids `withOwnerLocks` asks `stateDbSources` about: rows not already read-only and not WebUI- or fork-born. */
-export function ownerLockCandidates(rows: Row[]): string[] {
-  const webuiOwned = (r: Row): boolean => ['source_tag', 'raw_source', 'session_source'].some((k) => ['webui', 'fork'].includes(str(r[k]).trim().toLowerCase()))
-  return rows.filter((r) => !r.read_only && !webuiOwned(r)).map((r) => str(r.session_id))
+/** Every sidecar is checked in its own profile, including cached WebUI/fork tags. */
+export function ownerLockCandidates(rows: Row[]): Map<string, Set<string>> {
+  const byProfile = new Map<string, Set<string>>()
+  for (const row of rows) {
+    const profile = str(row.profile) || 'default'
+    const ids = byProfile.get(profile) ?? new Set<string>()
+    ids.add(str(row.session_id).trim())
+    byProfile.set(profile, ids)
+  }
+  return byProfile
 }
 
 /** Python `_session_is_subagent_view_only` on a row: a delegated child by any source marker. */
@@ -535,15 +542,16 @@ export function withSessionWireFlags<T extends Row>(row: T, activeStreamIds: Rea
   const subagent = kind === 'subagent' || isSubagentRow(r)
   if (subagent) { r.read_only = true; r.is_cli_session = false } else r.read_only = Boolean(r.read_only)
   // The branch gate (`SessionService.branch`): never a subagent child, and a read-only source only when it is a cron run.
-  r.can_branch = !subagent && (!r.read_only || str(r.source_tag || r.raw_source).trim().toLowerCase() === 'cron')
+  const ownerReadOnly = r.read_only && Boolean(r.read_only_reason)
+  r.can_branch = !ownerReadOnly && !subagent && (!r.read_only || str(r.source_tag || r.raw_source).trim().toLowerCase() === 'cron')
   // Pin and archive refuse only subagent children; duplicate also needs the WebUI sidecar it copies, so a sidecar-less
   // foreign row arrives with `can_duplicate: false`. Rename, move and delete follow `read_only` (the mutation gate).
   // A Claude Code import is a live view Web never stores (TAL-551), so it cannot be pinned or archived either.
-  const stored = !subagent && kind !== 'claude_code'
+  const stored = !ownerReadOnly && !subagent && kind !== 'claude_code'
   r.can_pin = stored
   r.can_archive = stored
   r.can_delete = !r.read_only
-  r.can_duplicate = !subagent && r.can_duplicate !== false
+  r.can_duplicate = !ownerReadOnly && !subagent && r.can_duplicate !== false
   r.sort_ts = sessionSortTimestamp(r)
   return row
 }
@@ -770,7 +778,7 @@ export function buildSessionListPayload(store: SessionStore, params: ListParams)
     const owners = params.stateDbSources ? params.stateDbSources(dedupedCli.map((r) => str(r.session_id))) : new Map<string, string>()
     // A sidecar-less foreign row whose owner refuses claiming is read-only, as its detail and mutations are; an
     // unreadable owner read (null) locks every row, as it locks sidecars.
-    dedupedCli = dedupedCli.map((r) => ({ ...r, read_only: !owners || !isClaimableCliSource(r, owners.get(str(r.session_id)) || str(r.source)), can_duplicate: false }))
+    dedupedCli = withOwnerLocks(dedupedCli.map((r) => ({ ...r, read_only: !owners || !isClaimableCliSource(r, owners.get(str(r.session_id)) || str(r.source)), can_duplicate: false })), () => owners)
   } else {
     webuiSessions = webuiSessions.filter((r) => !isCliSessionForSettings(r))
   }
