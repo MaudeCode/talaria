@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Agent compatibility checks reject updates that cut configured MCP tool deadlines short.",
+      "highlight": false,
+      "components": ["web"]
+    }
+  ]
+}

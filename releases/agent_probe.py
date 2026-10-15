@@ -8,7 +8,9 @@ import os
 import socket
 import sys
 import tempfile
+import time
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import patch
 
 
@@ -105,9 +107,139 @@ def ssh_config_approval():
 
 
 observations = ssh_config_approval()
-if report := os.environ.get("TALARIA_AGENT_PROBE_REPORT"):
-    Path(report).write_text(json.dumps(observations))
 print("SSH_CONFIG_APPROVAL " + json.dumps(observations, sort_keys=True))
 if expected := os.environ.get("TALARIA_AGENT_SSH_EXPECTED"):
     assert observations == json.loads(expected), "task-relative SSH configuration approval differs in release image"
 print(f"PASS Agent {__version__}: imports, real SessionDB, and the sidecar write path")
+
+
+# These exact supported sources predate per-entry executor deadlines. Never infer
+# this exception from a candidate's version or the presence of an Agent attribute.
+LEGACY_MCP_DEADLINES = {
+    "71d34bad1045610252eda02ee79549436896e784": "0.21.7",
+    "e06df9c2eae6901f4c88f464e0ae6e753c0428b8": "0.22.0",
+}
+
+MCP_SERVER = '''
+import asyncio
+import sys
+from pathlib import Path
+from mcp.server.mcpserver import MCPServer
+
+server = MCPServer("talaria-deadline-probe")
+markers = Path(sys.argv[1])
+
+@server.tool()
+async def probe(token: str, delay: float) -> str:
+    (markers / (token + ".started")).touch()
+    try:
+        await asyncio.sleep(delay)
+        return "deadline-complete:" + token
+    finally:
+        (markers / (token + ".finished")).touch()
+
+server.run()
+'''
+
+
+def probe_mcp_deadlines(report):
+    """Use the real discovery, registry, batch planner, bridge and executor, with stdio-only tools."""
+    from hermes_cli.config import atomic_config_write, get_config_path
+    from run_agent import AIAgent
+    from tools.mcp_tool_common import _resolve_tool_timeout
+    from tools.mcp_tool_discovery import discover_mcp_tools
+    from tools.mcp_tool_lifecycle import shutdown_mcp_servers
+    from tools.registry import registry
+
+    revision = os.environ.get("TALARIA_AGENT_PROBE_REVISION")
+    legacy = revision in LEGACY_MCP_DEADLINES and LEGACY_MCP_DEADLINES[revision] == __version__
+    report["historicalMcpDeadline"] = legacy
+    script = home / "deadline_mcp_server.py"
+    script.write_text(MCP_SERVER)
+    markers = home / "deadline-markers"
+    markers.mkdir()
+    generic, delay, server_budget = 0.5, 1.5, 8
+    servers = {name: {"command": sys.executable, "args": [str(script), str(markers)],
+                      "supports_parallel_tool_calls": True, "trust": "full", "lazy": False,
+                      **({"timeout": server_budget} if name == "deadline_explicit" else {})}
+               for name in ("deadline_explicit", "deadline_default")}
+    config = {"mcp_servers": servers, "timeouts": {"tools": {"sequential_call": server_budget,
+                                                         "concurrent_batch": server_budget}}}
+    atomic_config_write(get_config_path(), config)
+    agent = None
+    try:
+        names = discover_mcp_tools()
+        expected_names = {f"mcp__{name}__probe" for name in servers}
+        assert expected_names <= set(names), names
+        report["mcpDefaultTimeout"] = _resolve_tool_timeout({})
+        assert report["mcpDefaultTimeout"] == 300, "MCP default fallback changed"
+        agent = AIAgent(model="test-model", provider="openai", api_key="unused-test-key",
+                        base_url="http://127.0.0.1:9/v1", enabled_toolsets=[f"mcp-{name}" for name in servers],
+                        quiet_mode=True, skip_context_files=True, skip_memory=True, save_trajectories=False)
+        # Warm imports/middleware before arming the accelerated generic deadline.
+        cases = [("warmup", "deadline_default", False, 1, 0)]
+        cases += [(f"{server}/{mode}/{speed}", server, bridge, count, seconds)
+                  for server in servers
+                  for mode, bridge, count in (("sequential", False, 1), ("deferred", True, 1),
+                                              ("batch", False, 2), ("deferred-batch", True, 2))
+                  for speed, seconds in (("fast", 0), ("slow", delay))]
+        for index, (case, server, bridge, count, seconds) in enumerate(cases):
+            budget = server_budget if case == "warmup" else generic
+            config["timeouts"]["tools"] = {"sequential_call": budget, "concurrent_batch": budget}
+            atomic_config_write(get_config_path(), config)
+            name = f"mcp__{server}__probe"
+            entry = registry.get_entry(name)
+            assert entry is not None, name
+            calls, tokens = [], []
+            for number in range(count):
+                token = f"case-{index}-{number}"
+                tokens.append(token)
+                args = {"token": token, "delay": seconds}
+                if bridge:
+                    args = {"calls": [{"name": name, "arguments": args}]}
+                calls.append(SimpleNamespace(id=token, type="function", function=SimpleNamespace(
+                    name="tool_call" if bridge else name, arguments=json.dumps(args))))
+            messages = []
+            agent._execute_tool_calls(SimpleNamespace(tool_calls=calls), messages, f"deadline-{index}")
+            results = [str(message["content"]) for message in messages if message.get("role") == "tool"]
+            completed = len(results) == count and all(
+                f"deadline-complete:{token}" in result and "timed out" not in result
+                for token, result in zip(tokens, results))
+            timed_out = len(results) == count and all("timed out" in result for result in results)
+            # An outer timeout may abandon a worker. Observe its owned tool's exit
+            # before the next case, so a late result cannot contaminate the next call.
+            # A batch timeout can cancel a sibling before it reaches the transport.
+            dispatched = [token for token in tokens if (markers / (token + ".started")).exists()]
+            end = time.monotonic() + server_budget
+            while not all((markers / (token + ".finished")).exists() for token in dispatched) and time.monotonic() < end:
+                time.sleep(0.01)
+            finished = sum((markers / (token + ".finished")).exists() for token in dispatched)
+            succeeds = seconds == 0 or (server == "deadline_explicit" and not legacy)
+            actual = "completed" if completed else "tool_timeout" if timed_out else "unexpected_result"
+            expected = "completed" if succeeds else "tool_timeout"
+            check = {"case": case, "expected": expected, "actual": actual, "started": len(dispatched), "finished": finished,
+                     "executionTimeout": getattr(entry, "execution_timeout", None),
+                     "effectDispositions": [message.get("effect_disposition") for message in messages
+                                            if message.get("role") == "tool"]}
+            report["checks"].append(check)
+            if actual != expected or not dispatched or finished != len(dispatched) or (succeeds and len(dispatched) != count):
+                report["findings"].append({"name": "mcp_execution_deadline", **check, "results": results})
+    finally:
+        try:
+            if agent is not None:
+                agent.close()
+        finally:
+            shutdown_mcp_servers()
+
+
+report = {"sshConfigApproval": observations, "checks": [], "findings": []}
+try:
+    probe_mcp_deadlines(report)
+except Exception as error:
+    report["findings"].append({"name": "mcp_execution_deadline", "error": f"{type(error).__name__}: {error}"})
+finally:
+    if path := os.environ.get("TALARIA_AGENT_PROBE_REPORT"):
+        Path(path).write_text(json.dumps(report, indent=2) + "\n")
+    print(json.dumps(report))
+assert not report["findings"], report["findings"]
+print(f"PASS Agent {__version__}: real MCP registration and executor deadlines")
