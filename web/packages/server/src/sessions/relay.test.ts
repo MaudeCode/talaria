@@ -1,5 +1,5 @@
 import { createHash, createPublicKey, verify as cryptoVerify } from 'node:crypto'
-import { existsSync, mkdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs'
+import { chmodSync, existsSync, mkdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
@@ -278,6 +278,32 @@ describe('Talaria relay pairing and publishing', () => {
 })
 
 describe('relay publisher failure handling', () => {
+  it('retains cleanup when session existence cannot be inspected', async () => {
+    const s = await bootTestServer()
+    const relay = fakeRelay()
+    s.deps.fetch = relay.fetch
+    const sid = 'restricted-deletion'
+    try {
+      await s.deps.relay.pair({ relay_url: RELAY, publisher_id: 'https://pub.example', publisher_invitation: 'x' }, 'default', true)
+      s.deps.relay.stop()
+      mkdirSync(s.deps.sessionStore.sessionDir, { recursive: true })
+      s.deps.relay.clearDeleted(sid, 'default')
+      chmodSync(s.deps.sessionStore.sessionDir, 0o000)
+      expect(s.deps.relay.start()).toBe(true)
+      await vi.waitFor(() => { expect(s.logs.some((line) => line.includes('EACCES')) || relay.views().some((call) => call.url.includes(sid))).toBe(true) })
+      expect(relay.views().filter((call) => call.url.includes(sid))).toEqual([])
+      expect(deletedViews(s)).toHaveLength(1)
+      chmodSync(s.deps.sessionStore.sessionDir, 0o700)
+      s.deps.relay.current()!.changed()
+      await vi.waitFor(() => { expect(deletedViews(s)).toEqual([]) })
+      expect(relay.views().filter((call) => call.url.includes(sid))).toHaveLength(1)
+    } finally {
+      chmodSync(s.deps.sessionStore.sessionDir, 0o700)
+      s.deps.relay.stop()
+      await s.close()
+    }
+  })
+
   it.each(['write failure', 'corrupt outbox'])('preserves the session for retry after an outbox %s', async (failure) => {
     const s = await bootTestServer()
     const relay = fakeRelay()

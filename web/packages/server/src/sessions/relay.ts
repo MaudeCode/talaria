@@ -8,7 +8,7 @@
  */
 import { readCapped } from '../http/capped.js'
 import { createHash, createPrivateKey, generateKeyPairSync, randomUUID, sign as cryptoSign, type KeyObject } from 'node:crypto'
-import { existsSync, mkdirSync, readFileSync } from 'node:fs'
+import { existsSync, lstatSync, mkdirSync, readFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { z } from 'zod'
 import { atomicWriteText } from '../fs/atomic.js'
@@ -100,7 +100,11 @@ const deletedViewsPath = (stateDir: string): string => join(stateDir, 'talaria-r
 
 // A staged deletion cannot clear a session that survived a failed removal or a restart before removal.
 function hasSessionData(store: SessionStore, sid: string): boolean {
-  return store.sessions.has(sid) || existsSync(store.pathFor(sid))
+  if (store.sessions.has(sid)) return true
+  try { lstatSync(store.pathFor(sid)); return true } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return false
+    throw error
+  }
 }
 
 function loadDeletedViews(stateDir: string): DeletedView[] {
