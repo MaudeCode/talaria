@@ -45,6 +45,8 @@ class FakeTools:
         self.requires_python = ">=3.11, <3.14"
         self.sidecar_failures = 0
         self.approval_reports = {}
+        self.probe_findings = {}
+        self.probe_revisions = []
         self.published = {"draft": False, "prerelease": False}
         self.image_revision = None  # defaults to the tested source
         self.tag_digest = None  # defaults to the recorded image digest
@@ -68,7 +70,12 @@ class FakeTools:
         report = kwargs.get("env", {}).get("TALARIA_AGENT_PROBE_REPORT")
         if report and str(self.root / "releases/agent_probe.py") in command:
             version = command[-1]
-            Path(report).write_text(json.dumps(self.approval_reports.get(version, approval_report())))
+            self.probe_revisions.append(kwargs["env"].get("TALARIA_AGENT_PROBE_REVISION"))
+            findings = self.probe_findings.get(version, [])
+            Path(report).write_text(json.dumps({"sshConfigApproval": self.approval_reports.get(version, approval_report()),
+                                               "checks": [], "findings": findings}))
+            if findings:
+                raise subprocess.CalledProcessError(1, command)
         if command[:2] == ["git", "init"]:
             Path(command[-1]).mkdir(parents=True)
         if command[:2] == ["git", "-C"] and command[3] == "fetch":
@@ -222,13 +229,16 @@ class CheckerTests(unittest.TestCase):
             "kind": "supported", **{key: RELEASES[0][key] for key in checker.IDENTITY}, "webRevision": "e" * 40,
             "python": "3.13.7", "tests": {"passed": 39, "failed": 0, "skipped": 1}, "imageVerified": True,
             "result": "success", "diagnostics": "result.junit.xml",
-            "sshConfigApproval": {"observations": approval_report()}})
+            "sshConfigApproval": {"observations": approval_report()}, "agentProbe": {"checks": [], "findings": []}})
         # The release tag lands as a local tag so git-derived Agent versions can resolve it.
         self.assertEqual(self.tools.refspec, "+refs/tags/v2026.9.14:refs/tags/v2026.9.14")
         probe = next(command for command in self.tools.commands if command[-2:] == [str(self.root / "releases/agent_probe.py"), "0.21.3"])
         self.assertTrue(probe)
         self.assertIn(["uv", "sync", "--frozen", "--no-dev", "--extra", "mcp", "--python", "3.13"], self.tools.commands)
         self.assertEqual(len([command for command in self.tools.commands if command[:2] == ["docker", "run"]]), 1)
+        self.assertEqual(self.tools.probe_revisions, [RELEASES[0]["sourceRevision"]])
+        container = next(command for command in self.tools.commands if command[:2] == ["docker", "run"])
+        self.assertIn(f"TALARIA_AGENT_PROBE_REVISION={RELEASES[0]['sourceRevision']}", container)
 
     def test_active_pin_is_the_default_selection(self):
         self.assertEqual(self.receipt("--skip-docker")["releaseTag"], "v2026.9.21")
@@ -358,6 +368,18 @@ class CheckerTests(unittest.TestCase):
             self.receipt("--identity", json.dumps(CANDIDATE), "--skip-docker", "--skip-sidecar-tests")
         self.assertNotIn("candidate", self.last["sshConfigApproval"])
         self.assertEqual(self.tools.fetched, "refs/tags/" + RELEASES[-1]["releaseTag"])
+
+    def test_candidate_deadline_regression_is_named_in_failure_receipt(self):
+        self.tools.probe_findings[CANDIDATE["version"]] = [{"name": "mcp_execution_deadline", "case": "explicit/sequential",
+                                     "expected": "completed", "actual": "tool_timeout"}]
+        with self.assertRaises(subprocess.CalledProcessError):
+            self.receipt("--identity", json.dumps(CANDIDATE), "--skip-docker", "--skip-sidecar-tests")
+        self.assertEqual(self.last["result"], "failure")
+        self.assertEqual(self.last.get("agentProbe", {}).get("findings"), self.tools.probe_findings[CANDIDATE["version"]])
+        self.assertEqual(self.last["agentProbe"]["baseline"]["findings"], [])
+        self.assertEqual(self.last["sshConfigApproval"]["candidate"], approval_report())
+        self.assertEqual(self.tools.ran("docker"), [])
+        self.assertFalse(any(command[0].endswith("test.sh") for command in self.tools.commands))
 
     def test_main_canary_uses_an_exact_commit_and_its_own_python(self):
         self.write([], RELEASES[1])  # A canary never depends on, or enters, the stable record.

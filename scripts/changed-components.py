@@ -90,6 +90,8 @@ def path_suites(path):
         return set()
     if path.startswith("contracts/") or path in ("web/contract_versions.json", "relay/convex/releaseInfo.json"):
         return CONSUMERS
+    if path == "releases/agent_probe.py":
+        return {"web_server", "docker", "tooling"}
     if path.startswith(".github/workflows/"):
         return WORKFLOWS.get(local.removeprefix("workflows/"), SUITES)
     if path == ".github/actions/docker-plugins/action.yml":

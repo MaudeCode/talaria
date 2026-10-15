@@ -190,6 +190,7 @@ def verify_image(identity, sha, observations):
             "--tmpfs", "/tmp", "--tmpfs", "/opt/data", "--entrypoint", "/opt/hermes/.venv/bin/python",
             "-e", "HOME=/tmp/home", "-e", "HERMES_HOME=/tmp/home/hermes", "-e", "PYTHONPATH=/web/sidecar:/opt/hermes",
             "-e", "HERMES_WEBUI_AGENT_DIR=/opt/hermes",
+            "-e", f"TALARIA_AGENT_PROBE_REVISION={sha}",
             "-e", "TALARIA_AGENT_SSH_EXPECTED=" + json.dumps(observations),
             "-v", f"{ROOT / 'web'}:/web:ro", "-v", f"{ROOT / 'releases/agent_probe.py'}:/probe.py:ro",
             image, "/probe.py", version,
@@ -304,16 +305,14 @@ def check(args, kind, identity, receipt, junit):
             baseline_identity = max(supported_releases(ROOT), key=lambda release: tuple(map(int, release["version"].split("."))))
             baseline_env = env.copy()
             with agent_checkout(args, "supported", baseline_identity, baseline_env) as agent:
-                baseline = probe_agent(agent, baseline_identity, baseline_env)
-            receipt["sshConfigApproval"] = {"baseline": {**baseline_identity, "observations": baseline}}
+                baseline = probe_agent(agent, baseline_identity, baseline_env, receipt, "baseline")
             validate_ssh_approval(baseline, baseline_identity["version"])
         with agent_checkout(args, kind, identity, env) as agent:
             agent_python = agent / ".venv/bin/python"
             receipt["python"] = subprocess.check_output([str(agent_python), "-c", "import platform; print(platform.python_version())"],
                                                         env=env, text=True).strip()
             env.update(HERMES_WEBUI_AGENT_DIR=str(agent), HERMES_WEBUI_PYTHON=str(agent_python), HERMES_WEBUI_TEST_PYTHON=sys.executable)
-            observations = probe_agent(agent, identity, env)
-            receipt.setdefault("sshConfigApproval", {})["candidate" if kind == "candidate" else "observations"] = observations
+            observations = probe_agent(agent, identity, env, receipt, "candidate" if kind == "candidate" else "observations")
             validate_ssh_approval(observations, identity.get("version") if kind in ("active", "supported") else None, baseline)
             if not args.skip_sidecar_tests:
                 # The sidecar suite spawns `python -m talaria_sidecar` on this venv with disposable homes.
@@ -333,17 +332,29 @@ def check(args, kind, identity, receipt, junit):
         receipt["imageVerified"] = True
 
 
-def probe_agent(agent, identity, env):
+def probe_agent(agent, identity, env, receipt, role):
     # Separate disposable state for each baseline/candidate, including the real file tools' task cwd.
     with tempfile.TemporaryDirectory(prefix="talaria-agent-probe-") as directory:
         state = Path(directory)
-        report = state / "ssh-approval.json"
+        report = state / "agent-probe.json"
         probe_env = {**env, "HOME": str(state), "HERMES_HOME": str(state / "hermes"),
                      "TALARIA_AGENT_PROBE_REPORT": str(report), "PYTHONPATH": str(ROOT / "web/sidecar"),
-                     "HERMES_WEBUI_AGENT_DIR": str(agent)}
-        subprocess.run([str(agent / ".venv/bin/python"), str(ROOT / "releases/agent_probe.py"),
-                        *([identity["version"]] if "version" in identity else [])], cwd=agent, env=probe_env, check=True)
-        return json.loads(report.read_text())
+                     "HERMES_WEBUI_AGENT_DIR": str(agent), "TALARIA_AGENT_PROBE_REVISION": identity["sourceRevision"]}
+        try:
+            subprocess.run([str(agent / ".venv/bin/python"), str(ROOT / "releases/agent_probe.py"),
+                            *([identity["version"]] if "version" in identity else [])], cwd=agent, env=probe_env, check=True)
+        finally:
+            if report.exists():
+                result = json.loads(report.read_text())
+                observations = result.pop("sshConfigApproval")
+                receipt.setdefault("sshConfigApproval", {})[role] = (
+                    {**identity, "observations": observations} if role == "baseline" else observations)
+                diagnostics = receipt.setdefault("agentProbe", {})
+                if role == "baseline":
+                    diagnostics["baseline"] = {**identity, **result}
+                else:
+                    diagnostics.update(result)
+        return observations
 
 
 def validate_ssh_approval(observations, supported_version=None, baseline=None):

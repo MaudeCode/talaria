@@ -72,6 +72,7 @@ class RoutingTests(unittest.TestCase):
             (["scripts/check-docker.py"], {"docker", "tooling"}),
             (["scripts/stamp-release.py", "scripts/test-stamp-release.py"], {"tooling"}),
             (["scripts/check-agent-compatibility.py"], {"web_server", "docker", "tooling"}),
+            (["releases/agent_probe.py"], {"web_server", "docker", "tooling"}),
             (["scripts/check-release-agent.py"], {"tooling"}),
             (["scripts/test-check-agent-compatibility.py"], {"tooling"}),
             # The support record selects the sidecar suite on every supported Agent release.

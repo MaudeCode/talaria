@@ -81,6 +81,24 @@ The exact v0.22.2 candidate loses it and cannot be promoted until an upstream
 repair passes this behavioral gate. This check does not patch the Agent or
 change the current deployment pin.
 
+The shared `releases/agent_probe.py` also discovers two disposable stdio MCP
+servers and dispatches their registered tools through the real Agent executor.
+It covers direct and deferred `tool_call` invocations, single calls and opted-in
+parallel batches, and fast controls alongside calls that outlast an accelerated
+generic deadline. An explicit longer server timeout must let those calls finish;
+without a server timeout, the MCP default remains unchanged and the generic
+executor deadline still applies. No Agent code or timeout selector is patched.
+The probe observes tool-start and tool-exit markers before advancing each case.
+
+Receipts include `agentProbe.checks` and named `mcp_execution_deadline` findings,
+including when the probe fails before pytest starts. The exact supported
+v0.21.7 and v0.22.0 source identities predate per-entry executor budgets; their
+receipts explicitly record the historical timeout expectation. Every other
+source, including candidates and main canaries, must preserve the longer MCP
+budget demonstrated by v0.22.1. A candidate with a deadline finding must not
+enter `agent_support.json` or become the active pin. Repairing an external Agent
+regression is separate work; the gate does not patch or vendor that Agent.
+
 The compatibility gate proves Talaria's existing calls still work; it cannot see
 new Agent capabilities. For what a release or `main` SHA adds, modifies,
 deprecates or removes, run the
