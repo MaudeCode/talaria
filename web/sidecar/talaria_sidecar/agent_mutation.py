@@ -283,6 +283,21 @@ def _worker(root, revision, homes, requests, stopped, send):
             bootstrap_repair = True
         entries = [] if bootstrap_repair else _owners(root, homes, pause, identity, windows)
         recovery_only = (bootstrap_repair and needs_sync) or bool(adopted and not records.tree_is_whole(adopted, root)[0])
+        # Native gateway birth stamps and journal identities use different units.
+        # Bracket and repeat both probes, binding them to the same incarnation before recording it.
+        from gateway.status import get_process_start_time
+        owner_identities = {}
+        for entry in entries:
+            canonical = records.identity(entry["pid"])["ct"]
+            birth = get_process_start_time(entry["pid"])
+            if canonical is None or birth is None:
+                raise RuntimeError("Gateway process identity could not be proved.")
+            if (records.identity(entry["pid"])["ct"] != canonical
+                    or get_process_start_time(entry["pid"]) != birth
+                    or (entry.get("ct") is not None and entry["ct"] != birth)):
+                raise RuntimeError("Gateway process identity changed during quiescence; source was not changed.")
+            entry["ct"] = birth
+            owner_identities[str(entry["pid"])] = canonical
         token = pause._empty_token()
         if windows is not None:
             token.pop("platform", None)
@@ -291,12 +306,7 @@ def _worker(root, revision, homes, requests, stopped, send):
                          service_profiles={e["service"]: e["profile"] for e in services})
         token.update(posix_units=[e for e in entries if e.get("kind") and windows is None], unmapped=[e for e in entries if not e.get("kind")],
                      unmapped_pids=[e["pid"] for e in entries if not e.get("kind")],
-                     identities={str(e["pid"]): records.identity(e["pid"])["ct"] for e in entries}, resume_needed=bool(entries))
-        from gateway.status import get_process_start_time
-        for entry in entries:
-            entry["ct"] = get_process_start_time(entry["pid"])
-            if entry["ct"] is None or token["identities"][str(entry["pid"])] is None:
-                raise RuntimeError("Gateway process identity could not be proved.")
+                     identities=owner_identities, resume_needed=bool(entries))
         records.record_pause(token, adopted, claims)
         records.mark_stop_requested(token, [e["pid"] for e in entries])
         for entry in entries:

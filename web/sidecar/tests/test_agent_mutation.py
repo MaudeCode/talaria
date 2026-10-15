@@ -265,6 +265,25 @@ def test_pre_mutation_refusal_or_owner_exit_resumes_the_same_owned_set(owned, st
     wait_for(lambda: not (home / 'pause-record.json').exists())
 
 
+@pytest.mark.parametrize('changed', ['canonical', 'native'])
+def test_reused_gateway_identity_samples_refuse_before_record_or_drain(owned, changed):
+    root, home, base, target, sidecar = owned
+    if changed == 'canonical':
+        with (root / 'hermes_cli/update_pause_record.py').open('a') as file:
+            file.write("\ndef identity(pid=None): return {'ct':2 if (HOME/'identity-reused').exists() else 1}\n")
+        (root / 'gateway/status.py').write_text("import os\nfrom pathlib import Path\ndef get_process_start_time(pid):\n (Path(os.environ['HERMES_HOME'])/'identity-reused').touch()\n return 1\n")
+    else:
+        (root / 'gateway/status.py').write_text("calls=0\ndef get_process_start_time(pid):\n global calls\n calls+=1\n return calls\n")
+    result = rpc(sidecar, root, 'begin', revision=target, homes=[str(home)])
+    assert result['ok'] is False, 'mismatched identity samples must not admit an update'
+    assert 'identity changed' in result['detail']
+    assert (home / 'active').exists(), 'the original writer must remain untouched'
+    assert not (home / 'stop-asked').exists()
+    assert not (home / 'pause-record.json').exists(), 'no owner was safely bound for a pause record'
+    assert not (home / 'resumed').exists()
+    assert not (root / 'VERSION').exists()
+
+
 def test_unacknowledged_drain_never_mutates_source_and_retains_resume_debt(owned):
     root, home, base, target, sidecar = owned
     (home / 'refuse-drain').touch()
