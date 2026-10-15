@@ -157,7 +157,7 @@ def remote_tag_commit(tag):
     return refs.get(f"refs/tags/{tag}^{{}}", refs.get(f"refs/tags/{tag}"))
 
 
-def verify_image(identity, sha, observations):
+def verify_image(identity, sha, observations, compression):
     image, release_tag, version = identity["image"], identity["releaseTag"], identity["version"]
     # Docker needs the caller's daemon context, but the container receives only
     # these synthetic environment values, read-only code and temporary state.
@@ -192,6 +192,7 @@ def verify_image(identity, sha, observations):
             "-e", "HERMES_WEBUI_AGENT_DIR=/opt/hermes",
             "-e", f"TALARIA_AGENT_PROBE_REVISION={sha}",
             "-e", "TALARIA_AGENT_SSH_EXPECTED=" + json.dumps(observations),
+            "-e", "TALARIA_AGENT_COMPRESSION_EXPECTED=" + json.dumps(compression),
             "-v", f"{ROOT / 'web'}:/web:ro", "-v", f"{ROOT / 'releases/agent_probe.py'}:/probe.py:ro",
             image, "/probe.py", version,
         ], check=True)
@@ -328,7 +329,7 @@ def check(args, kind, identity, receipt, junit):
                 if command.returncode:
                     raise SystemExit(command.returncode)
     if not args.skip_docker and kind != "canary":
-        verify_image(identity, identity["sourceRevision"], observations)
+        verify_image(identity, identity["sourceRevision"], observations, receipt["compressionBackoff"]["observations"])
         receipt["imageVerified"] = True
 
 
@@ -347,6 +348,9 @@ def probe_agent(agent, identity, env, receipt, role):
             if report.exists():
                 result = json.loads(report.read_text())
                 observations = result.pop("sshConfigApproval")
+                compression = result.pop("compressionBackoff")
+                receipt.setdefault("compressionBackoff", {})[role] = (
+                    {**identity, "observations": compression} if role == "baseline" else compression)
                 receipt.setdefault("sshConfigApproval", {})[role] = (
                     {**identity, "observations": observations} if role == "baseline" else observations)
                 diagnostics = receipt.setdefault("agentProbe", {})
@@ -354,7 +358,31 @@ def probe_agent(agent, identity, env, receipt, role):
                     diagnostics["baseline"] = {**identity, **result}
                 else:
                     diagnostics.update(result)
+                baseline = receipt["compressionBackoff"].get("baseline", {}).get("observations") if role == "candidate" else None
+                # Retain the named compression rejection even when another probe also fails.
+                validate_compression_backoff(compression, None if role == "candidate" else identity.get("version"), baseline)
         return observations
+
+
+def validate_compression_backoff(observations, supported_version=None, baseline=None):
+    # These releases had structural cooldowns, but never rearmed them on transcript growth.
+    growth = supported_version not in {"0.21.7", "0.22.0"}
+    if baseline is not None:
+        # Permit adding the guarantee; never remove a guarantee proved by the supported baseline.
+        growth = baseline["grown"]["compressionCalls"] == 1 or observations.get("grown", {}).get("compressionCalls") == 1
+    expected = {
+        "structuralNoOp": {"unchanged": True, "reason": "structural_backoff:300", "ineffectiveCount": 0},
+        "unchanged": {"compressionCalls": 0, "blockedReasons": ["structural_backoff:300"]},
+        "grown": {"compressionCalls": int(growth), "blockedReasons": [] if growth else ["structural_backoff:300"]},
+        "expired": {"compressionCalls": 1, "blockedReasons": []},
+        "success": {"shouldCompress": True, "blockReason": None},
+        "failureUnchanged": {"compressionCalls": 0, "blockedReasons": ["cooldown:120"]},
+        "failureGrown": {"compressionCalls": 0, "blockedReasons": ["cooldown:120"]},
+        "failureExpired": {"compressionCalls": 1, "blockedReasons": []},
+    }
+    for case, result in expected.items():
+        if observations.get(case) != result:
+            raise RuntimeError(f"compression backoff failed: {case}: {observations.get(case)}")
 
 
 def validate_ssh_approval(observations, supported_version=None, baseline=None):

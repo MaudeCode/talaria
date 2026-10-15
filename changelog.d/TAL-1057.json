@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Agent compatibility checks reject updates that leave automatic chat compression blocked after a conversation grows.",
+      "highlight": false,
+      "components": ["web"]
+    }
+  ]
+}

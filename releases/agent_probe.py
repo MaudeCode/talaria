@@ -30,6 +30,7 @@ os.environ["HERMES_HOME"] = str(Path(state.name) / "hermes")
 home = Path(os.environ["HERMES_HOME"])
 home.mkdir(parents=True, exist_ok=True)
 for name in ("run_agent", "hermes_cli.runtime_provider", "agent.auxiliary_client", "agent.model_metadata",
+             "agent.context_compressor", "agent.turn_context", "agent.turn_context_compaction",
              "tools.file_tools", "tools.approval", "tools.terminal_tool"):
     module = importlib.import_module(name)
     if agent := os.environ.get("HERMES_WEBUI_AGENT_DIR"):
@@ -106,6 +107,76 @@ def ssh_config_approval():
     return observations
 
 
+def compression_backoff():
+    """Real compressor state and turn-start preflight; only clocks, tokens and the compression callback are synthetic."""
+    from agent.context_compressor import ContextCompressor
+    from agent.turn_context_compaction import run_turn_start_compaction
+
+    clock = [1000.0]
+    short = [{"role": "system", "content": "Synthetic system"},
+             {"role": "user", "content": "x" * 400_000}]
+    grown = short + [{"role": "assistant" if i % 2 == 0 else "user", "content": f"Synthetic turn {i}"}
+                     for i in range(8)]
+    observations = {}
+
+    def request_tokens(agent, messages, system):
+        return 90_000 if len(messages) >= 2 else 1000
+
+    with patch("time.monotonic", side_effect=lambda: clock[0]), patch("time.time", side_effect=lambda: clock[0]), \
+            patch("agent.context_compressor.get_model_context_length", return_value=100_000), \
+            patch("agent.turn_context._preflight_request_tokens", side_effect=request_tokens):
+        compressor = ContextCompressor(model="synthetic/model", threshold_percent=0.85,
+                                       protect_first_n=1, protect_last_n=1, quiet_mode=True)
+
+        def preflight(messages):
+            calls, warnings = [], []
+
+            def compress(messages, system, **kwargs):
+                calls.append(kwargs["trigger"])
+                return [messages[-1]], system
+
+            agent = SimpleNamespace(
+                context_compressor=compressor, compression_enabled=True, compression_idle_compact_after_seconds=0,
+                model="synthetic/model", api_mode="chat_completions", session_id=None, max_compression_attempts=1,
+                _request_pressure_anchored=True, _compress_context=compress, _emit_status=lambda message: None,
+                _clear_context_overflow_warn=lambda: None,
+                _warn_context_overflow_blocked=lambda reason, *args: warnings.append(reason),
+            )
+            run_turn_start_compaction(
+                agent, messages=messages, system_message=None, active_system_prompt=None,
+                conversation_history=None, current_turn_user_idx=len(messages) - 1,
+                user_message=messages[-1]["content"], effective_task_id="talaria-synthetic-compression",
+            )
+            return {"compressionCalls": len(calls), "blockedReasons": warnings}
+
+        result = compressor.compress(short, current_tokens=90_000)
+        observations["structuralNoOp"] = {
+            "unchanged": result == short, "reason": compressor.should_compress_info(90_000)[1],
+            "ineffectiveCount": compressor._ineffective_compression_count,
+        }
+        observations["unchanged"] = preflight(short)
+        observations["grown"] = preflight(grown)
+        # A fresh structural no-op must also release on clock expiry without growth.
+        compressor.compress(short, current_tokens=90_000)
+        clock[0] += 301
+        observations["expired"] = preflight(short)
+        compressor.compress(short, current_tokens=90_000)
+        compressor.record_completed_compaction()
+        should, reason = compressor.should_compress_info(90_000)
+        observations["success"] = {"shouldCompress": should, "blockReason": reason}
+        # A genuine failed summary is different: growth must not bypass its cooldown.
+        compressor._record_compression_failure_cooldown(120, "Synthetic summary failure")
+        observations["failureUnchanged"] = preflight(short)
+        observations["failureGrown"] = preflight(grown)
+        clock[0] += 121
+        observations["failureExpired"] = preflight(grown)
+    return observations
+
+
+compression = compression_backoff()
+print("COMPRESSION_BACKOFF " + json.dumps(compression, sort_keys=True))
+if expected := os.environ.get("TALARIA_AGENT_COMPRESSION_EXPECTED"):
+    assert compression == json.loads(expected), "compression backoff differs in release image"
 observations = ssh_config_approval()
 print("SSH_CONFIG_APPROVAL " + json.dumps(observations, sort_keys=True))
 if expected := os.environ.get("TALARIA_AGENT_SSH_EXPECTED"):
@@ -232,7 +303,7 @@ def probe_mcp_deadlines(report):
             shutdown_mcp_servers()
 
 
-report = {"sshConfigApproval": observations, "checks": [], "findings": []}
+report = {"sshConfigApproval": observations, "compressionBackoff": compression, "checks": [], "findings": []}
 try:
     probe_mcp_deadlines(report)
 except Exception as error:
