@@ -10,9 +10,11 @@ import signal
 import socket
 import sqlite3
 import subprocess
+import sys
 import threading
 import time
 from http.server import ThreadingHTTPServer
+from types import SimpleNamespace
 
 import pytest
 
@@ -77,6 +79,7 @@ def owner(tmp_path):
     model = ThreadingHTTPServer(("127.0.0.1", 0), HeldModel)
     model.daemon_threads = True
     model.started, model.release, model.requests = threading.Event(), threading.Event(), []
+    model.cancel_received = tmp_path / "owner-cancellation.json"
     threading.Thread(target=model.serve_forever, daemon=True).start()
     origin = f"http://127.0.0.1:{model.server_port}/v1"
     (home / "config.yaml").write_text(json.dumps({
@@ -87,13 +90,36 @@ def owner(tmp_path):
     }))
     (home / ".env").write_text("OPENAI_API_KEY=loopback-only\n")
     env = isolated_env(home, home=tmp_path, OPENAI_API_KEY="loopback-only", OPENAI_BASE_URL=origin,
-                       TALARIA_SIDECAR_AGENT_DIR=str(AGENT_DIR), PYTHONUNBUFFERED="1")
+                       TALARIA_SIDECAR_AGENT_DIR=str(AGENT_DIR), PYTHONUNBUFFERED="1",
+                       TALARIA_TEST_CANCEL_MARKER=str(model.cancel_received))
+    gateway_code = """
+import json, os
+from pathlib import Path
+from gateway import session_cron
+from gateway.run import main
+
+real_operation = session_cron.operation
+marker = Path(os.environ['TALARIA_TEST_CANCEL_MARKER'])
+
+async def observe_cancel(authority, name, params, actor=None):
+    result = await real_operation(authority, name, params, actor)
+    if name == 'cancel':
+        event = getattr(authority, '_cron_cancellations', {}).get(params['admission_id'])
+        if event is not None and event.is_set():
+            pending = marker.with_suffix('.tmp')
+            pending.write_text(json.dumps(params))
+            pending.replace(marker)
+    return result
+
+session_cron.operation = observe_cancel
+main()
+"""
     log_path = tmp_path / "gateway.log"
     with log_path.open("w") as log:
         gateway = None
         def start_gateway():
             nonlocal gateway
-            gateway = subprocess.Popen([AGENT_PYTHON, "-m", "gateway.run"], cwd=AGENT_DIR, env=env,
+            gateway = subprocess.Popen([AGENT_PYTHON, "-c", gateway_code], cwd=AGENT_DIR, env=env,
                                        stdin=subprocess.DEVNULL, stdout=log, stderr=subprocess.STDOUT)
             model.gateway = gateway
         start_gateway()
@@ -173,9 +199,43 @@ def test_started_cancel_waits_for_exact_owner_terminal_before_releasing_run(owne
 
 
 def workers(sidecar):
-    rows = subprocess.run(["ps", "-axo", "pid=,ppid=,command="], capture_output=True, text=True, check=True).stdout.splitlines()
+    # Long CI interpreter paths must not hide spawn_main at the terminal's column limit.
+    rows = subprocess.run(["ps", "-axwwo", "pid=,ppid=,command="], capture_output=True, text=True, check=True).stdout.splitlines()
     return [int(pid) for line in rows if len(parts := line.split(None, 2)) == 3
             for pid, parent, command in [parts] if int(parent) == sidecar.proc.pid and "spawn_main" in command]
+
+
+@pytest.mark.skipif(os.name != "posix", reason="worker lookup uses POSIX process tables")
+def test_workers_finds_long_interpreter_commands_at_narrow_terminal_width(tmp_path, monkeypatch):
+    monkeypatch.setenv("COLUMNS", "80")
+    executable = tmp_path / ("runtime-" + "x" * 100) / "python"
+    executable.parent.mkdir()
+    executable.symlink_to(sys.executable)
+    ready = tmp_path / "ready"
+    script = tmp_path / "worker.py"
+    script.write_text("""
+import multiprocessing, os, pathlib, sys
+
+def work(ready, stop):
+    pathlib.Path(ready).write_text(str(os.getpid()))
+    stop.wait(15)
+
+if __name__ == '__main__':
+    ctx = multiprocessing.get_context('spawn')
+    stop = ctx.Event()
+    child = ctx.Process(target=work, args=(sys.argv[1], stop))
+    child.start()
+    sys.stdin.read()
+    stop.set()
+    child.join(5)
+""")
+    parent = subprocess.Popen([str(executable), str(script), str(ready)], stdin=subprocess.PIPE,
+                              stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, env=isolated_env(tmp_path))
+    try:
+        child = wait_for(lambda: int(ready.read_text() or "0") if ready.exists() else None, 10)
+        assert workers(SimpleNamespace(proc=parent)) == [child]
+    finally:
+        parent.communicate(timeout=10)
 
 
 @requires_agent
@@ -208,8 +268,11 @@ def test_lost_submitter_recovers_same_admission_without_another_run(owner, resta
             assert replacement.result("cron.get", params)["job"]["id"] == job["id"], "Web preflight must receive the retained job snapshot"
             request = replacement.request("cron.run", params)
         wait_for(lambda: json.loads(record_path.read_text()).get("cancel_reason"))
-        # Recovery must be active before the original inference is released.
-        time.sleep(.5)
+        # The local intent precedes worker startup; wait for the real owner to latch cancellation.
+        wait_for(model.cancel_received.exists)
+        assert json.loads(model.cancel_received.read_text()) == {
+            "session_id": before["target_session_id"], "admission_id": before["admission_id"],
+        }
         model.release.set()
         active = replacement or sidecar
         reply = wait_for(lambda: (message if message.get("id") == request else None) if (message := active.next_message(timeout=60)) else None)

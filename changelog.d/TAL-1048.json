@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Changed",
+      "summary": "Support Hermes Agent 0.22.1 and use it for new Web installations, retaining support for 0.21.7 and 0.22.0.",
+      "highlight": false,
+      "components": ["web"]
+    }
+  ]
+}
