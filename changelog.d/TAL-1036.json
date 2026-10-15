@@ -1,0 +1,1 @@
+{"entries":[{"category":"Security","summary":"Keep chats owned by the Agent gateway read-only, preventing overlapping execution and transcript edits.","highlight":false,"components":["web"]}]}

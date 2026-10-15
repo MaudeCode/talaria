@@ -19,7 +19,7 @@ import { SessionBusy, SessionNotFound, statSignature, type SessionStore } from '
 import { UNSETTLED_TODO_KEY, attachTodoState } from './todo.js'
 import { isClaudeCodeSessionId, type ClaudeCodeSessionSource } from './claude-code.js'
 import { auditSessionRecovery, repairSafeSessionRecovery, type RecoveryDeps } from './recovery.js'
-import { agentSessionRowsExisting, agentSessionRowsExistingAsync, CONVERSATION_ROUND_THRESHOLD, countConversationRounds, stateDbCompressionLineage, stateDbTailToolContent, stateDbLineageReport, stateDbLocalTarget, stateDbSessionMessages, stateDbSessionRead, stateDbSessionRow, stateDbSessionSources, stateDbSessionSourcesAsync, stateDbTimestampSeconds, type StateDbRead } from './state-db.js'
+import { agentSessionRowsExisting, agentSessionRowsExistingAsync, CANONICAL_READ_ONLY_REASON, OWNERSHIP_UNAVAILABLE_REASON, CONVERSATION_ROUND_THRESHOLD, countConversationRounds, stateDbCompressionLineage, stateDbTailToolContent, stateDbLineageReport, stateDbLocalTarget, stateDbSessionMessages, stateDbSessionRead, stateDbSessionRow, stateDbSessionSources, stateDbSessionSourcesAsync, stateDbTimestampSeconds, type StateDbRead, type StateDbSessionSource } from './state-db.js'
 import { completionIncomplete, fallbackHandoffSummary, HANDOFF_SYSTEM_PROMPT, handoffMarker, handoffPayload, handoffTranscript, messageHandoffPayload, sameHandoff } from './handoff.js'
 import { anchorMessageKey, anchorSummary, CompressionJobs, compressionReference, visibleMessagesForAnchor, type CompressionJob } from './compress.js'
 import { chatReadiness, SidecarError, type SidecarLike } from '../sidecar/client.js'
@@ -295,7 +295,7 @@ export class SessionService {
   }
 
   /** TAL-358: batched `sessions.source` owners from the active profile's state.db. */
-  readonly stateDbSources = (ids: string[]): Map<string, string> | null => stateDbSessionSources(join(this.deps.profileHome(this.deps.activeProfile()), 'state.db'), ids)
+  readonly stateDbSources = (ids: string[], profile = this.deps.activeProfile()): Map<string, StateDbSessionSource> | null => stateDbSessionSources(this.stateDbPath(profile), ids)
 
   /**
    * TAL-590 (Python #3238): the read-only CLI or API-server imports among `rows` whose active-profile state.db row is
@@ -325,12 +325,17 @@ export class SessionService {
    */
   private async listStateDbLookups(rows: Row[], cliRowIds: string[]): Promise<Pick<ListParams, 'stateDbSources' | 'pruneOrphanedImports'>> {
     const dbPath = this.stateDbPath(null)
-    const ownerIds = [...ownerLockCandidates(rows), ...cliRowIds]
-    const owners = ownerIds.length ? await stateDbSessionSourcesAsync(dbPath, ownerIds) : new Map<string, string>()
+    const activeProfile = this.deps.activeProfile()
+    const byProfile = ownerLockCandidates(rows)
+    const activeIds = byProfile.get(activeProfile) ?? new Set<string>()
+    for (const id of cliRowIds) activeIds.add(id)
+    byProfile.set(activeProfile, activeIds)
+    const owners = new Map(await Promise.all([...byProfile].map(async ([profile, ids]) =>
+      [profile, ids.size ? await stateDbSessionSourcesAsync(this.stateDbPath(profile), ids) : new Map<string, StateDbSessionSource>()] as const)))
     const checked = new Set(this.orphanCandidates(rows))
     const existing = checked.size ? await agentSessionRowsExistingAsync(dbPath, checked) : new Set<string>()
     return {
-      stateDbSources: () => owners,
+      stateDbSources: (_ids, profile = activeProfile) => owners.get(profile) ?? null,
       pruneOrphanedImports: (current) => {
         // Only an id the worker checked can be an orphan; a row that became a candidate meanwhile waits for the next list.
         const orphans = new Set(this.orphanCandidates(current).filter((sid) => checked.has(sid) && !existing.has(sid)))
@@ -341,17 +346,19 @@ export class SessionService {
   }
 
   /** The persisted flag folded with the state.db owner lock (TAL-358): the one read-only rule for mutation gates and the wire. */
-  isReadOnly(s: Session): boolean {
-    if (s.read_only) return true
-    const [row] = withOwnerLocks([{ session_id: s.session_id, source_tag: s.source_tag, raw_source: s.raw_source, session_source: s.session_source }], this.stateDbSources)
-    return Boolean(row?.read_only)
+  readOnlyReason(s: Session): string | null {
+    const row = withOwnerLocks([{ session_id: s.session_id, profile: s.profile, source_tag: s.source_tag, raw_source: s.raw_source, session_source: s.session_source, read_only: s.read_only }], this.stateDbSources)[0]!
+    return row.read_only ? str(row.read_only_reason) || 'Read-only imported sessions cannot be modified from WebUI' : null
   }
+
+  isReadOnly(s: Session): boolean { return this.readOnlyReason(s) !== null }
 
   /** Full session for mutation, refusing read-only imports (Python `_get_or_materialize_session`). */
   getForMutation(sid: string): Session {
     let s = this.get404(sid)
     s = this.store.ensureFull(sid, s)
-    if (this.isReadOnly(s)) throw new HttpFailure(403, 'Read-only imported sessions cannot be modified from WebUI')
+    const reason = this.readOnlyReason(s)
+    if (reason) throw new HttpFailure(403, reason)
     if (str(s.source_tag || s.raw_source).trim().toLowerCase() === 'subagent') throw new HttpFailure(403, 'Read-only subagent child session')
     return s
   }
@@ -596,7 +603,9 @@ export class SessionService {
     const row = stateDbSessionRow(dbPath, sid)
     const stateDbSource = str(row?.source).trim().toLowerCase()
     const subagentChild = stateDbSource === 'subagent'
-    if ((this.indexMarksWasWebui(sid) || (this.store.wasDeleted(sid) && ['', 'webui', 'fork'].includes(stateDbSource))) && !subagentChild) return { session: null, reason: 'was_webui' }
+    const owners = this.stateDbSources([sid])
+    const canonical = typeof owners?.get(sid) === 'object'
+    if ((this.indexMarksWasWebui(sid) || (this.store.wasDeleted(sid) && ['', 'webui', 'fork'].includes(stateDbSource))) && !subagentChild && !canonical) return { session: null, reason: 'was_webui' }
     const msgs = isClaudeCodeSessionId(sid) ? this.deps.claudeCode?.messages(sid) ?? [] : stateDbSessionMessages(dbPath, sid, { stitch: true })
     const meta: Row = { ...(metaIn ?? this.lookupCliMeta(sid) ?? {}) }
     if (!msgs.length && !(meta._lineage_root_id && meta._lineage_tip_id)) return { session: null, reason: 'no_foreign_state' }
@@ -610,7 +619,6 @@ export class SessionService {
       if (!meta.updated_at && (row.ended_at || row.started_at)) meta.updated_at = row.ended_at || row.started_at
     }
     // An owner read that fails is an unknown owner, which never releases a claim (TAL-793).
-    const owners = this.stateDbSources([sid])
     const claimable = owners !== null && isClaimableCliSource(meta, owners.get(sid) || stateDbSource)
     const workspace = str(meta.workspace || meta.cwd).trim() || this.deps.workspaces.lastWorkspace(profile)
     const defaults = this.store.deps.defaults(profile)
@@ -648,8 +656,12 @@ export class SessionService {
     if (isClaudeCodeSessionId(sid)) throw new HttpFailure(400, `Claude Code sessions are view-only and cannot be ${verb} from WebUI`)
   }
 
-  private rejectSubagent(sid: string, verb: string): void {
+  private rejectViewOnly(sid: string, verb: string): void {
     this.rejectClaudeCode(sid, verb)
+    let profile = this.deps.activeProfile()
+    try { profile = this.store.get(sid, { metadataOnly: true }).profile || 'default' } catch { /* foreign row */ }
+    const owners = this.stateDbSources([sid], profile)
+    if (!owners || typeof owners.get(sid) === 'object') throw new HttpFailure(403, owners ? CANONICAL_READ_ONLY_REASON : OWNERSHIP_UNAVAILABLE_REASON)
     if (this.isSubagentViewOnly(sid)) throw new HttpFailure(400, `Subagent sessions are view-only and cannot be ${verb} from WebUI`)
   }
 
@@ -671,7 +683,7 @@ export class SessionService {
 
   /** `compact()` with the wire streaming/read-only flags (TAL-312), for replies that return the session row. */
   wireRow(s: Session): Record<string, unknown> {
-    return withSessionWireFlags({ ...s.compact({ contextLengthFor: this.deps.contextLengthFor, modelOptionFor: this.deps.modelOptionFor }), read_only: this.isReadOnly(s), assistant_name: this.assistantName(s), workspace_name: this.workspaceNames()(s) }, this.deps.runtime.activeStreamIds)
+    return withSessionWireFlags(withOwnerLocks([{ ...s.compact({ contextLengthFor: this.deps.contextLengthFor, modelOptionFor: this.deps.modelOptionFor }), assistant_name: this.assistantName(s), workspace_name: this.workspaceNames()(s) }], this.stateDbSources)[0]!, this.deps.runtime.activeStreamIds)
   }
 
   /**
@@ -791,7 +803,7 @@ export class SessionService {
     raw._msg_limit_max = MAX_MSG_LIMIT
     const revisionAfter = this.loadRevision(s)
     raw._load_revision = revisionBefore !== null && revisionBefore === revisionAfter ? hashRevision(revisionBefore) : `unstable-${randomUUID().replace(/-/g, '')}`
-    raw.read_only = this.isReadOnly(s)
+    Object.assign(raw, withOwnerLocks([raw], this.stateDbSources)[0])
     raw.assistant_name = this.assistantName(s)
     raw.workspace_name = this.workspaceNames()(s)
     raw.branched_from = this.branchedFrom(s)
@@ -886,7 +898,7 @@ export class SessionService {
       assistant_name: this.assistantName(synth), workspace_name: this.workspaceNames()(synth), confirms_deep_truncate: true,
     }
     attachTodoState(sess, msgs)
-    const merged = withSessionWireFlags(meta ? mergeCliSidebarMetadata(sess, meta) : sess, this.deps.runtime.activeStreamIds)
+    const merged = withSessionWireFlags(withOwnerLocks([meta ? mergeCliSidebarMetadata(sess, meta) : sess], this.stateDbSources)[0]!, this.deps.runtime.activeStreamIds)
     return redactSessionData(merged, this.deps.redactEnabled())
   }
 
@@ -1076,10 +1088,10 @@ export class SessionService {
     const profile = full.profile || 'default'
     let hermesHome = ''
     try { hermesHome = this.deps.workspaces.deps.profileHome(profile) } catch { hermesHome = '' }
-    const { is_streaming: streaming, active_stream_id: live, read_only: readOnly, active_turn_origin: origin } = this.wireRow(full)
+    const { is_streaming: streaming, active_stream_id: live, read_only: readOnly, read_only_reason: readOnlyReason, active_turn_origin: origin } = this.wireRow(full)
     return {
       session_id: full.session_id, title: full.title, model: full.model, profile, hermes_home: hermesHome, workspace: full.workspace, personality: full.personality,
-      message_count: full.messages.length, created_at: full.created_at, updated_at: full.updated_at, agent_running: streaming, is_streaming: streaming, active_stream_id: live, active_turn_origin: origin, read_only: readOnly,
+      message_count: full.messages.length, created_at: full.created_at, updated_at: full.updated_at, agent_running: streaming, is_streaming: streaming, active_stream_id: live, active_turn_origin: origin, read_only: readOnly, read_only_reason: readOnlyReason,
       input_tokens: inp, output_tokens: out, total_tokens: inp + out, estimated_cost: full.estimated_cost,
     }
   }
@@ -1175,7 +1187,7 @@ export class SessionService {
   }
 
   private async pinUnserialized(sid: string, pinRequested: boolean): Promise<Record<string, unknown>> {
-    this.rejectSubagent(sid, 'modified')
+    this.rejectViewOnly(sid, 'modified')
     let s = this.get404(sid)
     s = this.store.ensureFull(sid, s)
     if (pinRequested && !s.pinned) {
@@ -1197,7 +1209,7 @@ export class SessionService {
   }
 
   async archive(sid: string, archived: boolean): Promise<Record<string, unknown>> {
-    this.rejectSubagent(sid, 'archived')
+    this.rejectViewOnly(sid, 'archived')
     let s = this.get404(sid)
     s = this.store.ensureFull(sid, s)
     await this.store.withLock(sid, () => {
@@ -1260,7 +1272,7 @@ export class SessionService {
   }
 
   async setToolsets(sid: string, toolsets: unknown): Promise<Record<string, unknown>> {
-    this.rejectSubagent(sid, 'modified')
+    this.rejectViewOnly(sid, 'modified')
     const cleaned = this.validateToolsetsShape(toolsets)
     const s = this.mutationTarget(sid, 'modified')
     await this.store.withLock(sid, () => {
@@ -1272,7 +1284,7 @@ export class SessionService {
 
   /** Python `/api/personality/set` persistence: the name only; the prompt is resolved by the caller. */
   async setPersonality(sid: string, name: string | null): Promise<string | null> {
-    this.rejectSubagent(sid, 'modified')
+    this.rejectViewOnly(sid, 'modified')
     const s = this.mutationTarget(sid, 'modified')
     await this.store.withLock(sid, () => {
       s.personality = name
@@ -1289,7 +1301,7 @@ export class SessionService {
    * Without one (a released App, which asked on the device) the cut proceeds as before.
    */
   async truncate(sid: string, keepRaw: unknown, hold: { confirmToken: string | null } | null = null): Promise<Record<string, unknown>> {
-    this.rejectSubagent(sid, 'modified')
+    this.rejectViewOnly(sid, 'modified')
     if (keepRaw === null || keepRaw === undefined) throw new HttpFailure(400, 'Missing required field(s): keep_count')
     const s = this.mutationTarget(sid, 'modified')
     // Python `int(body["keep_count"])`: a float truncates, a non-integer string is rejected.
@@ -1439,7 +1451,7 @@ export class SessionService {
    * repeat compression builds on the previous summary instead of re-reading the whole display transcript. `context` is
    * that history unsanitized and `stateRows` the state.db read it came from. */
   private compressionTarget(sid: string): { s: Session; history: Message[]; context: Message[]; stateRows: Message[] } {
-    this.rejectSubagent(sid, 'compressed')
+    this.rejectViewOnly(sid, 'compressed')
     const s = this.mutationTarget(sid, 'compressed')
     const stateRows = this.stateDbRows(s)
     const context = this.compressionContext(s, stateRows)
@@ -1490,7 +1502,7 @@ export class SessionService {
    * back to a deterministic local summary rather than an error.
    */
   async handoffSummary(sid: string, since: number | null): Promise<{ ok: true; summary: string; message_count: number; rounds: number; fallback: boolean; warning?: string }> {
-    this.rejectSubagent(sid, 'summarized')
+    this.rejectViewOnly(sid, 'summarized')
     const { local, profile, dbPath } = this.handoffTarget(sid)
     const rounds = countConversationRounds(dbPath, sid, since)
     if (rounds < CONVERSATION_ROUND_THRESHOLD) throw new HttpFailure(400, 'Not enough conversation rounds to generate a summary.')
@@ -1678,7 +1690,7 @@ export class SessionService {
   }
 
   async clear(sid: string): Promise<Record<string, unknown>> {
-    this.rejectSubagent(sid, 'modified')
+    this.rejectViewOnly(sid, 'modified')
     const s = this.mutationTarget(sid, 'modified')
     await this.store.withLock(sid, () => {
       const hadMessages = s.messages.length > 0
@@ -1709,7 +1721,7 @@ export class SessionService {
   }
 
   async retry(sid: string): Promise<Record<string, unknown>> {
-    this.rejectSubagent(sid, 'modified')
+    this.rejectViewOnly(sid, 'modified')
     return this.store.withLock(sid, () => {
       const s = this.mutationTarget(sid, 'modified')
       const history = s.messages
@@ -1732,7 +1744,7 @@ export class SessionService {
   }
 
   async undo(sid: string): Promise<Record<string, unknown>> {
-    this.rejectSubagent(sid, 'modified')
+    this.rejectViewOnly(sid, 'modified')
     return this.store.withLock(sid, () => {
       const s = this.mutationTarget(sid, 'modified')
       const history = s.messages
@@ -1749,7 +1761,7 @@ export class SessionService {
   }
 
   duplicate(sid: string): Record<string, unknown> {
-    this.rejectSubagent(sid, 'duplicated')
+    this.rejectViewOnly(sid, 'duplicated')
     const session = this.store.load(sid)
     if (!session) throw new HttpFailure(404, 'Session not found')
     const now = this.deps.now()
@@ -1775,7 +1787,7 @@ export class SessionService {
   }
 
   branch(sid: string, body: Record<string, unknown>): Record<string, unknown> {
-    if (this.isSubagentViewOnly(sid)) throw new HttpFailure(400, 'Subagent sessions are view-only and cannot be branched from WebUI')
+    this.rejectViewOnly(sid, 'branched')
     const source = this.get404(sid)
     if (this.isReadOnly(source)) {
       if (str(source.source_tag || source.raw_source).trim().toLowerCase() !== 'cron') throw new HttpFailure(403, 'Read-only sessions cannot be branched from WebUI')

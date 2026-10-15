@@ -287,12 +287,13 @@ export const ContextUsageFields = {
 const ActiveTurnOriginSchema = z.enum(['user', 'background']).nullable().optional().describe('Who started the running turn; null while idle.')
 const IsStreamingSchema = z.boolean().describe('True only while the session\'s run is a live stream on this server.')
 const ActiveStreamIdSchema = NullableString.optional().describe('The live stream id; non-null only while `is_streaming` is true.')
+const ReadOnlyReasonSchema = NullableString.optional().describe('Server-owned reason this session is display-only or its ownership cannot be verified.')
 const ReadOnlySchema = z.boolean().describe('The session cannot be modified from Web: a read-only import, a view-only subagent child, or a foreign session whose owner refuses claiming.')
-const CanBranchSchema = z.boolean().describe('Web may branch this session: never a subagent child, and a read-only session only when it is a cron run.')
-const CanPinSchema = z.boolean().describe('Web may pin or unpin this session: never a subagent child.')
-const CanArchiveSchema = z.boolean().describe('Web may archive or unarchive this session: never a subagent child.')
+const CanBranchSchema = z.boolean().describe('Web may branch this session: never a subagent child or an ownership-locked session; other read-only sessions only when they are cron runs.')
+const CanPinSchema = z.boolean().describe('Web may pin or unpin this session: never a subagent child or a session locked by canonical ownership or unreadable ownership storage.')
+const CanArchiveSchema = z.boolean().describe('Web may archive or unarchive this session: never a subagent child or a session locked by canonical ownership or unreadable ownership storage.')
 const CanDeleteSchema = z.boolean().describe('Web may delete this session: never a read-only session (a read-only import, a view-only subagent child, or a foreign session whose owner refuses claiming).')
-const CanDuplicateSchema = z.boolean().describe('Web may duplicate this session: it has a WebUI copy and is not a subagent child.')
+const CanDuplicateSchema = z.boolean().describe('Web may duplicate this session: it has a WebUI copy, is not a subagent child, and is not locked by canonical ownership or unreadable ownership storage.')
 // TAL-310: the server classifies every session's source once; clients file rows by it and never scan source markers.
 export const SourceKindSchema = z.enum(['webui', 'cli', 'messaging', 'cron', 'webhook', 'subagent', 'claude_code', 'kanban', 'api', 'other'])
   .describe('The session\'s source family. `is_cli_session` is true only for `cli` and `claude_code`.')
@@ -335,7 +336,7 @@ export const SessionSchema = z.looseObject({
   automatic_turns_held: z.boolean().optional().describe('TAL-899: the user pressed Stop, so no automatic turn (background wakeup or goal continuation) starts until their next message.'), has_pending_user_message: z.boolean().optional(),
   pending_user_message: NullableString.optional(), pending_attachments: z.array(AttachmentSchema).optional(), pending_started_at: NullableNumber.optional(), pending_user_source: NullableString.optional(),
   context_length: NullableNumber.optional(), threshold_tokens: NullableNumber.optional(), last_prompt_tokens: NullableNumber.optional(), post_compression_context_tokens_estimate: NullableNumber.optional(), ...ContextUsageFields,
-  enabled_toolsets: z.array(z.string()).nullable().optional(), composer_draft: ComposerDraftSchema.optional(), is_cli_session: z.boolean().optional(), source_kind: SourceKindSchema, is_messaging_session: IsMessagingSessionSchema, sort_ts: SortTsSchema, read_only: ReadOnlySchema, can_branch: CanBranchSchema, can_pin: CanPinSchema, can_archive: CanArchiveSchema, can_delete: CanDeleteSchema, can_duplicate: CanDuplicateSchema, source_tag: NullableString.optional(),
+  enabled_toolsets: z.array(z.string()).nullable().optional(), composer_draft: ComposerDraftSchema.optional(), is_cli_session: z.boolean().optional(), source_kind: SourceKindSchema, is_messaging_session: IsMessagingSessionSchema, sort_ts: SortTsSchema, read_only: ReadOnlySchema, read_only_reason: ReadOnlyReasonSchema, can_branch: CanBranchSchema, can_pin: CanPinSchema, can_archive: CanArchiveSchema, can_delete: CanDeleteSchema, can_duplicate: CanDuplicateSchema, source_tag: NullableString.optional(),
   can_compress: z.boolean().optional().describe('TAL-614: a manual compression would start now: writable, no running turn, and at least four model-history messages. Only the full session detail carries it; absent means no.'),
   confirms_deep_truncate: z.boolean().optional().describe('TAL-929: this server holds a `session.truncate` that discards more than one user turn until it is confirmed; absent on older servers, which cut at once.'),
   source_label: NullableString.optional(), session_source: NullableString.optional(), raw_source: NullableString.optional(), parent_session_id: NullableString.optional(), worktree_path: NullableString.optional(),
@@ -361,7 +362,7 @@ export const SessionEnvelopeSchema = z.looseObject({ session: SessionSchema })
 export const SessionRowSchema = z.looseObject({
   session_id: SessionIdSchema, title: z.string(), workspace: z.string().optional(), model: NullableString.optional(), created_at: UnixSeconds.optional(), updated_at: UnixSeconds.optional(), last_message_at: NullableNumber.optional(),
   message_count: z.number().optional(), pinned: z.boolean().optional(), archived: z.boolean().optional(), project_id: NullableString.optional(), profile: NullableString.optional(), is_streaming: IsStreamingSchema,
-  is_cli_session: z.boolean().optional(), source_kind: SourceKindSchema, is_messaging_session: IsMessagingSessionSchema, sort_ts: SortTsSchema, cron_running: z.boolean().optional(), read_only: ReadOnlySchema, can_branch: CanBranchSchema, can_pin: CanPinSchema, can_archive: CanArchiveSchema, can_delete: CanDeleteSchema, can_duplicate: CanDuplicateSchema, attention: z.looseObject({ kind: z.string().optional(), count: z.number().optional() }).nullable().optional(),
+  is_cli_session: z.boolean().optional(), source_kind: SourceKindSchema, is_messaging_session: IsMessagingSessionSchema, sort_ts: SortTsSchema, cron_running: z.boolean().optional(), read_only: ReadOnlySchema, read_only_reason: ReadOnlyReasonSchema, can_branch: CanBranchSchema, can_pin: CanPinSchema, can_archive: CanArchiveSchema, can_delete: CanDeleteSchema, can_duplicate: CanDuplicateSchema, attention: z.looseObject({ kind: z.string().optional(), count: z.number().optional() }).nullable().optional(),
   source_tag: NullableString.optional(), source_label: NullableString.optional(), session_source: NullableString.optional(), raw_source: NullableString.optional(), parent_session_id: NullableString.optional(),
   active_stream_id: ActiveStreamIdSchema, share_token: NullableString.optional(), share_url: NullableString.optional(), worktree_branch: NullableString.optional(), match_type: z.enum(['title', 'metadata', 'content']).optional(), match_preview: NullableString.optional(),
   workspace_name: WorkspaceNameSchema,
@@ -390,7 +391,7 @@ export const SessionsListSchema = z.looseObject({
 export type SessionsList = z.infer<typeof SessionsListSchema>
 
 export const SessionStatusSchema = z.looseObject({
-  session_id: SessionIdSchema, title: z.string().optional(), active_stream_id: ActiveStreamIdSchema, active_turn_origin: ActiveTurnOriginSchema, agent_running: IsStreamingSchema, is_streaming: IsStreamingSchema, read_only: ReadOnlySchema, message_count: z.number().optional(), model: NullableString.optional(),
+  session_id: SessionIdSchema, title: z.string().optional(), active_stream_id: ActiveStreamIdSchema, active_turn_origin: ActiveTurnOriginSchema, agent_running: IsStreamingSchema, is_streaming: IsStreamingSchema, read_only: ReadOnlySchema, read_only_reason: ReadOnlyReasonSchema, message_count: z.number().optional(), model: NullableString.optional(),
   profile: NullableString.optional(), workspace: z.string().optional(), input_tokens: z.number().optional(), output_tokens: z.number().optional(), total_tokens: z.number().optional(), estimated_cost: NullableNumber.optional(), updated_at: UnixSeconds.optional(),
 })
 export type SessionStatus = z.infer<typeof SessionStatusSchema>

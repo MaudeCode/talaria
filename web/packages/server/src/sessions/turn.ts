@@ -428,6 +428,8 @@ export class TurnRunner {
   /** Python `_start_chat_stream_for_session`: persist pending state, register the channel, launch the worker. */
   private admit(session: Session, opts: StartTurnOptions, releaseStopHold = false): AdmissionResult {
     const s = session
+    const readOnly = this.deps.service().readOnlyReason(s)
+    if (readOnly) return { error: readOnly, _status: 403 }
     if (this.deps.updateInProgress?.()) return { error: 'Web is updating. Retry after it restarts.', _status: 503 }
     if (this.deps.profileDeleting?.(s.profile ?? null)) return { error: `Profile '${str(s.profile)}' is being deleted.`, _status: 409 }
     if (this.deps.workspaceBusy?.(opts.workspace)) return { error: WORKSPACE_BUSY_MESSAGE, _status: 409 }
@@ -1732,7 +1734,7 @@ export class TurnRunner {
     if (!sidecar) return { accepted: false, fallback: 'no_cached_agent', stream_id: null }
     // Register provisionally before the RPC: the Agent may apply the steer and finish the turn before the steer
     // reply arrives, and the turn's finalisation must then already see the record. A rejection removes it again.
-    return this.withSteerChain(activeStreamId, () => this.steerInto(sidecar, sessionId, activeStreamId, text, displayText, steerId))
+    return this.withSteerChain(activeStreamId, sessionId, () => this.steerInto(sidecar, sessionId, activeStreamId, text, displayText, steerId))
   }
 
   private async steerInto(sidecar: SidecarLike, sessionId: string, activeStreamId: string, text: string, displayText: string, steerId: string): Promise<Record<string, unknown>> {
@@ -1969,8 +1971,11 @@ export class TurnRunner {
     return (this.steers.get(streamId) ?? []).map((r) => this.pendingSteerView(r))
   }
 
-  private withSteerChain<T>(streamId: string, fn: () => Promise<T>): Promise<T> {
-    const run = (this.steerChains.get(streamId) ?? Promise.resolve()).then(fn)
+  private withSteerChain<T>(streamId: string, sessionId: string, fn: () => Promise<T>): Promise<T> {
+    const run = (this.steerChains.get(streamId) ?? Promise.resolve()).then(() => {
+      this.deps.service().getForMutation(sessionId)
+      return fn()
+    })
     const settled = run.catch(() => undefined).then(() => { if (this.steerChains.get(streamId) === settled) this.steerChains.delete(streamId) })
     this.steerChains.set(streamId, settled)
     return run
@@ -1987,7 +1992,7 @@ export class TurnRunner {
     const streamId = s?.active_stream_id
     const sidecar = this.deps.sidecar()
     if (!streamId || !sidecar) return fallback
-    return this.withSteerChain(streamId, async () => {
+    return this.withSteerChain(streamId, sessionId, async () => {
       const records = this.steers.get(streamId) ?? []
       const index = records.findIndex((r) => r.steer_id === steerId)
       if (index < 0 || records[index]!.state !== 'pending') return fallback

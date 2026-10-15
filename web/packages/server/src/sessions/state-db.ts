@@ -438,10 +438,13 @@ export function readImportableAgentSessionRows(dbPath: string, opts: ReadRowsOpt
     }
     const superseded = [...local].filter(([id, lineage]) => id !== lineage.ids.at(-1)).map(([id]) => id)
     if (superseded.length) { where.push('s.id NOT IN (SELECT value FROM json_each(?))'); params.push(JSON.stringify(superseded)) }
+    const hasPolicies = Boolean(db.prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'state_meta'").get())
+    const policySource = (id: string): string => `(SELECT CASE WHEN json_valid(value) THEN json_extract(value, '$.policy.source') END FROM state_meta WHERE key = 'gateway.local_policy.v1:' || ${id})`
+    const sourceSql = hasPolicies ? `COALESCE(${policySource('s.id')}, ${sessionCols.has('chat_id') ? policySource('s.chat_id') : 'NULL'}, s.source)` : 's.source'
     const included = (include ?? []).map(String).filter(Boolean)
-    if (included.length) { where.push(`s.source IN (${included.map(() => '?').join(', ')})`); params.push(...included) }
+    if (included.length) { where.push(`${sourceSql} IN (${included.map(() => '?').join(', ')})`); params.push(...included) }
     const excluded = (exclude ?? []).map(String).filter(Boolean)
-    if (excluded.length) { where.push(`s.source NOT IN (${excluded.map(() => '?').join(', ')})`); params.push(...excluded) }
+    if (excluded.length) { where.push(`${sourceSql} NOT IN (${excluded.map(() => '?').join(', ')})`); params.push(...excluded) }
     const preaggregated = messagesHasSessionId && messagesHasTimestamp && included.length === 1 && included[0] === 'cron' && !messagesIndexPresent
     if (preaggregated) {
       orderBy = 'ORDER BY COALESCE(MAX(m.timestamp), s.started_at) DESC'
@@ -464,6 +467,8 @@ export function readImportableAgentSessionRows(dbPath: string, opts: ReadRowsOpt
     } else {
       raw = db.prepare(`${selectSql} FROM sessions s ${joinClause} WHERE ${where.join(' AND ')} ${groupByClause} ${orderBy}`).all(...params)
     }
+    const owners = sessionSources(db, sessionCols, raw.map((r) => str(r.id)))
+    raw = raw.map((r) => { const owner = owners.get(str(r.id)); return { ...r, source: typeof owner === 'object' ? owner.source : owner || r.source } })
     let projected = projectAgentSessionRows(raw.map((r) => {
       const lineage = local.get(str(r.id))
       if (!lineage) return { ...r }
@@ -556,31 +561,93 @@ export function latestCronSessionInfo(dbPath: string, jobIds: Iterable<string>, 
   }
 }
 
-/**
- * TAL-358: the `sessions.source` owner of each present id, in one chunked read; a Kanban-owned lineage answers `kanban`
- * (TAL-793). A missing state.db (or one without a `source` column) owns nothing; an unreadable one answers null, so
- * callers fail closed on an unknown owner.
- */
-export function stateDbSessionSources(dbPath: string, sessionIds: Iterable<string>): Map<string, string> | null {
-  const sources = new Map<string, string>()
+/** A source label remains display metadata; canonical receipts and ledgers independently retain write ownership. */
+export const CANONICAL_READ_ONLY_REASON = 'This session is owned by the Agent gateway and is display-only in Talaria.'
+export const OWNERSHIP_UNAVAILABLE_REASON = 'Agent session ownership could not be verified. The session is read-only until storage is readable.'
+export type StateDbSessionSource = string | { source: string; canonical: true }
+
+/** Resolve on the caller's read snapshot; absence of newer tables is the legacy schema, a failed read is not. */
+function sessionSources(db: DatabaseSync, cols: Set<string>, ids: string[]): Map<string, StateDbSessionSource> {
+  const sources = new Map<string, StateDbSessionSource>()
+  if (!cols.has('id') || !cols.has('source')) return sources
+  const tables = new Set((db.prepare("SELECT name FROM sqlite_master WHERE type = 'table'").all() as { name: string }[]).map((r) => r.name))
+  const walk = resumeLineageWalker(db, cols)
+  const lineages = new Map(ids.map((id) => [id, walk(id)]))
+  const segments = [...new Set([...lineages.values()].flat())]
+  const rows = new Map<string, Dict>()
+  for (let i = 0; i < segments.length; i += 400) {
+    const chunk = segments.slice(i, i + 400)
+    for (const row of db.prepare(`SELECT id, source, ${cols.has('chat_id') ? 'chat_id' : 'NULL AS chat_id'} FROM sessions WHERE id IN (${chunk.map(() => '?').join(',')})`).all(...chunk) as Dict[]) rows.set(str(row.id), row)
+  }
+  const candidates = [...new Set([...segments, ...[...rows.values()].map((r) => str(r.chat_id)).filter(Boolean)])]
+  const policies = new Map<string, Dict | null>()
+  if (tables.has('state_meta')) {
+    const read = db.prepare('SELECT value FROM state_meta WHERE key = ?')
+    for (const owner of candidates) {
+      const raw = read.get(`gateway.local_policy.v1:${owner}`) as { value: string } | undefined
+      if (!raw) continue
+      try {
+        const parsed: unknown = JSON.parse(raw.value)
+        policies.set(owner, parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed as Dict : null)
+      } catch { policies.set(owner, null) }
+    }
+  }
+  const ledgerIds = new Set<string>()
+  for (const [table, column] of [['session_admissions', 'target_session_id'], ['worker_executions', 'session_id']] as const) {
+    if (!tables.has(table)) continue
+    const hasLineage = tableColumns(db, table).has('lineage_json')
+    for (let i = 0; i < candidates.length; i += 400) {
+      const chunk = candidates.slice(i, i + 400)
+      const marks = chunk.map(() => '?').join(',')
+      const linked = hasLineage ? ` OR EXISTS (SELECT 1 FROM json_each(lineage_json) WHERE value IN (${marks}))` : ''
+      const found = db.prepare(`SELECT ${column} AS id, ${hasLineage ? 'lineage_json' : 'NULL AS lineage_json'} FROM ${table} WHERE ${column} IN (${marks})${linked}`).all(...chunk, ...(hasLineage ? chunk : [])) as { id: string; lineage_json: string | null }[]
+      for (const row of found) {
+        ledgerIds.add(row.id)
+        if (row.lineage_json !== null) {
+          const lineage: unknown = JSON.parse(row.lineage_json)
+          if (!Array.isArray(lineage) || !lineage.every((v) => typeof v === 'string')) throw new Error('Unreadable Agent admission lineage')
+          for (const sid of lineage) ledgerIds.add(sid)
+        }
+      }
+    }
+  }
+  const kanban = new Set(kanbanOwnedIds(db, cols, ids.filter((id) => rows.has(id))))
+  for (const id of ids) {
+    const row = rows.get(id)
+    if (!row) continue
+    let source = kanban.has(id) ? 'kanban' : str(row.source)
+    let canonical = false
+    for (const segment of lineages.get(id) ?? [id]) {
+      const chatId = str(rows.get(segment)?.chat_id)
+      for (const owner of new Set([segment, chatId].filter(Boolean))) {
+        if (ledgerIds.has(owner)) canonical = true
+        if (!policies.has(owner)) continue
+        const policy = policies.get(owner)
+        // A broken receipt never releases its owner or a physical row naming that owner.
+        canonical = true
+        const origin = policy?.policy
+        if (origin && typeof origin === 'object' && !Array.isArray(origin) && str((origin as Dict).source)) source = str((origin as Dict).source)
+      }
+    }
+    // LOCAL is the canonical transport. Missing receipts cannot prove it safe to claim.
+    if (lower(source) === 'local') canonical = true
+    sources.set(id, canonical ? { source, canonical: true } : source)
+  }
+  return sources
+}
+
+/** Batched source/ownership probe. An unreadable authority answers null so callers fail closed. */
+export function stateDbSessionSources(dbPath: string, sessionIds: Iterable<string>): Map<string, StateDbSessionSource> | null {
   const ids = [...new Set([...sessionIds].map((s) => s.trim()).filter(Boolean))]
-  if (!ids.length || !existsSync(dbPath)) return sources
+  if (!ids.length || !existsSync(dbPath)) return new Map()
   let db: DatabaseSync
   try { db = openStateDbReadonly(dbPath) } catch { return null }
   try {
-    const cols = tableColumns(db, 'sessions')
-    if (!cols.has('id') || !cols.has('source')) return sources
-    for (let i = 0; i < ids.length; i += 500) {
-      const chunk = ids.slice(i, i + 500)
-      for (const row of db.prepare(`SELECT id, source FROM sessions WHERE id IN (${chunk.map(() => '?').join(',')})`).all(...chunk) as { id: string; source: unknown }[]) sources.set(row.id, str(row.source))
-    }
-    for (const id of kanbanOwnedIds(db, cols, [...sources.keys()])) sources.set(id, 'kanban')
-    return sources
+    db.exec('BEGIN')
+    return sessionSources(db, tableColumns(db, 'sessions'), ids)
   } catch {
     return null
-  } finally {
-    db.close()
-  }
+  } finally { db.close() }
 }
 
 /** The same marker parser serves conservative history boundaries and exact-parent ownership walks. */
@@ -781,8 +848,8 @@ export async function stateDbStorageAsync(dbPath: string): Promise<AgentStorage>
 }
 
 /** `stateDbSessionSources` on the listing worker; a worker failure is an unreadable state.db (null), so owners stay locked. */
-export async function stateDbSessionSourcesAsync(dbPath: string, sessionIds: Iterable<string>): Promise<Map<string, string> | null> {
-  try { return (await callListingWorker({ op: 'sources', dbPath, ids: [...sessionIds] })).value as Map<string, string> | null } catch { return null }
+export async function stateDbSessionSourcesAsync(dbPath: string, sessionIds: Iterable<string>): Promise<Map<string, StateDbSessionSource> | null> {
+  try { return (await callListingWorker({ op: 'sources', dbPath, ids: [...sessionIds] })).value as Map<string, StateDbSessionSource> | null } catch { return null }
 }
 
 /** `agentSessionRowsExisting` on the listing worker; a worker failure assumes every row present, so nothing is pruned. */

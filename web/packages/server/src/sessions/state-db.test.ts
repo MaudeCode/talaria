@@ -624,7 +624,7 @@ describe('state.db projection', () => {
     mkdirSync(unreadable, { recursive: true })
     expect(stateDbSessionSources(unreadable, ['a'])).toBeNull()
     const rows = withOwnerLocks([{ session_id: 'a' }, { session_id: 'b', source_tag: 'webui' }], () => null)
-    expect(rows.map((r) => r.read_only)).toEqual([true, undefined])
+    expect(rows.map((r) => r.read_only)).toEqual([true, true])
   })
 })
 

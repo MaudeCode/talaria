@@ -5089,5 +5089,87 @@
         }
       ]
     }
+  },
+  "canonical_session": {
+    "session_id": "contract-canonical-cli",
+    "title": "Canonical CLI fixture",
+    "source_tag": "cli",
+    "raw_source": "cli",
+    "session_source": "cli",
+    "source_kind": "cli",
+    "source_label": "CLI",
+    "is_cli_session": true,
+    "is_messaging_session": false,
+    "sort_ts": 1792027540.187957,
+    "read_only": true,
+    "read_only_reason": "This session is owned by the Agent gateway and is display-only in Talaria.",
+    "can_branch": false,
+    "can_pin": false,
+    "can_archive": false,
+    "can_delete": false,
+    "can_duplicate": false,
+    "messages": [
+      {
+        "role": "user",
+        "content": "Question one",
+        "timestamp": 1792027540.186901,
+        "_turn_id": "legacy:0",
+        "_display": "row"
+      },
+      {
+        "role": "assistant",
+        "content": "Answer one",
+        "timestamp": 1792027540.187386,
+        "_anchor_activity_scene": {
+          "version": "activity_scene_v1",
+          "activity_rows": [],
+          "final_answer": "Answer one",
+          "turn_duration": null,
+          "terminal_state": "completed",
+          "expanded_by_default": false,
+          "has_consumed_steering": false,
+          "file_changes": [],
+          "activity_rows_total": 0,
+          "activity_rows_offset": 0,
+          "activity_rows_complete": true,
+          "activity_rows_omitted": 0,
+          "activity_scene_ref": "54ea70e22dc263983471fb8334919572b3c3bce318d1dd85bce3f0fd41ee9d55"
+        },
+        "_turn_id": "legacy:0",
+        "_display": "row"
+      },
+      {
+        "role": "user",
+        "content": "Question two",
+        "timestamp": 1792027540.187697,
+        "_turn_id": "legacy:2",
+        "_display": "row"
+      },
+      {
+        "role": "assistant",
+        "content": "Answer two",
+        "timestamp": 1792027540.187957,
+        "_anchor_activity_scene": {
+          "version": "activity_scene_v1",
+          "activity_rows": [],
+          "final_answer": "Answer two",
+          "turn_duration": null,
+          "terminal_state": "completed",
+          "expanded_by_default": false,
+          "has_consumed_steering": false,
+          "file_changes": [],
+          "activity_rows_total": 0,
+          "activity_rows_offset": 0,
+          "activity_rows_complete": true,
+          "activity_rows_omitted": 0,
+          "activity_scene_ref": "abdaf1566e56dcf1ceac0e1fa5369b77037eae95065c57e302ed7d258441714a"
+        },
+        "_turn_id": "legacy:2",
+        "_display": "row"
+      }
+    ],
+    "is_streaming": false,
+    "active_stream_id": null,
+    "transcript_seq": null
   }
 }

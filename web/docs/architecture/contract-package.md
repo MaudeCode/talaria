@@ -73,3 +73,12 @@ schema fields are omitted. These projections do
 not rewrite the saved session files. The app retains tolerant decoding for older
 servers, and Insights displays server analytics rather than totals computed from
 session rows.
+
+Canonical Agent ownership is independent of source and runtime activity. The
+read-only state.db resolver reads local-policy receipts, admission lineages and
+worker ledgers in the selected profile, including terminal records. It recovers
+the original source from the receipt and keeps logical and physical reset or
+compression ids display-only. Existing Talaria sidecar tags cannot override that
+ownership. Session list/detail/status carry `read_only_reason` when canonical
+ownership or unreadable storage prevents writing. Mutation and turn admission
+use this same resolver; no Agent database writes or owner restarts are involved.
