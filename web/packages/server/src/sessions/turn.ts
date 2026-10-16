@@ -1466,6 +1466,9 @@ export class TurnRunner {
   private async llmTitle(s: Session, userText: string, assistantText: string): Promise<{ title: string; status: string; rawPreview: string }> {
     const sidecar = this.deps.sidecar()
     if (!sidecar) return { title: '', status: 'llm_error_aux', rawPreview: '' }
+    const service = this.deps.service()
+    await service.deps.warmSessionModelRepair?.(s.profile)
+    const [model, provider] = service.turnModel(s)
     const [qa, prompts] = titlePrompts(userText, assistantText)
     let status = 'llm_error_aux'
     for (const [idx, prompt] of prompts.entries()) {
@@ -1475,7 +1478,7 @@ export class TurnRunner {
         const result = await sidecar.call('aux.complete', {
           profile_home: this.deps.profileHome(s.profile), task: 'title_generation',
           messages: [{ role: 'system', content: prompt }, { role: 'user', content: qa }], max_tokens: 64,
-          main_runtime: { model: s.model ?? '', provider: s.model_provider ?? null }, main_fallback: true,
+          main_runtime: { model: model ?? '', provider }, main_fallback: true,
         })
         raw = str(result.text)
       } catch (error) {

@@ -3025,6 +3025,31 @@ describe('stale cross-provider session models at chat start (TAL-542)', () => {
     }
   })
 
+  it.each(['explicit regenerate', 'claimed session'])('repairs the title runtime on a cold catalog for %s (TAL-1013)', async (route) => {
+    useConfig('kilocode', 'kilo/auto', { ollama: ['llama3.2'], kilocode: ['kilo/auto', 'kilo/minimax/minimax-m3'] })
+    const sid = await sessionWith('kilo/minimax/minimax-m3', 'ollama')
+    const session = s.deps.sessionStore.get(sid)
+    session.title = 'CLI Session'
+    session.messages = [{ role: 'user', content: 'repair session title routing' }, { role: 'assistant', content: 'Use the session model.' }]
+    s.deps.sessionStore.save(session)
+    s.deps.catalog.invalidate()
+    sidecar.respond('aux.complete', () => ({ model: 'kilo/minimax/minimax-m3', text: 'Repaired session title routing', usage: null }))
+    const before = sidecar.calls.length
+    if (route === 'explicit regenerate') {
+      const res = await post(s, '/api/session/title/regenerate', { session_id: sid })
+      expect(res.status).toBe(200)
+      expect((await json(res)).title).toBe('Repaired session title routing')
+    } else {
+      await s.deps.turns.titleClaimed(session)
+      expect(s.deps.sessionStore.get(sid).title).toBe('Repaired session title routing')
+    }
+    const calls = sidecar.calls.slice(before)
+    expect(calls.filter((c) => c.method === 'chat.start')).toHaveLength(0)
+    expect(calls.filter((c) => c.method === 'aux.complete')).toMatchObject([{ params: {
+      task: 'title_generation', main_runtime: { model: 'kilo/minimax/minimax-m3', provider: 'kilocode' }, main_fallback: true,
+    } }])
+  })
+
   it('moves a poisoned pair to the one provider whose catalog lists the model, and persists it (#5731)', async () => {
     useConfig('kilocode', 'kilo/auto', { ollama: ['llama3.2'], kilocode: ['kilo/auto', 'kilo/minimax/minimax-m3'] })
     const sid = await sessionWith('kilo/minimax/minimax-m3', 'ollama')
