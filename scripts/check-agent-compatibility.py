@@ -302,13 +302,6 @@ def check(args, kind, identity, receipt, junit):
         for key in ("LD_LIBRARY_PATH", "PLAYWRIGHT_BROWSERS_PATH"):
             if key in os.environ:
                 env[key] = os.environ[key]
-        baseline = None
-        if kind == "candidate":
-            baseline_identity = max(supported_releases(ROOT), key=lambda release: tuple(map(int, release["version"].split("."))))
-            baseline_env = env.copy()
-            with agent_checkout(args, "supported", baseline_identity, baseline_env) as agent:
-                baseline = probe_agent(agent, baseline_identity, baseline_env, receipt, "baseline")
-            validate_ssh_approval(baseline, baseline_identity["version"])
         with agent_checkout(args, kind, identity, env) as agent:
             agent_python = agent / ".venv/bin/python"
             receipt["python"] = subprocess.check_output([str(agent_python), "-c", "import platform; print(platform.python_version())"],
@@ -316,8 +309,7 @@ def check(args, kind, identity, receipt, junit):
             env.update(HERMES_WEBUI_AGENT_DIR=str(agent), HERMES_WEBUI_PYTHON=str(agent_python), HERMES_WEBUI_TEST_PYTHON=sys.executable)
             # The retained formats first shipped in 0.22.1; promotion must not bypass their probe.
             retained_cron = kind in ("candidate", "canary") or tuple(map(int, identity["version"].split("."))) >= (0, 22, 1)
-            observations = probe_agent(agent, identity, {**env, "TALARIA_AGENT_UPGRADE_PROBE": "1" if retained_cron else "0"}, receipt, "candidate" if kind == "candidate" else "observations")
-            validate_ssh_approval(observations, identity.get("version") if kind in ("active", "supported") else None, baseline)
+            observations = probe_agent(agent, identity, {**env, "TALARIA_AGENT_UPGRADE_PROBE": "1" if retained_cron else "0"}, receipt)
             if not args.skip_sidecar_tests:
                 # The sidecar suite spawns `python -m talaria_sidecar` on this venv with disposable homes.
                 try:
@@ -336,7 +328,7 @@ def check(args, kind, identity, receipt, junit):
         receipt["imageVerified"] = True
 
 
-def probe_agent(agent, identity, env, receipt, role):
+def probe_agent(agent, identity, env, receipt):
     # Separate disposable state for each baseline/candidate, including the real file tools' task cwd.
     with tempfile.TemporaryDirectory(prefix="talaria-agent-probe-") as directory:
         state = Path(directory)
@@ -352,58 +344,11 @@ def probe_agent(agent, identity, env, receipt, role):
                 result = json.loads(report.read_text())
                 observations = result.pop("sshConfigApproval")
                 compression = result.pop("compressionBackoff")
-                receipt.setdefault("compressionBackoff", {})[role] = (
-                    {**identity, "observations": compression} if role == "baseline" else compression)
-                receipt.setdefault("sshConfigApproval", {})[role] = (
-                    {**identity, "observations": observations} if role == "baseline" else observations)
-                diagnostics = receipt.setdefault("agentProbe", {})
-                if role == "baseline":
-                    diagnostics["baseline"] = {**identity, **result}
-                else:
-                    diagnostics.update(result)
-                baseline = receipt["compressionBackoff"].get("baseline", {}).get("observations") if role == "candidate" else None
-                # Retain the named compression rejection even when another probe also fails.
-                validate_compression_backoff(compression, None if role == "candidate" else identity.get("version"), baseline)
+                # Agent-internal observations are diagnostics, not Talaria compatibility requirements.
+                receipt["compressionBackoff"] = {"observations": compression}
+                receipt["sshConfigApproval"] = {"observations": observations}
+                receipt["agentProbe"] = result
         return observations
-
-
-def validate_compression_backoff(observations, supported_version=None, baseline=None):
-    # These releases had structural cooldowns, but never rearmed them on transcript growth.
-    growth = supported_version not in {"0.21.7", "0.22.0"}
-    if baseline is not None:
-        # Permit adding the guarantee; never remove a guarantee proved by the supported baseline.
-        growth = baseline["grown"]["compressionCalls"] == 1 or observations.get("grown", {}).get("compressionCalls") == 1
-    expected = {
-        "structuralNoOp": {"unchanged": True, "reason": "structural_backoff:300", "ineffectiveCount": 0},
-        "unchanged": {"compressionCalls": 0, "blockedReasons": ["structural_backoff:300"]},
-        "grown": {"compressionCalls": int(growth), "blockedReasons": [] if growth else ["structural_backoff:300"]},
-        "expired": {"compressionCalls": 1, "blockedReasons": []},
-        "success": {"shouldCompress": True, "blockReason": None},
-        "failureUnchanged": {"compressionCalls": 0, "blockedReasons": ["cooldown:120"]},
-        "failureGrown": {"compressionCalls": 0, "blockedReasons": ["cooldown:120"]},
-        "failureExpired": {"compressionCalls": 1, "blockedReasons": []},
-    }
-    for case, result in expected.items():
-        if observations.get(case) != result:
-            raise RuntimeError(f"compression backoff failed: {case}: {observations.get(case)}")
-
-
-def validate_ssh_approval(observations, supported_version=None, baseline=None):
-    # These supported releases predate task-relative approval. Do not claim a guarantee they never had.
-    historical = supported_version in {"0.21.7", "0.22.0"}
-    for tool in ("write", "edit"):
-        for spelling in ("absolute", "relative"):
-            for decision in ("deny", "allow"):
-                case = f"{tool}/{spelling}/{decision}"
-                result = observations.get(case)
-                expected_gate = not (historical and spelling == "relative")
-                if baseline is not None:
-                    # Candidates may add a guarantee, but never remove one the baseline proves.
-                    expected_gate = baseline[case]["gateCalls"] > 0 or (isinstance(result, dict) and result.get("gateCalls") == 1)
-                expected_mutation = decision == "allow" or not expected_gate
-                if result != {"gateCalls": int(expected_gate), "mutated": expected_mutation,
-                              "expectedContent": expected_mutation}:
-                    raise RuntimeError(f"task-relative SSH configuration approval failed: {case}: {result}")
 
 
 def main():

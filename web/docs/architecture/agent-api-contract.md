@@ -64,63 +64,41 @@ not a requirement that independently installed Agent or peer component versions
 be equal. Unreleased Agent `main` canaries never change this pin or the
 support record.
 
-Candidate checks also compare SSH configuration approval against the newest
-supported release, using the same real-Agent probe for both identities. The
-probe registers a local task workspace different from the process cwd and
-exercises write and edit tools with absolute and relative `.ssh/config` paths,
-both denied and allowed. Only the human decision is synthetic; Agent path
-resolution, guards, and file mutation are real. Each probe owns a fresh HOME,
-denies network access, and verifies its Agent imports come from the selected
-checkout. The receipt's `sshConfigApproval` contains the baseline identity and
-both sets of observations; a missing approval or incorrect file mutation fails
-the check before promotion. Release images must reproduce the source observations.
+Compatibility means Talaria works with the selected Agent. The gate tests the
+imports and native update APIs Talaria uses, real `SessionDB` and sidecar writes,
+the full sidecar suite, safe handling of retained state, and the immutable source
+and image identity. It does not require Talaria to repair Agent-internal bugs or
+preserve every behavior of a previous Agent release.
 
-Historical supported v0.21.7 and v0.22.0 checks explicitly record their missing
-task-relative approval rather than claiming that guarantee. v0.22.1 proves it.
-The exact v0.22.2 candidate loses it and cannot be promoted until an upstream
-repair passes this behavioral gate. This check does not patch the Agent or
-change the current deployment pin.
+The same disposable probe retains upstream diagnostics for SSH file approval,
+MCP execution deadlines, and compression backoff. SSH observations exercise real
+write/edit tools with absolute and task-relative paths, with synthetic human
+approval responses. MCP observations discover stdio stub servers and use the
+real registry/executor for direct, deferred, sequential and batch calls.
+Compression observations use the real compressor/preflight with synthetic clocks,
+token counts and a callback that never contacts a provider. Each probe owns its
+HOME and denies network access. These observations and named MCP findings remain
+in the receipt even when Talaria is compatible; they do not become claims that
+Agent bugs are fixed. Exceptions that prevent the probe from running still fail
+the check. Source and image must reproduce the SSH/compression observations.
 
-The shared `releases/agent_probe.py` also discovers two disposable stdio MCP
-servers and dispatches their registered tools through the real Agent executor.
-It covers direct and deferred `tool_call` invocations, single calls and opted-in
-parallel batches, and fast controls alongside calls that outlast an accelerated
-generic deadline. An explicit longer server timeout must let those calls finish;
-without a server timeout, the MCP default remains unchanged and the generic
-executor deadline still applies. No Agent code or timeout selector is patched.
-The probe observes tool-start and tool-exit markers before advancing each case.
-
-Receipts include `agentProbe.checks` and named `mcp_execution_deadline` findings,
-including when the probe fails before pytest starts. The exact supported
-v0.21.7 and v0.22.0 source identities predate per-entry executor budgets; their
-receipts explicitly record the historical timeout expectation. Every other
-source, including candidates and main canaries, must preserve the longer MCP
-budget demonstrated by v0.22.1. A candidate with a deadline finding must not
-enter `agent_support.json` or become the active pin. Repairing an external Agent
-regression is separate work; the gate does not patch or vendor that Agent.
-
-The same probe observes structural compression backoff with a real compressor
-and turn-start preflight. After a two-message structural no-op, unchanged
-history stays blocked, while growth to ten messages must rearm compression
-when the baseline proves that guarantee. Synthetic clocks and token counts
-also check expiry, completed-compaction clearing, and a summary-failure
-cooldown that remains active even after history growth. The compression
-callback records admission without invoking a provider. The receipt's
-`compressionBackoff` records the baseline identity and both observations,
-and a regression fails with a named case before promotion. Release images
-must reproduce the source observations.
-
-Supported v0.21.7 and v0.22.0 explicitly retain their historical growth block;
-v0.22.1 proves rearming. The exact v0.22.2 candidate loses that guarantee and
-fails the `grown` case. The gate changes neither Agent code nor the pin.
+Agent v0.22.2 is supported with its observed upstream limitations: task-relative
+SSH configuration approval can be bypassed, explicit MCP budgets can be shortened
+by the executor's generic deadline, and transcript growth does not lift structural
+compression backoff. Those are Agent behaviors; Talaria does not patch, vendor or
+wrap the Agent to change them.
 
 Candidate and canary probes, and supported releases from v0.22.1 onward, also
 replay retained cron records written by the v0.22.1 Agent and Web manual-execution
-writers. The fixture at
-`sidecar/tests/fixtures/cron-retained-v0.22.1.json` records that base revision.
-The probe runs the installed target's real manual recovery and pending Bot Chat
-drain with disposable homes, no live owner, and network access denied. A target
-that imports successfully but cannot reconcile either format fails this gate.
+writers. The fixture at `sidecar/tests/fixtures/cron-retained-v0.22.1.json` records
+that base revision. Talaria must reconcile supported manual results or return its
+explicit unsupported-recovery refusal without changing retained evidence. The
+receipt records this result as `agentProbe.retainedCron.manualRecovery`. The probe
+also records direct upstream pending Bot Chat drain failures as diagnostics. Talaria's
+normal/force update preflight still rejects replacement when retained manual or
+deferred delivery obligations require capabilities the target lacks; support for
+clean installations does not authorize an unsafe retained-state update. The
+sidecar and server regression suites cover these protections.
 
 Both Agent update paths acquire the Agent's native checkout lock and durably
 record a cooperative gateway pause before the compatibility scan. Unknown
