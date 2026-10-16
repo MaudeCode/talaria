@@ -1783,8 +1783,8 @@ export class UpdateService {
     try {
       items = source === 'release_notes' ? await this.releaseItems(target, info, prior?.source === source ? prior : undefined) : await this.commitItems(target, prior?.latest_sha ?? current, latest)
     } catch (error) {
-      if (source !== 'release_notes' || stored) throw error
-      // An initial unreadable release can still display the existing commit fallback, but never checkpoint it.
+      if (source !== 'release_notes' || prior) throw error
+      // Without a matching checkpoint, unreadable notes can use commits without replacing retained state.
       source = 'commits'
       items = await this.commitItems(target, current, latest)
       complete = false

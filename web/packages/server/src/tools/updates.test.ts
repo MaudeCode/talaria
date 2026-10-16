@@ -1339,6 +1339,32 @@ describe('Agent checkout updates', () => {
     expect(pendingSummary(stateDir).items).toHaveLength(3)
   })
 
+  it.each(['installed', 'channel', 'diverged'])('keeps the commit fallback when a historical checkpoint belongs to a different range: %s (TAL-1009)', async (mode) => {
+    const a = agentInstall()
+    const stateDir = tmp()
+    let fail = false
+    const opts: { channel: 'stable' | 'experimental'; stateDir: string; getPublicJson: GetJson } = {
+      channel: mode === 'channel' ? 'experimental' : 'stable', stateDir,
+      getPublicJson: () => fail ? Promise.reject(new Error('notes unavailable')) : Promise.resolve({ body: 'Earlier release notes' }),
+    }
+    const { svc, prompts } = summaryService(a, opts)
+    await svc.check(true)
+    await svc.summarize('agent')
+    const checkpoint = readFileSync(join(stateDir, 'update-summaries.json'), 'utf8')
+    if (mode === 'installed') git(a.agent, 'reset', '--hard', a.v2)
+    if (mode === 'diverged') git(a.origin, 'reset', '--hard', a.v1)
+    git(a.origin, 'commit', '--allow-empty', '-m', 'available fallback subject')
+    git(a.origin, 'tag', 'v2.1.0')
+    opts.channel = 'stable'
+    fail = true
+    await svc.check(true)
+    expect(await svc.summarize('agent')).toMatchObject({ source: 'commits', generated_by: 'llm', cached: false })
+    expect(prompts).toHaveLength(2)
+    expect(prompts[1]).toContain('- available fallback subject')
+    expect(prompts[1]).not.toContain('Chats open faster')
+    expect(readFileSync(join(stateDir, 'update-summaries.json'), 'utf8')).toBe(checkpoint)
+  })
+
   it('serializes a newer check behind an older in-flight fold without losing either range (TAL-1009)', async () => {
     const a = agentInstall()
     const stateDir = tmp()
