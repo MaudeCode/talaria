@@ -30,7 +30,7 @@ export function stateDbIdentityKeys(message: Message, includeUids = true, fallba
 }
 
 /** A carrier is covered only by its own identity and every constituent it declares; partial overlap is new work. */
-export function stateDbMessageRepresented(message: Message, represented: Set<string>, includeUids = true, generation: string | null = null): boolean {
+export function stateDbMessageRepresented(message: Message, represented: Pick<ReadonlySet<string>, 'has'>, includeUids = true, generation: string | null = null): boolean {
   const own = stateDbIdentityKeys(message, includeUids, generation, false)
   return own.some((id) => represented.has(id)) && stateDbIdentityKeys(message, includeUids, generation).every((id) => own.includes(id) || represented.has(id))
 }
@@ -52,4 +52,15 @@ export function stateDbMessageKey(message: Message): string {
 /** Fixed-width replay metadata; UTF-16 preserves JavaScript string equality, including lone surrogates. */
 export function stateDbMessageFingerprint(message: Message): string {
   return createHash('sha256').update(stateDbMessageKey(message), 'utf16le').digest('hex')
+}
+
+/** The last recorded database generation remains the numeric identity's owner when a marker becomes stale. */
+export function markedStateDbGeneration(s: { state_db_seen_boundary: string | null }): string | null {
+  if (!s.state_db_seen_boundary) return null
+  try {
+    const boundary: unknown = JSON.parse(s.state_db_seen_boundary)
+    if (!Array.isArray(boundary) || !Array.isArray(boundary[4])) return null
+    const anchor: unknown[] = boundary[4]
+    return typeof anchor[2] === 'string' ? anchor[2] : null
+  } catch { return null }
 }

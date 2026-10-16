@@ -49,11 +49,11 @@ function toolResultMatchesCallIds(message: unknown, callIds: Set<string>): boole
 /** Visible-row-bounded window and its full-transcript offset. */
 export function messageWindowForDisplay(messages: unknown[], msgLimit: number | null, msgBefore: number | null): [unknown[], number] {
   const beforeIdx = msgBefore === null ? messages.length : Math.max(0, Math.min(msgBefore, messages.length))
-  const source = messages.slice(0, beforeIdx)
-  if (!source.length) return [[], 0]
-  if (!msgLimit) return [source, 0]
+  const source = messages
+  if (!beforeIdx) return [[], 0]
+  if (!msgLimit) return [source.slice(0, beforeIdx), 0]
   const limit = Math.max(1, msgLimit)
-  let endIdx = source.length
+  let endIdx = beforeIdx
   let lastRenderable: number | null = null
   for (let idx = endIdx - 1; idx >= 0; idx -= 1) {
     if (messageCountsAsRenderable(source[idx])) { lastRenderable = idx; break }
@@ -63,17 +63,17 @@ export function messageWindowForDisplay(messages: unknown[], msgLimit: number | 
     return [source.slice(start, endIdx), start]
   }
   endIdx = lastRenderable + 1
-  const windowIds = toolCallIdsInMessages(source.slice(0, lastRenderable + 1))
-  while (endIdx < source.length && !messageCountsAsRenderable(source[endIdx])) {
-    if (toolResultMatchesCallIds(source[endIdx], windowIds)) endIdx += 1
-    else break
-  }
   let startIdx = 0
   let renderable = 0
   for (let idx = lastRenderable; idx >= 0; idx -= 1) {
     if (!messageCountsAsRenderable(source[idx])) continue
     renderable += 1
     if (renderable >= limit) { startIdx = idx; break }
+  }
+  const windowIds = toolCallIdsInMessages(source.slice(startIdx, lastRenderable + 1))
+  while (endIdx < beforeIdx && !messageCountsAsRenderable(source[endIdx])) {
+    if (toolResultMatchesCallIds(source[endIdx], windowIds)) endIdx += 1
+    else break
   }
   return [source.slice(startIdx, endIdx), startIdx]
 }

@@ -12,7 +12,7 @@ const oneLine = (text: string): string => text.split(/\s+/).join(' ').trim()
 const plainText = (content: unknown): string => (Array.isArray(content) ? content.filter((p) => isDict(p) && p.type === 'text').map((p) => str((p as Message).text ?? (p as Message).content)).join('\n') : str(content)).trim()
 
 /** A transcript row a compression may anchor to. */
-function isAnchorCandidate(m: unknown): m is Message {
+export function isAnchorCandidate(m: unknown): m is Message {
   if (!isDict(m) || !m.role || m.role === 'tool' || isContextCompressionMarker(m)) return false
   if (plainText(m.content) || Boolean(m.attachments && (!Array.isArray(m.attachments) || m.attachments.length))) return true
   if (m.role !== 'assistant') return false
@@ -41,7 +41,7 @@ export function anchorSummary(summary: Record<string, unknown> | null, compresse
 }
 
 /** The anchor key matches a row's own key: role, text and attachment count, and the timestamp when both have one. */
-function keyMatches(stored: Record<string, unknown>, row: Record<string, unknown>): boolean {
+export function keyMatches(stored: Record<string, unknown>, row: Record<string, unknown>): boolean {
   if (str(stored.role) !== str(row.role) || str(stored.text) !== str(row.text)) return false
   if ((Number(stored.attachments) || 0) !== row.attachments) return false
   return stored.ts === null || stored.ts === undefined || row.ts === null || stored.ts === row.ts
