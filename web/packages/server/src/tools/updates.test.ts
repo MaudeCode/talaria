@@ -1182,12 +1182,12 @@ describe('Agent checkout updates', () => {
     expect(git(a.agent, 'rev-parse', 'HEAD')).toBe(a.v1)
   })
 
-  function summaryService(a: { agent: string; origin: string }, opts: { channel?: 'stable' | 'experimental'; getPublicJson?: GetJson; llm?: (system: string, user: string) => Promise<string>; now?: () => number; stateDir?: string; summarizeAutomatically?: () => boolean; checkEnabled?: () => boolean; includeAgent?: () => boolean; log?: (line: string) => void } = {}): { svc: UpdateService; prompts: string[] } {
+  function summaryService(a: { agent: string; origin: string }, opts: { channel?: 'stable' | 'experimental'; git?: GitRun; getPublicJson?: GetJson; llm?: (system: string, user: string) => Promise<string>; now?: () => number; stateDir?: string; summarizeAutomatically?: () => boolean; checkEnabled?: () => boolean; includeAgent?: () => boolean; log?: (line: string) => void } = {}): { svc: UpdateService; prompts: string[] } {
     // The checkout fetches its local origin but reports a GitHub remote, whose releases `getPublicJson` stubs.
     const run: GitRun = (args, cwd, t) => (args[0] === 'remote' && args[1] === 'get-url' ? Promise.resolve({ ok: true, out: 'https://github.com/Synthetic/agent.git' }) : runGit(args, cwd, t))
     const prompts: string[] = []
     const svc = new UpdateService({
-      webRoot: join(tmp(), 'web'), git: run, getJson: noReleases, ...(opts.getPublicJson ? { getPublicJson: opts.getPublicJson } : {}), identity: { release: () => DEV, stamped: () => DEV, runningSourceRevision: () => null }, webuiVersion: 'x',
+      webRoot: join(tmp(), 'web'), git: opts.git ?? run, getJson: noReleases, ...(opts.getPublicJson ? { getPublicJson: opts.getPublicJson } : {}), identity: { release: () => DEV, stamped: () => DEV, runningSourceRevision: () => null }, webuiVersion: 'x',
       agentDir: () => a.agent, channel: () => 'stable', agentChannel: () => opts.channel ?? 'stable', includeAgent: opts.includeAgent ?? (() => true), blockers: () => ({ active_streams: 0, active_runs: 0, blocking_stream_ids: [], blocking_run_ids: [], restart_blocked: false }),
       scheduleRestart: () => undefined, llm: (system, user) => { prompts.push(user); return opts.llm ? opts.llm(system, user) : Promise.resolve('- Notice: Chats open faster') }, log: () => undefined,
       ...(opts.now ? { now: opts.now } : {}), ...(opts.stateDir ? { stateDir: opts.stateDir } : {}), summarizeAutomatically: opts.summarizeAutomatically ?? (() => false), ...(opts.checkEnabled ? { checkEnabled: opts.checkEnabled } : {}),
@@ -1195,6 +1195,168 @@ describe('Agent checkout updates', () => {
     })
     return { svc, prompts }
   }
+
+  it('folds every pending commit and only reads new commits on the next check (TAL-1009)', async () => {
+    const a = agentInstall()
+    const stateDir = tmp()
+    const commands: string[][] = []
+    const run: GitRun = (args, cwd, timeout) => { commands.push(args); return runGit(args, cwd, timeout) }
+    const { svc, prompts } = summaryService(a, { channel: 'experimental', stateDir, git: run, summarizeAutomatically: () => true })
+    for (let i = 1; i <= 39; i++) git(a.origin, 'commit', '--allow-empty', '-m', `pending subject ${String(i)}`)
+    await svc.check(true)
+    await svc.summarize('agent')
+    expect(prompts.join('\n')).toContain('pending subject 1\n')
+    const previous = git(a.origin, 'rev-parse', 'HEAD')
+    commands.length = 0
+    for (let i = 40; i <= 44; i++) git(a.origin, 'commit', '--allow-empty', '-m', `pending subject ${String(i)}`)
+    await svc.check(true)
+    const result = await svc.summarize('agent')
+    expect(prompts).toHaveLength(2)
+    for (let i = 1; i <= 44; i++) expect(prompts.join('\n')).toContain(`pending subject ${String(i)}\n`)
+    expect(prompts[1]).toContain('Chats open faster')
+    expect(prompts[1]).not.toContain('pending subject 39\n')
+    expect(commands.filter((args) => args[0] === 'log')).toEqual([['log', '--format=%H%x00%s', `${previous}..${git(a.origin, 'rev-parse', 'HEAD')}`]])
+    expect(result.summary).not.toMatch(/latest 24|summary covers|commit subjects/)
+    expect(await svc.summarize('agent')).toMatchObject({ cached: true })
+    const restarted = summaryService(a, { channel: 'experimental', stateDir, git: run })
+    commands.length = 0
+    await restarted.svc.check(true)
+    expect(await restarted.svc.summarize('agent')).toMatchObject({ cached: true })
+    expect(restarted.prompts).toHaveLength(0)
+    expect(commands.filter((args) => args[0] === 'log')).toHaveLength(0)
+  })
+
+  const pendingSummary = (stateDir: string): Dict => (Object.fromEntries(JSON.parse(readFileSync(join(stateDir, 'update-summaries.json'), 'utf8')) as [string, Dict][]))['pending:agent']!
+
+  it('collects without automatic AI and folds only unsummarized items on demand (TAL-1009)', async () => {
+    const a = agentInstall()
+    const stateDir = tmp()
+    const { svc, prompts } = summaryService(a, { channel: 'experimental', stateDir })
+    await svc.check(true)
+    await vi.waitFor(() => { expect(pendingSummary(stateDir).items).toHaveLength(1) })
+    expect(prompts).toHaveLength(0)
+    await svc.summarize('agent')
+    for (let i = 1; i <= 3; i++) git(a.origin, 'commit', '--allow-empty', '-m', `unsummarized ${String(i)}`)
+    await svc.check(true)
+    await vi.waitFor(() => { expect(pendingSummary(stateDir).items).toHaveLength(4) })
+    expect(prompts).toHaveLength(1)
+    expect(await svc.summarize('agent')).toMatchObject({ cached: false })
+    expect(prompts).toHaveLength(2)
+    expect(prompts[1]).toContain('Chats open faster')
+    for (let i = 1; i <= 3; i++) expect(prompts[1]).toContain(`- unsummarized ${String(i)}`)
+    expect(prompts[1]).not.toContain('- agent v2')
+  })
+
+  it.each(['installed', 'diverged'])('rebuilds the pending list and drops prior sections when the range is %s (TAL-1009)', async (mode) => {
+    const a = agentInstall()
+    const stateDir = tmp()
+    const { svc, prompts } = summaryService(a, { channel: 'experimental', stateDir })
+    await svc.check(true)
+    await svc.summarize('agent')
+    if (mode === 'installed') git(a.agent, 'reset', '--hard', a.v2)
+    else git(a.origin, 'reset', '--hard', a.v1)
+    git(a.origin, 'commit', '--allow-empty', '-m', 'replacement update')
+    await svc.check(true)
+    await svc.summarize('agent')
+    expect(prompts).toHaveLength(2)
+    expect(prompts[1]).toContain('replacement update')
+    expect(prompts[1]).not.toContain('Chats open faster')
+    expect(prompts[1]).not.toContain('- agent v2')
+    expect(pendingSummary(stateDir).items).toHaveLength(1)
+  })
+
+  it('retains the complete checkpoint after a read failure and retries on the next check (TAL-1009)', async () => {
+    const a = agentInstall()
+    const stateDir = tmp()
+    let fail = false
+    const run: GitRun = (args, cwd, timeout) => args[0] === 'log' && fail ? Promise.resolve({ ok: false, out: 'synthetic read failure' }) : runGit(args, cwd, timeout)
+    const { svc, prompts } = summaryService(a, { channel: 'experimental', stateDir, git: run })
+    await svc.check(true)
+    await svc.summarize('agent')
+    const before = readFileSync(join(stateDir, 'update-summaries.json'), 'utf8')
+    git(a.origin, 'commit', '--allow-empty', '-m', 'retry update')
+    fail = true
+    await svc.check(true)
+    expect(await svc.summarize('agent')).toMatchObject({ generated_by: 'fallback', cached: false })
+    expect(readFileSync(join(stateDir, 'update-summaries.json'), 'utf8')).toBe(before)
+    expect(prompts).toHaveLength(1)
+    fail = false
+    await svc.check(true)
+    await svc.summarize('agent')
+    expect(prompts).toHaveLength(2)
+    expect(prompts[1]).toContain('retry update')
+    expect(pendingSummary(stateDir).items).toHaveLength(2)
+  })
+
+  it.each([false, true])('bounds commit folds and retries without checkpointing a partial model answer, partial failure=%s (TAL-1009)', async (partialFailure) => {
+    const a = agentInstall()
+    const items = Array.from({ length: 205 }, (_, i) => ({ id: (i + 1).toString(16).padStart(40, '0'), text: `subject-${String(i)}` }))
+    const run: GitRun = (args, cwd, timeout) => args[0] === 'log' ? Promise.resolve({ ok: true, out: [...items].reverse().map((item) => `${item.id}\0${item.text}`).join('\n') }) : runGit(args, cwd, timeout)
+    const stateDir = tmp()
+    let calls = 0
+    const { svc, prompts } = summaryService(a, { channel: 'experimental', git: run, stateDir, llm: () => ++calls === 2 && partialFailure ? Promise.reject(new Error('model unavailable')) : Promise.resolve('- Notice: Chats open faster') })
+    await svc.check(true)
+    if (partialFailure) {
+      expect(await svc.summarize('agent')).toMatchObject({ generated_by: 'fallback', cached: false })
+      expect(pendingSummary(stateDir)).toMatchObject({ summary_sections: null, summarized_through: null })
+      prompts.length = 0
+    }
+    await svc.summarize('agent')
+    expect(prompts.map((prompt) => [...prompt.matchAll(/^- subject-/gm)].length)).toEqual([100, 100, 5])
+    for (const item of items) expect(prompts.join('\n')).toContain(`- ${item.text}\n`)
+    expect(prompts[1]).toContain('Chats open faster')
+  })
+
+  it('fetches only new release notes and retains the checkpoint on a partial read failure (TAL-1009)', async () => {
+    const a = agentInstall()
+    const stateDir = tmp()
+    let fail = false
+    const paths: string[] = []
+    const getPublicJson: GetJson = (path) => {
+      paths.push(path)
+      if (fail && path.endsWith('/v2.2.0')) return Promise.reject(new Error('notes unavailable'))
+      return Promise.resolve({ body: `Release notes for ${path.split('/').pop() ?? ''}` })
+    }
+    const { svc, prompts } = summaryService(a, { stateDir, getPublicJson })
+    await svc.check(true)
+    await svc.summarize('agent')
+    const checkpoint = readFileSync(join(stateDir, 'update-summaries.json'), 'utf8')
+    for (let i = 1; i <= 2; i++) { git(a.origin, 'commit', '--allow-empty', '-m', `release ${String(i)}`); git(a.origin, 'tag', `v2.${String(i)}.0`) }
+    paths.length = 0
+    fail = true
+    await svc.check(true)
+    expect(await svc.summarize('agent')).toMatchObject({ generated_by: 'fallback' })
+    expect(readFileSync(join(stateDir, 'update-summaries.json'), 'utf8')).toBe(checkpoint)
+    expect(paths.every((path) => !path.endsWith('/v2.0.0'))).toBe(true)
+    fail = false
+    paths.length = 0
+    await svc.check(true)
+    await svc.summarize('agent')
+    expect(paths).toEqual(['/repos/Synthetic/agent/releases/tags/v2.1.0', '/repos/Synthetic/agent/releases/tags/v2.2.0'])
+    expect(prompts).toHaveLength(2)
+    expect(prompts[1]).toContain('Chats open faster')
+    expect(prompts[1]).not.toContain('Release notes for v2.0.0')
+    expect(pendingSummary(stateDir).items).toHaveLength(3)
+  })
+
+  it('serializes a newer check behind an older in-flight fold without losing either range (TAL-1009)', async () => {
+    const a = agentInstall()
+    const stateDir = tmp()
+    let answer!: (text: string) => void
+    let calls = 0
+    const { svc, prompts } = summaryService(a, { channel: 'experimental', stateDir, summarizeAutomatically: () => true, llm: () => ++calls === 1 ? new Promise<string>((resolve) => { answer = resolve }) : Promise.resolve('- Notice: Both updates') })
+    await svc.check(true)
+    await vi.waitFor(() => { expect(prompts).toHaveLength(1) })
+    git(a.origin, 'commit', '--allow-empty', '-m', 'concurrent update')
+    await svc.check(true)
+    const requested = svc.summarize('agent')
+    answer('- Notice: Earlier update')
+    expect(await requested).toMatchObject({ generated_by: 'llm' })
+    expect(prompts).toHaveLength(2)
+    expect(prompts[1]).toContain('Earlier update')
+    expect(prompts[1]).toContain('concurrent update')
+    expect(pendingSummary(stateDir)).toMatchObject({ latest_sha: git(a.origin, 'rev-parse', 'HEAD'), items: [expect.anything(), expect.anything()] })
+  })
 
   it('pre-generates summaries without blocking checks and shares the in-flight range (TAL-1008)', async () => {
     const a = agentInstall()
@@ -1260,7 +1422,7 @@ describe('Agent checkout updates', () => {
     expect(await svc.summarize('agent')).toMatchObject({ generated_by: 'fallback', cached: false })
     expect(prompts).toHaveLength(2)
     expect(logs.filter((line) => line.includes('summary'))).toHaveLength(1)
-    expect(existsSync(join(stateDir, 'update-summaries.json'))).toBe(false)
+    expect(pendingSummary(stateDir)).toMatchObject({ summary_sections: null, summarized_through: null })
   })
 
   it('summarizes the Stable release notes between the installed and target tags, not commit subjects (TAL-759)', async () => {
@@ -1349,18 +1511,25 @@ describe('Agent checkout updates', () => {
     expect(prompts[0]).toContain('- agent v2')
   })
 
-  it('keeps the newest releases within the prompt caps and names what the summary covers', async () => {
+  it('folds all twelve pending releases without dropping or trimming notes (TAL-1009)', async () => {
     const a = agentInstall()
-    for (let i = 1; i <= 10; i++) { git(a.origin, 'commit', '--allow-empty', '-m', `release ${String(i)}`); git(a.origin, 'tag', `v2.${String(i)}.0`) }
+    for (let i = 1; i <= 11; i++) { git(a.origin, 'commit', '--allow-empty', '-m', `release ${String(i)}`); git(a.origin, 'tag', `v2.${String(i)}.0`) }
     const paths: string[] = []
-    const { svc, prompts } = summaryService(a, { getPublicJson: notesFor(paths, (tag) => (tag === 'v2.10.0' ? 'x'.repeat(9000) : `Release notes for ${tag}`)) })
+    const body = (tag: string) => `Release notes for ${tag}\n${'x'.repeat(25_000)}END-${tag}`
+    const { svc, prompts } = summaryService(a, { getPublicJson: notesFor(paths, body) })
     await svc.check(true)
     const result = await svc.summarize('agent')
-    expect(paths).toHaveLength(11)
-    expect(paths.slice(0, 2)).toEqual(['/repos/Synthetic/agent/releases/latest', '/repos/Synthetic/agent/releases/tags/v2.1.0'])
-    expect(prompts[0]).not.toContain('Release notes for v2.0.0')
-    expect(prompts[0]).not.toContain('x'.repeat(8001))
-    expect((result.summary_sections as Dict[])[1]).toEqual({ title: 'Worth knowing', items: [expect.stringMatching(/^Hermes Agent has 11 releases to install; this summary covers the release notes for v2\.1\.0, .*v2\.10\.0\.$/)] })
+    expect(paths).toHaveLength(13)
+    for (let i = 0; i <= 11; i++) {
+      const tag = `v2.${String(i)}.0`
+      expect(prompts.join('')).toContain(`Release notes for ${tag}`)
+      expect(prompts.join('')).toContain(`END-${tag}`)
+    }
+    for (const prompt of prompts) {
+      const chars = [...prompt.matchAll(/<release tag="[^"]+">\n([\s\S]*?)\n<\/release>/g)].reduce((n, m) => n + m[1]!.length, 0)
+      expect(chars).toBeLessThanOrEqual(24_000)
+    }
+    expect(result.summary).not.toMatch(/summary covers|latest 24/)
   })
 
   it('answers none without a pending update and keeps deterministic sections when the model fails', async () => {

@@ -139,7 +139,64 @@ describe('Experimental npm updates (TAL-378)', () => {
     expect(await svc.summarize('webui')).toMatchObject({ source: 'commits', generated_by: 'llm' })
     expect(prompts[0]).toContain('- TAL-1: Chats open faster')
     expect(prompts[0]).not.toContain('installed')
-    expect(paths).toContain(`/commits?sha=${NEW_EXP}&path=web&since=${encodeURIComponent('2026-10-01T00:00:00Z')}&per_page=26`)
+    expect(paths).toContain(`/commits?sha=${NEW_EXP}&path=web&since=${encodeURIComponent('2026-10-01T00:00:00Z')}&per_page=100&page=1`)
+  })
+
+  it('reads every Web commit page, appends until the prior SHA, and keeps its list on a failed page (TAL-1009)', async () => {
+    const running = release(`web-exp-v${expVersion('2.0.0', OLD_EXP)}`, expVersion('2.0.0', OLD_EXP), OLD_EXP)
+    const n = npmInstall(running, {})
+    const stateDir = tmp()
+    let latest = NEW_EXP
+    const next = 'c'.repeat(40)
+    let fail = false
+    const paths: string[] = []
+    const prompts: string[] = []
+    const old = Array.from({ length: 120 }, (_, i) => ({ sha: (i + 1).toString(16).padStart(40, '0'), commit: { message: `Web change ${String(i)}` } }))
+    const additions = [next, 'd'.repeat(40), 'e'.repeat(40)].map((sha, i) => ({ sha, commit: { message: `New Web change ${String(i)}` } }))
+    const getJson: GetJson = (path, opts) => {
+      paths.push(path)
+      if (path.startsWith('/compare/')) return Promise.resolve({ status: 'ahead' })
+      if (path.startsWith('/commits/')) return Promise.resolve({ commit: { committer: { date: '2026-10-01T00:00:00Z' } } })
+      if (path.includes('path=web')) {
+        const page = Number(new URL(path, 'https://example.invalid').searchParams.get('page'))
+        if (latest === next) return Promise.resolve([...additions, { sha: NEW_EXP, commit: { message: 'prior boundary' } }, ...old.slice(0, 96)])
+        if (page === 2 && fail) return Promise.reject(new Error('page unavailable'))
+        return Promise.resolve(page === 1 ? [{ sha: NEW_EXP, commit: { message: 'Web latest change' } }, ...old.slice(0, 99)] : [...old.slice(99), { sha: OLD_EXP, commit: { message: 'installed' } }])
+      }
+      return stableGetJson(path, opts)
+    }
+    const experimental: ExperimentalRegistry = {
+      release: () => Promise.resolve({ tag: `web-exp-v${expVersion('2.0.0', latest)}`, version: expVersion('2.0.0', latest), sourceRevision: latest, digest: `sha256:${'f'.repeat(64)}`, size: 1 }),
+      builds: () => Promise.resolve(new Set([NEW_EXP, next])), download: () => Promise.reject(new Error('never install')),
+    }
+    const svc = new UpdateService({
+      webRoot: n.packageRoot, git: runGit, npm: n.npm, getJson, experimental, identity: identity(running), webuiVersion: 'web-exp', stateDir, summarizeAutomatically: () => false,
+      agentDir: () => null, channel: () => 'experimental', includeAgent: () => false,
+      blockers: () => ({ active_streams: 0, active_runs: 0, blocking_stream_ids: [], blocking_run_ids: [], restart_blocked: false }),
+      scheduleRestart: () => undefined, llm: (_system, user) => { prompts.push(user); return Promise.resolve('- Notice: Earlier Web changes') }, log: () => undefined,
+    })
+    fail = true
+    await svc.check(true)
+    expect(await svc.summarize('webui')).toMatchObject({ generated_by: 'fallback' })
+    expect(existsSync(join(stateDir, 'update-summaries.json'))).toBe(false)
+    fail = false
+    await svc.check(true)
+    expect(await svc.summarize('webui')).toMatchObject({ generated_by: 'llm' })
+    for (const commit of old) expect(prompts.join('\n')).toContain(`- ${commit.commit.message}\n`)
+    expect(prompts).toHaveLength(2)
+    expect(paths.some((path) => path.includes('path=web') && path.endsWith('page=2'))).toBe(true)
+    const checkpoint = readFileSync(join(stateDir, 'update-summaries.json'), 'utf8')
+    latest = next
+    paths.length = 0
+    await svc.check(true)
+    await svc.summarize('webui')
+    expect(prompts).toHaveLength(3)
+    expect(prompts[2]).toContain('Earlier Web changes')
+    expect(prompts[2]).not.toContain('- Web change')
+    for (const commit of additions) expect(prompts[2]).toContain(`- ${commit.commit.message}\n`)
+    expect(paths.filter((path) => path.includes('path=web'))).toHaveLength(1)
+    expect(paths).toContain(`/compare/${NEW_EXP}...${next}`)
+    expect(readFileSync(join(stateDir, 'update-summaries.json'), 'utf8')).not.toBe(checkpoint)
   })
 
   it('reports an Experimental npm install current at the tag revision and behind otherwise', async () => {
