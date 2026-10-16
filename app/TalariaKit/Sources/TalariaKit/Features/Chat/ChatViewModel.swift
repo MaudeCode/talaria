@@ -4169,8 +4169,16 @@ public final class ChatViewModel {
         guard let sessionID, steerActionsInFlight.insert(id).inserted else { return }
         defer { steerActionsInFlight.remove(id) }
         do {
-            if !(try await client.sendSteerNow(sessionID: sessionID, steerID: id)).redirected {
-                showNotice(String(localized: "Not delivered yet; it stays pending."))
+            let response = try await client.sendSteerNow(sessionID: sessionID, steerID: id)
+            switch response.outcome {
+            case .delivered: break
+            case .nextStep: showNotice(String(localized: "The agent takes it at its next step."))
+            case .notRunning: showNotice(String(localized: "Nothing is running to take it now; it stays pending."))
+            case .taken: showNotice(String(localized: "This steering message can no longer be changed."))
+            case .failed, .other: showNotice(String(localized: "Couldn't send it now; it stays pending."))
+            case nil:
+                // Older servers only send redirected; remove this fallback with that field.
+                if !response.redirected { showNotice(String(localized: "Not delivered yet; it stays pending.")) }
             }
         } catch {
             lastError = error

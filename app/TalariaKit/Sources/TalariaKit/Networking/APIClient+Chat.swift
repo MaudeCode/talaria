@@ -117,7 +117,7 @@ extension APIClient {
         try await send(endpoint: .chatSteerWithdraw, method: "POST", body: SteerWithdrawRequest(sessionId: sessionID, steerId: steerID, reason: reason))
     }
 
-    /// TAL-426: deliver a pending steer now; `redirected: false` when nothing is running to take it.
+    /// Deliver a pending steer now; the server outcome explains whether it was delivered or remains pending.
     public func sendSteerNow(sessionID: String, steerID: String) async throws -> SteerSendNowResponse {
         try await send(endpoint: .chatSteerSendNow, method: "POST", body: SteerSendNowRequest(sessionId: sessionID, steerId: steerID))
     }

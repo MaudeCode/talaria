@@ -1753,7 +1753,7 @@ describe('chat turns through the sidecar', () => {
       const calls: Json[] = []
       sidecar.respond('chat.steer_now', (params) => { calls.push(params); return { redirected: true, withdrawn: true, delivery: 'redirect' } })
       await post(s, '/api/chat/steer', { session_id: sid, text: 'go now', display_text: 'Go now', steer_id: 'steer-n1' })
-      expect(await json(await post(s, '/api/chat/steer/send-now', { session_id: sid, steer_id: 'steer-n1' }))).toEqual({ redirected: true })
+      expect(await json(await post(s, '/api/chat/steer/send-now', { session_id: sid, steer_id: 'steer-n1' }))).toEqual({ redirected: true, outcome: 'delivered' })
       expect(calls).toEqual([{ stream_id: run.streamId, pending: ['go now'], index: 0 }])
       expect((await frames(run.streamId, (f) => f.event === 'steer_consumed')).find((f) => f.event === 'steer_consumed')?.data).toMatchObject({ steer_id: 'steer-n1', text: 'Go now' })
       expect(await detailSteers(sid)).toEqual([])
@@ -1771,14 +1771,14 @@ describe('chat turns through the sidecar', () => {
       await post(s, '/api/chat/steer', { session_id: sid, text: 'one', steer_id: 'steer-t1' })
       await post(s, '/api/chat/steer', { session_id: sid, text: 'two', steer_id: 'steer-t2' })
       sidecar.respond('chat.steer_now', () => ({ redirected: false, withdrawn: true, requeued: 'kept' }))
-      expect(await json(await post(s, '/api/chat/steer/send-now', { session_id: sid, steer_id: 'steer-t1' }))).toEqual({ redirected: false })
+      expect(await json(await post(s, '/api/chat/steer/send-now', { session_id: sid, steer_id: 'steer-t1' }))).toEqual({ redirected: false, outcome: 'next_step' })
       expect((await detailSteers(sid)).map((p) => [p.steer_id, p.state])).toEqual([['steer-t1', 'pending'], ['steer-t2', 'pending']])
       // The Agent's queue changed meanwhile: it went back last, and clients follow the new order.
       sidecar.respond('chat.steer_now', () => ({ redirected: false, withdrawn: true, requeued: 'last' }))
-      expect(await json(await post(s, '/api/chat/steer/send-now', { session_id: sid, steer_id: 'steer-t1' }))).toEqual({ redirected: false })
+      expect(await json(await post(s, '/api/chat/steer/send-now', { session_id: sid, steer_id: 'steer-t1' }))).toEqual({ redirected: false, outcome: 'next_step' })
       expect((await detailSteers(sid)).map((p) => p.steer_id)).toEqual(['steer-t2', 'steer-t1'])
       sidecar.respond('chat.steer_now', () => ({ redirected: true, withdrawn: true, delivery: 'steer' }))
-      expect(await json(await post(s, '/api/chat/steer/send-now', { session_id: sid, steer_id: 'steer-t1' }))).toEqual({ redirected: true })
+      expect(await json(await post(s, '/api/chat/steer/send-now', { session_id: sid, steer_id: 'steer-t1' }))).toEqual({ redirected: true, outcome: 'delivered' })
       expect(await detailSteers(sid)).toMatchObject([
         { steer_id: 'steer-t2', state: 'pending' },
         { steer_id: 'steer-t1', state: 'sending_now', actions: { edit: false, cancel: false, send_now: false } },
@@ -1786,7 +1786,29 @@ describe('chat turns through the sidecar', () => {
       const sending = (await frames(run.streamId, (f) => f.event === 'steer_pending' && (f.data as Json).state === 'sending_now')).findLast((f) => f.event === 'steer_pending')
       expect(sending?.data).toMatchObject({ steer_id: 'steer-t1', state: 'sending_now' })
       // An unknown id is not sent.
-      expect(await json(await post(s, '/api/chat/steer/send-now', { session_id: sid, steer_id: 'nope' }))).toEqual({ redirected: false })
+      expect(await json(await post(s, '/api/chat/steer/send-now', { session_id: sid, steer_id: 'nope' }))).toEqual({ redirected: false, outcome: 'taken' })
+      run.release({ pending_steer: '' })
+      await frames(run.streamId, (f) => f.event === 'stream_end')
+    })
+
+    it('reports Send now outcomes for absent runs, taken steers and failures (TAL-1000)', async () => {
+      const sid = await newSession(s)
+      const send = () => post(s, '/api/chat/steer/send-now', { session_id: sid, steer_id: 'outcome-steer' }).then(json)
+      expect(await send()).toEqual({ redirected: false, outcome: 'not_running' })
+      const run = await running(sid)
+      await post(s, '/api/chat/steer', { session_id: sid, text: 'check', steer_id: 'outcome-steer' })
+      const unavailable = vi.spyOn(s.deps.turns.deps, 'sidecar').mockReturnValue(null)
+      try { expect(await send()).toEqual({ redirected: false, outcome: 'not_running' }) } finally { unavailable.mockRestore() }
+      sidecar.respond('chat.steer_now', () => ({ redirected: false, withdrawn: false, reason: 'not_running' }))
+      expect(await send()).toEqual({ redirected: false, outcome: 'not_running' })
+      sidecar.respond('chat.steer_now', () => ({ redirected: false, withdrawn: false }))
+      expect(await send()).toEqual({ redirected: false, outcome: 'taken' })
+      sidecar.respond('chat.steer_now', () => { throw new Error('synthetic redirect failure') })
+      expect(await send()).toEqual({ redirected: false, outcome: 'failed' })
+      expect(await detailSteers(sid)).toMatchObject([{ steer_id: 'outcome-steer', state: 'pending' }])
+      sidecar.respond('chat.steer_now', () => ({ redirected: true, withdrawn: true, delivery: 'steer' }))
+      expect(await send()).toEqual({ redirected: true, outcome: 'delivered' })
+      expect(await send()).toEqual({ redirected: false, outcome: 'taken' })
       run.release({ pending_steer: '' })
       await frames(run.streamId, (f) => f.event === 'stream_end')
     })
@@ -1834,7 +1856,7 @@ describe('chat turns through the sidecar', () => {
       sidecar.respond('chat.steer', () => ({ accepted: true, fallback: null, can_redirect: false }))
       await post(s, '/api/chat/steer', { session_id: sid, text: 'plain', steer_id: 'steer-c1' })
       expect(await detailSteers(sid)).toMatchObject([{ steer_id: 'steer-c1', actions: { edit: true, cancel: true, send_now: false } }])
-      expect(await json(await post(s, '/api/chat/steer/send-now', { session_id: sid, steer_id: 'steer-c1' }))).toEqual({ redirected: false })
+      expect(await json(await post(s, '/api/chat/steer/send-now', { session_id: sid, steer_id: 'steer-c1' }))).toEqual({ redirected: false, outcome: 'failed' })
       run.release({ pending_steer: '' })
       await frames(run.streamId, (f) => f.event === 'stream_end')
     })

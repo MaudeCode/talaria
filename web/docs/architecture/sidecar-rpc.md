@@ -26,6 +26,17 @@ the sidecar being killed closes that pipe, so the supervisor stops the
 writer's process tree and reaps the writer before releasing the lock. A concurrent repair fails
 without starting another writer.
 
+## Pending steer delivery
+
+`chat.steer_now` reports `reason: not_running` only when its run or Agent is
+absent. A live Agent that cannot redirect between requests puts the hint back
+in its pending slot. The server maps that result to `next_step` at
+`POST /api/chat/steer/send-now`; `delivered`, `not_running`, `taken`, and
+`failed` distinguish the other exits. Both clients render this server outcome
+through their existing notices. `redirected` remains for older clients, and
+new clients retain their previous boolean fallback for older servers. Remove
+the boolean and its fallbacks once those supported versions all use `outcome`.
+
 ## Ownership
 
 | Concern | Owner |

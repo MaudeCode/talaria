@@ -42955,10 +42955,21 @@
                   "properties": {
                     "redirected": {
                       "type": "boolean"
+                    },
+                    "outcome": {
+                      "enum": [
+                        "delivered",
+                        "next_step",
+                        "not_running",
+                        "taken",
+                        "failed"
+                      ],
+                      "type": "string"
                     }
                   },
                   "required": [
-                    "redirected"
+                    "redirected",
+                    "outcome"
                   ]
                 }
               }

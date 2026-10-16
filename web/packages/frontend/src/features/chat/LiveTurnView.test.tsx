@@ -157,7 +157,7 @@ describe('live steering', () => {
     const returned: string[] = []
     const stop = onReturnToComposer('s', (text) => { returned.push(text) })
     vi.mocked(api.withdrawSteer).mockResolvedValueOnce({ withdrawn: true, text: 'Check b too' }).mockResolvedValueOnce({ withdrawn: false }).mockResolvedValueOnce({ withdrawn: true, text: 'Check b too' })
-    vi.mocked(api.sendSteerNow).mockResolvedValueOnce({ redirected: true }).mockResolvedValueOnce({ redirected: false })
+    vi.mocked(api.sendSteerNow).mockResolvedValueOnce({ redirected: true } as never).mockResolvedValueOnce({ redirected: false } as never)
     const view = render(<View run={run} />)
     fireEvent.click(view.getByRole('button', { name: 'Edit steering message' }))
     await waitFor(() => { expect(returned).toEqual(['Check b too']) })
@@ -173,6 +173,24 @@ describe('live steering', () => {
     fireEvent.click(view.getByRole('button', { name: 'Send now' }))
     await waitFor(() => { expect(showToast).toHaveBeenCalledWith('Nothing is running to take it now; it stays pending.', 2500) })
     stop()
+  })
+
+  it.each([
+    ['delivered', true, null],
+    ['next_step', false, 'The agent takes it at its next step.'],
+    ['not_running', false, 'Nothing is running to take it now; it stays pending.'],
+    ['taken', false, 'This steering message can no longer be changed.'],
+    ['failed', false, "Couldn't send it now; it stays pending."],
+  ] as const)('renders the server Send now outcome %s (TAL-1000)', async (outcome, redirected, notice) => {
+    const run = liveRun()
+    run.emit(pending('s1'))
+    vi.mocked(showToast).mockClear()
+    vi.mocked(api.sendSteerNow).mockResolvedValueOnce({ redirected, outcome })
+    const view = render(<View run={run} />)
+    fireEvent.click(view.getByRole('button', { name: 'Send now' }))
+    await waitFor(() => { expect(view.getByRole('button', { name: 'Send now' })).toBeEnabled() })
+    if (notice) expect(showToast).toHaveBeenCalledWith(notice, 2500)
+    else expect(showToast).not.toHaveBeenCalled()
   })
 
   it('says so when the agent already took a steer being cancelled, and reports a failed request as an error', async () => {

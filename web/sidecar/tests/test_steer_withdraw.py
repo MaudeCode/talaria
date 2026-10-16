@@ -119,10 +119,11 @@ def _methods(monkeypatch, run):
     return registry.methods
 
 
-def test_rpc_methods_validate_and_report_a_finished_run(monkeypatch):
-    methods = _methods(monkeypatch, None)
+@pytest.mark.parametrize("run", [None, _Run(None)])
+def test_rpc_methods_validate_and_report_a_finished_run(monkeypatch, run):
+    methods = _methods(monkeypatch, run)
     assert methods["chat.steer_withdraw"](None, {"stream_id": "s", "pending": ["a"], "index": 0}) == {"withdrawn": False}
-    assert methods["chat.steer_now"](None, {"stream_id": "s", "pending": ["a"], "index": 0}) == {"redirected": False, "withdrawn": False}
+    assert methods["chat.steer_now"](None, {"stream_id": "s", "pending": ["a"], "index": 0}) == {"redirected": False, "withdrawn": False, "reason": "not_running"}
     for bad in ({"pending": [], "index": 0}, {"pending": ["a"], "index": 1}, {"pending": ["a", ""], "index": 0}, {"pending": "a", "index": 0}, {"pending": ["a"], "index": True}):
         with pytest.raises(InvalidParams):
             methods["chat.steer_withdraw"](None, {"stream_id": "s", **bad})
@@ -137,3 +138,11 @@ def test_rpc_methods_rewrite_the_running_agents_slot(monkeypatch):
     assert methods["chat.steer_now"](None, {"stream_id": "s", "pending": ["b"], "index": 0}) == {"redirected": False, "withdrawn": True, "requeued": "kept"}
     assert agent._pending_steer == "b"
     assert methods["chat.steer"](None, {"stream_id": "s", "text": "c"})["can_redirect"] is False
+
+
+def test_live_agent_between_requests_keeps_the_steer_for_its_next_step(monkeypatch):
+    agent = _Agent("a\nb")
+    agent.redirect = lambda text: False
+    methods = _methods(monkeypatch, _Run(agent))
+    assert methods["chat.steer_now"](None, {"stream_id": "s", "pending": ["a", "b"], "index": 0}) == {"redirected": False, "withdrawn": True, "requeued": "kept"}
+    assert agent._pending_steer == "a\nb"

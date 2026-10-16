@@ -1,4 +1,5 @@
 import SwiftUI
+import UIKit
 import XCTest
 @testable import Talaria
 import TalariaKit
@@ -89,8 +90,8 @@ final class ChatHostedTests: XCTestCase {
         XCTAssertNotNil(chip, "The parked goal chip is missing")
     }
 
-    /// Steers pending from another device offer only the actions the server allows; Send now explains itself when
-    /// nothing can take it, and Edit appends the steer after the draft (TAL-300).
+    /// Steers pending from another device offer only the actions the server allows; Send now explains a live
+    /// requeue, and Edit appends the steer after the draft (TAL-300, TAL-1000).
     func testPendingSteerFromAnotherDeviceOffersSendNowEditAndCancel() async throws {
         let window = try await hostFixtureChat(["--ui-test-chat-pending-steers"])
         try await sendFromComposer("Back up the cluster", in: window)
@@ -105,15 +106,21 @@ final class ChatHostedTests: XCTestCase {
         XCTAssertEqual(elements(named: "Cancel steering message", in: window).count, 2)
 
         // TAL-1001: Send now explains itself in one short chip, however often it is tapped, that goes on its own.
-        let isNotice: (NSObject) -> Bool = { $0.accessibilityLabel?.contains("it stays pending") == true }
+        let isNotice: (NSObject) -> Bool = { $0.accessibilityLabel == "The agent takes it at its next step." }
         for _ in 0..<5 {
             HostedAccessibility.activate(try XCTUnwrap(elements(named: "Send now", in: window).first))
             _ = await awaitElement(in: window, where: isNotice)
         }
         let notice = await awaitElement(in: window, where: isNotice)
-        XCTAssertNotNil(notice, "Send now gave no notice when nothing could take it")
+        XCTAssertNotNil(notice, "Send now did not explain the live requeue")
         XCTAssertEqual(HostedAccessibility.elements(in: window).filter(isNotice).count, 1, "Repeated Send now stacked notices")
         XCTAssertEqual(notice?.accessibilityValue, "Information", "The notice does not say its kind")
+        let attachment = XCTAttachment(image: UIGraphicsImageRenderer(bounds: window.bounds).image { _ in
+            window.drawHierarchy(in: window.bounds, afterScreenUpdates: true)
+        })
+        attachment.name = "send-now-phone"
+        attachment.lifetime = .keepAlways
+        add(attachment)
         let dismissed = await awaitNoElement(in: window, timeout: 5, where: isNotice)
         XCTAssertTrue(dismissed, "The notice never went away on its own")
 

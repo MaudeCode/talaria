@@ -2,11 +2,17 @@ import { describe, expect, it } from 'vitest'
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { z } from 'zod'
-import { ChatEventSchema, ClarifyPendingEnvelopeSchema, MemoryWriteRefusalSchema, ModelsSchema, SIDECAR_RPC_VERSION, SkillsSchema, SpeechPrepareSchema, TranscribeResponseSchema, TranscribeStreamEndSchema, TranscribeStreamEventSchema, TranscribeStreamStartSchema, UpdateNotificationsSchema, UpdateApplySchema } from './index.js'
+import { ChatEventSchema, ClarifyPendingEnvelopeSchema, MemoryWriteRefusalSchema, ModelsSchema, SIDECAR_RPC_VERSION, SkillsSchema, SpeechPrepareSchema, TranscribeResponseSchema, TranscribeStreamEndSchema, TranscribeStreamEventSchema, TranscribeStreamStartSchema, UpdateNotificationsSchema, UpdateApplySchema, SteerSendNowResponseSchema } from './index.js'
 
 const shared = (path: string): unknown => JSON.parse(readFileSync(resolve(import.meta.dirname, '../../../../contracts', path), 'utf8'))
 
 describe('contracts package', () => {
+  it('preserves every shared Send now outcome and the legacy delivery boolean', () => {
+    const responses = Object.values(shared('fixtures/steer-send-now.json') as Record<string, unknown>).map((body) => SteerSendNowResponseSchema.parse(body))
+    expect(responses.map((r) => r.outcome)).toEqual(['delivered', 'next_step', 'not_running', 'taken', 'failed'])
+    expect(responses.map((r) => r.redirected)).toEqual([true, false, false, false, false])
+  })
+
   it('preserves the shared Agent update hold and its separate recovery verdicts', () => {
     const hold = UpdateApplySchema.parse(shared('fixtures/agent-update-hold.json'))
     expect(hold.ok).toBe(false)
