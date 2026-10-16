@@ -954,6 +954,45 @@ describe('chat turns through the sidecar', () => {
     for (const secret of [...Object.values(secrets), 'me@example.com']) expect(kept).not.toContain(secret)
   })
 
+  it.each(['first title', 'adaptive refresh', 'explicit regenerate'])('routes %s through the session model with main fallback (TAL-1013)', async (route) => {
+    const turns = s.deps.turns as unknown as { deps: { titleRefreshEvery: (() => number) | undefined } }
+    const original = turns.deps.titleRefreshEvery
+    const sid = await newSession(s)
+    const session = s.deps.sessionStore.get(sid)
+    session.model = 'session-model'
+    session.model_provider = 'session-provider'
+    s.deps.sessionStore.save(session)
+    sidecar.respond('chat.start', (params) => completed([
+      ...(params.conversation_history as Json[]),
+      { role: 'user', content: str(params.user_message) },
+      { role: 'assistant', content: 'Use the session model for title generation.' },
+    ], { model: 'session-model', provider: 'session-provider' }))
+    sidecar.respond('aux.complete', () => ({ model: 'session-model', text: 'Session model title routing', usage: null }))
+    const turn = async (message: string): Promise<SseFrame[]> => {
+      const start = await json(await post(s, '/api/chat/start', { session_id: sid, message }))
+      return s.sse(`/api/chat/stream?stream_id=${String(start.stream_id)}`, (f) => f.event === 'stream_end')
+    }
+    turns.deps.titleRefreshEvery = () => 2
+    try {
+      const before = sidecar.calls.length
+      await turn('repair session title routing')
+      if (route === 'adaptive refresh') await turn('verify the repaired title routing')
+      if (route === 'explicit regenerate') {
+        const result = await post(s, '/api/session/title/regenerate', { session_id: sid })
+        expect(result.status).toBe(200)
+        expect((await json(result)).title).toBe('Session model title routing')
+      }
+      const calls = sidecar.calls.slice(before).filter((c) => c.method === 'aux.complete')
+      expect(calls).toHaveLength(route === 'first title' ? 1 : 2)
+      for (const call of calls) expect(call.params).toMatchObject({
+        task: 'title_generation', main_runtime: { model: 'session-model', provider: 'session-provider' }, main_fallback: true,
+      })
+      expect(s.deps.sessionStore.get(sid).title).toBe('Session model title routing')
+    } finally {
+      turns.deps.titleRefreshEvery = original
+    }
+  })
+
   it('skips background titling when the profile turns auxiliary.title_generation.enabled off; manual regenerate still titles (TAL-531)', async () => {
     const turns = s.deps.turns as unknown as { deps: { profileConfig: ((profile: string | null) => Promise<Record<string, unknown> | null>) | undefined } }
     const original = turns.deps.profileConfig

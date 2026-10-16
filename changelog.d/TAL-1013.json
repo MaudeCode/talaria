@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Session titles use the chat model when no dedicated title model can answer.",
+      "highlight": false,
+      "components": ["web"]
+    }
+  ]
+}

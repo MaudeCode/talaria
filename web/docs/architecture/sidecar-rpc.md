@@ -182,6 +182,13 @@ under Hermes Agent's context-local home override (`talaria_sidecar/home.py`).
 | `write_approval` | `pending`, `approve`, `reject` | |
 | `config` | `get`, `set`, `env_write` | |
 
+Session title calls pass the session's model and provider as `main_runtime`
+with `main_fallback: true`. A dedicated title model takes precedence; Auto
+resolves against that session runtime. If no auxiliary client answers, the
+sidecar tries the session model through a disposable, tool-free Agent before
+the server uses its local title summary. These calls use the sidecar's default
+timeout, like commit-message generation.
+
 Chat lifecycle diagnostics beginning with ⚠ or ❌ emit `warning` frames regardless
 of their wording. Compression notices retain their existing classification, and
 non-retryable errors retain `status` with `kind: terminal_error`; they also warn
