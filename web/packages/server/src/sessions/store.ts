@@ -37,6 +37,8 @@ export class SessionStore {
   private readonly resolutions = new Map<string, Promise<void>>()
   private readonly persistedMessages = new WeakMap<Session, string[]>()
   private indexWriter: Promise<void> = Promise.resolve()
+  private readonly indexPending = new Map<string, Record<string, unknown>>()
+  private indexFlush: Promise<void> | null = null
   constructor(readonly deps: SessionStoreDeps) {}
   private get backend() { return this.deps.storage.sessions }
   async exists(sid: string): Promise<boolean> { return this.backend.exists(sid) }
@@ -51,7 +53,14 @@ export class SessionStore {
     if (repaired) this.sessions.delete(issue.session_id)
     return repaired
   }
-  async close(): Promise<void> { await Promise.allSettled(this.resolutions.values()); await Promise.allSettled(this.writes.values()); await this.indexWriter; await this.deps.storage.close() }
+  async close(): Promise<void> {
+    try {
+      await Promise.allSettled(this.resolutions.values())
+      await Promise.allSettled(this.writes.values())
+      await this.indexFlush
+      await this.indexWriter
+    } finally { await this.deps.storage.close() }
+  }
   // ── locks ────────────────────────────────────────────────────────────────
 
   /** Serialize one session's read-modify-write sequences (Python `_get_session_agent_lock`). */
@@ -264,7 +273,7 @@ export class SessionStore {
     this.persistedMessages.set(session, snapshot)
     if (appendOnly) prefix!.savedAppend(rows, session.sidecarLoadedSignature)
     else delete session.prefixIndex
-    if (!(opts.skipIndex ?? false)) await this.writeIndex([indexEntry])
+    if (!(opts.skipIndex ?? false)) await this.queueIndexUpdate([indexEntry])
     if (rows.length) await this.clearDeletedTombstone(sid)
   }
 
@@ -333,7 +342,23 @@ export class SessionStore {
       if (JSON.stringify(rows) !== previous) await this.backend.writeIndex(rows)
     });
   }
-  async queueIndexUpdate(sessions: Session[]): Promise<void> { await this.writeIndex(sessions); }
+  queueIndexUpdate(updates: (Session | Record<string, unknown>)[]): Promise<void> {
+    for (const update of updates) {
+      const row = update instanceof Session ? update.compact() : update
+      const sid = str(row.session_id)
+      if (sid) this.indexPending.set(sid, row)
+    }
+    this.indexFlush ??= Promise.resolve().then(async () => {
+      try {
+        while (this.indexPending.size) {
+          const rows = [...this.indexPending.values()]
+          this.indexPending.clear()
+          await this.writeIndex(rows)
+        }
+      } finally { this.indexFlush = null }
+    })
+    return this.indexFlush
+  }
   async pruneFromIndex(sid: string): Promise<void> {
     await this.serializeIndex(async () => {
       if (!sid || !await this.backend.hasIndex()) return

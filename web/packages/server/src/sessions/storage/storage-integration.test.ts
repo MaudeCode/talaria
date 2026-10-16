@@ -4,6 +4,31 @@ import { expect, it, vi } from 'vitest'
 import { bootTestServer } from '../../test/harness.js'
 import { FakeSidecar } from '../../sidecar/fake.js'
 
+it('batches concurrent session saves into one index flush', async () => {
+  const server = await bootTestServer()
+  try {
+    const store = server.deps.sessionStore
+    const first = await store.newSession()
+    const second = await store.newSession()
+    await store.writeIndex()
+    const writeIndex = vi.spyOn(store.deps.storage.sessions, 'writeIndex')
+    first.messages = [{ role: 'user', content: 'first' }]
+    second.messages = [{ role: 'user', content: 'second' }]
+    await Promise.all([store.save(first), store.save(second)])
+    expect(writeIndex).toHaveBeenCalledTimes(1)
+    const rows = await store.readIndexEntries()
+    expect(rows.filter((row) => row.message_count === 1).map((row) => row.session_id).sort()).toEqual([first.session_id, second.session_id].sort())
+    first.messages.push({ role: 'assistant', content: 'first answer' })
+    second.messages.push({ role: 'assistant', content: 'second answer' })
+    writeIndex.mockRejectedValueOnce(new Error('synthetic index failure'))
+    const failed = await Promise.allSettled([store.save(first), store.save(second)])
+    expect(failed.map((result) => result.status)).toEqual(['rejected', 'rejected'])
+    await Promise.all([store.save(first), store.save(second)])
+    expect(writeIndex).toHaveBeenCalledTimes(3)
+    expect((await store.readIndexEntries()).map((row) => row.message_count)).toEqual([2, 2])
+  } finally { vi.restoreAllMocks(); await server.close() }
+})
+
 it('admits only one turn while persistence outlasts the stale-state grace period', async () => {
   let now = 1000
   let releaseWrite!: () => void
