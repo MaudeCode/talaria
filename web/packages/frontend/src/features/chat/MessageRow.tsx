@@ -52,20 +52,20 @@ function AttachmentList({ message, sessionId }: { message: Message; sessionId: s
   )
 }
 
-export const UserMessageRow = memo(function UserMessageRow({ row, renderMarkdown, sessionId, actions }: { row: VisibleMessage; renderMarkdown: boolean; sessionId: string | undefined; actions: RowActions }) {
+export const UserMessageRow = memo(function UserMessageRow({ row, renderMarkdown, sessionId, actions, pending = false }: { row: VisibleMessage; renderMarkdown: boolean; sessionId: string | undefined; actions: RowActions; pending?: boolean }) {
   const text = messageText(row.message.content)
   return (
-    <div className="msg-row" data-role="user" data-msg-idx={row.index} data-message-key={row.key}>
+    <div className="msg-row" data-role="user" data-msg-idx={pending ? undefined : row.index} data-message-key={row.key} data-live-user={pending ? "1" : undefined} aria-busy={pending || undefined}>
       <AttachmentList message={row.message} sessionId={sessionId} />
       <CollapsedBody excerpt={row.message._display_truncated ? row.message._display_excerpt : undefined}>
         {(excerpt) => <div className="msg-body">{renderMarkdown ? <Markdown text={excerpt ?? text} /> : <div className="whitespace-pre-wrap">{excerpt ?? text}</div>}</div>}
       </CollapsedBody>
-      <div className="msg-foot">
+      {!pending && <div className="msg-foot">
         {row.message.timestamp ? <span className="msg-time">{formatDate(row.message.timestamp)}</span> : null}
         <IconButton label={m.copy()} className="h-6 w-6" onClick={() => { void navigator.clipboard.writeText(text).then(() => showToast(m.copied())) }}><Copy size={12} aria-hidden="true" /></IconButton>
         {actions.onEdit && <IconButton label={m.edit_message()} className="h-6 w-6" onClick={() => actions.onEdit?.(row, text)}><Pencil size={12} aria-hidden="true" /></IconButton>}
         {actions.onBranch && <IconButton label={m.branch_from_here()} className="h-6 w-6" onClick={() => actions.onBranch?.(row)}><GitBranch size={12} aria-hidden="true" /></IconButton>}
-      </div>
+      </div>}
     </div>
   )
 })

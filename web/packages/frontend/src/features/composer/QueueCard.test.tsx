@@ -19,6 +19,17 @@ function Harness({ initial }: { initial: QueuedTurn[] }) {
 const row = (text: string) => screen.getAllByRole('listitem').find((li) => li.textContent.includes(text))!
 
 describe('QueueCard (TAL-562)', () => {
+  it('does not let an in-flight admission remove or roll back its queued receipt', async () => {
+    vi.mocked(api.rollbackUpload).mockClear()
+    const onChange = vi.fn()
+    render(<QueueCard sessionId="s1" queued={[turn('1', 'Sending'), turn('2', 'Waiting')]} onChange={onChange} pendingId="1" />)
+    for (const button of within(row('Sending')).getAllByRole('button')) expect(button).toBeDisabled()
+    await userEvent.click(within(row('Sending')).getByRole('button', { name: 'Cancel queued message' }))
+    expect(onChange).not.toHaveBeenCalled()
+    expect(api.rollbackUpload).not.toHaveBeenCalled()
+    expect(within(row('Waiting')).getByRole('button', { name: 'Cancel queued message' })).toBeEnabled()
+  })
+
   it('discards a removed message\'s uploaded files on the server', async () => {
     const file = { filename: 'a.png', path: '/u/a.png', size: 1, mime: 'image/png', rollback_token: 'tok-a' }
     render(<Harness initial={[turn('1', 'With a file', [file]), turn('2', 'Plain')]} />)

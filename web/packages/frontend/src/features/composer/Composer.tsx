@@ -7,9 +7,9 @@ import { keys } from '../../api/queryKeys'
 import type { Session, Settings } from '../../contracts'
 import type { LiveTurn } from '../../stream/reducer'
 import { isTerminal } from '../../stream/reducer'
-import { adoptTurn, cancelTurn, startTurn } from '../../stream/connection'
+import { adoptTurn, cancelTurn, getStreamContext, retryPendingTurn, startTurn } from '../../stream/connection'
 import { forgetOwnSteer, onReturnToComposer, rememberOwnSteer, returnToComposer } from './composerReturn'
-import { dispatch } from '../../stream/store'
+import { dispatch, getTurnIntent, setTurnIntent, useTurnIntent } from '../../stream/store'
 import { useBootstrap } from '../../app/bootstrap'
 import { cn } from '../../ui/cn'
 import { showToast } from '../toast/toast'
@@ -130,7 +130,9 @@ export function Composer(props: ComposerProps) {
   const qc = useQueryClient()
   const [text, setText] = useState(() => (sessionId ? readLocalDraft(sessionId) : ''))
   const [files, setFiles] = useState<PendingFile[]>([])
-  const [sending, setSending] = useState(false)
+  const intent = useTurnIntent(sessionId)
+  const sending = !!intent.send
+  const submitting = useRef(false)
   const [dictating, setDictating] = useState(false)
   const [dragOver, setDragOver] = useState(false)
   const [configOpen, setConfigOpen] = useState(false)
@@ -252,12 +254,15 @@ export function Composer(props: ComposerProps) {
   const draft = useRef(text)
   useLayoutEffect(() => { draft.current = text })
   const maxBytes = bootstrap.max_upload_bytes
+  useEffect(() => { const attempts = inflight.current; return () => { attempts.clear() } }, [])
   const upload = useCallback((key: string, file: File) => {
     if (!sessionId) return
+    const scope = getStreamContext()
     const attempt = {}
     inflight.current.set(key, attempt)
     void api.uploadFile(sessionId, file).then(
       (receipt) => {
+        if (scope !== getStreamContext()) return
         if (inflight.current.get(key) !== attempt) {
           if (receipt.rollback_token) void api.rollbackUpload(sessionId, [receipt.rollback_token]).catch(() => undefined)
           return
@@ -266,6 +271,7 @@ export function Composer(props: ComposerProps) {
         setFiles((prev) => prev.map((p) => (p.key === key ? { ...p, status: 'done', upload: receipt } : p)))
       },
       (e: unknown) => {
+        if (scope !== getStreamContext()) return
         if (inflight.current.get(key) !== attempt) return
         inflight.current.delete(key)
         setFiles((prev) => prev.map((p) => (p.key === key ? { ...p, status: 'error', error: e instanceof Error ? e.message : String(e) } : p)))
@@ -321,10 +327,24 @@ export function Composer(props: ComposerProps) {
   const firstSend = useFirstSend()
   useEffect(() => {
     if (!firstSend?.failed || !ownsFirstSend(firstSend, sessionId)) return
-    // eslint-disable-next-line react-hooks/set-state-in-effect -- one-time hand-back from the first-send store
-    setText(firstSend.text)
+    if (getFirstSend() !== firstSend) return
     endFirstSend()
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- one-time hand-back from the first-send store
+    setText((current) => current.trim() ? `${current}\n\n${firstSend.text}` : firstSend.text)
   }, [firstSend, sessionId])
+
+  // A refused send restores its exact submitted tray once, even after navigating away and back.
+  useEffect(() => {
+    const sent = intent.send
+    if (!sessionId || !sent?.error || sent.uncertain || !sent.files || getTurnIntent(sessionId).send !== sent) return
+    setTurnIntent(sessionId, { ...getTurnIntent(sessionId), send: undefined })
+    const dropped = sent.files.flatMap((file) => file.upload?.rollback_token && files.some((current) => current.key === file.key && current.upload?.rollback_token !== file.upload?.rollback_token) ? [file.upload.rollback_token] : [])
+    if (dropped.length) void api.rollbackUpload(sessionId, dropped).catch(() => undefined)
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- one-time recovery from the external send store, including remounts
+    setText((current) => current.trim() ? `${current}\n\n${sent.text}` : sent.text)
+    const restored = sent.files
+    setFiles((current) => [...current, ...restored.filter((file) => !current.some((f) => f.key === file.key))])
+  }, [intent.send, sessionId, files])
 
   const removeFile = (key: string) => {
     const f = files.find((p) => p.key === key)
@@ -347,6 +367,7 @@ export function Composer(props: ComposerProps) {
   // a steer the server did not accept returns after whatever was typed meanwhile.
   const trySteer = useCallback(async (text: string): Promise<void> => {
     if (!sessionId) return
+    const scope = getStreamContext()
     const steerId = `steer-${randomHex()}`
     // TAL-425: shown as sending until the server reports it; a Stop that withdraws it gives the text back to this tab.
     dispatch({ type: 'steer_sending', sessionId, steerId, text })
@@ -354,11 +375,13 @@ export function Composer(props: ComposerProps) {
     setText('')
     try {
       const r = await api.steerChat({ session_id: sessionId, text, steer_id: steerId })
+      if (scope !== getStreamContext()) return
       // TAL-460: sent during a background turn, the message became the user's own turn; follow it like a send.
       if (r.started_turn) { adoptTurn(sessionId, text, r.started_turn); return }
       if (r.accepted) return
       showToast(r.fallback === 'gateway_steer_queued' ? m.steer_leftover_queued() : m.busy_steer_fallback(), 2500)
     } catch (e) {
+      if (scope !== getStreamContext()) return
       showToast(e instanceof Error ? e.message : String(e), 4000, 'error')
     }
     dispatch({ type: 'steer_refused', sessionId, steerId })
@@ -382,94 +405,110 @@ export function Composer(props: ComposerProps) {
   const { run: runCommand, notice: commandNotice } = useCommandOutput(sessionId)
 
   const send = useCallback(async () => {
-    if (locked) { showToast(m.live_compressing(), 1500); return }
+    if (locked) return
     const value = text.trim()
-    if (sending) return
+    if (submitting.current || sending || (sessionId && getTurnIntent(sessionId).send)) return
     if (!value && files.length === 0) return
     if (files.some((f) => f.status === 'uploading')) { showToast(m.loading()); return }
-    const parsed = parseCommand(value)
-    // TAL-314: a typed alias resolves to its server catalog entry; one Web cannot run shows the server's message.
-    const entry = parsed ? resolveCommand(parsed.name, catalog) : undefined
-    if (entry && !entry.clients.includes('web')) { showToast(entry.unsupported_message ?? m.cmd_unsupported(), 3000); return }
-    // TAL-561: an entry the server runs shows its output in the composer tab; it never reaches the model.
-    if (entry && runsOnServer(entry)) { setText(''); void runCommand(value); return }
-    const cmd = parsed && { ...parsed, name: entry?.name ?? parsed.name }
-    if (cmd) {
-      if (cmd.name === 'theme') { const v = ThemeSchema.safeParse(cmd.args); if (v.success) setTheme(v.data); setText(''); return }
-      // A refused command (e.g. `/goal gate add` without a goal) shows the server's reason and keeps the text.
-      let handled: boolean
-      try { handled = await onLocalCommand(cmd.name, cmd.args) } catch (e) { showToast(e instanceof Error ? e.message : String(e), 5000, 'error'); return }
-      if (handled) { setText(''); return }
-      // TAL-372: `/background` runs the prompt in a hidden session; its record and result show in the background card.
-      if (cmd.name === 'background') {
-        if (!cmd.args) { showToast(m.bg_usage(), 2000); return }
-        try {
-          const target = session ?? (await onEnsureSession())
-          await api.startBackground(target.session_id, cmd.args)
-          setText('')
-          void qc.invalidateQueries({ queryKey: keys.background(target.session_id) })
-        } catch (e) { showToast(e instanceof Error ? e.message : String(e), 4000, 'error') }
-        return
-      }
-      // TAL-518: a side question never steers or sends; its answer shows in the composer tab, running or idle.
-      if (cmd.name === 'btw') {
-        if (!cmd.args) { showToast(m.cmd_btw_usage(), 2000); return }
-        if (!sessionId) { showToast(m.btw_needs_chat(), 2000); return }
-        setText('')
-        void askBtw(cmd.args)
-        return
-      }
-      if (cmd.name === 'queue' && busy) { requestScroll('end'); onQueue(queueEntry(cmd.args)); setText(''); setFiles([]); return }
-      if (cmd.name === 'steer' && busy && sessionId) { if (!cmd.args) { showToast(m.cmd_steer_no_msg(), 2000); return } requestScroll('end'); await trySteer(cmd.args); return }
-      if (cmd.name === 'interrupt' && busy && sessionId) { requestScroll('end'); await cancelTurn(sessionId); onQueue(queueEntry(cmd.args)); setText(''); setFiles([]); return }
-    }
-    requestScroll('end')
-    if (busy && sessionId) {
-      if (busyMode === 'queue') { onQueue(queueEntry(value)); setText(''); setFiles([]); return }
-      if (busyMode === 'steer') { await trySteer(value); return }
-      await cancelTurn(sessionId)
-      onQueue(queueEntry(value))
-      setText('')
-      setFiles([])
-      return
-    }
-    // The selected session's transcript is still loading: sending must not start a new chat in its place.
-    if (sessionId && !session) { showToast(m.loading()); return }
-    // First send from the unsaved chat: the hero gives way and the text shows as the pending user row at once, before
-    // the session or the turn exists. The index view unmounts mid-send, so a failure returns the text through the store.
-    if (!session) {
-      if (getFirstSend()) return
-      beginFirstSend(value)
-      setText('')
-      try {
-        const target = await onEnsureSession()
-        const started = await startTurn({ sessionId: target.session_id, message: value, request: turnRequest(target, bootstrap.profile?.name ?? 'default') })
-        // A turn admitted without a stream leaves no live row; hold the pending one until the session payload carries it.
-        if (!started.stream_id) await qc.refetchQueries({ queryKey: keys.sessions.detail(target.session_id) })
-        clearDraft(target.session_id)
-        endFirstSend()
-        void qc.invalidateQueries({ queryKey: keys.sessions.all })
-      } catch (e) {
-        showToast(e instanceof Error ? e.message : String(e), 5000, 'error')
-        failFirstSend()
-      }
-      return
-    }
-    setSending(true)
+    submitting.current = true
     try {
-      const target = session
-      const attachments = files.flatMap((f) => (f.status === 'done' && f.upload ? [f.upload] : []))
-      await startTurn({ sessionId: target.session_id, message: value, request: { ...turnRequest(target, bootstrap.profile?.name ?? 'default'), ...(attachments.length ? { attachments } : {}) } })
+      const interrupt = (replacement: string) => {
+        if (!sessionId) return
+        onQueue(queueEntry(replacement))
+        setText('')
+        setFiles([])
+        void cancelTurn(sessionId)
+      }
+      const parsed = parseCommand(value)
+      // TAL-314: a typed alias resolves to its server catalog entry; one Web cannot run shows the server's message.
+      const entry = parsed ? resolveCommand(parsed.name, catalog) : undefined
+      if (entry && !entry.clients.includes('web')) { showToast(entry.unsupported_message ?? m.cmd_unsupported(), 3000); return }
+      // TAL-561: an entry the server runs shows its output in the composer tab; it never reaches the model.
+      if (entry && runsOnServer(entry)) { setText(''); void runCommand(value); return }
+      const cmd = parsed && { ...parsed, name: entry?.name ?? parsed.name }
+      if (cmd) {
+        if (cmd.name === 'theme') { const v = ThemeSchema.safeParse(cmd.args); if (v.success) setTheme(v.data); setText(''); return }
+        // A refused command (e.g. `/goal gate add` without a goal) shows the server's reason and keeps the text.
+        const consumed = cmd.name === 'retry' || cmd.name === 'undo' || cmd.name === 'clear'
+        if (consumed) setText('')
+        let handled: boolean
+        try { handled = await onLocalCommand(cmd.name, cmd.args) } catch (e) { showToast(e instanceof Error ? e.message : String(e), 5000, 'error'); return }
+        if (handled) { if (!consumed) setText((current) => current === text ? '' : current); return }
+        // TAL-372: `/background` runs the prompt in a hidden session; its record and result show in the background card.
+        if (cmd.name === 'background') {
+          if (!cmd.args) { showToast(m.bg_usage(), 2000); return }
+          try {
+            const target = session ?? (await onEnsureSession())
+            await api.startBackground(target.session_id, cmd.args)
+            setText('')
+            void qc.invalidateQueries({ queryKey: keys.background(target.session_id) })
+          } catch (e) { showToast(e instanceof Error ? e.message : String(e), 4000, 'error') }
+          return
+        }
+        // TAL-518: a side question never steers or sends; its answer shows in the composer tab, running or idle.
+        if (cmd.name === 'btw') {
+          if (!cmd.args) { showToast(m.cmd_btw_usage(), 2000); return }
+          if (!sessionId) { showToast(m.btw_needs_chat(), 2000); return }
+          setText('')
+          void askBtw(cmd.args)
+          return
+        }
+        if (cmd.name === 'queue' && busy) { requestScroll('end'); onQueue(queueEntry(cmd.args)); setText(''); setFiles([]); return }
+        if (cmd.name === 'steer' && busy && sessionId) { if (!cmd.args) { showToast(m.cmd_steer_no_msg(), 2000); return } requestScroll('end'); await trySteer(cmd.args); return }
+        if (cmd.name === 'interrupt' && busy && sessionId) { requestScroll('end'); interrupt(cmd.args); return }
+      }
+      requestScroll('end')
+      if (sessionId && getTurnIntent(sessionId).stop) {
+        onQueue(queueEntry(cmd?.name === 'interrupt' || cmd?.name === 'queue' ? cmd.args : value))
+        setText('')
+        setFiles([])
+        return
+      }
+      if (busy && sessionId) {
+        if (busyMode === 'queue') { onQueue(queueEntry(value)); setText(''); setFiles([]); return }
+        if (busyMode === 'steer') { await trySteer(value); return }
+        interrupt(value)
+        return
+      }
+      // The selected session's transcript is still loading: sending must not start a new chat in its place.
+      if (sessionId && !session) { showToast(m.loading()); return }
+      // First send from the unsaved chat: the hero gives way and the text shows as the pending user row at once, before
+      // the session or the turn exists. The index view unmounts mid-send, so a failure returns the text through the store.
+      if (!session) {
+        if (getFirstSend()) return
+        const scope = getStreamContext()
+        beginFirstSend(value)
+        setText('')
+        try {
+          const target = await onEnsureSession()
+          if (scope !== getStreamContext()) return
+          await startTurn({ sessionId: target.session_id, message: value, request: turnRequest(target, bootstrap.profile?.name ?? 'default') })
+          if (scope !== getStreamContext()) return
+          endFirstSend()
+          void qc.invalidateQueries({ queryKey: keys.sessions.all })
+        } catch (e) {
+          if (scope !== getStreamContext()) return
+          showToast(e instanceof Error ? e.message : String(e), 5000, 'error')
+          failFirstSend()
+        }
+        return
+      }
+      const scope = getStreamContext()
       setText('')
       setFiles([])
-      clearDraft(target.session_id)
-      void qc.invalidateQueries({ queryKey: keys.sessions.all })
-    } catch (e) {
-      showToast(e instanceof Error ? e.message : String(e), 5000, 'error')
-    } finally {
-      setSending(false)
-      textarea.current?.focus()
-    }
+      clearDraft(session.session_id)
+      try {
+        const target = session
+        const attachments = files.flatMap((f) => (f.status === 'done' && f.upload ? [f.upload] : []))
+        await startTurn({ sessionId: target.session_id, message: value, files, request: { ...turnRequest(target, bootstrap.profile?.name ?? 'default'), ...(attachments.length ? { attachments } : {}) } })
+        if (scope === getStreamContext()) void qc.invalidateQueries({ queryKey: keys.sessions.all })
+      } catch (e) {
+        if (scope !== getStreamContext()) return
+        showToast(e instanceof Error ? e.message : String(e), 5000, 'error')
+      } finally {
+        textarea.current?.focus()
+      }
+    } finally { submitting.current = false }
   }, [text, files, sending, session, onEnsureSession, busy, busyMode, sessionId, trySteer, locked, queueEntry, onQueue, onLocalCommand, bootstrap.profile, qc, askBtw, runCommand, catalog])
 
   const applySuggestion = (s: CommandSuggestion) => { setText(`/${s.name} `); textarea.current?.focus() }
@@ -587,15 +626,17 @@ export function Composer(props: ComposerProps) {
   const tabNotices: ComposerNotice[] = [
     ...(busy && live ? [{ id: 'live', content: <LiveStatusPill turn={live} background={session?.active_turn_origin === 'background' && session.active_stream_id === live.streamId} /> }] : []),
     ...notices,
+    ...(intent.send ? [{ id: 'send', tone: intent.send.error ? 'error' as const : 'neutral' as const, content: <span role="status">{intent.send.uncertain ? m.composer_send_uncertain() : intent.send.error ?? m.composer_sending()}</span>, ...(intent.send.error && !intent.send.uncertain && !intent.send.files && sessionId ? { action: { label: m.retry(), run: () => { void retryPendingTurn(sessionId)?.catch(() => undefined) } } } : {}) }] : []),
+    ...(intent.stop ? [{ id: 'stop', tone: intent.stop.failed ? 'error' as const : 'neutral' as const, content: <span role="status">{intent.stop.failed ? m.composer_stop_failed() : m.composer_stopping()}</span> }] : []),
     ...(btwNotice ? [btwNotice] : []),
     ...(commandNotice ? [commandNotice] : []),
     ...(dictating ? [{ id: 'dictation', content: <span className="inline-flex items-center gap-1.5" role="status"><span className="mic-dot" aria-hidden="true" />{m.voice_listening()}</span> }] : []),
     ...(showYolo ? [{ id: 'yolo', tone: 'warning' as const, content: <><span aria-hidden="true">⚡</span><span className="truncate">{m.yolo_tab_active()}</span></>, action: { label: m.yolo_turn_off(), run: onToggleYolo } }] : []),
     ...(sessionId && backgroundTasks.some((t) => t.pinned) ? [{ id: 'background', content: <BackgroundWorkCard sessionId={sessionId} tasks={backgroundTasks} /> }] : []),
-    ...(sessionId && queued.length > 0 ? [{ id: 'queue', content: <QueueCard sessionId={sessionId} queued={queued} onChange={onQueueChange} /> }] : []),
+    ...(sessionId && queued.length > 0 ? [{ id: 'queue', content: <QueueCard sessionId={sessionId} queued={queued} onChange={onQueueChange} pendingId={intent.send?.queueId} /> }] : []),
   ]
   // A `/btw` draft asks beside the turn instead of steering, queueing or interrupting it (TAL-518).
-  const busyLabel = parseCommand(text)?.name === 'btw' ? m.composer_send() : busyMode === 'queue' ? m.composer_queue() : busyMode === 'interrupt' ? m.composer_interrupt() : m.composer_steer()
+  const busyLabel = intent.stop ? m.composer_queue() : parseCommand(text)?.name === 'btw' ? m.composer_send() : busyMode === 'queue' ? m.composer_queue() : busyMode === 'interrupt' ? m.composer_interrupt() : m.composer_steer()
 
   // The server marks sessions Web may not continue (TAL-312); it would refuse every send, so none is offered.
   if (session?.read_only) return <div className="composer-wrap" id="composerWrap"><div className="mx-auto max-w-(--msg-max) px-3 py-2 text-center text-xs text-muted" role="note">{m.session_read_only_notice()}</div></div>
@@ -658,9 +699,9 @@ export function Composer(props: ComposerProps) {
                 <ArrowUp size={14} aria-hidden="true" />
               </button>
             )}
-            {busy ? (
+            {busy || intent.stop ? (
               <>
-                <button type="button" onClick={() => { if (sessionId) void cancelTurn(sessionId) }} className="send-btn stop has-tooltip has-tooltip--left" id="btnStop" data-tooltip={m.composer_stop()} aria-label={m.composer_stop()} title={m.composer_stop()}>
+                <button type="button" onClick={() => { if (sessionId) void cancelTurn(sessionId) }} disabled={!!intent.stop && !intent.stop.failed} className="send-btn stop has-tooltip has-tooltip--left" id="btnStop" data-tooltip={intent.stop && !intent.stop.failed ? m.composer_stopping() : m.composer_stop()} aria-label={intent.stop && !intent.stop.failed ? m.composer_stopping() : m.composer_stop()} title={intent.stop && !intent.stop.failed ? m.composer_stopping() : m.composer_stop()}>
                   <Square size={12} fill="currentColor" strokeWidth={0} aria-hidden="true" />
                 </button>
                 {/* A typed draft steers, queues or interrupts mid-turn like Enter does, so it gets a send arrow beside Stop. */}

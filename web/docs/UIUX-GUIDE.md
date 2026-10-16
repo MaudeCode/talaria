@@ -232,7 +232,15 @@ the centred position (`sendMotion.ts`; instant under reduced motion). A new
 chat's first send shows its text as the pending user row and leaves the hero
 before the session or turn exists; the index and session routes mount separate
 views, so that state (`firstSend.ts`) and the dock animation (`sendMotion.ts`)
-survive the remount, and a failed send returns the text to the box. Every send, steer,
+survive the remount, and a failed send returns the text to the box. Existing-chat sends use the
+same pending user-row renderer while admission is unresolved. Only the submitted draft and tray leave the
+composer; newer typing and files survive. Refused submissions restore their exact payload. Uncertain
+transport outcomes keep the payload and block automatic replay until the conversation is reconciled.
+Interrupt stages its replacement in the existing queue immediately. Stop shows Stopping until the server
+confirms worker release, including after a terminal event; a failed Stop keeps the queue held and can be
+retried. Edit, Retry, Undo and Clear show their intent in the existing composer notice tab. Edit returns
+text only after the server accepts the cut, retaining deep-discard confirmation, and uses a returned full
+snapshot without waiting for another detail request. Every send, steer,
 or queue returns the transcript to its end.
 
 The top tab is a list of `ComposerNotice` entries (`ComposerTab.tsx`): an id,

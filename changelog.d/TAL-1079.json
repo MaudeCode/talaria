@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Web chats show submitted messages, queued interruptions, stopping responses, and history actions immediately while the server confirms them.",
+      "highlight": false,
+      "components": ["web"]
+    }
+  ]
+}

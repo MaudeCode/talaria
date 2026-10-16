@@ -2,6 +2,7 @@ import { deferred, sessionFixture } from '../test/fixtures'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { QueryClient } from '@tanstack/react-query'
 import { keys } from '../api/queryKeys'
+import { ApiError } from '../contracts/common'
 import type { ChatEvent } from '../contracts/sse'
 import { parseChatEvent } from '../contracts/sse'
 
@@ -25,10 +26,10 @@ vi.mock('../api/sse', () => ({
   },
 }))
 
-const { attachToStream, resetConnectionsForTests, teardown, teardownAll, discardSession, configureStream, hasLiveConnection, reconcileSession, startTurn, cancelTurn } = await import('./connection')
-const { onReturnToComposer, rememberOwnSteer } = await import('../features/composer/composerReturn')
+const { attachToStream, resetConnectionsForTests, teardown, teardownAll, discardSession, configureStream, hasLiveConnection, reconcileSession, startTurn, cancelTurn, retryPendingTurn } = await import('./connection')
+const { onReturnToComposer, rememberOwnSteer, returnToComposer } = await import('../features/composer/composerReturn')
 const withdrawn = (steer_id: string | null, reason: string, text: string) => parseChatEvent('steer_withdrawn', JSON.stringify({ steer_id, reason, text }))!
-const { getStreamState, resetStreamStoreForTests } = await import('./store')
+const { getStreamState, resetStreamStoreForTests, getTurnIntent } = await import('./store')
 const { liveText } = await import('./reducer')
 
 const api = await import('../api/endpoints')
@@ -327,5 +328,121 @@ describe('navigation ownership and retention (TAL-1050)', () => {
     await attachToStream(SID, 'run-b')
     reconcileSession(SID, sessionFixture({ session_id: SID, messages: [] }), 'run-a')
     expect(getStreamState().turns[SID]?.streamId).toBe('run-b')
+  })
+})
+
+
+describe('pending admission and cancellation intent (TAL-1079)', () => {
+  beforeEach(() => {
+    opened.length = 0
+    readyState = 1
+    resetConnectionsForTests()
+    resetStreamStoreForTests()
+    vi.mocked(api.startChat).mockReset()
+    vi.mocked(api.fetchStreamStatus).mockReset().mockResolvedValue({ active: true, stream_id: 'run-a', blocking_stream_id: 'run-a' })
+    vi.mocked(api.fetchSession).mockReset().mockResolvedValue({ session: sessionFixture({ session_id: SID, messages: [] }) })
+  })
+  afterEach(() => { vi.useRealTimers(); resetConnectionsForTests() })
+
+  it('deduplicates unresolved sends and does not let an old auth response settle a new identical session', async () => {
+    const old = deferred<Awaited<ReturnType<typeof api.startChat>>>()
+    const fresh = deferred<Awaited<ReturnType<typeof api.startChat>>>()
+    vi.mocked(api.startChat).mockReturnValueOnce(old.promise).mockReturnValueOnce(fresh.promise)
+    const first = startTurn({ sessionId: SID, message: 'Same', request: {} })
+    expect(startTurn({ sessionId: SID, message: 'Same', request: {} })).toBe(first)
+    expect(api.startChat).toHaveBeenCalledOnce()
+    teardownAll()
+    const next = startTurn({ sessionId: SID, message: 'Same', request: {} })
+    old.resolve({ stream_id: 'old' })
+    await first
+    expect(getTurnIntent(SID).send?.text).toBe('Same')
+    expect(opened).toHaveLength(0)
+    fresh.resolve({ stream_id: 'new' })
+    await next
+    expect(opened.map((s) => s.streamId)).toEqual(['new'])
+    expect(getTurnIntent(SID).send).toBeUndefined()
+  })
+
+  it('keeps a no-stream pending row until the authoritative detail arrives', async () => {
+    const detail = deferred<Awaited<ReturnType<typeof api.fetchSession>>>()
+    vi.mocked(api.startChat).mockResolvedValue({ status: 'suppressed' })
+    vi.mocked(api.fetchSession).mockReturnValue(detail.promise)
+    const sending = startTurn({ sessionId: SID, message: '/control', request: {} })
+    await Promise.resolve()
+    expect(getTurnIntent(SID).send?.text).toBe('/control')
+    detail.resolve({ session: sessionFixture({ session_id: SID, messages: [] }) })
+    await sending
+    expect(getTurnIntent(SID).send).toBeUndefined()
+    expect(opened).toHaveLength(0)
+  })
+
+  it('does not restart a turn whose terminal event arrived before its start response', async () => {
+    const response = deferred<Awaited<ReturnType<typeof api.startChat>>>()
+    vi.mocked(api.startChat).mockReturnValue(response.promise)
+    const sending = startTurn({ sessionId: SID, message: 'Go', request: {} })
+    await attachToStream(SID, 'run-a')
+    opened[0]!.onEvent(parseChatEvent('done', JSON.stringify({ session: sessionFixture({ session_id: SID }), terminal_state: 'completed' }))!, 'run-a:2')
+    response.resolve({ stream_id: 'run-a' })
+    await sending
+    expect(opened).toHaveLength(1)
+    expect(getStreamState().turns[SID]?.status).toBe('done')
+  })
+
+  it('reconciles an uncertain transport outcome without replaying or declaring it accepted', async () => {
+    vi.mocked(api.startChat).mockRejectedValue(new ApiError({ kind: 'timeout', path: '/api/chat/start', message: 'Timed out' }))
+    await expect(startTurn({ sessionId: SID, message: 'Same', request: {}, recover: true })).rejects.toThrow('Timed out')
+    expect(api.fetchSession).toHaveBeenCalledOnce()
+    expect(getTurnIntent(SID).send).toMatchObject({ text: 'Same', uncertain: true })
+    await expect(startTurn({ sessionId: SID, message: 'Same', request: {} })).rejects.toThrow('Send could not be confirmed')
+    expect(api.startChat).toHaveBeenCalledOnce()
+  })
+
+  it('retries a refused resend with the exact prompt and attachment payload without another history cut', async () => {
+    const request = { profile: 'default', attachments: [{ path: '/synthetic/notes.txt', filename: 'notes.txt' }] }
+    vi.mocked(api.startChat).mockResolvedValueOnce({ ok: false, reason: 'Refused' }).mockResolvedValueOnce({ status: 'suppressed' })
+    await expect(startTurn({ sessionId: SID, message: 'Original prompt', request, recover: true })).rejects.toThrow('Refused')
+    await retryPendingTurn(SID)
+    expect(api.startChat).toHaveBeenNthCalledWith(2, { session_id: SID, message: 'Original prompt', ...request })
+    expect(getTurnIntent(SID).send).toBeUndefined()
+  })
+
+  it('context reset drops buffered composer returns before the same session id is reused', () => {
+    returnToComposer(SID, 'Previous identity')
+    teardownAll()
+    const returned = vi.fn()
+    const off = onReturnToComposer(SID, returned)
+    expect(returned).not.toHaveBeenCalled()
+    off()
+  })
+
+  it('a deleted resource cannot be repopulated by its delayed admission', async () => {
+    const response = deferred<Awaited<ReturnType<typeof api.startChat>>>()
+    vi.mocked(api.startChat).mockReturnValue(response.promise)
+    const sending = startTurn({ sessionId: SID, message: 'Private', request: {}, recover: true })
+    discardSession(SID)
+    response.resolve({ stream_id: 'deleted-run' })
+    await sending
+    expect(getTurnIntent(SID).send).toBeUndefined()
+    expect(opened).toHaveLength(0)
+  })
+
+  it('holds queued delivery until the server reports worker release, including across navigation', async () => {
+    vi.useFakeTimers()
+    await attachToStream(SID, 'run-a')
+    vi.mocked(api.cancelChat).mockResolvedValue({ ok: true, cancelled: true })
+    const status = deferred<Awaited<ReturnType<typeof api.fetchStreamStatus>>>()
+    vi.mocked(api.fetchStreamStatus).mockReturnValueOnce(status.promise).mockResolvedValue({ active: false, stream_id: 'run-a', blocking_stream_id: null })
+    const stopping = cancelTurn(SID)
+    expect(cancelTurn(SID)).toBe(stopping)
+    await Promise.resolve()
+    opened[0]!.onEvent(parseChatEvent('cancel', '{}')!, 'run-a:2')
+    teardown(SID)
+    status.resolve({ active: false, stream_id: 'run-a', blocking_stream_id: 'run-a' })
+    await Promise.resolve()
+    expect(getTurnIntent(SID).stop).toBeDefined()
+    await vi.advanceTimersByTimeAsync(500)
+    await stopping
+    expect(getTurnIntent(SID).stop).toBeUndefined()
+    expect(api.cancelChat).toHaveBeenCalledOnce()
   })
 })

@@ -1,5 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { render, screen, waitFor, within } from '@testing-library/react'
+import { deferred } from '../../test/fixtures'
+import { teardownAll } from '../../stream/connection'
+import { act, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 vi.mock(import('../../api/endpoints'), async (importOriginal) => ({ ...(await importOriginal()), truncateSession: vi.fn() }))
 vi.mock(import('../composer/composerReturn'), async (importOriginal) => ({ ...(await importOriginal()), returnToComposer: vi.fn() }))
@@ -15,9 +17,9 @@ const refresh = vi.fn(() => Promise.resolve())
 const session = { session_id: 's1', title: 'Edit' } as never
 
 /** ChatView's Edit wiring: the row's pencil and the confirmation the hook mounts. */
-function Chat() {
-  const { onEdit, dialog } = useEditMessage('s1', refresh)
-  return <><button type="button" onClick={() => { void onEdit(row, 'Plan the release') }}>Edit message</button>{dialog}</>
+function Chat({ sid = 's1' }: { sid?: string }) {
+  const { onEdit, dialog, operation } = useEditMessage(sid, refresh)
+  return <><button type="button" onClick={() => { void onEdit(row, 'Plan the release') }}>Edit message</button>{operation && <span role="status">{operation}</span>}{dialog}</>
 }
 
 describe('Edit asks before a cut the server refuses (TAL-929)', () => {
@@ -25,6 +27,40 @@ describe('Edit asks before a cut the server refuses (TAL-929)', () => {
     vi.mocked(api.truncateSession).mockReset()
     vi.mocked(returnToComposer).mockReset()
     refresh.mockClear()
+  })
+
+  it('returns accepted editable text without waiting for a detail refresh', async () => {
+    refresh.mockImplementationOnce(() => new Promise(() => undefined))
+    vi.mocked(api.truncateSession).mockResolvedValueOnce({ ok: true, session })
+    render(<Chat />)
+    await userEvent.click(screen.getByRole('button', { name: 'Edit message' }))
+    await act(() => Promise.resolve())
+    expect(returnToComposer).toHaveBeenCalledExactlyOnceWith('s1', 'Plan the release')
+  })
+
+  it('shows editing while the cut is unresolved, suppresses duplicates, and fences an auth change', async () => {
+    const cut = deferred<Awaited<ReturnType<typeof api.truncateSession>>>()
+    vi.mocked(api.truncateSession).mockReturnValueOnce(cut.promise)
+    render(<Chat />)
+    await userEvent.click(screen.getByRole('button', { name: 'Edit message' }))
+    expect(screen.getByRole('status')).toHaveTextContent('Editing')
+    await userEvent.click(screen.getByRole('button', { name: 'Edit message' }))
+    expect(api.truncateSession).toHaveBeenCalledOnce()
+    teardownAll()
+    await act(async () => { cut.resolve({ ok: true, session }); await cut.promise })
+    expect(refresh).not.toHaveBeenCalled()
+    expect(returnToComposer).not.toHaveBeenCalled()
+  })
+
+  it('does not return text or refresh after navigation/unmount', async () => {
+    const cut = deferred<Awaited<ReturnType<typeof api.truncateSession>>>()
+    vi.mocked(api.truncateSession).mockReturnValueOnce(cut.promise)
+    const view = render(<Chat />)
+    await userEvent.click(screen.getByRole('button', { name: 'Edit message' }))
+    view.rerender(<Chat sid="other" />)
+    await act(async () => { cut.resolve({ ok: true, session }); await cut.promise })
+    expect(refresh).not.toHaveBeenCalled()
+    expect(returnToComposer).not.toHaveBeenCalled()
   })
 
   it('shows the server counts and cuts nothing until Discard resends with the flag', async () => {

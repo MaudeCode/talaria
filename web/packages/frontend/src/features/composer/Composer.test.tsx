@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { act, render, screen, waitFor, within } from '@testing-library/react'
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { openChatStream, type ChatStreamCallbacks } from '../../api/sse'
 import userEvent from '@testing-library/user-event'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
@@ -7,14 +7,16 @@ import { BootstrapContext } from '../../app/bootstrap'
 import { DEFAULT_BOOTSTRAP } from '../../contracts/adapters/memory'
 import type { Session, Settings } from '../../contracts'
 import * as api from '../../api/endpoints'
-import { dispatch, getStreamState, resetStreamStoreForTests } from '../../stream/store'
+import { dispatch, getStreamState, resetStreamStoreForTests, getTurnIntent } from '../../stream/store'
 import type { LiveTurn } from '../../stream/reducer'
 import type { QueuedTurn } from './queue'
+import { deferred } from '../../test/fixtures'
+import { resetConnectionsForTests } from '../../stream/connection'
 import { endFirstSend, getFirstSend } from '../chat/firstSend'
 import { returnToComposer } from './composerReturn'
 import { showToast } from '../toast/toast'
 
-vi.mock(import('../../api/endpoints'), async (importOriginal) => ({ ...(await importOriginal()), saveDraft: vi.fn(), fetchDraft: vi.fn(), steerChat: vi.fn(), startChat: vi.fn(), startBackground: vi.fn(), fetchBackgroundTasks: vi.fn(), askBtw: vi.fn(), fetchCommands: vi.fn(), execCommand: vi.fn(), fetchTranscribeCapability: vi.fn() }))
+vi.mock(import('../../api/endpoints'), async (importOriginal) => ({ ...(await importOriginal()), cancelChat: vi.fn(), fetchStreamStatus: vi.fn(), fetchSession: vi.fn(), uploadFile: vi.fn(), rollbackUpload: vi.fn(), saveDraft: vi.fn(), fetchDraft: vi.fn(), steerChat: vi.fn(), startChat: vi.fn(), startBackground: vi.fn(), fetchBackgroundTasks: vi.fn(), askBtw: vi.fn(), fetchCommands: vi.fn(), execCommand: vi.fn(), fetchTranscribeCapability: vi.fn() }))
 // jsdom has no EventSource: a followed turn opens a stream handle that does nothing.
 vi.mock(import('../toast/toast'), async (importOriginal) => ({ ...(await importOriginal()), showToast: vi.fn() }))
 vi.mock(import('../../api/sse'), async (importOriginal) => ({ ...(await importOriginal()), openChatStream: vi.fn(() => ({ close: () => undefined, readyState: () => 0 })) }))
@@ -42,6 +44,14 @@ function renderComposer(session: Session | null, live: LiveTurn | null = null, o
 
 describe('Composer', () => {
   beforeEach(() => {
+    resetConnectionsForTests()
+    resetStreamStoreForTests()
+    vi.mocked(api.startChat).mockReset()
+    vi.mocked(api.cancelChat).mockReset()
+    vi.mocked(api.uploadFile).mockReset()
+    vi.mocked(api.rollbackUpload).mockReset().mockResolvedValue({ ok: true } as never)
+    vi.mocked(api.fetchSession).mockReset().mockResolvedValue({ session: { ...writable, is_streaming: false, messages: [] } })
+    vi.mocked(api.fetchStreamStatus).mockReset().mockResolvedValue({ active: false, stream_id: 'run', blocking_stream_id: null })
     vi.mocked(api.fetchBackgroundTasks).mockReset().mockResolvedValue({ session_id: 's1', agent_available: true, tasks: [] })
     vi.mocked(api.fetchCommands).mockReset().mockResolvedValue({ commands: [] })
     vi.mocked(api.saveDraft).mockReset().mockResolvedValue({ ok: true, draft: { text: '', files: [] }, draft_version: null })
@@ -51,6 +61,112 @@ describe('Composer', () => {
     // jsdom has no matchMedia; the composer asks whether it is on a phone-width viewport.
     window.matchMedia = vi.fn(() => ({ matches: false, addEventListener: noop, removeEventListener: noop })) as unknown as typeof window.matchMedia
     globalThis.ResizeObserver = class { observe = noop; unobserve = noop; disconnect = noop }
+  })
+
+  it('clears an existing submitted draft before start resolves and preserves newer typing', async () => {
+    const start = deferred<Awaited<ReturnType<typeof api.startChat>>>()
+    vi.mocked(api.startChat).mockReturnValue(start.promise)
+    renderComposer({ ...writable, is_streaming: false })
+    const box = screen.getByRole('textbox')
+    await userEvent.type(box, 'Plan the release{Enter}')
+    expect(box).toHaveValue('')
+    await userEvent.type(box, 'Next draft{Enter}')
+    expect(api.startChat).toHaveBeenCalledOnce()
+    await act(async () => { start.resolve({ stream_id: 'started', session_id: 's1' }); await start.promise })
+    expect(box).toHaveValue('Next draft')
+  })
+
+  it('queues an interrupt and clears its draft while cancel is unresolved', async () => {
+    const cancel = deferred<Awaited<ReturnType<typeof api.cancelChat>>>()
+    vi.mocked(api.cancelChat).mockReturnValue(cancel.promise)
+    const queue = vi.fn()
+    renderComposer(writable, running(), queue, { default_message_mode: 'interrupt' })
+    await userEvent.type(screen.getByRole('textbox'), 'Replacement{Enter}')
+    expect(queue).toHaveBeenCalledOnce()
+    expect(queue.mock.calls[0]?.[0].text).toBe('Replacement')
+    expect(screen.getByRole('textbox')).toHaveValue('')
+    await act(async () => { cancel.resolve({ ok: true, cancelled: true }); await cancel.promise })
+  })
+
+  it('shows Stopping immediately and sends only one cancellation', async () => {
+    const cancel = deferred<Awaited<ReturnType<typeof api.cancelChat>>>()
+    vi.mocked(api.cancelChat).mockReturnValue(cancel.promise)
+    renderComposer(writable, running())
+    await userEvent.click(screen.getByRole('button', { name: 'Stop response' }))
+    const stopping = screen.getByRole('button', { name: 'Stopping' })
+    expect(stopping).toBeDisabled()
+    await userEvent.click(stopping)
+    expect(api.cancelChat).toHaveBeenCalledOnce()
+    await act(async () => { cancel.resolve({ ok: true, cancelled: true }); await cancel.promise })
+  })
+
+  it('restores a refused submitted draft after newer text and retries its exact attachment receipt', async () => {
+    const start = deferred<Awaited<ReturnType<typeof api.startChat>>>()
+    vi.mocked(api.startChat).mockReturnValueOnce(start.promise)
+    const receipt = { filename: 'plan.txt', path: '/synthetic/plan.txt', rollback_token: 'receipt-1', size: 4, mime: 'text/plain' }
+    vi.mocked(api.uploadFile).mockResolvedValue(receipt)
+    renderComposer({ ...writable, is_streaming: false })
+    const box = screen.getByRole('textbox')
+    const file = new File(['plan'], 'plan.txt', { type: 'text/plain', lastModified: 1 })
+    fireEvent.change(document.querySelector<HTMLInputElement>('#fileInput')!, { target: { files: [file] } })
+    await waitFor(() => expect(api.uploadFile).toHaveBeenCalled())
+    await waitFor(() => expect(document.querySelector('.attach-tray [data-status="done"]')).not.toBeNull())
+    await userEvent.type(box, 'Submitted{Enter}')
+    expect(document.querySelector('.attach-tray')).toBeNull()
+    expect(getTurnIntent('s1').send?.attachments).toEqual([receipt])
+    await userEvent.type(box, 'Newer')
+    const newerReceipt = { ...receipt, path: '/synthetic/new-plan.txt', rollback_token: 'receipt-2' }
+    vi.mocked(api.uploadFile).mockResolvedValueOnce(newerReceipt)
+    fireEvent.change(document.querySelector<HTMLInputElement>('#fileInput')!, { target: { files: [file] } })
+    await waitFor(() => expect(api.uploadFile).toHaveBeenCalledTimes(2))
+    await act(async () => { start.resolve({ ok: false, reason: 'Admission refused' }); await start.promise })
+    await waitFor(() => expect(box).toHaveValue('Newer\n\nSubmitted'))
+    expect(screen.getByRole('list', { name: 'Attachments' })).toHaveTextContent('plan.txt')
+    expect(api.rollbackUpload).toHaveBeenCalledExactlyOnceWith('s1', ['receipt-1'])
+    vi.mocked(api.startChat).mockResolvedValueOnce({ stream_id: 'retry', session_id: 's1' })
+    await userEvent.click(screen.getByRole('button', { name: 'Send message' }))
+    await waitFor(() => expect(api.startChat).toHaveBeenCalledTimes(2))
+    expect(vi.mocked(api.startChat).mock.calls[1]?.[0].attachments).toEqual([newerReceipt])
+    expect(box).toHaveValue('')
+  })
+
+  it('shows an attachment-only send while start is held and preserves a newly attached file on success', async () => {
+    const start = deferred<Awaited<ReturnType<typeof api.startChat>>>()
+    vi.mocked(api.startChat).mockReturnValue(start.promise)
+    vi.mocked(api.uploadFile).mockImplementation((_sid, file) => Promise.resolve({ filename: file.name, path: `/synthetic/${file.name}`, size: file.size, mime: file.type }))
+    renderComposer({ ...writable, is_streaming: false })
+    const input = document.querySelector<HTMLInputElement>('#fileInput')!
+    fireEvent.change(input, { target: { files: [new File(['one'], 'one.txt', { type: 'text/plain' })] } })
+    await waitFor(() => expect(api.uploadFile).toHaveBeenCalled())
+    await waitFor(() => expect(document.querySelector('.attach-tray [data-status="done"]')).not.toBeNull())
+    await userEvent.click(screen.getByRole('button', { name: 'Send message' }))
+    expect(getTurnIntent('s1').send).toMatchObject({ text: '', attachments: [{ filename: 'one.txt' }] })
+    expect(document.querySelector('.attach-tray')).toBeNull()
+    fireEvent.change(input, { target: { files: [new File(['two'], 'two.txt', { type: 'text/plain' })] } })
+    await act(async () => { start.resolve({ stream_id: 'started', session_id: 's1' }); await start.promise })
+    expect(screen.getByRole('list', { name: 'Attachments' })).toHaveTextContent('two.txt')
+    expect(screen.getByRole('list', { name: 'Attachments' })).not.toHaveTextContent('one.txt')
+  })
+
+  it('keeps Stopping through an early terminal event and leaves a failed Stop retryable', async () => {
+    const cancel = deferred<Awaited<ReturnType<typeof api.cancelChat>>>()
+    vi.mocked(api.cancelChat).mockReturnValue(cancel.promise)
+    const queue = vi.fn()
+    const { rerenderWith } = renderComposer(writable, running(), queue)
+    await userEvent.click(screen.getByRole('button', { name: 'Stop response' }))
+    act(() => dispatch({ type: 'event', sessionId: 's1', streamId: 'run', event: { event: 'cancel', data: {} }, lastEventId: 'run:1', now: 1 }))
+    rerenderWith(getStreamState().turns.s1!)
+    expect(screen.getByRole('button', { name: 'Stopping' })).toBeDisabled()
+    await userEvent.type(screen.getByRole('textbox'), 'After the terminal event{Enter}')
+    expect(queue).toHaveBeenCalledOnce()
+    expect(api.startChat).not.toHaveBeenCalled()
+    await act(async () => { cancel.resolve({ ok: false, cancelled: false, error: 'Cancellation refused' }); await cancel.promise })
+    expect(screen.getByRole('button', { name: 'Stop response' })).toBeEnabled()
+    expect(getTurnIntent('s1').stop?.failed).toBe(true)
+    vi.mocked(api.cancelChat).mockResolvedValueOnce({ ok: true, cancelled: true })
+    await userEvent.click(screen.getByRole('button', { name: 'Stop response' }))
+    await waitFor(() => expect(getTurnIntent('s1').stop).toBeUndefined())
+    expect(api.cancelChat).toHaveBeenCalledTimes(2)
   })
 
   it('dictates through the live stream when the server reports streaming: partials, then the final (TAL-802)', async () => {
@@ -85,7 +201,7 @@ describe('Composer', () => {
     renderComposer({ session_id: 'child', title: 'Delegated child', is_streaming: false, read_only: true, can_branch: false, can_pin: false, can_archive: false, can_delete: false, can_duplicate: false, source_tag: 'subagent', source_kind: 'subagent', is_messaging_session: false, sort_ts: 0 })
     expect(screen.getByRole('note')).toHaveTextContent('read-only')
     expect(screen.queryByRole('textbox')).toBeNull()
-    expect(screen.queryByRole('button', { name: 'Send' })).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Send message' })).toBeNull()
   })
 
   const writable: Session = { session_id: 's1', title: 'Mine', is_streaming: true, read_only: false, can_branch: true, can_pin: true, can_archive: true, can_delete: true, can_duplicate: true, source_kind: 'webui', is_messaging_session: false, sort_ts: 0 }

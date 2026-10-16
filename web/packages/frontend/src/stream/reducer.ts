@@ -14,7 +14,7 @@
  *    transport but never cancels the backend run.
  */
 import type { ChatEvent } from '../contracts/sse'
-import type { ApprovalPending, ClarifyPending, Session } from '../contracts'
+import type { ApprovalPending, Attachment, ClarifyPending, Session } from '../contracts'
 import type { ConnectorOperationView } from '@maudecode/talaria-web-contracts'
 import type { PendingSteer, RateLimitWait, ToolKind, ToolResultView } from '@maudecode/talaria-web-contracts'
 
@@ -57,6 +57,7 @@ export interface LiveTurn {
   turnId: string | null
   userMessageId: string | null
   userText: string
+  userAttachments: Attachment[]
   startedAt: number
   status: TurnStatus
   segments: Segment[]
@@ -96,7 +97,7 @@ export interface LiveTurn {
 
 export type StreamAction =
   /** `serverStartedAt`: the server's `pending_started_at` (epoch seconds), which starts the turn clock. */
-  | { type: 'start'; sessionId: string; streamId: string; turnId: string | null; userMessageId: string | null; userText: string; now: number; serverStartedAt?: number | null | undefined }
+  | { type: 'start'; sessionId: string; streamId: string; turnId: string | null; userMessageId: string | null; userText: string; userAttachments?: Attachment[]; now: number; serverStartedAt?: number | null | undefined }
   /** `serverCompressionStartedAt`: the session's `compression_started_at`, an open span whose frames the attach may resume past. */
   | { type: 'attach'; sessionId: string; streamId: string; now: number; replay: boolean; serverStartedAt?: number | null | undefined; serverCompressionStartedAt?: number | null | undefined }
   | { type: 'connection'; sessionId: string; streamId: string; status: 'open' | 'error' | 'reconnecting' }
@@ -139,7 +140,7 @@ export function runStart(serverStartedAt: number | null | undefined, fallback: n
 
 function newTurn(sessionId: string, streamId: string, now: number, serverStartedAt?: number | null): LiveTurn {
   return {
-    sessionId, streamId, turnId: null, userMessageId: null, userText: '', startedAt: runStart(serverStartedAt, now, now), status: 'starting',
+    sessionId, streamId, turnId: null, userMessageId: null, userText: '', userAttachments: [], startedAt: runStart(serverStartedAt, now, now), status: 'starting',
     segments: [], tools: {}, toolOrder: [], reasoningText: '', reasoningTitles: [], lastEventId: '', lastSeq: 0,
     usage: null, tps: null, contextStatus: null, warning: null, error: null, cancelledMessage: null, approval: null, clarify: null, connectCard: null,
     pendingSteers: [], closedSteerIds: [], compressionStartedAt: null, rateLimitWait: null, title: null, doneSession: null, doneAt: null, streamEnded: false, goal: null, replayed: false, claimsPersistedRows: true,
@@ -323,7 +324,7 @@ function reduceTurn(turn: LiveTurn, action: Extract<StreamAction, { type: 'event
 export function streamReducer(state: StreamState, action: StreamAction): StreamState {
   switch (action.type) {
     case 'start': {
-      const turn = { ...newTurn(action.sessionId, action.streamId, action.now, action.serverStartedAt), turnId: action.turnId, userMessageId: action.userMessageId, userText: action.userText, status: 'connecting' as const }
+      const turn = { ...newTurn(action.sessionId, action.streamId, action.now, action.serverStartedAt), turnId: action.turnId, userMessageId: action.userMessageId, userText: action.userText, userAttachments: action.userAttachments ?? [], status: 'connecting' as const }
       return { turns: { ...state.turns, [action.sessionId]: turn } }
     }
     case 'attach': {
