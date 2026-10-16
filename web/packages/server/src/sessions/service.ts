@@ -272,12 +272,12 @@ export class SessionService {
 
   /** One receipt-backed physical target for every operation on a local conversation alias. */
   resolveSessionId(sid: string): string {
-    const path = this.stateDbPath(null)
-    const key = JSON.stringify([statSignature(path), statSignature(`${path}-wal`), path])
-    if (this.localTargets?.key !== key) this.localTargets = { key, ids: new Map() }
-    const cached = this.localTargets.ids.get(sid)
-    if (cached) return cached
     try {
+      const path = this.stateDbPath(null)
+      const key = JSON.stringify([statSignature(path), statSignature(`${path}-wal`), path])
+      if (this.localTargets?.key !== key) this.localTargets = { key, ids: new Map() }
+      const cached = this.localTargets.ids.get(sid)
+      if (cached) return cached
       return stateDbLocalTarget(path, sid, { onRead: (target) => {
         // A failed or changing read cannot seed a routing cache.
         if (key !== JSON.stringify([statSignature(path), statSignature(`${path}-wal`), path])) return
