@@ -193,6 +193,17 @@ describe('live steering', () => {
     else expect(showToast).not.toHaveBeenCalled()
   })
 
+  it.each(['future', null, 0, false, {}])('reports an unknown or malformed Send now outcome as failed (%j)', async (outcome) => {
+    const run = liveRun()
+    run.emit(pending('s1'))
+    vi.mocked(showToast).mockClear()
+    vi.mocked(api.sendSteerNow).mockResolvedValueOnce({ redirected: false, outcome } as never)
+    const view = render(<View run={run} />)
+    fireEvent.click(view.getByRole('button', { name: 'Send now' }))
+    await waitFor(() => { expect(view.getByRole('button', { name: 'Send now' })).toBeEnabled() })
+    expect(showToast).toHaveBeenCalledWith("Couldn't send it now; it stays pending.", 2500)
+  })
+
   it('says so when the agent already took a steer being cancelled, and reports a failed request as an error', async () => {
     const run = liveRun()
     run.emit(pending('s1'))

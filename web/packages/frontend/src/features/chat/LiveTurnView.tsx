@@ -64,12 +64,13 @@ function PendingSteerMessage({ sessionId, steer }: { sessionId: string; steer: P
   const sendNow = () => run(async () => {
     const reply = await sendSteerNow({ session_id: sessionId, steer_id: steer.steerId })
     // Older servers only send redirected; remove this fallback with that field.
-    switch (reply.outcome ?? (reply.redirected ? 'delivered' : 'not_running')) {
+    switch (Object.hasOwn(reply, 'outcome') ? reply.outcome : (reply.redirected ? 'delivered' : 'not_running')) {
       case 'delivered': break
       case 'next_step': showToast(m.steer_next_step(), 2500); break
       case 'not_running': showToast(m.steer_stays_pending(), 2500); break
       case 'taken': showToast(m.steer_no_longer_changeable(), 2500); break
-      case 'failed': showToast(m.steer_send_now_failed(), 2500); break
+      case 'failed':
+      default: showToast(m.steer_send_now_failed(), 2500); break
     }
   })
   const button = (label: string, icon: ReactNode, onClick: () => Promise<void>) => (
