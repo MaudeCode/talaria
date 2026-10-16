@@ -1,0 +1,1 @@
+{"entries":[{"category":"Fixed","summary":"Protect newer chat data from stale saves while preserving existing session files and search results.","highlight":false,"components":["web"]}]}

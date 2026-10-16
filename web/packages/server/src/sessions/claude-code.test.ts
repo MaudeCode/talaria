@@ -61,7 +61,7 @@ describe('Claude Code sessions (TAL-551)', () => {
     expect((await post(s, '/api/session/pin', { session_id: sid, pinned: true })).status).toBe(400)
     expect((await post(s, '/api/session/archive', { session_id: sid, archived: true })).status).toBe(400)
     expect((await post(s, '/api/share/create', { session_id: sid })).status).toBe(400)
-    expect(() => s.deps.sessionStore.get(sid)).toThrow()
+    await expect(async () => (await s.deps.sessionStore.get(sid))).rejects.toThrow()
   })
 
   it('keeps the newest transcripts when more than 200 exist', () => {

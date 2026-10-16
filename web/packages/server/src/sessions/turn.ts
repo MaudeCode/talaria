@@ -6,7 +6,7 @@
  * `api/streaming.py::_run_agent_streaming`, `cancel_stream`).
  */
 import { randomUUID } from 'node:crypto'
-import { closeSync, existsSync, fstatSync, readFileSync, rmSync } from 'node:fs'
+import { closeSync, fstatSync, readFileSync } from 'node:fs'
 import { openAnchoredFd } from '../workspace/fs.js'
 import { isWithin, resolvePathLikePython } from '../workspace/paths.js'
 import type { SidecarLike } from '../sidecar/client.js'
@@ -136,9 +136,9 @@ export interface StartTurnOptions {
   /** TAL-818: the starting client renders `connect_card`; other turns keep the Agent's plain connect links. */
   connectCard?: boolean
   /** The settled turn's answer: its last non-error assistant reply, or `` when it produced none. */
-  onDone?: (answer: string) => void
+  onDone?: (answer: string) => void | Promise<void>
   /** Runs on every other end: an error, a cancel, or a writeback another stream took over (Python background runner: `complete_background(..., "(background task failed)")`). */
-  onFailed?: (failure: TurnFailure) => void
+  onFailed?: (failure: TurnFailure) => void | Promise<void>
 }
 
 /** How a turn that did not complete ended: the `apperror` frame it sent, if any, and whether it was cancelled. */
@@ -339,9 +339,9 @@ export class TurnRunner {
   // ── admission ────────────────────────────────────────────────────────────
 
   /** TAL-899: whether a Stop holds the session's automatic turns (session `automatic_turns_held`). */
-  automaticTurnsHeld(sessionId: string): boolean {
+  async automaticTurnsHeld(sessionId: string): Promise<boolean> {
     if (this.stopHeld.has(sessionId)) return true
-    try { return this.deps.store.get(sessionId, { metadataOnly: true }).automatic_turns_stop_held } catch { return false }
+    try { return (await this.deps.store.get(sessionId, { metadataOnly: true })).automatic_turns_stop_held } catch { return false }
   }
 
   /** TAL-803: the Agent's active notices for the session (session `notices`). */
@@ -372,7 +372,7 @@ export class TurnRunner {
   async loadGoal(sessionId: string): Promise<void> {
     if (this.goals.has(sessionId)) return
     let s: Session
-    try { s = this.deps.store.get(sessionId, { metadataOnly: true }) } catch { return }
+    try { s = (await this.deps.store.get(sessionId, { metadataOnly: true })) } catch { return }
     await this.readGoal(s)
   }
 
@@ -394,24 +394,24 @@ export class TurnRunner {
   }
 
   /** Hygiene sweep: a deleted session's hold, notices and goal go with it (TAL-899, TAL-803, TAL-808). */
-  sweep(): void {
-    const exists = (sid: string): boolean => existsSync(this.deps.store.pathFor(sid))
-    for (const sid of this.stopHeld) if (!exists(sid)) this.stopHeld.delete(sid)
-    this.notices.sweep(exists)
-    this.goals.sweep(exists)
+  async sweep(): Promise<void> {
+    const exists = async (sid: string): Promise<boolean> => (await this.deps.store.exists(sid))
+    for (const sid of this.stopHeld) if (!(await exists(sid))) this.stopHeld.delete(sid)
+    await this.notices.sweep(exists)
+    await this.goals.sweep(exists)
   }
 
   /**
    * Admit automatic turns through the same workspace recovery and model resolution as user turns. After the user's Stop
    * none starts (TAL-899): the answer is a `held` 409, and the caller keeps its work for the user's next turn.
    */
-  startServerTurn(session: Session, opts: Pick<StartTurnOptions, 'msg' | 'source' | 'goalRelated' | 'completionKeys' | 'backgroundUpdate'>): AdmissionResult {
-    if (this.automaticTurnsHeld(session.session_id)) return { _status: 409, error: 'automatic turns are held after Stop', held: true }
+  async startServerTurn(session: Session, opts: Pick<StartTurnOptions, 'msg' | 'source' | 'goalRelated' | 'completionKeys' | 'backgroundUpdate'>): Promise<AdmissionResult> {
+    if ((await this.automaticTurnsHeld(session.session_id))) return { _status: 409, error: 'automatic turns are held after Stop', held: true }
     try {
       const service = this.deps.service()
       const workspace = service.turnWorkspace(session)
       const [model, modelProvider, normalizedModel] = service.turnModel(session)
-      return this.admit(session, { ...opts, workspace, model, modelProvider, normalizedModel })
+      return (await this.admit(session, { ...opts, workspace, model, modelProvider, normalizedModel }))
     } catch (error) {
       if (error instanceof HttpFailure) return { _status: error.status, error: error.message }
       throw error
@@ -419,16 +419,16 @@ export class TurnRunner {
   }
 
   /** A user's turn; admitting it releases the hold a Stop put on automatic turns (TAL-899). */
-  start(session: Session, opts: StartTurnOptions): AdmissionResult {
-    const response = this.admit(session, opts, true)
+  async start(session: Session, opts: StartTurnOptions): Promise<AdmissionResult> {
+    const response = (await this.admit(session, opts, true))
     if (response._status === undefined) this.stopHeld.delete(session.session_id)
     return response
   }
 
   /** Python `_start_chat_stream_for_session`: persist pending state, register the channel, launch the worker. */
-  private admit(session: Session, opts: StartTurnOptions, releaseStopHold = false): AdmissionResult {
+  private async admit(session: Session, opts: StartTurnOptions, releaseStopHold = false): Promise<AdmissionResult> {
     const s = session
-    const readOnly = this.deps.service().readOnlyReason(s)
+    const readOnly = (await this.deps.service().readOnlyReason(s))
     if (readOnly) return { error: readOnly, _status: 403 }
     if (this.deps.updateInProgress?.()) return { error: 'Web is updating. Retry after it restarts.', _status: 503 }
     if (this.deps.profileDeleting?.(s.profile ?? null)) return { error: `Profile '${str(s.profile)}' is being deleted.`, _status: 409 }
@@ -437,7 +437,7 @@ export class TurnRunner {
     const locked = s.active_stream_id
     if (locked) {
       if (this.registry.liveIds.has(locked) || this.registry.activeRuns.has(locked)) return { error: 'session already has an active stream', active_stream_id: locked, _status: 409 }
-      this.deps.service().clearStaleStreamState(s)
+      await this.deps.service().clearStaleStreamState(s)
       if (s.active_stream_id) return { error: 'session already has an active stream', active_stream_id: s.active_stream_id, _status: 409 }
     } else {
       const blocking = this.registry.activeRunStreamForSession(s.session_id)
@@ -483,7 +483,7 @@ export class TurnRunner {
     if (opts.completionKeys?.length) s.extra.completion_acceptances = { ...accepted, ...Object.fromEntries(opts.completionKeys.map((key) => [key, streamId])) }
     const previousUpdates = s.extra.background_updates
     if (opts.backgroundUpdate) recordBackgroundUpdate(s, streamId, opts.backgroundUpdate)
-    try { this.deps.store.save(s) } catch (error) {
+    try { (await this.deps.store.save(s)) } catch (error) {
       s.extra.background_updates = previousUpdates
       s.extra.completion_acceptances = previousAcceptances
       s.automatic_turns_stop_held = previousStopHold
@@ -575,7 +575,7 @@ export class TurnRunner {
     const activeRun = this.registry.activeRuns.get(streamId)
     let s: Session
     try {
-      s = deps.store.get(sessionId)
+      s = (await deps.store.get(sessionId))
     } catch {
       put('apperror', { type: 'error', terminal_state: 'error', message: 'Session not found', session_id: sessionId })
       this.teardown(sessionId, streamId)
@@ -603,7 +603,7 @@ export class TurnRunner {
     // a Stop ends only this wait and a resend joins the same job. The turn then reads the compacted session afresh.
     const compacted = await deps.service().ensureCompacted(sessionId, { turn: streamId, signal: controller.signal, due: compactionDue, onWait: () => { put('compressing', { session_id: sessionId, message: 'Compressing context' }) } })
     if (compacted) {
-      try { s = deps.store.get(sessionId) } catch { /* the cancel or error path below reports a deleted session */ }
+      try { s = (await deps.store.get(sessionId)) } catch { /* the cancel or error path below reports a deleted session */ }
       ;({ previousMessages, previousContext, apiHistory } = history())
       put('compressed', this.compressedFrame(s))
     }
@@ -658,6 +658,8 @@ export class TurnRunner {
     let succeeded = false
     let ownershipRefused = false
     let agentDispatched = false
+    let streamWrites: Promise<void> = Promise.resolve()
+    let streamWriteError: Error | undefined
     // TAL-424: steers an errored turn ended without taking, sent as one follow-up turn once this one is torn down.
     let followUp: string[] = []
     try {
@@ -677,8 +679,8 @@ export class TurnRunner {
       // Last yield before `chat.start`: a cancel that landed during the attachment, config or YOLO awaits must not
       // start an Agent turn (the client also refuses an already-aborted signal outright).
       if (this.registry.cancelled.has(streamId)) {
-        this.finalizeCancelled(s, streamId, opts.ephemeral)
-        put('cancel', this.cancelFrame(sessionId))
+        await this.finalizeCancelled(s, streamId, opts.ephemeral)
+        put('cancel', (await this.cancelFrame(sessionId)))
         return
       }
       const turnContext = {
@@ -731,11 +733,14 @@ export class TurnRunner {
               putMetering(true)
               return
             }
-            case 'steer_pending':
+            case 'steer_pending': {
               // TAL-424: while a withdraw or Send now rewrites the Agent's queue its pending text is ambiguous; it settles after.
               if (this.steerRewrites.has(streamId)) { this.deferredPendingSteer.set(streamId, str(data.text)); return }
-              this.settleConsumedSteers(sessionId, streamId, str(data.text))
+              // Capture the causal position before the next frame; only persistence is asynchronous.
+              const saving = this.settleConsumedSteers(sessionId, streamId, str(data.text))
+              streamWrites = Promise.all([streamWrites, saving]).then(() => { /* drained before settlement */ }).catch((error: unknown) => { streamWriteError = error instanceof Error ? error : new Error(String(error)) })
               return
+            }
             case 'tool': {
               const call = { name: data.name, args: data.args ?? {}, tid: str(data.tid), done: false }
               liveToolCalls.push(call)
@@ -855,6 +860,8 @@ export class TurnRunner {
           }
         },
       })
+      await streamWrites
+      if (streamWriteError !== undefined) throw streamWriteError
       settledAt.value = true
       // TAL-545: every transcript the Agent hands back settles with the history's images, not the request's projection.
       const withImages = <T extends Record<string, unknown>>(rows: T[]): T[] => withNativeImagesRestored(rows, conversationHistory, apiHistory)
@@ -866,13 +873,13 @@ export class TurnRunner {
         const interrupted = await this.interrupts.get(streamId)
         applyAgentUsage(liveUsage, result.usage)
         this.liveUsage.set(streamId, liveUsage)
-        this.finalizeCancelled(s, streamId, opts.ephemeral, interrupted?.checkpoint ? withImages(interrupted.checkpoint) : result.messages)
-        put('cancel', this.cancelFrame(sessionId))
+        await this.finalizeCancelled(s, streamId, opts.ephemeral, interrupted?.checkpoint ? withImages(interrupted.checkpoint) : result.messages)
+        put('cancel', (await this.cancelFrame(sessionId)))
         return
       }
       // Writeback only while this stream still owns the session (Python `_stream_writeback_is_current`).
       let current: Session
-      try { current = deps.store.get(sessionId) } catch { current = s }
+      try { current = (await deps.store.get(sessionId)) } catch { current = s }
       if (current.active_stream_id !== streamId) {
         deps.log(`[webui] Skipping stale stream writeback for session ${sessionId} stream ${streamId}; active_stream_id=${current.active_stream_id ?? ''}`)
         return
@@ -904,9 +911,9 @@ export class TurnRunner {
         await this.steerRewrites.get(streamId)
         const { events: steerEvents, leftovers } = this.finalizeSteers(streamId, str(result.pending_steer), 'followup')
         followUp = leftovers
-        this.persistError(s, streamId, classification.label, payload, activeTurnToken, resultMessages, result.provider)
+        await this.persistError(s, streamId, classification.label, payload, activeTurnToken, resultMessages, result.provider)
         // TAL-512: a btw error carries no session: its journaled frame must not keep a copy of the parent conversation.
-        if (!opts.ephemeral) payload.session = this.publicTerminalSession(s)
+        if (!opts.ephemeral) payload.session = (await this.publicTerminalSession(s))
         payload.session_id = s.session_id
         payload.old_session_id = sessionId
         for (const [event, data] of steerEvents) put(event, data)
@@ -921,10 +928,10 @@ export class TurnRunner {
           if (m.role === 'assistant') { answer = str(m.content); break }
         }
         succeeded = true
-        opts.onDone?.(answer)
+        await opts.onDone?.(answer)
         // Python `_ephemeral_session_payload`: only role and content leave the server for a btw turn.
         put('done', { session: { session_id: sessionId, messages: resultMessages.map((m) => ({ role: m.role, content: m.content })) }, usage: { input_tokens: 0, output_tokens: 0 }, ephemeral: true, answer, terminal_state: answer.trim() ? 'completed' : 'no_response' })
-        try { rmSync(deps.store.pathFor(sessionId), { force: true }) } catch { /* ignore */ }
+        try { await deps.store.delete(sessionId, { tombstone: false }) } catch { /* ignore */ }
         deps.store.sessions.delete(sessionId)
         return
       }
@@ -1020,7 +1027,7 @@ export class TurnRunner {
       // (all of them, the dropped summary request too).
       this.settleStateDb(s, streamId, agentRows, { previousContext })
       recordBackgroundReview(s, streamId)
-      deps.store.save(s)
+      await deps.store.save(s)
       deps.pending.clearApprovals(sessionId)
       deps.pending.clearClarifies(sessionId)
       deps.events.publish('session_done', { profile: s.profile, sessionId: s.session_id })
@@ -1043,7 +1050,7 @@ export class TurnRunner {
         cache_hit_percent: cacheHit(cacheReadTokens, inputTokens), turn_cache_hit_percent: cacheHit(turnCacheRead, turnInput), duration_seconds: Math.round(duration * 1000) / 1000,
         context_length: s.context_length ?? 0, threshold_tokens: s.threshold_tokens ?? 0, last_prompt_tokens: s.last_prompt_tokens ?? 0,
       }
-      const doneSession = this.publicTerminalSession(s)
+      const doneSession = (await this.publicTerminalSession(s))
       // TAL-299: the ring's figures match the terminal session's (and a detail reload's).
       for (const key of CONTEXT_USAGE_FIELDS) doneUsage[key] = doneSession[key]
       if (usage.completion_tokens && duration > 0) doneUsage.tps = Math.round((usage.completion_tokens / duration) * 10) / 10
@@ -1068,7 +1075,7 @@ export class TurnRunner {
       // TAL-1005: a turn that settled at or above the next turn's threshold starts the compaction now, so the next message
       // usually finds the session compacted; a follow-up turn admitted meanwhile joins it.
       void deps.service().ensureCompacted(sessionId)
-      this.startSteerFollowUp(sessionId, leftovers)
+      await this.startSteerFollowUp(sessionId, leftovers)
       // Before the title work, so a generated title's own state.db sync lands after this one's provisional title.
       await deps.syncUsage?.(s, usedModel || null)
       // Title work and the goal judge run side by side; `stream_end` follows both, so their frames reach the stream.
@@ -1076,9 +1083,10 @@ export class TurnRunner {
       put('stream_end', { session_id: sessionId })
       for (const r of work) if (r.status === 'rejected') throw r.reason
       succeeded = true
-      opts.onDone?.(lastAnswer(s.messages))
+      await opts.onDone?.(lastAnswer(s.messages))
     } catch (error) {
-      const readOnly = !agentDispatched ? deps.service().readOnlyReason(s) : null
+      await streamWrites
+      const readOnly = !agentDispatched ? (await deps.service().readOnlyReason(s)) : null
       if (readOnly) {
         ownershipRefused = true
         if (this.registry.writebackOwners.get(sessionId) === streamId && s.active_stream_id === streamId) {
@@ -1086,17 +1094,17 @@ export class TurnRunner {
           s.messages = s.messages.filter((m) => !(m.role === 'user' && m._turn_id === streamId))
           this.clearPendingTurn(s)
           if (isDict(s.extra.completion_acceptances)) s.extra.completion_acceptances = Object.fromEntries(Object.entries(s.extra.completion_acceptances).filter(([, value]) => value !== streamId))
-          deps.store.save(s, { touchUpdatedAt: false })
+          await deps.store.save(s, { touchUpdatedAt: false })
         }
-        put('apperror', { type: 'error', terminal_state: 'error', message: readOnly, session_id: sessionId, session: this.publicTerminalSession(s) })
+        put('apperror', { type: 'error', terminal_state: 'error', message: readOnly, session_id: sessionId, session: (await this.publicTerminalSession(s)) })
         return
       }
       if (settledAt.value && !(error instanceof SidecarError)) {
         deps.log(`[webui] ERROR settling turn ${streamId}\n${error instanceof Error ? (error.stack ?? error.message) : String(error)}`)
       }
       if (this.registry.cancelled.has(streamId)) {
-        this.finalizeCancelled(s, streamId, opts.ephemeral)
-        put('cancel', this.cancelFrame(sessionId))
+        await this.finalizeCancelled(s, streamId, opts.ephemeral)
+        put('cancel', (await this.cancelFrame(sessionId)))
         return
       }
       const message = error instanceof Error ? error.message : String(error)
@@ -1109,11 +1117,11 @@ export class TurnRunner {
       }
       try {
         let current: Session = s
-        try { current = deps.store.get(sessionId) } catch { current = s }
+        try { current = (await deps.store.get(sessionId)) } catch { current = s }
         if (current.active_stream_id === streamId) {
           for (const [event, data] of this.takeSteerEventsBefore(streamId, 'apperror')) put(event, data)
-          this.persistError(current, streamId, classification.label, payload, activeTurnToken)
-          if (!opts.ephemeral) payload.session = this.publicTerminalSession(current)
+          await this.persistError(current, streamId, classification.label, payload, activeTurnToken)
+          if (!opts.ephemeral) payload.session = (await this.publicTerminalSession(current))
         }
       } catch (persistError) {
         deps.log(`[webui] WARNING: failed to persist turn error for ${sessionId}: ${(persistError as Error).message}`)
@@ -1125,11 +1133,11 @@ export class TurnRunner {
       this.teardown(sessionId, streamId)
       // After persistence and teardown: a background route's failure cleanup deletes the hidden session, which must
       // not race the error writeback above (a re-saved session would resurface in the sidebar).
-      if (!succeeded) opts.onFailed?.(failure)
+      if (!succeeded) await opts.onFailed?.(failure)
       // TAL-1005: a Stop or an error after the turn ran on a compaction's result left that job's estimate under a context
       // its prompt and work may have grown; the idle trigger judges the context measured again.
       if (!succeeded && !ownershipRefused && !opts.ephemeral) void deps.service().remeasureContext(sessionId).then((measured) => { if (measured) void deps.service().ensureCompacted(sessionId) })
-      this.startSteerFollowUp(sessionId, followUp)
+      await this.startSteerFollowUp(sessionId, followUp)
     }
   }
 
@@ -1193,21 +1201,21 @@ export class TurnRunner {
   }
 
   /** The settled session as a terminal frame carries it: the display window, redacted. */
-  publicTerminalSession(s: Session): Record<string, unknown> {
-    return redactSessionData(this.terminalSessionPayload(s), this.deps.redactEnabled())
+  async publicTerminalSession(s: Session): Promise<Record<string, unknown>> {
+    return redactSessionData((await this.terminalSessionPayload(s)), this.deps.redactEnabled())
   }
 
   /**
    * Python `_session_payload_with_terminal_window`: the same visible-message window contract as `GET /api/session?
    * msg_limit=` (renderable rows, limited payload shape, windowed tool calls, todo state) with the full count.
    */
-  private terminalSessionPayload(s: Session): Record<string, unknown> {
+  private async terminalSessionPayload(s: Session): Promise<Record<string, unknown>> {
     const payload = this.deps.service().wireRow(s)
-    payload.automatic_turns_held = this.automaticTurnsHeld(s.session_id)
+    payload.automatic_turns_held = (await this.automaticTurnsHeld(s.session_id))
     payload.notices = this.sessionNotices(s.session_id)
     payload.goal = this.sessionGoal(s.session_id)
     const service = this.deps.service()
-    const scened = service.backgroundLinked(s, hydrateAnchorActivityScenes(withToolCallOutcomes(service.backgroundUpdates(s, withMarkerKinds(withTurnIds(withAttachmentObjects(s.messages)), s)), s.tool_calls, s.active_stream_id), s.anchor_activity_scenes, { activeTurnId: s.active_stream_id, clipToolResults: true }))
+    const scened = service.backgroundLinked(s, hydrateAnchorActivityScenes(withToolCallOutcomes((await service.backgroundUpdates(s, withMarkerKinds(withTurnIds(withAttachmentObjects(s.messages)), s))), s.tool_calls, s.active_stream_id), s.anchor_activity_scenes, { activeTurnId: s.active_stream_id, clipToolResults: true }))
     const [window, offset] = messageWindowForDisplay(scened, TERMINAL_SSE_VISIBLE_MESSAGE_LIMIT, null)
     const limited = messagesForLimitedPayload(withBodyExcerpts(withDisplayMedia(window, service.mediaProjector(s)), s.active_stream_id))
     payload.messages = limited
@@ -1241,7 +1249,7 @@ export class TurnRunner {
 
   /** Python `_materialize_pending_user_turn_before_error` + error message append + save. */
   /** `runtimeProvider`: the provider the Agent resolved for the turn, when it reported one. */
-  private persistError(s: Session, streamId: string, label: string, payload: Record<string, unknown>, activeTurnToken: string | null, agentRows: Message[] = [], runtimeProvider = ''): void {
+  private async persistError(s: Session, streamId: string, label: string, payload: Record<string, unknown>, activeTurnToken: string | null, agentRows: Message[] = [], runtimeProvider = ''): Promise<void> {
     const startedAt = s.pending_started_at
     // TAL-576: an automatic wakeup with no usable credentials pauses the next ones instead of failing each.
     if (s.pending_user_source === 'process_wakeup' && payload.type === 'credential_pool_empty') {
@@ -1278,7 +1286,7 @@ export class TurnRunner {
     const context = payload.type === 'compression_exhausted' ? null : this.unsettledContext(streamId, agentRows, read)
     if (context) s.context_messages = context
     this.settleStateDb(s, streamId, agentRows, { read })
-    try { this.deps.store.save(s) } catch (error) { this.deps.log(`[webui] WARNING: failed to save error turn for ${s.session_id}: ${(error as Error).message}`) }
+    try { (await this.deps.store.save(s)) } catch (error) { this.deps.log(`[webui] WARNING: failed to save error turn for ${s.session_id}: ${(error as Error).message}`) }
     // The kept live counters are the session's usage now, so the insights row follows them (the runtime logs failures).
     void this.deps.syncUsage?.(s, str(s.model) || null)
     this.deps.pending.clearApprovals(s.session_id)
@@ -1344,9 +1352,9 @@ export class TurnRunner {
    * Python `_emit_cancel_event`: the terminal frame carries the settled session so tabs can render the partial without a
    * reload. TAL-364: no copy — clients show their one localized status for the `cancelled` outcome.
    */
-  private cancelFrame(sessionId: string | null): Record<string, unknown> {
+  private async cancelFrame(sessionId: string | null): Promise<Record<string, unknown>> {
     let snapshot: Record<string, unknown> | null = null
-    if (sessionId) try { snapshot = this.publicTerminalSession(this.deps.store.get(sessionId)) } catch { snapshot = null }
+    if (sessionId) try { snapshot = (await this.publicTerminalSession((await this.deps.store.get(sessionId)))) } catch { snapshot = null }
     return { type: 'cancelled', status: 'cancelled', terminal_state: 'cancelled', ...(sessionId ? { session_id: sessionId } : {}), ...(snapshot ? { session: snapshot } : {}) }
   }
 
@@ -1355,13 +1363,13 @@ export class TurnRunner {
    * turn's model context keeps what the Agent had captured (`checkpoint`, its canonical transcript) and the prose that
    * streamed, so the next request continues from it; the terminal row carries the outcome and no copy.
    */
-  private finalizeCancelled(s: Session, streamId: string, ephemeral: boolean | undefined, checkpoint: unknown[] | null = null): boolean {
+  private async finalizeCancelled(s: Session, streamId: string, ephemeral: boolean | undefined, checkpoint: unknown[] | null = null): Promise<boolean> {
     if (this.registry.writebackOwners.get(s.session_id) !== streamId) return false
     let current: Session = s
-    try { current = this.deps.store.get(s.session_id) } catch { return false }
+    try { current = (await this.deps.store.get(s.session_id)) } catch { return false }
     if (current.active_stream_id !== null && current.active_stream_id !== streamId) return false
     if (ephemeral) {
-      try { rmSync(this.deps.store.pathFor(current.session_id), { force: true }) } catch { /* ignore */ }
+      try { await this.deps.store.delete(current.session_id, { tombstone: false }) } catch { /* ignore */ }
       this.deps.store.sessions.delete(current.session_id)
       return true
     }
@@ -1372,7 +1380,7 @@ export class TurnRunner {
       // TAL-493: rows its worker committed while unwinding are covered by what it reports; others are kept.
       if (checkpoint) {
         this.settleStateDb(current, streamId, checkpoint as Message[])
-        try { this.deps.store.save(current) } catch { return false }
+        try { (await this.deps.store.save(current)) } catch { return false }
       }
       return true
     }
@@ -1395,7 +1403,7 @@ export class TurnRunner {
         const late = canonical && !stop.checkpointed ? settle(read) : null
         if (late) current.context_messages = dedupeContext(late)
         this.settleStateDb(current, streamId, checkpoint as Message[], { read })
-        try { this.deps.store.save(current) } catch { return false }
+        try { (await this.deps.store.save(current)) } catch { return false }
       }
       return true
     }
@@ -1412,7 +1420,7 @@ export class TurnRunner {
     this.keepLiveState(current, streamId)
     this.persistConsumedSteers(current, streamId, startedAt, this.deps.now())
     this.settleStateDb(current, streamId, checkpoint as Message[] | null, { read })
-    try { this.deps.store.save(current) } catch { return false }
+    try { (await this.deps.store.save(current)) } catch { return false }
     void this.deps.syncUsage?.(current, str(current.model) || null)
     this.deps.pending.clearApprovals(current.session_id)
     this.deps.pending.clearClarifies(current.session_id)
@@ -1477,7 +1485,7 @@ export class TurnRunner {
     const [qa, prompts] = titlePrompts(userText, assistantText)
     let status = 'llm_error_aux'
     for (const [idx, prompt] of prompts.entries()) {
-      if (this.deps.service().isReadOnly(s)) return { title: '', status: 'read_only', rawPreview: '' }
+      if ((await this.deps.service().isReadOnly(s))) return { title: '', status: 'read_only', rawPreview: '' }
       let raw = ''
       try {
         const result = await sidecar.call('aux.complete', {
@@ -1591,12 +1599,12 @@ export class TurnRunner {
     }
     const fallbackReason = source === 'fallback' && llmStatus ? `local_summary:${llmStatus}` : 'local_summary'
     let current: Session = s
-    try { current = this.deps.store.get(sessionId) } catch {
+    try { current = (await this.deps.store.get(sessionId)) } catch {
       // A session deleted while the title prompt ran stays deleted.
-      if (this.deps.store.wasDeleted(sessionId)) return
+      if ((await this.deps.store.wasDeleted(sessionId))) return
       current = s
     }
-    if (this.deps.service().isReadOnly(current)) { status('skipped', 'read_only', str(current.title).trim()); return }
+    if ((await this.deps.service().isReadOnly(current))) { status('skipped', 'read_only', str(current.title).trim()); return }
     let effective = str(current.title).trim()
     let wrote = false
     if (next) {
@@ -1605,7 +1613,7 @@ export class TurnRunner {
       if (next !== effective) {
         current.title = next
         markSessionTitleGenerated(current)
-        this.deps.store.save(current, { touchUpdatedAt: false })
+        await this.deps.store.save(current, { touchUpdatedAt: false })
         // Python `sync_session_title` after generation: the state.db row follows when `sync_to_insights` is on.
         await this.deps.syncTitle?.(current)
         this.deps.events.publish('title', { profile: current.profile, sessionId })
@@ -1632,14 +1640,14 @@ export class TurnRunner {
     // Admission is released before title work, so an earlier turn's refresh may still be running: refreshes apply in
     // turn order and each reads the title its predecessor wrote.
     const sessionId = s.session_id
-    const run = (this.titleRefreshes.get(sessionId) ?? Promise.resolve()).catch(() => undefined).then(() => this.applyTitleRefresh(sessionId, s, userText, assistantText, put, status))
+    const run = (this.titleRefreshes.get(sessionId) ?? Promise.resolve()).catch(() => undefined).then(async () => { await this.applyTitleRefresh(sessionId, s, userText, assistantText, put, status); })
     this.titleRefreshes.set(sessionId, run)
     try { await run } finally { if (this.titleRefreshes.get(sessionId) === run) this.titleRefreshes.delete(sessionId) }
   }
 
   private async applyTitleRefresh(sessionId: string, s: Session, userText: string, assistantText: string, put: (event: string, data: Record<string, unknown>) => void, status: (status: string, reason?: string, title?: string, rawPreview?: string) => void): Promise<void> {
-    const read = (): Session => { try { return this.deps.store.get(sessionId) } catch { return s } }
-    const latest = read()
+    const read = async (): Promise<Session> => { try { return (await this.deps.store.get(sessionId)) } catch { return s } }
+    const latest = (await read())
     const placeholder = str(latest.title).trim()
     if (['Untitled', 'New Chat', ''].includes(placeholder) || latest.manual_title || !latest.llm_title_generated) return
     const cfg = await this.deps.profileConfig?.(latest.profile ?? null)
@@ -1648,13 +1656,13 @@ export class TurnRunner {
     if (!next) { status('refresh_skipped', llmStatus || 'empty', placeholder, rawPreview); return }
     const normalize = (value: string): string => value.replace(/\s+/g, ' ').trim().toLowerCase()
     if (normalize(next) === normalize(placeholder)) { status('refresh_skipped', 'same_title', placeholder, rawPreview); return }
-    const current = read()
+    const current = (await read())
     // The user may have renamed the session while the title prompt ran.
     if (current.manual_title || str(current.title).trim() !== placeholder) { status('skipped', 'manual_title', str(current.title).trim()); return }
-    if (this.deps.service().isReadOnly(current)) { status('refresh_skipped', 'read_only', str(current.title).trim()); return }
+    if ((await this.deps.service().isReadOnly(current))) { status('refresh_skipped', 'read_only', str(current.title).trim()); return }
     current.title = next
     markSessionTitleGenerated(current)
-    this.deps.store.save(current, { touchUpdatedAt: false })
+    await this.deps.store.save(current, { touchUpdatedAt: false })
     await this.deps.syncTitle?.(current)
     this.deps.events.publish('title', { profile: current.profile, sessionId })
     status('refreshed', llmStatus, next, rawPreview)
@@ -1674,14 +1682,14 @@ export class TurnRunner {
     if (owner && this.registry.writebackOwners.get(owner) === streamId) {
       this.stopHeld.add(owner)
       try {
-        const session = this.deps.store.get(owner)
+        const session = (await this.deps.store.get(owner))
         session.automatic_turns_stop_held = true
-        this.deps.store.save(session, { touchUpdatedAt: false })
+        await this.deps.store.save(session, { touchUpdatedAt: false })
       } catch (error) {
         this.deps.log(`[webui] WARNING: failed to persist Stop hold for session ${owner}; interrupting with the in-memory hold: ${(error as Error).message}`)
       }
     }
-    return this.stop(streamId)
+    return (await this.stop(streamId))
   }
 
   private async stop(streamId: string): Promise<{ cancelled: boolean; withdrawn: SteerWithdrawn[] }> {
@@ -1713,9 +1721,9 @@ export class TurnRunner {
     const steerEvents = (this.steers.get(streamId) ?? []).length ? this.finalizeSteers(streamId, leftover, 'stopped').events : []
     if (sessionId) {
       let current: Session | null = null
-      try { current = this.deps.store.get(sessionId) } catch { current = null }
+      try { current = (await this.deps.store.get(sessionId)) } catch { current = null }
       if (current?.active_stream_id === streamId) {
-        this.finalizeCancelled(current, streamId, run?.ephemeral, checkpoint)
+        await this.finalizeCancelled(current, streamId, run?.ephemeral, checkpoint)
       }
     }
     // The worker may already have written its terminal row while the interrupt was in flight; the stream is then
@@ -1728,7 +1736,7 @@ export class TurnRunner {
         channel.put([event, data, eventId])
       }
       for (const [event, data] of steerEvents) emit(event, data)
-      emit('cancel', this.cancelFrame(sessionId))
+      emit('cancel', (await this.cancelFrame(sessionId)))
       this.registry.streams.delete(streamId)
       this.registry.liveIds.delete(streamId)
     }
@@ -1753,7 +1761,7 @@ export class TurnRunner {
 
   async steer(sessionId: string, text: string, displayText: string, steerId: string): Promise<Record<string, unknown>> {
     let s: Session | null = null
-    try { s = this.deps.store.get(sessionId, { metadataOnly: true }) } catch { s = null }
+    try { s = (await this.deps.store.get(sessionId, { metadataOnly: true })) } catch { s = null }
     const activeStreamId = s?.active_stream_id ?? null
     // Python: an unknown session has no live worker and no cached agent, so the lookup order yields `no_cached_agent`
     // (200) before `session_not_found` is ever reachable. A known idle session keeps its cached agent → `not_running`.
@@ -1858,11 +1866,11 @@ export class TurnRunner {
   }
 
   /** A steer is saved as it enters the stream, so a reload mid-turn already has it; the terminal save re-places it. */
-  private saveConsumedSteers(sessionId: string, streamId: string): void {
+  private async saveConsumedSteers(sessionId: string, streamId: string): Promise<void> {
     let s: Session
-    try { s = this.deps.store.get(sessionId) } catch { return }
+    try { s = (await this.deps.store.get(sessionId)) } catch { return }
     if (s.active_stream_id !== streamId || this.placeConsumedSteers(s, streamId, s.pending_started_at) === null) return
-    try { this.deps.store.save(s, { touchUpdatedAt: false }) } catch (error) {
+    try { (await this.deps.store.save(s, { touchUpdatedAt: false })) } catch (error) {
       this.deps.log(`[webui] WARNING: failed to save consumed steer for ${sessionId}: ${(error as Error).message}`)
     }
   }
@@ -1917,12 +1925,12 @@ export class TurnRunner {
    * TAL-424: the steers a finished turn never took go on as one follow-up turn, sent once by the server for every client.
    * Should another turn already hold the session, they steer into that one instead, so no text is lost.
    */
-  private startSteerFollowUp(sessionId: string, texts: string[]): void {
+  private async startSteerFollowUp(sessionId: string, texts: string[]): Promise<void> {
     if (!texts.length) return
     let s: Session
-    try { s = this.deps.store.get(sessionId) } catch { return }
+    try { s = (await this.deps.store.get(sessionId)) } catch { return }
     const msg = texts.join('\n')
-    const started = this.startServerTurn(s, { msg })
+    const started = (await this.startServerTurn(s, { msg }))
     if (!started._status || started._status < 400) return
     if (started._status === 409 && started.active_stream_id) {
       void this.steer(sessionId, msg, msg, `steer-${randomUUID()}`).then((r) => {
@@ -1966,8 +1974,8 @@ export class TurnRunner {
     const status = { message: decision.message, message_key: decision.message_key, message_args: decision.message_args ?? [], decision: decision.verdict }
     if (!proceed) { put('goal', { session_id: sessionId, state: 'idle', ...status }); return }
     let current: Session
-    try { current = this.deps.store.get(sessionId) } catch { return }
-    const started = this.startServerTurn(current, { msg: prompt, goalRelated: true })
+    try { current = (await this.deps.store.get(sessionId)) } catch { return }
+    const started = (await this.startServerTurn(current, { msg: prompt, goalRelated: true }))
     // TAL-899: a Stop, even one after the answer, holds the continuation; the user's next turn is judged instead.
     if (started.held) { put('goal', { session_id: sessionId, state: 'idle', decision: 'held', message: '' }); return }
     put('goal', { session_id: sessionId, state: 'continuing', ...status })
@@ -1981,9 +1989,9 @@ export class TurnRunner {
   }
 
   /** The Agent's pending steer text settles which steers it has taken: those become `steer_consumed` and their rows. */
-  private settleConsumedSteers(sessionId: string, streamId: string, pendingText: string): void {
+  private async settleConsumedSteers(sessionId: string, streamId: string, pendingText: string): Promise<void> {
     for (const record of this.takeConsumedSteers(streamId, pendingText, { keepLeftovers: true })) this.emitToSession(sessionId, 'steer_consumed', record)
-    this.saveConsumedSteers(sessionId, streamId)
+    await this.saveConsumedSteers(sessionId, streamId)
   }
 
   /** What every client shows for a pending steer; the server decides which actions it offers. */
@@ -2003,8 +2011,8 @@ export class TurnRunner {
   }
 
   private withSteerChain<T>(streamId: string, sessionId: string, fn: () => Promise<T>): Promise<T> {
-    const run = (this.steerChains.get(streamId) ?? Promise.resolve()).then(() => {
-      this.deps.service().getForMutation(sessionId)
+    const run = (this.steerChains.get(streamId) ?? Promise.resolve()).then(async () => {
+      await this.deps.service().getForMutation(sessionId)
       return fn()
     })
     const settled = run.catch(() => undefined).then(() => { if (this.steerChains.get(streamId) === settled) this.steerChains.delete(streamId) })
@@ -2019,7 +2027,7 @@ export class TurnRunner {
    */
   private async rewriteSteer<T>(sessionId: string, steerId: string, fallback: (reason: 'not_running' | 'taken' | 'failed') => T, rewrite: (sidecar: SidecarLike, streamId: string, records: SteerRecord[], index: number) => Promise<{ result: T; changed: boolean }>): Promise<T> {
     let s: Session | null = null
-    try { s = this.deps.store.get(sessionId, { metadataOnly: true }) } catch { s = null }
+    try { s = (await this.deps.store.get(sessionId, { metadataOnly: true })) } catch { s = null }
     const streamId = s?.active_stream_id
     const sidecar = this.deps.sidecar()
     if (!streamId || !sidecar) return fallback('not_running')
@@ -2036,7 +2044,7 @@ export class TurnRunner {
         finished()
         const deferred = this.deferredPendingSteer.get(streamId)
         this.deferredPendingSteer.delete(streamId)
-        if (deferred !== undefined && !outcome.changed) this.settleConsumedSteers(sessionId, streamId, deferred)
+        if (deferred !== undefined && !outcome.changed) (await this.settleConsumedSteers(sessionId, streamId, deferred))
       }
       return outcome.result
     })
@@ -2052,15 +2060,15 @@ export class TurnRunner {
    * TAL-424 Edit and Cancel: take a pending steer back before the Agent takes it. `withdrawn: false` (and nothing
    * emitted) when it is unknown, already taken or being sent; a taken one then settles as consumed.
    */
-  withdrawSteer(sessionId: string, steerId: string, reason: SteerWithdrawReason): Promise<{ withdrawn: boolean; text?: string }> {
-    return this.rewriteSteer<{ withdrawn: boolean; text?: string }>(sessionId, steerId, () => ({ withdrawn: false }), async (sidecar, streamId, records, index) => {
+  async withdrawSteer(sessionId: string, steerId: string, reason: SteerWithdrawReason): Promise<{ withdrawn: boolean; text?: string }> {
+    return (await this.rewriteSteer<{ withdrawn: boolean; text?: string }>(sessionId, steerId, () => ({ withdrawn: false }), async (sidecar, streamId, records, index) => {
       const record = records[index]!
       const reply = await sidecar.call('chat.steer_withdraw', { stream_id: streamId, pending: records.map((r) => r.text), index })
       if (!reply.withdrawn) return { result: { withdrawn: false }, changed: false }
       this.dropSteer(streamId, record)
       this.emitToSession(sessionId, 'steer_withdrawn', { steer_id: record.steer_id, reason, text: record.display_text })
       return { result: { withdrawn: true, text: record.display_text }, changed: true }
-    })
+    }))
   }
 
   /**
@@ -2068,8 +2076,8 @@ export class TurnRunner {
    * once); during tools it goes last on the Agent's queue and stays `sending_now` until taken; with nothing live it
    * stays pending.
    */
-  sendSteerNow(sessionId: string, steerId: string): Promise<SteerSendNowResponse> {
-    return this.rewriteSteer<SteerSendNowResponse>(sessionId, steerId, (outcome) => ({ redirected: false, outcome }), async (sidecar, streamId, records, index) => {
+  async sendSteerNow(sessionId: string, steerId: string): Promise<SteerSendNowResponse> {
+    return (await this.rewriteSteer<SteerSendNowResponse>(sessionId, steerId, (outcome) => ({ redirected: false, outcome }), async (sidecar, streamId, records, index) => {
       const record = records[index]!
       if (!record.can_redirect) return { result: { redirected: false, outcome: 'failed' }, changed: false }
       const reply = await sidecar.call('chat.steer_now', { stream_id: streamId, pending: records.map((r) => r.text), index })
@@ -2086,16 +2094,16 @@ export class TurnRunner {
         this.emitToSession(sessionId, 'steer_pending', this.pendingSteerView(record))
       } else {
         this.emitToSession(sessionId, 'steer_consumed', this.consumedSteerPayload(record, { redirected: true }))
-        this.saveConsumedSteers(sessionId, streamId)
+        await this.saveConsumedSteers(sessionId, streamId)
       }
       return { result: { redirected: true, outcome: 'delivered' }, changed: true }
-    })
+    }))
   }
 
   // ── approvals / clarify ──────────────────────────────────────────────────
 
   async respondApproval(sessionId: string, choice: string, approvalId: string, enableYolo: boolean): Promise<Record<string, unknown>> {
-    sessionId = this.deps.service().idForMutation(sessionId)
+    sessionId = (await this.deps.service().idForMutation(sessionId))
     // Python `_enable_session_yolo_and_release_pending`: a stale card id while another approval is parked
     // must not commit YOLO for the whole session — fail closed with the relay envelope instead.
     if (enableYolo && approvalId && !this.deps.pending.hasApprovalId(sessionId, approvalId) && this.deps.pending.hasPendingApproval(sessionId)) {
@@ -2107,7 +2115,7 @@ export class TurnRunner {
     const sidecar = this.deps.sidecar()
     const relayFailure = (message: string): Record<string, unknown> => ({ ok: false, choice, error: `The Agent sidecar did not accept the approval (${message}); retry in a moment.`, _status: 503 })
     let s: Session | null = null
-    try { s = this.deps.store.get(sessionId, { metadataOnly: true }) } catch { s = null }
+    try { s = (await this.deps.store.get(sessionId, { metadataOnly: true })) } catch { s = null }
     const profileHome = this.deps.profileHome(s?.profile ?? null)
     let resolved = false
     let withdrawn = false
@@ -2134,7 +2142,7 @@ export class TurnRunner {
       // still confirm now so parked Agent waiters are released before YOLO is reported as on.
       const failure = await this.withYoloLock(sessionId, async (): Promise<Record<string, unknown> | null> => {
         if (sidecar) { try { await sidecar.call('approval.set_yolo', { session_id: sessionId, enabled: true }) } catch (error) { return relayFailure(str((error as Error).message)) } }
-        this.deps.service().setYolo(sessionId, true)
+        await this.deps.service().setYolo(sessionId, true)
         return null
       })
       if (failure) return failure
@@ -2169,8 +2177,8 @@ export class TurnRunner {
   }
 
   private withYoloLock<T>(sessionId: string, fn: () => Promise<T>): Promise<T> {
-    const run = (this.yoloChains.get(sessionId) ?? Promise.resolve()).then(() => {
-      sessionId = this.deps.service().idForMutation(sessionId)
+    const run = (this.yoloChains.get(sessionId) ?? Promise.resolve()).then(async () => {
+      sessionId = (await this.deps.service().idForMutation(sessionId))
       return fn()
     })
     const settled = run.catch(() => undefined).then(() => { if (this.yoloChains.get(sessionId) === settled) this.yoloChains.delete(sessionId) })
@@ -2180,7 +2188,7 @@ export class TurnRunner {
 
   /** Python `set_session_yolo_enabled(False)`: the sidecar must drop its per-session YOLO state before the local flag clears. */
   async disableYolo(sessionId: string): Promise<Record<string, unknown>> {
-    sessionId = this.deps.service().idForMutation(sessionId)
+    sessionId = (await this.deps.service().idForMutation(sessionId))
     return this.withYoloLock(sessionId, async () => {
       const sidecar = this.deps.sidecar()
       if (sidecar) {
@@ -2188,7 +2196,7 @@ export class TurnRunner {
           return { ok: false, error: `The Agent sidecar did not disable YOLO (${str((error as Error).message)}); retry in a moment.`, yolo_enabled: this.deps.service().yolo(sessionId).yolo_enabled === true, _status: 503 }
         }
       }
-      return this.deps.service().setYolo(sessionId, false)
+      return (await this.deps.service().setYolo(sessionId, false))
     })
   }
 
@@ -2198,7 +2206,7 @@ export class TurnRunner {
    * did not acknowledge (prompt retained).
    */
   async respondClarify(sessionId: string, clarifyId: string, reply: string | ClarifyAnswers | null): Promise<{ ok: boolean; response?: string; stale?: boolean; invalid?: boolean; error?: string }> {
-    sessionId = this.deps.service().idForMutation(sessionId)
+    sessionId = (await this.deps.service().idForMutation(sessionId))
     const entry = this.deps.pending.peekClarify(sessionId, clarifyId)
     if (!entry) return { ok: false, stale: true }
     // TAL-887: a password-manager answer goes to the Agent and nowhere else; `null` (a decline) is its empty reply.

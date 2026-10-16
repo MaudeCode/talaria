@@ -1,3 +1,4 @@
+import { sessionPath } from '../test/storage.js'
 import { spawnSync } from 'node:child_process'
 import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
@@ -40,16 +41,16 @@ with SessionDB(Path(sys.argv[2]) / 'state.db') as db:
     client = new SidecarClient({ python, agentDir, sidecarDir: resolve(import.meta.dirname, '../../../../sidecar'), hermesHome: home, log: () => undefined })
     await client.start()
     s = await bootTestServer({ sidecar: client, env: { HERMES_HOME: home, HERMES_WEBUI_STATE_DIR: join(home, 'webui') } })
-    s.deps.sessionStore.save(new Session({ session_id: 'cli-settled', source_tag: 'webui', messages: [{ role: 'user', content: 'retirement regression' }] }, { workspace: home, model: null }))
+    await s.deps.sessionStore.save(new Session({ session_id: 'cli-settled', source_tag: 'webui', messages: [{ role: 'user', content: 'retirement regression' }] }, { workspace: home, model: null }))
     await s.deps.settings.save({ show_cli_sessions: true })
-    const sessionPath = s.deps.sessionStore.pathFor('cli-settled')
-    const before = readFileSync(sessionPath, 'utf8')
+    const savedPath = sessionPath(s.deps.sessionStore, 'cli-settled')
+    const before = readFileSync(savedPath, 'utf8')
     const calls = vi.spyOn(client, 'call')
     const response = await s.get('/api/session/delete', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ session_id: 'cli-settled' }) })
     const result: unknown = await response.json()
     if (ledger) {
       expect(response.status).toBe(403)
-      expect(readFileSync(sessionPath, 'utf8')).toBe(before)
+      expect(readFileSync(savedPath, 'utf8')).toBe(before)
       expect(calls.mock.calls.filter(([method]) => method === 'state_db.delete_cli_session')).toEqual([])
       const db = new DatabaseSync(join(home, 'state.db'), { readOnly: true })
       try {
@@ -60,7 +61,7 @@ with SessionDB(Path(sys.argv[2]) / 'state.db') as db:
       return
     }
     expect(response.status).toBe(200)
-    expect(existsSync(s.deps.sessionStore.pathFor('cli-settled'))).toBe(false)
+    expect(existsSync(sessionPath(s.deps.sessionStore, 'cli-settled'))).toBe(false)
     s.deps.cliSessions.invalidate()
     const listed = await (await s.get('/api/sessions')).json() as { sessions: { session_id: string }[] }
     expect(listed.sessions.map((session) => session.session_id)).not.toContain('cli-settled')

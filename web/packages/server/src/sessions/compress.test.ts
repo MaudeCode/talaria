@@ -1,3 +1,4 @@
+import { sessionPath } from '../test/storage.js'
 /**
  * TAL-255: manual compression on `/api/session/compress` (iOS `/compress`) and the `compress/start` + `compress/status`
  * job the browser polls, against a fake `chat.compress`.
@@ -63,9 +64,9 @@ describe('manual session compression', () => {
   async function seeded(extra: Json = {}): Promise<string> {
     const res = await post(s, '/api/session/new', {})
     const sid = String(((await json(res)).session as Json).session_id)
-    const session = s.deps.sessionStore.get(sid)
+    const session = (await s.deps.sessionStore.get(sid))
     Object.assign(session, { messages: structuredClone(ORIGINAL), tool_calls: structuredClone(TOOL_CALLS), ...extra })
-    s.deps.sessionStore.save(session)
+    await s.deps.sessionStore.save(session)
     return sid
   }
   const staleRuntime = (): void => {
@@ -80,7 +81,7 @@ describe('manual session compression', () => {
 
   it('compresses the model context, keeps the transcript, and anchors the manual compression', async () => {
     const sid = await seeded()
-    const bak = `${s.deps.sessionStore.pathFor(sid)}.bak`
+    const bak = `${sessionPath(s.deps.sessionStore, sid)}.bak`
     writeFileSync(bak, '{}')
     let seen: SidecarParams<'chat.compress'> | null = null
     sidecar.respond('chat.compress', (params) => { seen = params; return compressed(params) })
@@ -93,7 +94,7 @@ describe('manual session compression', () => {
     expect((session.messages as Json[]).map((m) => m.content)).toEqual(['one', 'two', 'three', 'four'])
     expect(session).toMatchObject({ session_id: sid, compression_reference: { text: 'Approx request size: ~400 → ~120 tokens', after_message_index: 3 }, context_used_tokens: 120 })
     expect(seen).toMatchObject({ session_id: sid, focus_topic: 'database schema', conversation_history: ORIGINAL.map(({ role, content }) => ({ role, content })) })
-    const stored = s.deps.sessionStore.get(sid)
+    const stored = (await s.deps.sessionStore.get(sid))
     expect(stored.messages.map((m) => m.content)).toEqual(['one', 'two', 'three', 'four'])
     expect(stored.context_messages.map((m) => [m.role, m.content])).toEqual([['user', 'one'], ['assistant', 'four']])
     expect(stored.tool_calls).toEqual(TOOL_CALLS)
@@ -115,7 +116,7 @@ describe('manual session compression', () => {
     sidecar.respond('chat.compress', (params) => { sent = params.conversation_history; return compressed(params) })
     expect((await post(s, '/api/session/compress', { session_id: sid })).status).toBe(200)
     expect(sent).toEqual(context.map(({ role, content }) => ({ role, content })))
-    expect(s.deps.sessionStore.get(sid).context_messages.map((m) => m.content)).toEqual(['[CONTEXT COMPACTION] earlier turns summarized', 'five'])
+    expect((await s.deps.sessionStore.get(sid)).context_messages.map((m) => m.content)).toEqual(['[CONTEXT COMPACTION] earlier turns summarized', 'five'])
   })
 
   it('keeps state.db-only continuations visible once the boundary covers them', async () => {
@@ -128,7 +129,7 @@ describe('manual session compression', () => {
       sidecar.respond('chat.compress', (params) => { sent = params.conversation_history; return compressed(params) })
       const res = await json(await post(s, '/api/session/compress', { session_id: sid }))
       expect(sent.map((m) => m.content)).toEqual(['one', 'two', 'three', 'four', 'continued from the CLI', 'CLI answer'])
-      expect(s.deps.sessionStore.get(sid).compression_anchor_message_key).toMatchObject({ text: 'CLI answer', ts: 4.6 })
+      expect((await s.deps.sessionStore.get(sid)).compression_anchor_message_key).toMatchObject({ text: 'CLI answer', ts: 4.6 })
       expect((res.session as Json).compression_reference).toMatchObject({ after_message_index: 5 })
       const detail = ((await json(await s.get(`/api/session?session_id=${sid}`))).session as Json).messages as Json[]
       expect(detail.map((m) => m.content)).toEqual(['one', 'two', 'three', 'four', 'continued from the CLI', 'CLI answer'])
@@ -145,7 +146,7 @@ describe('manual session compression', () => {
     const spy = vi.spyOn(s.deps.sessions, 'stateDbRead').mockImplementation(() => ({ rows: ++reads > 3 ? [...structuredClone(ORIGINAL), structuredClone(late)] : structuredClone(ORIGINAL), idCapable: false, ok: true, reason: null, generation: null }))
     try {
       expect((await post(s, '/api/session/compress', { session_id: sid })).status).toBe(200)
-      const stored = s.deps.sessionStore.get(sid)
+      const stored = (await s.deps.sessionStore.get(sid))
       // Not absorbed into the transcript the compressed context was built against...
       expect(stored.messages.map((m) => m.content)).toEqual(['one', 'two', 'three', 'four'])
       // ...and still reaching the next model request, after the compressed rows.
@@ -196,7 +197,7 @@ describe('manual session compression', () => {
   it('keeps pre-compression state.db rows out of the model history (#4836)', async () => {
     const sid = await seeded({ context_messages: structuredClone(ORIGINAL) })
     expect((await post(s, '/api/session/compress', { session_id: sid })).status).toBe(200)
-    const stored = s.deps.sessionStore.get(sid)
+    const stored = (await s.deps.sessionStore.get(sid))
     const replayed = mergeSessionMessagesAppendOnly(stored.context_messages, structuredClone(ORIGINAL), { truncationWatermark: stored.truncation_watermark })
     expect(replayed).toHaveLength(stored.context_messages.length)
   })
@@ -242,19 +243,19 @@ describe('manual session compression', () => {
     sidecar.respond('chat.compress', () => { throw new SidecarError('provider log at /Users/alice/.hermes/secrets/token.txt failed', { condition: 'sidecar_error' }) })
     const failed = await json(await post(s, '/api/session/compress', { session_id: sid }))
     expect(failed.error).toBe('Compression failed: provider log at <path> failed')
-    expect(s.deps.sessionStore.get(sid).context_messages).toEqual([])
+    expect((await s.deps.sessionStore.get(sid)).context_messages).toEqual([])
   })
 
   it('refuses a stale Agent runtime with the typed 409 before mutating or creating a job', async () => {
     const sid = await seeded()
-    const before = JSON.stringify(s.deps.sessionStore.get(sid).toDocument())
+    const before = JSON.stringify((await s.deps.sessionStore.get(sid)).toDocument())
     staleRuntime()
     for (const path of ['/api/session/compress', '/api/session/compress/start']) {
       const res = await post(s, path, { session_id: sid })
       expect(res.status).toBe(409)
       expect(await json(res)).toMatchObject({ error: 'restart required', type: 'agent_runtime_stale', retryable: true, restart_scheduled: false })
     }
-    expect(JSON.stringify(s.deps.sessionStore.get(sid).toDocument())).toBe(before)
+    expect(JSON.stringify((await s.deps.sessionStore.get(sid)).toDocument())).toBe(before)
     expect((await json(await s.get(`/api/session/compress/status?session_id=${sid}`))).status).toBe('idle')
   })
 
@@ -286,8 +287,8 @@ describe('manual session compression', () => {
     const sync = post(s, '/api/session/compress', { session_id: sid })
     expect((await json(await s.get(`/api/session/compress/status?session_id=${sid}`))).status).toBe('running')
     release()
-    for (let i = 0; i < 100 && s.deps.sessionStore.get(sid).context_messages.length === 0; i += 1) await new Promise((r) => setTimeout(r, 10))
-    expect(s.deps.sessionStore.get(sid).context_messages).toHaveLength(2)
+    for (let i = 0; i < 100 && (await s.deps.sessionStore.get(sid)).context_messages.length === 0; i += 1) await new Promise((r) => setTimeout(r, 10))
+    expect((await s.deps.sessionStore.get(sid)).context_messages).toHaveLength(2)
     expect(await json(await post(s, '/api/session/compress/start', { session_id: sid }))).toMatchObject({ status: 'running' })
     finalize()
     expect((await sync).status).toBe(200)
@@ -298,7 +299,7 @@ describe('manual session compression', () => {
     expect(calls).toBe(1)
     // Every open tab polling the finished job reads the same result until the TTL drops it.
     expect((await json(await s.get(`/api/session/compress/status?session_id=${sid}`))).status).toBe('done')
-    expect(s.deps.sessionStore.get(sid).context_messages.map((m) => m.content)).toEqual(['one', 'four'])
+    expect((await s.deps.sessionStore.get(sid)).context_messages.map((m) => m.content)).toEqual(['one', 'four'])
   })
 
   it('starts a fresh job after a terminal error', async () => {
@@ -313,15 +314,15 @@ describe('manual session compression', () => {
 
   it('refuses a result the transcript moved past and keeps the concurrent edit', async () => {
     const sid = await seeded()
-    sidecar.respond('chat.compress', (params) => {
-      const live = s.deps.sessionStore.get(sid)
+    sidecar.respond('chat.compress', async (params) => {
+      const live = (await s.deps.sessionStore.get(sid))
       live.messages.push({ role: 'user', content: 'concurrent edit', timestamp: 5 })
-      s.deps.sessionStore.save(live)
+      await s.deps.sessionStore.save(live)
       return compressed(params)
     })
     const res = await post(s, '/api/session/compress', { session_id: sid })
     expect([res.status, (await json(res)).error]).toEqual([409, 'Session was modified during compression; please retry.'])
-    const stored = s.deps.sessionStore.get(sid)
+    const stored = (await s.deps.sessionStore.get(sid))
     expect(stored.messages.at(-1)?.content).toBe('concurrent edit')
     expect(stored.context_messages).toEqual([])
     expect(stored.compression_anchor_mode).toBeNull()
@@ -338,7 +339,7 @@ describe('manual session compression', () => {
     try {
       const res = await post(s, '/api/session/compress', { session_id: sid })
       expect([res.status, (await json(res)).error]).toEqual([409, 'Session was modified during compression; please retry.'])
-      expect(s.deps.sessionStore.get(sid).truncation_watermark).toBeNull()
+      expect((await s.deps.sessionStore.get(sid)).truncation_watermark).toBeNull()
       expect(finalized).toEqual([false])
     } finally { spy.mockRestore() }
   })
@@ -346,17 +347,17 @@ describe('manual session compression', () => {
   it('does not compress over a stream that started while the runtime check awaited', async () => {
     const sid = await seeded()
     let compressCalls = 0
-    sidecar.respond('runtime.ensure_current', () => {
-      const live = s.deps.sessionStore.get(sid)
+    sidecar.respond('runtime.ensure_current', async () => {
+      const live = (await s.deps.sessionStore.get(sid))
       live.active_stream_id = 'stream-raced'
-      s.deps.sessionStore.save(live)
+      await s.deps.sessionStore.save(live)
       return { current: true as const, agent_revision: null }
     })
     sidecar.respond('chat.compress', (params) => { compressCalls += 1; return compressed(params) })
     const res = await post(s, '/api/session/compress', { session_id: sid })
     expect([res.status, (await json(res)).error]).toEqual([409, 'Session is still streaming; wait for the current turn to finish.'])
     expect(compressCalls).toBe(0)
-    expect(s.deps.sessionStore.get(sid).active_stream_id).toBe('stream-raced')
+    expect((await s.deps.sessionStore.get(sid)).active_stream_id).toBe('stream-raced')
   })
 
   it('evicts the cached turn agent once the compressed context is installed', async () => {
@@ -375,15 +376,15 @@ describe('manual session compression', () => {
 
   it('refuses a result once a stream started during the compression', async () => {
     const sid = await seeded()
-    sidecar.respond('chat.compress', (params) => {
-      const live = s.deps.sessionStore.get(sid)
+    sidecar.respond('chat.compress', async (params) => {
+      const live = (await s.deps.sessionStore.get(sid))
       live.active_stream_id = 'stream-concurrent'
-      s.deps.sessionStore.save(live)
+      await s.deps.sessionStore.save(live)
       return compressed(params)
     })
     await post(s, '/api/session/compress/start', { session_id: sid })
     expect(await waitForTerminal(s, sid)).toMatchObject({ ok: false, status: 'error', error_status: 409, error: 'Session stream state changed during compression; please retry.' })
-    const stored = s.deps.sessionStore.get(sid)
+    const stored = (await s.deps.sessionStore.get(sid))
     expect(stored.active_stream_id).toBe('stream-concurrent')
     expect(stored.context_messages).toEqual([])
   })
@@ -408,11 +409,11 @@ describe('manual session compression', () => {
       { role: 'user', content: 'five', timestamp: 6 },
       { role: 'assistant', content: 'six', timestamp: 7 },
     ]
-    const anchored = (extra: Json = {}): Promise<string> => seeded({
+    const anchored = async (extra: Json = {}): Promise<string> => (await seeded({
       messages: structuredClone(TRANSCRIPT), tool_calls: [],
       compression_anchor_visible_idx: 4, compression_anchor_message_key: { role: 'assistant', ts: 5, text: 'four', attachments: 0 }, compression_anchor_summary: 'Earlier turns summarized.',
       ...extra,
-    })
+    }))
     const detail = async (sid: string, query = ''): Promise<Json> => (await json(await s.get(`/api/session?session_id=${sid}${query}`))).session as Json
 
     it('places the card after the anchor row of the full transcript', async () => {

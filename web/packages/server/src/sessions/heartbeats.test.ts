@@ -1,3 +1,5 @@
+import { join } from 'node:path'
+import { sessionDirectory, sessionPath } from '../test/storage.js'
 import { readFileSync } from 'node:fs'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { FakeSidecar } from '../sidecar/fake.js'
@@ -20,17 +22,17 @@ describe('process heartbeats (TAL-790)', () => {
   const setup = async () => {
     const response = await s.get('/api/session/new', { method: 'POST', headers: { 'content-type': 'application/json' }, body: '{}' })
     const sid = ((await response.json()) as { session: { session_id: string } }).session.session_id
-    const session = s.deps.sessionStore.get(sid)
+    const session = (await s.deps.sessionStore.get(sid))
     session.messages = [{ role: 'user', content: 'run tests', _turn_id: 'user' }]
-    s.deps.sessionStore.save(session)
+    await s.deps.sessionStore.save(session)
     const registry = new StreamRegistry()
     const events: string[] = [], prompts: string[] = [], consumed: string[] = []
-    const receipts = new BackgroundTaskStore(s.deps.sessionStore.sessionDir, () => 100)
+    const receipts = new BackgroundTaskStore(sessionDirectory(s.deps.sessionStore), () => 100)
     const activity = new BackgroundActivity({ store: receipts, sidecar: () => sidecar, profileHome: () => s.state, liveStream: () => false, now: () => 100, log: () => undefined })
     sidecar.respond('process.format_notification', ({ event }) => ({ text: agentText(event) }))
     sidecar.respond('process.mark_consumed', ({ process_id }) => { consumed.push(process_id); return { ok: true } })
     sidecar.respond('process.consumed', ({ process_ids }) => ({ consumed: process_ids }))
-    const drain = new CompletionDrain({ sidecar: () => sidecar, baseHome: s.state, profileHome: () => s.state, activeProfile: () => 'default', store: s.deps.sessionStore,
+    const drain = new CompletionDrain({ heldWakeupsPath: join(s.state, 'sessions', '_wakeup_held.json'), sidecar: () => sidecar, baseHome: s.state, profileHome: () => s.state, activeProfile: () => 'default', store: s.deps.sessionStore,
       registry, channels: { emit: (_sid: string, name: string) => { events.push(name); return 1 } } as unknown as SessionChannels,
       background: activity, startTurn: (_session, prompt) => { prompts.push(prompt); return { stream_id: `wake-${prompts.length}` } }, now: () => 100, log: () => undefined })
     return { sid, session, registry, events, prompts, consumed, receipts, drain }
@@ -84,12 +86,12 @@ describe('process heartbeats (TAL-790)', () => {
     try {
       await drain.processOne(heartbeat(sid))
       session.messages.push({ role: 'user', content: agentText(heartbeat(sid)), _turn_id: 'wake-1', _source: 'process_wakeup' }, { role: 'assistant', content: 'Tests are progressing.', _turn_id: 'wake-1' })
-      s.deps.sessionStore.save(session)
-      const saved = JSON.parse(readFileSync(s.deps.sessionStore.pathFor(sid), 'utf8')) as { messages: Dict[] }
+      await s.deps.sessionStore.save(session)
+      const saved = JSON.parse(readFileSync(sessionPath(s.deps.sessionStore, sid), 'utf8')) as { messages: Dict[] }
       expect(saved.messages.find((m) => m._source === 'process_wakeup')?.display_kind).toBe('hidden')
       // The turn metadata is bounded; old heartbeat prompts must not reappear when it is pruned.
       for (let i = 0; i < 201; i++) recordBackgroundUpdate(session, `later-${i}`, batchUpdate([{ event: { type: 'completion' }, prompt: 'done' }]))
-      s.deps.sessionStore.save(session)
+      await s.deps.sessionStore.save(session)
       const data = await (await s.get(`/api/session?session_id=${sid}&messages=1`)).json() as { session: { messages: Dict[] } }
       expect(data.session.messages.find((m) => m._source === 'process_wakeup')).toMatchObject({ _display: 'hidden' })
       expect(data.session.messages.find((m) => m.content === 'Tests are progressing.')).toMatchObject({ _display: 'row', _background_reply: true })

@@ -81,7 +81,6 @@ beforeEach(() => {
   rmSync(dir(), { recursive: true, force: true })
   rmSync(dbPath(), { force: true })
   s.deps.sessionStore.sessions.clear()
-  s.deps.sessionStore.invalidatePersistedIds()
 })
 
 describe('session recovery routes', () => {
@@ -94,7 +93,7 @@ describe('session recovery routes', () => {
     orphan('abc123', 4)
     write('_index.json', [])
     // A resident shell without a sidecar never reaches the rebuilt index (it would audit as drift).
-    const shell = s.deps.sessionStore.newSession()
+    const shell = (await s.deps.sessionStore.newSession())
     const [status, body] = await repair()
     expect(status).toBe(200)
     expect(body).toMatchObject({ clean: true, ok: true, repaired: 1, backup_repair: { restored: 1, orphaned_backups: 1 }, after: { status: 'ok' } })
@@ -160,9 +159,9 @@ describe('deliberate shrinks', () => {
     const turns = [{ role: 'user', content: 'first' }, { role: 'assistant', content: 'one' }, { role: 'user', content: 'second' }, { role: 'assistant', content: 'two' }]
     for (const [path, body] of [['/api/session/truncate', { keep_count: 1 }], ['/api/session/retry', {}], ['/api/session/undo', {}]] as const) {
       const sid = String(((await json(await post(s, '/api/session/new', {}))).session as Json).session_id)
-      const session = s.deps.sessionStore.get(sid)
+      const session = (await s.deps.sessionStore.get(sid))
       session.messages = structuredClone(turns)
-      s.deps.sessionStore.save(session)
+      await s.deps.sessionStore.save(session)
       const res = await post(s, path, { session_id: sid, ...body })
       expect(res.status, path).toBe(200)
       expect(read(`${sid}.json.bak`).messages, path).toHaveLength(4)
@@ -176,11 +175,11 @@ describe('deliberate shrinks', () => {
 
   it('restores an unstamped shrink written after the marker, and the session reads the restored transcript', async () => {
     const sid = String(((await json(await post(s, '/api/session/new', {}))).session as Json).session_id)
-    const session = s.deps.sessionStore.get(sid)
+    const session = (await s.deps.sessionStore.get(sid))
     session.messages = msgs(3)
-    s.deps.sessionStore.save(session)
+    await s.deps.sessionStore.save(session)
     session.messages = msgs(1)
-    s.deps.sessionStore.save(session)
+    await s.deps.sessionStore.save(session)
     expect(kindsFor(await audit(), sid)).toEqual(['shrunken_live'])
     const [status, body] = await repair()
     expect([status, body.repaired]).toEqual([200, 1])
@@ -212,7 +211,7 @@ describe('deliberate shrinks', () => {
 
   it('skips a session with a live turn', async () => {
     pair('busy1', sessionDoc('busy1', 1), sessionDoc('busy1', 3))
-    const resident = s.deps.sessionStore.get('busy1')
+    const resident = (await s.deps.sessionStore.get('busy1'))
     resident.active_stream_id = 'stream-1'
     const [status, body] = await repair()
     expect(status).toBe(409)

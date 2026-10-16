@@ -33,11 +33,11 @@ describe('recalled memory display (TAL-888)', () => {
       expect(settled.filter((m) => m.role === 'user')).toHaveLength(1)
       expect(messageText(settled[0]!.content)).toBe(typed)
 
-      const session = s.deps.sessionStore.newSession()
+      const session = (await s.deps.sessionStore.newSession())
       session.messages = [row!, { role: 'assistant', content: 'A test image.', timestamp: 101 }]
       session.context_messages = structuredClone(session.messages)
-      s.deps.sessionStore.save(session)
-      const terminal = s.deps.turns.publicTerminalSession(session)
+      await s.deps.sessionStore.save(session)
+      const terminal = (await s.deps.turns.publicTerminalSession(session))
       const response = await s.get(`/api/session?session_id=${session.session_id}`)
       expect(response.status).toBe(200)
       const { session: reloaded } = await response.json() as { session: { messages: Message[] } }
@@ -70,10 +70,10 @@ describe('recalled memory display (TAL-888)', () => {
   ])('keeps $name visible and byte-faithful in public routes', async ({ content, expected }) => {
     const s = await bootTestServer()
     try {
-      const session = s.deps.sessionStore.newSession()
+      const session = (await s.deps.sessionStore.newSession())
       session.messages = [{ role: 'user', content }]
-      s.deps.sessionStore.save(session)
-      const terminal = s.deps.turns.publicTerminalSession(session)
+      await s.deps.sessionStore.save(session)
+      const terminal = (await s.deps.turns.publicTerminalSession(session))
       expect((terminal.messages as Message[])[0]).toMatchObject({ content: expected, _display: 'row' })
       for (const path of ['/api/session', '/api/session/export']) {
         const response = await s.get(`${path}?session_id=${session.session_id}`)

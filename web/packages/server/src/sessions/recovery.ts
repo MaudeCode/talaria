@@ -1,6 +1,6 @@
 /**
  * Session recovery audit and safe repair (Python `api/session_recovery.py`, TAL-259). The store writes
- * `<sid>.json.bak` before any save that shrinks a transcript; the audit classifies every backup, index row, WebUI-origin
+ * a shrink backup before any save that shrinks a transcript; the audit classifies every backup, index row, WebUI-origin
  * state.db row without a sidecar, and pending turn-journal entry as `repairable` or `unsafe_to_repair`, and safe repair
  * restores, materializes, and reindexes only what is repairable.
  *
@@ -9,13 +9,13 @@
  * `recovery_stamping_since` marker may predate that provenance, so next to a readable live transcript it goes to manual
  * review instead.
  */
-import { closeSync, existsSync, fsyncSync, linkSync, mkdirSync, openSync, readdirSync, readFileSync, renameSync, statSync, unlinkSync } from 'node:fs'
+import { existsSync, mkdirSync, readdirSync, readFileSync, statSync } from 'node:fs'
 import { join } from 'node:path'
 import type { DatabaseSync } from 'node:sqlite'
 import type { RecoveryAudit, RecoveryAuditItem, RecoveryRepair } from '@maudecode/talaria-web-contracts'
-import { atomicWriteText, writeFully } from '../fs/atomic.js'
+import { atomicWriteText } from '../fs/atomic.js'
 import { str } from '../util.js'
-import { isContextCompressionMarker } from './merge.js'
+import type { StorageIssue } from './storage/backend.js'
 import { isSafeSessionId, Session, type Message } from './session.js'
 import { normalizeAgentSessionSource, openStateDbReadonly } from './state-db.js'
 import type { SessionStore } from './store.js'
@@ -30,6 +30,7 @@ export interface RecoveryDeps {
   stateDbPath: string
   profile: string
   stampingSince: number
+  journalDirectory: string
   isReadOnly: (sid: string, profile: string) => boolean
   log: (line: string) => void
 }
@@ -37,15 +38,12 @@ export interface RecoveryDeps {
 const STAMPING_MARKER = 'recovery_stamping_since'
 /** Python `STATE_DB_RECOVERY_BUSY_TIMEOUT_MS`: a recovery scan waits out a writer rather than read a lock as "nothing missing". */
 const STATE_DB_RECOVERY_BUSY_TIMEOUT_MS = 5000
-const SHRINK_GENERATION_RE = /^[0-9a-f]{12}4[0-9a-f]{3}[89ab][0-9a-f]{15}$/
 const TURN_JOURNAL_DIR = '_turn_journal'
 const TURN_JOURNAL_ID_RE = /^[A-Za-z0-9_.-]+$/
 const TERMINAL_TURN_EVENTS = new Set(['completed', 'interrupted'])
 const WORKTREE_FIELDS = ['worktree_path', 'worktree_branch', 'worktree_repo_root', 'worktree_created_at'] as const
-let tmpCounter = 0
 
 const isDict = (v: unknown): v is Dict => Boolean(v) && typeof v === 'object' && !Array.isArray(v)
-const isEmptyList = (v: unknown): boolean => Array.isArray(v) && v.length === 0
 
 /**
  * Epoch seconds since which this server stamps every deliberate shrink, recorded in the state directory on first start.
@@ -61,92 +59,6 @@ export function recoveryStampingSince(stateDir: string): number {
   mkdirSync(stateDir, { recursive: true })
   atomicWriteText(path, `${String(now)}\n`)
   return now
-}
-
-function readDoc(path: string): Dict | null {
-  try {
-    const value = JSON.parse(readFileSync(path, 'utf8')) as unknown
-    return isDict(value) ? value : null
-  } catch {
-    return null
-  }
-}
-
-/** Python `_msg_count`: the transcript length, or -1 when the file is missing, unparseable, or not a session. */
-function messageCount(doc: Dict | null): number {
-  return doc && Array.isArray(doc.messages) ? doc.messages.length : -1
-}
-
-// ── deliberate-shrink provenance ─────────────────────────────────────────
-
-/**
- * Python `_session_records_clear_sentinel` / `_live_supersedes_backup_by_clear_generation`: the live sidecar carries a
- * clear generation the backup lacks and the clear's boundary reset, and is either the exact cleared shape or has new
- * messages since.
- */
-function clearedAfterBackup(live: Dict, bak: Dict): boolean {
-  const generation = live.clear_generation
-  if (typeof generation !== 'string' || !generation || bak.clear_generation === generation) return false
-  if (live.truncation_watermark !== 0 || live.truncation_boundary !== 0) return false
-  if (Array.isArray(live.messages) && live.messages.length > 0) return true
-  const nulls = ['active_stream_id', 'pending_user_message', 'pending_started_at', 'pending_user_source']
-  const lists = ['messages', 'context_messages', 'pending_attachments']
-  return nulls.every((k) => k in live && live[k] === null) && lists.every((k) => isEmptyList(live[k]))
-}
-
-/** Python `_session_records_intentional_compress_shrink`: the live sidecar records a context compression. */
-function recordsCompression(live: Dict): boolean {
-  if (str(live.compression_anchor_mode).trim().toLowerCase() === 'manual') return true
-  const shorter = Array.isArray(live.context_messages) && Array.isArray(live.messages) && live.context_messages.length < live.messages.length
-  if (!shorter) return false
-  const anchored = str(live.compression_anchor_summary).trim() !== '' && live.compression_anchor_message_key !== null && live.compression_anchor_message_key !== undefined
-  return anchored || (live.truncation_watermark !== null && live.truncation_watermark !== undefined)
-}
-
-/**
- * Python `_backup_predates_intentional_shrink`: the backup still holds the uncompressed context. A backup whose context
- * carries the compaction marker was written after the compression and stays recoverable.
- */
-function backupPredatesCompression(live: Dict, bak: Dict): boolean {
-  const bakContext = Array.isArray(bak.context_messages) ? bak.context_messages : []
-  if (bakContext.some(isContextCompressionMarker)) return false
-  return bakContext.length > (Array.isArray(live.context_messages) ? live.context_messages.length : 0)
-}
-
-/** Python `_session_records_intentional_message_shrink`: truncate, retry, or undo stamped a generation the backup lacks. */
-function recordsMessageShrink(live: Dict, bak: Dict): boolean {
-  const isGeneration = (v: unknown): boolean => typeof v === 'string' && SHRINK_GENERATION_RE.test(v)
-  if (!isGeneration(live.intentional_shrink_generation)) return false
-  const backup = bak.intentional_shrink_generation
-  if (backup === undefined || backup === null) return true
-  return isGeneration(backup) && backup !== live.intentional_shrink_generation
-}
-
-interface BackupStatus {
-  session_id: string
-  live_messages: number
-  bak_messages: number
-  recommend: 'restore' | 'no_action' | 'no_backup' | 'manual_review'
-  reason?: 'intentional_clear_truncate' | 'intentional_compress_shrink' | 'intentional_message_shrink' | 'unstamped_legacy_backup'
-}
-
-/** Python `inspect_session_recovery_status`: whether `<sid>.json.bak` should replace `<sid>.json`. */
-function inspectBackup(dir: string, sid: string, stampingSince: number): BackupStatus {
-  const livePath = join(dir, `${sid}.json`)
-  let bakMtime: number
-  try { bakMtime = statSync(`${livePath}.bak`).mtimeMs / 1000 } catch { return { session_id: sid, live_messages: messageCount(readDoc(livePath)), bak_messages: -1, recommend: 'no_backup' } }
-  const live = readDoc(livePath)
-  const bak = readDoc(`${livePath}.bak`)
-  const base = { session_id: sid, live_messages: messageCount(live), bak_messages: messageCount(bak) }
-  if (base.bak_messages <= base.live_messages) return { ...base, recommend: 'no_action' }
-  // Every guard needs both documents; an unreadable live file is a real loss and restores.
-  if (live && bak) {
-    if (clearedAfterBackup(live, bak)) return { ...base, recommend: 'no_action', reason: 'intentional_clear_truncate' }
-    if (recordsCompression(live) && backupPredatesCompression(live, bak)) return { ...base, recommend: 'no_action', reason: 'intentional_compress_shrink' }
-    if (recordsMessageShrink(live, bak)) return { ...base, recommend: 'no_action', reason: 'intentional_message_shrink' }
-    if (base.live_messages >= 0 && bakMtime < stampingSince) return { ...base, recommend: 'manual_review', reason: 'unstamped_legacy_backup' }
-  }
-  return { ...base, recommend: 'restore' }
 }
 
 // ── state.db ─────────────────────────────────────────────────────────────
@@ -166,7 +78,7 @@ function columns(db: DatabaseSync, table: string): Set<string> {
 }
 
 /** Python `_read_state_db_missing_sidecar_rows` (with empty rows) plus the session ids, from one read-only handle. */
-function readStateDb(path: string, sessionDir: string): StateDbView {
+function readStateDb(path: string, persisted: Set<string>): StateDbView {
   const absent: StateDbView = { has: () => true, missing: [], unreadable: false }
   if (!existsSync(path)) return absent
   let db: DatabaseSync
@@ -187,7 +99,7 @@ function readStateDb(path: string, sessionDir: string): StateDbView {
       : null
     for (const row of rows) {
       const sid = str(row.id).trim()
-      if (!isSafeSessionId(sid) || existsSync(join(sessionDir, `${sid}.json`))) continue
+      if (!isSafeSessionId(sid) || persisted.has(sid)) continue
       const transcript = ((messages?.all(sid) as Dict[] | undefined) ?? []).map((m) => ({ role: m.role, content: m.content || '', ...(m.timestamp !== null ? { timestamp: m.timestamp } : {}) }))
       view.missing.push({ ...row, id: sid, messages: transcript })
     }
@@ -265,7 +177,7 @@ const TURN_ROW_CLOCK_SLACK_S = 5
  * turn's id (or stream id) is that turn; otherwise rows and turns with the same text and attachments pair up in order,
  * one row per turn, so a repeated message ("continue") or an attachment-only turn still counts as missing.
  */
-function pendingJournalTurns(sessionDir: string, sid: string, events: Dict[]): RecoveryItem[] {
+function pendingJournalTurns(live: Dict | null, sid: string, events: Dict[]): RecoveryItem[] {
   interface Turn { id: string; ids: Set<string>; first: number; latest: Dict; key: string | null }
   const turns = new Map<string, Turn>()
   for (const event of events) {
@@ -279,7 +191,6 @@ function pendingJournalTurns(sessionDir: string, sid: string, events: Dict[]): R
     turns.set(id, turn)
   }
   if (!turns.size) return []
-  const live = readDoc(join(sessionDir, `${sid}.json`))
   const rows = (Array.isArray(live?.messages) ? live.messages : []).filter((m): m is Dict => isDict(m) && m.role === 'user')
   const rowTurnIds = new Set(rows.map((m) => str(m._turn_id)).filter(Boolean))
   const journaled = new Set([...turns.values()].flatMap((t) => [...t.ids]))
@@ -295,7 +206,7 @@ function pendingJournalTurns(sessionDir: string, sid: string, events: Dict[]): R
   const items: RecoveryItem[] = []
   for (const turn of [...missing].sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0))) {
     if (TERMINAL_TURN_EVENTS.has(str(turn.latest.event))) continue
-    items.push({ ...item(sid, 'turn_journal_pending_turn', 'repairable', 'audit_only_pending_turn_journal', messageCount(live)), turn_id: turn.id, event: str(turn.latest.event) })
+    items.push({ ...item(sid, 'turn_journal_pending_turn', 'repairable', 'audit_only_pending_turn_journal', Array.isArray(live?.messages) ? live.messages.length : -1), turn_id: turn.id, event: str(turn.latest.event) })
   }
   return items
 }
@@ -306,49 +217,41 @@ function item(session_id: string, kind: RecoveryItem['kind'], category: Recovery
   return { session_id, kind, category, recommendation, live_messages, bak_messages }
 }
 
-interface Scan { dir: string; liveIds: string[]; backupIds: string[]; db: StateDbView; tombstoned: Set<string> }
+interface Scan { liveIds: string[]; issues: StorageIssue[]; db: StateDbView; tombstoned: Set<string> }
 
-function scan(deps: RecoveryDeps): Scan {
-  const dir = deps.store.sessionDir
-  let names: string[] = []
-  try { names = readdirSync(dir).sort() } catch { /* no sessions yet; state.db may still hold some */ }
-  const ids = (suffix: string): string[] => names.filter((n) => n.endsWith(suffix) && !n.startsWith('_')).map((n) => n.slice(0, -suffix.length))
-  return { dir, liveIds: ids('.json'), backupIds: ids('.json.bak'), db: readStateDb(deps.stateDbPath, dir), tombstoned: deps.store.loadDeletedTombstone() }
+async function scan(deps: RecoveryDeps): Promise<Scan> {
+  const persisted = await deps.store.persistedIds()
+  return { liveIds: [...persisted].sort(), issues: await deps.store.diagnose(), db: readStateDb(deps.stateDbPath, persisted), tombstoned: await deps.store.loadDeletedTombstone() }
 }
 
-/** The document's actual home is also the ownership home for orphan backups. */
-function readOnlyRecovery(deps: RecoveryDeps, sid: string): boolean {
-  const path = deps.store.pathFor(sid)
-  const doc = readDoc(path) ?? readDoc(`${path}.bak`)
-  return deps.isReadOnly(sid, doc ? str(doc.profile) || 'default' : deps.profile)
+async function readOnlyRecovery(deps: RecoveryDeps, sid: string, profile?: string): Promise<boolean> {
+  if (profile === undefined) {
+    try { profile = (await deps.store.loadMetadataOnly(sid))?.profile ?? deps.profile } catch { profile = deps.profile }
+  }
+  return deps.isReadOnly(sid, profile)
 }
 
-/** Python `audit_session_recovery`: a read-only classification of every recovery finding. */
-export function auditSessionRecovery(deps: RecoveryDeps): RecoveryAudit {
-  const s = scan(deps)
+export async function auditSessionRecovery(deps: RecoveryDeps): Promise<RecoveryAudit> {
+  const s = await scan(deps)
   const items: RecoveryItem[] = []
-  const live = new Set(s.liveIds)
-  for (const sid of s.backupIds.filter((id) => live.has(id))) {
-    const status = inspectBackup(s.dir, sid, deps.stampingSince)
-    if (status.recommend === 'restore') items.push(item(sid, 'shrunken_live', 'repairable', 'restore_from_bak', status.live_messages, status.bak_messages))
-    if (status.recommend === 'manual_review') items.push(item(sid, 'unstamped_legacy_backup', 'unsafe_to_repair', 'manual_review', status.live_messages, status.bak_messages))
-  }
-  // A deleted session with both a surviving backup and a state.db row is reported once (#5504).
   const reportedDeleted = new Set<string>()
-  for (const sid of s.backupIds.filter((id) => !live.has(id))) {
-    const bakMessages = messageCount(readDoc(join(s.dir, `${sid}.json.bak`)))
-    if (bakMessages < 0 || !isSafeSessionId(sid)) items.push(item(sid, 'malformed_orphan_backup', 'unsafe_to_repair', 'manual_review', -1, bakMessages))
-    else if (s.tombstoned.has(sid)) {
-      reportedDeleted.add(sid)
-      items.push(item(sid, 'state_db_deleted_webui_tombstone', 'unsafe_to_repair', 'deleted_session_skipped', -1, bakMessages))
-    } else if (s.db.has(sid)) items.push(item(sid, 'orphan_backup', 'repairable', 'restore_from_bak', -1, bakMessages))
-    else items.push(item(sid, 'orphan_backup_without_state_row', 'unsafe_to_repair', 'manual_review', -1, bakMessages))
-  }
-  if (existsSync(deps.store.indexFile)) {
-    let indexed: Set<string> | null = null
-    try { indexed = new Set(deps.store.readIndexEntries().map((e) => e.session_id).filter((id): id is string => typeof id === 'string')) } catch { items.push(item('', 'index_unreadable', 'repairable', 'rebuild_index')) }
-    if (indexed) for (const sid of [...indexed].filter((id) => !live.has(id) && !s.tombstoned.has(id)).sort()) items.push(item(sid, 'index_missing_file', 'repairable', 'rebuild_index'))
-    if (indexed) for (const sid of s.liveIds.filter((id) => !indexed.has(id))) items.push(item(sid, 'index_missing_entry', 'repairable', 'rebuild_index', messageCount(readDoc(join(s.dir, `${sid}.json`)))))
+  for (const issue of s.issues) {
+    const { profile } = issue
+    const finding = { ...issue }
+    delete finding.profile
+    delete finding.revision
+    delete finding.backupRevision
+    if (finding.kind === 'index_missing_file' && s.tombstoned.has(finding.session_id)) continue
+    if (finding.kind === 'orphan_backup') {
+      if (s.tombstoned.has(finding.session_id)) {
+        reportedDeleted.add(finding.session_id)
+        finding.kind = 'state_db_deleted_webui_tombstone'; finding.category = 'unsafe_to_repair'; finding.recommendation = 'deleted_session_skipped'
+      } else if (!s.db.has(finding.session_id)) {
+        finding.kind = 'orphan_backup_without_state_row'; finding.category = 'unsafe_to_repair'; finding.recommendation = 'manual_review'
+      }
+    }
+    if (finding.recommendation === 'restore_from_bak' && await readOnlyRecovery(deps, finding.session_id, profile)) { finding.category = 'unsafe_to_repair'; finding.recommendation = 'manual_review' }
+    items.push(finding)
   }
   for (const row of s.db.missing) {
     if (reportedDeleted.has(row.id)) continue
@@ -357,87 +260,58 @@ export function auditSessionRecovery(deps: RecoveryDeps): RecoveryAudit {
     else items.push(item(row.id, 'state_db_missing_sidecar', 'repairable', 'materialize_from_state_db'))
   }
   if (s.db.unreadable) items.push(item('', 'state_db_unreadable', 'unsafe_to_repair', 'manual_review'))
-  for (const [sid, events] of readTurnJournals(s.dir)) items.push(...pendingJournalTurns(s.dir, sid, events))
-  for (const finding of items) if (['restore_from_bak', 'materialize_from_state_db'].includes(finding.recommendation) && readOnlyRecovery(deps, finding.session_id)) { finding.category = 'unsafe_to_repair'; finding.recommendation = 'manual_review' }
+  for (const [sid, events] of readTurnJournals(deps.journalDirectory)) {
+    let doc: Dict | null = null
+    try { doc = (await deps.store.load(sid))?.toDocument() ?? null } catch { /* corrupt */ }
+    items.push(...pendingJournalTurns(doc, sid, events))
+  }
+  for (const finding of items) if (finding.recommendation === 'materialize_from_state_db' && await readOnlyRecovery(deps, finding.session_id)) { finding.category = 'unsafe_to_repair'; finding.recommendation = 'manual_review' }
   const summary = { ok: s.liveIds.length, repairable: 0, unsafe_to_repair: 0 }
   for (const i of items) summary[i.category] += 1
   return { status: summary.unsafe_to_repair ? 'needs_manual_review' : summary.repairable ? 'warn' : 'ok', summary, items }
 }
 
-// ── repair ───────────────────────────────────────────────────────────────
-
-/** Write `text` to a synced sibling temp file and publish it: replace `target`, or with `create` only when it is absent. */
-function publish(target: string, text: string, create: boolean): boolean {
-  const tmp = `${target}.recover.tmp.${String(process.pid)}.${String(++tmpCounter)}`
-  try {
-    const fd = openSync(tmp, 'w')
-    try { writeFully(fd, text); fsyncSync(fd) } finally { closeSync(fd) }
-    if (!create) { renameSync(tmp, target); return true }
-    // A link never replaces a sidecar a concurrent save created after the check.
-    try { linkSync(tmp, target); return true } catch (error) { if ((error as NodeJS.ErrnoException).code === 'EEXIST') return false; throw error }
-  } finally {
-    try { unlinkSync(tmp) } catch { /* renamed */ }
-  }
-}
-
-/** A resident session with a live turn would overwrite any restored file on its next save. */
 function busy(store: SessionStore, sid: string): boolean {
   const s = store.sessions.get(sid)
   return Boolean(s && (s.active_stream_id || s.pending_user_message || s.pending_started_at))
 }
 
-/** Restore shrunken and orphaned sidecars from their backups, each re-checked under the session lock. */
 async function restoreBackups(deps: RecoveryDeps, s: Scan): Promise<RecoveryRepair['backup_repair']> {
   const { store } = deps
-  const live = new Set(s.liveIds)
-  const orphans = s.backupIds.filter((sid) => !live.has(sid) && isSafeSessionId(sid) && !s.tombstoned.has(sid) && s.db.has(sid) && messageCount(readDoc(join(s.dir, `${sid}.json.bak`))) >= 0)
+  const orphans = s.issues.filter((i) => i.kind === 'orphan_backup' && !s.tombstoned.has(i.session_id) && s.db.has(i.session_id))
   const result: RecoveryRepair['backup_repair'] = { scanned: s.liveIds.length + orphans.length, restored: 0, orphaned_backups: orphans.length, details: [] }
-  for (const sid of [...s.backupIds.filter((id) => live.has(id) && isSafeSessionId(id)), ...orphans]) {
-    await store.withLock(sid, () => {
-      const status = inspectBackup(s.dir, sid, deps.stampingSince)
-      const path = store.pathFor(sid)
-      if (status.recommend !== 'restore' || (!existsSync(path) && store.wasDeleted(sid))) return
-      const counts = { live_messages: status.live_messages, bak_messages: status.bak_messages }
-      if (readOnlyRecovery(deps, sid)) { result.details.push({ session_id: sid, restored: false, ...counts, skipped: 'read_only' }); return }
+  for (const issue of [...s.issues.filter((i) => i.kind === 'shrunken_live'), ...orphans]) {
+    const sid = issue.session_id
+    await store.withLock(sid, async () => {
+      if (!await store.exists(sid) && await store.wasDeleted(sid)) return
+      const counts = { live_messages: issue.live_messages, bak_messages: issue.bak_messages }
+      if (await readOnlyRecovery(deps, sid, issue.profile)) { result.details.push({ session_id: sid, restored: false, ...counts, skipped: 'read_only' }); return }
       if (busy(store, sid)) { result.details.push({ session_id: sid, restored: false, ...counts, skipped: 'session_active' }); return }
       try {
-        if (!publish(path, readFileSync(`${path}.bak`, 'utf8'), !existsSync(path))) { result.details.push({ session_id: sid, restored: false, ...counts, skipped: 'sidecar_appeared' }); return }
-      } catch (error) {
-        result.details.push({ session_id: sid, restored: false, ...counts, error: (error as Error).message })
-        return
-      }
-      store.sessions.delete(sid)
-      store.invalidatePersistedIds()
+        if (!await store.repair(issue)) { result.details.push({ session_id: sid, restored: false, ...counts, skipped: 'sidecar_appeared' }); return }
+      } catch (error) { result.details.push({ session_id: sid, restored: false, ...counts, error: (error as Error).message }); return }
       result.restored += 1
       result.details.push({ session_id: sid, restored: true, ...counts })
-      deps.log(`[webui] WARNING: session recovery restored ${sid} from .bak (live=${String(status.live_messages)} -> bak=${String(status.bak_messages)} messages)`)
+      deps.log(`[webui] WARNING: session recovery restored ${sid} from its backup (live=${String(issue.live_messages)} -> bak=${String(issue.bak_messages)} messages)`)
     })
   }
   return result
 }
 
-/** Python `recover_missing_sidecars_from_state_db`: create each missing WebUI sidecar that state.db can rebuild. */
 async function materializeSidecars(deps: RecoveryDeps, s: Scan): Promise<RecoveryRepair['sidecar_repair']> {
   const { store } = deps
   const rows = s.db.missing.filter((row) => row.messages.length && !s.tombstoned.has(row.id))
   const result: RecoveryRepair['sidecar_repair'] = { scanned: rows.length, materialized: 0, details: [] }
   for (const row of rows) {
-    await store.withLock(row.id, () => {
-      if (store.wasDeleted(row.id)) return
-      if (readOnlyRecovery(deps, row.id)) { result.details.push({ session_id: row.id, materialized: false, skipped: 'read_only' }); return }
+    await store.withLock(row.id, async () => {
+      if (await store.wasDeleted(row.id)) return
+      if (await readOnlyRecovery(deps, row.id)) { result.details.push({ session_id: row.id, materialized: false, skipped: 'read_only' }); return }
       if (busy(store, row.id)) { result.details.push({ session_id: row.id, materialized: false, skipped: 'session_active' }); return }
       try {
-        mkdirSync(s.dir, { recursive: true })
-        if (!publish(store.pathFor(row.id), JSON.stringify(sidecarFromStateDbRow(row, store, deps.profile), null, 2), true)) {
-          result.details.push({ session_id: row.id, materialized: false, skipped: 'sidecar_appeared_during_reconcile' })
-          return
-        }
-      } catch (error) {
-        result.details.push({ session_id: row.id, materialized: false, error: (error as Error).message })
-        return
-      }
+        if (await store.exists(row.id)) { result.details.push({ session_id: row.id, materialized: false, skipped: 'sidecar_appeared_during_reconcile' }); return }
+        await store.save(new Session(sidecarFromStateDbRow(row, store, deps.profile), store.deps.defaults(deps.profile)), { touchUpdatedAt: false, skipIndex: true })
+      } catch (error) { result.details.push({ session_id: row.id, materialized: false, error: (error as Error).message }); return }
       store.sessions.delete(row.id)
-      store.invalidatePersistedIds()
       result.materialized += 1
       result.details.push({ session_id: row.id, materialized: true, messages: row.messages.length })
     })
@@ -445,20 +319,16 @@ async function materializeSidecars(deps: RecoveryDeps, s: Scan): Promise<Recover
   return result
 }
 
-/**
- * Python `repair_safe_session_recovery`: restore repairable backups, materialize missing sidecars from state.db, rebuild
- * the index from the sidecars on disk, and audit again. `clean` holds only when the second audit has no finding.
- */
 export async function repairSafeSessionRecovery(deps: RecoveryDeps): Promise<RecoveryRepair> {
-  const before = auditSessionRecovery(deps)
-  const s = scan(deps)
+  const before = await auditSessionRecovery(deps)
+  const s = await scan(deps)
   const backupRepair = await restoreBackups(deps, s)
   const sidecarRepair = await materializeSidecars(deps, s)
-  const reindex = backupRepair.restored || sidecarRepair.materialized || !existsSync(deps.store.indexFile) || before.items.some((i) => i.recommendation === 'rebuild_index')
-  if (reindex && existsSync(s.dir)) {
-    try { deps.store.rebuildIndex({ diskOnly: true }) } catch (error) { deps.log(`[webui] WARNING: session recovery index rebuild failed: ${(error as Error).message}`) }
+  const reindex = backupRepair.restored || sidecarRepair.materialized || !await deps.store.hasIndex() || before.items.some((i) => i.recommendation === 'rebuild_index')
+  if (reindex) {
+    try { await deps.store.rebuildIndex({ diskOnly: true }) } catch (error) { deps.log(`[webui] WARNING: session recovery index rebuild failed: ${(error as Error).message}`) }
   }
-  const after = auditSessionRecovery(deps)
+  const after = await auditSessionRecovery(deps)
   const clean = after.summary.repairable === 0 && after.summary.unsafe_to_repair === 0
   return { clean, ok: clean, repaired: backupRepair.restored + sidecarRepair.materialized, before, backup_repair: backupRepair, sidecar_repair: sidecarRepair, after }
 }

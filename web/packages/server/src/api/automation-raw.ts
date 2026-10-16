@@ -80,7 +80,7 @@ export async function handleTerminalOutput(ctx: RequestContext): Promise<void> {
   const sid = str(ctx.query.get('session_id')).trim()
   if (!sid) { ctx.json({ error: 'session_id required' }, { status: 400 }); return }
   let session
-  try { session = ctx.deps.sessionStore.get(sid, { metadataOnly: true }) } catch { ctx.json({ error: 'Session not found' }, { status: 404 }); return }
+  try { session = (await ctx.deps.sessionStore.get(sid, { metadataOnly: true })) } catch { ctx.json({ error: 'Session not found' }, { status: 404 }); return }
   if (!ctx.deps.workspaces.profileSupportsLocalIo(session.profile)) { ctx.json({ error: 'remote_terminal_backend_unsupported', message: 'Embedded terminal is only supported for local terminal backends.' }, { status: 400 }); return }
   const term = ctx.deps.terminals.get(sid)
   if (!term) { ctx.json({ error: 'terminal not running' }, { status: 404 }); return }

@@ -333,7 +333,7 @@ export function createApp(deps: AppDeps, opts: CreateAppOptions = {}): App {
 
   const handler: RequestHandler = (req, res) => {
     const ctx = new RequestContext(req, res, deps)
-    return deps.requestScope.run(ctx, () => dispatch(ctx))
+    return deps.requestScope.run(ctx, async () => { await dispatch(ctx); })
   }
 
   const upgrade = (req: IncomingMessage, socket: Duplex, head: Buffer) => {
@@ -378,7 +378,7 @@ export function createApp(deps: AppDeps, opts: CreateAppOptions = {}): App {
         ctx.json({ error: csrfError(ctx.csrfFailure) }, { status: 403 })
         return
       }
-      if (path.startsWith('/api/') && !guardQuerySessionId(ctx)) return
+      if (path.startsWith('/api/') && !(await guardQuerySessionId(ctx))) return
       // A request whose profile home resolves outside the profiles root is refused, never run against another home;
       // listing profiles and switching away stay open. A cookie naming it is cleared in the refusal, so the next request
       // falls back to the process profile.

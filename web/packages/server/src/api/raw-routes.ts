@@ -129,10 +129,10 @@ function fileRawTarget(ctx: RequestContext, workspace: string, sid: string, rel:
   return null
 }
 
-function handleFileRaw(ctx: RequestContext): void {
+async function handleFileRaw(ctx: RequestContext): Promise<void> {
   const sid = ctx.query.get('session_id') ?? ''
   if (!sid) throw new HttpError(400, 'session_id is required')
-  const s = fileOpsSession(ctx, sid)
+  const s = (await fileOpsSession(ctx, sid))
   const rel = ctx.query.get('path') ?? ''
   if (rel.includes('\0')) throw new HttpError(400, 'invalid path')
   const resolved = fileRawTarget(ctx, s.workspace, sid, rel)
@@ -144,8 +144,8 @@ function handleFileRaw(ctx: RequestContext): void {
 }
 
 /** Python `_handle_escape_file_raw`: `/api/file/raw` for a path under an escape grant, anchored at the grant root. */
-function handleEscapeFileRaw(ctx: RequestContext): void {
-  const req = escapeRequest(ctx, ctx.query.get('session_id') ?? '', ctx.query.get('token') ?? '', ctx.query.get('path') ?? '')
+async function handleEscapeFileRaw(ctx: RequestContext): Promise<void> {
+  const req = (await escapeRequest(ctx, ctx.query.get('session_id') ?? '', ctx.query.get('token') ?? '', ctx.query.get('path') ?? ''))
   let target: string
   try {
     target = ctx.deps.escapeGrants.rawTarget(req)
@@ -197,7 +197,7 @@ export function handleWorkspacePreview(ctx: RequestContext): void {
   else serveFileBytes(ctx, target, { mime, disposition: 'inline', cacheControl: 'no-store', csp: SANDBOX_CSP, anchorRoot: root })
 }
 
-function handleMedia(ctx: RequestContext): void {
+async function handleMedia(ctx: RequestContext): Promise<void> {
   const { deps } = ctx
   const rawPath = (ctx.query.get('path') ?? '').trim()
   if (!rawPath) throw new HttpError(400, 'path parameter required')
@@ -206,7 +206,7 @@ function handleMedia(ctx: RequestContext): void {
   let localAllowed: boolean
   if (sessionId) {
     try {
-      mediaSession = deps.sessionStore.get(sessionId)
+      mediaSession = (await deps.sessionStore.get(sessionId))
     } catch {
       throw new HttpError(404, 'Session not found')
     }
@@ -284,7 +284,7 @@ function collectFolder(target: string, workspaceRoot: string, maxBytes: number, 
 async function handleFolderDownload(ctx: RequestContext): Promise<void> {
   const sid = ctx.query.get('session_id') ?? ''
   if (!sid) throw new HttpError(400, 'session_id is required')
-  const s = fileOpsSession(ctx, sid)
+  const s = (await fileOpsSession(ctx, sid))
   const rel = ctx.query.get('path') ?? ''
   let target: string
   try {
@@ -335,12 +335,12 @@ async function handleFolderDownload(ctx: RequestContext): Promise<void> {
   }
 }
 
-function handleSessionExport(ctx: RequestContext): void {
+async function handleSessionExport(ctx: RequestContext): Promise<void> {
   const sid = ctx.query.get('session_id') ?? ''
   if (!sid) throw new HttpError(400, 'session_id is required')
   let session: Session
   try {
-    session = ctx.deps.sessionStore.get(sid)
+    session = (await ctx.deps.sessionStore.get(sid))
   } catch {
     throw new HttpError(404, 'Session not found')
   }
@@ -416,10 +416,10 @@ export function uploadFile(ctx: RequestContext, form: MultipartResult): { filena
 }
 
 /** An unknown session and another profile's session both answer 404 before anything is written. */
-function uploadSessionVisible(ctx: RequestContext, sessionId: string): boolean {
+async function uploadSessionVisible(ctx: RequestContext, sessionId: string): Promise<boolean> {
   let session: Session
   try {
-    session = ctx.deps.sessionStore.get(sessionId, { metadataOnly: true })
+    session = (await ctx.deps.sessionStore.get(sessionId, { metadataOnly: true }))
   } catch {
     ctx.json({ error: 'Session not found' }, { status: 404 })
     return false
@@ -436,7 +436,7 @@ async function handleUpload(ctx: RequestContext): Promise<void> {
   if (!form) return
   const sessionId = form.fields.session_id ?? ctx.query.get('session_id') ?? ''
   const file = uploadFile(ctx, form)
-  if (!file || !uploadSessionVisible(ctx, sessionId)) return
+  if (!file || !(await uploadSessionVisible(ctx, sessionId))) return
   try {
     ctx.json(ctx.deps.uploads.store(sessionId, file.filename, file.body))
   } catch (error) {
@@ -454,7 +454,7 @@ async function handleUploadExtract(ctx: RequestContext): Promise<void> {
   if (!form) return
   const sessionId = form.fields.session_id ?? ''
   const file = uploadFile(ctx, form)
-  if (!file || !uploadSessionVisible(ctx, sessionId)) return
+  if (!file || !(await uploadSessionVisible(ctx, sessionId))) return
   const { uploads } = ctx.deps
   try {
     const inbox = uploads.sessionDir(sessionId)
@@ -490,7 +490,7 @@ async function handleWorkspaceUpload(ctx: RequestContext): Promise<void> {
   if (!form.parts.length) throw new HttpError(400, 'No file field in request')
   let workspace: string
   try {
-    workspace = fileOpsSession(ctx, sessionId, { strictWorkspace: true }).workspace
+    workspace = (await fileOpsSession(ctx, sessionId, { strictWorkspace: true })).workspace
   } catch (error) {
     if (error instanceof HttpError && error.message === REMOTE_WORKSPACE_UNSUPPORTED_CODE) throw new HttpError(400, REMOTE_WORKSPACE_UNSUPPORTED_MESSAGE, { code: REMOTE_WORKSPACE_UNSUPPORTED_CODE })
     throw error

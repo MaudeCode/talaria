@@ -184,9 +184,9 @@ describe('archive extraction, workspace upload, and copy path', () => {
     it('answers 404 for an unknown session and for another profile\'s session before anything is written', async () => {
       expect((await extract('a.zip', await zipOf({ 'a.txt': 'a' }), 'deadbeef0000')).status).toBe(404)
       const foreign = await newSession()
-      const stored = s.deps.sessionStore.get(foreign)
+      const stored = (await s.deps.sessionStore.get(foreign))
       stored.profile = 'other'
-      s.deps.sessionStore.save(stored)
+      await s.deps.sessionStore.save(stored)
       const res = await extract('archive.zip', await zipOf({ 'a.txt': 'a' }), foreign)
       expect(res).toEqual({ status: 404, body: { error: 'Session not found' } })
       expect(existsSync(inbox(foreign))).toBe(false)
@@ -270,9 +270,9 @@ describe('archive extraction, workspace upload, and copy path', () => {
       expect(await send('/api/workspace/upload', { session_id: sid }, [])).toEqual({ status: 400, body: { error: 'No file field in request' } })
       expect((await wsUpload('a.txt', Buffer.from('a'), '', 'deadbeef0000')).status).toBe(404)
       const foreign = await newSession()
-      const stored = s.deps.sessionStore.get(foreign)
+      const stored = (await s.deps.sessionStore.get(foreign))
       stored.profile = 'other'
-      s.deps.sessionStore.save(stored)
+      await s.deps.sessionStore.save(stored)
       expect(await wsUpload('foreign.txt', Buffer.from('x'), '', foreign)).toEqual({ status: 404, body: { error: 'Session not found' } })
       expect(existsSync(join(ws, 'foreign.txt'))).toBe(false)
       expect((await wsUpload('big.bin', Buffer.alloc(s.deps.config.maxUploadBytes + 1024))).status).toBe(413)

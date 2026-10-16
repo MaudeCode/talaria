@@ -872,7 +872,7 @@ describe('skills, memory, prompts, commands, mcp, health, updates, diagnostics',
 
   it('insights add CLI, messaging, and cron sessions from state.db, counting a Web session once (TAL-550)', async () => {
     const now = s.deps.nowSeconds()
-    const index = vi.spyOn(s.deps.sessionStore, 'readIndexEntries').mockReturnValue([
+    const index = vi.spyOn(s.deps.sessionStore, 'readIndexEntries').mockResolvedValue([
       { session_id: 'web', created_at: now - 100, updated_at: now - 50, input_tokens: 10, output_tokens: 5, estimated_cost: 0.5, message_count: 2, model: 'm' },
       // A CLI session claimed into the Web index keeps its state.db id; its row also holds the usage from before the claim.
       { session_id: 'imported', created_at: now - 100, updated_at: now - 50, input_tokens: 1, output_tokens: 1, message_count: 1, model: 'm' },

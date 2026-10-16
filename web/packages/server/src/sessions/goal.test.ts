@@ -49,7 +49,7 @@ describe('/goal continuation after a goal turn settles (TAL-396)', () => {
   const untilEnd = (streamId: string): Promise<SseFrame[]> => s.sse(`/api/chat/stream?stream_id=${streamId}&after_event_id=${streamId}:0`, (f) => f.event === 'stream_end')
   const calls = (method: string): Json[] => sidecar.calls.filter((c) => c.method === method).map((c) => c.params as Json)
   const idle = async (sid: string): Promise<void> => {
-    await vi.waitFor(() => { expect(((s.deps.sessionStore.get(sid)).active_stream_id)).toBeNull() })
+    await vi.waitFor(async () => { expect((((await s.deps.sessionStore.get(sid))).active_stream_id)).toBeNull() })
   }
 
   it('evaluates each goal turn, starts the continuation the Agent asks for, and stops when the goal is done', async () => {
@@ -75,7 +75,7 @@ describe('/goal continuation after a goal turn settles (TAL-396)', () => {
     await idle(sid)
     expect(calls('chat.start').map((p) => str(p.user_message).split('\n').pop())).toEqual([GOAL, 'Continue toward the goal.'])
     // TAL-882: the Agent runs goal gates in the session's workspace.
-    const workspace = s.deps.sessionStore.get(sid).workspace
+    const workspace = (await s.deps.sessionStore.get(sid)).workspace
     expect(workspace).toBeTruthy()
     expect(calls('goals.command')).toEqual([expect.objectContaining({ session_id: sid, args: GOAL, workspace })])
     expect(calls('goals.evaluate')).toEqual([expect.objectContaining({ session_id: sid, last_response: 'answer 1', workspace }), expect.objectContaining({ session_id: sid, last_response: 'answer 2', workspace })])
@@ -83,12 +83,12 @@ describe('/goal continuation after a goal turn settles (TAL-396)', () => {
 
   it.each([true, false])('admits a goal continuation after workspace deletion (TAL-729, fallback available: %s)', async (recoverable) => {
     const sid = await newSession()
-    const session = s.deps.sessionStore.get(sid)
+    const session = (await s.deps.sessionStore.get(sid))
     const fallback = session.workspace
     const worktree = join(fallback, 'goal-worktree')
     mkdirSync(worktree, { recursive: true })
     session.workspace = worktree
-    s.deps.sessionStore.save(session)
+    await s.deps.sessionStore.save(session)
     sidecar.respond('chat.start', (params) => answer(params, 'progress'))
     let evaluations = 0
     sidecar.respond('goals.evaluate', () => {
@@ -104,7 +104,7 @@ describe('/goal continuation after a goal turn settles (TAL-396)', () => {
         expect(next).toBeDefined()
         await untilEnd(str(next?.stream_id))
         expect(calls('chat.start')[1]).toMatchObject({ workspace: fallback, user_message: 'Continue toward the goal.' })
-        expect(s.deps.sessionStore.get(sid).workspace).toBe(fallback)
+        expect((await s.deps.sessionStore.get(sid)).workspace).toBe(fallback)
       } else {
         expect(frames.at(-1)).toEqual(['goal', expect.objectContaining({ state: 'idle', decision: 'error' })])
         expect(calls('chat.start')).toHaveLength(1)
@@ -131,12 +131,12 @@ describe('/goal continuation after a goal turn settles (TAL-396)', () => {
       await s.deps.catalog.warmSessionModelRepair(s.state)
     }
     let evaluations = 0
-    sidecar.respond('goals.evaluate', () => {
+    sidecar.respond('goals.evaluate', async () => {
       if (++evaluations > 1) return achieved
-      const session = s.deps.sessionStore.get(sid)
+      const session = (await s.deps.sessionStore.get(sid))
       session.model = kind === 'qualified' ? '@gemini:gemini-3.1-pro-preview' : 'gemini-3.1-pro-preview'
       session.model_provider = null
-      s.deps.sessionStore.save(session)
+      await s.deps.sessionStore.save(session)
       return continueWith('Continue toward the goal.')
     })
     const frames = goalFrames(await untilEnd(await setGoal(sid)))
@@ -148,7 +148,7 @@ describe('/goal continuation after a goal turn settles (TAL-396)', () => {
       ? { model: 'gemini-3.1-pro-preview', model_provider: 'gemini' }
       : { model: 'gpt-5.5', model_provider: 'openai-codex' }
     expect(calls('chat.start')[1]).toMatchObject(expected)
-    expect(s.deps.sessionStore.get(sid)).toMatchObject(expected)
+    expect((await s.deps.sessionStore.get(sid))).toMatchObject(expected)
   })
 
   it('stops when the turn budget is spent or the goal was paused', async () => {
@@ -220,12 +220,12 @@ describe('/goal continuation after a goal turn settles (TAL-396)', () => {
     await vi.waitFor(() => { expect(evaluations).toBe(1) })
     const user = str((await json(await post(s, '/api/chat/start', { session_id: sid, message: 'keep going' }))).stream_id)
     expect(await json(await s.get(`/api/chat/cancel?stream_id=${kickoff}`))).toMatchObject({ cancelled: false })
-    expect(s.deps.turns.automaticTurnsHeld(sid)).toBe(false)
+    expect((await s.deps.turns.automaticTurnsHeld(sid))).toBe(false)
     release()
     await untilEnd(kickoff)
     await untilEnd(user)
     await idle(sid)
-    expect(s.deps.turns.automaticTurnsHeld(sid)).toBe(false)
+    expect((await s.deps.turns.automaticTurnsHeld(sid))).toBe(false)
   })
 
   it('a failed evaluation or failed turn ends the goal run without a continuation, and a turn without a goal shows nothing', async () => {
@@ -358,7 +358,7 @@ describe('/goal continuation after a goal turn settles (TAL-396)', () => {
     sidecar.respond('goals.evaluate', () => decisions.shift() ?? inactive)
     const first = str((await json(await post(s, '/api/chat/start', { session_id: sid, message: 'talaria contract fixture' }))).stream_id)
     await vi.waitFor(async () => { expect((await status(first)).active).toBe(false) })
-    const continuation = s.deps.sessionStore.get(sid).active_stream_id
+    const continuation = (await s.deps.sessionStore.get(sid)).active_stream_id
     expect(continuation).not.toBe(first)
     expect((await status(first)).blocking_stream_id).toBe(continuation)
     expect(await remove(sid)).toBe(409)

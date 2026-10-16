@@ -1,3 +1,4 @@
+import { sessionDirectory } from '../test/storage.js'
 import { mkdirSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
@@ -56,8 +57,8 @@ describe('session list state.db reads off the event loop (TAL-920)', () => {
 
   it('never opens state.db on the main thread for /api/sessions, the gateway poll, or relay agent sessions', async () => {
     // A claimed CLI import and a read-only one exercise the list's owner-lock and orphan-prune lookups too.
-    s.deps.sessionStore.save(new Session({ session_id: 'cli-a', title: 'Claimed', source_tag: 'cli', raw_source: 'cli', messages: [{ role: 'user', content: 'x', timestamp: 1 }] }, { workspace: s.state, model: null }))
-    s.deps.sessionStore.save(new Session({ session_id: 'cli-gone', title: 'Gone', source_tag: 'cli', raw_source: 'cli', read_only: true, messages: [{ role: 'user', content: 'x', timestamp: 1 }] }, { workspace: s.state, model: null }))
+    await s.deps.sessionStore.save(new Session({ session_id: 'cli-a', title: 'Claimed', source_tag: 'cli', raw_source: 'cli', messages: [{ role: 'user', content: 'x', timestamp: 1 }] }, { workspace: s.state, model: null }))
+    await s.deps.sessionStore.save(new Session({ session_id: 'cli-gone', title: 'Gone', source_tag: 'cli', raw_source: 'cli', read_only: true, messages: [{ role: 'user', content: 'x', timestamp: 1 }] }, { workspace: s.state, model: null }))
     s.deps.cliSessions.invalidate()
     mainThreadOpens.length = 0
     const res = await s.get(ALL_SOURCES)
@@ -102,10 +103,10 @@ describe('session list state.db reads off the event loop (TAL-920)', () => {
     const extra = Array.from({ length: 5 }, (_, i) => ({ id: `idx-${String(i)}`, source: 'telegram', at: 2000 + i }))
     seedStateDb(dbPath, extra)
     for (const [i, { id }] of extra.slice(0, 4).entries()) {
-      s.deps.sessionStore.save(new Session({ session_id: id, title: `Indexed ${String(i)}`, archived: i === 0, source_tag: 'telegram', raw_source: 'telegram', messages: [{ role: 'user', content: 'x', timestamp: 1 }] }, { workspace: s.state, model: null }))
+      await s.deps.sessionStore.save(new Session({ session_id: id, title: `Indexed ${String(i)}`, archived: i === 0, source_tag: 'telegram', raw_source: 'telegram', messages: [{ role: 'user', content: 'x', timestamp: 1 }] }, { workspace: s.state, model: null }))
     }
     // A sidecar file the index has never listed is read from disk.
-    writeFileSync(join(s.deps.sessionStore.sessionDir, 'idx-4.json'), JSON.stringify({ session_id: 'idx-4', title: 'From file', created_at: 1, updated_at: 1, message_count: 2, archived: true, messages: [] }))
+    writeFileSync(join(sessionDirectory(s.deps.sessionStore), 'idx-4.json'), JSON.stringify({ session_id: 'idx-4', title: 'From file', created_at: 1, updated_at: 1, message_count: 2, archived: true, messages: [] }))
     s.deps.cliSessions.invalidate()
     const loads = vi.spyOn(s.deps.sessionStore, 'loadMetadataOnly')
     try {

@@ -64,8 +64,8 @@ function queryPositiveInt(value: string | undefined, fallback: number | null, ma
 const sanitizeError = sanitizePaths
 
 /** Python `_guard_request_session_visibility` for a body/query session id. */
-function guardVisibility(ctx: RequestContext, sid: unknown): void {
-  if (!ctx.deps.sessions.sessionIdVisible(sid)) throw new HttpError(404, 'Session not found')
+async function guardVisibility(ctx: RequestContext, sid: unknown): Promise<void> {
+  if (!(await ctx.deps.sessions.sessionIdVisible(sid))) throw new HttpError(404, 'Session not found')
 }
 
 /** Python `float(body["since"])` for the handoff dock: a unix time or numeric string; absent is null. */
@@ -77,12 +77,12 @@ function handoffSince(value: unknown): number | null {
 }
 
 /** The handoff dock's session id and `since`, validated in the predecessor's order. */
-function handoffInput(ctx: RequestContext, input: { session_id?: string | undefined; since?: unknown }): { sid: string; since: number | null } {
+async function handoffInput(ctx: RequestContext, input: { session_id?: string | undefined; since?: unknown }): Promise<{ sid: string; since: number | null }> {
   requireFields(input, 'session_id')
   const sid = str(input.session_id).trim()
   if (!sid) throw new HttpError(400, 'session_id is required')
   const since = handoffSince(input.since)
-  guardVisibility(ctx, sid)
+  await guardVisibility(ctx, sid)
   return { sid, since }
 }
 
@@ -135,15 +135,15 @@ export const sessionsRouter = os.router({
       }
       return await ctx.deps.sessions.search(input.q ?? '', opts) as { sessions: Record<string, unknown>[]; all_profiles: boolean; active_profile: string; query?: string; count?: number }
     })),
-    cleanup: os.sessions.cleanup.handler(({ context: { ctx } }) => run(() => ctx.deps.sessions.cleanup(false) as { ok: true; cleaned: number })),
-    cleanupZeroMessage: os.sessions.cleanupZeroMessage.handler(({ context: { ctx } }) => run(() => ctx.deps.sessions.cleanup(true) as { ok: true; cleaned: number })),
+    cleanup: os.sessions.cleanup.handler(({ context: { ctx } }) => run(async () => (await ctx.deps.sessions.cleanup(false)) as { ok: true; cleaned: number })),
+    cleanupZeroMessage: os.sessions.cleanupZeroMessage.handler(({ context: { ctx } }) => run(async () => (await ctx.deps.sessions.cleanup(true)) as { ok: true; cleaned: number })),
     // TAL-627: each id runs the single-session route's own guards, lock and cleanup, one at a time; a failure becomes
     // that id's result and the rest still run.
     bulk: os.sessions.bulk.handler(async ({ input, context: { ctx } }) => {
       const results = []
       for (const sid of input.session_ids) {
         try {
-          guardVisibility(ctx, sid)
+          await guardVisibility(ctx, sid)
           if (input.action === 'delete') {
             const { state_db_cleanup_failed } = await ctx.deps.sessions.delete(sid)
             results.push({ session_id: sid, ok: true, state_db_cleanup_failed: Boolean(state_db_cleanup_failed) })
@@ -169,23 +169,23 @@ export const sessionsRouter = os.router({
       await ctx.deps.sessions.deps.warmModelOptions?.()
       await ctx.deps.turns.loadGoal(input.session_id.trim())
       try {
-        return { session: ctx.deps.sessions.detail(input.session_id, input) as { session_id: string; title: string } }
+        return { session: (await ctx.deps.sessions.detail(input.session_id, input)) as { session_id: string; title: string } }
       } catch (error) {
         // Runs left on the relay by a deletion that predates `clearRelayCompletions` clear when the id is next requested.
         const sid = input.session_id.trim()
-        if (error instanceof HttpFailure && error.status === 404 && ctx.deps.sessionStore.wasDeleted(sid)) ctx.deps.relay.clearDeleted(sid, ctx.deps.activeProfile())
+        if (error instanceof HttpFailure && error.status === 404 && (await ctx.deps.sessionStore.wasDeleted(sid))) (await ctx.deps.relay.clearDeleted(sid, ctx.deps.activeProfile()))
         throw error
       }
     })),
-    status: os.session.status.handler(({ input, context: { ctx } }) => run(() => {
+    status: os.session.status.handler(({ input, context: { ctx } }) => run(async () => {
       if (!input.session_id) throw new HttpError(400, 'Missing session_id')
-      guardVisibility(ctx, input.session_id)
-      return ctx.deps.sessions.status(input.session_id) as { session_id: string }
+      await guardVisibility(ctx, input.session_id)
+      return (await ctx.deps.sessions.status(input.session_id)) as { session_id: string }
     })),
-    usage: os.session.usage.handler(({ input, context: { ctx } }) => run(() => {
+    usage: os.session.usage.handler(({ input, context: { ctx } }) => run(async () => {
       if (!input.session_id) throw new HttpError(400, 'Missing session_id')
-      guardVisibility(ctx, input.session_id)
-      return ctx.deps.sessions.usage(input.session_id) as { input_tokens: number; output_tokens: number; total_tokens: number; estimated_cost: unknown; model: string | null }
+      await guardVisibility(ctx, input.session_id)
+      return (await ctx.deps.sessions.usage(input.session_id)) as { input_tokens: number; output_tokens: number; total_tokens: number; estimated_cost: unknown; model: string | null }
     })),
     new: os.session.new.handler(({ input, context: { ctx } }) => run(async () => {
       // Python: an invisible prev_session_id is ignored (the service drops it), never an error (#5420).
@@ -204,7 +204,7 @@ export const sessionsRouter = os.router({
       }
       if (requested) {
         try {
-          let base = input.workspace ? ctx.deps.sessions.resolveNewSessionWorkspace(input, null, profile) : null
+          let base = input.workspace ? (await ctx.deps.sessions.resolveNewSessionWorkspace(input, null, profile)) : null
           base ??= ctx.deps.workspaces.resolveTrusted(ctx.deps.workspaces.lastWorkspace(profile), profile)
           const repo = base
           worktree = await ctx.deps.git.holdWrite(repo, () => ctx.deps.worktrees.create(repo))
@@ -219,66 +219,66 @@ export const sessionsRouter = os.router({
           worktreeSkipped = (error as Error).message
         }
       }
-      const s = ctx.deps.sessions.create(input, { worktree })
-      const payload: Record<string, unknown> = { session: ctx.deps.sessions.publicSession(s) }
+      const s = (await ctx.deps.sessions.create(input, { worktree }))
+      const payload: Record<string, unknown> = { session: (await ctx.deps.sessions.publicSession(s)) }
       if (worktreeSkipped) payload.worktree_skipped = worktreeSkipped
       return payload as { session: { session_id: string; title: string }; worktree_skipped?: string }
     })),
     rename: os.session.rename.handler(({ input, context: { ctx } }) => run(async () => {
-      guardVisibility(ctx, input.session_id)
+      await guardVisibility(ctx, input.session_id)
       if (!input.title) throw new HttpError(400, 'Missing required field(s): title')
-      return ctx.deps.sessions.rename(input.session_id, input.title) as Promise<{ session: { session_id: string; title: string } }>
+      return (await ctx.deps.sessions.rename(input.session_id, input.title)) as { session: { session_id: string; title: string } }
     })),
     delete: os.session.delete.handler(({ input, context: { ctx } }) => run(async () => {
-      guardVisibility(ctx, input.session_id)
-      return ctx.deps.sessions.delete(input.session_id) as Promise<{ ok: true; state_db_cleanup_failed: boolean }>
+      await guardVisibility(ctx, input.session_id)
+      return (await ctx.deps.sessions.delete(input.session_id)) as { ok: true; state_db_cleanup_failed: boolean }
     })),
     pin: os.session.pin.handler(({ input, context: { ctx } }) => run(async () => {
-      guardVisibility(ctx, input.session_id)
+      await guardVisibility(ctx, input.session_id)
       return ctx.deps.sessions.pin(input.session_id, input.pinned ?? true) as Promise<{ ok: true; session: { session_id: string; title: string } }>
     })),
     archive: os.session.archive.handler(({ input, context: { ctx } }) => run(async () => {
-      guardVisibility(ctx, input.session_id)
-      return ctx.deps.sessions.archive(input.session_id, input.archived ?? true) as Promise<{ ok: true; session: { session_id: string; title: string } }>
+      await guardVisibility(ctx, input.session_id)
+      return (await ctx.deps.sessions.archive(input.session_id, input.archived ?? true)) as { ok: true; session: { session_id: string; title: string } }
     })),
     move: os.session.move.handler(({ input, context: { ctx } }) => run(async () => {
-      guardVisibility(ctx, input.session_id)
-      return ctx.deps.sessions.move(input.session_id, input.project_id || null) as Promise<{ ok: true; session: { session_id: string; title: string } }>
+      await guardVisibility(ctx, input.session_id)
+      return (await ctx.deps.sessions.move(input.session_id, input.project_id || null)) as { ok: true; session: { session_id: string; title: string } }
     })),
-    duplicate: os.session.duplicate.handler(({ input, context: { ctx } }) => run(() => {
+    duplicate: os.session.duplicate.handler(({ input, context: { ctx } }) => run(async () => {
       if (!input.session_id) throw new HttpError(400, 'session_id is required')
-      guardVisibility(ctx, input.session_id)
-      return ctx.deps.sessions.duplicate(input.session_id) as { session: { session_id: string; title: string } }
+      await guardVisibility(ctx, input.session_id)
+      return (await ctx.deps.sessions.duplicate(input.session_id)) as { session: { session_id: string; title: string } }
     })),
-    branch: os.session.branch.handler(({ input, context: { ctx } }) => run(() => {
-      guardVisibility(ctx, input.session_id)
-      return ctx.deps.sessions.branch(input.session_id, input) as { session_id: string; title: string; parent_session_id: string }
+    branch: os.session.branch.handler(({ input, context: { ctx } }) => run(async () => {
+      await guardVisibility(ctx, input.session_id)
+      return (await ctx.deps.sessions.branch(input.session_id, input)) as { session_id: string; title: string; parent_session_id: string }
     })),
     truncate: os.session.truncate.handler(({ input, context: { ctx } }) => run(async () => {
-      guardVisibility(ctx, input.session_id)
+      await guardVisibility(ctx, input.session_id)
       // A body without `confirm_deep_truncate` is a released App's, which asked on the device before sending it.
       const hold = input.confirm_deep_truncate === undefined ? null : { confirmToken: input.confirm_deep_truncate ? input.confirm_token ?? null : null }
-      return ctx.deps.sessions.truncate(input.session_id, input.keep_count, hold) as Promise<{ ok: true; session: { session_id: string; title: string } } | { ok: false; confirm_required: true; discard_user_turns: number; discard_messages: number; confirm_token: string }>
+      return (await ctx.deps.sessions.truncate(input.session_id, input.keep_count, hold)) as { ok: true; session: { session_id: string; title: string } } | { ok: false; confirm_required: true; discard_user_turns: number; discard_messages: number; confirm_token: string }
     })),
     clear: os.session.clear.handler(({ input, context: { ctx } }) => run(async () => {
-      guardVisibility(ctx, input.session_id)
-      return ctx.deps.sessions.clear(input.session_id) as Promise<{ ok: true; session: { session_id: string; title: string } }>
+      await guardVisibility(ctx, input.session_id)
+      return (await ctx.deps.sessions.clear(input.session_id)) as { ok: true; session: { session_id: string; title: string } }
     })),
     retry: os.session.retry.handler(({ input, context: { ctx } }) => run(async () => {
-      guardVisibility(ctx, input.session_id)
-      return ctx.deps.sessions.retry(input.session_id) as Promise<{ ok: true; last_user_text: string; last_user_prompt: string; last_user_attachments: Attachment[]; removed_count: number } | { error: string }>
+      await guardVisibility(ctx, input.session_id)
+      return (await ctx.deps.sessions.retry(input.session_id)) as { ok: true; last_user_text: string; last_user_prompt: string; last_user_attachments: Attachment[]; removed_count: number } | { error: string }
     })),
     undo: os.session.undo.handler(({ input, context: { ctx } }) => run(async () => {
-      guardVisibility(ctx, input.session_id)
-      return ctx.deps.sessions.undo(input.session_id) as Promise<{ ok: true; removed_count: number; removed_preview: string } | { error: string }>
+      await guardVisibility(ctx, input.session_id)
+      return (await ctx.deps.sessions.undo(input.session_id)) as { ok: true; removed_count: number; removed_preview: string } | { error: string }
     })),
     update: os.session.update.handler(({ input, context: { ctx } }) => run(async () => {
-      guardVisibility(ctx, input.session_id)
-      return ctx.deps.sessions.update(input.session_id, input) as Promise<{ session: { session_id: string; title: string } }>
+      await guardVisibility(ctx, input.session_id)
+      return (await ctx.deps.sessions.update(input.session_id, input)) as { session: { session_id: string; title: string } }
     })),
     toolsets: os.session.toolsets.handler(({ input, context: { ctx } }) => run(async () => {
-      guardVisibility(ctx, input.session_id)
-      return ctx.deps.sessions.setToolsets(input.session_id, input.toolsets) as Promise<{ ok: true; enabled_toolsets: string[] | null }>
+      await guardVisibility(ctx, input.session_id)
+      return (await ctx.deps.sessions.setToolsets(input.session_id, input.toolsets)) as { ok: true; enabled_toolsets: string[] | null }
     })),
     yoloGet: os.session.yoloGet.handler(({ input, context: { ctx } }) => run(() => ctx.deps.sessions.yolo(input.session_id) as { yolo_enabled: boolean })),
     yoloSet: os.session.yoloSet.handler(({ input, context: { ctx } }) => run(async () => {
@@ -294,18 +294,18 @@ export const sessionsRouter = os.router({
       const released = await ctx.deps.turns.respondApproval(sid, 'once', '', true)
       return { ok: true as const, yolo_enabled: Boolean(released.yolo_enabled ?? ctx.deps.sessions.yolo(sid).yolo_enabled), ...(released.stale_cleared ? { stale_cleared: true } : {}) }
     })),
-    import: os.session.import.handler(({ input, context: { ctx } }) => run(() => ctx.deps.sessions.import(input) as { ok: true; session: { session_id: string; title: string } })),
+    import: os.session.import.handler(({ input, context: { ctx } }) => run(async () => (await ctx.deps.sessions.import(input)) as { ok: true; session: { session_id: string; title: string } })),
     regenerateTitle: os.session.regenerateTitle.handler(({ input, context: { ctx } }) => run(async () => {
       const sid = input.session_id
       let session: Session
-      try { session = ctx.deps.sessionStore.get(sid) } catch { throw new HttpError(404, 'Session not found') }
-      if (ctx.deps.sessions.isReadOnly(session) || ctx.deps.sessions.isSubagentViewOnly(sid)) throw new HttpError(403, 'Read-only imported sessions cannot regenerate titles')
+      try { session = (await ctx.deps.sessionStore.get(sid)) } catch { throw new HttpError(404, 'Session not found') }
+      if ((await ctx.deps.sessions.isReadOnly(session)) || (await ctx.deps.sessions.isSubagentViewOnly(sid))) throw new HttpError(403, 'Read-only imported sessions cannot regenerate titles')
       const generated = await ctx.deps.turns.generateTitle(session, { preferLatest: Boolean(input.prefer_latest) })
       if (!generated.title) throw new HttpError(422, `Could not generate a better title (${generated.status || 'empty'})`)
       const current = await ctx.deps.sessions.persistGeneratedTitle(sid, generated.title, 'session_title_regenerate')
       return { session: ctx.deps.sessions.wireRow(current), title: current.title, status: generated.status, raw_preview: generated.rawPreview.slice(0, 240) }
     })),
-    recoveryAudit: os.session.recoveryAudit.handler(({ context: { ctx } }) => run(() => ctx.deps.sessions.recoveryAudit())),
+    recoveryAudit: os.session.recoveryAudit.handler(({ context: { ctx } }) => run(async () => (await ctx.deps.sessions.recoveryAudit()))),
     recoveryRepairSafe: os.session.recoveryRepairSafe.handler(({ context: { ctx } }) => run(async () => {
       const result = await ctx.deps.sessions.recoveryRepairSafe()
       if (!result.clean) throw new RawResponse(409, result)
@@ -318,17 +318,17 @@ export const sessionsRouter = os.router({
       if (!report.found) throw new HttpError(404, 'Session not found')
       return report as { found: true }
     })),
-    compressionRecoveryStart: os.session.compressionRecoveryStart.handler(({ input, context: { ctx } }) => run(() => {
+    compressionRecoveryStart: os.session.compressionRecoveryStart.handler(({ input, context: { ctx } }) => run(async () => {
       requireFields(input, 'session_id')
       const sid = str(input.session_id).trim()
       if (!sid) throw new HttpError(400, 'session_id is required')
-      return ctx.deps.sessions.compressionRecoveryStart(sid) as Promise<{ ok: true }>
+      return (await ctx.deps.sessions.compressionRecoveryStart(sid)) as { ok: true }
     })),
     // TAL-255: the iOS `/compress` route joins or starts the session's compression job and answers with its result.
     compress: os.session.compress.handler(({ input, context: { ctx } }) => run(async () => {
       requireFields(input, 'session_id')
       const sid = str(input.session_id).trim()
-      guardVisibility(ctx, sid)
+      await guardVisibility(ctx, sid)
       const job = await ctx.deps.sessions.startCompression(sid, input.focus_topic || input.topic)
       await job.done
       if (job.status === 'error') throw new HttpError(job.error_status ?? 400, job.error ?? 'Compression failed', job.error_extra)
@@ -337,95 +337,95 @@ export const sessionsRouter = os.router({
     compressStart: os.session.compressStart.handler(({ input, context: { ctx } }) => run(async () => {
       requireFields(input, 'session_id')
       const sid = str(input.session_id).trim()
-      guardVisibility(ctx, sid)
+      await guardVisibility(ctx, sid)
       return compressionStatusPayload(await ctx.deps.sessions.startCompression(sid, input.focus_topic || input.topic)) as { status: 'running' }
     })),
     // TAL-258: the handoff dock. Rounds decides when to offer it; the summary is generated and appended to the transcript.
-    conversationRounds: os.session.conversationRounds.handler(({ input, context: { ctx } }) => run(() => {
-      const { sid, since } = handoffInput(ctx, input)
-      return ctx.deps.sessions.conversationRounds(sid, since)
+    conversationRounds: os.session.conversationRounds.handler(({ input, context: { ctx } }) => run(async () => {
+      const { sid, since } = (await handoffInput(ctx, input))
+      return (await ctx.deps.sessions.conversationRounds(sid, since))
     })),
-    handoffSummary: os.session.handoffSummary.handler(({ input, context: { ctx } }) => run(() => {
-      const { sid, since } = handoffInput(ctx, input)
-      return ctx.deps.sessions.handoffSummary(sid, since)
+    handoffSummary: os.session.handoffSummary.handler(({ input, context: { ctx } }) => run(async () => {
+      const { sid, since } = (await handoffInput(ctx, input))
+      return (await ctx.deps.sessions.handoffSummary(sid, since))
     })),
-    compressStatus: os.session.compressStatus.handler(({ input, context: { ctx } }) => run(() => {
+    compressStatus: os.session.compressStatus.handler(({ input, context: { ctx } }) => run(async () => {
       const sid = input.session_id.trim()
       if (!sid) throw new HttpError(400, 'session_id is required')
-      guardVisibility(ctx, sid)
-      const job = ctx.deps.sessions.compressionJob(sid)
+      await guardVisibility(ctx, sid)
+      const job = (await ctx.deps.sessions.compressionJob(sid))
       return (job ? compressionStatusPayload(job) : { ok: true, status: 'idle', session_id: sid }) as { status: 'idle' }
     })),
-    draftGet: os.session.draftGet.handler(({ input, context: { ctx } }) => run(() => {
-      guardVisibility(ctx, input.session_id)
-      return ctx.deps.sessions.readDraft(input.session_id) as { draft: { text: string; files: unknown[] }; draft_version: string | null }
+    draftGet: os.session.draftGet.handler(({ input, context: { ctx } }) => run(async () => {
+      await guardVisibility(ctx, input.session_id)
+      return (await ctx.deps.sessions.readDraft(input.session_id)) as { draft: { text: string; files: unknown[] }; draft_version: string | null }
     })),
     draftSave: os.session.draftSave.handler(({ input, context: { ctx } }) => run(async () => {
-      guardVisibility(ctx, input.session_id)
-      return ctx.deps.sessions.writeDraft(input) as Promise<{ ok: true; draft: { text: string; files: unknown[] }; draft_version: string | null; unchanged?: boolean }>
+      await guardVisibility(ctx, input.session_id)
+      return (await ctx.deps.sessions.writeDraft(input)) as { ok: true; draft: { text: string; files: unknown[] }; draft_version: string | null; unchanged?: boolean }
     })),
-    anchorSceneGet: os.session.anchorSceneGet.handler(({ input, context: { ctx } }) => run(() => {
-      guardVisibility(ctx, input.session_id)
-      return ctx.deps.sessions.readAnchorScene(input) as { scene_ref: string; rows: unknown[]; start: number; end: number; total: number; complete: boolean }
+    anchorSceneGet: os.session.anchorSceneGet.handler(({ input, context: { ctx } }) => run(async () => {
+      await guardVisibility(ctx, input.session_id)
+      return (await ctx.deps.sessions.readAnchorScene(input)) as { scene_ref: string; rows: unknown[]; start: number; end: number; total: number; complete: boolean }
     })),
-    toolResult: os.session.toolResult.handler(({ input, context: { ctx } }) => run(() => {
-      guardVisibility(ctx, input.session_id)
-      return ctx.deps.sessions.readToolResult(input)
+    toolResult: os.session.toolResult.handler(({ input, context: { ctx } }) => run(async () => {
+      await guardVisibility(ctx, input.session_id)
+      return (await ctx.deps.sessions.readToolResult(input))
     })),
     anchorSceneSave: os.session.anchorSceneSave.handler(({ input, context: { ctx } }) => run(async () => {
-      guardVisibility(ctx, input.session_id)
-      return ctx.deps.sessions.saveAnchorScene(input) as Promise<{ ok: true; message_index: number; message_ref: string }>
+      await guardVisibility(ctx, input.session_id)
+      return (await ctx.deps.sessions.saveAnchorScene(input)) as { ok: true; message_index: number; message_ref: string }
     })),
   },
   projects: {
-    list: os.projects.list.handler(({ input, context: { ctx } }) => run(() => {
+    list: os.projects.list.handler(({ input, context: { ctx } }) => run(async () => {
       const activeProfile = ctx.deps.activeProfile()
-      const all = ctx.deps.projects.load()
+      const all = (await ctx.deps.projects.load())
       const allProfiles = allProfilesEnabled(ctx, input.all_profiles)
       const scoped = allProfiles ? all : all.filter((p) => ctx.deps.profilesMatch(p.profile ?? null, activeProfile))
       return { projects: scoped, all_profiles: allProfiles, active_profile: activeProfile, other_profile_count: allProfiles || ctx.deps.isolatedProfileMode() ? 0 : all.length - scoped.length }
     })),
-    create: os.projects.create.handler(({ input, context: { ctx } }) => run(() => {
+    create: os.projects.create.handler(({ input, context: { ctx } }) => run(async () => {
       const name = input.name.trim().slice(0, 128)
       if (!name) throw new HttpError(400, 'name required')
       const color = input.color ?? null
       if (color && !/^#[0-9a-fA-F]{3,8}$/.test(color)) throw new HttpError(400, 'Invalid color format')
       const requested = (input.profile ?? '').trim()
       if (requested && requested !== 'default' && !/^[a-z0-9][a-z0-9_-]{0,63}$/.test(requested)) throw new HttpError(400, 'invalid profile')
-      const projects = ctx.deps.projects.load()
       const proj = { project_id: randomUUID().replace(/-/g, '').slice(0, 12), name, color, profile: requested || ctx.deps.activeProfile() || 'default', created_at: ctx.deps.auth.now() }
-      projects.push(proj)
-      ctx.deps.projects.save(projects)
+      await ctx.deps.projects.mutate((projects) => { projects.push(proj) })
       ctx.deps.events.publish('project_create', { profile: proj.profile })
       return { ok: true as const, project: proj }
     })),
-    rename: os.projects.rename.handler(({ input, context: { ctx } }) => run(() => {
-      const projects = ctx.deps.projects.load()
-      const proj = projects.find((p) => p.project_id === input.project_id)
+    rename: os.projects.rename.handler(({ input, context: { ctx } }) => run(async () => {
       const activeProfile = ctx.deps.activeProfile()
-      if (!proj || !ctx.deps.profilesMatch(proj.profile ?? null, activeProfile)) throw new HttpError(404, 'Project not found')
-      requireFields(input, 'project_id', 'name')
-      proj.name = input.name.trim().slice(0, 128)
-      if ('color' in input) {
-        const color = input.color ?? null
-        if (color && !/^#[0-9a-fA-F]{3,8}$/.test(color)) throw new HttpError(400, 'Invalid color format')
-        proj.color = color
-      }
-      ctx.deps.projects.save(projects)
+      const proj = await ctx.deps.projects.mutate((projects) => {
+        const proj = projects.find((p) => p.project_id === input.project_id)
+        if (!proj || !ctx.deps.profilesMatch(proj.profile ?? null, activeProfile)) throw new HttpError(404, 'Project not found')
+        requireFields(input, 'project_id', 'name')
+        proj.name = input.name.trim().slice(0, 128)
+        if ('color' in input) {
+          const color = input.color ?? null
+          if (color && !/^#[0-9a-fA-F]{3,8}$/.test(color)) throw new HttpError(400, 'Invalid color format')
+          proj.color = color
+        }
+        return proj
+      })
       ctx.deps.events.publish('project_rename', { profile: activeProfile })
       return { ok: true as const, project: proj }
     })),
-    delete: os.projects.delete.handler(({ input, context: { ctx } }) => run(() => {
-      let projects = ctx.deps.projects.load()
-      const proj = projects.find((p) => p.project_id === input.project_id)
+    delete: os.projects.delete.handler(({ input, context: { ctx } }) => run(async () => {
       const activeProfile = ctx.deps.activeProfile()
-      if (!proj || !ctx.deps.profilesMatch(proj.profile ?? null, activeProfile)) throw new HttpError(404, 'Project not found')
-      projects = projects.filter((p) => p.project_id !== input.project_id)
-      ctx.deps.projects.save(projects)
+      await ctx.deps.projects.mutate((projects) => {
+        const position = projects.findIndex((p) => p.project_id === input.project_id)
+        const proj = projects[position]
+        if (!proj || !ctx.deps.profilesMatch(proj.profile ?? null, activeProfile)) throw new HttpError(404, 'Project not found')
+        projects.splice(position, 1)
+      })
       const store = ctx.deps.sessionStore
       const activeIds = ctx.deps.sessions.deps.runtime.activeStreamIds
       try {
-        for (const entry of store.readIndexEntries()) {
+        for (const entry of (await store.readIndexEntries())) {
           if (entry.project_id !== input.project_id) continue
           const sid = str(entry.session_id)
           try {
@@ -433,9 +433,9 @@ export const sessionsRouter = os.router({
               const cached = store.sessions.get(sid)
               if (cached) { cached.project_id = null; continue }
             }
-            const s = store.get(sid)
+            const s = (await store.get(sid))
             s.project_id = null
-            store.save(s)
+            await store.save(s)
           } catch { /* one slow or failing session never aborts the request */ }
         }
       } catch { /* no index */ }
@@ -458,21 +458,21 @@ export const sessionsRouter = os.router({
       const bound = str(session?.bound_profile).trim() || null
       return relayCall(() => Promise.resolve(ctx.deps.relay.presence.update(input, ctx.deps.isRootProfile(bound ?? ctx.deps.activeProfile()) ? 'default' : (bound ?? ctx.deps.activeProfile()))))
     }),
-    viewed: os.talaria.viewed.handler(({ input, context: { ctx } }) => run(() => {
-      ctx.deps.relay.markViewed(input.session_id.trim())
+    viewed: os.talaria.viewed.handler(({ input, context: { ctx } }) => run(async () => {
+      await ctx.deps.relay.markViewed(input.session_id.trim())
       return { ok: true as const }
     })),
   },
   share: {
-    create: os.share.create.handler(({ input, context: { ctx } }) => run(() => {
+    create: os.share.create.handler(({ input, context: { ctx } }) => run(async () => {
       const sid = input.session_id.trim()
       if (!sid) throw new HttpError(400, 'session_id is required')
-      return ctx.deps.sessions.createShare(sid) as { ok: true; share: { token: string; url: string; title: string; message_count: number; created_at: number; updated_at: number }; session: { session_id: string; title: string } }
+      return (await ctx.deps.sessions.createShare(sid)) as { ok: true; share: { token: string; url: string; title: string; message_count: number; created_at: number; updated_at: number }; session: { session_id: string; title: string } }
     })),
-    revoke: os.share.revoke.handler(({ input, context: { ctx } }) => run(() => {
+    revoke: os.share.revoke.handler(({ input, context: { ctx } }) => run(async () => {
       const sid = input.session_id.trim()
       if (!sid) throw new HttpError(400, 'session_id is required')
-      return ctx.deps.sessions.revokeShare(sid) as { ok: true; session: { session_id: string; title: string } }
+      return (await ctx.deps.sessions.revokeShare(sid)) as { ok: true; session: { session_id: string; title: string } }
     })),
     read: os.share.read.handler(({ input, context: { ctx } }) => run(() => {
       ctx.extraResponseHeaders = { 'x-robots-tag': 'noindex, nofollow' }
@@ -556,12 +556,12 @@ export const sessionsRouter = os.router({
     })),
   },
   files: {
-    list: os.files.list.handler(({ input, context: { ctx } }) => run(() => {
+    list: os.files.list.handler(({ input, context: { ctx } }) => run(async () => {
       if (!input.session_id) throw new HttpError(400, 'session_id is required')
-      guardVisibility(ctx, input.session_id)
+      await guardVisibility(ctx, input.session_id)
       // Python `_handle_list` resolved the workspace directly and answered 404 with the trust error; the POST file ops
       // keep `get_session_for_file_ops`' lenient fallback.
-      const s = fileOpsSession(ctx, input.session_id, { strictWorkspace: true })
+      const s = (await fileOpsSession(ctx, input.session_id, { strictWorkspace: true }))
       const rel = input.path ?? '.'
       try {
         const entries = listDir(s.workspace, rel)
@@ -570,10 +570,10 @@ export const sessionsRouter = os.router({
         throw fileError(error, 404)
       }
     })),
-    read: os.files.read.handler(({ input, context: { ctx } }) => run(() => {
+    read: os.files.read.handler(({ input, context: { ctx } }) => run(async () => {
       if (!input.session_id) throw new HttpError(400, 'session_id is required')
-      guardVisibility(ctx, input.session_id)
-      const s = fileOpsSession(ctx, input.session_id)
+      await guardVisibility(ctx, input.session_id)
+      const s = (await fileOpsSession(ctx, input.session_id))
       if (!input.path) throw new HttpError(400, 'path is required')
       try {
         const file = readFilePreview(s.workspace, input.path)
@@ -582,9 +582,9 @@ export const sessionsRouter = os.router({
         throw fileError(error, 404)
       }
     })),
-    save: os.files.save.handler(({ input, context: { ctx } }) => run(() => {
+    save: os.files.save.handler(({ input, context: { ctx } }) => run(async () => {
       requireFields(input, 'session_id', 'path')
-      const s = fileOpsSession(ctx, input.session_id)
+      const s = (await fileOpsSession(ctx, input.session_id))
       try {
         if (['.docx', '.xlsx', '.pptx'].includes(extname(input.path).toLowerCase())) throw new HttpError(400, 'Office documents cannot be saved from the Web UI')
         const root = s.workspace
@@ -601,9 +601,9 @@ export const sessionsRouter = os.router({
         throw fileError(error)
       }
     })),
-    create: os.files.create.handler(({ input, context: { ctx } }) => run(() => {
+    create: os.files.create.handler(({ input, context: { ctx } }) => run(async () => {
       requireFields(input, 'session_id', 'path')
-      const s = fileOpsSession(ctx, input.session_id)
+      const s = (await fileOpsSession(ctx, input.session_id))
       try {
         const root = s.workspace
         assertWorkspaceFree(ctx, root)
@@ -618,9 +618,9 @@ export const sessionsRouter = os.router({
         throw fileError(error)
       }
     })),
-    createDir: os.files.createDir.handler(({ input, context: { ctx } }) => run(() => {
+    createDir: os.files.createDir.handler(({ input, context: { ctx } }) => run(async () => {
       requireFields(input, 'session_id', 'path')
-      const s = fileOpsSession(ctx, input.session_id)
+      const s = (await fileOpsSession(ctx, input.session_id))
       try {
         const root = s.workspace
         assertWorkspaceFree(ctx, root)
@@ -632,9 +632,9 @@ export const sessionsRouter = os.router({
         throw fileError(error)
       }
     })),
-    delete: os.files.delete.handler(({ input, context: { ctx } }) => run(() => {
+    delete: os.files.delete.handler(({ input, context: { ctx } }) => run(async () => {
       requireFields(input, 'session_id', 'path')
-      const s = fileOpsSession(ctx, input.session_id)
+      const s = (await fileOpsSession(ctx, input.session_id))
       try {
         const root = s.workspace
         assertWorkspaceFree(ctx, root)
@@ -650,9 +650,9 @@ export const sessionsRouter = os.router({
         throw fileError(error)
       }
     })),
-    rename: os.files.rename.handler(({ input, context: { ctx } }) => run(() => {
+    rename: os.files.rename.handler(({ input, context: { ctx } }) => run(async () => {
       requireFields(input, 'session_id', 'path', 'new_name')
-      const s = fileOpsSession(ctx, input.session_id)
+      const s = (await fileOpsSession(ctx, input.session_id))
       try {
         const root = s.workspace
         assertWorkspaceFree(ctx, root)
@@ -671,10 +671,10 @@ export const sessionsRouter = os.router({
         throw fileError(error)
       }
     })),
-    move: os.files.move.handler(({ input, context: { ctx } }) => run(() => {
+    move: os.files.move.handler(({ input, context: { ctx } }) => run(async () => {
       requireFields({ ...input, dest_dir: input.dest_dir ?? input.destination }, 'session_id', 'path', 'dest_dir')
       const destDirRaw = (input.dest_dir ?? input.destination ?? '.').trim() || '.'
-      const s = fileOpsSession(ctx, input.session_id)
+      const s = (await fileOpsSession(ctx, input.session_id))
       try {
         const root = s.workspace
         assertWorkspaceFree(ctx, root)
@@ -698,7 +698,7 @@ export const sessionsRouter = os.router({
     })),
     reveal: os.files.reveal.handler(({ input, context: { ctx } }) => run(async () => {
       requireFields(input, 'session_id', 'path')
-      const s = fileOpsSession(ctx, input.session_id)
+      const s = (await fileOpsSession(ctx, input.session_id))
       try {
         const target = safeResolve(s.workspace, input.path)
         if (!existsSync(target)) throw new HttpError(404, `File not found: ${target}`)
@@ -712,9 +712,9 @@ export const sessionsRouter = os.router({
         throw fileError(error)
       }
     })),
-    path: os.files.path.handler(({ input, context: { ctx } }) => run(() => {
+    path: os.files.path.handler(({ input, context: { ctx } }) => run(async () => {
       requireFields(input, 'session_id', 'path')
-      const s = fileOpsSession(ctx, input.session_id)
+      const s = (await fileOpsSession(ctx, input.session_id))
       try {
         return { ok: true as const, path: safeResolve(s.workspace, input.path) }
       } catch (error) {
@@ -723,7 +723,7 @@ export const sessionsRouter = os.router({
     })),
     openVsCode: os.files.openVsCode.handler(({ input, context: { ctx } }) => run(async () => {
       requireFields(input, 'session_id', 'path')
-      const s = fileOpsSession(ctx, input.session_id)
+      const s = (await fileOpsSession(ctx, input.session_id))
       try {
         const target = safeResolve(s.workspace, input.path)
         if (!existsSync(target)) throw new HttpError(404, `File not found: ${target}`)
@@ -736,7 +736,7 @@ export const sessionsRouter = os.router({
         throw fileError(error)
       }
     })),
-    escapeAuthorize: os.files.escapeAuthorize.handler(({ input, context: { ctx } }) => run(() => {
+    escapeAuthorize: os.files.escapeAuthorize.handler(({ input, context: { ctx } }) => run(async () => {
       // A Referer alone is not a browser fetch: Python required `Origin`, which the global CSRF check has already matched.
       if (!ctx.header('origin')) throw new HttpError(403, 'browser origin required')
       if (input.token?.trim()) throw new HttpError(400, 'token must not be provided')
@@ -744,15 +744,15 @@ export const sessionsRouter = os.router({
       const rel = (input.path ?? '').trim()
       if (!sid) throw new HttpError(400, 'session_id is required')
       if (!rel) throw new HttpError(400, 'path is required')
-      const s = fileOpsSession(ctx, sid)
+      const s = (await fileOpsSession(ctx, sid))
       try {
         return ctx.deps.escapeGrants.authorize(s.workspace, sid, s.profile, rel)
       } catch (error) {
         throw fileError(error, 404)
       }
     })),
-    escapeList: os.files.escapeList.handler(({ input, context: { ctx } }) => run(() => {
-      const req = escapeRequest(ctx, input.session_id, input.token, input.path ?? '.')
+    escapeList: os.files.escapeList.handler(({ input, context: { ctx } }) => run(async () => {
+      const req = (await escapeRequest(ctx, input.session_id, input.token, input.path ?? '.'))
       try {
         const listing = ctx.deps.escapeGrants.list(req)
         return { ...listing, entries: serializeEntriesForBrowser(listing.entries) }
@@ -760,8 +760,8 @@ export const sessionsRouter = os.router({
         throw fileError(error, 404)
       }
     })),
-    escapeRead: os.files.escapeRead.handler(({ input, context: { ctx } }) => run(() => {
-      const req = escapeRequest(ctx, input.session_id, input.token, input.path ?? '')
+    escapeRead: os.files.escapeRead.handler(({ input, context: { ctx } }) => run(async () => {
+      const req = (await escapeRequest(ctx, input.session_id, input.token, input.path ?? ''))
       try {
         const file = ctx.deps.escapeGrants.read(req)
         // The frame loads the bytes through the same grant; the workspace preview grant would outlive and skip its re-checks.
@@ -774,10 +774,10 @@ export const sessionsRouter = os.router({
 })
 
 /** The escape routes' shared front half: required ids, the session, and the grant re-check (403 when it fails). */
-export function escapeRequest(ctx: RequestContext, sid: string | undefined, token: string | undefined, rel: string): EscapeRequest {
+export async function escapeRequest(ctx: RequestContext, sid: string | undefined, token: string | undefined, rel: string): Promise<EscapeRequest> {
   if (!sid) throw new HttpError(400, 'session_id is required')
   if (!token) throw new HttpError(400, 'token is required')
-  const s = fileOpsSession(ctx, sid)
+  const s = (await fileOpsSession(ctx, sid))
   try {
     return ctx.deps.escapeGrants.resolve(s.workspace, sid, s.profile, token, rel)
   } catch (error) {
@@ -810,10 +810,10 @@ export interface FileOpsSession { workspace: string; profile: string | null; rec
  * `state.db` but that has no `sessions/<sid>.json` (CLI, messaging) is served as an external view bound to the active
  * workspace, as the sidebar already lists it (issue #3280).
  */
-export function fileOpsSession(ctx: RequestContext, sid: string, opts: { strictWorkspace?: boolean } = {}): FileOpsSession {
+export async function fileOpsSession(ctx: RequestContext, sid: string, opts: { strictWorkspace?: boolean } = {}): Promise<FileOpsSession> {
   let session: Session
   try {
-    session = ctx.deps.sessionStore.get(sid, { metadataOnly: true })
+    session = (await ctx.deps.sessionStore.get(sid, { metadataOnly: true }))
   } catch {
     const profile = ctx.deps.activeProfile()
     if (!isSafeSessionId(sid) || !stateDbHasSession(ctx.deps.cliSessions.dbPath(profile), sid)) throw new HttpError(404, 'Session not found')
@@ -835,8 +835,8 @@ export function fileOpsSession(ctx: RequestContext, sid: string, opts: { strictW
     const cached = ctx.deps.sessionStore.sessions.get(sid)
     if (cached) cached.workspace = workspace
     try {
-      const full = ctx.deps.sessionStore.load(sid)
-      if (full) { full.workspace = workspace; ctx.deps.sessionStore.save(full, { touchUpdatedAt: false }) }
+      const full = (await ctx.deps.sessionStore.load(sid))
+      if (full) { full.workspace = workspace; (await ctx.deps.sessionStore.save(full, { touchUpdatedAt: false })) }
     } catch { /* recovery persistence is best effort */ }
   }
   return { workspace, profile: session.profile, recovered, session }

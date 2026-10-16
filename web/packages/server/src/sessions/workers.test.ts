@@ -1,3 +1,4 @@
+import { sessionPath, sessionDirectory } from '../test/storage.js'
 import { appendFileSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, statSync, utimesSync, writeFileSync, existsSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -106,9 +107,9 @@ describe('async delegation delivery claims (TAL-459)', () => {
   const newSid = async (): Promise<string> => {
     const sid = String(((await json(await post(s, '/api/session/new', {}))).session as Json).session_id)
     // A session is only addressable for routing once it has been persisted.
-    const session = s.deps.sessionStore.get(sid)
+    const session = (await s.deps.sessionStore.get(sid))
     session.messages = [{ role: 'user', content: 'dispatch the delegation' }]
-    s.deps.sessionStore.save(session)
+    await s.deps.sessionStore.save(session)
     return sid
   }
   const delegation = (sid: string, id: string): Json => ({ process_id: id, delegation_id: id, type: 'async_delegation', origin_ui_session_id: sid, consumed: false })
@@ -127,7 +128,7 @@ describe('async delegation delivery claims (TAL-459)', () => {
     sidecar.respond('process.defer_delivery', (params) => { state.calls.push(`defer ${str((params.event as Json).delegation_id)}`); return { ok: true } })
     return state
   }
-  const drainWith = (startTurn: (prompt: string) => { _status?: number; stream_id?: string }): CompletionDrain => new CompletionDrain({
+  const drainWith = (startTurn: (prompt: string) => { _status?: number; stream_id?: string }): CompletionDrain => new CompletionDrain({ heldWakeupsPath: join(s.state, 'sessions', '_wakeup_held.json'),
     sidecar: () => sidecar, baseHome: s.state, profileHome: () => s.state, activeProfile: () => 'default', store: s.deps.sessionStore, channels: s.deps.channels, registry: s.deps.registry,
     startTurn: (_session, prompt) => startTurn(prompt), now: () => Date.now() / 1000, log: () => undefined,
   })
@@ -140,7 +141,7 @@ describe('async delegation delivery claims (TAL-459)', () => {
     fresh.respond('process.recover', () => { if (failures-- > 0) throw new Error('busy'); return { homes: 2 } })
     const logged: string[] = []
     fresh.respond('process.drain', () => ({ events: [] }))
-    const drain = new CompletionDrain({
+    const drain = new CompletionDrain({ heldWakeupsPath: join(s.state, 'sessions', '_wakeup_held.json'),
       sidecar: () => fresh, baseHome: '/base', profileHome: () => '/base/profiles/work', activeProfile: () => 'work', store: s.deps.sessionStore, channels: s.deps.channels,
       registry: s.deps.registry, startTurn: () => ({}), now: () => 0, log: (line) => { logged.push(line) },
     })
@@ -158,7 +159,7 @@ describe('async delegation delivery claims (TAL-459)', () => {
     let drains = 0
     fresh.respond('process.drain', () => { drains += 1; throw new Error('background process recovery failed for /base') })
     const logged: string[] = []
-    const drain = new CompletionDrain({
+    const drain = new CompletionDrain({ heldWakeupsPath: join(s.state, 'sessions', '_wakeup_held.json'),
       sidecar: () => fresh, baseHome: '/base', profileHome: () => '/base', activeProfile: () => 'default', store: s.deps.sessionStore, channels: s.deps.channels,
       registry: s.deps.registry, startTurn: () => ({}), now: () => 0, log: (line) => { logged.push(line) }, pollMs: 5,
     })
@@ -192,16 +193,16 @@ describe('async delegation delivery claims (TAL-459)', () => {
 
   it("claims and acknowledges in the session's own profile ledger, not the active profile's (TAL-534)", async () => {
     const sid = await newSid()
-    const session = s.deps.sessionStore.get(sid)
+    const session = (await s.deps.sessionStore.get(sid))
     session.profile = 'b'
-    s.deps.sessionStore.save(session)
+    await s.deps.sessionStore.save(session)
     ledger()
     // Each profile has its own state.db ledger; only B's holds this delegation's pending row.
     const homes: string[] = []
     const delivered = new Set<string>()
     sidecar.respond('process.claim_delivery', (params) => { homes.push(`claim ${str(params.profile_home)}`); return { claim_id: params.profile_home === '/homes/b' ? 'claim-b' : '' } })
     sidecar.respond('process.complete_delivery', (params) => { homes.push(`complete ${str(params.profile_home)}`); if (params.profile_home === '/homes/b') delivered.add(str((params.event as Json).delegation_id)); return { ok: true } })
-    const drain = new CompletionDrain({
+    const drain = new CompletionDrain({ heldWakeupsPath: join(s.state, 'sessions', '_wakeup_held.json'),
       sidecar: () => sidecar, baseHome: '/homes', profileHome: (profile) => `/homes/${profile ?? 'default'}`, activeProfile: () => 'a', store: s.deps.sessionStore, channels: s.deps.channels, registry: s.deps.registry,
       startTurn: () => ({ stream_id: 'run' }), now: () => Date.now() / 1000, log: () => undefined,
     })
@@ -222,7 +223,7 @@ describe('async delegation delivery claims (TAL-459)', () => {
       expect(state.delivered.has(`deleg_${String(status)}`)).toBe(false)
       expect(drain.deferredCount(sid)).toBe(1)
       drain.stop()
-      s.deps.sessionStore.deleteFiles(sid)
+      await s.deps.sessionStore.delete(sid)
     }
   })
 
@@ -242,7 +243,7 @@ describe('async delegation delivery claims (TAL-459)', () => {
     const channels = { emit: (_sid: string, name: string, payload: Json) => { if (name === 'bg_task_complete') notified.push(str(payload.task_id)); return 1 } } as unknown as SessionChannels
     // Each emit is past the coalescing window, so every notification surfaces at once and can be counted.
     let clock = 0
-    const drain = new CompletionDrain({
+    const drain = new CompletionDrain({ heldWakeupsPath: join(s.state, 'sessions', '_wakeup_held.json'),
       sidecar: () => sidecar, baseHome: s.state, profileHome: () => s.state, activeProfile: () => 'default', store: s.deps.sessionStore, channels, registry,
       startTurn: (_session, prompt) => startTurn(prompt), now: () => (clock += 5), log: () => undefined,
       background: { recordEvent: (_sid, evt) => { recorded.push(evt) } },
@@ -453,10 +454,10 @@ describe('process notifications follow the owning profile (TAL-933, TAL-907)', (
   /** A session on profile `b` while `a` is active; only the owning profile's config counts. An `Error` config is unreadable. */
   const setup = async (configs: Record<string, Json | Error>, opts: { env?: Record<string, string>; root?: string; profile?: string | null; fail?: () => boolean } = {}): Promise<{ sid: string; drain: CompletionDrain; starts: string[]; consumed: string[]; requeued: Json[]; notified: string[]; recorded: string[]; logs: string[] }> => {
     const sid = String(((await json(await post(s, '/api/session/new', {}))).session as Json).session_id)
-    const session = s.deps.sessionStore.get(sid)
+    const session = (await s.deps.sessionStore.get(sid))
     session.profile = opts.profile === undefined ? 'b' : opts.profile
     session.messages = [{ role: 'user', content: 'delegate the build' }]
-    s.deps.sessionStore.save(session)
+    await s.deps.sessionStore.save(session)
     const starts: string[] = []
     const consumed: string[] = []
     const requeued: Json[] = []
@@ -466,7 +467,7 @@ describe('process notifications follow the owning profile (TAL-933, TAL-907)', (
     sidecar.respond('process.mark_consumed', (params) => { consumed.push(str(params.process_id)); return { ok: true } })
     sidecar.respond('process.requeue', (params) => { requeued.push(...(params.events as Json[])); return { requeued: params.events.length } })
     const channels = { emit: (_sid: string, name: string, payload: Json) => { if (name === 'bg_task_complete') notified.push(str(payload.task_id)); return 1 } } as unknown as SessionChannels
-    const drain = new CompletionDrain({
+    const drain = new CompletionDrain({ heldWakeupsPath: join(s.state, 'sessions', '_wakeup_held.json'),
       sidecar: () => sidecar, baseHome: opts.root ?? '/homes', profileHome: (profile) => `${opts.root ?? '/homes'}/${profile ?? 'default'}`, activeProfile: () => 'a', store: s.deps.sessionStore, channels, registry: s.deps.registry,
       readConfig: (home: string) => { const config = configs[home]; return config instanceof Error ? Promise.reject(config) : Promise.resolve(config ?? {}) }, env: opts.env ?? {},
       background: { recordEvent: (_sid, evt) => { recorded.push(str(evt.process_id)) } },
@@ -643,9 +644,9 @@ describe('background wakeups carry their update metadata (TAL-371)', () => {
 
   const newSid = async (): Promise<string> => {
     const sid = String(((await json(await post(s, '/api/session/new', {}))).session as Json).session_id)
-    const session = s.deps.sessionStore.get(sid)
+    const session = (await s.deps.sessionStore.get(sid))
     session.messages = [{ role: 'user', content: 'start the work', timestamp: 1 }, { role: 'assistant', content: 'Started.', timestamp: 2 }]
-    s.deps.sessionStore.save(session)
+    await s.deps.sessionStore.save(session)
     return sid
   }
   const wakeupRow = async (sid: string): Promise<Json | undefined> => {
@@ -690,8 +691,8 @@ describe('background wakeups carry their update metadata (TAL-371)', () => {
     let source: unknown
     const chat = sidecar.responderFor('chat.start')
     sidecar.respond('process.format_notification', () => ({ text: prompt }))
-    sidecar.respond('chat.start', (params) => {
-      source = s.deps.registry.activeRuns.get(s.deps.sessionStore.get(sid).active_stream_id!)?.origin
+    sidecar.respond('chat.start', async (params) => {
+      source = s.deps.registry.activeRuns.get((await s.deps.sessionStore.get(sid)).active_stream_id!)?.origin
       return { ...completed('Tests are progressing.'), messages: [{ role: 'user', content: str(params.user_message) }, { role: 'assistant', content: 'Tests are progressing.' }] }
     })
     try {
@@ -699,7 +700,7 @@ describe('background wakeups carry their update metadata (TAL-371)', () => {
       const row = await wakeupRow(sid)
       expect(source).toBe('background')
       expect(row).toMatchObject({ content: prompt, _display: 'hidden', display_kind: 'hidden', _background_update: { kind: 'process', attention: false } })
-      const document = JSON.parse(readFileSync(s.deps.sessionStore.pathFor(sid), 'utf8')) as { messages: Json[] }
+      const document = JSON.parse(readFileSync(sessionPath(s.deps.sessionStore, sid), 'utf8')) as { messages: Json[] }
       expect(document.messages.find((m) => m._source === 'process_wakeup')).toMatchObject({ display_kind: 'hidden' })
       expect((await settled(sid)).findLast((m) => m.role === 'assistant')).toMatchObject({ content: 'Tests are progressing.', _background_reply: true, _display: 'row' })
     } finally {
@@ -754,7 +755,7 @@ describe('background wakeups carry their update metadata (TAL-371)', () => {
     try {
       await s.deps.completions.processOne({ process_id: 'review-live', delegation_id: 'review-live', type: 'async_delegation', origin_ui_session_id: sid, goals: ['Live review'], results: [{ status: 'completed' }] })
       await vi.waitFor(() => { expect(prompt).not.toBe('') })
-      const stream = s.deps.sessionStore.get(sid).active_stream_id!
+      const stream = (await s.deps.sessionStore.get(sid)).active_stream_id!
       const detail = async (suffix = ''): Promise<Json[]> => ((await json(await s.get(`/api/session?session_id=${sid}&messages=1${suffix}`))).session as Json).messages as Json[]
       expect((await detail()).find((m) => m._background_update)?._background_update).toMatchObject({ review_state: 'reviewing', lines: [{ label: 'Live review', review_state: 'reviewing' }] })
       expect((await detail('&msg_limit=1')).find((m) => m._background_update)?._background_update).toMatchObject({ review_state: 'reviewing', lines: [{ review_state: 'reviewing' }] })
@@ -763,7 +764,7 @@ describe('background wakeups carry their update metadata (TAL-371)', () => {
       const frames = await s.sse(`/api/chat/stream?stream_id=${stream}&replay=1`, (f) => f.event === 'stream_end')
       const terminal = (frames.find((f) => f.event === 'done')?.data as Json).session as Json
       expect((terminal.messages as Json[]).find((m) => m._background_update)?._background_update).toMatchObject({ review_state: 'reviewed' })
-      s.deps.sessionStore.evictOverCap(0)
+      await s.deps.sessionStore.evictOverCap(0)
       for (const suffix of ['', '&msg_limit=1']) {
         const messages = await detail(suffix)
         expect(messages.find((m) => m._background_update)?._background_update).toMatchObject({ review_state: 'reviewed', lines: [{ review_state: 'reviewed' }] })
@@ -787,19 +788,22 @@ describe('background wakeups carry their update metadata (TAL-371)', () => {
   it('tells only background turns how to stay silent, and never streams a silence marker', async () => {
     const prompts: Record<string, string> = {}
     const streamed = async (sid: string, start: () => Promise<string>, chunks: string[]): Promise<string> => {
-      sidecar.respond('chat.start', (params, emit) => {
+      let release!: () => void
+      const gate = new Promise<void>((resolve) => { release = resolve })
+      sidecar.respond('chat.start', async (params, emit) => {
         prompts[sid] = str(params.ephemeral_system_prompt)
         for (const text of chunks) emit({ event: 'token', data: { text } })
+        await gate
         return { ...completed(chunks.join('')), messages: [{ role: 'user', content: str(params.user_message) }, { role: 'assistant', content: chunks.join('') }] }
       })
-      const streamId = await start()
+      const streamId = await start().finally(release)
       const frames = await s.sse(`/api/chat/stream?stream_id=${streamId}&replay=1`, (f) => f.event === 'stream_end')
       return frames.filter((f) => f.event === 'token').map((f) => str((f.data as Json).text)).join('')
     }
     const background = (sid: string, id: string) => async (): Promise<string> => {
       await s.deps.completions.processOne({ process_id: id, session_id: id, type: 'completion', command: 'sync', exit_code: 0, output: 'ok', origin_ui_session_id: sid, consumed: false })
-      for (let i = 0; i < 60 && !s.deps.sessionStore.get(sid).active_stream_id; i += 1) await new Promise((r) => setTimeout(r, 20))
-      return str(s.deps.sessionStore.get(sid).active_stream_id)
+      for (let i = 0; i < 60 && !(await s.deps.sessionStore.get(sid)).active_stream_id; i += 1) await new Promise((r) => setTimeout(r, 20))
+      return str((await s.deps.sessionStore.get(sid)).active_stream_id)
     }
     const silentSid = await newSid()
     expect(await streamed(silentSid, background(silentSid, 'proc_silent'), [' [SIL', 'ENT', ']'])).toBe('')
@@ -831,7 +835,7 @@ describe('wakeups pause while the credential pool is empty (TAL-576)', () => {
     await new Promise((r) => setTimeout(r, 50))
     await idle()
   }
-  const heldFile = (): Record<string, Json[]> => { try { return JSON.parse(readFileSync(join(s.deps.sessionStore.sessionDir, '_wakeup_held.json'), 'utf8')) as Record<string, Json[]> } catch { return {} } }
+  const heldFile = (): Record<string, Json[]> => { try { return JSON.parse(readFileSync(join(sessionDirectory(s.deps.sessionStore), '_wakeup_held.json'), 'utf8')) as Record<string, Json[]> } catch { return {} } }
   const heldIndex = (): string[] => Object.keys(heldFile())
   const heldIds = (sid: string): unknown[] => (heldFile()[sid] ?? []).map((e) => e.process_id)
   const pausedSession = async (): Promise<string> => {
@@ -853,7 +857,7 @@ describe('wakeups pause while the credential pool is empty (TAL-576)', () => {
     expect(str(heldFile()[sid]![0]!.wakeup_prompt)).toContain(`Background process ${sid}_2 completed`)
     expect(s.deps.completions.deferredCount(sid)).toBe(0)
     expect(heldIndex()).toContain(sid)
-    expect(s.deps.sessionStore.get(sid).process_wakeup_pause).toMatchObject({ paused: true, classification: 'credential_pool_empty' })
+    expect((await s.deps.sessionStore.get(sid)).process_wakeup_pause).toMatchObject({ paused: true, classification: 'credential_pool_empty' })
     // Token refresh and request telemetry are no credential change.
     writeFileSync(join(s.state, 'auth.json'), JSON.stringify({ credential_pool: { openrouter: [{ api_key: 'sk-rotated', last_status: 'ok', request_count: 10 }] } }))
     await complete(sid, `${sid}_4`)
@@ -868,7 +872,7 @@ describe('wakeups pause while the credential pool is empty (TAL-576)', () => {
     expect(starts[1]).toContain(`Background process ${sid}_5 completed`)
     expect(starts[2]).toContain(`Background process ${sid}_2 completed`)
     expect(heldIndex()).not.toContain(sid)
-    expect(s.deps.sessionStore.get(sid).process_wakeup_pause).toBeNull()
+    expect((await s.deps.sessionStore.get(sid)).process_wakeup_pause).toBeNull()
   })
 
   it('holds a watch match and the exit of one process as two wakeups and delivers both (TAL-724)', async () => {
@@ -897,7 +901,7 @@ describe('wakeups pause while the credential pool is empty (TAL-576)', () => {
   it('keeps the exit held after a watch match held under its bare process id before TAL-724', async () => {
     const sid = await pausedSession()
     const id = `${sid}_old`
-    const path = join(s.deps.sessionStore.sessionDir, '_wakeup_held.json')
+    const path = join(sessionDirectory(s.deps.sessionStore), '_wakeup_held.json')
     writeFileSync(path, JSON.stringify({ ...heldFile(), [sid]: [{ process_id: id, wakeup_prompt: '[IMPORTANT: old watch matched]', event: { process_id: id, session_id: id, type: 'watch_match' } }] }))
     await complete(sid, id)
     expect(heldIds(sid)).toEqual([id, id])
@@ -921,7 +925,7 @@ describe('wakeups pause while the credential pool is empty (TAL-576)', () => {
     expect(starts[1]).toContain('hello')
     expect(starts[2]).toContain(`Background process ${sid}_2 completed`)
     await idle()
-    expect(s.deps.sessionStore.get(sid).process_wakeup_pause).toBeNull()
+    expect((await s.deps.sessionStore.get(sid)).process_wakeup_pause).toBeNull()
   })
 
   it('keeps held wakeups until a turn admits them, and a restarted server resumes them', async () => {
@@ -930,13 +934,13 @@ describe('wakeups pause while the credential pool is empty (TAL-576)', () => {
     expect(heldIds(sid)).toEqual([`${sid}_2`])
     writeFileSync(join(s.state, 'auth.json'), JSON.stringify({ credential_pool: { openrouter: [{ api_key: 'sk-a' }, { api_key: 'sk-b' }, { api_key: 'sk-c' }] } }))
     // The pause lifts but the turn is refused: the held copy stays on disk.
-    const refused = new CompletionDrain({
+    const refused = new CompletionDrain({ heldWakeupsPath: join(s.state, 'sessions', '_wakeup_held.json'),
       sidecar: () => sidecar, baseHome: s.state, profileHome: () => s.state, activeProfile: () => 'default', store: s.deps.sessionStore, channels: s.deps.channels, registry: s.deps.registry,
       startTurn: () => ({ _status: 500, error: 'boom' }), now: () => Date.now() / 1000, log: () => undefined,
     })
     await refused.drainDeferred(sid)
     refused.stop()
-    expect(s.deps.sessionStore.get(sid).process_wakeup_pause).toBeNull()
+    expect((await s.deps.sessionStore.get(sid)).process_wakeup_pause).toBeNull()
     expect(heldIds(sid)).toEqual([`${sid}_2`])
     expect(heldIndex()).toContain(sid)
     // A new server's first drain resumes the session and the admitted wakeup leaves the disk.
@@ -947,7 +951,7 @@ describe('wakeups pause while the credential pool is empty (TAL-576)', () => {
     restarted.respond('process.recover', () => { throw new Error('unrecoverable checkpoint') })
     restarted.respond('process.drain', () => ({ events: [] }))
     restarted.respond('process.mark_consumed', () => ({ ok: true }))
-    const resumed = new CompletionDrain({
+    const resumed = new CompletionDrain({ heldWakeupsPath: join(s.state, 'sessions', '_wakeup_held.json'),
       sidecar: () => restarted, baseHome: s.state, profileHome: () => s.state, activeProfile: () => 'default', store: s.deps.sessionStore, channels: s.deps.channels, registry: s.deps.registry,
       startTurn: (_session, prompt) => { prompts.push(prompt); return { stream_id: 'resumed' } }, now: () => Date.now() / 1000, log: () => undefined,
     })
@@ -973,12 +977,12 @@ describe('wakeups pause while the credential pool is empty (TAL-576)', () => {
 
   it('does not hold a wakeup when the pause lifted during the pool lookup', async () => {
     const sid = await pausedSession()
-    const session = s.deps.sessionStore.get(sid)
+    const session = (await s.deps.sessionStore.get(sid))
     session.model_provider = 'openrouter'
     session.process_wakeup_pause = { ...(session.process_wakeup_pause as Json), provider: 'openrouter' }
-    s.deps.sessionStore.save(session)
+    await s.deps.sessionStore.save(session)
     // A user turn succeeds while the lookup is in flight; the pool itself still reports no usable entry.
-    sidecar.respond('usage.pool', () => { s.deps.sessionStore.get(sid).process_wakeup_pause = null; return { entries: [] } })
+    sidecar.respond('usage.pool', async () => { (await s.deps.sessionStore.get(sid)).process_wakeup_pause = null; return { entries: [] } })
     sidecar.respond('chat.start', (params) => { starts.push(str(params.user_message)); return completed('ok') })
     await complete(sid, `${sid}_2`)
     sidecar.respond('usage.pool', () => { throw new Error('unset') })
@@ -987,7 +991,7 @@ describe('wakeups pause while the credential pool is empty (TAL-576)', () => {
   })
 
   it('never overwrites a held file it cannot read', async () => {
-    const path = join(s.deps.sessionStore.sessionDir, '_wakeup_held.json')
+    const path = join(sessionDirectory(s.deps.sessionStore), '_wakeup_held.json')
     const sid = await pausedSession()
     writeFileSync(path, '{"other": [{"process_id": "x", "wakeup_prompt": "kept"}]')
     await complete(sid, `${sid}_2`)
@@ -998,25 +1002,25 @@ describe('wakeups pause while the credential pool is empty (TAL-576)', () => {
 
   it('never revives a session deleted during the pool lookup', async () => {
     const sid = await pausedSession()
-    const session = s.deps.sessionStore.get(sid)
+    const session = (await s.deps.sessionStore.get(sid))
     session.model_provider = 'openrouter'
     session.process_wakeup_pause = { ...(session.process_wakeup_pause as Json), provider: 'openrouter' }
-    s.deps.sessionStore.save(session)
-    sidecar.respond('usage.pool', () => { s.deps.sessionStore.deleteFiles(sid); return { entries: [{ credential_id: 'k', label: 'k', status: 'available' as const, unavailable_reason: null, retry_after: null, matches_api_key: false }] } })
+    await s.deps.sessionStore.save(session)
+    sidecar.respond('usage.pool', async () => { (await s.deps.sessionStore.delete(sid)); return { entries: [{ credential_id: 'k', label: 'k', status: 'available' as const, unavailable_reason: null, retry_after: null, matches_api_key: false }] } })
     await complete(sid, `${sid}_2`)
     sidecar.respond('usage.pool', () => { throw new Error('unset') })
     expect(starts).toHaveLength(1)
-    expect(existsSync(s.deps.sessionStore.pathFor(sid)), 'the deleted session stays deleted').toBe(false)
+    expect(existsSync(sessionPath(s.deps.sessionStore, sid)), 'the deleted session stays deleted').toBe(false)
     expect(heldIndex()).not.toContain(sid)
   })
 
-  const standalone = (startTurn: (prompt: string) => { _status?: number; stream_id?: string }): CompletionDrain => new CompletionDrain({
+  const standalone = (startTurn: (prompt: string) => { _status?: number; stream_id?: string }): CompletionDrain => new CompletionDrain({ heldWakeupsPath: join(s.state, 'sessions', '_wakeup_held.json'),
     sidecar: () => sidecar, baseHome: s.state, profileHome: () => s.state, activeProfile: () => 'default', store: s.deps.sessionStore, channels: s.deps.channels, registry: s.deps.registry,
     startTurn: (_session, prompt) => startTurn(prompt), now: () => Date.now() / 1000, log: () => undefined,
   })
 
   it('rechecks later when the held store is unreadable', async () => {
-    const path = join(s.deps.sessionStore.sessionDir, '_wakeup_held.json')
+    const path = join(sessionDirectory(s.deps.sessionStore), '_wakeup_held.json')
     const sid = String(((await json(await post(s, '/api/session/new', {}))).session as Json).session_id)
     writeFileSync(path, '{"partial": ')
     const drain = standalone(() => ({ stream_id: 'x' }))
@@ -1028,7 +1032,7 @@ describe('wakeups pause while the credential pool is empty (TAL-576)', () => {
   })
 
   it('serializes concurrent drains so a held wakeup is delivered once', async () => {
-    const path = join(s.deps.sessionStore.sessionDir, '_wakeup_held.json')
+    const path = join(sessionDirectory(s.deps.sessionStore), '_wakeup_held.json')
     const sid = String(((await json(await post(s, '/api/session/new', {}))).session as Json).session_id)
     writeFileSync(path, JSON.stringify({ [sid]: [{ process_id: `${sid}_w`, wakeup_prompt: '[IMPORTANT: watch matched]', event: { type: 'watch_match' } }] }))
     const prompts: string[] = []
@@ -1040,7 +1044,7 @@ describe('wakeups pause while the credential pool is empty (TAL-576)', () => {
   })
 
   it('never redelivers an admitted wakeup whose release could not be written', async () => {
-    const path = join(s.deps.sessionStore.sessionDir, '_wakeup_held.json')
+    const path = join(sessionDirectory(s.deps.sessionStore), '_wakeup_held.json')
     const sid = String(((await json(await post(s, '/api/session/new', {}))).session as Json).session_id)
     writeFileSync(path, JSON.stringify({ [sid]: [{ process_id: `${sid}_n`, wakeup_prompt: '[IMPORTANT: notice]', event: { type: 'watch_disabled' } }] }))
     const prompts: string[] = []
@@ -1059,7 +1063,7 @@ describe('wakeups pause while the credential pool is empty (TAL-576)', () => {
   })
 
   it('never rewrites a held file with a malformed entry', async () => {
-    const path = join(s.deps.sessionStore.sessionDir, '_wakeup_held.json')
+    const path = join(sessionDirectory(s.deps.sessionStore), '_wakeup_held.json')
     const sid = await pausedSession()
     const malformed = JSON.stringify({ other: [{ process_id: 1, wakeup_prompt: 'kept' }] })
     writeFileSync(path, malformed)
@@ -1082,7 +1086,7 @@ describe('wakeups pause while the credential pool is empty (TAL-576)', () => {
     // The session names no provider (the config's implicit one): only the pool of the provider the Agent resolved counts,
     // never another provider's usable key.
     const sid = String(((await json(await post(s, '/api/session/new', {}))).session as Json).session_id)
-    expect(s.deps.sessionStore.get(sid).model_provider).toBeNull()
+    expect((await s.deps.sessionStore.get(sid)).model_provider).toBeNull()
     const deadline = Date.now() + 600
     const asked: string[] = []
     sidecar.respond('usage.pool', (params) => {
@@ -1100,7 +1104,7 @@ describe('wakeups pause while the credential pool is empty (TAL-576)', () => {
     expect(starts[1], 'the deadline alone resumes the held wakeup').toContain(`Background process ${sid}_2 completed`)
     expect(new Set(asked)).toEqual(new Set(['openrouter']))
     await idle()
-    expect(s.deps.sessionStore.get(sid).process_wakeup_pause).toBeNull()
+    expect((await s.deps.sessionStore.get(sid)).process_wakeup_pause).toBeNull()
   })
 })
 
@@ -1474,18 +1478,18 @@ describe('wakeup turns pass the user-turn admission (TAL-577)', () => {
 
   it('runs a wakeup for a session whose workspace was deleted in the recovered workspace', async () => {
     const sid = await newSid()
-    const session = s.deps.sessionStore.get(sid)
+    const session = (await s.deps.sessionStore.get(sid))
     const recovered = session.workspace
     const worktree = join(recovered, 'removed-worktree')
     mkdirSync(worktree, { recursive: true })
     session.workspace = worktree
-    s.deps.sessionStore.save(session)
+    await s.deps.sessionStore.save(session)
     rmSync(worktree, { recursive: true })
     starts.length = 0
     expect(await s.deps.completions.processOne(completion(sid, 'proc_gone'))).toBe(true)
     await settled()
     expect(starts.map((p) => p.workspace)).toEqual([recovered])
-    expect(s.deps.sessionStore.get(sid).workspace).toBe(recovered)
+    expect((await s.deps.sessionStore.get(sid)).workspace).toBe(recovered)
   })
 
   it('defers a wakeup while the Agent runtime is stale', async () => {
@@ -1562,7 +1566,7 @@ describe('a Stop holds automatic turns until the next user message (TAL-899)', (
       const after = sidecar.calls.filter((call) => call.method === 'chat.interrupt').length
       expect(after - before, 'Stop must reach the Agent despite a failed durable hold write').toBe(1)
       expect(outcome).toMatchObject({ cancelled: true })
-      expect(s.deps.turns.automaticTurnsHeld(sid)).toBe(true)
+      expect((await s.deps.turns.automaticTurnsHeld(sid))).toBe(true)
     } finally {
       spy.mockRestore()
       await s.deps.turns.cancel(stream)
@@ -1607,19 +1611,19 @@ describe('a Stop holds automatic turns until the next user message (TAL-899)', (
     await settled()
     expect(starts).toHaveLength(1)
     expect(s.deps.completions.deferredCount(sid)).toBe(1)
-    expect(s.deps.sessionStore.get(sid).active_stream_id).toBeNull()
+    expect((await s.deps.sessionStore.get(sid)).active_stream_id).toBeNull()
   })
 
   it('a deleted session leaves no hold behind once the hygiene sweep runs', async () => {
     const sid = await newSid()
     stoppableThenAnswer()
     await stop(await startAndStop(sid))
-    expect(s.deps.turns.automaticTurnsHeld(sid)).toBe(true)
-    s.deps.turns.sweep()
-    expect(s.deps.turns.automaticTurnsHeld(sid), 'a live session keeps its hold').toBe(true)
+    expect((await s.deps.turns.automaticTurnsHeld(sid))).toBe(true)
+    await s.deps.turns.sweep()
+    expect((await s.deps.turns.automaticTurnsHeld(sid)), 'a live session keeps its hold').toBe(true)
     expect((await post(s, '/api/session/delete', { session_id: sid })).status).toBe(200)
-    s.deps.turns.sweep()
-    expect(s.deps.turns.automaticTurnsHeld(sid)).toBe(false)
+    await s.deps.turns.sweep()
+    expect((await s.deps.turns.automaticTurnsHeld(sid))).toBe(false)
   })
 
   it('a background turn that yields to the user does not hold automatic turns', async () => {
@@ -1633,7 +1637,7 @@ describe('a Stop holds automatic turns until the next user message (TAL-899)', (
       })
     })
     expect(await s.deps.completions.processOne(completion(sid, 'proc_yield'))).toBe(true)
-    expect(starts).toHaveLength(1)
+    await vi.waitFor(() => { expect(starts).toHaveLength(1) })
     expect(await s.deps.turns.yieldBackgroundTurn(sid)).toBe(true)
     await settled()
     expect(await held(sid)).toBe(false)
@@ -1648,9 +1652,9 @@ describe('durable parent admission for delivered delegation notifications (TAL-1
     let release = (): void => undefined
     try {
       const sid = String(((await json(await post(s, '/api/session/new', {}))).session as Json).session_id)
-      const session = s.deps.sessionStore.get(sid)
+      const session = (await s.deps.sessionStore.get(sid))
       session.messages = [{ role: 'user', content: 'dispatch work' }]
-      s.deps.sessionStore.save(session)
+      await s.deps.sessionStore.save(session)
       const event = { type: 'async_delegation', process_id: 'deleg_unknown', delegation_id: 'deleg_unknown', origin_ui_session_id: sid, status: 'unknown', error: 'owner exited; outcome unknown', consumed: false, reconciliation_profile_home: s.state }
       // The sidecar verified the typed delivered notification. No global ledger claim is reopened.
       sidecar.respond('process.claim_delivery', () => ({ claim_id: '' }))
@@ -1662,7 +1666,7 @@ describe('durable parent admission for delivered delegation notifications (TAL-1
       })
       await Promise.all([s.deps.completions.processOne(event), s.deps.completions.processOne(event)])
       await vi.waitFor(() => { expect(starts).toHaveLength(1) })
-      const disk = JSON.parse(readFileSync(s.deps.sessionStore.pathFor(sid), 'utf8')) as Json
+      const disk = JSON.parse(readFileSync(sessionPath(s.deps.sessionStore, sid), 'utf8')) as Json
       expect(disk.completion_acceptances, 'admission receipt is durable before the worker finishes').toEqual({
         [JSON.stringify([realpathSync(s.state), 'deleg_unknown'])]: disk.active_stream_id,
       })
@@ -1683,27 +1687,30 @@ describe('durable parent admission for delivered delegation notifications (TAL-1
     const s = await bootTestServer({ sidecar })
     try {
       const sid = String(((await json(await post(s, '/api/session/new', {}))).session as Json).session_id)
-      const session = s.deps.sessionStore.get(sid)
+      const session = (await s.deps.sessionStore.get(sid))
       const notification = { role: 'user', content: 'Recovered delegation result', display_kind: 'async_delegation_complete', display_metadata: { delegation_id: 'deleg_unknown', completed_count: 1, failed_count: 0 } }
       session.messages = [notification]
       session.pre_compression_snapshot = true
-      s.deps.sessionStore.save(session)
+      await s.deps.sessionStore.save(session)
       sidecar.respond('process.format_notification', () => ({ text: '[Outcome unknown]' }))
       await s.deps.completions.processOne({ type: 'async_delegation', process_id: 'deleg_unknown', delegation_id: 'deleg_unknown', origin_ui_session_id: sid, consumed: false, status: 'unknown', error: 'owner exited' })
       const rows = withBackgroundUpdates(session.messages, session)
       expect(rows[0]).toMatchObject({ _background_update: { attention: true, lines: [{ kind: 'agent', status: 'notice', label: 'owner exited', review_state: 'unknown' }] } })
-      expect((JSON.parse(readFileSync(join(s.deps.sessionStore.sessionDir, '_wakeup_held.json'), 'utf8')) as Json)[sid]).toHaveLength(1)
+      expect((JSON.parse(readFileSync(join(sessionDirectory(s.deps.sessionStore), '_wakeup_held.json'), 'utf8')) as Json)[sid]).toHaveLength(1)
     } finally { await s.close() }
   })
 
   it('keeps a claimed result pending and never crosses profiles during reconciliation', async () => {
     const sidecar = new FakeSidecar()
     const s = await bootTestServer({ sidecar })
+    let release!: () => void
+    const gate = new Promise<void>((resolve) => { release = resolve })
+    sidecar.respond('chat.start', async () => { await gate; return completed('done') })
     try {
       const sid = String(((await json(await post(s, '/api/session/new', {}))).session as Json).session_id)
-      const session = s.deps.sessionStore.get(sid)
+      const session = (await s.deps.sessionStore.get(sid))
       session.messages = [{ role: 'user', content: 'dispatch' }]
-      s.deps.sessionStore.save(session)
+      await s.deps.sessionStore.save(session)
       const event = { type: 'async_delegation', process_id: 'same-id', delegation_id: 'same-id', origin_ui_session_id: sid, consumed: false }
       sidecar.respond('process.format_notification', () => ({ text: '[Result]' }))
       let claims = 0
@@ -1717,8 +1724,10 @@ describe('durable parent admission for delivered delegation notifications (TAL-1
       sidecar.respond('process.claim_delivery', () => ({ claim_id: '' }))
       await s.deps.completions.drainDeferred(sid)
       expect(session.active_stream_id).toBeTruthy()
-      await s.deps.turns.finished(session.active_stream_id!)
-    } finally { await s.close() }
+      const streamId = session.active_stream_id!
+      release()
+      await s.deps.turns.finished(streamId)
+    } finally { release(); await s.close() }
   })
 
   it('preserves a Stop hold across restart and releases the durable result after a user turn', async () => {
@@ -1736,21 +1745,21 @@ describe('durable parent admission for delivered delegation notifications (TAL-1
       await s.deps.turns.cancel(first)
       await s.deps.turns.finished(first)
       sidecar.respond('chat.start', (params) => ({ ...completed('Handled.'), messages: [{ role: 'user', content: str(params.user_message) }, { role: 'assistant', content: 'Handled.' }] }))
-      expect(s.deps.turns.automaticTurnsHeld(sid)).toBe(true)
+      expect((await s.deps.turns.automaticTurnsHeld(sid))).toBe(true)
       sidecar.respond('process.format_notification', () => ({ text: '[Result deleg_held]' }))
       sidecar.respond('process.claim_delivery', () => ({ claim_id: '' }))
       await s.deps.completions.processOne({ type: 'async_delegation', process_id: 'deleg_held', delegation_id: 'deleg_held', origin_ui_session_id: sid, consumed: false })
       restart = await bootTestServer({ sidecar, env: { HERMES_HOME: s.state, HERMES_WEBUI_STATE_DIR: s.state, HERMES_WEBUI_DEFAULT_WORKSPACE: join(s.state, 'workspace') } })
       await restart.deps.completions.drainOnce()
       await restart.deps.completions.drainDeferred(sid)
-      expect(restart.deps.turns.automaticTurnsHeld(sid)).toBe(true)
-      expect(restart.deps.sessionStore.get(sid).active_stream_id).toBeNull()
+      expect((await restart.deps.turns.automaticTurnsHeld(sid))).toBe(true)
+      expect((await restart.deps.sessionStore.get(sid)).active_stream_id).toBeNull()
       const userResponse = await json(await post(restart, '/api/chat/start', { session_id: sid, message: 'continue' }))
       expect(userResponse.stream_id, JSON.stringify(userResponse)).toBeTruthy()
       const user = str(userResponse.stream_id)
       await restart.deps.turns.finished(user)
-      await vi.waitFor(() => { expect(restart!.deps.sessionStore.get(sid).extra.completion_acceptances).toBeDefined() })
-      const receipts = restart.deps.sessionStore.get(sid).extra.completion_acceptances as Json
+      await vi.waitFor(async () => { expect((await restart!.deps.sessionStore.get(sid)).extra.completion_acceptances).toBeDefined() })
+      const receipts = (await restart.deps.sessionStore.get(sid)).extra.completion_acceptances as Json
       expect(Object.keys(receipts)).toEqual([JSON.stringify([realpathSync(s.state), 'deleg_held'])])
       await restart.deps.turns.finished(str(Object.values(receipts)[0]))
     } finally { await restart?.close(); await s.close() }
@@ -1760,10 +1769,10 @@ describe('durable parent admission for delivered delegation notifications (TAL-1
     const sidecar = new FakeSidecar()
     const s = await bootTestServer({ sidecar })
     try {
-      const session = s.deps.sessionStore.newSession()
+      const session = (await s.deps.sessionStore.newSession())
       session.messages = [{ role: 'user', content: 'dispatch' }]
       session.extra.completion_acceptances = { [JSON.stringify([realpathSync(s.state), 'deleg_ack'])]: 'accepted-before-crash' }
-      s.deps.sessionStore.save(session)
+      await s.deps.sessionStore.save(session)
       sidecar.respond('process.format_notification', () => ({ text: '[Result deleg_ack]' }))
       let acknowledgements = 0
       sidecar.respond('process.claim_delivery', () => ({ claim_id: 'retry-claim' }))
@@ -1773,7 +1782,7 @@ describe('durable parent admission for delivered delegation notifications (TAL-1
       await s.deps.completions.processOne({ type: 'async_delegation', process_id: 'deleg_ack', delegation_id: 'deleg_ack', origin_ui_session_id: session.session_id, consumed: false })
       expect(acknowledgements).toBe(1)
       expect(starts).toBe(0)
-      expect((JSON.parse(readFileSync(join(s.deps.sessionStore.sessionDir, '_wakeup_held.json'), 'utf8')) as Json)[session.session_id]).toBeUndefined()
+      expect((JSON.parse(readFileSync(join(sessionDirectory(s.deps.sessionStore), '_wakeup_held.json'), 'utf8')) as Json)[session.session_id]).toBeUndefined()
     } finally { await s.close() }
   })
 
@@ -1787,9 +1796,9 @@ describe('durable parent admission for delivered delegation notifications (TAL-1
       let starts = 0
       sidecar.respond('chat.start', (params) => { starts += 1; return { ...completed('Handled'), messages: [{ role: 'user', content: str(params.user_message) }, { role: 'assistant', content: 'Handled' }] } })
       for (const accepted of [true, false]) {
-        const session = s.deps.sessionStore.newSession()
+        const session = (await s.deps.sessionStore.newSession())
         session.messages = [{ role: 'user', content: prompt, ...(accepted ? { _source: 'process_wakeup', _turn_id: 'legacy-admission' } : { display_kind: 'async_delegation_complete', display_metadata: { delegation_id: 'deleg_legacy' } }) }]
-        s.deps.sessionStore.save(session)
+        await s.deps.sessionStore.save(session)
         await s.deps.completions.processOne({ type: 'async_delegation', process_id: 'deleg_legacy', delegation_id: 'deleg_legacy', origin_ui_session_id: session.session_id, consumed: false, reconciliation_profile_home: s.state })
         if (session.active_stream_id) await s.deps.turns.finished(session.active_stream_id)
         expect(starts).toBe(accepted ? 0 : 1)
@@ -1799,13 +1808,13 @@ describe('durable parent admission for delivered delegation notifications (TAL-1
   it.each(['held file', 'session save'] as const)('retries a live delegation automatically after a failed %s', async (failure) => {
     const sidecar = new FakeSidecar()
     const s = await bootTestServer({ sidecar })
-    const heldPath = join(s.deps.sessionStore.sessionDir, '_wakeup_held.json')
+    const heldPath = join(sessionDirectory(s.deps.sessionStore), '_wakeup_held.json')
     let restore = (): void => undefined
     let drain: CompletionDrain | undefined
     try {
-      const session = s.deps.sessionStore.newSession()
+      const session = (await s.deps.sessionStore.newSession())
       session.messages = [{ role: 'user', content: 'dispatch' }]
-      s.deps.sessionStore.save(session)
+      await s.deps.sessionStore.save(session)
       const event = { type: 'async_delegation', process_id: 'deleg_retry', delegation_id: 'deleg_retry', origin_ui_session_id: session.session_id, consumed: false }
       let offered = false
       sidecar.respond('process.drain', () => { const events = offered ? [] : [event]; offered = true; return { events } })
@@ -1819,7 +1828,7 @@ describe('durable parent admission for delivered delegation notifications (TAL-1
         restore = () => { spy.mockRestore() }
       }
       let starts = 0
-      drain = new CompletionDrain({ sidecar: () => sidecar, baseHome: s.state, profileHome: () => s.state, activeProfile: () => 'default', store: s.deps.sessionStore,
+      drain = new CompletionDrain({ heldWakeupsPath: join(s.state, 'sessions', '_wakeup_held.json'), sidecar: () => sidecar, baseHome: s.state, profileHome: () => s.state, activeProfile: () => 'default', store: s.deps.sessionStore,
         channels: s.deps.channels, registry: s.deps.registry, startTurn: () => { starts += 1; return { stream_id: 'retry-admitted' } }, now: () => Date.now() / 1000, log: () => undefined })
       vi.useFakeTimers()
       const routed = await drain.drainOnce()
@@ -1845,7 +1854,7 @@ it('does not show Waiting when only a held delivery acknowledgement remains (TAL
   server.deps.completions.stop()
   try {
     const sid = String(((await json(await post(server, '/api/session/new', {}))).session as Json).session_id)
-    const session = server.deps.sessionStore.get(sid), turn = 'cancelled-review', delegation = 'ack-only'
+    const session = (await server.deps.sessionStore.get(sid)), turn = 'cancelled-review', delegation = 'ack-only'
     const event = { type: 'async_delegation', delegation_id: delegation, process_id: delegation, origin_ui_session_id: sid, goals: ['Cancelled review'], results: [{ status: 'completed' }] }
     const update = batchUpdate([{ event, prompt: 'result' }])
     session.messages = [
@@ -1855,12 +1864,12 @@ it('does not show Waiting when only a held delivery acknowledgement remains (TAL
     ]
     recordBackgroundUpdate(session, turn, update)
     recordBackgroundUpdate(session, `delegation:${delegation}`, update)
-    server.deps.sessionStore.save(session)
-    new HeldWakeups(join(server.deps.sessionStore.sessionDir, '_wakeup_held.json')).hold(sid, [{ process_id: delegation, wakeup_prompt: 'result', event }])
+    await server.deps.sessionStore.save(session)
+    new HeldWakeups(join(sessionDirectory(server.deps.sessionStore), '_wakeup_held.json')).hold(sid, [{ process_id: delegation, wakeup_prompt: 'result', event }])
     const pending = (await json(await server.get(`/api/session?session_id=${sid}&messages=1&msg_limit=1`))).session as Json
     expect((pending.messages as Json[]).at(-1)?._background_update).toMatchObject({ review_state: 'waiting' })
     session.extra.completion_acceptances = { [JSON.stringify([realpathSync(server.state), delegation])]: turn }
-    server.deps.sessionStore.save(session)
+    await server.deps.sessionStore.save(session)
     const page = (await json(await server.get(`/api/session?session_id=${sid}&messages=1&msg_limit=1`))).session as Json
     expect((page.messages as Json[]).at(-1)?._background_update).toMatchObject({ review_state: 'unknown', lines: [{ review_state: 'unknown' }] })
   } finally { await server.close() }

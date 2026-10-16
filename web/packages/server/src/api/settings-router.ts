@@ -397,7 +397,7 @@ export const settingsRouter = os.router({
       if (!sid) throw new HttpError(400, 'Missing required field: session_id')
       if (input.name === undefined) throw new HttpError(400, 'Missing required field: name')
       let name = str(input.name).trim()
-      if (!ctx.deps.sessions.sessionIdVisible(sid)) throw new HttpError(404, 'Session not found')
+      if (!(await ctx.deps.sessions.sessionIdVisible(sid))) throw new HttpError(404, 'Session not found')
       let prompt = ''
       if (name) {
         const found = findPersonality(await ctx.deps.agentConfig.personalities(home(ctx)), name)

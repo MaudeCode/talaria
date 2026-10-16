@@ -289,7 +289,7 @@ async function drainStream(ctx: RequestContext, sse: SseWriter, sub: StreamSubsc
 export async function handleChatStream(ctx: RequestContext): Promise<void> {
   const streamId = ctx.query.get('stream_id') ?? ''
   const owner = streamOwnerSessionId(ctx, streamId)
-  if (owner && !ctx.deps.sessions.sessionIdVisible(owner)) { ctx.json({ error: 'Session not found' }, { status: 404 }); return }
+  if (owner && !(await ctx.deps.sessions.sessionIdVisible(owner))) { ctx.json({ error: 'Session not found' }, { status: 404 }); return }
   const cursor = resumeCursor(ctx, streamId)
   const channel = ctx.deps.registry.peek(streamId)
   if (!channel) {
@@ -347,7 +347,7 @@ export async function handleChatStream(ctx: RequestContext): Promise<void> {
 export async function handleSessionStream(ctx: RequestContext): Promise<void> {
   const sid = ctx.query.get('session_id') ?? ''
   if (!sid) { ctx.json({ error: 'session_id is required' }, { status: 400 }); return }
-  if (!ctx.deps.sessions.sessionIdVisible(sid)) { ctx.json({ error: 'Session not found' }, { status: 404 }); return }
+  if (!(await ctx.deps.sessions.sessionIdVisible(sid))) { ctx.json({ error: 'Session not found' }, { status: 404 }); return }
   const knownRaw = ctx.query.get('known_count') ?? ''
   const knownCount = knownRaw !== '' && /^-?\d+$/.test(knownRaw) ? Number.parseInt(knownRaw, 10) : null
   const sub = ctx.deps.channels.subscribe(sid)
@@ -359,12 +359,12 @@ export async function handleSessionStream(ctx: RequestContext): Promise<void> {
     const recover = ctx.deps.registry.attachableRunForSession(sid)
     if (recover) {
       let pendingStartedAt: number | null = null
-      try { pendingStartedAt = ctx.deps.sessionStore.get(sid, { metadataOnly: true }).pending_started_at } catch { pendingStartedAt = null }
+      try { pendingStartedAt = (await ctx.deps.sessionStore.get(sid, { metadataOnly: true })).pending_started_at } catch { pendingStartedAt = null }
       sse.event('server_turn_started', { session_id: sid, stream_id: recover, turn_id: recover, pending_started_at: pendingStartedAt, source: 'subscribe_recovery', recovered: true })
     } else if (knownCount !== null) {
       let persisted: number | null = null
       try {
-        const s = ctx.deps.sessionStore.get(sid, { metadataOnly: true })
+        const s = (await ctx.deps.sessionStore.get(sid, { metadataOnly: true }))
         persisted = s.metadataMessageCount ?? (s.messages.length || null)
       } catch { persisted = null }
       if (persisted !== null && persisted > knownCount) sse.event('session-updated', { session_id: sid, message_count: persisted, known_count: knownCount, source: 'subscribe_recovery' })
@@ -502,9 +502,9 @@ export async function handleGatewayStream(ctx: RequestContext): Promise<void> {
 
 /** `/api/sessions/{sid}/events`: per-session journal relay with snapshot fallback. */
 export async function handleSessionJournalStream(ctx: RequestContext, sessionId: string): Promise<void> {
-  if (!ctx.deps.sessions.sessionIdVisible(sessionId)) { ctx.json({ error: 'Session not found' }, { status: 404 }); return }
+  if (!(await ctx.deps.sessions.sessionIdVisible(sessionId))) { ctx.json({ error: 'Session not found' }, { status: 404 }); return }
   let session: Session
-  try { session = ctx.deps.sessionStore.get(sessionId, { metadataOnly: true }) } catch { ctx.json({ error: 'Session not found' }, { status: 404 }); return }
+  try { session = (await ctx.deps.sessionStore.get(sessionId, { metadataOnly: true })) } catch { ctx.json({ error: 'Session not found' }, { status: 404 }); return }
   const resumeEventId = (ctx.header('last-event-id') ?? '').trim() || (ctx.query.get('after_event_id') ?? '').trim() || null
   let idleFingerprint = ctx.deps.journal.sessionJournalFingerprint(sessionId)
   const sse = claimOrReject(ctx, false)
@@ -528,10 +528,10 @@ export async function handleSessionJournalStream(ctx: RequestContext, sessionId:
       legacy.close()
     }
   }
-  const snapshot = (activeStreamId: string | null): void => {
+  const snapshot = async (activeStreamId: string | null): Promise<void> => {
     let fresh = session
-    try { fresh = ctx.deps.sessionStore.get(sessionId, { metadataOnly: true }) } catch { fresh = session }
-    sse.event('session_snapshot', { session: withSessionWireFlags({ ...fresh.compact({ contextLengthFor: ctx.deps.sessions.deps.contextLengthFor, modelOptionFor: ctx.deps.sessions.deps.modelOptionFor }), read_only: ctx.deps.sessions.isReadOnly(fresh) }, new Set(activeStreamId ? [activeStreamId] : [])) })
+    try { fresh = (await ctx.deps.sessionStore.get(sessionId, { metadataOnly: true })) } catch { fresh = session }
+    sse.event('session_snapshot', { session: withSessionWireFlags({ ...fresh.compact({ contextLengthFor: ctx.deps.sessions.deps.contextLengthFor, modelOptionFor: ctx.deps.sessions.deps.modelOptionFor }), read_only: (await ctx.deps.sessions.isReadOnly(fresh)) }, new Set(activeStreamId ? [activeStreamId] : [])) })
   }
   const attach = (): { sub: StreamSubscriber | null; streamId: string | null; snapshot: { last_event_id: string | null } } => {
     const streamId = ctx.deps.registry.activeRunStreamForSession(sessionId)
@@ -546,7 +546,7 @@ export async function handleSessionJournalStream(ctx: RequestContext, sessionId:
     let replayEvents: JournalEvent[] = []
     if (resumeEventId) {
       const replay = ctx.deps.journal.readSessionRunEvents(sessionId, resumeEventId)
-      if (replay.status !== 'ok') snapshot(attached.streamId)
+      if (replay.status !== 'ok') (await snapshot(attached.streamId))
       else { replayOk = true; replayEvents = replay.events }
     }
     if (!attached.sub) {
@@ -556,7 +556,7 @@ export async function handleSessionJournalStream(ctx: RequestContext, sessionId:
         attached = attach()
         if (attached.sub) break
         const fp = ctx.deps.journal.sessionJournalFingerprint(sessionId)
-        if (fp !== idleFingerprint) { idleFingerprint = fp; snapshot(attached.streamId) }
+        if (fp !== idleFingerprint) { idleFingerprint = fp; (await snapshot(attached.streamId)) }
         sse.comment('keepalive')
         await new Promise((r) => setTimeout(r, SSE_HEARTBEAT_INTERVAL_MS))
       }
@@ -568,7 +568,7 @@ export async function handleSessionJournalStream(ctx: RequestContext, sessionId:
       cutoff = sameRunSeq(attached.snapshot.last_event_id, streamId)
       const reconciled = ctx.deps.journal.readSessionRunEvents(sessionId, resumeEventId)
       if (reconciled.status === 'ok') await emitReplay(reconciled.events, streamId, cutoff)
-      else snapshot(streamId)
+      else (await snapshot(streamId))
     }
     for (;;) {
       if (!(await sse.ready())) return

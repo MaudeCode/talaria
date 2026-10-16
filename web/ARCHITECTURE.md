@@ -53,7 +53,7 @@ hand-written endpoint schemas.
 |---|---|---|
 | Pipeline | `app.ts`, `server.ts`, `http/*`, `auth/*` | profile cookie → `Origin: null` rejection → auth (public / operator-only paths, profile mismatch 403) → startup gate (503 `startup_recovery`) → handler; CSRF (same-origin + HMAC token, non-browser bypass), security headers and CSP, trusted proxies, TLS, worker budget and per-client stream cap, 20 MiB body cap, multipart |
 | Routes | `api/router.ts`, `api/*-router.ts`, `api/*-raw.ts`, `api/sse-routes.ts` | oRPC handlers per contract namespace plus raw routes; `HttpError(status, message, extra)` envelopes |
-| Sessions | `sessions/store.ts`, `session.ts`, `list.ts`, `drafts.ts`, `shares.ts`, `journal.ts`, `titles.ts`, `export.ts` | byte-compatible `sessions/<sid>.json` (key order, atomic `.tmp.<pid>` writes, `.bak` shrink guard), `_index.json`, drafts, shares, run and turn journals |
+| Sessions | `sessions/store.ts`, `sessions/storage/`, `session.ts`, `list.ts`, `drafts.ts`, `shares.ts`, `journal.ts`, `titles.ts`, `export.ts` | Async `StorageBackend.sessions` behind `SessionStore`; the JSON adapter preserves session documents, index, tombstones and shrink backups. Drafts, shares and journals retain their existing stores. |
 | Chat | `sessions/turn.ts`, `streams.ts`, `pending.ts`, `channels.ts`, `events.ts` | stream registry, SSE replay from journals, approvals/clarify/goals over the sidecar, cancel/steer, compression, titles, metering |
 | Agent sessions | `sessions/state-db.ts`, `state-db-worker.ts`, `cli-sessions.ts`, `gateway-watcher.ts`, `completions.ts` | read-only `state.db` projection through `node:sqlite`; the session list, gateway watcher, and relay read it on one long-lived `worker_threads` worker so a slow database never blocks the event loop; gateway watcher per profile home; background completion drain and wake-up turns |
 | Workspace | `workspace/*` | hardened git runner, worktrees, rollback checkpoints, uploads, media, zip |
@@ -82,6 +82,19 @@ use fresh signing nonces. Reads and acknowledgement removals reload the file syn
 in-flight response cannot erase newly queued deletions. Invalid outbox state fails without overwriting
 it. The separate started ledger retains its announcement semantics. This additive file is ignored by
 older Stable versions and remains available when returning to a version that supports replay.
+
+Session persistence is selected by `TALARIA_STORAGE`, defaulting to `json`. Unknown values fail startup.
+`SessionStore` owns resident sessions, mutation locks, write serialization and index projection. Only its
+backend adapter accesses session files. Reads carry opaque revisions; stale writes raise
+`RevisionConflict`, reload the cache and preserve the committed document. Message changes are typed
+as unchanged, append, splice or replace. Content search sends one batch of unmatched candidates through
+the backend, with cached full transcripts handled by the store. Shared extraction and matching functions
+in `sessions/storage/search-text.ts` define search semantics for every adapter.
+
+An adapter implements `StorageBackend`, passes `runSessionBackendConformance`, and owns its recovery
+checks through `diagnose`/`repair`. Cross-backend recovery still reconciles the read-only Agent database.
+The JSON adapter deliberately performs each file transaction synchronously inside the async API; it
+keeps existing bytes and atomic publication behavior. Shutdown drains queued writes before closing storage.
 
 Concurrency: one event loop, no locks. Per-session serialization, stream slots, the coalesced index
 writer, and the update lock are promise-based; `docs/lock-ownership.md` lists the ordering rules that

@@ -17,6 +17,7 @@ export interface ServerConfig {
   tlsKey: string | null
   hermesHome: string
   stateDir: string
+  storage: 'json'
   sessionDir: string
   settingsFile: string
   /** `web/` checkout or npm package root that owns `static/`. */
@@ -109,6 +110,8 @@ export interface LoadConfigOptions {
 
 export function loadConfig(opts: LoadConfigOptions): ServerConfig {
   const env = opts.env ?? process.env
+  const storage = env.TALARIA_STORAGE ?? 'json'
+  if (storage !== 'json') throw new Error(`Unknown TALARIA_STORAGE=${JSON.stringify(storage)}; supported backends: json`)
   const home = opts.home ?? homedir()
   const warn = opts.warn ?? ((line) => { console.error(`[webui] WARNING: ${line}`) })
   const hermesHome = resolveHermesHome(env, home)
@@ -125,6 +128,7 @@ export function loadConfig(opts: LoadConfigOptions): ServerConfig {
     tlsCert: (env.HERMES_WEBUI_TLS_CERT ?? '').trim() || null,
     tlsKey: (env.HERMES_WEBUI_TLS_KEY ?? '').trim() || null,
     hermesHome,
+    storage,
     stateDir,
     sessionDir: resolve(stateDir, 'sessions'),
     settingsFile: resolve(stateDir, 'settings.json'),
