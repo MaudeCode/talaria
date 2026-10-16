@@ -297,7 +297,8 @@ struct ChatScrollObserver: UIViewRepresentable {
                 distanceFromBottom: geometry.distanceFromBottom,
                 isUserInteracting: isUserInteracting,
                 movedAwayFromBottom: !isUserInteracting && !isPinned
-                    && ChatScrollPolicy.isScrollingAwayFromBottom(previous: deliveredGeometry, current: geometry)
+                    && ChatScrollPolicy.isScrollingAwayFromBottom(previous: deliveredGeometry, current: geometry),
+                distanceFromTop: max(0, scrollView.contentOffset.y + scrollView.adjustedContentInset.top)
             )
             // The transcript only needs a callback when the derived metrics move,
             // but the away-from-bottom check compares viewports, so the geometry

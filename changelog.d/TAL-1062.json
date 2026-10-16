@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Changed",
+      "summary": "Older messages load automatically as you scroll up, with inline retry if loading fails.",
+      "highlight": false,
+      "components": ["app", "web"]
+    }
+  ]
+}

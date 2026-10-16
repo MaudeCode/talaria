@@ -7,6 +7,7 @@ struct ChatTranscriptView: View {
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @Environment(\.openURL) private var openURL
     @State private var scrollPositionController = ChatScrollPositionController()
+    @State private var isHistoryNearTop = false
     /// Owns the transcript's message long press: one handler for every row,
     /// which is what lets a press be resolved against link geometry first.
     @State private var menuRegistry = ChatMessageMenuRegistry()
@@ -147,6 +148,7 @@ struct ChatTranscriptView: View {
                         transcriptScrollContent(
                             proxy: proxy,
                             viewportWidth: viewportWidth,
+                            viewportHeight: viewport.size.height,
                             contentWidth: contentWidth
                         )
                     }
@@ -280,6 +282,7 @@ struct ChatTranscriptView: View {
     private func transcriptScrollContent(
         proxy: ScrollViewProxy,
         viewportWidth: CGFloat,
+        viewportHeight: CGFloat,
         contentWidth: CGFloat
     ) -> some View {
         VStack(spacing: transcriptMessageSpacing) {
@@ -287,7 +290,7 @@ struct ChatTranscriptView: View {
                 branchedFromButton(branchedFrom)
             }
 
-            olderMessagesButton(proxy: proxy)
+            olderMessagesSentinel(proxy: proxy)
 
             if let compressionReferenceCard, compressionReferenceCard.afterRenderID == nil {
                 compressionReferenceCardView(compressionReferenceCard, proxy: proxy)
@@ -385,6 +388,7 @@ struct ChatTranscriptView: View {
                     scrollPositionController: scrollPositionController,
                     onFollowEvent: onFollowEvent
                 ) { metrics in
+                    isHistoryNearTop = metrics.distanceFromTop <= viewportHeight
                     onUpdateScrollMetrics(metrics)
                 }
 
@@ -432,32 +436,35 @@ struct ChatTranscriptView: View {
     }
 
     @ViewBuilder
-    private func olderMessagesButton(proxy: ScrollViewProxy) -> some View {
+    private func olderMessagesSentinel(proxy: ScrollViewProxy) -> some View {
         if hasOlderMessages {
-            LoadOlderMessagesButton(isLoading: isLoadingOlderMessages) {
-                Task { await loadOlderMessagesPreservingPosition(proxy: proxy) }
+            TranscriptHistorySentinel(isLoading: isLoadingOlderMessages, isNearTop: isHistoryNearTop) {
+                await loadOlderMessagesPreservingPosition(proxy: proxy)
             }
         }
     }
 
-    private func loadOlderMessagesPreservingPosition(proxy: ScrollViewProxy) async {
+    @discardableResult
+    private func loadOlderMessagesPreservingPosition(proxy: ScrollViewProxy) async -> Bool {
         let renderID = displayedTranscriptMessages.first?.renderID
         let capturedExactPosition = scrollPositionController.capture(anchorRowID: renderID)
         let didLoad = await onLoadOlderMessages()
         guard didLoad else {
             scrollPositionController.cancelPreservation()
-            return
+            return false
         }
 
         if capturedExactPosition,
            scrollPositionController.restoreAfterPrepend() {
-            return
+            await scrollPositionController.waitForPrependToSettle()
+            return true
         }
 
-        guard let renderID else { return }
+        guard let renderID else { return true }
 
         await Task.yield()
         proxy.scrollTo(renderID, anchor: .top)
+        return true
     }
 
     @ViewBuilder

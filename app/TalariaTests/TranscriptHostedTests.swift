@@ -1,12 +1,133 @@
 import SwiftUI
 import XCTest
 @testable import Talaria
-import TalariaKit
+@testable import TalariaKit
 
 /// The fixture chat's transcript rows, hosted in process against the UI fixture's scenarios (TAL-856): what each row
 /// says to VoiceOver, its button trait, and where it sits against its neighbours.
 @MainActor
 final class TranscriptHostedTests: XCTestCase {
+    func testScrollingNearTheTopLoadsHistoryWithoutATap() async throws {
+        var requests = 0
+        var finish: ((Bool) -> Void)?
+        let window = try hostWindow(NavigationStack {
+            historyTranscript {
+                requests += 1
+                return await withCheckedContinuation { continuation in
+                    finish = { result in finish = nil; continuation.resume(returning: result) }
+                }
+            }
+            .navigationTitle("Transcript history")
+        })
+        let scroll = try XCTUnwrap(historyScroll(in: window))
+        try await Task.sleep(for: .milliseconds(150))
+        XCTAssertEqual(requests, 0, "Opening at the latest row must not page history")
+        scroll.contentOffset.y = 100
+        for _ in 0..<30 where requests == 0 { try await Task.sleep(for: .milliseconds(50)) }
+        XCTAssertEqual(requests, 1, "The top sentinel must request history before the reader reaches the top")
+        XCTAssertNil(HostedAccessibility.element(in: window, label: "Load older messages"))
+        for _ in 0..<5 { scroll.contentOffset.y = 100; try await Task.sleep(for: .milliseconds(20)) }
+        XCTAssertEqual(requests, 1, "Repeated appearances must not overlap requests")
+        scroll.contentOffset.y = -scroll.adjustedContentInset.top
+        try await Task.sleep(for: .milliseconds(250))
+        attachHistoryImage(window, name: "History loading")
+        finish?(false)
+        let retry = await awaitElement(in: window, label: "Try Again", timeout: 2)
+        XCTAssertNotNil(retry, "Failed history must offer inline retry")
+        try await Task.sleep(for: .milliseconds(250))
+        attachHistoryImage(window, name: "History retry")
+        scroll.contentOffset.y = 1_000
+        scroll.contentOffset.y = 0
+        try await Task.sleep(for: .milliseconds(100))
+        XCTAssertEqual(requests, 1, "Failed history must stop automatic requests")
+        if let retry { HostedAccessibility.activate(retry) }
+        for _ in 0..<20 where requests < 2 { try await Task.sleep(for: .milliseconds(50)) }
+        XCTAssertEqual(requests, 2)
+        finish?(true)
+        try await Task.sleep(for: .milliseconds(150))
+        XCTAssertEqual(requests, 2, "One appearance must not chain pages")
+    }
+
+    func testContinuousHistoryLoadsAllTwoThousandRowsAndPreservesPosition() async throws {
+        var requested: [Int] = []
+        let window = try hostWindow(PagedHistoryTranscript { requested.append($0) })
+        let scroll = try XCTUnwrap(historyScroll(in: window))
+        try await Task.sleep(for: .milliseconds(150))
+        for start in stride(from: 1_950, through: 50, by: -50) {
+            scroll.contentOffset.y = 100
+            let label = "History row \(start + 3). Synthetic transcript text."
+            let before = try await requireElement(in: window, label: label).accessibilityFrame.minY
+            for _ in 0..<40 where requested.last != start { try await Task.sleep(for: .milliseconds(25)) }
+            XCTAssertEqual(requested.last, start)
+            try await Task.sleep(for: .milliseconds(100))
+            let after = try await requireElement(in: window, label: label).accessibilityFrame.minY
+            XCTAssertEqual(after, before, accuracy: 2, "Prepending a page moved the reader at offset \(start)")
+            // Programmatic UIKit offsets have no drag to release the controller's existing one-second prepend window.
+            try await Task.sleep(for: .milliseconds(1_050))
+        }
+        XCTAssertEqual(requested, Array(stride(from: 1_950, through: 50, by: -50)))
+        scroll.contentOffset.y = 0
+        _ = try await requireElement(in: window, label: "History row 0. Synthetic transcript text.")
+        XCTAssertNil(HostedAccessibility.element(in: window, label: "Load older messages"))
+    }
+
+    func testANewTopAppearanceDuringLoadingRunsAfterThePageSettles() async throws {
+        var requests = 0
+        var finish: ((Bool) -> Void)?
+        let window = try hostWindow(historyTranscript {
+            requests += 1
+            return await withCheckedContinuation { continuation in
+                finish = { result in finish = nil; continuation.resume(returning: result) }
+            }
+        })
+        let scroll = try XCTUnwrap(historyScroll(in: window))
+        scroll.contentOffset.y = 100
+        for _ in 0..<30 where requests == 0 { try await Task.sleep(for: .milliseconds(50)) }
+        XCTAssertEqual(requests, 1)
+        scroll.contentOffset.y = 1_200
+        try await Task.sleep(for: .milliseconds(100))
+        scroll.contentOffset.y = 0
+        try await Task.sleep(for: .milliseconds(100))
+        XCTAssertEqual(requests, 1, "A repeated appearance must not overlap a page")
+        finish?(true)
+        for _ in 0..<40 where requests < 2 { try await Task.sleep(for: .milliseconds(50)) }
+        XCTAssertEqual(requests, 2, "A new appearance while loading must not strand the reader at the top")
+        finish?(false)
+    }
+
+    private func historyScroll(in view: UIView) -> UIScrollView? {
+        if let scroll = view as? UIScrollView { return scroll }
+        return view.subviews.lazy.compactMap { self.historyScroll(in: $0) }.first
+    }
+
+    func testPrependPreservesPositionWithAnExpandedDisclosure() async throws {
+        var requested: [Int] = []
+        let window = try hostWindow(PagedHistoryTranscript(hasDisclosure: true) { requested.append($0) })
+        let scroll = try XCTUnwrap(historyScroll(in: window))
+        let showMore = try await requireElement(in: window, label: "Show more")
+        HostedAccessibility.activate(showMore)
+        _ = try await requireElement(in: window, label: "Show less")
+        scroll.contentOffset.y = 100
+        let label = "History row 1953. Synthetic transcript text."
+        let before = try await requireElement(in: window, label: label).accessibilityFrame.minY
+        for _ in 0..<40 where requested.isEmpty { try await Task.sleep(for: .milliseconds(25)) }
+        try await Task.sleep(for: .milliseconds(150))
+        let after = try await requireElement(in: window, label: label).accessibilityFrame.minY
+        XCTAssertEqual(requested, [1950])
+        XCTAssertEqual(after, before, accuracy: 2)
+    }
+
+    private func attachHistoryImage(_ window: UIWindow, name: String) {
+        let image = UIGraphicsImageRenderer(bounds: window.bounds).image { _ in
+            window.drawHierarchy(in: window.bounds, afterScreenUpdates: true)
+        }
+        let attachment = XCTAttachment(image: image)
+        attachment.name = name
+        attachment.lifetime = .keepAlways
+        add(attachment)
+    }
+
+
     /// A server wakeup renders as completion lines above its reply; a silent reply stays hidden and a typed marker
     /// stays the user's message (TAL-371).
     func testWakeupsRenderAsCompletionLinesWithTheirReplies() async throws {
@@ -120,6 +241,65 @@ final class TranscriptHostedTests: XCTestCase {
                 XCTAssertNil(HostedAccessibility.element(in: window, label: plain), "\(plain) was announced as a change")
             }
             window.isHidden = true
+        }
+    }
+}
+
+
+@MainActor
+private func historyTranscript(messages supplied: [ChatMessage]? = nil, messageOffset: Int? = nil, hasOlderMessages: Bool = true, load: @escaping () async -> Bool) -> some View {
+    let messages = supplied ?? (0..<50).map { index in
+        ChatMessage(role: "user", content: "History row \(index). Synthetic transcript text.", timestamp: nil, messageId: "history-\(index)")
+    }
+    return ChatTranscriptView(
+        isLoading: false, errorMessage: nil, messages: messages,
+        displayedTranscriptMessages: ChatViewModel.transcriptMessages(from: messages, messageOffset: messageOffset),
+        compressionReferenceCard: nil, branchedFrom: nil, reasoningGroups: [],
+        completedToolCallGroupsForAnchor: { _ in [] }, archivedActivityRowsForAnchor: { _ in [] },
+        earlierSceneRowsForTurn: { _ in [] }, onLoadEarlierSceneRows: { _ in },
+        liveReasoningText: "", liveActivityRows: [], reasoningAnchorMessageID: nil,
+        liveToolCalls: [], toolCallAnchorMessageID: nil, streamingAssistantMessageID: nil,
+        liveTokensPerSecond: nil, showsRunStateCheck: false, clarificationPrompt: nil,
+        showsThinkingAndToolCards: false, shouldFollowLatestMessage: false,
+        isDisclosureSettling: false, latestTranscriptMessageRole: nil, isScrolledNearBottom: false,
+        activeStreamID: nil, streamingScrollTrigger: 0, cacheFirstReconcileScrollToken: 0,
+        bottomAnchorID: "bottom", transcriptMessageSpacing: 12, transcriptBlockSpacing: 8,
+        transcriptBottomInsetHeight: 0, scrollToBottomRequest: 0, followReplayRequest: 0,
+        assistantName: "Assistant", localAttachmentPreviews: [:], listeningMessageID: nil,
+        isViewingCachedData: false, isSessionReadOnly: false, canBranch: false,
+        hasOlderMessages: hasOlderMessages, isLoadingOlderMessages: false,
+        isRegeneratingMessage: false, isEditingMessage: false, isForkingMessage: false,
+        loadAttachmentImage: { _ in nil }, loadAttachmentData: { _ in nil },
+        loadTranscriptMediaImage: { _ in nil }, loadTranscriptMediaData: { _ in nil },
+        transcriptMediaCacheNamespace: "history-test", actionContext: { _, _ in nil },
+        shouldRenderMessageRow: { _ in true }, onLoadMessages: {}, onLoadOlderMessages: load,
+        onUpdateScrollMetrics: { _ in }, onFollowEvent: { _ in }, onDisclosureToggle: {},
+        onFollowSuppressed: {}, onDismissKeyboard: {}, onScrollToBottom: { _ in },
+        onScrollToLatestTranscriptMessage: { _ in }, onScrollToLatestContent: { _, _ in },
+        onPreviewAttachment: { _, _ in }, onPreviewTranscriptMedia: { _ in },
+        onToggleListening: { _ in }, onSelectText: { _ in }, onRegenerate: { _ in },
+        onEdit: { _ in }, onFork: { _ in }, onCopy: { _ in }
+    )
+}
+
+/// Hosts the transcript directly because FixtureApp's canned session does not page.
+@MainActor
+private struct PagedHistoryTranscript: View {
+    @State private var start = 1_950
+    var hasDisclosure = false
+    let onRequest: (Int) -> Void
+
+    var body: some View {
+        let messages = (start..<2_000).map { index in
+            if hasDisclosure && index == 1993 {
+                return ChatMessage(role: "user", content: String(repeating: "Expanded history fixture.\n", count: 30), timestamp: nil, messageId: "history-\(index)", displayExcerpt: "Expanded history fixture.", collapsible: true)
+            }
+            return ChatMessage(role: "user", content: "History row \(index). Synthetic transcript text.", timestamp: nil, messageId: "history-\(index)")
+        }
+        historyTranscript(messages: messages, messageOffset: start, hasOlderMessages: start > 0) {
+            onRequest(start)
+            start = max(0, start - 50)
+            return true
         }
     }
 }

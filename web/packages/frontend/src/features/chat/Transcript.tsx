@@ -12,6 +12,7 @@ import { WorklogDisclosureProvider, type ActivityMode } from './blocks/Worklog'
 import { groupAssistantTurns, isReplyRow, persistedActivity, toolIdsOf } from './turnActivity'
 import { cn } from '../../ui/cn'
 import { Button } from '../../ui/Button'
+import { LoadingState } from '../../ui/States'
 import { onScrollRequest, requestComposerRest } from './sendMotion'
 import { useAutoRead } from './useAutoRead'
 
@@ -35,8 +36,9 @@ export interface TranscriptProps {
   truncated: boolean
   /** Absolute index of the oldest loaded message; it drops with every older page, visible rows or not. */
   loadedFrom: number
-  onLoadOlder: () => void
+  onLoadOlder: (retry?: boolean, beforePrepend?: () => void) => void
   loadingOlder: boolean
+  olderError?: boolean
   emptyState: React.ReactNode
   /** A new chat's first send, shown as the live user row before its session and turn exist (sendMotion.ts). */
   pendingUserText?: string | undefined
@@ -52,8 +54,9 @@ export interface TranscriptProps {
  * virtualized with TanStack Virtual.
  */
 export function Transcript(props: TranscriptProps) {
-  const { rows: rawRows, live, assistantName, mode, renderUserMarkdown, autoFollow, sessionId, focusKey, actions, tts, truncated, loadedFrom, onLoadOlder, loadingOlder, emptyState, pendingUserText, showJumpButtons, virtualizeLongTranscripts } = props
+  const { rows: rawRows, live, assistantName, mode, renderUserMarkdown, autoFollow, sessionId, focusKey, actions, tts, truncated, loadedFrom, onLoadOlder, loadingOlder, olderError = false, emptyState, pendingUserText, showJumpButtons, virtualizeLongTranscripts } = props
   const scrollRef = useRef<HTMLDivElement>(null)
+  const prependRef = useRef<{ from: number; key: string; top: number; height: number; offset: number } | null>(null)
   const [pinned, setPinned] = useState(true)
   const [atTop, setAtTop] = useState(true)
   // The live turn gives way to the server's scene as soon as a terminal frame brings the settled session.
@@ -93,7 +96,8 @@ export function Transcript(props: TranscriptProps) {
   // A hand scroll (wheel or touch) of a transcript taller than its pane asks the composer to rest; programmatic
   // follow and entry jumps never do. Overflow comes from the resize observer below, so a wheel tick reads no layout.
   const overflowsRef = useRef(false)
-  const onReaderScroll = useCallback(() => { if (overflowsRef.current) requestComposerRest() }, [])
+  const onReaderInput = useCallback(() => { prependRef.current = null }, [])
+  const onReaderScroll = useCallback(() => { onReaderInput(); if (overflowsRef.current) requestComposerRest() }, [onReaderInput])
 
   const onScroll = useCallback(() => {
     const el = scrollRef.current
@@ -104,8 +108,7 @@ export function Transcript(props: TranscriptProps) {
     else if (!followsRef.current() || el.scrollTop < lastTopRef.current) { pin(false); settlingRef.current = false }
     lastTopRef.current = el.scrollTop
     setAtTop(el.scrollTop < 40)
-    if (el.scrollTop < 40 && truncated && !loadingOlder) onLoadOlder()
-  }, [pin, truncated, loadingOlder, onLoadOlder])
+  }, [pin])
 
   const scrollToBottom = useCallback((smooth = false) => {
     const el = scrollRef.current
@@ -158,18 +161,61 @@ export function Transcript(props: TranscriptProps) {
 
   // Entry is keyed by the session scope (and a `?msg=` link), never by row keys: sessions can share them, and older rows change the first.
   const entryRef = useRef<{ focus: string | undefined; pagedAt?: number } | null>(null)
-  useLayoutEffect(() => { entryRef.current = { focus: focusKey }; settlingRef.current = true; lastTopRef.current = 0; pin(true) }, [scope, focusKey, pin])
+  const requestOlder = useCallback((retry = false) => {
+    const pane = scrollRef.current
+    if (!pane || loadingOlder || (olderError && !retry)) return
+    if (!entryRef.current) { pin(false); settlingRef.current = false }
+    // Capture at response time: the reader can keep scrolling while the page is in flight.
+    onLoadOlder(retry, () => {
+      prependRef.current = null
+      if (entryRef.current) return
+      const top = pane.getBoundingClientRect().top
+      const anchor = [...pane.querySelectorAll<HTMLElement>('[data-message-key]')].find((row) => row.getBoundingClientRect().bottom > top)
+      const key = anchor?.dataset.messageKey
+      if (anchor && key) prependRef.current = { from: loadedFrom, key, top: anchor.getBoundingClientRect().top - top, height: pane.scrollHeight, offset: pane.scrollTop }
+    })
+  }, [loadedFrom, loadingOlder, olderError, onLoadOlder, pin])
+  useLayoutEffect(() => {
+    const saved = prependRef.current
+    const pane = scrollRef.current
+    if (!saved || !pane || loadedFrom >= saved.from) return
+    let frame = 0
+    let passes = 0
+    // A prepend can enable virtualization; its new rows measure over several frames.
+    const restore = () => {
+      if (prependRef.current !== saved) return
+      const anchor = pane.querySelector<HTMLElement>(`[data-message-key="${CSS.escape(saved.key)}"]`)
+      if (anchor) {
+        const offset = pane.scrollTop + anchor.getBoundingClientRect().top - pane.getBoundingClientRect().top - saved.top
+        if (virtualize) virtualizer.scrollToOffset(offset)
+        else pane.scrollTop = offset
+      }
+      else if (virtualize) {
+        const index = rows.findIndex((row) => row.key === saved.key)
+        const item = virtualizer.measurementsCache[index]
+        const list = pane.querySelector<HTMLElement>('[data-virtual-history]')
+        if (item && list) virtualizer.scrollToOffset(item.start + list.offsetTop - saved.top)
+      } else pane.scrollTop = saved.offset + pane.scrollHeight - saved.height
+      lastTopRef.current = pane.scrollTop
+      if (++passes < 12) frame = requestAnimationFrame(restore)
+      else prependRef.current = null
+    }
+    restore()
+    return () => cancelAnimationFrame(frame)
+  }, [loadedFrom, rows, virtualize, virtualizer])
+  useLayoutEffect(() => { prependRef.current = null; entryRef.current = { focus: focusKey }; settlingRef.current = true; lastTopRef.current = 0; pin(true) }, [scope, focusKey, pin])
   useLayoutEffect(() => {
     const entry = entryRef.current
     if (!entry || rows.length === 0) return
     // A grouped turn is keyed by its first assistant message but answers for every message it holds.
     const index = entry.focus ? rows.findIndex((row) => row.key === entry.focus || !!row.assistantRows?.some((part) => part.key === entry.focus)) : -1
-    // A linked message older than the loaded window pages older rows in until it appears; a failed page falls back to the bottom.
+    // A linked message pages until it appears; an error keeps its target for explicit retry.
     // Progress follows the loaded offset: a page can join an existing grouped row or hold no visible rows at all.
-    if (index < 0 && entry.focus && truncated && (entry.pagedAt !== loadedFrom || loadingOlder)) {
-      if (entry.pagedAt !== loadedFrom && !loadingOlder) { entry.pagedAt = loadedFrom; onLoadOlder() }
+    if (index < 0 && entry.focus && truncated && !olderError && (entry.pagedAt !== loadedFrom || loadingOlder)) {
+      if (entry.pagedAt !== loadedFrom && !loadingOlder) { entry.pagedAt = loadedFrom; requestOlder() }
       return
     }
+    if (index < 0 && entry.focus && olderError) return
     entryRef.current = null
     const target = index < 0 || virtualize ? null : scrollRef.current?.querySelector(`[data-message-key="${CSS.escape(rows[index]?.key ?? '')}"]`)
     if (index < 0 || (!virtualize && !target)) { scrollToBottom(false); return }
@@ -177,7 +223,19 @@ export function Transcript(props: TranscriptProps) {
     settlingRef.current = false
     if (target) target.scrollIntoView({ block: 'center' })
     else virtualizer.scrollToIndex(index, { align: 'center' })
-  }, [rows, loadedFrom, virtualize, virtualizer, truncated, loadingOlder, onLoadOlder, pin, scrollToBottom])
+  }, [rows, loadedFrom, virtualize, virtualizer, truncated, loadingOlder, olderError, requestOlder, pin, scrollToBottom])
+
+  const sentinelRef = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    const pane = scrollRef.current
+    const sentinel = sentinelRef.current
+    if (!pane || !sentinel || !truncated || loadingOlder || olderError || typeof IntersectionObserver === 'undefined') return
+    const observer = new IntersectionObserver((entries) => {
+      if (entries.some((entry) => entry.isIntersecting)) requestOlder()
+    }, { root: pane, rootMargin: `${pane.clientHeight}px 0px 0px 0px` })
+    observer.observe(sentinel)
+    return () => observer.disconnect()
+  }, [scope, truncated, loadingOlder, olderError, requestOlder])
 
   const renderRow = (row: VisibleMessage, i: number) => (
     row.message._background_update
@@ -196,16 +254,16 @@ export function Transcript(props: TranscriptProps) {
   return (
     <WorklogDisclosureProvider key={scope} scope={scope ?? ""}>
     <div className="messages-shell relative flex flex-1 min-h-0 flex-col">
-      <div ref={scrollRef} onScroll={onScroll} onWheel={(e) => { if (e.deltaY !== 0) onReaderScroll() }} onTouchMove={onReaderScroll} className={cn('messages relative z-0 flex flex-1 flex-col min-h-0 px-5 overflow-y-auto overflow-x-hidden [-webkit-overflow-scrolling:touch] touch-pan-y overscroll-y-contain [overflow-anchor:auto] [@media(hover:hover)_and_(pointer:fine)]:[overflow-anchor:none] max-[641px]:pl-[max(10px,env(safe-area-inset-left,0))] max-[641px]:pr-[max(10px,env(safe-area-inset-right,0))]', empty && 'messages-empty')} id="messages" role="log" aria-live="off" aria-relevant="additions">
+      <div ref={scrollRef} onScroll={onScroll} onWheel={(e) => { if (e.deltaY !== 0) onReaderScroll() }} onTouchMove={onReaderScroll} onPointerDown={onReaderInput} onKeyDown={onReaderInput} className={cn('messages relative z-0 flex flex-1 flex-col min-h-0 px-5 overflow-y-auto overflow-x-hidden [-webkit-overflow-scrolling:touch] touch-pan-y overscroll-y-contain [overflow-anchor:none] max-[641px]:pl-[max(10px,env(safe-area-inset-left,0))] max-[641px]:pr-[max(10px,env(safe-area-inset-right,0))]', empty && 'messages-empty')} id="messages" role="log" aria-live="off" aria-relevant="additions">
         {empty ? emptyState : (
           <div ref={innerRef} className="messages-inner mx-auto w-full flex flex-col max-w-(--msg-max) pt-5 pb-[calc(var(--composer-h,0px)+2rem)] max-[641px]:pt-3 max-[641px]:max-w-full max-[641px]:overflow-x-clip max-[641px]:[word-break:break-word] max-[641px]:min-w-0" id="msgInner">
             {truncated && (
-              <div className="flex justify-center py-2">
-                <Button variant="ghost" onClick={onLoadOlder} disabled={loadingOlder}>{loadingOlder ? m.loading() : m.load_older()}</Button>
+              <div ref={sentinelRef} className="flex h-11 shrink-0 items-center justify-center" data-history-sentinel>
+                {loadingOlder ? <LoadingState compact /> : olderError ? <div role="alert" className="flex items-center gap-2 text-sm text-muted">{m.error_generic()}<Button variant="ghost" className="min-h-11" onClick={() => requestOlder(true)}>{m.retry()}</Button></div> : null}
               </div>
             )}
             {virtualize ? (
-              <div style={{ height: virtualizer.getTotalSize(), position: 'relative' }}>
+              <div data-virtual-history style={{ height: virtualizer.getTotalSize(), position: 'relative' }}>
                 {virtualizer.getVirtualItems().map((v) => {
                   const row = rows[v.index]
                   if (!row) return null

@@ -8,6 +8,7 @@ struct ChatScrollMetrics: Equatable {
     /// A scroll with no gesture carried the reader away from the bottom since
     /// the last delivered report; see `ChatScrollPolicy.isScrollingAwayFromBottom`.
     let movedAwayFromBottom: Bool
+    let distanceFromTop: CGFloat
 }
 
 
@@ -287,6 +288,11 @@ final class ChatScrollPositionController {
         anchor = nil
         prependWindowEnd = nil
         isApplyingCompensation = false
+    }
+
+    /// History visibility may re-arm only after the existing prepend compensation has finished.
+    func waitForPrependToSettle() async {
+        await completionTask?.value
     }
 
     nonisolated private static func handleObservedContentSizeChange(

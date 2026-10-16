@@ -46,7 +46,7 @@ export function ChatView({ sessionId }: { sessionId: string | null }) {
   const qc = useQueryClient()
   const navigate = useNavigate()
   const settings = useSettingsQuery()
-  const { query, session, rows, base, live, truncated, loadOlder, loadingOlder, refresh } = useTranscript(sessionId)
+  const { query, session, rows, base, live, truncated, loadOlder, loadingOlder, olderError, refresh } = useTranscript(sessionId)
   const clarify = useClarify(sessionId, live)
   const vaultPrompt = useVaultPrompt(sessionId, live)
   useMarkViewed(sessionId, query.isFetchedAfterMount || (query.isSuccess && !query.isStale), live && isTerminal(live.status) ? live.streamId : null)
@@ -360,8 +360,9 @@ export function ChatView({ sessionId }: { sessionId: string | null }) {
             autoRead={(settings.data as Record<string, unknown> | undefined)?.tts_auto_read === true}
             truncated={truncated}
             loadedFrom={base}
-            onLoadOlder={() => { void loadOlder() }}
+            onLoadOlder={(retry, beforePrepend) => { void loadOlder(retry, beforePrepend) }}
             loadingOlder={loadingOlder}
+            olderError={olderError}
             emptyState={query.isPending && !knownEmpty ? <TranscriptSkeleton /> : null}
             pendingUserText={pendingUserText}
             showJumpButtons={(settings.data as Record<string, unknown> | undefined)?.session_jump_buttons !== false}

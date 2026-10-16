@@ -51,7 +51,18 @@ export function useTranscript(sessionId: string | null) {
   const [olderState, setOlderState] = useState<{ sid: string | null; items: Message[] }>({ sid: sessionId, items: [] })
   const older = useMemo(() => (olderState.sid === sessionId ? olderState.items : []), [olderState, sessionId])
   const setOlder = useCallback((update: (prev: Message[]) => Message[]) => setOlderState((s) => ({ sid: sessionId, items: update(s.sid === sessionId ? s.items : []) })), [sessionId])
-  const [loadingOlder, setLoadingOlder] = useState(false)
+  const [pageState, setPageState] = useState({ sid: sessionId, loading: false, error: false })
+  if (pageState.sid !== sessionId) setPageState({ sid: sessionId, loading: false, error: false })
+  const pageScope = useMemo(() => ({ sessionId }), [sessionId])
+  const retiredPages = useRef(new WeakSet<object>())
+  const paging = useRef<{ scope: typeof pageScope; loading: boolean; error: boolean; before?: number }>({ scope: pageScope, loading: false, error: false })
+  useEffect(() => {
+    const retired = retiredPages.current
+    retired.delete(pageScope)
+    return () => { retired.add(pageScope) }
+  }, [pageScope])
+  const loadingOlder = pageState.sid === sessionId && pageState.loading
+  const olderError = pageState.sid === sessionId && pageState.error
   const attachedStream = useRef<string | null>(null)
   const query = useQuery({
     queryKey: keys.sessions.detail(sessionId ?? ''),
@@ -106,21 +117,34 @@ export function useTranscript(sessionId: string | null) {
   const base = Math.max(0, (session?._messages_offset ?? 0) - older.length)
   const rows = useMemo(() => projectMessages(messages, base), [messages, base])
   const truncated = !!session?._messages_truncated && (session._messages_offset ?? 0) > older.length
-  const loadOlder = useCallback(async () => {
-    if (!sessionId || !session || loadingOlder) return
+  const loadOlder = useCallback(async (retry = false, beforePrepend?: () => void) => {
+    if (retiredPages.current.has(pageScope)) return
+    if (paging.current.scope !== pageScope) paging.current = { scope: pageScope, loading: false, error: false }
+    const request = paging.current
+    if (!sessionId || !session || !truncated || request.loading || (request.error && !retry)) return
     const before = (session._messages_offset ?? 0) - older.length
     if (before <= 0) return
-    setLoadingOlder(true)
+    if (request.before === before && !request.error) return
+    request.before = before
+    request.loading = true
+    request.error = false
+    setPageState({ sid: sessionId, loading: true, error: false })
     try {
       const res = await api.fetchSession(sessionId, { messages: true, msg_limit: TRANSCRIPT_WINDOW, msg_before: before, resolve_model: false })
       const chunk = res.session.messages ?? []
+      if (retiredPages.current.has(pageScope) || paging.current !== request) return
+      if (!chunk.length) throw new Error('Empty history page')
+      beforePrepend?.()
       setOlder((prev) => [...chunk, ...prev])
+    } catch {
+      if (!retiredPages.current.has(pageScope) && paging.current === request) request.error = true
     } finally {
-      setLoadingOlder(false)
+      request.loading = false
+      if (!retiredPages.current.has(pageScope) && paging.current === request) setPageState({ sid: sessionId, loading: false, error: request.error })
     }
-  }, [sessionId, session, older.length, loadingOlder, setOlder])
+  }, [sessionId, session, truncated, older.length, setOlder, pageScope])
 
   const refresh = useCallback(() => qc.invalidateQueries({ queryKey: keys.sessions.detail(sessionId ?? '') }), [qc, sessionId])
 
-  return { query, session, rows, base, live, truncated, loadOlder, loadingOlder, refresh }
+  return { query, session, rows, base, live, truncated, loadOlder, loadingOlder, olderError, refresh }
 }
