@@ -135,9 +135,9 @@ describe('session persistence and streaming flags', () => {
 
   it('save writes the session JSON with its id and messages', async () => {
     const sid = await newSession(s)
-    const session = s.deps.sessionStore.get(sid)
+    const session = (await s.deps.sessionStore.get(sid))
     session.messages = [{ role: 'user', content: 'persist me' }]
-    s.deps.sessionStore.save(session)
+    await s.deps.sessionStore.save(session)
     const raw = JSON.parse(readFileSync(join(s.state, 'sessions', `${sid}.json`), 'utf8')) as Json
     expect(raw.session_id).toBe(sid)
     expect((raw.messages as Json[])[0]).toMatchObject({ role: 'user', content: 'persist me' })
@@ -145,21 +145,21 @@ describe('session persistence and streaming flags', () => {
 
   it('a default save creates the sidebar index containing the id', async () => {
     const sid = await newSession(s)
-    const session = s.deps.sessionStore.get(sid)
+    const session = (await s.deps.sessionStore.get(sid))
     session.messages = [{ role: 'user', content: 'indexed' }]
-    s.deps.sessionStore.save(session)
+    await s.deps.sessionStore.save(session)
     expect(readFileSync(join(s.state, 'sessions', '_index.json'), 'utf8')).toContain(sid)
   })
 
   it('pending prompt, start time, and stream id survive a reload from disk', async () => {
     const sid = await newSession(s)
-    const session = s.deps.sessionStore.get(sid)
+    const session = (await s.deps.sessionStore.get(sid))
     session.pending_user_message = 'still pending'
     session.pending_started_at = 1234.5
     session.active_stream_id = 'stream-restart'
-    s.deps.sessionStore.save(session)
+    await s.deps.sessionStore.save(session)
     s.deps.sessionStore.sessions.delete(sid)
-    const reloaded = s.deps.sessionStore.get(sid)
+    const reloaded = (await s.deps.sessionStore.get(sid))
     expect(reloaded).toMatchObject({ pending_user_message: 'still pending', pending_started_at: 1234.5, active_stream_id: 'stream-restart' })
   })
 
@@ -167,14 +167,14 @@ describe('session persistence and streaming flags', () => {
     const indexed = await newSession(s)
     const inMemory = await newSession(s)
     for (const [sid, stream] of [[indexed, 'live-1'], [inMemory, 'live-2']] as const) {
-      const session = s.deps.sessionStore.get(sid)
+      const session = (await s.deps.sessionStore.get(sid))
       session.messages = [{ role: 'user', content: 'hi' }]
       session.active_stream_id = stream
-      s.deps.sessionStore.save(session)
+      await s.deps.sessionStore.save(session)
       s.deps.registry.liveIds.add(stream)
     }
     s.deps.sessionStore.sessions.delete(indexed)
-    const rows = allSessions(s.deps.sessionStore)
+    const rows = (await allSessions(s.deps.sessionStore))
     for (const sid of [indexed, inMemory]) expect(rows.find((r) => r.session_id === sid)).toMatchObject({ is_streaming: true })
     expect(rows.find((r) => r.session_id === indexed)?.active_stream_id).toBe('live-1')
     s.deps.registry.liveIds.delete('live-1')
@@ -183,46 +183,46 @@ describe('session persistence and streaming flags', () => {
 
   it('a stale stream id is not streaming until the registry holds it', async () => {
     const sid = await newSession(s)
-    const session = s.deps.sessionStore.get(sid)
+    const session = (await s.deps.sessionStore.get(sid))
     session.messages = [{ role: 'user', content: 'hi' }]
     session.active_stream_id = 'stale-9'
-    s.deps.sessionStore.save(session)
-    expect(allSessions(s.deps.sessionStore).find((r) => r.session_id === sid)?.is_streaming).toBe(false)
+    await s.deps.sessionStore.save(session)
+    expect((await allSessions(s.deps.sessionStore)).find((r) => r.session_id === sid)?.is_streaming).toBe(false)
     s.deps.registry.liveIds.add('stale-9')
-    expect(allSessions(s.deps.sessionStore).find((r) => r.session_id === sid)?.is_streaming).toBe(true)
+    expect((await allSessions(s.deps.sessionStore)).find((r) => r.session_id === sid)?.is_streaming).toBe(true)
     s.deps.registry.liveIds.delete('stale-9')
-    expect(allSessions(s.deps.sessionStore).find((r) => r.session_id === sid)?.is_streaming).toBe(false)
+    expect((await allSessions(s.deps.sessionStore)).find((r) => r.session_id === sid)?.is_streaming).toBe(false)
   })
 
   it('a persisted stream id does not resurrect streaming after a restart', async () => {
     const sid = await newSession(s)
-    const session = s.deps.sessionStore.get(sid)
+    const session = (await s.deps.sessionStore.get(sid))
     session.messages = [{ role: 'user', content: 'hi' }]
     session.active_stream_id = 'gone-after-restart'
-    s.deps.sessionStore.save(session)
+    await s.deps.sessionStore.save(session)
     s.deps.sessionStore.sessions.delete(sid)
-    const row = allSessions(s.deps.sessionStore).find((r) => r.session_id === sid)
+    const row = (await allSessions(s.deps.sessionStore)).find((r) => r.session_id === sid)
     expect(row?.active_stream_id).toBe('gone-after-restart')
     expect(row?.is_streaming).toBe(false)
   })
 
   it('the HTTP list repairs a stale stream id before serialising', async () => {
     const sid = await newSession(s)
-    const session = s.deps.sessionStore.get(sid)
+    const session = (await s.deps.sessionStore.get(sid))
     session.messages = [{ role: 'user', content: 'hi' }]
     session.active_stream_id = 'stale-list'
-    s.deps.sessionStore.save(session)
+    await s.deps.sessionStore.save(session)
     const rows = (await json(await s.get('/api/sessions'))).sessions as Json[]
     expect(rows.find((r) => r.session_id === sid)).toMatchObject({ active_stream_id: null, is_streaming: false })
   })
 
   it('clear persists empty transcript, context, and tool calls with a clear generation', async () => {
     const sid = await newSession(s)
-    const session = s.deps.sessionStore.get(sid)
+    const session = (await s.deps.sessionStore.get(sid))
     session.messages = [{ role: 'user', content: 'hi' }, { role: 'assistant', content: 'yo' }]
     session.context_messages = [{ role: 'user', content: 'hi' }]
     session.tool_calls = [{ name: 't' }]
-    s.deps.sessionStore.save(session)
+    await s.deps.sessionStore.save(session)
     const res = await post(s, '/api/session/clear', { session_id: sid })
     expect(res.status).toBe(200)
     const body = await json(res)
@@ -777,7 +777,7 @@ describe('chat streams, cancel, and error settlement', () => {
       await frames(await start(sid, 'Explain the outage'), terminal)
       expect(history).toEqual([])
       expect((await messagesOf(s, sid)).filter((m) => m.role === 'user')).toHaveLength(1)
-      expect(s.deps.sessionStore.get(sid).context_messages.map((m) => m.role)).toEqual(['user', 'assistant'])
+      expect((await s.deps.sessionStore.get(sid)).context_messages.map((m) => m.role)).toEqual(['user', 'assistant'])
     } finally {
       turns.deps.saveMode = original
     }
@@ -796,11 +796,11 @@ describe('chat streams, cancel, and error settlement', () => {
     // The old worker ignores the interrupt past the unwind ceiling, so a successor is admitted meanwhile.
     s.deps.registry.activeRuns.get(oldStream)!.cancelled_at = Date.now() / 1000 - 3600
     const successorHistory = await nextHistory(sid)
-    const settled = s.deps.sessionStore.get(sid).context_messages
+    const settled = (await s.deps.sessionStore.get(sid)).context_messages
     release({ ...completed([...earlier, { role: 'user', content: prompt }, { role: 'assistant', content: 'late cancelled output' }]), status: 'cancelled' })
     await new Promise((r) => setTimeout(r, 50))
     expect(successorHistory).toEqual(earlier)
-    expect(s.deps.sessionStore.get(sid).context_messages).toEqual(settled)
+    expect((await s.deps.sessionStore.get(sid)).context_messages).toEqual(settled)
     expect((await messagesOf(s, sid)).filter((m) => m._error)).toHaveLength(1)
   })
 
@@ -815,9 +815,9 @@ describe('chat streams, cancel, and error settlement', () => {
 
   it('a user turn the worker already merged is not appended twice on cancel', async () => {
     const sid = await newSession(s)
-    const session = s.deps.sessionStore.get(sid)
+    const session = (await s.deps.sessionStore.get(sid))
     session.messages = [{ role: 'user', content: 'merged already', timestamp: Date.now() / 1000 + 5 }]
-    s.deps.sessionStore.save(session)
+    await s.deps.sessionStore.save(session)
     cancellable([{ event: 'token', data: { text: 'p' } }])
     await cancelTurn(sid, 'merged already')
     expect((await messagesOf(s, sid)).filter((m) => m.role === 'user' && m.content === 'merged already')).toHaveLength(1)
@@ -825,9 +825,9 @@ describe('chat streams, cancel, and error settlement', () => {
 
   it('an older substring turn does not suppress the new user turn', async () => {
     const sid = await newSession(s)
-    const session = s.deps.sessionStore.get(sid)
+    const session = (await s.deps.sessionStore.get(sid))
     session.messages = [{ role: 'user', content: 'ok', timestamp: 1 }, { role: 'assistant', content: 'sure', timestamp: 2 }]
-    s.deps.sessionStore.save(session)
+    await s.deps.sessionStore.save(session)
     cancellable([{ event: 'token', data: { text: 'p' } }])
     await cancelTurn(sid, 'ok then do it')
     expect((await messagesOf(s, sid)).filter((m) => m.role === 'user')).toHaveLength(2)
@@ -861,12 +861,12 @@ describe('chat streams, cancel, and error settlement', () => {
 
   it('loading a session with a dead stream repairs it: user turn plus an error row', async () => {
     const sid = await newSession(s)
-    const session = s.deps.sessionStore.get(sid)
+    const session = (await s.deps.sessionStore.get(sid))
     session.active_stream_id = 'dead-stream'
     session.pending_user_message = 'lost prompt'
     session.pending_started_at = 1700000000
     session.pending_attachments = [{ name: 'a.txt' }]
-    s.deps.sessionStore.save(session)
+    await s.deps.sessionStore.save(session)
     const loaded = await detail(s, sid)
     expect(loaded.active_stream_id).toBeNull()
     expect(loaded.pending_user_message ?? null).toBeNull()
@@ -879,9 +879,9 @@ describe('chat streams, cancel, and error settlement', () => {
   // ── provider error settlement matrix (test_issue5121) ──
   const seeded = async (): Promise<string> => {
     const sid = await newSession(s)
-    const session = s.deps.sessionStore.get(sid)
+    const session = (await s.deps.sessionStore.get(sid))
     session.messages = [{ role: 'user', content: 'earlier', timestamp: 1 }, { role: 'assistant', content: 'earlier answer', timestamp: 2 }]
-    s.deps.sessionStore.save(session)
+    await s.deps.sessionStore.save(session)
     return sid
   }
   const failing = (error: string, opts: { partial?: string; replay?: string; status?: ChatResult['status'] } = {}): void => {

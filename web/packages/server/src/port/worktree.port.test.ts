@@ -89,7 +89,7 @@ describe('worktree-backed sessions', () => {
     const created = (await json(await post(s, '/api/session/new', { workspace: ws, worktree: true }))).session as Json
     const plain = (await json(await post(s, '/api/session/new', { workspace: ws }))).session as Json
     // Python `all_sessions()`: the empty-draft filter exempts worktree-backed sessions (the HTTP list additionally applies visible_only in both backends).
-    const ids = allSessions(s.deps.sessionStore).map((r) => r.session_id)
+    const ids = (await allSessions(s.deps.sessionStore)).map((r) => r.session_id)
     expect(ids).toContain(created.session_id)
     expect(ids).not.toContain(plain.session_id)
   })
@@ -251,11 +251,11 @@ describe('worktree status against a real git worktree', () => {
     repo = fixture.repo
     worktree = fixture.worktree
     sid = String(((await json(await post(s, '/api/session/new', { workspace: repo }))).session as Json).session_id)
-    const session = s.deps.sessionStore.get(sid)
+    const session = (await s.deps.sessionStore.get(sid))
     session.worktree_path = worktree
     session.worktree_repo_root = repo
     session.worktree_branch = 'hermes/wt'
-    s.deps.sessionStore.save(session)
+    await s.deps.sessionStore.save(session)
   })
   afterAll(() => s.close())
   const status = async (): Promise<Json> => (await json(await s.get(`/api/session/worktree/status?session_id=${sid}`))).status as Json
@@ -273,9 +273,9 @@ describe('worktree status against a real git worktree', () => {
   })
 
   it('locked_by_stream follows the live stream registry', async () => {
-    const session = s.deps.sessionStore.get(sid)
+    const session = (await s.deps.sessionStore.get(sid))
     session.active_stream_id = 'stream-live'
-    s.deps.sessionStore.save(session)
+    await s.deps.sessionStore.save(session)
     s.deps.registry.liveIds.add('stream-live')
     expect(await status()).toMatchObject({ locked_by_stream: true, removable: false })
     s.deps.registry.liveIds.delete('stream-live')

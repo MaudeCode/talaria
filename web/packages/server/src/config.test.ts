@@ -9,6 +9,16 @@ let home: string
 beforeEach(() => { home = mkdtempSync(resolve(tmpdir(), 'talaria-config-')) })
 afterEach(() => { vi.restoreAllMocks(); rmSync(home, { recursive: true, force: true }) })
 
+it('selects JSON session storage by default and explicitly', () => {
+  for (const storage of [undefined, 'json']) {
+    expect(loadConfig({ home, webRoot: home, env: { TALARIA_STORAGE: storage } }).storage).toBe('json')
+  }
+})
+
+it('rejects an unknown session storage backend without falling back', () => {
+  expect(() => loadConfig({ home, webRoot: home, env: { TALARIA_STORAGE: 'missing' } })).toThrow('Unknown TALARIA_STORAGE="missing"; supported backends: json')
+})
+
 describe.each(['darwin', 'win32'])('Agent home on %s', (platform) => {
   beforeEach(() => { vi.spyOn(process, 'platform', 'get').mockReturnValue(platform as NodeJS.Platform) })
 

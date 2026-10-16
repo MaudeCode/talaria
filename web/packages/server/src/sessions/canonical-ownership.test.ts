@@ -45,28 +45,28 @@ describe('canonical Agent ownership (TAL-1036)', () => {
     usage: { prompt_tokens: 1, completion_tokens: 1, cache_read_tokens: 0, cache_write_tokens: 0, estimated_cost_usd: null }, context: { context_length: 1000 },
     model: 'fixture', provider: 'custom', compressed: false, agent_session_id: sid, token_sent: true, pending_steer: '', live_tool_calls: [],
   })
-  const cache = (sid: string): Session => {
+  const cache = async (sid: string): Promise<Session> => {
     const session = new Session({ session_id: sid, title: 'Saved conversation', source_tag: 'cli', messages: [{ role: 'user', content: 'earlier question' }, { role: 'assistant', content: 'earlier answer' }] }, { workspace: join(s.state, 'workspace'), model: 'fixture' })
-    s.deps.sessionStore.save(session)
+    await s.deps.sessionStore.save(session)
     return session
   }
 
 
   it.each(['detail', 'metadata', 'status', 'direct'] as const)('keeps canonical stale-run recovery read-only through %s', async (route) => {
     const sid = fixture.sessions.cli!
-    const session = cache(sid)
+    const session = (await cache(sid))
     const stream = 'dead-owned-stream'
     session.active_stream_id = stream
     session.pending_user_message = 'unsettled Talaria prompt'
     session.pending_started_at = s.deps.sessions.deps.now() - 120
-    s.deps.sessionStore.save(session)
+    await s.deps.sessionStore.save(session)
     const writer = s.deps.journal.writer(sid, stream)
     writer.appendSseEvent('token', { text: 'unsettled Talaria output' })
     writer.close()
     const before = stored()
     const file = readFileSync(join(s.state, 'sessions', `${sid}.json`), 'utf8')
     s.deps.sessionStore.sessions.delete(sid)
-    if (route === 'direct') expect(s.deps.sessions.clearStaleStreamState(s.deps.sessionStore.get(sid))).toBe(false)
+    if (route === 'direct') expect((await s.deps.sessions.clearStaleStreamState((await s.deps.sessionStore.get(sid))))).toBe(false)
     else {
       const response = await s.get(route === 'status' ? `/api/session/status?session_id=${sid}` : `/api/session?session_id=${sid}${route === 'metadata' ? '&messages=0' : ''}`)
       expect(response.status).toBe(200)
@@ -77,7 +77,7 @@ describe('canonical Agent ownership (TAL-1036)', () => {
     }
     expect(readFileSync(join(s.state, 'sessions', `${sid}.json`), 'utf8')).toBe(file)
     expect(stored()).toEqual(before)
-    const current = s.deps.sessionStore.get(sid)
+    const current = (await s.deps.sessionStore.get(sid))
     expect(current.active_stream_id).toBe(stream)
     expect(current.pending_user_message).toBe('unsettled Talaria prompt')
     expect(current.messages).toEqual(session.messages)
@@ -87,7 +87,7 @@ describe('canonical Agent ownership (TAL-1036)', () => {
   it.each(['incoming', 'formatter', 'deferred', 'claim'] as const)('leaves canonical delegation completion writes to the owner at %s', async (phase) => {
     const sid = fixture.sessions.cli!
     if (phase !== 'incoming') makeLegacy(sid)
-    cache(sid)
+    await cache(sid)
     const path = join(s.state, 'sessions', `${sid}.json`)
     let file = readFileSync(path, 'utf8')
     let before = stored()
@@ -111,7 +111,7 @@ describe('canonical Agent ownership (TAL-1036)', () => {
 
   it.each(['live', 'orphan', 'materialize'] as const)('keeps canonical %s recovery candidates unsafe and unchanged', async (kind) => {
     const sid = fixture.sessions.cli!
-    const session = cache(sid)
+    const session = (await cache(sid))
     const path = join(s.state, 'sessions', `${sid}.json`)
     const file = readFileSync(path, 'utf8')
     const backup = JSON.stringify({ ...session.toDocument(), messages: [...session.messages, { role: 'assistant', content: 'longer backup' }] })
@@ -131,7 +131,7 @@ describe('canonical Agent ownership (TAL-1036)', () => {
   it('rechecks safe recovery ownership after its session lock wait', async () => {
     const sid = fixture.sessions.cli!
     makeLegacy(sid)
-    const session = cache(sid)
+    const session = (await cache(sid))
     const path = join(s.state, 'sessions', `${sid}.json`)
     const file = readFileSync(path, 'utf8')
     writeFileSync(`${path}.bak`, JSON.stringify({ ...session.toDocument(), messages: [...session.messages, { role: 'assistant', content: 'longer backup' }] }))
@@ -154,10 +154,10 @@ describe('canonical Agent ownership (TAL-1036)', () => {
 
   it.each(['cleanup', 'cleanup_zero_message'])('keeps canonical sidecars during %s maintenance', async (action) => {
     const sid = fixture.sessions.cli!
-    const session = cache(sid)
+    const session = (await cache(sid))
     session.title = 'Untitled'
     session.messages = []
-    s.deps.sessionStore.save(session)
+    await s.deps.sessionStore.save(session)
     const path = join(s.state, 'sessions', `${sid}.json`)
     const file = readFileSync(path, 'utf8')
     expect((await post(s, `/api/sessions/${action}`, {})).status).toBe(200)
@@ -167,9 +167,9 @@ describe('canonical Agent ownership (TAL-1036)', () => {
 
   it('does not prune a canonical read-only import whose transcript row was retired', async () => {
     const sid = fixture.sessions.cli!
-    const session = cache(sid)
+    const session = (await cache(sid))
     session.read_only = true
-    s.deps.sessionStore.save(session)
+    await s.deps.sessionStore.save(session)
     db.prepare('DELETE FROM session_admissions WHERE target_session_id = ?').run(sid)
     db.prepare('DELETE FROM messages WHERE session_id = ?').run(sid)
     db.prepare('DELETE FROM sessions WHERE id = ?').run(sid)
@@ -187,7 +187,7 @@ describe('canonical Agent ownership (TAL-1036)', () => {
     expect(response.status).toBe(403)
     expect(sidecar.calls.filter((c) => c.method === 'chat.start')).toEqual([])
     expect(stored()).toEqual(before)
-    expect(s.deps.sessionStore.loadMetadataOnly(sid)).toBeNull()
+    expect((await s.deps.sessionStore.loadMetadataOnly(sid))).toBeNull()
   })
 
   it.each(['queued', 'started', 'unknown', 'terminal'])('retains %s ownership and original surface on all read routes and capability flags', async (status) => {
@@ -212,7 +212,7 @@ describe('canonical Agent ownership (TAL-1036)', () => {
 
   it('locks stale sidecars, including ones persisted as webui/fork, before transcript or compression writes', async () => {
     for (const [i, sid] of Object.values(fixture.sessions).entries()) {
-      s.deps.sessionStore.save(new Session({ session_id: sid, source_tag: ['cli', 'webui', 'fork'][i], messages: [{ role: 'user', content: 'cached', timestamp: 1 }] }, { workspace: s.state, model: null }))
+      await s.deps.sessionStore.save(new Session({ session_id: sid, source_tag: ['cli', 'webui', 'fork'][i], messages: [{ role: 'user', content: 'cached', timestamp: 1 }] }, { workspace: s.state, model: null }))
       const before = stored()
       const file = readFileSync(join(s.state, 'sessions', `${sid}.json`), 'utf8')
       for (const path of ['/api/chat/start', '/api/session/rename', '/api/session/compress', '/api/session/compress/start', '/api/session/clear', '/api/session/truncate', '/api/session/pin', '/api/session/archive', '/api/session/duplicate', '/api/session/branch']) {
@@ -230,7 +230,7 @@ describe('canonical Agent ownership (TAL-1036)', () => {
     const sid = fixture.sessions.cli!
     makeLegacy(sid)
     const messages = [{ role: 'user', content: 'earlier question', timestamp: 1 }, { role: 'assistant', content: 'earlier answer', timestamp: 2 }]
-    s.deps.sessionStore.save(new Session({ session_id: sid, source_tag: 'cli', messages }, { workspace: join(s.state, 'workspace'), model: 'fixture' }))
+    await s.deps.sessionStore.save(new Session({ session_id: sid, source_tag: 'cli', messages }, { workspace: join(s.state, 'workspace'), model: 'fixture' }))
     s.deps.turns.deps.saveMode = () => mode
     let entered!: () => void
     let release!: () => void
@@ -252,7 +252,7 @@ describe('canonical Agent ownership (TAL-1036)', () => {
       await s.deps.turns.finished(stream)
       expect(sidecar.calls.filter((c) => c.method === 'chat.start')).toEqual([])
       expect(stored()).toEqual(before)
-      const session = s.deps.sessionStore.get(sid)
+      const session = (await s.deps.sessionStore.get(sid))
       expect(session.messages).toEqual(messages)
       expect(session.active_stream_id).toBeNull()
       expect(session.hasPendingPrompt).toBe(false)
@@ -271,21 +271,21 @@ describe('canonical Agent ownership (TAL-1036)', () => {
     const sid = fixture.sessions.cli!
     const source = new Session({ session_id: sid, source_tag: 'cli' }, { workspace: join(s.state, 'workspace'), model: 'fixture' })
     stampCompressionExhaustedRecovery(source, 'Context length exceeded.', '')
-    s.deps.sessionStore.save(source)
-    if (existing) s.deps.sessionStore.save(new Session({ session_id: 'earlier-recovery-child', session_source: 'fork', compression_recovery_source_session_id: sid, compression_recovery_action: 'start_focused_continuation' }, { workspace: join(s.state, 'workspace'), model: 'fixture' }))
-    const ids = [...s.deps.sessionStore.persistedIds()]
+    await s.deps.sessionStore.save(source)
+    if (existing) (await s.deps.sessionStore.save(new Session({ session_id: 'earlier-recovery-child', session_source: 'fork', compression_recovery_source_session_id: sid, compression_recovery_action: 'start_focused_continuation' }, { workspace: join(s.state, 'workspace'), model: 'fixture' })))
+    const ids = [...(await s.deps.sessionStore.persistedIds())]
     const before = stored()
     const saved = readFileSync(join(s.state, 'sessions', `${sid}.json`), 'utf8')
     const response = await post(s, '/api/session/compression-recovery/start', { session_id: sid })
     expect(response.status).toBe(403)
-    expect([...s.deps.sessionStore.persistedIds()]).toEqual(ids)
+    expect([...(await s.deps.sessionStore.persistedIds())]).toEqual(ids)
     expect(stored()).toEqual(before)
     expect(readFileSync(join(s.state, 'sessions', `${sid}.json`), 'utf8')).toBe(saved)
   })
 
   it('refuses refine before building an Agent for a canonical sidecar', async () => {
     const sid = fixture.sessions.cli!
-    cache(sid)
+    await cache(sid)
     const before = stored()
     sidecar.respond('chat.refine', () => ({ output: 'would launch review' }))
     const response = await post(s, '/api/commands/exec', { session_id: sid, command: '/refine' })
@@ -297,7 +297,7 @@ describe('canonical Agent ownership (TAL-1036)', () => {
   it('rechecks refine ownership after its profile setup await', async () => {
     const sid = fixture.sessions.cli!
     makeLegacy(sid)
-    cache(sid)
+    await cache(sid)
     let entered!: () => void
     let release!: () => void
     const setup = new Promise<void>((resolve) => { entered = resolve })
@@ -317,7 +317,7 @@ describe('canonical Agent ownership (TAL-1036)', () => {
 
   it.each([true, false])('refuses canonical YOLO enabled=%s before RPC or local flag changes', async (enabled) => {
     const sid = fixture.sessions.cli!
-    cache(sid)
+    await cache(sid)
     s.deps.sessions.deps.yolo.set(sid, !enabled)
     sidecar.respond('approval.set_yolo', (params) => ({ yolo_enabled: params.enabled, released: 0 }))
     const before = stored()
@@ -330,7 +330,7 @@ describe('canonical Agent ownership (TAL-1036)', () => {
 
   it.each([false, true])('keeps canonical approvals queued without dispatch (injected=%s)', async (injected) => {
     const sid = fixture.sessions.cli!
-    cache(sid)
+    await cache(sid)
     const entry = s.deps.pending.submitApproval(sid, { request_id: 'owned-approval', command: 'write memory', _injected: injected })
     sidecar.respond('approval.respond', (params) => ({ ok: true, resolved: 1, choice: params.choice }))
     const response = await post(s, '/api/approval/respond', { session_id: sid, approval_id: entry.approval_id, choice: 'once' })
@@ -341,7 +341,7 @@ describe('canonical Agent ownership (TAL-1036)', () => {
 
   it.each([false, true])('keeps canonical clarifications queued without dispatch (injected=%s)', async (injected) => {
     const sid = fixture.sessions.cli!
-    cache(sid)
+    await cache(sid)
     const entry = s.deps.pending.submitClarify(sid, { clarify_id: 'owned-clarify', question: 'Continue?', _injected: injected })
     sidecar.respond('clarify.respond', (params) => ({ ok: true, clarify_id: params.clarify_id }))
     const response = await post(s, '/api/clarify/respond', { session_id: sid, clarify_id: entry.clarify_id, response: 'yes' })
@@ -352,7 +352,7 @@ describe('canonical Agent ownership (TAL-1036)', () => {
 
   it('does not flush a canonical cached Agent memory when leaving the conversation', async () => {
     const sid = fixture.sessions.cli!
-    cache(sid)
+    await cache(sid)
     const before = stored()
     expect((await post(s, '/api/session/new', { prev_session_id: sid })).status).toBe(200)
     expect(sidecar.calls.filter((c) => c.method === 'chat.commit_memory')).toEqual([])
@@ -362,11 +362,11 @@ describe('canonical Agent ownership (TAL-1036)', () => {
   it.each(['initial', 'refresh'] as const)('does not dispatch %s title work after a turn becomes canonical-owned', async (kind) => {
     const sid = fixture.sessions.cli!
     makeLegacy(sid)
-    const session = cache(sid)
+    const session = (await cache(sid))
     const title = kind === 'initial' ? 'CLI Session' : 'Earlier generated title'
     session.title = title
     session.llm_title_generated = kind === 'refresh'
-    s.deps.sessionStore.save(session)
+    await s.deps.sessionStore.save(session)
     s.deps.turns.deps.titleRefreshEvery = () => 1
     sidecar.respond('chat.start', (params) => { adopt(sid); return completed(sid, params.user_message) })
     sidecar.respond('aux.complete', () => ({ model: 'fixture', usage: null, text: 'New generated title', finish_reason: 'stop' }))
@@ -374,17 +374,17 @@ describe('canonical Agent ownership (TAL-1036)', () => {
     expect(response.status).toBe(200)
     await s.deps.turns.finished(String((await json(response)).stream_id))
     expect(sidecar.calls.filter((c) => c.method === 'aux.complete')).toEqual([])
-    expect(s.deps.sessionStore.get(sid).title).toBe(title)
+    expect((await s.deps.sessionStore.get(sid)).title).toBe(title)
   })
 
   it.each(['initial', 'refresh'] as const)('does not save a %s title after adoption during its model await', async (kind) => {
     const sid = fixture.sessions.cli!
     makeLegacy(sid)
-    const session = cache(sid)
+    const session = (await cache(sid))
     const title = kind === 'initial' ? 'CLI Session' : 'Earlier generated title'
     session.title = title
     session.llm_title_generated = kind === 'refresh'
-    s.deps.sessionStore.save(session)
+    await s.deps.sessionStore.save(session)
     s.deps.turns.deps.titleRefreshEvery = () => 1
     sidecar.respond('chat.start', (params) => completed(sid, params.user_message))
     let entered!: () => void
@@ -402,7 +402,7 @@ describe('canonical Agent ownership (TAL-1036)', () => {
       const file = readFileSync(join(s.state, 'sessions', `${sid}.json`), 'utf8')
       release()
       await pending
-      expect(s.deps.sessionStore.get(sid).title).toBe(title)
+      expect((await s.deps.sessionStore.get(sid)).title).toBe(title)
       expect(readFileSync(join(s.state, 'sessions', `${sid}.json`), 'utf8')).toBe(file)
       expect(stored()).toEqual(before)
       expect(sidecar.calls.filter((c) => c.method === 'state_db.sync_title')).toEqual([])
@@ -412,19 +412,19 @@ describe('canonical Agent ownership (TAL-1036)', () => {
   it('does not retry a title prompt after adoption during an empty model response', async () => {
     const sid = fixture.sessions.cli!
     makeLegacy(sid)
-    const session = cache(sid)
+    const session = (await cache(sid))
     const title = session.title
     sidecar.respond('aux.complete', () => { adopt(sid); return { model: 'fixture', usage: null, text: '', finish_reason: 'stop' } })
     const response = await post(s, '/api/session/title/regenerate', { session_id: sid })
     expect(response.status).toBe(403)
     expect(sidecar.calls.filter((c) => c.method === 'aux.complete')).toHaveLength(1)
-    expect(s.deps.sessionStore.get(sid).title).toBe(title)
+    expect((await s.deps.sessionStore.get(sid)).title).toBe(title)
   })
 
   it('does not judge goals after the completed turn becomes canonical-owned', async () => {
     const sid = fixture.sessions.cli!
     makeLegacy(sid)
-    cache(sid)
+    await cache(sid)
     sidecar.respond('chat.start', (params) => {
       adopt(sid)
       return completed(sid, params.user_message)
@@ -437,7 +437,7 @@ describe('canonical Agent ownership (TAL-1036)', () => {
 
   it('refuses other session-bound commands for canonical sidecars', async () => {
     const sid = fixture.sessions.cli!
-    cache(sid)
+    await cache(sid)
     sidecar.respond('commands.exec', () => ({ output: 'would change session state', source: 'agent' }))
     const response = await post(s, '/api/commands/exec', { session_id: sid, command: '/clear' })
     expect(response.status, JSON.stringify(await json(response))).toBe(403)
@@ -447,7 +447,7 @@ describe('canonical Agent ownership (TAL-1036)', () => {
   it('rechecks goal-command ownership after the snapshot await', async () => {
     const sid = fixture.sessions.cli!
     makeLegacy(sid)
-    cache(sid)
+    await cache(sid)
     let entered!: () => void
     let release!: () => void
     const setup = new Promise<void>((resolve) => { entered = resolve })
@@ -466,7 +466,7 @@ describe('canonical Agent ownership (TAL-1036)', () => {
 
   it.each(['title', 'usage', 'delete', 'clear'] as const)('fences canonical %s RPC callbacks at their write boundary', async (action) => {
     const sid = fixture.sessions.cli!
-    const session = cache(sid)
+    const session = (await cache(sid))
     await s.deps.settings.save({ sync_to_insights: true })
     const before = stored()
     if (action === 'title') await s.deps.sessions.deps.syncTitle(session)
@@ -480,9 +480,9 @@ describe('canonical Agent ownership (TAL-1036)', () => {
 
   it('fences the actual callback home when the same id has different sidecar profile metadata', async () => {
     const sid = fixture.sessions.cli!
-    const session = cache(sid)
+    const session = (await cache(sid))
     session.profile = 'work'
-    s.deps.sessionStore.save(session)
+    await s.deps.sessionStore.save(session)
     await s.deps.sessions.deps.runtime.deleteCliSession('default', sid).catch(() => undefined)
     expect(sidecar.calls.filter((c) => c.method === 'state_db.delete_cli_session')).toEqual([])
   })
@@ -490,19 +490,19 @@ describe('canonical Agent ownership (TAL-1036)', () => {
   it("does not inherit another home's persisted read-only flag at an explicitly bound callback", async () => {
     const sid = fixture.sessions.cli!
     makeLegacy(sid)
-    const session = cache(sid)
+    const session = (await cache(sid))
     session.profile = 'work'
     session.read_only = true
-    s.deps.sessionStore.save(session)
+    await s.deps.sessionStore.save(session)
     await s.deps.sessions.deps.runtime.deleteCliSession('default', sid).catch(() => undefined)
     expect(sidecar.calls.filter((c) => c.method === 'state_db.delete_cli_session')).toHaveLength(1)
-    expect(s.deps.sessions.isReadOnly(session)).toBe(true)
+    expect((await s.deps.sessions.isReadOnly(session))).toBe(true)
   })
 
   it.each(['rename', 'pin', 'archive', 'toolsets', 'personality', 'truncate', 'clear', 'retry', 'undo', 'delete', 'update'] as const)('rechecks %s ownership after acquiring its mutation lock', async (action) => {
     const sid = fixture.sessions.cli!
     makeLegacy(sid)
-    const session = cache(sid)
+    const session = (await cache(sid))
     mkdirSync(join(s.state, 'workspace', 'next'), { recursive: true })
     const saved = readFileSync(join(s.state, 'sessions', `${sid}.json`), 'utf8')
     let entered!: () => void
@@ -512,10 +512,10 @@ describe('canonical Agent ownership (TAL-1036)', () => {
     const lock = s.deps.sessionStore.withLock(sid, () => { entered(); return held })
     await acquired
     const actions: Record<typeof action, () => Promise<unknown>> = {
-      rename: () => s.deps.sessions.rename(sid, 'changed'), pin: () => s.deps.sessions.pin(sid, true), archive: () => s.deps.sessions.archive(sid, true),
-      toolsets: () => s.deps.sessions.setToolsets(sid, ['terminal']), personality: () => s.deps.sessions.setPersonality(sid, 'helper'),
-      truncate: () => s.deps.sessions.truncate(sid, 0), clear: () => s.deps.sessions.clear(sid), retry: () => s.deps.sessions.retry(sid),
-      undo: () => s.deps.sessions.undo(sid), delete: () => s.deps.sessions.delete(sid), update: () => s.deps.sessions.update(sid, { workspace: join(s.state, 'workspace', 'next') }),
+      rename: async () => (await s.deps.sessions.rename(sid, 'changed')), pin: () => s.deps.sessions.pin(sid, true), archive: async () => (await s.deps.sessions.archive(sid, true)),
+      toolsets: async () => (await s.deps.sessions.setToolsets(sid, ['terminal'])), personality: async () => (await s.deps.sessions.setPersonality(sid, 'helper')),
+      truncate: async () => (await s.deps.sessions.truncate(sid, 0)), clear: async () => (await s.deps.sessions.clear(sid)), retry: async () => (await s.deps.sessions.retry(sid)),
+      undo: async () => (await s.deps.sessions.undo(sid)), delete: async () => (await s.deps.sessions.delete(sid)), update: async () => (await s.deps.sessions.update(sid, { workspace: join(s.state, 'workspace', 'next') })),
     }
     const pending = actions[action]().then(() => 200, (error: unknown) => error instanceof HttpFailure ? error.status : 500)
     try {
@@ -534,7 +534,7 @@ describe('canonical Agent ownership (TAL-1036)', () => {
   it.each([true, false])('rechecks handoff ownership after its model await (materialized=%s)', async (materialized) => {
     const sid = fixture.sessions.cli!
     makeLegacy(sid)
-    if (materialized) cache(sid)
+    if (materialized) (await cache(sid))
     for (let i = 0; i <= CONVERSATION_ROUND_THRESHOLD; i += 1) {
       db.prepare('INSERT INTO messages(session_id,role,content,timestamp) VALUES (?,?,?,?)').run(sid, 'user', `question ${i}`, 2000 + i * 2)
       db.prepare('INSERT INTO messages(session_id,role,content,timestamp) VALUES (?,?,?,?)').run(sid, 'assistant', `answer ${i}`, 2001 + i * 2)
@@ -562,7 +562,7 @@ describe('canonical Agent ownership (TAL-1036)', () => {
   it.each(['receipt', 'physical-alias', 'terminal-ledger', 'retired', 'api-binding'] as const)('retains %s ownership without a sessions row', async (kind) => {
     const root = fixture.sessions.cli!
     const sid = kind === 'physical-alias' ? 'pruned-canonical-tip' : root
-    cache(sid)
+    await cache(sid)
     if (kind === 'physical-alias') {
       db.prepare("UPDATE state_meta SET value = json_set(value, '$.lineage', json(?), '$.entry.session_id', ?) WHERE key = ?").run(JSON.stringify([root, sid]), sid, `gateway.local_policy.v1:${root}`)
     } else {
@@ -587,7 +587,7 @@ describe('canonical Agent ownership (TAL-1036)', () => {
   it('rechecks model-update ownership after context lookup without mutating the cached session', async () => {
     const sid = fixture.sessions.cli!
     makeLegacy(sid)
-    const session = cache(sid)
+    const session = (await cache(sid))
     const beforeModel = session.model
     const file = readFileSync(join(s.state, 'sessions', `${sid}.json`), 'utf8')
     let entered!: () => void
@@ -613,7 +613,7 @@ describe('canonical Agent ownership (TAL-1036)', () => {
   it('aborts prepared compression if ownership changes before external finalization', async () => {
     const sid = fixture.sessions.cli!
     makeLegacy(sid)
-    cache(sid)
+    await cache(sid)
     sidecar.respond('chat.compress', (params) => ({
       status: 'compressed', messages: [params.conversation_history[0]!, params.conversation_history.at(-1)!], before_tokens: 400, after_tokens: 120,
       message: null, agent_session_id: sid, commit_token: 'owned-compression', summary: { noop: false, headline: 'Compressed', token_line: '400 to 120', note: null },
@@ -642,14 +642,14 @@ describe('canonical Agent ownership (TAL-1036)', () => {
     const sid = 'owner-hinted-tip'
     db.prepare('DELETE FROM session_admissions WHERE target_session_id = ?').run(root)
     db.prepare("INSERT INTO sessions(id,source,chat_id,started_at,message_count) VALUES (?, 'cli', ?, 2000, 0)").run(sid, root)
-    cache(sid)
+    await cache(sid)
     expect((await post(s, '/api/chat/start', { session_id: sid, message: 'must remain display-only' })).status).toBe(403)
     expect(sidecar.calls.filter((c) => c.method === 'chat.start')).toEqual([])
   })
 
   it('reports an unreadable ownership home without dispatching or changing the transcript', async () => {
     const sid = fixture.sessions.cli!
-    cache(sid)
+    await cache(sid)
     const previous = s.deps.sessions.deps.profileHome
     s.deps.sessions.deps.profileHome = () => { throw new Error('Ownership home is unavailable') }
     try {
@@ -663,7 +663,7 @@ describe('canonical Agent ownership (TAL-1036)', () => {
 
   it('rejects padded canonical control ids before the sidecar can normalize them', async () => {
     const sid = fixture.sessions.cli!
-    cache(sid)
+    await cache(sid)
     sidecar.respond('approval.set_yolo', (params) => ({ yolo_enabled: params.enabled, released: 1 }))
     const response = await post(s, '/api/approval/respond', { session_id: ` ${sid} `, choice: 'once', yolo: true })
     expect(response.status).toBe(403)
@@ -674,7 +674,7 @@ describe('canonical Agent ownership (TAL-1036)', () => {
   it('refuses a steer into an already-materialized live sidecar before sidecar dispatch', async () => {
     const sid = fixture.sessions.cli!
     const stream = 'stale-canonical-stream'
-    s.deps.sessionStore.save(new Session({ session_id: sid, source_tag: 'cli', active_stream_id: stream }, { workspace: join(s.state, 'workspace'), model: 'fixture' }))
+    await s.deps.sessionStore.save(new Session({ session_id: sid, source_tag: 'cli', active_stream_id: stream }, { workspace: join(s.state, 'workspace'), model: 'fixture' }))
     s.deps.registry.liveIds.add(stream)
     sidecar.respond('chat.steer', () => ({ accepted: true }))
     try {
@@ -689,7 +689,7 @@ describe('canonical Agent ownership (TAL-1036)', () => {
     const sid = fixture.sessions.cli!
     const stream = 'previous-sidecar-stream'
     makeLegacy(sid)
-    s.deps.sessionStore.save(new Session({ session_id: sid, source_tag: 'cli', active_stream_id: stream }, { workspace: join(s.state, 'workspace'), model: 'fixture' }))
+    await s.deps.sessionStore.save(new Session({ session_id: sid, source_tag: 'cli', active_stream_id: stream }, { workspace: join(s.state, 'workspace'), model: 'fixture' }))
     s.deps.registry.liveIds.add(stream)
     sidecar.respond('chat.steer', () => ({ accepted: true, can_redirect: true }))
     try {
@@ -706,7 +706,7 @@ describe('canonical Agent ownership (TAL-1036)', () => {
 
   it('does not let a stale WebUI index hide a canonical conversation after its sidecar is gone', async () => {
     const sid = fixture.sessions.cli!
-    s.deps.sessionStore.save(new Session({ session_id: sid, source_tag: 'webui' }, { workspace: join(s.state, 'workspace'), model: 'fixture' }))
+    await s.deps.sessionStore.save(new Session({ session_id: sid, source_tag: 'webui' }, { workspace: join(s.state, 'workspace'), model: 'fixture' }))
     s.deps.sessionStore.sessions.delete(sid)
     rmSync(join(s.state, 'sessions', `${sid}.json`))
     const response = await s.get(`/api/session?session_id=${sid}`)
@@ -718,8 +718,8 @@ describe('canonical Agent ownership (TAL-1036)', () => {
   it('does not apply the legacy cron branch exception to a canonical owner', async () => {
     const sid = fixture.sessions.cli!
     db.prepare("UPDATE state_meta SET value = json_set(value, '$.policy.source', 'cron') WHERE key = ?").run(`gateway.local_policy.v1:${sid}`)
-    s.deps.sessionStore.save(new Session({ session_id: sid, source_tag: 'cron' }, { workspace: join(s.state, 'workspace'), model: 'fixture' }))
-    expect(s.deps.sessions.wireRow(s.deps.sessionStore.get(sid)).can_branch).toBe(false)
+    await s.deps.sessionStore.save(new Session({ session_id: sid, source_tag: 'cron' }, { workspace: join(s.state, 'workspace'), model: 'fixture' }))
+    expect(s.deps.sessions.wireRow((await s.deps.sessionStore.get(sid))).can_branch).toBe(false)
     expect((await post(s, '/api/session/branch', { session_id: sid })).status).toBe(403)
   })
 
@@ -770,10 +770,10 @@ describe('canonical Agent ownership (TAL-1036)', () => {
     expect((await post(s, '/api/chat/start', { session_id: fixture.sessions.tui!, message: 'unsafe' })).status).toBe(403)
   })
 
-  it('refuses automatic continuations of previously materialized canonical sessions', () => {
+  it('refuses automatic continuations of previously materialized canonical sessions', async () => {
     const session = new Session({ session_id: fixture.sessions.cli!, source_tag: 'webui' }, { workspace: join(s.state, 'workspace'), model: 'fixture' })
-    s.deps.sessionStore.save(session)
-    expect(s.deps.turns.startServerTurn(session, { msg: 'automatic', source: 'process_wakeup' })).toMatchObject({ _status: 403 })
+    await s.deps.sessionStore.save(session)
+    expect((await s.deps.turns.startServerTurn(session, { msg: 'automatic', source: 'process_wakeup' }))).toMatchObject({ _status: 403 })
     expect(session.active_stream_id).toBeNull()
     expect(sidecar.calls.filter((c) => c.method === 'chat.start')).toEqual([])
   })
@@ -791,7 +791,7 @@ describe('canonical Agent ownership (TAL-1036)', () => {
       expect(stateDbSessionSources(join(s.state, 'state.db'), [sid])?.get(sid)).toMatchObject({ canonical: true })
       // The sidecar belongs to work, not the active default home's canonical id.
       const work = new Session({ session_id: sid, profile: 'work', source_tag: 'cli' }, { workspace: join(s.state, 'workspace'), model: 'fixture' })
-      expect(s.deps.sessions.isReadOnly(work)).toBe(false)
+      expect((await s.deps.sessions.isReadOnly(work))).toBe(false)
       expect(s.deps.sessions.wireRow(work)).toMatchObject({ read_only: false })
     } finally { other.close() }
     db.exec("DELETE FROM state_meta WHERE key GLOB 'gateway.local_policy.v1:*'; DELETE FROM session_admissions; UPDATE sessions SET source = 'cli'")
@@ -804,7 +804,7 @@ describe('canonical Agent ownership (TAL-1036)', () => {
 
   it('fails closed with a server-owned recovery reason when ownership storage is unreadable', async () => {
     const sid = fixture.sessions.cli!
-    s.deps.sessionStore.save(new Session({ session_id: sid, source_tag: 'webui' }, { workspace: s.state, model: null }))
+    await s.deps.sessionStore.save(new Session({ session_id: sid, source_tag: 'webui' }, { workspace: s.state, model: null }))
     db.exec('DROP TABLE state_meta; CREATE TABLE state_meta (unrecognized TEXT)')
     const row = await detail(sid)
     expect(row.read_only).toBe(true)

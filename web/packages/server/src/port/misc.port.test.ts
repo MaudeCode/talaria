@@ -90,10 +90,10 @@ describe('import scrubbing and ephemeral projection', () => {
   })
 
   it('a non-list tool_calls answers 400 and creates nothing', async () => {
-    const before = s.deps.sessionStore.persistedIds().size
+    const before = (await s.deps.sessionStore.persistedIds()).size
     const res = await post(s, '/api/session/import', { messages: [{ role: 'user', content: 'hi' }], tool_calls: { name: 'not a list' } })
     expect(res.status).toBe(400)
-    expect(s.deps.sessionStore.persistedIds().size).toBe(before)
+    expect((await s.deps.sessionStore.persistedIds()).size).toBe(before)
   })
 
   it('a btw turn ends with only role and content per message', async () => {
@@ -171,15 +171,15 @@ describe('runtime seams from review round 10', () => {
     expect(synced.at(-1)).toMatchObject({ session_id: sid, title: 'loud', profile_home: s.state, manual: true })
     // Regenerating a manually named session applies the full generated-title transition (manual flag cleared,
     // generated flag set) and syncs the new title as a user-requested one, so it replaces the manual name in state.db.
-    const manual = s.deps.sessionStore.get(sid)
+    const manual = (await s.deps.sessionStore.get(sid))
     manual.messages = [{ role: 'user', content: 'How do I rotate the deploy key on the staging cluster safely?' }, { role: 'assistant', content: 'Rotate it in two steps: add the new key, then remove the old one once every node picked it up.' }]
-    s.deps.sessionStore.save(manual)
-    expect(s.deps.sessionStore.get(sid).manual_title).toBe(true)
+    await s.deps.sessionStore.save(manual)
+    expect((await s.deps.sessionStore.get(sid)).manual_title).toBe(true)
     sidecar.respond('aux.complete', () => ({ model: 'aux', text: 'Rotate staging deploy key', usage: null }))
     const regenerated = await post(s, '/api/session/title/regenerate', { session_id: sid })
     expect(regenerated.status, await regenerated.clone().text()).toBe(200)
     expect((await json(regenerated)).title).toBe('Rotate staging deploy key')
-    const after = s.deps.sessionStore.get(sid)
+    const after = (await s.deps.sessionStore.get(sid))
     expect([after.title, after.manual_title, after.llm_title_generated]).toEqual(['Rotate staging deploy key', false, true])
     await new Promise((r) => setTimeout(r, 20))
     expect(synced.at(-1)).toMatchObject({ session_id: sid, title: 'Rotate staging deploy key', manual: true })
@@ -201,7 +201,7 @@ describe('runtime seams from review round 10', () => {
     try {
       await turn('loud turn')
       expect(usageSynced).toHaveLength(1)
-      const session = s.deps.sessionStore.get(sid)
+      const session = (await s.deps.sessionStore.get(sid))
       expect(usageSynced[0]).toMatchObject({
         profile_home: s.state, session_id: sid, input_tokens: 120, output_tokens: 30, cache_read_tokens: 40, cache_write_tokens: 8,
         estimated_cost: 0.0125, model: 'used-model', title: session.title, message_count: session.messages.length,
@@ -213,7 +213,7 @@ describe('runtime seams from review round 10', () => {
         const before = usageSynced.length
         await turn(`${status} turn`)
         await expect.poll(() => usageSynced.length).toBe(before + 1)
-        const settled = s.deps.sessionStore.get(sid)
+        const settled = (await s.deps.sessionStore.get(sid))
         expect(usageSynced.at(-1)).toMatchObject({ session_id: sid, input_tokens: settled.input_tokens, output_tokens: settled.output_tokens, estimated_cost: settled.estimated_cost, message_count: settled.messages.length })
         if (status === 'cancelled') expect(usageSynced.at(-1)).toMatchObject({ input_tokens: usage.prompt_tokens, estimated_cost: usage.estimated_cost_usd })
       }
@@ -396,11 +396,11 @@ describe('image attachments in user messages (review round 14)', () => {
     expect(afterError.filter((m) => m.role === 'user').map((m) => (m.attachments as Json[]).map((a) => a.name))).toEqual([['kept.pdf']])
     // A stream that died with the server: recovery turns the in-flight prompt into a durable row.
     const stale = String(((await json(await post(s, '/api/session/new', {}))).session as Json).session_id)
-    const session = s.deps.sessionStore.get(stale)
+    const session = (await s.deps.sessionStore.get(stale))
     Object.assign(session, { active_stream_id: 'dead-stream', pending_user_message: '', pending_attachments: [doc], pending_started_at: Date.now() / 1000 - 120 })
-    s.deps.sessionStore.save(session)
-    expect(s.deps.sessions.clearStaleStreamState(s.deps.sessionStore.get(stale))).toBe(true)
-    const recovered = s.deps.sessionStore.get(stale).messages
+    await s.deps.sessionStore.save(session)
+    expect((await s.deps.sessions.clearStaleStreamState((await s.deps.sessionStore.get(stale))))).toBe(true)
+    const recovered = (await s.deps.sessionStore.get(stale)).messages
     expect(recovered.filter((m) => m.role === 'user').map((m) => (m.attachments as Json[]).map((a) => a.name))).toEqual([['kept.pdf']])
   })
 
@@ -414,9 +414,9 @@ describe('image attachments in user messages (review round 14)', () => {
     const image = { type: 'image_url', image_url: { url: 'data:image/png;base64,AAAA' } }
     const turnAfter = async (messages: Json[]): Promise<string> => {
       const sid = String(((await json(await post(s, '/api/session/new', {}))).session as Json).session_id)
-      const session = s.deps.sessionStore.get(sid)
+      const session = (await s.deps.sessionStore.get(sid))
       Object.assign(session, { messages, model: 'text-model', model_provider: 'custom:lab' })
-      s.deps.sessionStore.save(session)
+      await s.deps.sessionStore.save(session)
       const res = await post(s, '/api/chat/start', { session_id: sid, message: 'and now?' })
       await s.sse(`/api/chat/stream?stream_id=${String((await json(res)).stream_id)}&replay=1`, (f) => f.event === 'done' || f.event === 'apperror' || f.event === 'cancel')
       return sid
@@ -431,11 +431,11 @@ describe('image attachments in user messages (review round 14)', () => {
       expect(lookups.at(-1)).toMatchObject({ provider: 'custom:lab', model: 'text-model', requested_provider: 'custom:lab' })
       expect(String(lookups.at(-1)!.profile_home)).not.toBe('')
       // The image-free history is that request's projection only: the settled model context keeps the images.
-      expect(s.deps.sessionStore.get(sid).context_messages.slice(0, 4).map((m) => m.content)).toEqual([[{ type: 'text', text: 'what is this' }, image], 'a cat', [image], 'a dog'])
+      expect((await s.deps.sessionStore.get(sid)).context_messages.slice(0, 4).map((m) => m.content)).toEqual([[{ type: 'text', text: 'what is this' }, image], 'a cat', [image], 'a dog'])
       status = 'cancelled'
       const stopped = await turnAfter(imageTurns)
       expect(JSON.stringify(history)).not.toContain('image_url')
-      expect(s.deps.sessionStore.get(stopped).context_messages[0]!.content).toEqual([{ type: 'text', text: 'what is this' }, image])
+      expect((await s.deps.sessionStore.get(stopped)).context_messages[0]!.content).toEqual([{ type: 'text', text: 'what is this' }, image])
       status = 'completed'
       mode = 'native'
       await turnAfter(imageTurns)
@@ -501,7 +501,7 @@ describe('image attachments in user messages (review round 14)', () => {
     sidecar.respond('text.image_mode', () => { lookups += 1; return new Promise(() => undefined) })
     try {
       const sid = String(((await json(await post(s, '/api/session/new', {}))).session as Json).session_id)
-      const session = s.deps.sessionStore.get(sid)
+      const session = (await s.deps.sessionStore.get(sid))
       const controller = new AbortController()
       controller.abort()
       interface Resolver { imageInputMode: (sid: string, session: unknown, opts: Record<string, unknown>, signal: AbortSignal) => Promise<unknown> }

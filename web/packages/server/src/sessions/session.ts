@@ -322,7 +322,6 @@ export class Session {
   sidecarLoadedSignature: string | null = null
   branchSourceReadonly = false
   /** Last path the store wrote or loaded this session from. */
-  path = ''
 
   constructor(init: SessionInit, defaults: SessionDefaults) {
     const data = { ...init }

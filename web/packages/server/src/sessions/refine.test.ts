@@ -31,9 +31,9 @@ describe('/refine from Web', () => {
 
   async function seeded(extra: Json = {}): Promise<string> {
     const sid = String(((await json(await post(s, '/api/session/new', {}))).session as Json).session_id)
-    const session = s.deps.sessionStore.get(sid)
+    const session = (await s.deps.sessionStore.get(sid))
     Object.assign(session, { messages: structuredClone(TRANSCRIPT), ...extra })
-    s.deps.sessionStore.save(session)
+    await s.deps.sessionStore.save(session)
     return sid
   }
   const exec = async (command: string, sid?: string): Promise<{ status: number; body: Json }> => {
@@ -55,11 +55,11 @@ describe('/refine from Web', () => {
     expect(refines).toHaveLength(2)
     expect(refines[0]).toMatchObject({ profile_home: s.deps.profileHome('default'), session_id: sid, focus: '', messages: TRANSCRIPT.map(({ role, content }) => ({ role, content })) })
     // TAL-903: the workspace pair a turn sends, so the agent built here is the one the next turn reuses.
-    expect(refines[0]).toMatchObject({ workspace: s.deps.sessions.turnWorkspace(s.deps.sessionStore.get(sid)), workspace_local: true })
+    expect(refines[0]).toMatchObject({ workspace: s.deps.sessions.turnWorkspace((await s.deps.sessionStore.get(sid))), workspace_local: true })
     expect(refines[1]).toMatchObject({ focus: 'keep deploy steps' })
     expect(methods()).not.toContain('chat.start')
     expect(methods()).not.toContain('commands.exec')
-    expect(s.deps.sessionStore.get(sid).messages).toHaveLength(TRANSCRIPT.length)
+    expect((await s.deps.sessionStore.get(sid)).messages).toHaveLength(TRANSCRIPT.length)
   })
 
   it('asks to wait while a turn runs', async () => {

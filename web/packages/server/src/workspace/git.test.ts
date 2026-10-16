@@ -380,9 +380,9 @@ describe('slow git off the event loop', () => {
     const worktree = join(realpathSync(s.state), 'wt-serial')
     git(ws, 'worktree', 'add', '-q', '-b', 'wt-serial', worktree)
     const wtSid = String(((await json(await post(s, '/api/session/new', { workspace: ws }))).session as Json).session_id)
-    const session = s.deps.sessionStore.get(wtSid)
+    const session = (await s.deps.sessionStore.get(wtSid))
     Object.assign(session, { worktree_path: worktree, worktree_repo_root: ws })
-    s.deps.sessionStore.save(session)
+    await s.deps.sessionStore.save(session)
     const { push: pull } = await inFlight(sid, 'pull')
     const res = await post(s, '/api/session/worktree/remove', { session_id: wtSid })
     expect(await json(res)).toMatchObject({ code: 'operation_in_progress' })
@@ -395,9 +395,9 @@ describe('slow git off the event loop', () => {
     const { sid, ws } = await repoSession(s)
     const worktree = join(realpathSync(s.state), 'wt-remove')
     git(ws, 'worktree', 'add', '-q', '-b', 'wt-remove', worktree)
-    const session = s.deps.sessionStore.get(sid)
+    const session = (await s.deps.sessionStore.get(sid))
     Object.assign(session, { worktree_path: worktree, worktree_repo_root: ws })
-    s.deps.sessionStore.save(session)
+    await s.deps.sessionStore.save(session)
     const seen: boolean[] = []
     const locks = s.deps.worktreeLocks
     s.deps.worktreeLocks = {

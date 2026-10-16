@@ -33,14 +33,14 @@ async function run<T>(fn: () => Promise<T> | T): Promise<never> {
 }
 
 /** A session this request's profile may see (TAL-372 background work never crosses owners). */
-function visibleSession(ctx: RequestContext, sid: string): Session {
-  if (!ctx.deps.sessions.sessionIdVisible(sid)) throw new HttpError(404, 'Session not found')
-  return getSession(ctx, sid, true)
+async function visibleSession(ctx: RequestContext, sid: string): Promise<Session> {
+  if (!(await ctx.deps.sessions.sessionIdVisible(sid))) throw new HttpError(404, 'Session not found')
+  return (await getSession(ctx, sid, true))
 }
 
-function getSession(ctx: RequestContext, sid: string, metadataOnly = false): Session {
+async function getSession(ctx: RequestContext, sid: string, metadataOnly = false): Promise<Session> {
   try {
-    return ctx.deps.sessionStore.get(sid, { metadataOnly })
+    return (await ctx.deps.sessionStore.get(sid, { metadataOnly }))
   } catch {
     throw new HttpError(404, 'Session not found')
   }
@@ -67,7 +67,7 @@ export function normalizeChatAttachments(raw: unknown): Record<string, unknown>[
   return out
 }
 
-function startPayload(response: ReturnType<TurnRunner['start']>): Record<string, unknown> {
+function startPayload(response: Awaited<ReturnType<TurnRunner['start']>>): Record<string, unknown> {
   const payload: Record<string, unknown> = { ...response }
   Reflect.deleteProperty(payload, '_status')
   Reflect.deleteProperty(payload, 'error')
@@ -130,19 +130,19 @@ async function startChat(ctx: RequestContext, body: Record<string, unknown>, set
   await ctx.deps.sessions.deps.warmSessionModelRepair?.()
   let s: Session
   try {
-    s = ctx.deps.sessionStore.get(sid)
+    s = (await ctx.deps.sessionStore.get(sid))
   } catch {
     // Python `_claim_or_synthesize_cli_session` on the POST path: a claimable foreign (CLI/TUI/Desktop) session is
     // materialised as a WebUI sidecar before its first turn; an owned foreign store answers 403, nothing → 404.
-    const synth = ctx.deps.sessions.claimOrSynthesizeCliSession(sid)
+    const synth = (await ctx.deps.sessions.claimOrSynthesizeCliSession(sid))
     if (!synth.session) throw new HttpError(404, 'Session not found')
     if (synth.reason === 'not_claimable') throw new HttpError(403, 'session is read-only in its foreign store; cannot be claimed writeable in WebUI')
-    ctx.deps.sessionStore.save(synth.session)
-    s = ctx.deps.sessionStore.get(sid)
+    await ctx.deps.sessionStore.save(synth.session)
+    s = (await ctx.deps.sessionStore.get(sid))
   }
   // Python `_get_or_materialize_session` raised PermissionError for both: a read-only import and a delegated
   // subagent child (by sidecar tag or state.db row), which chat start answered with the same 403.
-  if (ctx.deps.sessions.isReadOnly(s) || s.branchSourceReadonly || ctx.deps.sessions.isSubagentViewOnly(sid)) throw new HttpError(403, 'Read-only imported sessions cannot be continued from WebUI')
+  if ((await ctx.deps.sessions.isReadOnly(s)) || s.branchSourceReadonly || (await ctx.deps.sessions.isSubagentViewOnly(sid))) throw new HttpError(403, 'Read-only imported sessions cannot be continued from WebUI')
   const requestedProfile = str(body.profile).trim()
   if (requestedProfile && requestedProfile !== 'default' && !PROFILE_ID_RE.test(requestedProfile)) throw new HttpError(400, 'invalid profile')
   visibleOrRetag(ctx, s, requestedProfile)
@@ -155,7 +155,7 @@ async function startChat(ctx: RequestContext, body: Record<string, unknown>, set
   const yielded = await ctx.deps.turns.yieldBackgroundTurn(sid)
   if (prompt !== null || yielded) {
     await ctx.deps.sessions.deps.warmSessionModelRepair?.()
-    s = ctx.deps.sessionStore.get(sid)
+    s = (await ctx.deps.sessionStore.get(sid))
     visibleOrRetag(ctx, s, requestedProfile)
   }
   // Python `compression_recovery_payload_for_session` + `is_generic_continuation_intent`.
@@ -165,7 +165,7 @@ async function startChat(ctx: RequestContext, body: Record<string, unknown>, set
   const workspace = ctx.deps.sessions.turnWorkspace(s, body.workspace)
   const [model, provider, normalized] = ctx.deps.sessions.turnModel(s, body)
   if (body.moa_config) throw new HttpError(503, 'MoA overrides need the Agent command registry (checkpoint 7).')
-  const response = ctx.deps.turns.start(s, { msg, ...(prompt === null ? {} : { prompt }), attachments, workspace, model, modelProvider: provider, normalizedModel: normalized, source: 'webui', voiceTurn: body.voice_turn === true, connectCard: body.connect_card === true, ...settle })
+  const response = (await ctx.deps.turns.start(s, { msg, ...(prompt === null ? {} : { prompt }), attachments, workspace, model, modelProvider: provider, normalizedModel: normalized, source: 'webui', voiceTurn: body.voice_turn === true, connectCard: body.connect_card === true, ...settle }))
   if (response._status !== undefined && response._status >= 400) throw new HttpError(response._status, response.error ?? 'chat start failed', response.active_stream_id ? { active_stream_id: response.active_stream_id } : {})
   return startPayload(response)
 }
@@ -175,7 +175,7 @@ async function startChat(ctx: RequestContext, body: Record<string, unknown>, set
  * failed after streaming text, answers `partial` with that text; any other failure answers with its error frame.
  */
 async function syncChat(ctx: RequestContext, body: Record<string, unknown>): Promise<Record<string, unknown>> {
-  if (ctx.deps.sessions.isSubagentViewOnly(str(body.session_id))) throw new HttpError(400, 'Subagent sessions are view-only and cannot be written from WebUI')
+  if ((await ctx.deps.sessions.isSubagentViewOnly(str(body.session_id)))) throw new HttpError(400, 'Subagent sessions are view-only and cannot be written from WebUI')
   if (!str(body.message).trim()) throw new HttpError(400, 'empty message')
   let outcome: { answer: string } | TurnFailure | null = null
   const started = await startChat(ctx, { session_id: body.session_id, message: body.message, workspace: body.workspace, model: body.model, ...('model_provider' in body ? { model_provider: body.model_provider } : {}) }, {
@@ -184,8 +184,8 @@ async function syncChat(ctx: RequestContext, body: Record<string, unknown>): Pro
   })
   const streamId = str(started.stream_id)
   if (streamId) await ctx.deps.turns.finished(streamId)
-  const s = getSession(ctx, str(body.session_id))
-  const session = ctx.deps.turns.publicTerminalSession(s) as never
+  const s = (await getSession(ctx, str(body.session_id)))
+  const session = (await ctx.deps.turns.publicTerminalSession(s)) as never
   const ended = outcome as { answer: string } | TurnFailure | null
   // A `[SILENT]` control message starts no turn.
   if (!streamId || (ended && 'answer' in ended)) {
@@ -206,8 +206,8 @@ async function syncChat(ctx: RequestContext, body: Record<string, unknown>): Pro
 
 export const chatRouter = os.router({
   chat: {
-    sync: os.chat.sync.handler(({ input, context: { ctx } }) => run(() => syncChat(ctx, input as Record<string, unknown>))),
-    start: os.chat.start.handler(({ input, context: { ctx } }) => run(() => startChat(ctx, input as Record<string, unknown>))),
+    sync: os.chat.sync.handler(({ input, context: { ctx } }) => run(async () => (await syncChat(ctx, input as Record<string, unknown>)))),
+    start: os.chat.start.handler(({ input, context: { ctx } }) => run(async () => (await startChat(ctx, input as Record<string, unknown>)))),
     steer: os.chat.steer.handler(({ input, context: { ctx } }) => run(async () => {
       const sid = str(input.session_id).trim()
       const text = str(input.text).trim()
@@ -217,7 +217,7 @@ export const chatRouter = os.router({
       if (!text) throw new HttpError(400, 'text required')
       if (steerId && !STEER_ID_RE.test(steerId)) throw new HttpError(400, 'steer_id must be 1-128 URL-safe characters')
       if (!steerId) steerId = `steer-${randomUUID()}`
-      if (!ctx.deps.sessions.sessionIdVisible(sid)) throw new HttpError(404, 'Session not found')
+      if (!(await ctx.deps.sessions.sessionIdVisible(sid))) throw new HttpError(404, 'Session not found')
       const active = ctx.deps.registry.activeRunStreamForSession(sid)
       if (active && ctx.deps.registry.activeRuns.get(active)?.origin === 'background') {
         const started = await startChat(ctx, { session_id: sid, message: text })
@@ -225,32 +225,32 @@ export const chatRouter = os.router({
       }
       // TAL-817: a prompt built-in steers with its expansion; the steer still shows as typed. A missing session is the steer's to report.
       let target: Session | null = null
-      try { target = ctx.deps.sessionStore.get(sid, { metadataOnly: true }) } catch { target = null }
+      try { target = (await ctx.deps.sessionStore.get(sid, { metadataOnly: true })) } catch { target = null }
       const prompt = target ? await expandPromptBuiltin(ctx, target, text, undefined) : null
-      return ctx.deps.turns.steer(sid, prompt ?? text, display || (prompt === null ? '' : text), steerId) as Promise<{ accepted: boolean; fallback: string | null; stream_id: string | null; steer_id?: string }>
+      return (await ctx.deps.turns.steer(sid, prompt ?? text, display || (prompt === null ? '' : text), steerId)) as { accepted: boolean; fallback: string | null; stream_id: string | null; steer_id?: string }
     })),
     // TAL-424: Edit, Cancel and Send now on a pending steer; unknown or already-taken steers answer false.
     steerWithdraw: os.chat.steerWithdraw.handler(({ input, context: { ctx } }) => run(async () => {
-      if (!ctx.deps.sessions.sessionIdVisible(input.session_id)) throw new HttpError(404, 'Session not found')
-      return ctx.deps.turns.withdrawSteer(input.session_id, input.steer_id, input.reason)
+      if (!(await ctx.deps.sessions.sessionIdVisible(input.session_id))) throw new HttpError(404, 'Session not found')
+      return (await ctx.deps.turns.withdrawSteer(input.session_id, input.steer_id, input.reason))
     })),
     steerSendNow: os.chat.steerSendNow.handler(({ input, context: { ctx } }) => run(async () => {
-      if (!ctx.deps.sessions.sessionIdVisible(input.session_id)) throw new HttpError(404, 'Session not found')
-      return ctx.deps.turns.sendSteerNow(input.session_id, input.steer_id)
+      if (!(await ctx.deps.sessions.sessionIdVisible(input.session_id))) throw new HttpError(404, 'Session not found')
+      return (await ctx.deps.turns.sendSteerNow(input.session_id, input.steer_id))
     })),
     cancel: os.chat.cancel.handler(({ input, context: { ctx } }) => run(async () => {
       const streamId = str(input.stream_id)
       if (!streamId) throw new HttpError(400, 'stream_id required')
-      if (!streamVisibleToRequest(ctx, streamId)) throw new HttpError(404, 'Session not found')
+      if (!(await streamVisibleToRequest(ctx, streamId))) throw new HttpError(404, 'Session not found')
       const { cancelled, withdrawn } = await ctx.deps.turns.cancel(streamId)
       return { ok: true, cancelled, stream_id: streamId, withdrawn_steers: withdrawn }
     })),
-    streamStatus: os.chat.streamStatus.handler(({ input, context: { ctx } }) => run(() => {
+    streamStatus: os.chat.streamStatus.handler(({ input, context: { ctx } }) => run(async () => {
       const streamId = str(input.stream_id)
-      if (!streamVisibleToRequest(ctx, streamId)) throw new HttpError(404, 'Session not found')
+      if (!(await streamVisibleToRequest(ctx, streamId))) throw new HttpError(404, 'Session not found')
       const active = ctx.deps.registry.liveIds.has(streamId)
       const owner = streamOwnerSessionId(ctx, streamId)
-      const payload: { active: boolean; stream_id: string; replay_available: boolean; journal?: Record<string, unknown>; blocking_stream_id: string | null } = { active, stream_id: streamId, replay_available: false, blocking_stream_id: owner ? ctx.deps.sessions.activeRunBlocking(owner) : null }
+      const payload: { active: boolean; stream_id: string; replay_available: boolean; journal?: Record<string, unknown>; blocking_stream_id: string | null } = { active, stream_id: streamId, replay_available: false, blocking_stream_id: owner ? (await ctx.deps.sessions.activeRunBlocking(owner)) : null }
       const summary = streamId ? ctx.deps.journal.findRunSummary(streamId) : null
       if (summary) {
         payload.replay_available = true
@@ -299,16 +299,16 @@ export const chatRouter = os.router({
     if (args.trim() === '[SILENT]') return { status: 'suppressed', reason: 'silent_control_message' }
     const sid = str(body.session_id)
     // Python: a delegated subagent child is view-only; its goal state is never mutated and no turn starts on it.
-    if (ctx.deps.sessions.isSubagentViewOnly(sid)) throw new HttpError(400, 'Subagent sessions are view-only and cannot run /goal from WebUI')
-    const s = getSession(ctx, sid)
-    if (ctx.deps.sessions.isReadOnly(s) || s.branchSourceReadonly) throw new HttpError(403, 'Read-only imported sessions cannot be continued from WebUI')
+    if ((await ctx.deps.sessions.isSubagentViewOnly(sid))) throw new HttpError(400, 'Subagent sessions are view-only and cannot run /goal from WebUI')
+    const s = (await getSession(ctx, sid))
+    if ((await ctx.deps.sessions.isReadOnly(s)) || s.branchSourceReadonly) throw new HttpError(403, 'Read-only imported sessions cannot be continued from WebUI')
     const requestedProfile = str(body.profile).trim()
     if (requestedProfile && requestedProfile !== 'default' && !PROFILE_ID_RE.test(requestedProfile)) throw new HttpError(400, 'invalid profile')
     if (requestedProfile && !ctx.deps.profilesMatch(s.profile, requestedProfile) && !s.messages.length && !s.context_messages.length && !s.hasPendingPrompt) s.profile = requestedProfile
     let streamRunning = false
     if (s.active_stream_id) {
       streamRunning = ctx.deps.registry.liveIds.has(s.active_stream_id)
-      if (!streamRunning) ctx.deps.sessions.clearStaleStreamState(s)
+      if (!streamRunning) (await ctx.deps.sessions.clearStaleStreamState(s))
     }
     const sidecar = ctx.deps.sidecar()
     if (!sidecar) throw new HttpError(503, 'Goal controls need the Agent sidecar, which is not running.', { condition: 'sidecar_unavailable' })
@@ -332,9 +332,9 @@ export const chatRouter = os.router({
       await ctx.deps.sessions.deps.warmSessionModelRepair?.(s.profile)
       const workspace = ctx.deps.sessions.turnWorkspace(s, body.workspace)
       const [model, provider, normalized] = ctx.deps.sessions.turnModel(s, body)
-      const started = ctx.deps.turns.start(s, { msg: kickoff, attachments: [], workspace, model, modelProvider: provider, normalizedModel: normalized, source: 'webui', goalRelated: true })
+      const started = (await ctx.deps.turns.start(s, { msg: kickoff, attachments: [], workspace, model, modelProvider: provider, normalizedModel: normalized, source: 'webui', goalRelated: true }))
       if (started._status !== undefined && started._status >= 400) {
-        try { ctx.deps.sessions.assertWritable(s); await sidecar.call('goals.restore', { session_id: sid, profile_home: profileHome, snapshot: snapshot.snapshot }) } catch { /* best effort */ }
+        try { (ctx.deps.sessions.assertWritable(s)); await sidecar.call('goals.restore', { session_id: sid, profile_home: profileHome, snapshot: snapshot.snapshot }) } catch { /* best effort */ }
         await ctx.deps.turns.refreshGoal(s)
         throw new HttpError(started._status, started.error ?? 'goal kickoff failed', { ...payload, ok: false })
       }
@@ -347,61 +347,61 @@ export const chatRouter = os.router({
       const body = input as Record<string, unknown>
       requireField(body, 'session_id', 'prompt')
       // A subagent child's profile/workspace/context must never seed a runnable background session.
-      if (ctx.deps.sessions.isSubagentViewOnly(str(body.session_id))) throw new HttpError(400, 'Subagent sessions are view-only and cannot run background tasks from WebUI')
+      if ((await ctx.deps.sessions.isSubagentViewOnly(str(body.session_id)))) throw new HttpError(400, 'Subagent sessions are view-only and cannot run background tasks from WebUI')
       // TAL-542: the background turn starts on the parent's repaired pair; the catalog is built before the parent is read.
       await ctx.deps.sessions.deps.warmSessionModelRepair?.()
-      const parent = getSession(ctx, str(body.session_id))
-      if (ctx.deps.sessions.isReadOnly(parent) || parent.branchSourceReadonly) throw new HttpError(403, 'Read-only imported sessions cannot be continued from WebUI')
+      const parent = (await getSession(ctx, str(body.session_id)))
+      if ((await ctx.deps.sessions.isReadOnly(parent)) || parent.branchSourceReadonly) throw new HttpError(403, 'Read-only imported sessions cannot be continued from WebUI')
       const prompt = str(body.prompt).trim()
       if (!prompt) throw new HttpError(400, 'prompt is required')
       const [model, modelProvider] = ctx.deps.sessions.turnModel(parent, {})
-      const bg = ctx.deps.sessionStore.newSession({ workspace: parent.workspace, model, modelProvider, profile: parent.profile })
+      const bg = (await ctx.deps.sessionStore.newSession({ workspace: parent.workspace, model, modelProvider, profile: parent.profile }))
       bg.title = `bg: ${prompt.slice(0, 60)}`
-      ctx.deps.sessionStore.save(bg)
+      await ctx.deps.sessionStore.save(bg)
       // Python: `uuid.uuid4().hex[:8]`; a failed run still completes the task so `/api/background/tasks` reports it,
       // and the hidden bg session file is removed afterwards.
       const taskId = randomUUID().replace(/-/g, '').slice(0, 8)
       // TAL-372: the parent session keeps the task's record and result, so every client and a restart see it.
       ctx.deps.background.trackCommand(parent.session_id, taskId, prompt)
-      const cleanup = (): void => { try { ctx.deps.sessionStore.deleteFiles(bg.session_id, { tombstone: false }) } catch { /* best effort */ } }
-      const started = ctx.deps.turns.start(bg, {
+      const cleanup = async (): Promise<void> => { try { (await ctx.deps.sessionStore.delete(bg.session_id, { tombstone: false })) } catch { /* best effort */ } }
+      const started = (await ctx.deps.turns.start(bg, {
         msg: prompt, attachments: [], workspace: parent.workspace, model, modelProvider, source: 'webui',
         // Python: the last non-error assistant reply with content, else "(no answer produced)".
-        onDone: (answer) => { ctx.deps.background.settleCommand(parent.session_id, taskId, 'completed', answer || '(no answer produced)'); cleanup() },
-        onFailed: () => { ctx.deps.background.settleCommand(parent.session_id, taskId, 'failed', '(background task failed)'); cleanup() },
-      })
+        onDone: async (answer) => { ctx.deps.background.settleCommand(parent.session_id, taskId, 'completed', answer || '(no answer produced)'); (await cleanup()) },
+        onFailed: async () => { ctx.deps.background.settleCommand(parent.session_id, taskId, 'failed', '(background task failed)'); (await cleanup()) },
+      }))
       if (started._status !== undefined && started._status >= 400) {
         // Admission refused (profile deleting, session busy…): nothing runs, so the tracked task and hidden
         // session must not linger as "running".
         ctx.deps.background.forgetCommand(parent.session_id, taskId)
-        cleanup()
+        await cleanup()
         throw new HttpError(started._status, started.error ?? 'background start failed')
       }
       ctx.deps.background.setCommandStream(parent.session_id, taskId, str(started.stream_id))
       return { ok: true as const, task_id: taskId, stream_id: str(started.stream_id), session_id: bg.session_id }
     })),
     tasks: os.background.tasks.handler(({ input, context: { ctx } }) => run(async () => {
-      const s = visibleSession(ctx, input.session_id)
+      const s = (await visibleSession(ctx, input.session_id))
       const snapshot = await ctx.deps.background.snapshot(s.session_id, s.profile)
       return { session_id: s.session_id, ...snapshot, tasks: input.kind ? snapshot.tasks.filter((t) => t.kind === input.kind) : snapshot.tasks }
     })),
     result: os.background.result.handler(({ input, context: { ctx } }) => run(async () => {
-      const s = visibleSession(ctx, input.session_id)
+      const s = (await visibleSession(ctx, input.session_id))
       const text = await ctx.deps.background.result(s.session_id, s.profile, input.task_id)
       if (text === null) throw new HttpError(404, 'No result for this background task')
       return { task_id: input.task_id, text }
     })),
-    dismiss: os.background.dismiss.handler(({ input, context: { ctx } }) => run(() => {
-      const s = visibleSession(ctx, input.session_id)
+    dismiss: os.background.dismiss.handler(({ input, context: { ctx } }) => run(async () => {
+      const s = (await visibleSession(ctx, input.session_id))
       const task = ctx.deps.background.dismiss(s.session_id, input.task_id)
       if (!task) throw new HttpError(404, 'Background task not found')
       return { ok: true as const, task }
     })),
-    ack: os.background.ack.handler(({ input, context: { ctx } }) => run(() => {
+    ack: os.background.ack.handler(({ input, context: { ctx } }) => run(async () => {
       const body = input as Record<string, unknown>
       requireField(body, 'session_id')
       const sid = str(body.session_id).trim()
-      const s = getSession(ctx, sid, true)
+      const s = (await getSession(ctx, sid, true))
       const pid = str(body.task_id || body.process_id).trim()
       if (str(body.process_id).trim()) ctx.extraResponseHeaders = { deprecation: 'true' }
       return { ok: true as const, session_id: s.session_id, task_id: pid, noop: true as const }
@@ -413,25 +413,25 @@ export const chatRouter = os.router({
     const sid = str(body.session_id)
     if (!isSafeSessionId(sid)) throw new HttpError(404, 'Session not found')
     // Python: a subagent child's context must not be cloned into a runnable ephemeral session.
-    if (ctx.deps.sessions.isSubagentViewOnly(sid)) throw new HttpError(400, 'Subagent sessions are view-only and cannot be used for /btw from WebUI')
+    if ((await ctx.deps.sessions.isSubagentViewOnly(sid))) throw new HttpError(400, 'Subagent sessions are view-only and cannot be used for /btw from WebUI')
     // TAL-542: the side question starts on the chat's repaired pair; the catalog is built before the chat is read.
     await ctx.deps.sessions.deps.warmSessionModelRepair?.()
-    const s = getSession(ctx, sid)
-    if (ctx.deps.sessions.isReadOnly(s) || s.branchSourceReadonly) throw new HttpError(403, 'Read-only imported sessions cannot be continued from WebUI')
+    const s = (await getSession(ctx, sid))
+    if ((await ctx.deps.sessions.isReadOnly(s)) || s.branchSourceReadonly) throw new HttpError(403, 'Read-only imported sessions cannot be continued from WebUI')
     const question = str(body.question).trim()
     if (!question) throw new HttpError(400, 'question is required')
     // TAL-518: a side question runs in its own hidden session, so the chat's running turn does not block it.
     const [model, modelProvider] = ctx.deps.sessions.turnModel(s, {})
-    const ephemeral = ctx.deps.sessionStore.newSession({ workspace: s.workspace, model, modelProvider, profile: s.profile })
+    const ephemeral = (await ctx.deps.sessionStore.newSession({ workspace: s.workspace, model, modelProvider, profile: s.profile }))
     ephemeral.messages = structuredClone(s.messages)
     ephemeral.context_messages = ctx.deps.sessions.sideQuestionContext(s)
     ephemeral.title = `btw: ${question.slice(0, 60)}`
-    ctx.deps.sessionStore.save(ephemeral)
+    await ctx.deps.sessionStore.save(ephemeral)
     // TAL-512: a failed or refused btw turn must not leave its copy of the parent conversation behind.
-    const cleanup = (): void => { try { ctx.deps.sessionStore.deleteFiles(ephemeral.session_id, { tombstone: false }) } catch { /* best effort */ } }
-    const started = ctx.deps.turns.start(ephemeral, { msg: question, attachments: [], workspace: s.workspace, model, modelProvider, source: 'webui', ephemeral: true, onFailed: cleanup })
+    const cleanup = async (): Promise<void> => { try { (await ctx.deps.sessionStore.delete(ephemeral.session_id, { tombstone: false })) } catch { /* best effort */ } }
+    const started = (await ctx.deps.turns.start(ephemeral, { msg: question, attachments: [], workspace: s.workspace, model, modelProvider, source: 'webui', ephemeral: true, onFailed: cleanup }))
     if (started._status !== undefined && started._status >= 400) {
-      cleanup()
+      await cleanup()
       throw new HttpError(started._status, started.error ?? 'btw start failed')
     }
     return { stream_id: str(started.stream_id), session_id: ephemeral.session_id, parent_session_id: sid }

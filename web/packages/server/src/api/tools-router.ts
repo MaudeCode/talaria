@@ -300,10 +300,10 @@ export function sanitizeClientEvent(payload: unknown): Dict {
   return out
 }
 
-function memoryWorkspace(ctx: RequestContext, sessionId: string, workspace: string): string | null {
+async function memoryWorkspace(ctx: RequestContext, sessionId: string, workspace: string): Promise<string | null> {
   if (sessionId) {
     try {
-      const session = ctx.deps.sessionStore.get(sessionId, { metadataOnly: true })
+      const session = (await ctx.deps.sessionStore.get(sessionId, { metadataOnly: true }))
       if (!ctx.deps.workspaces.profileSupportsLocalIo(session.profile)) return null
       const ws = str(session.workspace).trim()
       return ws ? ctx.deps.workspaces.resolvePath(ws, session.profile) : null
@@ -381,7 +381,7 @@ export const toolsRouter = os.router({
   memory: {
     get: os.memory.get.handler(({ input, context: { ctx } }) => run(async () => {
       const config = await ctx.deps.agentConfig.read(home(ctx))
-      return readMemory(home(ctx), config, memoryWorkspace(ctx, str(input.session_id), str(input.workspace)), ctx.deps.config.env, ctx.deps.sessions.deps.redactEnabled(), ctx.deps.auth.signingKey()) as never
+      return readMemory(home(ctx), config, (await memoryWorkspace(ctx, str(input.session_id), str(input.workspace))), ctx.deps.config.env, ctx.deps.sessions.deps.redactEnabled(), ctx.deps.auth.signingKey()) as never
     })),
     write: os.memory.write.handler(({ input, context: { ctx } }) => run(async () => {
       const section = input.section ?? input.target
@@ -425,14 +425,14 @@ export const toolsRouter = os.router({
       if (!command) throw new HttpError(400, 'command is required')
       const [, name = '', args = ''] = /^\/?(\S*)\s*([\s\S]*)$/.exec(command) ?? []
       const sessionId = str(input.session_id).trim()
-      if (sessionId) ctx.deps.sessions.assertWritable(sessionId)
+      if (sessionId) (await ctx.deps.sessions.assertWritable(sessionId))
       // TAL-902: a session command runs on the chat's own agent (the request guard already checked the chat's profile).
       if (SESSION_EXEC_COMMANDS.has(name.toLowerCase())) {
-        return { output: await ctx.deps.turns.refine(sessionId ? ctx.deps.sessionStore.get(sessionId) : null, args.trim()) }
+        return { output: await ctx.deps.turns.refine(sessionId ? (await ctx.deps.sessionStore.get(sessionId)) : null, args.trim()) }
       }
       // TAL-904: a chat's command runs under that chat's session and the workspace its next turn would use. An unknown
       // chat (404) or a workspace that turn would refuse (400) refuses the command rather than run it half-bound.
-      const chat = sessionId ? { session_id: sessionId, workspace: ctx.deps.sessions.turnWorkspace(ctx.deps.sessionStore.get(sessionId, { metadataOnly: true })) } : {}
+      const chat = sessionId ? { session_id: sessionId, workspace: ctx.deps.sessions.turnWorkspace((await ctx.deps.sessionStore.get(sessionId, { metadataOnly: true }))) } : {}
       try {
         return { output: (await runningSidecar(ctx).call('commands.exec', { profile_home: home(ctx), command, ...chat }, { timeoutMs: 120_000 })).output }
       } catch (error) {
@@ -489,9 +489,9 @@ export const toolsRouter = os.router({
     browse: os.wiki.browse.handler(({ context: { ctx } }) => run(async () => wikiPages.browse(await wikiLocation(ctx)))),
     page: os.wiki.page.handler(({ input, context: { ctx } }) => run(async () => wikiPages.page(await wikiLocation(ctx), str(input.path)))),
   },
-  insights: os.insights.handler(({ input, context: { ctx } }) => run(() => {
+  insights: os.insights.handler(({ input, context: { ctx } }) => run(async () => {
     let entries: Dict[] = []
-    try { entries = ctx.deps.sessionStore.readIndexEntries() } catch { entries = [] }
+    try { entries = (await ctx.deps.sessionStore.readIndexEntries()) } catch { entries = [] }
     return buildInsights(entries, input.days, ctx.deps.nowSeconds(), (cutoff) => insightsSessionRows(join(home(ctx), 'state.db'), cutoff)) as never
   })),
   logs: os.logs.handler(({ input, context: { ctx } }) => run(() => readLogTail(home(ctx), input.file, input.tail) as never)),

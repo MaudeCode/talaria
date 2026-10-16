@@ -229,3 +229,5 @@ outside contributions; see the [contribution policy](../CONTRIBUTING.md).
 
 Talaria Web began as a fork of Hermes WebUI; [NOTICE](NOTICE) keeps the upstream MIT attribution.
 Licensed under the MIT license (see the repository root).
+
+Session storage defaults to the existing JSON format. `TALARIA_STORAGE=json` selects that adapter explicitly; other values fail startup.

@@ -27,7 +27,7 @@ export interface CliSessionsDeps {
   lastWorkspace: (profile: string) => string
   profilesMatch: ListParams['profilesMatch']
   /** Python `_state_row_project_id`: the profile's Cron Jobs / Webhooks chip, or null when the profile has not opted into projects. */
-  backgroundProjectId?: (kind: 'cron' | 'webhook', profile: string) => string | null
+  backgroundProjectId?: (kind: 'cron' | 'webhook', profile: string) => string | null | Promise<string | null>
   now: () => number
   log: (line: string) => void
 }
@@ -77,7 +77,7 @@ export class CliSessionSource {
 
   /** `load` plus the source kinds whose rows stopped at the per-kind window, from the same read (TAL-482). */
   async read(profile: string, opts: CliLoadOptions = {}): Promise<CliSessionRead> {
-    const slot = this.slot(profile, opts)
+    const slot = await this.slot(profile, opts)
     const hit = this.cached(slot)
     if (hit) return hit
     const now = this.deps.now()
@@ -93,12 +93,12 @@ export class CliSessionSource {
     } catch (error) {
       results = error as Error
     }
-    return this.store(slot, now, profile, results, storage)
+    return (await this.store(slot, now, profile, results, storage))
   }
 
   /** `read` with the state.db queries on this thread, for single-session lookups whose callers are synchronous. */
-  readSync(profile: string, opts: CliLoadOptions = {}): CliSessionRead {
-    const slot = this.slot(profile, opts)
+  async readSync(profile: string, opts: CliLoadOptions = {}): Promise<CliSessionRead> {
+    const slot = await this.slot(profile, opts)
     const hit = this.cached(slot)
     if (hit) return hit
     const now = this.deps.now()
@@ -109,14 +109,14 @@ export class CliSessionSource {
     } catch (error) {
       results = error as Error
     }
-    return this.store(slot, now, profile, results, storage)
+    return (await this.store(slot, now, profile, results, storage))
   }
 
-  private slot(profile: string, opts: CliLoadOptions): CacheSlot {
+  private async slot(profile: string, opts: CliLoadOptions): Promise<CacheSlot> {
     const dbPath = this.dbPath(profile)
     const sourceFilter = str(opts.sourceFilter).trim().toLowerCase() || null
     const sessionIds = opts.sessionIds ?? null
-    return { cacheKey: `${profile}\n${sourceFilter ?? ''}`, key: `${dbPath}\n${dbStamp(dbPath)}\n${dbStamp(`${dbPath}-wal`)}\n${dbStamp(this.deps.store.indexFile)}`, dbPath, sourceFilter, sessionIds }
+    return { cacheKey: `${profile}\n${sourceFilter ?? ''}`, key: `${dbPath}\n${dbStamp(dbPath)}\n${dbStamp(`${dbPath}-wal`)}\n${await this.deps.store.index().then((index) => index.revision, () => '')}`, dbPath, sourceFilter, sessionIds }
   }
 
   private cached(slot: CacheSlot): CliSessionRead | null {
@@ -131,7 +131,7 @@ export class CliSessionSource {
    * read, interactive or background, decides the storage state (`corrupt` first, else `unavailable`), since it can reach
    * a damaged page the probe never touched; a probe that alone could not read says nothing about rows that were served.
    */
-  private store(slot: CacheSlot, now: number, profile: string, results: QueryResults, probed: AgentStorage): CliSessionRead {
+  private async store(slot: CacheSlot, now: number, profile: string, results: QueryResults, probed: AgentStorage): Promise<CliSessionRead> {
     let rows: Dict[]
     const truncated = new Set<string>()
     const failures = results instanceof Error ? [results] : (results ?? []).filter((r): r is Error => r instanceof Error)
@@ -139,7 +139,7 @@ export class CliSessionSource {
     const storage = failed.find((s) => s.state === 'corrupt') ?? failed[0] ?? (probed.state === 'unavailable' ? AGENT_STORAGE_OK : probed)
     try {
       if (results instanceof Error) throw results
-      rows = results ? this.build(profile, slot, results, truncated) : []
+      rows = results ? (await this.build(profile, slot, results, truncated)) : []
     } catch (error) {
       this.deps.log(`[webui] get_cli_sessions() failed; check state.db schema or path (${slot.dbPath}): ${(error as Error).message}`)
       rows = []
@@ -164,21 +164,21 @@ export class CliSessionSource {
    * UI-owned metadata of saved WebUI sidecars, from the session index parsed once per
    * build; only a sidecar file the index does not list is read (TAL-920).
    */
-  private sidecarMetaLookup(): (sid: string) => Dict | undefined {
+  private sidecarMetaLookup(): (sid: string) => Promise<Dict | undefined> {
     const store = this.deps.store
     let persisted: Set<string> | null = null
     let indexed: Map<string, Dict> | null = null
-    return (sid) => {
-      persisted ??= store.persistedIds()
+    return async (sid) => {
+      persisted ??= (await store.persistedIds())
       if (!persisted.has(sid)) return undefined
       if (indexed === null) {
         let entries: Dict[] = []
-        try { entries = store.readIndexEntries() } catch { /* every sidecar falls back to its file */ }
-        indexed = new Map(entries.flatMap((entry) => { const row = sanitizeSessionRow(entry, store, '_index.json'); return row ? [[str(row.session_id), row] as const] : [] }))
+        try { entries = (await store.readIndexEntries()) } catch { /* every sidecar falls back to its file */ }
+        indexed = new Map(entries.flatMap((entry) => { const row = sanitizeSessionRow(entry, store, 'index'); return row ? [[str(row.session_id), row] as const] : [] }))
       }
       const entry = indexed.get(sid)
       if (entry) return entry
-      const session = store.loadMetadataOnly(sid)
+      const session = (await store.loadMetadataOnly(sid))
       return session?.compact()
     }
   }
@@ -194,7 +194,7 @@ export class CliSessionSource {
     return names
   }
 
-  private build(profile: string, slot: CacheSlot, results: QueryResult[], truncated: Set<string>): Dict[] {
+  private async build(profile: string, slot: CacheSlot, results: QueryResult[], truncated: Set<string>): Promise<Dict[]> {
     const { sourceFilter } = slot
     const home = this.deps.profileHome(profile)
     let workspace: string | null = null
@@ -208,28 +208,30 @@ export class CliSessionSource {
       return cronNames.get(parts[1] ?? '') ?? null
     }
     const sidecarMeta = this.sidecarMetaLookup()
-    const tombstone = this.deps.store.loadDeletedTombstone()
+    const tombstone = (await this.deps.store.loadDeletedTombstone())
     const out: Dict[] = []
     const seen = new Set<string>()
     // Memoised per scan (Python `_cron_pid` / `_webhook_pid`): one projects.json read per kind, not per row.
     const projectIds = new Map<'cron' | 'webhook', string | null>()
-    const projectFor = (kind: 'cron' | 'webhook'): string | null => {
-      if (!projectIds.has(kind)) { try { projectIds.set(kind, this.deps.backgroundProjectId?.(kind, profile) ?? null) } catch { projectIds.set(kind, null) } }
+    const projectFor = async (kind: 'cron' | 'webhook'): Promise<string | null> => {
+      if (!projectIds.has(kind)) { try { projectIds.set(kind, (await this.deps.backgroundProjectId?.(kind, profile)) ?? null) } catch { projectIds.set(kind, null) } }
       return projectIds.get(kind) ?? null
     }
-    const toRow = (row: Dict, sourceTag: string, defaultTitle: string): Dict => {
+    const toRow = async (row: Dict, sourceTag: string, defaultTitle: string): Promise<Dict> => {
       const sid = str(row.id)
       const meta = normalizeAgentSessionSource(row.source || sourceTag)
       let title = str(row.title) || null
       if (!title && sourceTag === 'cron') title = cronTitle(sid) ?? title
       const lineage = Array.isArray(row._lineage_ids) ? row._lineage_ids.filter((id): id is string => typeof id === 'string') : null
-      const sidecar = latestLineageSidecar(lineage ?? [sid], profile, sidecarMeta, this.deps.profilesMatch)
+      const lineageIds = lineage ?? [sid]
+      const metadata = new Map(await Promise.all(lineageIds.map(async (id) => [id, await sidecarMeta(id)] as const)))
+      const sidecar = latestLineageSidecar(lineageIds, profile, (id) => metadata.get(id), this.deps.profilesMatch)
       if (sidecar?.title && (!lineage || !title || !looksLikeDefaultCliTitle(sidecar))) title = str(sidecar.title)
       return {
         session_id: sid, title: title ?? defaultTitle, workspace: (lineage && str(sidecar?.workspace)) || cliWorkspace(), model: row.model || null,
         message_count: Number(row.message_count) || Number(row.actual_message_count) || 0,
         created_at: row.started_at, updated_at: row.last_activity ?? row.started_at, pinned: Boolean(sidecar?.pinned), archived: Boolean(sidecar?.archived),
-        project_id: sourceTag === 'cron' || sourceTag === 'webhook' ? projectFor(sourceTag) : lineage ? str(sidecar?.project_id) || null : null, profile, source_tag: sourceTag, raw_source: row.raw_source ?? meta.raw_source,
+        project_id: sourceTag === 'cron' || sourceTag === 'webhook' ? await projectFor(sourceTag) : lineage ? str(sidecar?.project_id) || null : null, profile, source_tag: sourceTag, raw_source: row.raw_source ?? meta.raw_source,
         user_id: row.user_id ?? null, chat_id: row.chat_id ?? row.origin_chat_id ?? null, chat_type: row.chat_type ?? null, thread_id: row.thread_id ?? null,
         session_key: row.session_key ?? null, platform: row.platform ?? null,
         session_source: row.session_source ?? meta.session_source, source_label: row.source_label ?? meta.source_label,
@@ -247,12 +249,12 @@ export class CliSessionSource {
     for (const row of sourceFilter === null ? interactive : interactive.slice(0, interactiveLimit)) {
       const sid = str(row.id)
       const source = str(row.source) || 'cli'
-      if (source === 'webui' && tombstone.has(sid) && !existsSync(join(this.deps.store.sessionDir, `${sid}.json`))) continue
-      out.push(toRow(row, source, `${source.charAt(0).toUpperCase()}${source.slice(1)} Session`))
+      if (source === 'webui' && tombstone.has(sid) && !await this.deps.store.exists(sid)) continue
+      out.push(await toRow(row, source, `${source.charAt(0).toUpperCase()}${source.slice(1)} Session`))
       seen.add(sid)
     }
     if (sourceFilter !== null) return out
-    BACKGROUND_KINDS.forEach((kind, i) => {
+    for (const [i, kind] of BACKGROUND_KINDS.entries()) {
       try {
         const rows = results[i + 1] ?? []
         if (rows instanceof Error) throw rows
@@ -260,13 +262,13 @@ export class CliSessionSource {
         for (const row of rows.slice(0, BACKGROUND_PROJECT_CHIP_LIMIT)) {
           const sid = str(row.id)
           if (seen.has(sid) || (str(row.source) || kind) !== kind) continue
-          out.push(toRow(row, kind, `${kind.charAt(0).toUpperCase()}${kind.slice(1)} Session`))
+          out.push(await toRow(row, kind, `${kind.charAt(0).toUpperCase()}${kind.slice(1)} Session`))
           seen.add(sid)
         }
       } catch (error) {
         this.deps.log(`[webui] ${kind} sidebar second pass failed: ${(error as Error).message}`)
       }
-    })
+    }
     return out
   }
 }

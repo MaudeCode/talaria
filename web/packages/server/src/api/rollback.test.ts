@@ -165,9 +165,9 @@ describe('workspace checkpoints through the Agent (TAL-913)', () => {
     writeFileSync(join(wt, 'notes.txt'), 'edited\n')
     const created = await json(await post(s, '/api/session/new', { workspace: ws }))
     const wsid = String((created.session as Json).session_id)
-    const session = s.deps.sessionStore.get(wsid)
+    const session = (await s.deps.sessionStore.get(wsid))
     session.workspace = wt
-    s.deps.sessionStore.save(session)
+    await s.deps.sessionStore.save(session)
     // By path alone the worktree is still refused; the session vouches for its own workspace and nothing else.
     expect((await s.get(`/api/rollback/list?workspace=${encodeURIComponent(wt)}`)).status).toBe(400)
     const res = await s.get(`/api/rollback/list?session_id=${wsid}`)

@@ -1,3 +1,4 @@
+import { sessionPath } from '../test/storage.js'
 /** Anchor activity scenes: one normalized row shape for both clients, identical in the detail preview and the paged rows. */
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
@@ -302,10 +303,10 @@ describe('anchor scenes over HTTP', () => {
   it('serves the shared running-scene example exactly: a run with no journal ships its persisted rows open (TAL-374)', async () => {
     const fixture = (JSON.parse(readFileSync(join(import.meta.dirname, '../../../../../contracts/fixtures/web-session.json'), 'utf8')) as Json).running_scene_session as Json
     const sid = String(((await json(await post(s, '/api/session/new', {}))).session as Json).session_id)
-    const session = s.deps.sessionStore.get(sid)
+    const session = (await s.deps.sessionStore.get(sid))
     session.messages = fixture.stored as Json[]
     session.active_stream_id = String(fixture.active_stream_id)
-    s.deps.sessionStore.save(session)
+    await s.deps.sessionStore.save(session)
     s.deps.registry.liveIds.add(session.active_stream_id)
     try {
       const detail = (await json(await s.get(`/api/session?session_id=${sid}&messages=1&msg_limit=50`))).session as Json
@@ -318,12 +319,12 @@ describe('anchor scenes over HTTP', () => {
 
   it('serves the same normalized rows in the detail preview and the paged rows, and never rewrites the stored scene', async () => {
     const sid = String(((await json(await post(s, '/api/session/new', {}))).session as Json).session_id)
-    const session = s.deps.sessionStore.get(sid)
+    const session = (await s.deps.sessionStore.get(sid))
     session.messages = [{ role: 'user', content: 'Check' }, { role: 'assistant', content: 'Done.' }]
-    s.deps.sessionStore.save(session)
+    await s.deps.sessionStore.save(session)
     const rows = Array.from({ length: 90 }, (_, i) => ({ row_id: `r${String(i)}`, order_index: 89 - i, role: 'thinking', text: `step ${String(89 - i)}` }))
     expect((await post(s, '/api/session/anchor-scene', { session_id: sid, message_index: 1, scene: { version: 'activity_scene_v1', final_answer: 'Done.', activity_rows: [...rows, ...legacyRows] } })).status).toBe(200)
-    const stored = readFileSync(s.deps.sessionStore.pathFor(sid), 'utf8')
+    const stored = readFileSync(sessionPath(s.deps.sessionStore, sid), 'utf8')
 
     const detail = (await json(await s.get(`/api/session?session_id=${sid}`))).session as Json
     const scene = (detail.messages as Json[])[1]?._anchor_activity_scene as Json
@@ -337,19 +338,19 @@ describe('anchor scenes over HTTP', () => {
     expect(page).toMatchObject({ start: 0, end: all.length - 80, total: all.length, complete: true })
     expect(page.rows).toEqual(all.slice(0, all.length - 80))
     expect((page.rows as Json[])[0]).toMatchObject({ role: 'reasoning', text: 'step 0', order_index: 0 })
-    expect(readFileSync(s.deps.sessionStore.pathFor(sid), 'utf8')).toBe(stored)
+    expect(readFileSync(sessionPath(s.deps.sessionStore, sid), 'utf8')).toBe(stored)
   })
 
   it('redacts credentials in paged rows like the preview', async () => {
     const sid = String(((await json(await post(s, '/api/session/new', {}))).session as Json).session_id)
-    const session = s.deps.sessionStore.get(sid)
+    const session = (await s.deps.sessionStore.get(sid))
     const secret = 'sk-proj-AbCdEfGhIjKlMnOpQrStUvWxYz0123456789'
     const calls = Array.from({ length: 90 }, (_, i) => [
       { role: 'assistant', content: '', tool_calls: [{ id: `t${String(i)}`, name: 'terminal' }], _turn_id: 'run' },
       { role: 'tool', tool_call_id: `t${String(i)}`, content: i === 0 ? `export KEY=${secret}` : 'ok', _turn_id: 'run' },
     ]).flat()
     session.messages = [{ role: 'user', content: 'Go', _turn_id: 'run' }, ...calls, { role: 'assistant', content: 'Done.', _turn_id: 'run' }]
-    s.deps.sessionStore.save(session)
+    await s.deps.sessionStore.save(session)
     const detail = (await json(await s.get(`/api/session?session_id=${sid}`))).session as Json
     const scene = (detail.messages as Json[]).at(-1)?._anchor_activity_scene as Json
     const page = await json(await s.get(`/api/session/anchor-scene?session_id=${sid}&message_index=${String((detail.messages as Json[]).length - 1)}&before=${String(scene.activity_rows_offset)}&limit=80`))
@@ -360,9 +361,9 @@ describe('anchor scenes over HTTP', () => {
 
   it('gives legacy rows the same turn ids in every window', async () => {
     const sid = String(((await json(await post(s, '/api/session/new', {}))).session as Json).session_id)
-    const session = s.deps.sessionStore.get(sid)
+    const session = (await s.deps.sessionStore.get(sid))
     session.messages = Array.from({ length: 6 }, (_, i) => [{ role: 'user', content: `Q${String(i)}` }, { role: 'assistant', content: `A${String(i)}`, finish_reason: 'stop' }, { role: 'assistant', content: `A${String(i)} again`, finish_reason: 'stop' }]).flat()
-    s.deps.sessionStore.save(session)
+    await s.deps.sessionStore.save(session)
     const ids = async (query: string) => Object.fromEntries((((await json(await s.get(`/api/session?session_id=${sid}${query}`))).session as Json).messages as Json[]).map((m) => [String(m.content), m._turn_id]))
     const full = await ids('')
     expect(full.A2).toBe('legacy:6')
@@ -373,7 +374,7 @@ describe('anchor scenes over HTTP', () => {
 
   it('builds settled turns\' scenes identically in every window, and pages them', async () => {
     const sid = String(((await json(await post(s, '/api/session/new', {}))).session as Json).session_id)
-    const session = s.deps.sessionStore.get(sid)
+    const session = (await s.deps.sessionStore.get(sid))
     const work = Array.from({ length: 45 }, (_, i) => [
       { role: 'assistant', content: `step ${String(i)}`, tool_calls: [{ id: `c${String(i)}`, name: 'read_file' }], _turn_id: 'run-1' },
       { role: 'tool', tool_call_id: `c${String(i)}`, content: `r${String(i)}`, _turn_id: 'run-1' },
@@ -386,8 +387,8 @@ describe('anchor scenes over HTTP', () => {
     session.active_stream_id = 'run-2'
     session.pending_started_at = Date.now() / 1000
     session.pending_user_message = 'Next'
-    s.deps.sessionStore.save(session)
-    const stored = readFileSync(s.deps.sessionStore.pathFor(sid), 'utf8')
+    await s.deps.sessionStore.save(session)
+    const stored = readFileSync(sessionPath(s.deps.sessionStore, sid), 'utf8')
     const load = async (query: string) => ((await json(await s.get(`/api/session?session_id=${sid}${query}`))).session as Json).messages as Json[]
     const full = await load('')
     const doneIndex = full.findIndex((m) => m.content === 'All done.')
@@ -401,17 +402,17 @@ describe('anchor scenes over HTTP', () => {
     const page = await json(await s.get(`/api/session/anchor-scene?session_id=${sid}&message_ref=${String(scene.activity_scene_ref)}&message_index=${String(doneIndex)}&before=10`))
     expect(page).toMatchObject({ start: 0, end: 10, total: 90, complete: true })
     expect((page.rows as Json[]).map((r) => r.row_id)).toEqual(['i3:prose', 'tool:c0', 'i5:prose', 'tool:c1', 'i7:prose', 'tool:c2', 'i9:prose', 'tool:c3', 'i11:prose', 'tool:c4'])
-    expect(readFileSync(s.deps.sessionStore.pathFor(sid), 'utf8')).toBe(stored)
+    expect(readFileSync(sessionPath(s.deps.sessionStore, sid), 'utf8')).toBe(stored)
   })
 
   it('completes stored legacy scenes: the final answer leaves the rows, and a consumed steer is never promoted', async () => {
     const sid = String(((await json(await post(s, '/api/session/new', {}))).session as Json).session_id)
-    const session = s.deps.sessionStore.get(sid)
+    const session = (await s.deps.sessionStore.get(sid))
     session.messages = [
       { role: 'user', content: 'Check' }, { role: 'assistant', content: 'Done.' },
       { role: 'user', content: 'Again' }, { role: 'assistant', content: 'Stopping as asked.' },
     ]
-    s.deps.sessionStore.save(session)
+    await s.deps.sessionStore.save(session)
     const save = (index: number, rows: Json[]) => post(s, '/api/session/anchor-scene', { session_id: sid, message_index: index, scene: { version: 'activity_scene_v1', activity_rows: rows } })
     expect((await save(1, [{ row_id: 'p', role: 'prose', text: 'Progress' }, { role: 'tool', tool_call_id: 't', status: 'completed', tool: { name: 'read_file' } }, { row_id: 'f', role: 'prose', text: ' Done. ' }])).status).toBe(200)
     expect((await save(3, [{ row_id: 'p2', role: 'prose', text: 'Working' }, { role: 'steering', status: 'consumed', text: 'Stop now', payload: { steer_id: 's' } }])).status).toBe(200)
@@ -425,7 +426,7 @@ describe('anchor scenes over HTTP', () => {
 
   it('ships each settled turn\'s file changes from its own calls, never from a stored scene', async () => {
     const sid = String(((await json(await post(s, '/api/session/new', {}))).session as Json).session_id)
-    const session = s.deps.sessionStore.get(sid)
+    const session = (await s.deps.sessionStore.get(sid))
     session.messages = [
       { role: 'user', content: 'Edit', _turn_id: 'run-edit' },
       { role: 'assistant', content: '', tool_calls: [
@@ -439,7 +440,7 @@ describe('anchor scenes over HTTP', () => {
       { role: 'user', content: 'Delete', _turn_id: 'run-delete' },
       { role: 'assistant', content: '', tool_calls: [{ id: 'd', name: 'delete_file', args: { path: 'c.swift' } }], _turn_id: 'run-delete' },
     ]
-    s.deps.sessionStore.save(session)
+    await s.deps.sessionStore.save(session)
     // A client-posted scene cannot claim changes its turn never made.
     expect((await post(s, '/api/session/anchor-scene', { session_id: sid, message_index: 4, scene: { version: 'activity_scene_v1', activity_rows: [], file_changes: [{ path: 'forged', action: 'added' }] } })).status).toBe(200)
     const messages = ((await json(await s.get(`/api/session?session_id=${sid}`))).session as Json).messages as Json[]
@@ -451,7 +452,7 @@ describe('anchor scenes over HTTP', () => {
 
   it('keeps full tool results in scenes, clipping them only in a limited response like raw tool rows', async () => {
     const sid = String(((await json(await post(s, '/api/session/new', {}))).session as Json).session_id)
-    const session = s.deps.sessionStore.get(sid)
+    const session = (await s.deps.sessionStore.get(sid))
     const big = 'x'.repeat(6000)
     session.messages = [
       { role: 'user', content: 'Dump it', _turn_id: 'run-big' },
@@ -459,7 +460,7 @@ describe('anchor scenes over HTTP', () => {
       { role: 'tool', tool_call_id: 'big', content: big, _turn_id: 'run-big' },
       { role: 'assistant', content: 'Done.', _turn_id: 'run-big' },
     ]
-    s.deps.sessionStore.save(session)
+    await s.deps.sessionStore.save(session)
     const toolResult = async (query: string) => {
       const messages = ((await json(await s.get(`/api/session?session_id=${sid}${query}`))).session as Json).messages as Json[]
       const scene = messages.at(-1)?._anchor_activity_scene as Json
@@ -475,7 +476,7 @@ describe('anchor scenes over HTTP', () => {
 
   it('flags a clipped tool row and serves its full, redacted result by call id (TAL-331)', async () => {
     const sid = String(((await json(await post(s, '/api/session/new', {}))).session as Json).session_id)
-    const session = s.deps.sessionStore.get(sid)
+    const session = (await s.deps.sessionStore.get(sid))
     const secret = 'sk-proj-AbCdEfGhIjKlMnOpQrStUvWxYz0123456789'
     // The credential sits past both caps, so only the full result can leak it.
     const full = `${'x'.repeat(5000)} KEY=${secret} ${'y'.repeat(6000 - 5006 - secret.length)}`
@@ -486,7 +487,7 @@ describe('anchor scenes over HTTP', () => {
       { role: 'tool', tool_call_id: 'small', content: 'ok', _turn_id: 'run-big' },
       { role: 'assistant', content: 'Done.', _turn_id: 'run-big' },
     ]
-    s.deps.sessionStore.save(session)
+    await s.deps.sessionStore.save(session)
     const tool = async (query: string, id: string) => {
       const messages = ((await json(await s.get(`/api/session?session_id=${sid}${query}`))).session as Json).messages as Json[]
       return ((messages.at(-1)?._anchor_activity_scene as Json).activity_rows as Json[]).find((r) => (r.tool as Json | undefined)?.id === id)?.tool as Json
@@ -512,7 +513,7 @@ describe('anchor scenes over HTTP', () => {
 
   it('flags a capped row of a scene stored before TAL-331 from its rebuilt turn, in the preview and the paged rows', async () => {
     const sid = String(((await json(await post(s, '/api/session/new', {}))).session as Json).session_id)
-    const session = s.deps.sessionStore.get(sid)
+    const session = (await s.deps.sessionStore.get(sid))
     const full = 'z'.repeat(6000)
     session.messages = [
       { role: 'user', content: 'Dump it' },
@@ -521,7 +522,7 @@ describe('anchor scenes over HTTP', () => {
       { role: 'tool', tool_call_id: 'small', content: 'ok' },
       { role: 'assistant', content: 'Done.' },
     ]
-    s.deps.sessionStore.save(session)
+    await s.deps.sessionStore.save(session)
     // An older client's stored scene: whole results, no flags.
     const old = (id: string, result: string, order_index: number) => ({ row_id: `tool:${id}`, order_index, role: 'tool', tool: { id, name: 'read_file', result, done: true } })
     const filler = Array.from({ length: 85 }, (_, i) => ({ row_id: `r${String(i)}`, order_index: 2 + i, role: 'reasoning', text: `step ${String(i)}` }))

@@ -1,3 +1,5 @@
+import { filterAsync } from '../util.js'
+import { statSignature } from '../fs/stat.js'
 import { SessionPrefixIndex } from './prefix-index.js'
 /**
  * Route-level session operations (the Python `/api/session*` handlers): the
@@ -13,10 +15,10 @@ import { buildActiveTurnToken, copyJson, redactSessionData, redactValue, stripPu
 import type { DraftStore } from './drafts.js'
 import { DraftVersionConflict, normalizeDraftVersion } from './drafts.js'
 import type { SessionEventBus } from './events.js'
-import { allSessions, buildSessionListPayload, reconcileLocalSessionRows, sessionLineageIds, CLI_IDENTITY_FIELDS, isClaimableCliSource, isMessagingSessionRecord, ownerLockCandidates, withOwnerLocks, withSessionWireFlags, lineageRootId, mergeCliSidebarMetadata, sessionListResponse, sessionSearchMatches, sessionSearchMessageText, sessionSearchPreview, sessionSearchTerms, type ListParams, type ListResponse, type Row, type RuntimeOverlay } from './list.js'
+import { allSessions, buildSessionListPayload, reconcileLocalSessionRows, sessionLineageIds, CLI_IDENTITY_FIELDS, isClaimableCliSource, isMessagingSessionRecord, ownerLockCandidates, withOwnerLocks, withSessionWireFlags, lineageRootId, mergeCliSidebarMetadata, sessionListResponse, sessionSearchMatches, sessionSearchPreview, sessionSearchTerms, type ListParams, type ListResponse, type Row, type RuntimeOverlay } from './list.js'
 import { anchorSceneIntOrNull, fullToolResult, hydrateAnchorActivityScenes, normalizeAnchorSceneMessageRef, readAnchorSceneRows, storeAnchorScene, withTurnIds } from './anchor.js'
 import { COMPRESSION_RECOVERY_ACTION_START_FOCUSED, compressionRecoveryPayload, forgetContextFigures, isSafeSessionId, lastMessageTimestamp, Session, sharePath, stripAttachedFilesMarker, titleFrom, type Message } from './session.js'
-import { SessionBusy, SessionNotFound, statSignature, type SessionStore } from './store.js'
+import { SessionBusy, SessionNotFound, type SessionStore } from './store.js'
 import { UNSETTLED_TODO_KEY, attachTodoSnapshot, attachTodoState } from './todo.js'
 import { isClaudeCodeSessionId, type ClaudeCodeSessionSource } from './claude-code.js'
 import { auditSessionRecovery, repairSafeSessionRecovery, type RecoveryDeps } from './recovery.js'
@@ -84,6 +86,7 @@ function staleRuntimeFailure(error: SidecarError): HttpFailure {
 
 export interface SessionServiceDeps {
   /** TAL-259: epoch seconds of the state directory's `recovery_stamping_since` marker. */
+  recoveryJournalDirectory: string
   recoveryStampingSince: () => number
   /** TAL-255: the Agent sidecar for manual compression (`chat.compress`); null while it is down. */
   sidecar?: () => SidecarLike | null
@@ -93,7 +96,7 @@ export interface SessionServiceDeps {
   profileDeleting?: (profile: string | null) => boolean
   /** TAL-372: the session's background work receipts, for the delegation rows that started them. */
   backgroundReceipts?: (sid: string) => Receipt[]
-  backgroundPending?: (sid: string) => Set<string>
+  backgroundPending?: (sid: string) => Promise<Set<string>>
   store: SessionStore
   drafts: DraftStore
   events: SessionEventBus
@@ -119,11 +122,11 @@ export interface SessionServiceDeps {
     /** TAL-1006: the live stream's open compression span start (epoch seconds), else null. */
     compressionStartedAt?: (streamId: string) => number | null
     /** TAL-899: whether a Stop holds the session's automatic turns until the user's next turn. */
-    automaticTurnsHeld?: (sid: string) => boolean
+    automaticTurnsHeld?: (sid: string) => Promise<boolean>
     sessionNotices?: (sid: string) => SessionNotice[]
     sessionGoal?: (sid: string) => SessionGoal | null
     /** Drop the session's cached agent; `endSession` (delete/clear) also ends its approval grants and parked approvals. */
-    evictAgent: (sid: string, endSession?: boolean) => void
+    evictAgent: (sid: string, endSession?: boolean) => Promise<void>
     closeTerminal: (sid: string) => void
     /**
      * Python `delete_cli_session`: remove the session and its compression continuations from the profile's state.db in one
@@ -133,7 +136,7 @@ export interface SessionServiceDeps {
   }
   attachmentDir: (sid: string) => string
   /** A deleted session can never be viewed, so its finished runs are cleared from the relay. */
-  clearRelayCompletions?: (sid: string, profile: string | null) => void
+  clearRelayCompletions?: (sid: string, profile: string | null) => Promise<void>
   /** Run journals are removed with their session (Python `delete_run_journal`). */
   journal?: RunJournal
   hermesHome: string
@@ -161,12 +164,12 @@ export interface SessionServiceDeps {
   /** `truncated`: source kinds whose rows stopped at the per-kind window on this read (TAL-482). */
   cliSessions: (profile: string, opts: { sourceFilter: string | null; sessionIds?: readonly string[] }) => Promise<{ rows: Row[]; truncated: ReadonlySet<string>; storage: AgentStorage }>
   /** `cliSessions` read on this thread, for the synchronous single-session lookups. */
-  cliSessionsSync: (profile: string, opts: { sourceFilter: string | null; sessionIds?: readonly string[] }) => { rows: Row[]; truncated: ReadonlySet<string> }
+  cliSessionsSync: (profile: string, opts: { sourceFilter: string | null; sessionIds?: readonly string[] }) => Promise<{ rows: Row[]; truncated: ReadonlySet<string> }>
   /** TAL-551: read-only Claude Code transcripts, listed with the CLI rows when both toggles are on. */
   claudeCode?: ClaudeCodeSessionSource
   profileHome: (profile: string) => string
   /** Python `commit_session_memory` (fire-and-forget): the cached Agent flushes memory for a session the user left. */
-  commitSessionMemory?: (sid: string) => void
+  commitSessionMemory?: (sid: string) => Promise<void>
   /** TAL-186: the `/api/media` allow-list the transcript media projection rewrites against; without it nothing local is rewritten. */
   media?: { access: MediaAccessDeps; localIo: (profile: string | null) => boolean }
 }
@@ -256,13 +259,13 @@ export class SessionService {
    * not slip past the profile check into a handler that trims and trusts it. A non-empty id that is still unsafe after
    * trimming can name no session and is refused here instead of falling through.
    */
-  sessionIdVisible(raw: unknown): boolean {
+  async sessionIdVisible(raw: unknown): Promise<boolean> {
     if (typeof raw !== 'string' || !raw.trim()) return true
     const sid = raw.trim()
     if (!isSafeSessionId(sid)) return false
     let session: Session
     try {
-      session = this.store.get(sid, { metadataOnly: true })
+      session = (await this.store.get(sid, { metadataOnly: true }))
     } catch {
       return true
     }
@@ -289,26 +292,26 @@ export class SessionService {
   }
 
   /** Python `_lookup_cli_session_metadata(...).get('read_only')` plus the persisted sidecar flag and a not-claimable foreign owner. */
-  private isReadOnlyImport(sid: string): boolean {
+  private async isReadOnlyImport(sid: string): Promise<boolean> {
     try {
-      const s = this.store.get(sid, { metadataOnly: true })
-      if (this.isReadOnly(s)) return true
+      const s = (await this.store.get(sid, { metadataOnly: true }))
+      if ((await this.isReadOnly(s))) return true
     } catch {
       // No sidecar: a foreign state.db transcript whose owner refuses claiming is read-only too.
-      const { session, reason } = this.claimOrSynthesizeCliSession(sid)
+      const { session, reason } = (await this.claimOrSynthesizeCliSession(sid))
       if (session && reason === 'not_claimable') return true
     }
-    const meta = this.lookupCliMeta(sid)
+    const meta = (await this.lookupCliMeta(sid))
     return meta !== null && Boolean(meta.read_only)
   }
 
   /** Python `_session_is_subagent_view_only`: a delegated child by any signal — the persisted sidecar or the state.db row. */
-  isSubagentViewOnly(sid: string): boolean {
+  async isSubagentViewOnly(sid: string): Promise<boolean> {
     try {
-      const s = this.store.get(sid, { metadataOnly: true, cacheOnMiss: false, promote: false })
+      const s = (await this.store.get(sid, { metadataOnly: true, cacheOnMiss: false, promote: false }))
       if (str(s.source_tag || s.raw_source || s.session_source).trim().toLowerCase() === 'subagent') return true
     } catch { /* no sidecar */ }
-    const meta = this.lookupCliMeta(sid)
+    const meta = (await this.lookupCliMeta(sid))
     return meta !== null && str(meta.source_tag || meta.raw_source || meta.source).trim().toLowerCase() === 'subagent'
   }
 
@@ -323,21 +326,21 @@ export class SessionService {
    * nothing (`agentSessionRowsExisting`); another profile's session or one with a run the runtime still holds is never
    * an orphan, while a stream id a crash left behind does not count as one.
    */
-  private orphanedImports(rows: Row[], existing?: Set<string>, owners?: Map<string, StateDbSessionSource> | null): Set<string> {
-    const candidates = this.orphanCandidates(rows)
+  private async orphanedImports(rows: Row[], existing?: Set<string>, owners?: Map<string, StateDbSessionSource> | null): Promise<Set<string>> {
+    const candidates = (await this.orphanCandidates(rows))
     if (!candidates.length) return new Set()
     existing ??= agentSessionRowsExisting(this.stateDbPath(null), candidates)
     if (owners === undefined) owners = this.stateDbSources(candidates)
     return new Set(candidates.filter((sid) => !existing.has(sid) && owners !== null && typeof owners.get(sid) !== 'object'))
   }
 
-  private orphanCandidates(rows: Row[]): string[] {
-    return rows.filter((r) => r.read_only && ['cli', 'api'].includes(sourceKind(r)) && this.visibleToActiveProfile(str(r.profile) || null) && !this.activeRunBlocking(str(r.session_id)))
+  private async orphanCandidates(rows: Row[]): Promise<string[]> {
+    return (await filterAsync(rows, async (r) => r.read_only && ['cli', 'api'].includes(sourceKind(r)) && this.visibleToActiveProfile(str(r.profile) || null) && !(await this.activeRunBlocking(str(r.session_id)))))
       .map((r) => str(r.session_id))
   }
 
-  private isOrphanedImport(sid: string): boolean {
-    try { return this.orphanedImports([this.store.get(sid, { metadataOnly: true }).compact()]).size > 0 } catch { return false }
+  private async isOrphanedImport(sid: string): Promise<boolean> {
+    try { return (await this.orphanedImports([(await this.store.get(sid, { metadataOnly: true })).compact()])).size > 0 } catch { return false }
   }
 
   /**
@@ -353,78 +356,86 @@ export class SessionService {
     byProfile.set(activeProfile, activeIds)
     const owners = new Map(await Promise.all([...byProfile].map(async ([profile, ids]) =>
       [profile, ids.size ? await stateDbSessionSourcesAsync(this.stateDbPath(profile), ids) : new Map<string, StateDbSessionSource>()] as const)))
-    const checked = new Set(this.orphanCandidates(rows))
+    const checked = new Set((await this.orphanCandidates(rows)))
     const existing = checked.size ? await agentSessionRowsExistingAsync(dbPath, checked) : new Set<string>()
     return {
       stateDbSources: (_ids, profile = activeProfile) => owners.get(profile) ?? null,
-      pruneOrphanedImports: (current) => {
+      pruneOrphanedImports: async (current) => {
         // Only an id the worker checked can be an orphan; a row that became a candidate meanwhile waits for the next list.
-        const orphans = this.orphanedImports(current.filter((r) => checked.has(str(r.session_id))), existing, owners.get(activeProfile) ?? null)
-        for (const sid of orphans) this.store.deleteFiles(sid)
+        const orphans = (await this.orphanedImports(current.filter((r) => checked.has(str(r.session_id))), existing, owners.get(activeProfile) ?? null))
+        for (const sid of orphans) (await this.store.delete(sid))
         return orphans
       },
     }
   }
 
   /** The persisted flag folded with the state.db owner lock (TAL-358): the one read-only rule for mutation gates and the wire. */
-  readOnlyReason(s: Session | string, profile?: string): string | null {
-    let raw: Row = { session_id: typeof s === 'string' ? s : s.session_id, profile: this.deps.activeProfile() }
+  async readOnlyReason(s: Session | string, profile?: string): Promise<string | null> {
     if (typeof s === 'string') {
-      try { s = this.store.get(s, { metadataOnly: true, cacheOnMiss: false, promote: false }) } catch (error) {
+      try { s = await this.store.get(s, { metadataOnly: true, cacheOnMiss: false, promote: false }) } catch (error) {
         if (!(error instanceof SessionNotFound)) return OWNERSHIP_UNAVAILABLE_REASON
       }
     }
-    if (typeof s !== 'string') raw = { session_id: s.session_id, profile: s.profile, source_tag: s.source_tag, raw_source: s.raw_source, session_source: s.session_source, read_only: s.read_only }
+    return this.loadedReadOnlyReason(s, profile)
+  }
+
+  private loadedReadOnlyReason(s: Session | string, profile?: string): string | null {
+    let raw: Row = typeof s === 'string' ? { session_id: s, profile: this.deps.activeProfile() }
+      : { session_id: s.session_id, profile: s.profile, source_tag: s.source_tag, raw_source: s.raw_source, session_source: s.session_source, read_only: s.read_only }
     if (profile !== undefined) raw = this.deps.profilesMatch(str(raw.profile) || null, profile) ? { ...raw, profile } : { session_id: raw.session_id, profile }
     const row = withOwnerLocks([raw], this.stateDbSources)[0]!
     return row.read_only ? str(row.read_only_reason) || 'Read-only imported sessions cannot be modified from WebUI' : null
   }
 
-  /** No sidecar is materialized for an id; an explicit profile binds a callback to the home it will write. */
-  assertWritable(session: Session | string, profile?: string): void {
-    const reason = this.readOnlyReason(session, profile)
-    if (reason) throw new HttpFailure(403, reason)
+  /** A loaded session's final owner check stays synchronous with the protected sidecar dispatch. */
+  assertWritable(session: Session, profile?: string): void
+  assertWritable(session: string, profile?: string): Promise<void>
+  assertWritable(session: Session | string, profile?: string): void | Promise<void> {
+    const check = (reason: string | null): void => { if (reason) throw new HttpFailure(403, reason) }
+    if (typeof session === 'string') return this.readOnlyReason(session, profile).then(check)
+    check(this.loadedReadOnlyReason(session, profile))
   }
 
   /** Controls can exist without a local session file; use the same id the sidecar will address. */
-  idForMutation(sid: string): string {
+  async idForMutation(sid: string): Promise<string> {
     sid = sid.trim()
     if (!sid) throw new HttpFailure(400, 'Missing required field(s): session_id')
-    this.assertWritable(sid)
+    await this.assertWritable(sid)
     return sid
   }
 
-  isReadOnly(s: Session): boolean { return this.readOnlyReason(s) !== null }
+  async isReadOnly(s: Session): Promise<boolean> { return (await this.readOnlyReason(s)) !== null }
 
   /** Recheck after the mutex wait; legacy local metadata/handoff actions keep their existing read-only allowance. */
   private withMutationLock<T>(sid: string, fn: () => Promise<T> | T, opts: { timeoutMs?: number; allowReadOnly?: boolean } = {}): Promise<T> {
-    return this.store.withLock(sid, () => {
-      if (opts.allowReadOnly) this.rejectViewOnly(sid, 'modified')
-      else this.assertWritable(sid)
+    return this.store.withLock(sid, async () => {
+      if (opts.allowReadOnly) (await this.rejectViewOnly(sid, 'modified'))
+      else (await this.assertWritable(sid))
       return fn()
     }, opts)
   }
 
   /** Full session for mutation, refusing read-only imports (Python `_get_or_materialize_session`). */
-  getForMutation(sid: string): Session {
-    let s = this.get404(sid)
-    s = this.store.ensureFull(sid, s)
+  async getForMutation(sid: string): Promise<Session> {
+    let s = (await this.get404(sid))
+    s = (await this.store.ensureFull(sid, s))
     this.assertWritable(s)
     if (str(s.source_tag || s.raw_source).trim().toLowerCase() === 'subagent') throw new HttpFailure(403, 'Read-only subagent child session')
     return s
   }
 
-  private get404(sid: string, opts: { metadataOnly?: boolean } = {}): Session {
+  private async get404(sid: string, opts: { metadataOnly?: boolean } = {}): Promise<Session> {
     sid = this.resolveSessionId(sid)
     try {
-      return this.store.get(sid, opts)
+      return (await this.store.get(sid, opts))
     } catch (error) {
       if (error instanceof SessionNotFound) {
         // Python `_get_or_materialize_session`: a claimable foreign (CLI/TUI/Desktop) session gains a WebUI sidecar
         // on its first mutation; a read-only foreign source answers 403 from `getForMutation`, a missing one 404.
-        const synth = this.claimOrSynthesizeCliSession(sid)
+        const synth = (await this.claimOrSynthesizeCliSession(sid))
         if (synth.session && synth.reason === 'materialized') {
-          this.store.save(synth.session)
+          await this.store.save(synth.session)
+          await this.store.touch(synth.session)
           this.deps.titleClaimed?.(synth.session)
           return synth.session
         }
@@ -605,19 +616,19 @@ export class SessionService {
   }
 
   /** Python `_is_messaging_session_id`: from the WebUI metadata or the Agent's row. */
-  private isMessagingSession(sid: string): boolean {
-    try { if (isMessagingSessionRecord(this.store.get(sid, { metadataOnly: true }).compact())) return true } catch { /* absent */ }
-    const meta = this.lookupCliMeta(sid)
+  private async isMessagingSession(sid: string): Promise<boolean> {
+    try { if (isMessagingSessionRecord((await this.store.get(sid, { metadataOnly: true })).compact())) return true } catch { /* absent */ }
+    const meta = (await this.lookupCliMeta(sid))
     return meta !== null && isMessagingSessionRecord(meta)
   }
 
   /** Python `_lookup_cli_session_metadata`: the sidebar row for a state.db session in the active profile. */
-  private lookupCliMeta(sid: string): Row | null {
+  private async lookupCliMeta(sid: string): Promise<Row | null> {
     try {
       if (isClaudeCodeSessionId(sid)) return this.claudeCodeRows().find((r) => str(r.session_id) === sid) ?? null
       const profile = this.deps.activeProfile()
-      return this.deps.cliSessionsSync(profile, { sourceFilter: null }).rows.find((r) => str(r.session_id) === sid)
-        ?? this.deps.cliSessionsSync(profile, { sourceFilter: null, sessionIds: [sid] }).rows[0] ?? null
+      return (await this.deps.cliSessionsSync(profile, { sourceFilter: null })).rows.find((r) => str(r.session_id) === sid)
+        ?? (await this.deps.cliSessionsSync(profile, { sourceFilter: null, sessionIds: [sid] })).rows[0] ?? null
     } catch {
       return null
     }
@@ -628,9 +639,9 @@ export class SessionService {
   }
 
   /** Python `_session_index_marks_was_webui`: an index row that once owned a WebUI sidecar (self-heal 404). */
-  private indexMarksWasWebui(sid: string): boolean {
+  private async indexMarksWasWebui(sid: string): Promise<boolean> {
     let entries: Record<string, unknown>[]
-    try { entries = this.store.readIndexEntries() } catch { return false }
+    try { entries = (await this.store.readIndexEntries()) } catch { return false }
     for (const entry of entries) {
       if (str(entry.session_id) !== sid) continue
       const explicit = [entry.source_tag, entry.raw_source, entry.session_source].map((v) => str(v).trim().toLowerCase()).filter(Boolean)
@@ -646,7 +657,7 @@ export class SessionService {
    * a WebUI sidecar. `materialized` sessions are writeable (the caller persists the sidecar), `not_claimable` ones are
    * read-only stubs, `was_webui`/`no_foreign_state`/`invalid_sid` answer 404.
    */
-  claimOrSynthesizeCliSession(sid: string, metaIn?: Row | null): { session: Session | null; reason: 'materialized' | 'not_claimable' | 'was_webui' | 'no_foreign_state' | 'invalid_sid' } {
+  async claimOrSynthesizeCliSession(sid: string, metaIn?: Row | null): Promise<{ session: Session | null; reason: 'materialized' | 'not_claimable' | 'was_webui' | 'no_foreign_state' | 'invalid_sid' }> {
     if (!isSafeSessionId(sid)) return { session: null, reason: 'invalid_sid' }
     const profile = this.deps.activeProfile()
     const dbPath = join(this.deps.profileHome(profile), 'state.db')
@@ -656,9 +667,9 @@ export class SessionService {
     const subagentChild = stateDbSource === 'subagent'
     const owners = this.stateDbSources([sid])
     const canonical = typeof owners?.get(sid) === 'object'
-    if ((this.indexMarksWasWebui(sid) || (this.store.wasDeleted(sid) && ['', 'webui', 'fork'].includes(stateDbSource))) && !subagentChild && !canonical) return { session: null, reason: 'was_webui' }
+    if (((await this.indexMarksWasWebui(sid)) || ((await this.store.wasDeleted(sid)) && ['', 'webui', 'fork'].includes(stateDbSource))) && !subagentChild && !canonical) return { session: null, reason: 'was_webui' }
     const msgs = isClaudeCodeSessionId(sid) ? this.deps.claudeCode?.messages(sid) ?? [] : stateDbSessionMessages(dbPath, sid, { stitch: true })
-    const meta: Row = { ...(metaIn ?? this.lookupCliMeta(sid) ?? {}) }
+    const meta: Row = { ...(metaIn ?? (await this.lookupCliMeta(sid)) ?? {}) }
     if (!msgs.length && !(meta._lineage_root_id && meta._lineage_tip_id)) return { session: null, reason: 'no_foreign_state' }
     if (row) {
       if (!meta.source_tag && stateDbSource) meta.source_tag = stateDbSource
@@ -689,9 +700,9 @@ export class SessionService {
     return { session, reason: claimable ? 'materialized' : 'not_claimable' }
   }
 
-  private mutationTarget(sid: string, verb: string): Session {
+  private async mutationTarget(sid: string, verb: string): Promise<Session> {
     try {
-      return this.getForMutation(sid)
+      return (await this.getForMutation(sid))
     } catch (error) {
       if (error instanceof SessionNotFound) throw new HttpFailure(404, 'Session not found')
       if (error instanceof HttpFailure && error.status === 403) throw new HttpFailure(403, `Read-only imported sessions cannot be ${verb} from WebUI`)
@@ -707,21 +718,21 @@ export class SessionService {
     if (isClaudeCodeSessionId(sid)) throw new HttpFailure(400, `Claude Code sessions are view-only and cannot be ${verb} from WebUI`)
   }
 
-  private rejectViewOnly(sid: string, verb: string): string {
+  private async rejectViewOnly(sid: string, verb: string): Promise<string> {
     sid = sid.trim()
     this.rejectClaudeCode(sid, verb)
     let profile = this.deps.activeProfile()
-    try { profile = this.store.get(sid, { metadataOnly: true, cacheOnMiss: false, promote: false }).profile || 'default' } catch { /* foreign row */ }
+    try { profile = (await this.store.get(sid, { metadataOnly: true, cacheOnMiss: false, promote: false })).profile || 'default' } catch { /* foreign row */ }
     const owners = this.stateDbSources([sid], profile)
     const owner = owners?.get(sid)
     if (!owners || typeof owner === 'object') throw new HttpFailure(403, typeof owner === 'object' ? owner.reason ?? CANONICAL_READ_ONLY_REASON : OWNERSHIP_UNAVAILABLE_REASON)
-    if (this.isSubagentViewOnly(sid)) throw new HttpFailure(400, `Subagent sessions are view-only and cannot be ${verb} from WebUI`)
+    if ((await this.isSubagentViewOnly(sid))) throw new HttpFailure(400, `Subagent sessions are view-only and cannot be ${verb} from WebUI`)
     return sid
   }
 
   /** All transcript transports use the same live-run and durable-pending evidence. */
-  backgroundUpdates<T>(s: Session, messages: T[], reviewRows?: (turnId: string) => Message[]): T[] {
-    return withBackgroundUpdates(messages, s, { activeTurnId: this.deps.runtime.activeRunStream(s.session_id), pendingDelegations: this.deps.backgroundPending?.(s.session_id) ?? new Set(), ...(reviewRows ? { reviewRows } : {}) })
+  async backgroundUpdates<T>(s: Session, messages: T[], reviewRows?: (turnId: string) => Message[]): Promise<T[]> {
+    return withBackgroundUpdates(messages, s, { activeTurnId: this.deps.runtime.activeRunStream(s.session_id), pendingDelegations: (await this.deps.backgroundPending?.(s.session_id)) ?? new Set(), ...(reviewRows ? { reviewRows } : {}) })
   }
 
   /** TAL-372: each delegation row of a turn's scene carries the status of the work it started. */
@@ -730,11 +741,11 @@ export class SessionService {
   }
 
   /** `compact()` plus messages, redacted for the wire (Python `_public_session_projection`). */
-  publicSession(s: Session, withMessages = true, messages: Message[] = s.messages): Record<string, unknown> {
+  async publicSession(s: Session, withMessages = true, messages: Message[] = s.messages): Promise<Record<string, unknown>> {
     const payload = this.wireRow(s)
     // Mutation replies replace a client's transcript, so they carry the same server-built scenes as the detail.
     if (withMessages) {
-      payload.messages = this.backgroundLinked(s, hydrateAnchorActivityScenes(withToolCallOutcomes(this.backgroundUpdates(s, withMarkerKinds(withTurnIds(messages), s)), s.tool_calls, s.active_stream_id), s.anchor_activity_scenes, { activeTurnId: s.active_stream_id, runningScene: !this.journaledActiveTurn(s) }))
+      payload.messages = this.backgroundLinked(s, hydrateAnchorActivityScenes(withToolCallOutcomes((await this.backgroundUpdates(s, withMarkerKinds(withTurnIds(messages), s))), s.tool_calls, s.active_stream_id), s.anchor_activity_scenes, { activeTurnId: s.active_stream_id, runningScene: !this.journaledActiveTurn(s) }))
       payload.compression_reference = compressionReference(s, payload.messages as unknown[])
     }
     return redactSessionData(payload, this.deps.redactEnabled())
@@ -774,8 +785,8 @@ export class SessionService {
 
   // ── detail ──────────────────────────────────────────────────────────────
 
-  private loadRevision(s: Session): string | null {
-    return statSignature(this.store.pathFor(s.session_id))
+  private async loadRevision(s: Session): Promise<string | null> {
+    return (await this.store.revision(s.session_id))
   }
 
   private readonly pageTails = new WeakMap<SessionPrefixIndex, { key: string; tail: Message[]; index: SessionPrefixIndex; enoughContext: boolean; sources: SessionService['stateDbSources']; contextRows: Message[]; contextLength: number; summary: { total: number; last: number; todo: Record<string, unknown> | null; compression: ReturnType<SessionPrefixIndex['compressionReference']> } }>()
@@ -791,11 +802,11 @@ export class SessionService {
   }
 
   /** Existing projections, once per complete turn range, in absolute transcript coordinates. */
-  private deriveRange(s: Session, rows: Message[], baseIndex: number, initialTurn: string, journaled: boolean, refs: Pick<Map<string, number>, 'get'>, calls: unknown[], reviewRows: (turnId: string) => Message[]): Message[] {
-    return this.backgroundLinked(s, hydrateAnchorActivityScenes(withToolCallOutcomes(this.backgroundUpdates(s, withMarkerKinds(withTurnIds(withAttachmentObjects(rows), baseIndex, initialTurn), s), reviewRows), calls, s.active_stream_id, baseIndex), s.anchor_activity_scenes, { activeTurnId: s.active_stream_id, runningScene: !journaled, clipToolResults: true, baseIndex, refCounts: refs })) as Message[]
+  private async deriveRange(s: Session, rows: Message[], baseIndex: number, initialTurn: string, journaled: boolean, refs: Pick<Map<string, number>, 'get'>, calls: unknown[], reviewRows: (turnId: string) => Message[]): Promise<Message[]> {
+    return this.backgroundLinked(s, hydrateAnchorActivityScenes(withToolCallOutcomes((await this.backgroundUpdates(s, withMarkerKinds(withTurnIds(withAttachmentObjects(rows), baseIndex, initialTurn), s), reviewRows)), calls, s.active_stream_id, baseIndex), s.anchor_activity_scenes, { activeTurnId: s.active_stream_id, runningScene: !journaled, clipToolResults: true, baseIndex, refCounts: refs })) as Message[]
   }
 
-  private limitedDetail(s: Session, index: SessionPrefixIndex, limit: number, before: number | null, pending: ReturnType<SessionService['pendingTurn']>, journaled: ReturnType<SessionService['journaledActiveTurn']>) {
+  private async limitedDetail(s: Session, index: SessionPrefixIndex, limit: number, before: number | null, pending: ReturnType<SessionService['pendingTurn']>, journaled: ReturnType<SessionService['journaledActiveTurn']>) {
     let prefixEnd = s.messages.length
     const turnId = pending?.turnId ?? journaled?.turnId
     if (turnId) prefixEnd = Math.min(prefixEnd, index.turns.get(turnId)?.first ?? prefixEnd)
@@ -894,7 +905,7 @@ export class SessionService {
       for (let at = start; at < stop; at += 1) { const span = spanAt(at); if (span.first < start) { start = span.first; at = start - 1 } stop = Math.max(stop, span.last) }
       const rows = readRange(start, stop)
       const calls = index.toolCalls(start, rows.length)
-      derived = this.deriveRange(s, rows, start, start ? idAt(start - 1) : 'legacy:start', Boolean(journaled), refs, calls, reviewRows)
+      derived = (await this.deriveRange(s, rows, start, start ? idAt(start - 1) : 'legacy:start', Boolean(journaled), refs, calls, reviewRows))
       const [page, relative] = messageWindowForDisplay(derived, limit, end - start)
       if (relative > 0 || start === 0 || page.filter((m) => messageCountsAsRenderable(m)).length >= limit) {
         let offset = start + relative
@@ -910,7 +921,7 @@ export class SessionService {
   }
 
   /** Python `_handle_session_get` on the WebUI sidecar (state.db merge pending). */
-  detail(sid: string, query: { messages?: string | null | undefined; msg_limit?: string | null | undefined; msg_before?: string | null | undefined; resolve_model?: string | null | undefined }): Record<string, unknown> {
+  async detail(sid: string, query: { messages?: string | null | undefined; msg_limit?: string | null | undefined; msg_before?: string | null | undefined; resolve_model?: string | null | undefined }): Promise<Record<string, unknown>> {
     if (!sid) throw new HttpFailure(400, 'session_id is required')
     sid = this.resolveSessionId(sid)
     const loadMessages = (query.messages ?? '1') !== '0'
@@ -919,26 +930,26 @@ export class SessionService {
     const msgBefore = msgBeforeRaw ? (Number.isInteger(Number(msgBeforeRaw)) ? Number(msgBeforeRaw) : null) : null
     let s: Session
     try {
-      s = this.store.get(sid, { metadataOnly: !loadMessages })
+      s = (await this.store.get(sid, { metadataOnly: !loadMessages }))
     } catch {
-      return this.foreignSessionDetail(sid)
+      return (await this.foreignSessionDetail(sid))
     }
-    const revisionBefore = this.loadRevision(s)
+    const revisionBefore = (await this.loadRevision(s))
     if (!this.visibleToActiveProfile(s.profile)) {
       if (s.profile) throw new HttpFailure(409, 'Session belongs to a different profile', { code: 'session_profile_mismatch', session_id: sid, profile: s.profile })
       throw new HttpFailure(404, 'Session not found')
     }
-    this.clearStaleStreamState(s)
+    await this.clearStaleStreamState(s)
     const journaled = loadMessages ? this.journaledActiveTurn(s) : null
     const pending = loadMessages ? this.pendingTurn(s) : null
     const prefix = loadMessages && msgLimit !== null ? this.prefixIndex(s, revisionBefore) : null
-    const limited = prefix && msgLimit !== null ? this.limitedDetail(s, prefix, msgLimit, msgBefore, pending, journaled) : null
+    const limited = prefix && msgLimit !== null ? (await this.limitedDetail(s, prefix, msgLimit, msgBefore, pending, journaled)) : null
     const stateRows = loadMessages && !limited ? this.stateDbRows(s) : []
     let transcript = loadMessages && !limited ? this.mergedTranscript(s, s.messages, stateRows) : []
     if (pending && !limited) transcript = withPendingUserTurn(transcript, pending)
     if (journaled && !limited)transcript = withoutRunningTurnOutput(transcript, { ...journaled, localCount: s.messages.length })
     // Turn ids, tool outcomes and scenes are computed over the full transcript, so every window reports the same values.
-    const all: unknown[] = loadMessages && !limited ? this.backgroundLinked(s, hydrateAnchorActivityScenes(withToolCallOutcomes(this.backgroundUpdates(s, withMarkerKinds(withTurnIds(withAttachmentObjects(transcript)), s)), s.tool_calls, s.active_stream_id), s.anchor_activity_scenes, { activeTurnId: s.active_stream_id, runningScene: !journaled, clipToolResults: msgLimit !== null })) : []
+    const all: unknown[] = loadMessages && !limited ? this.backgroundLinked(s, hydrateAnchorActivityScenes(withToolCallOutcomes((await this.backgroundUpdates(s, withMarkerKinds(withTurnIds(withAttachmentObjects(transcript)), s))), s.tool_calls, s.active_stream_id), s.anchor_activity_scenes, { activeTurnId: s.active_stream_id, runningScene: !journaled, clipToolResults: msgLimit !== null })) : []
     let truncated: unknown[] = limited?.messages ?? []
     let offset = limited?.offset ?? 0
     let summaryCount: number | null = limited?.total ?? null
@@ -994,12 +1005,12 @@ export class SessionService {
     raw._messages_truncated = isTruncated
     raw._messages_offset = offset
     raw._msg_limit_max = MAX_MSG_LIMIT
-    const revisionAfter = this.loadRevision(s)
+    const revisionAfter = (await this.loadRevision(s))
     raw._load_revision = revisionBefore !== null && revisionBefore === revisionAfter ? hashRevision(revisionBefore) : `unstable-${randomUUID().replace(/-/g, '')}`
     Object.assign(raw, withOwnerLocks([raw], limited?.sources ?? this.stateDbSources)[0])
     raw.assistant_name = this.assistantName(s)
     raw.workspace_name = this.workspaceNames()(s)
-    raw.branched_from = this.branchedFrom(s)
+    raw.branched_from = (await this.branchedFrom(s))
     withSessionWireFlags(raw, activeStreamIds)
     // A metadata-only read lacks the history the gate counts, so it carries no flag.
     if (loadMessages) raw.can_compress = limited ? raw.read_only !== true && !isClaudeCodeSessionId(s.session_id) && (!s.active_stream_id || this.compactionWaiters.has(s.active_stream_id)) && limited.enoughContext : this.canCompress(s, raw.read_only === true, stateRows)
@@ -1008,7 +1019,7 @@ export class SessionService {
     // TAL-1006: the compression a client shows on load: the running manual job's, else the live run's open span.
     const job = this.compressionJobs.get(s.session_id)
     raw.compression_started_at = job?.status === 'running' ? job.started_at : raw.active_stream_id ? (this.deps.runtime.compressionStartedAt?.(str(raw.active_stream_id)) ?? null) : null
-    raw.automatic_turns_held = this.deps.runtime.automaticTurnsHeld?.(s.session_id) ?? false
+    raw.automatic_turns_held = (await this.deps.runtime.automaticTurnsHeld?.(s.session_id)) ?? false
     raw.notices = this.deps.runtime.sessionNotices?.(s.session_id) ?? []
     raw.goal = this.deps.runtime.sessionGoal?.(s.session_id) ?? null
     return redactSessionData(raw, this.deps.redactEnabled())
@@ -1018,12 +1029,12 @@ export class SessionService {
    * TAL-454: the chat `/branch` copied, while it still loads (archived included). A compression continuation is also a
    * fork of its parent but not a branch, so it links nowhere.
    */
-  private branchedFrom(s: Session): { session_id: string; title: string } | null {
+  private async branchedFrom(s: Session): Promise<{ session_id: string; title: string } | null> {
     const parentId = s.parent_session_id
     if (!parentId || str(s.session_source).trim().toLowerCase() !== 'fork' || s.compression_recovery_source_session_id) return null
     let title: unknown
     try {
-      const parent = this.store.get(parentId, { metadataOnly: true, promote: false, cacheOnMiss: false })
+      const parent = (await this.store.get(parentId, { metadataOnly: true, promote: false, cacheOnMiss: false }))
       if (!this.visibleToActiveProfile(parent.profile)) return null
       title = parent.title
     } catch {
@@ -1031,7 +1042,7 @@ export class SessionService {
       // has transcript rows and is not a deleted chat (`claimOrSynthesizeCliSession`'s `was_webui` and `no_foreign_state`).
       const dbPath = this.stateDbPath(null)
       const row = stateDbSessionRow(dbPath, parentId)
-      if (!row || this.store.wasDeleted(parentId) || this.indexMarksWasWebui(parentId)) return null
+      if (!row || (await this.store.wasDeleted(parentId)) || (await this.indexMarksWasWebui(parentId))) return null
       if (!stateDbSessionMessages(dbPath, parentId, { stitch: true }).length) return null
       title = row.title
     }
@@ -1062,23 +1073,23 @@ export class SessionService {
   }
 
   /** A session without a sidecar, synthesized from state.db for this profile; 404/409 like the detail. */
-  private foreignSession(sid: string): { synth: Session; meta: Row | null } {
+  private async foreignSession(sid: string): Promise<{ synth: Session; meta: Row | null }> {
     sid = this.resolveSessionId(sid)
-    const meta = this.lookupCliMeta(sid)
+    const meta = (await this.lookupCliMeta(sid))
     const profile = str(meta?.profile) || null
     const profileAgnostic = str(meta?.source_tag || meta?.raw_source).trim().toLowerCase() === 'claude_code'
     if (!profileAgnostic && !this.visibleToActiveProfile(profile)) {
       if (profile) throw new HttpFailure(409, 'Session belongs to a different profile', { code: 'session_profile_mismatch', session_id: sid, profile })
       throw new HttpFailure(404, 'Session not found')
     }
-    const { session: synth, reason } = this.claimOrSynthesizeCliSession(sid, meta)
+    const { session: synth, reason } = (await this.claimOrSynthesizeCliSession(sid, meta))
     if (!synth || reason === 'was_webui') throw new HttpFailure(404, 'Session not found')
     return { synth, meta }
   }
 
   /** Python `_handle_session_get` without a sidecar: the state.db transcript as a (read-only or claimable) foreign stub. */
-  private foreignSessionDetail(sid: string): Record<string, unknown> {
-    const { synth, meta } = this.foreignSession(sid)
+  private async foreignSessionDetail(sid: string): Promise<Record<string, unknown>> {
+    const { synth, meta } = (await this.foreignSession(sid))
     // The same turn projection as a WebUI session: turn ids, tool outcomes, then each completed turn's scene.
     const msgs = hydrateAnchorActivityScenes(withToolCallOutcomes(withMarkerKinds(withTurnIds(synth.messages), synth), [], null), {}) as Message[]
     const lastTs = Number(msgs[msgs.length - 1]?.timestamp ?? 0) || 0
@@ -1096,7 +1107,7 @@ export class SessionService {
   }
 
   /** Clear persisted streaming flags when no live stream backs them (Python `_clear_stale_stream_state`). */
-  clearStaleStreamState(session: Session): boolean {
+  async clearStaleStreamState(session: Session): Promise<boolean> {
     const streamId = session.active_stream_id
     if (!streamId) return false
     if (this.deps.runtime.activeStreamIds.has(streamId)) return false
@@ -1104,10 +1115,10 @@ export class SessionService {
     const pendingAge = session.pending_started_at ? this.deps.now() - session.pending_started_at : null
     if (session.hasPendingPrompt && pendingAge !== null && pendingAge < 30) return false
     // Reading a display-only session must not settle the previous Talaria worker's transcript.
-    if (this.isReadOnly(session)) return false
+    if ((await this.isReadOnly(session))) return false
     let target = session
     if (session.loadedMetadataOnly) {
-      const full = this.store.load(session.session_id)
+      const full = (await this.store.load(session.session_id))
       if (!full) return false
       target = full
       if (!target.active_stream_id) {
@@ -1158,14 +1169,14 @@ export class SessionService {
     target.pending_attachments = []
     target.pending_started_at = null
     target.pending_user_source = null
-    try { this.store.save(target, { touchUpdatedAt: false }) } catch { return false }
+    try { (await this.store.save(target, { touchUpdatedAt: false })) } catch { return false }
     if (target !== session) {
       session.active_stream_id = null
       session.pending_user_message = null
       session.pending_attachments = []
       session.pending_started_at = null
       session.pending_user_source = null
-      this.store.touch(target)
+      await this.store.touch(target)
     }
     return true
   }
@@ -1184,7 +1195,7 @@ export class SessionService {
 
   async list(params: Omit<ListParams, 'activeProfile' | 'isolatedProfileMode' | 'profilesMatch' | 'cliRows' | 'gatewayIdentity' | 'stateDbSources' | 'truncatedSources' | 'agentStorage' | 'pruneOrphanedImports' | 'webuiRows'>): Promise<{ body: ListResponse; etag: string }> {
     const activeProfile = this.deps.activeProfile()
-    const webuiRows = allSessions(this.store, { sidebarMetadataOnly: true })
+    const webuiRows = (await allSessions(this.store, { sidebarMetadataOnly: true }))
     const wantState = params.showCliSessions || params.showCronSessions || params.showWebhookSessions || params.showKanbanSessions
     // Python reads every profile's state.db under all_profiles; this port projects the active profile only.
     const cliRead = wantState ? await this.deps.cliSessions(activeProfile, { sourceFilter: params.sourceFilter ?? null }) : undefined
@@ -1199,13 +1210,13 @@ export class SessionService {
       if (expanded.storage && (expanded.storage.state === 'corrupt' || agentStorage?.state === 'ok')) agentStorage = expanded.storage
     }
     const lookups = await this.listStateDbLookups(webuiRows, (cliRows ?? []).map((r) => str(r.session_id)))
-    const payload = buildSessionListPayload(this.store, { ...params, ...(cliRows ? { cliRows } : {}), ...(truncatedSources ? { truncatedSources } : {}), ...(agentStorage ? { agentStorage } : {}), gatewayIdentity, ...lookups, webuiRows, activeProfile, isolatedProfileMode: this.deps.isolatedProfileMode(), profilesMatch: this.deps.profilesMatch })
+    const payload = (await buildSessionListPayload(this.store, { ...params, ...(cliRows ? { cliRows } : {}), ...(truncatedSources ? { truncatedSources } : {}), ...(agentStorage ? { agentStorage } : {}), gatewayIdentity, ...lookups, webuiRows, activeProfile, isolatedProfileMode: this.deps.isolatedProfileMode(), profilesMatch: this.deps.profilesMatch }))
     return sessionListResponse(payload, this.deps.runtime, this.deps.redactEnabled(), this.deps.now(), this.workspaceNames())
   }
 
   async search(q: string, opts: { content: boolean; depth: number; allProfiles: boolean }): Promise<Record<string, unknown>> {
     const activeProfile = this.deps.activeProfile()
-    let sessions = allSessions(this.store)
+    let sessions = (await allSessions(this.store))
     if (!opts.allProfiles) sessions = sessions.filter((r) => this.deps.profilesMatch(str(r.profile) || null, activeProfile))
     const metadata = await this.persistedAliasMetadata(sessions)
     sessions = reconcileLocalSessionRows(sessions, metadata.rows, this.deps.profilesMatch)
@@ -1222,12 +1233,12 @@ export class SessionService {
     const query = q.toLowerCase().trim()
     if (!query) return { sessions: sessions.map((s) => redactRow({ ...s })), all_profiles: opts.allProfiles, active_profile: activeProfile }
     const terms = sessionSearchTerms(query)
+    const matches = opts.content ? await this.store.searchMessages(sessions.filter((s) => !sessionSearchMatches(str(s.title), terms)).map((s) => str(s.session_id)), terms, opts.depth) : new Map<string, { idx: number; text: string }>()
     const results: Row[] = []
     for (const s of sessions) {
       if (sessionSearchMatches(str(s.title), terms)) { results.push(redactRow({ ...s, match_type: 'title' })); continue }
-      if (!opts.content) continue
-      const hit = this.contentMatch(str(s.session_id), terms, opts.depth)
-      if (hit) results.push(redactRow({ ...s, ...hit }))
+      const hit = matches.get(str(s.session_id))
+      if (hit) results.push(redactRow({ ...s, ...this.contentMatch(hit.text, terms) }))
     }
     return { sessions: results, query, count: results.length, all_profiles: opts.allProfiles, active_profile: activeProfile }
   }
@@ -1245,39 +1256,34 @@ export class SessionService {
     const base = { all_profiles: params.allProfiles, active_profile: this.deps.activeProfile(), include_archived: params.includeArchived, sidebar_filtered: true }
     if (!query) return { ...base, sessions: rows }
     const terms = sessionSearchTerms(query)
+    const metadataMatch = (row: Row) => ['workspace', 'workspace_name', 'model', 'model_provider', 'profile', 'source_label'].some((k) => sessionSearchMatches(str(row[k]), terms))
+    const matches = opts.content ? await this.store.searchMessages(rows.filter((row) => !sessionSearchMatches(str(row.title), terms) && !metadataMatch(row)).map((row) => str(row.session_id)), terms, opts.depth) : new Map<string, { idx: number; text: string }>()
     const results: Row[] = []
     for (const row of rows) {
       if (sessionSearchMatches(str(row.title), terms)) results.push({ ...row, match_type: 'title' })
-      else if (['workspace', 'workspace_name', 'model', 'model_provider', 'profile', 'source_label'].some((k) => sessionSearchMatches(str(row[k]), terms))) results.push({ ...row, match_type: 'metadata' })
-      else if (opts.content) {
-        const hit = this.contentMatch(str(row.session_id), terms, opts.depth)
-        if (hit) results.push({ ...row, ...hit })
+      else if (metadataMatch(row)) results.push({ ...row, match_type: 'metadata' })
+      else {
+        const hit = matches.get(str(row.session_id))
+        if (hit) results.push({ ...row, ...this.contentMatch(hit.text, terms) })
       }
     }
     return { ...base, sessions: results, query, count: results.length }
   }
 
   /** The first of a stored session's first `depth` messages (0: all) containing every term, with its redacted excerpt. */
-  private contentMatch(sid: string, terms: readonly string[], depth: number): Row | null {
-    let sess: Session
-    try { sess = this.store.get(sid, { promote: false, cacheOnMiss: false }) } catch { return null }
-    for (const m of depth ? sess.messages.slice(0, depth) : sess.messages) {
-      const c = sessionSearchMessageText(m)
-      if (!sessionSearchMatches(c, terms)) continue
-      const item: Row = { match_type: 'content' }
-      const preview = sessionSearchPreview(c, terms)
-      if (preview) item.match_preview = redactText(preview, this.deps.redactEnabled())
-      return item
-    }
-    return null
+  private contentMatch(text: string, terms: readonly string[]): Row {
+    const item: Row = { match_type: 'content' }
+    const preview = sessionSearchPreview(text, terms)
+    if (preview) item.match_preview = redactText(preview, this.deps.redactEnabled())
+    return item
   }
 
   // ── status / usage ───────────────────────────────────────────────────────
 
-  status(sid: string): Record<string, unknown> {
-    const s = this.get404(sid, { metadataOnly: true })
-    this.clearStaleStreamState(s)
-    const full = this.get404(sid)
+  async status(sid: string): Promise<Record<string, unknown>> {
+    const s = (await this.get404(sid, { metadataOnly: true }))
+    await this.clearStaleStreamState(s)
+    const full = (await this.get404(sid))
     const inp = Math.trunc(full.input_tokens) || 0
     const out = Math.trunc(full.output_tokens) || 0
     const profile = full.profile || 'default'
@@ -1291,8 +1297,8 @@ export class SessionService {
     }
   }
 
-  usage(sid: string): Record<string, unknown> {
-    const s = this.get404(sid)
+  async usage(sid: string): Promise<Record<string, unknown>> {
+    const s = (await this.get404(sid))
     const inp = Math.trunc(s.input_tokens) || 0
     const out = Math.trunc(s.output_tokens) || 0
     return { input_tokens: inp, output_tokens: out, total_tokens: inp + out, estimated_cost: s.estimated_cost, model: s.model }
@@ -1300,13 +1306,13 @@ export class SessionService {
 
   // ── creation ─────────────────────────────────────────────────────────────
 
-  resolveNewSessionWorkspace(body: Record<string, unknown>, visiblePrevSessionId: string | null, profile: string | null): string | null {
+  async resolveNewSessionWorkspace(body: Record<string, unknown>, visiblePrevSessionId: string | null, profile: string | null): Promise<string | null> {
     const candidate = body.workspace
     if (!candidate) return null
     const value = str(candidate)
     if (body.workspace_inherited_from_prev_session !== true || !visiblePrevSessionId) return this.deps.workspaces.resolveTrusted(value, profile)
     let previous: Session
-    try { previous = this.store.get(visiblePrevSessionId, { metadataOnly: true }) } catch { return this.deps.workspaces.resolveTrusted(value, profile) }
+    try { previous = (await this.store.get(visiblePrevSessionId, { metadataOnly: true })) } catch { return this.deps.workspaces.resolveTrusted(value, profile) }
     if (previous.workspace !== value) return this.deps.workspaces.resolveTrusted(value, profile)
     const [workspace] = this.deps.workspaces.resolveImplicitWithRecovery(value, (p) => this.deps.workspaces.profileDefaultWorkspaceForBoot(p), profile)
     return workspace
@@ -1321,22 +1327,22 @@ export class SessionService {
     return names.length ? names : null
   }
 
-  create(body: Record<string, unknown>, opts: { worktree?: { path: string; branch: string; repo_root: string; created_at: number } | null } = {}): Session {
+  async create(body: Record<string, unknown>, opts: { worktree?: { path: string; branch: string; repo_root: string; created_at: number } | null } = {}): Promise<Session> {
     // Python `new_session`: a body without a profile takes the request's active profile (cookie first).
     const profile = (typeof body.profile === 'string' && body.profile) || this.deps.activeProfile()
     let prevSessionId = typeof body.prev_session_id === 'string' && body.prev_session_id ? body.prev_session_id : null
-    if (prevSessionId && !this.sessionIdVisible(prevSessionId)) prevSessionId = null
+    if (prevSessionId && !(await this.sessionIdVisible(prevSessionId))) prevSessionId = null
     // Python: leaving a session for a new one flushes the previous session's memory in the background (W6).
-    if (prevSessionId) this.deps.commitSessionMemory?.(prevSessionId)
+    if (prevSessionId) await this.deps.commitSessionMemory?.(prevSessionId)
     let workspace: string | null
     try {
-      workspace = this.resolveNewSessionWorkspace(body, prevSessionId, profile)
+      workspace = (await this.resolveNewSessionWorkspace(body, prevSessionId, profile))
     } catch (error) {
       throw new HttpFailure(400, (error as Error).message)
     }
     const [model, provider] = this.deps.modelStateFromRequest(body.model, body.model_provider, null)
     const toolsets = this.validateToolsetsShape(body.enabled_toolsets)
-    const s = this.store.newSession({ workspace, model, modelProvider: provider, profile, projectId: typeof body.project_id === 'string' && body.project_id ? body.project_id : null, worktree: opts.worktree ?? null, enabledToolsets: toolsets })
+    const s = (await this.store.newSession({ workspace, model, modelProvider: provider, profile, projectId: typeof body.project_id === 'string' && body.project_id ? body.project_id : null, worktree: opts.worktree ?? null, enabledToolsets: toolsets }))
     if (opts.worktree) this.publish('session_new', s.profile, s.session_id)
     return s
   }
@@ -1347,12 +1353,12 @@ export class SessionService {
   async persistGeneratedTitle(sid: string, nextTitle: string, eventReason: string): Promise<Session> {
     const title = nextTitle.trim().slice(0, 80) || 'Untitled'
     let current: Session
-    try { current = this.store.get(sid) } catch { throw new HttpFailure(404, 'Session not found') }
-    if (this.isReadOnly(current)) throw new HttpFailure(403, `Session ${sid} is read-only`)
-    await this.withMutationLock(sid, () => {
+    try { current = (await this.store.get(sid)) } catch { throw new HttpFailure(404, 'Session not found') }
+    if ((await this.isReadOnly(current))) throw new HttpFailure(403, `Session ${sid} is read-only`)
+    await this.withMutationLock(sid, async () => {
       current.title = title
       markSessionTitleGenerated(current)
-      this.store.save(current, { touchUpdatedAt: false })
+      await this.store.save(current, { touchUpdatedAt: false })
     })
     // An explicit regenerate is user-requested, so state.db takes it over a manual name.
     await this.deps.syncTitle(current, true)
@@ -1361,10 +1367,10 @@ export class SessionService {
   }
 
   async rename(sid: string, rawTitle: unknown): Promise<Record<string, unknown>> {
-    const s = this.mutationTarget(sid, 'renamed')
-    await this.withMutationLock(sid, () => {
+    const s = (await this.mutationTarget(sid, 'renamed'))
+    await this.withMutationLock(sid, async () => {
       applySessionTitleRename(s, rawTitle)
-      this.store.save(s)
+      await this.store.save(s)
     })
     await this.deps.syncTitle(s, true)
     this.publish('session_rename', s.profile, s.session_id)
@@ -1376,17 +1382,17 @@ export class SessionService {
   private pinChain: Promise<unknown> = Promise.resolve()
 
   pin(sid: string, pinRequested: boolean): Promise<Record<string, unknown>> {
-    const run = this.pinChain.then(() => this.pinUnserialized(sid, pinRequested))
+    const run = this.pinChain.then(async () => (await this.pinUnserialized(sid, pinRequested)))
     this.pinChain = run.catch(() => undefined)
     return run
   }
 
   private async pinUnserialized(sid: string, pinRequested: boolean): Promise<Record<string, unknown>> {
-    this.rejectViewOnly(sid, 'modified')
-    let s = this.get404(sid)
-    s = this.store.ensureFull(sid, s)
+    await this.rejectViewOnly(sid, 'modified')
+    let s = (await this.get404(sid))
+    s = (await this.store.ensureFull(sid, s))
     if (pinRequested && !s.pinned) {
-      const rows = allSessions(this.store)
+      const rows = (await allSessions(this.store))
       const byId = new Map(rows.filter((r) => r.session_id).map((r) => [str(r.session_id), r]))
       byId.set(s.session_id, s.compact())
       const targetLineage = lineageRootId(s.compact(), byId)
@@ -1395,38 +1401,38 @@ export class SessionService {
       const limit = this.deps.pinnedSessionsLimit()
       if (pinnedLineages.size >= limit) throw new HttpFailure(400, `Up to ${limit} sessions can be pinned. Unpin one before pinning another.`)
     }
-    await this.withMutationLock(sid, () => {
+    await this.withMutationLock(sid, async () => {
       s.pinned = pinRequested
-      this.store.save(s)
+      await this.store.save(s)
     }, { allowReadOnly: true })
     this.publish('session_pin', s.profile, s.session_id)
     return { ok: true, session: this.wireRow(s) }
   }
 
   async archive(sid: string, archived: boolean): Promise<Record<string, unknown>> {
-    this.rejectViewOnly(sid, 'archived')
-    let s = this.get404(sid)
-    s = this.store.ensureFull(sid, s)
-    await this.withMutationLock(sid, () => {
+    await this.rejectViewOnly(sid, 'archived')
+    let s = (await this.get404(sid))
+    s = (await this.store.ensureFull(sid, s))
+    await this.withMutationLock(sid, async () => {
       s.archived = archived
       if (archived) s.pinned = false
-      this.store.save(s, { touchUpdatedAt: false })
+      await this.store.save(s, { touchUpdatedAt: false })
     }, { allowReadOnly: true })
     this.publish('session_archive', s.profile, s.session_id)
     return { ok: true, session: this.wireRow(s), ...worktreeRetainedPayload(s) }
   }
 
   async move(sid: string, targetProjectId: string | null): Promise<Record<string, unknown>> {
-    const s = this.mutationTarget(sid, 'moved')
+    const s = (await this.mutationTarget(sid, 'moved'))
     if (targetProjectId) {
       const sessionProfile = s.profile || this.deps.activeProfile()
-      const target = this.deps.projects.load().find((p) => p.project_id === targetProjectId)
+      const target = (await this.deps.projects.load()).find((p) => p.project_id === targetProjectId)
       if (!target || !this.deps.profilesMatch(target.profile ?? null, sessionProfile)) throw new HttpFailure(404, 'Project not found')
     }
     try {
-      await this.withMutationLock(sid, () => {
+      await this.withMutationLock(sid, async () => {
         s.project_id = targetProjectId
-        this.store.save(s)
+        await this.store.save(s)
       }, { timeoutMs: 5000 })
     } catch (error) {
       if (error instanceof SessionBusy) throw new HttpFailure(503, 'Session is busy (streaming). Please try again in a moment.')
@@ -1437,7 +1443,7 @@ export class SessionService {
   }
 
   async update(sid: string, body: Record<string, unknown>): Promise<Record<string, unknown>> {
-    const s = this.mutationTarget(sid, 'updated')
+    const s = (await this.mutationTarget(sid, 'updated'))
     const oldWs = s.workspace
     const oldModel = s.model
     const oldProvider = s.model_provider
@@ -1461,34 +1467,34 @@ export class SessionService {
         if (changed) {
           s.context_length = contextLength
           forgetContextFigures(s)
-          this.deps.runtime.evictAgent(sid)
+          await this.deps.runtime.evictAgent(sid)
         }
       }
-      this.store.save(s)
+      await this.store.save(s)
     })
     if (str(oldWs) !== str(newWs)) this.deps.runtime.closeTerminal(sid)
     this.deps.workspaces.setLastWorkspace(newWs, s.profile)
-    return { session: this.publicSession(s) }
+    return { session: (await this.publicSession(s)) }
   }
 
   async setToolsets(sid: string, toolsets: unknown): Promise<Record<string, unknown>> {
-    this.rejectViewOnly(sid, 'modified')
+    await this.rejectViewOnly(sid, 'modified')
     const cleaned = this.validateToolsetsShape(toolsets)
-    const s = this.mutationTarget(sid, 'modified')
-    await this.withMutationLock(sid, () => {
+    const s = (await this.mutationTarget(sid, 'modified'))
+    await this.withMutationLock(sid, async () => {
       s.enabled_toolsets = cleaned
-      this.store.save(s)
+      await this.store.save(s)
     })
     return { ok: true, enabled_toolsets: s.enabled_toolsets }
   }
 
   /** Python `/api/personality/set` persistence: the name only; the prompt is resolved by the caller. */
   async setPersonality(sid: string, name: string | null): Promise<string | null> {
-    this.rejectViewOnly(sid, 'modified')
-    const s = this.mutationTarget(sid, 'modified')
-    await this.withMutationLock(sid, () => {
+    await this.rejectViewOnly(sid, 'modified')
+    const s = (await this.mutationTarget(sid, 'modified'))
+    await this.withMutationLock(sid, async () => {
       s.personality = name
-      this.store.save(s)
+      await this.store.save(s)
     })
     return typeof s.personality === 'string' ? s.personality : null
   }
@@ -1501,9 +1507,9 @@ export class SessionService {
    * Without one (a released App, which asked on the device) the cut proceeds as before.
    */
   async truncate(sid: string, keepRaw: unknown, hold: { confirmToken: string | null } | null = null): Promise<Record<string, unknown>> {
-    this.rejectViewOnly(sid, 'modified')
+    await this.rejectViewOnly(sid, 'modified')
     if (keepRaw === null || keepRaw === undefined) throw new HttpFailure(400, 'Missing required field(s): keep_count')
-    const s = this.mutationTarget(sid, 'modified')
+    const s = (await this.mutationTarget(sid, 'modified'))
     // Python `int(body["keep_count"])`: a float truncates, a non-integer string is rejected.
     let keep: number
     if (typeof keepRaw === 'number') keep = Number.isFinite(keepRaw) ? Math.trunc(keepRaw) : Number.NaN
@@ -1511,14 +1517,14 @@ export class SessionService {
     else keep = /^[+-]?\d+$/.test(str(keepRaw).trim()) ? Number.parseInt(str(keepRaw).trim(), 10) : Number.NaN
     if (!Number.isInteger(keep)) throw new HttpFailure(400, 'keep_count must be an integer')
     if (keep < 0) throw new HttpFailure(400, 'keep_count must be non-negative')
-    const refused = await this.withMutationLock(sid, () => {
+    const refused = await this.withMutationLock(sid, async () => {
       // One state.db read decides and marks the boundary, so a row committed meanwhile is neither counted nor hidden.
       const read = this.stateDbRead(s)
       if (hold) {
         // A failed read cannot say whether a CLI continuation would go too: fail closed. The Agent keeps a state.db for every
         // profile it has run in, so a missing one is never evidence of a session without state.db rows.
         if (!read.ok) throw new HttpFailure(503, read.reason ?? 'The session history could not be read. Please try again in a moment.')
-        const held = this.heldCut(s, keep, read.rows)
+        const held = (await this.heldCut(s, keep, read.rows))
         if (held && held.confirm_token !== hold.confirmToken) return held
       }
       // A cut inside the state.db continuation keeps the continuation's rows before it: the boundary below hides every
@@ -1529,12 +1535,12 @@ export class SessionService {
       }
       truncateSessionAtKeep(s, keep)
       this.markStateDbSeen(s, read, { boundary: true })
-      this.store.save(s)
+      await this.store.save(s)
       return null
     })
     if (refused) return refused
-    this.deps.runtime.evictAgent(sid)
-    return { ok: true, session: this.publicSession(s) }
+    await this.deps.runtime.evictAgent(sid)
+    return { ok: true, session: (await this.publicSession(s)) }
   }
 
   /**
@@ -1542,9 +1548,9 @@ export class SessionService {
    * the detail shows, state.db continuation included, since `keep` indexes them: the user turns the cut removes, and the
    * messages after the row it starts at.
    */
-  private heldCut(s: Session, keep: number, stateRows: Message[]): { ok: false; confirm_required: true; discard_user_turns: number; discard_messages: number; confirm_token: string } | null {
+  private async heldCut(s: Session, keep: number, stateRows: Message[]): Promise<{ ok: false; confirm_required: true; discard_user_turns: number; discard_messages: number; confirm_token: string } | null> {
     const transcript = this.mergedTranscript(s, s.messages, stateRows)
-    const cut = ((this.publicSession(s, true, transcript).messages ?? []) as Message[]).map((m, i) => ({ m, i })).filter(({ m, i }) => i >= keep && m._display === 'row')
+    const cut = (((await this.publicSession(s, true, transcript)).messages ?? []) as Message[]).map((m, i) => ({ m, i })).filter(({ m, i }) => i >= keep && m._display === 'row')
     const userTurns = cut.filter(({ m }) => m.role === 'user').length
     if (userTurns <= 1) return null
     const token = createHash('sha256').update(JSON.stringify(transcript.slice(keep))).digest('hex').slice(0, 32)
@@ -1562,7 +1568,7 @@ export class SessionService {
     // A running job is joined first: once it has installed its short context, the guards below would refuse a new one.
     const existing = running()
     if (existing) return existing
-    const { s } = this.compressionTarget(sid)
+    const { s } = (await this.compressionTarget(sid))
     const focusTopic = str(focusRaw).trim().slice(0, 500) || null
     await ensureAgentRuntimeCurrent(this.deps.sidecar?.() ?? null)
     // Another start may have admitted a job while the runtime check awaited.
@@ -1597,7 +1603,7 @@ export class SessionService {
     if (turn) this.compactionWaiters.add(turn)
     try {
       let job = this.compressionJobs.get(sid)
-      if (job?.status !== 'running') job = (opts.due ?? this.storedCompactionDue(sid)) ? await this.startCompression(sid, null, { automatic: true }) : undefined
+      if (job?.status !== 'running') job = (opts.due ?? (await this.storedCompactionDue(sid))) ? await this.startCompression(sid, null, { automatic: true }) : undefined
       if (!job || signal?.aborted) return false
       if (turn) job.turns.add(turn)
       opts.onWait?.()
@@ -1620,23 +1626,23 @@ export class SessionService {
   async remeasureContext(sid: string): Promise<boolean> {
     const sidecar = this.deps.sidecar?.()
     let s: Session
-    try { s = this.store.get(sid) } catch { return false }
+    try { s = (await this.store.get(sid)) } catch { return false }
     const before = s.post_compression_context_tokens_estimate
     if (before === null || s.active_stream_id || !sidecar) return false
     let tokens: number
     try { tokens = (await sidecar.call('models.estimate_tokens', { messages: this.modelContext(s) })).tokens } catch { return false }
-    return this.store.withLock(sid, () => {
+    return this.store.withLock(sid, async () => {
       let live: Session
-      try { live = this.store.get(sid) } catch { return false }
-      if (live.active_stream_id || live.post_compression_context_tokens_estimate !== before || this.isReadOnly(live)) return false
+      try { live = (await this.store.get(sid)) } catch { return false }
+      if (live.active_stream_id || live.post_compression_context_tokens_estimate !== before || (await this.isReadOnly(live))) return false
       live.post_compression_context_tokens_estimate = Math.max(1, tokens)
-      this.store.save(live, { touchUpdatedAt: false })
+      await this.store.save(live, { touchUpdatedAt: false })
       return true
     })
   }
 
-  private storedCompactionDue(sid: string): boolean {
-    try { return this.compactionDue(this.store.get(sid, { metadataOnly: true })) } catch { return false }
+  private async storedCompactionDue(sid: string): Promise<boolean> {
+    try { return this.compactionDue((await this.store.get(sid, { metadataOnly: true }))) } catch { return false }
   }
 
   /** Whether the session's context (the post-compression estimate, else the last prompt) reached the next turn's threshold. */
@@ -1650,9 +1656,9 @@ export class SessionService {
   /** The session a compression may run on now, and the model history it compresses: the context a turn would send, so a
    * repeat compression builds on the previous summary instead of re-reading the whole display transcript. `context` is
    * that history unsanitized and `stateRows` the state.db read it came from. */
-  private compressionTarget(sid: string): { s: Session; history: Message[]; context: Message[]; stateRows: Message[] } {
-    this.rejectViewOnly(sid, 'compressed')
-    const s = this.mutationTarget(sid, 'compressed')
+  private async compressionTarget(sid: string): Promise<{ s: Session; history: Message[]; context: Message[]; stateRows: Message[] }> {
+    await this.rejectViewOnly(sid, 'compressed')
+    const s = (await this.mutationTarget(sid, 'compressed'))
     const stateRows = this.stateDbRows(s)
     const context = this.compressionContext(s, stateRows)
     return { s, history: sanitizeMessagesForApi(context), context, stateRows }
@@ -1683,17 +1689,17 @@ export class SessionService {
   }
 
   /** TAL-258: the session's WebUI record (absent for a CLI or gateway session) and the profile whose state.db holds its rows. */
-  private handoffTarget(sid: string): { local: Session | null; profile: string; dbPath: string } {
+  private async handoffTarget(sid: string): Promise<{ local: Session | null; profile: string; dbPath: string }> {
     sid = sid.trim()
     let local: Session | null = null
-    try { local = this.store.get(sid) } catch { /* a foreign session without a WebUI record */ }
+    try { local = (await this.store.get(sid)) } catch { /* a foreign session without a WebUI record */ }
     const profile = local?.profile ?? this.deps.activeProfile()
     return { local, profile, dbPath: this.stateDbPath(profile) }
   }
 
   /** Python `_handle_conversation_rounds` (TAL-258): the session's rounds and whether the handoff dock is due. */
-  conversationRounds(sid: string, since: number | null): { ok: true; rounds: number; threshold: number; should_show: boolean } {
-    const rounds = countConversationRounds(this.handoffTarget(sid).dbPath, sid, since)
+  async conversationRounds(sid: string, since: number | null): Promise<{ ok: true; rounds: number; threshold: number; should_show: boolean }> {
+    const rounds = countConversationRounds((await this.handoffTarget(sid)).dbPath, sid, since)
     return { ok: true, rounds, threshold: CONVERSATION_ROUND_THRESHOLD, should_show: rounds >= CONVERSATION_ROUND_THRESHOLD }
   }
 
@@ -1703,8 +1709,8 @@ export class SessionService {
    * back to a deterministic local summary rather than an error.
    */
   async handoffSummary(sid: string, since: number | null): Promise<{ ok: true; summary: string; message_count: number; rounds: number; fallback: boolean; warning?: string }> {
-    sid = this.rejectViewOnly(sid, 'summarized')
-    const { local, profile, dbPath } = this.handoffTarget(sid)
+    sid = (await this.rejectViewOnly(sid, 'summarized'))
+    const { local, profile, dbPath } = (await this.handoffTarget(sid))
     const rounds = countConversationRounds(dbPath, sid, since)
     if (rounds < CONVERSATION_ROUND_THRESHOLD) throw new HttpFailure(400, 'Not enough conversation rounds to generate a summary.')
     // A running turn settles the transcript it started from, which would drop a card appended meanwhile.
@@ -1714,11 +1720,11 @@ export class SessionService {
     if (messages.length < 2) throw new HttpFailure(400, 'Not enough messages to summarize.')
     const sidecar = this.deps.sidecar?.() ?? null
     await ensureAgentRuntimeCurrent(sidecar)
-    const meta = local ? null : this.lookupCliMeta(sid)
+    const meta = local ? null : (await this.lookupCliMeta(sid))
     const generated = await this.generateHandoffSummary(sidecar, profile, local, meta, messages)
     const pick = (row: Record<string, unknown> | null, ...keys: string[]): string => { for (const key of keys) { const v = str(row?.[key]).trim(); if (v) return v } return '' }
     // Python `get_cli_sessions` never listed WebUI's own state.db rows, so they name no channel.
-    const cliRow = meta ?? this.lookupCliMeta(sid)
+    const cliRow = meta ?? (await this.lookupCliMeta(sid))
     const channel = pick(local as unknown as Record<string, unknown> | null, 'source_label', 'raw_source', 'source_tag', 'session_source') || (str(cliRow?.raw_source || cliRow?.source).trim().toLowerCase() === 'webui' ? '' : pick(cliRow, 'source_label', 'raw_source', 'source_tag', 'source')) || null
     await this.persistHandoffMarker(sid, profile, handoffMarker(sid, generated.summary, channel, rounds, generated.fallback, this.deps.now()))
     return { ok: true, summary: generated.summary, message_count: messages.length, rounds, fallback: generated.fallback, ...(generated.warning ? { warning: generated.warning } : {}) }
@@ -1751,7 +1757,7 @@ export class SessionService {
   private async persistHandoffMarker(sid: string, profile: string, marker: Message): Promise<void> {
     const card = messageHandoffPayload(marker)
     const toStateDb = async (): Promise<boolean> => {
-      this.rejectViewOnly(sid, 'summarized')
+      await this.rejectViewOnly(sid, 'summarized')
       if (sameHandoff(handoffPayload(stateDbTailToolContent(this.stateDbPath(profile), sid)), card)) return true
       const sidecar = this.deps.sidecar?.()
       if (!sidecar) return false
@@ -1763,27 +1769,27 @@ export class SessionService {
     }
     await this.withMutationLock(sid, async () => {
       let live: Session | null = null
-      try { live = this.store.get(sid) } catch { /* no WebUI record */ }
+      try { live = (await this.store.get(sid)) } catch { /* no WebUI record */ }
       // A turn that started while the summary was generated would drop the card when it settles.
       if (live?.active_stream_id) throw new HttpFailure(409, 'Session is still streaming; wait for the current turn to finish.')
-      const toLocal = (): boolean => {
-        this.rejectViewOnly(sid, 'summarized')
+      const toLocal = async (): Promise<boolean> => {
+        await this.rejectViewOnly(sid, 'summarized')
         if (!live) return false
         if (sameHandoff(messageHandoffPayload(live.messages.at(-1)), card)) return true
         live.messages.push(marker)
-        this.store.save(live)
+        await this.store.save(live)
         return true
       }
-      const messaging = this.isMessagingSession(sid)
-      const saved = messaging ? [await toStateDb(), toLocal()].some(Boolean) : toLocal() || await toStateDb()
+      const messaging = (await this.isMessagingSession(sid))
+      const saved = messaging ? [await toStateDb(), (await toLocal())].some(Boolean) : (await toLocal()) || await toStateDb()
       // The caller may switch away on success, so a card saved nowhere is an error, not a summary.
       if (!saved) throw new HttpFailure(503, 'The handoff summary could not be saved; please retry.')
     }, { allowReadOnly: true })
   }
 
   /** The session's compression job; a deleted session's finished result is dropped rather than served. */
-  compressionJob(sid: string): CompressionJob | undefined {
-    try { this.store.get(sid, { metadataOnly: true }) } catch { this.compressionJobs.delete(sid); throw new HttpFailure(404, 'Session not found') }
+  async compressionJob(sid: string): Promise<CompressionJob | undefined> {
+    try { (await this.store.get(sid, { metadataOnly: true })) } catch { this.compressionJobs.delete(sid); throw new HttpFailure(404, 'Session not found') }
     return this.compressionJobs.get(sid)
   }
 
@@ -1796,7 +1802,7 @@ export class SessionService {
    */
   private async compressSession(job: CompressionJob): Promise<Record<string, unknown>> {
     const { session_id: sid, focus_topic: focusTopic } = job
-    const { s, history, context, stateRows: seenRows } = this.compressionTarget(sid)
+    const { s, history, context, stateRows: seenRows } = (await this.compressionTarget(sid))
     const ownRows = (m: Message): boolean => !s.active_stream_id || m._turn_id !== s.active_stream_id
     // The display transcript and the model context must both still start where the compression found them, followed
     // only by the waiting turns' rows; the context is the exact history sent, so a state.db row that lands after this
@@ -1825,9 +1831,9 @@ export class SessionService {
     let committed = false
     let keptTurnRows = false
     try {
-      const current = await this.withMutationLock(sid, () => {
+      const current = await this.withMutationLock(sid, async () => {
         let live: Session
-        try { live = this.store.get(sid) } catch { throw new HttpFailure(404, 'Session not found') }
+        try { live = (await this.store.get(sid)) } catch { throw new HttpFailure(404, 'Session not found') }
         const turn = live.active_stream_id
         if (turn && !waited(turn)) throw new HttpFailure(409, 'Session stream state changed during compression; please retry.')
         // One state.db read serves the check, the kept display rows, and the boundary.
@@ -1869,9 +1875,9 @@ export class SessionService {
         live.last_prompt_tokens = result.after_tokens
         live.post_compression_context_tokens_estimate = result.after_tokens
         // An automatic job is maintenance, not activity: it leaves the session's place in the list alone.
-        this.store.save(live, { touchUpdatedAt: !job.automatic })
+        await this.store.save(live, { touchUpdatedAt: !job.automatic })
         // A backup from before the compression would restore the uncompressed context.
-        try { rmSync(`${this.store.pathFor(sid)}.bak`, { force: true }) } catch { /* ignore */ }
+        try { await this.store.shrinkBackup.discard(sid) } catch { /* ignore */ }
         return live
       })
       committed = true
@@ -1883,11 +1889,11 @@ export class SessionService {
       // The cached turn agent still carries the uncompressed state; the next turn builds a fresh one (gateway parity).
       // Awaited, so a turn sent right after the reply cannot reuse the old agent.
       try { await sidecar.call('chat.evict_agent', { session_id: sid }) } catch (error) { this.deps.log(`[webui] agent eviction after compression of ${sid} failed: ${(error as Error).message}`) }
-      return { ok: true, session: this.publicSession(current), summary, focus_topic: focusTopic }
+      return { ok: true, session: (await this.publicSession(current)), summary, focus_topic: focusTopic }
     } finally {
       // Second phase: the Agent's context-engine notification fires only for a result the session now holds.
       if (result.commit_token) {
-        const readOnly = committed ? this.readOnlyReason(s) : null
+        const readOnly = committed ? (await this.readOnlyReason(s)) : null
         if (readOnly) committed = false
         try { await sidecar.call('chat.compress_finalize', { commit_token: result.commit_token, committed }) } catch (error) { this.deps.log(`[webui] compression finalize for ${sid} failed: ${(error as Error).message}`) }
         if (readOnly) throw new HttpFailure(403, readOnly)
@@ -1896,15 +1902,15 @@ export class SessionService {
   }
 
   async clear(sid: string): Promise<Record<string, unknown>> {
-    this.rejectViewOnly(sid, 'modified')
-    const s = this.mutationTarget(sid, 'modified')
-    await this.withMutationLock(sid, () => {
+    await this.rejectViewOnly(sid, 'modified')
+    const s = (await this.mutationTarget(sid, 'modified'))
+    await this.withMutationLock(sid, async () => {
       const hadMessages = s.messages.length > 0
       truncateSessionAtKeep(s, 0)
       s.tool_calls = []
       if (s.parent_session_id) {
         let parentIsSnapshot = false
-        try { parentIsSnapshot = this.store.get(s.parent_session_id, { metadataOnly: true }).pre_compression_snapshot } catch { parentIsSnapshot = false }
+        try { parentIsSnapshot = (await this.store.get(s.parent_session_id, { metadataOnly: true })).pre_compression_snapshot } catch { parentIsSnapshot = false }
         if (parentIsSnapshot) {
           s.parent_session_id = null
           s.compression_anchor_visible_idx = null
@@ -1919,17 +1925,17 @@ export class SessionService {
       s.clear_generation = hadMessages ? randomUUID().replace(/-/g, '') : null
       applySessionTitleRename(s, 'Untitled')
       this.markStateDbSeen(s, undefined, { boundary: true })
-      this.store.save(s)
-      if (hadMessages) { try { rmSync(`${this.store.pathFor(sid)}.bak`, { force: true }) } catch { /* ignore */ } }
+      await this.store.save(s)
+      if (hadMessages) { try { await this.store.shrinkBackup.discard(sid) } catch { /* ignore */ } }
     })
-    this.deps.runtime.evictAgent(sid, true)
+    await this.deps.runtime.evictAgent(sid, true)
     return { ok: true, session: this.wireRow(s) }
   }
 
   async retry(sid: string): Promise<Record<string, unknown>> {
-    this.rejectViewOnly(sid, 'modified')
-    return this.withMutationLock(sid, () => {
-      const s = this.mutationTarget(sid, 'modified')
+    await this.rejectViewOnly(sid, 'modified')
+    return this.withMutationLock(sid, async () => {
+      const s = (await this.mutationTarget(sid, 'modified'))
       const history = s.messages
       const lastUser = findLastUserIndex(history)
       if (lastUser === null) return { error: 'No previous message to retry.' }
@@ -1944,15 +1950,15 @@ export class SessionService {
       const removed = history.length - lastUser
       shrinkTo(s, lastUser)
       this.markStateDbSeen(s, undefined, { boundary: true })
-      this.store.save(s)
+      await this.store.save(s)
       return { ok: true, last_user_text: lastUserText, last_user_prompt: lastUserPrompt, last_user_attachments: lastUserAttachments, removed_count: removed }
     })
   }
 
   async undo(sid: string): Promise<Record<string, unknown>> {
-    this.rejectViewOnly(sid, 'modified')
-    return this.withMutationLock(sid, () => {
-      const s = this.mutationTarget(sid, 'modified')
+    await this.rejectViewOnly(sid, 'modified')
+    return this.withMutationLock(sid, async () => {
+      const s = (await this.mutationTarget(sid, 'modified'))
       const history = s.messages
       const lastUser = findLastUserIndex(history)
       if (lastUser === null) return { error: 'Nothing to undo.' }
@@ -1960,15 +1966,15 @@ export class SessionService {
       const removed = history.length - lastUser
       shrinkTo(s, lastUser)
       this.markStateDbSeen(s, undefined, { boundary: true })
-      this.store.save(s)
+      await this.store.save(s)
       const preview = removedText.length > 40 ? `${removedText.slice(0, 40)}...` : removedText
       return { ok: true, removed_count: removed, removed_preview: preview }
     })
   }
 
-  duplicate(sid: string): Record<string, unknown> {
-    this.rejectViewOnly(sid, 'duplicated')
-    const session = this.store.load(sid)
+  async duplicate(sid: string): Promise<Record<string, unknown>> {
+    await this.rejectViewOnly(sid, 'duplicated')
+    const session = (await this.store.load(sid))
     if (!session) throw new HttpFailure(404, 'Session not found')
     const now = this.deps.now()
     // A truncation cut names deleted state.db rows of the source; the copy's own state.db rows are all genuine (TAL-504).
@@ -1986,16 +1992,16 @@ export class SessionService {
       },
       { workspace: session.workspace, model: session.model },
     )
-    this.store.touch(copied)
-    this.store.save(copied)
+    await this.store.touch(copied)
+    await this.store.save(copied)
     this.publish('session_duplicate', copied.profile, copied.session_id)
-    return { session: this.publicSession(copied) }
+    return { session: (await this.publicSession(copied)) }
   }
 
-  branch(sid: string, body: Record<string, unknown>): Record<string, unknown> {
-    this.rejectViewOnly(sid, 'branched')
-    const source = this.get404(sid)
-    if (this.isReadOnly(source)) {
+  async branch(sid: string, body: Record<string, unknown>): Promise<Record<string, unknown>> {
+    await this.rejectViewOnly(sid, 'branched')
+    const source = (await this.get404(sid))
+    if ((await this.isReadOnly(source))) {
       if (str(source.source_tag || source.raw_source).trim().toLowerCase() !== 'cron') throw new HttpFailure(403, 'Read-only sessions cannot be branched from WebUI')
       source.branchSourceReadonly = true
     }
@@ -2006,7 +2012,7 @@ export class SessionService {
       if (keepCount < 0) throw new HttpFailure(400, 'keep_count must be non-negative')
     }
     const customTitle = body.title ? str(body.title).trim().slice(0, 80) || null : null
-    if (!source.branchSourceReadonly) { try { this.store.save(source) } catch { /* ignore */ } }
+    if (!source.branchSourceReadonly) { try { (await this.store.save(source)) } catch { /* ignore */ } }
     // Python: `keep_count` indexes the merged display transcript, never the raw sidecar array.
     const sourceMessages = this.mergedTranscript(source)
     const forked = keepCount !== null ? sourceMessages.slice(0, keepCount) : [...sourceMessages]
@@ -2026,9 +2032,9 @@ export class SessionService {
       },
       { workspace: source.workspace, model: source.model },
     )
-    this.store.touch(branch)
+    await this.store.touch(branch)
     if (forked.length) {
-      this.store.save(branch)
+      await this.store.save(branch)
       this.publish('session_branch', branch.profile, branch.session_id)
     }
     return { session_id: branch.session_id, title, parent_session_id: source.session_id }
@@ -2041,11 +2047,11 @@ export class SessionService {
 
   /** TAL-259: recovery reads the active profile's state.db, and a recovered sidecar joins that profile. */
   private recoveryDeps(): RecoveryDeps {
-    return { store: this.store, stateDbPath: this.stateDbPath(null), profile: this.deps.activeProfile(), stampingSince: this.deps.recoveryStampingSince(), isReadOnly: (sid, profile) => Boolean(withOwnerLocks([{ session_id: sid, profile }], this.stateDbSources)[0]?.read_only), log: this.deps.log }
+    return { journalDirectory: this.deps.recoveryJournalDirectory, store: this.store, stateDbPath: this.stateDbPath(null), profile: this.deps.activeProfile(), stampingSince: this.deps.recoveryStampingSince(), isReadOnly: (sid, profile) => Boolean(withOwnerLocks([{ session_id: sid, profile }], this.stateDbSources)[0]?.read_only), log: this.deps.log }
   }
 
-  recoveryAudit(): RecoveryAudit {
-    return auditSessionRecovery(this.recoveryDeps())
+  async recoveryAudit(): Promise<RecoveryAudit> {
+    return (await auditSessionRecovery(this.recoveryDeps()))
   }
 
   recoveryRepairSafe(): Promise<RecoveryRepair> {
@@ -2058,15 +2064,15 @@ export class SessionService {
    * already started from it in the same profile; the source's lock makes concurrent starts converge on one child.
    */
   async compressionRecoveryStart(sid: string): Promise<Record<string, unknown>> {
-    if (this.isSubagentViewOnly(sid)) throw new HttpFailure(400, 'Subagent sessions are view-only and cannot start compression recovery from WebUI')
+    if ((await this.isSubagentViewOnly(sid))) throw new HttpFailure(400, 'Subagent sessions are view-only and cannot start compression recovery from WebUI')
     const action = COMPRESSION_RECOVERY_ACTION_START_FOCUSED
     let created = false
-    const child = await this.withMutationLock(sid, () => {
+    const child = await this.withMutationLock(sid, async () => {
       // Validated under the lock: a delete that won it leaves no source to fork.
-      const source = this.store.get(sid)
+      const source = (await this.store.get(sid))
       if (!this.visibleToActiveProfile(source.profile)) throw new HttpFailure(404, 'Session not found')
       if (!compressionRecoveryPayload(source)) throw new HttpFailure(409, 'Session does not have a compression recovery action.')
-      const existing = this.compressionRecoveryChild(sid, action, source.profile)
+      const existing = (await this.compressionRecoveryChild(sid, action, source.profile))
       if (existing) return existing
       const base = (source.title || 'Untitled').trim() || 'Untitled'
       const fresh = new Session(
@@ -2082,43 +2088,43 @@ export class SessionService {
         { workspace: source.workspace, model: source.model },
       )
       try {
-        this.store.save(fresh)
+        await this.store.save(fresh)
       } catch (error) {
         throw new HttpFailure(500, `Failed to start compression recovery: ${sanitizePaths(error)}`)
       }
-      this.store.touch(fresh)
+      await this.store.touch(fresh)
       created = true
       return fresh
     }, { allowReadOnly: true })
     if (created) this.publish('session_compression_recovery', child.profile, child.session_id)
     return {
-      ok: true, session: this.publicSession(child), source_session_id: sid, recommended_recovery_action: action,
+      ok: true, session: (await this.publicSession(child)), source_session_id: sid, recommended_recovery_action: action,
       message: created ? 'Started a focused continuation. Describe the next narrow task to continue.' : 'Opened the existing focused continuation for this exhausted session.',
     }
   }
 
   /** Python `find_compression_recovery_session`: the oldest same-profile continuation started from `sid`, cached or persisted. */
-  private compressionRecoveryChild(sid: string, action: string, profile: string | null): Session | null {
+  private async compressionRecoveryChild(sid: string, action: string, profile: string | null): Promise<Session | null> {
     const matches = (s: Session): boolean => s.compression_recovery_source_session_id === sid && s.compression_recovery_action === action && this.deps.profilesMatch(s.profile, profile)
     const found = new Map<string, Session>()
     for (const s of this.store.sessions.values()) if (matches(s)) found.set(s.session_id, s)
-    for (const id of this.store.persistedIds()) {
+    for (const id of (await this.store.persistedIds())) {
       if (found.has(id) || this.store.sessions.has(id)) continue
       try {
-        const meta = this.store.get(id, { metadataOnly: true, promote: false, cacheOnMiss: false })
+        const meta = (await this.store.get(id, { metadataOnly: true, promote: false, cacheOnMiss: false }))
         if (matches(meta)) found.set(id, meta)
       } catch { /* unreadable: not a match */ }
     }
     const [oldest] = [...found.values()].sort((a, b) => (a.created_at || 0) - (b.created_at || 0) || (a.updated_at || 0) - (b.updated_at || 0) || (a.session_id < b.session_id ? -1 : 1))
-    return oldest ? this.store.get(oldest.session_id) : null
+    return oldest ? (await this.store.get(oldest.session_id)) : null
   }
 
   /** The run that keeps `delete` answering 409, if any; stream status reports it so a draining client can wait on it (TAL-622). */
-  activeRunBlocking(sid: string): string | null {
+  async activeRunBlocking(sid: string): Promise<string | null> {
     const live = this.deps.runtime.activeRunStream(sid)
     if (live) return live
     try {
-      const candidate = str(this.store.get(sid, { metadataOnly: true, promote: false, cacheOnMiss: false }).active_stream_id).trim()
+      const candidate = str((await this.store.get(sid, { metadataOnly: true, promote: false, cacheOnMiss: false })).active_stream_id).trim()
       if (candidate && this.deps.runtime.activeStreamIds.has(candidate)) return candidate
     } catch { /* absent */ }
     return null
@@ -2127,25 +2133,25 @@ export class SessionService {
   async delete(sid: string): Promise<Record<string, unknown>> {
     if (!sid) throw new HttpFailure(400, 'session_id is required')
     if (!isSafeSessionId(sid)) throw new HttpFailure(400, 'Invalid session_id')
-    this.rejectViewOnly(sid, 'deleted')
+    await this.rejectViewOnly(sid, 'deleted')
     // Python: a read-only import (persisted sidecar flag, sidebar metadata, or a foreign state.db owner such as a
     // Claude Code session) is never deleted — that would erase the owner's authoritative transcript. An orphan has none.
-    const orphaned = this.isOrphanedImport(sid)
-    if (!orphaned && this.isReadOnlyImport(sid)) throw new HttpFailure(400, 'Read-only imported sessions cannot be deleted from WebUI')
-    if (this.isSubagentViewOnly(sid)) throw new HttpFailure(400, 'Subagent sessions are view-only and cannot be deleted from WebUI')
-    const retained = (() => { try { return worktreeRetainedPayload(this.store.get(sid, { metadataOnly: true })) } catch { return {} } })()
+    const orphaned = (await this.isOrphanedImport(sid))
+    if (!orphaned && (await this.isReadOnlyImport(sid))) throw new HttpFailure(400, 'Read-only imported sessions cannot be deleted from WebUI')
+    if ((await this.isSubagentViewOnly(sid))) throw new HttpFailure(400, 'Subagent sessions are view-only and cannot be deleted from WebUI')
+    const retained = (await (async () => { try { return worktreeRetainedPayload((await this.store.get(sid, { metadataOnly: true }))) } catch { return {} } })())
     let eventProfile: string | null = null
-    try { eventProfile = this.store.get(sid, { metadataOnly: true }).profile } catch { eventProfile = null }
+    try { eventProfile = (await this.store.get(sid, { metadataOnly: true })).profile } catch { eventProfile = null }
     // Python `_is_messaging_session_id`: decided before the JSON is gone, from WebUI metadata or the Agent's row.
-    const isMessaging = this.isMessagingSession(sid)
+    const isMessaging = (await this.isMessagingSession(sid))
     const knownIds = !isMessaging && !orphaned ? stateDbCompressionLineage(this.stateDbPath(eventProfile), sid) : [sid]
-    const assertIdle = () => { if (knownIds.some((id) => this.activeRunBlocking(id))) throw new HttpFailure(409, 'Session has an active run; stop it before deleting') }
-    assertIdle()
+    const assertIdle = async () => { for (const id of knownIds) if (await this.activeRunBlocking(id)) throw new HttpFailure(409, 'Session has an active run; stop it before deleting') }
+    await assertIdle()
     let stateDbCleanupFailed = false
     let removedIds = [sid]
     try {
       await this.withMutationLock(sid, async () => {
-        assertIdle()
+        await assertIdle()
         // TAL-792: state.db goes first, so another Agent process running or compressing the session refuses the delete
         // before anything of Talaria's is removed. Python: the Agent/CLI transcript goes too (else a claimable CLI row
         // resurfaces in the sidebar), but a messaging channel's memory is never erased from the WebUI.
@@ -2155,18 +2161,18 @@ export class SessionService {
           removedIds = [...new Set([sid, ...(result.deleted_ids ?? (result.ok ? knownIds : []))])]
         }
         if (removedIds.some((id) => !isSafeSessionId(id))) throw new HttpFailure(503, 'Session cleanup could not finish because the Agent returned invalid session IDs.')
-        removedIds = removedIds.filter((id) => {
-          try { return this.deps.profilesMatch(this.store.get(id, { metadataOnly: true }).profile, eventProfile ?? this.deps.activeProfile()) } catch { return true }
-        })
+        removedIds = (await filterAsync(removedIds, async (id) => {
+          try { return this.deps.profilesMatch((await this.store.get(id, { metadataOnly: true })).profile, eventProfile ?? this.deps.activeProfile()) } catch { return true }
+        }))
         for (const id of removedIds) {
           // Revoke before removing each persisted alias; UI cleanup follows the Agent's committed target set.
           try {
-            const session = this.store.get(id, { metadataOnly: true })
+            const session = (await this.store.get(id, { metadataOnly: true }))
             if (!Object.keys(retained).length) Object.assign(retained, worktreeRetainedPayload(session))
             this.deps.shares.revoke(session)
-            this.deps.clearRelayCompletions?.(id, session.profile)
+            await this.deps.clearRelayCompletions?.(id, session.profile)
           } catch (error) { if (!(error instanceof SessionNotFound)) throw error }
-          if (!this.store.deleteFiles(id)) throw new HttpFailure(500, 'Failed to delete session data')
+          if (!(await this.store.delete(id))) throw new HttpFailure(500, 'Failed to delete session data')
         }
       }, { timeoutMs: 5000, allowReadOnly: orphaned })
     } catch (error) {
@@ -2174,7 +2180,7 @@ export class SessionService {
       throw error
     }
     for (const id of removedIds) {
-      this.deps.runtime.evictAgent(id, true)
+      await this.deps.runtime.evictAgent(id, true)
       try { rmSync(this.deps.attachmentDir(id), { recursive: true, force: true }) } catch { /* ignore */ }
       // Python `delete_run_journal` (#3802): a deleted session leaves no replayable run journal behind.
       try { this.deps.journal?.deleteSession(id) } catch { /* ignore */ }
@@ -2199,24 +2205,23 @@ export class SessionService {
     return result
   }
 
-  cleanup(zeroOnly: boolean): Record<string, unknown> {
+  async cleanup(zeroOnly: boolean): Promise<Record<string, unknown>> {
     let cleaned = 0
     const removed = new Set<string>()
-    for (const s of this.store.scanAll()) {
+    for (const s of (await this.store.scanAll())) {
       const shouldDelete = zeroOnly ? s.messages.length === 0 : s.title === 'Untitled' && s.messages.length === 0
-      if (!shouldDelete || this.isReadOnly(s)) continue
+      if (!shouldDelete || (await this.isReadOnly(s))) continue
       // A cleared session keeps its share; keep the session (and its revoke route) if the share cannot be revoked.
       try { this.deps.shares.revoke(s) } catch { continue }
       this.store.sessions.delete(s.session_id)
-      rmSync(this.store.pathFor(s.session_id), { force: true })
+      await this.store.delete(s.session_id, { tombstone: false })
       cleaned += 1
       removed.add(s.session_id)
     }
-    this.store.invalidatePersistedIds()
     let rewroteIndex = false
     try {
-      const rows = this.store.readIndexEntries()
-      const live = this.store.persistedIds()
+      const rows = (await this.store.readIndexEntries())
+      const live = (await this.store.persistedIds())
       const survivors = rows.filter((entry) => {
         const id = str(entry.session_id)
         if (!id || live.has(id) || this.store.sessions.has(id)) return true
@@ -2225,15 +2230,15 @@ export class SessionService {
         return false
       })
       if (survivors.length < rows.length) {
-        this.store.writeIndex()
+        await this.store.writeIndex()
         rewroteIndex = true
       }
     } catch { /* corrupt index is rebuilt below */ }
-    if (removed.size && !rewroteIndex) { try { this.store.writeIndex() } catch { /* ignore */ } }
+    if (removed.size && !rewroteIndex) { try { (await this.store.writeIndex()) } catch { /* ignore */ } }
     return { ok: true, cleaned }
   }
 
-  import(body: Record<string, unknown>): Record<string, unknown> {
+  async import(body: Record<string, unknown>): Promise<Record<string, unknown>> {
     const messages = stripPublicInternalFields(body.messages, { messageRecords: true })
     if (!Array.isArray(messages)) throw new HttpFailure(400, 'JSON must contain a "messages" array')
     const rawToolCalls = body.tool_calls ?? []
@@ -2250,26 +2255,26 @@ export class SessionService {
       defaults,
     )
     s.pinned = Boolean(body.pinned)
-    this.store.touch(s)
-    this.store.save(s)
+    await this.store.touch(s)
+    await this.store.save(s)
     this.publish('session_import')
-    return { ok: true, session: this.publicSession(s) }
+    return { ok: true, session: (await this.publicSession(s)) }
   }
 
   // ── drafts ───────────────────────────────────────────────────────────────
 
-  readDraft(sid: string): Record<string, unknown> {
+  async readDraft(sid: string): Promise<Record<string, unknown>> {
     if (!sid) throw new HttpFailure(400, 'session_id is required')
     let hasSidecar: boolean
     try { hasSidecar = this.deps.drafts.exists(sid) } catch { throw new HttpFailure(400, 'Invalid session_id') }
     if (hasSidecar) {
       const cached = this.store.sessions.get(sid)
-      if (!cached && !existsSessionFile(this.store, sid)) throw new HttpFailure(404, 'Session not found')
+      if (!cached && !(await existsSessionFile(this.store, sid))) throw new HttpFailure(404, 'Session not found')
       const [draft, version] = this.deps.drafts.readState(sid)
       if (cached) cached.composer_draft = draft
       return { draft, draft_version: version }
     }
-    const s = this.get404(sid, { metadataOnly: true })
+    const s = (await this.get404(sid, { metadataOnly: true }))
     const [draft, version] = this.deps.drafts.readState(sid, s.composer_draft)
     return { draft, draft_version: version }
   }
@@ -2277,7 +2282,7 @@ export class SessionService {
   async writeDraft(body: Record<string, unknown>): Promise<Record<string, unknown>> {
     const sid = str(body.session_id)
     if (!sid) throw new HttpFailure(400, 'Missing required field(s): session_id')
-    if (this.isSubagentViewOnly(sid)) throw new HttpFailure(400, 'Subagent sessions are view-only and cannot store a draft from WebUI')
+    if ((await this.isSubagentViewOnly(sid))) throw new HttpFailure(400, 'Subagent sessions are view-only and cannot store a draft from WebUI')
     let text = body.text
     let files = body.files
     if (text !== null && text !== undefined && typeof text !== 'string') text = ''
@@ -2295,13 +2300,13 @@ export class SessionService {
       const maxVersion = BigInt(Math.trunc((this.deps.now() + 300) * 1_000_000)) + 999n
       if (BigInt(draftVersion) > maxVersion) throw new HttpFailure(400, 'draft_version is too far in the future')
     }
-    return this.store.withLock(sid, () => {
+    return this.store.withLock(sid, async () => {
       let s = this.store.sessions.get(sid) ?? null
       if (s && s.session_id !== sid) s = null
-      const sessionExists = existsSessionFile(this.store, sid)
+      const sessionExists = (await existsSessionFile(this.store, sid))
       if (!s) {
         if (!sessionExists) throw new HttpFailure(404, 'Session not found')
-        if (!this.deps.drafts.exists(sid)) s = this.get404(sid, { metadataOnly: true })
+        if (!this.deps.drafts.exists(sid)) s = (await this.get404(sid, { metadataOnly: true }))
       }
       const [currentDraft, currentVersion] = this.deps.drafts.readState(sid, s?.composer_draft)
       const next = { ...currentDraft }
@@ -2322,7 +2327,7 @@ export class SessionService {
         if (!sessionExists && !cachedOwnerIsCurrent) throw new HttpFailure(404, 'Session not found')
         if (!sessionExists && s) {
           s.composer_draft = next
-          this.store.save(s, { touchUpdatedAt: false })
+          await this.store.save(s, { touchUpdatedAt: false })
         }
         try {
           saved = this.deps.drafts.write(sid, next, draftVersion)
@@ -2346,14 +2351,14 @@ export class SessionService {
     if (body.scene === undefined) throw new HttpFailure(400, 'Missing required field(s): scene')
     let s: Session
     try {
-      s = this.getForMutation(sid)
+      s = (await this.getForMutation(sid))
     } catch (error) {
       if (error instanceof SessionNotFound) throw new HttpFailure(404, 'Session not found')
       if (error instanceof HttpFailure && error.status === 403) throw new HttpFailure(403, 'Read-only imported sessions cannot persist anchor scenes')
       throw error
     }
     if (!this.visibleToActiveProfile(s.profile)) throw new HttpFailure(404, 'Session not found')
-    return this.withMutationLock(sid, () => {
+    return this.withMutationLock(sid, async () => {
       let placement
       try {
         placement = storeAnchorScene(s, body, this.deps.now())
@@ -2361,31 +2366,31 @@ export class SessionService {
         throw new HttpFailure(400, (error as Error).message)
       }
       if (!placement) throw new HttpFailure(404, 'Assistant message not found')
-      this.store.save(s, { touchUpdatedAt: false, skipIndex: true })
+      await this.store.save(s, { touchUpdatedAt: false, skipIndex: true })
       return { ok: true, ...placement }
     })
   }
 
   /** The session and the full transcript its detail is built from; a state.db-only session gives its synthesized one. */
-  private fullTranscript(sid: string): { session: Session; transcript: Message[]; stored: boolean } {
+  private async fullTranscript(sid: string): Promise<{ session: Session; transcript: Message[]; stored: boolean }> {
     try {
-      let session = this.store.get(sid)
-      if (session.loadedMetadataOnly) session = this.store.load(sid) ?? session
+      let session = (await this.store.get(sid))
+      if (session.loadedMetadataOnly) session = (await this.store.load(sid)) ?? session
       if (!this.visibleToActiveProfile(session.profile)) throw new HttpFailure(404, 'Session not found')
       return { session, transcript: this.mergedTranscript(session), stored: true }
     } catch (error) {
       if (error instanceof HttpFailure) throw error
-      const session = this.foreignSession(sid).synth
+      const session = (await this.foreignSession(sid)).synth
       return { session, transcript: session.messages, stored: false }
     }
   }
 
-  readAnchorScene(query: Record<string, string | null | undefined>): Record<string, unknown> {
+  async readAnchorScene(query: Record<string, string | null | undefined>): Promise<Record<string, unknown>> {
     const sid = str(query.session_id).trim()
     const messageRef = normalizeAnchorSceneMessageRef(query.message_ref)
     const messageIndex = anchorSceneIntOrNull(query.message_index)
     if (!sid || (!messageRef && messageIndex === null)) throw new HttpFailure(400, 'session_id and message_ref or message_index are required')
-    const { session, transcript, stored } = this.fullTranscript(sid)
+    const { session, transcript, stored } = (await this.fullTranscript(sid))
     const result = readAnchorSceneRows(session, { messageRef, messageIndex, before: anchorSceneIntOrNull(query.before), limit: anchorSceneIntOrNull(query.limit) }, withToolCallOutcomes(withTurnIds(transcript), session.tool_calls, session.active_stream_id))
     if (!result) throw new HttpFailure(404, 'Anchor activity scene not found')
     // Paged rows come from the raw transcript, so they take the same credential redaction as the detail's preview.
@@ -2397,22 +2402,22 @@ export class SessionService {
   }
 
   /** TAL-331: one tool call's whole result, which a limited response clipped (`result_truncated`), redacted like the detail. */
-  readToolResult(query: { session_id: string; tool_call_id: string }): { tool_call_id: string; result: string; result_view: ToolResultView } {
+  async readToolResult(query: { session_id: string; tool_call_id: string }): Promise<{ tool_call_id: string; result: string; result_view: ToolResultView }> {
     const sid = query.session_id.trim()
     const id = query.tool_call_id.trim()
     if (!sid || !id) throw new HttpFailure(400, 'session_id and tool_call_id are required')
-    const full = fullToolResult(this.fullTranscript(sid).transcript, id)
+    const full = fullToolResult((await this.fullTranscript(sid)).transcript, id)
     if (full === null) throw new HttpFailure(404, 'Tool result not found')
     return { tool_call_id: id, ...redactValue(full, this.deps.redactEnabled()) as typeof full }
   }
 
   // ── shares ───────────────────────────────────────────────────────────────
 
-  createShare(sid: string): Record<string, unknown> {
+  async createShare(sid: string): Promise<Record<string, unknown>> {
     this.rejectClaudeCode(sid, 'shared')
-    let s = this.get404(sid)
+    let s = (await this.get404(sid))
     if (!this.visibleToActiveProfile(s.profile)) throw new HttpFailure(404, 'Session not found')
-    s = this.store.ensureFull(sid, s)
+    s = (await this.store.ensureFull(sid, s))
     let snapshot
     try {
       snapshot = buildShareSnapshot(s, s.messages, { hermesHome: this.deps.hermesHome, attachmentRoot: this.deps.attachmentDir('').replace(/\/[^/]*$/, ''), home: this.deps.home })
@@ -2422,25 +2427,25 @@ export class SessionService {
     const meta = this.deps.shares.createOrRefresh(s, snapshot)
     s.share_token = meta.share_token
     s.share_created_at = meta.share_created_at
-    this.store.save(s, { touchUpdatedAt: false })
+    await this.store.save(s, { touchUpdatedAt: false })
     this.publish('session_share_create', s.profile, sid)
     return {
       ok: true,
       share: { token: meta.share_token, url: sharePath(meta.share_token) ?? '', title: meta.share_title, message_count: meta.share_message_count, created_at: meta.share_created_at, updated_at: meta.share_updated_at },
-      session: this.publicSession(s),
+      session: (await this.publicSession(s)),
     }
   }
 
-  revokeShare(sid: string): Record<string, unknown> {
-    let s = this.get404(sid)
+  async revokeShare(sid: string): Promise<Record<string, unknown>> {
+    let s = (await this.get404(sid))
     if (!this.visibleToActiveProfile(s.profile)) throw new HttpFailure(404, 'Session not found')
-    s = this.store.ensureFull(sid, s)
+    s = (await this.store.ensureFull(sid, s))
     this.deps.shares.revoke(s)
     s.share_token = null
     s.share_created_at = null
-    this.store.save(s, { touchUpdatedAt: false })
+    await this.store.save(s, { touchUpdatedAt: false })
     this.publish('session_share_revoke', s.profile, sid)
-    return { ok: true, session: this.publicSession(s) }
+    return { ok: true, session: (await this.publicSession(s)) }
   }
 
   loadShare(token: string): Record<string, unknown> {
@@ -2456,16 +2461,16 @@ export class SessionService {
     return { yolo_enabled: this.deps.yolo.isEnabled(sid) }
   }
 
-  setYolo(sid: string, enabled: boolean): Record<string, unknown> {
+  async setYolo(sid: string, enabled: boolean): Promise<Record<string, unknown>> {
     if (!sid) throw new HttpFailure(400, 'Missing required field(s): session_id')
-    this.assertWritable(sid)
+    await this.assertWritable(sid)
     this.deps.yolo.set(sid, enabled)
     return { ok: true, yolo_enabled: this.deps.yolo.isEnabled(sid) }
   }
 }
 
-function existsSessionFile(store: SessionStore, sid: string): boolean {
-  return store.persistedIds().has(sid)
+async function existsSessionFile(store: SessionStore, sid: string): Promise<boolean> {
+  return (await store.persistedIds()).has(sid)
 }
 
 import { createHash } from 'node:crypto'
