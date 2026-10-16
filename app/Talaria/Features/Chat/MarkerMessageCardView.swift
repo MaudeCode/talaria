@@ -201,7 +201,7 @@ private struct BackgroundLineRow: View {
     let parentReview: BackgroundReviewState?
 
     var body: some View {
-        HStack(alignment: .firstTextBaseline, spacing: 6) {
+        HStack(alignment: .center, spacing: 6) {
             if line.reviewState == .reviewing {
                 ProgressView().controlSize(.mini)
                     .accessibilityHidden(true)
