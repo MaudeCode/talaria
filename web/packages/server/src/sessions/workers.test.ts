@@ -756,6 +756,7 @@ describe('background wakeups carry their update metadata (TAL-371)', () => {
       const stream = s.deps.sessionStore.get(sid).active_stream_id!
       const detail = async (suffix = ''): Promise<Json[]> => ((await json(await s.get(`/api/session?session_id=${sid}&messages=1${suffix}`))).session as Json).messages as Json[]
       expect((await detail()).find((m) => m._background_update)?._background_update).toMatchObject({ review_state: 'reviewing', lines: [{ label: 'Live review', review_state: 'reviewing' }] })
+      expect((await detail('&msg_limit=1')).find((m) => m._background_update)?._background_update).toMatchObject({ review_state: 'reviewing', lines: [{ review_state: 'reviewing' }] })
       release()
       await s.deps.turns.finished(stream)
       const frames = await s.sse(`/api/chat/stream?stream_id=${stream}&replay=1`, (f) => f.event === 'stream_end')

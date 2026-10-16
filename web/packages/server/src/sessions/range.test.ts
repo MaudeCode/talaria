@@ -371,3 +371,37 @@ it.each([3, 4])('counts the separate compressed model context instead of the dis
     assertWindows(server, session)
   } finally { await server.close() }
 })
+
+import { batchUpdate, recordBackgroundUpdate } from './background-updates.js'
+
+it('keeps parent review proof outside a page without enumerating the cached prefix (TAL-1022)', async () => {
+  const server = await bootTestServer()
+  try {
+    const turn = 'review-parent', delegation = 'review-child'
+    const messages: Message[] = [
+      { role: 'user', content: 'Background result', _source: 'process_wakeup', _turn_id: turn, _background_review_terminal: 'completed', timestamp: 1 },
+      { role: 'assistant', content: '[SILENT]', _turn_id: turn, timestamp: 2 },
+      ...Array.from({ length: 2000 }, (_, i) => ({ role: i % 2 ? 'assistant' : 'user', content: `unrelated ${i}`, _turn_id: `unrelated-${Math.floor(i / 2)}`, timestamp: i + 3 })),
+      { role: 'user', content: 'Agent notification', _turn_id: 'notification', display_kind: 'async_delegation_complete', display_metadata: { delegation_id: delegation }, timestamp: 2003 },
+    ]
+    const session = new Session({ session_id: 'range-background-review', messages }, { workspace: server.state, model: null })
+    const update = batchUpdate([{ event: { type: 'async_delegation', goal: 'Review the result', results: [{ status: 'completed' }] }, prompt: 'Background result' }])
+    recordBackgroundUpdate(session, turn, update)
+    recordBackgroundUpdate(session, `delegation:${delegation}`, update)
+    session.extra.completion_acceptances = { [JSON.stringify([server.state, delegation])]: turn }
+    server.deps.sessionStore.save(session, { touchUpdatedAt: false })
+    const service = server.deps.sessions
+    const full = service.detail(session.session_id, {}).messages as Message[]
+    expect(full.at(-1)?._background_update).toMatchObject({ review_state: 'reviewed' })
+    service.detail(session.session_id, { msg_limit: '1' })
+    const resident = server.deps.sessionStore.get(session.session_id)
+    const iterate = resident.messages[Symbol.iterator].bind(resident.messages)
+    let prefixEnumerations = 0
+    Object.defineProperty(resident.messages, Symbol.iterator, { configurable: true, value: () => { prefixEnumerations += 1; return iterate() } })
+    const latest = service.detail(session.session_id, { msg_limit: '1' }).messages as Message[]
+    const older = service.detail(session.session_id, { msg_limit: '1', msg_before: '2' }).messages as Message[]
+    expect(latest.at(-1)?._background_update).toMatchObject({ review_state: 'reviewed', lines: [{ review_state: 'reviewed' }] })
+    expect(older[0]?._background_update).toMatchObject({ review_state: 'reviewed' })
+    expect(prefixEnumerations, 'cached pages must not scan the complete session for review proof').toBe(0)
+  } finally { await server.close() }
+})

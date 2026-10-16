@@ -207,5 +207,7 @@ Reviewing requires its live parent run. Successful settlement persists terminal
 evidence on the background prompt, alongside the actual final reply. A silent
 marker alone or a delivered ledger flag cannot establish review. Interrupted
 or missing runs remain Unknown unless their result is durably pending for retry.
-The same projection precedes terminal payloads and every session window. Its
+Indexed pages resolve off-page parent proof through the existing turn index;
+they never enumerate the cached transcript prefix for review state. The same
+projection precedes terminal payloads and every session window. Its
 persisted metadata is additive, and clients keep the explicit values in cache.

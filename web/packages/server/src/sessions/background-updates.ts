@@ -173,7 +173,7 @@ function agentUpdate(m: Dict, recorded: Dict): BackgroundUpdate | null {
  * (`_background_reply`); a reply that ends on a silence marker is `_background_silent` throughout. Needs `_turn_id` on
  * every row (`withTurnIds`). Returns copies; stored rows are untouched.
  */
-export interface BackgroundReviewContext { activeTurnId?: string | null; pendingDelegations?: Set<string> }
+export interface BackgroundReviewContext { activeTurnId?: string | null; pendingDelegations?: Set<string>; reviewRows?: (turnId: string) => Dict[] }
 
 /** Persist terminal evidence on the admitted prompt, alongside its actual final reply. */
 export function recordBackgroundReview(session: Session, turnId: string): void {
@@ -211,7 +211,8 @@ export function withBackgroundUpdates<T>(messages: T[], session: Session, contex
   const recorded = isDict(session.extra[RECORD_KEY]) ? (session.extra[RECORD_KEY] as Dict) : {}
   const backgroundTurns = new Set<string>()
   const turns = new Map<string, Dict[]>()
-  for (const m of session.messages) {
+  for (const m of messages) {
+    if (!isDict(m)) continue
     const turn = str(m._turn_id)
     const rows = turns.get(turn) ?? []
     rows.push(m)
@@ -227,7 +228,7 @@ export function withBackgroundUpdates<T>(messages: T[], session: Session, contex
     const delegationId = str(isDict(m.display_metadata) ? m.display_metadata.delegation_id : '')
     // An Agent notification can precede Web admission. Only the exact accepted result joins that parent's turn.
     const reviewTurn = m._source === BACKGROUND_SOURCE ? str(m._turn_id) : admittedReviewTurn(session, delegationId)
-    const review = parentReview(session, turns.get(reviewTurn) ?? [], reviewTurn, Boolean(delegationId && context.pendingDelegations?.has(delegationId)), context)
+    const review = parentReview(session, turns.get(reviewTurn) ?? context.reviewRows?.(reviewTurn) ?? [], reviewTurn, Boolean(delegationId && context.pendingDelegations?.has(delegationId)), context)
     return { ...m, _background_update: { ...update, review_state: review, lines: update.lines.map((line) => ({ ...line, review_state: line.status === 'failed' ? 'failed' : line.status === 'notice' ? 'unknown' : review })) } }
   })
   // A turn is silent when its last assistant text is exactly a silence marker; a running turn has no final text yet.

@@ -720,8 +720,8 @@ export class SessionService {
   }
 
   /** All transcript transports use the same live-run and durable-pending evidence. */
-  backgroundUpdates<T>(s: Session, messages: T[]): T[] {
-    return withBackgroundUpdates(messages, s, { activeTurnId: this.deps.runtime.activeRunStream(s.session_id), pendingDelegations: this.deps.backgroundPending?.(s.session_id) ?? new Set() })
+  backgroundUpdates<T>(s: Session, messages: T[], reviewRows?: (turnId: string) => Message[]): T[] {
+    return withBackgroundUpdates(messages, s, { activeTurnId: this.deps.runtime.activeRunStream(s.session_id), pendingDelegations: this.deps.backgroundPending?.(s.session_id) ?? new Set(), ...(reviewRows ? { reviewRows } : {}) })
   }
 
   /** TAL-372: each delegation row of a turn's scene carries the status of the work it started. */
@@ -791,8 +791,8 @@ export class SessionService {
   }
 
   /** Existing projections, once per complete turn range, in absolute transcript coordinates. */
-  private deriveRange(s: Session, rows: Message[], baseIndex: number, initialTurn: string, journaled: boolean, refs: Pick<Map<string, number>, 'get'>, calls: unknown[]): Message[] {
-    return this.backgroundLinked(s, hydrateAnchorActivityScenes(withToolCallOutcomes(this.backgroundUpdates(s, withMarkerKinds(withTurnIds(withAttachmentObjects(rows), baseIndex, initialTurn), s)), calls, s.active_stream_id, baseIndex), s.anchor_activity_scenes, { activeTurnId: s.active_stream_id, runningScene: !journaled, clipToolResults: true, baseIndex, refCounts: refs })) as Message[]
+  private deriveRange(s: Session, rows: Message[], baseIndex: number, initialTurn: string, journaled: boolean, refs: Pick<Map<string, number>, 'get'>, calls: unknown[], reviewRows: (turnId: string) => Message[]): Message[] {
+    return this.backgroundLinked(s, hydrateAnchorActivityScenes(withToolCallOutcomes(this.backgroundUpdates(s, withMarkerKinds(withTurnIds(withAttachmentObjects(rows), baseIndex, initialTurn), s), reviewRows), calls, s.active_stream_id, baseIndex), s.anchor_activity_scenes, { activeTurnId: s.active_stream_id, runningScene: !journaled, clipToolResults: true, baseIndex, refCounts: refs })) as Message[]
   }
 
   private limitedDetail(s: Session, index: SessionPrefixIndex, limit: number, before: number | null, pending: ReturnType<SessionService['pendingTurn']>, journaled: ReturnType<SessionService['journaledActiveTurn']>) {
@@ -862,12 +862,27 @@ export class SessionService {
     const end = before === null ? total : Math.max(0, Math.min(before, total))
     const readRange = (start: number, stop: number) => start >= prefixEnd ? tail.slice(start - prefixEnd, stop - prefixEnd) : [...s.messages.slice(start, Math.min(stop, prefixEnd)), ...(stop > prefixEnd ? tail.slice(0, stop - prefixEnd) : [])]
     const idAt = (at: number) => at < prefixEnd ? index.turnId(at) : tailIndex.turnId(at)
+    const turnSpan = (id: string) => {
+      const prefix = index.turns.get(id), suffix = tailIndex.turns.get(id)
+      return { first: Math.min(prefix && prefix.first < prefixEnd ? prefix.first : total, suffix?.first ?? total), last: Math.max(prefix && prefix.first < prefixEnd ? Math.min(prefix.last, prefixEnd - 1) : -1, suffix?.last ?? -1) + 1 }
+    }
     const spanAt = (at: number) => {
-      const id = idAt(at), prefix = index.turns.get(id), suffix = tailIndex.turns.get(id)
+      const id = idAt(at), own = turnSpan(id)
       const dependencies = [index.dependencies.get(id), tailIndex.dependencies.get(id)]
       const first = Math.min(...dependencies.map((span) => span?.first ?? total))
       const last = Math.max(...dependencies.map((span) => span ? Math.min(span.last, total - 1) : -1))
-      return { first: Math.min(prefix && prefix.first < prefixEnd ? prefix.first : total, suffix?.first ?? total, first), last: Math.max(prefix && prefix.first < prefixEnd ? Math.min(prefix.last, prefixEnd - 1) : -1, suffix?.last ?? -1, last) + 1 }
+      return { first: Math.min(own.first, first), last: Math.max(own.last, last + 1) }
+    }
+    // A notification can refer to a parent turn outside this page. Read that indexed turn, never the whole prefix.
+    const reviewTurns = new Map<string, Message[]>()
+    const reviewRows = (id: string): Message[] => {
+      let rows = reviewTurns.get(id)
+      if (!rows) {
+        const span = turnSpan(id)
+        rows = span.first < span.last ? withTurnIds(readRange(span.first, span.last), span.first, span.first ? idAt(span.first - 1) : 'legacy:start').filter((row) => row._turn_id === id) : []
+        reviewTurns.set(id, rows)
+      }
+      return rows
     }
     let start = end ? spanAt(Math.max(0, end - limit)).first : 0
     if (pending && before === null) start = Math.min(start, prefixEnd)
@@ -879,7 +894,7 @@ export class SessionService {
       for (let at = start; at < stop; at += 1) { const span = spanAt(at); if (span.first < start) { start = span.first; at = start - 1 } stop = Math.max(stop, span.last) }
       const rows = readRange(start, stop)
       const calls = index.toolCalls(start, rows.length)
-      derived = this.deriveRange(s, rows, start, start ? idAt(start - 1) : 'legacy:start', Boolean(journaled), refs, calls)
+      derived = this.deriveRange(s, rows, start, start ? idAt(start - 1) : 'legacy:start', Boolean(journaled), refs, calls, reviewRows)
       const [page, relative] = messageWindowForDisplay(derived, limit, end - start)
       if (relative > 0 || start === 0 || page.filter((m) => messageCountsAsRenderable(m)).length >= limit) {
         let offset = start + relative
