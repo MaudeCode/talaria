@@ -247,7 +247,10 @@ for the updated worker's HTTP listener to report ready over IPC. If that worker
 exits before readiness after requesting a restart, the supervisor moves it to
 `.talaria-web-failed`, restores the previous package, and starts it once. A crash
 after readiness, a normal initial-start failure, or a crash of the restored
-worker exits normally without another rollback. State stores are not reverted.
+worker exits normally without another rollback. If the restored package is back
+in place but the state directory cannot record the failure, the supervisor logs
+the persistence error and still starts the restored worker once. State stores
+are not reverted.
 
 The marker retains the failed version, and Web update status exposes it as
 `failed_update: { version, restored_version }`. Automatic updates skip that exact

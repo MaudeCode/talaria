@@ -1,12 +1,13 @@
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
+import * as atomic from '../fs/atomic.js'
 import { loadStartupEnv } from './dotenv.js'
 import { RESTART_EXIT_CODE, supervise } from './supervise.js'
 
 const roots: string[] = []
-afterEach(() => { for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true }) })
+afterEach(() => { vi.restoreAllMocks(); for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true }) })
 
 function fixture(mode: 'before-ready' | 'after-ready' | 'no-marker' | 'restored-crash' | 'retry' | 'newer-update' | 'restored-restart') {
   const root = mkdtempSync(join(tmpdir(), 'talaria-supervise-'))
@@ -66,6 +67,16 @@ describe('self-update startup rollback', () => {
     expect(readFileSync(join(dirname(f.packageRoot), '.talaria-web-failed/version'), 'utf8')).toBe('2.0.0')
     expect(JSON.parse(readFileSync(f.marker, 'utf8'))).toEqual({ version: '2.0.0', previousVersion: '1.0.0', failedVersion: '2.0.0' })
     expect(readFileSync(f.count, 'utf8')).toBe('3')
+    expect(f.lines).toContain('[serve] update to 2.0.0 failed to start; restored 1.0.0')
+  })
+
+  it.each(['before-ready', 'restored-crash'] as const)('starts the restored worker once when the failure record cannot be persisted (%s)', async (mode) => {
+    const f = fixture(mode)
+    vi.spyOn(atomic, 'atomicWriteText').mockImplementation(() => { throw new Error('synthetic full filesystem') })
+    expect(await f.run()).toBe(4)
+    expect(readFileSync(join(f.packageRoot, 'version'), 'utf8')).toBe('1.0.0')
+    expect(readFileSync(f.count, 'utf8')).toBe('3')
+    expect(f.lines).toContain('[serve] could not persist failed update: synthetic full filesystem')
     expect(f.lines).toContain('[serve] update to 2.0.0 failed to start; restored 1.0.0')
   })
 

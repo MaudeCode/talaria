@@ -70,7 +70,8 @@ export async function supervise(opts: SuperviseOptions): Promise<number> {
         catch (error) { renameSync(paths.failed, opts.packageRoot); throw error }
         // Record the attempt before spawning again; never loop if the restored worker also crashes.
         rolledBack = true
-        atomicWriteText(paths.marker, JSON.stringify({ ...marker, failedVersion: marker.version }))
+        try { atomicWriteText(paths.marker, JSON.stringify({ ...marker, failedVersion: marker.version })) }
+        catch (error) { opts.log(`[serve] could not persist failed update: ${(error as Error).message}`) }
         opts.log(`[serve] update to ${marker.version} failed to start; restored ${marker.previousVersion}`)
         continue
       } catch (error) {
