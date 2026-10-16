@@ -1372,12 +1372,12 @@ export class UpdateService {
     return createHash('sha256').update(canon({ target, channel: info.channel ?? null, release_based: info.release_based === true, behind: info.behind, current_sha: info.current_sha ?? null, latest_sha: info.latest_sha ?? null, current_version: info.current_version ?? null, latest_version: info.latest_version ?? null })).digest('hex')
   }
 
-  private preGenerateSummaries(): void {
+  private preGenerateSummaries(status: Dict): void {
     if (!this.deps.llm || this.deps.checkEnabled?.() === false || this.deps.summarizeAutomatically?.() === false) return
     for (const target of ['webui', 'agent'] as const) {
-      const info = dict(this.cachedStatus()[target])
+      const info = dict(status[target])
       if (updateTargetView(target, info, false).summary_available !== true || this.summaries.has(this.summaryKey(target, info))) continue
-      void this.summarize(target).catch(() => { /* The shared generation logs the failure. */ })
+      void this.summarizeTarget(target, info).catch(() => { /* The shared generation logs the failure. */ })
     }
   }
 
@@ -1443,7 +1443,7 @@ export class UpdateService {
     if (this.applying) return this.cachedStatus(includeAgent, channel, agentChannel)
     const matches = this.cache.include_agent === includeAgent && this.cache.channel === channel && this.cache.agent_channel === agentChannel
     if (!force && matches && this.now() - Number(this.cache.checked_at) < CACHE_TTL_S) {
-      this.preGenerateSummaries()
+      this.preGenerateSummaries(this.cache)
       return { ...this.cache }
     }
     this.checkingKey = key
@@ -1462,7 +1462,7 @@ export class UpdateService {
         if (agent.latest_sha) Object.assign(agent, agentWarning(agent, policy))
         if (Array.isArray(agent.versions)) agent.versions = agent.versions.map((v) => ({ ...dict(v), ...supportOf(dict(v).sha, policy) }))
         Object.assign(this.cache, { webui, agent, checked_at: this.now(), include_agent: includeAgent, channel, agent_channel: agentChannel })
-        this.preGenerateSummaries()
+        this.preGenerateSummaries(this.cache)
         return { ...this.cache }
       } finally {
         this.checking = null
@@ -1727,7 +1727,10 @@ export class UpdateService {
    * A model's answer is cached per exact range, so reopening or asking from another client reuses it.
    */
   async summarize(target: 'webui' | 'agent', checksOff = false): Promise<Dict> {
-    const info = dict(this.cachedStatus()[target])
+    return this.summarizeTarget(target, dict(this.cachedStatus()[target]), checksOff)
+  }
+
+  private async summarizeTarget(target: 'webui' | 'agent', info: Dict, checksOff = false): Promise<Dict> {
     const view = updateTargetView(target, info, checksOff)
     // The range this answer covers, so a client labels the summary it got rather than the status it last loaded.
     const range = { current_version: typeof info.current_version === 'string' ? info.current_version : null, target_version: view.target_version ?? null }
