@@ -69,13 +69,14 @@ export interface HygieneDeps {
   now: () => number
   log: (line: string) => void
   /** Extra per-tick sweeps (completion dedupe, terminal idle reaper). */
-  sweeps?: (() => void)[]
+  sweeps?: (() => void | Promise<void>)[]
 }
 
 export class HygieneTicker {
   private timer: NodeJS.Timeout | null = null
   private retentionLastRun: number | null = null
   private retention: Promise<void> | null = null
+  private readonly sweeps = new Map<() => void | Promise<void>, Promise<void>>()
   private abort = new AbortController()
   constructor(private readonly deps: HygieneDeps) {}
 
@@ -86,11 +87,11 @@ export class HygieneTicker {
     this.timer.unref()
   }
 
-  /** Stops the schedule; an in-flight retention sweep stops at its next yield, and the result settles when it has. */
+  /** Stops scheduling, aborts retention at its next yield, and drains all accepted sweeps. */
   stop(): Promise<void> {
     if (this.timer) { clearInterval(this.timer); this.timer = null }
     this.abort.abort()
-    return this.retention ?? Promise.resolve()
+    return this.pending()
   }
 
   /**
@@ -99,19 +100,31 @@ export class HygieneTicker {
    * current sweep (if any) does.
    */
   tick(): Promise<void> {
+    if (this.abort.signal.aborted) return this.pending()
     const step = (label: string, run: () => void): void => { try { run() } catch (error) { this.warn(label, error) } }
     step('WebUI log rotation', () => { rotateWebuiLog(webuiLogPaths(this.deps.env, this.deps.stateDir, this.deps.port()), webuiLogMaxBytes(this.deps.env), this.deps.log) })
-    for (const sweep of this.deps.sweeps ?? []) step('hygiene sweep', sweep)
-    if (this.retention) return this.retention
+    for (const sweep of this.deps.sweeps ?? []) {
+      if (this.sweeps.has(sweep)) continue
+      const pending = Promise.resolve().then(sweep)
+        .catch((error: unknown) => { this.warn('hygiene sweep', error) })
+        .finally(() => { this.sweeps.delete(sweep) })
+      this.sweeps.set(sweep, pending)
+    }
+    if (this.retention) return this.pending()
     const now = this.deps.now()
     const { signal } = this.abort
-    if (signal.aborted || (this.retentionLastRun !== null && now - this.retentionLastRun < RETENTION_INTERVAL_S)) return Promise.resolve()
+    if (this.retentionLastRun !== null && now - this.retentionLastRun < RETENTION_INTERVAL_S) return this.pending()
     this.retentionLastRun = now
     this.retention = this.deps.journal.pruneSettled({ now, signal, isActive: (path) => this.deps.activeJournalPaths().has(path) })
       .then((result) => { if (result.pruned) this.deps.log(`[webui] run-journal retention pruned ${String(result.pruned)} files (${String(result.bytes_reclaimed)} bytes)`) })
       .catch((error: unknown) => { this.warn('run-journal retention', error) })
       .finally(() => { this.retention = null })
-    return this.retention
+    return this.pending()
+  }
+
+  private pending(): Promise<void> {
+    if (!this.sweeps.size) return this.retention ?? Promise.resolve()
+    return Promise.all([...this.sweeps.values(), this.retention]).then(() => { /* all sweeps have settled */ })
   }
 
   private warn(label: string, error: unknown): void { this.deps.log(`[webui] WARNING: ${label} failed: ${(error as Error).message}`) }

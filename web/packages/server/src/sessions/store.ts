@@ -41,6 +41,7 @@ export class SessionStore {
   private get backend() { return this.deps.storage.sessions }
   async exists(sid: string): Promise<boolean> { return this.backend.exists(sid) }
   async revision(sid: string): Promise<string | null> { return this.backend.revision(sid) }
+  readMessages(sid: string, range: { start: number; end: number }): Promise<Message[]> { return this.backend.readMessages(sid, range) }
   async index() { return this.backend.index() }
   async hasIndex(): Promise<boolean> { return this.backend.hasIndex() }
   get shrinkBackup() { return this.backend.shrinkBackup }
@@ -127,7 +128,7 @@ export class SessionStore {
       if (!stored) return null
       const data = sanitizeSessionRow(stored.doc, this, sid)
       if (data?.session_id !== sid) return null
-      const messages = await this.backend.readMessages(sid, { start: 0, end: Infinity })
+      const messages = await this.readMessages(sid, { start: 0, end: Infinity })
       if (stored.revision === null || stored.revision !== await this.revision(sid)) continue
       const [rows, collapsed] = collapseAdjacentDuplicatePartials(messages)
       data.messages = rows

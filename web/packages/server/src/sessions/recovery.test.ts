@@ -84,6 +84,18 @@ beforeEach(() => {
 })
 
 describe('session recovery routes', () => {
+  it('audits journaled duplicate partials without rewriting the session or creating a backup', async () => {
+    const transcript = [{ role: 'assistant', content: 'partial', _partial: true }, { role: 'assistant', content: 'partial', _partial: true }]
+    const bytes = JSON.stringify({ ...sessionDoc('audit-only', 0), messages: transcript })
+    write('audit-only.json', bytes)
+    mkdirSync(join(dir(), '_turn_journal'), { recursive: true })
+    writeFileSync(join(dir(), '_turn_journal', 'audit-only~1001.jsonl'), JSON.stringify({ turn_id: 'pending', event: 'submitted', content: 'not persisted', created_at: 100 }) + '\n')
+    const report = await audit()
+    expect(readFileSync(file('audit-only.json'), 'utf8')).toBe(bytes)
+    expect(existsSync(file('audit-only.json.bak'))).toBe(false)
+    expect(items(report).find((item) => item.kind === 'turn_journal_pending_turn')?.live_messages).toBe(2)
+  })
+
   it('records the stamping marker on first start', () => {
     expect(marker()).toBeGreaterThan(0)
     expect(marker()).toBeLessThanOrEqual(Date.now() / 1000)

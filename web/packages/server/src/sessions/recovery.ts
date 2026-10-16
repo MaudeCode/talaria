@@ -262,7 +262,7 @@ export async function auditSessionRecovery(deps: RecoveryDeps): Promise<Recovery
   if (s.db.unreadable) items.push(item('', 'state_db_unreadable', 'unsafe_to_repair', 'manual_review'))
   for (const [sid, events] of readTurnJournals(deps.journalDirectory)) {
     let doc: Dict | null = null
-    try { doc = (await deps.store.load(sid))?.toDocument() ?? null } catch { /* corrupt */ }
+    try { if (await deps.store.exists(sid)) doc = { messages: await deps.store.readMessages(sid, { start: 0, end: Infinity }) } } catch { /* corrupt */ }
     items.push(...pendingJournalTurns(doc, sid, events))
   }
   for (const finding of items) if (finding.recommendation === 'materialize_from_state_db' && await readOnlyRecovery(deps, finding.session_id)) { finding.category = 'unsafe_to_repair'; finding.recommendation = 'manual_review' }

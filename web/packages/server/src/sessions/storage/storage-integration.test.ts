@@ -2,6 +2,55 @@ import { readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { expect, it, vi } from 'vitest'
 import { bootTestServer } from '../../test/harness.js'
+import { FakeSidecar } from '../../sidecar/fake.js'
+
+it('admits only one turn while persistence outlasts the stale-state grace period', async () => {
+  let now = 1000
+  let releaseWrite!: () => void
+  const writeGate = new Promise<void>((resolve) => { releaseWrite = resolve })
+  let enteredWrite!: () => void
+  const writeStarted = new Promise<void>((resolve) => { enteredWrite = resolve })
+  let releaseWorker!: () => void
+  const workerGate = new Promise<void>((resolve) => { releaseWorker = resolve })
+  const sidecar = new FakeSidecar()
+  sidecar.respond('chat.start', async () => { await workerGate; throw new Error('test worker finished') })
+  const server = await bootTestServer({ sidecar, now: () => now })
+  try {
+    const store = server.deps.sessionStore
+    const session = await store.newSession()
+    const write = store.deps.storage.sessions.write.bind(store.deps.storage.sessions)
+    vi.spyOn(store.deps.storage.sessions, 'write').mockImplementationOnce(async (...args) => {
+      enteredWrite()
+      await writeGate
+      return write(...args)
+    })
+    const options = { msg: 'first', workspace: server.state, model: null, modelProvider: null }
+    const first = server.deps.turns.start(session, options)
+    await writeStarted
+    expect(server.deps.registry.activeRunStreamForSession(session.session_id)).toBeTruthy()
+    expect(server.deps.registry.attachableRunForSession(session.session_id)).toBeNull()
+    now += 31
+    const second = server.deps.turns.start(session, { ...options, msg: 'second' })
+    await new Promise<void>((resolve) => setImmediate(resolve))
+    releaseWrite()
+    const results = await Promise.all([first, second])
+    releaseWorker()
+    for (const result of results) if (result.stream_id) await server.deps.turns.finished(result.stream_id)
+    expect(results.filter((result) => result._status === undefined)).toHaveLength(1)
+    expect(results.find((result) => result._status === 409)?.error).toBe('session already has an active stream')
+  } finally { releaseWrite(); releaseWorker(); vi.restoreAllMocks(); await server.close() }
+})
+
+it('releases the admission reservation if the pending snapshot cannot be persisted', async () => {
+  const server = await bootTestServer()
+  try {
+    const session = await server.deps.sessionStore.newSession()
+    vi.spyOn(server.deps.sessionStore.deps.storage.sessions, 'write').mockRejectedValueOnce(new Error('synthetic disk-full'))
+    await expect(server.deps.turns.start(session, { msg: 'first', workspace: server.state, model: null, modelProvider: null })).rejects.toThrow('synthetic disk-full')
+    expect(server.deps.registry.activeRunStreamForSession(session.session_id)).toBeNull()
+    expect(server.deps.registry.attachableRunForSession(session.session_id)).toBeNull()
+  } finally { vi.restoreAllMocks(); await server.close() }
+})
 
 it('skips malformed documents without assigning a generated session identity', async () => {
   const server = await bootTestServer()

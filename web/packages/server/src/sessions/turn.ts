@@ -483,7 +483,10 @@ export class TurnRunner {
     if (opts.completionKeys?.length) s.extra.completion_acceptances = { ...accepted, ...Object.fromEntries(opts.completionKeys.map((key) => [key, streamId])) }
     const previousUpdates = s.extra.background_updates
     if (opts.backgroundUpdate) recordBackgroundUpdate(s, streamId, opts.backgroundUpdate)
+    const admission = { stream_id: streamId, session_id: s.session_id, started_at: this.deps.now(), phase: 'starting', workspace: opts.workspace, model: opts.model, provider: opts.modelProvider, ephemeral: Boolean(opts.ephemeral), origin: turnOrigin(source), admitting: true }
+    this.registry.registerActiveRun(admission)
     try { (await this.deps.store.save(s)) } catch (error) {
+      this.registry.activeRuns.delete(streamId)
       s.extra.background_updates = previousUpdates
       s.extra.completion_acceptances = previousAcceptances
       s.automatic_turns_stop_held = previousStopHold
@@ -494,8 +497,8 @@ export class TurnRunner {
     this.deps.events.publish(wasHiddenEmpty ? 'session_new' : 'turn_started', { profile: s.profile, sessionId: s.session_id })
     try { this.deps.workspaces.setLastWorkspace(opts.workspace, s.profile) } catch { /* best effort */ }
     const channel = this.registry.create(streamId, s.session_id)
+    admission.admitting = false
     if (opts.goalRelated) this.registry.goalRelated.add(streamId)
-    this.registry.registerActiveRun({ stream_id: streamId, session_id: s.session_id, started_at: this.deps.now(), phase: 'starting', workspace: opts.workspace, model: opts.model, provider: opts.modelProvider, ephemeral: Boolean(opts.ephemeral), origin: turnOrigin(source) })
     const worker = this.run(s.session_id, streamId, channel, opts, compactionDue).catch((error: unknown) => {
       this.deps.log(`[webui] ERROR turn ${streamId} crashed\n${error instanceof Error ? (error.stack ?? error.message) : String(error)}`)
     }).finally(() => { this.workers.delete(streamId) })

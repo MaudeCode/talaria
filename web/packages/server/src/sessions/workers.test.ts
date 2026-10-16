@@ -1280,6 +1280,31 @@ describe('run-journal retention sweep', () => {
     expect(calls).toBe(3)
   })
 
+  it('drains asynchronous hygiene sweeps on stop and logs their failures', async () => {
+    const journal = new RunJournal(tempDir())
+    const log: string[] = []
+    let reject!: (error: Error) => void
+    const gate = new Promise<void>((_, fail) => { reject = fail })
+    void gate.catch(() => { /* the baseline ticker discards this promise */ })
+    let calls = 0
+    const ticker = new HygieneTicker({ env: {}, stateDir: journal.sessionDir, port: () => 0, journal, activeJournalPaths: () => new Set(), now: () => 1000, log: (line) => { log.push(line) }, sweeps: [() => { calls += 1; return gate }] })
+    try {
+      const first = ticker.tick()
+      await new Promise<void>((resolve) => setImmediate(resolve))
+      const second = ticker.tick()
+      let stopped = false
+      const stopping = ticker.stop().then(() => { stopped = true })
+      await new Promise<void>((resolve) => setImmediate(resolve))
+      expect(stopped, 'shutdown must wait for the pending storage sweep').toBe(false)
+      expect(calls).toBe(1)
+      reject(new Error('synthetic storage failure'))
+      await Promise.all([first, second, stopping])
+      expect(log).toContain('[webui] WARNING: hygiene sweep failed: synthetic storage failure')
+      await ticker.tick()
+      expect(calls).toBe(1)
+    } finally { reject(new Error('test cleanup')); await ticker.stop() }
+  })
+
   it('never compacts a journal that gains a writer or changes while the sweep yields', async () => {
     const journal = new RunJournal(tempDir())
     const paths = ['run0', 'run1', 'run2', 'run3', 'run4', 'run5'].map((r, i) => writeRun(journal, 'sess', r, { mtime: old + i }))
