@@ -1944,5 +1944,11 @@
 	"panel_agents_transcript": "Ouvrir la transcription",
 	"panel_files_unavailable": "Cette discussion n’a pas d’espace de travail.",
 	"panel_agents_transcript_for": "Transcription : {goal}",
-	"settings_label_summarize_updates_automatically": "Résumer automatiquement les mises à jour avec l’IA"
+	"settings_label_summarize_updates_automatically": "Résumer automatiquement les mises à jour avec l’IA",
+	"background_review_waiting": "En attente de la vérification de ce résultat par l’agent parent.",
+	"background_review_reviewing": "L’agent parent vérifie ce résultat.",
+	"background_review_reviewed": "L’agent parent a vérifié ce résultat.",
+	"background_review_failed": "Le travail ou la vérification par l’agent parent a échoué.",
+	"background_review_unknown": "Le résultat du travail ou de la vérification est inconnu.",
+	"background_review_parent": "Vérification par l’agent parent : {state}"
 }

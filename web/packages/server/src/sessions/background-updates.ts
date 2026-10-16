@@ -4,6 +4,8 @@
  * clients only render `_background_update`. TAL-460: each update carries one completion line per result, and the
  * Agent's reply to it is marked (`_background_reply`) and, when it is only a silence marker, silent (`_background_silent`).
  */
+import type { BackgroundReviewState, BackgroundLine } from '@maudecode/talaria-web-contracts'
+import { turnTerminalState } from './anchor.js'
 import type { Session } from './session.js'
 import { isDict, messageText } from './merge.js'
 import { str } from '../util.js'
@@ -11,9 +13,7 @@ import { backgroundEventKind } from './background-events.js'
 
 type Dict = Record<string, unknown>
 export type BackgroundUpdateKind = 'delegation' | 'process' | 'mixed' | 'other'
-/** One finished background item: an agent (by its goal), a command, or another notice (by its summary). */
-export interface BackgroundLine { kind: 'agent' | 'command' | 'other'; status: 'completed' | 'failed' | 'notice'; label: string; exit_code?: number | null }
-export interface BackgroundUpdate { kind: BackgroundUpdateKind; attention: boolean; count: number; summary: string; lines: BackgroundLine[]; display_kind?: 'hidden' }
+export interface BackgroundUpdate { kind: BackgroundUpdateKind; attention: boolean; count: number; summary: string; lines: BackgroundLine[]; display_kind?: 'hidden'; review_state?: BackgroundReviewState }
 export type TurnOrigin = 'user' | 'background'
 
 const RECORD_KEY = 'background_updates'
@@ -71,8 +71,8 @@ export function eventLines(evt: Dict, prompt: string): BackgroundLine[] {
     const results = Array.isArray(evt.results) ? evt.results.filter(isDict) : []
     const goals = Array.isArray(evt.goals) ? evt.goals : []
     return (results.length ? results : [evt]).map((r, i) => {
-      // Both clients already render an opaque notice verbatim; an unknown outcome is not an agent success line.
-      if (r.status === 'unknown') return { kind: 'other', status: 'notice', label: label(r.error ?? evt.error) || 'Outcome unknown' }
+      // Preserve the goal while keeping an unknown worker outcome distinct from success.
+      if (r.status === 'unknown') return { kind: 'agent', status: 'notice', label: label(goals[i] ?? r.goal ?? evt.goal) || label(r.error ?? evt.error) || 'Outcome unknown' }
       return { kind: 'agent', status: (results.length ? DELEGATION_DONE.has(str(r.status)) : !eventUpdate(evt).attention) ? 'completed' : 'failed', label: label(goals[i] ?? r.goal ?? evt.goal) || (results.length ? '' : backgroundUpdateSummary(prompt)) }
     })
   }
@@ -116,9 +116,11 @@ export function withBackgroundDisplayKinds<T>(messages: T[], session: Session): 
   const recorded = session.extra[RECORD_KEY]
   if (!isDict(recorded)) return messages
   return messages.map((m) => {
-    if (!isDict(m) || m.role !== 'user' || m._source !== BACKGROUND_SOURCE) return m
-    const update = recorded[str(m._turn_id)]
-    return isDict(update) && update.display_kind === 'hidden' ? { ...m, display_kind: 'hidden' } : m
+    if (!isDict(m) || m.role !== 'user') return m
+    const meta = isDict(m.display_metadata) ? m.display_metadata : {}
+    const key = m._source === BACKGROUND_SOURCE ? str(m._turn_id) : AGENT_UPDATE_KINDS[str(m.display_kind)] ? `delegation:${str(meta.delegation_id)}` : ''
+    const update = recorded[key]
+    return isDict(update) ? { ...m, _background_update: update, ...(update.display_kind === 'hidden' ? { display_kind: 'hidden' } : {}) } : m
   })
 }
 
@@ -156,7 +158,7 @@ function agentUpdate(m: Dict, recorded: Dict): BackgroundUpdate | null {
   const kind = AGENT_UPDATE_KINDS[str(m.display_kind)]
   if (!kind) return null
   const meta = isDict(m.display_metadata) ? m.display_metadata : {}
-  const authoritative = recordedUpdate(recorded, `delegation:${str(meta.delegation_id)}`)
+  const authoritative = recordedUpdate(recorded, `delegation:${str(meta.delegation_id)}`) ?? recordedUpdate({ row: m._background_update }, 'row')
   if (authoritative) return authoritative
   const update = summaryUpdate(kind, Number(meta.failed_count) > 0, backgroundUpdateSummary(messageText(m.content)))
   // Agent completed_count also counts recovered unknown outcomes. Only an event proves success.
@@ -171,17 +173,62 @@ function agentUpdate(m: Dict, recorded: Dict): BackgroundUpdate | null {
  * (`_background_reply`); a reply that ends on a silence marker is `_background_silent` throughout. Needs `_turn_id` on
  * every row (`withTurnIds`). Returns copies; stored rows are untouched.
  */
-export function withBackgroundUpdates<T>(messages: T[], session: Session): T[] {
+export interface BackgroundReviewContext { activeTurnId?: string | null; pendingDelegations?: Set<string> }
+
+/** Persist terminal evidence on the admitted prompt, alongside its actual final reply. */
+export function recordBackgroundReview(session: Session, turnId: string): void {
+  const prompt = session.messages.find((m) => m.role === 'user' && m._source === BACKGROUND_SOURCE && m._turn_id === turnId)
+  if (prompt) prompt._background_review_terminal = turnTerminalState(session.messages, turnId)
+}
+
+function parentReview(session: Session, rows: Dict[], turnId: string, pending: boolean, context: BackgroundReviewContext): BackgroundReviewState {
+  const receipt = rows.find((m) => m.role === 'user' && m._source === BACKGROUND_SOURCE)?._background_review_terminal
+  const last = rows.findLast((m) => m.role === 'assistant')
+  const terminal = str(receipt) || str(last?._terminal_state) || (last?._error === true ? 'error' : '')
+  if (terminal) {
+    if (terminal === 'completed') return receipt === 'completed' && turnTerminalState(rows, turnId) === 'completed' ? 'reviewed' : 'unknown'
+    if (['cancelled', 'interrupted', 'no_response'].includes(terminal)) return pending ? 'waiting' : 'unknown'
+    return 'failed'
+  }
+  if (turnId && context.activeTurnId === turnId && session.active_stream_id === turnId && session.pending_user_source === BACKGROUND_SOURCE) return 'reviewing'
+  return pending ? 'waiting' : 'unknown'
+}
+
+/** Admission receipts name the precise parent turn, even before the drain's follow-up metadata save. */
+function admittedReviewTurn(session: Session, delegationId: string): string {
+  if (!delegationId || !isDict(session.extra.completion_acceptances)) return ''
+  const turns = new Set<string>()
+  for (const [key, turn] of Object.entries(session.extra.completion_acceptances)) {
+    try {
+      const identity: unknown = JSON.parse(key)
+      if (Array.isArray(identity) && identity.length === 2 && identity[1] === delegationId && typeof turn === 'string' && turn) turns.add(turn)
+    } catch { /* An older or unrelated receipt cannot establish admission. */ }
+  }
+  return turns.size === 1 ? [...turns][0]! : ''
+}
+
+export function withBackgroundUpdates<T>(messages: T[], session: Session, context: BackgroundReviewContext = {}): T[] {
   const recorded = isDict(session.extra[RECORD_KEY]) ? (session.extra[RECORD_KEY] as Dict) : {}
   const backgroundTurns = new Set<string>()
+  const turns = new Map<string, Dict[]>()
+  for (const m of session.messages) {
+    const turn = str(m._turn_id)
+    const rows = turns.get(turn) ?? []
+    rows.push(m)
+    turns.set(turn, rows)
+  }
   const stamped = withBackgroundDisplayKinds(messages, session).map((m) => {
     if (!isDict(m) || m.role !== 'user') return m
     const update: BackgroundUpdate | null = m._source === BACKGROUND_SOURCE
-      ? recordedUpdate(recorded, m._turn_id) ?? summaryUpdate('other', false, backgroundUpdateSummary(messageText(m.content)))
+      ? recordedUpdate(recorded, m._turn_id) ?? recordedUpdate({ row: m._background_update }, 'row') ?? summaryUpdate('other', false, backgroundUpdateSummary(messageText(m.content)))
       : agentUpdate(m, recorded)
     if (!update) return m
     backgroundTurns.add(str(m._turn_id))
-    return { ...m, _background_update: update }
+    const delegationId = str(isDict(m.display_metadata) ? m.display_metadata.delegation_id : '')
+    // An Agent notification can precede Web admission. Only the exact accepted result joins that parent's turn.
+    const reviewTurn = m._source === BACKGROUND_SOURCE ? str(m._turn_id) : admittedReviewTurn(session, delegationId)
+    const review = parentReview(session, turns.get(reviewTurn) ?? [], reviewTurn, Boolean(delegationId && context.pendingDelegations?.has(delegationId)), context)
+    return { ...m, _background_update: { ...update, review_state: review, lines: update.lines.map((line) => ({ ...line, review_state: line.status === 'failed' ? 'failed' : line.status === 'notice' ? 'unknown' : review })) } }
   })
   // A turn is silent when its last assistant text is exactly a silence marker; a running turn has no final text yet.
   const silent = new Set<string>()

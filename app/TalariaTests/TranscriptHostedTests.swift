@@ -16,8 +16,9 @@ final class TranscriptHostedTests: XCTestCase {
         let updates = HostedAccessibility.elements(in: window).filter {
             HostedAccessibility.identifier(of: $0) == "background-update-lines"
         }
-        XCTAssertEqual(batch.accessibilityLabel, "Agent “Audit the fixture” completed, Background command make test failed (exit 1)")
-        XCTAssertEqual(updates.dropFirst().first?.accessibilityLabel, "Background command ./backup.sh finished")
+        XCTAssertEqual(batch.accessibilityLabel, "Audit the fixture. The parent reviewed this result., make test. The worker or parent review failed. Parent review: The parent reviewed this result.")
+        XCTAssertEqual(updates.dropFirst().first?.accessibilityLabel, "./backup.sh. The parent reviewed this result.")
+        XCTAssertTrue(updates.contains { $0.accessibilityLabel == "Waiting result. Waiting for the parent to review this result., Active review. The parent is reviewing this result., Unknown result. The worker or parent review outcome is unknown." })
         let reply = try await requireElement(in: window, label: "The audit finished and the test run failed.")
         XCTAssertLessThan(batch.accessibilityFrame.maxY, reply.accessibilityFrame.minY, "The reply is not under its completion lines")
         XCTAssertNil(HostedAccessibility.element(in: window, label: "[SILENT]"), "A silent background reply is shown")
@@ -29,6 +30,14 @@ final class TranscriptHostedTests: XCTestCase {
         HostedAccessibility.activate(batch)
         let body = await awaitElement(in: window) { $0.accessibilityLabel?.contains("Delegated result body.") == true }
         XCTAssertNotNil(body, "The expanded update does not show the full notification")
+    }
+
+    func testBackgroundReviewUsesTheAgreedPlatformIcons() {
+        XCTAssertEqual(BackgroundWorkSheet.icon(BackgroundReviewState.waiting), "clock")
+        XCTAssertEqual(BackgroundWorkSheet.icon(BackgroundReviewState.reviewed), "checkmark")
+        XCTAssertEqual(BackgroundWorkSheet.icon(BackgroundReviewState.failed), "exclamationmark.triangle.fill")
+        XCTAssertEqual(BackgroundWorkSheet.icon(BackgroundReviewState.unknown), "questionmark.circle")
+        XCTAssertEqual(BackgroundWorkSheet.icon(nil as BackgroundReviewState?), "questionmark.circle")
     }
 
     /// The compaction card follows the row the server named and precedes the next one (TAL-560).

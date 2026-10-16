@@ -93,6 +93,7 @@ export interface SessionServiceDeps {
   profileDeleting?: (profile: string | null) => boolean
   /** TAL-372: the session's background work receipts, for the delegation rows that started them. */
   backgroundReceipts?: (sid: string) => Receipt[]
+  backgroundPending?: (sid: string) => Set<string>
   store: SessionStore
   drafts: DraftStore
   events: SessionEventBus
@@ -718,6 +719,11 @@ export class SessionService {
     return sid
   }
 
+  /** All transcript transports use the same live-run and durable-pending evidence. */
+  backgroundUpdates<T>(s: Session, messages: T[]): T[] {
+    return withBackgroundUpdates(messages, s, { activeTurnId: this.deps.runtime.activeRunStream(s.session_id), pendingDelegations: this.deps.backgroundPending?.(s.session_id) ?? new Set() })
+  }
+
   /** TAL-372: each delegation row of a turn's scene carries the status of the work it started. */
   backgroundLinked(s: Session, messages: unknown[]): unknown[] {
     return withBackgroundLinks(messages, this.deps.backgroundReceipts?.(s.session_id) ?? [])
@@ -728,7 +734,7 @@ export class SessionService {
     const payload = this.wireRow(s)
     // Mutation replies replace a client's transcript, so they carry the same server-built scenes as the detail.
     if (withMessages) {
-      payload.messages = this.backgroundLinked(s, hydrateAnchorActivityScenes(withToolCallOutcomes(withBackgroundUpdates(withMarkerKinds(withTurnIds(messages), s), s), s.tool_calls, s.active_stream_id), s.anchor_activity_scenes, { activeTurnId: s.active_stream_id, runningScene: !this.journaledActiveTurn(s) }))
+      payload.messages = this.backgroundLinked(s, hydrateAnchorActivityScenes(withToolCallOutcomes(this.backgroundUpdates(s, withMarkerKinds(withTurnIds(messages), s)), s.tool_calls, s.active_stream_id), s.anchor_activity_scenes, { activeTurnId: s.active_stream_id, runningScene: !this.journaledActiveTurn(s) }))
       payload.compression_reference = compressionReference(s, payload.messages as unknown[])
     }
     return redactSessionData(payload, this.deps.redactEnabled())
@@ -786,7 +792,7 @@ export class SessionService {
 
   /** Existing projections, once per complete turn range, in absolute transcript coordinates. */
   private deriveRange(s: Session, rows: Message[], baseIndex: number, initialTurn: string, journaled: boolean, refs: Pick<Map<string, number>, 'get'>, calls: unknown[]): Message[] {
-    return this.backgroundLinked(s, hydrateAnchorActivityScenes(withToolCallOutcomes(withBackgroundUpdates(withMarkerKinds(withTurnIds(withAttachmentObjects(rows), baseIndex, initialTurn), s), s), calls, s.active_stream_id, baseIndex), s.anchor_activity_scenes, { activeTurnId: s.active_stream_id, runningScene: !journaled, clipToolResults: true, baseIndex, refCounts: refs })) as Message[]
+    return this.backgroundLinked(s, hydrateAnchorActivityScenes(withToolCallOutcomes(this.backgroundUpdates(s, withMarkerKinds(withTurnIds(withAttachmentObjects(rows), baseIndex, initialTurn), s)), calls, s.active_stream_id, baseIndex), s.anchor_activity_scenes, { activeTurnId: s.active_stream_id, runningScene: !journaled, clipToolResults: true, baseIndex, refCounts: refs })) as Message[]
   }
 
   private limitedDetail(s: Session, index: SessionPrefixIndex, limit: number, before: number | null, pending: ReturnType<SessionService['pendingTurn']>, journaled: ReturnType<SessionService['journaledActiveTurn']>) {
@@ -917,7 +923,7 @@ export class SessionService {
     if (pending && !limited) transcript = withPendingUserTurn(transcript, pending)
     if (journaled && !limited)transcript = withoutRunningTurnOutput(transcript, { ...journaled, localCount: s.messages.length })
     // Turn ids, tool outcomes and scenes are computed over the full transcript, so every window reports the same values.
-    const all: unknown[] = loadMessages && !limited ? this.backgroundLinked(s, hydrateAnchorActivityScenes(withToolCallOutcomes(withBackgroundUpdates(withMarkerKinds(withTurnIds(withAttachmentObjects(transcript)), s), s), s.tool_calls, s.active_stream_id), s.anchor_activity_scenes, { activeTurnId: s.active_stream_id, runningScene: !journaled, clipToolResults: msgLimit !== null })) : []
+    const all: unknown[] = loadMessages && !limited ? this.backgroundLinked(s, hydrateAnchorActivityScenes(withToolCallOutcomes(this.backgroundUpdates(s, withMarkerKinds(withTurnIds(withAttachmentObjects(transcript)), s)), s.tool_calls, s.active_stream_id), s.anchor_activity_scenes, { activeTurnId: s.active_stream_id, runningScene: !journaled, clipToolResults: msgLimit !== null })) : []
     let truncated: unknown[] = limited?.messages ?? []
     let offset = limited?.offset ?? 0
     let summaryCount: number | null = limited?.total ?? null
@@ -1128,7 +1134,7 @@ export class SessionService {
     }
     if (target.hasPendingPrompt || output.length) {
       target.messages.push(...output)
-      if (!answered) target.messages.push({ role: 'assistant', content: '**Interrupted:** The reply was interrupted before it could be saved.', timestamp: Math.trunc(this.deps.now()), _error: true, _turn_id: turnId })
+      if (!answered) target.messages.push({ role: 'assistant', content: '**Interrupted:** The reply was interrupted before it could be saved.', _terminal_state: 'interrupted', timestamp: Math.trunc(this.deps.now()), _error: true, _turn_id: turnId })
       // Settled like a turn: the Agent's own rows are covered by the recovered turn; without them, every row past the run's start is.
       this.settleStateDb(target, { turnId, previousContext, agentRows: ownRows, startId: stateDbSeenId(before) ?? (read.idCapable ? 0 : null), read })
     }

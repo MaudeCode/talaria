@@ -1851,5 +1851,11 @@
 	"panel_agents_transcript": "Mở bản ghi",
 	"panel_files_unavailable": "Cuộc trò chuyện này không có không gian làm việc.",
 	"panel_agents_transcript_for": "Bản ghi: {goal}",
-	"settings_label_summarize_updates_automatically": "Tự động tóm tắt bản cập nhật bằng AI"
+	"settings_label_summarize_updates_automatically": "Tự động tóm tắt bản cập nhật bằng AI",
+	"background_review_waiting": "Đang chờ tác nhân chính xem xét kết quả này.",
+	"background_review_reviewing": "Tác nhân chính đang xem xét kết quả này.",
+	"background_review_reviewed": "Tác nhân chính đã xem xét kết quả này.",
+	"background_review_failed": "Tác vụ hoặc quá trình xem xét của tác nhân chính đã thất bại.",
+	"background_review_unknown": "Chưa rõ kết quả tác vụ hoặc quá trình xem xét của tác nhân chính.",
+	"background_review_parent": "Xem xét của tác nhân chính: {state}"
 }

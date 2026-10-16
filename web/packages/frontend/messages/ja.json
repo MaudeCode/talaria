@@ -1853,5 +1853,11 @@
 	"panel_agents_transcript": "トランスクリプトを開く",
 	"panel_files_unavailable": "このチャットにはワークスペースがありません。",
 	"panel_agents_transcript_for": "トランスクリプト: {goal}",
-	"settings_label_summarize_updates_automatically": "AIで更新内容を自動的に要約"
+	"settings_label_summarize_updates_automatically": "AIで更新内容を自動的に要約",
+	"background_review_waiting": "親エージェントによる結果の確認を待っています。",
+	"background_review_reviewing": "親エージェントがこの結果を確認しています。",
+	"background_review_reviewed": "親エージェントがこの結果を確認しました。",
+	"background_review_failed": "タスクまたは親エージェントの確認が失敗しました。",
+	"background_review_unknown": "タスクまたは親エージェントの確認結果が不明です。",
+	"background_review_parent": "親エージェントの確認: {state}"
 }

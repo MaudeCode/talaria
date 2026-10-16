@@ -1,7 +1,8 @@
 import { memo, useState } from 'react'
-import { AlertTriangle, ArrowUp, CalendarClock, CheckCircle2, Copy, GitBranch, Info, ListChecks, Pencil, RotateCcw, Shrink, Volume2, Webhook } from 'lucide-react'
+import { AlertTriangle, ArrowUp, CalendarClock, Copy, GitBranch, ListChecks, Pencil, RotateCcw, Shrink, Volume2, Webhook } from 'lucide-react'
 import { m } from '../../paraglide/messages.js'
 import type { BackgroundLine, Message } from '../../contracts'
+import { StatusIcon } from '../background/BackgroundWork'
 import { Markdown } from './render/Markdown'
 import { messageText } from './render/text'
 import type { ActivityMode } from './blocks/Worklog'
@@ -69,34 +70,26 @@ export const UserMessageRow = memo(function UserMessageRow({ row, renderMarkdown
   )
 })
 
-/**
- * A localized line with `label` set in its own element (`code` for a command), wherever the wording puts it. Only the
- * label truncates, so the verb stays readable on one line.
- */
-function LineText({ text, label, code }: { text: (label: string) => string; label: string; code?: boolean }) {
-  const [before = '', after = ''] = text('\u0000').split('\u0000')
-  return (
-    <span className="flex min-w-0 whitespace-pre">
-      {before && <span className="shrink-0">{before}</span>}
-      {code ? <code className="min-w-0 truncate font-mono text-[12px] leading-[inherit]" title={label}>{label}</code> : <span className="min-w-0 truncate text-text" title={label}>{label}</span>}
-      {after && <span className="shrink-0">{after}</span>}
-    </span>
-  )
+function reviewLabel(state: NonNullable<BackgroundLine['review_state']>): string {
+  switch (state) {
+    case 'waiting': return m.background_review_waiting()
+    case 'reviewing': return m.background_review_reviewing()
+    case 'reviewed': return m.background_review_reviewed()
+    case 'failed': return m.background_review_failed()
+    case 'unknown': return m.background_review_unknown()
+  }
 }
 
-function BackgroundLineRow({ line }: { line: BackgroundLine }) {
-  const failed = line.status === 'failed'
-  const Icon = failed ? AlertTriangle : line.status === 'notice' ? Info : CheckCircle2
-  const exit = line.exit_code === null || line.exit_code === undefined ? null : String(line.exit_code)
-  const text = line.kind === 'agent'
-    ? <LineText label={line.label} text={(goal) => (failed ? m.background_line_agent_failed({ goal }) : m.background_line_agent_completed({ goal }))} />
-    : line.kind === 'command'
-    ? <LineText code label={line.label} text={(command) => (failed && exit !== null ? m.background_line_command_failed_exit({ command, code: exit }) : failed ? m.background_line_command_failed({ command }) : m.background_line_command_finished({ command }))} />
-    : line.label
+function reviewDescription(line: BackgroundLine, parentReview: BackgroundLine['review_state']): string {
+  return `${line.label}. ${reviewLabel(line.review_state ?? 'unknown')}${parentReview && parentReview !== line.review_state ? ` ${m.background_review_parent({ state: reviewLabel(parentReview) })}` : ''}`
+}
+
+function BackgroundLineRow({ line, parentReview }: { line: BackgroundLine; parentReview: BackgroundLine['review_state'] }) {
+  const description = reviewDescription(line, parentReview)
   return (
-    <li className="flex items-center gap-2">
-      <Icon size={14} aria-hidden="true" className={cn('shrink-0', failed ? 'text-warning' : 'text-muted')} />
-      <span className="min-w-0 truncate">{text}</span>
+    <li className="flex items-center gap-2" aria-label={description} title={description}>
+      <StatusIcon status={line.review_state ?? 'unknown'} />
+      <span className={cn('min-w-0 truncate', line.kind === 'agent' && 'text-text', line.kind === 'command' && 'font-mono')} title={line.label}>{line.label}</span>
     </li>
   )
 }
@@ -113,8 +106,8 @@ export const BackgroundUpdateRow = memo(function BackgroundUpdateRow({ row }: { 
   return (
     <div className="msg-row" data-role="background" data-msg-idx={row.index} data-message-key={row.key}>
       <details className="background-update text-[13px] text-muted">
-        <summary className="cursor-pointer list-none [&::-webkit-details-marker]:hidden" aria-label={m.background_update_details()}>
-          <ul className="flex flex-col gap-1">{update.lines.map((line, i) => <BackgroundLineRow key={i} line={line} />)}</ul>
+        <summary className="cursor-pointer list-none [&::-webkit-details-marker]:hidden" aria-label={update.lines.map((line) => reviewDescription(line, update.review_state)).join(', ')}>
+          <ul className="flex flex-col gap-1">{update.lines.map((line, i) => <BackgroundLineRow key={i} line={line} parentReview={update.review_state} />)}</ul>
         </summary>
         <div className="mt-2 rounded-md border border-border bg-surface px-3 py-2">
           <CollapsedBody excerpt={row.message._display_truncated ? row.message._display_excerpt : undefined}>

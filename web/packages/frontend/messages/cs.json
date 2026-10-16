@@ -1950,5 +1950,11 @@
 	"panel_agents_transcript": "Otevřít přepis",
 	"panel_files_unavailable": "Tento chat nemá pracovní prostor.",
 	"panel_agents_transcript_for": "Přepis: {goal}",
-	"settings_label_summarize_updates_automatically": "Automaticky shrnovat aktualizace pomocí AI"
+	"settings_label_summarize_updates_automatically": "Automaticky shrnovat aktualizace pomocí AI",
+	"background_review_waiting": "Čeká se, až nadřazený agent zkontroluje tento výsledek.",
+	"background_review_reviewing": "Nadřazený agent kontroluje tento výsledek.",
+	"background_review_reviewed": "Nadřazený agent zkontroloval tento výsledek.",
+	"background_review_failed": "Úloha nebo kontrola nadřazeného agenta selhala.",
+	"background_review_unknown": "Výsledek úlohy nebo kontroly nadřazeného agenta není znám.",
+	"background_review_parent": "Kontrola nadřazeného agenta: {state}"
 }

@@ -1727,5 +1727,11 @@
 	"panel_agents_transcript": "Abrir transcrição",
 	"panel_files_unavailable": "Esta conversa não tem espaço de trabalho.",
 	"panel_agents_transcript_for": "Transcrição: {goal}",
-	"settings_label_summarize_updates_automatically": "Resumir atualizações com IA automaticamente"
+	"settings_label_summarize_updates_automatically": "Resumir atualizações com IA automaticamente",
+	"background_review_waiting": "Aguardando o agente principal revisar este resultado.",
+	"background_review_reviewing": "O agente principal está revisando este resultado.",
+	"background_review_reviewed": "O agente principal revisou este resultado.",
+	"background_review_failed": "O trabalho ou a revisão do agente principal falhou.",
+	"background_review_unknown": "O resultado do trabalho ou da revisão é desconhecido.",
+	"background_review_parent": "Revisão do agente principal: {state}"
 }

@@ -34,7 +34,7 @@ import { hydrateAnchorActivityScenes, turnTerminalState, withTurnIds } from './a
 import { persistentStateChanges, persistentStateSnapshot } from './state-saved.js'
 import { agentBuildParams, webuiEphemeralSystemPrompt, workspaceSystemMessage } from './turn-context.js'
 import { agentSteerText, assistantReplyAddedAfterCurrentTurn, attachedFilesPrompt, buildPartialMessage, dedupeContext, checkpointTurnStart, extractToolCallsFromMessages, hasNativeImages, injectMaxIterationSummaryFallback, isDict, mergeDisplayMessagesAfterAgentResult, messageIdentity, messageText, pendingUserRow, sanitizeMessagesForApi, sessionLacksFinalAssistantAnswer, splitDisplayText, stateDbSeenId, joinReasoning, reasoningFieldsText, toolOutcome, withAttachmentObjects, withBodyExcerpts, withDisplayMedia, withMarkerKinds, withToolCallOutcomes, withoutMaxIterationSummaryRequest, withNativeImagesRestored, withoutNativeImages, withoutToolImages } from './merge.js'
-import { mayBecomeSilentReply, turnOrigin, withBackgroundUpdates } from './background-updates.js'
+import { mayBecomeSilentReply, turnOrigin, recordBackgroundReview, recordBackgroundUpdate, type BackgroundUpdate } from './background-updates.js'
 import { countExchanges, fallbackTitleFromExchange, firstExchangeSnippets, isGenericFallbackTitle, latestExchangeSnippets, looksInvalidGeneratedTitle, looksLikeDefaultCliTitle, sanitizeGeneratedTitle, titleLanguageMismatch, titlePrompts } from './titles.js'
 import { WORKSPACE_BUSY_MESSAGE } from '../workspace/git.js'
 import { CHECKPOINT_STORE_BUSY_MESSAGE } from '../workspace/rollback.js'
@@ -129,6 +129,7 @@ export interface StartTurnOptions {
   goalRelated?: boolean
   /** Durable delegation identities acknowledged by this automatic turn. */
   completionKeys?: string[]
+  backgroundUpdate?: BackgroundUpdate
   ephemeral?: boolean
   /** TAL-801: a spoken turn, which the Agent runs on the profile's `auxiliary.voice_chat` slot. */
   voiceTurn?: boolean
@@ -404,7 +405,7 @@ export class TurnRunner {
    * Admit automatic turns through the same workspace recovery and model resolution as user turns. After the user's Stop
    * none starts (TAL-899): the answer is a `held` 409, and the caller keeps its work for the user's next turn.
    */
-  startServerTurn(session: Session, opts: Pick<StartTurnOptions, 'msg' | 'source' | 'goalRelated' | 'completionKeys'>): AdmissionResult {
+  startServerTurn(session: Session, opts: Pick<StartTurnOptions, 'msg' | 'source' | 'goalRelated' | 'completionKeys' | 'backgroundUpdate'>): AdmissionResult {
     if (this.automaticTurnsHeld(session.session_id)) return { _status: 409, error: 'automatic turns are held after Stop', held: true }
     try {
       const service = this.deps.service()
@@ -480,7 +481,10 @@ export class TurnRunner {
     if (releaseStopHold) s.automatic_turns_stop_held = false
     const previousAcceptances = s.extra.completion_acceptances
     if (opts.completionKeys?.length) s.extra.completion_acceptances = { ...accepted, ...Object.fromEntries(opts.completionKeys.map((key) => [key, streamId])) }
+    const previousUpdates = s.extra.background_updates
+    if (opts.backgroundUpdate) recordBackgroundUpdate(s, streamId, opts.backgroundUpdate)
     try { this.deps.store.save(s) } catch (error) {
+      s.extra.background_updates = previousUpdates
       s.extra.completion_acceptances = previousAcceptances
       s.automatic_turns_stop_held = previousStopHold
       throw error
@@ -1015,6 +1019,7 @@ export class TurnRunner {
       // TAL-493: the rows this turn's Agent wrote to state.db are now in the transcript, so the merge must not replay them
       // (all of them, the dropped summary request too).
       this.settleStateDb(s, streamId, agentRows, { previousContext })
+      recordBackgroundReview(s, streamId)
       deps.store.save(s)
       deps.pending.clearApprovals(sessionId)
       deps.pending.clearClarifies(sessionId)
@@ -1202,7 +1207,7 @@ export class TurnRunner {
     payload.notices = this.sessionNotices(s.session_id)
     payload.goal = this.sessionGoal(s.session_id)
     const service = this.deps.service()
-    const scened = service.backgroundLinked(s, hydrateAnchorActivityScenes(withToolCallOutcomes(withBackgroundUpdates(withMarkerKinds(withTurnIds(withAttachmentObjects(s.messages)), s), s), s.tool_calls, s.active_stream_id), s.anchor_activity_scenes, { activeTurnId: s.active_stream_id, clipToolResults: true }))
+    const scened = service.backgroundLinked(s, hydrateAnchorActivityScenes(withToolCallOutcomes(service.backgroundUpdates(s, withMarkerKinds(withTurnIds(withAttachmentObjects(s.messages)), s)), s.tool_calls, s.active_stream_id), s.anchor_activity_scenes, { activeTurnId: s.active_stream_id, clipToolResults: true }))
     const [window, offset] = messageWindowForDisplay(scened, TERMINAL_SSE_VISIBLE_MESSAGE_LIMIT, null)
     const limited = messagesForLimitedPayload(withBodyExcerpts(withDisplayMedia(window, service.mediaProjector(s)), s.active_stream_id))
     payload.messages = limited

@@ -1797,5 +1797,11 @@
 	"panel_agents_transcript": "打开对话记录",
 	"panel_files_unavailable": "此对话没有工作区。",
 	"panel_agents_transcript_for": "对话记录：{goal}",
-	"settings_label_summarize_updates_automatically": "使用 AI 自动总结更新"
+	"settings_label_summarize_updates_automatically": "使用 AI 自动总结更新",
+	"background_review_waiting": "等待父代理审阅此结果。",
+	"background_review_reviewing": "父代理正在审阅此结果。",
+	"background_review_reviewed": "父代理已审阅此结果。",
+	"background_review_failed": "任务或父代理审阅失败。",
+	"background_review_unknown": "任务或父代理审阅的结果未知。",
+	"background_review_parent": "父代理审阅：{state}"
 }

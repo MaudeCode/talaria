@@ -694,6 +694,20 @@ final class SharedContractTests: XCTestCase {
         XCTAssertTrue(shown.contains("user-no-reply-answer"))
     }
 
+    func testBackgroundReviewStatesDecodeWithoutInventingOlderOrFutureValues() throws {
+        let object = try XCTUnwrap(JSONSerialization.jsonObject(with: fixture("background-review")) as? [String: Any])
+        let decoder = JSONDecoder()
+        decoder.keyDecodingStrategy = .convertFromSnakeCase
+        let messages = try decoder.decode([ChatMessage].self, from: JSONSerialization.data(withJSONObject: object["messages"]!))
+        XCTAssertEqual(messages.compactMap { $0.backgroundUpdate?.reviewState }, BackgroundReviewState.allCases)
+        XCTAssertEqual(messages.compactMap { $0.backgroundUpdate?.lines.first?.reviewState }, BackgroundReviewState.allCases)
+        for raw in ["{}", #"{"review_state":"future","lines":[{"kind":"agent","status":"completed","label":"Goal","review_state":"future"}]}"#] {
+            let update = try decoder.decode(BackgroundUpdate.self, from: Data(raw.utf8))
+            XCTAssertNil(update.reviewState)
+            XCTAssertNil(update.lines.first?.reviewState)
+        }
+    }
+
     func testSharedWebSessionMarksOnlyTheServersMarkers() throws {
         let object = try XCTUnwrap(JSONSerialization.jsonObject(with: try fixture("web-session")) as? [String: Any])
         // A release checks this App against every retained Web; one from before TAL-305 has no such example.

@@ -669,8 +669,8 @@ describe('background wakeups carry their update metadata (TAL-371)', () => {
     const row = await wakeupRow(sid)
     expect(row, 'the wakeup row settled into the transcript').toBeDefined()
     // TAL-460: one completion line per finished agent, from the structured event.
-    expect(row?._background_update).toEqual({ kind: 'delegation', attention: false, count: 1, summary: 'ASYNC DELEGATION BATCH COMPLETE — deleg_ok', lines: [
-      { kind: 'agent', status: 'completed', label: 'Audit the PVCs' }, { kind: 'agent', status: 'completed', label: 'Check' },
+    expect(row?._background_update).toEqual({ kind: 'delegation', attention: false, count: 1, summary: 'ASYNC DELEGATION BATCH COMPLETE — deleg_ok', review_state: 'reviewed', lines: [
+      { kind: 'agent', status: 'completed', label: 'Audit the PVCs', review_state: 'reviewed' }, { kind: 'agent', status: 'completed', label: 'Check', review_state: 'reviewed' },
     ] })
   })
 
@@ -679,7 +679,7 @@ describe('background wakeups carry their update metadata (TAL-371)', () => {
     await s.deps.completions.processOne({ process_id: 'proc_fail', session_id: 'proc_fail', type: 'completion', command: 'make test', exit_code: 2, output: '1 failed', origin_ui_session_id: sid, consumed: false })
     const row = await wakeupRow(sid)
     expect(row, 'the wakeup row settled into the transcript').toBeDefined()
-    expect(row?._background_update).toEqual({ kind: 'process', attention: true, count: 1, summary: 'IMPORTANT: Background process proc_fail completed (exit_code=2).', lines: [{ kind: 'command', status: 'failed', label: 'make test', exit_code: 2 }] })
+    expect(row?._background_update).toEqual({ kind: 'process', attention: true, count: 1, summary: 'IMPORTANT: Background process proc_fail completed (exit_code=2).', review_state: 'reviewed', lines: [{ kind: 'command', status: 'failed', label: 'make test', exit_code: 2, review_state: 'failed' }] })
   })
 
   it('a heartbeat starts a background-origin turn and persists its prompt hidden (TAL-790)', async () => {
@@ -714,8 +714,8 @@ describe('background wakeups carry their update metadata (TAL-371)', () => {
     await s.deps.completions.drainDeferred(sid)
     const row = await wakeupRow(sid)
     expect(row, 'the wakeup row settled into the transcript').toBeDefined()
-    expect(row?._background_update).toEqual({ kind: 'mixed', attention: true, count: 2, summary: 'ASYNC DELEGATION BATCH COMPLETE — deleg_mix', lines: [
-      { kind: 'agent', status: 'failed', label: 'Scan the logs' }, { kind: 'command', status: 'completed', label: 'ls', exit_code: 0 },
+    expect(row?._background_update).toEqual({ kind: 'mixed', attention: true, count: 2, summary: 'ASYNC DELEGATION BATCH COMPLETE — deleg_mix', review_state: 'reviewed', lines: [
+      { kind: 'agent', status: 'failed', label: 'Scan the logs', review_state: 'failed' }, { kind: 'command', status: 'completed', label: 'ls', exit_code: 0, review_state: 'reviewed' },
     ] })
   })
 
@@ -737,7 +737,37 @@ describe('background wakeups carry their update metadata (TAL-371)', () => {
       // TAL-600: the server, not the client, hides a silent reply; the update's own row always shows.
       expect(answer?._display, reply).toBe(reply === replies[0] ? 'row' : 'hidden')
       expect((await wakeupRow(sid))?._display, reply).toBe('row')
+      expect(((await wakeupRow(sid))?._background_update as Json)?.review_state, 'terminal parent review').toBe('reviewed')
     }
+  })
+
+  it('projects parent review from active admission through silent settlement, replay, paging and reload (TAL-1022)', async () => {
+    const sid = await newSid()
+    let release = (): void => undefined
+    let prompt = ''
+    const chat = sidecar.responderFor('chat.start')
+    sidecar.respond('chat.start', (params) => {
+      prompt = str(params.user_message)
+      return new Promise((resolve) => { release = () => { resolve({ ...completed('[SILENT]'), messages: [{ role: 'user', content: prompt }, { role: 'assistant', content: '[SILENT]' }] }) } })
+    })
+    try {
+      await s.deps.completions.processOne({ process_id: 'review-live', delegation_id: 'review-live', type: 'async_delegation', origin_ui_session_id: sid, goals: ['Live review'], results: [{ status: 'completed' }] })
+      await vi.waitFor(() => { expect(prompt).not.toBe('') })
+      const stream = s.deps.sessionStore.get(sid).active_stream_id!
+      const detail = async (suffix = ''): Promise<Json[]> => ((await json(await s.get(`/api/session?session_id=${sid}&messages=1${suffix}`))).session as Json).messages as Json[]
+      expect((await detail()).find((m) => m._background_update)?._background_update).toMatchObject({ review_state: 'reviewing', lines: [{ label: 'Live review', review_state: 'reviewing' }] })
+      release()
+      await s.deps.turns.finished(stream)
+      const frames = await s.sse(`/api/chat/stream?stream_id=${stream}&replay=1`, (f) => f.event === 'stream_end')
+      const terminal = (frames.find((f) => f.event === 'done')?.data as Json).session as Json
+      expect((terminal.messages as Json[]).find((m) => m._background_update)?._background_update).toMatchObject({ review_state: 'reviewed' })
+      s.deps.sessionStore.evictOverCap(0)
+      for (const suffix of ['', '&msg_limit=1']) {
+        const messages = await detail(suffix)
+        expect(messages.find((m) => m._background_update)?._background_update).toMatchObject({ review_state: 'reviewed', lines: [{ review_state: 'reviewed' }] })
+        expect(messages.every((m) => m._background_review_terminal === undefined)).toBe(true)
+      }
+    } finally { release(); sidecar.respond('chat.start', chat) }
   })
 
   it('never silences or marks a reply the user asked for', async () => {
@@ -1659,7 +1689,7 @@ describe('durable parent admission for delivered delegation notifications (TAL-1
       sidecar.respond('process.format_notification', () => ({ text: '[Outcome unknown]' }))
       await s.deps.completions.processOne({ type: 'async_delegation', process_id: 'deleg_unknown', delegation_id: 'deleg_unknown', origin_ui_session_id: sid, consumed: false, status: 'unknown', error: 'owner exited' })
       const rows = withBackgroundUpdates(session.messages, session)
-      expect(rows[0]).toMatchObject({ _background_update: { attention: true, lines: [{ kind: 'other', status: 'notice', label: 'owner exited' }] } })
+      expect(rows[0]).toMatchObject({ _background_update: { attention: true, lines: [{ kind: 'agent', status: 'notice', label: 'owner exited', review_state: 'unknown' }] } })
       expect((JSON.parse(readFileSync(join(s.deps.sessionStore.sessionDir, '_wakeup_held.json'), 'utf8')) as Json)[sid]).toHaveLength(1)
     } finally { await s.close() }
   })

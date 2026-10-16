@@ -2013,5 +2013,11 @@
 	"panel_agents_transcript": "Открыть запись",
 	"panel_files_unavailable": "У этого чата нет рабочей папки.",
 	"panel_agents_transcript_for": "Запись: {goal}",
-	"settings_label_summarize_updates_automatically": "Автоматически составлять сводку обновлений с ИИ"
+	"settings_label_summarize_updates_automatically": "Автоматически составлять сводку обновлений с ИИ",
+	"background_review_waiting": "Ожидание проверки результата родительским агентом.",
+	"background_review_reviewing": "Родительский агент проверяет этот результат.",
+	"background_review_reviewed": "Родительский агент проверил этот результат.",
+	"background_review_failed": "Задание или проверка родительским агентом завершились с ошибкой.",
+	"background_review_unknown": "Результат задания или проверки неизвестен.",
+	"background_review_parent": "Проверка родительским агентом: {state}"
 }

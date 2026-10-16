@@ -146,8 +146,15 @@ export const ActivitySceneSchema = z.looseObject({
 })
 export type ActivityScene = z.infer<typeof ActivitySceneSchema>
 
-/** TAL-460: one finished background item (see `_background_update.lines`). */
-export const BackgroundLineSchema = z.object({ kind: z.enum(['agent', 'command', 'other']), status: z.enum(['completed', 'failed', 'notice']), label: z.string(), exit_code: z.number().int().nullable().optional() })
+/** The server-owned result-review lifecycle (TAL-1022). */
+export const BackgroundReviewStateSchema = z.enum(['waiting', 'reviewing', 'reviewed', 'failed', 'unknown'])
+export type BackgroundReviewState = z.infer<typeof BackgroundReviewStateSchema>
+
+/** One finished background item (see `_background_update.lines`). */
+export const BackgroundLineSchema = z.object({ kind: z.enum(['agent', 'command', 'other']), status: z.enum(['completed', 'failed', 'notice']), label: z.string(), exit_code: z.number().int().nullable().optional(),
+  /** Server-composed worker and parent outcome. Failure/unknown worker outcomes take precedence. */
+  review_state: BackgroundReviewStateSchema.optional(),
+})
 export type BackgroundLine = z.infer<typeof BackgroundLineSchema>
 
 export const MessageSchema = z.looseObject({
@@ -201,11 +208,13 @@ export const MessageSchema = z.looseObject({
   _background_update: z.object({
     kind: z.enum(['delegation', 'process', 'mixed', 'other']), attention: z.boolean(), count: z.number().int().positive(), summary: z.string(),
     /**
-     * TAL-460: one completion line per finished item, shown in place of the row. Clients localize the wording per
-     * `kind` and `status`: an agent by its goal (`completed` / `failed`), a command (`finished` / `failed` with
-     * `exit_code`), or `label` as written for any other notice. `content` stays available in full on expansion.
+     * One completion line per finished item. Clients show its label and exactly one leading icon from `review_state`,
+     * with localized accessible/help wording. Parent review never overrides failed/unknown worker outcomes.
+     * `content` stays available in full on expansion.
      */
     lines: z.array(BackgroundLineSchema),
+    /** Parent review only, established from admission, the live run, and terminal evidence. */
+    review_state: BackgroundReviewStateSchema.optional(),
   }).optional(),
   /**
    * TAL-305: a marker the Agent wrote around context compaction, not a message anyone typed. Clients render a collapsed

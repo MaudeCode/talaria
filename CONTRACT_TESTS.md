@@ -139,3 +139,10 @@ received through the HTTP fixture.
 
 A contract change ships as one monorepo diff that updates `contracts/`, the
 producer, every affected consumer, and their checks together.
+
+Background review states use `contracts/fixtures/background-review.json` across
+contract schema tests, Web completion-row tests, and TalariaKit decoding. Server
+`background-updates.test.ts` and `workers.test.ts` cover live admission, terminal
+silent review, failed/unknown workers, multi-result isolation, replay, reload,
+and paging. `CacheStoreTests` retains the explicit outcomes for offline display;
+`TranscriptHostedTests` exercises the existing synthetic background-update UI.

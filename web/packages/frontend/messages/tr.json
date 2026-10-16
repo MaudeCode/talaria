@@ -1918,5 +1918,11 @@
 	"panel_agents_transcript": "Dökümü aç",
 	"panel_files_unavailable": "Bu sohbetin çalışma alanı yok.",
 	"panel_agents_transcript_for": "Döküm: {goal}",
-	"settings_label_summarize_updates_automatically": "Güncellemeleri yapay zekâ ile otomatik özetle"
+	"settings_label_summarize_updates_automatically": "Güncellemeleri yapay zekâ ile otomatik özetle",
+	"background_review_waiting": "Üst ajanın bu sonucu incelemesi bekleniyor.",
+	"background_review_reviewing": "Üst ajan bu sonucu inceliyor.",
+	"background_review_reviewed": "Üst ajan bu sonucu inceledi.",
+	"background_review_failed": "Görev veya üst ajanın incelemesi başarısız oldu.",
+	"background_review_unknown": "Görevin veya üst ajanın incelemesinin sonucu bilinmiyor.",
+	"background_review_parent": "Üst ajanın incelemesi: {state}"
 }

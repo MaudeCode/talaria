@@ -2490,5 +2490,11 @@
 	"panel_agents_updated": "Updated {time}",
 	"panel_agents_transcript": "Open transcript",
 	"panel_files_unavailable": "This chat has no workspace.",
-	"panel_agents_transcript_for": "Transcript: {goal}"
+	"panel_agents_transcript_for": "Transcript: {goal}",
+	"background_review_waiting": "Waiting for the parent to review this result.",
+	"background_review_reviewing": "The parent is reviewing this result.",
+	"background_review_reviewed": "The parent reviewed this result.",
+	"background_review_failed": "The worker or parent review failed.",
+	"background_review_unknown": "The worker or parent review outcome is unknown.",
+	"background_review_parent": "Parent review: {state}"
 }

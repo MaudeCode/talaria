@@ -1,3 +1,4 @@
+import { MessageSchema } from './views.js'
 import { describe, expect, it } from 'vitest'
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
@@ -7,6 +8,13 @@ import { ChatEventSchema, ClarifyPendingEnvelopeSchema, MemoryWriteRefusalSchema
 const shared = (path: string): unknown => JSON.parse(readFileSync(resolve(import.meta.dirname, '../../../../contracts', path), 'utf8'))
 
 describe('contracts package', () => {
+  it('accepts all five explicit background review states and additive older rows (TAL-1022)', () => {
+    const fixture = shared('fixtures/background-review.json') as { messages: unknown[] }
+    const messages = fixture.messages.map((m) => MessageSchema.parse(m))
+    expect(messages.map((m) => m._background_update?.lines[0]?.review_state)).toEqual(['waiting', 'reviewing', 'reviewed', 'failed', 'unknown'])
+    expect(MessageSchema.parse({ role: 'user', _background_update: { kind: 'other', attention: false, count: 1, summary: '', lines: [] } })._background_update?.review_state).toBeUndefined()
+  })
+
   it('preserves every shared Send now outcome and the legacy delivery boolean', () => {
     const responses = Object.values(shared('fixtures/steer-send-now.json') as Record<string, unknown>).map((body) => SteerSendNowResponseSchema.parse(body))
     expect(responses.map((r) => r.outcome)).toEqual(['delivered', 'next_step', 'not_running', 'taken', 'failed'])

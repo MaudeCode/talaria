@@ -70,8 +70,8 @@ describe('background updates (TAL-460)', () => {
     const disclosure = view.container.querySelector('details')!
     expect(disclosure.open).toBe(false)
     const lines = [...disclosure.querySelectorAll('summary li')].map((li) => li.textContent)
-    expect(lines).toEqual(['Agent “Audit the PVC backups” completed', 'Background command make test failed (exit 1)'])
-    expect(disclosure.querySelector('summary code')?.textContent).toBe('make test')
+    expect(lines).toEqual(['Audit the PVC backups', 'make test'])
+    expect(disclosure.querySelector('summary')?.textContent).toContain('make test')
     fireEvent.click(disclosure.querySelector('summary')!)
     expect(disclosure.open).toBe(true)
     expect(disclosure.querySelector('.msg-body')?.textContent).toBe(message.content)
@@ -93,9 +93,26 @@ describe('background updates (TAL-460)', () => {
       `background:${keyOf('wakeup-silent-user')}`,
       `user:${keyOf('user-no-reply')}`, `assistant:${keyOf('user-no-reply-answer')}`,
     ])
-    expect(view.container.querySelector(`[data-message-key="${keyOf('wakeup-silent-user')}"] summary`)).toHaveTextContent('Background command ./backup.sh finished')
+    expect(view.container.querySelector(`[data-message-key="${keyOf('wakeup-silent-user')}"] summary`)).toHaveTextContent('./backup.sh')
     expect(view.container.textContent).not.toContain('[SILENT]')
     expect(view.container.querySelector(`[data-message-key="${keyOf('user-no-reply-answer')}"]`)).toHaveTextContent('NO_REPLY')
+  })
+
+  it('renders all server review states in exactly one leading icon slot without visible status words', () => {
+    const states = ['waiting', 'reviewing', 'reviewed', 'failed', 'unknown'] as const
+    const icons = ['lucide-clock', 'lucide-loader-circle', 'lucide-check', 'lucide-triangle-alert', 'lucide-circle-help']
+    const message: Message = { role: 'user', content: 'Result details', _background_update: { kind: 'delegation', attention: false, count: 5, summary: 'Results', review_state: 'reviewed', lines: states.map((state) => ({ kind: 'agent', status: 'completed', label: `Goal ${state}`, review_state: state })) } }
+    const view = render(<BackgroundUpdateRow row={{ index: 0, key: 'review', message }} />)
+    const lines = [...view.container.querySelectorAll('summary li')]
+    expect(lines).toHaveLength(5)
+    lines.forEach((line, i) => {
+      expect(line.textContent).toBe(`Goal ${states[i]}`)
+      expect(line.querySelectorAll('svg')).toHaveLength(1)
+      expect(line.firstElementChild).toHaveClass(icons[i]!)
+      expect(line).toHaveAttribute('aria-label', expect.stringContaining('result'))
+      expect(line).toHaveAttribute('title', line.getAttribute('aria-label'))
+    })
+    expect(lines[1]!.firstElementChild).toHaveClass('animate-spin')
   })
 
   it('says the run is working on background results only while the server says a background result started it', () => {

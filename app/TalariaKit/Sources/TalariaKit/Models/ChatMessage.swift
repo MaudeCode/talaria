@@ -277,22 +277,30 @@ extension ChatMessage {
 /// An automatic background wakeup the server classified (TAL-371), as one completion line per finished item (TAL-460).
 public struct BackgroundUpdate: Codable, Equatable {
     public let lines: [BackgroundLine]
+    public let reviewState: BackgroundReviewState?
 
-    public init(lines: [BackgroundLine]) {
+    public init(lines: [BackgroundLine], reviewState: BackgroundReviewState? = nil) {
         self.lines = lines
+        self.reviewState = reviewState
     }
 
     enum CodingKeys: String, CodingKey {
-        case lines
+        case lines, reviewState
     }
 
     public init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         lines = (try? container.decodeIfPresent([BackgroundLine].self, forKey: .lines)) ?? []
+        reviewState = container.decodeLossyStringIfPresent(forKey: .reviewState).flatMap(BackgroundReviewState.init(rawValue:))
     }
 }
 
-/// One finished background item: the client words it per `kind` and `status` around the server's `label`.
+/// The explicit server-owned parent review or composed worker/review outcome.
+public enum BackgroundReviewState: String, Codable, Equatable, CaseIterable {
+    case waiting, reviewing, reviewed, failed, unknown
+}
+
+/// One finished background item, rendered by its server-supplied label and review state.
 public struct BackgroundLine: Codable, Equatable {
     public enum Kind: String, Codable, Equatable {
         case agent, command, other
@@ -307,16 +315,18 @@ public struct BackgroundLine: Codable, Equatable {
     /// An agent's goal, a command, or any other notice as written.
     public let label: String
     public let exitCode: Int?
+    public let reviewState: BackgroundReviewState?
 
-    public init(kind: Kind, status: Status, label: String, exitCode: Int? = nil) {
+    public init(kind: Kind, status: Status, label: String, exitCode: Int? = nil, reviewState: BackgroundReviewState? = nil) {
         self.kind = kind
         self.status = status
         self.label = label
         self.exitCode = exitCode
+        self.reviewState = reviewState
     }
 
     enum CodingKeys: String, CodingKey {
-        case kind, status, label, exitCode
+        case kind, status, label, exitCode, reviewState
     }
 
     public init(from decoder: Decoder) throws {
@@ -325,6 +335,7 @@ public struct BackgroundLine: Codable, Equatable {
         status = container.decodeLossyStringIfPresent(forKey: .status).flatMap(Status.init(rawValue:)) ?? .notice
         label = container.decodeLossyStringIfPresent(forKey: .label) ?? ""
         exitCode = container.decodeLossyIntIfPresent(forKey: .exitCode)
+        reviewState = container.decodeLossyStringIfPresent(forKey: .reviewState).flatMap(BackgroundReviewState.init(rawValue:))
     }
 }
 
