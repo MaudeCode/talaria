@@ -836,7 +836,7 @@ export class SessionService {
       let tail = [...s.messages.slice(prefixEnd), ...appended]
       if (pending) tail = withPendingUserTurn(tail, { ...pending, localCount: s.messages.length - prefixEnd })
       if (journaled) tail = withoutRunningTurnOutput(tail, { ...journaled, localCount: s.messages.length - prefixEnd })
-      const tailIndex = new SessionPrefixIndex(tail, index.revision, index.generation, { baseIndex: prefixEnd, initialTurn: prefixEnd ? index.turnId(prefixEnd - 1) : 'legacy:start', timestampFloor: index.summary(prefixEnd).maxTimestamp, todoFloor: index.summary(prefixEnd).maxTodoTimestamp, parent: { index, end: prefixEnd } })
+      const tailIndex = new SessionPrefixIndex(tail, index.revision, index.generation, { toolCalls: index.toolCalls(prefixEnd, tail.length), baseIndex: prefixEnd, initialTurn: prefixEnd ? index.turnId(prefixEnd - 1) : 'legacy:start', timestampFloor: index.summary(prefixEnd).maxTimestamp, todoFloor: index.summary(prefixEnd).maxTodoTimestamp, parent: { index, end: prefixEnd } })
       const enoughContext = !streaming && (context.enough || sanitizeMessagesForApi(context.marker ? context.local : mergeSessionMessagesAppendOnly(context.local, stateRows!, { truncationWatermark: s.truncation_watermark, compressedWatermark: s.truncation_watermark_compressed, stateDbSeenId: effectiveSeenId, stateDbGeneration: index.generation }).filter((m) => !s.active_stream_id || m._turn_id !== s.active_stream_id), { maxMessages: 4 }).length >= 4)
       const owners = new Map<string, ReturnType<SessionService['stateDbSources']>>()
       const sources: SessionService['stateDbSources'] = (ids, profile) => {

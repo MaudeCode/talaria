@@ -227,3 +227,127 @@ it('widens sparse visible pages without repeatedly deriving the same prefix', as
     expect(derive.mock.calls.reduce((total, call) => total + call[1].length, 0)).toBeLessThan(rows.length * 3)
   } finally { vi.restoreAllMocks(); await server.close() }
 })
+
+it('keeps a running turn record-only tool row in the compression anchor coordinates', async () => {
+  const server = await bootTestServer()
+  try {
+    const turn = 'range-record-live', started = server.deps.sessions.deps.now()
+    const session = new Session({
+      session_id: 'range-record-anchor',
+      messages: [
+        { role: 'user', content: 'earlier', timestamp: 1 },
+        { role: 'assistant', content: 'settled reply', timestamp: 2 },
+        { role: 'user', content: 'pending', _turn_id: turn, _active_turn_token: buildActiveTurnToken(turn, started), timestamp: started },
+        { role: 'assistant', content: '', _turn_id: turn, timestamp: started + 1 },
+      ],
+      tool_calls: [{ assistant_msg_idx: 3, tid: 'record-only', name: 'terminal', args: { command: 'pwd' } }],
+      active_stream_id: turn, pending_user_message: 'pending', pending_started_at: started,
+      compression_anchor_summary: 'reference', compression_anchor_visible_idx: 99,
+    }, { workspace: server.state, model: null })
+    server.deps.sessions.deps.runtime.activeStreamIds.add(turn)
+    server.deps.sessionStore.save(session)
+    const full = server.deps.sessions.detail(session.session_id, {})
+    expect(full.compression_reference).toEqual({ text: 'reference', after_message_index: 3 })
+    for (const query of [{ msg_limit: '50' }, { msg_limit: '1', msg_before: '2' }]) {
+      expect(server.deps.sessions.detail(session.session_id, query).compression_reference).toEqual(full.compression_reference)
+    }
+  } finally { await server.close() }
+})
+
+import compactionFixture from '../test/fixtures/compaction-replay.json' with { type: 'json' }
+
+it.each(['compacted', 'twiceCompacted', 'editedThenCompacted', 'editedTwiceCompacted', 'reverted'] as const)('keeps the full-build archive and UID identities through a %s tail read', async (stage) => {
+  const server = await bootTestServer(), path = join(server.state, 'state.db'), db = new DatabaseSync(path)
+  try {
+    const sid = compactionFixture.sessionId
+    const load = (snapshot: keyof typeof compactionFixture.snapshots) => {
+      db.exec('PRAGMA foreign_keys = OFF; DROP TABLE IF EXISTS messages; DROP TABLE IF EXISTS sessions; DROP TABLE IF EXISTS system_prompts')
+      db.exec([...compactionFixture.schema, ...compactionFixture.snapshots[snapshot]].join('\n'))
+    }
+    load('initial')
+    const initial = stateDb.stateDbSessionRead(path, sid)
+    const session = new Session({ session_id: sid, messages: initial.rows, context_messages: initial.rows }, { workspace: server.state, model: null })
+    server.deps.sessions.markStateDbSeen(session, initial)
+    server.deps.sessionStore.save(session, { touchUpdatedAt: false })
+    load(stage)
+    const tail = stateDb.stateDbSessionTailRead(path, sid, session.state_db_seen_id!)
+    expect(tail.ok).toBe(true)
+    expect(tail.rows).toEqual(stateDb.stateDbSessionRead(path, sid).rows)
+    const fullRead = vi.spyOn(server.deps.sessions, 'stateDbRows')
+    server.deps.sessions.detail(sid, { msg_limit: '50' })
+    expect(fullRead).not.toHaveBeenCalled()
+    assertWindows(server, session)
+  } finally { vi.restoreAllMocks(); db.close(); await server.close() }
+})
+
+it('invalidates cached tail summaries on a WAL append without rebuilding the sidecar index', async () => {
+  const server = await bootTestServer(), path = join(server.state, 'state.db'), db = new DatabaseSync(path)
+  try {
+    const sid = 'range-wal'
+    db.exec('PRAGMA journal_mode=WAL; CREATE TABLE sessions (id TEXT PRIMARY KEY, source TEXT); CREATE TABLE messages (id INTEGER PRIMARY KEY, session_id TEXT, role TEXT, content TEXT, timestamp REAL); CREATE INDEX idx_messages_session ON messages(session_id)')
+    db.prepare('INSERT INTO sessions VALUES (?, ?)').run(sid, 'webui')
+    const insert = db.prepare('INSERT INTO messages VALUES (?, ?, ?, ?, ?)')
+    insert.run(1, sid, 'user', 'first', 1)
+    const read = stateDb.stateDbSessionRead(path, sid)
+    const session = new Session({ session_id: sid, messages: read.rows }, { workspace: server.state, model: null })
+    server.deps.sessions.markStateDbSeen(session, read)
+    server.deps.sessionStore.save(session, { touchUpdatedAt: false })
+    expect(server.deps.sessions.detail(sid, { msg_limit: '1' })).toMatchObject({ message_count: 1, can_compress: false })
+    const prefix = server.deps.sessionStore.get(sid).prefixIndex
+    for (let i = 2; i <= 4; i += 1) insert.run(i, sid, i % 2 ? 'user' : 'assistant', `new ${i}`, i)
+    const fullRead = vi.spyOn(server.deps.sessions, 'stateDbRows')
+    const older = server.deps.sessions.detail(sid, { msg_limit: '1', msg_before: '1' })
+    expect(older).toMatchObject({ message_count: 4, can_compress: true })
+    expect((older.messages as Message[]).map((m) => m.content)).toEqual(['first'])
+    expect(server.deps.sessionStore.get(sid).prefixIndex).toBe(prefix)
+    expect(fullRead).not.toHaveBeenCalled()
+    assertWindows(server, session)
+  } finally { vi.restoreAllMocks(); db.close(); await server.close() }
+})
+
+import { storeAnchorScene } from './anchor.js'
+import { UNSETTLED_TODO_KEY } from './todo.js'
+
+it('preserves stored scenes with duplicate content refs and unsettled todo precedence in every window', async () => {
+  const server = await bootTestServer()
+  try {
+    const rows: Message[] = [
+      { role: 'user', content: 'first', timestamp: 1 },
+      { role: 'assistant', content: 'same reply', timestamp: 9 },
+      { role: 'user', content: 'second', timestamp: 2 },
+      { role: 'assistant', content: 'same reply', timestamp: 9 },
+      { role: 'tool', content: '{"todos":[{"id":"old","content":"old task","status":"pending"}]}', timestamp: 10 },
+    ]
+    const session = new Session({ session_id: 'range-stored-scene', messages: rows,
+      [UNSETTLED_TODO_KEY]: { todos: [{ id: 'new', content: 'unsettled task', status: 'pending' }], ts: 20 },
+    }, { workspace: server.state, model: null })
+    expect(storeAnchorScene(session, { message_index: 3, scene: { version: 'activity_scene_v1', final_answer: 'same reply', terminal_state: 'completed', activity_rows: [{ row_id: 'stored', role: 'prose', order_index: 0, text: 'stored detail' }] } }, 100)).not.toBeNull()
+    server.deps.sessionStore.save(session)
+    const full = server.deps.sessions.detail(session.session_id, {})
+    expect(full.todo_state).toMatchObject({ todos: [{ id: 'new', content: 'unsettled task', status: 'pending' }], ts: 20 })
+    const scenes = (full.messages as Message[]).map((m) => m._anchor_activity_scene as Message | undefined)
+    expect(scenes[1]?.activity_rows).not.toEqual(scenes[3]?.activity_rows)
+    assertWindows(server, session)
+  } finally { await server.close() }
+})
+
+it.each([false, true])('keeps the legacy timestamp merge with a row-id column=%s', async (rowIds) => {
+  const server = await bootTestServer(), path = join(server.state, 'state.db'), db = new DatabaseSync(path)
+  try {
+    const sid = 'range-legacy'
+    db.exec(`CREATE TABLE messages (${rowIds ? 'id INTEGER PRIMARY KEY,' : ''} session_id TEXT, role TEXT, content TEXT, timestamp REAL); CREATE INDEX idx_messages_session ON messages(session_id)`)
+    const rows = Array.from({ length: 4 }, (_, i) => ({ role: i % 2 ? 'assistant' : 'user', content: `row ${i}`, timestamp: i + 1 }))
+    const insert = db.prepare('INSERT INTO messages (session_id, role, content, timestamp) VALUES (?, ?, ?, ?)')
+    for (const row of rows) insert.run(sid, row.role, row.content, row.timestamp)
+    const session = new Session({ session_id: sid, messages: rows.slice(0, 2) }, { workspace: server.state, model: null })
+    server.deps.sessionStore.save(session)
+    const fullRead = vi.spyOn(server.deps.sessions, 'stateDbRows')
+    expect(server.deps.sessions.detail(sid, { msg_limit: '1' }).message_count).toBe(4)
+    expect(fullRead).toHaveBeenCalledTimes(1)
+    assertWindows(server, session)
+    session.truncation_watermark = 2
+    server.deps.sessionStore.save(session)
+    expect(server.deps.sessions.detail(sid, { msg_limit: '1' }).message_count).toBe(2)
+    assertWindows(server, session)
+  } finally { vi.restoreAllMocks(); db.close(); await server.close() }
+})
