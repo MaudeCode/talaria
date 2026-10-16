@@ -54,7 +54,8 @@ def _patch(monkeypatch, factory):
 MESSAGES = [{"role": "system", "content": "sys"}, {"role": "user", "content": "diff"}]
 
 
-def test_unconfigured_auxiliary_falls_back_to_the_main_model(monkeypatch) -> None:
+@pytest.mark.parametrize("task", ["compression", "title_generation"])
+def test_unconfigured_auxiliary_falls_back_to_the_main_model(monkeypatch, task) -> None:
     seen = {}
 
     def factory(task, *, main_runtime=None):
@@ -62,7 +63,7 @@ def test_unconfigured_auxiliary_falls_back_to_the_main_model(monkeypatch) -> Non
         return None, None
 
     _patch(monkeypatch, factory)
-    result = aux.complete("compression", MESSAGES, main_runtime={"model": "claude-x", "provider": "anthropic"}, max_tokens=None, temperature=None, ctx=Ctx(), main_fallback=True)
+    result = aux.complete(task, MESSAGES, main_runtime={"model": "claude-x", "provider": "anthropic"}, max_tokens=None, temperature=None, ctx=Ctx(), main_fallback=True)
     assert result == {"model": "claude-x", "text": "feat: main model answer", "usage": None, "finish_reason": None}
     # The auxiliary client saw the fully resolved main runtime, not just the hint.
     assert seen["main_runtime"]["api_key"] == "sk-main" and seen["main_runtime"]["model"] == "claude-x"
@@ -80,7 +81,8 @@ def test_without_fallback_the_unconfigured_error_is_kept(monkeypatch) -> None:
     assert FakeAgent.calls == []
 
 
-def test_a_failing_auxiliary_call_falls_back_to_the_main_model(monkeypatch) -> None:
+@pytest.mark.parametrize("task", ["compression", "title_generation"])
+def test_a_failing_auxiliary_call_falls_back_to_the_main_model(monkeypatch, task) -> None:
     class Broken:
         class chat:
             class completions:
@@ -89,7 +91,7 @@ def test_a_failing_auxiliary_call_falls_back_to_the_main_model(monkeypatch) -> N
                     raise RuntimeError("aux endpoint down")
 
     _patch(monkeypatch, lambda task, *, main_runtime=None: (Broken(), "aux-model"))
-    result = aux.complete("compression", MESSAGES, main_runtime={"model": "m", "provider": "p"}, max_tokens=None, temperature=None, ctx=Ctx(), main_fallback=True)
+    result = aux.complete(task, MESSAGES, main_runtime={"model": "m", "provider": "p"}, max_tokens=None, temperature=None, ctx=Ctx(), main_fallback=True)
     assert result["text"] == "feat: main model answer" and len(FakeAgent.calls) == 1
 
 
@@ -116,11 +118,12 @@ class RecordingMemoryAgent:
         self.closed = True
 
 
-def test_main_model_fallback_skips_memory_and_closes_the_agent(monkeypatch) -> None:
+@pytest.mark.parametrize("task", ["compression", "title_generation"])
+def test_main_model_fallback_skips_memory_and_closes_the_agent(monkeypatch, task) -> None:
     RecordingMemoryAgent.instances.clear()
     _patch(monkeypatch, lambda task, *, main_runtime=None: (None, None))
     monkeypatch.setattr(chat, "_agent_class", lambda: RecordingMemoryAgent)
-    result = aux.complete("compression", [{"role": "user", "content": "diff with sk-secret"}], main_runtime={"model": "m", "provider": "p"}, max_tokens=None, temperature=None, ctx=Ctx(), main_fallback=True)
+    result = aux.complete(task, [{"role": "user", "content": "diff with sk-secret"}], main_runtime={"model": "m", "provider": "p"}, max_tokens=None, temperature=None, ctx=Ctx(), main_fallback=True)
     assert result["text"] == "feat: answer"
     (agent,) = RecordingMemoryAgent.instances
     assert not agent.synced, f"the diff reached long-term memory: {agent.synced}"
@@ -234,3 +237,27 @@ def test_a_whole_response_to_a_stream_request_is_read_once(monkeypatch) -> None:
     _install_call_llm(monkeypatch, STREAMING_CLIENT, call_llm)
     result = aux.complete("title_generation", MESSAGES, main_runtime=None, max_tokens=None, temperature=None, ctx=CancellableCtx())
     assert result["text"] == "Fallback title" and calls == [True]
+
+
+def test_explicit_title_auxiliary_wins_over_main_fallback(monkeypatch) -> None:
+    seen = []
+
+    class TitleClient:
+        class chat:
+            class completions:
+                @staticmethod
+                def create(**kwargs):
+                    seen.append(kwargs)
+                    return _response("Dedicated title model answer")
+
+    def factory(task, *, main_runtime=None):
+        assert task == "title_generation"
+        assert main_runtime["model"] == "session-model"
+        return TitleClient(), "title-model"
+
+    _patch(monkeypatch, factory)
+    result = aux.complete("title_generation", MESSAGES, main_runtime={"model": "session-model", "provider": "session-provider"},
+                          max_tokens=64, temperature=None, ctx=Ctx(), main_fallback=True)
+    assert result["model"] == "title-model" and result["text"] == "Dedicated title model answer"
+    assert len(seen) == 1 and seen[0]["model"] == "title-model"
+    assert FakeAgent.calls == []

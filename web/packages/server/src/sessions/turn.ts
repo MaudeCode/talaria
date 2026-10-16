@@ -1466,13 +1466,20 @@ export class TurnRunner {
   private async llmTitle(s: Session, userText: string, assistantText: string): Promise<{ title: string; status: string; rawPreview: string }> {
     const sidecar = this.deps.sidecar()
     if (!sidecar) return { title: '', status: 'llm_error_aux', rawPreview: '' }
+    const service = this.deps.service()
+    await service.deps.warmSessionModelRepair?.(s.profile)
+    const [model, provider] = service.turnModel(s)
     const [qa, prompts] = titlePrompts(userText, assistantText)
     let status = 'llm_error_aux'
     for (const [idx, prompt] of prompts.entries()) {
       if (this.deps.service().isReadOnly(s)) return { title: '', status: 'read_only', rawPreview: '' }
       let raw = ''
       try {
-        const result = await sidecar.call('aux.complete', { profile_home: this.deps.profileHome(s.profile), task: 'title_generation', messages: [{ role: 'system', content: prompt }, { role: 'user', content: qa }], max_tokens: 64 }, { timeoutMs: 15_000 })
+        const result = await sidecar.call('aux.complete', {
+          profile_home: this.deps.profileHome(s.profile), task: 'title_generation',
+          messages: [{ role: 'system', content: prompt }, { role: 'user', content: qa }], max_tokens: 64,
+          main_runtime: { model: model ?? '', provider }, main_fallback: true,
+        })
         raw = str(result.text)
       } catch (error) {
         this.deps.log(`[webui] title generation failed for ${s.session_id}: ${(error as Error).message}`)

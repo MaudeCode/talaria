@@ -1,4 +1,4 @@
-/** Session title generation after the first exchange (Python `api/streaming.py` title helpers, reduced to the aux path). */
+/** Session title generation after the first exchange (Python `api/streaming.py` title helpers). */
 import { messageText, stripWorkspacePrefix } from './merge.js'
 import { str } from '../util.js'
 
