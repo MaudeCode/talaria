@@ -57,6 +57,8 @@ final class StatusChipGroupTests: XCTestCase {
         @Published var queueCount = 2
         @Published var compression = false
         @Published var runVisible = true
+        @Published var syncing = false
+        @Published var reservedHeight: CGFloat = 0
         var appearances = 0
         var queueOpens = 0
     }
@@ -64,9 +66,13 @@ final class StatusChipGroupTests: XCTestCase {
     private struct Entries: View {
         @ObservedObject var model: Model
         var body: some View {
-            StatusChipGroup {
-                if model.count > 0 && model.runVisible {
-                    RunStatusChip(.init(kind: model.compression ? .compressing : .active,
+            let hasRun = model.count > 0 && model.runVisible
+            StatusChipGroup(
+                reservesFirstSegment: !hasRun || !model.syncing,
+                onReservedHeightChange: { model.reservedHeight = $0 }
+            ) {
+                if hasRun {
+                    RunStatusChip(.init(kind: model.syncing ? .syncing : (model.compression ? .compressing : .active),
                                         runStartedAt: Date(timeIntervalSince1970: 2_000_000_000)), agentName: "Fixture")
                         .layoutPriority(-1)
                         .onAppear { model.appearances += 1 }
@@ -179,6 +185,30 @@ final class StatusChipGroupTests: XCTestCase {
             attachment.name = dark ? "segments-dark-rtl" : "segments-light"
             attachment.lifetime = .keepAlways
             add(attachment)
+        }
+    }
+
+    func testSyncingDoesNotIncreaseReservedHeightInRowsOrStacks() throws {
+        for (width, typeSize) in [(CGFloat(390), DynamicTypeSize.large), (150, .large), (390, .accessibility1)] {
+            let model = Model()
+            model.count = 2
+            model.runVisible = false
+            let window = try hostWindow(Entries(model: model).environment(\.dynamicTypeSize, typeSize),
+                                        size: CGSize(width: width, height: 844))
+            settle()
+            let queueHeight = model.reservedHeight
+            XCTAssertGreaterThanOrEqual(queueHeight, 44)
+            model.syncing = true
+            model.runVisible = true
+            settle()
+            XCTAssertNotNil(HostedAccessibility.element(in: window, label: "Syncing messages with the server"))
+            XCTAssertEqual(model.reservedHeight, queueHeight, accuracy: 1, "Syncing must not add transcript space")
+            model.runVisible = false
+            settle()
+            XCTAssertEqual(model.reservedHeight, queueHeight, accuracy: 1)
+            model.count = 0
+            settle()
+            XCTAssertEqual(model.reservedHeight, 0, accuracy: 1)
         }
     }
 }

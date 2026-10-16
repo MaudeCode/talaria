@@ -7,6 +7,25 @@ import TalariaKit
 /// The fixture chat's media, long bodies, background work and pending steers, hosted in process (TAL-856).
 @MainActor
 final class ChatHostedTests: XCTestCase {
+    func testSyncingBesideGoalDoesNotReserveTranscriptSpaceInNarrowStack() async throws {
+        let fixture = try FixtureApp(["--ui-test-hold-transcript-reloads", "--ui-test-goal"], for: self)
+        let session = try await fixture.session()
+        let window = try hostWindow(fixture.chat(session), size: CGSize(width: 320, height: 844))
+        _ = try await requireElement(in: window) { $0.accessibilityLabel?.hasPrefix("Fixture message 1 ") == true }
+        _ = try await requireElement(in: window) { $0.accessibilityLabel?.hasPrefix("Goal parked") == true }
+        NotificationCenter.default.post(name: .talariaReauthenticated, object: UITestFixtureEnvironment.serverURL)
+        _ = try await requireElement(in: window, label: "Syncing messages with the server")
+        settle(0.3)
+        let scroll = try transcriptScrollView(in: window)
+        let withSyncing = scroll.adjustedContentInset.bottom
+        fixture.releaseHeldLoads()
+        let cleared = await awaitNoElement(in: window) { $0.accessibilityLabel == "Syncing messages with the server" }
+        XCTAssertTrue(cleared)
+        settle(0.3)
+        XCTAssertEqual(scroll.adjustedContentInset.bottom, withSyncing, accuracy: 1,
+                       "The non-reserving syncing segment changed the transcript inset beside a goal")
+    }
+
     func testWorkingAndQueueShareOneRowWithIndependentActions() async throws {
         continueAfterFailure = false
         let window = try await hostFixtureChat(["--ui-test-chat-controls"])
@@ -315,9 +334,16 @@ final class ChatHostedTests: XCTestCase {
             child.label.map { ($0, child.value) }
         })
         let registry = try XCTUnwrap(stored["registry"] as? ChatMessageMenuRegistry)
-        let scrollView = try XCTUnwrap(host.superview.flatMap { sequence(first: $0, next: \.superview).first { $0 is UIScrollView } })
+        let scrollView = try transcriptScrollView(in: window)
         let frame = window.convert(element.accessibilityFrame, from: nil)
         let point = scrollView.convert(CGPoint(x: frame.midX, y: frame.midY), from: window)
         return registry.hit(at: point, in: scrollView)
+    }
+
+    private func transcriptScrollView(in window: UIWindow) throws -> UIScrollView {
+        let host = try XCTUnwrap(window.firstView(ofType: ChatMessageMenuHostView.self))
+        return try XCTUnwrap(host.superview.flatMap {
+            sequence(first: $0, next: \.superview).first { $0 is UIScrollView } as? UIScrollView
+        })
     }
 }

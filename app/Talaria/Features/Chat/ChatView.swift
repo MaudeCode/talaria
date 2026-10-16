@@ -133,7 +133,7 @@ struct ChatView: View {
     @State private var showApprovalBypassOffConfirmation = false
     /// The Agent's notices dismissed on this device (TAL-831); a notice whose text changes shows again.
     @State private var dismissedSessionNotices: Set<SessionNotice> = []
-    /// The measured compact row or fallback stack height reserved in the transcript.
+    /// The measured height of compact entries that reserve transcript space.
     @State private var compactStatusHeight: CGFloat = 0
     @State private var noticeChipHeight: CGFloat = 0
     @State private var showsQueuedMessagesSheet = false
@@ -1117,7 +1117,6 @@ struct ChatView: View {
 
                 if hasCompactStatusItems {
                     compactStatusRow
-                        .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { compactStatusHeight = $0 }
                         .transition(ChatMotion.bottomOverlayTransition(reduceMotion: reduceMotion))
                 }
             }
@@ -1147,7 +1146,10 @@ struct ChatView: View {
     }
 
     private var compactStatusItems: some View {
-        StatusChipGroup {
+        StatusChipGroup(
+            reservesFirstSegment: activeRunStatusPresentation?.reservesTranscriptSpace ?? true,
+            onReservedHeightChange: { compactStatusHeight = $0 }
+        ) {
             if let activeRunStatusPresentation {
                 RunStatusChip(activeRunStatusPresentation, agentName: viewModel.assistantName)
                     .layoutPriority(-1)
@@ -1528,7 +1530,7 @@ struct ChatView: View {
         SessionGoalChipPresentation(goal: viewModel.sessionGoal)
     }
 
-    /// Reserve the measured row or fallback stack, excluding a lone syncing or scroll chip.
+    /// Reserve measured compact entries and the transient notice, excluding syncing and the scroll chip.
     private func composerAccessorySpacerHeight() -> CGFloat {
         var height: CGFloat = viewModel.currentNotice == nil ? 0 : noticeChipHeight
         var itemCount = viewModel.currentNotice == nil ? 0 : 1
