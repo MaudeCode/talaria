@@ -81,12 +81,16 @@ export const GATEWAY_RESTART_NOW = 'restart_gateway_now'
 const GATEWAY_RESTART_NOW_ACTION: UpdateNotificationAction = { id: GATEWAY_RESTART_NOW, label: 'Restart now', style: 'destructive', acknowledges: false }
 /** A closed tab stops checking in; its refresh notice is dropped once unseen this long. An open tab recreates it on its next check. */
 const TAB_TTL_MS = 60 * 60 * 1000
+const FAILED_MESSAGE = 'The update could not be completed.'
 
 const copy = (row: StoredUpdateNotification): PublicUpdateNotification => ({
   id: row.id, kind: row.kind, target: row.target, phase: row.phase, severity: row.severity,
   persistent: row.persistent, requires_acknowledgement: row.requires_acknowledgement, actions: row.actions,
-  destination: row.destination,
-  title: row.title, message: row.message, created_at: row.created_at, updated_at: row.updated_at, read_at: row.read_at,
+  destination: row.kind === 'update' && row.phase === 'failed' && row.destination?.key === 'settings.system' ? null : row.destination,
+  title: row.title,
+  // Old persisted failures still carry the obsolete guidance; correct only that generic copy.
+  message: row.kind === 'update' && row.phase === 'failed' && row.message === `${FAILED_MESSAGE} Open System settings for details.` ? FAILED_MESSAGE : row.message,
+  created_at: row.created_at, updated_at: row.updated_at, read_at: row.read_at,
   acknowledged_at: row.acknowledged_at, acknowledged_action_id: row.acknowledged_action_id,
   verified_revision: row.verified_revision, verified_version: row.verified_version, detail: row.detail,
   unread: row.read_at === null,
@@ -109,7 +113,7 @@ const wording = (target: UpdateNotificationTarget, phase: UpdateNotificationPhas
     restarting: target === 'webui' ? 'The update is installed. Talaria Web is restarting.' : 'The update is installed. The messaging gateway is restarting.',
     succeeded: `${name} was updated successfully.`,
     blocked: 'The update is waiting for active work to finish.',
-    failed: 'The update could not be completed. Open System settings for details.',
+    failed: FAILED_MESSAGE,
     unknown: 'The connection closed before completion could be verified. Check the installed version before trying again.',
   }
   return { title: `${name} update`, message: messages[phase] }

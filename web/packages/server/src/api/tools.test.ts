@@ -1098,7 +1098,8 @@ describe('skills, memory, prompts, commands, mcp, health, updates, diagnostics',
 
     body = await json(await s.get('/api/update-notifications'))
     const notification = (body.notifications as Json[]).find((row) => row.id === notificationID)
-    expect(notification).toMatchObject({ kind: 'update', target: 'webui', phase: 'failed', read_at: null, destination: { key: 'settings.system' } })
+    expect(notification).toMatchObject({ kind: 'update', target: 'webui', phase: 'failed', read_at: null, destination: null, message: 'The update could not be completed.' })
+    expect(typeof notification?.detail).toBe('string')
 
     res = await post(s, `/api/update-notifications/${notificationID}/read`, { read: true })
     const readNotification = await json(res)

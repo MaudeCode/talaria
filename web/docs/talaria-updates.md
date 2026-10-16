@@ -198,6 +198,9 @@ The notification lifecycle is `applying`, `awaiting_confirmation`, `restarting`,
 `blocked`, `failed`, or `unknown`. A failed or blocked record, and a succeeded Agent update that kept conflicting local edits in the git stash (`stash_conflict`), keeps the apply's own explanation as `detail` (line breaks kept, bounded, cleared by the next phase); the notification center and the Updating dialog show it under the message. A restarted server marks an interrupted `applying` operation unknown.
 A `restarting` Web operation becomes succeeded only when the running release identity exactly matches the
 persisted expected identity; otherwise it becomes unknown. A dropped connection never proves success.
+Failed updates show a factual failure message and their available detail in the notification itself,
+without a System settings destination. This public projection also corrects the generic guidance on
+older saved failures without changing their stored detail or notification state.
 
 `GET /api/update-notifications` returns the active owner's bounded history plus server-computed unread and
 clear capabilities. The typed read, dismiss, clear, cancel, and action routes are idempotent. Clear all
