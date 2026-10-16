@@ -4038,6 +4038,16 @@
                                               "type": "null"
                                             }
                                           ]
+                                        },
+                                        "review_state": {
+                                          "enum": [
+                                            "waiting",
+                                            "reviewing",
+                                            "reviewed",
+                                            "failed",
+                                            "unknown"
+                                          ],
+                                          "type": "string"
                                         }
                                       },
                                       "required": [
@@ -4046,6 +4056,16 @@
                                         "label"
                                       ]
                                     }
+                                  },
+                                  "review_state": {
+                                    "enum": [
+                                      "waiting",
+                                      "reviewing",
+                                      "reviewed",
+                                      "failed",
+                                      "unknown"
+                                    ],
+                                    "type": "string"
                                   }
                                 },
                                 "required": [
@@ -6573,6 +6593,16 @@
                                               "type": "null"
                                             }
                                           ]
+                                        },
+                                        "review_state": {
+                                          "enum": [
+                                            "waiting",
+                                            "reviewing",
+                                            "reviewed",
+                                            "failed",
+                                            "unknown"
+                                          ],
+                                          "type": "string"
                                         }
                                       },
                                       "required": [
@@ -6581,6 +6611,16 @@
                                         "label"
                                       ]
                                     }
+                                  },
+                                  "review_state": {
+                                    "enum": [
+                                      "waiting",
+                                      "reviewing",
+                                      "reviewed",
+                                      "failed",
+                                      "unknown"
+                                    ],
+                                    "type": "string"
                                   }
                                 },
                                 "required": [
@@ -8843,6 +8883,16 @@
                                               "type": "null"
                                             }
                                           ]
+                                        },
+                                        "review_state": {
+                                          "enum": [
+                                            "waiting",
+                                            "reviewing",
+                                            "reviewed",
+                                            "failed",
+                                            "unknown"
+                                          ],
+                                          "type": "string"
                                         }
                                       },
                                       "required": [
@@ -8851,6 +8901,16 @@
                                         "label"
                                       ]
                                     }
+                                  },
+                                  "review_state": {
+                                    "enum": [
+                                      "waiting",
+                                      "reviewing",
+                                      "reviewed",
+                                      "failed",
+                                      "unknown"
+                                    ],
+                                    "type": "string"
                                   }
                                 },
                                 "required": [
@@ -12345,6 +12405,16 @@
                                               "type": "null"
                                             }
                                           ]
+                                        },
+                                        "review_state": {
+                                          "enum": [
+                                            "waiting",
+                                            "reviewing",
+                                            "reviewed",
+                                            "failed",
+                                            "unknown"
+                                          ],
+                                          "type": "string"
                                         }
                                       },
                                       "required": [
@@ -12353,6 +12423,16 @@
                                         "label"
                                       ]
                                     }
+                                  },
+                                  "review_state": {
+                                    "enum": [
+                                      "waiting",
+                                      "reviewing",
+                                      "reviewed",
+                                      "failed",
+                                      "unknown"
+                                    ],
+                                    "type": "string"
                                   }
                                 },
                                 "required": [
@@ -15711,6 +15791,16 @@
                                               "type": "null"
                                             }
                                           ]
+                                        },
+                                        "review_state": {
+                                          "enum": [
+                                            "waiting",
+                                            "reviewing",
+                                            "reviewed",
+                                            "failed",
+                                            "unknown"
+                                          ],
+                                          "type": "string"
                                         }
                                       },
                                       "required": [
@@ -15719,6 +15809,16 @@
                                         "label"
                                       ]
                                     }
+                                  },
+                                  "review_state": {
+                                    "enum": [
+                                      "waiting",
+                                      "reviewing",
+                                      "reviewed",
+                                      "failed",
+                                      "unknown"
+                                    ],
+                                    "type": "string"
                                   }
                                 },
                                 "required": [
@@ -19740,6 +19840,16 @@
                                               "type": "null"
                                             }
                                           ]
+                                        },
+                                        "review_state": {
+                                          "enum": [
+                                            "waiting",
+                                            "reviewing",
+                                            "reviewed",
+                                            "failed",
+                                            "unknown"
+                                          ],
+                                          "type": "string"
                                         }
                                       },
                                       "required": [
@@ -19748,6 +19858,16 @@
                                         "label"
                                       ]
                                     }
+                                  },
+                                  "review_state": {
+                                    "enum": [
+                                      "waiting",
+                                      "reviewing",
+                                      "reviewed",
+                                      "failed",
+                                      "unknown"
+                                    ],
+                                    "type": "string"
                                   }
                                 },
                                 "required": [
@@ -22035,6 +22155,16 @@
                                               "type": "null"
                                             }
                                           ]
+                                        },
+                                        "review_state": {
+                                          "enum": [
+                                            "waiting",
+                                            "reviewing",
+                                            "reviewed",
+                                            "failed",
+                                            "unknown"
+                                          ],
+                                          "type": "string"
                                         }
                                       },
                                       "required": [
@@ -22043,6 +22173,16 @@
                                         "label"
                                       ]
                                     }
+                                  },
+                                  "review_state": {
+                                    "enum": [
+                                      "waiting",
+                                      "reviewing",
+                                      "reviewed",
+                                      "failed",
+                                      "unknown"
+                                    ],
+                                    "type": "string"
                                   }
                                 },
                                 "required": [
@@ -24392,6 +24532,16 @@
                                               "type": "null"
                                             }
                                           ]
+                                        },
+                                        "review_state": {
+                                          "enum": [
+                                            "waiting",
+                                            "reviewing",
+                                            "reviewed",
+                                            "failed",
+                                            "unknown"
+                                          ],
+                                          "type": "string"
                                         }
                                       },
                                       "required": [
@@ -24400,6 +24550,16 @@
                                         "label"
                                       ]
                                     }
+                                  },
+                                  "review_state": {
+                                    "enum": [
+                                      "waiting",
+                                      "reviewing",
+                                      "reviewed",
+                                      "failed",
+                                      "unknown"
+                                    ],
+                                    "type": "string"
                                   }
                                 },
                                 "required": [
@@ -26736,6 +26896,16 @@
                                               "type": "null"
                                             }
                                           ]
+                                        },
+                                        "review_state": {
+                                          "enum": [
+                                            "waiting",
+                                            "reviewing",
+                                            "reviewed",
+                                            "failed",
+                                            "unknown"
+                                          ],
+                                          "type": "string"
                                         }
                                       },
                                       "required": [
@@ -26744,6 +26914,16 @@
                                         "label"
                                       ]
                                     }
+                                  },
+                                  "review_state": {
+                                    "enum": [
+                                      "waiting",
+                                      "reviewing",
+                                      "reviewed",
+                                      "failed",
+                                      "unknown"
+                                    ],
+                                    "type": "string"
                                   }
                                 },
                                 "required": [
@@ -36882,6 +37062,16 @@
                                               "type": "null"
                                             }
                                           ]
+                                        },
+                                        "review_state": {
+                                          "enum": [
+                                            "waiting",
+                                            "reviewing",
+                                            "reviewed",
+                                            "failed",
+                                            "unknown"
+                                          ],
+                                          "type": "string"
                                         }
                                       },
                                       "required": [
@@ -36890,6 +37080,16 @@
                                         "label"
                                       ]
                                     }
+                                  },
+                                  "review_state": {
+                                    "enum": [
+                                      "waiting",
+                                      "reviewing",
+                                      "reviewed",
+                                      "failed",
+                                      "unknown"
+                                    ],
+                                    "type": "string"
                                   }
                                 },
                                 "required": [
@@ -39324,6 +39524,16 @@
                                               "type": "null"
                                             }
                                           ]
+                                        },
+                                        "review_state": {
+                                          "enum": [
+                                            "waiting",
+                                            "reviewing",
+                                            "reviewed",
+                                            "failed",
+                                            "unknown"
+                                          ],
+                                          "type": "string"
                                         }
                                       },
                                       "required": [
@@ -39332,6 +39542,16 @@
                                         "label"
                                       ]
                                     }
+                                  },
+                                  "review_state": {
+                                    "enum": [
+                                      "waiting",
+                                      "reviewing",
+                                      "reviewed",
+                                      "failed",
+                                      "unknown"
+                                    ],
+                                    "type": "string"
                                   }
                                 },
                                 "required": [
@@ -41655,6 +41875,16 @@
                                                   "type": "null"
                                                 }
                                               ]
+                                            },
+                                            "review_state": {
+                                              "enum": [
+                                                "waiting",
+                                                "reviewing",
+                                                "reviewed",
+                                                "failed",
+                                                "unknown"
+                                              ],
+                                              "type": "string"
                                             }
                                           },
                                           "required": [
@@ -41663,6 +41893,16 @@
                                             "label"
                                           ]
                                         }
+                                      },
+                                      "review_state": {
+                                        "enum": [
+                                          "waiting",
+                                          "reviewing",
+                                          "reviewed",
+                                          "failed",
+                                          "unknown"
+                                        ],
+                                        "type": "string"
                                       }
                                     },
                                     "required": [

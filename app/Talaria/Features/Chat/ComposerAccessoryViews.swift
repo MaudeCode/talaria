@@ -168,7 +168,18 @@ struct BackgroundWorkSheet: View {
         }
     }
 
-    private static func icon(_ status: BackgroundWorkTask.Status) -> String {
+    /// The transcript reuses the background-work icon mapping for shared outcomes.
+    static func icon(_ review: BackgroundReviewState?) -> String {
+        switch review {
+        case .waiting: "clock"
+        case .reviewing: "circle.dotted"
+        case .reviewed: "checkmark"
+        case .failed: icon(BackgroundWorkTask.Status.failed)
+        case .unknown, nil: icon(BackgroundWorkTask.Status.unknown)
+        }
+    }
+
+    static func icon(_ status: BackgroundWorkTask.Status) -> String {
         switch status {
         case .running: "circle.dotted"
         case .attention, .failed: "exclamationmark.triangle.fill"

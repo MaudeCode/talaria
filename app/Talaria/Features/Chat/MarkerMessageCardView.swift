@@ -154,14 +154,14 @@ struct BackgroundUpdateLinesView: View {
             } label: {
                 VStack(alignment: .leading, spacing: 4) {
                     ForEach(Array(update.lines.enumerated()), id: \.offset) { _, line in
-                        BackgroundLineRow(line: line)
+                        BackgroundLineRow(line: line, parentReview: update.reviewState)
                     }
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
-            .accessibilityLabel(update.lines.map { BackgroundLineRow.text(for: $0) }.joined(separator: ", "))
+            .accessibilityLabel(update.lines.map { BackgroundLineRow.accessibilityText(for: $0, parentReview: update.reviewState) }.joined(separator: ", "))
             .accessibilityHint(isExpanded ? String(localized: "Double tap to collapse details.") : String(localized: "Double tap to expand details."))
             .accessibilityIdentifier("background-update-lines")
 
@@ -198,63 +198,44 @@ struct BackgroundUpdateLinesView: View {
 
 private struct BackgroundLineRow: View {
     let line: BackgroundLine
+    let parentReview: BackgroundReviewState?
 
     var body: some View {
-        HStack(alignment: .firstTextBaseline, spacing: 6) {
-            Image(systemName: icon)
-                .font(.caption.weight(.semibold))
-                .foregroundStyle(line.status == .failed ? Color.orange : Color.secondary)
-            // One line like a tool row: only the goal or command truncates, so the verb stays. The full text is the
-            // accessibility label and the expanded notice.
-            lineText
-                .font(AppFont.footnote())
-                .foregroundStyle(.secondary)
-                .lineLimit(1)
-        }
-    }
-
-    private var icon: String {
-        switch line.status {
-        case .completed: "checkmark.circle"
-        case .failed: "exclamationmark.triangle.fill"
-        case .notice: "info.circle"
-        }
-    }
-
-    @ViewBuilder
-    private var lineText: some View {
-        if line.kind == .other {
-            Text(verbatim: line.label).truncationMode(.tail)
-        } else {
-            // The localized wording around the label, split at a placeholder so only the label truncates.
-            let parts = Self.text(for: line, label: "\u{0}").components(separatedBy: "\u{0}")
-            HStack(alignment: .firstTextBaseline, spacing: 0) {
-                Text(verbatim: parts.first ?? "").fixedSize()
-                Text(verbatim: line.label)
-                    .font(line.kind == .command ? AppFont.mono(style: .footnote) : AppFont.footnote())
-                    .foregroundStyle(line.kind == .agent ? Color.primary : Color.secondary)
-                    .truncationMode(.tail)
-                Text(verbatim: parts.count > 1 ? parts[1] : "").fixedSize()
+        HStack(alignment: .center, spacing: 6) {
+            if line.reviewStateForDisplay == .reviewing {
+                ProgressView().controlSize(.mini)
+                    .accessibilityHidden(true)
+            } else {
+                Image(systemName: BackgroundWorkSheet.icon(line.reviewStateForDisplay))
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(line.reviewStateForDisplay == .failed ? Color.orange : Color.secondary)
+                    .accessibilityHidden(true)
             }
+            Text(verbatim: line.label)
+                .font(line.kind == .command ? AppFont.mono(style: .footnote) : AppFont.footnote())
+                .foregroundStyle(line.kind == .agent ? Color.primary : Color.secondary)
+                .lineLimit(1)
+                .truncationMode(.tail)
+        }
+        .help(Self.accessibilityText(for: line, parentReview: parentReview))
+    }
+
+    static func reviewLabel(_ state: BackgroundReviewState?) -> String {
+        switch state {
+        case .waiting: String(localized: "Waiting for the parent to review this result.")
+        case .reviewing: String(localized: "The parent is reviewing this result.")
+        case .reviewed: String(localized: "The parent reviewed this result.")
+        case .failed: String(localized: "The worker or parent review failed.")
+        case .unknown, nil: String(localized: "The worker or parent review outcome is unknown.")
         }
     }
 
-    /// The localized line, with `label` (the line's own by default) where the wording puts the goal or command.
-    static func text(for line: BackgroundLine, label: String? = nil) -> String {
-        let label = label ?? line.label
-        switch (line.kind, line.status, line.exitCode) {
-        case (.agent, .failed, _):
-            return String(localized: "Agent “\(label)” failed")
-        case (.agent, _, _):
-            return String(localized: "Agent “\(label)” completed")
-        case (.command, .failed, let code?):
-            return String(localized: "Background command \(label) failed (exit \(code))")
-        case (.command, .failed, nil):
-            return String(localized: "Background command \(label) failed")
-        case (.command, _, _):
-            return String(localized: "Background command \(label) finished")
-        case (.other, _, _):
-            return label
+    static func accessibilityText(for line: BackgroundLine, parentReview: BackgroundReviewState?) -> String {
+        var text = "\(line.label). \(reviewLabel(line.reviewStateForDisplay))"
+        if let parentReview, parentReview != line.reviewStateForDisplay {
+            let state = reviewLabel(parentReview)
+            text += " " + String(localized: "Parent review: \(state)")
         }
+        return text
     }
 }

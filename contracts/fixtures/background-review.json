@@ -1,0 +1,110 @@
+{
+  "session_id": "background-review-fixture",
+  "messages": [
+    {
+      "role": "user",
+      "content": "Synthetic background results",
+      "message_id": "review-waiting",
+      "_display": "row",
+      "_background_update": {
+        "kind": "delegation",
+        "attention": false,
+        "count": 1,
+        "summary": "Synthetic background result",
+        "review_state": "waiting",
+        "lines": [
+          {
+            "kind": "agent",
+            "status": "completed",
+            "label": "Audit the storage",
+            "review_state": "waiting"
+          }
+        ]
+      }
+    },
+    {
+      "role": "user",
+      "content": "Synthetic background results",
+      "message_id": "review-reviewing",
+      "_display": "row",
+      "_background_update": {
+        "kind": "delegation",
+        "attention": false,
+        "count": 1,
+        "summary": "Synthetic background result",
+        "review_state": "reviewing",
+        "lines": [
+          {
+            "kind": "agent",
+            "status": "completed",
+            "label": "Check the backups",
+            "review_state": "reviewing"
+          }
+        ]
+      }
+    },
+    {
+      "role": "user",
+      "content": "Synthetic background results",
+      "message_id": "review-reviewed",
+      "_display": "row",
+      "_background_update": {
+        "kind": "delegation",
+        "attention": false,
+        "count": 1,
+        "summary": "Synthetic background result",
+        "review_state": "reviewed",
+        "lines": [
+          {
+            "kind": "agent",
+            "status": "completed",
+            "label": "Review the configuration",
+            "review_state": "reviewed"
+          }
+        ]
+      }
+    },
+    {
+      "role": "user",
+      "content": "Synthetic background results",
+      "message_id": "review-failed",
+      "_display": "row",
+      "_background_update": {
+        "kind": "delegation",
+        "attention": true,
+        "count": 1,
+        "summary": "Synthetic background result",
+        "review_state": "failed",
+        "lines": [
+          {
+            "kind": "agent",
+            "status": "failed",
+            "label": "Run the tests",
+            "review_state": "failed"
+          }
+        ]
+      }
+    },
+    {
+      "role": "user",
+      "content": "Synthetic background results",
+      "message_id": "review-unknown",
+      "_display": "row",
+      "_background_update": {
+        "kind": "delegation",
+        "attention": true,
+        "count": 1,
+        "summary": "Synthetic background result",
+        "review_state": "unknown",
+        "lines": [
+          {
+            "kind": "agent",
+            "status": "notice",
+            "label": "Recover the result",
+            "review_state": "unknown"
+          }
+        ]
+      }
+    }
+  ]
+}

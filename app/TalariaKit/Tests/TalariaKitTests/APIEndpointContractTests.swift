@@ -681,9 +681,12 @@ final class SharedContractTests: XCTestCase {
         XCTAssertNil(byID["wakeup-mixed-reply"]?.backgroundUpdate)
         // A Web from before TAL-460 sends no lines; its summary is the one line.
         guard (example["background_updates"] as? [String: Any])?["wake-silent"] != nil else { return }
+        // Retained pre-TAL-1022 Web fixtures omit review_state; current historical rows have no review proof.
+        let rawMixed = (example["messages"] as? [[String: Any]])?.first { $0["message_id"] as? String == "wakeup-mixed-user" }
+        let hasReviewState = (rawMixed?["_background_update"] as? [String: Any])?["review_state"] != nil
         XCTAssertEqual(byID["wakeup-mixed-user"]?.backgroundUpdate?.lines, [
-            BackgroundLine(kind: .agent, status: .completed, label: "Audit the PVC backups"),
-            BackgroundLine(kind: .command, status: .failed, label: "make test", exitCode: 1),
+            BackgroundLine(kind: .agent, status: .completed, label: "Audit the PVC backups", reviewState: hasReviewState ? .unknown : nil),
+            BackgroundLine(kind: .command, status: .failed, label: "make test", exitCode: 1, reviewState: hasReviewState ? .failed : nil),
         ])
         // Only the background turn's silence marker is silent; the same words the user asked for are shown.
         XCTAssertEqual(messages.filter(\.backgroundSilent).map(\.messageId), ["wakeup-silent-reply"])
@@ -692,6 +695,34 @@ final class SharedContractTests: XCTestCase {
         XCTAssertFalse(shown.contains("wakeup-silent-reply"))
         XCTAssertTrue(shown.contains("wakeup-silent-user"))
         XCTAssertTrue(shown.contains("user-no-reply-answer"))
+    }
+
+    func testBackgroundReviewStatesDecodeWithoutInventingOlderOrFutureValues() throws {
+        let object = try XCTUnwrap(JSONSerialization.jsonObject(with: fixture("background-review")) as? [String: Any])
+        let decoder = JSONDecoder()
+        decoder.keyDecodingStrategy = .convertFromSnakeCase
+        let messages = try decoder.decode([ChatMessage].self, from: JSONSerialization.data(withJSONObject: object["messages"]!))
+        XCTAssertEqual(messages.compactMap { $0.backgroundUpdate?.reviewState }, BackgroundReviewState.allCases)
+        XCTAssertEqual(messages.compactMap { $0.backgroundUpdate?.lines.first?.reviewState }, BackgroundReviewState.allCases)
+        for raw in ["{}", #"{"review_state":"future","lines":[{"kind":"agent","status":"completed","label":"Goal","review_state":"future"}]}"#] {
+            let update = try decoder.decode(BackgroundUpdate.self, from: Data(raw.utf8))
+            XCTAssertNil(update.reviewState)
+            XCTAssertNil(update.lines.first?.reviewState)
+        }
+    }
+
+    func testLegacyBackgroundFailurePresentationDoesNotInventReviewProof() throws {
+        let decoder = JSONDecoder()
+        decoder.keyDecodingStrategy = .convertFromSnakeCase
+        for status in ["failed", "completed", "notice"] {
+            let raw = "{\"kind\":\"agent\",\"status\":\"\(status)\",\"label\":\"Legacy goal\"}"
+            let line = try decoder.decode(BackgroundLine.self, from: Data(raw.utf8))
+            XCTAssertNil(line.reviewState)
+            XCTAssertEqual(line.reviewStateForDisplay, status == "failed" ? .failed : .unknown)
+            XCTAssertNil(try decoder.decode(BackgroundLine.self, from: JSONEncoder().encode(line)).reviewState)
+        }
+        let explicit = BackgroundLine(kind: .agent, status: .failed, label: "Server choice", reviewState: .unknown)
+        XCTAssertEqual(explicit.reviewStateForDisplay, .unknown)
     }
 
     func testSharedWebSessionMarksOnlyTheServersMarkers() throws {

@@ -880,20 +880,31 @@ final class UITestFixtureURLProtocol: URLProtocol, @unchecked Sendable {
         [
             "role": "user", "content": "[ASYNC DELEGATION BATCH COMPLETE — deleg_ui]\nDelegated result body.\n\n[IMPORTANT: Background process proc_ui completed (exit_code=1).]",
             "message_id": "wakeup-user", "_ts": 2_000_000_002, "_turn_id": "wake-ui",
-            "_background_update": ["kind": "mixed", "attention": true, "count": 2, "summary": "ASYNC DELEGATION BATCH COMPLETE — deleg_ui", "lines": [
-                ["kind": "agent", "status": "completed", "label": "Audit the fixture"],
-                ["kind": "command", "status": "failed", "label": "make test", "exit_code": 1]
+            "_background_update": ["kind": "mixed", "attention": true, "count": 2, "summary": "ASYNC DELEGATION BATCH COMPLETE — deleg_ui", "review_state": "reviewed", "lines": [
+                ["kind": "agent", "status": "completed", "label": "Audit the fixture", "review_state": "reviewed"],
+                ["kind": "command", "status": "failed", "label": "make test", "exit_code": 1, "review_state": "failed"]
             ]]
         ],
         ["role": "assistant", "content": "The audit finished and the test run failed.", "message_id": "wakeup-reply", "_ts": 2_000_000_003, "_turn_id": "wake-ui", "_background_reply": true],
         [
             "role": "user", "content": "[IMPORTANT: Background process proc_quiet completed (exit_code=0).]",
             "message_id": "wakeup-quiet-user", "_ts": 2_000_000_004, "_turn_id": "wake-quiet",
-            "_background_update": ["kind": "process", "attention": false, "count": 1, "summary": "IMPORTANT: Background process proc_quiet completed (exit_code=0).", "lines": [
-                ["kind": "command", "status": "completed", "label": "./backup.sh", "exit_code": 0]
+            "_background_update": ["kind": "process", "attention": false, "count": 1, "summary": "IMPORTANT: Background process proc_quiet completed (exit_code=0).", "review_state": "reviewed", "lines": [
+                ["kind": "command", "status": "completed", "label": "./backup.sh", "exit_code": 0, "review_state": "reviewed"]
             ]]
         ],
-        ["role": "assistant", "content": "[SILENT]", "message_id": "wakeup-quiet-reply", "_ts": 2_000_000_005, "_turn_id": "wake-quiet", "_background_reply": true, "_background_silent": true]
+        ["role": "assistant", "content": "[SILENT]", "message_id": "wakeup-quiet-reply", "_ts": 2_000_000_005, "_turn_id": "wake-quiet", "_background_reply": true, "_background_silent": true],
+        ["role": "user", "content": "More results", "message_id": "review-states", "_ts": 2_000_000_006,
+         "_background_update": ["kind": "delegation", "attention": false, "count": 3, "summary": "More results", "lines": [
+            ["kind": "agent", "status": "completed", "label": "Waiting result", "review_state": "waiting"],
+            ["kind": "agent", "status": "completed", "label": "Active review", "review_state": "reviewing"],
+            ["kind": "agent", "status": "notice", "label": "Unknown result", "review_state": "unknown"]
+         ]]],
+        ["role": "user", "content": "Older server results", "message_id": "legacy-review-states", "_ts": 2_000_000_007,
+         "_background_update": ["kind": "delegation", "attention": true, "count": 2, "summary": "Older server results", "lines": [
+            ["kind": "agent", "status": "failed", "label": "Legacy failed goal"],
+            ["kind": "agent", "status": "completed", "label": "Legacy completed goal"]
+         ]]]
     ]
 
     /// 25 user bodies of 20-100K characters, each with a link, between short replies, collapsed

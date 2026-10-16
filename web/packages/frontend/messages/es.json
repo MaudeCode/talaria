@@ -1886,5 +1886,11 @@
 	"panel_agents_transcript": "Abrir transcripción",
 	"panel_files_unavailable": "Este chat no tiene espacio de trabajo.",
 	"panel_agents_transcript_for": "Transcripción: {goal}",
-	"settings_label_summarize_updates_automatically": "Resumir actualizaciones con IA automáticamente"
+	"settings_label_summarize_updates_automatically": "Resumir actualizaciones con IA automáticamente",
+	"background_review_waiting": "Esperando a que el agente principal revise este resultado.",
+	"background_review_reviewing": "El agente principal está revisando este resultado.",
+	"background_review_reviewed": "El agente principal revisó este resultado.",
+	"background_review_failed": "Falló el trabajo o la revisión del agente principal.",
+	"background_review_unknown": "Se desconoce el resultado del trabajo o de la revisión.",
+	"background_review_parent": "Revisión del agente principal: {state}"
 }

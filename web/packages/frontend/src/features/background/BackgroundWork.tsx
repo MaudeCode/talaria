@@ -4,8 +4,8 @@
  */
 import { useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { AlertTriangle, Check, CircleHelp, X } from 'lucide-react'
-import type { BackgroundLink, BackgroundTask } from '@maudecode/talaria-web-contracts'
+import { AlertTriangle, Check, CircleHelp, Clock, LoaderCircle, X } from 'lucide-react'
+import type { BackgroundLink, BackgroundTask, BackgroundReviewState } from '@maudecode/talaria-web-contracts'
 import * as api from '../../api/endpoints'
 import { keys } from '../../api/queryKeys'
 import { Markdown } from '../chat/render/Markdown'
@@ -45,9 +45,11 @@ export function agentsSummary(agents: BackgroundLink['agents']): string {
   return parts.join(' · ')
 }
 
-export function StatusIcon({ status }: { status: BackgroundTask['status'] }) {
+export function StatusIcon({ status }: { status: BackgroundTask['status'] | BackgroundReviewState }) {
+  if (status === 'waiting') return <Clock size={13} className="shrink-0 text-muted" aria-hidden="true" />
+  if (status === 'reviewing') return <LoaderCircle size={13} className="shrink-0 animate-spin motion-reduce:animate-none text-muted" aria-hidden="true" />
   if (status === 'running') return <span className="h-2 w-2 shrink-0 animate-pulse rounded-full bg-accent" aria-hidden="true" />
-  if (status === 'completed') return <Check size={13} className="shrink-0 text-success" aria-hidden="true" />
+  if (status === 'completed' || status === 'reviewed') return <Check size={13} className="shrink-0 text-success" aria-hidden="true" />
   if (status === 'unknown') return <CircleHelp size={13} className="shrink-0 text-muted" aria-hidden="true" />
   if (status === 'cancelled') return <X size={13} className="shrink-0 text-muted" aria-hidden="true" />
   return <AlertTriangle size={13} className="shrink-0 text-warning" aria-hidden="true" />

@@ -191,3 +191,24 @@ it has nothing else to send.
 - Journal rows pass through the same public-payload redaction as the live
   stream: no credentials, provider API keys, or unsanitized internal error
   details.
+
+## Background result review
+
+Background completion lines carry optional server-owned `review_state` fields.
+The update's state describes the parent; each line composes that review with
+its worker outcome, preserving failed or unknown worker results. The states are
+`waiting`, `reviewing`, `reviewed`, `failed`, and `unknown`. Clients show one
+leading icon and the goal, with localized state descriptions in accessibility
+and help text.
+
+Admission saves the structured update with the pending turn. Only the results
+admitted to that turn share its review. Waiting requires a durable held result that no parent has admitted; a pending
+delivery acknowledgement alone is not a pending review. Reviewing requires its
+live parent run. Successful settlement persists terminal
+evidence on the background prompt, alongside the actual final reply. A silent
+marker alone or a delivered ledger flag cannot establish review. Interrupted
+or missing runs remain Unknown unless their result is durably pending for retry.
+Indexed pages resolve off-page parent proof through the existing turn index;
+they never enumerate the cached transcript prefix for review state. The same
+projection precedes terminal payloads and every session window. Its
+persisted metadata is additive, and clients keep the explicit values in cache.

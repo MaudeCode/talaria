@@ -1851,5 +1851,11 @@
 	"panel_agents_transcript": "開啟對話紀錄",
 	"panel_files_unavailable": "此對話沒有工作區。",
 	"panel_agents_transcript_for": "對話紀錄：{goal}",
-	"settings_label_summarize_updates_automatically": "使用 AI 自動摘要更新"
+	"settings_label_summarize_updates_automatically": "使用 AI 自動摘要更新",
+	"background_review_waiting": "等待父代理審閱此結果。",
+	"background_review_reviewing": "父代理正在審閱此結果。",
+	"background_review_reviewed": "父代理已審閱此結果。",
+	"background_review_failed": "工作或父代理審閱失敗。",
+	"background_review_unknown": "工作或父代理審閱的結果未知。",
+	"background_review_parent": "父代理審閱：{state}"
 }

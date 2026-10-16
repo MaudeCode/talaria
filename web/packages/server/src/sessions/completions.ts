@@ -16,7 +16,7 @@ import type { Session } from './session.js'
 import { str } from '../util.js'
 import { expandDotenv, parseDotenv } from '../cli/dotenv.js'
 import { isDict, messageText } from './merge.js'
-import { batchUpdate, recordBackgroundUpdate, completionAccepted } from './background-updates.js'
+import { batchUpdate, recordBackgroundUpdate, completionAccepted, type BackgroundUpdate } from './background-updates.js'
 import type { BackgroundActivity } from './background-tasks.js'
 import { backgroundEventKind } from './background-events.js'
 import { HeldWakeups, deliveredPerProcess, heldKey, mergeWakeups, poolRecovery, wakeupPaused, type HeldWakeup } from './wakeup-pause.js'
@@ -44,7 +44,7 @@ export interface CompletionDrainDeps {
   channels: SessionChannels
   registry: StreamRegistry
   /** Start a server-side turn; `_status` 409 means a turn is already active, or with `retryable` that the Agent runtime is stale. */
-  startTurn: (session: Session, prompt: string, completionKeys: string[]) => StartedTurn | Promise<StartedTurn>
+  startTurn: (session: Session, prompt: string, completionKeys: string[], update: BackgroundUpdate) => StartedTurn | Promise<StartedTurn>
   now: () => number
   log: (line: string) => void
   pollMs?: number
@@ -115,6 +115,17 @@ export class CompletionDrain {
   private readonly unreleased = new Map<string, Deferred[]>()
   /** TAL-576: wakeups held while their session is paused. */
   private readonly heldWakeups: HeldWakeups
+
+  /** Waiting requires an unadmitted result, not an admitted turn's outstanding ledger acknowledgement. */
+  pendingDelegations(sid: string): Set<string> {
+    try {
+      const session = this.deps.store.get(sid), home = this.ownerHome(session)
+      return new Set(this.heldWakeups.get(sid).filter((entry) => {
+        const key = completionKey(home, entry.event ?? {})
+        return Boolean(key) && !completionAccepted(session, key)
+      }).map((entry) => str(entry.event?.delegation_id)).filter(Boolean))
+    } catch { return new Set() }
+  }
 
   constructor(private readonly deps: CompletionDrainDeps) {
     this.heldWakeups = new HeldWakeups(join(deps.store.sessionDir, '_wakeup_held.json'))
@@ -603,7 +614,7 @@ export class CompletionDrain {
     const giveBack = async (method: 'process.release_delivery' | 'process.defer_delivery' = 'process.release_delivery'): Promise<void> => { await this.settleClaims(home, method, held); redefer(deliver) }
     const prompt = deliver.length === 1 ? deliver[0]!.wakeup_prompt : deliver.map((e) => e.wakeup_prompt).join('\n\n')
     let resp: StartedTurn
-    try { resp = await this.deps.startTurn(session, prompt, deliver.map((e) => completionKey(home, e.event ?? {})).filter(Boolean)) } catch (error) { await giveBack(); this.scheduleRetry(sid); this.deps.log(`[webui] WARNING: server-side wakeup turn raised for session ${sid}: ${(error as Error).message}`); return false }
+    try { resp = await this.deps.startTurn(session, prompt, deliver.map((e) => completionKey(home, e.event ?? {})).filter(Boolean), batchUpdate(deliver.map((e) => ({ event: e.event ?? {}, prompt: e.wakeup_prompt })))) } catch (error) { await giveBack(); this.scheduleRetry(sid); this.deps.log(`[webui] WARNING: server-side wakeup turn raised for session ${sid}: ${(error as Error).message}`); return false }
     if (this.isReadOnly(session)) { await this.relinquish(sid, session, batched, held); return false }
     const status = resp._status ?? (resp.stream_id ? 200 : 500)
     // A busy session redelivers at its turn teardown; a stale runtime admits no turn, so it is retried on a timer (TAL-577).

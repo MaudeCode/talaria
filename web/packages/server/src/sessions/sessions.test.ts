@@ -2005,7 +2005,7 @@ describe('session detail marks background wakeups as updates (TAL-371)', () => {
       for (const m of await detail(sid, query)) {
         if (m.timestamp === 1000) expect(m, query).not.toHaveProperty('_background_update')
         // No event metadata survives for an older wakeup, so it gets the generic label.
-        if (m.timestamp === 1002) expect(m._background_update, query).toEqual({ kind: 'other', attention: false, count: 1, summary: 'IMPORTANT: Background process proc_1 completed (exit_code=0).', lines: [{ kind: 'other', status: 'completed', label: 'IMPORTANT: Background process proc_1 completed (exit_code=0).' }] })
+        if (m.timestamp === 1002) expect(m._background_update, query).toEqual({ kind: 'other', attention: false, count: 1, summary: 'IMPORTANT: Background process proc_1 completed (exit_code=0).', review_state: 'unknown', lines: [{ kind: 'other', status: 'completed', label: 'IMPORTANT: Background process proc_1 completed (exit_code=0).', review_state: 'unknown' }] })
         if (m.role === 'assistant') expect(m).not.toHaveProperty('_background_update')
         // TAL-460: the reply to the wakeup is marked in every window, even one that starts after the wakeup row.
         if (m.timestamp === 1001) expect(m, query).not.toHaveProperty('_background_reply')
@@ -2027,7 +2027,7 @@ describe('session detail marks background wakeups as updates (TAL-371)', () => {
     db.prepare('INSERT INTO messages (session_id, role, content, timestamp, display_kind, display_metadata) VALUES (?, ?, ?, ?, ?, ?)').run(sid, 'user', '[IMPORTANT: 3 background subagent delegations completed for this session.]\n…', 1002, 'async_delegation_complete', JSON.stringify({ delegation_id: 'deleg_db', task_count: 3, completed_count: 2, failed_count: 1 }))
     db.close()
     const row = (await detail(sid)).find((m) => m.timestamp === 1002)
-    expect(row?._background_update).toEqual({ kind: 'delegation', attention: true, count: 1, summary: 'IMPORTANT: 3 background subagent delegations completed for this session.', lines: [{ kind: 'other', status: 'failed', label: 'IMPORTANT: 3 background subagent delegations completed for this session.' }] })
+    expect(row?._background_update).toEqual({ kind: 'delegation', attention: true, count: 1, summary: 'IMPORTANT: 3 background subagent delegations completed for this session.', review_state: 'unknown', lines: [{ kind: 'other', status: 'failed', label: 'IMPORTANT: 3 background subagent delegations completed for this session.', review_state: 'failed' }] })
   })
   it('serves the shared background-update example exactly as the contract fixture records it', async () => {
     const fixture = (JSON.parse(readFileSync(join(import.meta.dirname, '../../../../../contracts/fixtures/web-session.json'), 'utf8')) as Json).background_update_session as Json

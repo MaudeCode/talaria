@@ -1862,5 +1862,11 @@
 	"panel_agents_transcript": "Verlauf öffnen",
 	"panel_files_unavailable": "Dieser Chat hat keinen Arbeitsbereich.",
 	"panel_agents_transcript_for": "Verlauf: {goal}",
-	"settings_label_summarize_updates_automatically": "Updates automatisch mit KI zusammenfassen"
+	"settings_label_summarize_updates_automatically": "Updates automatisch mit KI zusammenfassen",
+	"background_review_waiting": "Wartet darauf, dass der übergeordnete Agent dieses Ergebnis prüft.",
+	"background_review_reviewing": "Der übergeordnete Agent prüft dieses Ergebnis.",
+	"background_review_reviewed": "Der übergeordnete Agent hat dieses Ergebnis geprüft.",
+	"background_review_failed": "Der Auftrag oder die Prüfung durch den übergeordneten Agenten ist fehlgeschlagen.",
+	"background_review_unknown": "Das Ergebnis des Auftrags oder der Prüfung ist unbekannt.",
+	"background_review_parent": "Prüfung durch den übergeordneten Agenten: {state}"
 }

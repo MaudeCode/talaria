@@ -1960,5 +1960,11 @@
 	"panel_agents_transcript": "Otwórz zapis",
 	"panel_files_unavailable": "Ten czat nie ma obszaru roboczego.",
 	"panel_agents_transcript_for": "Zapis: {goal}",
-	"settings_label_summarize_updates_automatically": "Automatycznie podsumowuj aktualizacje za pomocą AI"
+	"settings_label_summarize_updates_automatically": "Automatycznie podsumowuj aktualizacje za pomocą AI",
+	"background_review_waiting": "Oczekiwanie na sprawdzenie wyniku przez agenta nadrzędnego.",
+	"background_review_reviewing": "Agent nadrzędny sprawdza ten wynik.",
+	"background_review_reviewed": "Agent nadrzędny sprawdził ten wynik.",
+	"background_review_failed": "Zadanie lub sprawdzenie przez agenta nadrzędnego nie powiodło się.",
+	"background_review_unknown": "Wynik zadania lub sprawdzenia jest nieznany.",
+	"background_review_parent": "Sprawdzenie przez agenta nadrzędnego: {state}"
 }

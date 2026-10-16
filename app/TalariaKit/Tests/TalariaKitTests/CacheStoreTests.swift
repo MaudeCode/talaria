@@ -588,7 +588,7 @@ final class CacheStoreTests: XCTestCase {
         let context = try makeContext()
         let serverURL = URL(string: "https://example.test")!
         let cachedAt = Date(timeIntervalSince1970: 1_770_000_000)
-        let update = BackgroundUpdate(lines: [BackgroundLine(kind: .agent, status: .failed, label: "Audit"), BackgroundLine(kind: .command, status: .completed, label: "make", exitCode: 0)])
+        let update = BackgroundUpdate(lines: [BackgroundLine(kind: .agent, status: .failed, label: "Audit", reviewState: .failed), BackgroundLine(kind: .command, status: .completed, label: "make", exitCode: 0, reviewState: .reviewed)], reviewState: .reviewed)
         let message = ChatMessage(role: "user", content: "[ASYNC DELEGATION BATCH COMPLETE]", timestamp: 1, messageId: "wake-1", backgroundUpdate: update)
         let silent = ChatMessage(role: "assistant", content: "[SILENT]", timestamp: 2, messageId: "wake-1-reply", backgroundSilent: true, display: .hidden)
         try CacheStore.cacheMessages([message, silent], serverURL: serverURL, sessionID: "abc123", in: context, cachedAt: cachedAt)

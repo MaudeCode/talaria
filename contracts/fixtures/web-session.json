@@ -1638,15 +1638,18 @@
             {
               "kind": "agent",
               "status": "completed",
-              "label": "Audit the PVC backups"
+              "label": "Audit the PVC backups",
+              "review_state": "unknown"
             },
             {
               "kind": "command",
               "status": "failed",
               "label": "make test",
-              "exit_code": 1
+              "exit_code": 1,
+              "review_state": "failed"
             }
-          ]
+          ],
+          "review_state": "unknown"
         },
         "_source": "process_wakeup",
         "_display": "row"
@@ -1690,9 +1693,11 @@
             {
               "kind": "other",
               "status": "completed",
-              "label": "IMPORTANT: Background process proc_old completed (exit_code=0)."
+              "label": "IMPORTANT: Background process proc_old completed (exit_code=0).",
+              "review_state": "unknown"
             }
-          ]
+          ],
+          "review_state": "unknown"
         },
         "_source": "process_wakeup",
         "_display": "row"
@@ -1737,9 +1742,11 @@
               "kind": "command",
               "status": "completed",
               "label": "./backup.sh",
-              "exit_code": 0
+              "exit_code": 0,
+              "review_state": "unknown"
             }
-          ]
+          ],
+          "review_state": "unknown"
         },
         "_source": "process_wakeup",
         "_display": "row"
