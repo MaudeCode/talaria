@@ -252,7 +252,11 @@ worker exits normally without another rollback. State stores are not reverted.
 The marker retains the failed version, and Web update status exposes it as
 `failed_update: { version, restored_version }`. Automatic updates skip that exact
 version on either channel. An owner can retry it manually; its failure record
-clears only when the replacement worker reports ready. A newer version remains
+clears only when the replacement worker reports ready, which also removes the
+quarantined failed package. Ordinary restarts of the restored version keep the
+failure record and quarantine. Each worker reloads values owned by the Hermes
+home `.env`, so a restart picks up credential rotations and removals while
+preserving variables set by the operator. A newer version remains
 eligible for automatic updates. The previous package stays until the next
 verified package replacement, which replaces that backup. Recovery requires the
 known-good supervisor to remain running through the update; an external service

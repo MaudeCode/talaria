@@ -8,6 +8,7 @@ import { spawn } from 'node:child_process'
 import { existsSync, renameSync, rmSync } from 'node:fs'
 import { atomicWriteText } from '../fs/atomic.js'
 import { readUpdateRollback, rollbackPaths } from '../tools/update-rollback.js'
+import { homeDotenvKeys, setHomeDotenvKeys } from './dotenv.js'
 
 export const RESTART_EXIT_CODE = 75
 export const WORKER_ENV = 'TALARIA_WEB_WORKER'
@@ -30,15 +31,24 @@ export async function supervise(opts: SuperviseOptions): Promise<number> {
   let afterRestart = false
   let rolledBack = false
   for (;;) {
-    const child = spawn(cmd, args, { cwd, stdio: ['inherit', 'inherit', 'inherit', 'ipc'], env: { ...opts.env, [WORKER_ENV]: '1' } })
-    let ready = false
+    const env: NodeJS.ProcessEnv = { ...opts.env, [WORKER_ENV]: '1' }
+    // Reload home-file values in each worker; the supervisor may hold credentials revoked since startup.
+    for (const key of homeDotenvKeys(env)) Reflect.deleteProperty(env, key)
+    setHomeDotenvKeys(env, new Set())
     const paths = opts.packageRoot && opts.stateDir ? rollbackPaths(opts.packageRoot, opts.stateDir) : null
+    const pendingUpdate = paths && existsSync(paths.previous) ? readUpdateRollback(opts.stateDir) : null
+    const child = spawn(cmd, args, { cwd, stdio: ['inherit', 'inherit', 'inherit', 'ipc'], env })
+    let ready = false
     child.on('message', (message) => {
       if (message !== 'ready' || ready) return
       ready = true
-      if (afterRestart && !rolledBack && paths) {
-        try { rmSync(paths.marker, { force: true }) }
-        catch (error) { opts.log(`[serve] could not clear update rollback marker: ${(error as Error).message}`) }
+      if (afterRestart && !rolledBack && paths && pendingUpdate) {
+        // A later update may already have written a different marker after this worker started listening.
+        if (JSON.stringify(readUpdateRollback(opts.stateDir)) !== JSON.stringify(pendingUpdate)) return
+        try {
+          rmSync(paths.failed, { recursive: true, force: true })
+          rmSync(paths.marker, { force: true })
+        } catch (error) { opts.log(`[serve] could not finish update recovery cleanup: ${(error as Error).message}`) }
       }
     })
     const forward = (signal: NodeJS.Signals) => (): void => { stopping = true; child.kill(signal) }
