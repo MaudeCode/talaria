@@ -689,7 +689,7 @@ final class UITestFixtureURLProtocol: URLProtocol, @unchecked Sendable {
             chatState.withdrawSteer(id: steerID)
             return json(["withdrawn": true, "text": Self.pendingSteerText])
         case "/api/chat/steer/send-now":
-            return json(["redirected": false])
+            return json(["redirected": false, "outcome": "next_step"])
         case "/api/chat/steer":
             let steerID = requestJSON(request)["steer_id"] as? String
             chatState.acceptSteer(id: steerID)

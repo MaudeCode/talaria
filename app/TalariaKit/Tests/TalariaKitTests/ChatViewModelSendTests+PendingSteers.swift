@@ -135,6 +135,47 @@ extension ChatViewModelSendTests {
         XCTAssertTrue(viewModel.messages.contains { $0.messageId == "steer-a" })
     }
 
+    func testSendNowSharedContractOutcomesDecode() throws {
+        let root = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+            .deletingLastPathComponent().deletingLastPathComponent()
+        let data = try Data(contentsOf: root.appendingPathComponent("contracts/fixtures/steer-send-now.json"))
+        let responses = try JSONDecoder().decode([String: SteerSendNowResponse].self, from: data)
+        XCTAssertEqual(responses.count, 5)
+        for (name, response) in responses {
+            XCTAssertEqual(response.outcome?.rawValue, name)
+            XCTAssertEqual(response.redirected, name == "delivered")
+        }
+    }
+
+    func testSendNowRendersTheServerOutcome() async throws {
+        let streamClient = SpySSEStreamingClient()
+        let log = RequestLog()
+        let viewModel = try runningViewModel(log, streamClient: streamClient)
+        let started = await viewModel.sendMessage("Initial request")
+        XCTAssertTrue(started)
+        streamClient.emit(.steerPending(steer("steer-a", "Check a")))
+        let cases: [(String, Bool, String?)] = [
+            ("delivered", true, nil),
+            ("next_step", false, "The agent takes it at its next step."),
+            ("not_running", false, "Nothing is running to take it now; it stays pending."),
+            ("taken", false, "This steering message can no longer be changed."),
+            ("failed", false, "Couldn't send it now; it stays pending.")
+        ]
+        for (outcome, redirected, notice) in cases {
+            viewModel.dismissNotice()
+            log.sendNow = [#"{"redirected":\#(redirected),"outcome":"\#(outcome)"}"#]
+            await viewModel.sendPendingSteerNow(id: "steer-a")
+            XCTAssertEqual(viewModel.currentNotice?.text, notice, outcome)
+            XCTAssertTrue(viewModel.messages.contains { $0.messageId == "steer-a" })
+        }
+        // A future enum value stays decodable and makes no claim about a missing run.
+        viewModel.dismissNotice()
+        log.sendNow = [#"{"redirected":false,"outcome":"future"}"#]
+        await viewModel.sendPendingSteerNow(id: "steer-a")
+        XCTAssertEqual(viewModel.currentNotice?.text, "Couldn't send it now; it stays pending.")
+    }
+
     func testAStopGivesThisDevicesSteerTextBackAndOnlyThat() async throws {
         let streamClient = SpySSEStreamingClient()
         let viewModel = try runningViewModel(RequestLog(), streamClient: streamClient)

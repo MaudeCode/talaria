@@ -6598,6 +6598,12 @@
           "kept",
           "last"
         ]
+      },
+      "reason": {
+        "type": "string",
+        "enum": [
+          "not_running"
+        ]
       }
     },
     "required": [

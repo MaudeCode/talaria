@@ -442,8 +442,9 @@ export type SteerWithdrawRequest = z.infer<typeof SteerWithdrawRequestSchema>
 /** `withdrawn: false` when the steer is unknown, already taken by the Agent (it then settles as consumed), or being sent. */
 export const SteerWithdrawResponseSchema = z.object({ withdrawn: z.boolean(), text: z.string().optional() })
 export const SteerSendNowRequestSchema = z.object({ session_id: SessionIdSchema, steer_id: z.string().min(1) })
-/** `redirected: false` when nothing is live to deliver it to now; the steer stays pending. */
-export const SteerSendNowResponseSchema = z.object({ redirected: z.boolean() })
+/** The server decides why Send now did or did not deliver. `redirected` remains for older clients. */
+export const SteerSendNowResponseSchema = z.object({ redirected: z.boolean(), outcome: z.enum(['delivered', 'next_step', 'not_running', 'taken', 'failed']) })
+export type SteerSendNowResponse = z.infer<typeof SteerSendNowResponseSchema>
 
 /** `text` is delivered to the running agent; `display_text` is what the transcript shows. */
 export const SteerRequestSchema = z.looseObject({ session_id: SessionIdSchema, text: z.string().min(1), display_text: z.string().optional(), steer_id: z.string().optional() })

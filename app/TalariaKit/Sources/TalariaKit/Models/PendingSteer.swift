@@ -102,7 +102,20 @@ public struct SteerWithdrawResponse: Decodable, Equatable {
 }
 
 public struct SteerSendNowResponse: Decodable, Equatable {
+    public enum Outcome: String, Equatable {
+        case delivered, nextStep = "next_step", notRunning = "not_running", taken, failed, other
+    }
+
     public let redirected: Bool
+    public let outcome: Outcome?
+
+    enum CodingKeys: String, CodingKey { case redirected, outcome }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        redirected = container.decodeLossyBoolIfPresent(forKey: .redirected) ?? false
+        outcome = container.decodeLossyStringIfPresent(forKey: .outcome).map { Outcome(rawValue: $0) ?? .other }
+    }
 }
 
 public enum PendingSteerWithdrawReason: String, Encodable {

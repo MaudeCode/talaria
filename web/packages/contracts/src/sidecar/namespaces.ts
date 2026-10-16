@@ -610,11 +610,11 @@ export const CHAT_METHODS = {
   /**
    * TAL-424: deliver `pending[index]` now with the Agent's `redirect`: `delivery: redirect` restarts the model request with
    * it, `delivery: steer` puts it last on the slot while tools yield. Not redirected: it stays pending, `requeued` in its
-   * place (`kept`) or last (`last`); `withdrawn: false` when the Agent already took it.
+   * place (`kept`) or last (`last`); `withdrawn: false` when the Agent already took it, or `reason: not_running` when the run or Agent is absent.
    */
   'chat.steer_now': {
     params: z.object({ stream_id: z.string().optional(), session_id: z.string().optional(), pending: z.array(z.string().min(1)).min(1), index: z.number().int().nonnegative() }),
-    result: z.object({ redirected: z.boolean(), withdrawn: z.boolean(), delivery: z.enum(['redirect', 'steer']).optional(), requeued: z.enum(['kept', 'last']).optional() }),
+    result: z.object({ redirected: z.boolean(), withdrawn: z.boolean(), delivery: z.enum(['redirect', 'steer']).optional(), requeued: z.enum(['kept', 'last']).optional(), reason: z.enum(['not_running']).optional() }),
   },
   /**
    * TAL-255: manual `/compress` of `conversation_history` through the Agent's `compress_now` on a throwaway agent. Nothing is

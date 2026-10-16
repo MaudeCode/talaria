@@ -34,7 +34,7 @@ test('a pending steer shows its actions; Edit returns it to the composer, Cancel
     send('steer_withdrawn', { steer_id: body.steer_id, reason: body.reason, text })
     await route.fulfill({ json: { withdrawn: true, text } })
   })
-  await page.route('**/api/chat/steer/send-now', (route) => route.fulfill({ json: { redirected: false } }))
+  await page.route('**/api/chat/steer/send-now', (route) => route.fulfill({ json: { redirected: false, outcome: 'next_step' } }))
   try {
     await page.goto(`/session/${sid}`)
     const bubble = (text: string) => page.locator('.steer-message', { hasText: text })
@@ -47,6 +47,12 @@ test('a pending steer shows its actions; Edit returns it to the composer, Cancel
     await expect(bubble('Check the backup logs too').getByRole('button', { name: 'Send now' })).toBeVisible()
     if (process.env.TAL425_SHOTS) await page.screenshot({ path: `${process.env.TAL425_SHOTS}/pending-${testInfo.project.name}.png` })
 
+    await bubble('Check the backup logs too').getByRole('button', { name: 'Send now' }).click()
+    await expect(page.getByText('The agent takes it at its next step.')).toBeVisible()
+    if (process.env.TAL1000_SHOTS) await page.screenshot({ path: `${process.env.TAL1000_SHOTS}/send-now-${testInfo.project.name}.png` })
+
+    // An older server still reaches the boolean fallback through the real HTTP client.
+    await page.route('**/api/chat/steer/send-now', (route) => route.fulfill({ json: { redirected: false } }))
     await bubble('Check the backup logs too').getByRole('button', { name: 'Send now' }).click()
     await expect(page.getByText('Nothing is running to take it now; it stays pending.')).toBeVisible()
 

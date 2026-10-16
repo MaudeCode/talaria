@@ -62,7 +62,16 @@ function PendingSteerMessage({ sessionId, steer }: { sessionId: string; steer: P
     if (reason === 'edit' && r.text !== undefined) returnToComposer(sessionId, r.text)
   })
   const sendNow = () => run(async () => {
-    if (!(await sendSteerNow({ session_id: sessionId, steer_id: steer.steerId })).redirected) showToast(m.steer_stays_pending(), 2500)
+    const reply = await sendSteerNow({ session_id: sessionId, steer_id: steer.steerId })
+    // Older servers only send redirected; remove this fallback with that field.
+    switch (Object.hasOwn(reply, 'outcome') ? reply.outcome : (reply.redirected ? 'delivered' : 'not_running')) {
+      case 'delivered': break
+      case 'next_step': showToast(m.steer_next_step(), 2500); break
+      case 'not_running': showToast(m.steer_stays_pending(), 2500); break
+      case 'taken': showToast(m.steer_no_longer_changeable(), 2500); break
+      case 'failed':
+      default: showToast(m.steer_send_now_failed(), 2500); break
+    }
   })
   const button = (label: string, icon: ReactNode, onClick: () => Promise<void>) => (
     <button type="button" className="steer-action" aria-label={label} title={label} disabled={busy} onPointerDown={keepFocus} onClick={() => { void onClick() }}>{icon}</button>

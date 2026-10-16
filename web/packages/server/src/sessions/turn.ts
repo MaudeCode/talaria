@@ -17,7 +17,7 @@ import type { StateDbRead } from './state-db.js'
 import { HttpFailure, markSessionTitleGenerated } from './service.js'
 import type { SessionEventBus } from './events.js'
 import { StreamRegistry, SessionChannels, type StreamChannel } from './streams.js'
-import { ChatUsageSchema, ConnectorOperationSnapshotSchema, type ClarifyAnswers, type PendingSteer, type SessionGoal, type SessionNotice, type SidecarResult, type SteerWithdrawn, type SteerWithdrawRequest } from '@maudecode/talaria-web-contracts'
+import { ChatUsageSchema, ConnectorOperationSnapshotSchema, type ClarifyAnswers, type PendingSteer, type SessionGoal, type SessionNotice, type SidecarResult, type SteerWithdrawn, type SteerWithdrawRequest, type SteerSendNowResponse } from '@maudecode/talaria-web-contracts'
 import { catalogNames, connectorOperation } from '../tools/connectors.js'
 import { PendingPrompts, clarifyReply, isVaultPrompt, vaultReply } from './pending.js'
 import { RunJournal, type RunJournalWriter } from './journal.js'
@@ -2005,21 +2005,21 @@ export class TurnRunner {
    * Agent's queue and says whether it did; pending text the Agent reported meanwhile is settled after, unless the queue
    * changed (the next report then reflects it).
    */
-  private async rewriteSteer<T>(sessionId: string, steerId: string, fallback: T, rewrite: (sidecar: SidecarLike, streamId: string, records: SteerRecord[], index: number) => Promise<{ result: T; changed: boolean }>): Promise<T> {
+  private async rewriteSteer<T>(sessionId: string, steerId: string, fallback: (reason: 'not_running' | 'taken' | 'failed') => T, rewrite: (sidecar: SidecarLike, streamId: string, records: SteerRecord[], index: number) => Promise<{ result: T; changed: boolean }>): Promise<T> {
     let s: Session | null = null
     try { s = this.deps.store.get(sessionId, { metadataOnly: true }) } catch { s = null }
     const streamId = s?.active_stream_id
     const sidecar = this.deps.sidecar()
-    if (!streamId || !sidecar) return fallback
+    if (!streamId || !sidecar) return fallback('not_running')
     return this.withSteerChain(streamId, sessionId, async () => {
       const records = this.steers.get(streamId) ?? []
       const index = records.findIndex((r) => r.steer_id === steerId)
-      if (index < 0 || records[index]!.state !== 'pending') return fallback
+      if (index < 0 || records[index]!.state !== 'pending') return fallback('taken')
       // In flight before the sidecar call, so a pending-text report racing its reply is deferred too.
       let finished: () => void = () => undefined
       this.steerRewrites.set(streamId, new Promise<void>((resolve) => { finished = resolve }))
-      let outcome: { result: T; changed: boolean } = { result: fallback, changed: false }
-      try { outcome = await rewrite(sidecar, streamId, records, index) } catch { outcome = { result: fallback, changed: false } } finally {
+      let outcome: { result: T; changed: boolean } = { result: fallback('failed'), changed: false }
+      try { outcome = await rewrite(sidecar, streamId, records, index) } catch { outcome = { result: fallback('failed'), changed: false } } finally {
         this.steerRewrites.delete(streamId)
         finished()
         const deferred = this.deferredPendingSteer.get(streamId)
@@ -2041,7 +2041,7 @@ export class TurnRunner {
    * emitted) when it is unknown, already taken or being sent; a taken one then settles as consumed.
    */
   withdrawSteer(sessionId: string, steerId: string, reason: SteerWithdrawReason): Promise<{ withdrawn: boolean; text?: string }> {
-    return this.rewriteSteer<{ withdrawn: boolean; text?: string }>(sessionId, steerId, { withdrawn: false }, async (sidecar, streamId, records, index) => {
+    return this.rewriteSteer<{ withdrawn: boolean; text?: string }>(sessionId, steerId, () => ({ withdrawn: false }), async (sidecar, streamId, records, index) => {
       const record = records[index]!
       const reply = await sidecar.call('chat.steer_withdraw', { stream_id: streamId, pending: records.map((r) => r.text), index })
       if (!reply.withdrawn) return { result: { withdrawn: false }, changed: false }
@@ -2056,16 +2056,16 @@ export class TurnRunner {
    * once); during tools it goes last on the Agent's queue and stays `sending_now` until taken; with nothing live it
    * stays pending.
    */
-  sendSteerNow(sessionId: string, steerId: string): Promise<{ redirected: boolean }> {
-    return this.rewriteSteer<{ redirected: boolean }>(sessionId, steerId, { redirected: false }, async (sidecar, streamId, records, index) => {
+  sendSteerNow(sessionId: string, steerId: string): Promise<SteerSendNowResponse> {
+    return this.rewriteSteer<SteerSendNowResponse>(sessionId, steerId, (outcome) => ({ redirected: false, outcome }), async (sidecar, streamId, records, index) => {
       const record = records[index]!
-      if (!record.can_redirect) return { result: { redirected: false }, changed: false }
+      if (!record.can_redirect) return { result: { redirected: false, outcome: 'failed' }, changed: false }
       const reply = await sidecar.call('chat.steer_now', { stream_id: streamId, pending: records.map((r) => r.text), index })
-      if (!reply.withdrawn) return { result: { redirected: false }, changed: false }
+      if (!reply.withdrawn) return { result: { redirected: false, outcome: reply.reason === 'not_running' ? 'not_running' : 'taken' }, changed: false }
       if (!reply.redirected) {
         // The Agent's queue changed meanwhile, so it went back last: clients follow the new order.
         if (reply.requeued === 'last') { this.dropSteer(streamId, record); records.push(record); this.emitToSession(sessionId, 'steer_pending', this.pendingSteerView(record)) }
-        return { result: { redirected: false }, changed: true }
+        return { result: { redirected: false, outcome: 'next_step' }, changed: true }
       }
       this.dropSteer(streamId, record)
       if (reply.delivery === 'steer') {
@@ -2076,7 +2076,7 @@ export class TurnRunner {
         this.emitToSession(sessionId, 'steer_consumed', this.consumedSteerPayload(record, { redirected: true }))
         this.saveConsumedSteers(sessionId, streamId)
       }
-      return { result: { redirected: true }, changed: true }
+      return { result: { redirected: true, outcome: 'delivered' }, changed: true }
     })
   }
 

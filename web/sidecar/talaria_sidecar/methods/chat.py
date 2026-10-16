@@ -2040,7 +2040,7 @@ def register(registry) -> None:
         pending, index = _steer_queue_params(params)
         run = _run_for(params)
         if run is None or run.agent is None:
-            return {"redirected": False, "withdrawn": False}
+            return {"redirected": False, "withdrawn": False, "reason": "not_running"}
         return steer_now(run.agent, pending, index)
 
     @registry.method("chat.evict_agent", requires_agent=False)

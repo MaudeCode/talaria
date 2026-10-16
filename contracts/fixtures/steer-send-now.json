@@ -1,0 +1,22 @@
+{
+  "delivered": {
+    "redirected": true,
+    "outcome": "delivered"
+  },
+  "next_step": {
+    "redirected": false,
+    "outcome": "next_step"
+  },
+  "not_running": {
+    "redirected": false,
+    "outcome": "not_running"
+  },
+  "taken": {
+    "redirected": false,
+    "outcome": "taken"
+  },
+  "failed": {
+    "redirected": false,
+    "outcome": "failed"
+  }
+}
