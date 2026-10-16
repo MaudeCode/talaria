@@ -899,6 +899,11 @@ final class UITestFixtureURLProtocol: URLProtocol, @unchecked Sendable {
             ["kind": "agent", "status": "completed", "label": "Waiting result", "review_state": "waiting"],
             ["kind": "agent", "status": "completed", "label": "Active review", "review_state": "reviewing"],
             ["kind": "agent", "status": "notice", "label": "Unknown result", "review_state": "unknown"]
+         ]]],
+        ["role": "user", "content": "Older server results", "message_id": "legacy-review-states", "_ts": 2_000_000_007,
+         "_background_update": ["kind": "delegation", "attention": true, "count": 2, "summary": "Older server results", "lines": [
+            ["kind": "agent", "status": "failed", "label": "Legacy failed goal"],
+            ["kind": "agent", "status": "completed", "label": "Legacy completed goal"]
          ]]]
     ]
 

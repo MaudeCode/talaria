@@ -32,6 +32,13 @@ final class TranscriptHostedTests: XCTestCase {
         XCTAssertNotNil(body, "The expanded update does not show the full notification")
     }
 
+    func testLegacyBackgroundFailuresKeepTheirWarningWithoutInventingParentReview() async throws {
+        let window = try await hostFixtureChat(["--ui-test-background-updates"])
+        let expected = "Legacy failed goal. The worker or parent review failed., Legacy completed goal. The worker or parent review outcome is unknown."
+        let row = await awaitElement(in: window, label: expected)
+        XCTAssertNotNil(row, "An older server's known failure must remain a warning, while its success proves no parent review")
+    }
+
     func testBackgroundReviewUsesTheAgreedPlatformIcons() {
         XCTAssertEqual(BackgroundWorkSheet.icon(BackgroundReviewState.waiting), "clock")
         XCTAssertEqual(BackgroundWorkSheet.icon(BackgroundReviewState.reviewed), "checkmark")

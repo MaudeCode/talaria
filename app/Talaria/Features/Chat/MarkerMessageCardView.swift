@@ -202,13 +202,13 @@ private struct BackgroundLineRow: View {
 
     var body: some View {
         HStack(alignment: .center, spacing: 6) {
-            if line.reviewState == .reviewing {
+            if line.reviewStateForDisplay == .reviewing {
                 ProgressView().controlSize(.mini)
                     .accessibilityHidden(true)
             } else {
-                Image(systemName: BackgroundWorkSheet.icon(line.reviewState))
+                Image(systemName: BackgroundWorkSheet.icon(line.reviewStateForDisplay))
                     .font(.caption.weight(.semibold))
-                    .foregroundStyle(line.reviewState == .failed ? Color.orange : Color.secondary)
+                    .foregroundStyle(line.reviewStateForDisplay == .failed ? Color.orange : Color.secondary)
                     .accessibilityHidden(true)
             }
             Text(verbatim: line.label)
@@ -231,8 +231,8 @@ private struct BackgroundLineRow: View {
     }
 
     static func accessibilityText(for line: BackgroundLine, parentReview: BackgroundReviewState?) -> String {
-        var text = "\(line.label). \(reviewLabel(line.reviewState))"
-        if let parentReview, parentReview != line.reviewState {
+        var text = "\(line.label). \(reviewLabel(line.reviewStateForDisplay))"
+        if let parentReview, parentReview != line.reviewStateForDisplay {
             let state = reviewLabel(parentReview)
             text += " " + String(localized: "Parent review: \(state)")
         }

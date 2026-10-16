@@ -80,15 +80,20 @@ function reviewLabel(state: NonNullable<BackgroundLine['review_state']>): string
   }
 }
 
+/** Older servers/caches can prove worker failure, but never successful parent review. */
+function lineReviewState(line: BackgroundLine): NonNullable<BackgroundLine['review_state']> {
+  return line.review_state ?? (line.status === 'failed' ? 'failed' : 'unknown')
+}
+
 function reviewDescription(line: BackgroundLine, parentReview: BackgroundLine['review_state']): string {
-  return `${line.label}. ${reviewLabel(line.review_state ?? 'unknown')}${parentReview && parentReview !== line.review_state ? ` ${m.background_review_parent({ state: reviewLabel(parentReview) })}` : ''}`
+  return `${line.label}. ${reviewLabel(lineReviewState(line))}${parentReview && parentReview !== lineReviewState(line) ? ` ${m.background_review_parent({ state: reviewLabel(parentReview) })}` : ''}`
 }
 
 function BackgroundLineRow({ line, parentReview }: { line: BackgroundLine; parentReview: BackgroundLine['review_state'] }) {
   const description = reviewDescription(line, parentReview)
   return (
     <li className="flex items-center gap-2" aria-label={description} title={description}>
-      <StatusIcon status={line.review_state ?? 'unknown'} />
+      <StatusIcon status={lineReviewState(line)} />
       <span className={cn('min-w-0 truncate', line.kind === 'agent' && 'text-text', line.kind === 'command' && 'font-mono')} title={line.label}>{line.label}</span>
     </li>
   )

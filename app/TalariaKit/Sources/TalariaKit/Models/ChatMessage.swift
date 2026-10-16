@@ -317,6 +317,12 @@ public struct BackgroundLine: Codable, Equatable {
     public let exitCode: Int?
     public let reviewState: BackgroundReviewState?
 
+    /// Older-server/cache rendering only. A known worker failure proves no successful parent review.
+    /// Remove this fallback once every retained Web contract requires review_state.
+    public var reviewStateForDisplay: BackgroundReviewState {
+        reviewState ?? (status == .failed ? .failed : .unknown)
+    }
+
     public init(kind: Kind, status: Status, label: String, exitCode: Int? = nil, reviewState: BackgroundReviewState? = nil) {
         self.kind = kind
         self.status = status
