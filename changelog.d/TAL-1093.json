@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Failed updates show their available error details without sending you to System settings.",
+      "highlight": false,
+      "components": ["web"]
+    }
+  ]
+}

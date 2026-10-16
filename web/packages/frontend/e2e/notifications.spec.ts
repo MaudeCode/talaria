@@ -21,6 +21,7 @@ interface NotificationRow {
   acknowledged_action_id: string | null
   verified_revision: string | null
   verified_version: string | null
+  detail: string | null
   unread: boolean
   active: boolean
   requires_interaction: boolean
@@ -31,12 +32,12 @@ const row = (id: string, overrides: Partial<NotificationRow> = {}): Notification
   id, kind: 'system', target: null, phase: 'notice', severity: 'info', persistent: false,
   requires_acknowledgement: false, actions: [], destination: { key: 'settings.system', label: 'Open System settings' },
   title: 'Server notice', message: 'A notification arrived.', created_at: '2026-09-26T12:00:00Z', updated_at: '2026-09-26T12:00:00Z',
-  read_at: null, acknowledged_at: null, acknowledged_action_id: null, verified_revision: null, verified_version: null,
+  read_at: null, acknowledged_at: null, acknowledged_action_id: null, verified_revision: null, verified_version: null, detail: null,
   unread: true, active: false, requires_interaction: false, can_dismiss: true,
   ...overrides,
 })
 
-test('server notification interactions preserve canonical read, clear, action, scope, and lifecycle behavior', async ({ page }) => {
+test('server notification interactions preserve canonical read, clear, action, scope, and lifecycle behavior', async ({ page }, testInfo) => {
   let scopeID = 'scope-a'
   let records: NotificationRow[] = []
   const readIDs: string[] = []
@@ -138,4 +139,21 @@ test('server notification interactions preserve canonical read, clear, action, s
   await expect(lifecyclePopup).toContainText('Installing.')
   records = [{ ...lifecycle, phase: 'succeeded', active: false, message: 'Talaria Web was updated successfully.', updated_at: '2026-09-26T12:02:00Z' }]
   await expect(lifecyclePopup).toContainText('updated successfully')
+
+  for (const target of ['webui', 'agent'] as const) {
+    const title = target === 'webui' ? 'Talaria Web update' : 'Hermes Agent update'
+    records = [{ ...lifecycle, id: target === 'webui' ? lifecycle.id : '00000000-0000-4000-8000-000000000007', target, title, phase: 'failed', active: false, severity: 'critical', destination: null,
+      message: 'The update could not be completed.', detail: 'Build failed.\nTry again.', updated_at: '2026-09-26T12:03:00Z' }]
+    const popup = page.locator('.notification-toast').filter({ hasText: title })
+    await expect(popup).toContainText('The update could not be completed.')
+    await expect(popup.getByRole('button', { name: 'Open System settings', exact: true })).toHaveCount(0)
+    await page.getByRole('button', { name: 'Notifications', exact: true }).click()
+    await expect(center).toContainText('The update could not be completed.')
+    const detail = center.getByText('Build failed.\nTry again.')
+    await expect(detail).toBeVisible()
+    expect(await detail.evaluate((node) => getComputedStyle(node).whiteSpace)).toBe('pre-line')
+    await expect(center.getByRole('button', { name: 'Open System settings', exact: true })).toHaveCount(0)
+    await page.screenshot({ path: testInfo.outputPath(`failed-${target}.png`) })
+    await center.getByRole('button', { name: 'Close', exact: true }).click()
+  }
 })

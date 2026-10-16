@@ -12,14 +12,14 @@ const MESSAGES: Record<Phase, string> = {
   restarting: 'The update is installed. Talaria Web is restarting.',
   succeeded: 'Talaria Web was updated successfully.',
   blocked: 'The update is waiting for active work to finish.',
-  failed: 'The update could not be completed. Open System settings for details.',
+  failed: 'The update could not be completed.',
   unknown: 'The connection closed before completion could be verified. Check the installed version before trying again.',
 }
 
 /** A synthetic server record for one update operation; `message` stands in for the server's wording. */
 const record = (id: string, phase: Phase, target: 'webui' | 'agent' = 'webui') => ({
   id, kind: 'update', target, phase, severity: phase === 'failed' || phase === 'unknown' ? 'critical' : 'info',
-  persistent: false, requires_acknowledgement: false, actions: [], destination: { key: 'settings.system', label: 'Open System settings' },
+  persistent: false, requires_acknowledgement: false, actions: [], destination: phase === 'failed' ? null : { key: 'settings.system', label: 'Open System settings' },
   title: target === 'webui' ? 'Talaria Web update' : 'Hermes Agent update',
   message: target === 'webui' ? MESSAGES[phase] : MESSAGES[phase].replace('Talaria Web', 'Hermes Agent'),
   created_at: '2026-09-27T12:00:00Z', updated_at: `2026-09-27T12:0${Object.keys(MESSAGES).indexOf(phase)}:00Z`,
@@ -118,7 +118,7 @@ test('a dropped Web update keeps the dialog reconnecting, then shows the server 
   dropExpectedFailures(errors)
 })
 
-test('an unverifiable outcome says so and checks again without starting another update', async ({ page, errors }) => {
+test('an unverifiable outcome says so and checks again without starting another update', async ({ page, errors }, testInfo) => {
   const server = await serveNotifications(page)
   await serveUpdatesCheck(page, { web: 1, agent: 1 })
   let applies = 0
@@ -134,11 +134,14 @@ test('an unverifiable outcome says so and checks again without starting another 
   server.tabUpdate = record(WEB_ID, 'failed')
   await dialog.getByRole('button', { name: 'Check again', exact: true }).click()
   await expect(dialog).toContainText(MESSAGES.failed)
+  await expect(dialog).not.toContainText('Open System settings')
   expect(server.reads).toBeGreaterThan(reads)
   // The server keeps the apply's own explanation on the record; the dialog shows it, line breaks included.
   server.tabUpdate = { ...record(WEB_ID, 'failed'), detail: 'npm run build failed.\nRun `npm ci` in web/ and press Update again.', updated_at: '2026-09-27T12:20:00Z' }
   await expect(dialog).toContainText('npm run build failed.')
   await expect(dialog.getByText(/Run `npm ci` in web\//)).toBeVisible()
+  expect(await dialog.getByText(/Run `npm ci` in web\//).evaluate((node) => getComputedStyle(node).whiteSpace)).toBe('pre-line')
+  await page.screenshot({ path: testInfo.outputPath('updating-failed.png') })
   expect(applies).toBe(1)
   dropExpectedFailures(errors)
 })
