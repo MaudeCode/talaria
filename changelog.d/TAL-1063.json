@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Changed",
+      "summary": "Load pages of long conversations without rebuilding the entire transcript for each request.",
+      "highlight": false,
+      "components": ["web"]
+    }
+  ]
+}

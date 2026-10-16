@@ -11,7 +11,7 @@ import { createHash } from 'node:crypto'
 import { Worker } from 'node:worker_threads'
 import type { AgentStorage } from '@maudecode/talaria-web-contracts'
 import { str } from '../util.js'
-import { stateDbMessageFingerprint } from './state-db-identity.js'
+import { stateDbMessageFingerprint, stateDbMessageKey } from './state-db-identity.js'
 import { MESSAGING_SOURCES } from './source-kind.js'
 import { looksLikeDefaultCliTitle, normalizeSourceName } from './titles.js'
 
@@ -297,11 +297,16 @@ function localLineages(db: DatabaseSync, sid?: string): Map<string, LocalLineage
 }
 
 /** The validated receipt's current physical target, or the original id on old Agents / unproven metadata. */
-export function stateDbLocalTarget(dbPath: string, sid: string): string {
-  if (!existsSync(dbPath)) return sid
+export function stateDbLocalTarget(dbPath: string, sid: string, opts: { onRead?: (target: string) => void } = {}): string {
+  if (!existsSync(dbPath)) { opts.onRead?.(sid); return sid }
   let db: DatabaseSync
   try { db = openStateDbReadonly(dbPath) } catch { return sid }
-  try { db.exec('BEGIN'); return localLineages(db, sid).get(sid)?.ids.at(-1) ?? sid } catch { return sid } finally { db.close() }
+  try {
+    db.exec('BEGIN')
+    const target = localLineages(db, sid).get(sid)?.ids.at(-1) ?? sid
+    opts.onRead?.(target)
+    return target
+  } catch { return sid } finally { db.close() }
 }
 
 export const AGENT_STORAGE_OK: AgentStorage = Object.freeze({ state: 'ok', reason: null })
@@ -1041,6 +1046,15 @@ export function stateDbSessionMessages(dbPath: string, sid: string, opts: { stit
  * (TAL-493: an empty id-capable read is a baseline of 0; a missing database or a failed read says nothing).
  */
 export function stateDbSessionRead(dbPath: string, sid: string, opts: { stitch?: boolean; lineage?: string[] | null } = {}): StateDbRead {
+  return readStateDbSession(dbPath, sid, opts)
+}
+
+/** The same snapshot and provenance projection, restricted to physical rows past the seen marker. */
+export function stateDbSessionTailRead(dbPath: string, sid: string, afterId: number, opts: { lineage?: string[] | null; unidentified?: readonly ReadonlyMap<string, number>[] } = {}): StateDbRead & { anchor?: Dict; requiresFullRead?: boolean } {
+  return readStateDbSession(dbPath, sid, { ...opts, stitch: false, afterId })
+}
+
+function readStateDbSession(dbPath: string, sid: string, opts: { stitch?: boolean; lineage?: string[] | null; afterId?: number; unidentified?: readonly ReadonlyMap<string, number>[] }): StateDbRead & { anchor?: Dict; requiresFullRead?: boolean } {
   const none: StateDbRead = { rows: [], idCapable: false, ok: false, reason: null, generation: null }
   const id = sid.trim()
   if (!id || !existsSync(dbPath)) return none
@@ -1074,8 +1088,11 @@ export function stateDbSessionRead(dbPath: string, sid: string, opts: { stitch?:
       }
     }
     const activeClause = available.has('active') ? ' AND (active IS NULL OR active != 0)' : ''
+    if (opts.afterId !== undefined && !hasId) return { ...none, ok: true }
+    const range = opts.afterId === undefined ? '' : ' AND id > ?'
+    const rangeArgs = opts.afterId === undefined ? [] : [opts.afterId]
     const order = hasId ? 'id' : 'timestamp'
-    const rows = db.prepare(`SELECT ${selected.join(', ')}, session_id FROM messages WHERE session_id IN (${chain.map(() => '?').join(', ')})${activeClause} ORDER BY ${order} ASC`).all(...chain) as Dict[]
+    const rows = db.prepare(`SELECT ${selected.join(', ')}, session_id FROM messages WHERE session_id IN (${chain.map(() => '?').join(', ')})${activeClause}${range} ORDER BY ${order} ASC`).all(...chain, ...rangeArgs) as Dict[]
     const projected = rows.map((row) => projectStateDbMessage(row, hasId))
     // TAL-709: an in-place compaction archives the live rows and re-inserts each as a copy that keeps its role and timestamp
     // (content may be pruned). A copy takes the id of the oldest archived row it copies, so the merge sees a row it has
@@ -1087,7 +1104,7 @@ export function stateDbSessionRead(dbPath: string, sid: string, opts: { stitch?:
       // compactions it holds.
       const sameCall = available.has('tool_call_id') ? " AND COALESCE(a.tool_call_id, '') = COALESCE(m.tool_call_id, '')" : ''
       const vouched = [available.has('compacted') ? 'a.compacted = 1' : '', available.has('tool_call_id') ? 'm.tool_call_id IS NOT NULL' : '', 'a.content = m.content'].filter(Boolean).join(' OR ')
-      const twins = db.prepare(`SELECT m.id AS id, MIN(a.id) AS twin FROM messages m JOIN messages a ON a.session_id = m.session_id AND a.active = 0 AND a.role = m.role AND a.timestamp = m.timestamp AND a.id < m.id${sameCall} WHERE m.session_id IN (${chain.map(() => '?').join(', ')}) AND (m.active IS NULL OR m.active != 0) AND (${vouched}) GROUP BY m.id`).all(...chain) as Dict[]
+      const twins = db.prepare(`SELECT m.id AS id, MIN(a.id) AS twin FROM messages m JOIN messages a ON a.session_id = m.session_id AND a.active = 0 AND a.role = m.role AND a.timestamp = m.timestamp AND a.id < m.id${sameCall} WHERE m.session_id IN (${chain.map(() => '?').join(', ')}) AND (m.active IS NULL OR m.active != 0) AND (${vouched})${opts.afterId === undefined ? '' : ' AND m.id > ?'} GROUP BY m.id`).all(...chain, ...rangeArgs) as Dict[]
       const twinOf = new Map(twins.map((row) => [row.id, row.twin]))
       for (const [i, row] of rows.entries()) {
         const twin = twinOf.get(row.id)
@@ -1111,7 +1128,25 @@ export function stateDbSessionRead(dbPath: string, sid: string, opts: { stitch?:
     if (hasId) {
       for (const m of projected) m._state_db_generation = generation
     }
-    return { rows: projected, idCapable: hasId, ok: true, reason: null, generation }
+    let anchor: Dict | undefined
+    if (opts.afterId !== undefined) {
+      anchor = projected.find((m) => m._state_db_row_id === opts.afterId)
+      if (!anchor) {
+        const row = db.prepare(`SELECT ${selected.join(', ')}, session_id FROM messages WHERE session_id IN (${chain.map(() => '?').join(', ')}) AND id = ?${activeClause} LIMIT 1`).get(...chain, opts.afterId) as Dict | undefined
+        if (row) anchor = { ...projectStateDbMessage(row, true), _state_db_generation: generation }
+      }
+    }
+    let requiresFullRead = false
+    if (opts.afterId !== undefined && opts.unidentified) {
+      const matches = projected.filter((m) => opts.unidentified!.some((keys) => keys.has(stateDbMessageKey(m))))
+      if (matches.length) {
+        // Projection can normalize content/timestamps. A bounded role-key superset is conservative copy detection.
+        const roles = [...new Set(matches.map((m) => m.role))]
+        const covered = db.prepare(`SELECT 1 FROM messages WHERE session_id IN (${chain.map(() => '?').join(', ')}) AND id <= ? AND role IN (SELECT value FROM json_each(?))${activeClause} LIMIT 1`).get(...chain, opts.afterId, JSON.stringify(roles))
+        requiresFullRead = Boolean(covered) || available.has('message_uid')
+      }
+    }
+    return { rows: projected, idCapable: hasId, ok: true, reason: null, generation, requiresFullRead, ...(anchor ? { anchor } : {}) }
   } catch (error) {
     return { ...none, reason: stateDbReadFailure(error).reason }
   } finally {

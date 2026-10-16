@@ -1,3 +1,4 @@
+import { markedStateDbGeneration } from './state-db-identity.js'
 import { str } from '../util.js'
 /**
  * The WebUI session store (Python `api/models.py`): `sessions/<sid>.json`
@@ -385,7 +386,12 @@ export class SessionStore {
     if (opts.touchUpdatedAt ?? true) session.updated_at = this.deps.now()
     if (markerCurrent) session.state_db_seen_stamp = session.updated_at
     session.messages = withBackgroundDisplayKinds(session.messages, session)
-    const payload = JSON.stringify(session.toDocument(), null, 2)
+    const prefix = session.prefixIndex
+    let appendOnly = Boolean(prefix && session.messages.length >= prefix.length && prefix.generation === markedStateDbGeneration(session) && prefix.matchesToolCalls(session.tool_calls))
+    const payload = JSON.stringify(session.toDocument(), function (this: unknown, key: string, value: unknown): unknown {
+      if (appendOnly && this === session.messages && Number(key) < prefix!.length && !prefix!.matchesRow(Number(key), value)) appendOnly = false
+      return value
+    }, 2)
     const path = session.path = this.pathFor(session.session_id)
     mkdirSync(this.sessionDir, { recursive: true })
     try {
@@ -414,6 +420,8 @@ export class SessionStore {
     } catch { /* stat failures never block the save */ }
     writeAtomic(path, payload)
     session.sidecarLoadedSignature = statSignature(path)
+    if (appendOnly) prefix!.savedAppend(session.messages, session.sidecarLoadedSignature)
+    else delete session.prefixIndex
     this.invalidatePersistedIds()
     if (!(opts.skipIndex ?? false)) this.queueIndexUpdate([session])
     if (session.messages.length) this.clearDeletedTombstone(session.session_id)

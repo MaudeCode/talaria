@@ -93,6 +93,14 @@ and restarts once active work drains by exiting with code 75 so the `talaria-web
 respawns the worker with the same PID tree that ctl, launchd, and systemd track. npm and container installs
 report `manual_update`.
 
+Windowed session details use a revision-owned `SessionPrefixIndex` on the resident session. It records absolute
+turn coordinates, tool-result dependencies, provenance and transcript summaries. Page derivation widens only to the
+required turns. A validated seen marker permits a keyset read of the Agent tail; legacy markers and ambiguous
+unidentified copies retain the full-reader fallback. The tail summary and ownership/routing lookups are cached against
+session, database and WAL revisions, so unchanged older pages do not open SQLite. Saving verifies indexed rows during
+serialization before extending an appended prefix; rewritten rows invalidate it. Requests without `msg_limit` retain
+the full projection. No index is written to the Agent database or the session document.
+
 ## 4. Sidecar
 
 `sidecar/talaria_sidecar` (`docs/architecture/sidecar-rpc.md`) is spawned as

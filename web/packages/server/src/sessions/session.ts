@@ -1,3 +1,4 @@
+import type { SessionPrefixIndex } from './prefix-index.js'
 /**
  * The persisted WebUI session record (Python `api/models.Session`). The file
  * layout is preserved: metadata fields first in Python's order, then the
@@ -314,6 +315,7 @@ export class Session {
   extra: Record<string, unknown>
 
   // Runtime-only state, never serialized.
+  prefixIndex?: SessionPrefixIndex
   loadedMetadataOnly = false
   metadataMessageCount: number | null = null
   anchorSceneIndex: Record<string, number>
@@ -489,12 +491,12 @@ export class Session {
   }
 
   /** Sidebar/index row (Python `Session.compact`). */
-  compact(opts: { includeRuntime?: boolean; activeStreamIds?: Set<string>; sidebarMetadataOnly?: boolean; contextLengthFor?: (model: string | null, provider: string | null) => number | null; modelOptionFor?: ((model: string | null, provider: string | null) => string | null) | undefined } = {}): Record<string, unknown> {
+  compact(opts: { transcriptSummary?: { userCount: number; lastTimestamp: number | null }; includeRuntime?: boolean; activeStreamIds?: Set<string>; sidebarMetadataOnly?: boolean; contextLengthFor?: (model: string | null, provider: string | null) => number | null; modelOptionFor?: ((model: string | null, provider: string | null) => string | null) | undefined } = {}): Record<string, unknown> {
     const activeStreamIds = opts.activeStreamIds ?? new Set<string>()
     const hasPending = this.hasPendingPrompt
     let messageCount = this.metadataMessageCount ?? this.messages.length
     if (hasPending) messageCount = Math.max(messageCount, 1)
-    let lastMessageAt: number = lastMessageTimestamp(this.messages) ?? this.updated_at
+    let lastMessageAt: number = (opts.transcriptSummary ? opts.transcriptSummary.lastTimestamp : lastMessageTimestamp(this.messages)) ?? this.updated_at
     if (hasPending && this.pending_started_at) lastMessageAt = this.pending_started_at
     const compact: Record<string, unknown> = {
       session_id: this.session_id,
@@ -550,7 +552,7 @@ export class Session {
       compact.worktree_created_at = this.worktree_created_at
     }
     Object.assign(compact, {
-      user_message_count: this.userMessageCount(),
+      user_message_count: opts.transcriptSummary?.userCount ?? this.userMessageCount(),
       active_stream_id: this.active_stream_id,
       pending_user_message: this.pending_user_message,
       has_pending_user_message: hasPending,

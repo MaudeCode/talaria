@@ -1,3 +1,4 @@
+import { SessionPrefixIndex } from './prefix-index.js'
 /**
  * Route-level session operations (the Python `/api/session*` handlers): the
  * detail payload, list and search, and every mutation with its guards.
@@ -16,19 +17,19 @@ import { allSessions, buildSessionListPayload, reconcileLocalSessionRows, sessio
 import { anchorSceneIntOrNull, fullToolResult, hydrateAnchorActivityScenes, normalizeAnchorSceneMessageRef, readAnchorSceneRows, storeAnchorScene, withTurnIds } from './anchor.js'
 import { COMPRESSION_RECOVERY_ACTION_START_FOCUSED, compressionRecoveryPayload, forgetContextFigures, isSafeSessionId, lastMessageTimestamp, Session, sharePath, stripAttachedFilesMarker, titleFrom, type Message } from './session.js'
 import { SessionBusy, SessionNotFound, statSignature, type SessionStore } from './store.js'
-import { UNSETTLED_TODO_KEY, attachTodoState } from './todo.js'
+import { UNSETTLED_TODO_KEY, attachTodoSnapshot, attachTodoState } from './todo.js'
 import { isClaudeCodeSessionId, type ClaudeCodeSessionSource } from './claude-code.js'
 import { auditSessionRecovery, repairSafeSessionRecovery, type RecoveryDeps } from './recovery.js'
-import { agentSessionRowsExisting, agentSessionRowsExistingAsync, CANONICAL_READ_ONLY_REASON, OWNERSHIP_UNAVAILABLE_REASON, CONVERSATION_ROUND_THRESHOLD, countConversationRounds, stateDbCompressionLineage, stateDbTailToolContent, stateDbLineageReport, stateDbLocalTarget, stateDbSessionMessages, stateDbSessionRead, stateDbSessionRow, stateDbSessionSources, stateDbSessionSourcesAsync, stateDbTimestampSeconds, type StateDbRead, type StateDbSessionSource } from './state-db.js'
+import { agentSessionRowsExisting, agentSessionRowsExistingAsync, CANONICAL_READ_ONLY_REASON, OWNERSHIP_UNAVAILABLE_REASON, CONVERSATION_ROUND_THRESHOLD, countConversationRounds, stateDbCompressionLineage, stateDbTailToolContent, stateDbLineageReport, stateDbLocalTarget, stateDbSessionMessages, stateDbSessionRead, stateDbSessionTailRead, stateDbSessionRow, stateDbSessionSources, stateDbSessionSourcesAsync, stateDbTimestampSeconds, type StateDbRead, type StateDbSessionSource } from './state-db.js'
 import { completionIncomplete, fallbackHandoffSummary, HANDOFF_SYSTEM_PROMPT, handoffMarker, handoffPayload, handoffTranscript, messageHandoffPayload, sameHandoff } from './handoff.js'
 import { anchorMessageKey, anchorSummary, CompressionJobs, compressionReference, visibleMessagesForAnchor, type CompressionJob } from './compress.js'
 import { chatReadiness, SidecarError, type SidecarLike } from '../sidecar/client.js'
-import { agentSteerText, attachedFilesPrompt, attachmentObjects, checkpointTurnStart, dedupeContext, isContextCompressionMarker, journalOutputRows, looksLikeCurrentUserTurn, stoppedTurnContext, mergeSessionMessagesAppendOnly, messageIdentity, pendingUserRow, reasoningFieldsText, sanitizeMessagesForApi, stateDbSeenId, stripWorkspacePrefix, withAttachmentObjects, withBodyExcerpts, withDisplayMedia, withMarkerKinds, withMirrorSources, withSceneRowMedia, withPendingUserTurn, withToolCallOutcomes, withoutRunningTurnOutput, type ToolResultView } from './merge.js'
+import { agentSteerText, ApiMessageSummary, appendStateDbIdentityRows, attachedFilesPrompt, attachmentObjects, checkpointTurnStart, dedupeContext, isContextCompressionMarker, journalOutputRows, looksLikeCurrentUserTurn, stoppedTurnContext, mergeSessionMessagesAppendOnly, messageIdentity, pendingUserRow, reasoningFieldsText, sanitizeMessagesForApi, stateDbSeenId, stripWorkspacePrefix, withAttachmentObjects, withBodyExcerpts, withDisplayMedia, withMarkerKinds, withMirrorSources, withSceneRowMedia, withPendingUserTurn, withToolCallOutcomes, withoutRunningTurnOutput, type ToolResultView } from './merge.js'
 import { withBackgroundUpdates } from './background-updates.js'
-import { stateDbIdentityKeys, stampStateDbGeneration, stateDbMessageRepresented } from './state-db-identity.js'
+import { markedStateDbGeneration, stateDbIdentityKeys, stampStateDbGeneration, stateDbMessageRepresented } from './state-db-identity.js'
 import { sourceKind } from './source-kind.js'
 import { withBackgroundLinks, type Receipt } from './background-tasks.js'
-import { messagesForLimitedPayload, messageWindowForDisplay, MAX_MSG_LIMIT, parseMsgLimit, toolCallsForMessageWindow } from './window.js'
+import { messagesForLimitedPayload, messageCountsAsRenderable, messageWindowForDisplay, MAX_MSG_LIMIT, parseMsgLimit, toolCallsForMessageWindow } from './window.js'
 import { redactText } from '../redact.js'
 import { workspaceDisplayName, type WorkspaceEntry, type WorkspaceRegistry } from '../workspace/workspaces.js'
 import { buildShareSnapshot, type ShareStore } from './shares.js'
@@ -267,9 +268,23 @@ export class SessionService {
     return this.visibleToActiveProfile(session.profile)
   }
 
+  private localTargets: { key: string; ids: Map<string, string> } | null = null
+
   /** One receipt-backed physical target for every operation on a local conversation alias. */
   resolveSessionId(sid: string): string {
-    try { return stateDbLocalTarget(this.stateDbPath(null), sid) } catch { return sid }
+    const path = this.stateDbPath(null)
+    const key = JSON.stringify([statSignature(path), statSignature(`${path}-wal`), path])
+    if (this.localTargets?.key !== key) this.localTargets = { key, ids: new Map() }
+    const cached = this.localTargets.ids.get(sid)
+    if (cached) return cached
+    try {
+      return stateDbLocalTarget(path, sid, { onRead: (target) => {
+        // A failed or changing read cannot seed a routing cache.
+        if (key !== JSON.stringify([statSignature(path), statSignature(`${path}-wal`), path])) return
+        if (this.localTargets!.ids.size >= 500) this.localTargets!.ids.clear()
+        this.localTargets!.ids.set(sid, target)
+      } })
+    } catch { return sid }
   }
 
   /** Python `_lookup_cli_session_metadata(...).get('read_only')` plus the persisted sidecar flag and a not-claimable foreign owner. */
@@ -757,6 +772,122 @@ export class SessionService {
     return statSignature(this.store.pathFor(s.session_id))
   }
 
+  private readonly pageTails = new WeakMap<SessionPrefixIndex, { key: string; tail: Message[]; index: SessionPrefixIndex; enoughContext: boolean; sources: SessionService['stateDbSources']; contextRows: Message[]; contextLength: number; summary: { total: number; last: number; todo: Record<string, unknown> | null; compression: ReturnType<SessionPrefixIndex['compressionReference']> } }>()
+  private readonly pageContexts = new WeakMap<SessionPrefixIndex, { key: string; local: Message[]; enough: boolean; contextRows: Message[]; contextLength: number; marker: boolean; unidentified: readonly ReadonlyMap<string, number>[] }>()
+
+  private prefixIndex(s: Session, revision: string | null): SessionPrefixIndex {
+    const previous = s.prefixIndex
+    if (previous?.rows === s.messages && previous.revision === revision && previous.length <= s.messages.length) {
+      previous.extend()
+      return previous
+    }
+    return s.prefixIndex = new SessionPrefixIndex(s.messages, revision, markedStateDbGeneration(s), { toolCalls: s.tool_calls })
+  }
+
+  /** Existing projections, once per complete turn range, in absolute transcript coordinates. */
+  private deriveRange(s: Session, rows: Message[], baseIndex: number, initialTurn: string, journaled: boolean, refs: Pick<Map<string, number>, 'get'>, calls: unknown[]): Message[] {
+    return this.backgroundLinked(s, hydrateAnchorActivityScenes(withToolCallOutcomes(withBackgroundUpdates(withMarkerKinds(withTurnIds(withAttachmentObjects(rows), baseIndex, initialTurn), s), s), calls, s.active_stream_id, baseIndex), s.anchor_activity_scenes, { activeTurnId: s.active_stream_id, runningScene: !journaled, clipToolResults: true, baseIndex, refCounts: refs })) as Message[]
+  }
+
+  private limitedDetail(s: Session, index: SessionPrefixIndex, limit: number, before: number | null, pending: ReturnType<SessionService['pendingTurn']>, journaled: ReturnType<SessionService['journaledActiveTurn']>) {
+    let prefixEnd = s.messages.length
+    const turnId = pending?.turnId ?? journaled?.turnId
+    if (turnId) prefixEnd = Math.min(prefixEnd, index.turns.get(turnId)?.first ?? prefixEnd)
+    const prompt = pending ? index.prompts.get(pending.activeTurnToken) : undefined
+    if (prompt !== undefined) prefixEnd = Math.min(prefixEnd, prompt)
+    const dbPath = this.stateDbPath(s.profile)
+    const key = JSON.stringify([index.revision, index.length, statSignature(dbPath), statSignature(`${dbPath}-wal`), s.active_stream_id, pending, journaled, s.state_db_seen_id, s.state_db_seen_boundary, s.state_db_seen_stamp, s.updated_at, this.deps.activeProfile(), s.compression_anchor_summary, s.compression_anchor_message_key, s.compression_anchor_visible_idx, this.compactionWaiters.has(s.active_stream_id ?? '')])
+    let cached = this.pageTails.get(index)
+    if (cached?.key !== key || cached.contextRows !== s.context_messages || cached.contextLength !== s.context_messages.length) {
+      const streaming = Boolean(s.active_stream_id && !this.compactionWaiters.has(s.active_stream_id))
+      const contextKey = JSON.stringify([index.revision, s.active_stream_id, index.length, streaming])
+      let context = this.pageContexts.get(index)
+      if (context?.key !== contextKey || context.contextRows !== s.context_messages || context.contextLength !== s.context_messages.length) {
+        const summary = !s.context_messages.length && !s.active_stream_id ? index.model : new ApiMessageSummary(s.active_stream_id, !s.context_messages.length)
+        if (summary !== index.model && !streaming) { for (const row of s.context_messages.length ? s.context_messages : s.messages) { summary.add(row); if (summary.enough) break } summary.finish() }
+        context = { key: contextKey, local: summary.rows, enough: summary.enough, contextRows: s.context_messages, contextLength: s.context_messages.length, marker: summary.marker, unidentified: summary.enough ? [] : summary.unidentified }
+        this.pageContexts.set(index, context)
+      }
+      let stateRows: Message[]
+      let effectiveSeenId: number | null = null
+      let cacheable = true
+      let appended: Message[] | null = null
+      if (typeof s.state_db_seen_id === 'number' && str(s.source_tag || s.raw_source || s.session_source).trim().toLowerCase() !== 'subagent') {
+        const read = stateDbSessionTailRead(dbPath, s.session_id, s.state_db_seen_id, { lineage: s.state_db_lineage?.[0] === s.session_id ? s.state_db_lineage : null, unidentified: [...index.unidentified, ...context.unidentified] })
+        if (!read.ok) cacheable = false
+        const markerRows = read.anchor ? [read.anchor, ...read.rows] : read.rows
+        if (read.ok && read.idCapable && currentStateDbSeenId(s, markerRows) !== null) {
+          // Covered rows consume unidentified local copies before a new duplicate. Any such match needs the full snapshot.
+          const ambiguous = read.requiresFullRead === true
+          if (!ambiguous) {
+            const includeUids = read.rows.some((m) => stateDbIdentityKeys(m).some((id) => id.startsWith('uid:')))
+            const mode = includeUids ? 1 : 0
+            appended = appendStateDbIdentityRows(read.rows, s.state_db_seen_id, index.identities[mode], index.unidentified[mode], index.generation, includeUids)
+            stateRows = read.rows
+            effectiveSeenId = s.state_db_seen_id
+          }
+        }
+      }
+      if (appended === null) {
+        stateRows = this.stateDbRows(s)
+        effectiveSeenId = currentStateDbSeenId(s, stateRows)
+        appended = this.mergedTranscript(s, s.messages, stateRows).slice(s.messages.length)
+      }
+      let tail = [...s.messages.slice(prefixEnd), ...appended]
+      if (pending) tail = withPendingUserTurn(tail, { ...pending, localCount: s.messages.length - prefixEnd })
+      if (journaled) tail = withoutRunningTurnOutput(tail, { ...journaled, localCount: s.messages.length - prefixEnd })
+      const tailIndex = new SessionPrefixIndex(tail, index.revision, index.generation, { baseIndex: prefixEnd, initialTurn: prefixEnd ? index.turnId(prefixEnd - 1) : 'legacy:start', timestampFloor: index.summary(prefixEnd).maxTimestamp, todoFloor: index.summary(prefixEnd).maxTodoTimestamp, parent: { index, end: prefixEnd } })
+      const enoughContext = !streaming && (context.enough || sanitizeMessagesForApi(context.marker ? context.local : mergeSessionMessagesAppendOnly(context.local, stateRows!, { truncationWatermark: s.truncation_watermark, compressedWatermark: s.truncation_watermark_compressed, stateDbSeenId: effectiveSeenId, stateDbGeneration: index.generation }).filter((m) => !s.active_stream_id || m._turn_id !== s.active_stream_id), { maxMessages: 4 }).length >= 4)
+      const owners = new Map<string, ReturnType<SessionService['stateDbSources']>>()
+      const sources: SessionService['stateDbSources'] = (ids, profile) => {
+        const ownerKey = JSON.stringify([ids, profile])
+        const existing = owners.get(ownerKey)
+        if (existing) return existing
+        const result = this.stateDbSources(ids, profile)
+        if (result) owners.set(ownerKey, result)
+        return result
+      }
+      cached = { key, tail, index: tailIndex, enoughContext, sources, contextRows: s.context_messages, contextLength: s.context_messages.length,
+        summary: { total: prefixEnd + tail.length, last: Math.max(index.summary(prefixEnd).maxTimestamp, tailIndex.summary().maxTimestamp), todo: tailIndex.summary().todo ?? index.summary(prefixEnd).todo, compression: index.compressionReference(s, prefixEnd, tailIndex) } }
+      if (cacheable) this.pageTails.set(index, cached)
+    }
+    const { tail, index: tailIndex } = cached
+    const total = prefixEnd + tail.length
+    const end = before === null ? total : Math.max(0, Math.min(before, total))
+    const readRange = (start: number, stop: number) => start >= prefixEnd ? tail.slice(start - prefixEnd, stop - prefixEnd) : [...s.messages.slice(start, Math.min(stop, prefixEnd)), ...(stop > prefixEnd ? tail.slice(0, stop - prefixEnd) : [])]
+    const idAt = (at: number) => at < prefixEnd ? index.turnId(at) : tailIndex.turnId(at)
+    const spanAt = (at: number) => {
+      const id = idAt(at), prefix = index.turns.get(id), suffix = tailIndex.turns.get(id)
+      const dependencies = [index.dependencies.get(id), tailIndex.dependencies.get(id)]
+      const first = Math.min(...dependencies.map((span) => span?.first ?? total))
+      const last = Math.max(...dependencies.map((span) => span ? Math.min(span.last, total - 1) : -1))
+      return { first: Math.min(prefix && prefix.first < prefixEnd ? prefix.first : total, suffix?.first ?? total, first), last: Math.max(prefix && prefix.first < prefixEnd ? Math.min(prefix.last, prefixEnd - 1) : -1, suffix?.last ?? -1, last) + 1 }
+    }
+    let start = end ? spanAt(Math.max(0, end - limit)).first : 0
+    if (pending && before === null) start = Math.min(start, prefixEnd)
+    let stop = end ? spanAt(end - 1).last : 0
+    // Stamped ids can recur non-contiguously. Include every row of a selected turn, as the full derivation does.
+    const refs = { get: (ref: string) => index.refCountBefore(ref, prefixEnd) + (tailIndex.refCounts.get(ref) ?? 0) }
+    let derived: Message[] = []
+    for (;;) {
+      for (let at = start; at < stop; at += 1) { const span = spanAt(at); if (span.first < start) { start = span.first; at = start - 1 } stop = Math.max(stop, span.last) }
+      const rows = readRange(start, stop)
+      const calls = index.toolCalls(start, rows.length)
+      derived = this.deriveRange(s, rows, start, start ? idAt(start - 1) : 'legacy:start', Boolean(journaled), refs, calls)
+      const [page, relative] = messageWindowForDisplay(derived, limit, end - start)
+      if (relative > 0 || start === 0 || page.filter((m) => messageCountsAsRenderable(m)).length >= limit) {
+        let offset = start + relative
+        let messages = page as Message[]
+        if (pending && before === null) {
+          const at = derived.findIndex((m) => m.role === 'user' && m._active_turn_token === pending.activeTurnToken)
+          if (at >= 0 && start + at < offset) { messages = derived.slice(at, relative + messages.length); offset = start + at }
+        }
+        return { messages, offset, ...cached.summary, enoughContext: cached.enoughContext, sources: cached.sources }
+      }
+      start = spanAt(Math.max(0, start - Math.max(limit, stop - start))).first
+    }
+  }
+
   /** Python `_handle_session_get` on the WebUI sidecar (state.db merge pending). */
   detail(sid: string, query: { messages?: string | null | undefined; msg_limit?: string | null | undefined; msg_before?: string | null | undefined; resolve_model?: string | null | undefined }): Record<string, unknown> {
     if (!sid) throw new HttpFailure(400, 'session_id is required')
@@ -778,19 +909,21 @@ export class SessionService {
     }
     this.clearStaleStreamState(s)
     const journaled = loadMessages ? this.journaledActiveTurn(s) : null
-    const stateRows = loadMessages ? this.stateDbRows(s) : []
-    let transcript = loadMessages ? this.mergedTranscript(s, s.messages, stateRows) : []
     const pending = loadMessages ? this.pendingTurn(s) : null
-    if (pending) transcript = withPendingUserTurn(transcript, pending)
-    if (journaled)transcript = withoutRunningTurnOutput(transcript, { ...journaled, localCount: s.messages.length })
+    const prefix = loadMessages && msgLimit !== null ? this.prefixIndex(s, revisionBefore) : null
+    const limited = prefix && msgLimit !== null ? this.limitedDetail(s, prefix, msgLimit, msgBefore, pending, journaled) : null
+    const stateRows = loadMessages && !limited ? this.stateDbRows(s) : []
+    let transcript = loadMessages && !limited ? this.mergedTranscript(s, s.messages, stateRows) : []
+    if (pending && !limited) transcript = withPendingUserTurn(transcript, pending)
+    if (journaled && !limited)transcript = withoutRunningTurnOutput(transcript, { ...journaled, localCount: s.messages.length })
     // Turn ids, tool outcomes and scenes are computed over the full transcript, so every window reports the same values.
-    const all: unknown[] = loadMessages ? this.backgroundLinked(s, hydrateAnchorActivityScenes(withToolCallOutcomes(withBackgroundUpdates(withMarkerKinds(withTurnIds(withAttachmentObjects(transcript)), s), s), s.tool_calls, s.active_stream_id), s.anchor_activity_scenes, { activeTurnId: s.active_stream_id, runningScene: !journaled, clipToolResults: msgLimit !== null })) : []
-    let truncated: unknown[] = []
-    let offset = 0
-    let summaryCount: number | null = null
-    let summaryLast: number | null = null
+    const all: unknown[] = loadMessages && !limited ? this.backgroundLinked(s, hydrateAnchorActivityScenes(withToolCallOutcomes(withBackgroundUpdates(withMarkerKinds(withTurnIds(withAttachmentObjects(transcript)), s), s), s.tool_calls, s.active_stream_id), s.anchor_activity_scenes, { activeTurnId: s.active_stream_id, runningScene: !journaled, clipToolResults: msgLimit !== null })) : []
+    let truncated: unknown[] = limited?.messages ?? []
+    let offset = limited?.offset ?? 0
+    let summaryCount: number | null = limited?.total ?? null
+    let summaryLast: number | null = limited?.last ?? null
     if (loadMessages) {
-      ;[truncated, offset] = messageWindowForDisplay(all, msgLimit, msgBefore)
+      if (!limited) [truncated, offset] = messageWindowForDisplay(all, msgLimit, msgBefore)
       // TAL-368: a tail window starts no later than the running turn's prompt, so a turn whose output stays in the
       // transcript (no journal to replay it) keeps its prompt; older pages end before it, so it is never sent twice.
       // ponytail: the window grows with that turn's persisted rows; clip the turn instead if degraded runs get long.
@@ -806,9 +939,9 @@ export class SessionService {
       summaryCount = s.metadataMessageCount ?? s.messages.length
       summaryLast = lastMessageTimestamp(s.messages) ?? 0
     }
-    const windowed = loadMessages && msgLimit !== null && (msgBefore !== null || truncated.length < all.length)
+    const windowed = loadMessages && msgLimit !== null && (msgBefore !== null || truncated.length < (limited?.total ?? all.length))
     let toolCalls: unknown[] = loadMessages ? s.tool_calls : []
-    if (windowed) toolCalls = toolCallsForMessageWindow(toolCalls, offset, truncated.length)
+    if (windowed) toolCalls = prefix ? prefix.toolCalls(offset, truncated.length, true) : toolCallsForMessageWindow(toolCalls, offset, truncated.length)
     const mergedCount = summaryCount ?? all.length
     let mergedLast = summaryLast ?? 0
     if (summaryLast === null && all.length) {
@@ -816,7 +949,7 @@ export class SessionService {
     }
     const activeStreamIds = this.deps.runtime.activeStreamIds
     const raw: Record<string, unknown> = {
-      ...s.compact({ includeRuntime: true, activeStreamIds, contextLengthFor: this.deps.contextLengthFor, modelOptionFor: this.deps.modelOptionFor }),
+      ...s.compact({ ...(prefix ? { transcriptSummary: prefix.summary() } : {}), includeRuntime: true, activeStreamIds, contextLengthFor: this.deps.contextLengthFor, modelOptionFor: this.deps.modelOptionFor }),
       messages: truncated,
       message_count: mergedCount,
       tool_calls: toolCalls,
@@ -829,8 +962,9 @@ export class SessionService {
       last_prompt_tokens: Number(s.last_prompt_tokens ?? 0) || 0,
     }
     if (loadMessages) raw.transcript_seq = journaled ? { stream_id: journaled.turnId, seq: 0 } : null
-    if (loadMessages) attachTodoState(raw, all, s.extra[UNSETTLED_TODO_KEY])
-    if (loadMessages) raw.compression_reference = compressionReference(s, all)
+    if (limited) attachTodoSnapshot(raw, limited.todo, s.extra[UNSETTLED_TODO_KEY])
+    else if (loadMessages) attachTodoState(raw, all, s.extra[UNSETTLED_TODO_KEY])
+    if (loadMessages) raw.compression_reference = limited ? limited.compression : compressionReference(s, all)
     if (mergedLast) {
       raw.last_message_at = Math.max(Number(raw.last_message_at ?? 0) || 0, mergedLast)
       raw.updated_at = Math.max(Number(raw.updated_at ?? 0) || 0, mergedLast)
@@ -841,13 +975,13 @@ export class SessionService {
     raw._msg_limit_max = MAX_MSG_LIMIT
     const revisionAfter = this.loadRevision(s)
     raw._load_revision = revisionBefore !== null && revisionBefore === revisionAfter ? hashRevision(revisionBefore) : `unstable-${randomUUID().replace(/-/g, '')}`
-    Object.assign(raw, withOwnerLocks([raw], this.stateDbSources)[0])
+    Object.assign(raw, withOwnerLocks([raw], limited?.sources ?? this.stateDbSources)[0])
     raw.assistant_name = this.assistantName(s)
     raw.workspace_name = this.workspaceNames()(s)
     raw.branched_from = this.branchedFrom(s)
     withSessionWireFlags(raw, activeStreamIds)
     // A metadata-only read lacks the history the gate counts, so it carries no flag.
-    if (loadMessages) raw.can_compress = this.canCompress(s, raw.read_only === true, stateRows)
+    if (loadMessages) raw.can_compress = limited ? raw.read_only !== true && !isClaudeCodeSessionId(s.session_id) && (!s.active_stream_id || this.compactionWaiters.has(s.active_stream_id)) && limited.enoughContext : this.canCompress(s, raw.read_only === true, stateRows)
     raw.confirms_deep_truncate = true
     raw.pending_steers = raw.active_stream_id ? (this.deps.runtime.pendingSteers?.(str(raw.active_stream_id)) ?? []) : []
     // TAL-1006: the compression a client shows on load: the running manual job's, else the live run's open span.
@@ -2396,16 +2530,6 @@ function currentStateDbSeenId(s: Session, stateRows: Message[]): number | null {
   return seenId !== null && s.state_db_seen_stamp === s.updated_at && s.state_db_seen_boundary === stateDbMarkKey(s, stateRows, seenId) ? seenId : null
 }
 
-/** The last recorded database generation remains the numeric identity's owner when a marker becomes stale. */
-function markedStateDbGeneration(s: Session): string | null {
-  if (!s.state_db_seen_boundary) return null
-  try {
-    const boundary: unknown = JSON.parse(s.state_db_seen_boundary)
-    if (!Array.isArray(boundary) || !Array.isArray(boundary[4])) return null
-    const anchor: unknown[] = boundary[4]
-    return typeof anchor[2] === 'string' ? anchor[2] : null
-  } catch { return null }
-}
 
 function truncationWatermarkFor(messages: unknown[]): number {
   if (!messages.length) return 0.0

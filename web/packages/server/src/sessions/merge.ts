@@ -629,7 +629,7 @@ export function extractToolCallsFromMessages(messages: unknown[], liveToolCalls:
  * (recorded live, else `null`), `result` (the result snippet, else `null`) and `result_view` (its display sections, TAL-315,
  * else `null`). Returns copies; stored rows are untouched.
  */
-export function withToolCallOutcomes<T>(messages: T[], sessionToolCalls: unknown[], activeTurnId: string | null): T[] {
+export function withToolCallOutcomes<T>(messages: T[], sessionToolCalls: unknown[], activeTurnId: string | null, baseIndex = 0): T[] {
   // Every identifier a stored call may carry (`ToolCallSchema`).
   const callId = (tc: unknown): string => (isDict(tc) ? toolCallId(tc) || str(tc.tool_call_id) : '')
   // Providers may reuse an id (`call_1` in every response), so a reply answers the latest earlier assistant row that
@@ -670,7 +670,7 @@ export function withToolCallOutcomes<T>(messages: T[], sessionToolCalls: unknown
     // Calls known only from a record: the session-level list's, and the live calls a failed or cancelled turn's partial
     // snapshot kept (`_partial_tool_calls`).
     const records: Record<string, unknown>[] = []
-    const rowRecords = recordedByRow.get(index) ?? []
+    const rowRecords = recordedByRow.get(baseIndex + index) ?? []
     const recorded = new Map(rowRecords.filter((tc) => str(tc.tid)).map((tc) => [str(tc.tid), tc]))
     for (const tc of [...rowRecords, ...(Array.isArray(m._partial_tool_calls) ? m._partial_tool_calls as unknown[] : [])]) {
       if (!isDict(tc)) continue
@@ -957,23 +957,9 @@ export function mergeSessionMessagesAppendOnly(sidecar: Message[], state: Messag
   const isRepresented = (m: Message): boolean => stateDbMessageRepresented(m, representedIds, includeUids, generation)
   const rememberIds = (m: Message): void => { for (const id of identities(m)) representedIds.add(id) }
   if (typeof seenId === 'number' && Number.isFinite(seenId) && state.some((m) => stateDbRowId(m) !== null)) {
-    // A row with durable provenance represents those identities; an unidentified row matches one exact copy.
     const localKeys = new Map<string, number>()
     for (const m of sidecar) if (!identities(m).length) localKeys.set(key(m), (localKeys.get(key(m)) ?? 0) + 1)
-    const merged = [...sidecar]
-    for (const m of state) {
-      const id = stateDbRowId(m)
-      if (isRepresented(m)) continue
-      // In state.db order, so a covered row matches its own local copy before a newer duplicate can.
-      const left = localKeys.get(key(m)) ?? 0
-      // An archive-proven edit is a new occurrence even when an older local row has identical text.
-      // Covered edits still consume their local match before later ordinary copies are considered.
-      if (left > 0 && (m._state_db_authored_change !== true || id === null || id <= seenId)) { localKeys.set(key(m), left - 1); rememberIds(m); continue }
-      if (id === null || id <= seenId) continue
-      rememberIds(m)
-      merged.push(m)
-    }
-    return merged
+    return [...sidecar, ...appendStateDbIdentityRows(state, seenId, representedIds, localKeys, generation, includeUids)]
   }
   // Legacy sidecars may have no seen marker or row IDs. A verified copy can still match its archived
   // source's exact role/timestamp/content key. This only removes represented copies; the timestamp
@@ -1013,6 +999,25 @@ export function mergeSessionMessagesAppendOnly(sidecar: Message[], state: Messag
     merged.push(m)
   }
   return merged
+}
+
+/** Shared identity-mode append step; an indexed prefix supplies the same witnesses without visiting its rows. */
+export function appendStateDbIdentityRows(state: Message[], seenId: number, represented: ReadonlySet<string>, localKeys: ReadonlyMap<string, number>, generation: string | null, includeUids: boolean): Message[] {
+  const added = new Set<string>()
+  const consumed = new Map<string, number>()
+  const witnesses = { has: (id: string) => represented.has(id) || added.has(id) }
+  const appended: Message[] = []
+  for (const m of state) {
+    if (stateDbMessageRepresented(m, witnesses, includeUids, generation)) continue
+    const id = stateDbRowId(m), key = stateDbMessageKey(m)
+    const used = consumed.get(key) ?? 0
+    const left = (localKeys.get(key) ?? 0) - used
+    if (left > 0 && (m._state_db_authored_change !== true || id === null || id <= seenId)) consumed.set(key, used + 1)
+    else if (id !== null && id > seenId) appended.push(m)
+    else continue
+    for (const identity of stateDbIdentityKeys(m, includeUids, generation)) added.add(identity)
+  }
+  return appended
 }
 
 /** TAL-493: the `state_db_seen_id` after reading `rows`: their highest id, or null when they carry none. */
@@ -1262,7 +1267,7 @@ function stripOobBlocks(content: unknown): unknown {
  * turn history; compression and other projections strip them all. Provider-issued carriers stay only on rows stamped at
  * or after `issuedReasoningSince`, the turn provider's start; without one they stay home too.
  */
-export function sanitizeMessagesForApi(messages: Message[], { preserveApiContent = false, issuedReasoningSince = null }: { preserveApiContent?: boolean; issuedReasoningSince?: number | null } = {}): Message[] {
+export function sanitizeMessagesForApi(messages: Message[], { preserveApiContent = false, issuedReasoningSince = null, maxMessages = Infinity }: { preserveApiContent?: boolean; issuedReasoningSince?: number | null; maxMessages?: number } = {}): Message[] {
   // Calls are OpenAI `tool_calls` or Anthropic-style `tool_use` content blocks; results name them by `tool_call_id`,
   // `tool_use_id`, or a user row's `tool_result` blocks.
   const toolUseIds = (msg: Message): string[] => (Array.isArray(msg.content) ? msg.content.flatMap((part) => (isDict(part) && part.type === 'tool_use' && str(part.id) ? [str(part.id)] : [])) : [])
@@ -1329,8 +1334,31 @@ export function sanitizeMessagesForApi(messages: Message[], { preserveApiContent
       msg = Object.fromEntries(Object.entries(msg).filter(([k]) => k !== '_recovered'))
     }
     final.push(msg)
+    if (final.length >= maxMessages) break
   }
   return final
+}
+
+/** A revision's compression threshold, using the sanitizer itself and stopping once four retained rows prove it. */
+export class ApiMessageSummary {
+  readonly rows: Message[] = []
+  readonly unidentified = [new Map<string, number>(), new Map<string, number>()] as const
+  enough = false
+  marker = false
+  private nextCheck = 4
+  constructor(readonly excludeTurn: string | null = null, private readonly displayHistory = true) {}
+  add(row: Message): void {
+    if (this.enough) return
+    if (this.displayHistory && (row._error || row._partial)) return
+    this.marker ||= isContextCompressionMarker(row)
+    if (this.enough || (this.excludeTurn && row._turn_id === this.excludeTurn)) return
+    this.rows.push(row)
+    for (const [mode, includeUids] of [false, true].entries()) if (!stateDbIdentityKeys(row, includeUids).length) {
+      const key = stateDbMessageKey(row); this.unidentified[mode]!.set(key, (this.unidentified[mode]!.get(key) ?? 0) + 1)
+    }
+    if (this.rows.length >= this.nextCheck) { this.finish(); this.nextCheck *= 2 }
+  }
+  finish(): void { if (!this.enough) this.enough = sanitizeMessagesForApi(this.rows, { maxMessages: 4 }).length >= 4 }
 }
 
 const isNativeImagePart = (part: unknown): boolean => isDict(part) && (part.type === 'image_url' || 'image_url' in part)

@@ -504,7 +504,7 @@ function turnsOf(messages: unknown[]): Map<string, [Record<string, unknown>, num
 }
 
 /** The stored record for a message: a unique content ref first, then its absolute index when the content agrees. */
-function storedRecordFor(message: Record<string, unknown>, index: number, lookup: { byRef: Map<string, Record<string, unknown>>; byIndex: Map<number, Record<string, unknown>>; refCounts: Map<string, number> }): Record<string, unknown> | undefined {
+function storedRecordFor(message: Record<string, unknown>, index: number, lookup: { byRef: Map<string, Record<string, unknown>>; byIndex: Map<number, Record<string, unknown>>; refCounts: Pick<Map<string, number>, 'get'> }): Record<string, unknown> | undefined {
   const ref = assistantAnchorSceneMessageRef(message)
   const record = (lookup.refCounts.get(ref) ?? 0) <= 1 ? lookup.byRef.get(ref) : undefined
   if (record) return record
@@ -541,9 +541,10 @@ function sceneLookup(messages: unknown[], records: Record<string, unknown>) {
  * Before display excerpts are derived, user rows lose recalled-memory fences and assistant rows leave in their
  * one display shape, after each scene is built from the stored rows.
  */
-export function hydrateAnchorActivityScenes(messages: unknown[], records: Record<string, unknown>, opts: { activeTurnId?: string | null; runningScene?: boolean; clipToolResults?: boolean } = {}): unknown[] {
+export function hydrateAnchorActivityScenes(messages: unknown[], records: Record<string, unknown>, opts: { activeTurnId?: string | null; runningScene?: boolean; clipToolResults?: boolean; baseIndex?: number; refCounts?: Pick<Map<string, number>, 'get'> } = {}): unknown[] {
   if (!messages.length) return messages
-  const lookup = sceneLookup(messages, records)
+  const lookup: { byRef: Map<string, Record<string, unknown>>; byIndex: Map<number, Record<string, unknown>>; refCounts: Pick<Map<string, number>, 'get'> } = sceneLookup(messages, records)
+  if (opts.refCounts) lookup.refCounts = opts.refCounts
   // Any scene carried inline leaves in the one normalized shape, even off a turn's last row.
   const out = messages.map((m) => (isDict(m) && isDict(m._anchor_activity_scene) ? { ...m, _anchor_activity_scene: anchorActivitySceneTransportPreview(m._anchor_activity_scene, str(m._anchor_activity_scene.activity_scene_ref)) } : m))
   for (const [turnId, turn] of turnsOf(messages)) {
@@ -552,8 +553,9 @@ export function hydrateAnchorActivityScenes(messages: unknown[], records: Record
     const lastEntry = turn.filter(([m]) => m.role === 'assistant').at(-1)
     if (!lastEntry) continue
     const [message, index] = lastEntry
-    const built = buildTurnScene(turn, { clipToolResults: opts.clipToolResults === true, running })
-    const record = running ? undefined : storedRecordFor(message, index, lookup)
+    const absoluteTurn: [Record<string, unknown>, number][] = opts.baseIndex ? turn.map(([m, i]) => [m, i + opts.baseIndex!]) : turn
+    const built = buildTurnScene(absoluteTurn, { clipToolResults: opts.clipToolResults === true, running })
+    const record = running ? undefined : storedRecordFor(message, index + (opts.baseIndex ?? 0), lookup)
     const inline = running ? undefined : message._anchor_activity_scene
     const next: Record<string, unknown> = { ...message }
     if (record && isDict(record.scene)) {
@@ -625,9 +627,14 @@ export function readAnchorSceneRows(session: Session, query: { messageRef: strin
 }
 
 /** A turn opens at a user message the reader sees (text or attachments); hidden prompts, the Agent's hidden rows and marker rows do not. */
-function opensTurn(m: Record<string, unknown>): boolean {
+export function opensTurn(m: Record<string, unknown>): boolean {
   if (m.role !== 'user' || markerKind(m) || isDict(m._steer) || agentRowKind(m)) return false
   return messageText(m.content).trim() !== '' || (Array.isArray(m.attachments) && m.attachments.length > 0)
+}
+
+/** Shared turn boundary for full builds and the revision index. */
+export function messageTurnId(message: Record<string, unknown>, index: number, current: string): string {
+  return str(message._turn_id) || (agentSteerText(message) === null && opensTurn(message) ? `legacy:${index}` : current)
 }
 
 /**
@@ -635,16 +642,15 @@ function opensTurn(m: Record<string, unknown>): boolean {
  * that (older files, state.db/CLI rows) take `legacy:<index of their opening user row>`, or `legacy:start`, computed
  * over the full transcript so a window boundary never changes a key. Returns copies; stored rows are untouched.
  */
-export function withTurnIds<T>(messages: T[]): T[] {
-  let current = 'legacy:start'
+export function withTurnIds<T>(messages: T[], baseIndex = 0, initialTurn = 'legacy:start'): T[] {
+  let current = initialTurn
   return messages.map((raw, index) => {
     if (!isDict(raw)) return raw
     // The Agent's own record of a delivered steer shows as the steer it is, inside its turn, never as a prompt.
     const agentSteer = agentSteerText(raw)
-    const m = agentSteer === null ? raw : { ...raw, content: agentSteer, _steer: { steer_id: `agent:${String(index)}` } }
-    const own = str(m._turn_id)
-    if (own) { current = own; return m }
-    if (opensTurn(m)) current = `legacy:${String(index)}`
+    const m = agentSteer === null ? raw : { ...raw, content: agentSteer, _steer: { steer_id: `agent:${String(baseIndex + index)}` } }
+    current = messageTurnId(m, baseIndex + index, current)
+    if (str(m._turn_id)) return m
     return { ...m, _turn_id: current }
   })
 }
