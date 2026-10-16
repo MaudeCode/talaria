@@ -44503,6 +44503,9 @@
                     "check_for_updates": {
                       "type": "boolean"
                     },
+                    "summarize_updates_automatically": {
+                      "type": "boolean"
+                    },
                     "ignore_agent_updates": {
                       "type": "boolean"
                     },
@@ -44755,6 +44758,9 @@
                       "type": "boolean"
                     },
                     "check_for_updates": {
+                      "type": "boolean"
+                    },
+                    "summarize_updates_automatically": {
                       "type": "boolean"
                     },
                     "ignore_agent_updates": {

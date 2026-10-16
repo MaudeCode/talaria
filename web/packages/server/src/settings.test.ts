@@ -190,6 +190,13 @@ describe('load', () => {
 })
 
 describe('save', () => {
+  it('defaults automatic update summaries on and ignores non-booleans (TAL-1008)', async () => {
+    const s = store()
+    expect(s.load().summarize_updates_automatically).toBe(true)
+    for (const value of ['false', 'true', 1, null, {}, []]) expect((await s.save({ summarize_updates_automatically: value })).summarize_updates_automatically).toBe(true)
+    expect((await s.save({ summarize_updates_automatically: false })).summarize_updates_automatically).toBe(false)
+    expect(store().load().summarize_updates_automatically).toBe(false)
+  })
   it('requires an explicit boolean opt-in for automatic application', async () => {
     const s = store()
     for (const value of ['false', 'true', 1, {}, []]) expect((await s.save({ auto_apply_updates: value })).auto_apply_updates).toBe(false)

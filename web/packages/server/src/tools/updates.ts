@@ -10,7 +10,7 @@
  * stash/pull or force reset, then the gateway restarts through the sidecar.
  * Nothing here deletes git locks; `clearLock` only inventories them.
  */
-import type { SidecarResult } from '@maudecode/talaria-web-contracts'
+import { UpdatesSummarySchema, type SidecarResult } from '@maudecode/talaria-web-contracts'
 import { readCapped } from '../http/capped.js'
 import { execFile } from 'node:child_process'
 import { createHash } from 'node:crypto'
@@ -1307,6 +1307,7 @@ export interface UpdateServiceDeps {
   includeAgent: () => boolean
   autoApply?: () => boolean
   checkEnabled?: () => boolean
+  summarizeAutomatically?: () => boolean
   autoNotification?: {
     begin: () => string
     transition: (id: string, phase: 'restarting' | 'succeeded' | 'blocked' | 'failed', expectedIdentity?: string | null, verifiedIdentity?: { revision: string | null; version: string | null }, detail?: unknown) => void
@@ -1334,6 +1335,8 @@ export class UpdateService {
   private autoRunning = false
   private autoRestartScheduled = false
   private readonly summaries = new Map<string, Dict>()
+  private readonly summarizing = new Map<string, Promise<Dict>>()
+  private readonly summaryFailures = new Set<string>()
   private readonly publishedTags = new Map<string, { at: number; tag: string | null }>()
   private readonly git: GitRun
   private readonly now: () => number
@@ -1341,6 +1344,41 @@ export class UpdateService {
   constructor(private readonly deps: UpdateServiceDeps) {
     this.git = deps.git ?? runGit
     this.now = deps.now ?? (() => Date.now() / 1000)
+    if (deps.stateDir) {
+      try {
+        const entries: unknown = JSON.parse(readFileSync(join(deps.stateDir, 'update-summaries.json'), 'utf8'))
+        if (Array.isArray(entries)) for (const entry of entries.slice(-16)) {
+          if (!Array.isArray(entry) || typeof entry[0] !== 'string' || !/^[a-f0-9]{64}$/.test(entry[0])) continue
+          const parsed = UpdatesSummarySchema.safeParse(entry[1])
+          if (parsed.success && parsed.data.ok && parsed.data.generated_by === 'llm') this.summaries.set(entry[0], parsed.data)
+        }
+      } catch { /* A missing or corrupt cache is regenerated on the next check or request. */ }
+    }
+  }
+
+  private persistSummaries(): void {
+    if (!this.deps.stateDir) return
+    try { atomicWriteText(join(this.deps.stateDir, 'update-summaries.json'), JSON.stringify([...this.summaries])) }
+    catch { this.deps.log('Could not persist update summaries; answers remain cached until restart.') }
+  }
+
+  private logSummaryFailure(key: string, target: string): void {
+    if (this.summaryFailures.has(key)) return
+    this.summaryFailures.add(key)
+    this.deps.log(`Could not generate the ${target} update summary for range ${key}; on-demand requests can retry.`)
+  }
+
+  private summaryKey(target: 'webui' | 'agent', info: Dict): string {
+    return createHash('sha256').update(canon({ target, channel: info.channel ?? null, release_based: info.release_based === true, behind: info.behind, current_sha: info.current_sha ?? null, latest_sha: info.latest_sha ?? null, current_version: info.current_version ?? null, latest_version: info.latest_version ?? null })).digest('hex')
+  }
+
+  private preGenerateSummaries(status: Dict): void {
+    if (!this.deps.llm || this.deps.checkEnabled?.() === false || this.deps.summarizeAutomatically?.() === false) return
+    for (const target of ['webui', 'agent'] as const) {
+      const info = dict(status[target])
+      if (updateTargetView(target, info, false).summary_available !== true || this.summaries.has(this.summaryKey(target, info))) continue
+      void this.summarizeTarget(target, info).catch(() => { /* The shared generation logs the failure. */ })
+    }
   }
 
   private agentChannel(): Channel { return this.deps.agentChannel?.() ?? DEFAULT_CHANNEL }
@@ -1404,7 +1442,10 @@ export class UpdateService {
     }
     if (this.applying) return this.cachedStatus(includeAgent, channel, agentChannel)
     const matches = this.cache.include_agent === includeAgent && this.cache.channel === channel && this.cache.agent_channel === agentChannel
-    if (!force && matches && this.now() - Number(this.cache.checked_at) < CACHE_TTL_S) return { ...this.cache }
+    if (!force && matches && this.now() - Number(this.cache.checked_at) < CACHE_TTL_S) {
+      this.preGenerateSummaries(this.cache)
+      return { ...this.cache }
+    }
     this.checkingKey = key
     this.checking = (async () => {
       try {
@@ -1421,6 +1462,7 @@ export class UpdateService {
         if (agent.latest_sha) Object.assign(agent, agentWarning(agent, policy))
         if (Array.isArray(agent.versions)) agent.versions = agent.versions.map((v) => ({ ...dict(v), ...supportOf(dict(v).sha, policy) }))
         Object.assign(this.cache, { webui, agent, checked_at: this.now(), include_agent: includeAgent, channel, agent_channel: agentChannel })
+        this.preGenerateSummaries(this.cache)
         return { ...this.cache }
       } finally {
         this.checking = null
@@ -1685,15 +1727,29 @@ export class UpdateService {
    * A model's answer is cached per exact range, so reopening or asking from another client reuses it.
    */
   async summarize(target: 'webui' | 'agent', checksOff = false): Promise<Dict> {
-    const info = dict(this.cachedStatus()[target])
+    return this.summarizeTarget(target, dict(this.cachedStatus()[target]), checksOff)
+  }
+
+  private async summarizeTarget(target: 'webui' | 'agent', info: Dict, checksOff = false): Promise<Dict> {
     const view = updateTargetView(target, info, checksOff)
     // The range this answer covers, so a client labels the summary it got rather than the status it last loaded.
     const range = { current_version: typeof info.current_version === 'string' ? info.current_version : null, target_version: view.target_version ?? null }
     if (view.summary_available !== true) return { ok: true, target, ...range, summary: '', summary_sections: [], generated_by: 'none', source: 'none', cached: false }
     // Keyed on the range alone, so a repeat answers before any git or GitHub read.
-    const cacheKey = createHash('sha256').update(canon({ target, channel: info.channel ?? null, release_based: info.release_based === true, behind: info.behind, current_sha: info.current_sha ?? null, latest_sha: info.latest_sha ?? null, current_version: info.current_version ?? null, latest_version: info.latest_version ?? null })).digest('hex')
+    const cacheKey = this.summaryKey(target, info)
     const cached = this.summaries.get(cacheKey)
-    if (cached) { this.summaries.delete(cacheKey); this.summaries.set(cacheKey, cached); return { ...cached, cached: true } }
+    if (cached) { this.summaries.delete(cacheKey); this.summaries.set(cacheKey, cached); this.persistSummaries(); return { ...cached, cached: true } }
+    const pending = this.summarizing.get(cacheKey)
+    if (pending) return pending
+    const generating = this.generateSummary(target, info, range, cacheKey).catch((error: unknown) => {
+      this.logSummaryFailure(cacheKey, target)
+      throw error
+    }).finally(() => { this.summarizing.delete(cacheKey) })
+    this.summarizing.set(cacheKey, generating)
+    return generating
+  }
+
+  private async generateSummary(target: 'webui' | 'agent', info: Dict, range: Dict, cacheKey: string): Promise<Dict> {
     const behind = Number(info.behind)
     const detail: Dict = { name: target, label: target === 'webui' ? 'Talaria Web' : 'Hermes Agent', behind, current_version: info.current_version ?? null, latest_version: info.latest_version ?? null, current_sha: info.current_sha ?? null, latest_sha: info.latest_sha ?? null, notes: [], commits: [] }
     const published = info.release_based === true ? await this.releaseNotes(target, info) : { notes: [], releases: 0 }
@@ -1709,6 +1765,7 @@ export class UpdateService {
     if (this.deps.llm) {
       const [system, user] = summaryPrompt([detail])
       try { candidate = (await this.deps.llm(system, user)).trim(); if (candidate) generatedBy = 'llm' } catch { candidate = '' }
+      if (!candidate) this.logSummaryFailure(cacheKey, target)
     }
     const [sections, summary] = formatSections(candidate, [detail])
     const result: Dict = { ok: true, target, ...range, summary, summary_sections: sections, generated_by: generatedBy, source: detail.source, cached: false }
@@ -1716,6 +1773,7 @@ export class UpdateService {
     if (generatedBy === 'llm') {
       if (this.summaries.size >= 16) this.summaries.delete(this.summaries.keys().next().value!)
       this.summaries.set(cacheKey, result)
+      this.persistSummaries()
     }
     return result
   }

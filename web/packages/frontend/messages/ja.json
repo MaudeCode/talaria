@@ -1852,5 +1852,6 @@
 	"panel_agents_updated": "更新 {time}",
 	"panel_agents_transcript": "トランスクリプトを開く",
 	"panel_files_unavailable": "このチャットにはワークスペースがありません。",
-	"panel_agents_transcript_for": "トランスクリプト: {goal}"
+	"panel_agents_transcript_for": "トランスクリプト: {goal}",
+	"settings_label_summarize_updates_automatically": "AIで更新内容を自動的に要約"
 }

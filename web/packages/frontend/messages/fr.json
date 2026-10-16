@@ -1943,5 +1943,6 @@
 	"panel_agents_updated": "Mis à jour {time}",
 	"panel_agents_transcript": "Ouvrir la transcription",
 	"panel_files_unavailable": "Cette discussion n’a pas d’espace de travail.",
-	"panel_agents_transcript_for": "Transcription : {goal}"
+	"panel_agents_transcript_for": "Transcription : {goal}",
+	"settings_label_summarize_updates_automatically": "Résumer automatiquement les mises à jour avec l’IA"
 }

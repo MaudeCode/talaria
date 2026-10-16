@@ -473,22 +473,25 @@ describe('Web source updates (test_tal203_source_update.py)', () => {
     expect(result.release_url).toBe(s.release.release_url)
   })
 
-  it('summarizes the published notes of the Stable Web releases an npm update installs (TAL-759)', async () => {
+  it.each([false, true])('summarizes the published notes of the Stable Web releases an npm update installs, saved channel mismatch=%s (TAL-759, TAL-1008)', async (mismatch) => {
     const s = sourceInstall()
     const n = npmPackageInstall(s)
     const notes = { tag_name: 'web-v2.0.0', published_at: '2026-09-19T00:00:00Z', assets: [], body: 'Chats open faster.\n\n<!-- talaria-publication:{"tag":"web-v2.0.0"} -->' }
     const getJson: GetJson = async (path, opts) => (opts.asset ? s.getJson(path, opts) : [notes, ...(await s.getJson(path, opts) as Dict[])])
     const prompts: string[] = []
+    let channel: 'stable' | 'experimental' = mismatch ? 'experimental' : 'stable'
     const svc = new UpdateService({
       webRoot: n.packageRoot, git: s.run, npm: n.npm, getJson, identity: s.identity, webuiVersion: 'web-v1.0.0',
-      agentDir: () => null, channel: () => 'stable', includeAgent: () => false,
+      agentDir: () => null, channel: () => channel, includeAgent: () => false,
       blockers: () => ({ active_streams: 0, active_runs: 0, blocking_stream_ids: [], blocking_run_ids: [], restart_blocked: false }),
       scheduleRestart: () => undefined, llm: (_system, user) => { prompts.push(user); return Promise.resolve('- Notice: Chats open faster') }, log: () => undefined,
     })
     const webui = updatesCheckView(await svc.check(true, false, 'stable')).webui as Dict
     expect(webui).toMatchObject({ state: 'release_ready', summary_available: true })
     expect(webui).not.toHaveProperty('release_notes')
-    expect(await svc.summarize('webui')).toMatchObject({ target: 'webui', source: 'release_notes', generated_by: 'llm' })
+    await vi.waitFor(() => { expect(prompts).toHaveLength(1) })
+    channel = 'stable'
+    expect(await svc.summarize('webui')).toMatchObject({ target: 'webui', source: 'release_notes', generated_by: 'llm', cached: true })
     expect(prompts[0]).toContain('<release tag="web-v2.0.0">\nChats open faster.\n</release>')
     expect(prompts[0]).not.toContain('talaria-publication')
   })
@@ -1179,18 +1182,86 @@ describe('Agent checkout updates', () => {
     expect(git(a.agent, 'rev-parse', 'HEAD')).toBe(a.v1)
   })
 
-  function summaryService(a: { agent: string; origin: string }, opts: { channel?: 'stable' | 'experimental'; getPublicJson?: GetJson; llm?: (system: string, user: string) => Promise<string>; now?: () => number } = {}): { svc: UpdateService; prompts: string[] } {
+  function summaryService(a: { agent: string; origin: string }, opts: { channel?: 'stable' | 'experimental'; getPublicJson?: GetJson; llm?: (system: string, user: string) => Promise<string>; now?: () => number; stateDir?: string; summarizeAutomatically?: () => boolean; checkEnabled?: () => boolean; includeAgent?: () => boolean; log?: (line: string) => void } = {}): { svc: UpdateService; prompts: string[] } {
     // The checkout fetches its local origin but reports a GitHub remote, whose releases `getPublicJson` stubs.
     const run: GitRun = (args, cwd, t) => (args[0] === 'remote' && args[1] === 'get-url' ? Promise.resolve({ ok: true, out: 'https://github.com/Synthetic/agent.git' }) : runGit(args, cwd, t))
     const prompts: string[] = []
     const svc = new UpdateService({
       webRoot: join(tmp(), 'web'), git: run, getJson: noReleases, ...(opts.getPublicJson ? { getPublicJson: opts.getPublicJson } : {}), identity: { release: () => DEV, stamped: () => DEV, runningSourceRevision: () => null }, webuiVersion: 'x',
-      agentDir: () => a.agent, channel: () => 'stable', agentChannel: () => opts.channel ?? 'stable', includeAgent: () => true, blockers: () => ({ active_streams: 0, active_runs: 0, blocking_stream_ids: [], blocking_run_ids: [], restart_blocked: false }),
+      agentDir: () => a.agent, channel: () => 'stable', agentChannel: () => opts.channel ?? 'stable', includeAgent: opts.includeAgent ?? (() => true), blockers: () => ({ active_streams: 0, active_runs: 0, blocking_stream_ids: [], blocking_run_ids: [], restart_blocked: false }),
       scheduleRestart: () => undefined, llm: (system, user) => { prompts.push(user); return opts.llm ? opts.llm(system, user) : Promise.resolve('- Notice: Chats open faster') }, log: () => undefined,
-      ...(opts.now ? { now: opts.now } : {}),
+      ...(opts.now ? { now: opts.now } : {}), ...(opts.stateDir ? { stateDir: opts.stateDir } : {}), summarizeAutomatically: opts.summarizeAutomatically ?? (() => false), ...(opts.checkEnabled ? { checkEnabled: opts.checkEnabled } : {}),
+      ...(opts.log ? { log: opts.log } : {}),
     })
     return { svc, prompts }
   }
+
+  it('pre-generates summaries without blocking checks and shares the in-flight range (TAL-1008)', async () => {
+    const a = agentInstall()
+    let resolveAnswer!: (value: string) => void
+    const answer = new Promise<string>((resolve) => { resolveAnswer = resolve })
+    const { svc, prompts } = summaryService(a, { summarizeAutomatically: () => true, llm: () => answer })
+    await svc.check(true)
+    await vi.waitFor(() => { expect(prompts).toHaveLength(1) })
+    const requested = svc.summarize('agent')
+    resolveAnswer('- Notice: Chats open faster')
+    const result = await requested
+    expect(result).toMatchObject({ generated_by: 'llm' })
+    expect(result.summary).toContain('Chats open faster')
+    expect(await svc.summarize('agent')).toMatchObject({ cached: true })
+    await svc.check(true)
+    expect(prompts).toHaveLength(1)
+    git(a.origin, 'commit', '--allow-empty', '-m', 'new update')
+    git(a.origin, 'tag', 'v3.0.0')
+    await svc.check(true)
+    await vi.waitFor(() => { expect(prompts).toHaveLength(2) })
+    await svc.summarize('agent')
+  })
+
+  it.each(['channel', 'include-agent'])('pre-generates for the checked update identity instead of the saved %s (TAL-1008)', async (mode) => {
+    let enabled = mode === 'channel'
+    const opts = { channel: 'stable' as 'stable' | 'experimental', includeAgent: () => enabled, summarizeAutomatically: () => true }
+    const { svc, prompts } = summaryService(agentInstall(), opts)
+    await svc.check(true, true, 'stable', mode === 'channel' ? 'experimental' : 'stable')
+    await vi.waitFor(() => { expect(prompts).toHaveLength(1) })
+    // Once the checked identity becomes the saved one, requests reuse that exact answer.
+    if (mode === 'channel') opts.channel = 'experimental'
+    enabled = true
+    expect(await svc.summarize('agent')).toMatchObject({ generated_by: 'llm', cached: true })
+    expect(prompts).toHaveLength(1)
+  })
+
+  it.each(['summary disabled', 'checks disabled'])('does not pre-generate when %s (TAL-1008)', async (mode) => {
+    const { svc, prompts } = summaryService(agentInstall(), { summarizeAutomatically: () => mode !== 'summary disabled', checkEnabled: () => mode !== 'checks disabled' })
+    await svc.check(true)
+    await new Promise((resolve) => setImmediate(resolve))
+    expect(prompts).toHaveLength(0)
+  })
+
+  it('persists model answers across service reconstruction (TAL-1008)', async () => {
+    const a = agentInstall()
+    const stateDir = tmp()
+    const first = summaryService(a, { stateDir })
+    await first.svc.check(true)
+    expect(await first.svc.summarize('agent')).toMatchObject({ generated_by: 'llm', cached: false })
+    const second = summaryService(a, { stateDir })
+    await second.svc.check(true)
+    expect(await second.svc.summarize('agent')).toMatchObject({ generated_by: 'llm', cached: true })
+    expect(second.prompts).toHaveLength(0)
+  })
+
+  it('logs a background model failure once per range and leaves fallback uncached (TAL-1008)', async () => {
+    const logs: string[] = []
+    const stateDir = tmp()
+    const { svc, prompts } = summaryService(agentInstall(), { stateDir, summarizeAutomatically: () => true, log: (line) => logs.push(line), llm: () => Promise.reject(new Error('model unavailable')) })
+    await svc.check(true)
+    expect(await svc.summarize('agent')).toMatchObject({ generated_by: 'fallback', cached: false })
+    await svc.check(true)
+    expect(await svc.summarize('agent')).toMatchObject({ generated_by: 'fallback', cached: false })
+    expect(prompts).toHaveLength(2)
+    expect(logs.filter((line) => line.includes('summary'))).toHaveLength(1)
+    expect(existsSync(join(stateDir, 'update-summaries.json'))).toBe(false)
+  })
 
   it('summarizes the Stable release notes between the installed and target tags, not commit subjects (TAL-759)', async () => {
     const a = agentInstall()

@@ -1850,5 +1850,6 @@
 	"panel_agents_updated": "更新於 {time}",
 	"panel_agents_transcript": "開啟對話紀錄",
 	"panel_files_unavailable": "此對話沒有工作區。",
-	"panel_agents_transcript_for": "對話紀錄：{goal}"
+	"panel_agents_transcript_for": "對話紀錄：{goal}",
+	"settings_label_summarize_updates_automatically": "使用 AI 自動摘要更新"
 }

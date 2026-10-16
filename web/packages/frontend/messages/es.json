@@ -1885,5 +1885,6 @@
 	"panel_agents_updated": "Actualizado {time}",
 	"panel_agents_transcript": "Abrir transcripción",
 	"panel_files_unavailable": "Este chat no tiene espacio de trabajo.",
-	"panel_agents_transcript_for": "Transcripción: {goal}"
+	"panel_agents_transcript_for": "Transcripción: {goal}",
+	"settings_label_summarize_updates_automatically": "Resumir actualizaciones con IA automáticamente"
 }

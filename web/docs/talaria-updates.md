@@ -173,6 +173,14 @@ Validation lives in `packages/server/src/tools/updates.test.ts` and the frontend
 System settings/browser tests. Source tests own their repositories, tags, worktrees, locks, and state;
 browser fixtures own release responses and never install updates.
 
+**Summarize updates with AI automatically** is on by default. After a successful
+check, the server prepares a summary for each pending Web or Agent update without
+blocking the check. Owners can turn it off in System settings; disabling update
+checks also disables background summaries. Opening **Summarize with AI** shares
+any request already in progress. Model answers are kept across restarts in
+`update-summaries.json` in the Web state directory, with a 16-range LRU limit.
+Failed model calls leave the deterministic on-demand fallback available.
+
 ## Durable update notifications
 
 Owner sessions receive server-owned notification records for Web and Agent update attempts. The server

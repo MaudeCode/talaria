@@ -146,6 +146,7 @@ export function SystemSection() {
           </UpdatePath>
         </div>
         <div className="border-t border-border-subtle pt-1">
+          <FieldRow label={m.settings_label_summarize_updates_automatically()} htmlFor="settingsSummarizeUpdatesAutomatically" inline><Switch id="settingsSummarizeUpdatesAutomatically" disabled={!canManage || !bool('check_for_updates', true)} checked={bool('summarize_updates_automatically', true)} onCheckedChange={(checked) => set({ summarize_updates_automatically: checked })} /></FieldRow>
           <FieldRow label={m.settings_label_check_updates()} hint={m.system_check_updates_hint()} htmlFor="settingsCheckUpdates" inline><Switch id="settingsCheckUpdates" disabled={!canManage} checked={bool('check_for_updates', true)} onCheckedChange={(checked) => set({ check_for_updates: checked })} /></FieldRow>
         </div>
       </section>
