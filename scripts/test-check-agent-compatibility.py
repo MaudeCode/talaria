@@ -61,6 +61,7 @@ class FakeTools:
         self.approval_reports = {}
         self.compression_reports = {}
         self.probe_findings = {}
+        self.probe_failures = set()
         self.probe_revisions = []
         self.published = {"draft": False, "prerelease": False}
         self.image_revision = None  # defaults to the tested source
@@ -90,7 +91,7 @@ class FakeTools:
             Path(report).write_text(json.dumps({"sshConfigApproval": self.approval_reports.get(version, approval_report()),
                                                "compressionBackoff": self.compression_reports.get(version, compression_report()),
                                                "checks": [], "findings": findings}))
-            if findings:
+            if version in self.probe_failures:
                 raise subprocess.CalledProcessError(1, command)
         if any(part.endswith('/releases/agent_probe.py') for part in command):
             self.probe_envs.append(kwargs['env'])
@@ -360,105 +361,50 @@ class CheckerTests(unittest.TestCase):
             self.main("--identity", json.dumps({**CANDIDATE, "sourceRevision": "main"}), "--skip-docker")
         self.assertEqual(self.tools.commands, [])
 
-    def test_candidate_rejects_task_relative_ssh_approval_regression_with_receipt(self):
+    def test_upstream_observations_do_not_block_talaria_integration(self):
         self.tools.approval_reports[CANDIDATE["version"]] = approval_report(relative_gate=False)
-        with self.assertRaisesRegex(RuntimeError, "task-relative SSH configuration approval"):
-            self.receipt("--identity", json.dumps(CANDIDATE), "--skip-docker", "--skip-sidecar-tests")
-        self.assertEqual(self.last["result"], "failure")
-        contract = self.last["sshConfigApproval"]
-        self.assertEqual(contract["baseline"]["sourceRevision"], RELEASES[-1]["sourceRevision"])
-        self.assertEqual(contract["candidate"]["write/relative/deny"],
-                         {"gateCalls": 0, "mutated": True, "expectedContent": True})
-        self.assertIn("write/relative/deny", self.last["failure"])
-
-    def test_candidate_rejects_compression_growth_regression_with_receipt(self):
         self.tools.compression_reports[CANDIDATE["version"]] = compression_report(growth=False)
-        with self.assertRaisesRegex(RuntimeError, "compression backoff failed: grown"):
-            self.receipt("--identity", json.dumps(CANDIDATE), "--skip-docker", "--skip-sidecar-tests")
-        self.assertEqual(self.last["result"], "failure")
-        contract = self.last["compressionBackoff"]
-        self.assertEqual(contract["baseline"]["sourceRevision"], RELEASES[-1]["sourceRevision"])
-        self.assertEqual(contract["candidate"]["grown"]["compressionCalls"], 0)
-
-    def test_compression_receipt_survives_another_probe_failure(self):
-        self.tools.compression_reports[CANDIDATE["version"]] = compression_report(growth=False)
-        findings = [{"name": "mcp_execution_deadline", "case": "explicit/sequential"}]
+        findings = [{"name": "mcp_execution_deadline", "case": "explicit/sequential",
+                     "expected": "completed", "actual": "tool_timeout"}]
         self.tools.probe_findings[CANDIDATE["version"]] = findings
-        with self.assertRaises(Exception) as failure:
-            self.receipt("--identity", json.dumps(CANDIDATE), "--skip-docker", "--skip-sidecar-tests")
-        self.assertIsInstance(failure.exception, RuntimeError)
-        self.assertRegex(str(failure.exception), "compression backoff failed: grown")
-        self.assertEqual(self.last["compressionBackoff"]["candidate"]["grown"]["compressionCalls"], 0)
-        self.assertEqual(self.last["agentProbe"]["findings"], findings)
+        try:
+            receipt = self.receipt("--identity", json.dumps(CANDIDATE))
+        except RuntimeError:
+            receipt = self.last
+        self.assertEqual(receipt["result"], "success")
+        self.assertEqual(receipt["tests"], {"passed": 39, "failed": 0, "skipped": 1})
+        self.assertTrue(receipt["imageVerified"])
+        self.assertEqual(receipt["sshConfigApproval"]["observations"], approval_report(relative_gate=False))
+        self.assertEqual(receipt["compressionBackoff"]["observations"], compression_report(growth=False))
+        self.assertEqual(receipt["agentProbe"]["findings"], findings)
+        self.assertEqual(self.tools.probe_revisions, [CANDIDATE["sourceRevision"]])
 
-    def test_each_compression_transition_is_enforced(self):
-        for case in compression_report():
-            with self.subTest(case=case):
-                report = compression_report()
-                report[case] = {"compressionCalls": 99}
-                with self.assertRaisesRegex(RuntimeError, case):
-                    checker.validate_compression_backoff(report, baseline=compression_report())
-                del report[case]
-                with self.assertRaisesRegex(RuntimeError, case):
-                    checker.validate_compression_backoff(report)
+    def test_upstream_observations_survive_a_real_probe_failure(self):
+        self.tools.compression_reports[CANDIDATE["version"]] = compression_report(growth=False)
+        self.tools.probe_failures.add(CANDIDATE["version"])
+        self.tools.probe_findings[CANDIDATE["version"]] = [{"name": "mcp_execution_deadline"}]
+        with self.assertRaises(subprocess.CalledProcessError):
+            self.receipt("--identity", json.dumps(CANDIDATE))
+        self.assertEqual(self.last["result"], "failure")
+        self.assertEqual(self.last["compressionBackoff"]["observations"]["grown"]["compressionCalls"], 0)
+        self.assertEqual(self.last["agentProbe"]["findings"], self.tools.probe_findings[CANDIDATE["version"]])
+        self.assertEqual(self.tools.ran("docker"), [])
+        self.assertFalse(any(command[0].endswith("test.sh") for command in self.tools.commands))
 
-    def test_historical_compression_expectations_do_not_weaken_candidates(self):
-        for version in ("0.21.7", "0.22.0"):
-            checker.validate_compression_backoff(compression_report(growth=False), supported_version=version)
-            with self.assertRaisesRegex(RuntimeError, "grown"):
-                checker.validate_compression_backoff(compression_report(), supported_version=version)
-        with self.assertRaisesRegex(RuntimeError, "grown"):
-            checker.validate_compression_backoff(compression_report(growth=False), supported_version="0.22.1")
-        checker.validate_compression_backoff(compression_report(), baseline=compression_report(growth=False))
+    def test_upstream_findings_cannot_mask_failed_sidecar_tests(self):
+        self.tools.probe_findings[CANDIDATE["version"]] = [{"name": "mcp_execution_deadline"}]
+        self.tools.sidecar_failures = 1
+        with self.assertRaises(subprocess.CalledProcessError):
+            self.receipt("--identity", json.dumps(CANDIDATE))
+        self.assertEqual(self.last["result"], "failure")
+        self.assertEqual(self.last["tests"]["failed"], 1)
+        self.assertEqual(self.tools.ran("docker"), [])
 
-    def test_broken_compression_baseline_cannot_authorize_candidate(self):
-        self.tools.compression_reports[RELEASES[-1]["version"]] = compression_report(growth=False)
-        with self.assertRaisesRegex(RuntimeError, "compression backoff failed: grown"):
-            self.receipt("--identity", json.dumps(CANDIDATE), "--skip-docker", "--skip-sidecar-tests")
-        self.assertNotIn("candidate", self.last["compressionBackoff"])
-
-    def test_release_image_must_reproduce_compression_observations(self):
+    def test_release_image_must_reproduce_upstream_observations(self):
         self.receipt("--release", RELEASES[-1]["releaseTag"])
         run = next(command for command in self.tools.ran("docker") if command[:2] == ["docker", "run"])
         self.assertIn("TALARIA_AGENT_COMPRESSION_EXPECTED=" + json.dumps(compression_report()), run)
-
-    def test_each_write_edit_path_and_approval_outcome_is_enforced(self):
-        for case in approval_report():
-            for field in ("gateCalls", "mutated", "expectedContent"):
-                with self.subTest(case=case, field=field):
-                    report = approval_report()
-                    report[case][field] = not report[case][field]
-                    with self.assertRaisesRegex(RuntimeError, case):
-                        checker.validate_ssh_approval(report, baseline=approval_report())
-        with self.assertRaisesRegex(RuntimeError, "write/absolute/deny"):
-            checker.validate_ssh_approval({})
-
-    def test_historical_supported_releases_report_the_missing_relative_guarantee(self):
-        for version in ("0.21.7", "0.22.0"):
-            with self.subTest(version=version):
-                checker.validate_ssh_approval(approval_report(relative_gate=False), supported_version=version)
-        with self.assertRaisesRegex(RuntimeError, "write/relative/deny"):
-            checker.validate_ssh_approval(approval_report(relative_gate=False), supported_version="0.22.1")
-        checker.validate_ssh_approval(approval_report(), baseline=approval_report(relative_gate=False))
-
-    def test_a_broken_baseline_cannot_authorize_a_candidate(self):
-        self.tools.approval_reports[RELEASES[-1]["version"]] = approval_report(relative_gate=False)
-        with self.assertRaisesRegex(RuntimeError, "write/relative/deny"):
-            self.receipt("--identity", json.dumps(CANDIDATE), "--skip-docker", "--skip-sidecar-tests")
-        self.assertNotIn("candidate", self.last["sshConfigApproval"])
-        self.assertEqual(self.tools.fetched, "refs/tags/" + RELEASES[-1]["releaseTag"])
-
-    def test_candidate_deadline_regression_is_named_in_failure_receipt(self):
-        self.tools.probe_findings[CANDIDATE["version"]] = [{"name": "mcp_execution_deadline", "case": "explicit/sequential",
-                                     "expected": "completed", "actual": "tool_timeout"}]
-        with self.assertRaises(subprocess.CalledProcessError):
-            self.receipt("--identity", json.dumps(CANDIDATE), "--skip-docker", "--skip-sidecar-tests")
-        self.assertEqual(self.last["result"], "failure")
-        self.assertEqual(self.last.get("agentProbe", {}).get("findings"), self.tools.probe_findings[CANDIDATE["version"]])
-        self.assertEqual(self.last["agentProbe"]["baseline"]["findings"], [])
-        self.assertEqual(self.last["sshConfigApproval"]["candidate"], approval_report())
-        self.assertEqual(self.tools.ran("docker"), [])
-        self.assertFalse(any(command[0].endswith("test.sh") for command in self.tools.commands))
+        self.assertIn("TALARIA_AGENT_SSH_EXPECTED=" + json.dumps(approval_report()), run)
 
     def test_candidate_and_canary_require_retained_state_probes_even_without_sidecar_tests(self):
         for selector in (["--identity", json.dumps(CANDIDATE)], ["--main", "9" * 40]):

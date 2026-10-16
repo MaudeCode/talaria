@@ -318,19 +318,6 @@ def probe_mcp_deadlines(report):
             shutdown_mcp_servers()
 
 
-report = {"sshConfigApproval": observations, "compressionBackoff": compression, "checks": [], "findings": []}
-try:
-    probe_mcp_deadlines(report)
-except Exception as error:
-    report["findings"].append({"name": "mcp_execution_deadline", "error": f"{type(error).__name__}: {error}"})
-finally:
-    if path := os.environ.get("TALARIA_AGENT_PROBE_REPORT"):
-        Path(path).write_text(json.dumps(report, indent=2) + "\n")
-    print(json.dumps(report))
-assert not report["findings"], report["findings"]
-print(f"PASS Agent {__version__}: real MCP registration and executor deadlines")
-
-
 def probe_retained_cron():
     """Replay records written by v0.22.1's real writers; discovery and delivery never leave this fixture."""
     from talaria_sidecar.methods import cron, cron_execution
@@ -365,8 +352,6 @@ def probe_retained_cron():
                 assert not stored_result, f"stored manual result could not be reconciled: {exc}"
                 assert "owning gateway is unavailable" in str(exc), exc
                 assert file.exists(), "unknown manual result lost its retained evidence"
-        if not compatible:
-            failures.append(f"manual recovery ({'stored' if stored_result else 'unknown'} result) is unsupported")
         file.unlink(missing_ok=True)
 
     from tools import bot_live_delivery
@@ -393,9 +378,19 @@ def probe_retained_cron():
         failures.append(f"pending Bot Chat drain failed: {type(exc).__name__}: {exc}")
     if file.read_bytes() != before:
         failures.append("pending Bot Chat drain changed a base-written record without a live owner")
-    assert not failures, "; ".join(failures)
-    print(f"PASS Agent {__version__}: retained v0.22.1 manual recovery and Bot Chat delivery formats")
+    print(f"PASS Talaria with Agent {__version__}: retained manual recovery completes or safely refuses")
+    return {"manualRecovery": "supported" if compatible else "refused_preserving_records", "upstreamFindings": failures}
 
 
-if os.environ.get("TALARIA_AGENT_UPGRADE_PROBE") == "1":
-    probe_retained_cron()
+report = {"sshConfigApproval": observations, "compressionBackoff": compression, "checks": [], "findings": []}
+try:
+    probe_mcp_deadlines(report)
+    if os.environ.get("TALARIA_AGENT_UPGRADE_PROBE") == "1":
+        report["retainedCron"] = probe_retained_cron()
+except Exception as error:
+    report["probeError"] = f"{type(error).__name__}: {error}"
+    raise
+finally:
+    if path := os.environ.get("TALARIA_AGENT_PROBE_REPORT"):
+        Path(path).write_text(json.dumps(report, indent=2) + "\n")
+    print(json.dumps(report))

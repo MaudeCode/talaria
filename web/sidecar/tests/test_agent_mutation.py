@@ -84,7 +84,9 @@ def mark_stop_sent(token,pid):
  except OSError: pass
 def write(token,owner=None):
  if (HOME/'fail-stop-record').exists() and token.get('stop_sent'): raise OSError('synthetic checkpoint failure')
- file().write_text(json.dumps({**token,'owner':owner or os.getpid()}))
+ temporary=file().with_name(file().name+'.'+uuid.uuid4().hex+'.tmp')
+ temporary.write_text(json.dumps({**token,'owner':owner or os.getpid()}))
+ temporary.replace(file())
 def discharge(token): file().unlink(missing_ok=True)
 def tree_is_whole(token,root=None): return not ((HOME/'torn').exists() or (HOME/'dependency-stale').exists()),'synthetic torn tree or stale dependencies'
 def record_path(): return file()
@@ -172,6 +174,32 @@ def _checkout_move(token,*args,**kwargs): yield {}
     target = git('rev-parse', 'HEAD')
     git('reset', '--hard', base)
     return root, home, base, target
+
+
+def test_native_pause_record_stays_readable_during_publication(tmp_path, monkeypatch):
+    import importlib.util
+
+    root, home, _, _ = native_agent(tmp_path)
+    monkeypatch.setenv('HERMES_HOME', str(home))
+    spec = importlib.util.spec_from_file_location('synthetic_pause_record', root / 'hermes_cli/update_pause_record.py')
+    records = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(records)
+    published = records.file()
+    before = json.dumps({'owner': 'original'})
+    published.write_text(before)
+    observations = []
+    original_open = Path.open
+
+    def observe_open(path, mode='r', *args, **kwargs):
+        handle = original_open(path, mode, *args, **kwargs)
+        if mode == 'w' and path.parent == home:
+            observations.append(published.read_text())
+        return handle
+
+    monkeypatch.setattr(Path, 'open', observe_open)
+    records.write({'resume_needed': True}, owner='unowned')
+    assert observations == [before], 'readers must see the prior complete record during publication'
+    assert json.loads(published.read_text()) == {'resume_needed': True, 'owner': 'unowned'}
 
 
 @contextmanager
