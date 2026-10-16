@@ -30,12 +30,12 @@ function applyServeArgs(argv: string[]): void {
 
 /** The long-lived server: `.env` precedence, Agent sidecar, workers. A supervisor parent respawns the worker after a self-update. */
 async function serve(args: string[]): Promise<number> {
-  if (process.env[WORKER_ENV] !== '1') return supervise({ command: [...serveCommand, ...args], env: process.env, log })
   // dotenv first so explicit serve arguments (positional port, --host) win over the checkout `.env`.
   const home = process.env.HOME ?? ''
   loadStartupEnv({ env: process.env, webRoot, home, log: warn })
   applyServeArgs(args)
   const config = loadConfig({ webRoot })
+  if (process.env[WORKER_ENV] !== '1') return supervise({ command: [...serveCommand, ...args], env: process.env, log, packageRoot: webRoot, stateDir: config.stateDir })
   const sidecar = launchSidecar({ env: config.env, hermesHome: config.hermesHome, webRoot, home: config.homeDir, log })
   if (sidecar) {
     try {
@@ -56,6 +56,7 @@ async function serve(args: string[]): Promise<number> {
   await Promise.resolve().then(() => deps.agentConfig.read(deps.profileHome(deps.activeProfile()))).catch(() => undefined)
   const app = createApp(deps)
   const running = await startServer(app, deps.config)
+  if (process.connected) process.send?.('ready')
   deps.relay.start()
   deps.completions.start()
   deps.hygiene.start()

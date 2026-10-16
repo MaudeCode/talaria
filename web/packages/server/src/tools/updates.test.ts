@@ -363,12 +363,12 @@ describe('Web source updates (test_tal203_source_update.py)', () => {
   }
 
   /** An UpdateService over a global npm install one Stable release behind, the only kind that updates itself (TAL-379). */
-  function npmService(opts: { channel?: () => 'stable' | 'experimental'; agentDir?: string | null; blockers?: () => RestartBlockers; autoApply?: () => boolean; checkEnabled?: () => boolean; autoNotification?: UpdateServiceDeps['autoNotification']; npm?: (inner: BuildRun) => BuildRun } = {}) {
+  function npmService(opts: { stateDir?: string; channel?: () => 'stable' | 'experimental'; agentDir?: string | null; blockers?: () => RestartBlockers; autoApply?: () => boolean; checkEnabled?: () => boolean; autoNotification?: UpdateServiceDeps['autoNotification']; npm?: (inner: BuildRun) => BuildRun } = {}) {
     const s = sourceInstall()
     const n = npmPackageInstall(s)
     const restarts: number[] = []
     const svc = new UpdateService({
-      webRoot: n.packageRoot, git: s.run, npm: opts.npm ? opts.npm(n.npm) : n.npm, getJson: s.getJson, identity: s.identity, webuiVersion: 'web-v1.0.0',
+      stateDir: opts.stateDir ?? tmp(), webRoot: n.packageRoot, git: s.run, npm: opts.npm ? opts.npm(n.npm) : n.npm, getJson: s.getJson, identity: s.identity, webuiVersion: 'web-v1.0.0',
       agentDir: () => opts.agentDir ?? null, channel: opts.channel ?? (() => 'stable'), includeAgent: () => true,
       ...(opts.autoApply ? { autoApply: opts.autoApply } : {}), ...(opts.checkEnabled ? { checkEnabled: opts.checkEnabled } : {}),
       ...(opts.autoNotification ? { autoNotification: opts.autoNotification } : {}),
@@ -380,13 +380,52 @@ describe('Web source updates (test_tal203_source_update.py)', () => {
     return { s, n, svc, restarts, installs, version }
   }
 
+  it('keeps the previous package and writes rollback intent before restarting (TAL-1014)', async () => {
+    const stateDir = tmp()
+    const { n, svc } = npmService({ stateDir })
+    const previous = join(n.packageRoot, '..', '.talaria-web-previous')
+    write(join(previous, 'obsolete'), 'older backup')
+    expect(await svc.apply('webui')).toMatchObject({ ok: true, restart_scheduled: true })
+    expect(existsSync(join(previous, 'package.json'))).toBe(true)
+    expect(JSON.parse(readFileSync(join(previous, 'package.json'), 'utf8'))).toMatchObject({ version: '1.0.0' })
+    expect(existsSync(join(previous, 'obsolete'))).toBe(false)
+    expect(JSON.parse(readFileSync(join(stateDir, 'update-rollback.json'), 'utf8'))).toEqual({ version: '2.0.0', previousVersion: '1.0.0' })
+  })
+
+  it('preserves the running package if rollback intent cannot be persisted (TAL-1014)', async () => {
+    const stateDir = tmp()
+    mkdirSync(join(stateDir, 'update-rollback.json'))
+    const { svc, version, restarts } = npmService({ stateDir })
+    expect(await svc.apply('webui')).toMatchObject({ ok: false, install_failed: true })
+    expect(version()).toBe('1.0.0')
+    expect(restarts).toEqual([])
+  })
+
+  it('reports a failed update and skips automatic reinstallation but permits manual retry (TAL-1014)', async () => {
+    const stateDir = tmp()
+    write(join(stateDir, 'update-rollback.json'), JSON.stringify({ version: '2.0.0', previousVersion: '1.0.0', failedVersion: '2.0.0' }))
+    const begin = vi.fn(() => 'unexpected-notification')
+    const { svc, installs, restarts } = npmService({ stateDir, autoApply: () => true, autoNotification: { begin, transition: vi.fn() } })
+    const failed_update = { version: '2.0.0', restored_version: '1.0.0' }
+    expect((await svc.check(true)).webui).toMatchObject({ failed_update })
+    expect(svc.cachedStatus().webui).toMatchObject({ failed_update })
+    await svc.autoApplyOnce()
+    expect(installs()).toBe(0)
+    expect(restarts).toEqual([])
+    expect(begin).not.toHaveBeenCalled()
+    expect(await svc.apply('webui')).toMatchObject({ ok: true, restart_scheduled: true })
+    expect(installs()).toBe(1)
+    // Keep the failure visible until the retried worker reports ready.
+    expect(JSON.parse(readFileSync(join(stateDir, 'update-rollback.json'), 'utf8'))).toMatchObject({ failedVersion: '2.0.0' })
+  })
+
   it('automatically installs the exact completed Stable npm release and schedules restart', async () => {
     const s = sourceInstall()
     const n = npmPackageInstall(s)
     const restarts: number[] = []
     const svc = new UpdateService({
       webRoot: n.packageRoot, git: s.run, npm: n.npm, getJson: s.getJson, identity: s.identity, webuiVersion: 'web-v1.0.0',
-      agentDir: () => null, channel: () => 'stable', includeAgent: () => false, autoApply: () => true,
+      stateDir: tmp(), agentDir: () => null, channel: () => 'stable', includeAgent: () => false, autoApply: () => true,
       blockers: () => ({ active_streams: 0, active_runs: 0, blocking_stream_ids: [], blocking_run_ids: [], restart_blocked: false }),
       scheduleRestart: () => restarts.push(1), log: () => undefined,
     })
@@ -401,7 +440,7 @@ describe('Web source updates (test_tal203_source_update.py)', () => {
   it.each(['failure', 'bad-stamp', 'empty-dependency'] as const)('fails closed when the npm replacement is %s', async (outcome) => {
     const s = sourceInstall()
     const n = npmPackageInstall(s, outcome)
-    const result = await applyWebUpdate(n.packageRoot, 'stable', s.run, s.getJson, s.identity, n.npm)
+    const result = await applyWebUpdate(n.packageRoot, 'stable', s.run, s.getJson, s.identity, n.npm, () => true, { stateDir: tmp() })
     expect(result.ok).toBe(false)
     expect(result[outcome === 'failure' ? 'install_failed' : 'verification_failed']).toBe(true)
     expect((JSON.parse(readFileSync(join(n.packageRoot, 'package.json'), 'utf8')) as { version: string }).version).toBe('1.0.0')
@@ -413,7 +452,7 @@ describe('Web source updates (test_tal203_source_update.py)', () => {
   ] as const)('fails closed when the candidate %s (TAL-1012)', async (outcome, detail) => {
     const s = sourceInstall()
     const n = npmPackageInstall(s, outcome)
-    const result = await applyWebUpdate(n.packageRoot, 'stable', s.run, s.getJson, s.identity, n.npm, () => true, { selfCheckTimeoutMs: 1000 })
+    const result = await applyWebUpdate(n.packageRoot, 'stable', s.run, s.getJson, s.identity, n.npm, () => true, { stateDir: tmp(), selfCheckTimeoutMs: 1000 })
     expect(result).toMatchObject({ ok: false, verification_failed: true })
     expect(result.message).toContain(detail)
     expect((JSON.parse(readFileSync(join(n.packageRoot, 'package.json'), 'utf8')) as { version: string }).version).toBe('1.0.0')
@@ -422,11 +461,11 @@ describe('Web source updates (test_tal203_source_update.py)', () => {
   it('accepts a Stable candidate from before self-check once its node-pty binding loads (TAL-1012)', async () => {
     const s = sourceInstall()
     const n = npmPackageInstall(s, 'legacy-bin')
-    expect(await applyWebUpdate(n.packageRoot, 'stable', s.run, s.getJson, s.identity, n.npm)).toMatchObject({ ok: true })
+    expect(await applyWebUpdate(n.packageRoot, 'stable', s.run, s.getJson, s.identity, n.npm, () => true, { stateDir: tmp() })).toMatchObject({ ok: true })
     expect((JSON.parse(readFileSync(join(n.packageRoot, 'package.json'), 'utf8')) as { version: string }).version).toBe('2.0.0')
     const t = sourceInstall()
     const broken = npmPackageInstall(t, 'legacy-bin-broken-pty')
-    const result = await applyWebUpdate(broken.packageRoot, 'stable', t.run, t.getJson, t.identity, broken.npm)
+    const result = await applyWebUpdate(broken.packageRoot, 'stable', t.run, t.getJson, t.identity, broken.npm, () => true, { stateDir: tmp() })
     expect(result).toMatchObject({ ok: false, verification_failed: true })
     expect(result.message).toContain('synthetic pty ABI mismatch')
   })
@@ -481,7 +520,7 @@ describe('Web source updates (test_tal203_source_update.py)', () => {
     const prompts: string[] = []
     let channel: 'stable' | 'experimental' = mismatch ? 'experimental' : 'stable'
     const svc = new UpdateService({
-      webRoot: n.packageRoot, git: s.run, npm: n.npm, getJson, identity: s.identity, webuiVersion: 'web-v1.0.0',
+      stateDir: tmp(), webRoot: n.packageRoot, git: s.run, npm: n.npm, getJson, identity: s.identity, webuiVersion: 'web-v1.0.0',
       agentDir: () => null, channel: () => channel, includeAgent: () => false,
       blockers: () => ({ active_streams: 0, active_runs: 0, blocking_stream_ids: [], blocking_run_ids: [], restart_blocked: false }),
       scheduleRestart: () => undefined, llm: (_system, user) => { prompts.push(user); return Promise.resolve('- Notice: Chats open faster') }, log: () => undefined,
@@ -521,7 +560,7 @@ describe('Web source updates (test_tal203_source_update.py)', () => {
     const n = npmPackageInstall(s, 'success', runtime)
     const restarts: number[] = []
     const svc = new UpdateService({
-      webRoot: n.packageRoot, git: s.run, npm: n.npm, getJson, identity: s.identity, webuiVersion: 'web-v1.0.0', agentDir: () => null, channel: () => 'stable', includeAgent: () => false,
+      stateDir: tmp(), webRoot: n.packageRoot, git: s.run, npm: n.npm, getJson, identity: s.identity, webuiVersion: 'web-v1.0.0', agentDir: () => null, channel: () => 'stable', includeAgent: () => false,
       blockers: () => ({ active_streams: 0, active_runs: 0, blocking_stream_ids: [], blocking_run_ids: [], restart_blocked: false }),
       scheduleRestart: () => restarts.push(1), log: () => undefined,
     })
@@ -552,7 +591,7 @@ describe('Web source updates (test_tal203_source_update.py)', () => {
 
   it('without a version still installs the newest Stable Web release (TAL-946)', async () => {
     const h = stableHistory()
-    expect(await applyWebUpdate(h.n.packageRoot, 'stable', h.s.run, h.getJson, h.s.identity, h.n.npm)).toMatchObject({ ok: true, npm: '@maudecode/talaria-web@2.0.0' })
+    expect(await applyWebUpdate(h.n.packageRoot, 'stable', h.s.run, h.getJson, h.s.identity, h.n.npm, () => true, { stateDir: tmp() })).toMatchObject({ ok: true, npm: '@maudecode/talaria-web@2.0.0' })
     expect(h.installs()).toEqual(['@maudecode/talaria-web@2.0.0'])
   })
 

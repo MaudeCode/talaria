@@ -23,6 +23,7 @@ import { dict } from '../config/agent-config.js'
 import { supportedAgents, validateReleaseInfo } from '../release.js'
 import { str } from '../util.js'
 import { atomicWriteText } from '../fs/atomic.js'
+import { readUpdateRollback, rollbackPaths } from './update-rollback.js'
 import { isWithin, resolvePathLikePython } from '../workspace/paths.js'
 
 export const REPOSITORY = 'MaudeCode/talaria'
@@ -574,7 +575,7 @@ export async function checkWebUpdate(webRoot: string | null, currentVersion: str
 }
 
 /** Packaged-install collaborators: the Experimental registry, Web's state dir for channel-switch backups, and the candidate self-check timeout. */
-export interface PackagedUpdateOptions { registry?: ExperimentalRegistry | undefined; stateDir?: string | undefined; selfCheckTimeoutMs?: number | undefined }
+export interface PackagedUpdateOptions { registry?: ExperimentalRegistry | undefined; stateDir?: string | undefined; selfCheckTimeoutMs?: number | undefined; skipFailedVersion?: boolean | undefined }
 
 export const CHANNEL_SWITCH_BACKUPS = 5
 /** Web's persisted stores (`settings.json`, the project store, the workspace store) as seen from the state dir. */
@@ -632,6 +633,8 @@ async function applyNpmWebUpdate(webRoot: string | null, channel: Channel, getJs
     // validateReleaseInfo (in diskRelease) already applies Stable's contract and Agent-pin checks to the packaged files.
     target = { version: release.version, sourceRevision: release.sourceRevision, label: `Experimental ${release.version}`, matches: (r) => r !== null && same({ tag: r.tag, version: r.version, sourceRevision: r.sourceRevision, releaseSet: r.releaseSet }, identity), experimental: release }
   }
+  const priorRollback = readUpdateRollback(packaged.stateDir)
+  if (packaged.skipFailedVersion && priorRollback?.failedVersion === target.version) return { ok: false, target: 'webui', channel, message: `Automatic update skipped: ${target.version} previously failed to start.` }
   const current = !switching && target.matches(onDisk)
   if (current) {
     if (same(id.release(), onDisk)) return { ok: true, up_to_date: true, target: 'webui', channel, message: channel === 'stable' ? 'Talaria Web already contains the selected npm release.' : `Talaria Web already contains ${target.label}.` }
@@ -640,9 +643,11 @@ async function applyNpmWebUpdate(webRoot: string | null, channel: Channel, getJs
   if (!canApply()) return { ok: false, message: 'Web update deferred because its settings or lifecycle changed.' }
   // Global npm installs keep dependencies inside the package. Build the replacement beside the old package so
   // install/verification failures cannot damage the running installation and the final rename stays on one volume.
+  if (!packaged.stateDir) return { ok: false, install_failed: true, message: 'The Web state directory is unknown; rollback cannot be recorded.' }
+  const paths = rollbackPaths(installed.packageRoot, packaged.stateDir)
   const staging = mkdtempSync(join(dirname(installed.packageRoot), '.talaria-update-'))
   const candidate = join(staging, 'lib/node_modules/@maudecode/talaria-web')
-  const backup = join(staging, 'previous')
+  const backup = paths.previous
   let keepBackup = false
   let stores: string | null = null
   try {
@@ -679,10 +684,19 @@ async function applyNpmWebUpdate(webRoot: string | null, channel: Channel, getJs
         return { ok: false, backup_failed: true, target: 'webui', channel, message: `Channel switch aborted: Web settings could not be backed up (${sanitizeGitDiagnostic((error as Error).message, 300)}). The installed package was preserved.` }
       }
     }
+    mkdirSync(packaged.stateDir, { recursive: true })
+    rmSync(backup, { recursive: true, force: true })
     renameSync(installed.packageRoot, backup)
-    try { renameSync(candidate, installed.packageRoot) } catch (error) {
+    let swapped = false
+    try {
+      renameSync(candidate, installed.packageRoot)
+      swapped = true
+      atomicWriteText(paths.marker, JSON.stringify({ version: target.version, previousVersion: installed.version,
+        ...(priorRollback?.failedVersion ? { failedVersion: priorRollback.failedVersion } : {}) }))
+    } catch (error) {
       // Never delete the only surviving copy if a filesystem error also prevents restoration.
       keepBackup = true
+      if (swapped) renameSync(installed.packageRoot, candidate)
       renameSync(backup, installed.packageRoot)
       keepBackup = false
       throw error
@@ -803,7 +817,7 @@ export interface AgentUpdatePolicy {
   beforeMutation?: (path: string, revision: string) => Promise<void>
 }
 /** `version` (TAL-946) names a listed Stable release `ref` for either target; omitted, an update takes the newest. */
-export interface UpdateOptions { agentChannel?: Channel | undefined; confirmedRevision?: string | undefined; version?: string | undefined }
+export interface UpdateOptions { skipFailedVersion?: boolean | undefined; agentChannel?: Channel | undefined; confirmedRevision?: string | undefined; version?: string | undefined }
 type AgentSupport = 'supported' | 'unchecked'
 /** Only an exact verified revision is supported: a moved tag, a non-tag HEAD, Experimental `main` and a missing record are all unchecked. */
 const agentSupport = (sha: unknown, policy: AgentUpdatePolicy): AgentSupport =>
@@ -1442,6 +1456,8 @@ export class UpdateService {
       // A cached result from the other mode never answers this one: re-enabled Agent checks wait for the next check.
       cached.agent = includeAgent ? null : ignoredAgent()
     }
+    const rollback = readUpdateRollback(this.deps.stateDir)
+    if (rollback?.failedVersion) cached.webui = { ...dict(cached.webui), failed_update: { version: rollback.failedVersion, restored_version: rollback.previousVersion } }
     cached.cached = true
     return cached
   }
@@ -1464,6 +1480,8 @@ export class UpdateService {
     this.checking = (async () => {
       try {
         const webui = this.keepLastGood('webui', channel, await checkWebUpdate(this.deps.webRoot, this.deps.webuiVersion, channel, this.git, this.deps.getJson, this.deps.identity, this.deps.npm ?? runPackageNpm, this.deps.experimental))
+        const rollback = readUpdateRollback(this.deps.stateDir)
+        if (rollback?.failedVersion) webui.failed_update = { version: rollback.failedVersion, restored_version: rollback.previousVersion }
         // The check may have fetched release tags the startup `git describe` never saw.
         if (this.deps.refreshWebuiVersion) webui.current_version = this.deps.refreshWebuiVersion()
         const agentDir = this.deps.agentDir()
@@ -1542,8 +1560,9 @@ export class UpdateService {
       if (!stillEnabled()) return web
       if (web.error || web.manual_update) { this.deps.log(`[updates] automatic Web update unavailable: ${str(web.error || web.message)}`); return web }
       if (!(Number(web.behind) > 0 || web.metadata_repair === true)) return web
+      if (readUpdateRollback(this.deps.stateDir)?.failedVersion === str(web.latest_version).replace(/^web-(?:exp-)?v/, '')) return web
       notificationId = this.deps.autoNotification?.begin() ?? null
-      const result = await this.apply('webui', channel, stillEnabled)
+      const result = await this.apply('webui', channel, stillEnabled, { skipFailedVersion: true })
       if (notificationId) {
         if (result.restart_blocked === true) this.deps.autoNotification?.transition(notificationId, 'blocked', null, undefined, result.message)
         else if (result.ok !== true) this.deps.autoNotification?.transition(notificationId, 'failed', null, undefined, result.message || result.error)
@@ -1592,7 +1611,7 @@ export class UpdateService {
   private async applyInner(target: string, channel: Channel, canApply: () => boolean = () => true, options: UpdateOptions = {}): Promise<Dict> {
     if (target === 'webui') {
       const lifecycle = this.lifecycle
-      const result = await applyWebUpdate(this.deps.webRoot, channel, this.git, this.deps.getJson, this.deps.identity, this.deps.npm ?? runPackageNpm, canApply, { registry: this.deps.experimental, stateDir: this.deps.stateDir }, options.version)
+      const result = await applyWebUpdate(this.deps.webRoot, channel, this.git, this.deps.getJson, this.deps.identity, this.deps.npm ?? runPackageNpm, canApply, { registry: this.deps.experimental, stateDir: this.deps.stateDir, skipFailedVersion: options.skipFailedVersion }, options.version)
       // Settings can cancel before mutation, but a committed replacement must finish restarting unless shutting down.
       if (result.ok && !result.up_to_date && lifecycle === this.lifecycle) { this.cache.checked_at = 0; this.autoRestartScheduled = true; this.stopAutoApply(); this.deps.scheduleRestart(); result.restart_scheduled = true }
       return result

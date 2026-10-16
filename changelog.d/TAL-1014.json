@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Web updates restore the previous version if the new server fails to start, and automatic updates skip that failed version.",
+      "highlight": false,
+      "components": ["web"]
+    }
+  ]
+}

@@ -242,3 +242,30 @@ shell once the server is reachable; offline it falls back to the cached shell an
 Packaged installations compare version numbers only within the selected channel.
 Switching between stable and experimental reports a manual update with unknown
 distance, even when both tags refer to the same source.
+
+## Failed Web startup recovery
+
+A direct global npm self-update retains the replaced package at
+`@maudecode/.talaria-web-previous` beside `talaria-web` and writes
+`update-rollback.json` in the Web state directory. The existing supervisor waits
+for the updated worker's HTTP listener to report ready over IPC. If that worker
+exits before readiness after requesting a restart, the supervisor moves it to
+`.talaria-web-failed`, restores the previous package, and starts it once. A crash
+after readiness, a normal initial-start failure, or a crash of the restored
+worker exits normally without another rollback. If the restored package is back
+in place but the state directory cannot record the failure, the supervisor logs
+the persistence error and still starts the restored worker once. State stores
+are not reverted.
+
+The marker retains the failed version, and Web update status exposes it as
+`failed_update: { version, restored_version }`. Automatic updates skip that exact
+version on either channel. An owner can retry it manually; its failure record
+clears only when the replacement worker reports ready, which also removes the
+quarantined failed package. Ordinary restarts of the restored version keep the
+failure record and quarantine. Each worker reloads values owned by the Hermes
+home `.env`, so a restart picks up credential rotations and removals while
+preserving variables set by the operator. A newer version remains
+eligible for automatic updates. The previous package stays until the next
+verified package replacement, which replaces that backup. Recovery requires the
+known-good supervisor to remain running through the update; an external service
+restart during the package swap is outside this recovery path.
