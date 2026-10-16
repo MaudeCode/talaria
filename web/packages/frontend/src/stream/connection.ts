@@ -211,15 +211,14 @@ export interface StartTurnInput { sessionId: string; message: string; request: O
 
 /** Send a turn: POST /api/chat/start, adopt the server turn identity, open the stream. */
 export async function startTurn(input: StartTurnInput) {
-  suspend(input.sessionId)
-  const owner = {}
+  const owner = owners.get(input.sessionId) ?? {}
   owners.set(input.sessionId, owner)
   try {
     const res = await api.startChat({ session_id: input.sessionId, message: input.message, ...input.request })
     if (owners.get(input.sessionId) === owner) adoptTurn(input.sessionId, input.message, res)
     return res
   } finally {
-    if (owners.get(input.sessionId) === owner) owners.delete(input.sessionId)
+    if (owners.get(input.sessionId) === owner && !live.has(input.sessionId) && !attaching.has(input.sessionId)) owners.delete(input.sessionId)
   }
 }
 
@@ -321,7 +320,7 @@ export function teardownAll(): void {
 /** Apply a fresh detail only to the run that existed when its request began. */
 export function reconcileSession(sessionId: string, session: Session, expectedStreamId: string | undefined): void {
   const turn = getStreamState().turns[sessionId]
-  if (turn && turn.streamId === expectedStreamId && session.active_stream_id !== turn.streamId) discardSession(sessionId)
+  if (turn && !isTerminal(turn.status) && turn.streamId === expectedStreamId && session.active_stream_id !== turn.streamId) discardSession(sessionId)
 }
 
 export function hasLiveConnection(sessionId: string): boolean {

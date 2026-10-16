@@ -201,7 +201,9 @@ Returning paints that turn immediately and reconnects from its last applied even
 Inactive turns are evicted oldest first above 20 turns or 2,000,000 serialized
 characters (the boot snapshot's size convention). Eviction drops display and
 cursor together; the next attach uses the server's cold-replay cursor. Fresh
-detail retires an ended or replaced run. Deletion, logout, authentication loss,
+detail retires a retained run that ended or was replaced while disconnected.
+An observed terminal frame keeps its transient continuation-link metadata until
+navigation or the next run. Deletion, logout, authentication loss,
 and profile/context resets clear the corresponding turns and pending work.
 This cache is process-local and does not survive a reload.
 

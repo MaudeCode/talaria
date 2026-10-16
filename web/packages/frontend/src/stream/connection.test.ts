@@ -275,6 +275,17 @@ describe('navigation ownership and retention (TAL-1050)', () => {
     expect(liveText(getStreamState().turns[SID]!)).toBe('')
   })
 
+  it('a suppressed control message keeps the existing live transport and scene', async () => {
+    await attachToStream(SID, 'run-a')
+    opened[0]!.onEvent(token('Working'), 'run-a:1')
+    vi.mocked(api.startChat).mockResolvedValueOnce({ status: 'suppressed' })
+    await startTurn({ sessionId: SID, message: '/control', request: {} })
+    expect(opened[0]!.close).not.toHaveBeenCalled()
+    expect(hasLiveConnection(SID)).toBe(true)
+    opened[0]!.onEvent(token(' still'), 'run-a:2')
+    expect(liveText(getStreamState().turns[SID]!)).toBe('Working still')
+  })
+
   it('a delayed send response cannot reopen a session after navigation or context reset', async () => {
     const response = deferred<Awaited<ReturnType<typeof api.startChat>>>()
     vi.mocked(api.startChat).mockReturnValueOnce(response.promise)
@@ -295,6 +306,17 @@ describe('navigation ownership and retention (TAL-1050)', () => {
     await cancelling
     expect(hasLiveConnection(SID)).toBe(true)
     expect(getStreamState().turns[SID]?.streamId).toBe('run-b')
+  })
+
+  it.each(['apperror', 'error'] as const)('fresh detail preserves the %s continuation link until navigation', async (event) => {
+    await attachToStream(SID, 'run-a')
+    const session = sessionFixture({ session_id: SID, messages: [] })
+    opened[0]!.onEvent(parseChatEvent(event, JSON.stringify({ session, type: 'context_limit', message: 'Continue in another chat', continuation_session_id: 'continuation-a' }))!, 'run-a:1')
+    reconcileSession(SID, session, 'run-a')
+    expect(getStreamState().turns[SID]?.error?.continuationSessionId).toBe('continuation-a')
+    expect(getStreamState().turns[SID]?.doneSession).toEqual(session)
+    teardown(SID)
+    expect(getStreamState().turns[SID]).toBeUndefined()
   })
 
   it('fresh detail retires only its original run when that run ended or was replaced', async () => {
