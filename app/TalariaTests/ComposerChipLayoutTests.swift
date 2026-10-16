@@ -51,6 +51,169 @@ final class ComposerChipLayoutTests: XCTestCase {
 }
 
 @MainActor
+final class StatusChipGroupTests: XCTestCase {
+    private final class Model: ObservableObject {
+        @Published var count = 0
+        @Published var queueCount = 2
+        @Published var compression = false
+        @Published var runVisible = true
+        @Published var syncing = false
+        @Published var reservedHeight: CGFloat = 0
+        var appearances = 0
+        var queueOpens = 0
+    }
+
+    private struct Entries: View {
+        @ObservedObject var model: Model
+        var body: some View {
+            let hasRun = model.count > 0 && model.runVisible
+            StatusChipGroup(
+                reservesFirstSegment: !hasRun || !model.syncing,
+                onReservedHeightChange: { model.reservedHeight = $0 }
+            ) {
+                if hasRun {
+                    RunStatusChip(.init(kind: model.syncing ? .syncing : (model.compression ? .compressing : .active),
+                                        runStartedAt: Date(timeIntervalSince1970: 2_000_000_000)), agentName: "Fixture")
+                        .layoutPriority(-1)
+                        .onAppear { model.appearances += 1 }
+                }
+                if model.count > 2 {
+                    StatusChip(label: "Goal", icon: .symbol("target"))
+                }
+                if model.count > 1 {
+                    Button { model.queueOpens += 1 } label: {
+                        StatusChip(label: "\(model.queueCount) queued", icon: .symbol("text.badge.plus"))
+                            .frame(minHeight: 44)
+                            .contentShape(.rect)
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+            .animation(.easeInOut(duration: 0.2), value: model.count)
+            .padding(16)
+        }
+    }
+
+    func testZeroOneTwoThreeAndQueueUpdatesKeepTheStatusAlive() throws {
+        let model = Model()
+        let window = try hostWindow(Entries(model: model), animationsEnabled: true)
+        XCTAssertFalse(HostedAccessibility.labels(in: window).contains("2 queued"))
+        for count in [1, 2, 3, 1, 2, 3] {
+            model.count = count
+            settle(0.3)
+            let status = try XCTUnwrap(HostedAccessibility.element(in: window, label: "Fixture is working on the response"))
+            XCTAssertFalse(status.accessibilityTraits.contains(.button))
+            XCTAssertEqual(model.appearances, 1, "Changing the segment count remounted the ticking status")
+            if count > 1 {
+                let queue = try XCTUnwrap(HostedAccessibility.element(in: window, label: "2 queued"))
+                XCTAssertEqual(status.accessibilityFrame.midY, queue.accessibilityFrame.midY, accuracy: 1)
+                HostedAccessibility.activate(queue)
+            }
+            XCTAssertEqual(HostedAccessibility.labels(in: window).contains("Goal"), count > 2)
+        }
+        XCTAssertEqual(model.queueOpens, 4)
+        model.count = 1
+        settle(0.05)
+        model.count = 3
+        settle(0.3)
+        XCTAssertEqual(model.appearances, 1, "Removal and re-add during animation remounted the status")
+        model.queueCount = 12
+        settle()
+        XCTAssertNotNil(HostedAccessibility.element(in: window, label: "12 queued"))
+        model.compression = true
+        model.count = 2
+        settle()
+        let compression = try XCTUnwrap(HostedAccessibility.element(in: window, label: "Fixture is compressing the context"))
+        let queue = try XCTUnwrap(HostedAccessibility.element(in: window, label: "12 queued"))
+        XCTAssertEqual(compression.accessibilityFrame.midY, queue.accessibilityFrame.midY, accuracy: 1)
+        XCTAssertEqual(model.appearances, 1)
+        model.runVisible = false
+        settle(0.3)
+        XCTAssertNil(HostedAccessibility.element(in: window, label: "Fixture is compressing the context"))
+        XCTAssertNotNil(HostedAccessibility.element(in: window, label: "12 queued"), "Ending the run hid the queue")
+        model.count = 0
+        settle(0.3)
+        XCTAssertFalse(HostedAccessibility.labels(in: window).contains("12 queued"))
+    }
+
+    func testNarrowAndAccessibilityLayoutsPreserveIndependentControls() throws {
+        for (width, typeSize) in [(CGFloat(150), DynamicTypeSize.large), (390, .accessibility5)] {
+            let model = Model()
+            model.count = 3
+            let window = try hostWindow(Entries(model: model).environment(\.dynamicTypeSize, typeSize), size: CGSize(width: width, height: 844))
+            let status = try XCTUnwrap(HostedAccessibility.element(in: window, label: "Fixture is working on the response"))
+            let queue = try XCTUnwrap(HostedAccessibility.element(in: window, label: "2 queued"))
+            let goal = try XCTUnwrap(HostedAccessibility.element(in: window, label: "Goal"))
+            XCTAssertLessThan(status.accessibilityFrame.maxY, goal.accessibilityFrame.minY)
+            XCTAssertLessThan(goal.accessibilityFrame.maxY, queue.accessibilityFrame.minY)
+            XCTAssertGreaterThanOrEqual(queue.accessibilityFrame.height, 44)
+            for element in [status, goal, queue] {
+                XCTAssertTrue(window.bounds.contains(window.convert(element.accessibilityFrame, from: nil)))
+            }
+            HostedAccessibility.activate(queue)
+            XCTAssertEqual(model.queueOpens, 1)
+            let attachment = XCTAttachment(image: UIGraphicsImageRenderer(bounds: window.bounds).image { _ in
+                window.drawHierarchy(in: window.bounds, afterScreenUpdates: true)
+            })
+            attachment.name = width == 150 ? "segments-narrow" : "segments-accessibility"
+            attachment.lifetime = .keepAlways
+            add(attachment)
+        }
+    }
+
+    func testLightDarkAndRightToLeftKeepTheQueueSeparate() throws {
+        for dark in [false, true] {
+            let model = Model()
+            model.count = 2
+            let window = try hostWindow(Entries(model: model)
+                .environment(\.layoutDirection, dark ? .rightToLeft : .leftToRight)) {
+                    $0.userInterfaceStyle = dark ? .dark : .light
+                }
+            let status = try XCTUnwrap(HostedAccessibility.element(in: window, label: "Fixture is working on the response"))
+            let queue = try XCTUnwrap(HostedAccessibility.element(in: window, label: "2 queued"))
+            XCTAssertEqual(status.accessibilityFrame.midY, queue.accessibilityFrame.midY, accuracy: 1)
+            if dark {
+                XCTAssertGreaterThan(status.accessibilityFrame.minX, queue.accessibilityFrame.maxX)
+            } else {
+                XCTAssertLessThan(status.accessibilityFrame.maxX, queue.accessibilityFrame.minX)
+            }
+            HostedAccessibility.activate(queue)
+            XCTAssertEqual(model.queueOpens, 1)
+            let attachment = XCTAttachment(image: UIGraphicsImageRenderer(bounds: window.bounds).image { _ in
+                window.drawHierarchy(in: window.bounds, afterScreenUpdates: true)
+            })
+            attachment.name = dark ? "segments-dark-rtl" : "segments-light"
+            attachment.lifetime = .keepAlways
+            add(attachment)
+        }
+    }
+
+    func testSyncingDoesNotIncreaseReservedHeightInRowsOrStacks() throws {
+        for (width, typeSize) in [(CGFloat(390), DynamicTypeSize.large), (150, .large), (390, .accessibility1)] {
+            let model = Model()
+            model.count = 2
+            model.runVisible = false
+            let window = try hostWindow(Entries(model: model).environment(\.dynamicTypeSize, typeSize),
+                                        size: CGSize(width: width, height: 844))
+            settle()
+            let queueHeight = model.reservedHeight
+            XCTAssertGreaterThanOrEqual(queueHeight, 44)
+            model.syncing = true
+            model.runVisible = true
+            settle()
+            XCTAssertNotNil(HostedAccessibility.element(in: window, label: "Syncing messages with the server"))
+            XCTAssertEqual(model.reservedHeight, queueHeight, accuracy: 1, "Syncing must not add transcript space")
+            model.runVisible = false
+            settle()
+            XCTAssertEqual(model.reservedHeight, queueHeight, accuracy: 1)
+            model.count = 0
+            settle()
+            XCTAssertEqual(model.reservedHeight, 0, accuracy: 1)
+        }
+    }
+}
+
+@MainActor
 final class ComposerToolsetsHostedTests: APIClientTestCase {
     func testOlderServerKeepsTheToolsetEditorAndProfileDefaultAction() async throws {
         let client = makeClient { request in

@@ -1,0 +1,9 @@
+{
+  "entries": [
+    {
+      "category": "Changed",
+      "summary": "Chat statuses and queued messages share a divided pill above the composer, with a stacked layout when more room is needed.",
+      "highlight": false
+    }
+  ]
+}

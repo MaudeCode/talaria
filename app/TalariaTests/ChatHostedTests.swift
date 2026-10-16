@@ -7,6 +7,78 @@ import TalariaKit
 /// The fixture chat's media, long bodies, background work and pending steers, hosted in process (TAL-856).
 @MainActor
 final class ChatHostedTests: XCTestCase {
+    func testSyncingBesideGoalDoesNotReserveTranscriptSpaceInNarrowStack() async throws {
+        let fixture = try FixtureApp(["--ui-test-hold-transcript-reloads", "--ui-test-goal"], for: self)
+        let session = try await fixture.session()
+        let window = try hostWindow(fixture.chat(session), size: CGSize(width: 320, height: 844))
+        _ = try await requireElement(in: window) { $0.accessibilityLabel?.hasPrefix("Fixture message 1 ") == true }
+        _ = try await requireElement(in: window) { $0.accessibilityLabel?.hasPrefix("Goal parked") == true }
+        NotificationCenter.default.post(name: .talariaReauthenticated, object: UITestFixtureEnvironment.serverURL)
+        _ = try await requireElement(in: window, label: "Syncing messages with the server")
+        settle(0.3)
+        let scroll = try transcriptScrollView(in: window)
+        let withSyncing = scroll.adjustedContentInset.bottom
+        fixture.releaseHeldLoads()
+        let cleared = await awaitNoElement(in: window) { $0.accessibilityLabel == "Syncing messages with the server" }
+        XCTAssertTrue(cleared)
+        settle(0.3)
+        XCTAssertEqual(scroll.adjustedContentInset.bottom, withSyncing, accuracy: 1,
+                       "The non-reserving syncing segment changed the transcript inset beside a goal")
+    }
+
+    func testWorkingAndQueueShareOneRowWithIndependentActions() async throws {
+        continueAfterFailure = false
+        let window = try await hostFixtureChat(["--ui-test-chat-controls"])
+        try await sendFromComposer("Run the deterministic fixture", in: window)
+        _ = try await requireElement(in: window, label: "Waiting for control input.")
+        try await sendFromComposer("/queue First queued message", in: window)
+        try await sendFromComposer("/queue Second queued message", in: window)
+        let queue = try await requireElement(in: window, label: "2 queued")
+        let status = try await requireElement(in: window) { $0.accessibilityLabel?.hasSuffix("is working on the response") == true }
+        settle(0.3)
+        let attachment = XCTAttachment(image: UIGraphicsImageRenderer(bounds: window.bounds).image { _ in
+            window.drawHierarchy(in: window.bounds, afterScreenUpdates: true)
+        })
+        attachment.name = "working-queue-phone"
+        attachment.lifetime = .keepAlways
+        add(attachment)
+        XCTAssertEqual(status.accessibilityFrame.midY, queue.accessibilityFrame.midY, accuracy: 1,
+                       "Working and the queue must be segments of one row")
+        XCTAssertLessThan(status.accessibilityFrame.maxX, queue.accessibilityFrame.minX)
+        XCTAssertFalse(status.accessibilityTraits.contains(.button))
+        XCTAssertTrue(queue.accessibilityTraits.contains(.button))
+        XCTAssertGreaterThanOrEqual(queue.accessibilityFrame.height, 44)
+        HostedAccessibility.activate(status)
+        XCTAssertNil(window.rootViewController?.presentedViewController)
+        HostedAccessibility.activate(queue)
+        _ = try await requireElement(in: window, label: "First queued message")
+        _ = try await requireElement(in: window, label: "Second queued message")
+        for remaining in [1, 0] {
+            let remove = try XCTUnwrap(elements(named: "Remove", in: window).first {
+                $0.accessibilityTraits.contains(.button) && $0.accessibilityFrame.height > 0
+                    && window.bounds.contains(window.convert($0.accessibilityFrame, from: nil))
+            }, "The queue has no visible Remove button")
+            XCTAssertTrue(HostedAccessibility.activate(remove))
+            if remaining == 1 {
+                // List retains removed rows in its hosted AX cache. Observe the live count and
+                // reopen the sheet before targeting its remaining row.
+                _ = try await requireElement(in: window, label: "1 queued")
+                HostedAccessibility.activate(try await requireElement(in: window, label: "Done"))
+            }
+            let closed = await awaitCondition { window.rootViewController?.presentedViewController == nil }
+            XCTAssertTrue(closed)
+            if remaining == 1 {
+                HostedAccessibility.activate(try await requireElement(in: window, label: "1 queued"))
+                _ = try await requireElement(in: window, label: "Second queued message")
+            }
+        }
+        let drained = await awaitNoElement(in: window) { $0.accessibilityLabel == "1 queued" || $0.accessibilityLabel == "2 queued" }
+        XCTAssertTrue(drained)
+        _ = try await requireElement(in: window) { $0.accessibilityLabel?.hasSuffix("is working on the response") == true }
+        try await sendFromComposer("/queue Re-added message", in: window)
+        _ = try await requireElement(in: window, label: "1 queued")
+    }
+
     /// Server-rewritten media renders inside the Markdown around it, audio follows as a tile, and its Export opens the
     /// file exporter (TAL-186). Saving through the exporter is the phone check's.
     func testServerMediaRendersInsideTheMarkdownAroundIt() async throws {
@@ -262,9 +334,16 @@ final class ChatHostedTests: XCTestCase {
             child.label.map { ($0, child.value) }
         })
         let registry = try XCTUnwrap(stored["registry"] as? ChatMessageMenuRegistry)
-        let scrollView = try XCTUnwrap(host.superview.flatMap { sequence(first: $0, next: \.superview).first { $0 is UIScrollView } })
+        let scrollView = try transcriptScrollView(in: window)
         let frame = window.convert(element.accessibilityFrame, from: nil)
         let point = scrollView.convert(CGPoint(x: frame.midX, y: frame.midY), from: window)
         return registry.hit(at: point, in: scrollView)
+    }
+
+    private func transcriptScrollView(in window: UIWindow) throws -> UIScrollView {
+        let host = try XCTUnwrap(window.firstView(ofType: ChatMessageMenuHostView.self))
+        return try XCTUnwrap(host.superview.flatMap {
+            sequence(first: $0, next: \.superview).first { $0 is UIScrollView } as? UIScrollView
+        })
     }
 }
