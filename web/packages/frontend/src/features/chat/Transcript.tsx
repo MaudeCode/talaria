@@ -56,7 +56,7 @@ export interface TranscriptProps {
 export function Transcript(props: TranscriptProps) {
   const { rows: rawRows, live, assistantName, mode, renderUserMarkdown, autoFollow, sessionId, focusKey, actions, tts, truncated, loadedFrom, onLoadOlder, loadingOlder, olderError = false, emptyState, pendingUserText, showJumpButtons, virtualizeLongTranscripts } = props
   const scrollRef = useRef<HTMLDivElement>(null)
-  const prependRef = useRef<{ from: number; key: string; top: number; height: number; offset: number } | null>(null)
+  const prependRef = useRef<{ from: number; anchors: { key: string; top: number; height: number }[]; height: number; offset: number } | null>(null)
   const [pinned, setPinned] = useState(true)
   const [atTop, setAtTop] = useState(true)
   // The live turn gives way to the server's scene as soon as a terminal frame brings the settled session.
@@ -148,7 +148,12 @@ export function Transcript(props: TranscriptProps) {
   const virtualizer = useVirtualizer({
     count: virtualize ? rows.length : 0,
     getScrollElement: () => scrollRef.current,
-    estimateSize: (i) => (rows[i]?.message.role === 'user' ? 96 : 220),
+    estimateSize: (i) => {
+      const row = rows[i]
+      // Keep a rekeyed turn near the viewport until its new contents can be measured.
+      const previous = prependRef.current?.anchors.find((anchor) => row?.key !== anchor.key && row?.assistantRows?.some((part) => part.key === anchor.key))
+      return previous?.height ?? (row?.message.role === 'user' ? 96 : 220)
+    },
     overscan: 8,
     getItemKey: (i) => rows[i]?.key ?? i,
   })
@@ -170,9 +175,16 @@ export function Transcript(props: TranscriptProps) {
       prependRef.current = null
       if (entryRef.current) return
       const top = pane.getBoundingClientRect().top
-      const anchor = [...pane.querySelectorAll<HTMLElement>('[data-message-key]')].find((row) => row.getBoundingClientRect().bottom > top)
-      const key = anchor?.dataset.messageKey
-      if (anchor && key) prependRef.current = { from: loadedFrom, key, top: anchor.getBoundingClientRect().top - top, height: pane.scrollHeight, offset: pane.scrollTop }
+      const elements = [...pane.querySelectorAll<HTMLElement>('[data-message-key]')]
+      const first = elements.findIndex((row) => row.getBoundingClientRect().bottom > top)
+      // The following row stays keyed when the first visible assistant turn absorbs an older part.
+      const anchors = first < 0 ? [] : elements.slice(first, first + 2).flatMap((row) => {
+        const key = row.dataset.messageKey
+        if (!key) return []
+        const bounds = row.getBoundingClientRect()
+        return [{ key, top: bounds.top - top, height: bounds.height }]
+      })
+      if (anchors.length) prependRef.current = { from: loadedFrom, anchors, height: pane.scrollHeight, offset: pane.scrollTop }
     })
   }, [loadedFrom, loadingOlder, olderError, onLoadOlder, pin])
   useLayoutEffect(() => {
@@ -184,18 +196,22 @@ export function Transcript(props: TranscriptProps) {
     // A prepend can enable virtualization; its new rows measure over several frames.
     const restore = () => {
       if (prependRef.current !== saved) return
-      const anchor = pane.querySelector<HTMLElement>(`[data-message-key="${CSS.escape(saved.key)}"]`)
-      if (anchor) {
-        const offset = pane.scrollTop + anchor.getBoundingClientRect().top - pane.getBoundingClientRect().top - saved.top
-        if (virtualize) virtualizer.scrollToOffset(offset)
-        else pane.scrollTop = offset
+      let offset = saved.offset + pane.scrollHeight - saved.height
+      for (const candidate of saved.anchors) {
+        const anchor = pane.querySelector<HTMLElement>(`[data-message-key="${CSS.escape(candidate.key)}"]`)
+        if (anchor) {
+          offset = pane.scrollTop + anchor.getBoundingClientRect().top - pane.getBoundingClientRect().top - candidate.top
+          break
+        }
+        if (virtualize) {
+          const index = rows.findIndex((row) => row.key === candidate.key)
+          const item = virtualizer.measurementsCache[index]
+          const list = pane.querySelector<HTMLElement>('[data-virtual-history]')
+          if (item && list) { offset = item.start + list.offsetTop - candidate.top; break }
+        }
       }
-      else if (virtualize) {
-        const index = rows.findIndex((row) => row.key === saved.key)
-        const item = virtualizer.measurementsCache[index]
-        const list = pane.querySelector<HTMLElement>('[data-virtual-history]')
-        if (item && list) virtualizer.scrollToOffset(item.start + list.offsetTop - saved.top)
-      } else pane.scrollTop = saved.offset + pane.scrollHeight - saved.height
+      if (virtualize) virtualizer.scrollToOffset(offset)
+      else pane.scrollTop = offset
       lastTopRef.current = pane.scrollTop
       if (++passes < 12) frame = requestAnimationFrame(restore)
       else prependRef.current = null

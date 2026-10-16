@@ -212,3 +212,54 @@ test('history errors wait for retry and resume a paged message deep link', async
   await expect(page.locator('[data-message-key="1"]')).toBeInViewport()
   expect(requests).toBe(2)
 })
+
+for (const [virtualize, repeats] of [[false, 1], [true, 1], [false, 50], [true, 50]] as const) {
+  test(`a boundary-spanning assistant turn keeps its visible text after rekeying: virtualize=${virtualize}, repeats=${repeats}`, async ({ page }) => {
+    const messages = transcript('boundary', 300).map((message, index) => index >= 330 && index < 370
+      ? { ...message, role: 'assistant', content: `Boundary piece ${index + 1}.`.repeat(repeats), _turn_id: 'boundary-turn' }
+      : message)
+    const requests: number[] = []
+    let release: (() => void) | undefined
+    await page.route('**/api/settings', (route) => route.fulfill({ json: { virtualize_transcript: virtualize } }))
+    await page.route('**/api/session?**', async (route) => {
+      const params = new URL(route.request().url()).searchParams
+      expect(params.get('msg_limit')).toBe('120')
+      const end = Number(params.get('msg_before') ?? messages.length)
+      const start = Math.max(0, end - 120)
+      if (params.has('msg_before')) {
+        requests.push(end)
+        await new Promise<void>((resolve) => { release = resolve })
+      }
+      await route.fulfill({ json: { session: { session_id: 'boundary', messages: messages.slice(start, end), _messages_offset: start, _messages_truncated: start > 0 } } })
+    })
+    await page.goto('/session/boundary')
+    await shows(page, 'boundary')
+    await expect.poll(() => distance(page)).toBeLessThan(2)
+    const readTop = () => page.locator('#messages').evaluate((pane) => {
+      pane.dispatchEvent(new WheelEvent('wheel', { deltaY: -1, bubbles: true }))
+      pane.scrollTop = 180
+    })
+    try {
+      await expect.poll(async () => { await readTop(); return requests.at(-1) }).toBe(480)
+      release!()
+      await expect(page.locator('[data-history-sentinel]').getByRole('status')).toHaveCount(0)
+      await expect.poll(async () => { await readTop(); return requests.at(-1) }).toBe(360)
+      const group = page.locator('[data-message-key="361"]')
+      await expect(group).toBeInViewport()
+      const anchor = await group.evaluate((row) => {
+        const top = document.getElementById('messages')!.getBoundingClientRect().top
+        const paragraph = [...row.querySelectorAll('p')].find((part) => part.getBoundingClientRect().bottom > top)!
+        return { text: paragraph.textContent, top: paragraph.getBoundingClientRect().top }
+      })
+      release!()
+      await expect(group).toHaveCount(0)
+      const preserved = page.getByText(anchor.text, { exact: true })
+      await expect(preserved).toBeInViewport()
+      await expect.poll(async () => Math.abs((await preserved.boundingBox())!.y - anchor.top)).toBeLessThan(2)
+      await expect(page.locator('[data-history-sentinel]').getByRole('status')).toHaveCount(0)
+      expect(requests).toEqual([480, 360])
+    } finally {
+      release?.()
+    }
+  })
+}
