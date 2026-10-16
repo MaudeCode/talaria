@@ -1,3 +1,4 @@
+import { discardSession } from '../../stream/connection'
 import { useState } from 'react'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { useNavigate } from '@tanstack/react-router'
@@ -33,7 +34,7 @@ export function SessionContextMenu({ row, active }: { row: SessionRow; active: b
   const pin = useMutation({ mutationFn: () => api.pinSession(sid, !row.pinned), onSuccess: invalidate, onError: (e) => showToast(m.session_pin_failed() + (e instanceof Error ? e.message : ''), 4000, 'error') })
   const archive = useMutation({ mutationFn: () => api.archiveSession(sid, !row.archived), onSuccess: () => { showToast(m.session_archived()); invalidate() }, onError: (e) => showToast(m.session_archive_failed() + (e instanceof Error ? e.message : ''), 4000, 'error') })
   const duplicate = useMutation({ mutationFn: () => api.duplicateSession(sid), onSuccess: (r) => { showToast(m.session_duplicated()); invalidate(); void navigate({ to: '/session/$sessionId', params: { sessionId: r.session.session_id } }) }, onError: (e) => showToast(m.session_duplicate_failed() + (e instanceof Error ? e.message : ''), 4000, 'error') })
-  const del = useMutation({ mutationFn: () => api.deleteSession(sid), onSuccess: () => { showToast(m.session_deleted()); invalidate(); if (active) void navigate({ to: '/', search: { action: 'new-chat' } }) }, onError: fail })
+  const del = useMutation({ mutationFn: () => api.deleteSession(sid), onSuccess: () => { discardSession(sid); qc.removeQueries({ queryKey: keys.sessions.detail(sid) }); showToast(m.session_deleted()); invalidate(); if (active) void navigate({ to: '/', search: { action: 'new-chat' } }) }, onError: fail })
   const move = useMutation({ mutationFn: () => api.moveSession(sid, projectId || null), onSuccess: () => { setDialog(null); invalidate() }, onError: fail })
   const regen = useMutation({ mutationFn: () => api.regenerateTitle(sid), onSuccess: (r) => { showToast(r.title ? m.session_title_regenerated({ title: r.title }) : m.session_title_regenerating()); invalidate() }, onError: (e) => showToast(m.session_title_regenerate_failed() + (e instanceof Error ? e.message : ''), 4000, 'error') })
   const shareUrl = row.share_url

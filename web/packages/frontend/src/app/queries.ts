@@ -1,5 +1,6 @@
 /** Query hooks for shared server resources. Keys live in api/queryKeys.ts. */
 import { useMutation, useQuery, useQueryClient, type UseQueryOptions } from '@tanstack/react-query'
+import { teardownAll } from '../stream/connection'
 import { keys } from '../api/queryKeys'
 import * as api from '../api/endpoints'
 
@@ -73,6 +74,7 @@ export function useSwitchProfile() {
   return useMutation({
     mutationFn: (name: string) => api.switchProfile(name),
     onSuccess: async () => {
+      teardownAll()
       qc.clear()
       await qc.invalidateQueries()
     },

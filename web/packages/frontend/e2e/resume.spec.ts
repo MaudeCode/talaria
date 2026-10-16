@@ -125,3 +125,98 @@ test('reopening a running session keeps its pending prompt before the activity, 
     await new Promise<void>((resolve) => server.close(() => { resolve() }))
   }
 })
+
+/** Real hook/router/HTTP SSE regression for passive navigation, including first paint before both delayed replies. */
+test('navigation keeps a live scene and requests only its unseen suffix (TAL-1050)', async ({ page }, testInfo) => {
+  const sid = 'navigation-fixture-a'
+  const run = 'navigation-run-a'
+  let detailReads = 0
+  let statusReads = 0
+  let releaseDetail!: () => void
+  let releaseStatus!: () => void
+  const detailGate = new Promise<void>((resolve) => { releaseDetail = resolve })
+  const statusGate = new Promise<void>((resolve) => { releaseStatus = resolve })
+  await page.route('**/api/session?**', async (route) => {
+    const id = new URL(route.request().url()).searchParams.get('session_id')!
+    if (id === sid && ++detailReads > 1) await detailGate
+    await route.fulfill({ json: { session: {
+      session_id: id, title: id === sid ? 'Navigation proof' : 'Other chat',
+      ...(id === sid ? { active_stream_id: run, transcript_seq: { stream_id: run, seq: 0 } } : {}),
+      messages: [{ role: 'user', id: 1, content: id === sid ? 'Read the file' : 'Other question', _turn_id: id === sid ? run : 'other' }],
+    } } })
+  })
+  await page.route('**/api/chat/stream/status?**', async (route) => {
+    if (++statusReads > 1) await statusGate
+    await route.fulfill({ json: { active: true, stream_id: run, replay_available: true } })
+  })
+  const journal: [string, Record<string, unknown>][] = [
+    ['token', { text: 'Reading the file.' }],
+    ['reasoning', { text: 'Checking the contents.' }],
+    ['tool', { id: 'navigation-tool', name: 'read_file', kind: 'read', target: 'fixture.txt' }],
+    ['tool_complete', { id: 'navigation-tool', name: 'read_file', result_view: { text: 'Fixture contents' } }],
+  ]
+  const requests: URL[] = []
+  const connections: ServerResponse[] = []
+  const server = createServer((request, response) => {
+    const url = new URL(request.url ?? '/', 'http://fixture')
+    requests.push(url)
+    connections.push(response)
+    const seq = Number(url.searchParams.get('after_seq') ?? journal.length)
+    response.writeHead(200, { 'Content-Type': 'text/event-stream', 'Access-Control-Allow-Origin': process.env.HERMES_E2E_BASE_URL!, 'Access-Control-Allow-Credentials': 'true' })
+    // Include the cursor boundary to prove identity-based overlap handling as well as suffix resume.
+    response.write(': connected\n\n' + journal.map(([event, data], index) => index + 1 >= Math.max(1, seq) ? `id: ${run}:${index + 1}\nevent: ${event}\ndata: ${JSON.stringify(data)}\n\n` : '').join(''))
+  })
+  await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve))
+  const address = server.address()
+  if (!address || typeof address === 'string') throw new Error('Missing fixture port')
+  await page.route('**/api/chat/stream?**', (route) => route.continue({ url: `http://127.0.0.1:${address.port}${new URL(route.request().url()).search}` }))
+  const enter = async (id: string) => {
+    await page.evaluate((path) => { history.pushState({}, '', path); dispatchEvent(new PopStateEvent('popstate')) }, `/session/${id}`)
+    await expect(page).toHaveURL(new RegExp(`/session/${id}$`))
+  }
+  try {
+    await page.goto(`/session/${sid}`)
+    await expect(page.locator('.live-turn')).toContainText('Reading the file.')
+    await expect(page.locator('[data-tool-id="navigation-tool"]')).toHaveCount(1)
+    await enter('navigation-fixture-b')
+    await expect(page.getByText('Other question')).toBeVisible()
+    await expect(page.getByText('Reading the file.')).toHaveCount(0)
+    journal.push(['token', { text: ' Unseen suffix.' }])
+    // Detail is stale on return, so the first paint must survive its outstanding refresh too.
+    await page.waitForTimeout(5100)
+    await enter(sid)
+    await expect.poll(() => detailReads).toBeGreaterThan(1)
+    await expect.poll(() => statusReads).toBe(2)
+    await page.screenshot({ path: testInfo.outputPath('return-held.png') })
+    await expect(page.locator('.live-turn')).toContainText('Reading the file.')
+    expect(requests).toHaveLength(1)
+    // Navigate again with status still pending. Its late reply must not reconnect a hidden chat.
+    await enter('navigation-fixture-b')
+    await expect(page.getByText('Other question')).toBeVisible()
+    releaseStatus()
+    releaseDetail()
+    await page.waitForTimeout(150)
+    expect(requests).toHaveLength(1)
+    await enter(sid)
+    await expect(page.locator('.live-turn')).toContainText('Unseen suffix.')
+    expect(requests).toHaveLength(2)
+    expect(requests[1]!.searchParams.get('after_seq')).toBe('4')
+    expect(requests[1]!.searchParams.get('after_event_id')).toBe(`${run}:4`)
+    await expect(page.locator('[data-tool-id="navigation-tool"]')).toHaveCount(1)
+    expect((await page.locator('.live-turn').innerText()).split('Reading the file.')).toHaveLength(2)
+    await page.screenshot({ path: testInfo.outputPath('resumed.png') })
+    await enter('navigation-fixture-b')
+    await expect(page.getByText('Other question')).toBeVisible()
+    await enter(sid)
+    await expect.poll(() => requests.length).toBe(3)
+    expect(requests[2]!.searchParams.get('after_seq')).toBe('5')
+    expect((await page.locator('.live-turn').innerText()).split('Unseen suffix.')).toHaveLength(2)
+  } finally {
+    releaseDetail()
+    releaseStatus()
+    await page.goto('about:blank')
+    for (const response of connections) response.end()
+    server.closeAllConnections()
+    await new Promise<void>((resolve) => server.close(() => { resolve() }))
+  }
+})

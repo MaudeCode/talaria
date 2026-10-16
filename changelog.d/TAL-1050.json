@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Keep running replies visible when switching chats and resume from where you left off.",
+      "highlight": false,
+      "components": ["web"]
+    }
+  ]
+}

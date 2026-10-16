@@ -8,9 +8,8 @@ import { useQuery, useQueryClient } from '@tanstack/react-query'
 import * as api from '../../api/endpoints'
 import { keys } from '../../api/queryKeys'
 import type { Message, Session } from '../../contracts'
-import { attachToStream, teardown } from '../../stream/connection'
-import { useLiveTurn } from '../../stream/store'
-import { isTerminal } from '../../stream/reducer'
+import { attachToStream, hasLiveConnection, reconcileSession, discardSession, teardown } from '../../stream/connection'
+import { getStreamState, useLiveTurn } from '../../stream/store'
 import { writePersisted } from '../../lib/persisted'
 
 export const TRANSCRIPT_WINDOW = 120
@@ -56,7 +55,18 @@ export function useTranscript(sessionId: string | null) {
   const attachedStream = useRef<string | null>(null)
   const query = useQuery({
     queryKey: keys.sessions.detail(sessionId ?? ''),
-    queryFn: () => api.fetchSession(sessionId ?? '', { messages: true, msg_limit: TRANSCRIPT_WINDOW }),
+    queryFn: async ({ signal }) => {
+      const sid = sessionId ?? ''
+      const expectedStreamId = getStreamState().turns[sid]?.streamId
+      try {
+        const result = await api.fetchSession(sid, { messages: true, msg_limit: TRANSCRIPT_WINDOW })
+        if (!signal.aborted) reconcileSession(sid, result.session, expectedStreamId)
+        return result
+      } catch (error) {
+        if (!signal.aborted && error && typeof error === 'object' && 'status' in error && error.status === 404) discardSession(sid)
+        throw error
+      }
+    },
     enabled: !!sessionId,
     staleTime: 5_000,
     retry: (count, error) => !(error instanceof Error && 'status' in error && (error as { status: number }).status === 404) && count < 1,
@@ -76,7 +86,7 @@ export function useTranscript(sessionId: string | null) {
     if (!sessionId || !session) return
     const streamId = session.active_stream_id
     if (!streamId) return
-    if (live?.streamId === streamId && !isTerminal(live.status)) return
+    if (live?.streamId === streamId && hasLiveConnection(sessionId)) return
     if (attachedStream.current === streamId) return
     attachedStream.current = streamId
     void attachToStream(sessionId, streamId, session).catch(() => undefined)

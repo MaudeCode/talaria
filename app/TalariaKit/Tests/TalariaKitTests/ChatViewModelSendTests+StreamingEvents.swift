@@ -472,6 +472,77 @@ extension ChatViewModelSendTests {
         XCTAssertEqual(viewModel.activeStreamID, "stream-123")
     }
 
+    func testActiveNavigationRecreationPaintsBufferedSnapshotBeforeDelayedDetailAndResumesCursor() async throws {
+        ChatViewModel.resetActiveStreamSnapshotsForTesting()
+        defer { ChatViewModel.resetActiveStreamSnapshotsForTesting() }
+        let server = URL(string: "https://tal1050-navigation.test")!
+        let originalStream = SpySSEStreamingClient()
+        originalStream.automaticallyFlushPendingStreamingContent = false
+        let original = try makeViewModel(streamClient: originalStream, server: server) { request in
+            XCTAssertEqual(request.url?.path, "/api/chat/start")
+            return apiTestJSONResponse(#"{"session_id":"session-abc","stream_id":"stream-123"}"#, for: request)
+        }
+        let started = await original.sendMessage("Keep working")
+        XCTAssertTrue(started)
+        originalStream.emit(.token("Already visible. Buffered suffix."), lastEventID: "stream-123:9")
+        XCTAssertFalse(original.messages.compactMap(\.content).contains("Already visible. Buffered suffix."))
+        original.suspendStreamForNavigation()
+        XCTAssertEqual(originalStream.stopCount, 1)
+        XCTAssertEqual(original.messages.compactMap(\.content), ["Keep working", "Already visible. Buffered suffix."])
+
+        let decoder = JSONDecoder()
+        decoder.keyDecodingStrategy = .convertFromSnakeCase
+        let otherRow = try decoder.decode(SessionSummary.self, from: Data(#"{"session_id":"session-b","title":"Other","is_streaming":false}"#.utf8))
+        let other = try makeViewModel(sessionSummary: otherRow, server: server) { _ in
+            XCTFail("B's local preparation must not request the network")
+            throw URLError(.badURL)
+        }
+        other.prepareInitialMessageLoad(modelContext: try makeContext())
+        XCTAssertTrue(other.messages.isEmpty)
+
+        let activeDetail = #"{"session":{"session_id":"session-abc","title":"Planning","active_stream_id":"stream-123","transcript_seq":{"stream_id":"stream-123","seq":0},"messages":[{"role":"user","content":"Keep working","message_id":"user-1"}]}}"#
+        let requests = DeferredRequests()
+        let requestedDetail = expectation(description: "A detail held")
+        DeferredMockURLProtocol.setOnRequest({ request in
+            if request.request.url?.path == "/api/session" {
+                if requests.append(request) == 1 {
+                    requestedDetail.fulfill()
+                } else {
+                    request.complete(withJSON: activeDetail)
+                }
+            } else if request.request.url?.path == "/api/chat/stream/status" {
+                request.complete(withJSON: #"{"active":true,"stream_id":"stream-123","replay_available":true}"#)
+            } else {
+                XCTFail("Unexpected request: \(request.request.url?.path ?? "nil")")
+                request.fail(with: URLError(.badURL))
+            }
+        }, forHost: server.host!)
+        defer { DeferredMockURLProtocol.setOnRequest(nil, forHost: server.host!) }
+        let row = try decoder.decode(SessionSummary.self, from: Data(#"{"session_id":"session-abc","title":"Planning","is_streaming":true,"active_stream_id":"stream-123"}"#.utf8))
+        let reopenedStream = SpySSEStreamingClient()
+        let reopened = try makeViewModel(streamClient: reopenedStream, sessionSummary: row, server: server, protocolClasses: [DeferredMockURLProtocol.self]) { _ in
+            XCTFail("Deferred transport owns this request")
+            throw URLError(.badURL)
+        }
+        let context = try makeContext()
+        reopened.prepareInitialMessageLoad(modelContext: context)
+        XCTAssertEqual(reopened.messages.compactMap(\.content), ["Keep working", "Already visible. Buffered suffix."])
+        XCTAssertTrue(reopenedStream.startedURLs.isEmpty)
+        let loading = Task { @MainActor in await reopened.loadMessages(modelContext: context) }
+        await fulfillment(of: [requestedDetail], timeout: 10)
+        XCTAssertEqual(reopened.messages.compactMap(\.content), ["Keep working", "Already visible. Buffered suffix."])
+        requests.request(at: 0).complete(withJSON: activeDetail)
+        await loading.value
+        await reopened.reconnectStreamIfNeeded()
+        let url = try XCTUnwrap(reopenedStream.startedURLs.last)
+        let query = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems ?? []
+        XCTAssertEqual(query.first(where: { $0.name == "after_seq" })?.value, "9")
+        XCTAssertEqual(reopenedStream.startedURLs.count, 1)
+        reopenedStream.emit(.token(" Unseen."), lastEventID: "stream-123:10")
+        XCTAssertEqual(reopened.messages.compactMap(\.content), ["Keep working", "Already visible. Buffered suffix. Unseen."])
+        reopened.suspendStreamForNavigation()
+    }
+
     func testReopenedInactiveStreamReplayUsesRestoredSnapshotEventID() {
         runMainActorTest {
             ChatViewModel.resetActiveStreamSnapshotsForTesting()

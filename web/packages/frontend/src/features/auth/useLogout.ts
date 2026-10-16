@@ -1,3 +1,4 @@
+import { teardownAll } from '../../stream/connection'
 import { useCallback } from 'react'
 import * as api from '../../api/endpoints'
 import { appUrl } from '../../lib/appRoot'
@@ -8,6 +9,7 @@ export function useLogout() {
     try {
       await api.logout()
     } finally {
+      teardownAll()
       removePersistedByPrefix('hermes-boot:')
       removePersistedByPrefix('hermes-webui-session')
       window.location.assign(appUrl('login').href)
