@@ -22,6 +22,7 @@ extension XCTestCase {
     func hostWindow(
         _ view: some View,
         size: CGSize = HostedSize.phone,
+        animationsEnabled: Bool = false,
         traits: (inout UITraitOverrides) -> Void = { _ in }
     ) throws -> UIWindow {
         _ = HostedAccessibility.enableAutomation
@@ -29,9 +30,9 @@ extension XCTestCase {
         let window = UIWindow(windowScene: scene)
         window.frame = CGRect(origin: .zero, size: size)
         traits(&window.traitOverrides)
-        window.rootViewController = UIHostingController(rootView: view.transaction { $0.disablesAnimations = true })
+        window.rootViewController = UIHostingController(rootView: view.transaction { $0.disablesAnimations = !animationsEnabled })
         let animated = UIView.areAnimationsEnabled
-        UIView.setAnimationsEnabled(false)
+        UIView.setAnimationsEnabled(animationsEnabled)
         // Key and visible, so appearance callbacks reach the screen's view controllers as they do in the app.
         window.makeKeyAndVisible()
         window.layoutIfNeeded()
