@@ -177,9 +177,14 @@ browser fixtures own release responses and never install updates.
 check, the server prepares a summary for each pending Web or Agent update without
 blocking the check. Owners can turn it off in System settings; disabling update
 checks also disables background summaries. Opening **Summarize with AI** shares
-any request already in progress. Model answers are kept across restarts in
-`update-summaries.json` in the Web state directory, with a 16-range LRU limit.
-Failed model calls leave the deterministic on-demand fallback available.
+any request already in progress. Each check grows a persisted list of all pending commits or release
+notes, even with automatic AI disabled. New items are folded into the previous summary in batches of
+at most 100 commit subjects or 24,000 release-note characters; no pending item is dropped. Installing
+an update or replacing upstream history rebuilds the list and summary. Read failures preserve the
+last complete list for retry.
+The list, summary sections, and summarized position survive restarts in `update-summaries.json` in the
+Web state directory. Its additive target entries are ignored by older Stable versions. A fully
+summarized range opens from cache; model failures leave the deterministic on-demand fallback available.
 
 ## Durable update notifications
 

@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "AI update summaries cover all pending updates and build on earlier summaries as new updates arrive.",
+      "highlight": false,
+      "components": ["web"]
+    }
+  ]
+}
