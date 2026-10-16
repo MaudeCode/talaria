@@ -302,6 +302,11 @@ it('invalidates cached tail summaries on a WAL append without rebuilding the sid
     expect(server.deps.sessionStore.get(sid).prefixIndex).toBe(prefix)
     expect(fullRead).not.toHaveBeenCalled()
     assertWindows(server, session)
+    insert.run(5, sid, 'tool', '{"todos":[{"id":"tail","content":"tail task","status":"pending"}]}', null)
+    insert.run(6, sid, 'assistant', 'tail settled', 6)
+    const withTodo = server.deps.sessions.detail(sid, { msg_limit: '1', msg_before: '1' })
+    expect(withTodo.todo_state).toMatchObject({ todos: [{ id: 'tail', content: 'tail task', status: 'pending' }], ts: 4 })
+    assertWindows(server, session)
   } finally { vi.restoreAllMocks(); db.close(); await server.close() }
 })
 
@@ -350,4 +355,19 @@ it.each([false, true])('keeps the legacy timestamp merge with a row-id column=%s
     expect(server.deps.sessions.detail(sid, { msg_limit: '1' }).message_count).toBe(2)
     assertWindows(server, session)
   } finally { vi.restoreAllMocks(); db.close(); await server.close() }
+})
+
+
+it.each([3, 4])('counts the separate compressed model context instead of the display transcript, %s rows', async (count) => {
+  const server = await bootTestServer()
+  try {
+    const context = [
+      { role: 'assistant', content: '[context compaction] earlier summary', _context_compression_marker: true },
+      ...fixtures[2]!.slice(0, count - 1),
+    ]
+    const session = new Session({ session_id: 'range-model-context', messages: fixtures[2]!, context_messages: context }, { workspace: server.state, model: null })
+    server.deps.sessionStore.save(session)
+    expect(server.deps.sessions.detail(session.session_id, { msg_limit: '1' }).can_compress).toBe(count === 4)
+    assertWindows(server, session)
+  } finally { await server.close() }
 })
