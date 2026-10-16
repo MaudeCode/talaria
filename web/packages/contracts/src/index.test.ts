@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { z } from 'zod'
-import { ChatEventSchema, ClarifyPendingEnvelopeSchema, MemoryWriteRefusalSchema, ModelsSchema, SIDECAR_RPC_VERSION, SkillsSchema, SpeechPrepareSchema, TranscribeResponseSchema, TranscribeStreamEndSchema, TranscribeStreamEventSchema, TranscribeStreamStartSchema, UpdateNotificationsSchema, UpdateApplySchema, SteerSendNowResponseSchema } from './index.js'
+import { ChatEventSchema, ClarifyPendingEnvelopeSchema, MemoryWriteRefusalSchema, ModelsSchema, SIDECAR_RPC_VERSION, SkillsSchema, SpeechPrepareSchema, TranscribeResponseSchema, TranscribeStreamEndSchema, TranscribeStreamEventSchema, TranscribeStreamStartSchema, UpdatesCheckSchema, UpdateNotificationsSchema, UpdateApplySchema, SteerSendNowResponseSchema } from './index.js'
 
 const shared = (path: string): unknown => JSON.parse(readFileSync(resolve(import.meta.dirname, '../../../../contracts', path), 'utf8'))
 
@@ -75,6 +75,13 @@ describe('contracts package', () => {
   it('publishes contract versions that satisfy their schema', () => {
     const schema = z.fromJSONSchema(shared('versions.schema.json') as Parameters<typeof z.fromJSONSchema>[0])
     expect(schema.safeParse(shared('versions.json')).error).toBeUndefined()
+  })
+
+  it('parses the shared failed Web update status and rejects invalid versions', () => {
+    const fixture = shared('fixtures/update-rollback.json')
+    const parsed = UpdatesCheckSchema.parse(fixture)
+    expect(parsed.webui?.failed_update).toEqual({ version: '2.0.0', restored_version: '1.0.0' })
+    expect(UpdatesCheckSchema.safeParse({ webui: { ...parsed.webui, failed_update: { version: 2, restored_version: '1.0.0' } } }).success).toBe(false)
   })
 
   it('parses the shared update notification fixture', () => {

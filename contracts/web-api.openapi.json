@@ -55280,6 +55280,22 @@
                         {
                           "type": "object",
                           "properties": {
+                            "failed_update": {
+                              "type": "object",
+                              "properties": {
+                                "version": {
+                                  "type": "string"
+                                },
+                                "restored_version": {
+                                  "type": "string"
+                                }
+                              },
+                              "required": [
+                                "version",
+                                "restored_version"
+                              ],
+                              "description": "Web only: the update that failed before HTTP readiness and the restored package version. Manual retry remains available."
+                            },
                             "name": {
                               "type": "string"
                             },
@@ -55528,6 +55544,22 @@
                         {
                           "type": "object",
                           "properties": {
+                            "failed_update": {
+                              "type": "object",
+                              "properties": {
+                                "version": {
+                                  "type": "string"
+                                },
+                                "restored_version": {
+                                  "type": "string"
+                                }
+                              },
+                              "required": [
+                                "version",
+                                "restored_version"
+                              ],
+                              "description": "Web only: the update that failed before HTTP readiness and the restored package version. Manual retry remains available."
+                            },
                             "name": {
                               "type": "string"
                             },
@@ -55849,6 +55881,22 @@
                         {
                           "type": "object",
                           "properties": {
+                            "failed_update": {
+                              "type": "object",
+                              "properties": {
+                                "version": {
+                                  "type": "string"
+                                },
+                                "restored_version": {
+                                  "type": "string"
+                                }
+                              },
+                              "required": [
+                                "version",
+                                "restored_version"
+                              ],
+                              "description": "Web only: the update that failed before HTTP readiness and the restored package version. Manual retry remains available."
+                            },
                             "name": {
                               "type": "string"
                             },
@@ -56097,6 +56145,22 @@
                         {
                           "type": "object",
                           "properties": {
+                            "failed_update": {
+                              "type": "object",
+                              "properties": {
+                                "version": {
+                                  "type": "string"
+                                },
+                                "restored_version": {
+                                  "type": "string"
+                                }
+                              },
+                              "required": [
+                                "version",
+                                "restored_version"
+                              ],
+                              "description": "Web only: the update that failed before HTTP readiness and the restored package version. Manual retry remains available."
+                            },
                             "name": {
                               "type": "string"
                             },

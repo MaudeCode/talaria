@@ -864,7 +864,9 @@ export const UpdateVersionSchema = z.object({
   support_label: z.string().optional().describe('Agent only: `support` worded to fit one phone line.'),
 }).describe('TAL-946: one installable Stable release newer than the installed one.')
 export type UpdateVersion = z.infer<typeof UpdateVersionSchema>
-export const UpdateTargetSchema = z.looseObject({ name: z.string().optional(), channel: z.enum(['stable', 'experimental']).optional(),
+export const UpdateTargetSchema = z.looseObject({
+  failed_update: z.object({ version: z.string(), restored_version: z.string() }).optional().describe('Web only: the update that failed before HTTP readiness and the restored package version. Manual retry remains available.'),
+  name: z.string().optional(), channel: z.enum(['stable', 'experimental']).optional(),
   unsupported: z.boolean().optional().describe('Deprecated (TAL-350): `support === \'unchecked\'`, kept for older clients.'),
   support: AgentSupportSchema.optional().describe('Agent target only (TAL-350): `supported` when the target revision is exactly a release in the verified Agent window, else `unchecked`; an `unchecked` apply requires `confirmed_agent_revision`.'),
   support_label: z.string().optional().describe('Agent target only (TAL-946): `support` worded to fit one phone line.'),

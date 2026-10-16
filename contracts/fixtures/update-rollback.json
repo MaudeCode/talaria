@@ -1,0 +1,25 @@
+{
+  "webui": {
+    "name": "webui",
+    "channel": "stable",
+    "behind": 1,
+    "current_version": "web-v1.0.0",
+    "latest_version": "web-v2.0.0",
+    "no_git": true,
+    "install_kind": "npm",
+    "manual_update": false,
+    "failed_update": {
+      "version": "2.0.0",
+      "restored_version": "1.0.0"
+    },
+    "state": "release_ready",
+    "can_apply": true,
+    "installed_unverified": false,
+    "manual_link": false,
+    "target_version": "web-v2.0.0",
+    "summary_available": true,
+    "versions": [],
+    "folded_count": 0
+  },
+  "agent": null
+}
