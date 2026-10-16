@@ -195,6 +195,18 @@ replay, session replacement, profile change, and unmount. Invariants from
 `docs/rfcs/live-to-final-assistant-replies.md` are asserted in
 `packages/frontend/src/stream/reducer.test.ts`.
 
+Passive navigation closes the transport and invalidates pending status/settlement
+requests, retaining each existing `LiveTurn` with its cursor in the same store.
+Returning paints that turn immediately and reconnects from its last applied event.
+Inactive turns are evicted oldest first above 20 turns or 2,000,000 serialized
+characters (the boot snapshot's size convention). Eviction drops display and
+cursor together; the next attach uses the server's cold-replay cursor. Fresh
+detail retires a retained run that ended or was replaced while disconnected.
+An observed terminal frame keeps its transient continuation-link metadata until
+navigation or the next run. Deletion, logout, authentication loss,
+and profile/context resets clear the corresponding turns and pending work.
+This cache is process-local and does not survive a reload.
+
 ## 9. UI, styling, accessibility
 
 - Theme system: `packages/frontend/src/theme/skins.ts` is the single source of truth

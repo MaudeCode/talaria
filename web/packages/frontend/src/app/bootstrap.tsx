@@ -6,6 +6,8 @@ import { createContext, useContext } from 'react'
 import type { Bootstrap } from '../contracts/bootstrap'
 import { configureClient } from '../api/client'
 import { fetchBootstrap } from '../api/endpoints'
+import { teardownAll } from '../stream/connection'
+import { appUrl } from '../lib/appRoot'
 import { bootLocale } from '../i18n/runtime'
 
 export type BootstrapStatus = { state: 'ready'; data: Bootstrap } | { state: 'error'; error: unknown }
@@ -14,12 +16,17 @@ const listeners = new Set<() => void>()
 let current: BootstrapStatus | null = null
 let inflight: Promise<Bootstrap> | null = null
 
+function handleAuthExpired(next: string): void {
+  teardownAll()
+  window.location.assign(appUrl(`login?next=${encodeURIComponent(next)}`).href)
+}
+
 export async function loadBootstrap(): Promise<Bootstrap> {
   if (inflight) return inflight
   inflight = (async () => {
     try {
       const data = await fetchBootstrap()
-      configureClient({ csrfToken: data.csrf_token, authEnabled: data.auth.auth_enabled })
+      configureClient({ csrfToken: data.csrf_token, authEnabled: data.auth.auth_enabled, onUnauthorized: handleAuthExpired })
       bootLocale(data.language)
       current = { state: 'ready', data }
       return data
@@ -45,7 +52,7 @@ export function subscribeBootstrap(listener: () => void): () => void {
 
 export function setBootstrapForTests(data: Bootstrap): void {
   current = { state: 'ready', data }
-  configureClient({ csrfToken: data.csrf_token, authEnabled: data.auth.auth_enabled })
+  configureClient({ csrfToken: data.csrf_token, authEnabled: data.auth.auth_enabled, onUnauthorized: handleAuthExpired })
   for (const l of listeners) l()
 }
 
