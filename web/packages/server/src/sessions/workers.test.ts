@@ -13,7 +13,8 @@ import { configFingerprint, McpHealthProber, probeServer } from '../tools/mcp-he
 import { agentHealth, processStartTime, remoteGatewayBaseUrl, runtimeStatusIsFresh } from '../tools/health.js'
 import { RunJournal } from './journal.js'
 import { str } from '../util.js'
-import { withBackgroundUpdates } from './background-updates.js'
+import { withBackgroundUpdates, batchUpdate, recordBackgroundUpdate } from './background-updates.js'
+import { HeldWakeups } from './wakeup-pause.js'
 
 type Json = Record<string, unknown>
 const json = async (res: Response): Promise<Json> => (await res.json()) as Json
@@ -1837,4 +1838,30 @@ describe('durable parent admission for delivered delegation notifications (TAL-1
     }
   })
 
+})
+
+it('does not show Waiting when only a held delivery acknowledgement remains (TAL-1022)', async () => {
+  const server = await bootTestServer()
+  server.deps.completions.stop()
+  try {
+    const sid = String(((await json(await post(server, '/api/session/new', {}))).session as Json).session_id)
+    const session = server.deps.sessionStore.get(sid), turn = 'cancelled-review', delegation = 'ack-only'
+    const event = { type: 'async_delegation', delegation_id: delegation, process_id: delegation, origin_ui_session_id: sid, goals: ['Cancelled review'], results: [{ status: 'completed' }] }
+    const update = batchUpdate([{ event, prompt: 'result' }])
+    session.messages = [
+      { role: 'user', content: 'result', _source: 'process_wakeup', _turn_id: turn },
+      { role: 'assistant', content: '', _error: true, _terminal_state: 'cancelled', _turn_id: turn },
+      { role: 'user', content: 'Agent notification', display_kind: 'async_delegation_complete', display_metadata: { delegation_id: delegation }, _turn_id: 'notification' },
+    ]
+    recordBackgroundUpdate(session, turn, update)
+    recordBackgroundUpdate(session, `delegation:${delegation}`, update)
+    server.deps.sessionStore.save(session)
+    new HeldWakeups(join(server.deps.sessionStore.sessionDir, '_wakeup_held.json')).hold(sid, [{ process_id: delegation, wakeup_prompt: 'result', event }])
+    const pending = (await json(await server.get(`/api/session?session_id=${sid}&messages=1&msg_limit=1`))).session as Json
+    expect((pending.messages as Json[]).at(-1)?._background_update).toMatchObject({ review_state: 'waiting' })
+    session.extra.completion_acceptances = { [JSON.stringify([realpathSync(server.state), delegation])]: turn }
+    server.deps.sessionStore.save(session)
+    const page = (await json(await server.get(`/api/session?session_id=${sid}&messages=1&msg_limit=1`))).session as Json
+    expect((page.messages as Json[]).at(-1)?._background_update).toMatchObject({ review_state: 'unknown', lines: [{ review_state: 'unknown' }] })
+  } finally { await server.close() }
 })

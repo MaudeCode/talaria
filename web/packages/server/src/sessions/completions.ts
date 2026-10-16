@@ -116,9 +116,15 @@ export class CompletionDrain {
   /** TAL-576: wakeups held while their session is paused. */
   private readonly heldWakeups: HeldWakeups
 
-  /** Only durably retained results qualify for Waiting, including after a restart. */
+  /** Waiting requires an unadmitted result, not an admitted turn's outstanding ledger acknowledgement. */
   pendingDelegations(sid: string): Set<string> {
-    try { return new Set(this.heldWakeups.get(sid).map((e) => str(e.event?.delegation_id)).filter(Boolean)) } catch { return new Set() }
+    try {
+      const session = this.deps.store.get(sid), home = this.ownerHome(session)
+      return new Set(this.heldWakeups.get(sid).filter((entry) => {
+        const key = completionKey(home, entry.event ?? {})
+        return Boolean(key) && !completionAccepted(session, key)
+      }).map((entry) => str(entry.event?.delegation_id)).filter(Boolean))
+    } catch { return new Set() }
   }
 
   constructor(private readonly deps: CompletionDrainDeps) {

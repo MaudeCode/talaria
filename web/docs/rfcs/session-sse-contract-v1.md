@@ -202,8 +202,9 @@ leading icon and the goal, with localized state descriptions in accessibility
 and help text.
 
 Admission saves the structured update with the pending turn. Only the results
-admitted to that turn share its review. Waiting requires a durable held result;
-Reviewing requires its live parent run. Successful settlement persists terminal
+admitted to that turn share its review. Waiting requires a durable held result that no parent has admitted; a pending
+delivery acknowledgement alone is not a pending review. Reviewing requires its
+live parent run. Successful settlement persists terminal
 evidence on the background prompt, alongside the actual final reply. A silent
 marker alone or a delivered ledger flag cannot establish review. Interrupted
 or missing runs remain Unknown unless their result is durably pending for retry.
