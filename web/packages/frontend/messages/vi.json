@@ -1850,5 +1850,6 @@
 	"panel_agents_updated": "Cập nhật {time}",
 	"panel_agents_transcript": "Mở bản ghi",
 	"panel_files_unavailable": "Cuộc trò chuyện này không có không gian làm việc.",
-	"panel_agents_transcript_for": "Bản ghi: {goal}"
+	"panel_agents_transcript_for": "Bản ghi: {goal}",
+	"settings_label_summarize_updates_automatically": "Tự động tóm tắt bản cập nhật bằng AI"
 }

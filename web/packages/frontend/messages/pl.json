@@ -1959,5 +1959,6 @@
 	"panel_agents_updated": "Zaktualizowano {time}",
 	"panel_agents_transcript": "Otwórz zapis",
 	"panel_files_unavailable": "Ten czat nie ma obszaru roboczego.",
-	"panel_agents_transcript_for": "Zapis: {goal}"
+	"panel_agents_transcript_for": "Zapis: {goal}",
+	"settings_label_summarize_updates_automatically": "Automatycznie podsumowuj aktualizacje za pomocą AI"
 }

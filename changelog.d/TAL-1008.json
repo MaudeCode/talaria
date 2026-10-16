@@ -1,0 +1,12 @@
+{
+  "entries": [
+    {
+      "category": "Changed",
+      "summary": "AI update summaries are prepared automatically and stay available after a server restart.",
+      "highlight": false,
+      "components": [
+        "web"
+      ]
+    }
+  ]
+}

@@ -1030,6 +1030,7 @@
 	"settings_label_sync_insights": "Sync to insights",
 	"settings_label_check_updates": "Check for updates",
 	"settings_label_auto_apply_updates": "Automatically apply Web updates",
+	"settings_label_summarize_updates_automatically": "Summarize updates with AI automatically",
 	"settings_label_update_channel": "Update channel",
 	"settings_update_channel_stable": "Stable",
 	"settings_update_channel_experimental": "Experimental",

@@ -1179,7 +1179,7 @@ describe('Agent checkout updates', () => {
     expect(git(a.agent, 'rev-parse', 'HEAD')).toBe(a.v1)
   })
 
-  function summaryService(a: { agent: string; origin: string }, opts: { channel?: 'stable' | 'experimental'; getPublicJson?: GetJson; llm?: (system: string, user: string) => Promise<string>; now?: () => number } = {}): { svc: UpdateService; prompts: string[] } {
+  function summaryService(a: { agent: string; origin: string }, opts: { channel?: 'stable' | 'experimental'; getPublicJson?: GetJson; llm?: (system: string, user: string) => Promise<string>; now?: () => number; stateDir?: string; summarizeAutomatically?: () => boolean; checkEnabled?: () => boolean; log?: (line: string) => void } = {}): { svc: UpdateService; prompts: string[] } {
     // The checkout fetches its local origin but reports a GitHub remote, whose releases `getPublicJson` stubs.
     const run: GitRun = (args, cwd, t) => (args[0] === 'remote' && args[1] === 'get-url' ? Promise.resolve({ ok: true, out: 'https://github.com/Synthetic/agent.git' }) : runGit(args, cwd, t))
     const prompts: string[] = []
@@ -1187,10 +1187,65 @@ describe('Agent checkout updates', () => {
       webRoot: join(tmp(), 'web'), git: run, getJson: noReleases, ...(opts.getPublicJson ? { getPublicJson: opts.getPublicJson } : {}), identity: { release: () => DEV, stamped: () => DEV, runningSourceRevision: () => null }, webuiVersion: 'x',
       agentDir: () => a.agent, channel: () => 'stable', agentChannel: () => opts.channel ?? 'stable', includeAgent: () => true, blockers: () => ({ active_streams: 0, active_runs: 0, blocking_stream_ids: [], blocking_run_ids: [], restart_blocked: false }),
       scheduleRestart: () => undefined, llm: (system, user) => { prompts.push(user); return opts.llm ? opts.llm(system, user) : Promise.resolve('- Notice: Chats open faster') }, log: () => undefined,
-      ...(opts.now ? { now: opts.now } : {}),
+      ...(opts.now ? { now: opts.now } : {}), ...(opts.stateDir ? { stateDir: opts.stateDir } : {}), summarizeAutomatically: opts.summarizeAutomatically ?? (() => false), ...(opts.checkEnabled ? { checkEnabled: opts.checkEnabled } : {}),
+      ...(opts.log ? { log: opts.log } : {}),
     })
     return { svc, prompts }
   }
+
+  it('pre-generates summaries without blocking checks and shares the in-flight range (TAL-1008)', async () => {
+    const a = agentInstall()
+    let resolveAnswer!: (value: string) => void
+    const answer = new Promise<string>((resolve) => { resolveAnswer = resolve })
+    const { svc, prompts } = summaryService(a, { summarizeAutomatically: () => true, llm: () => answer })
+    await svc.check(true)
+    await vi.waitFor(() => { expect(prompts).toHaveLength(1) })
+    const requested = svc.summarize('agent')
+    resolveAnswer('- Notice: Chats open faster')
+    const result = await requested
+    expect(result).toMatchObject({ generated_by: 'llm' })
+    expect(result.summary).toContain('Chats open faster')
+    expect(await svc.summarize('agent')).toMatchObject({ cached: true })
+    await svc.check(true)
+    expect(prompts).toHaveLength(1)
+    git(a.origin, 'commit', '--allow-empty', '-m', 'new update')
+    git(a.origin, 'tag', 'v3.0.0')
+    await svc.check(true)
+    await vi.waitFor(() => { expect(prompts).toHaveLength(2) })
+    await svc.summarize('agent')
+  })
+
+  it.each(['summary disabled', 'checks disabled'])('does not pre-generate when %s (TAL-1008)', async (mode) => {
+    const { svc, prompts } = summaryService(agentInstall(), { summarizeAutomatically: () => mode !== 'summary disabled', checkEnabled: () => mode !== 'checks disabled' })
+    await svc.check(true)
+    await new Promise((resolve) => setImmediate(resolve))
+    expect(prompts).toHaveLength(0)
+  })
+
+  it('persists model answers across service reconstruction (TAL-1008)', async () => {
+    const a = agentInstall()
+    const stateDir = tmp()
+    const first = summaryService(a, { stateDir })
+    await first.svc.check(true)
+    expect(await first.svc.summarize('agent')).toMatchObject({ generated_by: 'llm', cached: false })
+    const second = summaryService(a, { stateDir })
+    await second.svc.check(true)
+    expect(await second.svc.summarize('agent')).toMatchObject({ generated_by: 'llm', cached: true })
+    expect(second.prompts).toHaveLength(0)
+  })
+
+  it('logs a background model failure once per range and leaves fallback uncached (TAL-1008)', async () => {
+    const logs: string[] = []
+    const stateDir = tmp()
+    const { svc, prompts } = summaryService(agentInstall(), { stateDir, summarizeAutomatically: () => true, log: (line) => logs.push(line), llm: () => Promise.reject(new Error('model unavailable')) })
+    await svc.check(true)
+    expect(await svc.summarize('agent')).toMatchObject({ generated_by: 'fallback', cached: false })
+    await svc.check(true)
+    expect(await svc.summarize('agent')).toMatchObject({ generated_by: 'fallback', cached: false })
+    expect(prompts).toHaveLength(2)
+    expect(logs.filter((line) => line.includes('summary'))).toHaveLength(1)
+    expect(existsSync(join(stateDir, 'update-summaries.json'))).toBe(false)
+  })
 
   it('summarizes the Stable release notes between the installed and target tags, not commit subjects (TAL-759)', async () => {
     const a = agentInstall()

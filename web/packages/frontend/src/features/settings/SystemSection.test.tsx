@@ -43,6 +43,26 @@ function renderSystem() {
   return qc
 }
 
+describe('automatic update summaries (TAL-1008)', () => {
+  beforeEach(() => { vi.mocked(api.fetchUpdatesCheck).mockResolvedValue({ cached: true, webui: current, agent: current }); vi.mocked(api.saveSettings).mockReset() })
+  it('defaults on and saves the owner choice', async () => {
+    settingsState = { check_for_updates: true }
+    renderSystem()
+    const control = await screen.findByRole('switch', { name: 'Summarize updates with AI automatically' })
+    expect(control).toBeChecked()
+    await userEvent.click(control)
+    await waitFor(() => expect(api.saveSettings).toHaveBeenCalledWith({ summarize_updates_automatically: false }))
+  })
+  it('is disabled when update checks are off', async () => {
+    settingsState = { check_for_updates: false }
+    renderSystem()
+    const control = await screen.findByRole('switch', { name: 'Summarize updates with AI automatically' })
+    await waitFor(() => expect(control).toHaveAttribute('aria-disabled', 'true'))
+    await userEvent.click(control)
+    expect(api.saveSettings).not.toHaveBeenCalled()
+  })
+})
+
 describe('SystemSection "Check now"', () => {
   it('keeps the Agent picker on Stable when Web is Experimental', async () => {
     renderSystem()

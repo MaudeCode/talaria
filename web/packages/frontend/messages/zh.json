@@ -1796,5 +1796,6 @@
 	"panel_agents_updated": "更新于 {time}",
 	"panel_agents_transcript": "打开对话记录",
 	"panel_files_unavailable": "此对话没有工作区。",
-	"panel_agents_transcript_for": "对话记录：{goal}"
+	"panel_agents_transcript_for": "对话记录：{goal}",
+	"settings_label_summarize_updates_automatically": "使用 AI 自动总结更新"
 }

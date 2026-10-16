@@ -766,6 +766,7 @@ export function createDeps(opts: CreateDepsOptions): AppDeps {
     channel: () => normalizeChannel(settings.load().update_channel),
     agentChannel: () => normalizeChannel(settings.load().agent_update_channel),
     includeAgent: () => !pyBool(settings.load().ignore_agent_updates),
+    summarizeAutomatically: () => settings.load().check_for_updates !== false && settings.load().summarize_updates_automatically !== false,
     autoApply: () => settings.load().check_for_updates !== false && settings.load().auto_apply_updates === true,
     checkEnabled: () => !truthy(env.HERMES_WEBUI_TEST_NETWORK_BLOCK) && settings.load().check_for_updates !== false,
     autoNotification: {

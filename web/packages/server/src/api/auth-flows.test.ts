@@ -94,7 +94,7 @@ describe('OIDC browser login', () => {
     expect(status).toMatchObject({ logged_in: true, auth_type: 'oidc', user: 'kim@example.com', bound_profile: null, can_manage_server: false })
     expect((await s.get('/api/sessions', { headers: { cookie: `${s.deps.auth.cookieName()}=${cookie ?? ''}` } })).status).toBe(200)
     // TAL-279: link-safety settings apply to every user, so only an owner may change them.
-    for (const patch of [{ auto_apply_updates: true }, { update_channel: 'experimental' }, { agent_update_channel: 'experimental' }, { check_for_updates: false }, { confirm_external_links: false }, { trusted_link_hosts: ['attacker.test'] }]) {
+    for (const patch of [{ summarize_updates_automatically: false }, { auto_apply_updates: true }, { update_channel: 'experimental' }, { agent_update_channel: 'experimental' }, { check_for_updates: false }, { confirm_external_links: false }, { trusted_link_hosts: ['attacker.test'] }]) {
       expect((await s.get('/api/settings', { method: 'POST', body: JSON.stringify(patch), headers: { 'content-type': 'application/json', cookie: `${s.deps.auth.cookieName()}=${cookie ?? ''}` } })).status).toBe(403)
     }
   })

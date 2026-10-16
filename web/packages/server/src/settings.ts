@@ -58,6 +58,7 @@ export function settingsDefaults(opts: { defaultWorkspace: string; botName: stri
     show_previous_messaging_sessions: false,
     sync_to_insights: false,
     check_for_updates: true,
+    summarize_updates_automatically: true,
     auto_apply_updates: false,
     update_channel: 'stable',
     agent_update_channel: 'stable',
@@ -411,7 +412,7 @@ export class SettingsStore {
     }
     for (const [k, rawValue] of Object.entries(settings)) {
       let v: unknown = rawValue
-      if (k === 'auto_apply_updates' && typeof v !== 'boolean') continue
+      if (['auto_apply_updates', 'summarize_updates_automatically'].includes(k) && typeof v !== 'boolean') continue
       if (k === 'provider_quota_thresholds' && opts.profile !== undefined) {
         const byProfile = thresholdsByProfile(current)
         byProfile[opts.profile] = mergeQuotaThresholds(mergeQuotaThresholds(QUOTA_THRESHOLD_DEFAULTS, byProfile[opts.profile]), v)
