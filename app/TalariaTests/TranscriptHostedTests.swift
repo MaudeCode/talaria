@@ -7,11 +7,54 @@ import XCTest
 /// says to VoiceOver, its button trait, and where it sits against its neighbours.
 @MainActor
 final class TranscriptHostedTests: XCTestCase {
+    func testFastUpwardScrollingKeepsLoadingWithoutLeavingThePrefetchRegion() async throws {
+        var requested: [Int] = []
+        let window = try hostWindow(PagedHistoryTranscript(sparseOlderPages: true) { requested.append($0) })
+        let scroll = try XCTUnwrap(historyScroll(in: window))
+        try await Task.sleep(for: .milliseconds(150))
+        // A fast reader repeatedly reaches the loaded edge while a prepend is settling.
+        for _ in 0..<150 {
+            scroll.contentOffset.y = -scroll.adjustedContentInset.top
+            try await Task.sleep(for: .milliseconds(10))
+        }
+        try await Task.sleep(for: .milliseconds(200))
+        XCTAssertGreaterThanOrEqual(requested.count, 3, "Fast scrolling must keep requesting older pages without an away/back gesture")
+        let pages = Array(stride(from: 1_950, through: 50, by: -50))
+        XCTAssertEqual(requested, Array(pages.prefix(requested.count)), "Every cursor is requested once; never request past the first page")
+        attachHistoryImage(window, name: "Fast upward history after prefetch")
+    }
+
+    func testHistoryPrefetchStartsBeforeTheLastViewport() async throws {
+        var requests = 0
+        let window = try hostWindow(historyTranscript { _ in requests += 1; return false })
+        let scroll = try XCTUnwrap(historyScroll(in: window))
+        try await Task.sleep(for: .milliseconds(150))
+        scroll.contentOffset.y = scroll.bounds.height * 1.5
+        for _ in 0..<20 where requests == 0 { try await Task.sleep(for: .milliseconds(25)) }
+        XCTAssertEqual(requests, 1, "Prefetch must start with more than one viewport of history still available")
+    }
+
+    func testHistoryResponsePreservesWhereTheReaderMovedWhilePageWasInFlight() async throws {
+        var requested: [Int] = []
+        let window = try hostWindow(PagedHistoryTranscript(responseDelay: .milliseconds(150)) { requested.append($0) })
+        let scroll = try XCTUnwrap(historyScroll(in: window))
+        scroll.contentOffset.y = 100
+        for _ in 0..<30 where requested.isEmpty { try await Task.sleep(for: .milliseconds(10)) }
+        XCTAssertEqual(requested, [1950])
+        scroll.contentOffset.y = 300
+        let label = "History row 1956. Synthetic transcript text."
+        let before = try await requireElement(in: window, label: label).accessibilityFrame.minY
+        _ = try await requireElement(in: window, label: "History row 1900. Synthetic transcript text.")
+        try await Task.sleep(for: .milliseconds(100))
+        let after = try await requireElement(in: window, label: label).accessibilityFrame.minY
+        XCTAssertEqual(after, before, accuracy: 2, "A response must preserve the reader's latest position, not jump back to the request's position")
+    }
+
     func testScrollingNearTheTopLoadsHistoryWithoutATap() async throws {
         var requests = 0
         var finish: ((Bool) -> Void)?
         let window = try hostWindow(NavigationStack {
-            historyTranscript {
+            historyTranscript { _ in
                 requests += 1
                 return await withCheckedContinuation { continuation in
                     finish = { result in finish = nil; continuation.resume(returning: result) }
@@ -74,7 +117,7 @@ final class TranscriptHostedTests: XCTestCase {
     func testANewTopAppearanceDuringLoadingRunsAfterThePageSettles() async throws {
         var requests = 0
         var finish: ((Bool) -> Void)?
-        let window = try hostWindow(historyTranscript {
+        let window = try hostWindow(historyTranscript { _ in
             requests += 1
             return await withCheckedContinuation { continuation in
                 finish = { result in finish = nil; continuation.resume(returning: result) }
@@ -84,7 +127,7 @@ final class TranscriptHostedTests: XCTestCase {
         scroll.contentOffset.y = 100
         for _ in 0..<30 where requests == 0 { try await Task.sleep(for: .milliseconds(50)) }
         XCTAssertEqual(requests, 1)
-        scroll.contentOffset.y = 1_200
+        scroll.contentOffset.y = scroll.contentSize.height - scroll.bounds.height
         try await Task.sleep(for: .milliseconds(100))
         scroll.contentOffset.y = 0
         try await Task.sleep(for: .milliseconds(100))
@@ -247,7 +290,7 @@ final class TranscriptHostedTests: XCTestCase {
 
 
 @MainActor
-private func historyTranscript(messages supplied: [ChatMessage]? = nil, messageOffset: Int? = nil, hasOlderMessages: Bool = true, load: @escaping () async -> Bool) -> some View {
+private func historyTranscript(messages supplied: [ChatMessage]? = nil, messageOffset: Int? = nil, hasOlderMessages: Bool = true, load: @escaping (@MainActor () -> Void) async -> Bool) -> some View {
     let messages = supplied ?? (0..<50).map { index in
         ChatMessage(role: "user", content: "History row \(index). Synthetic transcript text.", timestamp: nil, messageId: "history-\(index)")
     }
@@ -287,6 +330,8 @@ private func historyTranscript(messages supplied: [ChatMessage]? = nil, messageO
 private struct PagedHistoryTranscript: View {
     @State private var start = 1_950
     var hasDisclosure = false
+    var sparseOlderPages = false
+    var responseDelay = Duration.zero
     let onRequest: (Int) -> Void
 
     var body: some View {
@@ -294,10 +339,12 @@ private struct PagedHistoryTranscript: View {
             if hasDisclosure && index == 1993 {
                 return ChatMessage(role: "user", content: String(repeating: "Expanded history fixture.\n", count: 30), timestamp: nil, messageId: "history-\(index)", displayExcerpt: "Expanded history fixture.", collapsible: true)
             }
-            return ChatMessage(role: "user", content: "History row \(index). Synthetic transcript text.", timestamp: nil, messageId: "history-\(index)")
+            return ChatMessage(role: "user", content: "History row \(index). Synthetic transcript text.", timestamp: nil, messageId: "history-\(index)", display: sparseOlderPages && index < 1_950 && index % 50 != 0 ? .hidden : .row)
         }
-        historyTranscript(messages: messages, messageOffset: start, hasOlderMessages: start > 0) {
+        historyTranscript(messages: messages, messageOffset: start, hasOlderMessages: start > 0) { beforePrepend in
             onRequest(start)
+            try? await Task.sleep(for: responseDelay)
+            beforePrepend()
             start = max(0, start - 50)
             return true
         }

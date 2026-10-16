@@ -4,6 +4,8 @@ import SwiftUI
 struct TranscriptHistorySentinel: View {
     let isLoading: Bool
     let isNearTop: Bool
+    let pageRevision: Int
+    let canPrefetch: @MainActor () -> Bool
     let onLoad: () async -> Bool
     @State private var isRequesting = false
     @State private var failed = false
@@ -11,6 +13,7 @@ struct TranscriptHistorySentinel: View {
     @State private var latestNearTop = false
     @State private var leftDuringRequest = false
     @State private var appearedAgain = false
+    @State private var latestPageRevision = 0
 
     var body: some View {
         HStack(spacing: 8) {
@@ -30,7 +33,15 @@ struct TranscriptHistorySentinel: View {
         }
         .frame(maxWidth: .infinity, minHeight: 44)
         // The eager VStack appears off screen; the existing UIKit observer owns actual viewport visibility.
-        .onAppear { latestNearTop = isNearTop; if isNearTop { request() } }
+        .onAppear { latestPageRevision = pageRevision; latestNearTop = isNearTop; if isNearTop { request() } }
+        .onDisappear { latestNearTop = false }
+        .onChange(of: pageRevision) { previous, revision in
+            latestPageRevision = revision
+            if revision > previous && latestNearTop && !isRequesting {
+                armed = true
+                request()
+            }
+        }
         .onChange(of: isNearTop) { _, nearTop in
             latestNearTop = nearTop
             if nearTop {
@@ -45,18 +56,19 @@ struct TranscriptHistorySentinel: View {
     }
 
     private func request(retry: Bool = false) {
-        guard !isLoading, !isRequesting, retry || (armed && !failed) else { return }
+        guard !isLoading, !isRequesting, retry || (armed && !failed && canPrefetch()) else { return }
         isRequesting = true
         armed = false
         failed = false
         leftDuringRequest = false
         appearedAgain = false
+        let requestedRevision = latestPageRevision
         Task { @MainActor in
             failed = !(await onLoad())
             await Task.yield()
             armed = !latestNearTop
             isRequesting = false
-            if !failed && appearedAgain && latestNearTop {
+            if !failed && latestNearTop && (appearedAgain || latestPageRevision > requestedRevision) {
                 armed = true
                 request()
             }

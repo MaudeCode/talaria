@@ -1736,7 +1736,7 @@ public final class ChatViewModel {
     }
 
     @discardableResult
-    public func loadOlderMessages(modelContext: ModelContext? = nil) async -> Bool {
+    public func loadOlderMessages(modelContext: ModelContext? = nil, beforePrepend: @MainActor () -> Void = {}) async -> Bool {
         guard let sessionID else {
             errorMessage = String(localized: "The server did not provide a session ID.")
             return false
@@ -1779,6 +1779,7 @@ public final class ChatViewModel {
             let olderMessages = session.messages ?? []
             let mergedMessages = Self.prependingOlderMessages(olderMessages, to: messages)
             let didAddMessages = mergedMessages.count > messages.count
+            if didAddMessages { beforePrepend() }
             applyCompressionReference(from: session)
             messages = mergedMessages
             latestServerLoadHadAssistantResponseAfterLatestUser = Self.hasAssistantResponseAfterLatestUser(

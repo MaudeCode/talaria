@@ -136,6 +136,72 @@ final class ChatVerticalScrollAxisGuardTests: XCTestCase {
 
 @MainActor
 final class ChatScrollPositionControllerTests: XCTestCase {
+    func testPrefetchAnchorsTheCurrentReaderInsteadOfAnOlderPageBelowThem() {
+        let scrollView = makeScrollView()
+        scrollView.contentOffset.y = 240
+        let controller = ChatScrollPositionController()
+        controller.attach(to: scrollView)
+        controller.recordRowMinY(180, for: "reader")
+        controller.recordRowMinY(600, for: "previous-page-first")
+        XCTAssertEqual(controller.readingAnchorRowID, "reader")
+        XCTAssertTrue(controller.capture(anchorRowID: controller.readingAnchorRowID))
+        XCTAssertTrue(controller.restoreAfterPrepend())
+        controller.recordRowMinY(580, for: "reader")
+        // The prepend adds 400pt; a disclosure below the reader adds another 100pt.
+        controller.recordRowMinY(1_100, for: "previous-page-first")
+        scrollView.contentSize.height += 500
+        XCTAssertEqual(scrollView.contentOffset.y, 640, accuracy: 0.001)
+    }
+
+    func testPrependWaitsForItsLayoutRevisionAndDetachReleasesTheWait() async {
+        let scrollView = makeScrollView()
+        let controller = ChatScrollPositionController()
+        controller.attach(to: scrollView)
+        XCTAssertTrue(controller.capture(anchorRowID: nil, contentRevision: 2))
+        var settled = false
+        let wait = Task { await controller.waitForPrependLayout(); settled = true }
+        await Task.yield()
+        controller.contentDidLayout(revision: 1)
+        await Task.yield()
+        XCTAssertFalse(settled, "An old page's layout cannot admit the next fetch")
+        controller.contentDidLayout(revision: 2)
+        await wait.value
+        XCTAssertTrue(settled)
+
+        XCTAssertTrue(controller.capture(anchorRowID: nil, contentRevision: 3))
+        settled = false
+        let detachWait = Task { await controller.waitForPrependLayout(); settled = true }
+        await Task.yield()
+        controller.detach()
+        await detachWait.value
+        XCTAssertTrue(settled, "Closing the transcript must not strand its loading task")
+
+        controller.attach(to: scrollView)
+        XCTAssertTrue(controller.capture(anchorRowID: nil, contentRevision: 4))
+        settled = false
+        let reattachWait = Task { await controller.waitForPrependLayout(); settled = true }
+        await Task.yield()
+        controller.attach(to: makeScrollView())
+        await reattachWait.value
+        XCTAssertTrue(settled, "Replacing the scroll view releases its old layout wait")
+    }
+
+    func testResponseTimePrependPreservesAnActiveDragUntilTheNextReaderMovement() {
+        let scrollView = makeScrollView(isDragging: true)
+        scrollView.contentOffset.y = 240
+        let controller = ChatScrollPositionController()
+        controller.attach(to: scrollView)
+        XCTAssertTrue(controller.capture(anchorRowID: nil))
+        XCTAssertFalse(controller.restoreAfterPrepend(), "A capture made before a request must still defer to the gesture")
+        XCTAssertTrue(controller.capture(anchorRowID: nil))
+        XCTAssertTrue(controller.restoreAfterPrepend(whileInteracting: true))
+        scrollView.contentSize.height += 640
+        XCTAssertEqual(scrollView.contentOffset.y, 880, accuracy: 0.001)
+        scrollView.contentOffset.y = 860
+        scrollView.contentSize.height += 400
+        XCTAssertEqual(scrollView.contentOffset.y, 860, accuracy: 0.001, "The reader's next movement releases compensation")
+    }
+
     func testPrependCompensatesByExactContentHeightGrowth() {
         let scrollView = makeScrollView()
         scrollView.contentOffset = CGPoint(x: 0, y: 240)
@@ -461,8 +527,9 @@ final class ChatScrollPositionControllerTests: XCTestCase {
         )
     }
 
-    private func makeScrollView() -> UIScrollView {
-        let scrollView = UIScrollView(frame: CGRect(x: 0, y: 0, width: 320, height: 480))
+    private func makeScrollView(isDragging: Bool = false) -> UIScrollView {
+        let scrollView = HistoryInteractionScrollView(frame: CGRect(x: 0, y: 0, width: 320, height: 480))
+        scrollView.userIsDragging = isDragging
         scrollView.contentSize = CGSize(width: 320, height: 1_200)
         return scrollView
     }
@@ -481,4 +548,10 @@ final class ChatScrollPositionControllerTests: XCTestCase {
         XCTAssertEqual(scrollView.contentOffset.y, 880, accuracy: 0.001)
         return controller
     }
+}
+
+/// UIScrollView's interaction flags are read-only; the existing fixture needs a controllable gesture for this case.
+private final class HistoryInteractionScrollView: UIScrollView {
+    var userIsDragging = false
+    override var isDragging: Bool { userIsDragging }
 }

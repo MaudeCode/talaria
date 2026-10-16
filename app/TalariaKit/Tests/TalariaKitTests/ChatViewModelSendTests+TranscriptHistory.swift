@@ -487,9 +487,15 @@ extension ChatViewModelSendTests {
         }
 
         await viewModel.loadMessages()
-        let didLoadOlder = await viewModel.loadOlderMessages()
+        var prepared = false
+        let didLoadOlder = await viewModel.loadOlderMessages {
+            XCTAssertEqual(requestQueries.count, 2, "Capture only after the page response arrives")
+            XCTAssertEqual(viewModel.messages.count, 2, "Capture before applying the older rows")
+            prepared = true
+        }
 
         XCTAssertTrue(didLoadOlder)
+        XCTAssertTrue(prepared)
         XCTAssertEqual(requestQueries.count, 2)
         XCTAssertNil(requestQueries[0]["msg_before"])
         XCTAssertEqual(requestQueries[1]["msg_before"], "2")

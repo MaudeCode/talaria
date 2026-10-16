@@ -8,6 +8,7 @@ struct ChatTranscriptView: View {
     @Environment(\.openURL) private var openURL
     @State private var scrollPositionController = ChatScrollPositionController()
     @State private var isHistoryNearTop = false
+    @State private var historyLayoutRevision = 0
     /// Owns the transcript's message long press: one handler for every row,
     /// which is what lets a press be resolved against link geometry first.
     @State private var menuRegistry = ChatMessageMenuRegistry()
@@ -70,7 +71,7 @@ struct ChatTranscriptView: View {
     let actionContext: (ChatMessage, Int) -> MessageActionContext?
     let shouldRenderMessageRow: (ChatMessage) -> Bool
     let onLoadMessages: () async -> Void
-    let onLoadOlderMessages: () async -> Bool
+    let onLoadOlderMessages: (@MainActor () -> Void) async -> Bool
     let onUpdateScrollMetrics: (ChatScrollMetrics) -> Void
     let onFollowEvent: (ChatScrollPolicy.FollowEvent) -> Void
     let onDisclosureToggle: () -> Void
@@ -148,7 +149,6 @@ struct ChatTranscriptView: View {
                         transcriptScrollContent(
                             proxy: proxy,
                             viewportWidth: viewportWidth,
-                            viewportHeight: viewport.size.height,
                             contentWidth: contentWidth
                         )
                     }
@@ -282,7 +282,6 @@ struct ChatTranscriptView: View {
     private func transcriptScrollContent(
         proxy: ScrollViewProxy,
         viewportWidth: CGFloat,
-        viewportHeight: CGFloat,
         contentWidth: CGFloat
     ) -> some View {
         VStack(spacing: transcriptMessageSpacing) {
@@ -386,9 +385,10 @@ struct ChatTranscriptView: View {
                 ChatScrollObserver(
                     isStreaming: activeStreamID != nil,
                     scrollPositionController: scrollPositionController,
+                    contentRevision: historyLayoutRevision,
                     onFollowEvent: onFollowEvent
                 ) { metrics in
-                    isHistoryNearTop = metrics.distanceFromTop <= viewportHeight
+                    isHistoryNearTop = scrollPositionController.shouldPrefetchHistory()
                     onUpdateScrollMetrics(metrics)
                 }
 
@@ -438,7 +438,7 @@ struct ChatTranscriptView: View {
     @ViewBuilder
     private func olderMessagesSentinel(proxy: ScrollViewProxy) -> some View {
         if hasOlderMessages {
-            TranscriptHistorySentinel(isLoading: isLoadingOlderMessages, isNearTop: isHistoryNearTop) {
+            TranscriptHistorySentinel(isLoading: isLoadingOlderMessages, isNearTop: isHistoryNearTop, pageRevision: historyLayoutRevision, canPrefetch: scrollPositionController.shouldPrefetchHistory) {
                 await loadOlderMessagesPreservingPosition(proxy: proxy)
             }
         }
@@ -446,23 +446,28 @@ struct ChatTranscriptView: View {
 
     @discardableResult
     private func loadOlderMessagesPreservingPosition(proxy: ScrollViewProxy) async -> Bool {
-        let renderID = displayedTranscriptMessages.first?.renderID
-        let capturedExactPosition = scrollPositionController.capture(anchorRowID: renderID)
-        let didLoad = await onLoadOlderMessages()
+        var renderID: String?
+        var capturedExactPosition = false
+        // A fling can keep moving while the page is in flight; snapshot immediately before the prepend.
+        let didLoad = await onLoadOlderMessages {
+            renderID = scrollPositionController.readingAnchorRowID ?? displayedTranscriptMessages.first?.renderID
+            historyLayoutRevision += 1
+            capturedExactPosition = scrollPositionController.capture(anchorRowID: renderID, contentRevision: historyLayoutRevision)
+        }
         guard didLoad else {
             scrollPositionController.cancelPreservation()
             return false
         }
 
         if capturedExactPosition,
-           scrollPositionController.restoreAfterPrepend() {
-            await scrollPositionController.waitForPrependToSettle()
+           scrollPositionController.restoreAfterPrepend(whileInteracting: true) {
+            await scrollPositionController.waitForPrependLayout()
             return true
         }
 
         guard let renderID else { return true }
 
-        await Task.yield()
+        await scrollPositionController.waitForPrependLayout()
         proxy.scrollTo(renderID, anchor: .top)
         return true
     }

@@ -22,6 +22,12 @@ import SwiftUI
 /// reading-older chrome, and how far a gesture-free scroll must carry the
 /// reader before it counts as leaving.
 public enum ChatScrollPolicy {
+    /// Buffer two viewports while reading history; keep one viewport at the latest edge.
+    public static func shouldPrefetchHistory(geometry: ScrollGeometry) -> Bool {
+        let screens: CGFloat = isAtBottom(distanceFromBottom: geometry.distanceFromBottom) ? 1 : 2
+        return geometry.offsetY <= geometry.visibleHeight * screens
+    }
+
     /// Existing transcripts should enter at their latest content as part of the
     /// scroll view's first layout, before the destination becomes visible.
     public static let initialTranscriptAnchor = UnitPoint.bottom

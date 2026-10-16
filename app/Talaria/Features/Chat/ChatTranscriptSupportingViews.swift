@@ -9,6 +9,18 @@ struct ChatScrollMetrics: Equatable {
     /// the last delivered report; see `ChatScrollPolicy.isScrollingAwayFromBottom`.
     let movedAwayFromBottom: Bool
     let distanceFromTop: CGFloat
+
+    @MainActor
+    static func geometry(of scrollView: UIScrollView) -> ChatScrollPolicy.ScrollGeometry? {
+        let inset = scrollView.adjustedContentInset
+        let visibleHeight = scrollView.bounds.height - inset.top - inset.bottom
+        guard visibleHeight > 0 else { return nil }
+        return ChatScrollPolicy.ScrollGeometry(
+            offsetY: scrollView.contentOffset.y + inset.top,
+            contentHeight: scrollView.contentSize.height,
+            visibleHeight: visibleHeight
+        )
+    }
 }
 
 
@@ -16,7 +28,7 @@ struct ChatScrollMetrics: Equatable {
 /// would otherwise move them for. Two cases:
 ///
 /// - **Prepend.** Older rows are inserted above the reader; the offset follows
-///   the previous first row down. `ScrollViewProxy.scrollTo(_:anchor:)` can only
+///   the captured reader row down. `ScrollViewProxy.scrollTo(_:anchor:)` can only
 ///   align a row to a coarse anchor, which loses the gap formerly occupied by
 ///   the Load Older button and causes a visible hop.
 /// - **Hold.** A disclosure toggle grows or shrinks the tapped row; the offset
@@ -58,6 +70,8 @@ final class ChatScrollPositionController {
     private var contentSizeObservation: NSKeyValueObservation?
     private var contentOffsetObservation: NSKeyValueObservation?
     private var completionTask: Task<Void, Never>?
+    private var pendingLayoutRevision: Int?
+    private var layoutWaiter: CheckedContinuation<Void, Never>?
     private var quietReleaseTask: Task<Void, Never>?
     private var isApplyingCompensation = false
     /// Set when a hold had to undo an offset SwiftUI applied. SwiftUI's own
@@ -94,11 +108,13 @@ final class ChatScrollPositionController {
 
     func attach(to scrollView: UIScrollView) {
         guard scrollView !== self.scrollView else { return }
+        finishPendingLayout()
         cancelPreservation()
         self.scrollView = scrollView
     }
 
     func detach() {
+        finishPendingLayout()
         cancelPreservation()
         scrollView = nil
     }
@@ -121,11 +137,19 @@ final class ChatScrollPositionController {
         applyCompensation()
     }
 
-    /// Snapshots the position before older rows are requested. `anchorRowID`
-    /// is the current first row; without a reported frame for it the prepend
+    var readingAnchorRowID: String? {
+        guard let scrollView else { return nil }
+        let top = scrollView.contentOffset.y + scrollView.adjustedContentInset.top
+        return rowMinY.filter { $0.value <= top }.max { $0.value < $1.value }?.key
+            ?? rowMinY.min { $0.value < $1.value }?.key
+    }
+
+    /// Snapshots the position before older rows are inserted. `anchorRowID`
+    /// is a rendered row near the reader; without a reported frame the prepend
     /// falls back to net content-height growth.
     @discardableResult
-    func capture(anchorRowID: String?) -> Bool {
+    func capture(anchorRowID: String?, contentRevision: Int? = nil) -> Bool {
+        finishPendingLayout()
         cancelPreservation()
         guard let scrollView else { return false }
 
@@ -133,7 +157,31 @@ final class ChatScrollPositionController {
         baselineOffsetY = scrollView.contentOffset.y
         anchor = anchorRowID.flatMap(anchorSnapshot)
         hasPrependCapture = true
+        pendingLayoutRevision = contentRevision
         return true
+    }
+
+    func shouldPrefetchHistory() -> Bool {
+        guard let scrollView, let geometry = ChatScrollMetrics.geometry(of: scrollView) else { return false }
+        return ChatScrollPolicy.shouldPrefetchHistory(geometry: geometry)
+    }
+
+    /// The observer acknowledges this page after UIKit layout, including a page of only hidden rows.
+    func contentDidLayout(revision: Int) {
+        guard pendingLayoutRevision == revision else { return }
+        finishPendingLayout()
+    }
+
+    func waitForPrependLayout() async {
+        guard pendingLayoutRevision != nil else { return }
+        await withCheckedContinuation { layoutWaiter = $0 }
+    }
+
+    private func finishPendingLayout() {
+        pendingLayoutRevision = nil
+        let waiter = layoutWaiter
+        layoutWaiter = nil
+        waiter?.resume()
     }
 
     private func anchorSnapshot(_ rowID: String) -> (rowID: String, baselineMinY: CGFloat)? {
@@ -145,15 +193,15 @@ final class ChatScrollPositionController {
     /// flight, or a disclosure hold replaced the capture meanwhile, leaving the
     /// caller free to use its coarse fallback instead of overriding movement it
     /// does not own.
+    /// A caller that captured at response time may preserve the prepend during
+    /// a drag; the next user movement still releases compensation.
     @discardableResult
-    func restoreAfterPrepend() -> Bool {
+    func restoreAfterPrepend(whileInteracting: Bool = false) -> Bool {
         guard hasPrependCapture,
               let scrollView,
               let baselineOffsetY,
               baselineContentHeight != nil,
-              !scrollView.isDragging,
-              !scrollView.isTracking,
-              !scrollView.isDecelerating,
+              (whileInteracting || (!scrollView.isDragging && !scrollView.isTracking && !scrollView.isDecelerating)),
               abs(scrollView.contentOffset.y - baselineOffsetY) <= 1
         else {
             cancelPreservation()
@@ -254,7 +302,9 @@ final class ChatScrollPositionController {
         contentSizeObservation = scrollView.observe(\.contentSize, options: [.new]) { [weak self] scrollView, _ in
             Self.handleObservedContentSizeChange(for: self, scrollView: scrollView)
         }
-        contentOffsetObservation = scrollView.observe(\.contentOffset, options: [.new]) { [weak self] scrollView, _ in
+        contentOffsetObservation = scrollView.observe(\.contentOffset, options: [.old, .new]) { [weak self] scrollView, change in
+            // UIKit can notify the same offset while changing content size, even during a drag.
+            guard change.oldValue != change.newValue else { return }
             Self.handleObservedOffsetChange(for: self, scrollView: scrollView)
         }
 
@@ -288,11 +338,6 @@ final class ChatScrollPositionController {
         anchor = nil
         prependWindowEnd = nil
         isApplyingCompensation = false
-    }
-
-    /// History visibility may re-arm only after the existing prepend compensation has finished.
-    func waitForPrependToSettle() async {
-        await completionTask?.value
     }
 
     nonisolated private static func handleObservedContentSizeChange(

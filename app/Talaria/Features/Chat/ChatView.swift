@@ -1333,8 +1333,8 @@ struct ChatView: View {
             onLoadMessages: {
                 await loadMessages(isUserRefresh: true, joinsLoadInFlight: true)
             },
-            onLoadOlderMessages: {
-                await loadOlderMessages()
+            onLoadOlderMessages: { beforePrepend in
+                await loadOlderMessages(beforePrepend: beforePrepend)
             },
             onUpdateScrollMetrics: updateScrollMetrics,
             onFollowEvent: handleFollowEvent,
@@ -1770,7 +1770,7 @@ struct ChatView: View {
         }
     }
 
-    private func loadOlderMessages() async -> Bool {
+    private func loadOlderMessages(beforePrepend: @MainActor () -> Void) async -> Bool {
         followLatch.isFollowing = false
         if !isReadingOlderTranscript {
             withAnimation(ChatMotion.quickState(reduceMotion: reduceMotion)) {
@@ -1778,7 +1778,7 @@ struct ChatView: View {
             }
         }
 
-        let didLoad = await viewModel.loadOlderMessages(modelContext: modelContext)
+        let didLoad = await viewModel.loadOlderMessages(modelContext: modelContext, beforePrepend: beforePrepend)
         if let lastError = viewModel.lastError {
             onAPIError(lastError)
         }
