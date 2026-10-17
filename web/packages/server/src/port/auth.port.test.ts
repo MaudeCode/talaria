@@ -269,7 +269,7 @@ describe('OAuth provider cards and model groups', () => {
     liveIds = new Map()
     sidecar.respond('config.get', (params) => ({ path: join(params.profile_home, 'config.yaml'), exists: true, config: configs.get(params.profile_home) ?? {} }))
     sidecar.respond('providers.auth_status', (params) => ({ status: { logged_in: false, ...(auth.get(params.provider ?? '') ?? { error: 'not logged in' }) } }))
-    sidecar.respond('providers.model_ids', (params) => ({ provider: params.provider, model_ids: liveIds.get(params.provider) ?? [] }))
+    sidecar.respond('providers.model_ids', (params) => ({ provider: params.provider, model_ids: liveIds.get(params.provider) ?? [], fallback: !liveIds.has(params.provider) }))
     s = await bootTestServer({ sidecar })
     writeFileSync(join(s.state, 'config.yaml'), '# seed\n')
   })

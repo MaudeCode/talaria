@@ -1,0 +1,8 @@
+{
+  "entries": [{
+    "category": "Fixed",
+    "summary": "Show unavailable or last-confirmed provider data during Agent recovery while preserving the configured model.",
+    "highlight": false,
+    "components": ["app", "web"]
+  }]
+}

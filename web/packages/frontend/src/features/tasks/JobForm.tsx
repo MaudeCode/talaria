@@ -15,7 +15,7 @@ import { showToast } from '../toast/toast'
 import { cn } from '../../ui/cn'
 import { useModelsQuery, useProfilesQuery } from '../../app/queries'
 import { contextFromList, jobId } from './cronJob'
-import { catalogEntryById } from '../../lib/modelEntry'
+import { catalogEntryById, catalogGroupLabel } from '../../lib/modelEntry'
 
 export type EditorMode = 'create' | 'edit' | 'duplicate'
 
@@ -172,7 +172,7 @@ export function JobForm({ mode, job, jobs, onCancel, onSaved }: { mode: EditorMo
                   <Select id="cronModel" value={f.state.value} onValueChange={(v) => { form.setFieldValue('model_provider', catalogEntryById(models.data, v)?.provider_id ?? (v && v === initialModel ? job?.provider ?? null : null)); f.handleChange(v) }} className="w-56 max-w-full" disabled={noAgent}>
                     <option value="">{m.cron_model_use_default()}</option>
                     {(models.data?.groups ?? []).map((g) => (
-                      <optgroup key={g.provider} label={g.provider}>
+                      <optgroup key={g.provider} label={catalogGroupLabel(g)}>
                         {g.models.map((mm) => <option key={mm.id} value={mm.id}>{mm.label ?? mm.id}</option>)}
                       </optgroup>
                     ))}

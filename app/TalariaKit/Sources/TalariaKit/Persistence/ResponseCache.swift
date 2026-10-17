@@ -17,7 +17,7 @@ public struct ResponseCache: Sendable {
     public init(server: URL, root: URL? = nil) {
         let base = root ?? FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0]
             .appendingPathComponent("ResponseCache", isDirectory: true)
-        directory = base.appendingPathComponent(Self.folderName(for: server), isDirectory: true)
+        directory = base.appendingPathComponent(Self.serverIdentity(for: server), isDirectory: true)
         self.server = server
         generation = ServerCacheGeneration.current(for: server)
     }
@@ -93,7 +93,8 @@ public struct ResponseCache: Sendable {
         Data(name.utf8).map { String(format: "%02x", $0) }.joined()
     }
 
-    private static func folderName(for server: URL) -> String {
+    /// Opaque server binding shared by response and quota snapshots.
+    public static func serverIdentity(for server: URL) -> String {
         SHA256.hash(data: Data(server.absoluteString.utf8)).map { String(format: "%02x", $0) }.joined()
     }
 }
@@ -117,12 +118,12 @@ public enum ServerCacheGeneration {
 /// The profile each server last reported active to this app (TAL-553). `APIClient` records it from
 /// every profile list and switch; `ResponseCache` keeps each profile's entries apart by it. Stored
 /// so the first screen after launch reads the right profile's entries before the network answers.
-enum ActiveServerProfile {
+public enum ActiveServerProfile {
     private static let storageKey = "responseCache.activeProfile.v1"
     private static let lock = NSLock()
     nonisolated(unsafe) private static var switches: [String: Int] = [:]
 
-    static func name(for server: URL) -> String? {
+    public static func name(for server: URL) -> String? {
         UserDefaults.standard.dictionary(forKey: storageKey)?[server.absoluteString] as? String
     }
 

@@ -5,6 +5,7 @@ import Foundation
 /// profile, provider, and credential account, so they can be persisted without
 /// storing a server URL or credential-derived identity.
 public struct ProviderQuotasResponse: Codable, Equatable, Sendable {
+    public let availability: CatalogAvailability?
     public let version: Int?
     public let scopeID: String?
     public let profileID: String?
@@ -12,10 +13,11 @@ public struct ProviderQuotasResponse: Codable, Equatable, Sendable {
     let requestedSourceID: String?
     public let missingSource: Bool
     public let sources: [ProviderQuotaSource]
-    /// Server reference time of every window's `pace`; each source carries it too.
+    /// Response reference time; coalesced or stale sources retain their own timestamps.
     public let computedAt: String?
 
     enum CodingKeys: String, CodingKey {
+        case availability
         case version
         case computedAt
         case scopeID = "scopeId"
@@ -28,6 +30,7 @@ public struct ProviderQuotasResponse: Codable, Equatable, Sendable {
 
     public init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
+        availability = try? container.decodeIfPresent(CatalogAvailability.self, forKey: .availability)
         version = container.decodeQuotaIntIfPresent(forKey: .version)
         scopeID = container.decodeQuotaStringIfPresent(forKey: .scopeID)
         profileID = container.decodeQuotaStringIfPresent(forKey: .profileID)
@@ -44,6 +47,29 @@ public struct ProviderQuotasResponse: Codable, Equatable, Sendable {
                 return source
             }
     }
+    /// Older servers predate availability and keep their explicit missing-source contract.
+    public var hasAuthoritativeMembership: Bool {
+        availability.map { $0.authoritative == true } ?? true
+    }
+
+    /// Unknown membership retains only a matching server/profile/source generation.
+    public func retainingUnconfirmedSources(_ previous: [ProviderQuotaSource], scopeID: String?, generation: String?) -> [ProviderQuotaSource] {
+        guard let availability, !hasAuthoritativeMembership,
+              let generation, !generation.isEmpty, generation == availability.generation,
+              let scopeID, scopeID == self.scopeID
+        else { return sources }
+        let incomingIDs = Set(sources.map(\.id))
+        return sources + previous.filter { !incomingIDs.contains($0.id) }.map { source in
+            var source = source
+            source.status = availability.status ?? "unavailable"
+            source.unavailableReason = availability.unavailableReason
+            if let level = ProviderQuotaUrgency(rawValue: availability.status ?? "unavailable") {
+                source.urgency = ProviderQuotaUrgencyLevels(remaining: level, pace: level)
+            }
+            return source
+        }
+    }
+
 }
 
 public struct ProviderQuotaSource: Codable, Equatable, Identifiable, Sendable {
@@ -53,12 +79,12 @@ public struct ProviderQuotaSource: Codable, Equatable, Identifiable, Sendable {
     let accountLabel: String
     public let isActiveProvider: Bool
     let supported: Bool
-    public let status: String
+    public internal(set) var status: String
     public let plan: String?
     public let windows: [ProviderQuotaWindow]
     public let quota: ProviderQuotaAmount?
     public let details: [String]
-    public let unavailableReason: String?
+    public internal(set) var unavailableReason: String?
     public let retryAfter: String?
     public let fetchedAt: String?
     public let message: String?
@@ -69,7 +95,7 @@ public struct ProviderQuotaSource: Codable, Equatable, Identifiable, Sendable {
     /// The response's `computed_at`, kept per source because targeted refreshes merge sources.
     public internal(set) var computedAt: String?
     /// Server urgency of the windows a widget shows by default; nil from a server that predates it.
-    public let urgency: ProviderQuotaUrgencyLevels?
+    public internal(set) var urgency: ProviderQuotaUrgencyLevels?
 
     enum CodingKeys: String, CodingKey {
         case id = "sourceId"

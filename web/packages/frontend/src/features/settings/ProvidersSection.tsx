@@ -1,3 +1,4 @@
+import { reconcileProviderQuotas } from '../../lib/providerQuotas'
 import { useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { RefreshCw } from 'lucide-react'
@@ -21,9 +22,13 @@ const setProviderKey = (provider: string, api_key: string | null) => post('api/p
 
 export function ProvidersSection() {
   const qc = useQueryClient()
+  const fetchQuotas = async (refresh = false) => {
+    const response = await api.fetchProviderQuotas(refresh)
+    return reconcileProviderQuotas(qc.getQueryData(keys.providerQuotas), response)
+  }
   const providers = useQuery({ queryKey: keys.providers, queryFn: api.fetchProviders, staleTime: 30_000 })
   // The server recomputes pace on every read (provider calls are cached 45 s), so a reset replaces an expired pace within a minute.
-  const quotas = useQuery({ queryKey: keys.providerQuotas, queryFn: () => api.fetchProviderQuotas(false), staleTime: 60_000, refetchInterval: 60_000 })
+  const quotas = useQuery({ queryKey: keys.providerQuotas, queryFn: () => fetchQuotas(), staleTime: 60_000, refetchInterval: 60_000 })
   const { str } = useSettingField()
   const setDefault = useSetDefaultModel()
   const [editing, setEditing] = useState<string | null>(null)
@@ -43,12 +48,14 @@ export function ProvidersSection() {
   if (providers.isError) return <ErrorState error={providers.error} onRetry={() => { void providers.refetch() }} />
   const active = providers.data.active_provider
   const defaultModel = str('default_model')
+  const quotaNotice = quotas.data?.availability?.unavailable_reason ?? providers.data.availability?.unavailable_reason
   return (
     <div className="flex flex-col gap-3" data-section="providers">
       <div className="flex items-center justify-between text-xs text-muted">
         <span>{m.providers_active()}: <strong className="text-text">{active ?? '—'}</strong></span>
-        <Button onClick={() => { void api.fetchProviderQuotas(true).then((d) => { qc.setQueryData(keys.providerQuotas, d); void qc.invalidateQueries({ queryKey: keys.providerCostHistory }) }).catch(() => undefined) }}>{m.providers_quota_refresh()}</Button>
+        <Button onClick={() => { void qc.cancelQueries({ queryKey: keys.providerQuotas }).then(() => qc.query({ queryKey: keys.providerQuotas, queryFn: () => fetchQuotas(true), staleTime: 0 })).then(() => { void qc.invalidateQueries({ queryKey: keys.providerCostHistory }) }).catch(() => undefined) }}>{m.providers_quota_refresh()}</Button>
       </div>
+      {quotaNotice && <p role="status" className="text-xs text-muted">{quotaNotice}</p>}
       <QuotaThresholdsForm />
       <ul className="flex flex-col gap-2">
         {providers.data.providers.map((p) => {
@@ -61,8 +68,8 @@ export function ProvidersSection() {
                 <div className="min-w-0 flex-1 basis-48">
                   <div className="text-sm font-medium text-text">{p.display_name ?? p.id}</div>
                   <div className="text-[11px] text-muted">
-                    {(p.configured ?? p.has_key) ? m.providers_configured() : m.providers_not_configured()}{p.key_source_kind ? ` · ${p.key_source_kind === 'other' ? p.key_source : p.key_source_kind}` : ''}{p.base_url ? ` · ${p.base_url}` : ''}{p.models_total !== undefined ? ` · ${m.providers_models_count({ n: p.models_total })}` : ''}
-                    {quota?.message ? ` · ${quota.message}` : ''}
+                    {providers.data.availability?.authoritative === false ? m.catalog_unavailable() : (p.configured ?? p.has_key) ? m.providers_configured() : m.providers_not_configured()}{p.key_source_kind ? ` · ${p.key_source_kind === 'other' ? p.key_source : p.key_source_kind}` : ''}{p.base_url ? ` · ${p.base_url}` : ''}{p.models_total !== undefined ? ` · ${m.providers_models_count({ n: p.models_total })}` : ''}
+                    {!quotaNotice && quota?.message ? ` · ${quota.message}` : ''}
                   </div>
                   {p.auth_error && <div className="text-[11px] text-error">{p.auth_error}</div>}
                 </div>

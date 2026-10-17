@@ -231,7 +231,10 @@ struct ComposerModelPickerSheet: View {
     /// TAL-807: the server's rate-limit state for a provider: its account limit or a low quota level (never both).
     @ViewBuilder
     private func groupLimitBadge(_ group: ModelCatalogGroup) -> some View {
-        if let resetsAt = group.accountLimitResetsAt {
+        if let label = group.availability?.displayLabel {
+            Text(label).font(.caption).foregroundStyle(.secondary)
+                .accessibilityHint(group.availability?.unavailableReason ?? "")
+        } else if let resetsAt = group.accountLimitResetsAt {
             limitBadge("Limited until \(modelLimitResetTime(resetsAt))", color: .red)
         } else if group.quotaLevel == .critical {
             limitBadge("Quota nearly out", color: .red)

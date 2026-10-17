@@ -46,7 +46,7 @@ describe('the Agent\'s local llama.cpp models in the picker', () => {
   it('a staged GGUF is a Local group; with nothing staged no group appears', async () => {
     const groups = (await models()).groups as Group[]
     expect(groups[0]).toMatchObject({ provider_id: 'anthropic' })
-    expect(groups.find((g) => g.provider_id === 'llamacpp')).toEqual({ provider: 'Local', provider_id: 'llamacpp', models: [expect.objectContaining({ id: `@llamacpp:${STAGED}`, label: STAGED, provider_id: 'llamacpp', bare_id: STAGED })] })
+    expect(groups.find((g) => g.provider_id === 'llamacpp')).toMatchObject({ provider: 'Local', provider_id: 'llamacpp', models: [expect.objectContaining({ id: `@llamacpp:${STAGED}`, label: STAGED, provider_id: 'llamacpp', bare_id: STAGED })] })
 
     staged = []
     expect(((await models()).groups as Group[]).some((g) => g.provider_id === 'llamacpp')).toBe(false)
