@@ -28,8 +28,8 @@ export function useResourceIntents<T = unknown>(): Record<string, ResourceIntent
   return Object.fromEntries(Object.entries(data).filter(([, intent]) => intent.context === getStreamContext())) as Record<string, ResourceIntent<T>>
 }
 
-function cancelResourceReads(qc: QueryClient, queryKey?: QueryKey) {
-  return Promise.all((queryKey ? [queryKey] : [keys.sessions.all, keys.projects]).map((queryKey) => qc.cancelQueries({ queryKey })))
+function cancelResourceReads(qc: QueryClient, queryKey?: QueryKey, readKeys?: QueryKey[]) {
+  return Promise.all((queryKey ? [queryKey] : [keys.sessions.all, keys.projects]).map((queryKey) => qc.cancelQueries({ queryKey, ...(readKeys ? { predicate: (query) => readKeys.some((key) => matchQuery({ queryKey: key }, query)) } : {}) })))
 }
 
 async function reconcile(qc: QueryClient, current: () => boolean, resource: string, queryKey?: QueryKey, readKeys?: QueryKey[]) {
@@ -43,7 +43,8 @@ async function reconcile(qc: QueryClient, current: () => boolean, resource: stri
     previous.requested += 1
     previous.requests.push({ current, resource, readKeys })
     // Supersede the shared read, while every owner waits for the covering follow-up.
-    await cancelResourceReads(qc, queryKey)
+    const pendingKeys = previous.requests.some((request) => !request.readKeys) ? undefined : previous.requests.flatMap((request) => request.readKeys ?? [])
+    await cancelResourceReads(qc, queryKey, pendingKeys)
     return previous.promise
   }
   const queue = { context, requested: 1, requests: [{ current, resource, readKeys }], promise: Promise.resolve() }
@@ -75,7 +76,7 @@ async function reconcile(qc: QueryClient, current: () => boolean, resource: stri
 async function reconcileSnapshot(qc: QueryClient, current: () => boolean, resource: string, queryKey?: QueryKey, readKeys?: QueryKey[]) {
   if (!current()) return
   // Cancel reads captured before the write, including inactive detail/search queries.
-  await cancelResourceReads(qc, queryKey)
+  await cancelResourceReads(qc, queryKey, readKeys)
   if (!current()) return
   if (queryKey) {
     await qc.invalidateQueries({ queryKey, refetchType: 'all', ...(readKeys ? { predicate: (query) => readKeys.some((key) => matchQuery({ queryKey: key }, query)) } : {}) }, { throwOnError: true })
