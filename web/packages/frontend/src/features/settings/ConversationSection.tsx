@@ -50,10 +50,10 @@ export function ConversationSection() {
         </Select>
       </FieldRow>
       <FieldRow label={m.settings_label_structured_code_auto_lines()} htmlFor="settingsStructuredCodeAutoLines" inline>
-        <TextInput id="settingsStructuredCodeAutoLines" type="number" min={1} max={500} className="w-20" value={num('structured_code_auto_tree_lines', 40)} onChange={(e) => { const n = Number(e.target.value); if (Number.isInteger(n) && n > 0) set({ structured_code_auto_tree_lines: n }) }} />
+        <TextInput id="settingsStructuredCodeAutoLines" type="number" retainDraft min={1} max={500} className="w-20" value={num('structured_code_auto_tree_lines', 40)} onChange={(e) => { const n = Number(e.target.value); if (Number.isInteger(n) && n > 0) set({ structured_code_auto_tree_lines: n }) }} />
       </FieldRow>
       <FieldRow label={m.settings_label_max_tokens()} htmlFor="settingsMaxTokens" inline>
-        <TextInput id="settingsMaxTokens" type="number" min={1} className="w-28" placeholder={m.settings_placeholder_max_tokens_none()} value={num('max_tokens', 0) || ''} onChange={(e) => { const raw = e.target.value.trim(); if (raw === '') set({ max_tokens: null }); else { const n = Number(raw); if (Number.isInteger(n) && n > 0) set({ max_tokens: n }) } }} />
+        <TextInput id="settingsMaxTokens" type="number" retainDraft min={1} className="w-28" placeholder={m.settings_placeholder_max_tokens_none()} value={num('max_tokens', 0) || ''} onChange={(e) => { const raw = e.target.value.trim(); if (raw === '') set({ max_tokens: null }); else { const n = Number(raw); if (Number.isInteger(n) && n > 0) set({ max_tokens: n }) } }} />
       </FieldRow>
       <FieldRow label={m.settings_label_auto_title_refresh()} htmlFor="settingsAutoTitleRefresh" inline>
         <Select id="settingsAutoTitleRefresh" value={str('auto_title_refresh_every', '0')} onValueChange={(v) => set({ auto_title_refresh_every: v })}>

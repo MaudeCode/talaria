@@ -67,7 +67,7 @@ export function PreferencesSection() {
         </Select>
       </FieldRow>
       <FieldRow label={m.settings_label_bot_name()} htmlFor="settingsBotName">
-        <form className="flex gap-2" onSubmit={(e) => { e.preventDefault(); if (botName !== null) { set({ bot_name: botName.trim() || 'Hermes' }); setBotName(null) } }}>
+        <form className="flex gap-2" onSubmit={(e) => { e.preventDefault(); if (botName !== null) { const submitted = botName; set({ bot_name: submitted.trim() || 'Hermes' }, () => setBotName((draft) => draft === submitted ? null : draft)) } }}>
           <TextInput id="settingsBotName" value={botName ?? str('bot_name', 'Hermes')} onChange={(e) => setBotName(e.target.value)} maxLength={64} />
           <Button type="submit" disabled={botName === null}>{m.save()}</Button>
         </form>
@@ -93,7 +93,7 @@ export function PreferencesSection() {
         </Select>
       </FieldRow>
       <FieldRow label={m.settings_label_pinned_limit()} hint={m.settings_desc_pinned_limit()} htmlFor="settingsPinnedLimit" inline>
-        <TextInput id="settingsPinnedLimit" type="number" min={1} max={50} className="w-20" value={num('pinned_sessions_limit', 3)} onChange={(e) => { const n = Number(e.target.value); if (Number.isInteger(n) && n > 0) set({ pinned_sessions_limit: n }) }} />
+        <TextInput id="settingsPinnedLimit" type="number" retainDraft min={1} max={50} className="w-20" value={num('pinned_sessions_limit', 3)} onChange={(e) => { const n = Number(e.target.value); if (Number.isInteger(n) && n > 0) set({ pinned_sessions_limit: n }) }} />
       </FieldRow>
       <FieldRow label={m.settings_label_external_sessions()} htmlFor="settings-show_cli_sessions" inline><Switch id="settings-show_cli_sessions" checked={bool('show_cli_sessions')} onCheckedChange={(checked) => set({ show_cli_sessions: checked })} /></FieldRow>
       <Toggle label={m.settings_label_claude_code_sessions()} settingKey="show_claude_code_sessions" />
@@ -105,7 +105,7 @@ export function PreferencesSection() {
       <Toggle label={m.settings_label_api_redact()} settingKey="api_redact_enabled" fallback />
       <Toggle label={m.settings_label_confirm_external_links()} settingKey="confirm_external_links" fallback disabled={!canManage} />
       <FieldRow label={m.settings_label_trusted_link_hosts()} hint={m.settings_desc_trusted_link_hosts()} htmlFor="settingsTrustedLinkHosts">
-        <form className="flex items-start gap-2" onSubmit={(e) => { e.preventDefault(); if (trustedHosts !== null) { set({ trusted_link_hosts: trustedHosts.split('\n') }); setTrustedHosts(null) } }}>
+        <form className="flex items-start gap-2" onSubmit={(e) => { e.preventDefault(); if (trustedHosts !== null) { const submitted = trustedHosts; set({ trusted_link_hosts: submitted.split('\n') }, () => setTrustedHosts((draft) => draft === submitted ? null : draft)) } }}>
           <textarea id="settingsTrustedLinkHosts" disabled={!canManage} rows={3} spellCheck={false} autoCapitalize="none" placeholder="docs.example.com" className="min-h-9 w-full rounded-md border border-border bg-input px-3 py-2 font-mono text-sm text-text placeholder:text-muted focus:border-accent disabled:cursor-not-allowed disabled:opacity-50" value={trustedHosts ?? (settings.data.trusted_link_hosts ?? []).join('\n')} onChange={(e) => setTrustedHosts(e.target.value)} />
           <Button type="submit" disabled={!canManage || trustedHosts === null}>{m.save()}</Button>
         </form>
