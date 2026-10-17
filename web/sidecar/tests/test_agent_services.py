@@ -789,19 +789,19 @@ token=services._local_session({'pid':os.getpid(),'home':str(home)})
 assert token and provider.verify_session(access_token=token) is not None, 'owner dotenv session was not authenticated'
 client=TestClient(web_server.app,base_url='http://127.0.0.1')
 connection=Mock()
-responses=[]
+requests=[]
 def request(method,path,body,headers):
- assert path in {'/api/host/identity','/api/health/retirement'}
+ assert path in {'/api/host/identity','/api/health/retirement','/openapi.json'}
  assert 'disposable-password' not in str(headers) and secret not in str(headers)
  response=client.request(method,path,content=body,headers=headers)
- responses.append(response.status_code)
+ requests.append((method,path,response.status_code))
  connection.getresponse.return_value=Mock(status=response.status_code,read=lambda limit: response.content)
 connection.request.side_effect=request
 services.http.client.HTTPConnection=lambda *a,**kw: connection
 services._auth=lambda entry: ''
 entry=dict(pid=os.getpid(),home=str(home),host='127.0.0.1',port=12345,label='synthetic.dashboard')
 assert services.backend_request(entry)['pid']==os.getpid()
-assert responses==[401,200],responses
+assert requests==[('GET','/api/host/identity',401),('GET','/api/host/identity',200),('GET','/openapi.json',200)],requests
 assert dict(os.environ)==before, 'lifecycle auth changed the updater environment'
 headers={'Authorization':'Bearer '+token}
 identity=client.get('/api/host/identity',headers=headers)
