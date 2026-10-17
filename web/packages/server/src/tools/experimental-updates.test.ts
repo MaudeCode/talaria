@@ -72,6 +72,36 @@ const stableGetJson: GetJson = (_path, { asset }) => Promise.resolve(asset ? {
   contracts: { appWeb: { web: [1] }, webRelay: { web: [2] } }, agent: COMPAT.compatibleAgent,
 } : [{ tag_name: `release-set-${STABLE_SOURCE}`, published_at: '2026-01-01', assets: [{ name: 'release-set.json', id: 1 }] }])
 
+interface HistoryCommit { sha: string; message: string; date: string; web?: boolean }
+const commitJson = (c: HistoryCommit): Dict => ({ sha: c.sha, commit: { message: c.message, author: { date: c.date }, committer: { date: c.date } } })
+/**
+ * GitHub over one synthetic main, newest ancestor first. Compare follows ancestry; `/commits?path=web`
+ * filters `since` by each commit's own date and orders by date, so a commit can sit above another in
+ * history while being dated before it. Other paths fall through to `fallback`.
+ */
+function githubHistory(main: HistoryCommit[], fallback: GetJson = stableGetJson): GetJson {
+  const at = (sha: string | null): number => main.findIndex((c) => c.sha === sha)
+  return (path, opts) => {
+    const url = new URL(path, 'https://api.invalid')
+    const page = Number(url.searchParams.get('page'))
+    const per = Number(url.searchParams.get('per_page'))
+    const compare = /^\/compare\/(\w{40})\.\.\.(\w{40})$/.exec(url.pathname)
+    if (compare && !url.search) return Promise.resolve({ status: at(compare[2]!) <= at(compare[1]!) ? 'ahead' : 'diverged' })
+    if (compare) {
+      const range = main.slice(at(compare[2]!), at(compare[1]!)).reverse()
+      return Promise.resolve({ status: 'ahead', total_commits: range.length, commits: range.slice((page - 1) * per, page * per).map(commitJson) })
+    }
+    if (url.pathname === '/commits' && url.searchParams.get('path') === 'web') {
+      const since = url.searchParams.get('since') ?? ''
+      const listed = main.slice(at(url.searchParams.get('sha'))).filter((c) => c.web !== false && c.date >= since).sort((a, b) => b.date.localeCompare(a.date))
+      return Promise.resolve(listed.slice((page - 1) * per, page * per).map(commitJson))
+    }
+    const commit = /^\/commits\/(\w{40})$/.exec(url.pathname)
+    if (commit && at(commit[1]!) >= 0) return Promise.resolve(commitJson(main[at(commit[1]!)]!))
+    return fallback(path, opts)
+  }
+}
+
 interface Ghcr { artifactType?: string; redirect?: string; served?: Buffer; version?: string; source?: string; tags?: string[] }
 /** A fake GHCR speaking the token, manifest, and redirected-blob protocol for one `experimental` artifact. */
 function fakeGhcr(tarball: Buffer, opts: Ghcr = {}) {
@@ -122,12 +152,11 @@ describe('Experimental npm updates (TAL-378)', () => {
     const n = npmInstall(running, {})
     const g = fakeGhcr(TARBALL)
     const paths: string[] = []
-    const getJson: GetJson = (path, opts) => {
-      paths.push(path)
-      if (path === `/commits/${OLD_EXP}`) return Promise.resolve({ sha: OLD_EXP, commit: { committer: { date: '2026-10-01T00:00:00Z' } } })
-      if (path.startsWith(`/commits?sha=${NEW_EXP}&path=web&since=`)) return Promise.resolve([{ sha: NEW_EXP, commit: { message: 'TAL-1: Chats open faster\n\nBody text' } }, { sha: OLD_EXP, commit: { message: 'installed' } }])
-      return stableGetJson(path, opts)
-    }
+    const history = githubHistory([
+      { sha: NEW_EXP, message: 'TAL-1: Chats open faster\n\nBody text', date: '2026-10-02T00:00:00Z' },
+      { sha: OLD_EXP, message: 'installed', date: '2026-10-01T00:00:00Z' },
+    ])
+    const getJson: GetJson = (path, opts) => { paths.push(path); return history(path, opts) }
     const prompts: string[] = []
     const svc = new UpdateService({
       webRoot: n.packageRoot, git: runGit, npm: n.npm, getJson, experimental: g.registry, identity: identity(running), webuiVersion: 'web-exp',
@@ -139,10 +168,36 @@ describe('Experimental npm updates (TAL-378)', () => {
     expect(await svc.summarize('webui')).toMatchObject({ source: 'commits', generated_by: 'llm' })
     expect(prompts[0]).toContain('- TAL-1: Chats open faster')
     expect(prompts[0]).not.toContain('installed')
-    expect(paths).toContain(`/commits?sha=${NEW_EXP}&path=web&since=${encodeURIComponent('2026-10-01T00:00:00Z')}&per_page=100&page=1`)
+    expect(paths).toContain(`/compare/${OLD_EXP}...${NEW_EXP}?per_page=100&page=1`)
+    expect(paths).toContain(`/commits?sha=${NEW_EXP}&path=web&since=${encodeURIComponent('2026-10-02T00:00:00.000Z')}&per_page=100&page=1`)
   })
 
-  it('reads every Web commit page, appends until the prior SHA, and keeps its list on a failed page (TAL-1009)', async () => {
+  it('summarizes pending Web commits dated before the installed build, and only those (TAL-1105)', async () => {
+    const running = release(`web-exp-v${expVersion('2.0.0', OLD_EXP)}`, expVersion('2.0.0', OLD_EXP), OLD_EXP)
+    const n = npmInstall(running, {})
+    // A PR branched before the installed build and merged after it: its commits are pending but dated earlier.
+    const getJson = githubHistory([
+      { sha: NEW_EXP, message: 'Merge pull request #2 from MaudeCode/fix/TAL-2-branch', date: '2026-10-17T15:00:00Z' },
+      { sha: 'c'.repeat(40), message: 'TAL-3: Relay pairing retries', date: '2026-10-17T14:55:00Z', web: false },
+      { sha: 'd'.repeat(40), message: 'TAL-2: Dashboards sign in with the owning profile', date: '2026-10-17T14:26:00Z' },
+      { sha: OLD_EXP, message: 'Merge pull request #1 from MaudeCode/fix/TAL-1-branch', date: '2026-10-17T14:50:00Z' },
+      { sha: 'e'.repeat(40), message: 'TAL-1: Already installed change', date: '2026-10-17T14:30:00Z' },
+    ])
+    const prompts: string[] = []
+    const svc = new UpdateService({
+      webRoot: n.packageRoot, git: runGit, npm: n.npm, getJson, experimental: fakeGhcr(TARBALL).registry, identity: identity(running), webuiVersion: 'web-exp',
+      agentDir: () => null, channel: () => 'experimental', includeAgent: () => false,
+      blockers: () => ({ active_streams: 0, active_runs: 0, blocking_stream_ids: [], blocking_run_ids: [], restart_blocked: false }),
+      scheduleRestart: () => undefined, llm: (_system, user) => { prompts.push(user); return Promise.resolve('- Notice: Dashboards sign in') }, log: () => undefined,
+    })
+    await svc.check(true, false, 'experimental')
+    expect(await svc.summarize('webui')).toMatchObject({ source: 'commits', generated_by: 'llm' })
+    expect(prompts[0]).toContain('- TAL-2: Dashboards sign in with the owning profile\n- Merge pull request #2')
+    expect(prompts[0]).not.toContain('Relay pairing')
+    expect(prompts[0]).not.toContain('Already installed')
+  })
+
+  it('reads every compare and Web commit page, appends from the prior SHA, and keeps its list on a failed page (TAL-1009)', async () => {
     const running = release(`web-exp-v${expVersion('2.0.0', OLD_EXP)}`, expVersion('2.0.0', OLD_EXP), OLD_EXP)
     const n = npmInstall(running, {})
     const stateDir = tmp()
@@ -151,19 +206,13 @@ describe('Experimental npm updates (TAL-378)', () => {
     let fail = false
     const paths: string[] = []
     const prompts: string[] = []
-    const old = Array.from({ length: 120 }, (_, i) => ({ sha: (i + 1).toString(16).padStart(40, '0'), commit: { message: `Web change ${String(i)}` } }))
-    const additions = [next, 'd'.repeat(40), 'e'.repeat(40)].map((sha, i) => ({ sha, commit: { message: `New Web change ${String(i)}` } }))
+    const old = Array.from({ length: 120 }, (_, i) => ({ sha: (i + 1).toString(16).padStart(40, '0'), message: `Web change ${String(i)}` }))
+    const additions = [next, 'd'.repeat(40), 'e'.repeat(40)].map((sha, i) => ({ sha, message: `New Web change ${String(i)}` }))
+    const main = [...additions, { sha: NEW_EXP, message: 'Web latest change' }, ...old, { sha: OLD_EXP, message: 'installed' }]
+    const history = githubHistory(main.map((c, i) => ({ ...c, date: new Date(Date.UTC(2026, 9, 1) + (main.length - i) * 60_000).toISOString() })))
     const getJson: GetJson = (path, opts) => {
       paths.push(path)
-      if (path.startsWith('/compare/')) return Promise.resolve({ status: 'ahead' })
-      if (path.startsWith('/commits/')) return Promise.resolve({ commit: { committer: { date: '2026-10-01T00:00:00Z' } } })
-      if (path.includes('path=web')) {
-        const page = Number(new URL(path, 'https://example.invalid').searchParams.get('page'))
-        if (latest === next) return Promise.resolve([...additions, { sha: NEW_EXP, commit: { message: 'prior boundary' } }, ...old.slice(0, 96)])
-        if (page === 2 && fail) return Promise.reject(new Error('page unavailable'))
-        return Promise.resolve(page === 1 ? [{ sha: NEW_EXP, commit: { message: 'Web latest change' } }, ...old.slice(0, 99)] : [...old.slice(99), { sha: OLD_EXP, commit: { message: 'installed' } }])
-      }
-      return stableGetJson(path, opts)
+      return fail && path.endsWith('page=2') ? Promise.reject(new Error('page unavailable')) : history(path, opts)
     }
     const experimental: ExperimentalRegistry = {
       release: () => Promise.resolve({ tag: `web-exp-v${expVersion('2.0.0', latest)}`, version: expVersion('2.0.0', latest), sourceRevision: latest, digest: `sha256:${'f'.repeat(64)}`, size: 1 }),
@@ -182,7 +231,7 @@ describe('Experimental npm updates (TAL-378)', () => {
     fail = false
     await svc.check(true)
     expect(await svc.summarize('webui')).toMatchObject({ generated_by: 'llm' })
-    for (const commit of old) expect(prompts.join('\n')).toContain(`- ${commit.commit.message}\n`)
+    for (const commit of old) expect(prompts.join('\n')).toContain(`- ${commit.message}\n`)
     expect(prompts).toHaveLength(2)
     expect(paths.some((path) => path.includes('path=web') && path.endsWith('page=2'))).toBe(true)
     const checkpoint = readFileSync(join(stateDir, 'update-summaries.json'), 'utf8')
@@ -193,7 +242,7 @@ describe('Experimental npm updates (TAL-378)', () => {
     expect(prompts).toHaveLength(3)
     expect(prompts[2]).toContain('Earlier Web changes')
     expect(prompts[2]).not.toContain('- Web change')
-    for (const commit of additions) expect(prompts[2]).toContain(`- ${commit.commit.message}\n`)
+    for (const commit of additions) expect(prompts[2]).toContain(`- ${commit.message}\n`)
     expect(paths.filter((path) => path.includes('path=web'))).toHaveLength(1)
     expect(paths).toContain(`/compare/${NEW_EXP}...${next}`)
     expect(readFileSync(join(stateDir, 'update-summaries.json'), 'utf8')).not.toBe(checkpoint)

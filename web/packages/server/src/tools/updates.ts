@@ -1687,25 +1687,36 @@ export class UpdateService {
   private async commitItems(target: 'webui' | 'agent', current: string, latest: string): Promise<SummaryItem[]> {
     if (!SHA.test(current) || !SHA.test(latest)) throw new Error('Update range is unavailable')
     if (target === 'webui') {
-      const installedAt = dict(dict(dict(await this.deps.getJson(`/commits/${current}`, { asset: false })).commit).committer).date
-      if (typeof installedAt !== 'string' || !Number.isFinite(Date.parse(installedAt))) throw new Error('Commit date is unavailable')
-      const items: SummaryItem[] = []
-      const seen = new Set<string>()
+      // Ancestry picks the range; GitHub's `since` filters by each commit's own date, so a branch merged
+      // after the installed build can hold older-dated pending commits (TAL-1105).
+      const range = new Map<string, SummaryItem>()
+      let since = Infinity
       for (let page = 1; ; page++) {
-        const commits = await this.deps.getJson(`/commits?sha=${latest}&path=web&since=${encodeURIComponent(installedAt)}&per_page=100&page=${String(page)}`, { asset: false })
-        if (!Array.isArray(commits)) throw new Error('Commit page is unavailable')
-        let reached = false
-        const before = items.length
-        for (const raw of commits) {
+        const compared = dict(await this.deps.getJson(`/compare/${current}...${latest}?per_page=100&page=${String(page)}`, { asset: false }))
+        const total = compared.total_commits
+        if (!Array.isArray(compared.commits) || typeof total !== 'number' || !Number.isInteger(total) || total < 0) throw new Error('Commit range is unavailable')
+        const before = range.size
+        for (const raw of compared.commits) {
           const commit = dict(raw)
-          if (commit.sha === current) { reached = true; break }
-          const text = str(dict(commit.commit).message).split('\n')[0] ?? ''
-          if (!SHA.test(str(commit.sha)) || !text.trim()) throw new Error('Commit page is incomplete')
           const id = str(commit.sha)
-          if (!seen.has(id)) { seen.add(id); items.push({ id, text: text.trim() }) }
+          const text = (str(dict(commit.commit).message).split('\n')[0] ?? '').trim()
+          const dates = [dict(dict(commit.commit).author).date, dict(dict(commit.commit).committer).date].map((date) => typeof date === 'string' ? Date.parse(date) : NaN)
+          if (!SHA.test(id) || !text || dates.some((date) => !Number.isFinite(date))) throw new Error('Commit range is incomplete')
+          range.set(id, { id, text })
+          since = Math.min(since, ...dates)
         }
-        if (reached || commits.length < 100) return items.reverse()
-        if (items.length === before) throw new Error('Commit pagination made no progress')
+        if (range.size >= total) break
+        if (range.size === before) throw new Error('Commit range pagination made no progress')
+      }
+      if (!range.size) return []
+      const touched = new Set<string>()
+      for (let page = 1; ; page++) {
+        const commits = await this.deps.getJson(`/commits?sha=${latest}&path=web&since=${encodeURIComponent(new Date(since).toISOString())}&per_page=100&page=${String(page)}`, { asset: false })
+        if (!Array.isArray(commits)) throw new Error('Commit page is unavailable')
+        const before = touched.size
+        for (const raw of commits) touched.add(str(dict(raw).sha))
+        if (commits.length < 100) return [...range.values()].filter((item) => touched.has(item.id))
+        if (touched.size === before) throw new Error('Commit pagination made no progress')
       }
     }
     const path = this.deps.agentDir()
