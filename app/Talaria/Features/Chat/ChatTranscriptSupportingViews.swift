@@ -529,11 +529,21 @@ final class ChatScrollPositionController {
         return scrollView.contentSize.height - baselineContentHeight
     }
 
-    /// Lazy estimates change repeatedly inside a layout pass. Correct only
-    /// after UIKit has committed that pass, not while SwiftUI is measuring it.
+    /// A visible prepend must move with its rows before this frame is drawn.
+    /// Disclosure holds and detached lazy layouts still coalesce measurements.
     private func requestCompensation() {
         guard baselineOffsetY != nil else { return }
         guard usesLazyLayout else { applyCompensation(); return }
+        if mode == .prepend, let scrollView, scrollView.window != nil {
+            // Row geometry can arrive before UIKit extends the content bounds.
+            // Clamping to the old end would realize an unrelated viewport.
+            if let baselineOffsetY, let boundedTarget = compensatedOffsetY(in: scrollView),
+               baselineOffsetY + anchorShift(in: scrollView) > boundedTarget + 0.5 {
+                return
+            }
+            applyCompensation()
+            return
+        }
         guard !compensationScheduled else { return }
         compensationScheduled = true
         compensationEpoch += 1

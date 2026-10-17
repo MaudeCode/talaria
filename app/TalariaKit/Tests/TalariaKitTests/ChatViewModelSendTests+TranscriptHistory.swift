@@ -1,4 +1,5 @@
 import XCTest
+import Observation
 import AVFoundation
 import ImageIO
 import SwiftData
@@ -486,7 +487,30 @@ extension ChatViewModelSendTests {
             }
         }
 
+        var renderIDsAtInitialOffsetPublication: [String] = []
+        withObservationTracking {
+            _ = viewModel.messagesOffset
+        } onChange: {
+            MainActor.assumeIsolated {
+                renderIDsAtInitialOffsetPublication = viewModel.displayedTranscriptMessages.map(\.renderID)
+            }
+        }
         await viewModel.loadMessages()
+        XCTAssertEqual(renderIDsAtInitialOffsetPublication, [],
+                       "The first page must not publish message IDs before its absolute offset is applied")
+        let existingMessageIDs = Set(viewModel.messages.compactMap(\.messageId))
+        let originalRenderIDs = viewModel.displayedTranscriptMessages.map(\.renderID)
+        let initialRecomputes = viewModel.displayedTranscriptRecomputeCount
+        var renderIDsAtOffsetPublication: [String] = []
+        withObservationTracking {
+            _ = viewModel.messagesOffset
+        } onChange: {
+            MainActor.assumeIsolated {
+                renderIDsAtOffsetPublication = viewModel.displayedTranscriptMessages.filter {
+                    $0.message.messageId.map(existingMessageIDs.contains) == true
+                }.map(\.renderID)
+            }
+        }
         var prepared = false
         let didLoadOlder = await viewModel.loadOlderMessages {
             XCTAssertEqual(requestQueries.count, 2, "Capture only after the page response arrives")
@@ -496,6 +520,10 @@ extension ChatViewModelSendTests {
 
         XCTAssertTrue(didLoadOlder)
         XCTAssertTrue(prepared)
+        XCTAssertEqual(renderIDsAtOffsetPublication, originalRenderIDs,
+                       "Observers must never see existing messages under the wrong absolute row IDs")
+        XCTAssertEqual(viewModel.displayedTranscriptRecomputeCount, initialRecomputes + 1,
+                       "A page must publish one coherent transcript mapping")
         XCTAssertEqual(requestQueries.count, 2)
         XCTAssertNil(requestQueries[0]["msg_before"])
         XCTAssertEqual(requestQueries[1]["msg_before"], "2")

@@ -14,11 +14,7 @@ public final class ChatViewModel {
     }
 
     public private(set) var messages: [ChatMessage] = [] {
-        didSet {
-            if !isUpdatingStreamingAssistantContent {
-                recomputeDisplayedTranscriptMessages()
-            }
-        }
+        didSet { recomputeDisplayedTranscriptMessages() }
     }
     /// Memoized transcript mapping. Structural changes rebuild it; paced content
     /// flushes replace only the active transcript row.
@@ -130,7 +126,7 @@ public final class ChatViewModel {
     @ObservationIgnored private var pendingReasoningText = ""
     @ObservationIgnored private var pendingReasoningTitles: [String] = []
     @ObservationIgnored private var pendingStreamingContentFlushTask: Task<Void, Never>?
-    @ObservationIgnored private var isUpdatingStreamingAssistantContent = false
+    @ObservationIgnored private var isDeferringTranscriptMapping = false
     private(set) var completedToolCallGroups: [ToolCallGroup] = []
     private var completedToolCallGroupLookup = ToolCallGroupAnchorLookup()
     private(set) var completedReasoningGroups: [ReasoningGroup] = []
@@ -199,7 +195,20 @@ public final class ChatViewModel {
         return response.resultView ?? ToolResultView(text: response.result)
     }
 
+    /// The message array and its absolute offset describe one layout window.
+    /// Keep observers on the previous mapping until both have their final values.
+    private func withDeferredTranscriptMapping(_ update: () -> Void) {
+        let wasDeferring = isDeferringTranscriptMapping
+        isDeferringTranscriptMapping = true
+        defer {
+            isDeferringTranscriptMapping = wasDeferring
+            if !wasDeferring { recomputeDisplayedTranscriptMessages() }
+        }
+        update()
+    }
+
     private func recomputeDisplayedTranscriptMessages() {
+        guard !isDeferringTranscriptMapping else { return }
 #if DEBUG
         displayedTranscriptRecomputeCount += 1
 #endif
@@ -254,6 +263,7 @@ public final class ChatViewModel {
         compressionReferenceCard = nil
     }
     private func recomputeCompressionReferenceCard() {
+        guard !isDeferringTranscriptMapping else { return }
         // Not folded into the messages/messagesOffset observers alone:
         // applyCompletedStreamSession can update the reference without
         // reassigning messages, so reference changes recompute here too. The
@@ -1802,13 +1812,15 @@ public final class ChatViewModel {
             let mergedMessages = Self.prependingOlderMessages(olderMessages, to: messages)
             let didAddMessages = mergedMessages.count > messages.count
             if didAddMessages { beforePrepend() }
-            applyCompressionReference(from: session)
-            messages = mergedMessages
-            latestServerLoadHadAssistantResponseAfterLatestUser = Self.hasAssistantResponseAfterLatestUser(
-                in: messages
-            )
-            responseCompletionNeedsTranscriptRefresh = false
-            updateOlderMessagePagination(from: session, loadedMessageCount: messages.count)
+            withDeferredTranscriptMapping {
+                applyCompressionReference(from: session)
+                messages = mergedMessages
+                latestServerLoadHadAssistantResponseAfterLatestUser = Self.hasAssistantResponseAfterLatestUser(
+                    in: messages
+                )
+                responseCompletionNeedsTranscriptRefresh = false
+                updateOlderMessagePagination(from: session, loadedMessageCount: messages.count)
+            }
             isViewingCachedData = false
             contextWindowSnapshot = ContextWindowSnapshot(session: session)
             if let title = session.title, titleVersionAtFetch == sessionListOwner?.resourceMetadataVersion(for: sessionID), ownsCurrentCache {
@@ -2016,37 +2028,39 @@ public final class ChatViewModel {
         previousMessages: [ChatMessage],
         previousMessagesOffset: Int
     ) {
-        let reloadedMessagesOffset = Self.resolvedMessagesOffset(
-            from: session,
-            loadedMessageCount: reloadedMessages.count
-        )
+        withDeferredTranscriptMapping {
+            let reloadedMessagesOffset = Self.resolvedMessagesOffset(
+                from: session,
+                loadedMessageCount: reloadedMessages.count
+            )
 
-        if let expandedMessages = Self.mergingReloadedMessages(
-            reloadedMessages,
-            intoCurrentMessages: previousMessages,
-            currentMessagesOffset: previousMessagesOffset,
-            reloadedMessagesOffset: reloadedMessagesOffset
-        ) {
-            messages = expandedMessages
-            messagesOffset = previousMessagesOffset
-            hasOlderMessages = previousMessagesOffset > 0
-            return
+            if let expandedMessages = Self.mergingReloadedMessages(
+                reloadedMessages,
+                intoCurrentMessages: previousMessages,
+                currentMessagesOffset: previousMessagesOffset,
+                reloadedMessagesOffset: reloadedMessagesOffset
+            ) {
+                messages = expandedMessages
+                messagesOffset = previousMessagesOffset
+                hasOlderMessages = previousMessagesOffset > 0
+                return
+            }
+
+            if let trimmedMessages = Self.trimmingReloadedMessages(
+                reloadedMessages,
+                toPreserveCurrentMessages: previousMessages,
+                currentMessagesOffset: previousMessagesOffset,
+                reloadedMessagesOffset: reloadedMessagesOffset
+            ) {
+                messages = trimmedMessages
+                messagesOffset = previousMessagesOffset
+                hasOlderMessages = previousMessagesOffset > 0 || session?.messagesTruncated == true
+                return
+            }
+
+            messages = reloadedMessages
+            updateOlderMessagePagination(from: session, loadedMessageCount: messages.count)
         }
-
-        if let trimmedMessages = Self.trimmingReloadedMessages(
-            reloadedMessages,
-            toPreserveCurrentMessages: previousMessages,
-            currentMessagesOffset: previousMessagesOffset,
-            reloadedMessagesOffset: reloadedMessagesOffset
-        ) {
-            messages = trimmedMessages
-            messagesOffset = previousMessagesOffset
-            hasOlderMessages = previousMessagesOffset > 0 || session?.messagesTruncated == true
-            return
-        }
-
-        messages = reloadedMessages
-        updateOlderMessagePagination(from: session, loadedMessageCount: messages.count)
     }
 
     nonisolated private static func mergingReloadedMessages(
@@ -5589,9 +5603,9 @@ public final class ChatViewModel {
     }
 
     private func updateStreamingAssistantMessage(at messageIndex: Int, with message: ChatMessage) {
-        isUpdatingStreamingAssistantContent = true
+        isDeferringTranscriptMapping = true
         messages[messageIndex] = message
-        isUpdatingStreamingAssistantContent = false
+        isDeferringTranscriptMapping = false
 
         guard let transcriptIndex = displayedTranscriptMessages.lastIndex(where: { transcriptMessage in
             transcriptMessage.assistantSegments.contains { $0.message.messageId == message.messageId }

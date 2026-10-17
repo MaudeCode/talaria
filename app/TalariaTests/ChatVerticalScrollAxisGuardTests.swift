@@ -432,6 +432,41 @@ final class ChatScrollPositionControllerTests: XCTestCase {
         XCTAssertEqual(scrollView.contentOffset.y, 640, accuracy: 0.001)
     }
 
+    func testVisiblePrependDoesNotJumpToTheOldEndBeforeItsBoundsGrow() throws {
+        let window = try hostWindow(Color.clear)
+        let scrollView = makeScrollView()
+        window.addSubview(scrollView)
+        let controller = ChatScrollPositionController(usesLazyLayout: true)
+        defer { controller.cancelPreservation(); scrollView.removeFromSuperview() }
+        controller.attach(to: scrollView)
+        scrollView.contentOffset.y = 240
+        controller.recordRowMinY(180, for: "reader")
+        XCTAssertTrue(controller.capture(anchorRowID: "reader", contentRevision: 1))
+        XCTAssertTrue(controller.restoreAfterPrepend())
+        // SwiftUI reports the inserted rows before UIKit extends its scroll bounds.
+        controller.recordRowMinY(2_580, for: "reader")
+        XCTAssertEqual(scrollView.contentOffset.y, 240, accuracy: 0.001,
+                       "Clamping to the old end would lay out a different viewport for no reason")
+        scrollView.contentSize.height += 2_400
+        XCTAssertEqual(scrollView.contentOffset.y, 2_640, accuracy: 0.001)
+    }
+
+    func testVisiblePrependRepairsItsOffsetBeforeTheFrameCanBeCommitted() throws {
+        let window = try hostWindow(Color.clear)
+        let scrollView = makeScrollView()
+        window.addSubview(scrollView)
+        let controller = ChatScrollPositionController(usesLazyLayout: true)
+        defer { controller.cancelPreservation(); scrollView.removeFromSuperview() }
+        controller.attach(to: scrollView)
+        scrollView.contentOffset.y = 240
+        controller.recordRowMinY(180, for: "reader")
+        XCTAssertTrue(controller.capture(anchorRowID: "reader", contentRevision: 1))
+        XCTAssertTrue(controller.restoreAfterPrepend())
+        scrollView.contentSize.height += 640
+        XCTAssertEqual(scrollView.contentOffset.y, 880, accuracy: 0.001,
+                       "A visible prepend must not submit its new rows at the old content offset")
+    }
+
     func testLazyLayoutCompensationWaitsForTheFinalFrameInThePass() async throws {
         let scrollView = makeScrollView()
         scrollView.contentOffset.y = 240

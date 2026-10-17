@@ -8,6 +8,23 @@ import TalariaKit
 /// tree, activating one runs its action, and the in-process fixture answers the App's requests.
 @MainActor
 final class HostedViewTests: XCTestCase {
+    func testViewLookupVisitsEachBranchOnce() {
+        final class Probe: UIView {
+            var reads = 0
+            override var subviews: [UIView] { reads += 1; return super.subviews }
+        }
+        let root = Probe()
+        let child = Probe()
+        let target = UIButton()
+        root.addSubview(child)
+        child.addSubview(target)
+        root.reads = 0
+        child.reads = 0
+        XCTAssertTrue(root.firstView(ofType: UIButton.self) === target)
+        XCTAssertEqual(root.reads, 1)
+        XCTAssertEqual(child.reads, 1, "Nested view lookup must not repeat the same subtree")
+    }
+
     func testMessageMenuRegistryRetainsAMarkerAcrossTemporaryDetachment() throws {
         let window = try hostWindow(Color.clear)
         let marker = UIView(frame: CGRect(x: 16, y: 16, width: 100, height: 100))

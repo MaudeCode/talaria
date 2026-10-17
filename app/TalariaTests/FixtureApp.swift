@@ -125,13 +125,7 @@ extension XCTestCase {
 
     @MainActor
     func attachHistoryImage(_ window: UIWindow, name: String) {
-        let image = UIGraphicsImageRenderer(bounds: window.bounds).image { _ in
-            window.drawHierarchy(in: window.bounds, afterScreenUpdates: true)
-        }
-        let attachment = XCTAttachment(image: image)
-        attachment.name = name
-        attachment.lifetime = .keepAlways
-        add(attachment)
+        attachHostedScreenshot(window, name: name)
     }
 
     /// Waits for an element that satisfies `match` to appear in `window`'s accessibility tree. It sleeps between looks

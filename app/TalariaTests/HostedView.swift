@@ -167,6 +167,10 @@ extension UIView {
 
     /// The first view of `type` under this one, depth first.
     func firstView<View: UIView>(ofType type: View.Type) -> View? {
-        self as? View ?? subviews.lazy.compactMap { $0.firstView(ofType: type) }.first
+        if let match = self as? View { return match }
+        for child in subviews {
+            if let match = child.firstView(ofType: type) { return match }
+        }
+        return nil
     }
 }
