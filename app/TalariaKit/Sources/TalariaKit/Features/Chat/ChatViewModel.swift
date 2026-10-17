@@ -2552,28 +2552,20 @@ public final class ChatViewModel {
         let localMessageID = "local-\(UUID().uuidString)"
         let attachmentPreparation = attachmentCoordinator.prepareForSend(queuedAttachments, localMessageID: localMessageID)
 
-        let outcome = await performChatSend(
+        return await performChatSend(
             sessionID: sessionID,
             localMessageID: localMessageID,
             // The optimistic row shows the draft and its attachments, which is what the server
             // replays once it strips its own marker, so the bubble keeps its look across a reload.
             displayContent: message,
             messageForAPI: message,
-            messageAttachments: attachmentPreparation.messageAttachments,
-            apiPayloads: attachmentPreparation.apiPayloads,
+            attachmentPreparation: attachmentPreparation,
             // A queued message keeps its files in the queue when its send fails, not in the composer.
-            attachmentsToRestoreOnFailure: queuedAttachments == nil ? attachmentPreparation.attachments : [],
+            restoresAttachmentsOnFailure: queuedAttachments == nil,
             modelContext: modelContext,
             waitForSession: waitForSession,
             sessionAttachments: sessionAttachments
         )
-        if outcome.didStart {
-            for attachment in attachmentPreparation.attachments {
-                guard let fileName = attachment.draftFileName else { continue }
-                await attachmentCoordinator.deleteDraftCopy(named: fileName)
-            }
-        }
-        return outcome
     }
 
     /// Records → transcribes → uploads → sends a server-transcribed voice note
@@ -2676,31 +2668,30 @@ public final class ChatViewModel {
             localMessageID: localMessageID,
             displayContent: transcript,
             messageForAPI: transcript,
-            messageAttachments: [messageAttachment],
-            apiPayloads: [pending.toJSONValue()],
-            attachmentsToRestoreOnFailure: [],
+            attachmentPreparation: ChatAttachmentSendPreparation(attachments: [pending], messageAttachments: [messageAttachment]),
+            restoresAttachmentsOnFailure: false,
             voiceTurn: true,
             modelContext: modelContext
         )
     }
 
     /// Shared pending-row + `startChat` + rollback core for text, voice notes, and accepted history resends.
-    /// `attachmentsToRestoreOnFailure` is re-staged into the composer if the send
-    /// fails — empty for voice notes, whose clip isn't a composer attachment.
+    /// Prepared files return to the composer on failure unless the queue or voice-note flow owns them.
     private func performChatSend(
         sessionID: String?,
         localMessageID: String,
         displayContent: String,
         messageForAPI: String,
-        messageAttachments: [MessageAttachment],
-        apiPayloads: [JSONValue]?,
-        attachmentsToRestoreOnFailure: [PendingAttachment],
+        attachmentPreparation: ChatAttachmentSendPreparation = .init(attachments: [], messageAttachments: []),
+        restoresAttachmentsOnFailure: Bool = true,
         voiceTurn: Bool = false,
         modelContext: ModelContext?,
         waitForSession: (@MainActor () async -> Bool)? = nil,
         sessionAttachments: (@MainActor () -> [PendingAttachment])? = nil,
         appendsUserMessage: Bool = true
     ) async -> ChatSendOutcome {
+        let messageAttachments = attachmentPreparation.messageAttachments
+        let attachmentsToRestoreOnFailure = restoresAttachmentsOnFailure ? attachmentPreparation.attachments : []
         // Single-owner backstop for the shared start pipeline: only one caller may
         // own the optimistic row, the `startChat` request, and `isStartingChat` at a
         // time. Deliberately does not test `isSendingVoiceNote` — the voice pipeline
@@ -2766,7 +2757,7 @@ public final class ChatViewModel {
             ? attachmentCoordinator.prepareForSend(sessionAttachments?() ?? [], localMessageID: localMessageID) : nil
         for file in initialFiles?.attachments ?? [] { attachmentCoordinator.removePendingAttachment(id: file.id) }
         let sendAttachments = messageAttachments + (initialFiles?.messageAttachments ?? [])
-        let sendPayloads = (apiPayloads ?? []) + (initialFiles?.apiPayloads ?? [])
+        let sendPayloads = (attachmentPreparation.apiPayloads ?? []) + (initialFiles?.apiPayloads ?? [])
         let restoredFiles = attachmentsToRestoreOnFailure + (initialFiles?.attachments ?? [])
         if let index = messages.firstIndex(where: { $0.messageId == localMessageID }), !sendAttachments.isEmpty {
             messages[index].attachments = sendAttachments
@@ -2788,8 +2779,8 @@ public final class ChatViewModel {
                 voiceTurn: voiceTurn
             )
 
-            guard ownership == sendOwnershipGeneration, !Task.isCancelled else { return ChatSendOutcome(didStart: false) }
             guard let streamID = Self.nonEmpty(response.streamId) else {
+                guard ownership == sendOwnershipGeneration, !Task.isCancelled else { return ChatSendOutcome(didStart: false) }
                 sendErrorMessage = response.error ?? String(localized: "The server did not return a stream ID.")
                 rollbackOptimisticMessage(id: localMessageID)
                 cacheCurrentMessages(sessionID: sessionID, modelContext: modelContext)
@@ -2797,11 +2788,11 @@ public final class ChatViewModel {
                 return ChatSendOutcome(didStart: false)
             }
 
-            completeExplicitModelPickForChatStart(explicitModelPick)
-            for file in initialFiles?.attachments ?? [] {
+            for file in attachmentPreparation.attachments + (initialFiles?.attachments ?? []) {
                 if let name = file.draftFileName { await attachmentCoordinator.deleteDraftCopy(named: name) }
             }
             guard ownership == sendOwnershipGeneration, !Task.isCancelled else { return ChatSendOutcome(didStart: true) }
+            completeExplicitModelPickForChatStart(explicitModelPick)
             streamCoordinator.start(
                 streamID: streamID,
                 armsAggregateForLocalWork: true,
@@ -4439,13 +4430,10 @@ public final class ChatViewModel {
                 localMessageID: "local-\(UUID().uuidString)",
                 displayContent: editedText,
                 messageForAPI: editedText,
-                messageAttachments: [],
-                apiPayloads: nil,
-                attachmentsToRestoreOnFailure: [],
                 modelContext: modelContext,
                 appendsUserMessage: true
             )
-            guard ownership == sendOwnershipGeneration, !Task.isCancelled else { return false }
+            guard ownership == sendOwnershipGeneration, !Task.isCancelled else { return outcome.didStart }
             if !outcome.didStart {
                 messageActionErrorMessage = sendErrorMessage
                 returnedComposerTexts.append(editedText)
@@ -4517,13 +4505,10 @@ public final class ChatViewModel {
                 localMessageID: "local-\(UUID().uuidString)",
                 displayContent: userText,
                 messageForAPI: userText,
-                messageAttachments: [],
-                apiPayloads: nil,
-                attachmentsToRestoreOnFailure: [],
                 modelContext: modelContext,
                 appendsUserMessage: false
             )
-            guard ownership == sendOwnershipGeneration, !Task.isCancelled else { return false }
+            guard ownership == sendOwnershipGeneration, !Task.isCancelled else { return outcome.didStart }
             if !outcome.didStart {
                 messageActionErrorMessage = sendErrorMessage
             }

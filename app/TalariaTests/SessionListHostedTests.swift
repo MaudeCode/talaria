@@ -343,6 +343,57 @@ final class SessionListHostedTests: XCTestCase {
         XCTAssertNil(migrated, "A closed chat must not adopt a late session or move another chat's draft")
         XCTAssertEqual(current?.text, "Replacement draft")
     }
+
+    func testAcceptedSendAfterLeavingConsumesOnlyItsOwnedDraft() async throws {
+        for (newerTyping, replacementDraft, movesDraft) in [
+            (nil as String?, nil as String?, false),
+            ("Newer typing", nil, false),
+            (nil, "Replacement draft", false),
+            (nil, nil, true),
+        ] {
+            let fixture = try FixtureApp(["--ui-test-hold-chat-start"], for: self)
+            let session = try await fixture.session()
+            let server = UITestFixtureEnvironment.serverURL
+            let defaultsName = "TAL1080.LateAcceptance.\(UUID().uuidString)"
+            let defaults = try XCTUnwrap(UserDefaults(suiteName: defaultsName))
+            defer { defaults.removePersistentDomain(forName: defaultsName) }
+            let stream = SpySSEStreamingClient()
+            let viewModel = ChatViewModel(
+                session: session, server: server, client: fixture.client,
+                streamClient: stream, approvalStreamClient: SpySSEStreamingClient(),
+                clarifyStreamClient: SpySSEStreamingClient(), liveActivityManager: SpyChatLiveActivityManager(),
+                listenAudioSession: SpyListenAudioSession(), userDefaults: defaults
+            )
+            var accepted = false
+            let window = try hostWindow(NavigationStack {
+                ChatView(
+                    session: session, server: server, onAPIError: { _ in },
+                    loadsInitialMessages: false, draftStore: fixture.environment.draftStore,
+                    viewModel: viewModel, onConversationStarted: { accepted = true }
+                )
+            }.environment(\.scenePhase, .active).modelContainer(fixture.cache))
+            try await sendFromComposer("Submitted prompt", in: window)
+            let posted = await awaitCondition { UITestFixtureHold.shared.pendingCount > 0 }
+            XCTAssertTrue(posted)
+            if let newerTyping { try await typeIntoComposer(newerTyping, in: window) }
+            window.rootViewController = UIHostingController(rootView: Color.clear)
+            // Deliver the same navigation cleanup explicitly before releasing the transport;
+            // UIKit may defer the hosting controller's disappearance transaction.
+            viewModel.suspendStreamForNavigation()
+            let sessionKey = ChatDraftKey.session(server: server, session: session)
+            let key = movesDraft ? ChatDraftKey.newChat(server: server) : sessionKey
+            if movesDraft { fixture.environment.draftStore.moveDraft(from: sessionKey, to: key) }
+            if let replacementDraft { fixture.environment.draftStore.setDraft(replacementDraft, for: key) }
+            fixture.releaseHeldLoads()
+            let finished = await awaitCondition { !viewModel.isStartingChat }
+            XCTAssertTrue(finished)
+            let draft = await fixture.environment.draftStore.draft(for: key)
+            XCTAssertTrue(accepted, "The server-accepted send must settle even after its view leaves")
+            XCTAssertEqual(draft?.text ?? "", replacementDraft ?? newerTyping ?? "", "An accepted prompt must not return as an unsent draft or clear newer input")
+            XCTAssertNil(viewModel.activeStreamID)
+            XCTAssertTrue(stream.startedURLs.isEmpty)
+        }
+    }
 }
 
 

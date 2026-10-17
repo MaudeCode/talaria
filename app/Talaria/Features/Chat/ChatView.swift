@@ -92,6 +92,7 @@ struct ChatView: View {
     @State private var draftMessageStorage = ""
     @State private var draftWriteRevision = 0
     @State private var draftRevision = 0
+    @State private var draftTextWriteID: UUID?
 
     /// Every write bumps `draftWriteRevision`, so the composer can order the updates
     /// it receives and ignore one a newer write has already superseded. Without that
@@ -199,6 +200,7 @@ struct ChatView: View {
         draftAttachmentStore: (any ChatDraftAttachmentStoring)? = nil,
         restoresDraftSettings: Bool = false,
         startSession: (() async -> ChatSessionStartResult)? = nil,
+        viewModel: ChatViewModel? = nil,
         onConversationStarted: @escaping () -> Void = {},
         sessionListOwner: SessionListViewModel? = nil
     ) {
@@ -216,7 +218,7 @@ struct ChatView: View {
         self.onConversationStarted = onConversationStarted
         _draftMessageStorage = State(initialValue: initialDraft)
         _initialAttachments = State(initialValue: initialAttachments)
-        _viewModel = State(initialValue: ChatViewModel(
+        _viewModel = State(initialValue: viewModel ?? ChatViewModel(
             session: session,
             server: server,
             showsLiveActivityResponseExcerpts: UserDefaults.standard.bool(
@@ -557,7 +559,7 @@ struct ChatView: View {
                 ChatDraftSyncModifier(
                     pendingAttachments: viewModel.pendingAttachments,
                     composerSettings: currentComposerSettings,
-                    onAttachmentsChange: syncDraftAttachments,
+                    onAttachmentsChange: { syncDraftAttachments() },
                     onSettingsChange: syncDraftSettings
                 )
             )
@@ -1950,7 +1952,7 @@ struct ChatView: View {
         let stagedIDs = Set(viewModel.pendingAttachments.map(\.id))
         let restoredIDs = Set(submittedRecords.map(\.id))
         var sessionFileIDs = Set<UUID>()
-        draftStore.setDraft(submittedDraft, for: draftKey)
+        writeComposerDraft(submittedDraft)
         draftMessage = ""
 
         let generation = sessionStartGeneration
@@ -1975,6 +1977,16 @@ struct ChatView: View {
                 return files
             }
         )
+        if didStart {
+            if let draftTextWriteID {
+                draftStore.consumeAcceptedSubmission(
+                    textWriteID: draftTextWriteID,
+                    currentText: draftMessage,
+                    attachmentIDs: stagedIDs.union(sessionFileIDs)
+                )
+            }
+            onConversationStarted()
+        }
         if awaitedSession {
             pendingFirstDraft = nil
             pendingFirstAttachmentIDs = []
@@ -1985,11 +1997,13 @@ struct ChatView: View {
             restoreUnacceptedDraft(submittedDraft, submittedDraftRevision: submittedDraftRevision)
         }
         if didStart {
-            onConversationStarted()
             draftAttachmentsPendingRetry = ChatDraftSendReconciliation.outcome(
                 draftRecords: submittedRecords,
                 stagedAttachmentIDs: stagedIDs.union(sessionFileIDs)
             ).retained
+            // The write receipt owns persistence; this view must not overwrite a moved or newer draft.
+            syncDraftAttachments(persists: false)
+            return true
         }
         draftMessage = draftStore.resolveSubmission(
             submittedText: submittedDraft,
@@ -1998,16 +2012,12 @@ struct ChatView: View {
             draftWasEdited: draftRevision != submittedDraftRevision,
             for: draftKey
         )
-        if didStart {
-            // `resolveSubmission` cleared the draft's attachment records; put
-            // back the ones the send never carried so they retry on a later
-            // open. Deterministic here rather than waiting on the observation
-            // sync that the emptied composer strip will also trigger.
-            syncDraftAttachments()
-        }
-
-        draftStore.setDraft(draftMessage, for: draftKey)
+        writeComposerDraft(draftMessage)
         return didStart
+    }
+
+    private func writeComposerDraft(_ text: String) {
+        draftTextWriteID = draftStore.setDraft(text, for: draftKey)
     }
 
     private func draftText(appending text: String) -> String {
@@ -2020,12 +2030,12 @@ struct ChatView: View {
         let text: String
         if let pendingFirstDraft, !pendingFirstDraft.isEmpty { text = draftText(appending: pendingFirstDraft) }
         else { text = draftMessage }
-        draftStore.setDraft(text, for: draftKey)
+        writeComposerDraft(text)
     }
 
     private func appendReturnedComposerText(_ text: String) {
         draftMessage = draftText(appending: text)
-        draftStore.setDraft(draftMessage, for: draftKey)
+        writeComposerDraft(draftMessage)
     }
 
     private func restoreUnacceptedDraft(_ submittedDraft: String, submittedDraftRevision: Int) {
@@ -2138,7 +2148,7 @@ struct ChatView: View {
                 draftMessage = persistedDraft.text
             }
         } else {
-            draftStore.setDraft(textBeforeHydration, for: draftKey)
+            writeComposerDraft(textBeforeHydration)
         }
         didHydrateDraft = true
 
@@ -2244,7 +2254,7 @@ struct ChatView: View {
     /// mid-restore or post-restore sync can't silently drop them. Gated during
     /// hydration/restore so an empty or partial composer never overwrites the
     /// persisted set.
-    private func syncDraftAttachments() {
+    private func syncDraftAttachments(persists: Bool = true) {
         guard didHydrateDraft, !isRestoringDraftAttachments else { return }
         // Only records backed by a durable copy are persisted. Without one the
         // record could never be restored, and keeping it would hold the draft
@@ -2261,7 +2271,7 @@ struct ChatView: View {
         }
         let records = pendingRecords + retryRecords + heldRecords
         lastSyncedDraftAttachments = records
-        draftStore.setAttachments(records, for: draftKey)
+        if persists { draftStore.setAttachments(records, for: draftKey) }
     }
 
     /// Snapshots the effective composer settings into the draft whenever they

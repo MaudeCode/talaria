@@ -7,6 +7,36 @@ import UniformTypeIdentifiers
 
 @MainActor
 extension ChatViewModelSendTests {
+    func testAcceptedStartAfterNavigationRemainsAcceptedWithoutAttachingAStream() async throws {
+        for accepted in [true, false] {
+            let requests = DeferredRequests()
+            let host = "tal1080-late-start.test"
+            let arrived = expectation(description: "start held before navigation")
+            DeferredMockURLProtocol.setOnRequest({ request in
+                _ = requests.append(request)
+                arrived.fulfill()
+            }, forHost: host)
+            defer { DeferredMockURLProtocol.setOnRequest(nil, forHost: host) }
+            let stream = SpySSEStreamingClient()
+            let viewModel = try makeViewModel(streamClient: stream, server: URL(string: "https://\(host)")!, protocolClasses: [DeferredMockURLProtocol.self]) { _ in
+                throw URLError(.badURL)
+            }
+            let send = Task { await viewModel.sendMessage("Submitted prompt") }
+            await fulfillment(of: [arrived], timeout: 10)
+            viewModel.suspendStreamForNavigation()
+            requests.request(at: 0).complete(withJSON: accepted ? #"{"stream_id":"accepted-run"}"# : #"{"error":"Refused"}"#)
+            let didStart = await send.value
+            XCTAssertEqual(didStart, accepted, "Navigation must not turn a server-accepted send into a retryable failure")
+            XCTAssertNil(viewModel.activeStreamID)
+            XCTAssertTrue(stream.startedURLs.isEmpty, "An accepted late response must not reconnect the departed chat")
+            XCTAssertFalse(viewModel.isStartingChat)
+        }
+    }
+
+    func testHistoryResendsAcceptedAfterNavigationDoNotAttachAStream() async throws {
+        for edits in [true, false] { try await assertHistoryResendWhileHeld(edits: edits, acceptedAfterNavigation: true) }
+    }
+
     func testPendingFirstSendKeepsAttachmentCapDuringStartup() async throws {
         var uploads = 0
         let viewModel = try makeViewModel { request in
@@ -140,7 +170,7 @@ extension ChatViewModelSendTests {
         try await assertHistoryResendWhileHeld(edits: false)
     }
 
-    private func assertHistoryResendWhileHeld(edits: Bool) async throws {
+    private func assertHistoryResendWhileHeld(edits: Bool, acceptedAfterNavigation: Bool = false) async throws {
         let requests = DeferredRequests()
         let staleRequests = DeferredRequests()
         let sessionReads = LockedCounter()
@@ -169,7 +199,8 @@ extension ChatViewModelSendTests {
             }
         }, forHost: host)
         defer { DeferredMockURLProtocol.setOnRequest(nil, forHost: host) }
-        let viewModel = try makeViewModel(server: URL(string: "https://\(host)")!, protocolClasses: [DeferredMockURLProtocol.self]) { _ in
+        let stream = SpySSEStreamingClient()
+        let viewModel = try makeViewModel(streamClient: stream, server: URL(string: "https://\(host)")!, protocolClasses: [DeferredMockURLProtocol.self]) { _ in
             throw URLError(.badURL)
         }
         await viewModel.loadMessages()
@@ -191,15 +222,18 @@ extension ChatViewModelSendTests {
         XCTAssertEqual(viewModel.messages.compactMap(\.content), [edits ? "Edited" : "Original"], "The resend row must appear before startChat answers")
         XCTAssertTrue(viewModel.isStartingChat)
         XCTAssertNil(viewModel.activeStreamID)
-        requests.request(at: 1).complete(withJSON: #"{"error":"Refused"}"#)
+        if acceptedAfterNavigation { viewModel.suspendStreamForNavigation() }
+        requests.request(at: 1).complete(withJSON: acceptedAfterNavigation ? #"{"stream_id":"accepted-run"}"# : #"{"error":"Refused"}"#)
         let didStart = await resend.value
-        XCTAssertFalse(didStart)
-        XCTAssertEqual(viewModel.messages.compactMap(\.content), edits ? [] : ["Original"], "A failed resend must not resurrect server-deleted history")
-        XCTAssertEqual(viewModel.messageActionErrorMessage, "Refused")
-        XCTAssertEqual(viewModel.returnedComposerTexts, edits ? ["Edited"] : [])
+        XCTAssertEqual(didStart, acceptedAfterNavigation)
+        let keptText = acceptedAfterNavigation ? [edits ? "Edited" : "Original"] : (edits ? [] : ["Original"])
+        XCTAssertEqual(viewModel.messages.compactMap(\.content), keptText, "A failed resend must not resurrect server-deleted history")
+        XCTAssertEqual(viewModel.messageActionErrorMessage, acceptedAfterNavigation ? nil : "Refused")
+        XCTAssertEqual(viewModel.returnedComposerTexts, edits && !acceptedAfterNavigation ? ["Edited"] : [])
+        XCTAssertTrue(stream.startedURLs.isEmpty)
         staleRequests.request(at: 0).complete(withJSON: #"{"session":{"session_id":"session-abc","confirms_deep_truncate":true,"messages":[{"role":"user","content":"Original","message_id":"u-1"},{"role":"assistant","content":"Deleted answer","message_id":"a-1"}]}}"#)
         await staleLoad.value
-        XCTAssertEqual(viewModel.messages.compactMap(\.content), edits ? [] : ["Original"], "A pre-truncate reload cannot resurrect deleted history after a failed resend")
+        XCTAssertEqual(viewModel.messages.compactMap(\.content), keptText, "A pre-truncate reload cannot resurrect deleted history after a failed resend")
     }
 
     func testSkillShortcutWithoutArgsReturnsLocalSkillInfoWithoutStartingChat() async throws {
