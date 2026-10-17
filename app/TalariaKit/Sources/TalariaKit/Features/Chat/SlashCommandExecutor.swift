@@ -6,6 +6,13 @@ public struct ParsedSlashCommand: Equatable {
     let args: String
     /// The server catalog marks the command `exec` for iOS: the server runs it (TAL-918).
     public var runsOnServer = false
+
+    /// These stream commands send their arguments as an ordinary message when no reply is running.
+    public var messageForIdleSend: String? {
+        guard let command, case .serverSide(let action) = command.handler,
+              StreamingSendBehavior(rawValue: action.rawValue) != nil else { return nil }
+        return args
+    }
 }
 
 public enum SlashCommandExecutionResult: Equatable {

@@ -1261,6 +1261,12 @@ struct MessageComposerView: View {
             return isCancellingStream
         }
 
+        if sessionStart != nil, trimmedDraftMessage.hasPrefix("/") {
+            guard !isWaitingForStream,
+                  let message = SlashCommandExecutor.parse(trimmedDraftMessage, catalog: agentCommands)?.messageForIdleSend,
+                  !message.isEmpty || !pendingAttachments.isEmpty else { return true }
+        }
+
         return (trimmedDraftMessage.isEmpty && pendingAttachments.isEmpty)
             || isSending
             || isCompressingSession
@@ -1298,7 +1304,7 @@ struct MessageComposerView: View {
     }
 
     private var sendOptions: [ComposerSendButton.Option] {
-        guard !isAnsweringClarification, !showsStopButton, !isActionButtonDisabled else { return [] }
+        guard sessionStart == nil, !isAnsweringClarification, !showsStopButton, !isActionButtonDisabled else { return [] }
         return ComposerSendButton.options(
             isWaitingForStream: isWaitingForStream,
             carriesFiles: !pendingAttachments.isEmpty,

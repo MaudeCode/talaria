@@ -1843,7 +1843,15 @@ struct ChatView: View {
         let commandText = command.map { "/\($0) \(submittedDraft)" } ?? submittedDraft
         let sendsWithChosenBehavior = behavior != nil && viewModel.activeStreamID != nil
 
-        if !sendsWithChosenBehavior, commandText.trimmingCharacters(in: .whitespacesAndNewlines).hasPrefix("/") {
+        var pendingSlash: ParsedSlashCommand?
+        if sessionStart != nil, commandText.trimmingCharacters(in: .whitespacesAndNewlines).hasPrefix("/") {
+            guard command == nil, viewModel.activeStreamID == nil,
+                  let parsed = SlashCommandExecutor.parse(commandText, catalog: viewModel.agentCommands),
+                  parsed.messageForIdleSend != nil else { return }
+            pendingSlash = parsed
+        }
+
+        if pendingSlash == nil, !sendsWithChosenBehavior, commandText.trimmingCharacters(in: .whitespacesAndNewlines).hasPrefix("/") {
             let parsed = SlashCommandExecutor.parse(commandText, catalog: viewModel.agentCommands)
             let parsedCommand = parsed?.command
             // A typed command leaves the composer whatever its result, so it leaves as it is sent, like a message,
@@ -1895,7 +1903,8 @@ struct ChatView: View {
         } else {
             didStart = await sendStandardMessage(
                 submittedDraft,
-                submittedDraftRevision: submittedDraftRevision
+                submittedDraftRevision: submittedDraftRevision,
+                pendingSlash: pendingSlash
             )
         }
 
@@ -1936,10 +1945,12 @@ struct ChatView: View {
 
     private func sendStandardMessage(
         _ submittedDraft: String,
-        submittedDraftRevision: Int
+        submittedDraftRevision: Int,
+        pendingSlash: ParsedSlashCommand? = nil
     ) async -> Bool {
         guard !viewModel.isSubmittingMessage else { return false }
-        guard !submittedDraft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        let message = pendingSlash?.messageForIdleSend ?? submittedDraft
+        guard !message.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
             || !viewModel.pendingAttachments.isEmpty
         else {
             return false
@@ -1965,10 +1976,25 @@ struct ChatView: View {
         if awaitedSession {
             pendingFirstDraft = submittedDraft
         }
+        let waitForSession: (@MainActor () async -> Bool)?
+        if awaitedSession {
+            waitForSession = {
+                guard await startPendingSession() else { return false }
+                // Startup loads the current catalog; do not execute a command that it no longer supports.
+                if pendingSlash != nil,
+                   SlashCommandExecutor.parse(submittedDraft, catalog: viewModel.agentCommands)?.messageForIdleSend != message {
+                    viewModel.setSendErrorMessage(String(localized: "Check the command and try again."))
+                    return false
+                }
+                return true
+            }
+        } else {
+            waitForSession = nil
+        }
         let didStart = await viewModel.sendMessage(
-            submittedDraft,
+            message,
             modelContext: modelContext,
-            waitForSession: awaitedSession ? startPendingSession : nil,
+            waitForSession: waitForSession,
             sessionAttachments: {
                 let files = viewModel.pendingAttachments.filter {
                     restoredIDs.contains($0.id) || initialImportedAttachmentIDs.contains($0.id)

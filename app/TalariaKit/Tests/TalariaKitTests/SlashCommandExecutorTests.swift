@@ -134,6 +134,19 @@ final class SlashCommandExecutorTests: XCTestCase {
         XCTAssertEqual(SlashCommandExecutor.parse("/bg audit this", catalog: catalog)?.command?.handler, .serverSide(.background))
     }
 
+    func testIdleSendPayloadUsesTheResolvedSupportedCommand() {
+        for name in ["queue", "steer", "interrupt"] {
+            XCTAssertEqual(SlashCommandExecutor.parse("/\(name) hello")?.messageForIdleSend, "hello")
+        }
+        for text in ["/model test", "/btw hello", "/unknown hello"] {
+            XCTAssertNil(SlashCommandExecutor.parse(text)?.messageForIdleSend)
+        }
+        let catalog = [AgentCommand(name: "queue", aliases: ["q"], handler: "client", clients: ["ios"])]
+        XCTAssertEqual(SlashCommandExecutor.parse("/q hello", catalog: catalog)?.messageForIdleSend, "hello")
+        let unavailable = [AgentCommand(name: "queue", handler: "client", clients: ["web"])]
+        XCTAssertNil(SlashCommandExecutor.parse("/queue hello", catalog: unavailable)?.messageForIdleSend)
+    }
+
     func testEmptyArgsHandlingTrimsWhitespace() {
         let parsed = SlashCommandExecutor.parse("  /model   ")
         XCTAssertEqual(parsed?.command?.name, "model")
