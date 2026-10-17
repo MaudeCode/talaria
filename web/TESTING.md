@@ -88,6 +88,7 @@ In-process chat tests receive a fresh Agent cache per case without extending oth
 into the process-leak scan. Native-supervisor fixtures wait for
 their disposable source/home processes to exit, including restarted supervisors; a published
 recovery journal or removed PID marker is not exit proof.
+Service scenarios synchronize on live successor identity and terminal recovery completion.
 
 One merged JUnit report remains beside each compatibility receipt. Per-case durations and
 failure/error/skip information are preserved, with slow tests and modules printed after the run.
