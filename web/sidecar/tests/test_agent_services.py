@@ -11,7 +11,7 @@ from contextlib import contextmanager
 import pytest
 
 from conftest import SidecarProcess, AGENT_DIR, AGENT_PYTHON
-from test_agent_mutation import native_agent, wait_for, supervised_inventory
+from test_agent_mutation import native_agent, wait_for, wait_for_agent_exit, supervised_inventory
 
 
 def test_snapshot_resamples_a_descendant_exited_before_birth_lookup(supervised_inventory, monkeypatch):
@@ -628,6 +628,7 @@ finally:
    except (FileNotFoundError,ProcessLookupError): pass
  child.wait(timeout=5)
  if (folder/'service.pid').exists() and int((folder/'service.pid').read_text())==os.getpid(): (folder/'service.pid').unlink()
+ while (HOME/'hold-supervisor-exit').exists(): time.sleep(.01)
 ''')
     (modules / 'backend_retirement.py').write_bytes((AGENT_DIR / 'hermes_cli/backend_retirement.py').read_bytes())
     (modules / 'web_server_idle_proof.py').write_text("import os\nfrom pathlib import Path\ndef idle_proof(): return {'idle': not (Path(os.environ['BACKEND_HOME'])/'busy').exists()}\n")
@@ -887,6 +888,7 @@ UpdateLock.acquire_checkout=acquire_checkout
         for proc in supervisors:
             proc.wait(timeout=8)
         wait_for(lambda: not list((home / 'services').glob('*/service.pid')))
+        wait_for_agent_exit(root, home)
 
 
 def test_wrapped_gateway_and_dashboard_stay_paused_through_source_mutation(tmp_path):
@@ -936,7 +938,7 @@ def test_direct_and_nested_services_resume_all_profiles_once(tmp_path, depth):
 
 
 @pytest.mark.parametrize('mode', ['normal', 'force'])
-def test_legacy_backends_hold_source_and_dependency_custody(tmp_path, mode):
+def test_legacy_backends_hold_source_and_dependency_custody(tmp_path, mode, monkeypatch):
     with supervised_agent(tmp_path, dashboards=2, dependency_sync=True, legacy=True) as (root, home, base, target, sidecar, configs):
         begun = rpc(sidecar, root, 'begin', revision=target, homes=list({c['home'] for c in configs}))
         assert begun['ok'], begun
@@ -953,6 +955,19 @@ def test_legacy_backends_hold_source_and_dependency_custody(tmp_path, mode):
         assert all((Path(c['home']) / 'backend.pid').exists() for c in configs[1:])
         assert not list((home / '.talaria-agent-services').glob('*.json'))
         assert all((home / 'services' / c['label'] / 'starts').read_text().splitlines() == ['start'] for c in configs)
+        # Marker removal precedes process exit. Keep the restarted supervisors
+        # alive until teardown observes them, preserving the CI leak boundary.
+        import test_agent_mutation
+        gate = home / 'hold-supervisor-exit'
+        gate.touch()
+        snapshot = test_agent_mutation.process_snapshot
+
+        def release_after_snapshot():
+            rows = snapshot()
+            gate.unlink(missing_ok=True)
+            return rows
+
+        monkeypatch.setattr(test_agent_mutation, 'process_snapshot', release_after_snapshot)
 
 
 @pytest.mark.parametrize('missing', ['identity', 'retirement', 'both'])
