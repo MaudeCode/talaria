@@ -1,11 +1,12 @@
 import { useEffect, useState } from 'react'
 import { useQuery, useQueryClient, type QueryClient } from '@tanstack/react-query'
 import { Loader2 } from 'lucide-react'
+import { chatConditionText } from './chatCondition'
 import { m } from '../../paraglide/messages.js'
 import * as api from '../../api/endpoints'
 import { keys } from '../../api/queryKeys'
 import { isApiError } from '../../contracts/common'
-import type { ChatReadiness, SessionGoal, SessionNotice } from '@maudecode/talaria-web-contracts'
+import type { SessionGoal, SessionNotice } from '@maudecode/talaria-web-contracts'
 import type { LiveTurn } from '../../stream/reducer'
 import type { ComposerNotice } from '../composer/ComposerTab'
 import { RunElapsed } from '../chat/LiveTurnView'
@@ -14,11 +15,6 @@ type AgentHealth = Awaited<ReturnType<typeof api.fetchAgentHealth>>
 
 type Kind = 'thread_error' | 'server_unreachable' | 'offline' | 'agent_unavailable' | 'provider_failure' | 'agent_notice' | 'compressing' | 'goal'
 interface Notice { id?: string; kind: Kind; tone: 'error' | 'warning' | 'info'; title: string; detail?: string | undefined; /** A short state shown on the right, keeping the row to one line. */ status?: React.ReactNode; action?: { label: string; run: () => void } | undefined; dismissible: boolean; oneLine?: boolean }
-const CHAT_CONDITION: Record<NonNullable<ChatReadiness['condition']>, () => string> = {
-  sidecar_unavailable: m.notice_agent_sidecar_unavailable,
-  agent_incompatible: m.notice_agent_incompatible,
-  agent_runtime_stale: m.notice_agent_runtime_stale,
-}
 const PRIORITY: Kind[] = ['thread_error', 'server_unreachable', 'offline', 'agent_unavailable', 'provider_failure', 'agent_notice', 'compressing', 'goal']
 const NOTICE_TONE: Record<SessionNotice['level'], Notice['tone']> = { error: 'error', warn: 'warning', info: 'info', success: 'info' }
 
@@ -127,11 +123,14 @@ export function useRuntimeNotices({ live, onRetry, compressingSince, agentNotice
   const list: Notice[] = []
   if (!online) list.push({ kind: 'offline', tone: 'warning', title: m.notice_offline_title(), detail: m.notice_offline_detail(), dismissible: true })
   if (failures > 0) list.push({ kind: 'server_unreachable', tone: 'warning', title: m.notice_server_title(), status: <RetryCountdown at={(probe.data?.failedAt ?? 0) + retryDelay(failures)} busy={probe.isFetching} />, action: { label: m.retry(), run: retry }, dismissible: false })
-  if (failures === 0 && health?.chat?.available === false) list.push({ kind: 'agent_unavailable', tone: 'warning', title: CHAT_CONDITION[health.chat.condition](), dismissible: true })
+  if (failures === 0 && health?.chat?.available === false) list.push({ kind: 'agent_unavailable', tone: 'warning', title: chatConditionText(health.chat.condition, health.chat.agent_runtime_reason) ?? m.notice_agent_title(), dismissible: true })
   // Old-server fallback (TAL-951): a server without `chat` only reports gateway liveness. Delete once Stable ships `chat`.
   else if (failures === 0 && health && !health.chat && health.alive === false) list.push({ kind: 'agent_unavailable', tone: 'warning', title: m.notice_agent_title(), detail: health.details?.reason ?? health.error, dismissible: true })
   if (live?.warning) list.push({ kind: 'provider_failure', tone: 'warning', title: live.warning, dismissible: true })
-  if (live?.status === 'error' && live.error) list.push({ kind: 'thread_error', tone: 'error', title: m.live_error(), detail: live.error.message, action: onRetry ? { label: m.retry(), run: onRetry } : undefined, dismissible: true })
+  if (live?.status === 'error' && live.error) {
+    const runtimeTitle = chatConditionText(live.error.condition ?? live.error.type, live.error.agent_runtime_reason)
+    list.push({ kind: 'thread_error', tone: 'error', title: runtimeTitle ?? m.live_error(), detail: runtimeTitle ? undefined : live.error.message, action: onRetry ? { label: m.retry(), run: onRetry } : undefined, dismissible: true })
+  }
   for (const n of agentNotices) list.push({ id: `runtime:agent_notice:${n.key}`, kind: 'agent_notice', tone: NOTICE_TONE[n.level], title: n.text, dismissible: true })
   const compressionSince = compressingSince ?? live?.compressionStartedAt ?? null
   if (compressionSince !== null) list.push({ kind: 'compressing', tone: 'info', title: m.live_compressing(), status: <RunElapsed since={compressionSince} />, dismissible: false, oneLine: true })

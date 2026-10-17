@@ -14,7 +14,7 @@ import { spawn, type ChildProcess } from 'node:child_process'
 import { createInterface } from 'node:readline'
 import {
   RPC_ERROR_CODES, RpcIncomingSchema, SIDECAR_METHODS, SIDECAR_RPC_VERSION,
-  type ChatReadiness, type RpcErrorObject, type RuntimeDescribe, type SidecarMethodName, type SidecarParams, type SidecarResult,
+  type AgentRuntimeMetadata, type ChatReadiness, type RpcErrorObject, type RuntimeDescribe, type SidecarMethodName, type SidecarParams, type SidecarResult,
 } from '@maudecode/talaria-web-contracts'
 
 import { AGENT_IMPORT_ENV } from './env.js'
@@ -85,10 +85,32 @@ interface Pending {
   timer?: ReturnType<typeof setTimeout> | undefined
 }
 
+/** Normalize typed sidecar evidence once for health, preflight, and journalled turn errors. */
+export function runtimeFailureDetails(condition: string, data: Record<string, unknown> = {}): AgentRuntimeMetadata & { condition: string; type: string; message?: string } {
+  const details: AgentRuntimeMetadata & { condition: string; type: string; message?: string } = { condition, type: condition }
+  if (condition !== 'agent_runtime_stale') return details
+  const state = typeof data.agent_update_state === 'string' ? data.agent_update_state : undefined
+  details.agent_runtime_reason = state === 'active' ? 'update_active'
+    : state === 'incomplete' ? 'recovery_incomplete'
+      : state === 'unverified' && data.agent_source_changed === true ? 'source_changed' : 'unknown'
+  details.message = {
+    update_active: 'Agent update is in progress',
+    recovery_incomplete: 'Agent update recovery is incomplete',
+    source_changed: 'Agent source changed; check the update outcome before restarting Talaria Web',
+    unknown: 'Agent runtime is unavailable; check the Agent update outcome',
+  }[details.agent_runtime_reason]
+  if (state !== undefined) details.agent_update_state = state
+  details.retryable = typeof data.retryable === 'boolean' ? data.retryable : true
+  details.restart_scheduled = typeof data.restart_scheduled === 'boolean' ? data.restart_scheduled : false
+  return details
+}
+
 /** Whether Agent operations (chat turns) can run on `sidecar`, and the failure condition when they cannot. */
 export function chatReadiness(sidecar: Pick<SidecarLike, 'status' | 'describe'> | null): ChatReadiness {
   if (sidecar?.status === 'ready') return { available: true, condition: null }
-  if (sidecar?.status === 'incompatible') return { available: false, condition: sidecar.describe?.stale ? 'agent_runtime_stale' : 'agent_incompatible' }
+  if (sidecar?.status === 'incompatible') return sidecar.describe?.stale
+    ? { available: false, ...runtimeFailureDetails('agent_runtime_stale', { agent_update_state: sidecar.describe.update_state, agent_source_changed: sidecar.describe.agent_source_changed }), condition: 'agent_runtime_stale' }
+    : { available: false, condition: 'agent_incompatible' }
   return { available: false, condition: 'sidecar_unavailable' }
 }
 

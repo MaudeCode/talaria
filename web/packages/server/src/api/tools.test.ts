@@ -1308,7 +1308,7 @@ describe('agent health chat readiness', () => {
         ['restarting', false, { available: false, condition: 'sidecar_unavailable' }],
         ['stopped', false, { available: false, condition: 'sidecar_unavailable' }],
         ['incompatible', false, { available: false, condition: 'agent_incompatible' }],
-        ['incompatible', true, { available: false, condition: 'agent_runtime_stale' }],
+        ['incompatible', true, { available: false, condition: 'agent_runtime_stale', agent_runtime_reason: 'unknown', retryable: true, restart_scheduled: false }],
       ]
       for (const [status, stale, expected] of cases) {
         sidecar.status = status
@@ -1319,7 +1319,7 @@ describe('agent health chat readiness', () => {
       sidecar.status = 'ready'
       sidecar.describe = handshake
       sidecar.respond('runtime.ensure_current', () => { throw new SidecarError('Hermes Agent was updated', { condition: 'agent_runtime_stale' }) })
-      expect(await chat(), 'ready, checkout changed').toEqual({ available: false, condition: 'agent_runtime_stale' })
+      expect(await chat(), 'ready, checkout changed').toEqual({ available: false, condition: 'agent_runtime_stale', agent_runtime_reason: 'unknown', retryable: true, restart_scheduled: false })
       // A ready sidecar that cannot answer the check is not verified ready, and the wait stays well inside the browser's probe timeout.
       let checkTimeout: number | undefined
       sidecar.respond('runtime.ensure_current', (_params, _emit, opts) => { checkTimeout = opts.timeoutMs; throw new SidecarError('sidecar call runtime.ensure_current timed out', { condition: 'sidecar_timeout' }) })

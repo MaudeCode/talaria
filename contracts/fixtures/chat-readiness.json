@@ -1,0 +1,154 @@
+{
+  "recovery": [
+    {
+      "health": {
+        "alive": true,
+        "chat": {
+          "available": false,
+          "condition": "agent_runtime_stale",
+          "agent_update_state": "active",
+          "agent_runtime_reason": "update_active",
+          "retryable": true,
+          "restart_scheduled": false
+        }
+      },
+      "http": {
+        "error": "Check the Agent update outcome",
+        "condition": "agent_runtime_stale",
+        "type": "agent_runtime_stale",
+        "agent_update_state": "active",
+        "agent_runtime_reason": "update_active",
+        "retryable": true,
+        "restart_scheduled": false
+      },
+      "event": {
+        "event": "apperror",
+        "data": {
+          "message": "Check the Agent update outcome",
+          "condition": "agent_runtime_stale",
+          "type": "agent_runtime_stale",
+          "agent_update_state": "active",
+          "agent_runtime_reason": "update_active",
+          "retryable": true,
+          "restart_scheduled": false
+        }
+      }
+    },
+    {
+      "health": {
+        "alive": true,
+        "chat": {
+          "available": false,
+          "condition": "agent_runtime_stale",
+          "agent_update_state": "incomplete",
+          "agent_runtime_reason": "recovery_incomplete",
+          "retryable": true,
+          "restart_scheduled": false
+        }
+      },
+      "http": {
+        "error": "Check the Agent update outcome",
+        "condition": "agent_runtime_stale",
+        "type": "agent_runtime_stale",
+        "agent_update_state": "incomplete",
+        "agent_runtime_reason": "recovery_incomplete",
+        "retryable": true,
+        "restart_scheduled": false
+      },
+      "event": {
+        "event": "apperror",
+        "data": {
+          "message": "Check the Agent update outcome",
+          "condition": "agent_runtime_stale",
+          "type": "agent_runtime_stale",
+          "agent_update_state": "incomplete",
+          "agent_runtime_reason": "recovery_incomplete",
+          "retryable": true,
+          "restart_scheduled": false
+        }
+      }
+    },
+    {
+      "health": {
+        "alive": true,
+        "chat": {
+          "available": false,
+          "condition": "agent_runtime_stale",
+          "agent_update_state": "unknown",
+          "agent_runtime_reason": "unknown",
+          "retryable": true,
+          "restart_scheduled": false
+        }
+      },
+      "http": {
+        "error": "Check the Agent update outcome",
+        "condition": "agent_runtime_stale",
+        "type": "agent_runtime_stale",
+        "agent_update_state": "unknown",
+        "agent_runtime_reason": "unknown",
+        "retryable": true,
+        "restart_scheduled": false
+      },
+      "event": {
+        "event": "apperror",
+        "data": {
+          "message": "Check the Agent update outcome",
+          "condition": "agent_runtime_stale",
+          "type": "agent_runtime_stale",
+          "agent_update_state": "unknown",
+          "agent_runtime_reason": "unknown",
+          "retryable": true,
+          "restart_scheduled": false
+        }
+      }
+    },
+    {
+      "health": {
+        "alive": true,
+        "chat": {
+          "available": false,
+          "condition": "agent_runtime_stale",
+          "agent_update_state": "unverified",
+          "agent_runtime_reason": "source_changed",
+          "retryable": true,
+          "restart_scheduled": false
+        }
+      },
+      "http": {
+        "error": "Check the Agent update outcome",
+        "condition": "agent_runtime_stale",
+        "type": "agent_runtime_stale",
+        "agent_update_state": "unverified",
+        "agent_runtime_reason": "source_changed",
+        "retryable": true,
+        "restart_scheduled": false
+      },
+      "event": {
+        "event": "apperror",
+        "data": {
+          "message": "Check the Agent update outcome",
+          "condition": "agent_runtime_stale",
+          "type": "agent_runtime_stale",
+          "agent_update_state": "unverified",
+          "agent_runtime_reason": "source_changed",
+          "retryable": true,
+          "restart_scheduled": false
+        }
+      }
+    }
+  ],
+  "completed_update": {
+    "alive": true,
+    "chat": {
+      "available": true,
+      "condition": null
+    }
+  },
+  "legacy": {
+    "alive": true,
+    "chat": {
+      "available": false,
+      "condition": "agent_runtime_stale"
+    }
+  }
+}

@@ -104,7 +104,7 @@ describe('legacy chat and test-hook endpoints', () => {
     sidecar.respond('runtime.ensure_current', () => { throw new SidecarError('restart required', { condition: 'agent_runtime_stale' }) })
     let res = await post(s, '/api/chat', { session_id: sid, message: 'hi' })
     expect(res.status).toBe(409)
-    expect(await json(res)).toMatchObject({ error: 'restart required', type: 'agent_runtime_stale' })
+    expect(await json(res)).toMatchObject({ error: 'Agent runtime is unavailable; check the Agent update outcome', type: 'agent_runtime_stale' })
     sidecar.respond('runtime.ensure_current', undefined)
     res = await post(s, '/api/chat', { session_id: sid, message: '   ' })
     expect(res.status).toBe(400)

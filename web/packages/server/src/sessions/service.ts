@@ -25,7 +25,7 @@ import { auditSessionRecovery, repairSafeSessionRecovery, type RecoveryDeps } fr
 import { agentSessionRowsExisting, agentSessionRowsExistingAsync, CANONICAL_READ_ONLY_REASON, OWNERSHIP_UNAVAILABLE_REASON, CONVERSATION_ROUND_THRESHOLD, countConversationRounds, stateDbCompressionLineage, stateDbTailToolContent, stateDbLineageReport, stateDbLocalTarget, stateDbSessionMessages, stateDbSessionRead, stateDbSessionTailRead, stateDbSessionRow, stateDbSessionSources, stateDbSessionSourcesAsync, stateDbTimestampSeconds, type StateDbRead, type StateDbSessionSource } from './state-db.js'
 import { completionIncomplete, fallbackHandoffSummary, HANDOFF_SYSTEM_PROMPT, handoffMarker, handoffPayload, handoffTranscript, messageHandoffPayload, sameHandoff } from './handoff.js'
 import { anchorMessageKey, anchorSummary, CompressionJobs, compressionReference, visibleMessagesForAnchor, type CompressionJob } from './compress.js'
-import { chatReadiness, SidecarError, type SidecarLike } from '../sidecar/client.js'
+import { chatReadiness, runtimeFailureDetails, SidecarError, type SidecarLike } from '../sidecar/client.js'
 import { agentSteerText, ApiMessageSummary, appendStateDbIdentityRows, attachedFilesPrompt, attachmentObjects, checkpointTurnStart, dedupeContext, isContextCompressionMarker, journalOutputRows, looksLikeCurrentUserTurn, stoppedTurnContext, mergeSessionMessagesAppendOnly, messageIdentity, pendingUserRow, reasoningFieldsText, sanitizeMessagesForApi, stateDbSeenId, stripWorkspacePrefix, withAttachmentObjects, withBodyExcerpts, withDisplayMedia, withMarkerKinds, withMirrorSources, withSceneRowMedia, withPendingUserTurn, withToolCallOutcomes, withoutRunningTurnOutput, type ToolResultView } from './merge.js'
 import { withBackgroundUpdates } from './background-updates.js'
 import { markedStateDbGeneration, stateDbIdentityKeys, stampStateDbGeneration, stateDbMessageRepresented } from './state-db-identity.js'
@@ -65,23 +65,26 @@ export async function ensureAgentRuntimeCurrent(sidecar: SidecarLike | null): Pr
 const CHAT_READINESS_CHECK_TIMEOUT_MS = 5_000
 
 /**
- * TAL-951: whether a chat turn would be admitted now. The sidecar status gives the verdict, and a ready sidecar also
- * runs turn admission's live loaded-revision check, since the Agent checkout can change after the handshake. A check
+ * TAL-951: whether a chat turn would be admitted now. Ready and source-stale incompatible sidecars both run turn
+ * admission's live check: recovery state can change after the handshake. A check
  * that cannot answer fails closed as `sidecar_unavailable`.
  */
 export async function currentChatReadiness(sidecar: SidecarLike | null): Promise<ChatReadiness> {
   const readiness = chatReadiness(sidecar)
-  if (!sidecar || !readiness.available) return readiness
+  if (!sidecar || (!readiness.available && readiness.condition !== 'agent_runtime_stale')) return readiness
   try {
     await sidecar.call('runtime.ensure_current', {}, { timeoutMs: CHAT_READINESS_CHECK_TIMEOUT_MS })
   } catch (error) {
-    return { available: false, condition: error instanceof SidecarError && error.condition === 'agent_runtime_stale' ? 'agent_runtime_stale' : 'sidecar_unavailable' }
+    if (error instanceof SidecarError && error.condition === 'agent_runtime_stale') return { available: false, ...runtimeFailureDetails(error.condition, error.data), condition: 'agent_runtime_stale' }
+    return { available: false, condition: error instanceof SidecarError && error.condition === 'agent_incompatible' ? 'agent_incompatible' : 'sidecar_unavailable' }
   }
-  return readiness
+  // The live guard can clear after a rollback, but the client's incompatible admission gate still refuses chat.
+  return readiness.available ? readiness : { available: false, ...runtimeFailureDetails('agent_runtime_stale'), condition: 'agent_runtime_stale' }
 }
 
 function staleRuntimeFailure(error: SidecarError): HttpFailure {
-  return new HttpFailure(409, error.message, { type: 'agent_runtime_stale', retryable: true, restart_scheduled: false, ...(error.data.agent_update_state !== undefined ? { agent_update_state: error.data.agent_update_state } : {}) })
+  const { message, ...details } = runtimeFailureDetails(error.condition, error.data)
+  return new HttpFailure(409, message ?? error.message, details)
 }
 
 export interface SessionServiceDeps {

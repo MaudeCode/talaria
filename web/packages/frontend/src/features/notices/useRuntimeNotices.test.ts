@@ -56,6 +56,33 @@ describe('useRuntimeNotices agent_unavailable', () => {
     expect(screen.getByText(m.notice_agent_runtime_stale())).toBeTruthy()
   })
 
+  it.each([
+    ['recovery_incomplete', 'Agent update recovery is incomplete'],
+    ['update_active', 'Agent update is in progress'],
+    ['unknown', 'Agent runtime is unavailable; check the Agent update outcome'],
+    ['source_changed', 'Agent source changed; check the update outcome before restarting Talaria Web'],
+    [undefined, 'Agent runtime is unavailable; check the Agent update outcome'],
+  ])('renders the server reason %s truthfully for health and replayed errors', async (reason, title) => {
+    const shown = await notices({ alive: true, chat: { available: false, condition: 'agent_runtime_stale', agent_runtime_reason: reason } })
+    const notice = shown.find((n) => n.id === 'runtime:agent_unavailable')!
+    const rendered = render(createElement(Fragment, null, notice.content))
+    expect(rendered.container.textContent).toBe(title)
+    expect(rendered.container.textContent).not.toContain('Agent updated')
+    rendered.unmount()
+  })
+
+  it('renders a replayed runtime error with the same reason as health', () => {
+    vi.mocked(api.fetchAgentHealth).mockResolvedValue({ alive: true, chat: { available: true, condition: null } })
+    const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    const wrapper = ({ children }: { children: ReactNode }) => createElement(QueryClientProvider, { client: qc }, children)
+    let state = streamReducer(initialStreamState, { type: 'start', sessionId: 's', streamId: 'r', turnId: null, userMessageId: null, userText: 'hi', now: 1 })
+    state = streamReducer(state, { type: 'event', sessionId: 's', streamId: 'r', event: parseChatEvent('apperror', JSON.stringify({ type: 'agent_runtime_stale', condition: 'agent_runtime_stale', agent_runtime_reason: 'recovery_incomplete', agent_update_state: 'incomplete', retryable: true, restart_scheduled: false, message: 'Agent updated successfully' }))!, lastEventId: 'r:1', now: 2 })
+    const { result } = renderHook(() => useRuntimeNotices({ live: state.turns.s!, compressingSince: null }), { wrapper })
+    const shown = render(createElement(Fragment, null, result.current.notices.find((n) => n.id === 'runtime:thread_error')!.content))
+    expect(shown.container.textContent).toBe('Agent update recovery is incomplete')
+    expect(state.turns.s!.error).toMatchObject({ agent_runtime_reason: 'recovery_incomplete', retryable: true, restart_scheduled: false })
+  })
+
   it('keeps the gateway warning for an older server that sends no chat readiness', async () => {
     const shown = await notices({ alive: false, details: { state: 'down', reason: 'gateway_not_running' } })
     const notice = shown.find((n) => n.id === 'runtime:agent_unavailable')
