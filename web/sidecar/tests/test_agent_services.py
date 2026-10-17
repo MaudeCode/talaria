@@ -382,6 +382,31 @@ def test_verification_rejects_a_child_arriving_during_identity_probes(supervised
         services.verify_processes(entry, records, stopping=stopping)
 
 
+@pytest.mark.parametrize('revived', [True, None])
+def test_stopping_verification_rejects_reuse_after_an_earlier_exit_probe(supervised_inventory, monkeypatch, revived):
+    from types import SimpleNamespace
+    from talaria_sidecar import agent_services as services
+    _, _, _, _, _, parents, modules = supervised_inventory
+    parents[41005] = 41002
+    entry = dict(kind='launchd', domain='gui/12345', label='synthetic.gateway', pid=41002, service_pid=41001)
+    records = SimpleNamespace(identity=lambda p: {'ct': p})
+    entry['processes'] = services.snapshot(entry)
+    services.bind_processes(entry, records)
+    probes = 0
+
+    def exists(pid):
+        nonlocal probes
+        if pid == 41005:
+            probes += 1
+            return False if probes == 1 else revived
+        return pid in parents
+
+    monkeypatch.setattr(modules['gateway.status'], '_pid_exists', exists)
+    monkeypatch.setattr(modules['gateway.status'], 'get_process_start_time', lambda p: p * 10 + (p == 41005))
+    with pytest.raises(RuntimeError, match='identity/ancestry changed'):
+        services.verify_processes(entry, records, stopping=True)
+
+
 def rpc(sidecar, root, action, **params):
     return sidecar.result('runtime.agent_mutation', {'agent_dir': str(root), 'action': action, **params}, timeout=45)
 

@@ -274,21 +274,26 @@ def _service_pid(entry):
 def verify_processes(entry, records, *, stopping=False):
     from gateway.status import get_process_start_time, _pid_exists
     parents = _process_table()
+    departed = set()
     for pid, expected in entry['processes'].items():
         pid = int(pid)
         if _pid_exists(pid) is False:
             if stopping:
+                departed.add(pid)
                 continue
             raise RuntimeError(f'{_name(entry)} process {pid} disappeared before its stop.')
         if (get_process_start_time(pid) != expected['birth'] or records.identity(pid)['ct'] != expected.get('ct')
                 or parents.get(pid) != expected['parent']):
             if stopping and _pid_exists(pid) is False:
+                departed.add(pid)
                 continue
             raise RuntimeError(f'{_name(entry)} process {pid} identity/ancestry changed; source was not changed.')
     _, service_pid = _service_pid(entry)
     if service_pid and service_pid != entry['service_pid']:
         raise RuntimeError(f'{_name(entry)} supervisor respawned during quiescence; source was not changed.')
     parents = _process_table()
+    if any(_pid_exists(pid) is not False for pid in departed):
+        raise RuntimeError(f'{_name(entry)} process identity/ancestry changed after departure; source was not changed.')
     for pid, expected in entry['processes'].items():
         if parents.get(int(pid)) != expected['parent']:
             if stopping and _pid_exists(int(pid)) is False:
