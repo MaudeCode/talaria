@@ -92,12 +92,10 @@ function githubHistory(main: HistoryCommit[], fallback: GetJson = stableGetJson)
       return Promise.resolve({ status: 'ahead', total_commits: range.length, commits: range.slice((page - 1) * per, page * per).map(commitJson) })
     }
     if (url.pathname === '/commits' && url.searchParams.get('path') === 'web') {
-      const since = url.searchParams.get('since') ?? ''
-      const listed = main.slice(at(url.searchParams.get('sha'))).filter((c) => c.web !== false && c.date >= since).sort((a, b) => b.date.localeCompare(a.date))
+      const since = Date.parse(url.searchParams.get('since') ?? '')
+      const listed = main.slice(at(url.searchParams.get('sha'))).filter((c) => c.web !== false && Date.parse(c.date) >= since).sort((a, b) => Date.parse(b.date) - Date.parse(a.date))
       return Promise.resolve(listed.slice((page - 1) * per, page * per).map(commitJson))
     }
-    const commit = /^\/commits\/(\w{40})$/.exec(url.pathname)
-    if (commit && at(commit[1]!) >= 0) return Promise.resolve(commitJson(main[at(commit[1]!)]!))
     return fallback(path, opts)
   }
 }
@@ -176,13 +174,15 @@ describe('Experimental npm updates (TAL-378)', () => {
     const running = release(`web-exp-v${expVersion('2.0.0', OLD_EXP)}`, expVersion('2.0.0', OLD_EXP), OLD_EXP)
     const n = npmInstall(running, {})
     // A PR branched before the installed build and merged after it: its commits are pending but dated earlier.
-    const getJson = githubHistory([
+    let diverged = true
+    const history = githubHistory([
       { sha: NEW_EXP, message: 'Merge pull request #2 from MaudeCode/fix/TAL-2-branch', date: '2026-10-17T15:00:00Z' },
       { sha: 'c'.repeat(40), message: 'TAL-3: Relay pairing retries', date: '2026-10-17T14:55:00Z', web: false },
       { sha: 'd'.repeat(40), message: 'TAL-2: Dashboards sign in with the owning profile', date: '2026-10-17T14:26:00Z' },
       { sha: OLD_EXP, message: 'Merge pull request #1 from MaudeCode/fix/TAL-1-branch', date: '2026-10-17T14:50:00Z' },
       { sha: 'e'.repeat(40), message: 'TAL-1: Already installed change', date: '2026-10-17T14:30:00Z' },
     ])
+    const getJson: GetJson = (path, opts) => diverged && path.startsWith('/compare/') ? Promise.resolve({ status: 'diverged', total_commits: 0, commits: [] }) : history(path, opts)
     const prompts: string[] = []
     const svc = new UpdateService({
       webRoot: n.packageRoot, git: runGit, npm: n.npm, getJson, experimental: fakeGhcr(TARBALL).registry, identity: identity(running), webuiVersion: 'web-exp',
@@ -191,6 +191,9 @@ describe('Experimental npm updates (TAL-378)', () => {
       scheduleRestart: () => undefined, llm: (_system, user) => { prompts.push(user); return Promise.resolve('- Notice: Dashboards sign in') }, log: () => undefined,
     })
     await svc.check(true, false, 'experimental')
+    expect(await svc.summarize('webui')).toMatchObject({ generated_by: 'fallback' })
+    expect(prompts).toHaveLength(0)
+    diverged = false
     expect(await svc.summarize('webui')).toMatchObject({ source: 'commits', generated_by: 'llm' })
     expect(prompts[0]).toContain('- TAL-2: Dashboards sign in with the owning profile\n- Merge pull request #2')
     expect(prompts[0]).not.toContain('Relay pairing')
@@ -204,6 +207,7 @@ describe('Experimental npm updates (TAL-378)', () => {
     let latest = NEW_EXP
     const next = 'c'.repeat(40)
     let fail = false
+    let incomplete = false
     const paths: string[] = []
     const prompts: string[] = []
     const old = Array.from({ length: 120 }, (_, i) => ({ sha: (i + 1).toString(16).padStart(40, '0'), message: `Web change ${String(i)}` }))
@@ -212,7 +216,8 @@ describe('Experimental npm updates (TAL-378)', () => {
     const history = githubHistory(main.map((c, i) => ({ ...c, date: new Date(Date.UTC(2026, 9, 1) + (main.length - i) * 60_000).toISOString() })))
     const getJson: GetJson = (path, opts) => {
       paths.push(path)
-      return fail && path.endsWith('page=2') ? Promise.reject(new Error('page unavailable')) : history(path, opts)
+      if (fail && path.includes('path=web') && path.endsWith('page=2')) return Promise.reject(new Error('page unavailable'))
+      return incomplete && path.startsWith('/compare/') && path.includes('?') ? Promise.resolve({ status: 'ahead', total_commits: 3 }) : history(path, opts)
     }
     const experimental: ExperimentalRegistry = {
       release: () => Promise.resolve({ tag: `web-exp-v${expVersion('2.0.0', latest)}`, version: expVersion('2.0.0', latest), sourceRevision: latest, digest: `sha256:${'f'.repeat(64)}`, size: 1 }),
@@ -236,6 +241,11 @@ describe('Experimental npm updates (TAL-378)', () => {
     expect(paths.some((path) => path.includes('path=web') && path.endsWith('page=2'))).toBe(true)
     const checkpoint = readFileSync(join(stateDir, 'update-summaries.json'), 'utf8')
     latest = next
+    incomplete = true
+    await svc.check(true)
+    expect(await svc.summarize('webui')).toMatchObject({ generated_by: 'fallback' })
+    expect(readFileSync(join(stateDir, 'update-summaries.json'), 'utf8')).toBe(checkpoint)
+    incomplete = false
     paths.length = 0
     await svc.check(true)
     await svc.summarize('webui')

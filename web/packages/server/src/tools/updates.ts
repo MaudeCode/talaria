@@ -1694,13 +1694,13 @@ export class UpdateService {
       for (let page = 1; ; page++) {
         const compared = dict(await this.deps.getJson(`/compare/${current}...${latest}?per_page=100&page=${String(page)}`, { asset: false }))
         const total = compared.total_commits
-        if (!Array.isArray(compared.commits) || typeof total !== 'number' || !Number.isInteger(total) || total < 0) throw new Error('Commit range is unavailable')
+        if (!['ahead', 'identical'].includes(str(compared.status)) || !Array.isArray(compared.commits) || typeof total !== 'number' || !Number.isInteger(total) || total < 0) throw new Error('Commit range is unavailable')
         const before = range.size
         for (const raw of compared.commits) {
-          const commit = dict(raw)
-          const id = str(commit.sha)
-          const text = (str(dict(commit.commit).message).split('\n')[0] ?? '').trim()
-          const dates = [dict(dict(commit.commit).author).date, dict(dict(commit.commit).committer).date].map((date) => typeof date === 'string' ? Date.parse(date) : NaN)
+          const id = str(dict(raw).sha)
+          const commit = dict(dict(raw).commit)
+          const text = (str(commit.message).split('\n')[0] ?? '').trim()
+          const dates = [dict(commit.author).date, dict(commit.committer).date].map((date) => typeof date === 'string' ? Date.parse(date) : NaN)
           if (!SHA.test(id) || !text || dates.some((date) => !Number.isFinite(date))) throw new Error('Commit range is incomplete')
           range.set(id, { id, text })
           since = Math.min(since, ...dates)
@@ -1714,7 +1714,11 @@ export class UpdateService {
         const commits = await this.deps.getJson(`/commits?sha=${latest}&path=web&since=${encodeURIComponent(new Date(since).toISOString())}&per_page=100&page=${String(page)}`, { asset: false })
         if (!Array.isArray(commits)) throw new Error('Commit page is unavailable')
         const before = touched.size
-        for (const raw of commits) touched.add(str(dict(raw).sha))
+        for (const raw of commits) {
+          const id = str(dict(raw).sha)
+          if (!SHA.test(id)) throw new Error('Commit page is incomplete')
+          touched.add(id)
+        }
         if (commits.length < 100) return [...range.values()].filter((item) => touched.has(item.id))
         if (touched.size === before) throw new Error('Commit pagination made no progress')
       }
