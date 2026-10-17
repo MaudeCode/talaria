@@ -24,6 +24,8 @@ import pytest
 
 SIDECAR_ROOT = pathlib.Path(__file__).resolve().parent.parent
 FIXTURES = pathlib.Path(__file__).resolve().parent / "fixtures"
+sys.path.insert(0, str(SIDECAR_ROOT / "scripts"))
+from suite_runner import process_snapshot
 
 
 def configured_agent_dir() -> pathlib.Path | None:
@@ -202,14 +204,13 @@ def no_surviving_processes(tmp_path_factory: pytest.TempPathFactory):
     """Fail a test that leaves a process naming the session's temp tree running, so cleanup never races a writer."""
     yield
     base = str(tmp_path_factory.getbasetemp())
-    listing = subprocess.run(["ps", "-eo", "pid=,ppid=,args="], capture_output=True, text=True, check=True).stdout
-    rows = [(int(parts[0]), int(parts[1]), parts[2]) for parts in (line.split(None, 2) for line in listing.splitlines()) if len(parts) == 3]
+    rows = process_snapshot()
     # The runner and its parents may name the temp tree themselves (--basetemp).
-    parents, runner, pid = {pid: ppid for pid, ppid, _ in rows}, set(), os.getpid()
+    parents, runner, pid = {pid: ppid for pid, ppid, _, _ in rows}, set(), os.getpid()
     while pid > 1 and pid not in runner:
         runner.add(pid)
         pid = parents.get(pid, 0)
-    left = [(pid, args) for pid, _, args in rows if base in args and pid not in runner]
+    left = [(pid, args) for pid, _, _, args in rows if base in args and pid not in runner]
     for pid, _ in left:
         try:
             os.kill(pid, 9)
