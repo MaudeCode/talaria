@@ -241,7 +241,11 @@ for (const [virtualize, repeats] of [[false, 1], [true, 1], [false, 50], [true, 
     })
     try {
       await expect.poll(async () => { await readTop(); return requests.at(-1) }).toBe(480)
+      await expect(page.locator('[data-history-sentinel]').getByRole('status')).toHaveCount(1)
       release!()
+      // Loading may not have painted when the route first arrives. Wait for the first
+      // prepend to commit before scrolling into the next page's prefetch region.
+      await expect(page.locator(virtualize ? '[data-virtual-history]' : '[data-message-key="361"]')).toBeAttached()
       await expect(page.locator('[data-history-sentinel]').getByRole('status')).toHaveCount(0)
       await expect.poll(async () => { await readTop(); return requests.at(-1) }).toBe(360)
       const group = page.locator('[data-message-key="361"]')
