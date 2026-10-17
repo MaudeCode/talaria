@@ -4,6 +4,83 @@ import XCTest
 
 @MainActor
 final class CacheStoreTests: XCTestCase {
+    func testRecentTranscriptMetadataSurvivesListRefreshWithoutInventingAListRow() throws {
+        let context = try makeContext()
+        let server = URL(string: "https://recent.test")!
+        let time = Date()
+        let messages = (0..<100).map { ChatMessage(role: "user", content: "Message \($0)", timestamp: nil, messageId: "m-\($0)") }
+        try CacheStore.cacheMessages(messages, serverURL: server, sessionID: "recent", in: context,
+                                     messagesOffset: 200, hasOlderMessages: true, cachedAt: time)
+        XCTAssertTrue(try CacheStore.cachedSessions(serverURL: server, in: context, now: time).isEmpty)
+        try CacheStore.cacheSessions([SessionSummary(sessionId: "recent", title: "Listed by server")], serverURL: server, in: context, cachedAt: time)
+        let window = try CacheStore.cachedTranscriptWindow(serverURL: server, sessionID: "recent", in: context, now: time)
+        XCTAssertEqual(window.messages, messages)
+        XCTAssertEqual(window.messagesOffset, 200)
+        XCTAssertTrue(window.hasOlderMessages)
+        XCTAssertEqual(try CacheStore.cachedSessions(serverURL: server, in: context, now: time).first?.title, "Listed by server")
+        try CacheStore.cacheSessions([], serverURL: server, in: context, cachedAt: time)
+        XCTAssertTrue(try CacheStore.cachedSessions(serverURL: server, in: context, now: time).isEmpty)
+        XCTAssertEqual(try CacheStore.cachedTranscriptWindow(serverURL: server, sessionID: "recent", in: context, now: time).messagesOffset, 200)
+    }
+
+    func testRecentTranscriptExpiryDeletionAndServerIsolation() throws {
+        let context = try makeContext()
+        let server = URL(string: "https://recent.test")!
+        let other = URL(string: "https://other.test")!
+        let time = Date()
+        let messages = [ChatMessage(role: "assistant", content: "Saved", timestamp: nil, messageId: "saved")]
+        for url in [server, other] {
+            try CacheStore.cacheMessages(messages, serverURL: url, sessionID: "recent", in: context,
+                                         messagesOffset: 200, hasOlderMessages: true, cachedAt: time)
+        }
+        let expired = try CacheStore.cachedTranscriptWindow(serverURL: server, sessionID: "recent", in: context, now: time.addingTimeInterval(CachePolicy.ttl + 1))
+        XCTAssertTrue(expired.messages.isEmpty)
+        XCTAssertNil(expired.recentMessagesOffset)
+        try CacheStore.clearCache(for: server, sessionIDs: ["recent"], in: context)
+        let deleted = try CacheStore.cachedTranscriptWindow(serverURL: server, sessionID: "recent", in: context, now: time)
+        XCTAssertTrue(deleted.messages.isEmpty)
+        XCTAssertNil(deleted.recentMessagesOffset)
+        let kept = try CacheStore.cachedTranscriptWindow(serverURL: other, sessionID: "recent", in: context, now: time)
+        XCTAssertEqual(kept.messagesOffset, 200)
+        try CacheStore.clearCache(for: other, in: context)
+        XCTAssertTrue(try CacheStore.cachedTranscriptWindow(serverURL: other, sessionID: "recent", in: context, now: time).messages.isEmpty)
+    }
+
+    func testEvictingPartOfARecentTranscriptInvalidatesItsMetadataAndUsesBoundedFallback() throws {
+        let context = try makeContext()
+        let server = URL(string: "https://recent.test")!
+        let time = Date()
+        let messages = (0...CachePolicy.maxMessages).map { ChatMessage(role: "user", content: "Message \($0)", timestamp: nil, messageId: "m-\($0)") }
+        try CacheStore.cacheMessages(messages, serverURL: server, sessionID: "recent", in: context,
+                                     messagesOffset: 200, hasOlderMessages: true, cachedAt: time)
+        XCTAssertEqual(try context.fetchCount(FetchDescriptor<CachedMessage>()), CachePolicy.maxMessages)
+        let row = try XCTUnwrap(context.fetch(FetchDescriptor<CachedSession>()).first)
+        XCTAssertNil(row.recentMessagesOffset)
+        XCTAssertNil(row.recentMessagesCount)
+        let fallback = try CacheStore.cachedTranscriptWindow(serverURL: server, sessionID: "recent", in: context, now: time)
+        XCTAssertEqual(fallback.messages.count, 50)
+        XCTAssertNil(fallback.recentMessagesOffset)
+        XCTAssertEqual(fallback.messagesOffset, 0)
+    }
+
+    func testIncompleteOrLegacyTranscriptCannotReuseCompleteWindowMetadata() throws {
+        let context = try makeContext()
+        let server = URL(string: "https://recent.test")!
+        let messages = (0..<100).map { ChatMessage(role: "user", content: "Message \($0)", timestamp: nil, messageId: "m-\($0)") }
+        try CacheStore.cacheMessages(messages, serverURL: server, sessionID: "recent", in: context,
+                                     messagesOffset: 200, hasOlderMessages: true)
+        let first = try XCTUnwrap(context.fetch(FetchDescriptor<CachedMessage>()).first)
+        context.delete(first)
+        try context.save()
+        let incomplete = try CacheStore.cachedTranscriptWindow(serverURL: server, sessionID: "recent", in: context)
+        XCTAssertEqual(incomplete.messages.count, 50)
+        XCTAssertNil(incomplete.recentMessagesOffset)
+        try CacheStore.cacheMessages(messages, serverURL: server, sessionID: "recent", in: context)
+        let legacy = try CacheStore.cachedTranscriptWindow(serverURL: server, sessionID: "recent", in: context)
+        XCTAssertEqual(legacy.messages.count, 50)
+        XCTAssertNil(legacy.recentMessagesOffset)
+    }
+
     func testCacheSessionsWritesVisibleSessionsAndRemovesStaleEntries() throws {
         let context = try makeContext()
         let serverURL = URL(string: "https://example.test")!

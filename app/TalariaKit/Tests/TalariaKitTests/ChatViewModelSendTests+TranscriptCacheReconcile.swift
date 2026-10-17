@@ -7,6 +7,98 @@ import UniformTypeIdentifiers
 
 @MainActor
 extension ChatViewModelSendTests {
+    func testReopenRestoresCompleteServerRecentWindowBeforeHeldReconcile() async throws {
+        let context = try makeContext()
+        let body = try Self.toolHeavyRecentSessionJSON()
+        var first: ChatViewModel? = try makeViewModel { apiTestJSONResponse(body, for: $0) }
+        await first?.loadMessages(modelContext: context)
+        let expected = try XCTUnwrap(first).messages
+        let expectedRows = try XCTUnwrap(first).displayedTranscriptMessages.map(\.renderID)
+        XCTAssertEqual(expected.count, 100)
+        XCTAssertEqual(first?.messagesOffset, 200)
+        first?.persistTranscript(modelContext: context)
+        first = nil
+        ChatViewModel.resetActiveStreamSnapshotsForTesting()
+
+        let arrived = expectation(description: "reopen detail held")
+        let release = DispatchSemaphore(value: 0)
+        let reopened = try makeViewModel { request in
+            arrived.fulfill()
+            XCTAssertEqual(release.wait(timeout: .now() + .seconds(10)), .success)
+            return apiTestJSONResponse(body, for: request)
+        }
+        reopened.prepareInitialMessageLoad(modelContext: context)
+        let load = Task { await reopened.loadMessages(modelContext: context) }
+        defer { release.signal() }
+        await fulfillment(of: [arrived], timeout: 5)
+        XCTAssertEqual(reopened.messages, expected, "The complete server-selected page must paint before sync")
+        XCTAssertEqual(reopened.messagesOffset, 200, "Cached rows must keep their absolute identities")
+        XCTAssertTrue(reopened.hasOlderMessages)
+        XCTAssertEqual(reopened.displayedTranscriptMessages.map(\.renderID), expectedRows)
+        XCTAssertEqual(reopened.messages.last?.activityScene, expected.last?.activityScene)
+        XCTAssertTrue(reopened.isSyncingTranscript)
+        release.signal()
+        await load.value
+        XCTAssertEqual(reopened.messages, expected)
+        XCTAssertEqual(reopened.displayedTranscriptMessages.map(\.renderID), expectedRows)
+        XCTAssertFalse(reopened.isSyncingTranscript)
+        XCTAssertEqual(reopened.cacheFirstReconcileScrollToken, 0, "An unchanged restored window must not request another scroll after sync")
+    }
+
+    func testCacheReadFailureStillLoadsTheCompleteServerWindow() async throws {
+        let context = try makeContext()
+        let body = try Self.toolHeavyRecentSessionJSON()
+        let viewModel = try makeViewModel { apiTestJSONResponse(body, for: $0) }
+        viewModel.readTranscriptCache = { _, _, _ in throw CocoaError(.fileReadCorruptFile) }
+        viewModel.prepareInitialMessageLoad(modelContext: context)
+        XCTAssertTrue(viewModel.messages.isEmpty)
+        await viewModel.loadMessages(modelContext: context)
+        XCTAssertEqual(viewModel.messages.count, 100)
+        XCTAssertEqual(viewModel.messagesOffset, 200)
+        XCTAssertFalse(viewModel.isViewingCachedData)
+    }
+
+    func testHeldRecentWindowUpdateAddsOnlyNewServerContentOnce() async throws {
+        let context = try makeContext()
+        let body = try Self.toolHeavyRecentSessionJSON()
+        let first = try makeViewModel { apiTestJSONResponse(body, for: $0) }
+        await first.loadMessages(modelContext: context)
+        var object = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(body.utf8)) as? [String: Any])
+        var session = try XCTUnwrap(object["session"] as? [String: Any])
+        var messages = try XCTUnwrap(session["messages"] as? [[String: Any]])
+        messages.removeFirst(4)
+        messages.append(contentsOf: [
+            ["role": "user", "content": "A genuinely new question", "message_id": "new-question", "_display": "row"],
+            ["role": "tool", "content": "A new tool result", "message_id": "new-tool", "_display": "hidden"],
+            ["role": "assistant", "content": "A genuinely new answer", "message_id": "new-answer", "_display": "row"]
+        ])
+        session["messages"] = messages
+        session["_messages_offset"] = 204
+        object["session"] = session
+        let updated = String(decoding: try JSONSerialization.data(withJSONObject: object), as: UTF8.self)
+        let arrived = expectation(description: "newer detail held")
+        let release = DispatchSemaphore(value: 0)
+        let reopened = try makeViewModel { request in
+            arrived.fulfill()
+            XCTAssertEqual(release.wait(timeout: .now() + .seconds(10)), .success)
+            return apiTestJSONResponse(updated, for: request)
+        }
+        reopened.prepareInitialMessageLoad(modelContext: context)
+        let load = Task { await reopened.loadMessages(modelContext: context) }
+        defer { release.signal() }
+        await fulfillment(of: [arrived], timeout: 5)
+        XCTAssertEqual(reopened.messages, first.messages)
+        release.signal()
+        await load.value
+        XCTAssertEqual(reopened.messages.suffix(3).compactMap(\.messageId), ["new-question", "new-tool", "new-answer"])
+        XCTAssertEqual(Set(reopened.messages.map(\.id)).count, reopened.messages.count)
+        XCTAssertEqual(reopened.messages.filter { $0.content == "A genuinely new answer" }.count, 1)
+        let nextOpen = try makeViewModel { apiTestJSONResponse(updated, for: $0) }
+        nextOpen.prepareInitialMessageLoad(modelContext: context)
+        XCTAssertEqual(nextOpen.messagesOffset, 204)
+        XCTAssertEqual(nextOpen.messages.count, 99, "Older retained rows must not enlarge the next recent paint")
+    }
+
     func testReloadPreservesCachedOptimisticUserMessageWhenServerTemporarilyOmitsIt() async throws {
         let context = try makeContext()
         let streamClient = SpySSEStreamingClient()

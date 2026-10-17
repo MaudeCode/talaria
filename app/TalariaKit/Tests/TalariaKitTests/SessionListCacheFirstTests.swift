@@ -163,7 +163,7 @@ extension SessionListMutationTests {
                     .queryItems?.first { $0.name == "session_id" }?.value ?? ""
                 sessionReads.append(id)
                 return apiTestJSONResponse("""
-                {"session": {"session_id": "\(id)", "messages": [
+                {"session": {"session_id": "\(id)", "_messages_offset": 200, "_messages_truncated": true, "messages": [
                   {"role": "user", "content": "Asked on the web", "timestamp": 1770000100, "message_id": "u1"}
                 ]}}
                 """, for: request)
@@ -178,6 +178,9 @@ extension SessionListMutationTests {
         await viewModel.prefetchRunningTranscripts(modelContext: context)
 
         XCTAssertEqual(sessionReads.values, ["running-elsewhere"], "Only the running chat with no saved transcript, once")
+        let prefetched = try CacheStore.cachedTranscriptWindow(serverURL: server, sessionID: "running-elsewhere", in: context)
+        XCTAssertEqual(prefetched.messagesOffset, 200)
+        XCTAssertTrue(prefetched.hasOlderMessages)
         XCTAssertEqual(
             try CacheStore.cachedMessages(serverURL: server, sessionID: "running-elsewhere", in: context).compactMap(\.content),
             ["Asked on the web"]

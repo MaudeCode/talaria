@@ -1,3 +1,4 @@
+import SwiftData
 import SwiftUI
 import UIKit
 import XCTest
@@ -23,6 +24,42 @@ final class ChatHostedTests: XCTestCase {
         let waiting = await awaitElement(in: window, label: "Held steering prompt")
         XCTAssertNotNil(waiting)
         XCTAssertEqual(draft.text, "Newer draft")
+    }
+
+    func testCachedReopenKeepsLatestContentStationaryWhenSyncFinishes() async throws {
+        let fixture = try FixtureApp([UITestFixtureEnvironment.holdTranscriptReloadsArgument], for: self)
+        let response = try await fixture.client.session(id: UITestFixtureURLProtocol.sessionID)
+        let messages = try XCTUnwrap(response.session?.messages)
+        try CacheStore.cacheMessages(
+            messages, serverURL: UITestFixtureEnvironment.serverURL,
+            sessionID: UITestFixtureURLProtocol.sessionID, in: fixture.cache.mainContext,
+            messagesOffset: 0, hasOlderMessages: false
+        )
+
+        let reopened = try hostWindow(fixture.sessionList(), size: CGSize(width: 402, height: 874), animationsEnabled: true)
+        let row = try await requireElement(in: reopened) { $0.accessibilityLabel?.hasPrefix(UITestFixtureURLProtocol.sessionTitle) == true }
+        XCTAssertTrue(HostedAccessibility.activate(row))
+        _ = try await requireElement(in: reopened, label: "Syncing messages with the server")
+        settle(0.5)
+        let scroll = try transcriptScrollView(in: reopened)
+        let beforeOffset = scroll.contentOffset.y
+        let beforeHeight = scroll.contentSize.height
+        let beforeInset = scroll.adjustedContentInset.bottom
+        let anchor = try await requireElement(in: reopened, label: "Fixture link request")
+        let beforeAnchorY = anchor.accessibilityFrame.minY
+        attachHostedScreenshot(reopened, name: "cached-reopen-syncing-bottom")
+
+        fixture.releaseHeldLoads()
+        let synced = await awaitNoElement(in: reopened) { $0.accessibilityLabel == "Syncing messages with the server" }
+        XCTAssertTrue(synced)
+        settle(0.5)
+        attachHostedScreenshot(reopened, name: "cached-reopen-after-sync")
+        let afterAnchor = try await requireElement(in: reopened, label: "Fixture link request")
+        let metrics = XCTAttachment(string: "offset: \(beforeOffset) -> \(scroll.contentOffset.y); height: \(beforeHeight) -> \(scroll.contentSize.height); bottom inset: \(beforeInset) -> \(scroll.adjustedContentInset.bottom); anchor Y: \(beforeAnchorY) -> \(afterAnchor.accessibilityFrame.minY)")
+        metrics.name = "cache reopen scroll metrics"
+        metrics.lifetime = .keepAlways
+        add(metrics)
+        XCTAssertEqual(afterAnchor.accessibilityFrame.minY, beforeAnchorY, accuracy: 3, "Sync completion moved an unchanged message on screen")
     }
 
     func testSyncingBesideGoalDoesNotReserveTranscriptSpaceInNarrowStack() async throws {
