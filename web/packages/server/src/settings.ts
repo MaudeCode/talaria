@@ -296,7 +296,11 @@ export class SettingsStore {
       if (typeof loaded !== 'object' || loaded === null || Array.isArray(loaded)) throw new Error('Settings must contain an object')
       this.cache = loaded as Settings
       return structuredClone(this.cache)
-    } catch (error) { if (opts.strict) throw error; return {} }
+    } catch (error) {
+      this.cache = {}
+      if (opts.strict) throw error
+      return {}
+    }
   }
 
   async load(): Promise<Settings> { return this.fromRaw(await this.readRaw()) }
@@ -347,10 +351,11 @@ export class SettingsStore {
   /** Save a patch, ignoring unknown keys and invalid values. `provider_quota_thresholds` patches `profile`'s set. Returns the merged settings. */
   async save(input: Settings, opts: { profile?: string } = {}): Promise<Settings> {
     const settings: Settings = { ...input }
-    // Hash before snapshotting the file: the PBKDF2 await is the only yield in this method, so once `readRaw()`
-    // runs the read/merge/write below is atomic with respect to concurrent saves.
+    // Preserve request intent and hash once before retrying revisioned reads and writes.
     const rawPw = settings._set_password
     delete settings._set_password
+    const clearPw = settings._clear_password
+    delete settings._clear_password
     let newPasswordHash: string | null = null
     if (typeof rawPw === 'string' && rawPw.trim()) {
       if (!this.hooks.hashPassword) throw new Error('password hashing is not wired')
@@ -385,8 +390,6 @@ export class SettingsStore {
         current.password_hash = newPasswordHash
         passwordChanged = true
       }
-      const clearPw = settings._clear_password
-      delete settings._clear_password
       if (pyBool(clearPw)) {
         current.password_hash = null
         passwordChanged = true

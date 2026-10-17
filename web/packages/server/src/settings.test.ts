@@ -2,17 +2,18 @@ import { JsonDocuments } from './test/storage.js'
 import { closeSync, lstatSync, mkdirSync, mkdtempSync, openSync, readFileSync, readdirSync, rmSync, statSync, symlinkSync, writeFileSync, writeSync, chmodSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { open } from 'node:fs/promises'
 import { atomicWriteText, atomicWriteTextAsync, writeFully, writeFullyAsync } from './fs/atomic.js'
+import { RevisionConflict, type DocumentBackend } from './sessions/storage/backend.js'
 import { normalizeAppearance, QUOTA_THRESHOLD_DEFAULTS, SettingsStore } from './settings.js'
 
 let dir: string
 beforeEach(() => { dir = mkdtempSync(join(tmpdir(), 'talaria-settings-')) })
-afterEach(() => { rmSync(dir, { recursive: true, force: true }) })
+afterEach(() => { vi.restoreAllMocks(); rmSync(dir, { recursive: true, force: true }) })
 
-function store(env: Record<string, string> = {}): SettingsStore {
-  const s = new SettingsStore({ documents: new JsonDocuments(dir), env, stateDir: dir, defaultWorkspace: join(dir, 'workspace'), botName: 'Hermes' })
+function store(env: Record<string, string> = {}, documents: DocumentBackend = new JsonDocuments(dir)): SettingsStore {
+  const s = new SettingsStore({ documents, env, stateDir: dir, defaultWorkspace: join(dir, 'workspace'), botName: 'Hermes' })
   s.hooks = { hashPassword: (pw) => Promise.resolve(`hashed:${pw}`) }
   return s
 }
@@ -356,5 +357,43 @@ describe('normalizeAppearance', () => {
     expect(normalizeAppearance(' Light ', 'MONO')).toEqual(['light', 'mono'])
     expect(normalizeAppearance(null, null)).toEqual(['dark', 'default'])
     expect(normalizeAppearance('slate', 'nope')).toEqual(['dark', 'slate'])
+  })
+})
+
+describe('settings policies and revision retries', () => {
+  it.each([
+    { failure: 'malformed', strict: false },
+    { failure: 'malformed', strict: true },
+    { failure: 'unreadable', strict: false },
+    { failure: 'unreadable', strict: true },
+  ])('resets cached policy after a $failure read, strict=$strict', async ({ failure, strict }) => {
+    const documents = new JsonDocuments(dir)
+    const settings = store({}, documents)
+    write({ api_redact_enabled: false, auto_apply_updates: true })
+    await settings.load()
+    expect(settings.peek()).toMatchObject({ api_redact_enabled: false, auto_apply_updates: true })
+    if (failure === 'malformed') writeFileSync(join(dir, 'settings.json'), '{')
+    else vi.spyOn(documents, 'get').mockRejectedValueOnce(new Error('synthetic unreadable settings'))
+    if (strict) await expect(settings.readRaw({ strict: true })).rejects.toThrow()
+    else await settings.load()
+    expect(settings.peek()).toMatchObject({ api_redact_enabled: true, auto_apply_updates: false })
+  })
+
+  it('preserves password clearing after a revision conflict', async () => {
+    const documents = new JsonDocuments(dir)
+    const settings = store({}, documents)
+    write({ password_hash: 'original', theme: 'dark' })
+    const changed = vi.fn()
+    settings.hooks.onPasswordChanged = changed
+    const put = documents.put.bind(documents)
+    const writes = vi.spyOn(documents, 'put').mockImplementationOnce(async (namespace, key, _value, expected) => {
+      await put(namespace, key, { password_hash: 'winner', bot_name: 'Concurrent' }, expected)
+      throw new RevisionConflict(key)
+    })
+    const saved = await settings.save({ _clear_password: true, theme: 'light' })
+    expect(saved.password_hash).toBeNull()
+    expect(onDisk()).toMatchObject({ password_hash: null, theme: 'light', bot_name: 'Concurrent' })
+    expect(writes).toHaveBeenCalledTimes(2)
+    expect(changed).toHaveBeenCalledTimes(1)
   })
 })
