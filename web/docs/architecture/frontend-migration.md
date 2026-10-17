@@ -168,6 +168,13 @@ late full responses cannot replace another field's confirmed write. Completion i
 the connection context and query-cache identity. Pending values never enter boot snapshots.
 Numeric TextInput drafts clear when their owning save settles; a newer incomplete edit stays local.
 
+Kanban uses the same resource-intent owner for card actions, both ends of a dependency,
+bulk card changes, board selection and lane preferences. Its reconciliation queue is separate
+from session/project reads. Requested statuses and dependencies are pending labels; server
+columns, actions, links, readiness and lanes remain authoritative. A board switch reads the
+explicit destination immediately, uses no previous-board placeholder, and locks writes until
+reconciliation finishes. Failed reconciliation retains the intent and offers a read-only retry.
+
 ## 6. Contracts
 
 - `packages/frontend/src/contracts/` holds browser-independent Zod 4 schemas: request

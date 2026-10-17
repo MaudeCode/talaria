@@ -57,7 +57,10 @@ test("kanban card dialog shows only the server's actions and confirms leaving Ru
   await page.screenshot({ path: testInfo.outputPath(`kanban-leave-running-${testInfo.project.name}.png`) })
   await confirm.getByRole('button', { name: 'Continue' }).click()
   await expect.poll(() => writes).toEqual([{ path: '/api/kanban/tasks/R1/patch', body: { status: 'done', confirm_running_exit: true, board: 'default' } }])
+  await expect(confirm).toHaveCount(0)
+  await expect(dialog.getByRole('status')).toHaveCount(0)
   await page.keyboard.press('Escape')
+  await expect(dialog).toHaveCount(0)
 
   // Blocked: Unblock and Complete without confirmation; no Block; Ready is reached through Unblock.
   await page.locator('[data-task-id="B1"]').click()
@@ -66,7 +69,9 @@ test("kanban card dialog shows only the server's actions and confirms leaving Ru
   await expectMoves(page, blocked, ['blocked', 'triage', 'todo'])
   await blocked.getByRole('button', { name: 'Unblock', exact: true }).click()
   await expect.poll(() => writes.at(-1)).toMatchObject({ path: '/api/kanban/tasks/B1/unblock' })
+  await expect(blocked.getByRole('status')).toHaveCount(0)
   await page.keyboard.press('Escape')
+  await expect(blocked).toHaveCount(0)
 
   // Todo: only Archive.
   await page.locator('[data-task-id="T1"]').click()
