@@ -16,6 +16,7 @@ from pathlib import Path
 import plistlib
 import shlex
 import signal
+import stat
 import subprocess
 import sys
 import tempfile
@@ -25,6 +26,52 @@ import time
 STOP_SECONDS = 30.0
 READY_SECONDS = 30.0
 SNAPSHOT_ATTEMPTS = 4
+
+
+@contextlib.contextmanager
+def gateway_fence(entry):
+    from gateway import status
+    home = Path(entry['home'])
+    path = status._get_gateway_lock_path(home / 'gateway.pid')
+    with os.fdopen(os.open(path, os.O_RDWR | os.O_NOFOLLOW | os.O_NONBLOCK), 'r+') as fence:
+        info = os.fstat(fence.fileno())
+        if not stat.S_ISREG(info.st_mode) or info.st_nlink != 1:
+            raise RuntimeError(f'{_name(entry)} gateway lock is not an exclusive regular file; recovery remains owed.')
+        if not status._try_acquire_file_lock(fence):
+            yield None
+            return
+        try:
+            # A live, explicitly non-gateway owner keeps native stale-PID cleanup
+            # from replacing this held lock inode. The companion debt owns recovery.
+            opened, current = os.fstat(fence.fileno()), path.stat()
+            if (opened.st_dev, opened.st_ino) != (current.st_dev, current.st_ino):
+                raise RuntimeError(f'{_name(entry)} gateway runtime fence changed; recovery remains owed.')
+            marker = {**status._build_pid_record(), 'kind': 'talaria-update-fence', 'hermes_home': str(home)}
+            if marker.get('start_time') is None:
+                raise RuntimeError(f'{_name(entry)} updater birth identity is unverified; recovery remains owed.')
+            fence.seek(0)
+            fence.truncate()
+            json.dump(marker, fence)
+            fence.flush()
+            os.fsync(fence.fileno())
+            yield fence
+        finally:
+            status._release_file_lock(fence)
+
+
+def _verify_fence(entry, fence):
+    from gateway import status
+    path = status._get_gateway_lock_path(Path(entry['home']) / 'gateway.pid')
+    try:
+        opened, current = os.fstat(fence.fileno()), path.stat()
+        if (opened.st_dev, opened.st_ino) != (current.st_dev, current.st_ino) or current.st_nlink != 1:
+            raise ValueError('replaced or linked inode')
+        marker = json.loads(path.read_text())
+        if (marker.get('kind') != 'talaria-update-fence' or marker.get('pid') != os.getpid()
+                or marker.get('start_time') != status.get_process_start_time(os.getpid())):
+            raise ValueError('changed owner')
+    except (OSError, ValueError, TypeError, AttributeError) as exc:
+        raise RuntimeError(f'{_name(entry)} gateway runtime fence changed; recovery remains owed.') from exc
 
 
 def recovery_path(root, home):
@@ -138,7 +185,7 @@ def snapshot(entry, *, records=None, expected=None):
     raise RuntimeError(f'{_name(entry)} process inventory kept changing after {SNAPSHOT_ATTEMPTS} samples; retry when descendants settle. Source was not changed and recovery remains owed.')
 
 
-def gateway_entries(entries, homes, pause):
+def gateway_entries(entries, homes, pause, *, allow_starting=False):
     if not entries:
         return []
     from gateway.status import get_running_pid_identity_strict
@@ -149,6 +196,8 @@ def gateway_entries(entries, homes, pause):
         if home not in homes:
             raise RuntimeError(f'{_name(entry)} gateway owning profile is unknown or outside this Web instance.')
         runtime = get_running_pid_identity_strict(home / 'gateway.pid')
+        if runtime is None and allow_starting:
+            continue  # Lock admission can precede PID publication; callers retain custody while waiting.
         if runtime is None or not pause._home_of(runtime[0]) or Path(pause._home_of(runtime[0])).resolve() != home:
             raise RuntimeError(f'{_name(entry)} has no verified gateway in its owning profile.')
         entry.update(service_pid=entry['pid'], pid=runtime[0], ct=runtime[1], home=str(home))
@@ -271,7 +320,7 @@ def _service_pid(entry):
     return active, _unit_main_pid(cmd, entry['unit']) or None
 
 
-def verify_processes(entry, records, *, stopping=False):
+def verify_processes(entry, records, *, stopping=False, fenced=False):
     from gateway.status import get_process_start_time, _pid_exists
     parents = _process_table()
     departed = set()
@@ -290,6 +339,8 @@ def verify_processes(entry, records, *, stopping=False):
             raise RuntimeError(f'{_name(entry)} process {pid} identity/ancestry changed; source was not changed.')
     _, service_pid = _service_pid(entry)
     if service_pid and service_pid != entry['service_pid']:
+        if fenced:
+            return False
         raise RuntimeError(f'{_name(entry)} supervisor respawned during quiescence; source was not changed.')
     parents = _process_table()
     if any(_pid_exists(pid) is not False for pid in departed):
@@ -302,7 +353,10 @@ def verify_processes(entry, records, *, stopping=False):
     if service_pid:
         for pid in _descendants(service_pid, parents):
             if str(pid) not in entry['processes']:
+                if fenced:
+                    return False
                 raise RuntimeError(f'{_name(entry)} acquired an unrecorded descendant {pid}; source was not changed.')
+    return True
 
 
 def bind_processes(entry, records):
@@ -701,26 +755,128 @@ class ServiceRecovery:
             if stopped.wait(.05) or time.monotonic() >= deadline:
                 raise RuntimeError(f'{_name(owed)} legacy refresh readiness is unverified; source was not changed and recovery remains owed.')
 
-    def gateway_requested(self, entry):
+    def gateway_requested(self, entry, *, acknowledged=False):
         if not entry.get('processes'):
             return
         owed = next(e for e in self.state['entries'] if _service_key(e) == _service_key(entry))
         owed['phase'] = 'retiring'
+        if acknowledged:
+            owed['drain_acknowledged'] = True
         self.save()
 
-    def _settle_gateway(self, entry):
-        live = [int(pid) for pid, p in entry['processes'].items()
-                if self.records.identity_is_live({'pid': int(pid), 'ct': p['ct']})]
-        if any(pid != entry['service_pid'] or pid == entry['pid'] for pid in live):
-            raise RuntimeError(f'{_name(entry)} gateway drain remains owed; retry Agent update recovery.')
-        if live:
-            verify_processes(entry, self.records, stopping=True)
-            self.pause._disarm(service_entry(entry))
-            wait_stopped(entry, self.records, threading.Event())
+    def _gateway_candidate(self, entry):
+        units, jobs = self.pause._discover_systemd(), self.pause._discover_launchd()
+        matches = [e for e in units + jobs if _service_key(e) == _service_key(entry)]
+        if not matches:
+            return None
+        if len(matches) != 1 or not matches[0].get('home') or Path(matches[0]['home']).resolve() != Path(entry['home']).resolve():
+            raise RuntimeError(f'{_name(entry)} successor supervisor/profile is unverified; recovery remains owed.')
+        candidates = gateway_entries(matches, {Path(entry['home']).resolve()}, self.pause, allow_starting=True)
+        if not candidates:
+            return None
+        candidate = candidates[0]
+        if (_config_stamp(candidate) != entry['config_stamp']
+                or candidate.get('profile') != entry.get('profile')):
+            raise RuntimeError(f'{_name(entry)} successor configuration/profile changed; recovery remains owed.')
+        bind_processes(candidate, self.records)
+        parents = {int(pid): p['parent'] for pid, p in candidate['processes'].items()}
+        chain, pid = set(), candidate['pid']
+        while True:
+            chain.add(pid)
+            if pid == candidate['service_pid']:
+                break
+            pid = parents[pid]
+        if chain | _descendants(candidate['pid'], parents) != set(parents):
+            raise RuntimeError(f'{_name(entry)} successor has unrelated descendants; recovery remains owed.')
+        for pid, process in candidate['processes'].items():
+            old = entry['processes'].get(pid) or entry.get('retired_processes', {}).get(pid)
+            if old is not None and old != process:
+                raise RuntimeError(f'{_name(entry)} successor reused a recorded process identity; recovery remains owed.')
+        return candidate
+
+    def _gateway_writers_live(self, entry):
+        processes = {**entry.get('retired_processes', {}), **entry['processes']}
+        return any(self.records.identity_is_live({'pid': int(pid), 'ct': p['ct']})
+                   for pid, p in processes.items()
+                   if int(pid) != entry['service_pid'] or int(pid) == entry['pid'])
+
+    def gateway_deadline(self):
+        return time.monotonic() + min(self.pause._drain_budget(), 300)
+
+    def settle_gateway(self, entry, stopped, *, deadline=None):
+        owed = next(e for e in self.state['entries'] if _service_key(e) == _service_key(entry))
+        self._settle_gateway(owed, stopped, deadline=deadline)
+
+    def _settle_gateway(self, entry, stopped=None, *, deadline=None):
+        if not self._gateway_writers_live(entry) and not any(_service_pid(entry)):
+            if _config_stamp(entry) != entry['config_stamp']:
+                raise RuntimeError(f'{_name(entry)} service configuration changed; recovery remains owed.')
             entry['phase'] = 'stopped'
             self.save()
+            return
+        stopped = stopped or threading.Event()
+        if deadline is None:
+            deadline = self.gateway_deadline()
+        while True:
+            if stopped.is_set() or time.monotonic() >= deadline:
+                raise RuntimeError(f'{_name(entry)} gateway drain remains owed; retry Agent update recovery.')
+            if _config_stamp(entry) != entry['config_stamp']:
+                raise RuntimeError(f'{_name(entry)} service configuration changed; recovery remains owed.')
+            if self._gateway_writers_live(entry):
+                if not entry.get('drain_acknowledged'):
+                    raise RuntimeError(f'{_name(entry)} gateway drain remains owed; retry Agent update recovery.')
+                stopped.wait(.05)
+                continue
+            entry['runtime_fence_requested'] = True
+            self.save()
+            with gateway_fence(entry) as fence:
+                if fence is not None:
+                    while True:
+                        _verify_fence(entry, fence)
+                        if stopped.is_set() or time.monotonic() >= deadline:
+                            raise RuntimeError(f'{_name(entry)} gateway startup contenders remain; recovery remains owed.')
+                        _, service_pid = _service_pid(entry)
+                        parents = _process_table()
+                        # Pre-fence starters may still be in native stale-file cleanup.
+                        # Wait for every unrecorded process to exit, never stop them.
+                        pending = service_pid and (service_pid != entry['service_pid'] or any(
+                            str(pid) not in entry['processes'] for pid in _descendants(service_pid, parents)))
+                        if pending:
+                            stopped.wait(.05)
+                            continue
+                        if not verify_processes(entry, self.records, stopping=True, fenced=True):
+                            stopped.wait(.05)
+                            continue
+                        if self._gateway_writers_live(entry) or _config_stamp(entry) != entry['config_stamp']:
+                            raise RuntimeError(f'{_name(entry)} gateway custody changed; recovery remains owed.')
+                        _verify_fence(entry, fence)
+                        self.pause._disarm(service_entry(entry))
+                        wait_stopped(entry, self.records, stopped)
+                        _verify_fence(entry, fence)
+                        entry['phase'] = 'stopped'
+                        self.save()
+                        return
+            if not entry.get('drain_acknowledged'):
+                raise RuntimeError(f'{_name(entry)} successor appeared without an acknowledged drain; recovery remains owed.')
+            candidate = self._gateway_candidate(entry)
+            if candidate is not None:
+                attempts = entry.get('settle_attempts', 0) + 1
+                if attempts > 8:
+                    raise RuntimeError(f'{_name(entry)} repeatedly respawned during drain; recovery remains owed.')
+                retired = {**entry.get('retired_processes', {}), **entry['processes']}
+                entry.update(candidate, retired_processes=retired, phase='retiring',
+                             drain_acknowledged=False, settle_attempts=attempts)
+                self.save()  # Successor custody precedes its cooperative lifecycle request.
+                verify_processes(entry, self.records)
+                if _config_stamp(entry) != entry['config_stamp']:
+                    raise RuntimeError(f'{_name(entry)} service configuration changed; recovery remains owed.')
+                if not self.pause._ask_to_drain(entry):
+                    raise RuntimeError(f'{_name(entry)} successor did not acknowledge cooperative drain; recovery remains owed.')
+                entry['drain_acknowledged'] = True
+                self.save()
+            stopped.wait(.05)
 
-    def resume(self, ledger):
+    def resume(self, ledger, *, gateway_deadline=None):
         if not self.state['entries']:
             return
         whole, why = self.records.tree_is_whole(self.state['tree'], self.root)
@@ -742,7 +898,9 @@ class ServiceRecovery:
                     self.save()
                     continue
                 if entry['purpose'] == 'gateway':
-                    self._settle_gateway(entry)
+                    if gateway_deadline is None:
+                        gateway_deadline = self.gateway_deadline()
+                    self._settle_gateway(entry, deadline=gateway_deadline)
                     if not _service_pid(entry)[1]:
                         _start(entry, self.pause)
                     self._wait_ready(entry, ledger)
@@ -788,15 +946,12 @@ class ServiceRecovery:
             runtime = get_running_pid_identity_strict(Path(entry['home']) / 'gateway.pid')
             if runtime is None:
                 return False
-            if (runtime[0] == entry['pid'] and entry['phase'] != 'recorded'
-                    and self.records.identity_is_live({'pid': entry['pid'], 'ct': entry['processes'][str(entry['pid'])]['ct']})):
+            if entry['phase'] != 'recorded' and self._gateway_writers_live(entry):
                 return False
-            candidate = {**entry, 'pid': runtime[0], 'service_pid': _service_pid(entry)[1]}
-            if not candidate['service_pid']:
+            candidate = self._gateway_candidate(entry)
+            if candidate is None:
                 return False
-            candidate['processes'] = snapshot(candidate, expected={str(runtime[0]): {'birth': runtime[1]}})
-            bind_processes(candidate, self.records)
-            ready = self.pause._gateway_on_home(entry['home'], set()) == runtime[0]
+            ready = self.pause._gateway_on_home(entry['home'], set()) == candidate['pid']
             verify_processes(candidate, self.records)
             return ready
         if entry.get('legacy_refresh') and any(self.records.identity_is_live({'pid': int(pid), 'ct': p['ct']})
