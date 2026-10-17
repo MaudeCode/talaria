@@ -493,7 +493,7 @@ def git(root, *args):
 
 
 @contextmanager
-def supervised_agent(tmp_path, *, dashboards=1, depth=1, gateways=True, dependency_sync=False, readiness=None, legacy=False, refresh=False, manager="launchd", stop_seconds=None, modern_first=False, gateway_respawn=False, gateway_profiles=1, transient=False):
+def supervised_agent(tmp_path, *, dashboards=1, depth=1, gateways=True, dependency_sync=False, readiness=None, legacy=False, refresh=False, manager="launchd", stop_seconds=None, modern_first=False, gateway_respawn=False, gateway_profiles=1, transient=False, respawn_barrier=False):
     root, home, _, _ = native_agent(tmp_path)
     modules = root / 'hermes_cli'
     writer = root / 'writer.py'
@@ -616,7 +616,9 @@ try:
     break
    elif (folder/'respawn-once').exists():
     (folder/'respawn-once').unlink(); child=spawn()
-   elif (folder/'respawn').exists(): child=spawn()
+   elif (folder/'respawn').exists():
+    while (folder/'hold-respawn').exists(): time.sleep(.01)
+    if not (folder/'disarm').exists(): child=spawn()
    elif cfg.get('refresh') or (cfg['purpose']=='gateway' and not admission.exists()): break
   time.sleep(.01)
 finally:
@@ -761,8 +763,31 @@ def _resume_windows_gateways_after_update(token):
     }
     for name, content in protocol.items():
         (modules / (name + '.py')).write_text(content)
-    if readiness is not None or stop_seconds is not None:
-        (modules / 'main.py').write_text('from talaria_sidecar import agent_services\n' + (f'agent_services.READY_SECONDS={readiness!r}\n' if readiness is not None else '') + (f'agent_services.STOP_SECONDS={stop_seconds!r}\n' if stop_seconds is not None else ''))
+    if readiness is not None or stop_seconds is not None or respawn_barrier:
+        main = 'from talaria_sidecar import agent_services\n'
+        if readiness is not None:
+            main += f'agent_services.READY_SECONDS={readiness!r}\n'
+        if stop_seconds is not None:
+            main += f'agent_services.STOP_SECONDS={stop_seconds!r}\n'
+        if respawn_barrier:
+            main += '''import time
+from pathlib import Path
+from synthetic_services import HOME, birth
+original_wait_stopped=agent_services.wait_stopped
+def wait_stopped(entry,records,stopped,*,writers_only=False):
+ original_wait_stopped(entry,records,stopped,writers_only=writers_only)
+ if writers_only and entry['purpose']=='dashboard':
+  (HOME/'services'/entry['label']/'hold-respawn').unlink(missing_ok=True)
+  deadline=time.monotonic()+4
+  while True:
+   try: successor=int((Path(entry['home'])/'backend.pid').read_text())
+   except (FileNotFoundError,ValueError): successor=0
+   if successor and successor!=entry['pid'] and birth(successor) is not None: break
+   if time.monotonic()>=deadline: raise RuntimeError('synthetic successor did not become ready')
+   time.sleep(.01)
+agent_services.wait_stopped=wait_stopped
+'''
+        (modules / 'main.py').write_text(main)
     if dependency_sync:
         (modules / 'venv_sync.py').write_text("import json\nfrom synthetic_services import HOME\nwith (HOME/'sync-runs').open('a') as f: f.write('sync'+chr(10))\nprint(json.dumps({'ok':not (HOME/'fail-sync').exists()}))\n")
     (root / 'gateway/status.py').write_text('''from synthetic_services import HOME, birth, alive
@@ -878,6 +903,7 @@ UpdateLock.acquire_checkout=acquire_checkout
             sidecar.close()
         for cfg in configs:
             (home / 'services' / cfg['label'] / 'disarm').touch()
+            (home / 'services' / cfg['label'] / 'hold-respawn').unlink(missing_ok=True)
             (Path(cfg['home']) / 'slow-stop').unlink(missing_ok=True)
             (Path(cfg['home']) / 'hold-successor-drain').unlink(missing_ok=True)
             if cfg['purpose'] == 'gateway':
@@ -1148,7 +1174,8 @@ def test_backend_recovery_covers_lease_exit_paths(tmp_path, exit_path, legacy):
         begun = rpc(sidecar, root, 'begin', revision=target, homes=[str(home)])
         assert begun['ok'], begun
         if exit_path == 'finish':
-            assert rpc(sidecar, root, 'finish', token=begun['token'])['ok']
+            finished = rpc(sidecar, root, 'finish', token=begun['token'])
+            assert finished['ok'], finished
         elif exit_path == 'eof':
             sidecar.proc.stdin.close()
         else:
@@ -1550,9 +1577,11 @@ print('native credential precedence, decoding, isolation and cleanup verified')
 
 @pytest.mark.parametrize('legacy', [False, True])
 def test_supervisor_respawn_refuses_mutation_and_recovery_adopts_its_successor(tmp_path, legacy):
-    with supervised_agent(tmp_path, legacy=legacy) as (root, home, base, target, sidecar, configs):
+    # The real verifier must see a live successor, rather than the spawn gap.
+    with supervised_agent(tmp_path, legacy=legacy, respawn_barrier=True) as (root, home, base, target, sidecar, configs):
         service = home / 'services' / configs[1]['label']
         (service / 'respawn').touch()
+        (service / 'hold-respawn').touch()
         result = rpc(sidecar, root, 'begin', revision=target, homes=[str(home)])
         assert not result['ok'], result
         assert not (root / 'VERSION').exists()
@@ -1788,6 +1817,10 @@ def test_unsupported_lifecycle_recovery_keeps_debt_and_restores_sibling(tmp_path
         sidecar.close()
         with contextlib.closing(SidecarProcess(home, agent_dir=root, python=AGENT_PYTHON, env={'PATH': str(home / 'bin') + os.pathsep + os.environ['PATH']})) as replacement:
             replacement.result('runtime.handshake', {'rpc_version': __import__('talaria_sidecar').SIDECAR_RPC_VERSION}, timeout=30)
+            # A handshake coalesces with an active recovery attempt. Its terminal
+            # warning follows releasing that ownership, so the retry starts anew.
+            wait_for(lambda: any('Agent service recovery remains owed:' in line and
+                                 'lifecycle APIs are unsupported' in line for line in replacement.stderr_lines))
             # The retained incompatible listener is never stopped or counted as recovered.
             attempt = rpc(replacement, root, 'begin', revision=target, homes=list({c['home'] for c in configs}))
             assert not attempt['ok'], attempt

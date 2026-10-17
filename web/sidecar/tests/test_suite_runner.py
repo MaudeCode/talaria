@@ -39,27 +39,31 @@ def run(project, workers, *args):
     )
 
 
-@pytest.mark.parametrize("workers,modules", [(1, 1), (2, 2), (4, 4), (8, 8), (8, 2)])
+@pytest.mark.parametrize("workers,modules", [(1, 2), (2, 3), (4, 5), (8, 9), (8, 2)])
 def test_independent_modules_overlap(project, workers, modules):
     barrier = project / "barrier"
     barrier.mkdir()
+    concurrent = min(workers, modules)
     for index in range(modules):
         (project / f"tests/test_{index}.py").write_text(textwrap.dedent(f"""
             import time, os, json
             from pathlib import Path
             def test_overlap():
                 barrier = Path({str(barrier)!r})
-                (barrier / '{index}').write_text(json.dumps({{key: os.environ[key] for key in ('HOME', 'TMPDIR')}}))
+                state = {{key: os.environ[key] for key in ('HOME', 'TMPDIR')}}
+                state['pid'] = os.getpid()
+                (barrier / '{index}').write_text(json.dumps(state))
                 deadline = time.monotonic() + 5
-                while len(list(barrier.iterdir())) < {modules} and time.monotonic() < deadline:
+                while len(list(barrier.iterdir())) < {concurrent} and time.monotonic() < deadline:
                     time.sleep(.02)
-                assert len(list(barrier.iterdir())) == {modules}, 'independent modules never overlapped'
+                assert len(list(barrier.iterdir())) >= {concurrent}, 'independent modules never overlapped'
         """))
     result = run(project, workers)
     assert result.returncode == 0, result.stdout + result.stderr
     states = [json.loads(path.read_text()) for path in barrier.iterdir()]
-    for key in ('HOME', 'TMPDIR'):
-        assert len({state[key] for state in states}) == modules
+    assert len(states) == modules
+    for key in ('HOME', 'TMPDIR', 'pid'):
+        assert len({state[key] for state in states}) == concurrent
 
 
 @pytest.mark.parametrize("value", ["", "0", "-1", "1.5", "abc"])
