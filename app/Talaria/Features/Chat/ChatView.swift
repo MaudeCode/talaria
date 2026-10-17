@@ -200,7 +200,8 @@ struct ChatView: View {
         draftAttachmentStore: (any ChatDraftAttachmentStoring)? = nil,
         restoresDraftSettings: Bool = false,
         startSession: (() async -> ChatSessionStartResult)? = nil,
-        onConversationStarted: @escaping () -> Void = {}
+        onConversationStarted: @escaping () -> Void = {},
+        sessionListOwner: SessionListViewModel? = nil
     ) {
         _session = State(initialValue: session)
         self.startSession = startSession
@@ -224,7 +225,8 @@ struct ChatView: View {
             ),
             draftAttachmentStore: resolvedDraftAttachmentStore,
             responseCache: .app(server: server),
-            networkPath: NetworkPathObserver.shared
+            networkPath: NetworkPathObserver.shared,
+            sessionListOwner: sessionListOwner
         ))
         _gitAvailabilityViewModel = State(initialValue: GitWorkspaceAvailabilityViewModel(
             session: session,
@@ -514,7 +516,10 @@ struct ChatView: View {
         .overlay(alignment: .top) {
             GitActionToastOverlay(state: gitToastState)
         }
-        .accessibilityIdentifier("chat-detail:\(viewModel.displayTitle)")
+        .accessibilityIdentifier("chat-detail:\(displayTitle)")
+        .onChange(of: viewModel.pendingResourceChange) { previous, current in
+            if previous?.title != nil && current == nil { viewModel.reconcileResourceTitle() }
+        }
     }
 
     private var chatWithLifecycle: some View {
@@ -1569,11 +1574,12 @@ struct ChatView: View {
     }
 
     private var displayTitle: String {
-        viewModel.displayTitle
+        viewModel.pendingResourceChange?.title ?? viewModel.displayTitle
     }
 
     private var headerSubtitle: String? {
-        ChatToolbarSubtitleResolver.subtitle(
+        if let pending = viewModel.pendingResourceChange { return pending.status }
+        return ChatToolbarSubtitleResolver.subtitle(
             workspaceName: viewModel.selectedWorkspaceName,
             profileTitle: viewModel.selectedProfileTitle
         )

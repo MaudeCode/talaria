@@ -121,3 +121,39 @@ describe('session list date groups (TAL-306)', () => {
     expect(groupSessionRows([recent], at).map((g) => g.id)).toEqual(['today'])
   })
 })
+
+
+describe('pending session and project presentation (TAL-1082)', () => {
+  it('marks an archive while its write and reconciliation are unresolved', async () => {
+    let answer!: (value: unknown) => void
+    vi.mocked(api.fetchSessions).mockResolvedValue({ sessions: [alpha] } as never)
+    vi.mocked(api.archiveSession).mockReturnValue(new Promise((resolve) => { answer = resolve }) as never)
+    const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    render(<QueryClientProvider client={qc}><SessionListPanel /></QueryClientProvider>)
+    await screen.findByText('Alpha zebra')
+    await userEvent.click(screen.getByRole('button', { name: 'Archive' }))
+    await waitFor(() => expect(api.archiveSession).toHaveBeenCalledWith('alpha', true))
+    expect(screen.getByText('Pending: Archive')).toBeInTheDocument()
+    expect(qc.getQueryData<{ sessions: SessionRow[] }>(['sessions', 'list', {}])?.sessions[0]?.archived).not.toBe(true)
+    vi.mocked(api.fetchSessions).mockResolvedValue({ sessions: [] } as never)
+    answer({ ok: true })
+    await waitFor(() => expect(shown()).toEqual([]))
+    expect(screen.queryByText('Pending: Archive')).toBeNull()
+  })
+
+  it('shows a provisional project before creation returns its identity', async () => {
+    let answer!: (value: unknown) => void
+    vi.spyOn(window, 'prompt').mockReturnValueOnce('New project')
+    vi.mocked(api.createProject).mockReturnValue(new Promise((resolve) => { answer = resolve }) as never)
+    render(<QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}><SessionListPanel /></QueryClientProvider>)
+    await screen.findByText('Alpha zebra')
+    await userEvent.click(screen.getByRole('button', { name: 'New project' }))
+    await waitFor(() => expect(api.createProject).toHaveBeenCalledWith('New project'))
+    expect(screen.getByText('New project')).toBeInTheDocument()
+    expect(screen.getByText('Pending: Create')).toBeInTheDocument()
+    vi.mocked(api.fetchProjects).mockResolvedValue({ projects: [{ project_id: 'new-server-id', name: 'Canonical project' }] } as never)
+    answer({ project: { project_id: 'new-server-id', name: 'Canonical project' } })
+    await screen.findByText('Canonical project')
+    await waitFor(() => expect(screen.queryByText('Pending: Create')).toBeNull())
+  })
+})

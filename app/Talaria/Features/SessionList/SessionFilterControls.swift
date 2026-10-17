@@ -20,6 +20,10 @@ struct SessionFilterControls: View {
                     }
                     if showsProjects {
                         projectMenu
+                        if let pending = viewModel.pendingChanges["project:new"] {
+                            SessionFilterChip(title: "\(pending.title ?? "") · \(pending.status)", systemImage: "folder")
+                                .foregroundStyle(Color(hexString: pending.color) ?? .primary)
+                        }
                     }
                 }
                 .padding(.horizontal, 24)
@@ -77,6 +81,7 @@ struct SessionFilterControls: View {
                         selectedProjectID = projectID
                     } label: {
                         Label(projectName(project), systemImage: selectedProjectID == projectID ? "checkmark" : "folder")
+                            .foregroundStyle(Color(hexString: viewModel.pendingChange(for: project)?.color ?? project.color) ?? .primary)
                     }
                 }
             }
@@ -97,13 +102,14 @@ struct SessionFilterControls: View {
                         projectPendingDeletion = selectedProject
                     }
                 }
-                .disabled(viewModel.isViewingCachedData || viewModel.isRenamingProject || viewModel.isDeletingProject)
+                .disabled(viewModel.isViewingCachedData || viewModel.pendingChange(for: selectedProject) != nil)
             }
         } label: {
             SessionFilterChip(
                 title: selectedProject.map(projectName) ?? String(localized: "All Projects"),
                 systemImage: "folder"
             )
+            .foregroundStyle(Color(hexString: selectedProject.flatMap { viewModel.pendingChange(for: $0)?.color }) ?? .primary)
         }
         .accessibilityLabel("Project filter: \(selectedProject.map(projectName) ?? String(localized: "All Projects"))")
     }
@@ -118,6 +124,9 @@ struct SessionFilterControls: View {
     }
 
     private func projectName(_ project: ProjectSummary) -> String {
+        if let pending = viewModel.pendingChange(for: project) {
+            return "\(pending.title ?? project.name ?? "") · \(pending.status)"
+        }
         guard let name = project.name?.trimmingCharacters(in: .whitespacesAndNewlines), !name.isEmpty else {
             return String(localized: "Untitled Project")
         }

@@ -151,6 +151,15 @@ only renders what the server allows.
 | Extension channels | `extensions/host.ts` | one `MessageChannel` per iframe, nonce and version handshake, capability table from the sanitized manifest |
 | Service worker state | `sw.ts` | precache list injected by the build; runtime caches for hashed assets only |
 
+Session and project writes keep submitted values in a separate, ephemeral resource-intent query.
+`useResourceMutation` owns that intent across row menus, the sidebar and the chat header, and fences
+completion against the current connection context. Reconciliations coalesce per query client and context;
+every owner waits for a fresh pass covering all completed writes, including confirmed deletions.
+The snapshots above retain server values and order;
+pending labels and colors never become authoritative metadata or enter boot persistence. Confirmed
+deletions purge their cached list entries and per-session queries. A failed reconciliation offers a
+read-only retry, and project creation reconciles even after its query's last observer unmounts.
+
 ## 6. Contracts
 
 - `packages/frontend/src/contracts/` holds browser-independent Zod 4 schemas: request

@@ -493,6 +493,18 @@ public final class ChatViewModel {
     /// Last composer catalogs per server, so a chat's choices show before they load (TAL-437).
     private let responseCache: ResponseCache?
 
+    @ObservationIgnored private weak var sessionListOwner: SessionListViewModel?
+    private let resourceCacheVersionAtOpen: UUID?
+    public var pendingResourceChange: PendingResourceChange? {
+        guard ownsCurrentCache, let sessionID else { return nil }
+        return sessionListOwner?.pendingChanges["session:\(sessionID)"]
+    }
+
+    public func reconcileResourceTitle() {
+        guard ownsCurrentCache, let sessionID, let title = sessionListOwner?.confirmedTitle(for: sessionID) else { return }
+        displayTitle = Self.displayTitle(from: title)
+    }
+
     public init(
         session: SessionSummary,
         server: URL,
@@ -514,8 +526,11 @@ public final class ChatViewModel {
         draftAttachmentStore: any ChatDraftAttachmentStoring = ChatDraftAttachmentStore.shared,
         userDefaults: UserDefaults = .standard,
         responseCache: ResponseCache? = nil,
-        networkPath: (any NetworkPathObserving)? = nil
+        networkPath: (any NetworkPathObserving)? = nil,
+        sessionListOwner: SessionListViewModel? = nil
     ) {
+        self.sessionListOwner = sessionListOwner
+        resourceCacheVersionAtOpen = session.sessionId.flatMap { sessionListOwner?.resourceCacheVersion(for: $0) }
         self.responseCache = responseCache
         sessionID = session.sessionId
         currentWorkspace = session.workspace
@@ -1374,6 +1389,7 @@ public final class ChatViewModel {
             return
         }
 
+        let titleVersionAtFetch = sessionListOwner?.resourceMetadataVersion(for: sessionID)
         resetPendingStreamingContentBuffers()
         latestServerLoadHadAssistantResponseAfterLatestUser = false
         let streamLoadPreparation = streamCoordinator.prepareForSessionLoad()
@@ -1550,7 +1566,7 @@ public final class ChatViewModel {
                     cacheErrorMessage = error.localizedDescription
                 }
             }
-            if let title = session?.title {
+            if let title = session?.title, titleVersionAtFetch == sessionListOwner?.resourceMetadataVersion(for: sessionID), ownsCurrentCache {
                 displayTitle = Self.displayTitle(from: title)
             }
             setCompletedToolCallGroups(ToolCallGroup.groups(
@@ -1742,6 +1758,7 @@ public final class ChatViewModel {
             return false
         }
 
+        let titleVersionAtFetch = sessionListOwner?.resourceMetadataVersion(for: sessionID)
         guard !isLoadingOlderMessages, hasOlderMessages else {
             return false
         }
@@ -1788,7 +1805,7 @@ public final class ChatViewModel {
             updateOlderMessagePagination(from: session, loadedMessageCount: messages.count)
             isViewingCachedData = false
             contextWindowSnapshot = ContextWindowSnapshot(session: session)
-            if let title = session.title {
+            if let title = session.title, titleVersionAtFetch == sessionListOwner?.resourceMetadataVersion(for: sessionID), ownsCurrentCache {
                 displayTitle = Self.displayTitle(from: title)
             }
             applyServerWorkspace(session.workspace, name: session.workspaceName)
@@ -2940,10 +2957,11 @@ public final class ChatViewModel {
     /// Whether no server-scoped reset ran since this chat opened (`ServerCacheGeneration`).
     private var ownsCurrentCache: Bool {
         ServerCacheGeneration.current(for: server) == cacheGeneration
+            && resourceCacheVersionAtOpen == sessionID.flatMap { sessionListOwner?.resourceCacheVersion(for: $0) }
     }
 
     private func cacheMessagesIfCurrent(_ messages: [ChatMessage], sessionID: String, in modelContext: ModelContext) throws {
-        guard ownsCurrentCache else { return }
+        guard self.sessionID == sessionID, ownsCurrentCache else { return }
         try CacheStore.cacheMessages(messages, serverURL: server, sessionID: sessionID, in: modelContext)
     }
 
@@ -3427,6 +3445,14 @@ public final class ChatViewModel {
 
         lastError = nil
         sendErrorMessage = nil
+
+        if let sessionListOwner {
+            guard ownsCurrentCache else { return .unsupported(friendlyMessage: String(localized: "Reopen this chat before renaming it.")) }
+            let renamed = await sessionListOwner.rename(SessionSummary(sessionId: sessionID), to: title)
+            guard renamed else { return .unsupported(friendlyMessage: sessionListOwner.actionErrorMessage ?? String(localized: "The server refused this change.")) }
+            reconcileResourceTitle()
+            return .executed(message: String(localized: "Title set to **\(displayTitle)**."))
+        }
 
         do {
             let response = try await client.renameSession(id: sessionID, title: title)

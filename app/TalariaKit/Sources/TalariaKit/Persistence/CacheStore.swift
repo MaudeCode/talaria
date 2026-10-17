@@ -246,14 +246,16 @@ public enum CacheStore {
     /// leaving every other configured server's offline data intact (#18). Backs
     /// the Settings "Clear Offline Cache" action (active server) and the purge
     /// of a server's cache when it is removed, so a removed/reset server never
-    /// leaves orphaned rows behind.
+    /// leaves orphaned rows behind. `sessionIDs` narrows the same purge to confirmed deletions.
     @MainActor
-    public static func clearCache(for serverURL: URL, in context: ModelContext) throws {
+    public static func clearCache(for serverURL: URL, sessionIDs: [String]? = nil, in context: ModelContext) throws {
         let serverURLString = serverURL.absoluteString
+        let allSessions = sessionIDs == nil
+        let targetIDs = sessionIDs ?? []
 
         let sessionDescriptor = FetchDescriptor<CachedSession>(
             predicate: #Predicate { cachedSession in
-                cachedSession.serverURLString == serverURLString
+                cachedSession.serverURLString == serverURLString && (allSessions || targetIDs.contains(cachedSession.sessionID))
             }
         )
         for cachedSession in try context.fetch(sessionDescriptor) {
@@ -262,7 +264,7 @@ public enum CacheStore {
 
         let messageDescriptor = FetchDescriptor<CachedMessage>(
             predicate: #Predicate { cachedMessage in
-                cachedMessage.serverURLString == serverURLString
+                cachedMessage.serverURLString == serverURLString && (allSessions || targetIDs.contains(cachedMessage.sessionID))
             }
         )
         for cachedMessage in try context.fetch(messageDescriptor) {

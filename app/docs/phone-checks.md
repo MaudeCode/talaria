@@ -8,6 +8,7 @@ changes touch before it ships.
 | Flow | Check on the phone | In-process coverage |
 |---|---|---|
 | Cold launch on a slow network | Relaunch with the server slow or unreachable: the last chats show at once | `SessionListHostedTests.testRelaunchShowsTheLastChatsBeforeTheServerAnswers` |
+| Pending chat and project changes | Pin/unpin, rename/move, archive and Undo, then create/rename/recolor/delete a disposable project. Submitted choices say Pending while saving; refusals leave the affected action available. Confirm deletion before the row changes. | `SessionListHostedTests.testPendingPinIsVisibleBeforeTheServerAnswers`, TalariaKit `SessionListPendingChangeTests` |
 | Row swipe to archive | Swipe a chat left, tap Archive, then Undo on the toast | `SessionListHostedTests.testUndoRestoresAnArchivedChat` |
 | Saving transcript audio | In a chat with an audio tile, tap Export and save it to Files | `ChatHostedTests.testServerMediaRendersInsideTheMarkdownAroundIt` (the exporter opens) |
 | Clarification with the keyboard up | Answer a batch clarification: the keyboard is not raised at first, the grip drags the question area, and Next stays above the keyboard once typing | `StreamHostedTests.testBatchClarificationShowsChoicesAndDeliversTypedAndMultiSelectAnswers` |

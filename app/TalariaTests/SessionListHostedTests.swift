@@ -14,6 +14,43 @@ final class SessionListHostedTests: XCTestCase {
         element.accessibilityLabel?.hasPrefix(sessionTitle) == true
     }
 
+    func testPendingPinIsVisibleBeforeTheServerAnswers() async throws {
+        let arrived = expectation(description: "pin request held")
+        let state = HeldRowMutationProtocol.State()
+        HeldRowMutationProtocol.state = state
+        state.onPin = { arrived.fulfill() }
+        defer { HeldRowMutationProtocol.state = nil }
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [HeldRowMutationProtocol.self]
+        let server = URL(string: "https://pending-row.test")!
+        let viewModel = SessionListViewModel(server: server, client: APIClient(baseURL: server, session: URLSession(configuration: configuration)))
+        _ = await viewModel.load()
+        let session = try XCTUnwrap(viewModel.sessions.first)
+        let actions = SessionListRowActions(retryLoad: {}, open: { _ in }, togglePinned: { _ in }, archive: { _ in }, delete: { _ in }, rename: { _ in }, duplicate: { _ in }, move: { _, _ in }, createProject: { _ in }, refreshProjects: {}, export: { _, _ in })
+        let window = try hostWindow(SessionInteractiveRow(viewModel: viewModel, session: session, showsMessageCount: false, showsWorkspace: false, selectedSessionID: nil, actions: actions))
+        let before = XCTAttachment(image: UIGraphicsImageRenderer(bounds: window.bounds).image { _ in
+            window.drawHierarchy(in: window.bounds, afterScreenUpdates: true)
+        })
+        before.name = "pending-pin-before"
+        before.lifetime = .keepAlways
+        add(before)
+        let pin = Task { await viewModel.setPinned(true, for: session) }
+        await fulfillment(of: [arrived], timeout: 5)
+        let pending = await awaitElement(in: window) { $0.accessibilityLabel?.contains("Pending: Pin") == true }
+        XCTAssertNotNil(pending, "The row must display the submitted pin while the write is unresolved")
+        let after = XCTAttachment(image: UIGraphicsImageRenderer(bounds: window.bounds).image { _ in
+            window.drawHierarchy(in: window.bounds, afterScreenUpdates: true)
+        })
+        after.name = "pending-pin-after"
+        after.lifetime = .keepAlways
+        add(after)
+        XCTAssertNotEqual(viewModel.sessions.first?.pinned, true, "The pending pin must not change canonical grouping")
+        state.answerPin()
+        _ = await pin.value
+        let cleared = await awaitNoElement(in: window) { $0.accessibilityLabel?.contains("Pending: Pin") == true }
+        XCTAssertTrue(cleared)
+    }
+
     /// Archiving a chat removes it and offers Undo, which restores it from the server (TAL-443).
     func testUndoRestoresAnArchivedChat() async throws {
         let fixture = try FixtureApp(["--ui-test-hold-archive-undo"], for: self)
@@ -157,5 +194,35 @@ final class SessionListHostedTests: XCTestCase {
         HostedAccessibility.activate(retry)
         _ = try await requireElement(in: window, label: "Select model", "Retry did not start the chat")
         XCTAssertNil(HostedAccessibility.element(in: window, label: "Retry"))
+    }
+}
+
+
+private final class HeldRowMutationProtocol: URLProtocol {
+    final class State: @unchecked Sendable {
+        var onPin: (() -> Void)?
+        private let lock = NSLock()
+        private var pin: HeldRowMutationProtocol?
+        func hold(_ request: HeldRowMutationProtocol) {
+            lock.lock(); pin = request; lock.unlock()
+            onPin?()
+        }
+        func answerPin() {
+            lock.lock(); let request = pin; pin = nil; lock.unlock()
+            request?.answer(#"{"ok": true}"#)
+        }
+    }
+    nonisolated(unsafe) static var state: State?
+    override class func canInit(with request: URLRequest) -> Bool { request.url?.host == "pending-row.test" }
+    override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
+    override func startLoading() {
+        if request.url?.path == "/api/session/pin" { Self.state?.hold(self) }
+        else { answer(#"{"sessions":[{"session_id":"pending-row","title":"Pending fixture","pinned":false,"can_pin":true,"source_kind":"webui"}]}"#) }
+    }
+    override func stopLoading() {}
+    func answer(_ json: String) {
+        client?.urlProtocol(self, didReceive: HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: ["Content-Type":"application/json"])!, cacheStoragePolicy: .notAllowed)
+        client?.urlProtocol(self, didLoad: Data(json.utf8))
+        client?.urlProtocolDidFinishLoading(self)
     }
 }
