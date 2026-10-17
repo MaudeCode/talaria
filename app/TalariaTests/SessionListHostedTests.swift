@@ -384,6 +384,7 @@ final class SessionListHostedTests: XCTestCase {
         let session = try await fixture.session()
         var creation: CheckedContinuation<ChatSessionStartResult, Never>?
         var creationReturned = false
+        var didDisappear = false
         let window = try hostWindow(ChatView(
             session: SessionSummary(title: "New Chat"),
             server: UITestFixtureEnvironment.serverURL,
@@ -397,11 +398,16 @@ final class SessionListHostedTests: XCTestCase {
                 creationReturned = true
                 return result
             }
-        ).environment(\.scenePhase, .active).modelContainer(fixture.cache))
+        ).environment(\.scenePhase, .active).modelContainer(fixture.cache)
+            .onDisappear { didDisappear = true })
         defer { creation?.resume(returning: .failed("Test ended")) }
         let started = await awaitCondition { creation != nil }
         XCTAssertTrue(started)
         window.rootViewController = UIHostingController(rootView: Color.clear)
+        // Hosting-controller replacement can defer SwiftUI's disappearance transaction.
+        let disappeared = await awaitCondition { didDisappear }
+        XCTAssertTrue(disappeared)
+        guard disappeared else { return }
         let newKey = ChatDraftKey.newChat(server: UITestFixtureEnvironment.serverURL)
         fixture.environment.draftStore.setDraft("Replacement draft", for: newKey)
         creation?.resume(returning: .started(session))
