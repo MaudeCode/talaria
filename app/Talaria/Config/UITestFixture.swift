@@ -29,6 +29,8 @@ struct UITestFixtureEnvironment {
     /// Holds every `/api/sessions` read until the test releases it, so a relaunch shows what it
     /// painted from cache (TAL-437).
     nonisolated static let holdSessionListArgument = "--ui-test-hold-session-list"
+    nonisolated static let failAttachmentUploadsArgument = "--ui-test-fail-attachment-uploads"
+    nonisolated static let holdAttachmentUploadsArgument = "--ui-test-hold-attachment-uploads"
     /// Fails the first `/api/session/new` with a server error, so a UI test can see a new chat's
     /// composer report it and retry (TAL-636).
     nonisolated static let failFirstSessionCreationArgument = "--ui-test-fail-first-session-creation"
@@ -465,7 +467,9 @@ final class UITestFixtureURLProtocol: URLProtocol, @unchecked Sendable {
 
         let holdsSessionList = url.path == "/api/sessions"
             && ProcessInfo.processInfo.arguments.contains(UITestFixtureEnvironment.holdSessionListArgument)
-        if Self.holdsTranscriptReload(for: url) || holdsSessionList {
+        let holdsUpload = url.path == "/api/upload"
+            && ProcessInfo.processInfo.arguments.contains(UITestFixtureEnvironment.holdAttachmentUploadsArgument)
+        if Self.holdsTranscriptReload(for: url) || holdsSessionList || holdsUpload {
             UITestFixtureHold.shared.hold { [weak self] in
                 guard let self, !self.isStopped else { return }
                 self.sendResponse(for: url)
@@ -606,6 +610,9 @@ final class UITestFixtureURLProtocol: URLProtocol, @unchecked Sendable {
             )
             return json(["session": created])
         case "/api/upload":
+            if ProcessInfo.processInfo.arguments.contains(UITestFixtureEnvironment.failAttachmentUploadsArgument) {
+                return json(["error": "Fixture upload failed."])
+            }
             // Shared attachments upload before the composer can show them, so the
             // fixture has to accept one (TAL-81). Only a non-empty path is required;
             // the composer labels the chip with the local filename. An image upload

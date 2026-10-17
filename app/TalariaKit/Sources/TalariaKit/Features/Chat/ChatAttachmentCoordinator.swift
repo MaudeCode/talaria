@@ -30,6 +30,7 @@ extension ChatAttachmentCoordinatorDelegate {
 final class ChatAttachmentCoordinator {
     private(set) var pendingAttachments: [PendingAttachment] = []
     private(set) var uploadAttachmentErrorMessage: String?
+    private var uploadErrorAttachmentID: UUID?
     private(set) var localAttachmentPreviews: [String: [String: Data]] = [:]
     private var activeUploadCount = 0
     private var stagingCount = 0
@@ -42,7 +43,7 @@ final class ChatAttachmentCoordinator {
     private(set) var maxAttachmentsPerMessage: Int?
 
     var isUploadingAttachment: Bool {
-        activeUploadCount > 0 || stagingCount > 0
+        stagingCount > 0
             || pendingAttachments.contains { $0.uploadPhase == .staged || $0.uploadPhase == .uploading }
     }
 
@@ -64,16 +65,61 @@ final class ChatAttachmentCoordinator {
         self.draftAttachmentStore = draftAttachmentStore
     }
 
+    /// Apply the server capacity and a local preview budget without discarding file intents.
+    private func boundedPendingAttachments(_ attachments: [PendingAttachment]) -> [PendingAttachment] {
+        var remaining = 8 * 1_024 * 1_024
+        return attachments.enumerated().map { index, attachment in
+            var bounded = attachment
+            if let cap = maxAttachmentsPerMessage, index >= cap {
+                bounded.uploadPhase = .failed(Self.attachmentCapMessage(cap))
+            }
+            if let data = attachment.thumbnailData, data.count <= remaining {
+                remaining -= data.count
+            } else {
+                bounded.thumbnailData = nil
+            }
+            return bounded
+        }
+    }
+
+    private static func attachmentCapMessage(_ cap: Int) -> String {
+        String(localized: "A message can carry up to \(cap) attachments.")
+    }
+
+    private func recordUploadFailure(_ message: String, id: UUID?, reportsErrors: Bool) {
+        if let id {
+            guard let index = pendingAttachments.firstIndex(where: { $0.id == id }) else { return }
+            pendingAttachments[index].uploadPhase = .failed(message)
+            // Keep selection and voice errors; this file reports its failure in its own row.
+            guard reportsErrors, stagedContexts[id] == delegate?.attachmentContextID,
+                  uploadAttachmentErrorMessage == nil || uploadErrorAttachmentID != nil else { return }
+            uploadAttachmentErrorMessage = message
+            uploadErrorAttachmentID = id
+        } else if reportsErrors {
+            setUploadAttachmentError(message)
+        }
+    }
+
+    private func setPendingAttachment(_ attachment: PendingAttachment) {
+        var updated = pendingAttachments
+        if let index = updated.firstIndex(where: { $0.id == attachment.id }) {
+            updated[index] = attachment
+        } else {
+            updated.append(attachment)
+        }
+        pendingAttachments = boundedPendingAttachments(updated)
+    }
+
     /// Every input saves and publishes its local intent before the batch starts network work.
     @discardableResult
     func stageAttachment(data: Data, filename: String, previewData: Data? = nil) async -> PendingAttachment? {
         guard !Task.isCancelled else { return nil }
         guard data.count <= PendingAttachment.maximumUploadBytes else {
-            uploadAttachmentErrorMessage = PendingAttachment.uploadTooLargeMessage(filename: filename)
+            setUploadAttachmentError(PendingAttachment.uploadTooLargeMessage(filename: filename))
             return nil
         }
         if let cap = reachedAttachmentCap {
-            uploadAttachmentErrorMessage = String(localized: "A message can carry up to \(cap) attachments.")
+            setUploadAttachmentError(Self.attachmentCapMessage(cap))
             return nil
         }
         let expectedGeneration = generation
@@ -96,7 +142,7 @@ final class ChatAttachmentCoordinator {
                 isImage: previewData != nil || type?.conforms(to: .image) == true,
                 thumbnailData: nil, draftFileName: file, uploadPhase: .staged
             )
-            pendingAttachments.append(attachment)
+            setPendingAttachment(attachment)
             stagingCount -= 1
             ownsReservation = false
             stagedContexts[attachment.id] = context
@@ -106,12 +152,15 @@ final class ChatAttachmentCoordinator {
                 )
                 guard expectedGeneration == generation, context == delegate?.attachmentContextID,
                       let index = pendingAttachments.firstIndex(where: { $0.id == attachment.id }) else { return nil }
-                pendingAttachments[index].thumbnailData = thumbnail
+                var previewed = pendingAttachments[index]
+                previewed.thumbnailData = thumbnail
+                setPendingAttachment(previewed)
                 return pendingAttachments[index]
             }
-            return attachment
+            return pendingAttachments.first { $0.id == attachment.id }
         } catch {
-            uploadAttachmentErrorMessage = String(localized: "Could not save the attachment on this device.")
+            guard expectedGeneration == generation, context == delegate?.attachmentContextID, !Task.isCancelled else { return nil }
+            setUploadAttachmentError(String(localized: "Could not save the attachment on this device."))
             delegate?.attachmentCoordinatorDidFail(error)
             return nil
         }
@@ -132,56 +181,75 @@ final class ChatAttachmentCoordinator {
         guard !isDraining else { return }
         isDraining = true
         defer { isDraining = false }
-        var attempted = Set<UUID>()
-        while let id = pendingAttachments.first(where: { $0.uploadPhase == .uploading && !attempted.contains($0.id) })?.id {
-            attempted.insert(id)
+        while let id = pendingAttachments.first(where: { $0.uploadPhase == .uploading && !uploadingIDs.contains($0.id) })?.id {
             _ = await retryAttachment(id: id)
         }
+    }
+
+    func retryPendingAttachment(id: UUID) async {
+        guard let index = pendingAttachments.firstIndex(where: { $0.id == id }),
+              case .failed = pendingAttachments[index].uploadPhase, !uploadingIDs.contains(id) else { return }
+        if uploadErrorAttachmentID == id { setUploadAttachmentError(nil) }
+        pendingAttachments[index].uploadPhase = .staged
+        await uploadStagedAttachments(ids: [id])
     }
 
     @discardableResult
     func retryAttachment(id: UUID, data restoredData: Data? = nil, reportsErrors: Bool = true) async -> PendingAttachment? {
         guard !uploadingIDs.contains(id),
-              let staged = pendingAttachments.first(where: { $0.id == id }),
-              !staged.isReadyToSend, let file = staged.draftFileName,
-              stagedContexts[id] == delegate?.attachmentContextID else { return nil }
+              let index = pendingAttachments.firstIndex(where: { $0.id == id }),
+              !pendingAttachments[index].isReadyToSend else { return nil }
+        let staged = pendingAttachments[index]
+        let contextError = String(localized: "This attachment belongs to another chat or profile. Switch back to retry, or remove it.")
+        guard let file = staged.draftFileName else {
+            recordUploadFailure(String(localized: "The saved attachment is not available on this device."), id: id, reportsErrors: reportsErrors)
+            return nil
+        }
+        guard stagedContexts[id] == delegate?.attachmentContextID else {
+            recordUploadFailure(contextError, id: id, reportsErrors: false)
+            return nil
+        }
+        guard !Task.isCancelled else {
+            recordUploadFailure(String(localized: "Upload paused. Try again."), id: id, reportsErrors: false)
+            return nil
+        }
         let expectedGeneration = generation
-        if let cap = maxAttachmentsPerMessage,
-           let index = pendingAttachments.firstIndex(where: { $0.id == id }), index >= cap {
-            pendingAttachments[index].uploadPhase = .failed(String(localized: "A message can carry up to \(cap) attachments."))
+        if let cap = maxAttachmentsPerMessage, index >= cap {
+            recordUploadFailure(Self.attachmentCapMessage(cap), id: id, reportsErrors: reportsErrors)
             return nil
         }
         uploadingIDs.insert(id)
-        defer { uploadingIDs.remove(id) }
-        if let index = pendingAttachments.firstIndex(where: { $0.id == id }) {
-            pendingAttachments[index].uploadPhase = .uploading
+        pendingAttachments[index].uploadPhase = .uploading
+        defer {
+            uploadingIDs.remove(id)
+            if let index = pendingAttachments.firstIndex(where: { $0.id == id }), pendingAttachments[index].uploadPhase == .uploading {
+                let message = stagedContexts[id] == delegate?.attachmentContextID
+                    ? String(localized: "Upload paused. Try again.") : contextError
+                recordUploadFailure(message, id: id, reportsErrors: false)
+            }
         }
-        let result: PendingAttachment?
+        let isCurrent = { self.generation == expectedGeneration && self.stagedContexts[id] == self.delegate?.attachmentContextID
+            && self.pendingAttachments.contains(where: { $0.id == id }) && !Task.isCancelled }
         do {
             let data: Data
             if let restoredData { data = restoredData } else { data = try await draftAttachmentStore.data(named: file) }
-            guard expectedGeneration == generation, stagedContexts[id] == delegate?.attachmentContextID,
-                  pendingAttachments.contains(where: { $0.id == id }) else { return nil }
-            result = await performUpload(
+            guard isCurrent(), pendingAttachments.first(where: { $0.id == id })?.uploadPhase == .uploading else { return nil }
+            let result = await performUpload(
                 data: data, filename: staged.name, previewData: staged.thumbnailData,
                 draftFileName: file, draftAttachmentID: id, reportsErrors: reportsErrors
             )
+            guard isCurrent(), let index = pendingAttachments.firstIndex(where: { $0.id == id }) else { return nil }
+            if let result {
+                setPendingAttachment(result)
+                return pendingAttachments[index].isReadyToSend ? pendingAttachments[index] : nil
+            }
+            if case .failed = pendingAttachments[index].uploadPhase { return nil }
+            recordUploadFailure(String(localized: "Upload failed."), id: id, reportsErrors: reportsErrors)
         } catch {
-            uploadAttachmentErrorMessage = error.localizedDescription
-            result = nil
+            guard isCurrent() else { return nil }
+            recordUploadFailure(error.localizedDescription, id: id, reportsErrors: reportsErrors)
         }
-        guard let index = pendingAttachments.firstIndex(where: { $0.id == id }) else { return nil }
-        guard stagedContexts[id] == delegate?.attachmentContextID else {
-            pendingAttachments[index].uploadPhase = .failed(String(localized: "This attachment belongs to another chat or profile. Switch back to retry, or remove it."))
-            return nil
-        }
-        guard expectedGeneration == generation else { return nil }
-        if let result {
-            pendingAttachments[index] = result
-        } else {
-            pendingAttachments[index].uploadPhase = .failed(uploadAttachmentErrorMessage ?? String(localized: "Upload failed."))
-        }
-        return result
+        return nil
     }
 
     func saveLocalAudio(data: Data, filename: String) async throws -> String {
@@ -203,7 +271,7 @@ final class ChatAttachmentCoordinator {
             size: draftAttachment.size, isImage: draftAttachment.isImage, thumbnailData: thumbnail,
             draftFileName: file, uploadPhase: .uploading
         )
-        pendingAttachments.append(staged)
+        setPendingAttachment(staged)
         stagedContexts[staged.id] = delegate?.attachmentContextID
         return await retryAttachment(id: staged.id, data: data, reportsErrors: false)
     }
@@ -245,28 +313,24 @@ final class ChatAttachmentCoordinator {
         preferredUploadFilename: String? = nil
     ) async -> PendingAttachment? {
         guard delegate?.attachmentIsViewingCachedData != true else {
-            if reportsErrors {
-                uploadAttachmentErrorMessage = String(localized: "Reconnect to the server to upload attachments.")
-            }
+            recordUploadFailure(String(localized: "Reconnect to the server to upload attachments."), id: draftAttachmentID, reportsErrors: reportsErrors)
             return nil
         }
 
         guard data.count <= PendingAttachment.maximumUploadBytes else {
-            if reportsErrors {
-                uploadAttachmentErrorMessage = PendingAttachment.uploadTooLargeMessage(filename: filename)
-            }
+            recordUploadFailure(PendingAttachment.uploadTooLargeMessage(filename: filename), id: draftAttachmentID, reportsErrors: reportsErrors)
             return nil
         }
 
         guard let sessionID = delegate?.attachmentSessionID else {
-            if reportsErrors {
-                uploadAttachmentErrorMessage = String(localized: "The server did not provide a session ID.")
-            }
+            recordUploadFailure(String(localized: "The server did not provide a session ID."), id: draftAttachmentID, reportsErrors: reportsErrors)
             return nil
         }
 
         let expectedGeneration = generation
         let expectedContext = delegate?.attachmentContextID
+        let isCurrent = { self.generation == expectedGeneration && self.delegate?.attachmentContextID == expectedContext
+            && (draftAttachmentID.map { id in self.pendingAttachments.contains(where: { $0.id == id }) } ?? true) && !Task.isCancelled }
         let displayFilename = Self.normalizedAttachmentFilename(filename)
         let uploadFilename = reserveUploadFilename(preferredFilename: preferredUploadFilename ?? displayFilename, excluding: draftAttachmentID)
 
@@ -282,26 +346,23 @@ final class ChatAttachmentCoordinator {
 
         do {
             let response = try await client.uploadFile(sessionID: sessionID, data: data, filename: uploadFilename)
-            guard expectedGeneration == generation, expectedContext == delegate?.attachmentContextID, !Task.isCancelled else { return nil }
+            guard isCurrent() else { return nil }
             if let errorMessage = response.error {
-                if reportsErrors {
-                    uploadAttachmentErrorMessage = errorMessage
-                }
+                recordUploadFailure(errorMessage, id: draftAttachmentID, reportsErrors: reportsErrors)
                 return nil
             }
 
             guard let path = response.path, !path.isEmpty else {
-                if reportsErrors {
-                    uploadAttachmentErrorMessage = String(localized: "The server did not return the uploaded file path.")
-                }
+                recordUploadFailure(String(localized: "The server did not return the uploaded file path."), id: draftAttachmentID, reportsErrors: reportsErrors)
                 return nil
             }
 
             if let cap = response.maxAttachmentsPerMessage, cap > 0 {
                 maxAttachmentsPerMessage = cap
+                pendingAttachments = boundedPendingAttachments(pendingAttachments)
             }
             let thumbnail = await Self.thumbnailData(for: response, originalData: data, previewData: previewData)
-            guard expectedGeneration == generation, expectedContext == delegate?.attachmentContextID, !Task.isCancelled else { return nil }
+            guard isCurrent() else { return nil }
             return PendingAttachment(
                 id: draftAttachmentID ?? UUID(),
                 name: displayFilename,
@@ -313,11 +374,11 @@ final class ChatAttachmentCoordinator {
                 draftFileName: draftFileName
             )
         } catch {
-            guard expectedGeneration == generation, expectedContext == delegate?.attachmentContextID else { return nil }
+            guard isCurrent() else { return nil }
             if reportsErrors {
                 delegate?.attachmentCoordinatorDidFail(error)
-                uploadAttachmentErrorMessage = error.localizedDescription
             }
+            recordUploadFailure(error.localizedDescription, id: draftAttachmentID, reportsErrors: reportsErrors)
             return nil
         }
     }
@@ -333,17 +394,19 @@ final class ChatAttachmentCoordinator {
         generation += 1
         stagedContexts.removeAll()
         pendingAttachments.removeAll()
-        uploadAttachmentErrorMessage = nil
+        setUploadAttachmentError(nil)
     }
 
     func removePendingAttachment(id: UUID) {
         let file = pendingAttachments.first(where: { $0.id == id })?.draftFileName
         stagedContexts[id] = nil
+        if uploadErrorAttachmentID == id { setUploadAttachmentError(nil) }
         pendingAttachments.removeAll { $0.id == id }
         if let file { Task { await draftAttachmentStore.delete(named: file) } }
     }
 
     func setUploadAttachmentError(_ message: String?) {
+        uploadErrorAttachmentID = nil
         uploadAttachmentErrorMessage = message
     }
 
@@ -442,7 +505,7 @@ final class ChatAttachmentCoordinator {
 
     func restorePendingAttachments(_ attachments: [PendingAttachment]) {
         guard !attachments.isEmpty else { return }
-        pendingAttachments = attachments + pendingAttachments
+        pendingAttachments = boundedPendingAttachments(attachments + pendingAttachments)
     }
 
     func consumePendingAttachments() -> [PendingAttachment] {

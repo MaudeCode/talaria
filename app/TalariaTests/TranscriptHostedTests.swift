@@ -1,4 +1,5 @@
 import SwiftUI
+import SwiftData
 import XCTest
 @testable import Talaria
 @testable import TalariaKit
@@ -170,6 +171,61 @@ extension TranscriptHostedTests {
             let play = await awaitElement(in: window, label: "Play Voice.wav")
             _ = try XCTUnwrap(play, "The local voice note must be replayable during preparation")
             attachMediaEvidence(window, name: size == HostedSize.phone ? "local-media-phone" : "local-media-pad")
+            window.isHidden = true
+        }
+    }
+
+    func testRemovingRestoredAttachmentClearsItsDraftEvenWhenUploadIsHeld() async throws {
+        for held in [false, true] {
+            let scenarios = [UITestFixtureEnvironment.failAttachmentUploadsArgument]
+                + (held ? [UITestFixtureEnvironment.holdAttachmentUploadsArgument] : [])
+            let fixture = try FixtureApp(scenarios, for: self)
+            let session = try await fixture.session()
+            let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+            defer { try? FileManager.default.removeItem(at: directory) }
+            let copies = ChatDraftAttachmentStore(directoryURL: directory)
+            let file = try await copies.save(data: Data("saved attachment".utf8), suggestedFilename: "saved.txt")
+            let record = ChatDraftAttachment(pending: PendingAttachment(name: "saved.txt", path: "", mime: "text/plain",
+                                                                        isImage: false, draftFileName: file))
+            let drafts = fixture.environment.draftStore
+            let key = ChatDraftKey.session(server: UITestFixtureEnvironment.serverURL, session: session)
+            drafts.setDraft("Keep typed input", for: key)
+            drafts.setAttachments([record], for: key)
+            let window = try hostWindow(
+                NavigationStack {
+                    ChatView(session: session, server: UITestFixtureEnvironment.serverURL, onAPIError: { _ in },
+                             draftStore: drafts, draftAttachmentStore: copies)
+                }
+                .environment(\.scenePhase, .active)
+                .modelContainer(fixture.cache)
+            )
+            if !held {
+                _ = try await requireElement(in: window, label: "Retry upload saved.txt")
+                let send = try await requireElement(in: window, label: "Send")
+                XCTAssertTrue(send.accessibilityTraits.contains(.notEnabled), "Failed attachments must disable Send")
+                attachMediaEvidence(window, name: "restored-failed-attachment-send")
+            }
+            let remove = try await requireElement(in: window, label: "Remove attachment saved.txt")
+            HostedAccessibility.activate(remove)
+            if held {
+                let canSendBeforeReply = await awaitCondition {
+                    guard let send = HostedAccessibility.element(in: window, label: "Send") else { return false }
+                    return !send.accessibilityTraits.contains(.notEnabled)
+                }
+                XCTAssertTrue(canSendBeforeReply, "Removing every saved attachment must not wait for an obsolete upload reply")
+            }
+            fixture.releaseHeldLoads()
+            let finished = await awaitCondition {
+                guard let send = HostedAccessibility.element(in: window, label: "Send") else { return false }
+                return !send.accessibilityTraits.contains(.notEnabled)
+                    && HostedAccessibility.element(in: window, label: "Remove attachment saved.txt") == nil
+            }
+            XCTAssertTrue(finished)
+            let draft = await drafts.draft(for: key)
+            XCTAssertEqual(draft?.attachments, [], "Explicit removal must clear both visible and retained restore receipts")
+            XCTAssertEqual(draft?.text, "Keep typed input")
+            let removedCopy = try? await copies.data(named: file)
+            XCTAssertNil(removedCopy)
             window.isHidden = true
         }
     }

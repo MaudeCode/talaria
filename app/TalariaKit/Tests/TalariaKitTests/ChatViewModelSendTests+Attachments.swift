@@ -7,6 +7,51 @@ import UniformTypeIdentifiers
 
 @MainActor
 extension ChatViewModelSendTests {
+    func testManualRetryWaitsForTheExistingSequentialUploadDrain() async throws {
+        let held = expectation(description: "second upload held")
+        let state = DeferredUploadState()
+        DeferredUploadMockURLProtocol.requestHandler = { request, transport in
+            XCTAssertEqual(request.url?.path, "/api/upload")
+            let index = state.nextUploadIndex()
+            if index == 1 {
+                transport.complete(with: apiTestJSONResponse(#"{"error":"First upload failed"}"#, for: request))
+            } else if index == 2 {
+                state.setFirstUploadCompletion { transport.complete(with: apiTestJSONResponse(#"{"path":"/tmp/two.txt"}"#, for: request)) }
+                held.fulfill()
+            } else {
+                transport.complete(with: apiTestJSONResponse(#"{"path":"/tmp/one.txt"}"#, for: request))
+            }
+        }
+        defer { DeferredUploadMockURLProtocol.requestHandler = nil }
+        let viewModel = try makeViewModel(protocolClasses: [DeferredUploadMockURLProtocol.self]) { _ in throw URLError(.badURL) }
+        let staged = await viewModel.stageAttachment(data: Data("one".utf8), filename: "one.txt")
+        let first = try XCTUnwrap(staged)
+        _ = await viewModel.stageAttachment(data: Data("two".utf8), filename: "two.txt")
+        let batch = Task { await viewModel.uploadStagedAttachments() }
+        await fulfillment(of: [held], timeout: 10)
+        await viewModel.retryAttachment(id: first.id)
+        XCTAssertEqual(state.observedUploadCount(), 2, "The retry cannot start a parallel request")
+        XCTAssertEqual(viewModel.pendingAttachments.first?.uploadPhase, .uploading, "Manual retry must wait behind the held request")
+        try XCTUnwrap(state.firstUploadCompletion())()
+        await batch.value
+        XCTAssertEqual(state.observedUploadCount(), 3)
+        XCTAssertTrue(viewModel.pendingAttachments.allSatisfy(\.isReadyToSend))
+    }
+
+    func testRetryCannotClearANewerRejectedSelectionError() async throws {
+        var uploads = 0
+        let viewModel = try makeViewModel { request in
+            uploads += 1
+            return apiTestJSONResponse(uploads == 1 ? #"{"error":"Upload failed"}"# : #"{"path":"/tmp/retried.txt"}"#, for: request)
+        }
+        _ = await viewModel.uploadAttachment(data: Data("retry".utf8), filename: "retry.txt")
+        let id = try XCTUnwrap(viewModel.pendingAttachments.first?.id)
+        _ = await viewModel.stageAttachment(data: Data(count: PendingAttachment.maximumUploadBytes + 1), filename: "newer-oversized.bin")
+        await viewModel.retryAttachment(id: id)
+        XCTAssertTrue(viewModel.pendingAttachments[0].isReadyToSend)
+        XCTAssertEqual(viewModel.uploadAttachmentErrorMessage, PendingAttachment.uploadTooLargeMessage(filename: "newer-oversized.bin"))
+    }
+
     func testUploadAttachmentRejectsOversizedFileBeforeRequest() async throws {
         var didRequestUpload = false
         let viewModel = try makeViewModel { request in

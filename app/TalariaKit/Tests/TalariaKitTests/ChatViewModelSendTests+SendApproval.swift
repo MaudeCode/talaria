@@ -1334,6 +1334,7 @@ extension ChatViewModelSendTests {
         let attachment = try XCTUnwrap(staged)
         let direct = await viewModel.sendMessage("Later")
         XCTAssertFalse(direct)
+        XCTAssertEqual(viewModel.sendErrorMessage, "Finish uploading or remove failed attachments before sending.")
         let queued = await viewModel.submitStreamingMessage("Later", behavior: .queue)
         guard case .unsupported = queued else { return XCTFail("An unfinished attachment cannot enter the send queue") }
         XCTAssertEqual(viewModel.pendingAttachments.map(\.id), [attachment.id])

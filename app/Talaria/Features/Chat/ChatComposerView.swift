@@ -1141,6 +1141,10 @@ struct MessageComposerView: View {
             || sessionStart != nil
     }
 
+    private var hasUnreadyAttachments: Bool {
+        pendingAttachments.contains { !$0.isReadyToSend }
+    }
+
     private var isVoiceInputDisabled: Bool {
         guard !isAnsweringClarification else { return true }
         if voiceInput.isListening {
@@ -1152,7 +1156,7 @@ struct MessageComposerView: View {
             || isCompressingSession
             || isWaitingForStream
             || isUploadingAttachment
-            || pendingAttachments.contains { !$0.isReadyToSend }
+            || hasUnreadyAttachments
             || isUpdatingConfiguration
             || voiceInput.isRequestingPermission
     }
@@ -1269,6 +1273,7 @@ struct MessageComposerView: View {
             || isSending
             || isCompressingSession
             || isUploadingAttachment
+            || hasUnreadyAttachments
             || isUpdatingConfiguration
     }
 

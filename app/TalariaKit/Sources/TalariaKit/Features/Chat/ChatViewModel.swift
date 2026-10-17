@@ -1338,13 +1338,12 @@ public final class ChatViewModel {
 
     public func uploadStagedAttachments(ids: [UUID]? = nil) async { await attachmentCoordinator.uploadStagedAttachments(ids: ids) }
     public func retryAttachment(id: UUID) async {
-        attachmentCoordinator.setUploadAttachmentError(nil)
-        _ = await attachmentCoordinator.retryAttachment(id: id)
+        await attachmentCoordinator.retryPendingAttachment(id: id)
     }
 
     /// Re-uploads a restored draft attachment from its durable local copy,
-    /// preserving the draft record's identity. Quiet on failure (returns nil):
-    /// the caller reports in aggregate and keeps the record for a later retry.
+    /// preserving the draft record's identity. Failure returns nil; a staged
+    /// failed row owns its retry, while an unstaged record stays in the restore ledger.
     @discardableResult
     public func reuploadDraftAttachment(_ draftAttachment: ChatDraftAttachment, data: Data) async -> PendingAttachment? {
         await attachmentCoordinator.reuploadDraftAttachment(data: data, draftAttachment: draftAttachment)
@@ -2549,7 +2548,10 @@ public final class ChatViewModel {
         // send is valid when it carries staged files: read them before `prepareForSend` consumes them.
         let message = draft.trimmingCharacters(in: .whitespacesAndNewlines)
         let attachmentsToSend = queuedAttachments ?? attachmentCoordinator.pendingAttachments
-        guard attachmentsToSend.allSatisfy(\.isReadyToSend) else { return ChatSendOutcome(didStart: false) }
+        if let error = attachmentSendReadinessError(attachmentsToSend) {
+            sendErrorMessage = error
+            return ChatSendOutcome(didStart: false)
+        }
         let hasSendableAttachments = attachmentsToSend.contains {
             !$0.path.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
         }
@@ -3116,7 +3118,7 @@ public final class ChatViewModel {
         _ action: ServerSideAction,
         args: String
     ) async -> SlashCommandExecutionResult {
-        if [.queue, .steer, .interrupt].contains(action), let error = attachmentSendReadinessError {
+        if [.queue, .steer, .interrupt].contains(action), let error = attachmentSendReadinessError() {
             return .unsupported(friendlyMessage: error)
         }
         switch action {
@@ -3169,8 +3171,8 @@ public final class ChatViewModel {
         }
     }
 
-    private var attachmentSendReadinessError: String? {
-        attachmentCoordinator.pendingAttachments.allSatisfy(\.isReadyToSend)
+    private func attachmentSendReadinessError(_ attachments: [PendingAttachment]? = nil) -> String? {
+        (attachments ?? attachmentCoordinator.pendingAttachments).allSatisfy(\.isReadyToSend)
             ? nil : String(localized: "Finish uploading or remove failed attachments before sending.")
     }
 
@@ -3178,7 +3180,7 @@ public final class ChatViewModel {
         _ draft: String,
         behavior: StreamingSendBehavior
     ) async -> SlashCommandExecutionResult {
-        if let error = attachmentSendReadinessError { return .unsupported(friendlyMessage: error) }
+        if let error = attachmentSendReadinessError() { return .unsupported(friendlyMessage: error) }
         switch behavior.sending(withFiles: !attachmentCoordinator.pendingAttachments.isEmpty) {
         case .steer:
             return await steerResponseFromSlashCommand(draft)

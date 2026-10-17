@@ -170,8 +170,8 @@ struct ChatView: View {
     /// Records hydration found, handed to the restore pass that runs alongside
     /// the transcript load rather than in front of it.
     @State private var draftAttachmentsAwaitingRestore: [ChatDraftAttachment] = []
-    /// Restored attachment records whose re-upload failed; they stay in the
-    /// draft for a later retry and are unioned into every attachment sync.
+    /// Saved records without a visible pending owner stay here for a later restore.
+    /// Visible failed uploads own their retry and durable copy in the coordinator.
     @State private var draftAttachmentsPendingRetry: [ChatDraftAttachment] = []
     @State private var lastSyncedDraftAttachments: [ChatDraftAttachment] = []
     @State private var restoredDraftSettings: ChatDraftSettings?
@@ -386,7 +386,12 @@ struct ChatView: View {
                 Task { await handlePastedImages(images) }
             },
             onRemoveAttachment: { id in
+                // The receipt also fences a restore response that is still in flight.
+                lastSyncedDraftAttachments.removeAll { $0.id == id }
+                draftAttachmentsPendingRetry.removeAll { $0.id == id }
                 viewModel.removePendingAttachment(id: id)
+                if lastSyncedDraftAttachments.isEmpty { isRestoringDraftAttachments = false }
+                syncDraftAttachments()
             },
             onPreviewAttachment: { attachment in
                 presentPreviewRestoringComposerFocusIfNeeded {
@@ -2079,6 +2084,7 @@ struct ChatView: View {
         var wasCancelled = false
 
         for (offset, record) in records.enumerated() {
+            guard lastSyncedDraftAttachments.contains(where: { $0.id == record.id }) else { continue }
             if Task.isCancelled {
                 // Leaving the chat mid-restore is not a restore failure. Every
                 // record from here on is untried, so carry the whole remainder
@@ -2086,7 +2092,9 @@ struct ChatView: View {
                 // anything missing from it would be dropped from the draft and
                 // later swept from disk.
                 wasCancelled = true
-                pendingRetry.append(contentsOf: records[offset...])
+                pendingRetry.append(contentsOf: records[offset...].filter { record in
+                    lastSyncedDraftAttachments.contains { $0.id == record.id }
+                })
                 break
             }
             guard let fileName = record.file else {
@@ -2111,7 +2119,10 @@ struct ChatView: View {
                 continue
             }
 
-            if await viewModel.reuploadDraftAttachment(record, data: data) == nil {
+            let uploaded = await viewModel.reuploadDraftAttachment(record, data: data)
+            guard lastSyncedDraftAttachments.contains(where: { $0.id == record.id }) else { continue }
+            // A visible failed row already owns its durable copy and retry action.
+            if uploaded == nil, !viewModel.pendingAttachments.contains(where: { $0.id == record.id }) {
                 pendingRetry.append(record)
             }
         }
@@ -2147,7 +2158,7 @@ struct ChatView: View {
     }
 
     /// Mirrors the composer's staged attachments into the persisted draft.
-    /// Restored records whose re-upload failed are unioned back in so a
+    /// Saved records that could not be staged are unioned back in so a
     /// mid-restore or post-restore sync can't silently drop them. Gated during
     /// hydration/restore so an empty or partial composer never overwrites the
     /// persisted set.
