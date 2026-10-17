@@ -1,10 +1,15 @@
-import { spawnSync } from 'node:child_process'
+import { execFile, spawnSync } from 'node:child_process'
 import { existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync, unlinkSync, utimesSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterAll, describe, expect, it, vi } from 'vitest'
 import type { Session } from '../sessions/session.js'
 import { removeWorktreeForSession, worktreeStatusForSession } from './worktrees.js'
+
+vi.mock('node:child_process', async (original) => {
+  const childProcess = await original<typeof import('node:child_process')>()
+  return { ...childProcess, execFile: vi.fn(childProcess.execFile) }
+})
 
 const root = realpathSync(mkdtempSync(join(tmpdir(), 'talaria-worktrees-')))
 afterAll(() => { rmSync(root, { recursive: true, force: true }) })
@@ -65,6 +70,15 @@ describe('hardened worktree Git calls', () => {
     git(worktree, 'branch', '--set-upstream-to=main')
     return { repo, worktree, session: { session_id: `secure-${String(n)}`, worktree_path: worktree, worktree_repo_root: repo } as unknown as Session }
   }
+
+  it('scans submodule filters once per status poll, excluding metadata-only probes', async () => {
+    const { session } = setup(2)
+    vi.mocked(execFile).mockClear()
+    expect(await worktreeStatusForSession(session, unlocked)).toMatchObject({ dirty: false, listed: true, ahead_behind: { available: true } })
+    const commands = vi.mocked(execFile).mock.calls.map((call) => call[1] as string[])
+    expect(commands.filter((args) => args.includes('ls-files'))).toHaveLength(3)
+    expect(commands).toHaveLength(16)
+  })
 
   for (const depth of [1, 2]) {
     for (const operation of ['status', 'remove', 'remove --force'] as const) {

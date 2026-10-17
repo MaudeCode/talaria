@@ -20,7 +20,8 @@ async function git(args: string[], cwd: string, timeoutMs = 2_000): Promise<GitR
 
 async function gitOrThrow(args: string[], cwd: string, timeoutMs: number, filterConfigCwds: string[] = []): Promise<GitResult> {
   try {
-    return await new GitRunner({ env: process.env }).run(cwd, args, { timeoutMs, neutralizeFilterPrograms: true, filterConfigCwds })
+    const mayRunFilters = args[0] === 'status' || (args[0] === 'worktree' && args[1] === 'remove')
+    return await new GitRunner({ env: process.env }).run(cwd, args, { timeoutMs, neutralizeFilterPrograms: mayRunFilters, filterConfigCwds })
   } catch (error) {
     if (!(error instanceof GitWorkspaceError) || !(error.cause instanceof Error)) throw error
     const cause = error.cause as NodeJS.ErrnoException
