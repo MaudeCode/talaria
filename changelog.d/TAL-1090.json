@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Scheduled task actions show pending feedback immediately and prevent duplicate requests while confirming the result.",
+      "highlight": false,
+      "components": ["web"]
+    }
+  ]
+}

@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { useState } from 'react'
-import { cleanup, render, screen, waitFor, within } from '@testing-library/react'
+import { act, cleanup, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import type { CronJob, CronStoreHealth } from '../../contracts'
@@ -13,6 +13,10 @@ vi.mock(import('../../api/endpoints'), async (importOriginal) => ({
 import * as api from '../../api/endpoints'
 import { keys } from '../../api/queryKeys'
 import { useTasksWorkbench } from './TasksPage'
+import { teardownAll } from '../../stream/connection'
+import { showToast } from '../toast/toast'
+
+vi.mock(import('../toast/toast'), async (importOriginal) => ({ ...(await importOriginal()), showToast: vi.fn() }))
 
 // Persisted shape: cron.jobs.create_job record plus _cron_job_for_api projections
 // (profile, toast_notifications, monitor, continuity) with every field set.
@@ -36,9 +40,13 @@ function Workbench() {
   return <><aside data-testid="sidebar">{sidebar}</aside><main data-testid="main">{main}</main><div id="rightpanelSlot" /></>
 }
 
+function cronList(jobs: CronJob[], unwritable_stores: CronStoreHealth[] = []): Awaited<ReturnType<typeof api.fetchCrons>> {
+  return { jobs, active_profile: 'work', all_profiles: false, other_profile_count: 0, unwritable_stores }
+}
+
 let qc: QueryClient
 function renderPage(jobs: CronJob[], unwritable_stores: CronStoreHealth[] = []) {
-  vi.mocked(api.fetchCrons).mockResolvedValue({ jobs, active_profile: 'work', all_profiles: false, other_profile_count: 0, unwritable_stores })
+  vi.mocked(api.fetchCrons).mockResolvedValue(cronList(jobs, unwritable_stores))
   qc = new QueryClient({ defaultOptions: { queries: { retry: false } } })
   return render(<QueryClientProvider client={qc}><Workbench /></QueryClientProvider>)
 }
@@ -56,6 +64,13 @@ async function selectJob(name: string) {
 
 const runs = Array.from({ length: 50 }, (_, i) => ({ filename: `2026-09-${String(17 - (i % 17)).padStart(2, '0')}_09-00-${String(i).padStart(2, '0')}.md`, size: 1200 + i, modified: 1_789_600_000 - i * 3600, usage: { input_tokens: 1000 + i, output_tokens: 50 } }))
 
+function deferred<T>() {
+  let resolve!: (value: T) => void
+  let reject!: (error: unknown) => void
+  const promise = new Promise<T>((yes, no) => { resolve = yes; reject = no })
+  return { promise, resolve, reject }
+}
+
 describe('TasksPage', () => {
   beforeEach(() => {
     // jsdom has no matchMedia; the empty state asks whether the sidebar is a drawer.
@@ -69,6 +84,149 @@ describe('TasksPage', () => {
     vi.mocked(api.fetchSkills).mockResolvedValue({ skills: [{ name: 'inbox' }] })
     vi.mocked(api.fetchProfiles).mockResolvedValue({ profiles: [{ name: 'work' }, { name: 'personal' }], active: 'work' })
     vi.mocked(api.fetchModels).mockResolvedValue({ groups: [{ provider: 'OpenAI Codex', provider_id: 'openai-codex', models: [{ id: '@openai-codex:gpt-5.6-sol', provider_id: 'openai-codex', bare_id: 'gpt-5.6-sol' }, { id: '@openai-codex:gpt-6-astra', provider_id: 'openai-codex', bare_id: 'gpt-6-astra' }] }] })
+  })
+
+  it('shows pause intent in row and detail while transport is unresolved, keeping confirmed state and history', async () => {
+    const held = deferred<Awaited<ReturnType<typeof api.cronAction>>>()
+    vi.mocked(api.cronAction).mockImplementation(() => held.promise)
+    const detail = await openJob('Digest')
+    const history = detail.getByRole('region', { name: /^runs$/i })
+    await userEvent.click(within(history).getAllByRole('cell')[4]!)
+    const picked = runs[1]!.filename
+    await waitFor(() => expect(api.fetchCronRun).toHaveBeenLastCalledWith(full.id, picked))
+    await userEvent.click(detail.getByRole('button', { name: /^pause$/i }))
+    expect(detail.getByRole('status')).toHaveTextContent('Pending: Pause')
+    expect(within(screen.getByTestId('sidebar')).getByRole('status')).toHaveTextContent('Pending: Pause')
+    expect(screen.getByTestId('cron-detail')).toHaveAttribute('data-state', 'active')
+    expect(detail.getByRole('button', { name: /^pause$/i })).toBeDisabled()
+    await userEvent.click(detail.getByRole('button', { name: /^pause$/i }))
+    expect(api.cronAction).toHaveBeenCalledTimes(1)
+    vi.mocked(api.fetchCrons).mockResolvedValue(cronList([{ ...full, derived_state: 'paused', resumable: true }, feed]))
+    await act(async () => { held.resolve({ ok: true }); await held.promise })
+    await waitFor(() => expect(detail.queryByRole('status')).not.toBeInTheDocument())
+    expect(screen.getByTestId('cron-detail')).toHaveAttribute('data-state', 'paused')
+    expect(detail.getByRole('button', { name: /^resume$/i })).toBeEnabled()
+    expect(api.fetchCronRun).toHaveBeenLastCalledWith(full.id, picked)
+    expect(document.documentElement.dataset.workspacePanel).toBe('open')
+  })
+
+  it('keeps independent pause/resume requests and stale polls separate', async () => {
+    const pause = deferred<Awaited<ReturnType<typeof api.cronAction>>>()
+    const resume = deferred<Awaited<ReturnType<typeof api.cronAction>>>()
+    const oldList = deferred<Awaited<ReturnType<typeof api.fetchCrons>>>()
+    const oldStatus = deferred<Awaited<ReturnType<typeof api.fetchCronStatus>>>()
+    const paused: CronJob = { ...feed, derived_state: 'paused', resumable: true }
+    vi.mocked(api.cronAction).mockImplementation((action) => action === 'pause' ? pause.promise : resume.promise)
+    const detail = await openJob('Digest', [full, paused])
+    vi.mocked(api.fetchCrons).mockImplementationOnce(() => oldList.promise)
+    vi.mocked(api.fetchCronStatus).mockImplementationOnce(() => oldStatus.promise)
+    let stale!: Promise<void>
+    act(() => { stale = qc.invalidateQueries({ queryKey: keys.crons.all }) })
+    await userEvent.click(detail.getByRole('button', { name: /^pause$/i }))
+    await selectJob('Feed')
+    await userEvent.click(detail.getByRole('button', { name: /^resume$/i }))
+    expect(within(screen.getByTestId('sidebar')).getAllByRole('status').map((s) => s.textContent)).toEqual(['Pending: Pause', 'Pending: Resume'])
+    vi.mocked(api.fetchCrons).mockResolvedValue(cronList([{ ...full, derived_state: 'paused', resumable: true }, paused]))
+    await act(async () => { pause.resolve({ ok: true }); await pause.promise })
+    await waitFor(() => expect(within(screen.getByTestId('sidebar')).getAllByRole('status')).toHaveLength(1))
+    expect(detail.getByRole('status')).toHaveTextContent('Pending: Resume')
+    await act(async () => { oldList.resolve(cronList([full, paused])); oldStatus.resolve({ running: { [full.id!]: 1790000000 } }); await stale })
+    await selectJob('Digest')
+    expect(screen.getByTestId('cron-detail')).toHaveAttribute('data-state', 'paused')
+    await selectJob('Feed')
+    vi.mocked(api.fetchCrons).mockResolvedValue(cronList([{ ...full, derived_state: 'paused', resumable: true }, feed]))
+    await act(async () => { resume.resolve({ ok: true }); await resume.promise })
+    await waitFor(() => expect(detail.queryByRole('status')).toBeNull())
+    expect(screen.getByTestId('cron-detail')).toHaveAttribute('data-state', 'active')
+  })
+
+  it.each(['refusal', 'transport failure'] as const)('marks only the confirmed delete, then restores state after %s', async (outcome) => {
+    const held = deferred<Awaited<ReturnType<typeof api.cronAction>>>()
+    vi.mocked(api.cronAction).mockImplementation(() => held.promise)
+    vi.mocked(api.fetchCronStatus).mockResolvedValue({ running: { [full.id!]: 1790000000 } })
+    const detail = await openJob('Digest')
+    await userEvent.click(detail.getByRole('button', { name: /^delete$/i }))
+    await userEvent.click(within(screen.getByRole('alertdialog')).getByRole('button', { name: /^cancel$/i }))
+    expect(api.cronAction).not.toHaveBeenCalled()
+    expect(detail.queryByRole('status')).toBeNull()
+    await userEvent.click(detail.getByRole('button', { name: /^delete$/i }))
+    await userEvent.click(within(screen.getByRole('alertdialog')).getByRole('button', { name: /^delete$/i }))
+    expect(detail.getByRole('status')).toHaveTextContent('Pending: Delete')
+    expect(screen.getByTestId('cron-detail')).toHaveAttribute('data-state', 'running')
+    const sidebar = within(screen.getByTestId('sidebar'))
+    expect(sidebar.getAllByRole('status')).toHaveLength(1)
+    expect(sidebar.getByRole('button', { name: /Feed/ })).toBeEnabled()
+    act(() => {
+      if (outcome === 'refusal') held.resolve({ ok: false, error: 'Delete refused' })
+      else held.reject(new Error('Connection lost'))
+    })
+    await waitFor(() => expect(detail.queryByRole('status')).toBeNull())
+    expect(detail.getByRole('button', { name: /^delete$/i })).toBeEnabled()
+    expect(showToast).toHaveBeenCalledWith(outcome === 'refusal' ? 'Delete refused' : 'Connection lost', 4000, 'error')
+    expect(screen.getByTestId('cron-detail')).toHaveAttribute('data-state', 'running')
+  })
+
+  it('keeps an unknown delete locked until read-only recovery succeeds', async () => {
+    const held = deferred<Awaited<ReturnType<typeof api.cronAction>>>()
+    vi.mocked(api.cronAction).mockImplementation(() => held.promise)
+    const detail = await openJob('Digest')
+    await userEvent.click(detail.getByRole('button', { name: /^delete$/i }))
+    await userEvent.click(within(screen.getByRole('alertdialog')).getByRole('button', { name: /^delete$/i }))
+    vi.mocked(api.fetchCronStatus).mockRejectedValue(new Error('Offline'))
+    act(() => { held.reject(new Error('Unknown result')) })
+    await waitFor(() => expect(detail.getByRole('status')).toHaveTextContent('Retry'))
+    expect(detail.getByRole('button', { name: /^delete$/i })).toBeDisabled()
+    vi.mocked(api.fetchCronStatus).mockResolvedValue({ running: {} })
+    vi.mocked(api.fetchCrons).mockResolvedValue(cronList([feed]))
+    await userEvent.click(within(detail.getByRole('status')).getByRole('button', { name: 'Retry' }))
+    await waitFor(() => expect(screen.queryByTestId('cron-detail')).toBeNull())
+    expect(api.cronAction).toHaveBeenCalledTimes(1)
+    expect(within(screen.getByTestId('sidebar')).queryByRole('button', { name: /Digest/ })).toBeNull()
+  })
+
+  it('fences old profile completion from a replacement job intent and notifications', async () => {
+    const old = deferred<Awaited<ReturnType<typeof api.cronAction>>>()
+    const replacement = deferred<Awaited<ReturnType<typeof api.cronAction>>>()
+    vi.mocked(api.cronAction).mockImplementationOnce(() => old.promise).mockImplementationOnce(() => replacement.promise)
+    const mounted = renderPage([full, feed])
+    const detail = await selectJob('Digest')
+    await userEvent.click(detail.getByRole('button', { name: /^pause$/i }))
+    act(() => { teardownAll(); qc.clear() })
+    // Bootstrap refresh renders the new profile over the cleared query cache.
+    mounted.rerender(<QueryClientProvider client={qc}><Workbench /></QueryClientProvider>)
+    await waitFor(() => expect(detail.getByRole('button', { name: /^pause$/i })).toBeEnabled())
+    await userEvent.click(detail.getByRole('button', { name: /^pause$/i }))
+    vi.mocked(showToast).mockClear()
+    await act(async () => { old.resolve({ ok: true }); await old.promise })
+    expect(showToast).not.toHaveBeenCalled()
+    expect(detail.getByRole('status')).toHaveTextContent('Pending: Pause')
+    await act(async () => { replacement.resolve({ ok: true }); await replacement.promise })
+    await waitFor(() => expect(detail.queryByRole('status')).toBeNull())
+  })
+
+  it('keeps Run now pending without inventing execution or a new action capability', async () => {
+    const held = deferred<Awaited<ReturnType<typeof api.cronAction>>>()
+    vi.mocked(api.cronAction).mockImplementation(() => held.promise)
+    const detail = await openJob('Digest', [{ ...full, resumable: undefined }])
+    expect(detail.queryByRole('button', { name: /^(pause|resume)$/i })).toBeNull()
+    await userEvent.click(detail.getByRole('button', { name: /^run now$/i }))
+    expect(detail.getByRole('status')).toHaveTextContent('Pending: Run now')
+    expect(screen.getByTestId('cron-detail')).toHaveAttribute('data-state', 'active')
+    expect(detail.getByRole('button', { name: /^run now$/i })).toBeDisabled()
+    await act(async () => { held.resolve({ ok: true }); await held.promise })
+    await waitFor(() => expect(detail.queryByRole('status')).toBeNull())
+    expect(screen.getByTestId('cron-detail')).toHaveAttribute('data-state', 'active')
+  })
+
+  it('discards delete confirmation when the owning profile is replaced', async () => {
+    const mounted = renderPage([full, feed])
+    const detail = await selectJob('Digest')
+    await userEvent.click(detail.getByRole('button', { name: /^delete$/i }))
+    expect(screen.getByRole('alertdialog')).toBeVisible()
+    act(() => { teardownAll(); qc.clear() })
+    mounted.rerender(<QueryClientProvider client={qc}><Workbench /></QueryClientProvider>)
+    await waitFor(() => expect(screen.queryByRole('alertdialog')).toBeNull())
+    expect(api.cronAction).not.toHaveBeenCalled()
   })
 
   it('keeps the script path explanation behind the section help button', async () => {
