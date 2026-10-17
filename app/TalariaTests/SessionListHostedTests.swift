@@ -217,9 +217,16 @@ final class SessionListHostedTests: XCTestCase {
         try await assertFirstSendDuringCreation(withImportedFile: true)
     }
 
-    private func assertFirstSendDuringCreation(withImportedFile: Bool) async throws {
-        let fixture = try FixtureApp(withImportedFile ? ["--ui-test-hold-chat-start"] : [], for: self)
+    func testFirstSendWaitsForEveryImportedFileBeforePosting() async throws {
+        try await assertFirstSendDuringCreation(withImportedFile: true, partialImportFailure: true)
+    }
+
+    private func assertFirstSendDuringCreation(withImportedFile: Bool, partialImportFailure: Bool = false) async throws {
+        var scenario = withImportedFile ? ["--ui-test-hold-chat-start"] : []
+        if partialImportFailure { scenario.append("--ui-test-fail-first-upload") }
+        let fixture = try FixtureApp(scenario, for: self)
         let session = try await fixture.session()
+        let filenames = partialImportFailure ? ["first-fails.txt", "later-succeeds.txt"] : (withImportedFile ? ["intent.txt"] : [])
         var creation: CheckedContinuation<ChatSessionStartResult, Never>?
         var creationCount = 0
         let window = try hostWindow(NavigationStack {
@@ -227,8 +234,9 @@ final class SessionListHostedTests: XCTestCase {
                 session: SessionSummary(title: "New Chat"),
                 server: UITestFixtureEnvironment.serverURL,
                 onAPIError: { _ in },
-                initialAttachments: withImportedFile
-                    ? [SharedAttachmentImport(filename: "intent.txt", typeIdentifier: "public.plain-text", data: Data("Synthetic file".utf8))] : [],
+                initialAttachments: filenames.map {
+                    SharedAttachmentImport(filename: $0, typeIdentifier: "public.plain-text", data: Data("Synthetic file".utf8))
+                },
                 loadsInitialMessages: false,
                 draftStore: fixture.environment.draftStore,
                 startSession: {
@@ -246,23 +254,44 @@ final class SessionListHostedTests: XCTestCase {
         HostedAccessibility.activate(send)
         let consumed = await awaitCondition { window.firstView(ofType: UITextView.self)?.text == "" }
         XCTAssertTrue(consumed, "The submitted draft must clear while creation is held")
-        let screenshot = XCTAttachment(image: UIGraphicsImageRenderer(bounds: window.bounds).image { _ in
-            window.drawHierarchy(in: window.bounds, afterScreenUpdates: true)
-        })
-        screenshot.name = "first-send-pending-phone"
-        screenshot.lifetime = .keepAlways
-        add(screenshot)
+        attachHostedScreenshot(window, name: "first-send-pending-phone")
         XCTAssertEqual(HostedAccessibility.elements(in: window).filter { $0.accessibilityLabel == "First pending prompt" }.count, 1)
         XCTAssertEqual(creationCount, 1)
         creation?.resume(returning: .started(session))
         creation = nil
+        if partialImportFailure {
+            let settled = await awaitCondition {
+                UITestFixtureHold.shared.pendingCount > 0 || HostedAccessibility.element(in: window, label: "Retry") != nil
+            }
+            XCTAssertTrue(settled)
+            XCTAssertEqual(UITestFixtureHold.shared.pendingCount, 0, "A failed import followed by a success must not post a partial first message")
+            guard UITestFixtureHold.shared.pendingCount == 0 else {
+                fixture.releaseHeldLoads()
+                return
+            }
+            XCTAssertEqual(UITestFixtureURLProtocol.initialUploadAttemptCount, 2)
+            let restored = await awaitCondition { window.firstView(ofType: UITextView.self)?.text == "First pending prompt" }
+            XCTAssertTrue(restored)
+            attachHostedScreenshot(window, name: "mixed-import-blocked-phone")
+            HostedAccessibility.activate(try await requireElement(in: window, label: "Retry"))
+            _ = try await requireElement(in: window, label: "Select model")
+            XCTAssertEqual(creationCount, 1, "Retrying imports must reuse the created session")
+            XCTAssertEqual(UITestFixtureURLProtocol.initialUploadAttemptCount, 3, "Only the failed import should retry")
+            HostedAccessibility.activate(try await requireElement(in: window, label: "Send"))
+        }
         if withImportedFile {
             let posted = await awaitCondition { UITestFixtureHold.shared.pendingCount > 0 }
             XCTAssertTrue(posted)
             let held = await fixture.environment.draftStore.draft(for: .session(server: UITestFixtureEnvironment.serverURL, session: session))
             XCTAssertEqual(held?.text, "First pending prompt")
-            XCTAssertEqual(held?.attachments.count, 1, "The submitted file must remain durable until startChat answers")
+            XCTAssertEqual(held?.attachments.count, filenames.count, "The submitted files must remain durable until startChat answers")
             XCTAssertNotNil(held?.attachments.first?.file)
+            if partialImportFailure {
+                let request = try XCTUnwrap(UITestFixtureHold.shared.pendingRequests.last)
+                let body = try apiTestJSONBody(from: request)
+                XCTAssertEqual((body["attachments"] as? [[String: Any]])?.count, 2)
+                XCTAssertEqual(Set((body["attachments"] as? [[String: Any]] ?? []).compactMap { $0["name"] as? String }), Set(filenames))
+            }
             fixture.releaseHeldLoads()
         }
         _ = try await requireElement(in: window, label: "Select model")

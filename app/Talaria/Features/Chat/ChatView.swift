@@ -186,7 +186,7 @@ struct ChatView: View {
     @State private var sessionStartTask: Task<Bool, Never>?
     @State private var sessionStartGeneration = 0
     @State private var pendingFirstDraft: String?
-    @State private var pendingFirstAttachmentIDs = Set<UUID>()
+    @State private var pendingSubmissionAttachmentIDs = Set<UUID>()
 
     init(
         session: SessionSummary,
@@ -1672,7 +1672,9 @@ struct ChatView: View {
                 }
                 await beginSessionWork()
                 guard !Task.isCancelled, generation == sessionStartGeneration else { return false }
-                if let error = viewModel.uploadAttachmentErrorMessage ?? (!draftAttachmentsPendingRetry.isEmpty
+                let importFailure = initialAttachments.isEmpty ? nil
+                    : String(localized: "Couldn't upload every attachment. Retry before sending.")
+                if let error = viewModel.uploadAttachmentErrorMessage ?? importFailure ?? (!draftAttachmentsPendingRetry.isEmpty
                     ? draftRestoreFailureMessage(retryCount: draftAttachmentsPendingRetry.count, droppedCount: 0) : nil) {
                     sessionStart = .failed(error)
                     return false
@@ -1936,6 +1938,7 @@ struct ChatView: View {
         _ submittedDraft: String,
         submittedDraftRevision: Int
     ) async -> Bool {
+        guard !viewModel.isSubmittingMessage else { return false }
         guard !submittedDraft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
             || !viewModel.pendingAttachments.isEmpty
         else {
@@ -1948,8 +1951,10 @@ struct ChatView: View {
         // draft's whole record set. A record that is not staged — awaiting a
         // re-upload retry, or not yet reached by an in-flight restore — was
         // never carried by this send, so its durable copy must survive.
-        let submittedRecords = lastSyncedDraftAttachments
         let stagedIDs = Set(viewModel.pendingAttachments.map(\.id))
+        pendingSubmissionAttachmentIDs = stagedIDs
+        syncDraftAttachments()
+        let submittedRecords = lastSyncedDraftAttachments
         let restoredIDs = Set(submittedRecords.map(\.id))
         var sessionFileIDs = Set<UUID>()
         writeComposerDraft(submittedDraft)
@@ -1959,7 +1964,6 @@ struct ChatView: View {
         let awaitedSession = sessionStart != nil || sessionStartTask != nil
         if awaitedSession {
             pendingFirstDraft = submittedDraft
-            pendingFirstAttachmentIDs = stagedIDs
         }
         let didStart = await viewModel.sendMessage(
             submittedDraft,
@@ -1971,7 +1975,7 @@ struct ChatView: View {
                 }
                 sessionFileIDs = Set(files.map(\.id))
                 if awaitedSession {
-                    pendingFirstAttachmentIDs.formUnion(sessionFileIDs)
+                    pendingSubmissionAttachmentIDs.formUnion(sessionFileIDs)
                     syncDraftAttachments()
                 }
                 return files
@@ -1987,10 +1991,8 @@ struct ChatView: View {
             }
             onConversationStarted()
         }
-        if awaitedSession {
-            pendingFirstDraft = nil
-            pendingFirstAttachmentIDs = []
-        }
+        if awaitedSession { pendingFirstDraft = nil }
+        pendingSubmissionAttachmentIDs = []
         guard generation == sessionStartGeneration else { return didStart }
         if !didStart, awaitedSession, draftRevision != submittedDraftRevision {
             // Keep the failed first prompt retryable after newer typing, using the existing returned-text path.
@@ -2267,7 +2269,7 @@ struct ChatView: View {
         }
         let stagedAndRetryIDs = Set((pendingRecords + retryRecords).map(\.id))
         let heldRecords = lastSyncedDraftAttachments.filter {
-            pendingFirstAttachmentIDs.contains($0.id) && !stagedAndRetryIDs.contains($0.id)
+            pendingSubmissionAttachmentIDs.contains($0.id) && !stagedAndRetryIDs.contains($0.id)
         }
         let records = pendingRecords + retryRecords + heldRecords
         lastSyncedDraftAttachments = records

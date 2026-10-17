@@ -17,12 +17,7 @@ final class ChatHostedTests: XCTestCase {
         let composer = await composerTextView(in: window)
         let draft = try XCTUnwrap(composer)
         XCTAssertEqual(draft.text, "", "A streaming send must consume its draft before the steer answers")
-        let screenshot = XCTAttachment(image: UIGraphicsImageRenderer(bounds: window.bounds).image { _ in
-            window.drawHierarchy(in: window.bounds, afterScreenUpdates: true)
-        })
-        screenshot.name = "streaming-send-pending-phone"
-        screenshot.lifetime = .keepAlways
-        add(screenshot)
+        attachHostedScreenshot(window, name: "streaming-send-pending-phone")
         try await typeIntoComposer("Newer draft", in: window)
         fixture.releaseHeldLoads()
         let waiting = await awaitElement(in: window, label: "Held steering prompt")
@@ -59,12 +54,7 @@ final class ChatHostedTests: XCTestCase {
         let queue = try await requireElement(in: window, label: "2 queued")
         let status = try await requireElement(in: window) { $0.accessibilityLabel?.hasSuffix("is working on the response") == true }
         settle(0.3)
-        let attachment = XCTAttachment(image: UIGraphicsImageRenderer(bounds: window.bounds).image { _ in
-            window.drawHierarchy(in: window.bounds, afterScreenUpdates: true)
-        })
-        attachment.name = "working-queue-phone"
-        attachment.lifetime = .keepAlways
-        add(attachment)
+        attachHostedScreenshot(window, name: "working-queue-phone")
         XCTAssertEqual(status.accessibilityFrame.midY, queue.accessibilityFrame.midY, accuracy: 1,
                        "Working and the queue must be segments of one row")
         XCTAssertLessThan(status.accessibilityFrame.maxX, queue.accessibilityFrame.minX)
@@ -210,12 +200,7 @@ final class ChatHostedTests: XCTestCase {
         XCTAssertNotNil(notice, "Send now did not explain the live requeue")
         XCTAssertEqual(HostedAccessibility.elements(in: window).filter(isNotice).count, 1, "Repeated Send now stacked notices")
         XCTAssertEqual(notice?.accessibilityValue, "Information", "The notice does not say its kind")
-        let attachment = XCTAttachment(image: UIGraphicsImageRenderer(bounds: window.bounds).image { _ in
-            window.drawHierarchy(in: window.bounds, afterScreenUpdates: true)
-        })
-        attachment.name = "send-now-phone"
-        attachment.lifetime = .keepAlways
-        add(attachment)
+        attachHostedScreenshot(window, name: "send-now-phone")
         let dismissed = await awaitNoElement(in: window, timeout: 5, where: isNotice)
         XCTAssertTrue(dismissed, "The notice never went away on its own")
 
