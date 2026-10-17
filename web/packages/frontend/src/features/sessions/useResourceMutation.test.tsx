@@ -42,6 +42,58 @@ describe('resource intent ownership', () => {
     await waitFor(() => expect(result.current.intents).toEqual({}))
   })
 
+  it('reconciles independent completions without stranding a peer intent', async () => {
+    const a = deferred<{ ok: boolean }>(), b = deferred<{ ok: boolean }>(), firstRead = deferred<string>()
+    const initialProjects = deferred<string>(), projectRead = deferred<string>()
+    const { wrapper } = harness()
+    const projects = vi.fn().mockImplementationOnce(() => initialProjects.promise).mockImplementationOnce(() => projectRead.promise).mockResolvedValue('latest projects')
+    const read = vi.fn().mockResolvedValueOnce('baseline').mockImplementationOnce(() => firstRead.promise).mockResolvedValue('latest')
+    const { result } = renderHook(() => ({
+      list: useQuery({ queryKey: keys.sessions.list({}), queryFn: read }),
+      projects: useQuery({ queryKey: keys.projects, queryFn: projects }),
+      intents: useResourceIntents(),
+      write: useResourceMutation({ resource: (id: string) => id, intent: () => ({ label: 'Save' }), mutationFn: (id) => id === 'session:a' ? a.promise : b.promise }),
+    }), { wrapper })
+    await waitFor(() => expect(result.current.list.data).toBe('baseline'))
+    let first!: Promise<unknown>, second!: Promise<unknown>
+    act(() => { first = result.current.write.mutateAsync('session:a'); second = result.current.write.mutateAsync('session:b') })
+    await waitFor(() => expect(Object.keys(result.current.intents)).toHaveLength(2))
+    await act(async () => { a.resolve({ ok: true }); await Promise.resolve() })
+    await waitFor(() => { expect(read).toHaveBeenCalledTimes(2); expect(projects).toHaveBeenCalledTimes(2) })
+    // B completes while A's reconciliation read is held, rather than while A's write is held.
+    await act(async () => { b.resolve({ ok: true }); await Promise.resolve() })
+    await act(async () => { firstRead.resolve('from A'); projectRead.resolve('projects from A'); initialProjects.resolve('stale projects'); await Promise.all([first, second]) })
+    await waitFor(() => expect(result.current.intents).toEqual({}))
+    expect(result.current.list.data).toBe('latest')
+  })
+
+  it('does not restore a confirmed deletion from a peer snapshot', async () => {
+    const a = deferred<{ ok: boolean }>(), b = deferred<{ ok: boolean }>()
+    const stale = deferred<string[]>(), fresh = deferred<string[]>()
+    const { qc, wrapper } = harness()
+    const read = vi.fn().mockResolvedValueOnce(['keeper', 'deleted']).mockImplementationOnce(() => stale.promise).mockImplementationOnce(() => fresh.promise)
+    const { result } = renderHook(() => ({
+      list: useQuery({ queryKey: keys.sessions.list({}), queryFn: read }),
+      intents: useResourceIntents(),
+      change: useResourceMutation({ resource: () => 'session:keeper', intent: () => ({ label: 'Rename' }), mutationFn: () => a.promise }),
+      remove: useResourceMutation({ resource: () => 'session:deleted', intent: () => ({ label: 'Delete' }), mutationFn: () => b.promise, onSuccess: () => qc.setQueryData(keys.sessions.list({}), ['keeper']) }),
+    }), { wrapper })
+    await waitFor(() => expect(result.current.list.data).toEqual(['keeper', 'deleted']))
+    let first!: Promise<unknown>, second!: Promise<unknown>
+    act(() => { first = result.current.change.mutateAsync(); second = result.current.remove.mutateAsync() })
+    await act(async () => { a.resolve({ ok: true }); await Promise.resolve() })
+    await waitFor(() => expect(read).toHaveBeenCalledTimes(2))
+    await act(async () => { b.resolve({ ok: true }); await Promise.resolve() })
+    await act(async () => { stale.resolve(['keeper', 'deleted']); await Promise.resolve() })
+    await waitFor(() => expect(read).toHaveBeenCalledTimes(3))
+    try {
+      expect(result.current.list.data).toEqual(['keeper'])
+    } finally {
+      await act(async () => { fresh.resolve(['keeper']); await Promise.all([first, second]) })
+    }
+    await waitFor(() => expect(result.current.intents).toEqual({}))
+  })
+
   it('cannot apply an old profile completion or clear a replacement intent for the same ID', async () => {
     const old = deferred<{ ok: boolean }>(), replacement = deferred<{ ok: boolean }>()
     const { qc, wrapper } = harness()

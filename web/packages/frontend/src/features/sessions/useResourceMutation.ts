@@ -14,16 +14,61 @@ export interface ResourceIntent {
 interface OwnedIntent extends ResourceIntent { context: object }
 const intentKey = ['resource-intents'] as const
 const empty: Record<string, OwnedIntent> = {}
+const reconciliations = new WeakMap<QueryClient, {
+  context: object
+  requested: number
+  requests: { current: () => boolean; resource: string }[]
+  promise: Promise<void>
+}>()
 
 export function useResourceIntents(): Record<string, ResourceIntent> {
   const { data } = useQuery({ queryKey: intentKey, queryFn: () => empty, initialData: empty, enabled: false, gcTime: Infinity, structuralSharing: false })
   return Object.fromEntries(Object.entries(data).filter(([, intent]) => intent.context === getStreamContext()))
 }
 
+function cancelResourceReads(qc: QueryClient) {
+  return Promise.all([keys.sessions.all, keys.projects].map((queryKey) => qc.cancelQueries({ queryKey })))
+}
+
 async function reconcile(qc: QueryClient, current: () => boolean, resource: string) {
   if (!current()) return
+  const context = getStreamContext()
+  const previous = reconciliations.get(qc)
+  if (previous?.context === context) {
+    previous.requested += 1
+    previous.requests.push({ current, resource })
+    // Supersede the shared read, while every owner waits for the covering follow-up.
+    await cancelResourceReads(qc)
+    return previous.promise
+  }
+  const queue = { context, requested: 1, requests: [{ current, resource }], promise: Promise.resolve() }
+  queue.promise = Promise.resolve().then(async () => {
+    try {
+      let served = 0
+      while (served < queue.requested && reconciliations.get(qc) === queue && context === getStreamContext()) {
+        const requested = queue.requested
+        const requests = queue.requests.filter((request) => request.current())
+        const resource = requests.find((request) => request.resource.startsWith('project:'))?.resource ?? requests[0]?.resource
+        if (!resource) return
+        try {
+          await reconcileSnapshot(qc, () => requests.some((request) => request.current()), resource)
+        } catch (error) {
+          if (requested === queue.requested) throw error
+        }
+        served = requested
+      }
+    } finally {
+      if (reconciliations.get(qc) === queue) reconciliations.delete(qc)
+    }
+  })
+  reconciliations.set(qc, queue)
+  return queue.promise
+}
+
+async function reconcileSnapshot(qc: QueryClient, current: () => boolean, resource: string) {
+  if (!current()) return
   // Cancel reads captured before the write, including inactive detail/search queries.
-  await Promise.all([keys.sessions.all, keys.projects].map((queryKey) => qc.cancelQueries({ queryKey })))
+  await cancelResourceReads(qc)
   if (!current()) return
   const projects = qc.getQueryCache().find({ queryKey: keys.projects, exact: true })
   await Promise.all([

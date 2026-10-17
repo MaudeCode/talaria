@@ -153,7 +153,9 @@ only renders what the server allows.
 
 Session and project writes keep submitted values in a separate, ephemeral resource-intent query.
 `useResourceMutation` owns that intent across row menus, the sidebar and the chat header, and fences
-completion against the current connection context. The snapshots above retain server values and order;
+completion against the current connection context. Reconciliations coalesce per query client and context;
+every owner waits for a fresh pass covering all completed writes, including confirmed deletions.
+The snapshots above retain server values and order;
 pending labels and colors never become authoritative metadata or enter boot persistence. Confirmed
 deletions purge their cached list entries and per-session queries. A failed reconciliation offers a
 read-only retry, and project creation reconciles even after its query's last observer unmounts.
