@@ -1652,7 +1652,9 @@ def test_backend_lifecycle_capability_evidence(monkeypatch, case, unsupported):
             self.wfile.write(blob)
 
         def do_POST(self):
+            self.rfile.read(int(self.headers.get('Content-Length', '0')))
             self.send_response(404)
+            self.send_header('Content-Length', '0')
             self.end_headers()
 
     server = ThreadingHTTPServer(('127.0.0.1', 0), Handler)
