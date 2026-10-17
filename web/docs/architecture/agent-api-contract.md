@@ -136,6 +136,9 @@ digest, native runtime PID/birth, complete wrapper ancestry and canonical proces
 identities, and durably records that incarnation alongside its predecessor.
 It rechecks the configuration after that custody save and process verification,
 immediately before requesting the successor's cooperative drain.
+If the successor holds the runtime lock before publishing its PID identity,
+settling waits within that same deadline and retains predecessor custody.
+It grants no custody or lifecycle request until the complete identity is verified.
 An unacknowledged initial drain, reused identity, foreign profile, changed
 configuration, updater ancestor or unrelated descendant never grants custody.
 Tool subprocesses below the attested gateway remain part of its cooperative

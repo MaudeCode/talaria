@@ -185,7 +185,7 @@ def snapshot(entry, *, records=None, expected=None):
     raise RuntimeError(f'{_name(entry)} process inventory kept changing after {SNAPSHOT_ATTEMPTS} samples; retry when descendants settle. Source was not changed and recovery remains owed.')
 
 
-def gateway_entries(entries, homes, pause):
+def gateway_entries(entries, homes, pause, *, allow_starting=False):
     if not entries:
         return []
     from gateway.status import get_running_pid_identity_strict
@@ -196,6 +196,8 @@ def gateway_entries(entries, homes, pause):
         if home not in homes:
             raise RuntimeError(f'{_name(entry)} gateway owning profile is unknown or outside this Web instance.')
         runtime = get_running_pid_identity_strict(home / 'gateway.pid')
+        if runtime is None and allow_starting:
+            continue  # Lock admission can precede PID publication; callers retain custody while waiting.
         if runtime is None or not pause._home_of(runtime[0]) or Path(pause._home_of(runtime[0])).resolve() != home:
             raise RuntimeError(f'{_name(entry)} has no verified gateway in its owning profile.')
         entry.update(service_pid=entry['pid'], pid=runtime[0], ct=runtime[1], home=str(home))
@@ -769,7 +771,10 @@ class ServiceRecovery:
             return None
         if len(matches) != 1 or not matches[0].get('home') or Path(matches[0]['home']).resolve() != Path(entry['home']).resolve():
             raise RuntimeError(f'{_name(entry)} successor supervisor/profile is unverified; recovery remains owed.')
-        candidate = gateway_entries(matches, {Path(entry['home']).resolve()}, self.pause)[0]
+        candidates = gateway_entries(matches, {Path(entry['home']).resolve()}, self.pause, allow_starting=True)
+        if not candidates:
+            return None
+        candidate = candidates[0]
         if (_config_stamp(candidate) != entry['config_stamp']
                 or candidate.get('profile') != entry.get('profile')):
             raise RuntimeError(f'{_name(entry)} successor configuration/profile changed; recovery remains owed.')

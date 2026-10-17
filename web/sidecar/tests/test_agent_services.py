@@ -503,6 +503,9 @@ lock=(home/'gateway.lock').open('a+')
 try: fcntl.flock(lock,fcntl.LOCK_EX|fcntl.LOCK_NB)
 except BlockingIOError: raise SystemExit(0)
 if os.environ.get('TALARIA_SYNTHETIC_ADMISSION'): Path(os.environ['TALARIA_SYNTHETIC_ADMISSION']).touch()
+if (home/'hold-runtime-publication').exists():
+ (home/'runtime-publication-held').touch()
+ while (home/'hold-runtime-publication').exists(): time.sleep(.01)
 import subprocess
 tool=None
 if (home/'hold-successor-drain').exists():
@@ -732,7 +735,9 @@ def _alive(pid,ct):
  if not result and (HOME/'wait-gateway-successor').exists():
   deadline=time.monotonic()+4
   while time.monotonic()<deadline:
-   if any(r['purpose']=='gateway' and r['pid']!=pid for r in ledger()): break
+   if (HOME/'hold-runtime-publication').exists():
+    if (HOME/'runtime-publication-held').exists(): break
+   elif any(r['purpose']=='gateway' and r['pid']!=pid for r in ledger()): break
    time.sleep(.01)
   (HOME/'wait-gateway-successor').unlink()
  return result
@@ -778,7 +783,9 @@ def get_process_start_time(pid):
 def _pid_exists(pid): return alive(pid)
 def get_running_pid_identity_strict(path):
  try: pid=int((Path(path).parent/'active').read_text())
- except FileNotFoundError: return None
+ except FileNotFoundError:
+  if (Path(path).parent/'runtime-publication-held').exists(): (Path(path).parent/'unpublished-runtime-observed').touch()
+  return None
  ct=birth(pid)
  return (pid,ct) if ct is not None else None
 ''')
@@ -864,6 +871,8 @@ UpdateLock.acquire_checkout=acquire_checkout
         sidecar = SidecarProcess(home, agent_dir=root, python=AGENT_PYTHON, env={'PATH': env['PATH']})
         yield root, home, base, target, sidecar, configs
     finally:
+        for cfg in configs:
+            (Path(cfg['home']) / 'hold-runtime-publication').unlink(missing_ok=True)
         if sidecar is not None:
             sidecar.close()
         for cfg in configs:
@@ -2162,6 +2171,34 @@ def test_persisted_retiring_gateway_adopts_verified_ready_successor_without_rest
     assert calls == []
 
 
+@pytest.mark.parametrize('publishes', [False, True])
+def test_gateway_successor_waits_for_runtime_identity_before_drain(gateway_successor, monkeypatch, publishes):
+    import types
+    from talaria_sidecar import agent_services as services
+    recovery, entry, calls, parents, pause, records, modules = gateway_successor
+    status = modules['gateway.status']
+    runtime = [None]
+    status.get_running_pid_identity_strict = lambda path: runtime[0]
+    with pytest.raises(RuntimeError, match='no verified gateway'):
+        services.gateway_entries(pause._discover_launchd(), {Path(entry['home'])}, pause)
+    clock = [0]
+    class Waiting:
+        def is_set(self): return False
+        def wait(self, seconds):
+            assert calls == [], 'an unpublished successor received a lifecycle request'
+            assert json.loads(recovery.path.read_text())['entries'][0]['pid'] == 41002
+            clock[0] += 1
+            if publishes: runtime[0] = (42002, 420020)
+            return False
+    monkeypatch.setattr(services, 'time', types.SimpleNamespace(monotonic=lambda: clock[0]))
+    pause._ask_to_drain = lambda e: calls.append(('drain', e['pid'])) or False
+    with pytest.raises(RuntimeError, match='did not acknowledge' if publishes else 'gateway drain remains owed'):
+        recovery.settle_gateway(entry, Waiting(), deadline=3)
+    assert clock[0] == (1 if publishes else 3)
+    assert calls == ([('drain', 42002)] if publishes else [])
+    assert recovery.path.exists()
+
+
 def test_gateway_successor_is_durable_before_drain_and_attempts_are_bounded(gateway_successor):
     import threading
     recovery, entry, calls, parents, pause, records, modules = gateway_successor
@@ -2297,6 +2334,24 @@ def test_multiple_gateway_profiles_and_backends_survive_expected_respawns(tmp_pa
         assert all((Path(c['home'])/('active' if c['purpose']=='gateway' else 'backend.pid')).exists() for c in configs)
         assert not list((home/'.talaria-agent-services').glob('*.json'))
         assert all((home/'services'/c['label']/'starts').read_text().splitlines()==['start'] for c in configs)
+
+
+@pytest.mark.parametrize('manager', ['launchd', 'systemd'])
+def test_multiple_gateway_profiles_wait_for_successor_runtime_publication(tmp_path, manager):
+    with supervised_agent(tmp_path, gateway_respawn=True, gateway_profiles=2, manager=manager) as (root, home, base, target, sidecar, configs):
+        hold = home / 'hold-runtime-publication'
+        hold.touch()
+        request = sidecar.request('runtime.agent_mutation', {'agent_dir': str(root), 'action': 'begin', 'revision': target,
+                                                           'homes': list({c['home'] for c in configs})})
+        wait_for(lambda: (home / 'unpublished-runtime-observed').exists())
+        assert (home / 'runtime-publication-held').exists()
+        assert not (home / 'services' / configs[0]['label'] / 'disarm').exists()
+        assert git(root, 'rev-parse', 'HEAD') == base
+        hold.unlink()
+        begun = sidecar.next_message(timeout=30)
+        assert begun['id'] == request and begun['result']['ok'], begun
+        assert rpc(sidecar, root, 'finish', token=begun['result']['token'])['ok']
+        assert not list((home / '.talaria-agent-services').glob('*.json'))
 
 
 @pytest.mark.parametrize('link', ['symbolic', 'hard'])
