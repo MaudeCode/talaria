@@ -38,17 +38,57 @@ describe('removeWorktreeForSession', () => {
 describe('hardened worktree Git calls', () => {
   const unlocked = { lockedByStream: () => false, lockedByTerminal: () => false }
   let n = 0
-  function setup(): { repo: string; worktree: string; session: Session } {
+  function setup(submoduleDepth = 0): { repo: string; worktree: string; session: Session } {
     const repo = join(root, `secure-repo-${String(++n)}`)
     git(root, 'init', '-q', '-b', 'main', repo)
     writeFileSync(join(repo, '.gitattributes'), '*.txt filter=evil\n')
     writeFileSync(join(repo, 'tracked.txt'), 'hello\n')
     git(repo, 'add', '.')
     git(repo, 'commit', '-q', '-m', 'init')
+    let source: string | undefined
+    for (let depth = 0; depth < submoduleDepth; depth++) {
+      const next = join(root, `module-source-${String(n)}-${String(depth)}`)
+      git(root, 'clone', '-q', '--local', repo, next)
+      if (source) {
+        git(next, '-c', 'protocol.file.allow=always', 'submodule', 'add', '-q', source, 'module')
+        git(next, 'commit', '-q', '-am', 'nested submodule')
+      }
+      source = next
+    }
+    if (source) {
+      git(repo, '-c', 'protocol.file.allow=always', 'submodule', 'add', '-q', source, 'module')
+      git(repo, 'commit', '-q', '-am', 'submodule')
+    }
     const worktree = join(root, `secure-wt-${String(n)}`)
     git(repo, 'worktree', 'add', '-q', '-b', `secure-wt-${String(n)}`, worktree)
+    if (source) git(worktree, '-c', 'protocol.file.allow=always', 'submodule', 'update', '--init', '--recursive')
     git(worktree, 'branch', '--set-upstream-to=main')
     return { repo, worktree, session: { session_id: `secure-${String(n)}`, worktree_path: worktree, worktree_repo_root: repo } as unknown as Session }
+  }
+
+  for (const depth of [1, 2]) {
+    for (const operation of ['status', 'remove', 'remove --force'] as const) {
+      it(`does not execute depth-${String(depth)} submodule filters during ${operation}`, async () => {
+        const { worktree, session } = setup(depth)
+        const submodule = join(worktree, ...Array<string>(depth).fill('module'))
+        const marker = join(root, `submodule-executed-${String(n)}`)
+        git(submodule, 'config', 'filter.evil.clean', `printf clean >> "${marker}"; cat`)
+        utimesSync(join(submodule, 'tracked.txt'), 1, 1)
+        if (operation === 'status') {
+          expect(await worktreeStatusForSession(session, unlocked)).toMatchObject({ dirty: false, untracked_count: 0, force_required: false })
+          writeFileSync(join(submodule, 'tracked.txt'), 'changed\n')
+          expect(await worktreeStatusForSession(session, unlocked)).toMatchObject({ dirty: true, untracked_count: 0, force_required: true })
+        } else if (operation === 'remove') {
+          // Git preserves initialized submodules unless force was explicitly requested.
+          await expect(removeWorktreeForSession(session, unlocked)).rejects.toThrow('git worktree remove failed')
+          expect(existsSync(worktree)).toBe(true)
+        } else {
+          expect(await removeWorktreeForSession(session, unlocked, { force: true })).toMatchObject({ ok: true })
+          expect(existsSync(worktree)).toBe(false)
+        }
+        expect(existsSync(marker), existsSync(marker) ? readFileSync(marker, 'utf8') : 'no submodule program executed').toBe(false)
+      })
+    }
   }
 
   for (const scope of ['local', 'worktree'] as const) {

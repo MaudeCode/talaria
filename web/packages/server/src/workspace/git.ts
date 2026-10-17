@@ -292,8 +292,22 @@ export class GitRunner {
     return names
   }
 
-  private async filterNames(cwd: string, env: Record<string, string>): Promise<Set<string>> {
-    return await this.namesLocalAndWorktree(cwd, env, String.raw`^filter\..*\.(clean|smudge|process|required)$`, /^filter\.(.+)\.(clean|smudge|process|required)$/)
+  private async filterNames(cwd: string, env: Record<string, string>, includeSubmodules = false, visited = new Set<string>()): Promise<Set<string>> {
+    const names = await this.namesLocalAndWorktree(cwd, env, String.raw`^filter\..*\.(clean|smudge|process|required)$`, /^filter\.(.+)\.(clean|smudge|process|required)$/)
+    if (!includeSubmodules) return names
+    // Status enters initialized submodules even with submodule.recurse=false. Enumerate gitlinks without inspecting files.
+    const root = resolvePathLikePython((await this.run(cwd, ['rev-parse', '--show-toplevel'], { check: true, env })).stdout.replace(/\r?\n$/, ''))
+    if (visited.has(root)) return names
+    visited.add(root)
+    const index = await this.run(root, ['ls-files', '--stage', '-z'], { check: true, env })
+    for (const entry of index.stdout.split('\0')) {
+      const match = /^160000 [a-f0-9]+ [0-3]\t(.+)$/s.exec(entry)
+      if (!match?.[1]) continue
+      const submodule = safeResolveWs(root, match[1])
+      if (submodule === root || !existsSync(join(submodule, '.git'))) continue
+      for (const name of await this.filterNames(submodule, env, true, visited)) names.add(name)
+    }
+    return names
   }
 
   private async mergeDriverNames(cwd: string, env: Record<string, string>): Promise<Set<string>> {
@@ -329,7 +343,7 @@ export class GitRunner {
       if (opts.disableFilterAttributes || opts.neutralizeFilterPrograms) {
         const names = new Set<string>()
         for (const path of new Set([cwd, ...(opts.filterConfigCwds ?? [])])) {
-          for (const name of await this.filterNames(path, runEnv)) names.add(name)
+          for (const name of await this.filterNames(path, runEnv, true)) names.add(name)
         }
         for (const name of [...names].sort()) {
           if (!GitRunner.legal(name)) continue
