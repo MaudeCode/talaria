@@ -246,6 +246,27 @@ def test_workers_and_detached_children_cleaned_on_abort(project, failure, proc_e
             os.kill(int(pidfile.read_text()), signal.SIGKILL)
 
 
+@pytest.mark.parametrize('mocked_api', ['Popen', 'check_output'])
+def test_cleanup_fixture_runs_after_subprocess_mocks_are_restored(project, mocked_api):
+    shutil.copy(SCRIPTS.parent / 'tests/conftest.py', project / 'tests/conftest.py')
+    (project / 'tests/test_mocks.py').write_text(textwrap.dedent(f"""
+        import subprocess, sys, types
+        chat = types.ModuleType('talaria_sidecar.methods.chat')
+        chat._AGENT_CACHE = {{'previous': object()}}
+        sys.modules[chat.__name__] = chat
+        def test_mock(monkeypatch):
+            assert not chat._AGENT_CACHE
+            chat._AGENT_CACHE['current'] = object()
+            def mocked(*args, **kwargs):
+                raise AssertionError('subprocess mock survived into process cleanup')
+            monkeypatch.setattr(subprocess, {mocked_api!r}, mocked)
+        def test_next_cache():
+            assert not chat._AGENT_CACHE
+    """))
+    result = run(project, 1)
+    assert result.returncode == 0, result.stdout + result.stderr
+
+
 def test_cleanup_fixture_leaves_sibling_child_alive_and_detects_own_leak(project):
     # Exercise the real basetemp-scanning fixture, without another harness.
     shutil.copy(SCRIPTS.parent / 'tests/conftest.py', project / 'tests/conftest.py')

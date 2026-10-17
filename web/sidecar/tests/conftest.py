@@ -201,11 +201,16 @@ def serve_model(handler: type[OneToolCallModel]):
 
 
 @pytest.fixture(autouse=True)
-def isolated_chat_agent_cache(monkeypatch):
+def isolated_chat_agent_cache():
     # Do not import chat into synthetic runner projects or bootstrap probes.
     chat = sys.modules.get('talaria_sidecar.methods.chat')
-    if chat is not None:
-        monkeypatch.setattr(chat, '_AGENT_CACHE', OrderedDict())
+    # A dependency on pytest's monkeypatch fixture promotes it to autouse,
+    # retaining every test's subprocess mocks through process-leak teardown.
+    # Keep this cache patch independent so test mocks unwind before that scan.
+    with pytest.MonkeyPatch.context() as patch:
+        if chat is not None:
+            patch.setattr(chat, '_AGENT_CACHE', OrderedDict())
+        yield
 
 
 @pytest.fixture(autouse=True)
