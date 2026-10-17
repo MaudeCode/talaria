@@ -315,36 +315,91 @@ def _local_session(entry):
         return basic._sign({'sub': str(username), 'kind': 'access', 'exp': int(time.time()) + 60}, key)
 
 
+class BackendLifecycleUnsupported(RuntimeError):
+    """Terminal capability refusal, distinct from retryable recovery readiness."""
+
+
 def backend_request(entry, action=None, permit=None):
     host, port = _endpoint(entry)
     token = _auth(entry)
     headers = {'X-Hermes-Session-Token': token, 'Authorization': 'Bearer ' + token}
-    for attempt in range(2):
-        connection = http.client.HTTPConnection(host, port, timeout=2)
-        try:
-            body = None if action is None else json.dumps(dict(action=action, **({'token': permit} if permit else {})))
-            if body is not None:
-                headers['Content-Type'] = 'application/json'
-            connection.request('GET' if body is None else 'POST', '/api/host/identity' if body is None else '/api/health/retirement', body, headers)
-            response = connection.getresponse()
-            data = response.read(65537)
-            if response.status == 401 and attempt == 0:
-                credential = _local_session(entry)
-                if credential:
-                    headers['Authorization'] = 'Bearer ' + credential
-                    continue
-            if response.status != 200 or len(data) > 65536:
-                raise RuntimeError(f'{_name(entry)} refused authenticated backend lifecycle access (HTTP {response.status}); source was not changed.')
-            result = json.loads(data)
-            if not isinstance(result, dict):
-                raise ValueError('not an object')
-            if action is None and (result.get('pid') != entry['pid'] or result.get('role') != 'serve' or result.get('ok') is not True):
+
+    def request(path, body=None, *, authenticated=True, limit=65536):
+        for attempt in range(2):
+            connection = http.client.HTTPConnection(host, port, timeout=2)
+            try:
+                sent = {**headers, 'Content-Type': 'application/json'} if authenticated else {}
+                connection.request('GET' if body is None else 'POST', path, body, sent)
+                response = connection.getresponse()
+                data = response.read(limit + 1)
+                if authenticated and response.status == 401 and attempt == 0:
+                    credential = _local_session(entry)
+                    if credential:
+                        headers['Authorization'] = 'Bearer ' + credential
+                        continue
+                if authenticated and response.status in {401, 403}:
+                    raise RuntimeError(f'{_name(entry)} refused authenticated backend lifecycle access (HTTP {response.status}); source was not changed.')
+                if len(data) > limit:
+                    raise ValueError('oversized response')
+                return response.status, json.loads(data) if response.status == 200 else None
+            finally:
+                connection.close()
+
+    def verified_identity(status, result):
+        return (status == 200 and isinstance(result, dict) and result.get('pid') == entry['pid']
+                and result.get('role') == 'serve' and result.get('ok') is True)
+
+    def capability_check(identity_status, identity):
+        # The schema belongs to the running endpoint, never the checkout on disk.
+        status, schema = request('/openapi.json', limit=4 * 1024 * 1024)
+        if (status != 200 or not isinstance(schema, dict) or not isinstance(schema.get('paths'), dict)
+                or not isinstance(schema.get('openapi'), str) or not schema['openapi'].startswith('3.')):
+            raise RuntimeError(f'{_name(entry)} backend lifecycle/readiness schema could not be verified.')
+        paths = schema['paths']
+        for path, method in (('/api/host/identity', 'get'), ('/api/health/retirement', 'post')):
+            route = paths.get(path, {})
+            if not isinstance(route, dict) or (method in route and not isinstance(route[method], dict)):
+                raise ValueError('malformed lifecycle schema')
+        missing_identity = 'get' not in paths.get('/api/host/identity', {})
+        missing_retirement = 'post' not in paths.get('/api/health/retirement', {})
+        if not missing_identity and not missing_retirement:
+            return
+        if verified_identity(identity_status, identity):
+            if missing_identity or not verified_identity(*request('/api/host/identity')):
+                raise RuntimeError(f'{_name(entry)} backend lifecycle identity/schema changed or disagrees.')
+        elif identity_status in {404, 405, 501} and missing_identity:
+            challenge, _ = request('/api/sessions?limit=1', authenticated=False)
+            accepted, sessions = request('/api/sessions?limit=1')
+            if (challenge not in {401, 403} or accepted != 200 or not isinstance(sessions, dict)
+                    or not isinstance(sessions.get('sessions'), list)
+                    or request('/api/host/identity')[0] != identity_status):
+                return
+        else:
+            return
+        name = ''.join(c for c in str(_name(entry)) if c.isprintable())
+        unverified = ' Backend listener identity remains unverified.' if missing_identity else ''
+        raise BackendLifecycleUnsupported(
+            f'{name} running backend lifecycle APIs are unsupported for safe Agent update custody.' + unverified
+            + ' Finish active work, then have the owner gracefully refresh this service through its original supervisor.'
+            + ' Verify the successor lifecycle APIs and intended installation/profile/PID, then retry the Agent update.'
+            + ' Any retained service recovery remains owed.')
+
+    try:
+        body = None if action is None else json.dumps(dict(action=action, **({'token': permit} if permit else {})))
+        status, result = request('/api/host/identity' if action is None else '/api/health/retirement', body)
+        if action is None:
+            if status == 200 and not verified_identity(status, result):
                 raise RuntimeError(f'{_name(entry)} endpoint is not the expected backend process.')
-            return result
-        except (OSError, ValueError, http.client.HTTPException) as exc:
-            raise RuntimeError(f'{_name(entry)} backend lifecycle/readiness could not be verified.') from exc
-        finally:
-            connection.close()
+            capability_check(status, result)
+        elif status in {404, 405, 501}:
+            capability_check(*request('/api/host/identity'))
+        if status != 200:
+            raise RuntimeError(f'{_name(entry)} backend lifecycle/readiness could not be verified (HTTP {status}).')
+        if not isinstance(result, dict):
+            raise ValueError('not an object')
+        return result
+    except (OSError, ValueError, TypeError, http.client.HTTPException) as exc:
+        raise RuntimeError(f'{_name(entry)} backend lifecycle/readiness could not be verified.') from exc
 
 
 def _config_stamp(entry):
@@ -598,6 +653,8 @@ class ServiceRecovery:
             verify_processes(candidate, self.records)
             if self.identity._pid_alive_matches(row['pid'], row['create_time'], strict=True) is not True:
                 return False
+        except BackendLifecycleUnsupported:
+            raise
         except RuntimeError:
             return False
         return True

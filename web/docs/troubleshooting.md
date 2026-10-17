@@ -314,3 +314,32 @@ Related references:
 - [`docs/docker.md`](docker.md) — Docker compose setup, common failure modes, bind-mount migration.
 - [`docs/wsl-autostart.md`](wsl-autostart.md) — WSL2 auto-start at login on Windows.
 - [`docs/EXTENSIONS.md`](EXTENSIONS.md) — WebUI extension injection, security model, examples.
+
+
+## Agent update says the running backend lifecycle APIs are unsupported
+
+The named dashboard/serve service accepted authentication but its running API
+lacks the identity or admission-closing retirement protocol needed for a safe
+Agent update. A newer checkout on disk does not upgrade an already-running
+process. If identity is missing, Talaria cannot verify the listener's PID or
+role and says so. A 401/403 instead means authentication failed; a generic
+404 or unreachable listener alone does not prove an old backend.
+
+1. Finish active work in that dashboard and its served profile.
+2. With the owner's authorization, use the original service/supervisor's
+   established graceful restart or refresh procedure. This is an owner action;
+   Talaria cannot close admission safely on the incompatible runtime.
+3. Verify the successor serves authenticated `GET /api/host/identity` and
+   advertises `POST /api/health/retirement` in `/openapi.json`, with the intended
+   installation, profile, PID, original supervisor and endpoint. A wrapper PID
+   or a listening port alone is insufficient. Do not commit retirement merely
+   as a diagnostic probe.
+4. Retry the Agent update. Normal and force updates use the same safety checks.
+   If a previous attempt owes service recovery, the obligation stays recorded
+   until the capable successor is verified. Safe sibling services can recover
+   independently.
+
+Keep authentication, ledger and recovery records intact. Do not force-kill the
+service, disable it permanently, or bypass updater custody checks. Failure to
+read the live API schema or verify the successor remains a refusal requiring
+repair; it is not successful recovery.

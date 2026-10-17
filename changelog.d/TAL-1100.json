@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Agent updates explain when a running dashboard needs a safe owner-controlled refresh before updating.",
+      "highlight": false,
+      "components": ["web"]
+    }
+  ]
+}
