@@ -18,13 +18,41 @@ def rpc(sidecar, root, action, **params):
     return sidecar.result('runtime.agent_mutation', {'agent_dir': str(root), 'action': action, **params}, timeout=45)
 
 
+@pytest.mark.parametrize('named', [False, True])
+def test_native_legacy_backend_identity_resolves_scoped_profile(tmp_path, named):
+    from conftest import isolated_env, SIDECAR_ROOT
+    home = tmp_path / 'home'
+    served = home / 'profiles' / 'named' if named else home
+    served.mkdir(parents=True)
+    alias = tmp_path / 'home-link'
+    alias.symlink_to(served, target_is_directory=True)
+    script = '''import os, psutil, subprocess, sys
+from pathlib import Path
+from hermes_cli import process_identity
+from talaria_sidecar.agent_services import _backend_identity
+child=subprocess.Popen([sys.executable,'-c','import time; time.sleep(30)'],env={**os.environ,'HERMES_HOME':os.environ['TARGET_HOME']})
+try:
+ row=dict(pid=child.pid,create_time=psutil.Process(child.pid).create_time(),purpose='serve')
+ home,profile=_backend_identity(row,{Path(os.environ['TARGET_HOME']).resolve()},process_identity)
+ assert home==Path(os.environ['TARGET_HOME']).resolve()
+ assert profile==os.environ['EXPECTED_PROFILE'],profile
+ assert 'hermes_home' not in row and 'profile' not in row
+finally:
+ child.terminate(); child.wait(timeout=5)
+'''
+    env = isolated_env(home, PYTHONPATH=str(SIDECAR_ROOT) + os.pathsep + str(AGENT_DIR), TARGET_HOME=str(alias),
+                       EXPECTED_PROFILE='named' if named else 'default', HERMES_SUPERVISED_CHILD='1')
+    result = subprocess.run([AGENT_PYTHON, '-c', script], cwd=AGENT_DIR, env=env, capture_output=True, text=True, timeout=30)
+    assert result.returncode == 0, result.stderr[-5000:]
+
+
 def git(root, *args):
     return subprocess.check_output(['git', '-c', 'user.name=Synthetic', '-c', 'user.email=synthetic@example.invalid',
                                    '-c', 'commit.gpgsign=false', '-C', str(root), *args], text=True).strip()
 
 
 @contextmanager
-def supervised_agent(tmp_path, *, dashboards=1, depth=1, gateways=True, dependency_sync=False, readiness=None):
+def supervised_agent(tmp_path, *, dashboards=1, depth=1, gateways=True, dependency_sync=False, readiness=None, legacy=False):
     root, home, _, _ = native_agent(tmp_path)
     modules = root / 'hermes_cli'
     (root / 'synthetic_services.py').write_text('''import json, os, subprocess, sys, time, psutil
@@ -70,7 +98,10 @@ def ledger():
   try: pid=int(file.read_text())
   except FileNotFoundError: continue
   ct=birth(pid)
-  if ct is not None: result.append(dict(pid=pid,create_time=ct,install='synthetic-install',purpose=cfg['purpose'],hermes_home=cfg['home'],profile=cfg['profile'],host='127.0.0.1',port=cfg.get('port'),argv='hermes '+cfg['purpose']))
+  if ct is not None:
+   row=dict(pid=pid,create_time=ct,install='synthetic-install',purpose=cfg['purpose'],hermes_home=cfg['home'],profile=cfg['profile'],host='127.0.0.1',port=cfg.get('port'),argv='hermes '+cfg['purpose'])
+   if cfg.get('legacy') and cfg['purpose']!='gateway': row.pop('hermes_home'); row['profile']=''
+   result.append(row)
  return result
 ''')
     (root / 'wrapper.py').write_text('import subprocess, sys\nraise SystemExit(subprocess.call(sys.argv[1:]))\n')
@@ -146,9 +177,13 @@ def _loaded_launchd_backend_jobs(): return [('gui/12345',c['label'],['hermes',c[
 def _launchd_job_owning_backend(pid,cmdline,jobs,ancestors=()): return next(((d,l,p) for d,l,a,p in jobs if p in ancestors),None)
 def _get_systemd_service_for_pid(pid): return None
 ''',
-      'dashboard_procs': '''from synthetic_services import ledger
-def _hermes_home_for_pid(pid): return next((r['hermes_home'] for r in ledger() if r['pid']==pid),None)
+      'dashboard_procs': '''from synthetic_services import ledger, services
+def _hermes_home_for_pid(pid): return next((c['home'] for r in ledger() for c in services() if r['pid']==pid and c['purpose']==r['purpose'] and c.get('port')==r.get('port')),None)
 def _pid_environ(pid): return {'HERMES_DASHBOARD_SESSION_TOKEN':'synthetic-local-token'}
+''',
+      'update_receipt': '''from pathlib import Path
+from synthetic_services import services
+def _profile_homes(): return list({(c['profile'],Path(c['home'])) for c in services()})
 ''',
       'update_inventory': 'def _is_desktop_ssh_ledger_entry(row): return False\n',
       'update_cmd_posix_pause': '''from synthetic_services import *
@@ -231,7 +266,7 @@ UpdateLock.acquire_checkout=acquire_checkout
         label = f'synthetic.{purpose}.{i}'
         served_home = home if i < 2 else home / 'profiles' / f'profile{i}'
         served_home.mkdir(parents=True, exist_ok=True)
-        cfg = dict(label=label, purpose=purpose, depth=depth, home=str(served_home), profile='default' if i < 2 else f'profile{i}')
+        cfg = dict(label=label, purpose=purpose, depth=depth, home=str(served_home), profile='default' if i < 2 else f'profile{i}', legacy=legacy)
         if i:
             listener = socket.socket()
             listener.bind(('127.0.0.1', 0))
@@ -306,9 +341,146 @@ def test_direct_and_nested_services_resume_all_profiles_once(tmp_path, depth):
         assert not list((home / '.talaria-agent-services').glob('*.json'))
 
 
+@pytest.mark.parametrize('mode', ['normal', 'force'])
+def test_legacy_backends_hold_source_and_dependency_custody(tmp_path, mode):
+    with supervised_agent(tmp_path, dashboards=2, dependency_sync=True, legacy=True) as (root, home, base, target, sidecar, configs):
+        begun = rpc(sidecar, root, 'begin', revision=target, homes=list({c['home'] for c in configs}))
+        assert begun['ok'], begun
+        debt = json.loads(next((home / '.talaria-agent-services').glob('*.json')).read_text())
+        assert {(e['home'], e.get('profile')) for e in debt['entries'] if e['purpose'] != 'gateway'} == {
+            (c['home'], c['profile']) for c in configs if c['purpose'] != 'gateway'}
+        assert not list((home / 'services').glob('*/service.pid'))
+        args = ['merge', '--ff-only', target] if mode == 'normal' else ['reset', '--hard', target]
+        assert rpc(sidecar, root, 'git', token=begun['token'], args=args, timeout_ms=10000)['ok']
+        assert git(root, 'rev-parse', 'HEAD') == target
+        assert not any((Path(c['home']) / 'backend.pid').exists() for c in configs[1:])
+        assert rpc(sidecar, root, 'sync', token=begun['token'])['ok']
+        assert rpc(sidecar, root, 'finish', token=begun['token'])['ok']
+        assert all((Path(c['home']) / 'backend.pid').exists() for c in configs[1:])
+        assert not list((home / '.talaria-agent-services').glob('*.json'))
+        assert all((home / 'services' / c['label'] / 'starts').read_text().splitlines() == ['start'] for c in configs)
+
+
+@pytest.mark.parametrize('profile', ['default', 'named'])
+@pytest.mark.parametrize('metadata', ['omitted', 'empty', 'null', 'modern'])
+def test_backend_identity_uses_verified_home_for_admission_and_recovery(supervised_inventory, monkeypatch, profile, metadata):
+    import types
+    from talaria_sidecar import agent_services as services
+    from talaria_sidecar.agent_mutation import _owners
+    root, home, pause, identity, rows, parents, modules = supervised_inventory
+    pause._discover_launchd = lambda: []
+    pause._discover_bare = lambda excluded: ([], [])
+    served = home if profile == 'default' else home / 'profiles' / profile
+    served.mkdir(parents=True, exist_ok=True)
+    alias = root / 'home-link'
+    alias.symlink_to(served, target_is_directory=True)
+    modules['hermes_cli.update_receipt']._profile_homes = lambda: [('default', home), *([] if profile == 'default' else [(profile, served)])]
+    modules['hermes_cli.dashboard_procs']._hermes_home_for_pid = lambda pid: str(alias)
+    row = dict(purpose='serve', pid=41004, create_time=410040, host='127.0.0.1', port=9417, argv='hermes serve')
+    if metadata != 'omitted':
+        row.update(hermes_home={'empty': '', 'null': None, 'modern': str(alias)}[metadata],
+                   profile={'empty': '', 'null': None, 'modern': profile}[metadata])
+    original = dict(row)
+    rows.append(row)
+    entry = _owners(root, {served.resolve()}, pause, identity)[0]
+    assert (entry['home'], entry['profile']) == (str(served.resolve()), profile)
+    assert row == original, 'Agent-owned metadata must not be backfilled'
+    records = types.SimpleNamespace(identity=lambda pid: {'ct': pid}, identity_is_live=lambda p: False)
+    services.bind_processes(entry, records)
+    recovery = services.ServiceRecovery(root, home, records, identity, pause)
+    recovery.prepare([entry], {})
+    recovery.state['entries'][0]['phase'] = 'stopped'
+    calls = []
+    monkeypatch.setattr(services, 'backend_request', lambda candidate: calls.append(candidate))
+    assert recovery._ready(recovery.state['entries'][0], lambda *args: [(row, True)])
+    assert [(c['home'], c['profile']) for c in calls] == [(str(served.resolve()), profile)]
+    assert row == original
+
+
+@pytest.mark.parametrize('unsafe', ['ledger-home', 'ledger-profile', 'live-home', 'unreadable-home', 'unreadable-env',
+                                  'missing-birth', 'reused-pid', 'birth-during-home', 'birth-during-supervisor',
+                                  'ambiguous-profile', 'ambiguous-supervisor', 'manual', 'desktop', 'isolated', 'updater-ancestor'])
+def test_legacy_backend_refuses_conflicting_or_unverified_identity(supervised_inventory, unsafe):
+    from talaria_sidecar.agent_mutation import _owners
+    root, home, pause, identity, rows, parents, modules = supervised_inventory
+    pause._discover_launchd = lambda: []
+    pause._discover_bare = lambda excluded: ([], [])
+    row = dict(purpose='dashboard', pid=41004, create_time=410040, host='127.0.0.1', port=9417, argv='hermes dashboard')
+    rows.append(row)
+    procs, dashboard = modules['hermes_cli.dashboard_procs'], modules['hermes_cli.main_dashboard']
+    if unsafe == 'ledger-home': row['hermes_home'] = str(root / 'foreign')
+    if unsafe == 'ledger-profile': row['profile'] = 'named'
+    if unsafe == 'live-home': procs._hermes_home_for_pid = lambda pid: str(root / 'foreign')
+    if unsafe == 'unreadable-home': procs._hermes_home_for_pid = lambda pid: None
+    if unsafe == 'unreadable-env': procs._pid_environ = lambda pid: None
+    if unsafe == 'missing-birth': row.pop('create_time')
+    if unsafe == 'reused-pid': identity._pid_alive_matches = lambda *args, **kwargs: False
+    if unsafe == 'birth-during-home':
+        def observed(pid):
+            identity._pid_alive_matches = lambda *args, **kwargs: False
+            return str(home)
+        procs._hermes_home_for_pid = observed
+    if unsafe == 'birth-during-supervisor':
+        original = dashboard._loaded_launchd_backend_jobs
+        def jobs():
+            identity._pid_alive_matches = lambda *args, **kwargs: False
+            return original()
+        dashboard._loaded_launchd_backend_jobs = jobs
+    if unsafe == 'ambiguous-profile': modules['hermes_cli.update_receipt']._profile_homes = lambda: [('default', home), ('alias', home)]
+    if unsafe == 'ambiguous-supervisor':
+        parents[41003] = 41001
+        original = dashboard._loaded_launchd_backend_jobs
+        dashboard._loaded_launchd_backend_jobs = lambda: [*original(), ('gui/12345', 'other', ['hermes', 'dashboard'], 41001)]
+    if unsafe == 'manual': dashboard._loaded_launchd_backend_jobs = lambda: []
+    if unsafe == 'desktop': procs._pid_environ = lambda pid: {'HERMES_DESKTOP': '1', 'HERMES_DASHBOARD_SESSION_TOKEN': 'synthetic'}
+    if unsafe == 'isolated': row['isolated'] = True
+    if unsafe == 'updater-ancestor': parents[os.getpid()] = 41003
+    with pytest.raises(RuntimeError, match='backend|Backend|owns the updater'):
+        _owners(root, {home}, pause, identity)
+
+
+@pytest.mark.parametrize('conflict', ['home', 'profile', 'configuration', 'listener-birth'])
+def test_legacy_successor_identity_failure_keeps_recovery_debt(supervised_inventory, monkeypatch, conflict):
+    import plistlib
+    import types
+    from talaria_sidecar import agent_services as services
+    from talaria_sidecar.agent_mutation import _owners
+    root, home, pause, identity, rows, parents, modules = supervised_inventory
+    pause._discover_launchd = lambda: []
+    pause._discover_bare = lambda excluded: ([], [])
+    row = dict(purpose='dashboard', pid=41004, create_time=410040, host='127.0.0.1', port=9417, argv='hermes dashboard')
+    rows.append(row)
+    entry = _owners(root, {home}, pause, identity)[0]
+    records = types.SimpleNamespace(identity=lambda pid: {'ct': pid}, identity_is_live=lambda p: False,
+                                    tree_is_whole=lambda *args: (True, ''))
+    services.bind_processes(entry, records)
+    recovery = services.ServiceRecovery(root, home, records, identity, pause)
+    recovery.prepare([entry], {})
+    recovery.state['entries'][0]['phase'] = 'stopped'
+    recovery.save()
+    if conflict == 'home': modules['hermes_cli.dashboard_procs']._hermes_home_for_pid = lambda pid: str(root / 'foreign')
+    if conflict == 'profile': row['profile'] = 'foreign'
+    if conflict == 'configuration':
+        alternate = root / 'alternate'
+        alternate.mkdir()
+        data = plistlib.loads(Path(entry['plist']).read_bytes())
+        data['EnvironmentVariables'] = {'SYNTHETIC_CHANGED': '1'}
+        (alternate / (entry['label'] + '.plist')).write_bytes(plistlib.dumps(data))
+        modules['hermes_cli.main_dashboard']._launchd_plist_dirs = lambda: [('agent', alternate)]
+    def listener(candidate):
+        assert conflict == 'listener-birth', 'unverified identity must never reach the listener'
+        identity._pid_alive_matches = lambda *args, **kwargs: False
+    monkeypatch.setattr(services, 'backend_request', listener)
+    monkeypatch.setattr(services, 'READY_SECONDS', .01)
+    with pytest.raises(RuntimeError):
+        recovery.resume(lambda *args: [(row, True)])
+    assert [e['label'] for e in json.loads(recovery.path.read_text())['entries']] == [entry['label']]
+
+
 @pytest.mark.parametrize('exit_path', ['finish', 'eof', 'owner-kill'])
-def test_backend_recovery_covers_lease_exit_paths(tmp_path, exit_path):
-    with supervised_agent(tmp_path) as (root, home, base, target, sidecar, configs):
+@pytest.mark.parametrize('legacy', [False, True])
+def test_backend_recovery_covers_lease_exit_paths(tmp_path, exit_path, legacy):
+    with supervised_agent(tmp_path, legacy=legacy) as (root, home, base, target, sidecar, configs):
         begun = rpc(sidecar, root, 'begin', revision=target, homes=[str(home)])
         assert begun['ok'], begun
         if exit_path == 'finish':
@@ -338,9 +510,10 @@ def test_partial_pause_restores_only_the_services_it_stopped(tmp_path):
         assert not (home / 'services' / configs[2]['label'] / 'starts').exists()
 
 
-def test_failed_restart_retains_debt_and_a_fresh_sidecar_recovers_it(tmp_path):
-    with supervised_agent(tmp_path) as (root, home, base, target, sidecar, configs):
-        begun = rpc(sidecar, root, 'begin', revision=target, homes=[str(home)])
+@pytest.mark.parametrize('legacy', [False, True])
+def test_failed_restart_retains_debt_and_a_fresh_sidecar_recovers_it(tmp_path, legacy):
+    with supervised_agent(tmp_path, dashboards=2, legacy=legacy) as (root, home, base, target, sidecar, configs):
+        begun = rpc(sidecar, root, 'begin', revision=target, homes=list({c['home'] for c in configs}))
         assert begun['ok'], begun
         refused = home / 'services' / configs[1]['label'] / 'fail-start'
         refused.touch()
@@ -348,6 +521,9 @@ def test_failed_restart_retains_debt_and_a_fresh_sidecar_recovers_it(tmp_path):
         assert not finished['ok'], finished
         assert configs[1]['label'] in finished['detail'] and 'failed to load' in finished['detail']
         assert list((home / '.talaria-agent-services').glob('*.json'))
+        debt = json.loads(next((home / '.talaria-agent-services').glob('*.json')).read_text())
+        assert [e['label'] for e in debt['entries']] == [configs[1]['label']]
+        assert (Path(configs[2]['home']) / 'backend.pid').exists()
         assert not (home / 'backend.pid').exists()
         refused.unlink()
         sidecar.close()
@@ -361,8 +537,9 @@ def test_failed_restart_retains_debt_and_a_fresh_sidecar_recovers_it(tmp_path):
         assert (home / 'services' / configs[1]['label'] / 'starts').read_text().splitlines() == ['start']
 
 
-def test_native_and_backend_debt_survive_worker_death_and_unsafe_source(tmp_path):
-    with supervised_agent(tmp_path) as (root, home, base, target, sidecar, configs):
+@pytest.mark.parametrize('legacy', [False, True])
+def test_native_and_backend_debt_survive_worker_death_and_unsafe_source(tmp_path, legacy):
+    with supervised_agent(tmp_path, legacy=legacy) as (root, home, base, target, sidecar, configs):
         begun = rpc(sidecar, root, 'begin', revision=target, homes=[str(home)])
         assert begun['ok'], begun
         journal = next(p for p in home.glob('*.json') if 'owner' in json.loads(p.read_text()))
@@ -469,8 +646,9 @@ def test_supervised_dashboard_without_gateway_recovers(tmp_path):
         assert (home / 'backend.pid').exists()
 
 
-def test_dependency_failure_keeps_both_services_stopped_until_repair(tmp_path):
-    with supervised_agent(tmp_path, dependency_sync=True) as (root, home, base, target, sidecar, configs):
+@pytest.mark.parametrize('legacy', [False, True])
+def test_dependency_failure_keeps_both_services_stopped_until_repair(tmp_path, legacy):
+    with supervised_agent(tmp_path, dependency_sync=True, legacy=legacy) as (root, home, base, target, sidecar, configs):
         begun = rpc(sidecar, root, 'begin', revision=target, homes=[str(home)])
         assert begun['ok'], begun
         assert rpc(sidecar, root, 'git', token=begun['token'], args=['merge', '--ff-only', target], timeout_ms=10000)['ok']
@@ -536,8 +714,9 @@ print('native gated retirement accepted; active work preserved')
     assert 'native gated retirement accepted' in result.stdout
 
 
-def test_supervisor_respawn_refuses_mutation_and_recovery_adopts_its_successor(tmp_path):
-    with supervised_agent(tmp_path) as (root, home, base, target, sidecar, configs):
+@pytest.mark.parametrize('legacy', [False, True])
+def test_supervisor_respawn_refuses_mutation_and_recovery_adopts_its_successor(tmp_path, legacy):
+    with supervised_agent(tmp_path, legacy=legacy) as (root, home, base, target, sidecar, configs):
         service = home / 'services' / configs[1]['label']
         (service / 'respawn').touch()
         result = rpc(sidecar, root, 'begin', revision=target, homes=[str(home)])
