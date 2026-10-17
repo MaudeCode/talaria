@@ -1,4 +1,4 @@
-import { matchQuery, useMutation, useQuery, useQueryClient, type QueryKey, type QueryClient } from '@tanstack/react-query'
+import { matchQuery, useMutation, useQuery, useQueryClient, type QueryKey, type QueryClient, type Query } from '@tanstack/react-query'
 import { getStreamContext } from '../../stream/connection'
 import { keys } from '../../api/queryKeys'
 import * as api from '../../api/endpoints'
@@ -15,10 +15,12 @@ export interface ResourceIntent<T = unknown> {
 interface OwnedIntent extends ResourceIntent { context: object }
 const intentKey = ['resource-intents'] as const
 const empty: Record<string, OwnedIntent> = {}
+/** Extend the existing key selection with an exact snapshot match when descendants are unrelated. */
+type ResourceRead = QueryKey | { queryKey: QueryKey; exact: boolean }
 interface Reconciliation {
   context: object
   requested: number
-  requests: { current: () => boolean; resource: string; readKeys: QueryKey[] | undefined }[]
+  requests: { current: () => boolean; resource: string; readKeys: ResourceRead[] | undefined }[]
   promise: Promise<void>
 }
 const reconciliations = new WeakMap<QueryClient, Map<string, Reconciliation>>()
@@ -28,11 +30,16 @@ export function useResourceIntents<T = unknown>(): Record<string, ResourceIntent
   return Object.fromEntries(Object.entries(data).filter(([, intent]) => intent.context === getStreamContext())) as Record<string, ResourceIntent<T>>
 }
 
-function cancelResourceReads(qc: QueryClient, queryKey?: QueryKey, readKeys?: QueryKey[]) {
-  return Promise.all((queryKey ? [queryKey] : [keys.sessions.all, keys.projects]).map((queryKey) => qc.cancelQueries({ queryKey, ...(readKeys ? { predicate: (query) => readKeys.some((key) => matchQuery({ queryKey: key }, query)) } : {}) })))
+/** Cancellation and refetch must cover the same required snapshots. */
+function resourceReadFilter(readKeys?: ResourceRead[]) {
+  return readKeys ? { predicate: (query: Query) => readKeys.some((key) => matchQuery('queryKey' in key ? key : { queryKey: key }, query)) } : {}
 }
 
-async function reconcile(qc: QueryClient, current: () => boolean, resource: string, queryKey?: QueryKey, readKeys?: QueryKey[]) {
+function cancelResourceReads(qc: QueryClient, queryKey?: QueryKey, readKeys?: ResourceRead[]) {
+  return Promise.all((queryKey ? [queryKey] : [keys.sessions.all, keys.projects]).map((queryKey) => qc.cancelQueries({ queryKey, ...resourceReadFilter(readKeys) })))
+}
+
+async function reconcile(qc: QueryClient, current: () => boolean, resource: string, queryKey?: QueryKey, readKeys?: ResourceRead[]) {
   if (!current()) return
   const context = getStreamContext()
   const group = JSON.stringify(queryKey ?? ['resources'])
@@ -73,13 +80,13 @@ async function reconcile(qc: QueryClient, current: () => boolean, resource: stri
   return queue.promise
 }
 
-async function reconcileSnapshot(qc: QueryClient, current: () => boolean, resource: string, queryKey?: QueryKey, readKeys?: QueryKey[]) {
+async function reconcileSnapshot(qc: QueryClient, current: () => boolean, resource: string, queryKey?: QueryKey, readKeys?: ResourceRead[]) {
   if (!current()) return
   // Cancel reads captured before the write, including inactive detail/search queries.
   await cancelResourceReads(qc, queryKey, readKeys)
   if (!current()) return
   if (queryKey) {
-    await qc.invalidateQueries({ queryKey, refetchType: 'all', ...(readKeys ? { predicate: (query) => readKeys.some((key) => matchQuery({ queryKey: key }, query)) } : {}) }, { throwOnError: true })
+    await qc.invalidateQueries({ queryKey, refetchType: 'all', ...resourceReadFilter(readKeys) }, { throwOnError: true })
     return
   }
   const projects = qc.getQueryCache().find({ queryKey: keys.projects, exact: true })
@@ -96,7 +103,7 @@ export function useResourceMutation<V, R, T = unknown>(options: {
   resource: (variables: V) => string | string[]
   intent: (variables: V) => ResourceIntent<T>
   queryKey?: QueryKey
-  readKeys?: (variables: V) => QueryKey[]
+  readKeys?: (variables: V) => ResourceRead[]
   mutationFn: (variables: V) => Promise<R>
   onSuccess?: (result: R, variables: V) => void
   onError?: (error: unknown) => void

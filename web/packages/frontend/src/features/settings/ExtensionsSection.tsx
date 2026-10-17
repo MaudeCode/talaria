@@ -14,6 +14,8 @@ import { ConfirmDialog } from '../../ui/Dialog'
 import { EmptyState, ErrorState, LoadingState } from '../../ui/States'
 import { showToast } from '../toast/toast'
 import { useBootstrap } from '../../app/bootstrap'
+import { useResourceIntents, useResourceMutation, type ResourceIntent } from '../sessions/useResourceMutation'
+import { ResourceSwitch } from '../sessions/ResourcePending'
 import { cn } from '../../ui/cn'
 
 const GUIDE = 'https://github.com/MaudeCode/talaria/blob/main/web/docs/architecture/extension-migration-guide.md'
@@ -26,14 +28,24 @@ export function ExtensionsSection() {
   const registry = useQuery({ queryKey: keys.extensions.registry, queryFn: api.fetchExtensionRegistry, staleTime: 5 * 60_000, retry: false })
   const [confirmUninstall, setConfirmUninstall] = useState<string | null>(null)
   const invalidate = () => { void qc.invalidateQueries({ queryKey: keys.extensions.manifests }); void qc.invalidateQueries({ queryKey: keys.extensions.status }) }
+  const intents = useResourceIntents<boolean>()
+  const toggle = useResourceMutation({
+    resource: ({ id }: { id: string; enabled: boolean }) => `extension:${id}`,
+    intent: ({ enabled }) => ({ value: enabled, label: m.save() }),
+    queryKey: keys.extensions.all,
+    readKeys: () => [keys.extensions.manifests, keys.extensions.status],
+    mutationFn: async ({ id, enabled }) => api.extensionAction('toggle', { id, enabled }),
+    onSuccess: () => showToast(m.saved()),
+    onError: (e) => showToast(e instanceof Error ? e.message : String(e), 5000, 'error'),
+  })
   const act = useMutation({
     mutationFn: async ({ action, body }: { action: Parameters<typeof api.extensionAction>[0]; body: Record<string, unknown> }) => { await api.extensionAction(action, body) },
     onSuccess: () => { showToast(m.saved()); invalidate() },
     onError: (e) => showToast(e instanceof Error ? e.message : String(e), 5000, 'error'),
   })
   if (manifests.isPending) return <LoadingState />
-  if (manifests.isError) return <ErrorState error={manifests.error} onRetry={() => { void manifests.refetch() }} />
-  const list = manifests.data.manifests
+  if (manifests.isError && !manifests.data) return <ErrorState error={manifests.error} onRetry={() => { void manifests.refetch() }} />
+  const list = manifests.data?.manifests ?? []
   const gallery = (registry.data?.entries ?? registry.data?.extensions ?? []) as { id?: string; name?: string; description?: string; version?: string; download_url?: string; sha256?: string }[]
   const installed = new Set(list.map((e) => e.id))
   const canManage = bootstrap.auth.can_manage_server
@@ -44,7 +56,7 @@ export function ExtensionsSection() {
         <h2 className="mb-2 text-sm font-semibold text-text">{m.extensions_installed()}</h2>
         {list.length === 0 && <EmptyState>{m.extensions_none()}</EmptyState>}
         <ul className="flex flex-col gap-2">
-          {list.map((e) => <ExtensionRow key={e.id} ext={e} canManage={canManage} onToggle={(enabled) => act.mutate({ action: 'toggle', body: { id: e.id, enabled } })} onConsent={(consent) => act.mutate({ action: 'sidecar-proxy-consent', body: { id: e.id, consent } })} onUninstall={() => setConfirmUninstall(e.id)} />)}
+          {list.map((e) => <ExtensionRow key={e.id} ext={e} canManage={canManage} intent={intents[`extension:${e.id}`]} onToggle={(enabled) => toggle.mutate({ id: e.id, enabled })} onConsent={(consent) => act.mutate({ action: 'sidecar-proxy-consent', body: { id: e.id, consent } })} onUninstall={() => setConfirmUninstall(e.id)} />)}
         </ul>
       </section>
       <section>
@@ -66,7 +78,7 @@ export function ExtensionsSection() {
   )
 }
 
-function ExtensionRow({ ext, canManage, onToggle, onConsent, onUninstall }: { ext: ExtensionManifest; canManage: boolean; onToggle: (enabled: boolean) => void; onConsent: (consent: boolean) => void; onUninstall: () => void }) {
+function ExtensionRow({ ext, canManage, intent, onToggle, onConsent, onUninstall }: { ext: ExtensionManifest; intent: ResourceIntent<boolean> | undefined; canManage: boolean; onToggle: (enabled: boolean) => void; onConsent: (consent: boolean) => void; onUninstall: () => void }) {
   const perms = Object.entries(ext.permissions ?? {}).filter(([, v]) => v).map(([k]) => k)
   return (
     <li className={cn('rounded-lg border border-border bg-surface p-3 text-sm', !ext.enabled && 'opacity-80')} data-extension-id={ext.id} data-source={ext.source}>
@@ -77,7 +89,7 @@ function ExtensionRow({ ext, canManage, onToggle, onConsent, onUninstall }: { ex
         </div>
         {ext.panel && ext.enabled && <Link to="/ext/$extensionId" params={{ extensionId: ext.id }} className="text-xs text-accent-text underline">{m.extensions_open()}</Link>}
         {canManage && ext.can_toggle && (
-          <label className="flex items-center gap-1 text-xs text-muted"><Switch checked={ext.enabled} onCheckedChange={(checked) => onToggle(checked)} aria-label={`${ext.name}: ${ext.enabled ? m.plugins_enabled() : m.plugins_disabled()}`} /> {ext.enabled ? m.plugins_enabled() : m.plugins_disabled()}</label>
+          <ResourceSwitch intent={intent} checked={ext.enabled} onCheckedChange={(checked) => onToggle(checked)} aria-label={ext.name} stateLabel={(enabled) => enabled ? m.plugins_enabled() : m.plugins_disabled()} />
         )}
         {canManage && ext.source === 'gallery' && <Button variant="ghost" className="text-error" onClick={onUninstall}>{m.extensions_uninstall()}</Button>}
       </div>

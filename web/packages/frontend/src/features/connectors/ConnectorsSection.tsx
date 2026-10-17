@@ -9,12 +9,14 @@ import { isApiError } from '../../contracts'
 import { Badge } from '../../ui/Badge'
 import { Button } from '../../ui/Button'
 import { ConfirmDialog } from '../../ui/Dialog'
-import { Switch } from '../../ui/Field'
 import { EmptyState, ErrorState, LoadingState } from '../../ui/States'
 import { showToast } from '../toast/toast'
+import { useResourceIntents, useResourceMutation } from '../sessions/useResourceMutation'
+import { ResourceSwitch } from '../sessions/ResourcePending'
 import { ConnectTargets, useConnectorOperation } from './ConnectTargets'
 
 type Rule = { enabled: boolean } | { tool: string; tool_enabled: boolean }
+const ruleResource = (connector: string, rule: Rule) => JSON.stringify(['connector-rule', connector, 'tool' in rule ? rule.tool : null])
 
 const PROBLEM: Record<NonNullable<ConnectorView['accounts'][number]['problem']>, () => string> = {
   pending: m.connectors_account_pending, failed: m.connectors_account_failed, expired: m.connectors_account_expired, revoked: m.connectors_account_revoked, inactive: m.connectors_account_inactive,
@@ -25,11 +27,13 @@ const FACET: Record<ConnectorToolsView['tools'][number]['facet'], () => string> 
 
 /** The member-rule write every switch on the page makes; a stale revision reloads the page's rules. */
 function useRule() {
-  const qc = useQueryClient()
-  return useMutation({
+  return useResourceMutation({
+    resource: ({ connector, rule }: { connector: string; revision: string; rule: Rule }) => [ruleResource(connector, rule), 'connector-rules'],
+    intent: ({ rule }) => ({ value: 'tool' in rule ? rule.tool_enabled : rule.enabled, label: m.save() }),
+    queryKey: keys.connectors.all,
+    readKeys: () => [keys.connectors.page, ['connectors', 'tools']],
     mutationFn: ({ connector, revision, rule }: { connector: string; revision: string; rule: Rule }) => api.setConnectorRule(connector, revision, rule),
-    onError: (error) => showToast(isApiError(error) && error.code === 'policy_conflict' ? m.connectors_rule_conflict() : error.message || m.connectors_failed(), 5000, 'error'),
-    onSettled: () => { void qc.invalidateQueries({ queryKey: keys.connectors.all }) },
+    onError: (error) => showToast(isApiError(error) && error.code === 'policy_conflict' ? m.connectors_rule_conflict() : error instanceof Error && error.message ? error.message : m.connectors_failed(), 5000, 'error'),
   })
 }
 
@@ -37,9 +41,10 @@ function useRule() {
 export function ConnectorsSection() {
   const page = useQuery({ queryKey: keys.connectors.page, queryFn: api.fetchConnectors, staleTime: 30_000 })
   const rule = useRule()
+  const intents = useResourceIntents<boolean>()
   if (page.isPending) return <LoadingState />
-  if (page.isError) return <ErrorState error={page.error} onRetry={() => { void page.refetch() }} />
-  if (!page.data.available) return <EmptyState>{m.connectors_unavailable()}</EmptyState>
+  if (page.isError && !page.data) return <ErrorState error={page.error} onRetry={() => { void page.refetch() }} />
+  if (!page.data?.available) return <EmptyState>{m.connectors_unavailable()}</EmptyState>
   if (page.data.connectors.length === 0) return <EmptyState>{m.connectors_empty()}</EmptyState>
   const revision = page.data.policy_revision
   return (
@@ -47,8 +52,8 @@ export function ConnectorsSection() {
     {page.data.rules_error && <p role="status" className="mb-2 text-xs text-error" data-connectors-rules-error>{page.data.rules_error}</p>}
     <ul className="flex flex-col divide-y divide-border-subtle" aria-label={m.settings_section_connectors_title()} data-section="connectors">
       {page.data.connectors.map((connector) => (
-        <ConnectorRow key={connector.slug} connector={connector} ruleBusy={rule.isPending}
-          onRule={(next) => { if (revision) rule.mutate({ connector: connector.slug, revision, rule: next }) }} />
+        <ConnectorRow key={connector.slug} connector={connector} ruleBusy={!!intents['connector-rules'] || !revision}
+          onRule={(next) => { if (revision && !intents['connector-rules']) rule.mutate({ connector: connector.slug, revision, rule: next }) }} />
       ))}
     </ul>
     </>
@@ -57,6 +62,7 @@ export function ConnectorsSection() {
 
 function ConnectorRow({ connector, ruleBusy, onRule }: { connector: ConnectorView; ruleBusy: boolean; onRule: (rule: Rule) => void }) {
   const qc = useQueryClient()
+  const intents = useResourceIntents<boolean>()
   const [operation, setOperation] = useState<ConnectorOperationView | null>(null)
   const [toolsOpen, setToolsOpen] = useState(false)
   const [removing, setRemoving] = useState<{ id: string; name: string } | null>(null)
@@ -84,7 +90,7 @@ function ConnectorRow({ connector, ruleBusy, onRule }: { connector: ConnectorVie
           {connector.description && <div className="line-clamp-1 text-xs text-muted">{connector.description}</div>}
         </div>
         {!operation && <Button disabled={connect.isPending} onClick={() => connect.mutate()}>{connector.connected ? m.connectors_add_account() : m.connectors_connect()}</Button>}
-        <Switch checked={connector.enabled} disabled={!connector.rules_editable || ruleBusy} onCheckedChange={(enabled) => onRule({ enabled })}
+        <ResourceSwitch intent={intents[ruleResource(connector.slug, { enabled: connector.enabled })]} checked={connector.enabled} disabled={!connector.rules_editable || ruleBusy} onCheckedChange={(enabled) => onRule({ enabled })}
           aria-label={m.connectors_enabled_aria({ name: connector.name })} />
       </div>
       {operation && <PageConnect initial={operation} name={connector.name} onDone={() => { setOperation(null); void qc.invalidateQueries({ queryKey: keys.connectors.page }) }} />}
@@ -127,12 +133,13 @@ function PageConnect({ initial, name, onDone }: { initial: ConnectorOperationVie
 }
 
 function ToolList({ slug, busy, onRule }: { slug: string; busy: boolean; onRule: (rule: Rule) => void }) {
+  const intents = useResourceIntents<boolean>()
   const tools = useQuery({ queryKey: keys.connectors.tools(slug), queryFn: () => api.fetchConnectorTools(slug), staleTime: 30_000 })
   if (tools.isPending) return <LoadingState />
-  if (tools.isError) return <ErrorState error={tools.error} onRetry={() => { void tools.refetch() }} />
+  if (tools.isError && !tools.data) return <ErrorState error={tools.error} onRetry={() => { void tools.refetch() }} />
   return (
     <ul className="mt-1 flex max-h-80 flex-col divide-y divide-border-subtle overflow-y-auto" aria-label={m.connectors_tools()}>
-      {tools.data.tools.map((tool) => (
+      {tools.data?.tools.map((tool) => (
         <li key={tool.slug} className="flex items-center gap-3 py-1.5">
           <div className="min-w-0 flex-1">
             <div className="flex flex-wrap items-center gap-1.5 text-sm">
@@ -142,7 +149,7 @@ function ToolList({ slug, busy, onRule }: { slug: string; busy: boolean; onRule:
             </div>
             {tool.description && <div className="line-clamp-1 text-[11px] text-muted">{tool.description}</div>}
           </div>
-          <Switch checked={tool.enabled} disabled={!tool.editable || busy} onCheckedChange={(on) => onRule({ tool: tool.slug, tool_enabled: on })}
+          <ResourceSwitch intent={intents[ruleResource(slug, { tool: tool.slug, tool_enabled: tool.enabled })]} checked={tool.enabled} disabled={!tool.editable || busy} onCheckedChange={(on) => onRule({ tool: tool.slug, tool_enabled: on })}
             aria-label={m.connectors_tool_aria({ name: tool.name })} />
         </li>
       ))}

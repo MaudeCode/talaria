@@ -46,10 +46,10 @@ for (const width of [1280, 390]) {
     await page.getByRole('heading', { name: 'MCP Servers' }).scrollIntoViewIfNeeded()
     await page.screenshot({ path: testInfo.outputPath(`mcp-${String(width)}.png`) })
 
-    await notes.getByRole('switch', { name: 'notes: Disabled' }).click()
+    await notes.getByRole('switch', { name: 'notes' }).click()
     await expect(notes).toContainText('Configured')
-    await expect(notes.getByRole('switch', { name: 'notes: Enabled' })).toBeChecked()
-    await github.getByRole('switch', { name: 'github: Enabled' }).click()
+    await expect(notes.getByRole('switch', { name: 'notes' })).toBeChecked()
+    await github.getByRole('switch', { name: 'github' }).click()
     await expect(github).toContainText('Disabled')
     await expect(github).not.toContainText('Needs sign-in')
     expect(patches).toEqual([{ method: 'PATCH', name: 'notes', body: { enabled: true } }, { method: 'PATCH', name: 'github', body: { enabled: false } }])
