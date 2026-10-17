@@ -156,7 +156,9 @@ verified successor instead of starting a duplicate. Each service is settled
 independently; a failed restart retains its own obligation while safe siblings
 are restored. Services that were stopped before the attempt are never recorded
 or started. A new sidecar handshake retries retained backend debt through the
-same isolated recovery worker and checkout lock. Agent admission stays closed
+same isolated recovery worker and checkout lock. Recovery runs asynchronously so
+supervisor/readiness waits do not consume the handshake's RPC deadline. Repeated
+handshakes share one recovery worker. Agent admission stays closed
 while that debt exists. Unsafe source, failed repair, failed graceful stop or
 unverified readiness retains durable debt for an explicit repair/retry.
 

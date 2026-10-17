@@ -353,6 +353,7 @@ def test_failed_restart_retains_debt_and_a_fresh_sidecar_recovers_it(tmp_path):
         sidecar.close()
         with contextlib.closing(SidecarProcess(home, agent_dir=root, python=AGENT_PYTHON, env={'PATH': str(home / 'bin') + os.pathsep + os.environ['PATH']})) as replacement:
             replacement.result('runtime.handshake', {'rpc_version': __import__('talaria_sidecar').SIDECAR_RPC_VERSION}, timeout=30)
+            wait_for(lambda: not list((home / '.talaria-agent-services').glob('*.json')))
             assert (home / 'backend.pid').exists(), replacement.stderr_lines
             assert (home / 'active').exists(), replacement.stderr_lines
         wait_for(lambda: (home / 'active').exists() and (home / 'backend.pid').exists())
@@ -372,11 +373,13 @@ def test_native_and_backend_debt_survive_worker_death_and_unsafe_source(tmp_path
         sidecar.close()
         with contextlib.closing(SidecarProcess(home, agent_dir=root, python=AGENT_PYTHON, env={'PATH': str(home / 'bin') + os.pathsep + os.environ['PATH']})) as replacement:
             replacement.result('runtime.handshake', {'rpc_version': __import__('talaria_sidecar').SIDECAR_RPC_VERSION}, timeout=30)
+            wait_for(lambda: any('source/dependency' in line for line in replacement.stderr_lines))
             assert not (home / 'backend.pid').exists()
             assert not (home / 'active').exists()
             assert list((home / '.talaria-agent-services').glob('*.json'))
             interrupted.unlink()
             replacement.result('runtime.handshake', {'rpc_version': __import__('talaria_sidecar').SIDECAR_RPC_VERSION}, timeout=30)
+            wait_for(lambda: not list((home / '.talaria-agent-services').glob('*.json')))
             assert (home / 'active').exists() and (home / 'backend.pid').exists(), replacement.stderr_lines
         wait_for(lambda: (home / 'active').exists() and (home / 'backend.pid').exists())
         assert not list((home / '.talaria-agent-services').glob('*.json'))
@@ -544,6 +547,7 @@ def test_supervisor_respawn_refuses_mutation_and_recovery_adopts_its_successor(t
         sidecar.close()
         with contextlib.closing(SidecarProcess(home, agent_dir=root, python=AGENT_PYTHON, env={'PATH': str(home / 'bin') + os.pathsep + os.environ['PATH']})) as replacement:
             replacement.result('runtime.handshake', {'rpc_version': __import__('talaria_sidecar').SIDECAR_RPC_VERSION}, timeout=30)
+            wait_for(lambda: not list((home / '.talaria-agent-services').glob('*.json')))
             assert (home / 'backend.pid').exists(), replacement.stderr_lines
         assert not list((home / '.talaria-agent-services').glob('*.json'))
         assert not (service / 'starts').exists(), 'a verified supervisor successor must be adopted, never started again'
@@ -580,6 +584,7 @@ def test_crash_after_wrapped_gateway_drain_finishes_the_supervisor_obligation_on
         sidecar.close()
         with contextlib.closing(SidecarProcess(home, agent_dir=root, python=AGENT_PYTHON, env={'PATH': str(home / 'bin') + os.pathsep + os.environ['PATH']})) as replacement:
             replacement.result('runtime.handshake', {'rpc_version': __import__('talaria_sidecar').SIDECAR_RPC_VERSION}, timeout=45)
+            wait_for(lambda: not list((home / '.talaria-agent-services').glob('*.json')))
             assert (home / 'active').exists() and (home / 'backend.pid').exists(), replacement.stderr_lines
         assert not list((home / '.talaria-agent-services').glob('*.json'))
         assert all((home / 'services' / c['label'] / 'starts').read_text().splitlines() == ['start'] for c in configs)
@@ -627,3 +632,35 @@ def test_unavailable_backend_auth_refuses_before_stops_or_recovery_intent(tmp_pa
         assert (home / 'backend.pid').read_text() == backend
         assert not list((home / '.talaria-agent-services').glob('*.json'))
         assert not (root / 'VERSION').exists()
+
+
+def test_service_recovery_keeps_handshake_responsive_and_admission_closed(tmp_path, monkeypatch):
+    import threading
+    from talaria_sidecar import agent_mutation, agent_services
+    from talaria_sidecar.runtime import AgentRuntime, AgentRuntimeStale
+    root, home = tmp_path / 'agent', tmp_path / 'home'
+    root.mkdir(); home.mkdir()
+    runtime = AgentRuntime(home, root)
+    file = agent_services.recovery_path(root, home)
+    file.parent.mkdir(); file.write_text('{}')
+    entered, release = threading.Event(), threading.Event()
+    calls = []
+    def recover(*args, **kwargs):
+        calls.append(args)
+        entered.set()
+        release.wait(2)
+        file.unlink()
+        return subprocess.CompletedProcess(args, 0, '{"ok":true}', '')
+    monkeypatch.setattr(subprocess, 'run', recover)
+    try:
+        agent_mutation.recover_retained(runtime)
+        assert entered.wait(1)
+        assert file.exists(), 'handshake must return while retained service recovery still owns admission'
+        with pytest.raises(AgentRuntimeStale, match='recovery is incomplete'):
+            runtime.ensure_current()
+        agent_mutation.recover_retained(runtime)
+        assert len(calls) == 1, 'concurrent handshakes must share one recovery worker'
+    finally:
+        release.set()
+        wait_for(lambda: not file.exists())
+    runtime.ensure_current()

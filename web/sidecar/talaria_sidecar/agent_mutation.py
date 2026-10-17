@@ -26,6 +26,7 @@ from . import agent_services as services
 
 _SESSIONS = {}
 _SESSIONS_LOCK = threading.Lock()
+_RECOVERING = set()
 
 
 def _close(session):
@@ -55,22 +56,40 @@ def close_all():
 
 
 def recover_retained(runtime):
-    """Reconcile backend debt on a fresh sidecar, before admitting Agent work."""
+    """Recover retained services without blocking the handshake; their record closes admission."""
     root = runtime.agent_dir
     if root is None or not services.recovery_path(root, runtime.hermes_home).exists():
         return
+    key = (root.resolve(), runtime.hermes_home.resolve())
+    with _SESSIONS_LOCK:
+        if key in _RECOVERING:
+            return
+        _RECOVERING.add(key)
     from .home import _frozen_launch_env
     env = _frozen_launch_env()
     env.update(HERMES_HOME=str(runtime.hermes_home), HERMES_DISABLE_LAZY_INSTALLS='1',
                PYTHONPATH=str(Path(__file__).parents[1]) + os.pathsep + str(root))
+    def recover():
+        detail = None
+        try:
+            result = subprocess.run([sys.executable, '-m', 'talaria_sidecar.agent_mutation', '--resume', str(root)],
+                                    cwd=root, env=env, stdin=subprocess.DEVNULL, capture_output=True, text=True, timeout=320, check=False)
+            reply = json.loads(result.stdout) if result.returncode == 0 else {}
+            if not isinstance(reply, dict) or reply.get('ok') is not True:
+                detail = str(reply.get('detail') or 'recovery was not verified') if isinstance(reply, dict) else 'invalid recovery response'
+        except (OSError, ValueError, subprocess.TimeoutExpired):
+            detail = 'recovery could not finish; its durable obligation is retained'
+        finally:
+            with _SESSIONS_LOCK:
+                _RECOVERING.discard(key)
+        if detail:
+            logging.getLogger(__name__).warning('Agent service recovery remains owed: %s', detail)
     try:
-        result = subprocess.run([sys.executable, '-m', 'talaria_sidecar.agent_mutation', '--resume', str(root)],
-                                cwd=root, env=env, stdin=subprocess.DEVNULL, capture_output=True, text=True, timeout=320, check=False)
-        reply = json.loads(result.stdout) if result.returncode == 0 else {}
-        if reply.get('ok') is not True:
-            logging.getLogger(__name__).warning('Agent service recovery remains owed: %s', reply.get('detail') or 'recovery was not verified')
-    except (OSError, ValueError, subprocess.TimeoutExpired):
-        logging.getLogger(__name__).warning('Agent service recovery could not finish; its durable obligation is retained.')
+        threading.Thread(target=recover, daemon=True).start()
+    except BaseException:
+        with _SESSIONS_LOCK:
+            _RECOVERING.discard(key)
+        raise
 
 
 def _exchange(session, request, ctx):
