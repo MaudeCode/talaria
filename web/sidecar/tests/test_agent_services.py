@@ -2310,3 +2310,59 @@ def test_runtime_fence_does_not_write_through_linked_files(gateway_successor, li
     except (OSError, RuntimeError):
         pass
     assert victim.read_bytes() == b'original unrelated content'
+
+
+def test_recovery_shares_gateway_drain_budget(gateway_successor, monkeypatch):
+    import copy
+    import types
+    from talaria_sidecar import agent_services as services
+    recovery, entry, calls, parents, pause, records, modules = gateway_successor
+    candidate = recovery._gateway_candidate(entry)
+    entry.update(candidate, phase='retiring', drain_acknowledged=True)
+    sibling = copy.deepcopy(entry)
+    sibling.update(label='synthetic.second', pid=43002, service_pid=43001,
+                   processes={'43001': {'birth': 430010, 'ct': 43001, 'parent': 1},
+                              '43002': {'birth': 430020, 'ct': 43002, 'parent': 43001}})
+    parents.update({43001: 1, 43002: 43001})
+    recovery.state['entries'].append(sibling)
+    recovery.save()
+    clock = [0]
+    class Waiting:
+        def is_set(self): return False
+        def wait(self, seconds): clock[0] += 1; return False
+    monkeypatch.setattr(services, 'time', types.SimpleNamespace(monotonic=lambda: clock[0]))
+    monkeypatch.setattr(services, 'threading', types.SimpleNamespace(Event=Waiting))
+    pause._drain_budget = lambda: 3
+    with pytest.raises(RuntimeError, match='gateway drain remains owed'):
+        recovery.resume(lambda *args: [])
+    assert clock[0] == 3, 'recovery granted a new drain budget to the next profile'
+    assert calls == []
+    assert len(json.loads(recovery.path.read_text())['entries']) == 2
+
+
+@pytest.mark.parametrize('manager', ['launchd', 'systemd'])
+def test_successor_configuration_is_rechecked_before_drain(gateway_successor, monkeypatch, manager):
+    import threading
+    import types
+    recovery, entry, calls, parents, pause, records, modules = gateway_successor
+    config = Path(entry['plist'])
+    if manager == 'systemd':
+        label = entry.pop('label')
+        entry.update(kind='systemd', scope='user', unit=label)
+        pause._discover_launchd = lambda: []
+        pause._discover_systemd = lambda: [{**entry, 'pid': 42001}]
+        fleet = types.ModuleType('hermes_cli.update_cmd_fleet')
+        fleet._unit_main_pid = lambda *args: 42001
+        fleet._systemctl = lambda argv, **kwargs: types.SimpleNamespace(returncode=0, stdout=config.read_text() if 'cat' in argv else 'active')
+        monkeypatch.setitem(sys.modules, 'hermes_cli.update_cmd_fleet', fleet)
+    original_save = recovery.save
+    def save(token=None):
+        original_save(token)
+        if entry.get('settle_attempts') and not entry.get('drain_acknowledged'):
+            config.write_text('externally changed supervisor configuration')
+    monkeypatch.setattr(recovery, 'save', save)
+    with pytest.raises(RuntimeError, match='configuration changed'):
+        recovery.settle_gateway(entry, threading.Event())
+    assert calls == [], 'changed supervisor received a cooperative drain request'
+    retained = json.loads(recovery.path.read_text())['entries'][0]
+    assert retained['pid'] == 42002 and retained['phase'] == 'retiring'

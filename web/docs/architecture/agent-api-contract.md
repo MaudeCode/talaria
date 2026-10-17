@@ -134,12 +134,17 @@ orphan recovery share one settling path. Before requesting a successor's drain,
 Talaria re-discovers the exact supervisor key, canonical home, configuration
 digest, native runtime PID/birth, complete wrapper ancestry and canonical process
 identities, and durably records that incarnation alongside its predecessor.
+It rechecks the configuration after that custody save and process verification,
+immediately before requesting the successor's cooperative drain.
 An unacknowledged initial drain, reused identity, foreign profile, changed
 configuration, updater ancestor or unrelated descendant never grants custody.
 Tool subprocesses below the attested gateway remain part of its cooperative
 drain; unrelated siblings below a wrapper do not gain custody.
-Successor drains wait for work to finish, with one bounded drain budget and at
-most eight successor requests. There is no signal escalation.
+Successor drains wait for work to finish, with one shared absolute deadline for
+the original requests, every profile, successor settling and the same worker's
+failure recovery. Orphan recovery starts one fresh deadline per recovery attempt,
+shared by all gateways. There are at most eight successor requests. There is no
+signal escalation.
 
 After all recorded writers exit, the settling path takes the Agent's native
 per-home runtime file lock and records its own live native birth and custody
