@@ -21,6 +21,8 @@ CI (`.github/workflows/web-verify.yml`) runs the server, sidecar (one job per su
 in `sidecar/agent_support.json`, each provisioned with
 `scripts/check-agent-compatibility.py --skip-docker --release TAG`), and frontend jobs selected by
 `scripts/changed-components.py`.
+Each Agent job first runs the synthetic runner checks so isolation and cleanup failures surface
+before the longer real-Agent suite.
 
 ## Server tests
 
@@ -80,6 +82,8 @@ test processes naming the disposable state directory are cleaned up on every exi
 reaps terminated orphans throughout execution, preserving worker exit statuses. The existing
 per-test process-leak fixture still detects and kills leaks. Both cleanup paths use an untruncated
 process snapshot, including when readline changes the native terminal-width environment.
+Linux kernels without the optional proc children entry use that same process snapshot for orphan
+discovery, including startup failure and cancellation.
 
 One merged JUnit report remains beside each compatibility receipt. Per-case durations and
 failure/error/skip information are preserved, with slow tests and modules printed after the run.

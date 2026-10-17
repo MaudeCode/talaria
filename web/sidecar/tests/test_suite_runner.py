@@ -165,15 +165,33 @@ def process_is_live(pid):
     return result.returncode == 0 and not result.stdout.strip().startswith('Z')
 
 
+def hide_proc_children(project):
+    (project / 'sitecustomize.py').write_text(textwrap.dedent("""
+        import pathlib
+        original = pathlib.Path.read_text
+        def read_text(path, *args, **kwargs):
+            if str(path).startswith('/proc/self/task/') and path.name == 'children':
+                raise FileNotFoundError('optional kernel children entry unavailable')
+            return original(path, *args, **kwargs)
+        pathlib.Path.read_text = read_text
+    """))
+
+
 @pytest.mark.parametrize('failure', ['cancel', 'startup'])
-def test_workers_and_detached_children_cleaned_on_abort(project, failure):
+@pytest.mark.parametrize('proc_entry', ['present', pytest.param('missing', marks=pytest.mark.skipif(sys.platform != 'linux', reason='Linux proc fallback'))])
+def test_workers_and_detached_children_cleaned_on_abort(project, failure, proc_entry):
+    if proc_entry == 'missing':
+        hide_proc_children(project)
     pidfile = project / 'child.pid'
     observed = project / 'parent-observed-child'
     (project / 'tests/test_a.py').write_text(textwrap.dedent(f"""
         import subprocess, sys, pathlib, time
         def test_child(tmp_path):
             child = subprocess.Popen([sys.executable, '-c', 'import time; time.sleep(60)', str(tmp_path)], start_new_session=True)
-            pathlib.Path({str(pidfile)!r}).write_text(str(child.pid))
+            pidfile = pathlib.Path({str(pidfile)!r})
+            temporary = pidfile.with_suffix('.tmp')
+            temporary.write_text(str(child.pid))
+            temporary.replace(pidfile)
             time.sleep(60)
     """))
     (project / 'tests/test_b.py').write_text("def test_other(): pass\n")
@@ -182,6 +200,13 @@ def test_workers_and_detached_children_cleaned_on_abort(project, failure):
     wrapper.write_text(textwrap.dedent(f"""
         import suite_runner as runner, time
         from pathlib import Path
+        if {proc_entry!r} == 'missing':
+            try:
+                Path('/proc/self/task/' + str(runner.os.getpid()) + '/children').read_text()
+            except FileNotFoundError:
+                pass
+            else:
+                raise AssertionError('optional proc entry fault was not installed')
         original = runner.subprocess.Popen
         def launch(command, **kwargs):
             if any(arg.startswith('--junitxml=') and Path(arg.split('=', 1)[1]).parent.name == 'worker-2' for arg in command):
@@ -195,7 +220,9 @@ def test_workers_and_detached_children_cleaned_on_abort(project, failure):
             runner.subprocess.Popen = launch
         raise SystemExit(runner.main())
     """))
-    proc = subprocess.Popen([sys.executable, str(wrapper)], cwd=project, env={**os.environ, 'TALARIA_SIDECAR_WORKERS': '2'},
+    proc = subprocess.Popen([sys.executable, str(wrapper)], cwd=project,
+                            env={**os.environ, 'TALARIA_SIDECAR_WORKERS': '2',
+                                 'PYTHONPATH': str(project) + os.pathsep + os.environ.get('PYTHONPATH', '')},
                             stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, start_new_session=True)
     try:
         wait_for(pidfile, proc)
@@ -267,7 +294,10 @@ def test_cleanup_fixture_leaves_sibling_child_alive_and_detects_own_leak(project
 
 
 @pytest.mark.skipif(sys.platform != 'linux', reason='Linux subreaper ownership')
-def test_exited_orphans_are_reaped_while_worker_runs(project):
+@pytest.mark.parametrize('proc_entry', ['present', 'missing'])
+def test_exited_orphans_are_reaped_while_worker_runs(project, proc_entry):
+    if proc_entry == 'missing':
+        hide_proc_children(project)
     child = "import pathlib, sys, time\nrelease = pathlib.Path(sys.argv[1])\nwhile not release.exists(): time.sleep(.01)\n"
     parent = f"import subprocess, sys\nchild = subprocess.Popen([sys.executable, '-c', {child!r}, sys.argv[1]], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)\nprint(child.pid, flush=True)\n"
     (project / 'tests/test_orphan.py').write_text(textwrap.dedent(f"""
