@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Agent updates can authenticate dashboards using credentials from the owning profile's settings.",
+      "highlight": false,
+      "components": ["web"]
+    }
+  ]
+}

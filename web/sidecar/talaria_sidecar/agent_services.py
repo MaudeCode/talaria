@@ -5,6 +5,7 @@ POSIX supervisor obligations and verifies actual gateway/backend readiness.
 """
 from __future__ import annotations
 
+import base64
 import contextlib
 import hashlib
 import http.client
@@ -294,25 +295,47 @@ def _local_session(entry):
     except ImportError:
         return None
     from .home import scoped_home
+    from agent import secret_scope
+    from hermes_cli.env_loader import hydrate_profile_secret_sources
     env = _pid_environ(entry['pid'])
     if env is None:
         return None
-    with scoped_home(Path(entry['home'])):
-        section = basic._load_config_basic_auth_section()
-        secret = env.get('HERMES_DASHBOARD_BASIC_AUTH_SECRET') or section.get('secret')
-        username = env.get('HERMES_DASHBOARD_BASIC_AUTH_USERNAME') or section.get('username')
+    home = Path(entry['home'])
+    with scoped_home(home):
+        hydrate_profile_secret_sources(home)
+        # The launch scope also contains updater credentials; use only the owner's file-backed scope.
+        scope = secret_scope.build_profile_secret_scope(home)
+        scope.update({name: env[name] for name in ('HERMES_DASHBOARD_BASIC_AUTH_SECRET', 'HERMES_DASHBOARD_BASIC_AUTH_USERNAME')
+                      if env.get(name, '').strip()})
+        token = secret_scope.set_secret_scope(scope)
+        # Config ${...} references must also refuse launch-environment fallback, including on the main profile.
+        multiplex = secret_scope.set_multiplex_context(True)
+        try:
+            section = basic._load_config_basic_auth_section()
+        finally:
+            secret_scope.reset_multiplex_context(multiplex)
+            secret_scope.reset_secret_scope(token)
+
+        def setting(name, key):
+            return str(scope.get(name) or '').strip() or str(section.get(key) or '').strip()
+
+        secret = setting('HERMES_DASHBOARD_BASIC_AUTH_SECRET', 'secret')
+        username = setting('HERMES_DASHBOARD_BASIC_AUTH_USERNAME', 'username')
         if not secret or not username:
             return None  # A process-random key is not reproducible; never manufacture a replacement key.
-        previous = os.environ.get('HERMES_DASHBOARD_BASIC_AUTH_SECRET')
-        try:
-            os.environ['HERMES_DASHBOARD_BASIC_AUTH_SECRET'] = str(secret)
-            key = basic._resolve_secret(section)
-        finally:
-            if previous is None:
-                os.environ.pop('HERMES_DASHBOARD_BASIC_AUTH_SECRET', None)
-            else:
-                os.environ['HERMES_DASHBOARD_BASIC_AUTH_SECRET'] = previous
-        return basic._sign({'sub': str(username), 'kind': 'access', 'exp': int(time.time()) + 60}, key)
+        # Native _resolve_secret reads os.environ directly. Match its base64/hex/raw order without mutating it.
+        key = secret.encode('utf-8')
+        for decoder in (base64.b64decode, bytes.fromhex):
+            try:
+                decoded = decoder(secret)
+                if len(decoded) >= 16:
+                    key = decoded
+                    break
+            except (ValueError, TypeError):
+                pass
+        if len(key) < 16:
+            return None
+        return basic._sign({'sub': username, 'kind': 'access', 'exp': int(time.time()) + 60}, key)
 
 
 def backend_request(entry, action=None, permit=None):
