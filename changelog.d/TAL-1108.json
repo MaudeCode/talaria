@@ -1,0 +1,12 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Agent updates finish when supervised gateways restart during their graceful pause.",
+      "highlight": false,
+      "components": [
+        "web"
+      ]
+    }
+  ]
+}

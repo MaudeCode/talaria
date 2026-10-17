@@ -125,8 +125,42 @@ runtime anchors, and live unreadable identities refuse custody. Persistent
 churn exhausts the budget with a retryable error and leaves source/recovery
 obligations intact. Stop verification permits departure only after stopping is
 already authorized, rechecks a failed identity probe for that exit race, and
-refreshes the final ancestry inventory to reject new descendants. Its separate
+refreshes the final ancestry inventory to reject new descendants. Outside a verified gateway fence, its separate
 supervisor-respawn guard remains in force.
+
+An acknowledged gateway drain may hand the same unchanged supervisor to a
+successor under launchd KeepAlive or systemd Restart. The ordinary stop and
+orphan recovery share one settling path. Before requesting a successor's drain,
+Talaria re-discovers the exact supervisor key, canonical home, configuration
+digest, native runtime PID/birth, complete wrapper ancestry and canonical process
+identities, and durably records that incarnation alongside its predecessor.
+An unacknowledged initial drain, reused identity, foreign profile, changed
+configuration, updater ancestor or unrelated descendant never grants custody.
+Tool subprocesses below the attested gateway remain part of its cooperative
+drain; unrelated siblings below a wrapper do not gain custody.
+Successor drains wait for work to finish, with one bounded drain budget and at
+most eight successor requests. There is no signal escalation.
+
+After all recorded writers exit, the settling path takes the Agent's native
+per-home runtime file lock and records its own live native birth and custody
+home in that held inode with kind talaria-update-fence. This is explicitly not
+a gateway identity. Original process identities remain in the durable companion
+record; gateway PID files and service configuration are untouched. A live lock
+owner prevents native stale-PID cleanup from replacing the held inode on every
+supported Agent. Starters already in flight may still be completing stale-file
+cleanup, so Talaria waits for every unrecorded startup contender to exit without
+signalling it, and rechecks the inode, owner and configuration before disarm.
+It holds the lock across native disarm and stopped-state verification, closing
+the restart-to-admission race. An unavailable or replaced lock, unexpected
+process or failed disarm refuses source mutation and retains recovery debt.
+The OS releases the fence on cancellation, errors and worker death. The native
+startup reclaims the inactive lock before a recovered gateway writes its own
+identity. An already unloaded supervisor with no recorded writer can settle
+without acquiring another fence. Recovery adopts a verified ready successor without starting a duplicate; it clears only
+that obligation after checking the original configuration, home and actual
+runtime readiness. Safe sibling services recover independently. These companion
+record fields are additive; an older reader retains an obligation it cannot
+safely settle.
 
 Supervised dashboard/serve writers from the same installation's native ledger
 join that same lease. Native loaded launchd inventory and systemd MainPID

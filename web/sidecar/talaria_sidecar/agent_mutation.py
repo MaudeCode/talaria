@@ -453,6 +453,7 @@ def _worker(root, revision, homes, requests, stopped, send, refresh_binding=None
             records.write(token)
             if not pause._ask_to_drain(entry):
                 raise RuntimeError("A gateway did not acknowledge cooperative quiescence; source was not changed.")
+            recovery.gateway_requested(entry, acknowledged=True)
         deadline = time.monotonic() + min(pause._drain_budget(), 300)
         waiting = list(gateway_entries)
         while waiting:
@@ -465,10 +466,9 @@ def _worker(root, revision, homes, requests, stopped, send, refresh_binding=None
                                                                  expected_service_identity=(entry["service_pid"], entry["service_ct"]))
                     else:
                         if entry.get('processes'):
-                            services.verify_processes(entry, records, stopping=True)
-                        pause._disarm(services.service_entry(entry))
-                        if entry.get('processes'):
-                            services.wait_stopped(entry, records, stopped)
+                            recovery.settle_gateway(entry, stopped)
+                        else:
+                            pause._disarm(services.service_entry(entry))
                     waiting.remove(entry)
             if waiting and (stopped.wait(.05) or time.monotonic() >= deadline):
                 raise RuntimeError("Gateway drain has not completed; its durable resume obligation is retained.")

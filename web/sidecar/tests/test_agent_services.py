@@ -493,9 +493,23 @@ def git(root, *args):
 
 
 @contextmanager
-def supervised_agent(tmp_path, *, dashboards=1, depth=1, gateways=True, dependency_sync=False, readiness=None, legacy=False, refresh=False, manager="launchd", stop_seconds=None, modern_first=False, transient=False):
+def supervised_agent(tmp_path, *, dashboards=1, depth=1, gateways=True, dependency_sync=False, readiness=None, legacy=False, refresh=False, manager="launchd", stop_seconds=None, modern_first=False, gateway_respawn=False, gateway_profiles=1):
     root, home, _, _ = native_agent(tmp_path)
     modules = root / 'hermes_cli'
+    writer = root / 'writer.py'
+    writer.write_text(writer.read_text().replace("home=Path(sys.argv[1])", """home=Path(sys.argv[1])
+import fcntl
+lock=(home/'gateway.lock').open('a+')
+try: fcntl.flock(lock,fcntl.LOCK_EX|fcntl.LOCK_NB)
+except BlockingIOError: raise SystemExit(0)
+if os.environ.get('TALARIA_SYNTHETIC_ADMISSION'): Path(os.environ['TALARIA_SYNTHETIC_ADMISSION']).touch()
+import subprocess
+tool=None
+if (home/'hold-successor-drain').exists():
+ tool=subprocess.Popen([sys.executable,'-c',"import sys,time; from pathlib import Path; flag=Path(sys.argv[1]); exec('while flag.exists(): time.sleep(.01)')",str(home/'hold-successor-drain')])
+""").replace("(home/'active').unlink(missing_ok=True)", """while (home/'hold-successor-drain').exists(): time.sleep(.01)
+if tool is not None: tool.wait(timeout=5)
+(home/'active').unlink(missing_ok=True)"""))
     (root / 'synthetic_services.py').write_text('''import json, os, subprocess, sys, time, psutil
 from pathlib import Path
 HOME=Path(os.environ['HERMES_HOME']); ROOT=Path(__file__).parent
@@ -519,13 +533,21 @@ def service_pid(label):
   pid=int((HOME/'services'/label/'service.pid').read_text())
   return pid if alive(pid) else None
  except FileNotFoundError: return None
+def native_pid(label):
+ cfg=json.loads((HOME/'services'/label/'config.json').read_text())
+ if cfg['purpose']=='gateway' and cfg['depth']==0:
+  try: pid=int((Path(cfg['home'])/'active').read_text())
+  except FileNotFoundError: return None
+  return pid if alive(pid) else None
+ return service_pid(label)
 def start(label):
  with (HOME/'services'/label/'start-attempts').open('a') as f: f.write('attempt'+chr(10))
  if (HOME/'services'/label/'fail-start').exists(): raise RuntimeError('synthetic service start refused')
  if service_pid(label): return
  (HOME/'services'/label/'disarm').unlink(missing_ok=True)
  cfg=json.loads((HOME/'services'/label/'config.json').read_text())
- if cfg['purpose']=='gateway': (Path(cfg['home'])/'pause').unlink(missing_ok=True)
+ if cfg['purpose']=='gateway':
+  (Path(cfg['home'])/'pause').unlink(missing_ok=True)
  with (HOME/'services'/label/'starts').open('a') as f: f.write('start\\n')
  subprocess.Popen([sys.executable,str(ROOT/'supervisor.py'),label],stdin=subprocess.DEVNULL,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL,start_new_session=True)
  deadline=time.monotonic()+4
@@ -572,16 +594,27 @@ publish_pid(folder/'service.pid')
 argv=[sys.executable,str(ROOT/('writer.py' if cfg['purpose']=='gateway' else 'backend.py')),cfg['home']]
 if (folder/'wrapper-only').exists(): argv=[sys.executable,str(ROOT/'inert.py'),cfg['home']]
 for _ in range(cfg['depth']): argv=[sys.executable,str(ROOT/'wrapper.py'),*argv]
-child=subprocess.Popen(argv)
+admission=folder/('admitted.'+str(os.getpid()))
+def spawn():
+ admission.unlink(missing_ok=True)
+ return subprocess.Popen(argv,env={**os.environ,'TALARIA_SYNTHETIC_ADMISSION':str(admission)})
+child=spawn()
 def stop(*_): (folder/'disarm').touch()
 signal.signal(signal.SIGTERM,stop)
 try:
  while not (folder/'disarm').exists():
   if child.poll() is not None:
-   if (folder/'respawn-once').exists():
-    (folder/'respawn-once').unlink(); child=subprocess.Popen(argv)
-   elif (folder/'respawn').exists(): child=subprocess.Popen(argv)
-   elif cfg.get('refresh'): break
+   if (folder/'gateway-respawn-once').exists():
+    (folder/'gateway-respawn-once').unlink()
+    (Path(cfg['home'])/'pause').unlink(missing_ok=True)
+    if (folder/'hold-successor').exists(): (Path(cfg['home'])/'hold-successor-drain').touch()
+    subprocess.Popen([sys.executable,str(ROOT/'supervisor.py'),label],start_new_session=True)
+    while int((folder/'service.pid').read_text())==os.getpid(): time.sleep(.01)
+    break
+   elif (folder/'respawn-once').exists():
+    (folder/'respawn-once').unlink(); child=spawn()
+   elif (folder/'respawn').exists(): child=spawn()
+   elif cfg.get('refresh') or (cfg['purpose']=='gateway' and not admission.exists()): break
   time.sleep(.01)
 finally:
  if helper is not None and helper.poll() is None: helper.terminate(); helper.wait(timeout=5)
@@ -591,7 +624,7 @@ finally:
    try: os.kill(int((Path(cfg['home'])/'backend.pid').read_text()),signal.SIGTERM)
    except (FileNotFoundError,ProcessLookupError): pass
  child.wait(timeout=5)
- (folder/'service.pid').unlink(missing_ok=True)
+ if (folder/'service.pid').exists() and int((folder/'service.pid').read_text())==os.getpid(): (folder/'service.pid').unlink()
 ''')
     (modules / 'backend_retirement.py').write_bytes((AGENT_DIR / 'hermes_cli/backend_retirement.py').read_bytes())
     (modules / 'web_server_idle_proof.py').write_text("import os\nfrom pathlib import Path\ndef idle_proof(): return {'idle': not (Path(os.environ['BACKEND_HOME'])/'busy').exists()}\n")
@@ -645,8 +678,7 @@ def _pid_alive_matches(pid,ct,**kw): return alive(pid,ct)
 ''',
       'gateway': '''from synthetic_services import *
 def _launchd_print_service_pid(domain,label):
- pid=service_pid(label)
- return pid is not None,pid
+ return service_pid(label) is not None,native_pid(label)
 def _launchctl_bootstrap(domain,plist,label): start(label)
 def _is_pid_ancestor_of_current_process(pid): return False
 ''',
@@ -672,7 +704,7 @@ def systemd_unit_hermes_home(cmd,unit): return next(c['home'] for c in services(
 ''',
       'update_cmd_fleet': '''from synthetic_services import *
 from types import SimpleNamespace
-def _unit_main_pid(cmd,unit): return service_pid(unit)
+def _unit_main_pid(cmd,unit): return native_pid(unit)
 def _systemctl(argv,**kw):
  args=[a for a in argv if a not in ('systemctl','--user')]; verb,unit=args[:2]
  if verb=='cat': out=(HOME/'services'/unit/'config.json').read_text()
@@ -684,8 +716,8 @@ def _systemctl(argv,**kw):
 ''',
       'update_cmd_posix_pause': '''from synthetic_services import *
 def _empty_token(): return {'platform':'posix','resume_needed':False,'profiles':{},'unmapped':[],'posix_units':[]}
-def _discover_systemd(): return []
-def _discover_launchd(): return [dict(kind='launchd',domain='gui/12345',label=c['label'],plist=str(HOME/'plists'/(c['label']+'.plist')),pid=service_pid(c['label']),home=c['home']) for c in services() if c['purpose']=='gateway' and service_pid(c['label'])]
+def _discover_systemd(): return [dict(kind='systemd',scope='user',unit=c['label'],pid=native_pid(c['label']),home=c['home']) for c in services() if c['purpose']=='gateway' and c['manager']=='systemd' and native_pid(c['label'])]
+def _discover_launchd(): return [dict(kind='launchd',domain='gui/12345',label=c['label'],plist=str(HOME/'plists'/(c['label']+'.plist')),pid=native_pid(c['label']),home=c['home']) for c in services() if c['purpose']=='gateway' and c['manager']=='launchd' and native_pid(c['label'])]
 def _left_running(units,jobs): return units,jobs,[]
 def _home_of(pid): return next((r['hermes_home'] for r in ledger() if r['pid']==pid),str(HOME))
 def _discover_bare(excluded): return [],[f"gateway PID {r['pid']} is supervised" for r in ledger() if r['purpose']=='gateway' and r['pid'] not in excluded]
@@ -695,10 +727,19 @@ def _gateway_on_home(home,exclude):
  except FileNotFoundError: return None
  return pid if alive(pid) and pid not in exclude else None
 def _drain_budget(): return 4
-def _alive(pid,ct): return alive(pid,ct)
+def _alive(pid,ct):
+ result=alive(pid,ct)
+ if not result and (HOME/'wait-gateway-successor').exists():
+  deadline=time.monotonic()+4
+  while time.monotonic()<deadline:
+   if any(r['purpose']=='gateway' and r['pid']!=pid for r in ledger()): break
+   time.sleep(.01)
+  (HOME/'wait-gateway-successor').unlink()
+ return result
 def _manage_cmd(scope): return ['systemctl','--user']
 def _disarm(entry):
  label=entry.get('label') or entry['unit']
+ if label.startswith('synthetic.gateway') and (HOME/'fail-gateway-disarm').exists(): raise RuntimeError('synthetic disarm failure')
  if label.startswith('synthetic.gateway') and (HOME/'hold-disarm').exists():
   (HOME/'gateway-disarm-requested').touch()
   while (HOME/'hold-disarm').exists(): time.sleep(.01)
@@ -720,13 +761,14 @@ def _resume_windows_gateways_after_update(token):
         (modules / 'venv_sync.py').write_text("import json\nfrom synthetic_services import HOME\nwith (HOME/'sync-runs').open('a') as f: f.write('sync'+chr(10))\nprint(json.dumps({'ok':not (HOME/'fail-sync').exists()}))\n")
     (root / 'gateway/status.py').write_text('''from synthetic_services import HOME, birth, alive
 from pathlib import Path
-def get_process_start_time(pid):
- for file in (HOME/'services').glob('*/helper.pid'):
-  if int(file.read_text())!=pid: continue
-  with (file.parent/'helper-control').open('w') as control: control.write('exit')
-  with (file.parent/'helper-ack').open() as ack: assert ack.read()=='reaped'
-  with (file.parent/'sampled-exits').open('a') as log: log.write(str(pid)+'\\n')
- return birth(pid)
+import fcntl
+def _get_gateway_lock_path(pid_path): return pid_path.with_name('gateway.lock')
+def _try_acquire_file_lock(handle):
+ try: fcntl.flock(handle,fcntl.LOCK_EX|fcntl.LOCK_NB); return True
+ except BlockingIOError: return False
+def _release_file_lock(handle): fcntl.flock(handle,fcntl.LOCK_UN)
+def _build_pid_record(): return {'pid':os.getpid(),'start_time':birth(os.getpid()),'kind':'gateway','hermes_home':str(Path(os.environ['HERMES_HOME']))}
+def get_process_start_time(pid): return birth(pid)
 def _pid_exists(pid): return alive(pid)
 def get_running_pid_identity_strict(path):
  try: pid=int((Path(path).parent/'active').read_text())
@@ -734,6 +776,14 @@ def get_running_pid_identity_strict(path):
  ct=birth(pid)
  return (pid,ct) if ct is not None else None
 ''')
+    import ast
+    native_status = ast.parse((AGENT_DIR / 'gateway/status.py').read_text())
+    lock_functions = {'_get_gateway_lock_path', '_try_acquire_file_lock', '_release_file_lock'}
+    with (root / 'gateway/status.py').open('a') as status:
+        status.write("\nimport contextlib, os\nfrom typing import Optional\n_IS_WINDOWS=False\n_GATEWAY_LOCK_FILENAME='gateway.lock'\n")
+        for function in native_status.body:
+            if isinstance(function, ast.FunctionDef) and function.name in lock_functions:
+                status.write(ast.unparse(function) + '\n')
     (root / 'gateway/host_rendezvous.py').write_text("ROLE_SERVE='serve'\ndef read_record(role): return None\n")
     (root / 'hermes_constants.py').write_text("import os\nfrom pathlib import Path\ndef get_default_hermes_root(): return Path(os.environ['HERMES_HOME'])\n")
     for name in ['update_pause_record.py', 'update_cmd_pause_gate.py']:
@@ -763,15 +813,15 @@ UpdateLock.acquire_checkout=acquire_checkout
     sockets, configs = [], []
     (home / 'services').mkdir()
     (home / 'plists').mkdir()
-    for i in range(dashboards + 1):
-        if i == 0 and not gateways:
+    for i in range(dashboards + gateway_profiles):
+        if i < gateway_profiles and not gateways:
             continue
-        purpose = 'gateway' if i == 0 else 'dashboard'
+        purpose = 'gateway' if i < gateway_profiles else 'dashboard'
         label = f'synthetic.{purpose}.{i}'
-        served_home = home if i < 2 else home / 'profiles' / f'profile{i}'
+        served_home = home if i in {0, gateway_profiles} else home / 'profiles' / f'profile{i}'
         served_home.mkdir(parents=True, exist_ok=True)
-        cfg = dict(label=label, purpose=purpose, depth=depth, home=str(served_home), profile='default' if i < 2 else f'profile{i}', legacy=legacy, refresh=refresh, manager=manager, transient=transient)
-        if i:
+        cfg = dict(label=label, purpose=purpose, depth=depth, home=str(served_home), profile='default' if served_home == home else f'profile{i}', legacy=legacy, refresh=refresh, manager=manager)
+        if purpose != 'gateway':
             listener = socket.socket()
             listener.bind(('127.0.0.1', 0))
             cfg['port'] = listener.getsockname()[1]
@@ -782,6 +832,9 @@ UpdateLock.acquire_checkout=acquire_checkout
         folder.mkdir()
         (folder / 'config.json').write_text(json.dumps(cfg))
         (home / 'plists' / (label + '.plist')).write_bytes(plistlib.dumps({'Label': label, 'ProgramArguments': ['hermes', purpose]}))
+        if gateway_respawn and purpose == 'gateway':
+            (folder / 'gateway-respawn-once').touch()
+            (home / 'wait-gateway-successor').touch()
         configs.append(cfg)
     binary = home / 'bin'
     binary.mkdir()
@@ -801,7 +854,7 @@ UpdateLock.acquire_checkout=acquire_checkout
     supervisors = [subprocess.Popen([AGENT_PYTHON, str(root / 'supervisor.py'), cfg['label']], env=env) for cfg in configs]
     sidecar = None
     try:
-        wait_for(lambda: (not gateways or (home / 'active').exists()) and all((Path(c['home']) / 'backend.pid').exists() for c in configs if c['purpose'] != 'gateway'))
+        wait_for(lambda: (not gateways or all((Path(c['home'])/'active').exists() for c in configs if c['purpose']=='gateway')) and all((Path(c['home']) / 'backend.pid').exists() for c in configs if c['purpose'] != 'gateway'))
         sidecar = SidecarProcess(home, agent_dir=root, python=AGENT_PYTHON, env={'PATH': env['PATH']})
         yield root, home, base, target, sidecar, configs
     finally:
@@ -810,6 +863,7 @@ UpdateLock.acquire_checkout=acquire_checkout
         for cfg in configs:
             (home / 'services' / cfg['label'] / 'disarm').touch()
             (Path(cfg['home']) / 'slow-stop').unlink(missing_ok=True)
+            (Path(cfg['home']) / 'hold-successor-drain').unlink(missing_ok=True)
             if cfg['purpose'] == 'gateway':
                 (Path(cfg['home']) / 'stop').touch()
             else:
@@ -1970,3 +2024,289 @@ def test_refresh_failed_supervisor_start_is_attempted_once_per_worker(tmp_path, 
         debt = next((home / '.talaria-agent-services').glob('*.json'))
         assert json.loads(debt.read_text())['entries'][0]['legacy_refresh'] is True
         assert (service / 'start-attempts').read_text().splitlines() == ['attempt']
+
+
+@pytest.mark.parametrize('mode', ['normal', 'force'])
+@pytest.mark.parametrize('depth,manager', [(0, 'launchd'), (1, 'launchd'), (2, 'systemd')])
+def test_expected_gateway_supervisor_respawn_finishes_same_update(tmp_path, mode, depth, manager):
+    with supervised_agent(tmp_path, gateway_respawn=True, depth=depth, manager=manager, dependency_sync=True) as (root, home, base, target, sidecar, configs):
+        begun = rpc(sidecar, root, 'begin', revision=target, homes=[str(home)])
+        assert begun['ok'], begun
+        assert not (home / 'active').exists()
+        assert not list((home / 'services').glob('*/service.pid'))
+        args = ['merge', '--ff-only', target] if mode == 'normal' else ['reset', '--hard', target]
+        assert rpc(sidecar, root, 'git', token=begun['token'], args=args, timeout_ms=10000)['ok']
+        assert rpc(sidecar, root, 'sync', token=begun['token'])['ok']
+        finished = rpc(sidecar, root, 'finish', token=begun['token'])
+        assert finished['ok'], finished
+        assert git(root, 'rev-parse', 'HEAD') == target
+        assert (home / 'active').exists() and (home / 'backend.pid').exists()
+        assert not list((home / '.talaria-agent-services').glob('*.json'))
+        assert all((home / 'services' / c['label'] / 'starts').read_text().splitlines() == ['start'] for c in configs)
+
+
+def test_gateway_successor_work_finishes_before_disarm_or_mutation(tmp_path):
+    with supervised_agent(tmp_path, gateway_respawn=True, depth=2) as (root, home, base, target, sidecar, configs):
+        service = home / 'services' / configs[0]['label']
+        (service / 'hold-successor').touch()
+        request = sidecar.request('runtime.agent_mutation', {'agent_dir': str(root), 'action': 'begin', 'revision': target, 'homes': [str(home)]})
+        wait_for(lambda: (home / 'hold-successor-drain').exists() and (home / 'pause').exists())
+        wait_for(lambda: any(e.get('settle_attempts') and e.get('drain_acknowledged')
+                             for p in (home / '.talaria-agent-services').glob('*.json')
+                             for e in json.loads(p.read_text())['entries']))
+        assert (home / 'active').exists() and (service / 'service.pid').exists()
+        debt = json.loads(next((home / '.talaria-agent-services').glob('*.json')).read_text())
+        gateway = next(e for e in debt['entries'] if e['purpose'] == 'gateway')
+        assert any(p['parent'] == gateway['pid'] for p in gateway['processes'].values()), 'active tool subprocess was not covered by successor custody'
+        assert not (service / 'disarm').exists()
+        assert git(root, 'rev-parse', 'HEAD') == base
+        (home / 'hold-successor-drain').unlink()
+        begun = sidecar.next_message(timeout=30)
+        assert begun['id'] == request and begun['result']['ok'], begun
+        assert not (home / 'active').exists()
+        assert git(root, 'rev-parse', 'HEAD') == base
+        assert rpc(sidecar, root, 'finish', token=begun['result']['token'])['ok']
+
+
+@pytest.mark.parametrize('exit_path', ['finish', 'eof', 'owner-kill'])
+def test_expected_respawn_custody_recovers_after_lease_exit(tmp_path, exit_path):
+    with supervised_agent(tmp_path, gateway_respawn=True) as (root, home, base, target, sidecar, configs):
+        begun = rpc(sidecar, root, 'begin', revision=target, homes=[str(home)])
+        assert begun['ok'], begun
+        if exit_path == 'finish':
+            assert rpc(sidecar, root, 'finish', token=begun['token'])['ok']
+        elif exit_path == 'eof':
+            sidecar.close()
+        else:
+            journal = next(p for p in home.glob('*.json') if 'owner' in json.loads(p.read_text()))
+            os.kill(json.loads(journal.read_text())['owner']['pid'], signal.SIGKILL)
+            sidecar.close()
+        with contextlib.closing(SidecarProcess(home, agent_dir=root, python=AGENT_PYTHON, env={'PATH': str(home / 'bin') + os.pathsep + os.environ['PATH']})) as replacement:
+            replacement.result('runtime.handshake', {'rpc_version': __import__('talaria_sidecar').SIDECAR_RPC_VERSION}, timeout=45)
+            wait_for(lambda: not list((home / '.talaria-agent-services').glob('*.json')))
+        assert (home / 'active').exists() and (home / 'backend.pid').exists()
+        assert all((home / 'services' / c['label'] / 'starts').read_text().splitlines() == ['start'] for c in configs)
+
+
+@pytest.fixture
+def gateway_successor(supervised_inventory, monkeypatch):
+    import types
+    from talaria_sidecar import agent_services as services
+    from talaria_sidecar.agent_mutation import _owners
+    root, home, pause, identity, rows, parents, modules = supervised_inventory
+    plist = root / 'synthetic.gateway.plist'
+    plist.write_bytes(b'original supervisor configuration')
+    records = types.SimpleNamespace(identity=lambda pid: {'ct': pid},
+        identity_is_live=lambda p: p['pid'] in parents and p['ct'] == p['pid'],
+        tree_is_whole=lambda *args: (True, ''), write=lambda *args: None)
+    entry = _owners(root, {home}, pause, identity)[0]
+    services.bind_processes(entry, records)
+    recovery = services.ServiceRecovery(root, home, records, identity, pause)
+    recovery.prepare([{**entry, 'purpose': 'gateway'}], {'baselines': [{'synthetic': True}]})
+    owed = recovery.state['entries'][0]
+    owed.update(phase='retiring', drain_acknowledged=True)
+    recovery.save()
+    parents.pop(41001); parents.pop(41002)
+    parents.update({42001: 1, 42002: 42001})
+    pause._discover_launchd = lambda: [{**entry, 'pid': 42001}]
+    modules['hermes_cli.gateway']._launchd_print_service_pid = lambda *args: (True, 42001)
+    status = modules['gateway.status']
+    status.get_running_pid_identity_strict = lambda path: (42002, 420020)
+    status._get_gateway_lock_path = lambda path: home / 'gateway.lock'
+    (home / 'gateway.lock').touch()
+    status._build_pid_record = lambda: {'pid':os.getpid(),'start_time':os.getpid()*10}
+    status._try_acquire_file_lock = lambda file: False
+    status._release_file_lock = lambda file: None
+    pause._drain_budget = lambda: .1
+    pause._gateway_on_home = lambda *args: 42002
+    calls = []
+    pause._ask_to_drain = lambda e: calls.append(('drain', e['pid'])) or True
+    pause._disarm = lambda e: calls.append(('disarm', e['pid']))
+    return recovery, owed, calls, parents, pause, records, modules
+
+
+@pytest.mark.parametrize('unsafe', ['before-ack', 'configuration', 'foreign-home', 'changed-profile', 'service-key',
+                                  'unrelated-child', 'updater-ancestor', 'runtime-birth', 'pid-reuse'])
+def test_gateway_successor_cannot_gain_custody_from_label_alone(gateway_successor, unsafe):
+    import threading
+    recovery, entry, calls, parents, pause, records, modules = gateway_successor
+    if unsafe == 'before-ack': entry['drain_acknowledged'] = False
+    if unsafe == 'configuration': Path(entry['plist']).write_bytes(b'changed')
+    original = pause._discover_launchd
+    if unsafe in {'foreign-home', 'changed-profile', 'service-key'}:
+        field, value = {'foreign-home': ('home', '/foreign'), 'changed-profile': ('profile', 'foreign'), 'service-key': ('label', 'foreign')}[unsafe]
+        pause._discover_launchd = lambda: [{**original()[0], field: value}]
+    if unsafe == 'unrelated-child': parents[42003] = 42001
+    if unsafe == 'updater-ancestor': parents[os.getpid()] = 42001
+    if unsafe == 'runtime-birth': modules['gateway.status'].get_running_pid_identity_strict = lambda path: (42002, -1)
+    if unsafe == 'pid-reuse': entry['processes']['42002'] = {'birth': -1, 'ct': -1, 'parent': 42001}
+    with pytest.raises(RuntimeError):
+        recovery.settle_gateway(entry, threading.Event())
+    assert calls == []
+    assert recovery.path.exists()
+    assert json.loads(recovery.path.read_text())['entries'][0]['phase'] == 'retiring'
+
+
+def test_persisted_retiring_gateway_adopts_verified_ready_successor_without_restart(gateway_successor):
+    from talaria_sidecar import agent_services as services
+    recovery, entry, calls, parents, pause, records, modules = gateway_successor
+    recovered = services.ServiceRecovery(recovery.root, Path(entry['home']), records, recovery.identity, pause)
+    recovered.resume(lambda *args: [])
+    assert not recovered.path.exists()
+    assert calls == []
+
+
+def test_gateway_successor_is_durable_before_drain_and_attempts_are_bounded(gateway_successor):
+    import threading
+    recovery, entry, calls, parents, pause, records, modules = gateway_successor
+    def drain(candidate):
+        saved = json.loads(recovery.path.read_text())['entries'][0]
+        assert saved['pid'] == 42002 and saved['drain_acknowledged'] is False
+        assert saved['retired_processes']
+        calls.append(('drain', candidate['pid']))
+        return False
+    pause._ask_to_drain = drain
+    with pytest.raises(RuntimeError, match='did not acknowledge'):
+        recovery.settle_gateway(entry, threading.Event())
+    assert calls == [('drain', 42002)]
+    entry.update(drain_acknowledged=True, settle_attempts=8)
+    parents.pop(42002)
+    parents[43002] = 42001
+    modules['gateway.status'].get_running_pid_identity_strict = lambda path: (43002, 430020)
+    with pytest.raises(RuntimeError, match='repeatedly respawned'):
+        recovery.settle_gateway(entry, threading.Event())
+    assert calls == [('drain', 42002)]
+
+
+@pytest.mark.parametrize('named', [False, True])
+def test_native_gateway_startup_preserves_live_talaria_fence(tmp_path, named):
+    from conftest import isolated_env, SIDECAR_ROOT
+    home = tmp_path / 'home' / 'profiles' / 'named' if named else tmp_path / 'home'
+    home.mkdir(parents=True)
+    script = """import json, os, subprocess, sys
+from pathlib import Path
+from gateway import status
+from talaria_sidecar.agent_services import gateway_fence, _verify_fence
+home=Path(os.environ['HERMES_HOME'])
+path=status._get_gateway_lock_path(home/'gateway.pid')
+path.write_text(json.dumps({'pid':999999999,'start_time':1,'kind':'gateway','hermes_home':str(home)}))
+pid_path=home/'gateway.pid';pid_path.write_bytes(path.read_bytes());original_pid=pid_path.read_bytes()
+with gateway_fence({'home':str(home)}) as fence:
+ assert fence is not None
+ original=os.fstat(fence.fileno()).st_ino
+ child=subprocess.run([sys.executable,'-c','from gateway import status; status.get_running_pid(); print(status.acquire_gateway_runtime_lock())'],capture_output=True,text=True,env=os.environ)
+ assert child.returncode==0,child.stderr
+ print('replacement acquired runtime lock:',child.stdout.strip(),flush=True)
+ assert child.stdout.strip()=='False', 'native startup admitted a replacement despite the live Talaria fence'
+ assert path.exists() and path.stat().st_ino==original
+ assert json.loads(path.read_text())['kind']=='talaria-update-fence'
+ assert pid_path.read_bytes()==original_pid, 'Talaria changed the gateway PID record'
+ _verify_fence({'home':str(home),'pid':999999999},fence)
+child=subprocess.run([sys.executable,'-c','from gateway import status; status.get_running_pid(); print(status.acquire_gateway_runtime_lock())'],capture_output=True,text=True,env=os.environ)
+assert child.returncode==0 and child.stdout.strip()=='True', 'released Talaria fence prevented recovery startup'
+"""
+    env = isolated_env(home, PYTHONPATH=str(SIDECAR_ROOT) + os.pathsep + str(AGENT_DIR))
+    result = subprocess.run([AGENT_PYTHON, '-c', script], cwd=AGENT_DIR, env=env, capture_output=True, text=True, timeout=30)
+    assert result.returncode == 0, result.stderr[-3000:]
+
+
+@pytest.mark.parametrize('failure', ['pending-starter', 'replaced-inode', 'disarm', 'cancelled'])
+def test_runtime_fence_failure_never_authorizes_source_change(gateway_successor, monkeypatch, failure):
+    import threading
+    from talaria_sidecar import agent_services as services
+    recovery, entry, calls, parents, pause, records, modules = gateway_successor
+    status = modules['gateway.status']
+    releases = []
+    status._try_acquire_file_lock = lambda file: True
+    status._release_file_lock = lambda file: releases.append(True)
+    if failure != 'pending-starter':
+        monkeypatch.setattr(services, '_service_pid', lambda e: (True, None))
+    if failure == 'replaced-inode':
+        original = status._build_pid_record
+        def publish():
+            assert json.loads(recovery.path.read_text())['entries'][0]['runtime_fence_requested']
+            lock = Path(entry['home']) / 'gateway.lock'
+            lock.unlink(); lock.touch()
+            return original()
+        status._build_pid_record = publish
+    if failure == 'disarm':
+        def disarm(e):
+            calls.append(('disarm', e['pid']))
+            raise RuntimeError('synthetic disarm failure')
+        pause._disarm = disarm
+    stopped = threading.Event()
+    if failure == 'cancelled': stopped.set()
+    with pytest.raises(RuntimeError):
+        recovery.settle_gateway(entry, stopped)
+    assert calls == ([('disarm', 41001)] if failure == 'disarm' else [])
+    assert recovery.path.exists()
+    assert json.loads(recovery.path.read_text())['entries'][0]['phase'] == 'retiring'
+    assert releases == ([] if failure == 'cancelled' else [True])
+
+
+@pytest.mark.parametrize('failure', ['source', 'dependencies', 'disarm'])
+def test_expected_respawn_failure_retains_custody_and_recovers_siblings(tmp_path, failure):
+    with supervised_agent(tmp_path, gateway_respawn=True, dependency_sync=True) as (root, home, base, target, sidecar, configs):
+        if failure == 'disarm': (home / 'fail-gateway-disarm').touch()
+        begun = rpc(sidecar, root, 'begin', revision=target, homes=[str(home)])
+        if failure == 'disarm':
+            assert not begun['ok'] and 'disarm failure' in begun['detail'], begun
+            assert git(root, 'rev-parse', 'HEAD') == base
+            assert (home / 'backend.pid').exists(), 'safe sibling must recover independently'
+            debt = next((home / '.talaria-agent-services').glob('*.json'))
+            assert any(e['purpose']=='gateway' for e in json.loads(debt.read_text())['entries'])
+            (home / 'fail-gateway-disarm').unlink()
+        else:
+            assert begun['ok'], begun
+            if failure == 'source':
+                assert not rpc(sidecar, root, 'git', token=begun['token'], args=['merge', '--ff-only', 'missing-target'], timeout_ms=10000)['ok']
+                assert git(root, 'rev-parse', 'HEAD') == base
+            else:
+                assert rpc(sidecar, root, 'git', token=begun['token'], args=['merge','--ff-only',target], timeout_ms=10000)['ok']
+                (home / 'fail-sync').touch()
+                assert not rpc(sidecar, root, 'sync', token=begun['token'])['ok']
+                assert not rpc(sidecar, root, 'finish', token=begun['token'])['ok']
+                assert not (home / 'active').exists() and not (home / 'backend.pid').exists()
+                (home / 'fail-sync').unlink()
+                begun = rpc(sidecar, root, 'begin', revision=target, homes=[str(home)])
+                assert begun['ok'], begun
+                assert rpc(sidecar, root, 'sync', token=begun['token'])['ok']
+            assert rpc(sidecar, root, 'finish', token=begun['token'])['ok']
+        sidecar.close()
+        with contextlib.closing(SidecarProcess(home, agent_dir=root, python=AGENT_PYTHON, env={'PATH':str(home/'bin')+os.pathsep+os.environ['PATH']})) as recovered:
+            recovered.result('runtime.handshake', {'rpc_version':__import__('talaria_sidecar').SIDECAR_RPC_VERSION}, timeout=45)
+            wait_for(lambda: not list((home / '.talaria-agent-services').glob('*.json')))
+        assert (home / 'active').exists() and (home / 'backend.pid').exists()
+
+
+@pytest.mark.parametrize('manager', ['launchd', 'systemd'])
+def test_multiple_gateway_profiles_and_backends_survive_expected_respawns(tmp_path, manager):
+    with supervised_agent(tmp_path, gateway_respawn=True, gateway_profiles=2, dashboards=2, manager=manager) as (root, home, base, target, sidecar, configs):
+        begun = rpc(sidecar, root, 'begin', revision=target, homes=list({c['home'] for c in configs}))
+        assert begun['ok'], begun
+        assert not any((Path(c['home'])/('active' if c['purpose']=='gateway' else 'backend.pid')).exists() for c in configs)
+        assert not list((home/'services').glob('*/service.pid'))
+        assert rpc(sidecar, root, 'git', token=begun['token'], args=['merge','--ff-only',target], timeout_ms=10000)['ok']
+        assert rpc(sidecar, root, 'finish', token=begun['token'])['ok']
+        assert all((Path(c['home'])/('active' if c['purpose']=='gateway' else 'backend.pid')).exists() for c in configs)
+        assert not list((home/'.talaria-agent-services').glob('*.json'))
+        assert all((home/'services'/c['label']/'starts').read_text().splitlines()==['start'] for c in configs)
+
+
+@pytest.mark.parametrize('link', ['symbolic', 'hard'])
+def test_runtime_fence_does_not_write_through_linked_files(gateway_successor, link):
+    from talaria_sidecar import agent_services as services
+    recovery, entry, calls, parents, pause, records, modules = gateway_successor
+    victim = Path(entry['home']) / 'unrelated-file'
+    victim.write_bytes(b'original unrelated content')
+    lock = victim.with_name('gateway.lock')
+    lock.unlink()
+    if link == 'symbolic': lock.symlink_to(victim)
+    else: os.link(victim, lock)
+    modules['gateway.status']._try_acquire_file_lock = lambda file: True
+    try:
+        with services.gateway_fence(entry):
+            pass
+    except (OSError, RuntimeError):
+        pass
+    assert victim.read_bytes() == b'original unrelated content'
