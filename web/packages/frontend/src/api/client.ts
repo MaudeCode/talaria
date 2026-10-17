@@ -12,6 +12,7 @@
  * Tests and the in-memory contract adapters inject a `Transport`; production
  * uses `fetch`. ESLint forbids `fetch` anywhere else.
  */
+import { chatConditionText } from '../features/notices/chatCondition'
 import type { ZodType } from 'zod'
 import { ApiError, ErrorBodySchema, parseOrThrow } from '../contracts/common'
 import { appRoot, appUrl } from '../lib/appRoot'
@@ -174,7 +175,7 @@ export async function request<T>(path: string, opts: RequestOptions<T>): Promise
           code: errBody.success ? errBody.data.code : undefined,
           body: parsed,
           path,
-          message: errBody.success ? errBody.data.error : `HTTP ${response.status} from ${path}`,
+          message: errBody.success ? (chatConditionText(errBody.data.condition ?? errBody.data.type, errBody.data.agent_runtime_reason) ?? errBody.data.error) : `HTTP ${response.status} from ${path}`,
           retryable: retryStatuses.has(response.status),
         })
         if (err.retryable && attempt < maxAttempts) {
@@ -255,7 +256,7 @@ export async function contractFetch(req: Request): Promise<Response> {
       let parsed: unknown = null
       try { parsed = text ? JSON.parse(text) : null } catch { parsed = { error: text.slice(0, 500) } }
       const errBody = ErrorBodySchema.safeParse(parsed)
-      throw new ApiError({ kind: 'http', status: response.status, code: errBody.success ? errBody.data.code : undefined, body: parsed, path, message: errBody.success ? errBody.data.error : `HTTP ${response.status} from ${path}`, retryable: false })
+      throw new ApiError({ kind: 'http', status: response.status, code: errBody.success ? errBody.data.code : undefined, body: parsed, path, message: errBody.success ? (chatConditionText(errBody.data.condition ?? errBody.data.type, errBody.data.agent_runtime_reason) ?? errBody.data.error) : `HTTP ${response.status} from ${path}`, retryable: false })
     }
     return response
   }

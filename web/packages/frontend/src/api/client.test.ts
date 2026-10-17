@@ -58,6 +58,12 @@ describe('typed client against the in-memory adapter', () => {
     await expect(fetchSession('missing')).rejects.toMatchObject({ kind: 'http', status: 404, message: 'Session not found' })
   })
 
+  it('renders the server recovery reason on a refused send while preserving its envelope', async () => {
+    const body = { error: 'Agent updated successfully', type: 'agent_runtime_stale', agent_runtime_reason: 'recovery_incomplete', agent_update_state: 'incomplete', retryable: true, restart_scheduled: false }
+    configureClient({ transport: createMemoryAdapter({ routes: { 'POST /api/chat/start': () => [409, body] } }) })
+    await expect(post('api/chat/start', {}, z.unknown())).rejects.toMatchObject({ message: 'Agent update recovery is incomplete', body })
+  })
+
   it('rejects malformed payloads instead of returning unchecked JSON', async () => {
     configureClient({ transport: createMemoryAdapter({ routes: { 'GET /api/settings': () => [200, { bot_name: 42 }] } }) })
     const err = await get('api/settings', z.object({ bot_name: z.string() })).catch((e: unknown) => e)

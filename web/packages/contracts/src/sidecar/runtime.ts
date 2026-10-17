@@ -18,6 +18,7 @@ export const RuntimeDescribeSchema = z.object({
   // Agent imports succeeded; this is not an exact match with the officially tested pin.
   compatible: z.boolean(),
   stale: z.boolean(),
+  agent_source_changed: z.boolean().optional(),
   update_state: z.enum(['absent', 'active', 'stale', 'unknown', 'incomplete', 'unverified']),
   import_error: z.string().nullable(),
 })

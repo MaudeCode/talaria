@@ -1,7 +1,7 @@
 import { oc } from '@orpc/contract'
 import { z } from 'zod'
 import { SessionDeleteRefusedSchema } from '../sidecar/namespaces.js'
-import { SessionIdSchema, SessionRowSchema, SessionEnvelopeSchema, SessionsListSchema, SessionNewRequestSchema, DraftSchema, DraftResponseSchema, ProjectSchema, ProjectsSchema, SessionStatusSchema, SessionUsageSchema, SessionDeleteResultSchema, ShareReadSchema, ShareCreateResponseSchema, ActivitySceneRowSchema, ToolResultViewSchema, SessionSchema, AttachmentSchema } from '../views.js'
+import { AgentRuntimeMetadataSchema, SessionIdSchema, SessionRowSchema, SessionEnvelopeSchema, SessionsListSchema, SessionNewRequestSchema, DraftSchema, DraftResponseSchema, ProjectSchema, ProjectsSchema, SessionStatusSchema, SessionUsageSchema, SessionDeleteResultSchema, ShareReadSchema, ShareCreateResponseSchema, ActivitySceneRowSchema, ToolResultViewSchema, SessionSchema, AttachmentSchema } from '../views.js'
 
 /** Session, project, share, and draft routes. Response rows are loose: the sidecar carries operator-defined extras. */
 
@@ -78,7 +78,7 @@ export const CompressResultSchema = z.looseObject({ ok: z.literal(true), session
 export const CompressionStatusSchema = z.looseObject({
   ok: z.boolean().optional(), status: z.enum(['running', 'done', 'error', 'idle']), session_id: z.string().nullable().optional(), focus_topic: z.string().nullable().optional(),
   session: SessionSchema.optional(), summary: CompressionSummarySchema.optional(), error: z.string().optional(), error_status: z.number().int().optional(),
-  type: z.string().optional(), retryable: z.boolean().optional(), restart_scheduled: z.boolean().optional(), agent_update_state: z.unknown().optional(),
+  type: z.string().optional(), ...AgentRuntimeMetadataSchema.shape,
   started_at: z.number().optional(), updated_at: z.number().optional(),
 })
 

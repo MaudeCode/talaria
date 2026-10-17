@@ -1,13 +1,11 @@
 import { z } from 'zod'
+import { ErrorBodySchema as SharedErrorBodySchema } from '@maudecode/talaria-web-contracts'
 
 export { UnixSeconds, NullableString, NullableNumber } from '@maudecode/talaria-web-contracts'
 export const OptionalBool = z.boolean().optional()
 
 /** Server error body: `{ error, code?, ... }`. Kept loose so route-specific fields survive. */
-export const ErrorBodySchema = z.looseObject({
-  error: z.string(),
-  code: z.string().optional(),
-})
+export const ErrorBodySchema = SharedErrorBodySchema.extend({ code: z.string().optional() })
 export type ErrorBody = z.infer<typeof ErrorBodySchema>
 
 /** `{ ok: true }`-style acknowledgements. */

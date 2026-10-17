@@ -10,7 +10,7 @@ import { closeSync, fstatSync, readFileSync } from 'node:fs'
 import { openAnchoredFd } from '../workspace/fs.js'
 import { isWithin, resolvePathLikePython } from '../workspace/paths.js'
 import type { SidecarLike } from '../sidecar/client.js'
-import { SidecarError } from '../sidecar/client.js'
+import { runtimeFailureDetails, SidecarError } from '../sidecar/client.js'
 import type { SessionStore } from './store.js'
 import type { SessionService } from './service.js'
 import type { StateDbRead } from './state-db.js'
@@ -1116,12 +1116,11 @@ export class TurnRunner {
       }
       const message = error instanceof Error ? error.message : String(error)
       const condition = error instanceof SidecarError ? error.condition : undefined
-      const classification = classifyProviderError(message, { condition })
-      const payload = providerErrorPayload(message, classification.type, classification.hint, deps.redactEnabled())
-      if (condition === 'sidecar_unavailable' || condition === 'agent_runtime_stale') {
-        payload.type = condition === 'agent_runtime_stale' ? 'agent_runtime_stale' : 'sidecar_unavailable'
-        payload.condition = condition
-      }
+      const runtime = error instanceof SidecarError && ['sidecar_unavailable', 'agent_runtime_stale', 'agent_incompatible'].includes(error.condition)
+        ? runtimeFailureDetails(error.condition, error.data) : null
+      const classification = runtime ? { label: 'Error', type: runtime.type, hint: '' } : classifyProviderError(message, { condition })
+      const payload = providerErrorPayload(runtime?.message ?? message, classification.type, classification.hint, deps.redactEnabled())
+      if (runtime) Object.assign(payload, runtime)
       try {
         let current: Session = s
         try { current = (await deps.store.get(sessionId)) } catch { current = s }

@@ -13,6 +13,7 @@
  * 4. Teardown (session switch, profile change, unmount) releases the local
  *    transport but never cancels the backend run.
  */
+import type { AgentRuntimeMetadata } from '@maudecode/talaria-web-contracts'
 import type { ChatEvent } from '../contracts/sse'
 import type { ApprovalPending, Attachment, ClarifyPending, Session } from '../contracts'
 import type { ConnectorOperationView } from '@maudecode/talaria-web-contracts'
@@ -71,7 +72,7 @@ export interface LiveTurn {
   tps: number | null
   contextStatus: { state?: string | undefined; message?: string | undefined } | null
   warning: string | null
-  error: { type: string; message: string; hint?: string | undefined; continuationSessionId?: string | undefined } | null
+  error: (AgentRuntimeMetadata & { condition?: string | undefined; type: string; message: string; hint?: string | undefined; continuationSessionId?: string | undefined }) | null
   cancelledMessage: string | null
   approval: ApprovalPending | null
   clarify: ClarifyPending | null
@@ -294,7 +295,7 @@ function reduceTurn(turn: LiveTurn, action: Extract<StreamAction, { type: 'event
         status: cancelled ? 'cancelled' : 'error',
         terminalState,
         doneAt: now,
-        error: cancelled ? null : { type, message: event.data.message ?? '', hint: event.data.hint, continuationSessionId: event.data.continuation_session_id ?? event.data.new_session_id },
+        error: cancelled ? null : { condition: event.data.condition, agent_runtime_reason: event.data.agent_runtime_reason, agent_update_state: event.data.agent_update_state, retryable: event.data.retryable, restart_scheduled: event.data.restart_scheduled, type, message: event.data.message ?? '', hint: event.data.hint, continuationSessionId: event.data.continuation_session_id ?? event.data.new_session_id },
         cancelledMessage: cancelled ? (event.data.message ?? '') : null,
         doneSession: sessionOf(event.data),
         ...NO_PROMPTS,

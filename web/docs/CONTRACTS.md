@@ -152,3 +152,12 @@ Before opening or updating a PR, verify the body against the root PR template
 - [`docs/troubleshooting.md`](troubleshooting.md): diagnostic flows for common
   failures.
 - [`docs/EXTENSIONS.md`](EXTENSIONS.md): administrator-controlled extensions.
+
+Chat readiness and runtime refusals share the optional `agent_runtime_reason`,
+`agent_update_state`, `retryable`, and `restart_scheduled` fields. The server
+projects typed sidecar evidence into `update_active`, `recovery_incomplete`,
+`source_changed`, or `unknown`; HTTP refusals and journalled SSE errors carry the
+same projection as `/api/health/agent`. Source changes require a verified revision
+mismatch and do not prove that an update completed. Older responses without a
+reason use neutral runtime-unavailable wording. These fields do not change
+update notification history or authorize service recovery or a Web restart.

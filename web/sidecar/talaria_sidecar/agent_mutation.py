@@ -334,6 +334,7 @@ def _worker(root, revision, homes, requests, stopped, send, refresh_binding=None
     sync_failed = False
     error = None
     recovery = None
+    gateway_deadline = None
     try:
         recovery = services.ServiceRecovery(root, Path(os.environ['HERMES_HOME']), records, identity, pause)
         found = _command(modules["update_custody"].git_argv(["git"], ["rev-parse", "HEAD"]), root, 10, stopped, modules["update_custody"])
@@ -443,7 +444,10 @@ def _worker(root, revision, homes, requests, stopped, send, refresh_binding=None
         records.mark_stop_requested(token, sorted({pid for e in gateway_entries for pid in (e['pid'], e.get('service_pid', e['pid']))}))
         for entry in backend_entries:
             recovery.stop(entry, stopped)
+        gateway_deadline = recovery.gateway_deadline()
         for entry in gateway_entries:
+            if stopped.is_set() or time.monotonic() >= gateway_deadline:
+                raise RuntimeError('Gateway drain has not completed; its durable resume obligation is retained.')
             if entry.get('processes'):
                 services.verify_processes(entry, records)
             recovery.gateway_requested(entry)
@@ -453,7 +457,7 @@ def _worker(root, revision, homes, requests, stopped, send, refresh_binding=None
             records.write(token)
             if not pause._ask_to_drain(entry):
                 raise RuntimeError("A gateway did not acknowledge cooperative quiescence; source was not changed.")
-        deadline = time.monotonic() + min(pause._drain_budget(), 300)
+            recovery.gateway_requested(entry, acknowledged=True)
         waiting = list(gateway_entries)
         while waiting:
             for entry in list(waiting):
@@ -465,12 +469,11 @@ def _worker(root, revision, homes, requests, stopped, send, refresh_binding=None
                                                                  expected_service_identity=(entry["service_pid"], entry["service_ct"]))
                     else:
                         if entry.get('processes'):
-                            services.verify_processes(entry, records, stopping=True)
-                        pause._disarm(services.service_entry(entry))
-                        if entry.get('processes'):
-                            services.wait_stopped(entry, records, stopped)
+                            recovery.settle_gateway(entry, stopped, deadline=gateway_deadline)
+                        else:
+                            pause._disarm(services.service_entry(entry))
                     waiting.remove(entry)
-            if waiting and (stopped.wait(.05) or time.monotonic() >= deadline):
+            if waiting and (stopped.wait(.05) or time.monotonic() >= gateway_deadline):
                 raise RuntimeError("Gateway drain has not completed; its durable resume obligation is retained.")
         if (_writer_ledger(root, identity) if bootstrap_repair else _owners(root, homes, pause, identity, windows)):
             raise RuntimeError("A gateway appeared during quiescence; source was not changed.")
@@ -558,7 +561,7 @@ def _worker(root, revision, homes, requests, stopped, send, refresh_binding=None
                 if live and not changed and not sync_failed and records.tree_is_whole(token, root)[0]:
                     # An untouched gateway must not strand a backend stopped earlier in a partial pause.
                     recovery.save(token)
-                    recovery.resume(_writer_ledger)
+                    recovery.resume(_writer_ledger, gateway_deadline=gateway_deadline)
                 if live or sync_failed or (changed and needs_sync and not locals().get("response", {}).get("ok")):
                     raise RuntimeError("Gateway resume remains owed until writer drain and dependency repair complete.")
                 whole, why = records.tree_is_whole(token, root)
@@ -577,7 +580,7 @@ def _worker(root, revision, homes, requests, stopped, send, refresh_binding=None
                 if token.get("resume_needed") or token.get("resume_deferred"):
                     raise RuntimeError("Gateway resume could not be verified; its obligation is retained.")
                 recovery.save(token)
-                recovery.resume(_writer_ledger)
+                recovery.resume(_writer_ledger, gateway_deadline=gateway_deadline)
             if token and not handed_off:
                 records.discharge(token)
         except BaseException as exc:

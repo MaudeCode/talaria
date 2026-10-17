@@ -11,20 +11,51 @@ from talaria_sidecar import SIDECAR_RPC_VERSION
 from talaria_sidecar.runtime import read_pin
 
 
-def test_same_revision_agent_work_is_blocked_until_durable_web_repair_intent_is_cleared(tmp_path, monkeypatch):
+@pytest.mark.parametrize('obligation', ['dependency', 'service'])
+def test_same_revision_agent_work_is_blocked_until_durable_web_repair_intent_is_cleared(tmp_path, monkeypatch, obligation):
     from talaria_sidecar.runtime import AgentRuntime, AgentRuntimeStale
     root, home, state = tmp_path / 'agent', tmp_path / 'home', tmp_path / 'web-state'
     root.mkdir(); home.mkdir()
     runtime = AgentRuntime(home, root)
     monkeypatch.setattr(runtime, 'is_stale', lambda: False)
     monkeypatch.setenv('HERMES_WEBUI_STATE_DIR', str(state))
-    marker = state / 'agent-dependency-sync' / hashlib.sha256(str(root.resolve()).encode()).hexdigest()
+    from talaria_sidecar.agent_services import recovery_path
+    marker = recovery_path(root, home) if obligation == 'service' else state / 'agent-dependency-sync' / hashlib.sha256(str(root.resolve()).encode()).hexdigest()
     marker.parent.mkdir(parents=True)
     marker.write_text('pending\n')
-    with pytest.raises(AgentRuntimeStale, match='Finish the Agent update'):
+    with pytest.raises(AgentRuntimeStale, match='Finish the Agent update') as failure:
         runtime.ensure_current()
+    assert failure.value.data['agent_update_state'] == 'incomplete'
+    assert 'updated' not in str(failure.value).lower()
     marker.unlink()
     runtime.ensure_current()
+
+
+@pytest.mark.parametrize('fresh, changed', [('b' * 40, True), (None, False)])
+def test_runtime_refusal_only_reports_verified_source_changes(tmp_path, monkeypatch, fresh, changed):
+    from talaria_sidecar import runtime as module
+    runtime = module.AgentRuntime(tmp_path / 'home', tmp_path / 'agent')
+    runtime.loaded = True
+    runtime.revision = 'a' * 40
+    monkeypatch.setattr(runtime, 'web_repair_state', lambda: 'absent')
+    monkeypatch.setattr(runtime, 'update_transaction_state', lambda: 'unverified')
+    monkeypatch.setattr(module, 'read_agent_revision', lambda *_: fresh)
+    with pytest.raises(module.AgentRuntimeStale) as failure:
+        runtime.ensure_current()
+    assert failure.value.data['agent_source_changed'] is changed
+    assert failure.value.data['agent_update_state'] == 'unverified'
+    assert 'updated' not in str(failure.value).lower()
+
+
+def test_active_update_with_retained_recovery_is_not_classified_as_incomplete(tmp_path, monkeypatch):
+    from talaria_sidecar import runtime as module
+    runtime = module.AgentRuntime(tmp_path / 'home', tmp_path / 'agent')
+    monkeypatch.setattr(runtime, 'web_repair_state', lambda: 'present')
+    monkeypatch.setattr(module, '_read_live_agent_update', lambda *_: 'active')
+    with pytest.raises(module.AgentRuntimeStale) as failure:
+        runtime.ensure_current()
+    assert failure.value.data['agent_update_state'] == 'active'
+    assert 'incomplete' not in str(failure.value).lower()
 
 
 @requires_agent

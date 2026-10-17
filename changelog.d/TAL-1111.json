@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Agent recovery notices now distinguish incomplete updates from source changes without claiming a failed update succeeded.",
+      "highlight": false,
+      "components": ["web"]
+    }
+  ]
+}
