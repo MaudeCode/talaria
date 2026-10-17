@@ -1,4 +1,4 @@
-import { useMutation, useQuery, useQueryClient, type QueryKey, type QueryClient } from '@tanstack/react-query'
+import { matchQuery, useMutation, useQuery, useQueryClient, type QueryKey, type QueryClient } from '@tanstack/react-query'
 import { getStreamContext } from '../../stream/connection'
 import { keys } from '../../api/queryKeys'
 import * as api from '../../api/endpoints'
@@ -18,7 +18,7 @@ const empty: Record<string, OwnedIntent> = {}
 interface Reconciliation {
   context: object
   requested: number
-  requests: { current: () => boolean; resource: string }[]
+  requests: { current: () => boolean; resource: string; readKeys: QueryKey[] | undefined }[]
   promise: Promise<void>
 }
 const reconciliations = new WeakMap<QueryClient, Map<string, Reconciliation>>()
@@ -32,7 +32,7 @@ function cancelResourceReads(qc: QueryClient, queryKey?: QueryKey) {
   return Promise.all((queryKey ? [queryKey] : [keys.sessions.all, keys.projects]).map((queryKey) => qc.cancelQueries({ queryKey })))
 }
 
-async function reconcile(qc: QueryClient, current: () => boolean, resource: string, queryKey?: QueryKey) {
+async function reconcile(qc: QueryClient, current: () => boolean, resource: string, queryKey?: QueryKey, readKeys?: QueryKey[]) {
   if (!current()) return
   const context = getStreamContext()
   const group = JSON.stringify(queryKey ?? ['resources'])
@@ -41,12 +41,12 @@ async function reconcile(qc: QueryClient, current: () => boolean, resource: stri
   const previous = queues.get(group)
   if (previous?.context === context) {
     previous.requested += 1
-    previous.requests.push({ current, resource })
+    previous.requests.push({ current, resource, readKeys })
     // Supersede the shared read, while every owner waits for the covering follow-up.
     await cancelResourceReads(qc, queryKey)
     return previous.promise
   }
-  const queue = { context, requested: 1, requests: [{ current, resource }], promise: Promise.resolve() }
+  const queue = { context, requested: 1, requests: [{ current, resource, readKeys }], promise: Promise.resolve() }
   queue.promise = Promise.resolve().then(async () => {
     try {
       let served = 0
@@ -55,8 +55,10 @@ async function reconcile(qc: QueryClient, current: () => boolean, resource: stri
         const requests = queue.requests.filter((request) => request.current())
         const resource = requests.find((request) => request.resource.startsWith('project:'))?.resource ?? requests[0]?.resource
         if (!resource) return
+        // Concurrent owners share one pass over the union of their required snapshots.
+        const readKeys = requests.some((request) => !request.readKeys) ? undefined : requests.flatMap((request) => request.readKeys ?? [])
         try {
-          await reconcileSnapshot(qc, () => requests.some((request) => request.current()), resource, queryKey)
+          await reconcileSnapshot(qc, () => requests.some((request) => request.current()), resource, queryKey, readKeys)
         } catch (error) {
           if (requested === queue.requested) throw error
         }
@@ -70,13 +72,13 @@ async function reconcile(qc: QueryClient, current: () => boolean, resource: stri
   return queue.promise
 }
 
-async function reconcileSnapshot(qc: QueryClient, current: () => boolean, resource: string, queryKey?: QueryKey) {
+async function reconcileSnapshot(qc: QueryClient, current: () => boolean, resource: string, queryKey?: QueryKey, readKeys?: QueryKey[]) {
   if (!current()) return
   // Cancel reads captured before the write, including inactive detail/search queries.
   await cancelResourceReads(qc, queryKey)
   if (!current()) return
   if (queryKey) {
-    await qc.invalidateQueries({ queryKey, refetchType: 'all' }, { throwOnError: true })
+    await qc.invalidateQueries({ queryKey, refetchType: 'all', ...(readKeys ? { predicate: (query) => readKeys.some((key) => matchQuery({ queryKey: key }, query)) } : {}) }, { throwOnError: true })
     return
   }
   const projects = qc.getQueryCache().find({ queryKey: keys.projects, exact: true })
@@ -93,6 +95,7 @@ export function useResourceMutation<V, R, T = unknown>(options: {
   resource: (variables: V) => string | string[]
   intent: (variables: V) => ResourceIntent<T>
   queryKey?: QueryKey
+  readKeys?: (variables: V) => QueryKey[]
   mutationFn: (variables: V) => Promise<R>
   onSuccess?: (result: R, variables: V) => void
   onError?: (error: unknown) => void
@@ -132,7 +135,7 @@ export function useResourceMutation<V, R, T = unknown>(options: {
         throw error
       } finally {
         if (current()) {
-          const recover = async () => { await reconcile(qc, current, id, options.queryKey); clear() }
+          const recover = async () => { await reconcile(qc, current, id, options.queryKey, options.readKeys?.(variables)); clear() }
           try { await recover() } catch {
             // An unknown outcome cannot be retried as another create/delete. Retry reads only.
             if (current()) {

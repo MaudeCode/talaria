@@ -23,7 +23,11 @@ import { getStreamContext } from '../../stream/connection'
 
 // Same owner for single-card and bulk writes; profile/server identity comes from the connection context.
 const cardResource = (board: string | undefined, id: string) => JSON.stringify(['kanban', board, id])
-const kanbanQueries = ['kanban'] as const
+// Extend the existing board key: only snapshots touched by this intent gate its reconciliation.
+const kanbanReads = (board: string | undefined, ids: string[] = []) => {
+  const key = keys.kanban.board(board)
+  return [[...key, 'view'], [...key, 'stats'], ...ids.flatMap((id) => [[...key, 'task', id], [...key, 'task-log', id]])]
+}
 const boardSelection = 'kanban:selection'
 const lanePreference = 'kanban:lanes'
 
@@ -84,16 +88,17 @@ export function KanbanPage() {
   const setSelected = (ids: string[]) => setSelection({ context: getStreamContext(), board: current, ids })
   const filters = { include_archived: includeArchived, assignee, tenant, only_mine: onlyMine, search }
   // Filter placeholders stay within one board. A destination board uses only its own cached answer.
-  const board = useQuery({ queryKey: [...keys.kanban.board(current), filters], queryFn: () => api.fetchKanbanBoard(current, filters), staleTime: 10_000, enabled: boards.isSuccess, placeholderData: (previous, query) => query?.queryKey[2] === current ? previous : undefined })
-  const stats = useQuery({ queryKey: ['kanban', 'stats', current ?? ''], queryFn: () => api.fetchKanbanStats(current), staleTime: 10_000, enabled: boards.isSuccess })
+  const board = useQuery({ queryKey: [...keys.kanban.board(current), 'view', filters], queryFn: () => api.fetchKanbanBoard(current, filters), staleTime: 10_000, enabled: boards.isSuccess, placeholderData: (previous, query) => query?.queryKey[2] === current ? previous : undefined })
+  const stats = useQuery({ queryKey: [...keys.kanban.board(current), 'stats'], queryFn: () => api.fetchKanbanStats(current), staleTime: 10_000, enabled: boards.isSuccess })
   useKanbanLiveRefresh(current, board.isPlaceholderData ? undefined : board.data?.latest_event_id)
-  const invalidate = () => qc.invalidateQueries({ queryKey: ['kanban'] })
+  const invalidate = (refetchType: 'active' | 'none' = 'active') => qc.invalidateQueries({ queryKey: ['kanban'], refetchType })
   const toastError = (e: unknown) => showToast(e instanceof Error ? e.message : String(e), 4000, 'error')
-  const switchBoard = useResourceMutation({ resource: () => boardSelection, queryKey: kanbanQueries, intent: (slug: string) => ({ label: m.kanban_board_label(), value: slug }), mutationFn: api.switchKanbanBoard, onError: toastError })
-  const saveView = useResourceMutation({ resource: () => lanePreference, queryKey: kanbanQueries, intent: (lanes: boolean) => ({ label: m.kanban_lanes_by_profile(), value: lanes }), mutationFn: api.updateKanbanConfig, onError: (e) => showToast(m.kanban_view_update_failed() + (e instanceof Error ? e.message : String(e)), 4000, 'error') })
+  const switchBoard = useResourceMutation({ resource: () => boardSelection, queryKey: keys.kanban.boards, intent: (slug: string) => ({ label: m.kanban_board_label(), value: slug }), mutationFn: api.switchKanbanBoard, onError: toastError })
+  const saveView = useResourceMutation({ resource: () => lanePreference, queryKey: keys.kanban.board(current), readKeys: () => kanbanReads(current), intent: (lanes: boolean) => ({ label: m.kanban_lanes_by_profile(), value: lanes }), mutationFn: api.updateKanbanConfig, onSuccess: () => { void invalidate('none') }, onError: (e) => { void invalidate('none'); showToast(m.kanban_view_update_failed() + (e instanceof Error ? e.message : String(e)), 4000, 'error') } })
   const bulk = useResourceMutation({
     resource: ({ ids, board }: { ids: string[]; status: string; board: string | undefined }) => ids.map((id) => cardResource(board, id)),
-    queryKey: kanbanQueries,
+    queryKey: keys.kanban.board(current),
+    readKeys: ({ board, ids }) => kanbanReads(board, ids),
     intent: ({ status }) => ({ label: statusLabel(status), value: status }),
     mutationFn: ({ ids, status, board }) => api.bulkKanbanStatus(board, ids, status),
     onSuccess: (res, { board, ids }) => {
@@ -254,11 +259,12 @@ function TaskDialog({ board, task, readOnly, onClose, onChanged }: { board: stri
   const intents = useResourceIntents<string>()
   const intent = intents[cardResource(board, String(task.id))]
   const busy = readOnly || !!intent
-  const log = useQuery({ queryKey: ['kanban', 'task-log', board ?? '', String(task.id)], queryFn: () => api.fetchKanbanTaskLog(board, task.id), staleTime: 10_000 })
-  const detail = useQuery({ queryKey: ['kanban', 'task', board ?? '', String(task.id)], queryFn: () => api.fetchKanbanTask(board, task.id), staleTime: 10_000 })
+  const log = useQuery({ queryKey: [...keys.kanban.board(board), 'task-log', String(task.id)], queryFn: () => api.fetchKanbanTaskLog(board, task.id), staleTime: 10_000 })
+  const detail = useQuery({ queryKey: [...keys.kanban.board(board), 'task', String(task.id)], queryFn: () => api.fetchKanbanTask(board, task.id), staleTime: 10_000 })
   const link = useResourceMutation({
     resource: ({ parent, child }: { parent: string; child: string; remove: boolean; revision?: number }) => [cardResource(board, parent), cardResource(board, child)],
-    queryKey: kanbanQueries,
+    queryKey: keys.kanban.board(board),
+    readKeys: ({ parent, child }) => kanbanReads(board, [parent, child]),
     intent: ({ parent, child, remove }) => ({ label: remove ? m.kanban_remove_dependency_named({ a0: `${parent} → ${child}` }) : m.kanban_add_dependency() + ': ' + parent }),
     // Clear only the submitted draft; edits made while transport was held belong to the user.
     mutationFn: ({ parent, child, remove }) => remove ? api.unlinkKanbanTasks(board, parent, child) : api.linkKanbanTasks(board, parent, child),
@@ -270,7 +276,8 @@ function TaskDialog({ board, task, readOnly, onClose, onChanged }: { board: stri
   const linked = new Map((detail.data?.link_tasks ?? []).map((t) => [t.id, t]))
   const act = useResourceMutation({
     resource: () => cardResource(board, String(task.id)),
-    queryKey: kanbanQueries,
+    queryKey: keys.kanban.board(board),
+    readKeys: () => kanbanReads(board, [String(task.id)]),
     intent: ({ action, body }: { action: Parameters<typeof api.kanbanTaskAction>[2]; body: Record<string, unknown> }) => ({ label: typeof body.status === 'string' ? statusLabel(body.status) : action === 'block' ? m.kanban_block() : action === 'unblock' ? m.kanban_unblock() : m.kanban_dispatch(), value: typeof body.status === 'string' ? body.status : undefined }),
     mutationFn: ({ action, body }: { action: Parameters<typeof api.kanbanTaskAction>[2]; body: Record<string, unknown> }) => api.kanbanTaskAction(board, task.id, action, body),
     onSuccess: () => { showToast(m.saved()) },
