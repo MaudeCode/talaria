@@ -187,7 +187,9 @@ intent. A consumed, expired or changed confirmation cannot refresh anything.
 After reacquiring the native checkout lock, Talaria rechecks those identities
 and atomically records a `legacy_refresh` recovery obligation before SIGTERM to
 that exact backend. It waits for all old writer descendants and adopts an
-attested capable successor, or starts the original service once if inactive.
+attested capable successor, or attempts to start the original service once per
+worker if inactive. Failed-worker cleanup cannot repeat that start; a fresh
+recovery attempt may retry the retained obligation.
 It never force-kills, uses a force-restart command, rewrites configuration or
 signals a replacement incarnation. Missing modern APIs, failed start, slow
 shutdown and unverified readiness preserve source and durable debt. Crash/EOF

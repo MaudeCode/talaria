@@ -495,6 +495,7 @@ class ServiceRecovery:
     def __init__(self, root, home, records, identity, pause):
         self.root, self.records, self.identity, self.pause = root, records, identity, pause
         self.path = recovery_path(root, home)
+        self._refresh_starts = set()  # Finally recovery must not retry a failed bootstrap in this worker.
         try:
             self.state = json.loads(self.path.read_text())
         except FileNotFoundError:
@@ -636,9 +637,13 @@ class ServiceRecovery:
                 self.save()
                 return
             if not _service_pid(owed)[1] and not started:
+                key = _service_key(owed)
+                if key in self._refresh_starts:
+                    raise RuntimeError(f'{_name(owed)} legacy refresh start was already attempted; retry Agent update recovery. Source was not changed and recovery remains owed.')
                 whole, why = self.records.tree_is_whole(self.state['tree'], self.root)
                 if not whole or self.state.get('sync_failed'):
                     raise RuntimeError('Legacy refresh source/dependency recovery remains owed: ' + why)
+                self._refresh_starts.add(key)
                 _start(owed, self.pause)
                 started = True
             if stopped.wait(.05) or time.monotonic() >= deadline:

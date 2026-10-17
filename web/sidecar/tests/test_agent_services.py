@@ -59,6 +59,9 @@ def supervised_agent(tmp_path, *, dashboards=1, depth=1, gateways=True, dependen
 from pathlib import Path
 HOME=Path(os.environ['HERMES_HOME']); ROOT=Path(__file__).parent
 
+def publish_pid(path):
+ temporary=path.with_name('.'+path.name+'.'+str(os.getpid())+'.tmp')
+ temporary.write_text(str(os.getpid())); temporary.replace(path)
 def birth(pid):
  pid=int(pid)
  if pid<=0: return None
@@ -76,6 +79,7 @@ def service_pid(label):
   return pid if alive(pid) else None
  except FileNotFoundError: return None
 def start(label):
+ with (HOME/'services'/label/'start-attempts').open('a') as f: f.write('attempt'+chr(10))
  if (HOME/'services'/label/'fail-start').exists(): raise RuntimeError('synthetic service start refused')
  if service_pid(label): return
  (HOME/'services'/label/'disarm').unlink(missing_ok=True)
@@ -108,10 +112,10 @@ def ledger():
     (root / 'inert.py').write_text("import sys,time\nfrom pathlib import Path\nwhile not (Path(sys.argv[1])/'stop').exists(): time.sleep(.01)\n")
     (root / 'supervisor.py').write_text('''import json, os, signal, subprocess, sys, time
 from pathlib import Path
-from synthetic_services import HOME, ROOT
+from synthetic_services import HOME, ROOT, publish_pid
 label=sys.argv[1]; folder=HOME/'services'/label
 cfg=json.loads((folder/'config.json').read_text())
-(folder/'service.pid').write_text(str(os.getpid()))
+publish_pid(folder/'service.pid')
 argv=[sys.executable,str(ROOT/('writer.py' if cfg['purpose']=='gateway' else 'backend.py')),cfg['home']]
 if (folder/'wrapper-only').exists(): argv=[sys.executable,str(ROOT/'inert.py'),cfg['home']]
 for _ in range(cfg['depth']): argv=[sys.executable,str(ROOT/'wrapper.py'),*argv]
@@ -140,6 +144,7 @@ finally:
     (root / 'backend.py').write_text('''import json, os, signal, sys, threading
 from pathlib import Path
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from synthetic_services import publish_pid
 home=Path(sys.argv[1]); os.environ['BACKEND_HOME']=str(home)
 from hermes_cli.backend_retirement import retirement
 cfg=json.loads((home/'backend-config.json').read_text())
@@ -150,6 +155,7 @@ class Handler(BaseHTTPRequestHandler):
  def reply(self,data,status=200):
   blob=json.dumps(data).encode(); self.send_response(status); self.send_header('Content-Length',str(len(blob))); self.end_headers(); self.wfile.write(blob)
  def do_GET(self):
+  with (home/'get-requests.jsonl').open('a') as log: log.write(json.dumps(dict(pid=os.getpid(),legacy=legacy_runtime,path=self.path))+chr(10))
   if (home/'refuse-auth').exists(): self.reply({},401); return
   missing=legacy_runtime or (home/'missing-identity').exists()
   if self.path=='/openapi.json':
@@ -168,7 +174,7 @@ class Handler(BaseHTTPRequestHandler):
   with (home/'retirement-actions').open('a') as log: log.write(body['action']+'\\n')
   self.reply(retirement.prepare() if body['action']=='prepare' else getattr(retirement,body['action'])(body.get('token')))
 server=ThreadingHTTPServer(('127.0.0.1',cfg['port']),Handler)
-(home/'backend.pid').write_text(str(os.getpid()))
+publish_pid(home/'backend.pid')
 def stop(*_):
  with (home/'signals').open('a') as log: log.write('TERM'+chr(10))
  if not (home/'slow-stop').exists(): threading.Thread(target=server.shutdown,daemon=True).start()
@@ -1328,17 +1334,21 @@ def test_expired_refresh_consent_is_refused_before_starting_a_worker(tmp_path, m
 
 
 def test_legacy_refresh_failure_restores_siblings_and_fresh_sidecar_recovers(tmp_path):
-    with supervised_agent(tmp_path, dashboards=2, refresh=True, readiness=.3) as (root, home, base, target, sidecar, configs):
+    with supervised_agent(tmp_path, dashboards=2, refresh=True) as (root, home, base, target, sidecar, configs):
         homes = list({c['home'] for c in configs})
         pending = rpc(sidecar, root, 'begin', revision=target, homes=homes, intent='synthetic-owner')
         service = home / 'services' / configs[-1]['label']
         (service / 'fail-start').touch()
         result = rpc(sidecar, root, 'begin', revision=target, homes=homes, intent='synthetic-owner', refresh_token=pending['refresh_confirmation']['token'])
         assert not result['ok'], result
+        assert (service / 'start-attempts').exists(), result
+        assert (service / 'start-attempts').read_text().splitlines() == ['attempt'], result
         assert git(root, 'rev-parse', 'HEAD') == base
         assert (home / 'backend.pid').exists()
         assert (home / 'active').exists()
-        debt = next((home / '.talaria-agent-services').glob('*.json'))
+        debts = list((home / '.talaria-agent-services').glob('*.json'))
+        assert debts, result
+        debt = debts[0]
         assert [e['label'] for e in json.loads(debt.read_text())['entries']] == [configs[-1]['label']]
         sidecar.close()
         (service / 'fail-start').unlink()
@@ -1415,7 +1425,7 @@ def test_refresh_persists_incarnation_before_signal_and_definitive_refusal_is_re
 
 @pytest.mark.parametrize('failure', ['active-modern', 'missing-successor-api', 'wrong-successor', 'unsafe-source', 'unsafe-dependencies'])
 def test_refresh_failure_never_mutates_source_or_interrupts_modern_work(tmp_path, failure):
-    with supervised_agent(tmp_path, dashboards=2, gateways=False, refresh=True, modern_first=True, readiness=.25) as (root, home, base, target, sidecar, configs):
+    with supervised_agent(tmp_path, dashboards=2, gateways=False, refresh=True, modern_first=True, readiness=5) as (root, home, base, target, sidecar, configs):
         homes = [c['home'] for c in configs]
         params = dict(revision=target, homes=homes, intent='synthetic-owner')
         modern = home / 'backend.pid'
@@ -1425,6 +1435,7 @@ def test_refresh_failure_never_mutates_source_or_interrupts_modern_work(tmp_path
         pending = rpc(sidecar, root, 'begin', **params)
         assert pending.get('refresh_confirmation'), pending
         legacy_home = Path(configs[-1]['home'])
+        original_legacy = int((legacy_home / 'backend.pid').read_text())
         if failure == 'active-modern': (home / 'busy').touch()
         if failure == 'missing-successor-api': (legacy_home / 'missing-retirement').touch()
         if failure == 'wrong-successor': (legacy_home / 'foreign-listener').touch()
@@ -1433,6 +1444,15 @@ def test_refresh_failure_never_mutates_source_or_interrupts_modern_work(tmp_path
         assert git(root, 'rev-parse', 'HEAD') == base
         assert modern.read_text() == before
         assert not (home / 'signals').exists(), 'the busy/untouched modern writer must never be interrupted'
+        if failure in {'missing-successor-api', 'wrong-successor'}:
+            requests = [json.loads(line) for line in (legacy_home / 'get-requests.jsonl').read_text().splitlines()]
+            successor_paths = {r['path'] for r in requests if r['pid'] != original_legacy and r['legacy'] is False}
+            assert '/api/host/identity' in successor_paths, result
+            if failure == 'missing-successor-api':
+                assert '/openapi.json' in successor_paths
+                assert 'running backend lifecycle APIs are unsupported' in result['detail']
+            assert (legacy_home / 'signals').read_text().splitlines() == ['TERM']
+            assert (home / 'services' / configs[-1]['label'] / 'start-attempts').read_text().splitlines() == ['attempt']
         if failure.startswith('unsafe-'):
             assert not (legacy_home / 'signals').exists()
         elif failure != 'active-modern':
@@ -1449,3 +1469,18 @@ def test_legacy_listener_requires_the_attested_os_process():
         services.verify_listener(entry)
         with pytest.raises((RuntimeError, OSError)):
             services.verify_listener({**entry, 'pid': os.getppid()})
+
+
+@pytest.mark.parametrize('manager', ['launchd', 'systemd'])
+def test_refresh_failed_supervisor_start_is_attempted_once_per_worker(tmp_path, manager):
+    with supervised_agent(tmp_path, gateways=False, refresh=True, readiness=.2, manager=manager) as (root, home, base, target, sidecar, configs):
+        params = dict(revision=target, homes=[str(home)], intent='synthetic-owner')
+        pending = rpc(sidecar, root, 'begin', **params)
+        service = home / 'services' / configs[0]['label']
+        (service / 'fail-start').touch()
+        result = rpc(sidecar, root, 'begin', **params, refresh_token=pending['refresh_confirmation']['token'])
+        assert not result['ok'], result
+        assert git(root, 'rev-parse', 'HEAD') == base
+        debt = next((home / '.talaria-agent-services').glob('*.json'))
+        assert json.loads(debt.read_text())['entries'][0]['legacy_refresh'] is True
+        assert (service / 'start-attempts').read_text().splitlines() == ['attempt']
