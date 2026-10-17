@@ -77,7 +77,9 @@ disjoint groups balanced by case count. Each worker has its own HOME, TMPDIR, py
 log, execution journal, and JUnit report. A collection failure, incomplete/duplicate execution,
 crashed worker, or missing/invalid report fails compatibility. Worker process groups and detached
 test processes naming the disposable state directory are cleaned up on every exit; Linux also
-reaps orphan descendants. The existing per-test process-leak fixture still detects and kills leaks.
+reaps terminated orphans throughout execution, preserving worker exit statuses. The existing
+per-test process-leak fixture still detects and kills leaks. Both cleanup paths use an untruncated
+process snapshot, including when readline changes the native terminal-width environment.
 
 One merged JUnit report remains beside each compatibility receipt. Per-case durations and
 failure/error/skip information are preserved, with slow tests and modules printed after the run.

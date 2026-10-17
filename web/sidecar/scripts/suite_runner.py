@@ -12,6 +12,7 @@ import signal
 import subprocess
 import sys
 import tempfile
+import time
 import traceback
 import xml.etree.ElementTree as ET
 
@@ -72,6 +73,45 @@ def report_argument(args):
     return remaining, Path(report).resolve() if report else None
 
 
+def reap_orphans(processes, *, terminate=False):
+    if sys.platform != "linux":
+        return
+    # Only adopted children belong to this reaper. Popen must retain the exit
+    # statuses of registered collection/workers, including already-dead workers.
+    managed = {proc.pid for proc in processes if proc.returncode is None}
+    children = Path(f"/proc/self/task/{os.getpid()}/children")
+    while True:
+        adopted = set(map(int, children.read_text().split())) - managed
+        for pid in adopted:
+            if terminate:
+                try:
+                    os.kill(pid, signal.SIGKILL)
+                except ProcessLookupError:
+                    pass
+            try:
+                os.waitpid(pid, 0 if terminate else os.WNOHANG)
+            except ChildProcessError:
+                pass
+        if not terminate or not adopted:
+            return
+
+
+def wait_for(proc, processes):
+    while proc.poll() is None:
+        reap_orphans(processes)
+        time.sleep(.02)
+    reap_orphans(processes)
+    return proc.returncode
+
+
+def process_snapshot():
+    # Readline can set native COLUMNS behind os.environ's back. Ownership paths
+    # must survive that terminal width in both pytest fixtures and final cleanup.
+    listing = subprocess.check_output(["ps", "-ww", "-eo", "pid=,ppid=,pgid=,args="], text=True)
+    return [(int(row[0]), int(row[1]), int(row[2]), row[3])
+            for row in (line.split(None, 3) for line in listing.splitlines()) if len(row) == 4]
+
+
 def cleanup(processes, state):
     """Reap workers and kill their process groups even when pytest exited first."""
     for proc in processes:
@@ -86,9 +126,8 @@ def cleanup(processes, state):
         proc.wait()
     # Tests can detach a process from pytest's group. Reuse the fixture's
     # disposable-path ownership rule to clean those up on crashes/cancellation.
-    listing = subprocess.check_output(["ps", "-eo", "pid=,ppid=,pgid=,args="], text=True)
-    rows = [line.split(None, 3) for line in listing.splitlines()]
-    parents = {int(row[0]): int(row[1]) for row in rows if len(row) == 4}
+    rows = process_snapshot()
+    parents = {pid: ppid for pid, ppid, _, _ in rows}
     ancestors, pid = set(), os.getpid()
     while pid > 1 and pid not in ancestors:
         ancestors.add(pid)
@@ -100,23 +139,13 @@ def cleanup(processes, state):
             break
         owned = expanded
     groups = {proc.pid for proc in processes}
-    for row in rows:
-        if (len(row) == 4 and (str(state) in row[3] or int(row[0]) in owned
-                              or int(row[2]) in groups) and int(row[0]) not in ancestors):
+    for pid, _, pgid, args in rows:
+        if (str(state) in args or pid in owned or pgid in groups) and pid not in ancestors:
             try:
-                os.kill(int(row[0]), signal.SIGKILL)
+                os.kill(pid, signal.SIGKILL)
             except ProcessLookupError:
                 pass
-    if sys.platform == "linux":
-        # The runner is a subreaper, so killed orphan grandchildren can be
-        # waited here instead of leaving zombies to a container's PID 1.
-        while True:
-            try:
-                pid, _ = os.waitpid(-1, 0)
-                if not pid:
-                    break
-            except ChildProcessError:
-                break
+    reap_orphans(processes, terminate=True)
 
 
 def merge_reports(jobs, destination):
@@ -201,9 +230,9 @@ def run(args):
         try:
             if remaining:
                 job, proc = launch("serial", args)
-                return proc.wait()
+                return wait_for(proc, processes)
             job, collection = launch("collection", ["--collect-only"])
-            if collection.wait():
+            if wait_for(collection, processes):
                 raise ValueError("pytest collection failed")
             nodeids = json.loads((job / "manifest.json").read_text())["collected"]
             if not nodeids or len(nodeids) != len(set(nodeids)):
@@ -218,7 +247,7 @@ def run(args):
                 jobs.append((job, group, proc))
             failed = False
             for job, _, proc in jobs:
-                code = proc.wait()
+                code = wait_for(proc, processes)
                 print(f"{job.name}: exit={code}", flush=True)
                 failed |= code != 0
             report_failed = merge_reports([(job, group) for job, group, _ in jobs], report or output / "junit.xml")
