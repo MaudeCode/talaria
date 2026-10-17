@@ -24,6 +24,7 @@ import time
 
 STOP_SECONDS = 30.0
 READY_SECONDS = 30.0
+SNAPSHOT_ATTEMPTS = 4
 
 
 def recovery_path(root, home):
@@ -73,23 +74,68 @@ def _service_key(entry):
     return (entry['kind'], entry.get('domain') or entry.get('scope'), entry.get('label') or entry.get('unit'))
 
 
-def snapshot(entry):
-    from gateway.status import get_process_start_time
-    parents = _process_table()
+def snapshot(entry, *, records=None, expected=None):
+    """Attest a complete live tree, retrying only proved exits/new discoveries."""
+    from gateway.status import get_process_start_time, _pid_exists
     service, pid = entry.get('service_pid', entry['pid']), entry['pid']
-    chain = _ancestors(pid, parents)
-    if service not in chain:
-        raise RuntimeError(f'{_name(entry)} does not own backend/gateway PID {pid}.')
-    if service in _ancestors(os.getpid(), parents):
-        raise RuntimeError(f'{_name(entry)} owns the updater or an ancestor; source was not changed.')
-    descendants = _descendants(service, parents)
-    births = {str(p): get_process_start_time(p) for p in descendants}
-    if any(value is None for value in births.values()):
-        raise RuntimeError(f'{_name(entry)} process birth identities could not be proved.')
-    after = _process_table()
-    if any(after.get(p) != parents[p] or get_process_start_time(p) != births[str(p)] for p in descendants):
-        raise RuntimeError(f'{_name(entry)} process identity or ancestry changed during discovery.')
-    return {str(p): {'birth': births[str(p)], 'parent': parents[p]} for p in descendants}
+    anchors = {service, pid}
+    observed = dict(expected or {})
+    seen_parents = {int(p): proof['parent'] for p, proof in observed.items() if 'parent' in proof}
+    departed = set()
+
+    def exited(p):
+        if _pid_exists(p) is False:
+            if p in anchors:
+                raise RuntimeError(f'{_name(entry)} anchor process {p} disappeared during discovery; source was not changed.')
+            departed.add(p)
+            return True
+        return False
+
+    def inventory():
+        parents = _process_table()
+        if service not in _ancestors(pid, parents):
+            raise RuntimeError(f'{_name(entry)} does not own backend/gateway PID {pid}.')
+        if service in _ancestors(os.getpid(), parents):
+            raise RuntimeError(f'{_name(entry)} owns the updater or an ancestor; source was not changed.')
+        for p, parent in seen_parents.items():
+            if parents.get(p) != parent:
+                if p not in parents and exited(p):
+                    continue
+                raise RuntimeError(f'{_name(entry)} process {p} identity/ancestry changed during discovery; source was not changed.')
+        descendants = _descendants(service, parents)
+        seen_parents.update({p: parents[p] for p in descendants})
+        # Zombies may remain in ps. Recheck departed PIDs at every inventory so
+        # neither a recycled PID nor unknown liveness can be silently excluded.
+        if any(_pid_exists(p) is not False for p in departed):
+            raise RuntimeError(f'{_name(entry)} a departed descendant PID became live or unreadable; source was not changed.')
+        return parents, descendants - departed
+
+    def read(p, parents):
+        if exited(p):
+            return None
+        proof = {'birth': get_process_start_time(p), 'parent': parents[p]}
+        if records is not None:
+            proof['ct'] = records.identity(p)['ct']
+        if proof['birth'] is None or (records is not None and proof['ct'] is None):
+            if exited(p):
+                return None
+            raise RuntimeError(f'{_name(entry)} process {p} birth identity is live or unreadable; source was not changed.')
+        if any(proof.get(key) != value for key, value in observed.get(str(p), {}).items()):
+            raise RuntimeError(f'{_name(entry)} process {p} identity/ancestry changed during discovery; source was not changed.')
+        observed[str(p)] = proof
+        return proof
+
+    for _ in range(SNAPSHOT_ATTEMPTS):
+        parents, live = inventory()
+        proofs = {str(p): read(p, parents) for p in sorted(live)}
+        after, remaining = inventory()
+        for p in sorted(live & remaining):
+            read(p, after)
+        _, final = inventory()
+        if live & departed or remaining != live or final != live:
+            continue
+        return proofs
+    raise RuntimeError(f'{_name(entry)} process inventory kept changing after {SNAPSHOT_ATTEMPTS} samples; retry when descendants settle. Source was not changed and recovery remains owed.')
 
 
 def gateway_entries(entries, homes, pause):
@@ -106,9 +152,7 @@ def gateway_entries(entries, homes, pause):
         if runtime is None or not pause._home_of(runtime[0]) or Path(pause._home_of(runtime[0])).resolve() != home:
             raise RuntimeError(f'{_name(entry)} has no verified gateway in its owning profile.')
         entry.update(service_pid=entry['pid'], pid=runtime[0], ct=runtime[1], home=str(home))
-        entry['processes'] = snapshot(entry)
-        if entry['processes'][str(entry['pid'])]['birth'] != entry['ct']:
-            raise RuntimeError(f'{_name(entry)} gateway birth identity changed during discovery.')
+        entry['processes'] = snapshot(entry, expected={str(entry['pid']): {'birth': entry['ct']}})
         key = _service_key(entry)
         if key in found and found[key] != entry:
             raise RuntimeError(f'{_name(entry)} has conflicting discovery identities.')
@@ -230,18 +274,31 @@ def _service_pid(entry):
 def verify_processes(entry, records, *, stopping=False):
     from gateway.status import get_process_start_time, _pid_exists
     parents = _process_table()
+    departed = set()
     for pid, expected in entry['processes'].items():
         pid = int(pid)
-        if not _pid_exists(pid):
+        if _pid_exists(pid) is False:
             if stopping:
+                departed.add(pid)
                 continue
             raise RuntimeError(f'{_name(entry)} process {pid} disappeared before its stop.')
         if (get_process_start_time(pid) != expected['birth'] or records.identity(pid)['ct'] != expected.get('ct')
                 or parents.get(pid) != expected['parent']):
+            if stopping and _pid_exists(pid) is False:
+                departed.add(pid)
+                continue
             raise RuntimeError(f'{_name(entry)} process {pid} identity/ancestry changed; source was not changed.')
     _, service_pid = _service_pid(entry)
     if service_pid and service_pid != entry['service_pid']:
         raise RuntimeError(f'{_name(entry)} supervisor respawned during quiescence; source was not changed.')
+    parents = _process_table()
+    if any(_pid_exists(pid) is not False for pid in departed):
+        raise RuntimeError(f'{_name(entry)} process identity/ancestry changed after departure; source was not changed.')
+    for pid, expected in entry['processes'].items():
+        if parents.get(int(pid)) != expected['parent']:
+            if stopping and _pid_exists(int(pid)) is False:
+                continue
+            raise RuntimeError(f'{_name(entry)} process {pid} identity/ancestry changed; source was not changed.')
     if service_pid:
         for pid in _descendants(service_pid, parents):
             if str(pid) not in entry['processes']:
@@ -249,13 +306,8 @@ def verify_processes(entry, records, *, stopping=False):
 
 
 def bind_processes(entry, records):
-    from gateway.status import get_process_start_time
-    for pid, expected in entry.get('processes', {}).items():
-        canonical = records.identity(int(pid))['ct']
-        if canonical is None or get_process_start_time(int(pid)) != expected['birth'] or records.identity(int(pid))['ct'] != canonical:
-            raise RuntimeError(f'{_name(entry)} process {pid} identity changed before custody.')
-        expected['ct'] = canonical
     if entry.get('processes'):
+        entry['processes'] = snapshot(entry, records=records, expected=entry['processes'])
         verify_processes(entry, records)
 
 
@@ -742,7 +794,7 @@ class ServiceRecovery:
             candidate = {**entry, 'pid': runtime[0], 'service_pid': _service_pid(entry)[1]}
             if not candidate['service_pid']:
                 return False
-            candidate['processes'] = snapshot(candidate)
+            candidate['processes'] = snapshot(candidate, expected={str(runtime[0]): {'birth': runtime[1]}})
             bind_processes(candidate, self.records)
             ready = self.pause._gateway_on_home(entry['home'], set()) == runtime[0]
             verify_processes(candidate, self.records)
