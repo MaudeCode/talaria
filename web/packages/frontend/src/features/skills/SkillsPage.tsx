@@ -6,16 +6,16 @@ import * as api from '../../api/endpoints'
 import { keys } from '../../api/queryKeys'
 import { HubPage } from '../../shell/AppShell'
 import { Button } from '../../ui/Button'
-import { Switch } from '../../ui/Field'
 import { Select } from '../../ui/Select'
 import { ConfirmDialog } from '../../ui/Dialog'
 import { EmptyState, ErrorState, LoadingState, formatBytes } from '../../ui/States'
 import { showToast } from '../toast/toast'
 import { cn } from '../../ui/cn'
+import { useResourceIntents, useResourceMutation } from '../sessions/useResourceMutation'
+import { ResourceSwitch } from '../sessions/ResourcePending'
 import { PendingWritesPanel } from '../pending-writes/PendingWritesPanel'
 
 export function SkillsPage() {
-  const qc = useQueryClient()
   const [query, setQuery] = useState('')
   const [category, setCategory] = useState('')
   const [selected, setSelected] = useState<string | null>(null)
@@ -27,7 +27,8 @@ export function SkillsPage() {
     const q = query.trim().toLowerCase()
     return list.filter((s) => (!category || s.category === category) && (!q || s.name.toLowerCase().includes(q) || (s.description ?? '').toLowerCase().includes(q)))
   }, [list, query, category])
-  const toggle = useMutation({ mutationFn: ({ name, enabled }: { name: string; enabled: boolean }) => api.toggleSkill(name, enabled), onSuccess: () => { void qc.invalidateQueries({ queryKey: keys.skills.all }) }, onError: (e) => showToast(e instanceof Error ? e.message : String(e), 4000, 'error') })
+  const intents = useResourceIntents<boolean>()
+  const toggle = useResourceMutation({ resource: ({ name }: { name: string; enabled: boolean }) => `skill:${name}`, intent: ({ enabled }) => ({ value: enabled, label: m.save() }), queryKey: keys.skills.all, readKeys: () => [keys.skills.all], mutationFn: ({ name, enabled }: { name: string; enabled: boolean }) => api.toggleSkill(name, enabled), onError: (e) => showToast(e instanceof Error ? e.message : String(e), 4000, 'error') })
 
   if (selected) return <SkillDetail name={selected} onBack={() => setSelected(null)} />
   return (
@@ -63,9 +64,9 @@ export function SkillsPage() {
               </button>
               {s.category && <span className="rounded-full border border-border px-2 py-0.5 text-[10px] uppercase tracking-wider text-muted">{s.category}</span>}
               {use > 0 && <span className="text-[11px] text-muted">{m.skill_uses({ n: use })}</span>}
-              <label className="flex items-center gap-1 text-xs text-muted">
-                <Switch checked={!s.disabled} onCheckedChange={(checked) => toggle.mutate({ name: s.name, enabled: checked })} aria-label={`${s.name}: ${s.disabled ? m.skill_disabled() : m.skill_enabled()}`} />
-              </label>
+              <span className="flex items-center gap-1 text-xs text-muted">
+                <ResourceSwitch intent={intents[`skill:${s.name}`]} checked={!s.disabled} onCheckedChange={(checked) => toggle.mutate({ name: s.name, enabled: checked })} aria-label={`${s.name}: ${s.disabled ? m.skill_disabled() : m.skill_enabled()}`} />
+              </span>
             </li>
           )
         })}

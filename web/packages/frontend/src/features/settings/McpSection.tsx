@@ -1,12 +1,14 @@
 import { useEffect, useState } from 'react'
-import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { keepPreviousData, useQuery } from '@tanstack/react-query'
 import { m } from '../../paraglide/messages.js'
 import * as api from '../../api/endpoints'
 import { keys } from '../../api/queryKeys'
 import { cn } from '../../ui/cn'
 import { Badge } from '../../ui/Badge'
-import { HelpTip, Switch, TextInput } from '../../ui/Field'
+import { HelpTip, TextInput } from '../../ui/Field'
 import { EmptyState, ErrorState, LoadingState } from '../../ui/States'
+import { useResourceIntents, useResourceMutation } from '../sessions/useResourceMutation'
+import { ResourceSwitch } from '../sessions/ResourcePending'
 import { showToast } from '../toast/toast'
 
 const STATUS: Record<string, { label: () => string; tone: string }> = {
@@ -27,25 +29,27 @@ function StatusBadge({ status }: { status: string | undefined }) {
 
 /** MCP servers from config.yaml with server-computed status and health, the enable toggle, and server-side tool search. */
 export function McpSection({ heading }: { heading: string }) {
-  const qc = useQueryClient()
+  const intents = useResourceIntents<boolean>()
   const [query, setQuery] = useState('')
   const [q, setQ] = useState('')
   useEffect(() => { const t = setTimeout(() => setQ(query), 250); return () => clearTimeout(t) }, [query])
   // A cold health cache answers `health_pending`; re-read until the server's probes settle.
   const servers = useQuery({ queryKey: keys.mcp.servers, queryFn: api.fetchMcpServers, staleTime: 30_000, refetchInterval: (s) => (s.state.data?.health_pending ? 2500 : false) })
   const tools = useQuery({ queryKey: [...keys.mcp.tools, q], queryFn: () => api.fetchMcpTools(q), staleTime: 30_000, placeholderData: keepPreviousData })
-  const toggle = useMutation({
+  const toggle = useResourceMutation({
+    resource: ({ name }: { name: string; enabled: boolean }) => `mcp:${name}`,
+    intent: ({ enabled }) => ({ value: enabled, label: m.save() }),
+    queryKey: keys.mcp.all,
     mutationFn: ({ name, enabled }: { name: string; enabled: boolean }) => api.toggleMcpServer(name, enabled),
     onSuccess: (r) => showToast(r.enabled ? m.mcp_enabled_toast({ name: r.name }) : m.mcp_disabled_toast({ name: r.name })),
     onError: () => showToast(m.mcp_toggle_failed(), 5000, 'error'),
-    onSettled: () => { void qc.invalidateQueries({ queryKey: keys.mcp.servers }); void qc.invalidateQueries({ queryKey: keys.mcp.tools }) },
   })
   const unavailable = tools.data?.unavailable_servers ?? []
   return (
     <>
       <section aria-labelledby="systemMcpHeading" className="flex flex-col gap-2" data-section="mcp-servers">
         <h2 id="systemMcpHeading" className={heading}>{m.mcp_servers_title()}<HelpTip label={m.field_help_about({ label: m.mcp_servers_title() })}>{m.mcp_servers_desc()}{servers.data?.reload_required ? ` ${m.mcp_reload_hint()}` : ''}</HelpTip></h2>
-        {servers.isPending ? <LoadingState /> : servers.isError ? <ErrorState error={servers.error} onRetry={() => { void servers.refetch() }} /> : servers.data.servers.length === 0 ? <EmptyState>{m.mcp_no_servers()}</EmptyState> : (
+        {servers.isPending ? <LoadingState /> : servers.isError && !servers.data ? <ErrorState error={servers.error} onRetry={() => { void servers.refetch() }} /> : servers.data.servers.length === 0 ? <EmptyState>{m.mcp_no_servers()}</EmptyState> : (
           <ul className="flex flex-col divide-y divide-border-subtle">
             {servers.data.servers.map((s) => {
               const health = HEALTH[s.health ?? '']
@@ -61,7 +65,7 @@ export function McpSection({ heading }: { heading: string }) {
                     {typeof s.tool_count === 'number' && <div className="text-[11px] text-muted">{m.mcp_tool_count({ a0: String(s.tool_count) })}</div>}
                   </div>
                   {servers.data.toggle_supported && s.can_toggle === true && (
-                    <Switch checked={s.enabled !== false} disabled={toggle.isPending} onCheckedChange={(enabled) => toggle.mutate({ name: s.name, enabled })} aria-label={`${s.name}: ${s.enabled !== false ? m.mcp_enabled_yes() : m.mcp_enabled_no()}`} />
+                    <ResourceSwitch intent={intents[`mcp:${s.name}`]} checked={s.enabled !== false} onCheckedChange={(enabled) => toggle.mutate({ name: s.name, enabled })} aria-label={`${s.name}: ${s.enabled !== false ? m.mcp_enabled_yes() : m.mcp_enabled_no()}`} />
                   )}
                 </li>
               )
