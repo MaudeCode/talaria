@@ -20,7 +20,8 @@ import { StreamRegistry, SessionChannels, type StreamChannel } from './streams.j
 import { ChatUsageSchema, ConnectorOperationSnapshotSchema, type ClarifyAnswers, type PendingSteer, type SessionGoal, type SessionNotice, type SidecarResult, type SteerWithdrawn, type SteerWithdrawRequest, type SteerSendNowResponse } from '@maudecode/talaria-web-contracts'
 import { catalogNames, connectorOperation } from '../tools/connectors.js'
 import { PendingPrompts, clarifyReply, isVaultPrompt, vaultReply } from './pending.js'
-import { RunJournal, type RunJournalWriter } from './journal.js'
+import type { JournalEventMeta } from './storage/backend.js'
+import type { RunJournal, RunJournalWriter } from './journal.js'
 import { COMPRESSION_RECOVERY_ACTION_START_FOCUSED, COMPRESSION_RECOVERY_TERMINAL_STATE, CONTEXT_USAGE_FIELDS, Session, contextUsage, forgetContextFigures, titleFrom, type Message } from './session.js'
 import { anchorMessageKey, compressionReference, markerSummary, visibleMessagesForAnchor } from './compress.js'
 import { buildActiveTurnToken, completedToolIndex, publicToolFrame, redactNestedMessageContainers, redactSessionData, redactString, withToolId } from '../redact.js'
@@ -296,7 +297,7 @@ export const GATEWAY_APPROVAL_RELAY_UNAVAILABLE = 'Gateway approval could not be
 
 export class TurnRunner {
   readonly writers = new Map<string, RunJournalWriter>()
-  private readonly sessionPuts = new Map<string, (event: string, data: Record<string, unknown>) => void>()
+  private readonly sessionPuts = new Map<string, (event: string, data: Record<string, unknown>) => Promise<void>>()
   /** Per-session chain for sidecar YOLO mutation + local commit, so opposing toggles cannot interleave. */
   private readonly yoloChains = new Map<string, Promise<unknown>>()
   private readonly abortControllers = new Map<string, AbortController>()
@@ -362,9 +363,9 @@ export class TurnRunner {
    * TAL-808: reads the session's goal from the Agent and, when its view changed, sends `session_goal` on `put` (else the
    * session's live stream) and `sessions_changed`, which reloads the session for a client between turns.
    */
-  async refreshGoal(s: Pick<Session, 'session_id' | 'profile'>, put: (event: string, data: Record<string, unknown>) => void = (event, data) => { this.emitToSession(s.session_id, event, data) }): Promise<void> {
+  async refreshGoal(s: Pick<Session, 'session_id' | 'profile'>, put: (event: string, data: Record<string, unknown>) => Promise<void> = async (event, data) => { (await this.emitToSession(s.session_id, event, data)) }): Promise<void> {
     if (!(await this.readGoal(s))) return
-    put('session_goal', { session_id: s.session_id, goal: this.sessionGoal(s.session_id) })
+    await put('session_goal', { session_id: s.session_id, goal: this.sessionGoal(s.session_id) })
     this.deps.events.publish('goal', { profile: s.profile, sessionId: s.session_id })
   }
 
@@ -409,7 +410,7 @@ export class TurnRunner {
     if ((await this.automaticTurnsHeld(session.session_id))) return { _status: 409, error: 'automatic turns are held after Stop', held: true }
     try {
       const service = this.deps.service()
-      const workspace = service.turnWorkspace(session)
+      const workspace = (await service.turnWorkspace(session))
       const [model, modelProvider, normalizedModel] = service.turnModel(session)
       return (await this.admit(session, { ...opts, workspace, model, modelProvider, normalizedModel }))
     } catch (error) {
@@ -495,7 +496,7 @@ export class TurnRunner {
     this.registry.writebackOwners.set(s.session_id, streamId)
     // A new chat appears in the list; every turn tells open clients a run started (TAL-434).
     this.deps.events.publish(wasHiddenEmpty ? 'session_new' : 'turn_started', { profile: s.profile, sessionId: s.session_id })
-    try { this.deps.workspaces.setLastWorkspace(opts.workspace, s.profile) } catch { /* best effort */ }
+    try { (await this.deps.workspaces.setLastWorkspace(opts.workspace, s.profile)) } catch { /* best effort */ }
     const channel = this.registry.create(streamId, s.session_id)
     admission.admitting = false
     if (opts.goalRelated) this.registry.goalRelated.add(streamId)
@@ -527,7 +528,7 @@ export class TurnRunner {
     const { deps } = this
     let writer: RunJournalWriter | null = null
     try {
-      writer = deps.journal.writer(sessionId, streamId)
+      writer = (await deps.journal.writer(sessionId, streamId))
       this.writers.set(streamId, writer)
     } catch (error) {
       deps.log(`[webui] WARNING: run journal degraded for stream ${streamId}: ${(error as Error).message}`)
@@ -536,21 +537,21 @@ export class TurnRunner {
     // TAL-821: whether the run's rate-limit wait is showing; the next content frame clears it.
     let rateLimitWait = false
     // TAL-1006: the open compression span closes on the Agent's end of it, else on the next content frame.
-    const closeCompression = (): void => {
+    const closeCompression = async (createdAt?: number): Promise<void> => {
       if (!this.compressionSpans.delete(streamId)) return
-      put('compressed', { session_id: sessionId, message: 'Compression finished' })
+      await put('compressed', { session_id: sessionId, message: 'Compression finished' }, createdAt === undefined ? {} : { createdAt })
     }
-    const put = (event: string, data: Record<string, unknown>, meta: { redacted?: boolean } = {}): void => {
+    const put = async (event: string, data: Record<string, unknown>, meta: JournalEventMeta = {}): Promise<void> => {
       if (CONTENT_EVENTS.has(event)) {
         if (rateLimitWait) {
           rateLimitWait = false
-          put('rate_limit_wait', { session_id: sessionId, wait: null })
+          await put('rate_limit_wait', { session_id: sessionId, wait: null }, meta.createdAt === undefined ? {} : { createdAt: meta.createdAt })
         }
-        closeCompression()
+        await closeCompression(meta.createdAt)
       }
       if (event === 'apperror') failure.apperror = data
       else if (event === 'cancel') failure.cancelled = true
-      for (const steerEvent of this.takeSteerEventsBefore(streamId, event)) put(steerEvent[0], steerEvent[1])
+      for (const steerEvent of this.takeSteerEventsBefore(streamId, event)) (await put(steerEvent[0], steerEvent[1]))
       if (this.registry.cancelled.has(streamId) && !['cancel', 'apperror', 'steer_consumed', 'steer_withdrawn'].includes(event)) return
       // `cancel()` already wrote the terminal row and closed the stream: the worker's unwind adds no second one.
       if (event === 'cancel' && !this.registry.streams.has(streamId)) {
@@ -560,7 +561,7 @@ export class TurnRunner {
       let eventId: string | null = null
       if (writer) {
         try {
-          eventId = writer.appendSseEvent(event, data, meta).event_id
+          eventId = (await writer.appendSseEvent(event, data, meta)).event_id
         } catch (error) {
           this.registry.degradedJournals.add(streamId)
           deps.log(`[webui] WARNING: run journal append failed for ${streamId}/${event}: ${(error as Error).message}`)
@@ -580,8 +581,8 @@ export class TurnRunner {
     try {
       s = (await deps.store.get(sessionId))
     } catch {
-      put('apperror', { type: 'error', terminal_state: 'error', message: 'Session not found', session_id: sessionId })
-      this.teardown(sessionId, streamId)
+      await put('apperror', { type: 'error', terminal_state: 'error', message: 'Session not found', session_id: sessionId })
+      await this.teardown(sessionId, streamId)
       return
     }
     const msgText = opts.msg
@@ -604,11 +605,11 @@ export class TurnRunner {
     this.abortControllers.set(streamId, controller)
     // TAL-1005: an over-threshold session compacts in its joinable compression job before the turn reads its history, so
     // a Stop ends only this wait and a resend joins the same job. The turn then reads the compacted session afresh.
-    const compacted = await deps.service().ensureCompacted(sessionId, { turn: streamId, signal: controller.signal, due: compactionDue, onWait: () => { put('compressing', { session_id: sessionId, message: 'Compressing context' }) } })
+    const compacted = await deps.service().ensureCompacted(sessionId, { turn: streamId, signal: controller.signal, due: compactionDue, onWait: async () => { (await put('compressing', { session_id: sessionId, message: 'Compressing context' })) } })
     if (compacted) {
       try { s = (await deps.store.get(sessionId)) } catch { /* the cancel or error path below reports a deleted session */ }
       ;({ previousMessages, previousContext, apiHistory } = history())
-      put('compressed', this.compressedFrame(s))
+      await put('compressed', this.compressedFrame(s))
     }
     const activeTurnToken = buildActiveTurnToken(streamId, s.pending_started_at)
     const sidecar = deps.sidecar()
@@ -626,19 +627,17 @@ export class TurnRunner {
     // TAL-397: the live meter. Counters start from the session's and follow the Agent's; the rate counts text deltas.
     const liveUsage: UsageCounters = { input_tokens: s.input_tokens, output_tokens: s.output_tokens, estimated_cost: s.estimated_cost, cache_read_tokens: s.cache_read_tokens, cache_write_tokens: s.cache_write_tokens }
     const meter = { deltas: 0, first: 0, last: 0, sentAt: null as number | null }
-    const putMetering = (force: boolean): void => {
-      const now = deps.now()
+    const putMetering = async (force: boolean, now = deps.now()): Promise<void> => {
       if (!force && meter.sentAt !== null && now - meter.sentAt < METERING_INTERVAL_S) return
       meter.sentAt = now
       const tps = meter.deltas && meter.last > meter.first ? Math.round((meter.deltas / (meter.last - meter.first)) * 10) / 10 : null
-      put('metering', { session_id: sessionId, usage: meteringUsage(liveUsage), tps, tps_available: tps !== null, estimated: false })
+      await put('metering', { session_id: sessionId, usage: meteringUsage(liveUsage), tps, tps_available: tps !== null, estimated: false })
     }
-    const meterDelta = (): void => {
-      const now = deps.now()
+    const meterDelta = async (now = deps.now()): Promise<void> => {
       if (!meter.deltas) meter.first = now
       meter.last = now
       meter.deltas += 1
-      putMetering(false)
+      await putMetering(false, now)
     }
     // TAL-460: a background turn's text is held back while it could still be a silence marker, so one never flashes by.
     // ponytail: checks the turn's whole text, so a marker after earlier prose streams until the settled row hides it;
@@ -683,7 +682,7 @@ export class TurnRunner {
       // start an Agent turn (the client also refuses an already-aborted signal outright).
       if (this.registry.cancelled.has(streamId)) {
         await this.finalizeCancelled(s, streamId, opts.ephemeral)
-        put('cancel', (await this.cancelFrame(sessionId)))
+        await put('cancel', (await this.cancelFrame(sessionId)))
         return
       }
       const turnContext = {
@@ -694,7 +693,7 @@ export class TurnRunner {
       // Python `_public_prefill_context_status`: the session-recall prefill hook was dropped with TAL-245, so the
       // context frame always reports the not-configured shape.
       const persistentBefore = persistentStateSnapshot(deps.profileHome(s.profile))
-      put('context_status', { session_id: sessionId, prefill: { status: 'not_configured', source: 'none', label: '', message_count: 0 } })
+      await put('context_status', { session_id: sessionId, prefill: { status: 'not_configured', source: 'none', label: '', message_count: 0 } })
       // Setup awaits can outlive a gateway adoption; no await separates this read from dispatch.
       deps.service().assertWritable(s)
       agentDispatched = true
@@ -707,160 +706,165 @@ export class TurnRunner {
         signal: controller.signal,
         timeoutMs: 0,
         onStream: (frame) => {
-          const data = isDict(frame.data) ? frame.data : {}
-          switch (frame.event) {
-            case 'token': {
-              tokenSent = true
-              firstTokenAt ??= deps.now()
-              // Visible text closes the reasoning segment: a stable title snapshot (or a clear) goes out first.
-              const stable = titles.stableSnapshot(reasoningText.join(''))
-              if (stable !== null) put('reasoning', { text: '', titles: stable })
-              partialText.push(str(data.text))
-              if (holdSilence && mayBecomeSilentReply(partialText.join(''))) { heldText += str(data.text); meterDelta(); return }
-              put('token', { text: heldText + str(data.text) })
-              heldText = ''
-              meterDelta()
-              return
-            }
-            case 'reasoning': {
-              if (partialText.length && !reasoningText.length) titles.resetSegment()
-              reasoningText.push(str(data.text))
-              // Python `reasoning_event_payload`: bold or first-line titles ride on the delta they complete.
-              put('reasoning', titles.prepare(reasoningEventPayload(str(data.text), reasoningText.join(''))))
-              meterDelta()
-              return
-            }
-            case 'usage': {
-              const usage = ChatUsageSchema.safeParse(data)
-              if (usage.success) { applyAgentUsage(liveUsage, usage.data); this.liveUsage.set(streamId, liveUsage) }
-              putMetering(true)
-              return
-            }
-            case 'steer_pending': {
-              // TAL-424: while a withdraw or Send now rewrites the Agent's queue its pending text is ambiguous; it settles after.
-              if (this.steerRewrites.has(streamId)) { this.deferredPendingSteer.set(streamId, str(data.text)); return }
-              // Capture the causal position before the next frame; only persistence is asynchronous.
-              const saving = this.settleConsumedSteers(sessionId, streamId, str(data.text))
-              streamWrites = Promise.all([streamWrites, saving]).then(() => { /* drained before settlement */ }).catch((error: unknown) => { streamWriteError = error instanceof Error ? error : new Error(String(error)) })
-              return
-            }
-            case 'tool': {
-              const call = { name: data.name, args: data.args ?? {}, tid: str(data.tid), done: false }
-              liveToolCalls.push(call)
-              toolIds.set(call, call.tid || mintToolId())
-              toolStartedAt.set(call, deps.now())
-              const redacted = deps.redactEnabled()
-              put('tool', publicToolFrame(withToolId(data, toolIds.get(call)!), redacted), { redacted })
-              return
-            }
-            case 'tool_complete': {
-              // TAL-313: the server decides failure from the sidecar's raw result, which never leaves the server; TAL-315: so
-              // are its display sections, which keep the stderr and exit code the flat preview drops.
-              const { raw_result: rawResult, todo_result: todoResult, result_diff: resultDiff, display_metadata: displayMetadata, ...complete } = data
-              const outcome = toolOutcome(rawResult)
-              complete.is_error = outcome.is_error
-              if (rawResult !== undefined) complete.result_view = outcome.result_view
-              // TAL-448: a file edit's change, counted over the whole diff the sidecar forwards; redacted with the frame. TAL-909:
-              // else the diff in the metadata the Agent persisted on the result row, which a reload reads the same way.
-              const editDiff = toolEditDiff(data.name, { diff: resultDiff }, displayMetadata)
-              if (editDiff) complete.edit_diff = editDiff
-              const tc = liveToolCalls[completedToolIndex(liveToolCalls, str(data.tid), data.name)]
-              if (tc) {
-                const startedAt = toolStartedAt.get(tc)
-                if (startedAt !== undefined) complete.duration = Math.round(Math.max(0, deps.now() - startedAt) * 1000) / 1000
-                // TAL-315: the decided view too, so a failed or cancelled turn's snapshot keeps the sections shown live.
-                Object.assign(tc, { done: true, snippet: data.preview, is_error: complete.is_error, duration: complete.duration ?? null, ...(complete.result_view ? { result_view: complete.result_view } : {}), ...(editDiff ? { edit_diff: editDiff } : {}) })
+          const receivedAt = deps.now()
+          streamWrites = streamWrites.then(async () => {
+            const publish = put
+            const emitFrame = (event: string, data: Record<string, unknown>, meta: JournalEventMeta = {}) => publish(event, data, { ...meta, createdAt: receivedAt })
+            const data = isDict(frame.data) ? frame.data : {}
+            switch (frame.event) {
+              case 'token': {
+                tokenSent = true
+                firstTokenAt ??= receivedAt
+                // Visible text closes the reasoning segment: a stable title snapshot (or a clear) goes out first.
+                const stable = titles.stableSnapshot(reasoningText.join(''))
+                if (stable !== null) (await emitFrame('reasoning', { text: '', titles: stable }))
+                partialText.push(str(data.text))
+                if (holdSilence && mayBecomeSilentReply(partialText.join(''))) { heldText += str(data.text); (await meterDelta(receivedAt)); return }
+                await emitFrame('token', { text: heldText + str(data.text) })
+                heldText = ''
+                await meterDelta(receivedAt)
+                return
               }
-              const id = (tc && toolIds.get(tc)) || str(data.tid) || mintToolId()
-              this.lastCompletedTool.set(streamId, id)
-              const redacted = deps.redactEnabled()
-              put('tool_complete', publicToolFrame(withToolId(complete, id), redacted), { redacted })
-              // TAL-397: the todo tool's result is the session's new list; the settled session derives the same one.
-              // TAL-889: the sidecar attaches `todo_result` only to the Agent's todo tool, so no name check here.
-              const todos = parseTodoToolResult(todoResult)
-              if (todos) {
-                todos.ts = deps.now()
-                this.liveTodos.set(streamId, todos)
-                put('todo_state', redactNestedMessageContainers({ ...todos, session_id: sessionId, stream_id: streamId, source: 'live' }, redacted) as Record<string, unknown>)
+              case 'reasoning': {
+                if (partialText.length && !reasoningText.length) titles.resetSegment()
+                reasoningText.push(str(data.text))
+                // Python `reasoning_event_payload`: bold or first-line titles ride on the delta they complete.
+                await emitFrame('reasoning', titles.prepare(reasoningEventPayload(str(data.text), reasoningText.join(''))))
+                await meterDelta(receivedAt)
+                return
               }
-              return
-            }
-            // Python: the live chat frame carries the queue head plus depth, not the entry that just arrived.
-            case 'approval': {
-              deps.pending.submitApproval(sessionId, { ...data, session_id: sessionId })
-              const { pending, pending_count } = deps.pending.approvalPending(sessionId)
-              put('approval', { ...(pending ?? data), pending_count })
-              return
-            }
-            // TAL-514: the Agent stopped waiting on an approval (answer, timeout, or interrupt); withdraw its copy.
-            case 'approval_resolved': {
-              if (!str(data.approval_id)) return
-              deps.pending.resolveApproval(sessionId, str(data.approval_id))
-              put(...this.approvalHeadFrame(sessionId))
-              return
-            }
-            case 'clarify': {
-              deps.pending.submitClarify(sessionId, { ...data, session_id: sessionId })
-              const head = deps.pending.clarifyHeadFrame(sessionId)
-              if (head) put('clarify', head)
-              return
-            }
-            case 'clarify_resolved': {
-              const { head } = deps.pending.resolveClarify(sessionId, str(data.clarify_id))
-              if (head) put('clarify', head)
-              return
-            }
-            // TAL-821: the Agent sits out a provider's rate limit (`until`, epoch seconds: its reset, else the Agent's retry).
-            case 'rate_limit_wait': {
-              const until = typeof data.until === 'number' ? data.until : null
-              if (until === null && !rateLimitWait) return
-              rateLimitWait = until !== null
-              const provider = str(data.provider) || null
-              put('rate_limit_wait', { session_id: sessionId, wait: until === null ? null : { provider, provider_label: provider && (deps.providerLabel?.(s.profile ?? null, provider) ?? displayName(provider)), until, until_kind: data.until_kind === 'reset' ? 'reset' : 'retry' } })
-              return
-            }
-            // TAL-818: a `manage_connections` card opened; clients poll and answer the operation by its `op_id`.
-            case 'connection': {
-              const snapshot = ConnectorOperationSnapshotSchema.safeParse(data)
-              if (snapshot.success) put('connect_card', connectorOperation(snapshot.data, catalogNames(deps.profileHome(s.profile))))
-              return
-            }
-            case 'compressing': {
-              const startedAt = this.compressionSpans.get(streamId) ?? deps.now()
-              this.compressionSpans.set(streamId, startedAt)
-              put('compressing', { ...data, started_at: startedAt })
-              return
-            }
-            case 'compression_finished':
-              closeCompression()
-              return
-            case 'status':
-              if (data.kind === 'terminal_error' && !capturedTerminalError) capturedTerminalError = str(data.message)
-              return
-            // TAL-803: the session's notice list changed; every client replaces its copy.
-            case 'notice': {
-              const notice = this.notices.add(sessionId, data)
-              if (!notice) return
-              put('notices', { session_id: sessionId, notices: this.sessionNotices(sessionId) })
-              // ponytail: the expiry reaches a client only while a turn streams; an idle tab drops it on its next session load.
-              if (notice.expires_at !== null) {
-                const expiresAt = notice.expires_at
-                const emitAfterExpiry = (): void => {
-                  // Timers can run before the wall clock expires the notice. Let SessionNotices decide, then retry.
-                  if (this.notices.list(sessionId).includes(notice)) setTimeout(emitAfterExpiry, Math.max(1, Math.ceil((expiresAt - deps.now()) * 1000))).unref()
-                  else this.emitToSession(sessionId, 'notices', { session_id: sessionId, notices: this.sessionNotices(sessionId) })
+              case 'usage': {
+                const usage = ChatUsageSchema.safeParse(data)
+                if (usage.success) { applyAgentUsage(liveUsage, usage.data); this.liveUsage.set(streamId, liveUsage) }
+                await putMetering(true, receivedAt)
+                return
+              }
+              case 'steer_pending': {
+                // TAL-424: while a withdraw or Send now rewrites the Agent's queue its pending text is ambiguous; it settles after.
+                if (this.steerRewrites.has(streamId)) { this.deferredPendingSteer.set(streamId, str(data.text)); return }
+                // Capture the causal position before the next frame; only persistence is asynchronous.
+                const saving = this.settleConsumedSteers(sessionId, streamId, str(data.text))
+                await saving
+                return
+              }
+              case 'tool': {
+                const call = { name: data.name, args: data.args ?? {}, tid: str(data.tid), done: false }
+                liveToolCalls.push(call)
+                toolIds.set(call, call.tid || mintToolId())
+                toolStartedAt.set(call, receivedAt)
+                const redacted = deps.redactEnabled()
+                await emitFrame('tool', publicToolFrame(withToolId(data, toolIds.get(call)!), redacted), { redacted })
+                return
+              }
+              case 'tool_complete': {
+                // TAL-313: the server decides failure from the sidecar's raw result, which never leaves the server; TAL-315: so
+                // are its display sections, which keep the stderr and exit code the flat preview drops.
+                const { raw_result: rawResult, todo_result: todoResult, result_diff: resultDiff, display_metadata: displayMetadata, ...complete } = data
+                const outcome = toolOutcome(rawResult)
+                complete.is_error = outcome.is_error
+                if (rawResult !== undefined) complete.result_view = outcome.result_view
+                // TAL-448: a file edit's change, counted over the whole diff the sidecar forwards; redacted with the frame. TAL-909:
+                // else the diff in the metadata the Agent persisted on the result row, which a reload reads the same way.
+                const editDiff = toolEditDiff(data.name, { diff: resultDiff }, displayMetadata)
+                if (editDiff) complete.edit_diff = editDiff
+                const tc = liveToolCalls[completedToolIndex(liveToolCalls, str(data.tid), data.name)]
+                if (tc) {
+                  const startedAt = toolStartedAt.get(tc)
+                  if (startedAt !== undefined) complete.duration = Math.round(Math.max(0, receivedAt - startedAt) * 1000) / 1000
+                  // TAL-315: the decided view too, so a failed or cancelled turn's snapshot keeps the sections shown live.
+                  Object.assign(tc, { done: true, snippet: data.preview, is_error: complete.is_error, duration: complete.duration ?? null, ...(complete.result_view ? { result_view: complete.result_view } : {}), ...(editDiff ? { edit_diff: editDiff } : {}) })
                 }
-                emitAfterExpiry()
+                const id = (tc && toolIds.get(tc)) || str(data.tid) || mintToolId()
+                this.lastCompletedTool.set(streamId, id)
+                const redacted = deps.redactEnabled()
+                await emitFrame('tool_complete', publicToolFrame(withToolId(complete, id), redacted), { redacted })
+                // TAL-397: the todo tool's result is the session's new list; the settled session derives the same one.
+                // TAL-889: the sidecar attaches `todo_result` only to the Agent's todo tool, so no name check here.
+                const todos = parseTodoToolResult(todoResult)
+                if (todos) {
+                  todos.ts = receivedAt
+                  this.liveTodos.set(streamId, todos)
+                  await emitFrame('todo_state', redactNestedMessageContainers({ ...todos, session_id: sessionId, stream_id: streamId, source: 'live' }, redacted) as Record<string, unknown>)
+                }
+                return
               }
-              return
+              // Python: the live chat frame carries the queue head plus depth, not the entry that just arrived.
+              case 'approval': {
+                deps.pending.submitApproval(sessionId, { ...data, session_id: sessionId })
+                const { pending, pending_count } = deps.pending.approvalPending(sessionId)
+                await emitFrame('approval', { ...(pending ?? data), pending_count })
+                return
+              }
+              // TAL-514: the Agent stopped waiting on an approval (answer, timeout, or interrupt); withdraw its copy.
+              case 'approval_resolved': {
+                if (!str(data.approval_id)) return
+                deps.pending.resolveApproval(sessionId, str(data.approval_id))
+                await emitFrame(...this.approvalHeadFrame(sessionId))
+                return
+              }
+              case 'clarify': {
+                deps.pending.submitClarify(sessionId, { ...data, session_id: sessionId })
+                const head = deps.pending.clarifyHeadFrame(sessionId)
+                if (head) (await emitFrame('clarify', head))
+                return
+              }
+              case 'clarify_resolved': {
+                const { head } = deps.pending.resolveClarify(sessionId, str(data.clarify_id))
+                if (head) (await emitFrame('clarify', head))
+                return
+              }
+              // TAL-821: the Agent sits out a provider's rate limit (`until`, epoch seconds: its reset, else the Agent's retry).
+              case 'rate_limit_wait': {
+                const until = typeof data.until === 'number' ? data.until : null
+                if (until === null && !rateLimitWait) return
+                rateLimitWait = until !== null
+                const provider = str(data.provider) || null
+                await emitFrame('rate_limit_wait', { session_id: sessionId, wait: until === null ? null : { provider, provider_label: provider && (deps.providerLabel?.(s.profile ?? null, provider) ?? displayName(provider)), until, until_kind: data.until_kind === 'reset' ? 'reset' : 'retry' } })
+                return
+              }
+              // TAL-818: a `manage_connections` card opened; clients poll and answer the operation by its `op_id`.
+              case 'connection': {
+                const snapshot = ConnectorOperationSnapshotSchema.safeParse(data)
+                if (snapshot.success) (await emitFrame('connect_card', connectorOperation(snapshot.data, catalogNames(deps.profileHome(s.profile)))))
+                return
+              }
+              case 'compressing': {
+                const startedAt = this.compressionSpans.get(streamId) ?? receivedAt
+                this.compressionSpans.set(streamId, startedAt)
+                await emitFrame('compressing', { ...data, started_at: startedAt })
+                return
+              }
+              case 'compression_finished':
+                await closeCompression(receivedAt)
+                return
+              case 'status':
+                if (data.kind === 'terminal_error' && !capturedTerminalError) capturedTerminalError = str(data.message)
+                return
+              // TAL-803: the session's notice list changed; every client replaces its copy.
+              case 'notice': {
+                const notice = this.notices.add(sessionId, data)
+                if (!notice) return
+                await emitFrame('notices', { session_id: sessionId, notices: this.sessionNotices(sessionId) })
+                // ponytail: the expiry reaches a client only while a turn streams; an idle tab drops it on its next session load.
+                if (notice.expires_at !== null) {
+                  const expiresAt = notice.expires_at
+                  const emitAfterExpiry = async (): Promise<void> => {
+                    // Timers can run before the wall clock expires the notice. Let SessionNotices decide, then retry.
+                    if (this.notices.list(sessionId).includes(notice)) setTimeout(() => { void emitAfterExpiry().catch((error: unknown) => { deps.log(`[webui] notice expiry failed: ${String(error)}`) }) }, Math.max(1, Math.ceil((expiresAt - deps.now()) * 1000))).unref()
+                    else (await this.emitToSession(sessionId, 'notices', { session_id: sessionId, notices: this.sessionNotices(sessionId) }))
+                  }
+                  await emitAfterExpiry()
+                }
+                return
+              }
+              case 'notice_clear':
+              case 'notices_reset':
+                if (frame.event === 'notice_clear' ? this.notices.clear(sessionId, str(data.key)) : this.notices.reset(sessionId)) (await emitFrame('notices', { session_id: sessionId, notices: this.sessionNotices(sessionId) }))
+                return
+              default:
+                await emitFrame(frame.event, data)
             }
-            case 'notice_clear':
-            case 'notices_reset':
-              if (frame.event === 'notice_clear' ? this.notices.clear(sessionId, str(data.key)) : this.notices.reset(sessionId)) put('notices', { session_id: sessionId, notices: this.sessionNotices(sessionId) })
-              return
-            default:
-              put(frame.event, data)
-          }
+          }).catch((error: unknown) => { streamWriteError = error instanceof Error ? error : new Error(String(error)) })
         },
       })
       await streamWrites
@@ -877,7 +881,7 @@ export class TurnRunner {
         applyAgentUsage(liveUsage, result.usage)
         this.liveUsage.set(streamId, liveUsage)
         await this.finalizeCancelled(s, streamId, opts.ephemeral, interrupted?.checkpoint ? withImages(interrupted.checkpoint) : result.messages)
-        put('cancel', (await this.cancelFrame(sessionId)))
+        await put('cancel', (await this.cancelFrame(sessionId)))
         return
       }
       // Writeback only while this stream still owns the session (Python `_stream_writeback_is_current`).
@@ -919,8 +923,8 @@ export class TurnRunner {
         if (!opts.ephemeral) payload.session = (await this.publicTerminalSession(s))
         payload.session_id = s.session_id
         payload.old_session_id = sessionId
-        for (const [event, data] of steerEvents) put(event, data)
-        put('apperror', payload)
+        for (const [event, data] of steerEvents) (await put(event, data))
+        await put('apperror', payload)
         return
       }
       // TAL-512: a btw turn passes the failure check above first, so its last assistant row is this turn's reply.
@@ -933,7 +937,7 @@ export class TurnRunner {
         succeeded = true
         await opts.onDone?.(answer)
         // Python `_ephemeral_session_payload`: only role and content leave the server for a btw turn.
-        put('done', { session: { session_id: sessionId, messages: resultMessages.map((m) => ({ role: m.role, content: m.content })) }, usage: { input_tokens: 0, output_tokens: 0 }, ephemeral: true, answer, terminal_state: answer.trim() ? 'completed' : 'no_response' })
+        await put('done', { session: { session_id: sessionId, messages: resultMessages.map((m) => ({ role: m.role, content: m.content })) }, usage: { input_tokens: 0, output_tokens: 0 }, ephemeral: true, answer, terminal_state: answer.trim() ? 'completed' : 'no_response' })
         try { await deps.store.delete(sessionId, { tombstone: false }) } catch { /* ignore */ }
         deps.store.sessions.delete(sessionId)
         return
@@ -979,7 +983,7 @@ export class TurnRunner {
       if (typeof result.context.threshold_tokens === 'number') s.threshold_tokens = result.context.threshold_tokens
       if (typeof result.context.last_prompt_tokens === 'number') s.last_prompt_tokens = result.context.last_prompt_tokens
       s.next_turn_threshold_tokens = result.context.next_turn_threshold_tokens ?? null
-      if (result.compressed) put('compressed', this.compressedFrame(s))
+      if (result.compressed) (await put('compressed', this.compressedFrame(s)))
       s.tool_calls = extractToolCallsFromMessages(s.messages, liveToolCalls, s.tool_calls)
       this.clearPendingTurn(s)
       // TAL-576: a turn that ran means the provider has usable credentials again.
@@ -1037,8 +1041,8 @@ export class TurnRunner {
       // Python `_persistent_state_changes`: toast memory/skill files the agent wrote during the turn.
       try {
         const changes = persistentStateChanges(persistentBefore, persistentStateSnapshot(deps.profileHome(s.profile)))
-        if (changes.memory_saved) put('state_saved', { session_id: sessionId, kind: 'memory', action: 'saved' })
-        for (const change of changes.skills) put('state_saved', { session_id: sessionId, kind: 'skill', action: change.action, name: change.name })
+        if (changes.memory_saved) (await put('state_saved', { session_id: sessionId, kind: 'memory', action: 'saved' }))
+        for (const change of changes.skills) (await put('state_saved', { session_id: sessionId, kind: 'skill', action: change.action, name: change.name }))
       } catch (error) {
         deps.log(`[webui] persistent state change detection failed for ${sessionId}: ${(error as Error).message}`)
       }
@@ -1067,9 +1071,9 @@ export class TurnRunner {
       }
       if (result.tool_limit_reached) donePayload.terminal_reason = 'max_iterations'
       // TAL-397: the live meter ends on the persisted counters and turn rate.
-      put('metering', { session_id: sessionId, usage: meteringUsage(s), tps: doneUsage.tps ?? null, tps_available: doneUsage.tps !== undefined, estimated: false })
-      put('done', donePayload)
-      for (const [event, payload] of steerEvents) put(event, payload)
+      await put('metering', { session_id: sessionId, usage: meteringUsage(s), tps: doneUsage.tps ?? null, tps_available: doneUsage.tps !== undefined, estimated: false })
+      await put('done', donePayload)
+      for (const [event, payload] of steerEvents) (await put(event, payload))
       // The turn is over: release admission before the title work so a follow-up message is accepted while the
       // (up to two) title prompts run; the channel and journal stay open for the `title` events (Python retired the
       // worker before its daemon-thread title generation).
@@ -1083,7 +1087,7 @@ export class TurnRunner {
       await deps.syncUsage?.(s, usedModel || null)
       // Title work and the goal judge run side by side; `stream_end` follows both, so their frames reach the stream.
       const work = await Promise.allSettled([this.backgroundTitle(s, put), this.continueGoal(s, streamId, put)])
-      put('stream_end', { session_id: sessionId })
+      await put('stream_end', { session_id: sessionId })
       for (const r of work) if (r.status === 'rejected') throw r.reason
       succeeded = true
       await opts.onDone?.(lastAnswer(s.messages))
@@ -1099,7 +1103,7 @@ export class TurnRunner {
           if (isDict(s.extra.completion_acceptances)) s.extra.completion_acceptances = Object.fromEntries(Object.entries(s.extra.completion_acceptances).filter(([, value]) => value !== streamId))
           await deps.store.save(s, { touchUpdatedAt: false })
         }
-        put('apperror', { type: 'error', terminal_state: 'error', message: readOnly, session_id: sessionId, session: (await this.publicTerminalSession(s)) })
+        await put('apperror', { type: 'error', terminal_state: 'error', message: readOnly, session_id: sessionId, session: (await this.publicTerminalSession(s)) })
         return
       }
       if (settledAt.value && !(error instanceof SidecarError)) {
@@ -1107,7 +1111,7 @@ export class TurnRunner {
       }
       if (this.registry.cancelled.has(streamId)) {
         await this.finalizeCancelled(s, streamId, opts.ephemeral)
-        put('cancel', (await this.cancelFrame(sessionId)))
+        await put('cancel', (await this.cancelFrame(sessionId)))
         return
       }
       const message = error instanceof Error ? error.message : String(error)
@@ -1122,7 +1126,7 @@ export class TurnRunner {
         let current: Session = s
         try { current = (await deps.store.get(sessionId)) } catch { current = s }
         if (current.active_stream_id === streamId) {
-          for (const [event, data] of this.takeSteerEventsBefore(streamId, 'apperror')) put(event, data)
+          for (const [event, data] of this.takeSteerEventsBefore(streamId, 'apperror')) (await put(event, data))
           await this.persistError(current, streamId, classification.label, payload, activeTurnToken)
           if (!opts.ephemeral) payload.session = (await this.publicTerminalSession(current))
         }
@@ -1131,9 +1135,9 @@ export class TurnRunner {
       }
       payload.session_id = sessionId
       payload.old_session_id = sessionId
-      put('apperror', payload)
+      await put('apperror', payload)
     } finally {
-      this.teardown(sessionId, streamId)
+      await this.teardown(sessionId, streamId)
       // After persistence and teardown: a background route's failure cleanup deletes the hidden session, which must
       // not race the error writeback above (a re-saved session would resurface in the sidebar).
       if (!succeeded) await opts.onFailed?.(failure)
@@ -1213,14 +1217,14 @@ export class TurnRunner {
    * msg_limit=` (renderable rows, limited payload shape, windowed tool calls, todo state) with the full count.
    */
   private async terminalSessionPayload(s: Session): Promise<Record<string, unknown>> {
-    const payload = this.deps.service().wireRow(s)
+    const payload = (await this.deps.service().wireRow(s))
     payload.automatic_turns_held = (await this.automaticTurnsHeld(s.session_id))
     payload.notices = this.sessionNotices(s.session_id)
     payload.goal = this.sessionGoal(s.session_id)
     const service = this.deps.service()
-    const scened = service.backgroundLinked(s, hydrateAnchorActivityScenes(withToolCallOutcomes((await service.backgroundUpdates(s, withMarkerKinds(withTurnIds(withAttachmentObjects(s.messages)), s))), s.tool_calls, s.active_stream_id), s.anchor_activity_scenes, { activeTurnId: s.active_stream_id, clipToolResults: true }))
+    const scened = (await service.backgroundLinked(s, hydrateAnchorActivityScenes(withToolCallOutcomes((await service.backgroundUpdates(s, withMarkerKinds(withTurnIds(withAttachmentObjects(s.messages)), s))), s.tool_calls, s.active_stream_id), s.anchor_activity_scenes, { activeTurnId: s.active_stream_id, clipToolResults: true })))
     const [window, offset] = messageWindowForDisplay(scened, TERMINAL_SSE_VISIBLE_MESSAGE_LIMIT, null)
-    const limited = messagesForLimitedPayload(withBodyExcerpts(withDisplayMedia(window, service.mediaProjector(s)), s.active_stream_id))
+    const limited = messagesForLimitedPayload(withBodyExcerpts(withDisplayMedia(window, (await service.mediaProjector(s))), s.active_stream_id))
     payload.messages = limited
     payload.message_count = s.messages.length
     payload._messages_offset = offset
@@ -1432,8 +1436,8 @@ export class TurnRunner {
   }
 
   /** Push a frame onto the session's live chat stream from outside the turn (Python gateway notify callbacks). */
-  private emitToSession(sessionId: string, event: string, data: Record<string, unknown>): void {
-    this.sessionPuts.get(sessionId)?.(event, data)
+  private async emitToSession(sessionId: string, event: string, data: Record<string, unknown>): Promise<void> {
+    await this.sessionPuts.get(sessionId)?.(event, data)
   }
 
   /** TAL-397: a turn that ends without its result keeps what the live stream already showed: counters and todo list. */
@@ -1444,12 +1448,12 @@ export class TurnRunner {
     if (todos) s.extra[UNSETTLED_TODO_KEY] = todos
   }
 
-  private teardown(sessionId: string, streamId: string): void {
+  private async teardown(sessionId: string, streamId: string): Promise<void> {
     this.liveUsage.delete(streamId)
     this.compressionSpans.delete(streamId)
     this.liveTodos.delete(streamId)
     const writer = this.writers.get(streamId)
-    if (writer) { try { writer.close() } catch { /* ignore */ } this.writers.delete(streamId) }
+    if (writer) { try { (await writer.close()) } catch { /* ignore */ } this.writers.delete(streamId) }
     this.abortControllers.delete(streamId)
     this.interrupts.delete(streamId)
     this.stopContexts.delete(streamId)
@@ -1472,9 +1476,7 @@ export class TurnRunner {
   }
 
   /** Journal files with a live writer (retention must leave them alone). */
-  activeJournalPaths(): Set<string> {
-    return new Set([...this.writers.values()].map((w) => this.deps.journal.pathFor(w.sessionId, w.runId)))
-  }
+
 
   // ── title ────────────────────────────────────────────────────────────────
 
@@ -1531,7 +1533,7 @@ export class TurnRunner {
     return (await sidecar.call('chat.refine', {
       profile_home: this.deps.profileHome(s.profile), session_id: s.session_id, messages, focus, model: model ?? '', model_provider: provider,
       enabled_toolsets: this.deps.toolsetsFor(s), ...agentBuildParams(cfg, 'webui', provider, this.deps.env ?? {}),
-      ...this.agentWorkspace(s, this.deps.service().turnWorkspace(s)),
+      ...this.agentWorkspace(s, (await this.deps.service().turnWorkspace(s))),
     }, { timeoutMs: 120_000 })).output
   }
 
@@ -1568,11 +1570,11 @@ export class TurnRunner {
    */
   async titleClaimed(s: Session): Promise<void> {
     if (!looksLikeDefaultCliTitle({ title: s.title, source_tag: s.source_tag, raw_source: s.raw_source, session_source: s.session_source, source_label: s.source_label })) return
-    await this.backgroundTitle(s, () => undefined).catch((error: unknown) => { this.deps.log(`[webui] imported session title failed for ${s.session_id}: ${(error as Error).message}`) })
+    await this.backgroundTitle(s, () => Promise.resolve()).catch((error: unknown) => { this.deps.log(`[webui] imported session title failed for ${s.session_id}: ${(error as Error).message}`) })
   }
 
   /** Python `_run_background_title_update` (spawned only when `_background_title_generation_inputs` is eligible). */
-  private async backgroundTitle(s: Session, put: (event: string, data: Record<string, unknown>) => void): Promise<void> {
+  private async backgroundTitle(s: Session, put: (event: string, data: Record<string, unknown>) => Promise<void>): Promise<void> {
     const sessionId = s.session_id
     const placeholder = str(s.title).trim()
     const invalidExisting = looksInvalidGeneratedTitle(s.title)
@@ -1581,19 +1583,19 @@ export class TurnRunner {
     const eligible = ['Untitled', 'New Chat', ''].includes(placeholder) || placeholder === titleFrom(s.messages, '') || invalidExisting || defaultTitle(s)
     const [userText, assistantText] = firstExchangeSnippets(s.messages)
     // Python `_put_title_status`: empty reason/title/raw_preview keys are omitted.
-    const status = (status: string, reason = '', title = '', rawPreview = ''): void => {
-      put('title_status', { session_id: sessionId, status, ...(reason ? { reason } : {}), ...(title ? { title } : {}), ...(rawPreview ? { raw_preview: rawPreview } : {}) })
+    const status = async (status: string, reason = '', title = '', rawPreview = ''): Promise<void> => {
+      await put('title_status', { session_id: sessionId, status, ...(reason ? { reason } : {}), ...(title ? { title } : {}), ...(rawPreview ? { raw_preview: rawPreview } : {}) })
     }
     // Python ran the adaptive refresh only when the first-title job was not eligible.
     if (!eligible || (s.llm_title_generated && !invalidExisting) || !userText || !assistantText) { await this.refreshTitle(s, put, status); return }
-    if (s.manual_title) { status('skipped', 'manual_title', placeholder); return }
+    if (s.manual_title) { (await status('skipped', 'manual_title', placeholder)); return }
     // A missing config.yaml reads as `{}` (enabled); an unreadable one cannot confirm the user has not opted out.
     const cfg = await this.deps.profileConfig?.(s.profile ?? null)
-    if (!cfg) { status('skipped', 'config_unavailable', placeholder); return }
-    if (!titleGenerationEnabled(cfg)) { status('skipped', 'title_generation_disabled', placeholder); return }
+    if (!cfg) { (await status('skipped', 'config_unavailable', placeholder)); return }
+    if (!titleGenerationEnabled(cfg)) { (await status('skipped', 'title_generation_disabled', placeholder)); return }
     const generated = await this.llmTitle(s, userText, assistantText)
     const { status: llmStatus, rawPreview } = generated
-    if (llmStatus === 'read_only') { status('skipped', 'read_only', placeholder); return }
+    if (llmStatus === 'read_only') { (await status('skipped', 'read_only', placeholder)); return }
     let next = generated.title
     let source = llmStatus
     if (!next) {
@@ -1607,12 +1609,12 @@ export class TurnRunner {
       if ((await this.deps.store.wasDeleted(sessionId))) return
       current = s
     }
-    if ((await this.deps.service().isReadOnly(current))) { status('skipped', 'read_only', str(current.title).trim()); return }
+    if ((await this.deps.service().isReadOnly(current))) { (await status('skipped', 'read_only', str(current.title).trim())); return }
     let effective = str(current.title).trim()
     let wrote = false
     if (next) {
       const stillAuto = effective === placeholder || ['Untitled', 'New Chat', ''].includes(effective) || effective === titleFrom(current.messages, '') || looksInvalidGeneratedTitle(current.title) || defaultTitle(current)
-      if (current.manual_title || !stillAuto) { status('skipped', 'manual_title', effective); return }
+      if (current.manual_title || !stillAuto) { (await status('skipped', 'manual_title', effective)); return }
       if (next !== effective) {
         current.title = next
         markSessionTitleGenerated(current)
@@ -1625,16 +1627,16 @@ export class TurnRunner {
       }
     }
     if (wrote) {
-      status(source, source === 'fallback' ? fallbackReason : llmStatus, effective, rawPreview)
-      put('title', { session_id: sessionId, title: effective })
-    } else status('skipped', source || 'unchanged', effective, rawPreview)
+      await status(source, source === 'fallback' ? fallbackReason : llmStatus, effective, rawPreview)
+      await put('title', { session_id: sessionId, title: effective })
+    } else (await status('skipped', source || 'unchanged', effective, rawPreview))
   }
 
   /**
    * Python `_maybe_schedule_title_refresh` + `_run_background_title_refresh`: every N exchanges a generated title is
    * regenerated from the latest exchange; a manual title is never touched.
    */
-  private async refreshTitle(s: Session, put: (event: string, data: Record<string, unknown>) => void, status: (status: string, reason?: string, title?: string, rawPreview?: string) => void): Promise<void> {
+  private async refreshTitle(s: Session, put: (event: string, data: Record<string, unknown>) => Promise<void>, status: (status: string, reason?: string, title?: string, rawPreview?: string) => Promise<void>): Promise<void> {
     const every = this.deps.titleRefreshEvery?.() ?? 0
     const exchanges = countExchanges(s.messages)
     if (every <= 0 || exchanges <= 0 || exchanges % every !== 0) return
@@ -1648,28 +1650,28 @@ export class TurnRunner {
     try { await run } finally { if (this.titleRefreshes.get(sessionId) === run) this.titleRefreshes.delete(sessionId) }
   }
 
-  private async applyTitleRefresh(sessionId: string, s: Session, userText: string, assistantText: string, put: (event: string, data: Record<string, unknown>) => void, status: (status: string, reason?: string, title?: string, rawPreview?: string) => void): Promise<void> {
+  private async applyTitleRefresh(sessionId: string, s: Session, userText: string, assistantText: string, put: (event: string, data: Record<string, unknown>) => Promise<void>, status: (status: string, reason?: string, title?: string, rawPreview?: string) => Promise<void>): Promise<void> {
     const read = async (): Promise<Session> => { try { return (await this.deps.store.get(sessionId)) } catch { return s } }
     const latest = (await read())
     const placeholder = str(latest.title).trim()
     if (['Untitled', 'New Chat', ''].includes(placeholder) || latest.manual_title || !latest.llm_title_generated) return
     const cfg = await this.deps.profileConfig?.(latest.profile ?? null)
-    if (!cfg || !titleGenerationEnabled(cfg)) { status('refresh_skipped', cfg ? 'title_generation_disabled' : 'config_unavailable', placeholder); return }
+    if (!cfg || !titleGenerationEnabled(cfg)) { (await status('refresh_skipped', cfg ? 'title_generation_disabled' : 'config_unavailable', placeholder)); return }
     const { title: next, status: llmStatus, rawPreview } = await this.llmTitle(latest, userText, assistantText)
-    if (!next) { status('refresh_skipped', llmStatus || 'empty', placeholder, rawPreview); return }
+    if (!next) { (await status('refresh_skipped', llmStatus || 'empty', placeholder, rawPreview)); return }
     const normalize = (value: string): string => value.replace(/\s+/g, ' ').trim().toLowerCase()
-    if (normalize(next) === normalize(placeholder)) { status('refresh_skipped', 'same_title', placeholder, rawPreview); return }
+    if (normalize(next) === normalize(placeholder)) { (await status('refresh_skipped', 'same_title', placeholder, rawPreview)); return }
     const current = (await read())
     // The user may have renamed the session while the title prompt ran.
-    if (current.manual_title || str(current.title).trim() !== placeholder) { status('skipped', 'manual_title', str(current.title).trim()); return }
-    if ((await this.deps.service().isReadOnly(current))) { status('refresh_skipped', 'read_only', str(current.title).trim()); return }
+    if (current.manual_title || str(current.title).trim() !== placeholder) { (await status('skipped', 'manual_title', str(current.title).trim())); return }
+    if ((await this.deps.service().isReadOnly(current))) { (await status('refresh_skipped', 'read_only', str(current.title).trim())); return }
     current.title = next
     markSessionTitleGenerated(current)
     await this.deps.store.save(current, { touchUpdatedAt: false })
     await this.deps.syncTitle?.(current)
     this.deps.events.publish('title', { profile: current.profile, sessionId })
-    status('refreshed', llmStatus, next, rawPreview)
-    put('title', { session_id: sessionId, title: next })
+    await status('refreshed', llmStatus, next, rawPreview)
+    await put('title', { session_id: sessionId, title: next })
   }
 
   // ── cancel / steer ───────────────────────────────────────────────────────
@@ -1733,13 +1735,13 @@ export class TurnRunner {
     // gone from the registry and this path must not add a second one.
     if (channel && this.registry.streams.has(streamId)) {
       const writer = this.writers.get(streamId) ?? null
-      const emit = (event: string, data: Record<string, unknown>): void => {
+      const emit = async (event: string, data: Record<string, unknown>): Promise<void> => {
         let eventId: string | null = null
-        if (writer) { try { eventId = writer.appendSseEvent(event, data).event_id } catch { eventId = null } }
+        if (writer) { try { eventId = (await writer.appendSseEvent(event, data)).event_id } catch { eventId = null } }
         channel.put([event, data, eventId])
       }
-      for (const [event, data] of steerEvents) emit(event, data)
-      emit('cancel', (await this.cancelFrame(sessionId)))
+      for (const [event, data] of steerEvents) (await emit(event, data))
+      await emit('cancel', (await this.cancelFrame(sessionId)))
       this.registry.streams.delete(streamId)
       this.registry.liveIds.delete(streamId)
     }
@@ -1802,7 +1804,7 @@ export class TurnRunner {
     else {
       record.can_redirect = result.can_redirect === true
       // TAL-424: every client shows it until the Agent takes it (unless it already did while the reply was in flight).
-      if (this.steers.get(activeStreamId)?.includes(record)) this.emitToSession(sessionId, 'steer_pending', this.pendingSteerView(record))
+      if (this.steers.get(activeStreamId)?.includes(record)) (await this.emitToSession(sessionId, 'steer_pending', this.pendingSteerView(record)))
     }
     return { accepted: result.accepted, fallback: result.accepted ? null : (result.fallback ?? 'not_running'), stream_id: activeStreamId, steer_id: steerId }
   }
@@ -1950,7 +1952,7 @@ export class TurnRunner {
    * persisted goal picks up from the next user message. A user turn that took the session meanwhile runs first and is
    * judged next. A stopped or failed turn never gets here, so the run ends there.
    */
-  private async continueGoal(s: Session, streamId: string, put: (event: string, data: Record<string, unknown>) => void): Promise<void> {
+  private async continueGoal(s: Session, streamId: string, put: (event: string, data: Record<string, unknown>) => Promise<void>): Promise<void> {
     const sidecar = this.deps.sidecar()
     const lastResponse = lastAnswer(s.messages)
     // The Agent never drives a goal from an empty reply.
@@ -1958,7 +1960,7 @@ export class TurnRunner {
     const sessionId = s.session_id
     // Only a known goal turn shows progress up front; any other turn shows nothing unless a goal turns out to be active.
     const goalTurn = this.registry.goalRelated.has(streamId)
-    if (goalTurn) put('goal', { session_id: sessionId, state: 'evaluating', message: 'Evaluating goal progress…', message_key: 'goal_evaluating_progress' })
+    if (goalTurn) (await put('goal', { session_id: sessionId, state: 'evaluating', message: 'Evaluating goal progress…', message_key: 'goal_evaluating_progress' }))
     let decision: SidecarResult<'goals.evaluate'>
     try {
       // The workspace the turn ran in, unrecovered: the Agent pauses the goal rather than run its gates anywhere else.
@@ -1966,7 +1968,7 @@ export class TurnRunner {
       decision = await sidecar.call('goals.evaluate', { session_id: sessionId, profile_home: this.deps.profileHome(s.profile), last_response: lastResponse, user_initiated: true, workspace: str(s.workspace) || undefined })
     } catch (error) {
       this.deps.log(`[webui] WARNING: goal evaluation failed for ${sessionId}: ${(error as Error).message}`)
-      if (goalTurn) put('goal', { session_id: sessionId, state: 'idle', decision: 'error', message: '' })
+      if (goalTurn) (await put('goal', { session_id: sessionId, state: 'idle', decision: 'error', message: '' }))
       return
     }
     // The judgement moved the goal on (turns, park, pause, done); an inactive one only matters if a goal still shows.
@@ -1975,25 +1977,25 @@ export class TurnRunner {
     const prompt = str(decision.continuation_prompt).trim()
     const proceed = decision.should_continue && Boolean(prompt)
     const status = { message: decision.message, message_key: decision.message_key, message_args: decision.message_args ?? [], decision: decision.verdict }
-    if (!proceed) { put('goal', { session_id: sessionId, state: 'idle', ...status }); return }
+    if (!proceed) { (await put('goal', { session_id: sessionId, state: 'idle', ...status })); return }
     let current: Session
     try { current = (await this.deps.store.get(sessionId)) } catch { return }
     const started = (await this.startServerTurn(current, { msg: prompt, goalRelated: true }))
     // TAL-899: a Stop, even one after the answer, holds the continuation; the user's next turn is judged instead.
-    if (started.held) { put('goal', { session_id: sessionId, state: 'idle', decision: 'held', message: '' }); return }
-    put('goal', { session_id: sessionId, state: 'continuing', ...status })
+    if (started.held) { (await put('goal', { session_id: sessionId, state: 'idle', decision: 'held', message: '' })); return }
+    await put('goal', { session_id: sessionId, state: 'continuing', ...status })
     if (started._status === 409 && started.active_stream_id) { this.registry.goalRelated.add(started.active_stream_id); return }
     if (started._status !== undefined && started._status >= 400) {
       this.deps.log(`[webui] WARNING: goal continuation for ${sessionId} not started (${String(started._status)}): ${str(started.error)}`)
-      put('goal', { session_id: sessionId, state: 'idle', decision: 'error', message: '' })
+      await put('goal', { session_id: sessionId, state: 'idle', decision: 'error', message: '' })
       return
     }
-    put('goal_continue', { session_id: sessionId, state: 'continuing', continuation_prompt: prompt, text: prompt, stream_id: str(started.stream_id), ...status })
+    await put('goal_continue', { session_id: sessionId, state: 'continuing', continuation_prompt: prompt, text: prompt, stream_id: str(started.stream_id), ...status })
   }
 
   /** The Agent's pending steer text settles which steers it has taken: those become `steer_consumed` and their rows. */
   private async settleConsumedSteers(sessionId: string, streamId: string, pendingText: string): Promise<void> {
-    for (const record of this.takeConsumedSteers(streamId, pendingText, { keepLeftovers: true })) this.emitToSession(sessionId, 'steer_consumed', record)
+    for (const record of this.takeConsumedSteers(streamId, pendingText, { keepLeftovers: true })) (await this.emitToSession(sessionId, 'steer_consumed', record))
     await this.saveConsumedSteers(sessionId, streamId)
   }
 
@@ -2069,7 +2071,7 @@ export class TurnRunner {
       const reply = await sidecar.call('chat.steer_withdraw', { stream_id: streamId, pending: records.map((r) => r.text), index })
       if (!reply.withdrawn) return { result: { withdrawn: false }, changed: false }
       this.dropSteer(streamId, record)
-      this.emitToSession(sessionId, 'steer_withdrawn', { steer_id: record.steer_id, reason, text: record.display_text })
+      await this.emitToSession(sessionId, 'steer_withdrawn', { steer_id: record.steer_id, reason, text: record.display_text })
       return { result: { withdrawn: true, text: record.display_text }, changed: true }
     }))
   }
@@ -2087,16 +2089,16 @@ export class TurnRunner {
       if (!reply.withdrawn) return { result: { redirected: false, outcome: reply.reason === 'not_running' ? 'not_running' : 'taken' }, changed: false }
       if (!reply.redirected) {
         // The Agent's queue changed meanwhile, so it went back last: clients follow the new order.
-        if (reply.requeued === 'last') { this.dropSteer(streamId, record); records.push(record); this.emitToSession(sessionId, 'steer_pending', this.pendingSteerView(record)) }
+        if (reply.requeued === 'last') { this.dropSteer(streamId, record); records.push(record); (await this.emitToSession(sessionId, 'steer_pending', this.pendingSteerView(record))) }
         return { result: { redirected: false, outcome: 'next_step' }, changed: true }
       }
       this.dropSteer(streamId, record)
       if (reply.delivery === 'steer') {
         record.state = 'sending_now'
         records.push(record)
-        this.emitToSession(sessionId, 'steer_pending', this.pendingSteerView(record))
+        await this.emitToSession(sessionId, 'steer_pending', this.pendingSteerView(record))
       } else {
-        this.emitToSession(sessionId, 'steer_consumed', this.consumedSteerPayload(record, { redirected: true }))
+        await this.emitToSession(sessionId, 'steer_consumed', this.consumedSteerPayload(record, { redirected: true }))
         await this.saveConsumedSteers(sessionId, streamId)
       }
       return { result: { redirected: true, outcome: 'delivered' }, changed: true }
@@ -2176,7 +2178,7 @@ export class TurnRunner {
       this.deps.log(`[webui] approval reconcile failed for ${sessionId}: ${(error as Error).message}`)
       return
     }
-    if (this.deps.pending.dropApprovals(sessionId, new Set(before.filter((id) => !live.has(id)))).length) this.emitToSession(sessionId, ...this.approvalHeadFrame(sessionId))
+    if (this.deps.pending.dropApprovals(sessionId, new Set(before.filter((id) => !live.has(id)))).length) (await this.emitToSession(sessionId, ...this.approvalHeadFrame(sessionId)))
   }
 
   private withYoloLock<T>(sessionId: string, fn: () => Promise<T>): Promise<T> {
@@ -2232,7 +2234,7 @@ export class TurnRunner {
     }
     if (!ok) return { ok: false, stale: true }
     const { head } = this.deps.pending.resolveClarify(sessionId, str(entry.clarify_id))
-    if (head) this.emitToSession(sessionId, 'clarify', head)
+    if (head) (await this.emitToSession(sessionId, 'clarify', head))
     return vault ? { ok: true } : { ok: true, response }
   }
 }

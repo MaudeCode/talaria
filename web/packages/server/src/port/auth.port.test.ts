@@ -1,3 +1,5 @@
+import { initializeStore } from '../test/storage.js'
+import { JsonDocuments } from '../test/storage.js'
 /**
  * Auth and provider-status regressions: login redirect sanitising, CSRF
  * exemption and attempt persistence, per-identity stream budgets,
@@ -62,11 +64,11 @@ describe('password login: CSRF exemption and attempt persistence', () => {
     for (let i = 0; i < 5; i += 1) await post(s, '/api/auth/login', { password: 'wrong' })
     expect((await post(s, '/api/auth/login', { password: PASSWORD })).status).toBe(429)
     await s.deps.auth.flushPersistence()
-    const reloaded = new AuthStore({ stateDir: s.state, env: s.deps.config.env, settings: s.deps.settings })
+    const reloaded = (await initializeStore(new AuthStore({ documents: new JsonDocuments(s.state), env: s.deps.config.env, settings: s.deps.settings })))
     expect(reloaded.checkLoginRate('127.0.0.1')).toBe(false)
     s.deps.auth.clearLoginAttempts('127.0.0.1')
     await s.deps.auth.flushPersistence()
-    expect(new AuthStore({ stateDir: s.state, env: s.deps.config.env, settings: s.deps.settings }).checkLoginRate('127.0.0.1')).toBe(true)
+    expect((await initializeStore(new AuthStore({ documents: new JsonDocuments(s.state), env: s.deps.config.env, settings: s.deps.settings }))).checkLoginRate('127.0.0.1')).toBe(true)
   })
 
   it('without the trusted-proxy opt-in a forwarded header does not escape the peer budget', async () => {
@@ -106,7 +108,7 @@ describe('auth persistence off the request path', () => {
     const gate = new Promise<void>((resolve) => { open = resolve })
     const land = s.deps.auth.persistWrite
     const held: string[] = []
-    s.deps.auth.persistWrite = async (file, text) => { held.push(file); await gate; await land(file, text) }
+    s.deps.auth.persistWrite = async (file, text) => { held.push(join(s.state, file === 'sessions' ? '.sessions.json' : '.login_attempts.json')); await gate; await land(file, text) }
     try {
       const login = await post(s, '/api/auth/login', { password: PASSWORD })
       expect(login.status).toBe(200)

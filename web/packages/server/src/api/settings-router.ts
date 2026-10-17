@@ -89,7 +89,7 @@ async function authFields(ctx: RequestContext, into: Dict): Promise<void> {
   into.auth_enabled = await auth.isAuthEnabled()
   into.password_auth_enabled = (await auth.getPasswordHash()) !== null
   if (auth.passkeyFeatureFlagEnabled()) {
-    const registered = auth.passkeysEnabled()
+    const registered = await auth.passkeysEnabled()
     into.passkeys_enabled = registered
     into.passwordless_enabled = registered && !into.password_auth_enabled
   } else {
@@ -100,18 +100,19 @@ async function authFields(ctx: RequestContext, into: Dict): Promise<void> {
 
 async function settingsPayload(ctx: RequestContext): Promise<Dict> {
   const deps = ctx.deps
-  const settings: Dict = deps.settings.load()
-  settings.persisted_speech_keys = [...SETTINGS_SPEECH_KEYS].filter((k) => k in deps.settings.readRaw()).sort()
+  const settings: Dict = (await deps.settings.load())
+  const raw = await deps.settings.readRaw()
+  settings.persisted_speech_keys = [...SETTINGS_SPEECH_KEYS].filter((k) => k in raw).sort()
   Reflect.deleteProperty(settings, 'password_hash')
   Object.assign(settings, { max_tokens: null, max_tokens_effective: null, max_tokens_fallback: null })
   try { Object.assign(settings, maxTokensStatus(await deps.agentConfig.read(home(ctx)))) } catch { /* unavailable: nulls stand */ }
   await authFields(ctx, settings)
-  derivedFields(ctx, settings)
+  await derivedFields(ctx, settings)
   return settings
 }
 
 /** Fields computed from the environment, not stored: load and save both return them so a save never blanks them in the client cache. */
-function derivedFields(ctx: RequestContext, into: Dict): void {
+async function derivedFields(ctx: RequestContext, into: Dict): Promise<void> {
   const deps = ctx.deps
   into.password_env_var = Boolean((deps.config.env.HERMES_WEBUI_PASSWORD ?? '').trim())
   into.webui_version = deps.version
@@ -119,7 +120,7 @@ function derivedFields(ctx: RequestContext, into: Dict): void {
   into.update_channel = str(into.update_channel) || 'stable'
   into.update_channel_version = deps.version
   Reflect.deleteProperty(into, QUOTA_THRESHOLDS_BY_PROFILE_KEY)
-  into.provider_quota_thresholds = deps.settings.quotaThresholds(activeProfileName(ctx))
+  into.provider_quota_thresholds = (await deps.settings.quotaThresholds(activeProfileName(ctx)))
 }
 
 async function saveSettings(ctx: RequestContext, input: Dict): Promise<Dict> {
@@ -157,15 +158,16 @@ async function saveSettings(ctx: RequestContext, input: Dict): Promise<Dict> {
   }
   if (requestedPasswordless) {
     if (!auth.passkeyFeatureFlagEnabled()) throw new HttpError(409, 'Passkey support is disabled. Enable HERMES_WEBUI_PASSKEY before going passwordless.')
-    if (!auth.passkeysEnabled()) throw new HttpError(409, 'Register a passkey before going passwordless.')
-  } else if (requestedClear) deps.clearPasskeys()
+    if (!await auth.passkeysEnabled()) throw new HttpError(409, 'Register a passkey before going passwordless.')
+  } else if (requestedClear) await deps.clearPasskeys()
   const ack = body._auth_disabled_acknowledged
   Reflect.deleteProperty(body, '_auth_disabled_acknowledged')
   if (ack !== undefined && ack !== null && !(await auth.isAuthEnabled())) body.auth_disabled_acknowledged = pyBool(ack)
   else if ((await auth.isAuthEnabled()) || requestedPassword) body.auth_disabled_acknowledged = false
 
   const saved: Dict = await deps.settings.save(body, { profile: activeProfileName(ctx) })
-  saved.persisted_speech_keys = [...SETTINGS_SPEECH_KEYS].filter((k) => k in deps.settings.readRaw()).sort()
+  const raw = await deps.settings.readRaw()
+  saved.persisted_speech_keys = [...SETTINGS_SPEECH_KEYS].filter((k) => k in raw).sort()
   Reflect.deleteProperty(saved, 'password_hash')
   const cfgHome = home(ctx)
   try {
@@ -186,7 +188,7 @@ async function saveSettings(ctx: RequestContext, input: Dict): Promise<Dict> {
   saved.auth_just_enabled = authJustEnabled
   await authFields(ctx, saved)
   saved.auth_enabled = authEnabledAfter
-  derivedFields(ctx, saved)
+  await derivedFields(ctx, saved)
   return saved
 }
 
@@ -228,13 +230,13 @@ function oauthFlowId(raw: unknown): string {
 
 export const settingsRouter = os.router({
   settings: {
-    get: os.settings.get.handler(({ context: { ctx } }) => run(() => settingsPayload(ctx))),
+    get: os.settings.get.handler(({ context: { ctx } }) => run(async () => (await settingsPayload(ctx)))),
     save: os.settings.save.handler(({ input, context: { ctx } }) => run(() => saveSettings(ctx, input))),
-    linkCheck: os.settings.linkCheck.handler(({ input, context: { ctx } }) => checkExternalLink(input.url, linkPreferences(ctx.deps.settings.load()))),
+    linkCheck: os.settings.linkCheck.handler(async ({ input, context: { ctx } }) => checkExternalLink(input.url, linkPreferences((await ctx.deps.settings.load())))),
   },
   profiles: {
     list: os.profiles.list.handler(({ context: { ctx } }) => run(async () => ({ profiles: await ctx.deps.profiles.list(activeProfileName(ctx)) as never[], active: activeProfileName(ctx), single_profile_mode: ctx.deps.isolatedProfileMode() }))),
-    active: os.profiles.active.handler(({ context: { ctx } }) => run(() => ctx.deps.profiles.activePayload(activeProfileName(ctx)) as never)),
+    active: os.profiles.active.handler(({ context: { ctx } }) => run(async () => (await ctx.deps.profiles.activePayload(activeProfileName(ctx))) as never)),
     switch: os.profiles.switch.handler(({ input, context: { ctx } }) => run(async () => {
       const name = str(input.name ?? input.profile).trim()
       if (!name) throw new HttpError(400, 'name is required')
@@ -324,7 +326,7 @@ export const settingsRouter = os.router({
     })),
   },
   providers: {
-    list: os.providers.list.handler(({ context: { ctx } }) => run(() => ctx.deps.catalog.providers(home(ctx)) as Promise<never>)),
+    list: os.providers.list.handler(({ context: { ctx } }) => run(() => ctx.deps.catalog.providers(home(ctx)) as never)),
     setKey: os.providers.setKey.handler(({ input, context: { ctx } }) => run(() => setProviderKey(ctx, str(input.provider).trim().toLowerCase(), input.api_key === null || input.api_key === undefined ? null : str(input.api_key).trim() || null))),
     delete: os.providers.delete.handler(({ input, context: { ctx } }) => run(async () => {
       const pid = str(input.provider).trim().toLowerCase()
@@ -349,7 +351,7 @@ export const settingsRouter = os.router({
     })),
     selfHosted: os.providers.selfHosted.handler(({ input, context: { ctx } }) => run(async () => { const r = await ctx.deps.onboarding.selfHosted(input); ctx.deps.catalog.invalidate(); return r })),
     quota: os.providers.quota.handler(({ input, context: { ctx } }) => run(() => ctx.deps.catalog.quota(home(ctx), str(input.provider).trim() || null, { refresh: truthy(input.refresh) }))),
-    quotas: os.providers.quotas.handler(({ input, context: { ctx } }) => run(() => ctx.deps.catalog.quotas(home(ctx), activeProfileName(ctx), { sourceId: str(input.source).trim() || null, refresh: truthy(input.refresh) }) as Promise<never>)),
+    quotas: os.providers.quotas.handler(({ input, context: { ctx } }) => run(() => ctx.deps.catalog.quotas(home(ctx), activeProfileName(ctx), { sourceId: str(input.source).trim() || null, refresh: truthy(input.refresh) }) as never)),
     costHistory: os.providers.costHistory.handler(({ input, context: { ctx } }) => run(() => {
       const parsed = Number.parseInt(str(input.days ?? '7').trim() || '7', 10)
       const days = Number.isFinite(parsed) ? Math.max(1, Math.min(parsed, 365)) : 7
@@ -411,7 +413,7 @@ export const settingsRouter = os.router({
     })),
   },
   onboarding: {
-    status: os.onboarding.status.handler(({ context: { ctx } }) => run(() => ctx.deps.onboarding.status() as Promise<never>)),
+    status: os.onboarding.status.handler(({ context: { ctx } }) => run(async () => (await ctx.deps.onboarding.status()) as never)),
     setup: os.onboarding.setup.handler(({ input, context: { ctx } }) => run(async () => {
       if (!(await onboardingGateAllows(ctx))) throw new HttpError(403, 'Onboarding setup is only available from local networks when auth is not enabled. To bypass this on a remote server, set HERMES_WEBUI_ONBOARDING_OPEN=1.')
       const result = await ctx.deps.onboarding.setup(input)
@@ -420,7 +422,7 @@ export const settingsRouter = os.router({
     })),
     complete: os.onboarding.complete.handler(({ context: { ctx } }) => run(async () => {
       if (!(await onboardingGateAllows(ctx))) throw new HttpError(403, 'Onboarding is only available from local networks when auth is not enabled. To bypass this on a remote server, set HERMES_WEBUI_ONBOARDING_OPEN=1.')
-      return ctx.deps.onboarding.complete() as Promise<never>
+      return (await ctx.deps.onboarding.complete()) as never
     })),
     probe: os.onboarding.probe.handler(({ input, context: { ctx } }) => run(async () => {
       if (!(await onboardingGateAllows(ctx))) throw new HttpError(403, 'Onboarding probe is only available from local networks when auth is not enabled. To bypass this on a remote server, set HERMES_WEBUI_ONBOARDING_OPEN=1.')

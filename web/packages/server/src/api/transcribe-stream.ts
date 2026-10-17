@@ -36,25 +36,25 @@ export function closeTranscribeStreams(): void {
   for (const ws of sockets.clients) ws.terminate()
 }
 
-export function handleTranscribeStream(ctx: RequestContext): void {
+export async function handleTranscribeStream(ctx: RequestContext): Promise<void> {
   const upgrade = upgrades.get(ctx.req)
   if (!upgrade || (ctx.header('upgrade') ?? '').toLowerCase() !== 'websocket') {
-    ctx.json({ error: 'WebSocket upgrade required' }, { status: 426, headers: { Upgrade: 'websocket' } })
+    await ctx.json({ error: 'WebSocket upgrade required' }, { status: 426, headers: { Upgrade: 'websocket' } })
     return
   }
   // A browser cannot send the CSRF header on a handshake, so the origin check alone guards it (non-browser clients pass).
   const failure = checkSameOriginBrowserRequest({ origin: ctx.header('origin'), referer: ctx.header('referer'), host: ctx.header('host'), secFetchSite: ctx.header('sec-fetch-site'), forwardedHost: ctx.header('x-forwarded-host'), realHost: ctx.header('x-real-host') }, ctx.deps.config.env)
   if (failure) {
-    ctx.json({ error: csrfRejectionError(failure) }, { status: 403 })
+    await ctx.json({ error: csrfRejectionError(failure) }, { status: 403 })
     return
   }
   const sidecar = ctx.deps.sidecar()
   if (!sidecar) {
-    ctx.json({ error: 'Speech-to-text is unavailable on this server' }, { status: 503 })
+    await ctx.json({ error: 'Speech-to-text is unavailable on this server' }, { status: 503 })
     return
   }
   if (sockets.clients.size >= MAX_TRANSCRIBE_STREAMS) {
-    ctx.json({ error: 'Too many live dictations are open' }, { status: 503 })
+    await ctx.json({ error: 'Too many live dictations are open' }, { status: 503 })
     return
   }
   const profileHome = ctx.deps.profileHome(activeProfileName(ctx))

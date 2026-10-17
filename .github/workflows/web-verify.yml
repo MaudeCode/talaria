@@ -100,6 +100,19 @@ jobs:
           cache: pip
           cache-dependency-path: web/sidecar/agent_support.json
 
+      - name: Set up Node for the combined HTTP updater proof
+        uses: actions/setup-node@v7
+        with:
+          node-version-file: web/.nvmrc
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+
+      - name: Build the HTTP updater proof runtime
+        run: |
+          npm ci --no-audit --no-fund
+          npm run build -w packages/contracts
+          npm run build -w packages/server
+
       - name: Install uv (the Agent's locked dependency resolver)
         run: python3 -m pip install --disable-pip-version-check "uv==0.11.3"
 

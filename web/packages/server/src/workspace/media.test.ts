@@ -23,7 +23,7 @@ describe('serveFileBytes descriptor ownership (TAL-572)', () => {
   })
   afterEach(() => { rmSync(root, { recursive: true, force: true }) })
 
-  const serve = (headers: Record<string, string>): { status?: number | undefined } => {
+  const serve = async (headers: Record<string, string>): Promise<{ status?: number | undefined }> => {
     const sent: { status?: number | undefined } = {}
     const ctx = {
       header: (name: string) => headers[name],
@@ -31,23 +31,23 @@ describe('serveFileBytes descriptor ownership (TAL-572)', () => {
       json: (_payload: unknown, opts: { status?: number } = {}) => { sent.status = opts.status },
     } as unknown as RequestContext
     let thrown: unknown
-    try { serveFileBytes(ctx, file, { mime: 'image/png', disposition: 'inline', cacheControl: 'private, max-age=0' }) } catch (error) { thrown = error }
+    try { (await serveFileBytes(ctx, file, { mime: 'image/png', disposition: 'inline', cacheControl: 'private, max-age=0' })) } catch (error) { thrown = error }
     // A second close of a freed descriptor number can close another request's file.
     expect(vi.mocked(closeSync)).toHaveBeenCalledTimes(1)
     expect(thrown).toBeUndefined()
     return sent
   }
 
-  it('closes a buffered 200 response descriptor once', () => {
-    expect(serve({}).status).toBe(200)
+  it('closes a buffered 200 response descriptor once', async () => {
+    expect((await serve({})).status).toBe(200)
   })
 
-  it('closes a 206 range response descriptor once', () => {
-    expect(serve({ range: 'bytes=0-2' }).status).toBe(206)
+  it('closes a 206 range response descriptor once', async () => {
+    expect((await serve({ range: 'bytes=0-2' })).status).toBe(206)
   })
 
-  it('closes a 416 response descriptor once', () => {
-    expect(serve({ range: 'bytes=99-' }).status).toBe(416)
+  it('closes a 416 response descriptor once', async () => {
+    expect((await serve({ range: 'bytes=99-' })).status).toBe(416)
   })
 })
 
@@ -79,26 +79,26 @@ describe('mediaAnchorRoot session MEDIA scan (TAL-573)', () => {
     return { session, reads: () => reads }
   }
 
-  it('skips the scan when an allowed root authorizes the path', () => {
+  it('skips the scan when an allowed root authorizes the path', async () => {
     const target = join(base, 'ws', 'a.png')
     const { session, reads } = spySession(target)
-    expect(mediaAnchorRoot(target, session, deps)).toBe(join(base, 'ws'))
+    expect((await mediaAnchorRoot(target, session, deps))).toBe(join(base, 'ws'))
     expect(reads()).toBe(0)
   })
 
-  it('scans the session when no root authorizes the path', () => {
+  it('scans the session when no root authorizes the path', async () => {
     const target = join(base, 'outside', 'a.png')
     const { session, reads } = spySession(target)
-    expect(mediaAnchorRoot(target, session, deps)).toBe(join(base, 'outside'))
+    expect((await mediaAnchorRoot(target, session, deps))).toBe(join(base, 'outside'))
     expect(reads()).toBe(1)
   })
 
-  it('keeps a legacy custom snapshot store denied under an allowed root (TAL-587)', () => {
+  it('keeps a legacy custom snapshot store denied under an allowed root (TAL-587)', async () => {
     const store = join(base, 'ws', 'snaps')
     mkdirSync(store)
     writeFileSync(join(store, `${'a'.repeat(64)}.snap`), 'frozen')
     deps.policy = { ...deps.policy, legacySnapshotDir: store }
-    expect(mediaAnchorRoot(join(store, `${'a'.repeat(64)}.snap`), null, deps)).toBeNull()
-    expect(mediaAnchorRoot(join(base, 'ws', 'a.png'), null, deps)).toBe(join(base, 'ws'))
+    expect((await mediaAnchorRoot(join(store, `${'a'.repeat(64)}.snap`), null, deps))).toBeNull()
+    expect((await mediaAnchorRoot(join(base, 'ws', 'a.png'), null, deps))).toBe(join(base, 'ws'))
   })
 })

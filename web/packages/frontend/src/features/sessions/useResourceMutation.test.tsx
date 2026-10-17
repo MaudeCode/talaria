@@ -135,6 +135,20 @@ describe('resource intent ownership', () => {
     await waitFor(() => expect(result.current.intents).toEqual({}))
     expect(result.current.projects.data).toBe('reconciled')
   })
+  it('leaves an unrelated in-flight history read intact during required snapshot reconciliation', async () => {
+    const { wrapper } = harness()
+    const history = deferred<string>()
+    const { result } = renderHook(() => ({
+      list: useQuery({ queryKey: keys.crons.list(false), queryFn: () => Promise.resolve('jobs') }),
+      history: useQuery({ queryKey: keys.crons.history('digest'), queryFn: () => history.promise }),
+      change: useResourceMutation({ resource: () => 'cron:digest', queryKey: keys.crons.all, readKeys: () => [keys.crons.list(false)], intent: () => ({ label: 'Pause' }), mutationFn: () => Promise.resolve({ ok: true }) }),
+    }), { wrapper })
+    await waitFor(() => expect(result.current.list.data).toBe('jobs'))
+    await act(async () => { await result.current.change.mutateAsync() })
+    await act(async () => { history.resolve('selected run'); await history.promise })
+    await waitFor(() => expect(result.current.history.data).toBe('selected run'))
+  })
+
   it('coalesces required read sets while excluding an unrelated failed descendant', async () => {
     const { qc, wrapper } = harness()
     const family = ['kanban', 'board', 'default']

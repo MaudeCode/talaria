@@ -1,4 +1,4 @@
-import { closeSync, fstatSync, fsyncSync, openSync, renameSync, unlinkSync } from 'node:fs'
+import { chmodSync, closeSync, fstatSync, fsyncSync, openSync, renameSync, unlinkSync } from 'node:fs'
 import { writeFully } from '../../fs/atomic.js'
 let tmpCounter = 0
 
@@ -6,13 +6,14 @@ function tmpName(path: string): string {
   return `${path}.tmp.${process.pid}.${++tmpCounter}`
 }
 
-export function writeAtomic(path: string, text: string): void {
+export function writeAtomic(path: string, text: string | Uint8Array, mode?: number): void {
   const tmp = tmpName(path)
-  const fd = openSync(tmp, 'w')
+  const fd = openSync(tmp, 'w', mode)
   try {
     writeFully(fd, text)
     fsyncSync(fd)
     closeSync(fd)
+    if (mode !== undefined) chmodSync(tmp, mode)
     renameSync(tmp, path)
   } catch (error) {
     try { closeSync(fd) } catch { /* closed */ }

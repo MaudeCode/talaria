@@ -137,6 +137,94 @@ final class ChatVerticalScrollAxisGuardTests: XCTestCase {
 
 @MainActor
 final class ChatScrollPositionControllerTests: XCTestCase {
+    func testUserInteractionReleasesUnfinishedNavigationBeforeRealizingRows() async throws {
+        for disclosure in [false, true] {
+            let scroll = makeScrollView()
+            scroll.contentOffset.y = 200
+            let controller = ChatScrollPositionController()
+            controller.attach(to: scroll)
+            defer { controller.detach() }
+            controller.recordRowGeometry(.init(revision: 0, contentMinY: 200,
+                frame: scroll.convert(CGRect(x: 0, y: 200, width: 320, height: 100), to: nil)), for: "reader")
+            controller.recordRowGeometry(.init(revision: 0, contentMinY: 700,
+                frame: scroll.convert(CGRect(x: 0, y: 700, width: 320, height: 100), to: nil)), for: "destination")
+            controller.prepareNativeScroll(revision: 1, targetID: "destination", anchor: .top)
+            var realized = 0
+            controller.enqueueRowRealization(id: "neighbor", priority: 0) { realized += 1 }
+            if disclosure { controller.holdPosition(anchorRowID: "reader", resync: {}) }
+            else { controller.userDidBeginDragging() }
+            try await Task.sleep(for: .milliseconds(40))
+            XCTAssertEqual(realized, 1, "A user's disclosure or drag must not wait for an abandoned navigation")
+        }
+    }
+
+    func testNativeScrollAcknowledgementWaitsForTheMeasuredDestination() async throws {
+        let destinations: [(CGFloat, UnitPoint, CGFloat)] = [
+            (100, .top, 100), (100, .bottom, 0), (1_100, .top, 720),
+            (100, UnitPoint(x: 0.5, y: -3.5), 720)
+        ]
+        for (rowY, anchor, destination) in destinations {
+            let scroll = makeScrollView()
+            scroll.contentOffset.y = 700
+            let controller = ChatScrollPositionController()
+            controller.attach(to: scroll)
+            defer { controller.detach() }
+            controller.recordRowGeometry(.init(revision: 0, contentMinY: rowY,
+                frame: scroll.convert(CGRect(x: 0, y: rowY, width: 320, height: 100), to: nil)), for: "destination")
+            controller.prepareNativeScroll(revision: 1, targetID: "destination", anchor: anchor)
+            var realized = 0
+            controller.enqueueRowRealization(id: "neighbor", priority: 0) { realized += 1 }
+            controller.contentDidLayout(revision: 0, nativeScrollRevision: 1)
+            try await Task.sleep(for: .milliseconds(40))
+            XCTAssertEqual(realized, 0, "Layout alone cannot admit neighbors while the old viewport is still visible")
+            scroll.contentOffset.y = destination
+            controller.recordRowGeometry(.init(revision: 0, contentMinY: rowY,
+                frame: scroll.convert(CGRect(x: 0, y: rowY, width: 320, height: 100), to: nil)), for: "destination")
+            controller.contentDidLayout(revision: 0, nativeScrollRevision: 1)
+            let resumed = await awaitCondition { realized == 1 }
+            XCTAssertTrue(resumed, "Reaching the measured destination must release queued neighbors")
+        }
+    }
+
+    func testNativeScrollLayoutBlocksRealizationUntilItsMatchingAcknowledgement() async throws {
+        let scrollView = makeScrollView()
+        let controller = ChatScrollPositionController()
+        controller.attach(to: scrollView)
+        defer { controller.detach() }
+        var realized = 0
+        controller.prepareNativeScroll(revision: 1)
+        controller.enqueueRowRealization(id: "pending-row", priority: 0) { realized += 1 }
+        try await Task.sleep(for: .milliseconds(40))
+        XCTAssertEqual(realized, 0, "A new command must establish its viewport before neighbors change height")
+        controller.contentDidLayout(revision: 0, nativeScrollRevision: 0)
+        try await Task.sleep(for: .milliseconds(40))
+        XCTAssertEqual(realized, 0)
+        controller.prepareNativeScroll(revision: 2)
+        controller.contentDidLayout(revision: 0, nativeScrollRevision: 1)
+        try await Task.sleep(for: .milliseconds(40))
+        XCTAssertEqual(realized, 0, "An obsolete command's acknowledgement cannot admit the next command's rows")
+        controller.contentDidLayout(revision: 0, nativeScrollRevision: 2)
+        let resumed = await awaitCondition { realized == 1 }
+        XCTAssertTrue(resumed, "Matching layout must resume the queued row")
+    }
+
+    func testRealizationPreservesTheVisibleRowWhenViewportStartsInSpacing() {
+        let scrollView = makeScrollView(isDragging: true)
+        scrollView.contentOffset.y = 110
+        let controller = ChatScrollPositionController()
+        controller.attach(to: scrollView)
+        controller.recordRowGeometry(.init(revision: 0, contentMinY: 0,
+            frame: CGRect(x: 0, y: -110, width: 320, height: 100)), for: "above-gap")
+        controller.recordRowGeometry(.init(revision: 0, contentMinY: 120,
+            frame: CGRect(x: 0, y: 10, width: 320, height: 200)), for: "reader")
+        XCTAssertEqual(controller.readingAnchorRowID, "reader")
+        XCTAssertTrue(controller.preserveReaderForRealization(isFollowingLatest: false))
+        controller.recordRowMinY(270, for: "reader")
+        scrollView.contentSize.height += 150
+        XCTAssertEqual(scrollView.contentOffset.y, 260, accuracy: 0.001,
+                       "Realizing content above a visible row must preserve it even when the viewport begins in spacing")
+    }
+
     func testLazyPrependRealizesItsDiscardedReaderBeforeUsingHeightEstimates() {
         for sample: (height: CGFloat, anchorY: CGFloat) in [(1_000, 60.0 / 520), (480, 0)] {
             let scrollView = makeScrollView()
@@ -983,5 +1071,50 @@ private final class HistoryInteractionScrollView: UIScrollView {
         private var movement = CGPoint.zero
         override func translation(in view: UIView?) -> CGPoint { movement }
         override func setTranslation(_ translation: CGPoint, in view: UIView?) { movement = translation }
+    }
+}
+
+@MainActor
+final class ChatTranscriptRowCacheTests: XCTestCase {
+    func testWindowBoundsLayoutNodesWithoutChangingDocumentExtent() {
+        let cache = ChatTranscriptRowCache()
+        let ids = (0..<1_000).map { "row-\($0)" }
+        for top: CGFloat in [0, 50_000, 199_000] {
+            let elements = cache.elements(ids: ids, top: top, viewportHeight: 600,
+                                          spacing: 12, pinned: ["row-400"], freezesWindow: false)
+            XCTAssertLessThan(elements.count, 24, "Layout nodes must depend on the viewport, not loaded history")
+            XCTAssertEqual(extent(elements, cache: cache), 200_000 + 999 * 12, accuracy: 0.001)
+        }
+    }
+
+    func testFrozenPrependUsesOnePrefixSpacerAndRetainsReaderIdentityAndState() {
+        let cache = ChatTranscriptRowCache()
+        let ids = (50..<100).map { "row-\($0)" }
+        let state = cache.state(for: "row-59")
+        cache.record(height: 2_400, for: "row-59")
+        let before = cache.elements(ids: ids, top: 0, viewportHeight: 600,
+                                    spacing: 12, pinned: ["row-59"], freezesWindow: true)
+        let after = cache.elements(ids: (0..<100).map { "row-\($0)" }, top: 0, viewportHeight: 600,
+                                   spacing: 12, pinned: ["row-59"], freezesWindow: true)
+        XCTAssertEqual(after.count, before.count)
+        XCTAssertEqual(extent(after, cache: cache) - extent(before, cache: cache), 50 * 212, accuracy: 0.001)
+        XCTAssertEqual(before.filter { if case .row = $0 { return true }; return false }.map(\.id),
+                       after.filter { if case .row = $0 { return true }; return false }.map(\.id))
+        XCTAssertTrue(state === cache.state(for: "row-59"))
+        let previousExtent = extent(before, cache: cache)
+        cache.record(height: 3_000, for: "row-59")
+        let remeasured = cache.elements(ids: ids, top: 0, viewportHeight: 600,
+                                       spacing: 12, pinned: [], freezesWindow: true)
+        XCTAssertEqual(extent(remeasured, cache: cache), previousExtent + 600, accuracy: 0.001)
+        XCTAssertTrue(state === cache.state(for: "row-59"), "Removing a row wrapper must retain its device-local state")
+    }
+
+    private func extent(_ elements: [ChatTranscriptRowCache.Element], cache: ChatTranscriptRowCache) -> CGFloat {
+        elements.reduce(CGFloat(max(0, elements.count - 1)) * 12) { sum, element in
+            switch element {
+            case let .row(_, id): sum + cache.height(for: id)
+            case let .gap(_, _, height): sum + height
+            }
+        }
     }
 }

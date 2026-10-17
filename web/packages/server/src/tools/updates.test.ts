@@ -136,7 +136,7 @@ describe('Web source updates (test_tal203_source_update.py)', () => {
     const { svc, restarts, installs, version } = npmService({
       autoApply: () => enabled,
       blockers: () => ({ active_streams: blocked ? 1 : 0, active_runs: 0, blocking_stream_ids: blocked ? ['s'] : [], blocking_run_ids: [], restart_blocked: blocked }),
-      autoNotification: { begin: () => { notificationEvents.push('begin'); return `notice-${String(notificationEvents.length)}` }, transition: (_id, phase) => { notificationEvents.push(phase) } },
+      autoNotification: { begin: () => { notificationEvents.push('begin'); return Promise.resolve(`notice-${String(notificationEvents.length)}`) }, transition: (_id, phase) => { notificationEvents.push(phase) } },
     })
     expect(await svc.autoApplyOnce()).toBeNull()
     enabled = true
@@ -404,7 +404,7 @@ describe('Web source updates (test_tal203_source_update.py)', () => {
   it('reports a failed update and skips automatic reinstallation but permits manual retry (TAL-1014)', async () => {
     const stateDir = tmp()
     write(join(stateDir, 'update-rollback.json'), JSON.stringify({ version: '2.0.0', previousVersion: '1.0.0', failedVersion: '2.0.0' }))
-    const begin = vi.fn(() => 'unexpected-notification')
+    const begin = vi.fn(() => Promise.resolve('unexpected-notification'))
     const { svc, installs, restarts } = npmService({ stateDir, autoApply: () => true, autoNotification: { begin, transition: vi.fn() } })
     const failed_update = { version: '2.0.0', restored_version: '1.0.0' }
     expect((await svc.check(true)).webui).toMatchObject({ failed_update })
@@ -786,6 +786,76 @@ describe('Agent checkout updates', () => {
       expect(server.deps.updates.blocksNewWork()).toBe(!resumeFailure)
       if (!resumeFailure) expect(result.gateway_restart).toBe('resumed')
       expect(sidecar.calls.some((call) => call.method === 'runtime.sync_dependencies')).toBe(false)
+    } finally { await server.close() }
+  })
+
+  it.each(['apply', 'force'] as const)('continues the selected %s update after a scoped legacy refresh confirmation', async (action) => {
+    const a = agentInstall(true)
+    const sidecar = new FakeSidecar()
+    sidecar.describe = { ...sidecar.describe!, agent_dir: a.agent }
+    const refreshToken = 'c'.repeat(32)
+    const events: string[] = []
+    let intent: string | undefined
+    sidecar.respond('runtime.agent_mutation', async (params) => {
+      if (params.action === 'begin') {
+        if (!params.refresh_token) {
+          intent = params.intent
+          events.push('confirm')
+          return { ok: false, skipped: false, detail: 'Active dashboard work may be interrupted.', refresh_confirmation: { token: refreshToken, services: ['synthetic.dashboard'] } }
+        }
+        expect(params.intent).toBe(intent)
+        expect(params.refresh_token).toBe(refreshToken)
+        expect(params.revision).toBe(a.v2)
+        events.push('refresh')
+        return { ok: true, skipped: false, detail: '', token: 'a'.repeat(32) }
+      }
+      if (params.action === 'git') {
+        const result = await runGit(params.args, a.agent, params.timeout_ms)
+        return { ok: result.ok, skipped: false, detail: result.out }
+      }
+      events.push(params.action)
+      return { ok: true, skipped: false, detail: '' }
+    })
+    const server = await bootTestServer({ sidecar })
+    try {
+      const wired = (server.deps.updates as unknown as { deps: UpdateServiceDeps }).deps
+      wired.scheduleRestart = () => { events.push('restart') }
+      const request = async (extra: Dict = {}) => (await server.get(`/api/updates/${action}`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ target: 'agent', confirmed_agent_revision: a.v2, ...extra }) })).json() as Promise<Dict>
+      const pending = await request()
+      expect(pending).toMatchObject({ ok: false, confirmation_required: true, candidate_revision: a.v2, agent_channel: 'stable', refresh_confirmation: { token: refreshToken, services: ['synthetic.dashboard'] } })
+      expect(intent).toBeTruthy()
+      expect(git(a.agent, 'rev-parse', 'HEAD')).toBe(a.v1)
+      expect(existsSync(join(server.state, 'agent-dependency-sync', createHash('sha256').update(a.agent).digest('hex')))).toBe(false)
+      const history = await (await server.get('/api/update-notifications')).json() as { notifications: Dict[] }
+      expect(history.notifications.find((row) => row.id === pending.notification_id)).toMatchObject({ phase: 'awaiting_confirmation', message: 'Active dashboard work may be interrupted.' })
+      expect(await request({ agent_refresh_token: refreshToken })).toMatchObject({ ok: true, verified_revision: a.v2, gateway_restart: 'resumed' })
+      expect(git(a.agent, 'rev-parse', 'HEAD')).toBe(a.v2)
+      expect(events).toEqual(['confirm', 'refresh', 'sync', 'finish', 'restart'])
+    } finally { await server.close() }
+  })
+
+  it.each(['apply', 'force'] as const)('preserves lifecycle capability guidance in %s results and notifications', async (action) => {
+    const a = agentInstall(true)
+    const sidecar = new FakeSidecar()
+    sidecar.describe = { ...sidecar.describe!, agent_dir: a.agent }
+    const detail = 'synthetic.dashboard running backend lifecycle APIs are unsupported for safe Agent update custody. Backend listener identity remains unverified. Finish active work, then have the owner gracefully refresh this service through its original supervisor. Verify the successor lifecycle APIs and intended installation/profile/PID, then retry the Agent update. Any retained service recovery remains owed.'
+    sidecar.respond('runtime.agent_mutation', () => ({ ok: false, skipped: false, detail }))
+    writeFileSync(join(a.agent, 'README'), 'local edit\n')
+    writeFileSync(join(a.agent, 'untracked'), 'local work\n')
+    const before = git(a.agent, 'status', '--porcelain')
+    const server = await bootTestServer({ sidecar })
+    try {
+      const response = await server.get(`/api/updates/${action}`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ target: 'agent', confirmed_agent_revision: a.v2 }) })
+      expect(response.status).toBe(200)
+      const result = await response.json() as Dict
+      expect(result).toMatchObject({ ok: false })
+      expect(result.message).toContain(detail)
+      const history = await (await server.get('/api/update-notifications')).json() as { notifications: Dict[] }
+      expect(history.notifications.find((row) => row.id === result.notification_id)).toMatchObject({ phase: 'failed', detail: result.message })
+      expect(git(a.agent, 'rev-parse', 'HEAD')).toBe(a.v1)
+      expect(git(a.agent, 'status', '--porcelain')).toBe(before)
+      expect(git(a.agent, 'stash', 'list')).toBe('')
+      expect(sidecar.calls.filter((call) => call.method === 'runtime.agent_mutation').map((call) => (call.params as Dict).action)).toEqual(['begin'])
     } finally { await server.close() }
   })
 

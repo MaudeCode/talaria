@@ -16,14 +16,14 @@ xcodebuild_pid=""
 # process, so the visual-reference record switch travels as a marker file the
 # tests can stat. It never outlives the run that created it.
 visual_reference_marker="$repo_root/TalariaTests/VisualReferences/.record"
-owns_visual_reference_marker=false
+typeset -a owned_run_markers=()
 mkdir -p "$runtime_dir/results"
 mkdir -p "$lease_dir"
 exec 9>"$lock_file"
 
 cleanup() {
     # A run cancelled while waiting for admission must not remove the marker of the run it waits on.
-    [[ "$owns_visual_reference_marker" != true ]] || rm -f "$visual_reference_marker"
+    for marker in "${owned_run_markers[@]}"; do rm -f "$marker"; done
     if [[ -n "$xcodebuild_pid" ]]; then
         kill -TERM "$xcodebuild_pid" 2>/dev/null || true
         wait "$xcodebuild_pid" 2>/dev/null || true
@@ -74,14 +74,19 @@ runner_hang_only() {
 typeset -a filters=("${@/#/-only-testing:}")
 
 cd "$repo_root"
-# Clear first: a recording run killed before its EXIT trap would otherwise leave
-# the marker behind and silently turn the next ordinary run into a re-record.
-rm -f "$visual_reference_marker"
-if [[ -n "${TALARIA_RECORD_VISUAL_REFERENCES:-}" ]]; then
-    mkdir -p "${visual_reference_marker:h}"
-    : > "$visual_reference_marker"
-    owns_visual_reference_marker=true
-fi
+# A killed owner can leave a marker behind. Clear each mode only after this
+# runner owns admission; a cancelled waiter must leave its owner's mode alone.
+prepare_run_marker() {
+    local marker_path=$1 marker_value=$2
+    rm -f "$marker_path"
+    if [[ -n "$marker_value" ]]; then
+        mkdir -p "${marker_path:h}"
+        print -rn -- "$marker_value" > "$marker_path"
+        owned_run_markers+=("$marker_path")
+    fi
+}
+prepare_run_marker "$visual_reference_marker" "${TALARIA_RECORD_VISUAL_REFERENCES:-}"
+prepare_run_marker "$runtime_dir/native-history-drag" "${TALARIA_NATIVE_HISTORY_DRAG:-}"
 
 attempt=1
 while true; do

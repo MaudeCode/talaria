@@ -7,6 +7,7 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		C10620000000000000000001 /* ChatTranscriptRow.swift in Sources */ = {isa = PBXBuildFile; fileRef = C10620000000000000000002 /* ChatTranscriptRow.swift */; };
 		AA1900000000000000000001 /* ReauthenticationSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA1900000000000000000002 /* ReauthenticationSheet.swift */; };
 		26AB000000000000000000B1 /* ProvidersViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 26AB000000000000000000F1 /* ProvidersViewModel.swift */; };
 		26AB000000000000000388B1 /* AuxiliaryModelsSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 26AB000000000000000388F1 /* AuxiliaryModelsSettingsView.swift */; };
@@ -454,6 +455,7 @@
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
+		C10620000000000000000002 /* ChatTranscriptRow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatTranscriptRow.swift; sourceTree = "<group>"; };
 		AA1900000000000000000002 /* ReauthenticationSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReauthenticationSheet.swift; sourceTree = "<group>"; };
 		351C0F1600000000000000A1 /* Shared.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; name = Shared.xcconfig; path = Config/Shared.xcconfig; sourceTree = "<group>"; };
 		1A2B3C4D5E6F700000000010 /* Talaria.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Talaria.app; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -1134,6 +1136,7 @@
 				C107A000000000000000012 /* ListenPlaybackBar.swift */,
 				C107A000000000000000013 /* ChatToolbarTitleLabel.swift */,
 				C05100000000000000000011 /* ChatTranscriptView.swift */,
+				C10620000000000000000002 /* ChatTranscriptRow.swift */,
 				C107N0000000000000000118 /* ChatTranscriptMessageBlock.swift */,
 				C107N0000000000000000119 /* ChatTranscriptMessageRow.swift */,
 				C1TAL49B0000000000000001 /* ChatMessageLinkRegions.swift */,
@@ -1867,6 +1870,7 @@
 					C107A000000000000000002 /* ListenPlaybackBar.swift in Sources */,
 					C107A000000000000000003 /* ChatToolbarTitleLabel.swift in Sources */,
 					C05100000000000000000001 /* ChatTranscriptView.swift in Sources */,
+					C10620000000000000000001 /* ChatTranscriptRow.swift in Sources */,
 					C05100000000000000000003 /* ChatGoalControls.swift in Sources */,
 					C05100000000000000000004 /* ChatTranscriptSupportingViews.swift in Sources */,
 					C0CAM000000000000000B001 /* CameraPickerView.swift in Sources */,

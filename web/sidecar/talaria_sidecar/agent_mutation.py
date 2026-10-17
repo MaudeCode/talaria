@@ -6,6 +6,7 @@ checkout lock and gateway journal also fence the backend recovery companion.
 from __future__ import annotations
 
 import contextlib
+import hashlib
 import importlib
 import json
 import logging
@@ -27,6 +28,8 @@ from . import agent_services as services
 _SESSIONS = {}
 _SESSIONS_LOCK = threading.Lock()
 _RECOVERING = set()
+_CONSENTS = {}
+CONSENT_SECONDS = 300
 
 
 def _close(session):
@@ -111,7 +114,8 @@ def _exchange(session, request, ctx):
             result = json.loads(line)
             if not isinstance(result, dict) or not isinstance(result.get("ok"), bool):
                 raise RpcError("Invalid Agent writer lease response.", condition="agent_update_unsafe")
-            return {"ok": result["ok"], "skipped": result.get("skipped") is True, "detail": str(result.get("detail") or "")}
+            return {"ok": result["ok"], "skipped": result.get("skipped") is True, "detail": str(result.get("detail") or ""),
+                    **({"refresh_confirmation": result["refresh_confirmation"]} if "refresh_confirmation" in result else {})}
 
 
 def call(runtime, ctx, params):
@@ -131,7 +135,21 @@ def call(runtime, ctx, params):
             raise InvalidParams("resolved profile homes are required")
         if any(Path(home).resolve().is_relative_to(root.resolve()) for home in homes):
             raise InvalidParams("Agent profile homes must stay outside the source checkout to survive update cleanup")
+        intent = params.get('intent', '')
+        refresh_token = params.get('refresh_token')
+        if not isinstance(intent, str) or len(intent) > 1024:
+            raise InvalidParams('invalid update intent')
+        binding = None
         with _SESSIONS_LOCK:
+            for key, value in list(_CONSENTS.items()):
+                if value['expires'] <= time.monotonic():
+                    _CONSENTS.pop(key)
+            if refresh_token is not None:
+                consent = _CONSENTS.pop(refresh_token, None) if isinstance(refresh_token, str) else None
+                if (consent is None or not intent or consent['intent'] != intent or consent['root'] != root.resolve()
+                        or consent['revision'] != revision or consent['homes'] != sorted({str(Path(h).resolve()) for h in homes})):
+                    return {'ok': False, 'skipped': False, 'detail': 'Legacy refresh confirmation expired, changed or was already used. Check for updates and confirm again.'}
+                binding = consent['binding']
             for old_token, old in list(_SESSIONS.items()):
                 if old["proc"].poll() is not None:
                     _SESSIONS.pop(old_token)
@@ -149,14 +167,14 @@ def call(runtime, ctx, params):
                 stderr.close()
                 return {"ok": False, "skipped": False, "detail": "A gateway lifecycle action is still running."}
             try:
-                proc = subprocess.Popen([sys.executable, "-m", "talaria_sidecar.agent_mutation", str(root), revision, json.dumps(homes)],
+                proc = subprocess.Popen([sys.executable, "-m", "talaria_sidecar.agent_mutation", str(root), revision, json.dumps(homes), binding or ""],
                                         cwd=root, env=env, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=stderr, text=True)
             except BaseException:
                 stderr.close()
                 _ACTION_LOCK.release()
                 raise
             token = uuid.uuid4().hex
-            session = {"root": root.resolve(), "proc": proc, "stderr": stderr, "lock": threading.RLock(),
+            session = {"intent": intent, "revision": revision, "homes": sorted({str(Path(h).resolve()) for h in homes}), "root": root.resolve(), "proc": proc, "stderr": stderr, "lock": threading.RLock(),
                        "close_lock": threading.Lock(), "closed": False, "output": queue.Queue(), "gateway_lock": _ACTION_LOCK}
             _SESSIONS[token] = session
         def read():
@@ -189,6 +207,17 @@ def call(runtime, ctx, params):
                 raise InvalidParams("invalid leased git timeout")
     try:
         result = _exchange(session, None if action == "begin" else params, ctx)
+        if action == 'begin' and 'refresh_confirmation' in result:
+            confirmation = result['refresh_confirmation']
+            if not session['intent']:
+                return {'ok': False, 'skipped': False, 'detail': 'Legacy dashboard refresh requires an interactive operator confirmation.'}
+            nonce = uuid.uuid4().hex
+            with _SESSIONS_LOCK:
+                if len(_CONSENTS) >= 64:
+                    _CONSENTS.pop(next(iter(_CONSENTS)))
+                _CONSENTS[nonce] = {key: session[key] for key in ('root', 'revision', 'homes', 'intent')}
+                _CONSENTS[nonce].update(binding=confirmation['binding'], expires=time.monotonic() + CONSENT_SECONDS)
+            result['refresh_confirmation'] = {'token': nonce, 'services': confirmation['services']}
         if action == "begin" and result["ok"]:
             return {**result, "token": token}
         if action != "finish" and result["ok"]:
@@ -281,7 +310,7 @@ def _writer_ledger(root, identity):
     return found
 
 
-def _worker(root, revision, homes, requests, stopped, send):
+def _worker(root, revision, homes, requests, stopped, send, refresh_binding=None):
     if os.name not in {"posix", "nt"}:
         raise RuntimeError("A cooperative Agent writer lease is unavailable on this platform; source was not changed.")
     sys.path.insert(0, str(root))
@@ -337,6 +366,8 @@ def _worker(root, revision, homes, requests, stopped, send):
                     or any(records.identity_is_live({"pid": int(pid), "ct": ct}) for pid, ct in adopted.get("identities", {}).items())):
                 raise RuntimeError("The Agent environment cannot import and its writers cannot be proved quiesced; use native recovery first.")
             bootstrap_repair = True
+        if any(e.get('legacy_refresh') for e in recovery.state['entries']):
+            recovery.resume(_writer_ledger)
         entries = [] if bootstrap_repair else _owners(root, homes, pause, identity, windows)
         recovery_only = ((bootstrap_repair and needs_sync) or bool(adopted and not records.tree_is_whole(adopted, root)[0])
                          or bool(recovery.state['entries'] and (recovery.state.get('sync_failed') or not records.tree_is_whole(recovery.state['tree'], root)[0])))
@@ -344,6 +375,7 @@ def _worker(root, revision, homes, requests, stopped, send):
         # Bracket and repeat both probes, binding them to the same incarnation before recording it.
         from gateway.status import get_process_start_time
         owner_identities = {}
+        legacy = []
         for entry in entries:
             services.bind_processes(entry, records)
             canonical = records.identity(entry["pid"])["ct"]
@@ -356,11 +388,28 @@ def _worker(root, revision, homes, requests, stopped, send):
                 raise RuntimeError("Gateway process identity changed during quiescence; source was not changed.")
             entry["ct"] = birth
             if entry.get('purpose') in {'dashboard', 'serve'}:
-                services.backend_request(entry)
+                try:
+                    services.backend_request(entry)
+                except services.BackendLifecycleUnsupported:
+                    services.verify_listener(entry)
+                    entry['config_stamp'] = services._config_stamp(entry)
+                    legacy.append(entry)
                 services.verify_processes(entry, records)
             if not entry.get('purpose'):
                 owner_identities[str(entry["pid"])] = canonical
                 owner_identities.update({pid: p['ct'] for pid, p in entry.get('processes', {}).items()})
+        binding = hashlib.sha256(json.dumps({'root': str(root), 'revision': revision, 'tree': initial_tree,
+                                             'homes': sorted(map(str, homes)), 'entries': sorted(legacy, key=services._name)},
+                                            sort_keys=True).encode()).hexdigest()
+        if refresh_binding and (not legacy or refresh_binding != binding):
+            raise RuntimeError('Legacy refresh target or process identity changed. Check for updates and confirm again.')
+        if legacy and not refresh_binding:
+            send({'ok': False, 'detail': 'Active dashboard work may be interrupted by a graceful refresh.',
+                  'refresh_confirmation': {'binding': binding, 'services': [services._name(e) for e in legacy]}})
+            return
+        if legacy and (recovery_only or bootstrap_repair or initial_tree['dirty_at_pause']
+                       or (root / '.interrupted').exists()):
+            raise RuntimeError('The installed Agent source/dependencies are not safe for a legacy refresh; repair remains owed.')
         gateway_entries = [e for e in entries if not e.get('purpose')]
         backend_entries = [e for e in entries if e.get('purpose') in {'serve', 'dashboard'}]
         token = pause._empty_token()
@@ -375,6 +424,21 @@ def _worker(root, revision, homes, requests, stopped, send):
                      unmapped_pids=[e["pid"] for e in gateway_entries if not e.get("kind")],
                      identities=owner_identities, resume_needed=bool(gateway_entries))
         records.record_pause(token, adopted, claims)
+        if legacy:
+            whole, why = records.tree_is_whole(token, root)
+            if not whole:
+                raise RuntimeError('Legacy refresh requires verified current source/dependencies: ' + why)
+            for entry in legacy:
+                recovery.prepare([entry], token)
+                recovery.refresh(entry, stopped, _writer_ledger)
+            # Bootstrap is bounded to the consented incarnations; every successor now uses the normal fence.
+            entries = _owners(root, homes, pause, identity, windows)
+            for entry in entries:
+                services.bind_processes(entry, records)
+                if entry.get('purpose') in {'dashboard', 'serve'}:
+                    services.backend_request(entry)
+            gateway_entries = [e for e in entries if not e.get('purpose')]
+            backend_entries = [e for e in entries if e.get('purpose') in {'serve', 'dashboard'}]
         recovery.prepare(backend_entries + [{**e, 'purpose': 'gateway'} for e in gateway_entries if e.get('processes')], token)
         records.mark_stop_requested(token, sorted({pid for e in gateway_entries for pid in (e['pid'], e.get('service_pid', e['pid']))}))
         for entry in backend_entries:
@@ -628,7 +692,7 @@ def main():
             send(_resume_worker(Path(sys.argv[2]).resolve()))
             return
         with contextlib.redirect_stdout(sys.stderr):
-            _worker(Path(sys.argv[1]).resolve(), sys.argv[2], {Path(h).resolve() for h in json.loads(sys.argv[3])}, requests, stopped, send)
+            _worker(Path(sys.argv[1]).resolve(), sys.argv[2], {Path(h).resolve() for h in json.loads(sys.argv[3])}, requests, stopped, send, sys.argv[4] if len(sys.argv) > 4 else None)
     except BaseException as exc:
         send({"ok": False, "detail": str(exc)})
 

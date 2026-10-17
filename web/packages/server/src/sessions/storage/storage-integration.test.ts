@@ -120,7 +120,7 @@ it('shares one resident session across concurrent cold reads with asynchronous s
     await store.save(session)
     store.sessions.clear()
     const original = store.deps.storage
-    store.deps.storage = { ...original, close: () => original.close(), sessions: new Proxy(original.sessions, {
+    store.deps.storage = { ...original, close: async () => { await original.close(); }, sessions: new Proxy(original.sessions, {
       get(target, key, receiver) {
         const value: unknown = Reflect.get(target, key, receiver)
         if (typeof value !== 'function') return value

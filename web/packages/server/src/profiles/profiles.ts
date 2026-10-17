@@ -4,8 +4,9 @@
  * `delete_profile_api`). Rows come from the sidecar (`profiles.*`, the Agent's
  * own per-profile readers); the per-request active profile stays a cookie.
  */
-import { existsSync, lstatSync, readdirSync, readFileSync, realpathSync, statSync } from 'node:fs'
-import { atomicWriteText } from '../fs/atomic.js'
+import { existsSync, lstatSync, readdirSync, realpathSync, statSync } from 'node:fs'
+import type { DocumentBackend } from '../sessions/storage/backend.js'
+import { updateDocument } from '../sessions/storage/document.js'
 import { join, resolve } from 'node:path'
 import type { SidecarLike } from '../sidecar/client.js'
 import type { AgentConfig, Dict } from '../config/agent-config.js'
@@ -51,14 +52,14 @@ export interface ProfileDeps {
   isolatedProfileName: () => string
   config: AgentConfig
   /** Resolves a profile's default workspace (Python `get_profile_default_workspace`). */
-  defaultWorkspace: (profile: string) => string | null
+  defaultWorkspace: (profile: string) => string | null | Promise<string | null>
   models: (profileHome: string) => Promise<ModelsCatalog>
   /** True while any agent stream runs (blocks deleting the process-active profile). */
   streamsActive: () => boolean
   /** Whether any live run's session belongs to the named profile (its home must not be removed underneath it). */
   profileRunsActive: (name: string) => boolean
   /** Deletion tombstones survive restarts here, so a still-valid cookie cannot recreate a deleted profile later. */
-  tombstoneFile?: string
+  documents: DocumentBackend
   log: (line: string) => void
 }
 
@@ -80,7 +81,10 @@ export class ProfileService {
   private cache: { at: number; rows: Dict[] } | null = null
 
   constructor(private readonly deps: ProfileDeps, private readonly now: () => number = () => Date.now() / 1000) {
-    for (const name of this.loadTombstones()) this.deleted.add(name)
+  }
+
+  async initialize(): Promise<void> {
+    for (const name of await this.loadTombstones()) this.deleted.add(name)
   }
 
   /** Also forgets the root-alias snapshot (Python `_invalidate_root_profile_cache`); the next lookup reloads it. */
@@ -132,9 +136,9 @@ export class ProfileService {
     return rows.map((r) => ({ ...r, is_active: str(r.name) === active, pending_writes: pendingWrites(str(r.path)) }))
   }
 
-  activePayload(active: string): Dict {
+  async activePayload(active: string): Promise<Dict> {
     let workspace: string | null = null
-    try { workspace = this.deps.defaultWorkspace(active) } catch { workspace = null }
+    try { workspace = (await this.deps.defaultWorkspace(active)) } catch { workspace = null }
     return { name: active, path: this.deps.profileHome(active), is_default: this.isRootProfile(active), default_workspace: workspace }
   }
 
@@ -172,7 +176,7 @@ export class ProfileService {
       if (typeof model === 'string') defaultModel = model
       else if (model && typeof model === 'object') { defaultModel = (model as Dict).default ?? null; defaultProvider = (model as Dict).provider ?? null }
       let workspace: string | null = null
-      try { workspace = this.deps.defaultWorkspace(name) } catch { workspace = null }
+      try { workspace = (await this.deps.defaultWorkspace(name)) } catch { workspace = null }
       const profiles = await this.list(name)
       ensureTarget()
       return { profiles, active: name, is_default: this.isRootProfile(name), default_model: defaultModel, default_model_provider: defaultProvider, default_workspace: workspace }
@@ -199,7 +203,7 @@ export class ProfileService {
     // a source already being deleted / deleted is refused before anything is created).
     let releaseSource: (() => void) | null = null
     if (opts.clone_from && !this.isRootProfile(opts.clone_from)) {
-      const lease = this.beginWrite(opts.clone_from)
+      const lease = (await this.beginWrite(opts.clone_from))
       if (lease === 'deleting') throw new ProfileError(`Profile '${opts.clone_from}' is being deleted.`, 409)
       if (lease === 'missing') throw new ProfileError(`Profile '${opts.clone_from}' does not exist.`, 404)
       if (lease === 'unreadable') throw new ProfileError('Profile deletion records are unreadable; retry in a moment.', 503)
@@ -208,6 +212,7 @@ export class ProfileService {
     // Sidecar creation and the follow-up configuration writes are one lifecycle step: a delete of the same name
     // waits behind them instead of removing the half-configured home (and `config.set` resurrecting it).
     const created = await this.withLifecycle(opts.name, async () => {
+      if (this.deleted.has(opts.name)) await this.clearProfileDocuments(opts.name)
       // A recreation whose tombstone clearing (or follow-up configuration) failed left a home behind: retrying the
       // create skips the sidecar (which would refuse the existing directory) but re-applies the requested settings
       // before clearing the record, so a partially configured home never becomes the final state.
@@ -251,7 +256,7 @@ export class ProfileService {
       // The deletion tombstone lifts only once the recreation fully succeeded, and only durably: if the removal cannot
       // be persisted the in-memory mark is kept too, so the response and a restart agree (the profile stays refused
       // until the record can be written), instead of a working profile turning unusable on the next start.
-      if (this.deleted.has(opts.name)) this.clearTombstoneDurably(opts.name)
+      if (this.deleted.has(opts.name)) (await this.clearTombstoneDurably(opts.name))
       return row
     }).finally(() => { releaseSource?.() })
     const rows = await this.list('default')
@@ -263,10 +268,10 @@ export class ProfileService {
   /** Homes created by the sidecar whose requested configuration has not been applied yet (and could not be rolled back). */
   private readonly incomplete = new Set<string>()
 
-  private clearTombstoneDurably(name: string): void {
+  private async clearTombstoneDurably(name: string): Promise<void> {
     this.deleted.delete(name)
     try {
-      this.saveTombstones()
+      await this.saveTombstones()
     } catch (error) {
       this.deleted.add(name)
       throw new ProfileError(`Profile '${name}' exists but its deletion record could not be cleared (${str((error as Error).message)}); writes stay refused until a retried create can clear it`, 503)
@@ -286,23 +291,27 @@ export class ProfileService {
   private readonly deleted = new Set<string>()
 
   /** Set when the tombstone file exists but cannot be read or parsed: named-profile writes fail closed until it can. */
+  private persistedDeleted = new Set<string>()
   private tombstoneLoadError: string | null = null
 
-  private loadTombstones(): string[] {
-    if (!this.deps.tombstoneFile) return []
-    let raw: string
+  private async loadTombstones(): Promise<string[]> {
+    let raw: unknown
     try {
-      raw = readFileSync(this.deps.tombstoneFile, 'utf8')
+      const record = await this.deps.documents.get('profiles', 'deleted')
+      if (!record) { this.tombstoneLoadError = null; return [] }
+      raw = record.value
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code === 'ENOENT') { this.tombstoneLoadError = null; return [] }
       this.tombstoneLoadError = str((error as Error).message)
       return []
     }
     try {
-      const parsed: unknown = JSON.parse(raw)
+      const parsed = raw
       if (!Array.isArray(parsed)) throw new Error('not a list')
       this.tombstoneLoadError = null
-      return parsed.filter((v): v is string => typeof v === 'string' && PROFILE_ID_RE.test(v))
+      const names = parsed.filter((v): v is string => typeof v === 'string' && PROFILE_ID_RE.test(v))
+      this.persistedDeleted = new Set(names)
+      return names
     } catch (error) {
       this.tombstoneLoadError = `malformed: ${str((error as Error).message)}`
       return []
@@ -310,9 +319,23 @@ export class ProfileService {
   }
 
   /** Persist the tombstones; throws when the state directory cannot be written (callers decide whether to fail closed). */
-  private saveTombstones(): void {
-    if (!this.deps.tombstoneFile) return
-    atomicWriteText(this.deps.tombstoneFile, JSON.stringify([...this.deleted].sort()))
+  private async saveTombstones(): Promise<void> {
+    const desired = new Set(this.deleted)
+    const previous = new Set(this.persistedDeleted)
+    await updateDocument(this.deps.documents, 'profiles', 'deleted', (raw) => {
+      if (raw !== undefined && !Array.isArray(raw)) throw new Error('Stored deletion records are malformed')
+      const names = new Set((Array.isArray(raw) ? raw : []).filter((name): name is string => typeof name === 'string' && PROFILE_ID_RE.test(name)))
+      for (const name of previous) if (!desired.has(name)) names.delete(name)
+      for (const name of desired) names.add(name)
+      return { value: [...names].sort(), result: undefined }
+    })
+    this.persistedDeleted = desired
+  }
+
+  private async clearProfileDocuments(name: string): Promise<void> {
+    try {
+      for (const [namespace, key] of [['relay-identities', name], ['workspaces', `${name}.registry`], ['workspaces', `${name}.last`]] as const) await this.deps.documents.delete(namespace, key)
+    } catch { throw new ProfileError(`Saved state for profile '${name}' could not be cleared.`, 503) }
   }
 
   isDeleting(name: string | null): boolean {
@@ -328,14 +351,15 @@ export class ProfileService {
    * never recreate it, not even while `profiles.create` is mid-flight. Profiles that merely never existed keep lazy
    * creation (group-mapped trusted identities).
    */
-  beginWrite(name: string): (() => void) | 'deleting' | 'missing' | 'unreadable' {
+  async beginWrite(name: string): Promise<(() => void) | 'deleting' | 'missing' | 'unreadable'> {
     if (this.deleting.has(name)) return 'deleting'
     // An unreadable tombstone record cannot vouch for any named profile: retry the load, else fail closed (the root
     // profile can never be deleted, so it stays writable).
     if (this.tombstoneLoadError !== null && !this.isRootProfile(name)) {
-      for (const stale of this.loadTombstones()) this.deleted.add(stale)
+      for (const stale of (await this.loadTombstones())) this.deleted.add(stale)
       if (this.tombstoneLoadError !== null) return 'unreadable'
     }
+    if (this.deleting.has(name)) return 'deleting'
     if (this.deleted.has(name)) return 'missing'
     const lease = this.writeLeases.get(name) ?? { count: 0, drained: [] }
     lease.count += 1
@@ -380,21 +404,23 @@ export class ProfileService {
         if (this.deps.profileRunsActive(name)) throw new ProfileError(`Cannot delete active profile '${name}' while an agent is running. Cancel or wait for it to finish.`, 409)
         // The tombstone is durable before anything is removed: if it cannot be persisted, nothing is deleted, so a
         // restart can never lose the guard for a home that is already gone.
+        const wasDeleted = this.deleted.has(name)
         this.deleted.add(name)
         try {
-          this.saveTombstones()
+          await this.saveTombstones()
         } catch (error) {
-          this.deleted.delete(name)
+          if (!wasDeleted) this.deleted.delete(name)
           throw new ProfileError(`Profile '${name}' was not deleted: the deletion record could not be written (${str((error as Error).message)})`, 503)
         }
         try {
           await this.sidecar().call('profiles.delete', { base_home: this.deps.baseHome, name })
         } catch (error) {
-          this.deleted.delete(name)
-          try { this.saveTombstones() } catch { /* the stale tombstone only over-refuses; the next successful create lifts it */ }
+          if (!wasDeleted) this.deleted.delete(name)
+          try { (await this.saveTombstones()) } catch { /* the stale tombstone only over-refuses; the next successful create lifts it */ }
           const message = str((error as Error).message)
           throw new ProfileError(message, /does not exist/i.test(message) ? 404 : 400)
         }
+        await this.clearProfileDocuments(name)
       })
     } finally {
       this.deleting.delete(name)

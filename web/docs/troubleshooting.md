@@ -314,3 +314,31 @@ Related references:
 - [`docs/docker.md`](docker.md) — Docker compose setup, common failure modes, bind-mount migration.
 - [`docs/wsl-autostart.md`](wsl-autostart.md) — WSL2 auto-start at login on Windows.
 - [`docs/EXTENSIONS.md`](EXTENSIONS.md) — WebUI extension injection, security model, examples.
+
+
+## Agent update asks to refresh a legacy dashboard
+
+A newer Agent checkout on disk does not upgrade an already-running dashboard.
+When the running service lacks modern lifecycle APIs, Update Agent can offer
+**Refresh and update** for an attested launchd or systemd service. The dialog
+names the service and selected revision. Active dashboard work may be
+interrupted, so finish that work or choose Cancel before continuing.
+
+Confirmation gracefully refreshes that exact process through its original
+supervisor, verifies a capable successor and continues the selected update.
+Force update and confirmation of an untested version do not grant this separate
+interruption consent. An expired or changed confirmation requires a fresh
+attempt; it cannot act on a different process or target.
+
+If graceful shutdown, modern successor readiness or service restoration fails,
+Talaria reports failure and retains recovery debt. Retry Update Agent after the
+cause is resolved. Recovery adopts an already verified successor and does not
+repeat an interruption signal or start duplicates. A refresh failure preserves
+source. A later update/repair failure retains the normal dependency-repair
+obligation and never reports installed success before restoration is verified.
+
+Authentication failures, a generic 404, foreign listener, unknown ownership,
+changed service configuration, unsafe source/dependencies or missing modern
+APIs remain refusals. Keep authentication, ledger and recovery records intact.
+Do not bypass custody checks, force-kill a service or rewrite its configuration
+to clear a refusal. Safe sibling services can recover independently.

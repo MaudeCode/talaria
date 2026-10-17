@@ -5,6 +5,7 @@ POSIX supervisor obligations and verifies actual gateway/backend readiness.
 """
 from __future__ import annotations
 
+import base64
 import contextlib
 import hashlib
 import http.client
@@ -16,6 +17,7 @@ import plistlib
 import shlex
 import signal
 import subprocess
+import sys
 import tempfile
 import threading
 import time
@@ -133,9 +135,10 @@ def _plist(domain, label, argv, dashboard):
     return str(matches[0])
 
 
-def backend_entry(row, homes, pause, identity):
-    from hermes_cli import main_dashboard as dashboard
-    from hermes_cli import dashboard_procs, update_inventory
+def _backend_identity(row, homes, identity):
+    from hermes_cli import dashboard_procs, update_inventory, update_receipt
+    if row.get('create_time') is None or identity._pid_alive_matches(row['pid'], row['create_time'], strict=True) is not True:
+        raise RuntimeError(f"Agent backend PID {row['pid']} birth identity is unverified.")
     env = dashboard_procs._pid_environ(row['pid'])
     if env is None:
         raise RuntimeError(f"Agent backend PID {row['pid']} ownership environment is unreadable.")
@@ -143,19 +146,29 @@ def backend_entry(row, homes, pause, identity):
     desktop = env.get('HERMES_DESKTOP') == '1' and bool(env.get('HERMES_DASHBOARD_SESSION_TOKEN'))
     if desktop or row.get('isolated') or update_inventory._is_desktop_ssh_ledger_entry(row):
         raise RuntimeError(f"Agent backend PID {row['pid']} is Desktop/isolated-owned; its owner must stop it.")
-    home = Path(row['hermes_home']).resolve() if row.get('hermes_home') else None
     observed = dashboard_procs._hermes_home_for_pid(row['pid'])
-    if home not in homes or not observed or Path(observed).resolve() != home:
+    home = Path(observed).resolve() if observed else None
+    if home not in homes or (row.get('hermes_home') and Path(row['hermes_home']).resolve() != home):
         raise RuntimeError(f"Agent backend PID {row['pid']} has an unknown or foreign owning profile.")
-    if row.get('create_time') is None or identity._pid_alive_matches(row['pid'], row['create_time'], strict=True) is not True:
-        raise RuntimeError(f"Agent backend PID {row['pid']} birth identity is unverified.")
+    profiles = {name for name, path in update_receipt._profile_homes() if Path(path).resolve() == home}
+    if len(profiles) != 1 or (row.get('profile') and row['profile'] not in profiles):
+        raise RuntimeError(f"Agent backend PID {row['pid']} has conflicting or ambiguous profile ownership.")
+    if identity._pid_alive_matches(row['pid'], row['create_time'], strict=True) is not True:
+        raise RuntimeError(f"Agent backend PID {row['pid']} birth identity changed during discovery.")
+    return home, profiles.pop()
+
+
+def backend_entry(row, homes, pause, identity):
+    from hermes_cli import main_dashboard as dashboard
+    from hermes_cli import update_inventory
+    home, profile = _backend_identity(row, homes, identity)
     parents = _process_table()
     ancestors = _ancestors(row['pid'], parents)
     jobs = dashboard._loaded_launchd_backend_jobs()
     # Native ownership also admits argv-only matches; this lease requires a live ancestry witness.
     candidates = [job for job in jobs if job[3] in ancestors]
     owner = dashboard._launchd_job_owning_backend(row['pid'], shlex.split(row.get('argv') or ''), candidates, ancestors=ancestors)
-    entry = dict(pid=row['pid'], purpose=row['purpose'], home=str(home), profile=row.get('profile') or 'default',
+    entry = dict(pid=row['pid'], purpose=row['purpose'], home=str(home), profile=profile,
                  host=row.get('host'), port=row.get('port'))
     if owner:
         domain, label, service_pid = owner
@@ -182,6 +195,8 @@ def backend_entry(row, homes, pause, identity):
         entry.update(kind='systemd', unit=unit, scope=scope, cgroup=cgroup, service_pid=service_pid)
     _endpoint(entry)
     entry['processes'] = snapshot(entry)
+    if identity._pid_alive_matches(row['pid'], row['create_time'], strict=True) is not True:
+        raise RuntimeError(f"Agent backend PID {row['pid']} birth identity changed during discovery.")
     return entry
 
 
@@ -259,6 +274,38 @@ def wait_stopped(entry, records, stopped, *, writers_only=False):
         raise RuntimeError(f'{_name(entry)} supervisor is still active; source was not changed and recovery remains owed.')
 
 
+def verify_listener(entry):
+    """A legacy HTTP response has no PID identity; require OS socket ownership as well."""
+    _endpoint(entry)
+    pid, port = entry['pid'], entry['port']
+    if sys.platform.startswith('linux'):
+        owned = set()
+        for path in Path(f'/proc/{pid}/fd').iterdir():
+            with contextlib.suppress(FileNotFoundError):
+                owned.add(os.readlink(path))
+        listeners = set()
+        for table in ('tcp', 'tcp6'):
+            try:
+                rows = Path('/proc/net/' + table).read_text().splitlines()[1:]
+            except FileNotFoundError:
+                if table == 'tcp6':
+                    continue
+                raise
+            for line in rows:
+                fields = line.split()
+                if int(fields[1].split(':')[1], 16) == port and fields[3] == '0A':
+                    listeners.add('socket:[' + fields[9] + ']')
+        matched = bool(listeners) and listeners <= owned
+    elif sys.platform == 'darwin':
+        result = subprocess.run(['/usr/sbin/lsof', '-nP', f'-iTCP:{port}', '-sTCP:LISTEN', '-Fp'],
+                                capture_output=True, text=True, timeout=10, check=False)
+        matched = result.returncode == 0 and {int(line[1:]) for line in result.stdout.splitlines() if line.startswith('p')} == {pid}
+    else:
+        matched = False
+    if not matched:
+        raise RuntimeError(f'{_name(entry)} legacy listener ownership could not be proved; source was not changed.')
+
+
 def _auth(entry):
     from gateway import host_rendezvous as host
     from hermes_cli.dashboard_procs import _pid_environ
@@ -281,57 +328,132 @@ def _local_session(entry):
     except ImportError:
         return None
     from .home import scoped_home
+    from agent import secret_scope
+    from hermes_cli.env_loader import hydrate_profile_secret_sources
     env = _pid_environ(entry['pid'])
     if env is None:
         return None
-    with scoped_home(Path(entry['home'])):
-        section = basic._load_config_basic_auth_section()
-        secret = env.get('HERMES_DASHBOARD_BASIC_AUTH_SECRET') or section.get('secret')
-        username = env.get('HERMES_DASHBOARD_BASIC_AUTH_USERNAME') or section.get('username')
+    home = Path(entry['home'])
+    with scoped_home(home):
+        hydrate_profile_secret_sources(home)
+        # The launch scope also contains updater credentials; use only the owner's file-backed scope.
+        scope = secret_scope.build_profile_secret_scope(home)
+        scope.update({name: env[name] for name in ('HERMES_DASHBOARD_BASIC_AUTH_SECRET', 'HERMES_DASHBOARD_BASIC_AUTH_USERNAME')
+                      if env.get(name, '').strip()})
+        token = secret_scope.set_secret_scope(scope)
+        # Config ${...} references must also refuse launch-environment fallback, including on the main profile.
+        multiplex = secret_scope.set_multiplex_context(True)
+        try:
+            section = basic._load_config_basic_auth_section()
+        finally:
+            secret_scope.reset_multiplex_context(multiplex)
+            secret_scope.reset_secret_scope(token)
+
+        def setting(name, key):
+            return str(scope.get(name) or '').strip() or str(section.get(key) or '').strip()
+
+        secret = setting('HERMES_DASHBOARD_BASIC_AUTH_SECRET', 'secret')
+        username = setting('HERMES_DASHBOARD_BASIC_AUTH_USERNAME', 'username')
         if not secret or not username:
             return None  # A process-random key is not reproducible; never manufacture a replacement key.
-        previous = os.environ.get('HERMES_DASHBOARD_BASIC_AUTH_SECRET')
-        try:
-            os.environ['HERMES_DASHBOARD_BASIC_AUTH_SECRET'] = str(secret)
-            key = basic._resolve_secret(section)
-        finally:
-            if previous is None:
-                os.environ.pop('HERMES_DASHBOARD_BASIC_AUTH_SECRET', None)
-            else:
-                os.environ['HERMES_DASHBOARD_BASIC_AUTH_SECRET'] = previous
-        return basic._sign({'sub': str(username), 'kind': 'access', 'exp': int(time.time()) + 60}, key)
+        # Native _resolve_secret reads os.environ directly. Match its base64/hex/raw order without mutating it.
+        key = secret.encode('utf-8')
+        for decoder in (base64.b64decode, bytes.fromhex):
+            try:
+                decoded = decoder(secret)
+                if len(decoded) >= 16:
+                    key = decoded
+                    break
+            except (ValueError, TypeError):
+                pass
+        return basic._sign({'sub': username, 'kind': 'access', 'exp': int(time.time()) + 60}, key)
+
+
+class BackendLifecycleUnsupported(RuntimeError):
+    """Terminal capability refusal, distinct from retryable recovery readiness."""
 
 
 def backend_request(entry, action=None, permit=None):
     host, port = _endpoint(entry)
     token = _auth(entry)
     headers = {'X-Hermes-Session-Token': token, 'Authorization': 'Bearer ' + token}
-    for attempt in range(2):
-        connection = http.client.HTTPConnection(host, port, timeout=2)
-        try:
-            body = None if action is None else json.dumps(dict(action=action, **({'token': permit} if permit else {})))
-            if body is not None:
-                headers['Content-Type'] = 'application/json'
-            connection.request('GET' if body is None else 'POST', '/api/host/identity' if body is None else '/api/health/retirement', body, headers)
-            response = connection.getresponse()
-            data = response.read(65537)
-            if response.status == 401 and attempt == 0:
-                credential = _local_session(entry)
-                if credential:
-                    headers['Authorization'] = 'Bearer ' + credential
-                    continue
-            if response.status != 200 or len(data) > 65536:
-                raise RuntimeError(f'{_name(entry)} refused authenticated backend lifecycle access (HTTP {response.status}); source was not changed.')
-            result = json.loads(data)
-            if not isinstance(result, dict):
-                raise ValueError('not an object')
-            if action is None and (result.get('pid') != entry['pid'] or result.get('role') != 'serve' or result.get('ok') is not True):
+
+    def request(path, body=None, *, authenticated=True, limit=65536):
+        for attempt in range(2):
+            connection = http.client.HTTPConnection(host, port, timeout=2)
+            try:
+                sent = {**headers, 'Content-Type': 'application/json'} if authenticated else {}
+                connection.request('GET' if body is None else 'POST', path, body, sent)
+                response = connection.getresponse()
+                data = response.read(limit + 1)
+                if authenticated and response.status == 401 and attempt == 0:
+                    credential = _local_session(entry)
+                    if credential:
+                        headers['Authorization'] = 'Bearer ' + credential
+                        continue
+                if authenticated and response.status in {401, 403}:
+                    raise RuntimeError(f'{_name(entry)} refused authenticated backend lifecycle access (HTTP {response.status}); source was not changed.')
+                if len(data) > limit:
+                    raise ValueError('oversized response')
+                return response.status, json.loads(data) if response.status == 200 else None
+            finally:
+                connection.close()
+
+    def verified_identity(status, result):
+        return (status == 200 and isinstance(result, dict) and result.get('pid') == entry['pid']
+                and result.get('role') == 'serve' and result.get('ok') is True)
+
+    def capability_check(identity_status, identity):
+        # The schema belongs to the running endpoint, never the checkout on disk.
+        status, schema = request('/openapi.json', limit=4 * 1024 * 1024)
+        if (status != 200 or not isinstance(schema, dict) or not isinstance(schema.get('paths'), dict)
+                or not isinstance(schema.get('openapi'), str) or not schema['openapi'].startswith('3.')):
+            raise RuntimeError(f'{_name(entry)} backend lifecycle/readiness schema could not be verified.')
+        paths = schema['paths']
+        for path, method in (('/api/host/identity', 'get'), ('/api/health/retirement', 'post')):
+            route = paths.get(path, {})
+            if not isinstance(route, dict) or (method in route and not isinstance(route[method], dict)):
+                raise ValueError('malformed lifecycle schema')
+        missing_identity = 'get' not in paths.get('/api/host/identity', {})
+        missing_retirement = 'post' not in paths.get('/api/health/retirement', {})
+        if not missing_identity and not missing_retirement:
+            return
+        if verified_identity(identity_status, identity):
+            if missing_identity or not verified_identity(*request('/api/host/identity')):
+                raise RuntimeError(f'{_name(entry)} backend lifecycle identity/schema changed or disagrees.')
+        elif identity_status in {404, 405, 501} and missing_identity:
+            challenge, _ = request('/api/sessions?limit=1', authenticated=False)
+            accepted, sessions = request('/api/sessions?limit=1')
+            if (challenge not in {401, 403} or accepted != 200 or not isinstance(sessions, dict)
+                    or not isinstance(sessions.get('sessions'), list)
+                    or request('/api/host/identity')[0] != identity_status):
+                return
+        else:
+            return
+        name = ''.join(c for c in str(_name(entry)) if c.isprintable())
+        unverified = ' Backend listener identity remains unverified.' if missing_identity else ''
+        raise BackendLifecycleUnsupported(
+            f'{name} running backend lifecycle APIs are unsupported for safe Agent update custody.' + unverified
+            + ' Finish active work, then have the owner gracefully refresh this service through its original supervisor.'
+            + ' Verify the successor lifecycle APIs and intended installation/profile/PID, then retry the Agent update.'
+            + ' Any retained service recovery remains owed.')
+
+    try:
+        body = None if action is None else json.dumps(dict(action=action, **({'token': permit} if permit else {})))
+        status, result = request('/api/host/identity' if action is None else '/api/health/retirement', body)
+        if action is None:
+            if status == 200 and not verified_identity(status, result):
                 raise RuntimeError(f'{_name(entry)} endpoint is not the expected backend process.')
-            return result
-        except (OSError, ValueError, http.client.HTTPException) as exc:
-            raise RuntimeError(f'{_name(entry)} backend lifecycle/readiness could not be verified.') from exc
-        finally:
-            connection.close()
+            capability_check(status, result)
+        elif status in {404, 405, 501}:
+            capability_check(*request('/api/host/identity'))
+        if status != 200:
+            raise RuntimeError(f'{_name(entry)} backend lifecycle/readiness could not be verified (HTTP {status}).')
+        if not isinstance(result, dict):
+            raise ValueError('not an object')
+        return result
+    except (OSError, ValueError, TypeError, http.client.HTTPException) as exc:
+        raise RuntimeError(f'{_name(entry)} backend lifecycle/readiness could not be verified.') from exc
 
 
 def _config_stamp(entry):
@@ -373,6 +495,7 @@ class ServiceRecovery:
     def __init__(self, root, home, records, identity, pause):
         self.root, self.records, self.identity, self.pause = root, records, identity, pause
         self.path = recovery_path(root, home)
+        self._refresh_starts = set()  # Finally recovery must not retry a failed bootstrap in this worker.
         try:
             self.state = json.loads(self.path.read_text())
         except FileNotFoundError:
@@ -384,7 +507,8 @@ class ServiceRecovery:
             raise RuntimeError('Backend recovery evidence has an unknown identity or format; source was not changed.')
         if self.state['entries'] and (not self.state['tree'].get('baselines') or any(
                 not isinstance(e, dict) or e.get('purpose') not in {'gateway', 'dashboard', 'serve'}
-                or e.get('phase') not in {'recorded', 'retiring', 'stopped'} or not isinstance(e.get('processes'), dict)
+                or e.get('phase') not in {'recorded', 'retiring', 'stopped', 'refreshing'}
+                or (e.get('phase') == 'refreshing' and e.get('legacy_refresh') is not True) or not isinstance(e.get('processes'), dict)
                 for e in self.state['entries'])):
             raise RuntimeError('Service recovery lacks complete source/process custody evidence; source was not changed.')
 
@@ -470,6 +594,61 @@ class ServiceRecovery:
         owed['phase'] = 'stopped'
         self.save()
 
+    def refresh(self, entry, stopped, ledger):
+        owed = next(e for e in self.state['entries'] if _service_key(e) == _service_key(entry))
+        if owed.get('legacy_refresh'):
+            raise RuntimeError(f'{_name(entry)} legacy shutdown remains owed; no signal was replayed.')
+        if _config_stamp(owed) != owed['config_stamp']:
+            raise RuntimeError(f'{_name(entry)} configuration changed before legacy refresh.')
+        verify_processes(owed, self.records)
+        verify_listener(owed)
+        owed.update(legacy_refresh=True, phase='refreshing')
+        self.save()  # Older readers reject this phase and retain debt; no reader replays its signal.
+        verify_processes(owed, self.records)
+        verify_listener(owed)
+        if _config_stamp(owed) != owed['config_stamp']:
+            raise RuntimeError(f'{_name(owed)} configuration changed before legacy refresh.')
+        verify_processes(owed, self.records)
+        try:
+            if stopped.is_set():
+                raise InterruptedError('Legacy refresh was cancelled before interruption.')
+            os.kill(owed['pid'], signal.SIGTERM)
+        except ProcessLookupError:
+            pass  # The consented incarnation already exited; only a verified successor can discharge debt.
+        except (PermissionError, InterruptedError) as exc:
+            self.state['entries'].remove(owed)
+            self.save()  # The OS definitively refused delivery, so a new confirmation may retry it.
+            raise RuntimeError(f'{_name(owed)} graceful refresh was cancelled or its signal was refused; source was not changed.') from exc
+        self._refresh_successor(owed, stopped, ledger)
+
+    def _refresh_successor(self, owed, stopped, ledger):
+        wait_stopped(owed, self.records, stopped, writers_only=True)
+        deadline = time.monotonic() + READY_SECONDS
+        started = False
+        while True:
+            candidate = self._ready(owed, ledger)
+            if candidate:
+                if any(self.records.identity_is_live({'pid': int(pid), 'ct': p['ct']})
+                       for pid, p in owed['processes'].items()
+                       if int(pid) != owed['service_pid'] or int(pid) == owed['pid']):
+                    raise RuntimeError(f'{_name(owed)} old writer descendants remain; recovery remains owed.')
+                owed.clear()
+                owed.update(candidate, phase='recorded', config_stamp=_config_stamp(candidate))
+                self.save()
+                return
+            if not _service_pid(owed)[1] and not started:
+                key = _service_key(owed)
+                if key in self._refresh_starts:
+                    raise RuntimeError(f'{_name(owed)} legacy refresh start was already attempted; retry Agent update recovery. Source was not changed and recovery remains owed.')
+                whole, why = self.records.tree_is_whole(self.state['tree'], self.root)
+                if not whole or self.state.get('sync_failed'):
+                    raise RuntimeError('Legacy refresh source/dependency recovery remains owed: ' + why)
+                self._refresh_starts.add(key)
+                _start(owed, self.pause)
+                started = True
+            if stopped.wait(.05) or time.monotonic() >= deadline:
+                raise RuntimeError(f'{_name(owed)} legacy refresh readiness is unverified; source was not changed and recovery remains owed.')
+
     def gateway_requested(self, entry):
         if not entry.get('processes'):
             return
@@ -499,6 +678,14 @@ class ServiceRecovery:
         for entry in list(self.state['entries']):
             try:
                 if self._ready(entry, ledger):
+                    self.state['entries'].remove(entry)
+                    self.save()
+                    continue
+                if entry.get('legacy_refresh'):
+                    # EOF/crash recovery may adopt/start a successor, but never replay interruption consent.
+                    if self.records.identity_is_live({'pid': entry['pid'], 'ct': entry['processes'][str(entry['pid'])]['ct']}):
+                        raise RuntimeError(f'{_name(entry)} legacy shutdown remains owed; no signal was replayed.')
+                    self._refresh_successor(entry, threading.Event(), ledger)
                     self.state['entries'].remove(entry)
                     self.save()
                     continue
@@ -560,10 +747,12 @@ class ServiceRecovery:
             ready = self.pause._gateway_on_home(entry['home'], set()) == runtime[0]
             verify_processes(candidate, self.records)
             return ready
+        if entry.get('legacy_refresh') and any(self.records.identity_is_live({'pid': int(pid), 'ct': p['ct']})
+                for pid, p in entry['processes'].items()
+                if int(pid) != entry['service_pid'] or int(pid) == entry['pid']):
+            return False
         candidates = [row for row, live in ledger(self.root, self.identity) if live is True
-                      and row.get('purpose') == entry['purpose'] and row.get('hermes_home')
-                      and Path(row['hermes_home']).resolve() == Path(entry['home']).resolve()
-                      and (row.get('profile') or 'default') == entry['profile']
+                      and row.get('purpose') == entry['purpose']
                       and row.get('host') == entry['host'] and row.get('port') == entry['port']]
         if len(candidates) != 1:
             return False
@@ -571,12 +760,14 @@ class ServiceRecovery:
         if (row['pid'] == entry['pid'] and entry['phase'] != 'recorded'
                 and self.records.identity_is_live({'pid': entry['pid'], 'ct': entry['processes'][str(entry['pid'])]['ct']})):
             return False  # A committed retirement on the original process closes admission permanently.
-        candidate = {**entry, 'pid': row['pid'], 'service_pid': _service_pid(entry)[1]}
-        if not candidate['service_pid'] or self.identity._pid_alive_matches(row['pid'], row.get('create_time'), strict=True) is not True:
+        candidate = backend_entry(row, {Path(entry['home']).resolve()}, self.pause, self.identity)
+        if (candidate['profile'] != entry['profile'] or _service_key(candidate) != _service_key(entry)
+                or _config_stamp(candidate) != entry['config_stamp']):
             return False
-        candidate['processes'] = snapshot(candidate)
         bind_processes(candidate, self.records)
         try:
+            if entry.get('legacy_refresh'):
+                verify_listener(candidate)
             backend_request(candidate)
             if entry['phase'] == 'recorded' and row['pid'] == entry['pid']:
                 permit = backend_request(candidate, 'prepare')
@@ -585,6 +776,10 @@ class ServiceRecovery:
                 if backend_request(candidate, 'cancel', permit['token']).get('ok') is not True:
                     return False
             verify_processes(candidate, self.records)
+            if self.identity._pid_alive_matches(row['pid'], row['create_time'], strict=True) is not True:
+                return False
+        except BackendLifecycleUnsupported:
+            raise
         except RuntimeError:
             return False
-        return True
+        return candidate

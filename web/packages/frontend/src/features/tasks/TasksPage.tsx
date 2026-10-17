@@ -4,7 +4,7 @@
  * can be linked and the browser back button works; the editor is transient.
  */
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useNavigate, useSearch } from '@tanstack/react-router'
 import { Copy, Pause, Play, Plus, RefreshCw, Trash2 } from 'lucide-react'
 import { m } from '../../paraglide/messages.js'
@@ -25,9 +25,15 @@ import { cn } from '../../ui/cn'
 import { contextFromList, cronDiagnostics, cronState, jobId, lastRunAt, nextRunAt, runningIds, usageStrip, type CronState } from './cronJob'
 import { Markdown } from '../chat/render/Markdown'
 import { JobForm, type EditorMode } from './JobForm'
+import { useResourceIntents, useResourceMutation, type ResourceIntent } from '../sessions/useResourceMutation'
+import { ResourcePending } from '../sessions/ResourcePending'
+import { getStreamContext } from '../../stream/connection'
 
 type CronAction = Parameters<typeof api.cronAction>[0]
 interface Editor { mode: EditorMode; job: CronJob | null }
+
+// Server/profile replacement is fenced by the shared connection context.
+const cronResource = (job: CronJob) => JSON.stringify(['cron', job.owner_profile ?? job.profile ?? '', jobId(job)])
 
 export function statusLabel(state: CronState): { label: string; tone: string } {
   switch (state) {
@@ -55,20 +61,33 @@ export function TasksRoute() {
 /** Both panes over one query set; `selectedId` is owned by the caller (the URL in the app, state in tests). */
 export function useTasksWorkbench(selectedId: string | null, onSelect: (id: string | null) => void): { sidebar: ReactNode; main: ReactNode } {
   const qc = useQueryClient()
+  const context = getStreamContext()
+  const selection = useRef(selectedId)
+  useEffect(() => { selection.current = selectedId }, [selectedId])
   const [allProfiles, setAllProfiles] = useState(false)
   const [editor, setEditor] = useState<Editor | null>(null)
-  const [confirmDelete, setConfirmDelete] = useState<CronJob | null>(null)
+  const [deletion, setDeletion] = useState<{ context: object; job: CronJob } | null>(null)
+  const confirmDelete = deletion?.context === getStreamContext() ? deletion.job : null
+  const intents = useResourceIntents()
   // The list polls because it carries `last_run_at`, the only completion signal that covers scheduled runs
   // (the status map below only tracks runs started from the UI).
   const crons = useQuery({ queryKey: keys.crons.list(allProfiles), queryFn: () => api.fetchCrons(allProfiles), staleTime: 15_000, refetchInterval: 30_000 })
   const status = useQuery({ queryKey: keys.crons.status, queryFn: api.fetchCronStatus, refetchInterval: 10_000, staleTime: 5_000 })
   const invalidate = () => qc.invalidateQueries({ queryKey: keys.crons.all })
-  const action = useMutation({
-    mutationFn: ({ action, body }: { action: CronAction; body: Record<string, unknown> }) => api.cronAction(action, body),
-    onSuccess: (res, vars) => {
-      if (res.error) showToast(res.error, 4000, 'error')
-      else showToast(vars.action === 'run' ? m.cron_job_triggered() : vars.action === 'pause' ? m.cron_job_paused() : vars.action === 'resume' ? m.cron_job_resumed() : vars.action === 'delete' ? m.cron_job_deleted() : m.saved())
-      void invalidate()
+  const action = useResourceMutation({
+    resource: ({ job, context: owner }: { action: CronAction; job: CronJob; context: object }) => {
+      // Fence stale handlers before ownership or transport starts in a replacement profile.
+      if (owner !== getStreamContext()) throw new Error(m.error_generic())
+      return cronResource(job)
+    },
+    queryKey: keys.crons.all,
+    // History/output are independent reads and must not block action reconciliation.
+    readKeys: () => [keys.crons.list(false), keys.crons.list(true), keys.crons.status],
+    intent: ({ action }) => ({ label: action === 'run' ? m.cron_run_now() : action === 'pause' ? m.cron_pause() : action === 'resume' ? m.cron_resume() : m.delete() }),
+    mutationFn: ({ action, job }) => api.cronAction(action, { job_id: jobId(job) }),
+    onSuccess: (_res, vars) => {
+      showToast(vars.action === 'run' ? m.cron_job_triggered() : vars.action === 'pause' ? m.cron_job_paused() : vars.action === 'resume' ? m.cron_job_resumed() : vars.action === 'delete' ? m.cron_job_deleted() : m.saved())
+      if (vars.action === 'delete' && selection.current === jobId(vars.job)) onSelect(null)
     },
     onError: (e) => showToast(e instanceof Error ? e.message : String(e), 4000, 'error'),
   })
@@ -92,8 +111,8 @@ export function useTasksWorkbench(selectedId: string | null, onSelect: (id: stri
     seenRun.current = { id: selectedId, lastRun }
     if (changed && selectedId) void qc.invalidateQueries({ queryKey: keys.crons.history(selectedId) })
   }, [selectedId, lastRun, qc])
-  const run = (act: CronAction, job: CronJob) => action.mutate({ action: act, body: { job_id: jobId(job) } })
-  const select = (id: string | null) => { setEditor(null); onSelect(id); closeMobileSidebar() }
+  const run = (act: CronAction, job: CronJob) => { if (!intents[cronResource(job)] && !job.read_only) action.mutate({ action: act, job, context }) }
+  const select = (id: string | null) => { selection.current = id; setEditor(null); onSelect(id); closeMobileSidebar() }
   const startEditor = (mode: EditorMode, job: CronJob | null) => { setEditor({ mode, job }); closeMobileSidebar() }
 
   const sidebar = (
@@ -104,6 +123,7 @@ export function useTasksWorkbench(selectedId: string | null, onSelect: (id: stri
       otherProfileCount={crons.data?.other_profile_count ?? 0}
       allProfiles={allProfiles}
       running={running}
+      intents={intents}
       selectedId={editor ? null : selectedId}
       onSelect={select}
       onNew={() => startEditor('create', null)}
@@ -135,11 +155,12 @@ export function useTasksWorkbench(selectedId: string | null, onSelect: (id: stri
         job={selected}
         jobs={jobs}
         state={cronState(selected, running.has(jobId(selected)))}
+        intent={intents[cronResource(selected)]}
         unwritable={unwritable}
         onAction={(act) => run(act, selected)}
         onEdit={() => startEditor('edit', selected)}
         onDuplicate={() => startEditor('duplicate', selected)}
-        onDelete={() => setConfirmDelete(selected)}
+        onDelete={() => setDeletion({ context, job: selected })}
       />
     )
   }
@@ -148,13 +169,13 @@ export function useTasksWorkbench(selectedId: string | null, onSelect: (id: stri
       {main}
       <ConfirmDialog
         open={confirmDelete !== null}
-        onOpenChange={(o) => { if (!o) setConfirmDelete(null) }}
+        onOpenChange={(o) => { if (!o) setDeletion(null) }}
         title={m.cron_delete_confirm_title()}
         description={confirmDelete?.name ?? ''}
         confirmLabel={m.delete()}
         cancelLabel={m.cancel()}
         danger
-        onConfirm={() => { if (confirmDelete) { run('delete', confirmDelete); if (selectedId === jobId(confirmDelete)) onSelect(null) } }}
+        onConfirm={() => { if (confirmDelete) run('delete', confirmDelete) }}
       />
     </>
   )
@@ -163,8 +184,9 @@ export function useTasksWorkbench(selectedId: string | null, onSelect: (id: stri
 
 // ── Sidebar ──────────────────────────────────────────────────────────────────
 
-function TaskListPanel({ jobs, pending, error, otherProfileCount, allProfiles, running, selectedId, onSelect, onNew, onRefresh, onToggleAllProfiles }: {
+function TaskListPanel({ jobs, pending, error, otherProfileCount, allProfiles, running, intents, selectedId, onSelect, onNew, onRefresh, onToggleAllProfiles }: {
   jobs: CronJob[]; pending: boolean; error: unknown; otherProfileCount: number; allProfiles: boolean; running: Set<string>
+  intents: Record<string, ResourceIntent>
   selectedId: string | null; onSelect: (id: string) => void; onNew: () => void; onRefresh: () => void; onToggleAllProfiles: () => void
 }) {
   const rows = jobs.map((job) => ({ job, id: jobId(job), state: cronState(job, running.has(jobId(job))) }))
@@ -174,22 +196,25 @@ function TaskListPanel({ jobs, pending, error, otherProfileCount, allProfiles, r
   const item = ({ job, id, state }: typeof rows[number]) => {
     const st = statusLabel(state)
     const active = id === selectedId
+    const intent = intents[cronResource(job)]
     return (
-      <button
-        key={id}
-        type="button"
-        onClick={() => onSelect(id)}
-        aria-current={active ? 'page' : undefined}
-        data-job-id={id}
-        data-state={state}
-        className={cn('side-menu-item flex w-full flex-col gap-0.5 rounded-(--r-sm) border-0 bg-transparent px-2.5 py-[7px] text-left text-text hover:bg-hover [&.active]:bg-(--menu-active-bg) [&.active]:text-(--menu-active-fg)', active && 'active', job.read_only && 'opacity-75')}
-      >
-        <span className="flex min-w-0 items-center gap-2">
-          <span className="min-w-0 flex-1 truncate text-[13px] font-medium">{job.name || m.untitled()}</span>
-          <span className={cn('shrink-0 text-[11px]', active ? 'opacity-80' : st.tone)}>{st.label}</span>
-        </span>
-        <span className="truncate font-mono text-[11px] opacity-70">{job.schedule_display}</span>
-      </button>
+      <div key={id} aria-busy={!!intent}>
+        <button
+          type="button"
+          onClick={() => onSelect(id)}
+          aria-current={active ? 'page' : undefined}
+          data-job-id={id}
+          data-state={state}
+          className={cn('side-menu-item flex w-full flex-col gap-0.5 rounded-(--r-sm) border-0 bg-transparent px-2.5 py-[7px] text-left text-text hover:bg-hover [&.active]:bg-(--menu-active-bg) [&.active]:text-(--menu-active-fg)', active && 'active', job.read_only && 'opacity-75')}
+        >
+          <span className="flex min-w-0 items-center gap-2">
+            <span className="min-w-0 flex-1 truncate text-[13px] font-medium">{job.name || m.untitled()}</span>
+            <span className={cn('shrink-0 text-[11px]', active ? 'opacity-80' : st.tone)}>{st.label}</span>
+          </span>
+          <span className="truncate font-mono text-[11px] opacity-70">{job.schedule_display}</span>
+        </button>
+        {intent && <div className="px-2.5 pb-1"><ResourcePending intent={intent} /></div>}
+      </div>
     )
   }
   return (
@@ -268,8 +293,9 @@ function Row({ label, children }: { label: string; children: ReactNode }) {
 
 const DL = 'grid grid-cols-[max-content_1fr] gap-x-4 gap-y-1.5 text-[13px]'
 
-function TaskDetail({ job, jobs, state, unwritable, onAction, onEdit, onDuplicate, onDelete }: {
+function TaskDetail({ job, jobs, state, intent, unwritable, onAction, onEdit, onDuplicate, onDelete }: {
   job: CronJob; jobs: CronJob[]; state: CronState; unwritable: CronStoreHealth[]; onAction: (action: CronAction) => void; onEdit: () => void; onDuplicate: () => void; onDelete: () => void
+  intent: ResourceIntent | undefined
 }) {
   const id = jobId(job)
   const readOnly = !!job.read_only
@@ -288,14 +314,14 @@ function TaskDetail({ job, jobs, state, unwritable, onAction, onEdit, onDuplicat
   const toolbar = readOnly
     ? <div className="text-xs text-muted" role="note">{m.cron_read_only_profile({ profile: ownerProfile })}</div>
     : (
-      <div className="flex flex-wrap gap-2" role="group" aria-label={job.name ?? id}>
+      <fieldset disabled={!!intent} className="flex flex-wrap gap-2" aria-label={job.name ?? id}>
         <Button onClick={() => onAction('run')}><Play size={12} aria-hidden="true" /> {m.cron_run_now()}</Button>
         {job.resumable === true && <Button onClick={() => onAction('resume')}><Play size={12} aria-hidden="true" /> {m.cron_resume()}</Button>}
         {job.resumable === false && <Button onClick={() => onAction('pause')}><Pause size={12} aria-hidden="true" /> {m.cron_pause()}</Button>}
         <Button onClick={onEdit}>{m.edit()}</Button>
         <Button onClick={onDuplicate}><Copy size={12} aria-hidden="true" /> {m.cron_duplicate()}</Button>
         <Button variant="ghost" className="text-error" onClick={onDelete}><Trash2 size={12} aria-hidden="true" /> {m.delete()}</Button>
-      </div>
+      </fieldset>
     )
   return (
     <HubPage title={job.name || m.untitled()} toolbar={toolbar} id="taskDetail">
@@ -308,11 +334,11 @@ function TaskDetail({ job, jobs, state, unwritable, onAction, onEdit, onDuplicat
             {job.attention_hint === 'croniter_missing' && <p className="mt-1 text-[13px] text-text">{m.cron_attention_croniter_hint()}</p>}
             {job.last_error && <p className="mt-2 font-mono text-[12px] text-error">{job.last_error}</p>}
             {job.last_delivery_error && <p className="mt-1 font-mono text-[12px] text-error">{job.last_delivery_error}</p>}
-            <div className="mt-3 flex flex-wrap gap-2">
+            <fieldset disabled={!!intent} className="mt-3 flex flex-wrap gap-2">
               <Button onClick={() => onAction('resume')}>{m.cron_attention_resume()}</Button>
               <Button onClick={() => onAction('run')}>{m.cron_attention_run_once()}</Button>
               <Button onClick={copyDiagnostics}>{m.cron_attention_copy_diagnostics()}</Button>
-            </div>
+            </fieldset>
           </section>
         )}
         {!attention && (job.last_error || job.last_delivery_error) && (
@@ -326,7 +352,7 @@ function TaskDetail({ job, jobs, state, unwritable, onAction, onEdit, onDuplicat
           <section>
             <h2 className="mb-2 text-xs font-medium text-muted">{m.cron_schedule_preset_label()}</h2>
             <dl className={DL}>
-              <Row label={m.cron_status_label()}><span className={st.tone}>{st.label}</span>{job.paused_reason && <span className="text-muted"> · {job.paused_reason}</span>}</Row>
+              <Row label={m.cron_status_label()}><span className={st.tone}>{st.label}</span>{job.paused_reason && <span className="text-muted"> · {job.paused_reason}</span>}{intent && <div><ResourcePending intent={intent} /></div>}</Row>
               <Row label={m.cron_schedule_preset_label()}><code>{job.schedule_display}</code></Row>
               <Row label={m.cron_next()}>{nextRun ? formatDate(nextRun) : m.not_available()}</Row>
               <Row label={m.cron_last()}>{lastRun ? formatDate(lastRun) : m.never()}</Row>

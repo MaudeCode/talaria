@@ -8,6 +8,26 @@ import UniformTypeIdentifiers
 
 @MainActor
 extension ChatViewModelSendTests {
+    static func toolHeavyRecentSessionJSON(offset: Int = 200, activeStreamID: String? = nil) throws -> String {
+        var messages: [[String: Any]] = []
+        for turn in 0..<25 {
+            let scene: [String: Any] = ["version": "activity_scene_v1", "final_answer": "Recent answer \(turn)",
+                "activity_rows": [["row_id": "prose-\(turn)", "order_index": 0, "role": "prose", "text": "Cached work \(turn)"]]]
+            let rows: [[String: Any]] = [
+                ["role": "user", "content": "Recent question \(turn)", "message_id": "question-\(turn)", "_ts": 2_000_000_000 + turn * 4, "_display": "row"],
+                ["role": "tool", "content": "Tool result A", "message_id": "tool-a-\(turn)", "_display": "hidden"],
+                ["role": "tool", "content": "Tool result B", "message_id": "tool-b-\(turn)", "_display": "hidden"],
+                ["role": "assistant", "content": "Recent answer \(turn)", "message_id": "answer-\(turn)", "_ts": 2_000_000_003 + turn * 4, "_display": "row",
+                 "_anchor_activity_scene": scene]
+            ]
+            messages.append(contentsOf: rows)
+        }
+        var session: [String: Any] = ["session_id": "session-abc", "title": "Recent tool-heavy chat", "messages": messages,
+                                      "_messages_offset": offset, "_messages_truncated": true, "message_count": offset + messages.count]
+        if let activeStreamID { session["active_stream_id"] = activeStreamID }
+        return String(decoding: try JSONSerialization.data(withJSONObject: ["session": session]), as: UTF8.self)
+    }
+
     /// A `503 {"error": ...}` for `/api/tts` — the canonical "server TTS refused,
     /// use the on-device fallback" stimulus for Listen tests (#15).
     static func ttsUnavailableResponse(for request: URLRequest) -> (HTTPURLResponse, Data) {

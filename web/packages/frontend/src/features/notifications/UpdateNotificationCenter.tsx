@@ -211,6 +211,10 @@ export function UpdateNotificationProvider({ children }: { children: ReactNode }
       const toastId = `server-${row.id}`
       const priorPhase = observedPhases.current.get(row.id)
       const requiresInteraction = row.requires_interaction
+      if (row.id === shownRowId && !requiresInteraction) {
+        removeToast(toastId)
+        visibleServerToasts.current.delete(toastId)
+      }
       if (requiresInteraction) {
         unresolvedPersistent.add(toastId)
         if (!visiblePersistent.current.has(toastId) || persistentVersions.current.get(toastId) !== row.updated_at) {

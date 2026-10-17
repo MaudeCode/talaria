@@ -1,3 +1,6 @@
+import { JsonDocuments } from '../test/storage.js'
+import { testProfileIdentity } from '../test/storage.js'
+import { initializeStore } from '../test/storage.js'
 import { sessionDirectory, sessionPath } from '../test/storage.js'
 import { createHash, createPublicKey, verify as cryptoVerify } from 'node:crypto'
 import { chmodSync, existsSync, mkdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs'
@@ -8,7 +11,7 @@ import type { SidecarResult } from '@maudecode/talaria-web-contracts'
 import { FakeSidecar } from '../sidecar/fake.js'
 import { bootTestServer, type TestServer } from '../test/harness.js'
 import * as atomic from '../fs/atomic.js'
-import { loadRelayConfig, saveRelayConfig, PRESENCE_FENCE_SECONDS, PRESENCE_LEASE_SECONDS, PRESENCE_MAX_LEASES, PresenceLeases, profileIdentity, RelayPairingError, RelayPublisher, validatedOrigin, type RelayConfig } from './relay.js'
+import { loadRelayConfig, saveRelayConfig, PRESENCE_FENCE_SECONDS, PRESENCE_LEASE_SECONDS, PRESENCE_MAX_LEASES, PresenceLeases, RelayPairingError, RelayPublisher, validatedOrigin, type RelayConfig } from './relay.js'
 
 type Json = Record<string, unknown>
 const RELAY = 'https://relay.talaria.kil.dev'
@@ -79,9 +82,9 @@ describe('Talaria relay pairing and publishing', () => {
     const redeem = relay.calls[0]!
     expect(redeem.body).toMatchObject({ invitation: 'invite-1', publisherId: 'https://pub.example', label: 'Test box' })
     expect(String(redeem.body.profileId)).toMatch(/^prf_[0-9a-f]{32}$/)
-    const config = loadRelayConfig(s.state)!
+    const config = (await loadRelayConfig(new JsonDocuments(s.state)))!
     expect(config).toMatchObject({ url: RELAY, publisher_id: 'https://pub.example', key_id: 'key-1' })
-    expect(config.profiles.default).toEqual({ identity: profileIdentity(s.state), profile_id: redeem.body.profileId })
+    expect(config.profiles.default).toEqual({ identity: (await testProfileIdentity(s.state)), profile_id: redeem.body.profileId })
     expect(statSync(config.private_key_path).mode & 0o777).toBe(0o600)
     expect(readFileSync(config.private_key_path, 'utf8')).toContain('BEGIN PRIVATE KEY')
     expect(Object.keys(JSON.parse(readFileSync(join(s.state, 'talaria-relay.json'), 'utf8')) as Json)).toEqual(['key_id', 'private_key_path', 'profiles', 'publisher_id', 'url', 'version'])
@@ -136,7 +139,7 @@ describe('Talaria relay pairing and publishing', () => {
 
   it('acknowledges a viewed session on the relay after the snapshot carrying its terminal state', async () => {
     const sid = String(((await json(await post(s, '/api/session/new', { title: 'Viewed run' }))).session as Json).session_id)
-    const profileId = loadRelayConfig(s.state)!.profiles.default!.profile_id
+    const profileId = (await loadRelayConfig(new JsonDocuments(s.state)))!.profiles.default!.profile_id
     s.deps.registry.activeRuns.set('stream-v', { stream_id: 'stream-v', session_id: sid, started_at: 1, phase: 'running', workspace: s.state, model: null, provider: null, ephemeral: false })
     s.deps.relay.noteTerminal('stream-v', 'completed')
     s.deps.registry.activeRuns.delete('stream-v')
@@ -158,7 +161,7 @@ describe('Talaria relay pairing and publishing', () => {
   })
 
   it('clears a deleted session\'s finished runs on the relay once, and an orphan left by an earlier deletion on first lookup', async () => {
-    const profileId = loadRelayConfig(s.state)!.profiles.default!.profile_id
+    const profileId = (await loadRelayConfig(new JsonDocuments(s.state)))!.profiles.default!.profile_id
     const viewedPath = (sid: string): string => `/v1/publishers/${encodeURIComponent('https://pub.example')}/profiles/${profileId}/sessions/${sid}/viewed`
     const viewsOf = (sid: string): Captured[] => relay.views().filter((c) => c.url.endsWith(viewedPath(sid)))
     const finishedSession = async (title: string, stream: string): Promise<string> => {
@@ -260,20 +263,20 @@ describe('Talaria relay pairing and publishing', () => {
   })
 
   it('enrolls another profile with a signed request on the existing key', async () => {
-    const config = loadRelayConfig(s.state)!
+    const config = (await loadRelayConfig(new JsonDocuments(s.state)))!
     const before = relay.calls.length
     await s.deps.relay.pair({ relay_url: RELAY, publisher_id: 'https://pub.example', publisher_invitation: 'invite-2' }, 'default', false)
     const redeem = relay.calls[before]!
     verifySigned(relay, redeem, '/v1/pairings/profile/redeem')
     expect(redeem.body).toEqual({ invitation: 'invite-2', publisherId: 'https://pub.example', profileId: config.profiles.default!.profile_id })
-    expect(loadRelayConfig(s.state)!.profiles.default).toEqual(config.profiles.default)
+    expect((await loadRelayConfig(new JsonDocuments(s.state)))!.profiles.default).toEqual(config.profiles.default)
   })
 
   it('surfaces relay rejections as 409/502 without persisting a broken registration', async () => {
     relay.snapshotStatus = 503
-    const before = loadRelayConfig(s.state)!
+    const before = (await loadRelayConfig(new JsonDocuments(s.state)))!
     await expect(s.deps.relay.pair({ relay_url: RELAY, publisher_id: 'https://pub.example', publisher_invitation: 'invite-3' }, 'default', true)).rejects.toMatchObject({ status: 502 })
-    expect(loadRelayConfig(s.state)).toEqual(before)
+    expect((await loadRelayConfig(new JsonDocuments(s.state)))).toEqual(before)
     relay.snapshotStatus = 200
   })
 })
@@ -290,7 +293,7 @@ describe('relay publisher failure handling', () => {
       mkdirSync(sessionDirectory(s.deps.sessionStore), { recursive: true })
       await s.deps.relay.clearDeleted(sid, 'default')
       chmodSync(sessionDirectory(s.deps.sessionStore), 0o000)
-      expect(s.deps.relay.start()).toBe(true)
+      expect((await s.deps.relay.start())).toBe(true)
       await vi.waitFor(() => { expect(s.logs.some((line) => line.includes('EACCES')) || relay.views().some((call) => call.url.includes(sid))).toBe(true) })
       expect(relay.views().filter((call) => call.url.includes(sid))).toEqual([])
       expect(deletedViews(s)).toHaveLength(1)
@@ -359,7 +362,7 @@ describe('relay publisher failure handling', () => {
         env: { HERMES_HOME: s.state, HERMES_WEBUI_STATE_DIR: s.state }, now: () => clock,
         deps: (deps) => { deps.fetch = relay.fetch },
       })
-      expect(restarted.deps.relay.start()).toBe(true)
+      expect((await restarted.deps.relay.start())).toBe(true)
       const marker = String(((await json(await post(restarted, '/api/session/new', { title: 'Replay barrier' }))).session as Json).session_id)
       await post(restarted, '/api/talaria/viewed', { session_id: marker })
       await vi.waitFor(() => { expect(relay.views().some((call) => call.url.includes(marker))).toBe(true) })
@@ -388,7 +391,7 @@ describe('relay publisher failure handling', () => {
     try {
       await s.deps.relay.pair({ relay_url: RELAY, publisher_id: 'https://pub.example', publisher_invitation: 'x' }, 'default', true)
       const sid = String(((await json(await post(s, '/api/session/new', { title: 'Deleted during outage' }))).session as Json).session_id)
-      const profileId = loadRelayConfig(s.state)!.profiles.default!.profile_id
+      const profileId = (await loadRelayConfig(new JsonDocuments(s.state)))!.profiles.default!.profile_id
       s.deps.registry.activeRuns.set('deleted-run', { stream_id: 'deleted-run', session_id: sid, started_at: clock, phase: 'running', workspace: s.state, model: null, provider: null, ephemeral: false })
       s.deps.relay.noteTerminal('deleted-run', 'completed')
       s.deps.registry.activeRuns.delete('deleted-run')
@@ -406,7 +409,7 @@ describe('relay publisher failure handling', () => {
         env: { HERMES_HOME: s.state, HERMES_WEBUI_STATE_DIR: s.state }, now: () => clock,
         deps: (deps) => { deps.fetch = relay.fetch },
       })
-      expect(restarted.deps.relay.start()).toBe(true)
+      expect((await restarted.deps.relay.start())).toBe(true)
       await vi.waitFor(() => { expect(relay.views().slice(before).some((c) => c.url.includes(sid))).toBe(true) })
       const replay = relay.views().slice(before).find((c) => c.url.includes(sid))!
       verifySigned(relay, replay, `/v1/publishers/${encodeURIComponent('https://pub.example')}/profiles/${profileId}/sessions/${sid}/viewed`)
@@ -415,7 +418,7 @@ describe('relay publisher failure handling', () => {
       await vi.waitFor(() => { expect(deletedViews(s)).toEqual([]) })
       restarted.deps.relay.stop()
       const delivered = relay.views().length
-      expect(restarted.deps.relay.start()).toBe(true)
+      expect((await restarted.deps.relay.start())).toBe(true)
       // A later ordinary view acts as a barrier for another publisher pass.
       const marker = String(((await json(await post(restarted, '/api/session/new', { title: 'Marker' }))).session as Json).session_id)
       await post(restarted, '/api/talaria/viewed', { session_id: marker })
@@ -475,7 +478,7 @@ describe('relay publisher failure handling', () => {
       expect(relay.views().map((c) => c.url.split('/sessions/')[1]?.split('/')[0])).toEqual(ids.slice(0, 2))
       await s.deps.relay.pair({ relay_url: RELAY, publisher_id: 'https://pub.example', publisher_invitation: 'work' }, 'work', true)
       await vi.waitFor(() => { expect(deletedViews(s)).toEqual([]) })
-      const config = loadRelayConfig(s.state)!
+      const config = (await loadRelayConfig(new JsonDocuments(s.state)))!
       const call = relay.views().find((c) => c.url.includes(ids[2]!))!
       verifySigned(relay, call, `/v1/publishers/${encodeURIComponent('https://pub.example')}/profiles/${config.profiles.work!.profile_id}/sessions/${ids[2]!}/viewed`)
     } finally {
@@ -490,19 +493,19 @@ describe('relay publisher failure handling', () => {
     s.deps.fetch = relay.fetch
     try {
       await s.deps.relay.pair({ relay_url: RELAY, publisher_id: 'https://pub.example', publisher_invitation: 'x' }, 'default', true)
-      const config = loadRelayConfig(s.state)!
+      const config = (await loadRelayConfig(new JsonDocuments(s.state)))!
       s.deps.relay.stop()
       const sid = String(((await json(await post(s, '/api/session/new', { title: 'Paused cleanup' }))).session as Json).session_id)
       expect((await post(s, '/api/session/delete', { session_id: sid })).status).toBe(200)
       const pending = deletedViews(s)
       expect(pending).toHaveLength(1)
       if (condition === 'disabled') relay.snapshotStatus = 403
-      if (condition === 'missing') saveRelayConfig(s.state, { ...config, profiles: { other: { identity: config.profiles.default!.identity, profile_id: 'prf_other' } } })
+      if (condition === 'missing') (await saveRelayConfig(new JsonDocuments(s.state), { ...config, profiles: { other: { identity: config.profiles.default!.identity, profile_id: 'prf_other' } } }))
       if (condition === 'identity') writeFileSync(join(s.state, '.talaria-relay-profile-id'), 'pfi_11111111111111111111111111111111\n')
-      if (condition === 'scope') saveRelayConfig(s.state, { ...config, profiles: { default: { ...config.profiles.default!, profile_id: 'prf_different' } } })
-      if (condition === 'publisher') saveRelayConfig(s.state, { ...config, publisher_id: 'https://other-publisher.example' })
-      if (condition === 'origin') saveRelayConfig(s.state, { ...config, url: 'https://other-relay.example' })
-      expect(s.deps.relay.start()).toBe(true)
+      if (condition === 'scope') (await saveRelayConfig(new JsonDocuments(s.state), { ...config, profiles: { default: { ...config.profiles.default!, profile_id: 'prf_different' } } }))
+      if (condition === 'publisher') (await saveRelayConfig(new JsonDocuments(s.state), { ...config, publisher_id: 'https://other-publisher.example' }))
+      if (condition === 'origin') (await saveRelayConfig(new JsonDocuments(s.state), { ...config, url: 'https://other-relay.example' }))
+      expect((await s.deps.relay.start())).toBe(true)
       const pass = vi.spyOn(s.deps.relay.current()!, 'publishStarted')
       await vi.waitFor(() => { expect(pass).toHaveBeenCalled() })
       expect(deletedViews(s)).toEqual(pending)
@@ -510,9 +513,9 @@ describe('relay publisher failure handling', () => {
       pass.mockRestore()
       s.deps.relay.stop()
       relay.snapshotStatus = 200
-      saveRelayConfig(s.state, config)
+      await saveRelayConfig(new JsonDocuments(s.state), config)
       writeFileSync(join(s.state, '.talaria-relay-profile-id'), config.profiles.default!.identity + '\n')
-      expect(s.deps.relay.start()).toBe(true)
+      expect((await s.deps.relay.start())).toBe(true)
       await vi.waitFor(() => { expect(deletedViews(s)).toEqual([]) })
       expect(relay.views().filter((c) => c.url.includes(sid))).toHaveLength(1)
     } finally {
@@ -549,7 +552,7 @@ describe('relay publisher failure handling', () => {
         if (relay.views().length === 1 && (typeof input === 'string' && input.endsWith('/inflight-deletion/viewed'))) await stalled
         return response
       }
-      expect(s.deps.relay.start()).toBe(true)
+      expect((await s.deps.relay.start())).toBe(true)
       const previous = s.deps.relay.current()!
       const completedPass = vi.spyOn(previous, 'publishStarted')
       await vi.waitFor(() => { expect(relay.views()).toHaveLength(1) })
@@ -595,7 +598,7 @@ describe('relay publisher failure handling', () => {
         if (url.includes('/first-deletion/viewed') && relay.views().filter((c) => c.url.includes('first-deletion')).length === 1) await stalled
         return response
       }
-      expect(s.deps.relay.start()).toBe(true)
+      expect((await s.deps.relay.start())).toBe(true)
       await vi.waitFor(() => { expect(relay.views()).toHaveLength(1) })
       await s.deps.relay.clearDeleted('second-deletion', 'default')
       expect(deletedViews(s)).toHaveLength(2)
@@ -603,7 +606,7 @@ describe('relay publisher failure handling', () => {
       await vi.waitFor(() => { expect(failed).toBe(true) })
       expect(deletedViews(s)).toHaveLength(2)
       s.deps.relay.stop()
-      expect(s.deps.relay.start()).toBe(true)
+      expect((await s.deps.relay.start())).toBe(true)
       await vi.waitFor(() => { expect(deletedViews(s)).toEqual([]) })
       const firstCalls = relay.views().filter((c) => c.url.includes('first-deletion'))
       expect(firstCalls.length).toBeGreaterThanOrEqual(2)
@@ -624,9 +627,9 @@ describe('relay publisher failure handling', () => {
     s.deps.fetch = relay.fetch
     try {
       await s.deps.relay.pair({ relay_url: RELAY, publisher_id: 'https://pub.example', publisher_invitation: 'x' }, 'default', true)
-      const base = loadRelayConfig(s.state)!
+      const base = (await loadRelayConfig(new JsonDocuments(s.state)))!
       const config: RelayConfig = { ...base, profiles: { ...base.profiles, other: { identity: '', profile_id: 'prf_other' } } }
-      const publisher = new RelayPublisher(config, { stateDir: s.state, registry: s.deps.registry, pending: s.deps.pending, store: s.deps.sessionStore, presence: s.deps.relay.presence, profileHome: s.deps.profileHome, profilesMatch: s.deps.profilesMatch, agentSessions: () => Promise.resolve([]), fetch: () => s.deps.fetch, now: () => Date.now() / 1000, log: (l) => s.logs.push(l) })
+      const publisher = (await initializeStore(new RelayPublisher(config, { documents: new JsonDocuments(s.state, s.deps.profileHome), registry: s.deps.registry, pending: s.deps.pending, store: s.deps.sessionStore, presence: s.deps.relay.presence, profileHome: s.deps.profileHome, profilesMatch: s.deps.profilesMatch, agentSessions: () => Promise.resolve([]), fetch: () => s.deps.fetch, now: () => Date.now() / 1000, log: (l) => s.logs.push(l) })))
       relay.failOnly = 'prf_other'
       relay.snapshotStatus = 403
       await publisher.publishSnapshot(true)
@@ -652,7 +655,7 @@ describe('relay publisher failure handling', () => {
     try {
       await s.deps.relay.pair({ relay_url: RELAY, publisher_id: 'https://pub.example', publisher_invitation: 'x' }, 'default', true)
       let clock = 1_800_000_000
-      const publisher = new RelayPublisher(loadRelayConfig(s.state)!, { stateDir: s.state, registry: s.deps.registry, pending: s.deps.pending, store: s.deps.sessionStore, presence: s.deps.relay.presence, profileHome: s.deps.profileHome, profilesMatch: s.deps.profilesMatch, agentSessions: () => Promise.resolve([]), fetch: () => s.deps.fetch, now: () => clock, log: (l) => s.logs.push(l) })
+      const publisher = (await initializeStore(new RelayPublisher((await loadRelayConfig(new JsonDocuments(s.state)))!, { documents: new JsonDocuments(s.state, s.deps.profileHome), registry: s.deps.registry, pending: s.deps.pending, store: s.deps.sessionStore, presence: s.deps.relay.presence, profileHome: s.deps.profileHome, profilesMatch: s.deps.profilesMatch, agentSessions: () => Promise.resolve([]), fetch: () => s.deps.fetch, now: () => clock, log: (l) => s.logs.push(l) })))
       const sid = String(((await json(await post(s, '/api/session/new', { title: 'Ended run' }))).session as Json).session_id)
       s.deps.registry.activeRuns.set('stream-t', { stream_id: 'stream-t', session_id: sid, started_at: 1, phase: 'running', workspace: s.state, model: null, provider: null, ephemeral: false })
       publisher.noteTerminal('stream-t', 'completed')
@@ -695,7 +698,7 @@ describe('relay publisher failure handling', () => {
     try {
       await expect(s.deps.relay.pair({ relay_url: RELAY, publisher_id: 'https://pub.example', publisher_invitation: 'x' }, 'default', false)).rejects.toMatchObject({ status: 409 })
       expect(relay.calls).toHaveLength(0)
-      expect(s.deps.relay.start()).toBe(false)
+      expect((await s.deps.relay.start())).toBe(false)
       expect(existsSync(join(s.state, 'talaria-relay.json'))).toBe(false)
     } finally {
       await s.close()
@@ -740,7 +743,7 @@ describe('session-started events from the running server', () => {
     }
     try {
       await s.deps.relay.pair({ relay_url: RELAY, publisher_id: 'https://pub.example', publisher_invitation: 'x' }, 'default', true)
-      const profileId = loadRelayConfig(s.state)!.profiles.default!.profile_id
+      const profileId = (await loadRelayConfig(new JsonDocuments(s.state)))!.profiles.default!.profile_id
       const startedPath = (sid: string): string => `/v1/publishers/${encodeURIComponent('https://pub.example')}/profiles/${profileId}/sessions/${sid}/started`
       // A publisher pass ends before the next one's snapshot, so two snapshots mean tracking began before these sessions.
       const passes = async (): Promise<void> => {

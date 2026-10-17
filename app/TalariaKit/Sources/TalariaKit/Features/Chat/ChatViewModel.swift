@@ -7,6 +7,9 @@ import SwiftData
 @Observable
 public final class ChatViewModel {
     static let messagePageLimit = 50
+    @ObservationIgnored var readTranscriptCache = { (server: URL, sessionID: String, context: ModelContext) in
+        try CacheStore.cachedTranscriptWindow(serverURL: server, sessionID: sessionID, in: context, legacyLimit: messagePageLimit)
+    }
 
     private struct SessionLoadWaiter {
         let requestGeneration: Int
@@ -287,6 +290,8 @@ public final class ChatViewModel {
     private(set) var messagesOffset = 0 {
         didSet { recomputeDisplayedTranscriptMessages() }
     }
+    @ObservationIgnored private var recentMessagesOffset: Int?
+    @ObservationIgnored private var recentHasOlderMessages = false
     public private(set) var hasOlderMessages = false
     public private(set) var contextWindowSnapshot: ContextWindowSnapshot?
     public private(set) var responseCompletionHapticTrigger = 0
@@ -1479,15 +1484,10 @@ public final class ChatViewModel {
             let reloadedMessages: [ChatMessage]
             if let modelContext {
                 do {
-                    let cachedMessages = try CacheStore.cachedMessages(
-                        serverURL: server,
-                        sessionID: sessionID,
-                        in: modelContext,
-                        limit: Self.messagePageLimit
-                    )
+                    let cachedMessages = try readTranscriptCache(server, sessionID, modelContext)
                     reloadedMessages = Self.mergingLoadedMessages(
                         loadedMessages,
-                        withCachedLocalOptimisticMessages: cachedMessages
+                        withCachedLocalOptimisticMessages: cachedMessages.messages
                     )
                 } catch {
                     cacheErrorMessage = error.localizedDescription
@@ -1549,9 +1549,7 @@ public final class ChatViewModel {
                 lastError = nil
                 errorMessage = nil
                 cacheCurrentMessages(sessionID: sessionID, modelContext: modelContext)
-                if renderedCacheFirst {
-                    cacheFirstReconcileScrollToken += 1
-                }
+                requestCacheFirstReconcileScrollIfNeeded(cacheFirstPlaceholder)
                 latestSettledSessionLoadRequestGeneration = loadRequestGeneration
                 isConfirmingRunState = false
                 return
@@ -1577,11 +1575,7 @@ public final class ChatViewModel {
                 previousMessages: previousMessages,
                 previousMessagesOffset: previousMessagesOffset
             )
-            if renderedCacheFirst {
-                // The taller server transcript has now replaced the lighter cache-first
-                // render; signal the view to re-pin to the bottom without a visible jump.
-                cacheFirstReconcileScrollToken += 1
-            }
+            requestCacheFirstReconcileScrollIfNeeded(cacheFirstPlaceholder)
             latestServerLoadHadAssistantResponseAfterLatestUser = Self.hasAssistantResponseAfterLatestUser(
                 in: messages
             )
@@ -1634,22 +1628,15 @@ public final class ChatViewModel {
             latestServerLoadHadAssistantResponseAfterLatestUser = false
             if CacheFallbackPolicy.shouldUseCache(for: error), let modelContext {
                 do {
-                    let cachedMessages = try CacheStore.cachedMessages(
-                        serverURL: server,
-                        sessionID: sessionID,
-                        in: modelContext,
-                        limit: Self.messagePageLimit
-                    )
-                    if !cachedMessages.isEmpty {
+                    let cachedMessages = try readTranscriptCache(server, sessionID, modelContext)
+                    if !cachedMessages.messages.isEmpty {
                         clearCompressionReference()
                         restoreCachedBranchedFrom(sessionID: sessionID, modelContext: modelContext)
-                        messages = cachedMessages
+                        restoreCachedTranscriptWindow(cachedMessages)
                         latestServerLoadHadAssistantResponseAfterLatestUser = Self.hasAssistantResponseAfterLatestUser(
                             in: messages
                         )
                         responseCompletionNeedsTranscriptRefresh = false
-                        messagesOffset = 0
-                        hasOlderMessages = false
                         isViewingCachedData = true
                         contextWindowSnapshot = nil
                         errorMessage = nil
@@ -1741,28 +1728,37 @@ public final class ChatViewModel {
         sessionID: String,
         modelContext: ModelContext
     ) -> [ChatMessage] {
-        let cachedMessages: [ChatMessage]
+        let cachedMessages: (messages: [ChatMessage], messagesOffset: Int, hasOlderMessages: Bool, recentMessagesOffset: Int?)
         do {
-            cachedMessages = try CacheStore.cachedMessages(
-                serverURL: server,
-                sessionID: sessionID,
-                in: modelContext,
-                limit: Self.messagePageLimit
-            )
+            cachedMessages = try readTranscriptCache(server, sessionID, modelContext)
         } catch {
             // A cache read failure must not block the normal network load; fall back
             // to the existing skeleton-until-network behavior.
             return []
         }
 
-        guard !cachedMessages.isEmpty else { return [] }
+        guard !cachedMessages.messages.isEmpty else { return [] }
 
         restoreCachedBranchedFrom(sessionID: sessionID, modelContext: modelContext)
-        messages = cachedMessages
-        messagesOffset = 0
-        hasOlderMessages = false
+        restoreCachedTranscriptWindow(cachedMessages)
         isViewingCachedData = false
-        return cachedMessages
+        return cachedMessages.messages
+    }
+
+    private func restoreCachedTranscriptWindow(
+        _ window: (messages: [ChatMessage], messagesOffset: Int, hasOlderMessages: Bool, recentMessagesOffset: Int?)
+    ) {
+        messagesOffset = window.messagesOffset
+        messages = window.messages
+        hasOlderMessages = window.hasOlderMessages
+        recentMessagesOffset = window.recentMessagesOffset
+        recentHasOlderMessages = window.hasOlderMessages
+    }
+
+    private func requestCacheFirstReconcileScrollIfNeeded(_ placeholder: [ChatMessage]) {
+        // A complete, unchanged cached paint already has its final position.
+        guard !placeholder.isEmpty, messages != placeholder else { return }
+        cacheFirstReconcileScrollToken += 1
     }
 
     /// Undo a cache-first placeholder (#289) when the reload fails without adopting
@@ -1780,6 +1776,10 @@ public final class ChatViewModel {
         messages = previousMessages
         messagesOffset = previousMessagesOffset
         hasOlderMessages = previousMessagesOffset > 0
+        if previousMessages.isEmpty {
+            recentMessagesOffset = nil
+            recentHasOlderMessages = false
+        }
     }
 
     @discardableResult
@@ -1835,7 +1835,7 @@ public final class ChatViewModel {
                     in: messages
                 )
                 responseCompletionNeedsTranscriptRefresh = false
-                updateOlderMessagePagination(from: session, loadedMessageCount: messages.count)
+                updateOlderMessagePagination(from: session, loadedMessageCount: messages.count, preservingRecentWindow: true)
             }
             isViewingCachedData = false
             contextWindowSnapshot = ContextWindowSnapshot(session: session)
@@ -2046,6 +2046,9 @@ public final class ChatViewModel {
     ) {
         withDeferredTranscriptMapping {
             defer {
+                let recentOffset = max(messagesOffset, Self.resolvedMessagesOffset(from: session, loadedMessageCount: reloadedMessages.count))
+                recentMessagesOffset = recentOffset
+                recentHasOlderMessages = recentOffset > 0 || session?.messagesTruncated == true
                 if let note = pendingVoiceDraft,
                    let local = previousMessages.first(where: { $0.id == note.id }) {
                     // A repeated transcript and display filename are not a receipt. Require the unique
@@ -2153,13 +2156,21 @@ public final class ChatViewModel {
         return Array(reloadedMessages[overlapIndex...])
     }
 
-    private func updateOlderMessagePagination(from session: SessionDetail?, loadedMessageCount: Int) {
+    private func updateOlderMessagePagination(
+        from session: SessionDetail?,
+        loadedMessageCount: Int,
+        preservingRecentWindow: Bool = false
+    ) {
         let resolvedOffset = Self.resolvedMessagesOffset(
             from: session,
             loadedMessageCount: loadedMessageCount
         )
         messagesOffset = resolvedOffset
         hasOlderMessages = resolvedOffset > 0 || session?.messagesTruncated == true
+        if !preservingRecentWindow {
+            recentMessagesOffset = resolvedOffset
+            recentHasOlderMessages = hasOlderMessages
+        }
     }
 
     nonisolated private static func resolvedMessagesOffset(
@@ -3184,7 +3195,12 @@ public final class ChatViewModel {
             return
         }
         deferredTranscriptCache = nil
-        try CacheStore.cacheMessages(messages, serverURL: server, sessionID: sessionID, in: modelContext)
+        // Older pages belong to this reader; reopening retains the recent server window.
+        let start = recentMessagesOffset.map { max(0, $0 - messagesOffset) } ?? 0
+        try CacheStore.cacheMessages(
+            Array(messages.dropFirst(start)), serverURL: server, sessionID: sessionID, in: modelContext,
+            messagesOffset: recentMessagesOffset, hasOlderMessages: recentHasOlderMessages
+        )
     }
 
     /// Saves the transcript as it stands, a partial answer included, when the chat leaves the
@@ -3211,6 +3227,8 @@ public final class ChatViewModel {
         clearCompressionReference()
         messages = []
         messagesOffset = 0
+        recentMessagesOffset = nil
+        recentHasOlderMessages = false
         hasOlderMessages = false
         setCompletedToolCallGroups([])
         completedReasoningGroups = []
@@ -5099,7 +5117,9 @@ public final class ChatViewModel {
                 toolCallAnchorMessageID: toolCallAnchorMessageID,
                 reasoningAnchorMessageID: reasoningAnchorMessageID,
                 contextWindowSnapshot: contextWindowSnapshot,
-                localAttachmentPreviews: attachmentCoordinator.localAttachmentPreviews
+                localAttachmentPreviews: attachmentCoordinator.localAttachmentPreviews,
+                recentMessagesOffset: recentMessagesOffset,
+                recentHasOlderMessages: recentHasOlderMessages
             ),
             server: server,
             sessionID: sessionID,
@@ -5122,6 +5142,8 @@ public final class ChatViewModel {
         if merge.usedSnapshotMessagesOffset {
             messagesOffset = snapshot.messagesOffset
             hasOlderMessages = snapshot.messagesOffset > 0
+            recentMessagesOffset = snapshot.recentMessagesOffset
+            recentHasOlderMessages = snapshot.recentHasOlderMessages
         }
         displayTitle = displayTitle.isEmpty ? snapshot.displayTitle : displayTitle
         setCompletedToolCallGroups(snapshot.completedToolCallGroups)

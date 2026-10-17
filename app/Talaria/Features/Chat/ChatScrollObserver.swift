@@ -10,6 +10,7 @@ struct ChatScrollObserver: UIViewRepresentable {
     let isStreaming: Bool
     let scrollPositionController: ChatScrollPositionController?
     let contentRevision: Int
+    let nativeScrollRevision: Int
     let onFollowEvent: @MainActor (ChatScrollPolicy.FollowEvent) -> Void
     let onMetrics: @MainActor (ChatScrollMetrics) -> Void
 
@@ -17,18 +18,20 @@ struct ChatScrollObserver: UIViewRepresentable {
         isStreaming: Bool,
         scrollPositionController: ChatScrollPositionController? = nil,
         contentRevision: Int = 0,
+        nativeScrollRevision: Int = 0,
         onFollowEvent: @escaping @MainActor (ChatScrollPolicy.FollowEvent) -> Void = { _ in },
         onMetrics: @escaping @MainActor (ChatScrollMetrics) -> Void
     ) {
         self.isStreaming = isStreaming
         self.scrollPositionController = scrollPositionController
         self.contentRevision = contentRevision
+        self.nativeScrollRevision = nativeScrollRevision
         self.onFollowEvent = onFollowEvent
         self.onMetrics = onMetrics
     }
 
     private var metricContext: MetricContext {
-        MetricContext(isStreaming: isStreaming, contentRevision: contentRevision)
+        MetricContext(isStreaming: isStreaming, contentRevision: contentRevision, nativeScrollRevision: nativeScrollRevision)
     }
 
     func makeCoordinator() -> Coordinator {
@@ -63,6 +66,7 @@ struct ChatScrollObserver: UIViewRepresentable {
     struct MetricContext: Equatable {
         let isStreaming: Bool
         var contentRevision = 0
+        var nativeScrollRevision = 0
     }
 
     @MainActor
@@ -285,9 +289,10 @@ struct ChatScrollObserver: UIViewRepresentable {
 
         func reportContentLayout() {
             let revision = metricContext.contentRevision
+            let nativeRevision = metricContext.nativeScrollRevision
             let controller = scrollPositionController
             DispatchQueue.main.async { [weak controller] in
-                MainActor.assumeIsolated { controller?.contentDidLayout(revision: revision) }
+                MainActor.assumeIsolated { controller?.contentDidLayout(revision: revision, nativeScrollRevision: nativeRevision) }
             }
         }
 

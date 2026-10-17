@@ -35,7 +35,7 @@ import { messagesForLimitedPayload, messageCountsAsRenderable, messageWindowForD
 import { redactText } from '../redact.js'
 import { workspaceDisplayName, type WorkspaceEntry, type WorkspaceRegistry } from '../workspace/workspaces.js'
 import { buildShareSnapshot, type ShareStore } from './shares.js'
-import { mediaAnchorRoot, mediaRefPath, mediaTarget, type MediaAccessDeps } from '../workspace/media.js'
+import { mediaAnchorRootResolved, resolveMediaAccess, mediaRefPath, mediaTarget, type MediaAccessDeps } from '../workspace/media.js'
 import { projectMediaRefs, type MediaProjection } from '../workspace/media-refs.js'
 import type { ProjectStore } from '../projects.js'
 import { loadGatewaySessionIdentityMap } from './list.js'
@@ -86,8 +86,7 @@ function staleRuntimeFailure(error: SidecarError): HttpFailure {
 
 export interface SessionServiceDeps {
   /** TAL-259: epoch seconds of the state directory's `recovery_stamping_since` marker. */
-  recoveryJournalDirectory: string
-  recoveryStampingSince: () => number
+  recoveryStampingSince: () => Promise<number>
   /** TAL-255: the Agent sidecar for manual compression (`chat.compress`); null while it is down. */
   sidecar?: () => SidecarLike | null
   /** Detached sidecar work for a profile: deletion waits for the returned release, so the home outlives the work. */
@@ -95,7 +94,7 @@ export interface SessionServiceDeps {
   /** A profile whose deletion has started takes no new detached work. */
   profileDeleting?: (profile: string | null) => boolean
   /** TAL-372: the session's background work receipts, for the delegation rows that started them. */
-  backgroundReceipts?: (sid: string) => Receipt[]
+  backgroundReceipts?: (sid: string) => Receipt[] | Promise<Receipt[]>
   backgroundPending?: (sid: string) => Promise<Set<string>>
   store: SessionStore
   drafts: DraftStore
@@ -195,13 +194,13 @@ export class SessionService {
    * User-turn admission shared by `chat.start` and automatic turns through `TurnRunner.startServerTurn`.
    * A requested workspace must be trusted; the session's own one, when its directory is gone, falls back to the last one.
    */
-  turnWorkspace(s: Session, requested?: unknown): string {
+  async turnWorkspace(s: Session, requested?: unknown): Promise<string> {
     const ws = this.deps.workspaces
     if (requested !== undefined && requested !== null && requested !== '') {
-      try { return ws.resolveTrusted(str(requested), s.profile) } catch (error) { throw new HttpFailure(400, (error as Error).message) }
+      try { return (await ws.resolveTrusted(str(requested), s.profile)) } catch (error) { throw new HttpFailure(400, (error as Error).message) }
     }
     try {
-      const [workspace, recovered] = ws.resolveImplicitWithRecovery(s.workspace, (p) => ws.lastWorkspace(p), s.profile)
+      const [workspace, recovered] = (await ws.resolveImplicitWithRecovery(s.workspace, async (p) => (await ws.lastWorkspace(p)), s.profile))
       if (recovered) s.workspace = workspace
       return workspace
     } catch (error) {
@@ -223,16 +222,17 @@ export class SessionService {
    * TAL-186: rewrites a session's media references to their URLs. A local path is rewritten only when `/api/media`
    * serves it for this session, under the same resolution, so every rewritten reference loads.
    */
-  mediaProjector(s: Session): (text: string) => MediaProjection | null {
+  async mediaProjector(s: Session): Promise<(text: string) => MediaProjection | null> {
     const media = this.deps.media
+    const access = media ? await resolveMediaAccess(media.access) : null
     const served = new Map<string, string | null>()
     const localUrl = (path: string): string | null => {
-      if (!media?.localIo(s.profile)) return null
+      if (!media?.localIo(s.profile) || !access) return null
       if (served.has(path)) return served.get(path) ?? null
       let url: string | null = null
       try {
         const target = mediaTarget(mediaRefPath(path))
-        if (mediaAnchorRoot(target, s, media.access)) url = `./api/media?${new URLSearchParams({ path: target, session_id: s.session_id }).toString()}`
+        if (mediaAnchorRootResolved(target, s, access)) url = `./api/media?${new URLSearchParams({ path: target, session_id: s.session_id }).toString()}`
       } catch { /* an invalid path stays text */ }
       served.set(path, url)
       return url
@@ -625,7 +625,7 @@ export class SessionService {
   /** Python `_lookup_cli_session_metadata`: the sidebar row for a state.db session in the active profile. */
   private async lookupCliMeta(sid: string): Promise<Row | null> {
     try {
-      if (isClaudeCodeSessionId(sid)) return this.claudeCodeRows().find((r) => str(r.session_id) === sid) ?? null
+      if (isClaudeCodeSessionId(sid)) return (await this.claudeCodeRows()).find((r) => str(r.session_id) === sid) ?? null
       const profile = this.deps.activeProfile()
       return (await this.deps.cliSessionsSync(profile, { sourceFilter: null })).rows.find((r) => str(r.session_id) === sid)
         ?? (await this.deps.cliSessionsSync(profile, { sourceFilter: null, sessionIds: [sid] })).rows[0] ?? null
@@ -634,8 +634,8 @@ export class SessionService {
     }
   }
 
-  private claudeCodeRows(): Row[] {
-    return this.deps.claudeCode?.rows(this.deps.workspaces.lastWorkspace(this.deps.activeProfile())) ?? []
+  private async claudeCodeRows(): Promise<Row[]> {
+    return this.deps.claudeCode?.rows((await this.deps.workspaces.lastWorkspace(this.deps.activeProfile()))) ?? []
   }
 
   /** Python `_session_index_marks_was_webui`: an index row that once owned a WebUI sidecar (self-heal 404). */
@@ -682,8 +682,8 @@ export class SessionService {
     }
     // An owner read that fails is an unknown owner, which never releases a claim (TAL-793).
     const claimable = owners !== null && isClaimableCliSource(meta, owners.get(sid) || stateDbSource)
-    const workspace = str(meta.workspace || meta.cwd).trim() || this.deps.workspaces.lastWorkspace(profile)
-    const defaults = this.store.deps.defaults(profile)
+    const workspace = str(meta.workspace || meta.cwd).trim() || (await this.deps.workspaces.lastWorkspace(profile))
+    const defaults = (await this.store.deps.defaults(profile))
     const context = Array.isArray(meta._lineage_ids) ? stateDbSessionMessages(dbPath, sid, { stitch: false }) : null
     const session = new Session({
       session_id: sid, title: str(meta.title) || 'CLI Session', workspace, model: str(meta.model) || 'unknown', model_provider: str(meta.model_provider) || null,
@@ -736,41 +736,38 @@ export class SessionService {
   }
 
   /** TAL-372: each delegation row of a turn's scene carries the status of the work it started. */
-  backgroundLinked(s: Session, messages: unknown[]): unknown[] {
-    return withBackgroundLinks(messages, this.deps.backgroundReceipts?.(s.session_id) ?? [])
+  async backgroundLinked(s: Session, messages: unknown[]): Promise<unknown[]> {
+    return withBackgroundLinks(messages, (await this.deps.backgroundReceipts?.(s.session_id)) ?? [])
   }
 
   /** `compact()` plus messages, redacted for the wire (Python `_public_session_projection`). */
   async publicSession(s: Session, withMessages = true, messages: Message[] = s.messages): Promise<Record<string, unknown>> {
-    const payload = this.wireRow(s)
+    const payload = (await this.wireRow(s))
     // Mutation replies replace a client's transcript, so they carry the same server-built scenes as the detail.
     if (withMessages) {
-      payload.messages = this.backgroundLinked(s, hydrateAnchorActivityScenes(withToolCallOutcomes((await this.backgroundUpdates(s, withMarkerKinds(withTurnIds(messages), s))), s.tool_calls, s.active_stream_id), s.anchor_activity_scenes, { activeTurnId: s.active_stream_id, runningScene: !this.journaledActiveTurn(s) }))
+      payload.messages = (await this.backgroundLinked(s, hydrateAnchorActivityScenes(withToolCallOutcomes((await this.backgroundUpdates(s, withMarkerKinds(withTurnIds(messages), s))), s.tool_calls, s.active_stream_id), s.anchor_activity_scenes, { activeTurnId: s.active_stream_id, runningScene: !(await this.journaledActiveTurn(s)) })))
       payload.compression_reference = compressionReference(s, payload.messages as unknown[])
     }
     return redactSessionData(payload, this.deps.redactEnabled())
   }
 
   /** `compact()` with the wire streaming/read-only flags (TAL-312), for replies that return the session row. */
-  wireRow(s: Session): Record<string, unknown> {
-    return withSessionWireFlags(withOwnerLocks([{ ...s.compact({ contextLengthFor: this.deps.contextLengthFor, modelOptionFor: this.deps.modelOptionFor }), assistant_name: this.assistantName(s), workspace_name: this.workspaceNames()(s) }], this.stateDbSources)[0]!, this.deps.runtime.activeStreamIds)
+  async wireRow(s: Session): Promise<Record<string, unknown>> {
+    return withSessionWireFlags(withOwnerLocks([{ ...s.compact({ contextLengthFor: this.deps.contextLengthFor, modelOptionFor: this.deps.modelOptionFor }), assistant_name: this.assistantName(s), workspace_name: (await this.workspaceNames([s]))(s) }], this.stateDbSources)[0]!, this.deps.runtime.activeStreamIds)
   }
 
   /**
    * TAL-303: the label for a session's workspace, from its own profile's registry (a profileless row is the root's).
    * One resolver serves one response, so each profile's registry is read once however many rows it names.
    */
-  workspaceNames(): (row: { profile?: unknown; workspace?: unknown }) => string | null {
+  async workspaceNames(rows: readonly { profile?: unknown; workspace?: unknown }[]): Promise<(row: { profile?: unknown; workspace?: unknown }) => string | null> {
     const registries = new Map<string, WorkspaceEntry[]>()
-    return (row) => {
-      const profile = str(row.profile) || 'default'
-      let entries = registries.get(profile)
-      if (!entries) {
-        try { entries = this.deps.workspaces.entries(profile) } catch { entries = [] }
-        registries.set(profile, entries)
-      }
-      return workspaceDisplayName(str(row.workspace), entries)
+    for (const profile of new Set(rows.map((row) => str(row.profile) || 'default'))) {
+      let entries: WorkspaceEntry[]
+      try { entries = await this.deps.workspaces.entries(profile) } catch { entries = [] }
+      registries.set(profile, entries)
     }
+    return (row) => workspaceDisplayName(str(row.workspace), registries.get(str(row.profile) || 'default') ?? [])
   }
 
   /** The agent's display name for a session's profile (`assistant_name`). */
@@ -803,10 +800,10 @@ export class SessionService {
 
   /** Existing projections, once per complete turn range, in absolute transcript coordinates. */
   private async deriveRange(s: Session, rows: Message[], baseIndex: number, initialTurn: string, journaled: boolean, refs: Pick<Map<string, number>, 'get'>, calls: unknown[], reviewRows: (turnId: string) => Message[]): Promise<Message[]> {
-    return this.backgroundLinked(s, hydrateAnchorActivityScenes(withToolCallOutcomes((await this.backgroundUpdates(s, withMarkerKinds(withTurnIds(withAttachmentObjects(rows), baseIndex, initialTurn), s), reviewRows)), calls, s.active_stream_id, baseIndex), s.anchor_activity_scenes, { activeTurnId: s.active_stream_id, runningScene: !journaled, clipToolResults: true, baseIndex, refCounts: refs })) as Message[]
+    return (await this.backgroundLinked(s, hydrateAnchorActivityScenes(withToolCallOutcomes((await this.backgroundUpdates(s, withMarkerKinds(withTurnIds(withAttachmentObjects(rows), baseIndex, initialTurn), s), reviewRows)), calls, s.active_stream_id, baseIndex), s.anchor_activity_scenes, { activeTurnId: s.active_stream_id, runningScene: !journaled, clipToolResults: true, baseIndex, refCounts: refs }))) as Message[]
   }
 
-  private async limitedDetail(s: Session, index: SessionPrefixIndex, limit: number, before: number | null, pending: ReturnType<SessionService['pendingTurn']>, journaled: ReturnType<SessionService['journaledActiveTurn']>) {
+  private async limitedDetail(s: Session, index: SessionPrefixIndex, limit: number, before: number | null, pending: ReturnType<SessionService['pendingTurn']>, journaled: Awaited<ReturnType<SessionService['journaledActiveTurn']>>) {
     let prefixEnd = s.messages.length
     const turnId = pending?.turnId ?? journaled?.turnId
     if (turnId) prefixEnd = Math.min(prefixEnd, index.turns.get(turnId)?.first ?? prefixEnd)
@@ -940,7 +937,7 @@ export class SessionService {
       throw new HttpFailure(404, 'Session not found')
     }
     await this.clearStaleStreamState(s)
-    const journaled = loadMessages ? this.journaledActiveTurn(s) : null
+    const journaled = loadMessages ? (await this.journaledActiveTurn(s)) : null
     const pending = loadMessages ? this.pendingTurn(s) : null
     const prefix = loadMessages && msgLimit !== null ? this.prefixIndex(s, revisionBefore) : null
     const limited = prefix && msgLimit !== null ? (await this.limitedDetail(s, prefix, msgLimit, msgBefore, pending, journaled)) : null
@@ -949,7 +946,7 @@ export class SessionService {
     if (pending && !limited) transcript = withPendingUserTurn(transcript, pending)
     if (journaled && !limited)transcript = withoutRunningTurnOutput(transcript, { ...journaled, localCount: s.messages.length })
     // Turn ids, tool outcomes and scenes are computed over the full transcript, so every window reports the same values.
-    const all: unknown[] = loadMessages && !limited ? this.backgroundLinked(s, hydrateAnchorActivityScenes(withToolCallOutcomes((await this.backgroundUpdates(s, withMarkerKinds(withTurnIds(withAttachmentObjects(transcript)), s))), s.tool_calls, s.active_stream_id), s.anchor_activity_scenes, { activeTurnId: s.active_stream_id, runningScene: !journaled, clipToolResults: msgLimit !== null })) : []
+    const all: unknown[] = loadMessages && !limited ? (await this.backgroundLinked(s, hydrateAnchorActivityScenes(withToolCallOutcomes((await this.backgroundUpdates(s, withMarkerKinds(withTurnIds(withAttachmentObjects(transcript)), s))), s.tool_calls, s.active_stream_id), s.anchor_activity_scenes, { activeTurnId: s.active_stream_id, runningScene: !journaled, clipToolResults: msgLimit !== null }))) : []
     let truncated: unknown[] = limited?.messages ?? []
     let offset = limited?.offset ?? 0
     let summaryCount: number | null = limited?.total ?? null
@@ -965,7 +962,7 @@ export class SessionService {
         offset = prompt
       }
       // Per-row display fields (TAL-186 media, TAL-456 excerpts cut from that display text) only for the rows sent.
-      truncated = withBodyExcerpts(withDisplayMedia(truncated, this.mediaProjector(s)), s.active_stream_id)
+      truncated = withBodyExcerpts(withDisplayMedia(truncated, (await this.mediaProjector(s))), s.active_stream_id)
       if (msgLimit !== null) truncated = messagesForLimitedPayload(truncated)
     } else {
       summaryCount = s.metadataMessageCount ?? s.messages.length
@@ -1009,7 +1006,7 @@ export class SessionService {
     raw._load_revision = revisionBefore !== null && revisionBefore === revisionAfter ? hashRevision(revisionBefore) : `unstable-${randomUUID().replace(/-/g, '')}`
     Object.assign(raw, withOwnerLocks([raw], limited?.sources ?? this.stateDbSources)[0])
     raw.assistant_name = this.assistantName(s)
-    raw.workspace_name = this.workspaceNames()(s)
+    raw.workspace_name = (await this.workspaceNames([s]))(s)
     raw.branched_from = (await this.branchedFrom(s))
     withSessionWireFlags(raw, activeStreamIds)
     // A metadata-only read lacks the history the gate counts, so it carries no flag.
@@ -1053,11 +1050,11 @@ export class SessionService {
    * TAL-316: the active run whose journal can replay its output from the start. The detail then leaves that output to the
    * replay; with no active run, no identifiable prompt, or no complete journal, it returns the persisted transcript unchanged.
    */
-  private journaledActiveTurn(s: Session): { turnId: string; startedAt: number; activeTurnToken: string } | null {
+  private async journaledActiveTurn(s: Session): Promise<{ turnId: string; startedAt: number; activeTurnToken: string } | null> {
     const turnId = str(s.active_stream_id).trim()
     const activeTurnToken = buildActiveTurnToken(turnId, s.pending_started_at)
     if (!turnId || !activeTurnToken || this.deps.runtime.journalDegraded(turnId)) return null
-    const summary = this.deps.journal?.findRunSummary(turnId)
+    const summary = (await this.deps.journal?.findRunSummary(turnId))
     if (summary?.session_id !== s.session_id || summary.journal_pruned) return null
     return { turnId, startedAt: Number(s.pending_started_at), activeTurnToken }
   }
@@ -1099,7 +1096,7 @@ export class SessionService {
       pinned: synth.pinned, archived: synth.archived, project_id: synth.project_id ?? null, profile: synth.profile,
       is_cli_session: synth.is_cli_session, source_tag: synth.source_tag, raw_source: synth.raw_source, session_source: synth.session_source,
       source_label: synth.source_label, read_only: synth.read_only, can_duplicate: false, messages: msgs, tool_calls: [], transcript_seq: null,
-      assistant_name: this.assistantName(synth), workspace_name: this.workspaceNames()(synth), confirms_deep_truncate: true,
+      assistant_name: this.assistantName(synth), workspace_name: (await this.workspaceNames([synth]))(synth), confirms_deep_truncate: true,
     }
     attachTodoState(sess, msgs)
     const merged = withSessionWireFlags(withOwnerLocks([meta ? mergeCliSidebarMetadata(sess, meta) : sess], this.stateDbSources)[0]!, this.deps.runtime.activeStreamIds)
@@ -1135,7 +1132,7 @@ export class SessionService {
     // run that never finished with an answer, so a dead stream never silently drops what the user sent or what streamed.
     const turnId = str(target.active_stream_id)
     // ponytail: one bounded tail read (Python's recovery window); a journal past it recovers its latest output only.
-    const events = this.deps.journal?.readRunEventTail(target.session_id, turnId, RECOVERY_JOURNAL_MAX_BYTES, RECOVERY_JOURNAL_MAX_ROWS).events ?? []
+    const events = (await this.deps.journal?.readRunEventTail(target.session_id, turnId, RECOVERY_JOURNAL_MAX_BYTES, RECOVERY_JOURNAL_MAX_ROWS))?.events ?? []
     const { rows: output, answered } = journalOutputRows(events, turnId)
     const pendingText = str(target.pending_user_message)
     const attachments = [...target.pending_attachments]
@@ -1199,7 +1196,7 @@ export class SessionService {
     const wantState = params.showCliSessions || params.showCronSessions || params.showWebhookSessions || params.showKanbanSessions
     // Python reads every profile's state.db under all_profiles; this port projects the active profile only.
     const cliRead = wantState ? await this.deps.cliSessions(activeProfile, { sourceFilter: params.sourceFilter ?? null }) : undefined
-    const claudeCodeRows = params.showCliSessions && params.showClaudeCodeSessions ? this.claudeCodeRows() : []
+    const claudeCodeRows = params.showCliSessions && params.showClaudeCodeSessions ? (await this.claudeCodeRows()) : []
     let cliRows = cliRead ? [...cliRead.rows, ...claudeCodeRows] : undefined
     const gatewayIdentity = loadGatewaySessionIdentityMap(join(this.deps.profileHome(activeProfile), 'sessions', 'sessions.json'))
     const truncatedSources = cliRead?.truncated
@@ -1211,7 +1208,7 @@ export class SessionService {
     }
     const lookups = await this.listStateDbLookups(webuiRows, (cliRows ?? []).map((r) => str(r.session_id)))
     const payload = (await buildSessionListPayload(this.store, { ...params, ...(cliRows ? { cliRows } : {}), ...(truncatedSources ? { truncatedSources } : {}), ...(agentStorage ? { agentStorage } : {}), gatewayIdentity, ...lookups, webuiRows, activeProfile, isolatedProfileMode: this.deps.isolatedProfileMode(), profilesMatch: this.deps.profilesMatch }))
-    return sessionListResponse(payload, this.deps.runtime, this.deps.redactEnabled(), this.deps.now(), this.workspaceNames())
+    return sessionListResponse(payload, this.deps.runtime, this.deps.redactEnabled(), this.deps.now(), await this.workspaceNames([...payload.sessions, ...payload.sidebar_reference_sessions]))
   }
 
   async search(q: string, opts: { content: boolean; depth: number; allProfiles: boolean }): Promise<Record<string, unknown>> {
@@ -1222,7 +1219,7 @@ export class SessionService {
     sessions = reconcileLocalSessionRows(sessions, metadata.rows, this.deps.profilesMatch)
     sessions = withOwnerLocks(sessions, this.stateDbSources)
     const redact = this.deps.redactEnabled()
-    const workspaceName = this.workspaceNames()
+    const workspaceName = await this.workspaceNames(sessions)
     const redactRow = (item: Row) => {
       withSessionWireFlags(item, this.deps.runtime.activeStreamIds)
       item.workspace_name = workspaceName(item)
@@ -1289,7 +1286,7 @@ export class SessionService {
     const profile = full.profile || 'default'
     let hermesHome = ''
     try { hermesHome = this.deps.workspaces.deps.profileHome(profile) } catch { hermesHome = '' }
-    const { is_streaming: streaming, active_stream_id: live, read_only: readOnly, read_only_reason: readOnlyReason, active_turn_origin: origin } = this.wireRow(full)
+    const { is_streaming: streaming, active_stream_id: live, read_only: readOnly, read_only_reason: readOnlyReason, active_turn_origin: origin } = (await this.wireRow(full))
     return {
       session_id: full.session_id, title: full.title, model: full.model, profile, hermes_home: hermesHome, workspace: full.workspace, personality: full.personality,
       message_count: full.messages.length, created_at: full.created_at, updated_at: full.updated_at, agent_running: streaming, is_streaming: streaming, active_stream_id: live, active_turn_origin: origin, read_only: readOnly, read_only_reason: readOnlyReason,
@@ -1310,11 +1307,11 @@ export class SessionService {
     const candidate = body.workspace
     if (!candidate) return null
     const value = str(candidate)
-    if (body.workspace_inherited_from_prev_session !== true || !visiblePrevSessionId) return this.deps.workspaces.resolveTrusted(value, profile)
+    if (body.workspace_inherited_from_prev_session !== true || !visiblePrevSessionId) return (await this.deps.workspaces.resolveTrusted(value, profile))
     let previous: Session
-    try { previous = (await this.store.get(visiblePrevSessionId, { metadataOnly: true })) } catch { return this.deps.workspaces.resolveTrusted(value, profile) }
-    if (previous.workspace !== value) return this.deps.workspaces.resolveTrusted(value, profile)
-    const [workspace] = this.deps.workspaces.resolveImplicitWithRecovery(value, (p) => this.deps.workspaces.profileDefaultWorkspaceForBoot(p), profile)
+    try { previous = (await this.store.get(visiblePrevSessionId, { metadataOnly: true })) } catch { return (await this.deps.workspaces.resolveTrusted(value, profile)) }
+    if (previous.workspace !== value) return (await this.deps.workspaces.resolveTrusted(value, profile))
+    const [workspace] = (await this.deps.workspaces.resolveImplicitWithRecovery(value, async (p) => (await this.deps.workspaces.profileDefaultWorkspaceForBoot(p)), profile))
     return workspace
   }
 
@@ -1374,7 +1371,7 @@ export class SessionService {
     })
     await this.deps.syncTitle(s, true)
     this.publish('session_rename', s.profile, s.session_id)
-    return { session: this.wireRow(s) }
+    return { session: (await this.wireRow(s)) }
   }
 
   // The pin quota is counted across sessions, so the count-and-save transaction runs on one process-wide chain;
@@ -1406,7 +1403,7 @@ export class SessionService {
       await this.store.save(s)
     }, { allowReadOnly: true })
     this.publish('session_pin', s.profile, s.session_id)
-    return { ok: true, session: this.wireRow(s) }
+    return { ok: true, session: (await this.wireRow(s)) }
   }
 
   async archive(sid: string, archived: boolean): Promise<Record<string, unknown>> {
@@ -1419,7 +1416,7 @@ export class SessionService {
       await this.store.save(s, { touchUpdatedAt: false })
     }, { allowReadOnly: true })
     this.publish('session_archive', s.profile, s.session_id)
-    return { ok: true, session: this.wireRow(s), ...worktreeRetainedPayload(s) }
+    return { ok: true, session: (await this.wireRow(s)), ...worktreeRetainedPayload(s) }
   }
 
   async move(sid: string, targetProjectId: string | null): Promise<Record<string, unknown>> {
@@ -1439,7 +1436,7 @@ export class SessionService {
       throw error
     }
     this.publish('session_move', s.profile, s.session_id)
-    return { ok: true, session: this.wireRow(s) }
+    return { ok: true, session: (await this.wireRow(s)) }
   }
 
   async update(sid: string, body: Record<string, unknown>): Promise<Record<string, unknown>> {
@@ -1449,7 +1446,7 @@ export class SessionService {
     const oldProvider = s.model_provider
     let newWs: string
     try {
-      newWs = this.deps.workspaces.resolveTrusted(typeof body.workspace === 'string' ? body.workspace : s.workspace, s.profile)
+      newWs = (await this.deps.workspaces.resolveTrusted(typeof body.workspace === 'string' ? body.workspace : s.workspace, s.profile))
     } catch (error) {
       throw new HttpFailure(400, (error as Error).message)
     }
@@ -1473,7 +1470,7 @@ export class SessionService {
       await this.store.save(s)
     })
     if (str(oldWs) !== str(newWs)) this.deps.runtime.closeTerminal(sid)
-    this.deps.workspaces.setLastWorkspace(newWs, s.profile)
+    await this.deps.workspaces.setLastWorkspace(newWs, s.profile)
     return { session: (await this.publicSession(s)) }
   }
 
@@ -1598,7 +1595,7 @@ export class SessionService {
    * `turn` is the waiting turn's stream: the job leaves its rows alone. `onWait` runs once a job is being waited on; an abort of `signal` (the turn's Stop) ends the wait but not the
    * job. True when the job installed a compressed context. Never throws: a failed job leaves the Agent's own preflight.
    */
-  async ensureCompacted(sid: string, opts: { turn?: string; signal?: AbortSignal; onWait?: () => void; due?: boolean } = {}): Promise<boolean> {
+  async ensureCompacted(sid: string, opts: { turn?: string; signal?: AbortSignal; onWait?: () => void | Promise<void>; due?: boolean } = {}): Promise<boolean> {
     const { turn, signal } = opts
     if (turn) this.compactionWaiters.add(turn)
     try {
@@ -1606,7 +1603,7 @@ export class SessionService {
       if (job?.status !== 'running') job = (opts.due ?? (await this.storedCompactionDue(sid))) ? await this.startCompression(sid, null, { automatic: true }) : undefined
       if (!job || signal?.aborted) return false
       if (turn) job.turns.add(turn)
-      opts.onWait?.()
+      await opts.onWait?.()
       const aborted = new Promise<void>((resolve) => { signal?.addEventListener('abort', () => { resolve() }, { once: true }) })
       await Promise.race([job.done, aborted])
       return !signal?.aborted && job.status === 'done'
@@ -1929,7 +1926,7 @@ export class SessionService {
       if (hadMessages) { try { await this.store.shrinkBackup.discard(sid) } catch { /* ignore */ } }
     })
     await this.deps.runtime.evictAgent(sid, true)
-    return { ok: true, session: this.wireRow(s) }
+    return { ok: true, session: (await this.wireRow(s)) }
   }
 
   async retry(sid: string): Promise<Record<string, unknown>> {
@@ -2046,16 +2043,16 @@ export class SessionService {
   }
 
   /** TAL-259: recovery reads the active profile's state.db, and a recovered sidecar joins that profile. */
-  private recoveryDeps(): RecoveryDeps {
-    return { journalDirectory: this.deps.recoveryJournalDirectory, store: this.store, stateDbPath: this.stateDbPath(null), profile: this.deps.activeProfile(), stampingSince: this.deps.recoveryStampingSince(), isReadOnly: (sid, profile) => Boolean(withOwnerLocks([{ session_id: sid, profile }], this.stateDbSources)[0]?.read_only), log: this.deps.log }
+  private async recoveryDeps(): Promise<RecoveryDeps> {
+    return { store: this.store, stateDbPath: this.stateDbPath(null), profile: this.deps.activeProfile(), stampingSince: await this.deps.recoveryStampingSince(), isReadOnly: (sid, profile) => Boolean(withOwnerLocks([{ session_id: sid, profile }], this.stateDbSources)[0]?.read_only), log: this.deps.log }
   }
 
   async recoveryAudit(): Promise<RecoveryAudit> {
-    return (await auditSessionRecovery(this.recoveryDeps()))
+    return (await auditSessionRecovery(await this.recoveryDeps()))
   }
 
-  recoveryRepairSafe(): Promise<RecoveryRepair> {
-    return repairSafeSessionRecovery(this.recoveryDeps())
+  async recoveryRepairSafe(): Promise<RecoveryRepair> {
+    return repairSafeSessionRecovery(await this.recoveryDeps())
   }
 
   /**
@@ -2169,7 +2166,7 @@ export class SessionService {
           try {
             const session = (await this.store.get(id, { metadataOnly: true }))
             if (!Object.keys(retained).length) Object.assign(retained, worktreeRetainedPayload(session))
-            this.deps.shares.revoke(session)
+            await this.deps.shares.revoke(session)
             await this.deps.clearRelayCompletions?.(id, session.profile)
           } catch (error) { if (!(error instanceof SessionNotFound)) throw error }
           if (!(await this.store.delete(id))) throw new HttpFailure(500, 'Failed to delete session data')
@@ -2183,7 +2180,7 @@ export class SessionService {
       await this.deps.runtime.evictAgent(id, true)
       try { rmSync(this.deps.attachmentDir(id), { recursive: true, force: true }) } catch { /* ignore */ }
       // Python `delete_run_journal` (#3802): a deleted session leaves no replayable run journal behind.
-      try { this.deps.journal?.deleteSession(id) } catch { /* ignore */ }
+      try { (await this.deps.journal?.deleteSession(id)) } catch { /* ignore */ }
       this.deps.runtime.closeTerminal(id)
     }
     this.publish('session_delete', eventProfile)
@@ -2212,7 +2209,7 @@ export class SessionService {
       const shouldDelete = zeroOnly ? s.messages.length === 0 : s.title === 'Untitled' && s.messages.length === 0
       if (!shouldDelete || (await this.isReadOnly(s))) continue
       // A cleared session keeps its share; keep the session (and its revoke route) if the share cannot be revoked.
-      try { this.deps.shares.revoke(s) } catch { continue }
+      try { (await this.deps.shares.revoke(s)) } catch { continue }
       this.store.sessions.delete(s.session_id)
       await this.store.delete(s.session_id, { tombstone: false })
       cleaned += 1
@@ -2245,11 +2242,11 @@ export class SessionService {
     if (!Array.isArray(rawToolCalls)) throw new HttpFailure(400, 'JSON "tool_calls" must be an array')
     let workspace: string
     try {
-      workspace = this.deps.workspaces.resolveTrusted(typeof body.workspace === 'string' ? body.workspace : null)
+      workspace = (await this.deps.workspaces.resolveTrusted(typeof body.workspace === 'string' ? body.workspace : null))
     } catch (error) {
       throw new HttpFailure(400, (error as Error).message)
     }
-    const defaults = this.store.deps.defaults(this.deps.activeProfile())
+    const defaults = (await this.store.deps.defaults(this.deps.activeProfile()))
     const s = new Session(
       { title: typeof body.title === 'string' ? body.title : 'Imported session', workspace, model: typeof body.model === 'string' ? body.model : defaults.model, messages: messages as Message[], tool_calls: stripPublicInternalFields(rawToolCalls) as Record<string, unknown>[], profile: this.deps.activeProfile() },
       defaults,
@@ -2265,17 +2262,17 @@ export class SessionService {
 
   async readDraft(sid: string): Promise<Record<string, unknown>> {
     if (!sid) throw new HttpFailure(400, 'session_id is required')
-    let hasSidecar: boolean
-    try { hasSidecar = this.deps.drafts.exists(sid) } catch { throw new HttpFailure(400, 'Invalid session_id') }
+    try { this.deps.drafts.validate(sid) } catch { throw new HttpFailure(400, 'Invalid session_id') }
+    const hasSidecar = await this.deps.drafts.exists(sid)
     if (hasSidecar) {
       const cached = this.store.sessions.get(sid)
       if (!cached && !(await existsSessionFile(this.store, sid))) throw new HttpFailure(404, 'Session not found')
-      const [draft, version] = this.deps.drafts.readState(sid)
+      const [draft, version] = (await this.deps.drafts.readState(sid))
       if (cached) cached.composer_draft = draft
       return { draft, draft_version: version }
     }
     const s = (await this.get404(sid, { metadataOnly: true }))
-    const [draft, version] = this.deps.drafts.readState(sid, s.composer_draft)
+    const [draft, version] = (await this.deps.drafts.readState(sid, s.composer_draft))
     return { draft, draft_version: version }
   }
 
@@ -2289,7 +2286,7 @@ export class SessionService {
     if (typeof text === 'string' && text.length > 50_000) text = text.slice(0, 50_000)
     if (files !== null && files !== undefined && !Array.isArray(files)) files = []
     if (Array.isArray(files) && files.length > 50) files = files.slice(0, 50)
-    try { this.deps.drafts.path(sid) } catch { throw new HttpFailure(400, 'Invalid session_id') }
+    try { this.deps.drafts.validate(sid) } catch { throw new HttpFailure(400, 'Invalid session_id') }
     let draftVersion: string | null
     try {
       draftVersion = normalizeDraftVersion(body.draft_version)
@@ -2306,9 +2303,9 @@ export class SessionService {
       const sessionExists = (await existsSessionFile(this.store, sid))
       if (!s) {
         if (!sessionExists) throw new HttpFailure(404, 'Session not found')
-        if (!this.deps.drafts.exists(sid)) s = (await this.get404(sid, { metadataOnly: true }))
+        if (!(await this.deps.drafts.exists(sid))) s = (await this.get404(sid, { metadataOnly: true }))
       }
-      const [currentDraft, currentVersion] = this.deps.drafts.readState(sid, s?.composer_draft)
+      const [currentDraft, currentVersion] = (await this.deps.drafts.readState(sid, s?.composer_draft))
       const next = { ...currentDraft }
       if (text !== null && text !== undefined) next.text = text as string
       if (files !== null && files !== undefined) next.files = files as unknown[]
@@ -2330,7 +2327,7 @@ export class SessionService {
           await this.store.save(s, { touchUpdatedAt: false })
         }
         try {
-          saved = this.deps.drafts.write(sid, next, draftVersion)
+          saved = (await this.deps.drafts.write(sid, next, draftVersion))
         } catch (error) {
           if (error instanceof DraftVersionConflict) throw new HttpFailure(409, error.message, { draft: error.currentDraft, draft_version: error.currentVersion })
           throw error
@@ -2398,7 +2395,7 @@ export class SessionService {
     const redacted = redactValue(result, enabled) as typeof result
     const rows = withSceneToolDisplay(result.rows, redacted.rows as unknown[], enabled)
     // `/api/media` serves stored sessions only, so a state.db-only session's rows stay as written, as its detail does.
-    return { ...redacted, rows: stored ? withSceneRowMedia(rows, this.mediaProjector(session)) : rows }
+    return { ...redacted, rows: stored ? withSceneRowMedia(rows, (await this.mediaProjector(session))) : rows }
   }
 
   /** TAL-331: one tool call's whole result, which a limited response clipped (`result_truncated`), redacted like the detail. */
@@ -2424,7 +2421,7 @@ export class SessionService {
     } catch (error) {
       throw new HttpFailure(400, (error as Error).message)
     }
-    const meta = this.deps.shares.createOrRefresh(s, snapshot)
+    const meta = (await this.deps.shares.createOrRefresh(s, snapshot))
     s.share_token = meta.share_token
     s.share_created_at = meta.share_created_at
     await this.store.save(s, { touchUpdatedAt: false })
@@ -2440,7 +2437,7 @@ export class SessionService {
     let s = (await this.get404(sid))
     if (!this.visibleToActiveProfile(s.profile)) throw new HttpFailure(404, 'Session not found')
     s = (await this.store.ensureFull(sid, s))
-    this.deps.shares.revoke(s)
+    await this.deps.shares.revoke(s)
     s.share_token = null
     s.share_created_at = null
     await this.store.save(s, { touchUpdatedAt: false })
@@ -2448,8 +2445,8 @@ export class SessionService {
     return { ok: true, session: (await this.publicSession(s)) }
   }
 
-  loadShare(token: string): Record<string, unknown> {
-    const share = this.deps.shares.load(token)
+  async loadShare(token: string): Promise<Record<string, unknown>> {
+    const share = (await this.deps.shares.load(token))
     if (!share) throw new HttpFailure(404, 'Shared conversation not found')
     return { share }
   }

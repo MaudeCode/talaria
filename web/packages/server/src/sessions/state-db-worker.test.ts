@@ -175,9 +175,10 @@ describe('session list state.db reads off the event loop (TAL-920)', () => {
     setStateDbReadDelayForTests(1500)
     const started = performance.now()
     const read = other.deps.cliSessions.read('default')
-    setStateDbReadDelayForTests(0)
     await new Promise((resolve) => setTimeout(resolve, 100))
     await other.close()
+    // The session-index lookup can yield before dispatch: keep the delay armed until shutdown interrupts the read.
+    setStateDbReadDelayForTests(0)
     expect((await read).rows).toEqual([])
     expect(performance.now() - started).toBeLessThan(1000)
     expect(other.logs.some((line) => line.includes('state.db worker stopped'))).toBe(true)

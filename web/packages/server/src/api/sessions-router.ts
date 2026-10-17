@@ -94,8 +94,8 @@ function allProfilesEnabled(ctx: RequestContext, value: string | undefined): boo
 const SIDEBAR_SEARCH_KEYS = ['project_id', 'sidebar_source', 'include_archived', 'exclude_hidden', 'show_cli_sessions', 'show_claude_code_sessions', 'show_cron_sessions', 'show_webhook_sessions', 'show_kanban_sessions'] as const
 
 /** The `/api/sessions` row selection for a list or sidebar-search query (TAL-308 shares it). */
-function sidebarListParams(ctx: RequestContext, input: SessionsListQuery): Parameters<RequestContext['deps']['sessions']['list']>[0] {
-  const settings = ctx.deps.settings.load()
+async function sidebarListParams(ctx: RequestContext, input: SessionsListQuery): Promise<Parameters<RequestContext['deps']['sessions']['list']>[0]> {
+  const settings = (await ctx.deps.settings.load())
   const overrideKeys = ['show_cli_sessions', 'show_claude_code_sessions', 'show_cron_sessions', 'show_webhook_sessions', 'show_kanban_sessions'] as const
   const sidebarSourceRaw = (input.sidebar_source ?? '').trim().toLowerCase()
   return {
@@ -119,7 +119,7 @@ function sidebarListParams(ctx: RequestContext, input: SessionsListQuery): Param
 export const sessionsRouter = os.router({
   sessions: {
     list: os.sessions.list.handler(({ input, context: { ctx } }) => run(async () => {
-      const { body, etag } = await ctx.deps.sessions.list(sidebarListParams(ctx, input))
+      const { body, etag } = await ctx.deps.sessions.list((await sidebarListParams(ctx, input)))
       ctx.extraResponseHeaders = { etag }
       if (ifNoneMatchMatches(ctx.header('if-none-match') ?? '', etag)) ctx.notModified = true
       return body
@@ -131,7 +131,7 @@ export const sessionsRouter = os.router({
       const opts = { content: (input.content ?? '1') === '1', depth, allProfiles: allProfilesEnabled(ctx, input.all_profiles) }
       // TAL-308: any sidebar filter answers from the sidebar's own rows; without one the store-only search stays.
       if (SIDEBAR_SEARCH_KEYS.some((k) => input[k] !== undefined)) {
-        return await ctx.deps.sessions.sidebarSearch(input.q ?? '', sidebarListParams(ctx, input), { ...opts, projectId: input.project_id?.trim() || null }) as { sessions: Record<string, unknown>[]; all_profiles: boolean; active_profile: string; query?: string; count?: number }
+        return await ctx.deps.sessions.sidebarSearch(input.q ?? '', (await sidebarListParams(ctx, input)), { ...opts, projectId: input.project_id?.trim() || null }) as { sessions: Record<string, unknown>[]; all_profiles: boolean; active_profile: string; query?: string; count?: number }
       }
       return await ctx.deps.sessions.search(input.q ?? '', opts) as { sessions: Record<string, unknown>[]; all_profiles: boolean; active_profile: string; query?: string; count?: number }
     })),
@@ -205,7 +205,7 @@ export const sessionsRouter = os.router({
       if (requested) {
         try {
           let base = input.workspace ? (await ctx.deps.sessions.resolveNewSessionWorkspace(input, null, profile)) : null
-          base ??= ctx.deps.workspaces.resolveTrusted(ctx.deps.workspaces.lastWorkspace(profile), profile)
+          base ??= (await ctx.deps.workspaces.resolveTrusted((await ctx.deps.workspaces.lastWorkspace(profile)), profile))
           const repo = base
           worktree = await ctx.deps.git.holdWrite(repo, () => ctx.deps.worktrees.create(repo))
         } catch (error) {
@@ -303,7 +303,7 @@ export const sessionsRouter = os.router({
       const generated = await ctx.deps.turns.generateTitle(session, { preferLatest: Boolean(input.prefer_latest) })
       if (!generated.title) throw new HttpError(422, `Could not generate a better title (${generated.status || 'empty'})`)
       const current = await ctx.deps.sessions.persistGeneratedTitle(sid, generated.title, 'session_title_regenerate')
-      return { session: ctx.deps.sessions.wireRow(current), title: current.title, status: generated.status, raw_preview: generated.rawPreview.slice(0, 240) }
+      return { session: (await ctx.deps.sessions.wireRow(current)), title: current.title, status: generated.status, raw_preview: generated.rawPreview.slice(0, 240) }
     })),
     recoveryAudit: os.session.recoveryAudit.handler(({ context: { ctx } }) => run(async () => (await ctx.deps.sessions.recoveryAudit()))),
     recoveryRepairSafe: os.session.recoveryRepairSafe.handler(({ context: { ctx } }) => run(async () => {
@@ -474,18 +474,18 @@ export const sessionsRouter = os.router({
       if (!sid) throw new HttpError(400, 'session_id is required')
       return (await ctx.deps.sessions.revokeShare(sid)) as { ok: true; session: { session_id: string; title: string } }
     })),
-    read: os.share.read.handler(({ input, context: { ctx } }) => run(() => {
+    read: os.share.read.handler(({ input, context: { ctx } }) => run(async () => {
       ctx.extraResponseHeaders = { 'x-robots-tag': 'noindex, nofollow' }
-      return ctx.deps.sessions.loadShare(input.token.trim()) as { share: { title: string; messages: Record<string, unknown>[]; message_count: number } }
+      return (await ctx.deps.sessions.loadShare(input.token.trim())) as { share: { title: string; messages: Record<string, unknown>[]; message_count: number } }
     })),
   },
   workspaces: {
-    list: os.workspaces.list.handler(({ context: { ctx } }) => run(() => {
+    list: os.workspaces.list.handler(({ context: { ctx } }) => run(async () => {
       const profile = ctx.deps.activeProfile()
-      return { workspaces: ctx.deps.workspaces.load(profile), last: ctx.deps.workspaces.lastWorkspace(profile), terminal_remote_backend: ctx.deps.features().terminal_remote_backend }
+      return { workspaces: (await ctx.deps.workspaces.load(profile)), last: (await ctx.deps.workspaces.lastWorkspace(profile)), terminal_remote_backend: ctx.deps.features().terminal_remote_backend }
     })),
-    suggest: os.workspaces.suggest.handler(({ input, context: { ctx } }) => run(() => ({ suggestions: ctx.deps.workspaces.suggest(input.prefix ?? '', 12, ctx.deps.activeProfile()), prefix: input.prefix ?? '' }))),
-    add: os.workspaces.add.handler(({ input, context: { ctx } }) => run(() => {
+    suggest: os.workspaces.suggest.handler(({ input, context: { ctx } }) => run(async () => ({ suggestions: (await ctx.deps.workspaces.suggest(input.prefix ?? '', 12, ctx.deps.activeProfile())), prefix: input.prefix ?? '' }))),
+    add: os.workspaces.add.handler(({ input, context: { ctx } }) => run(async () => {
       const ws = ctx.deps.workspaces
       const pathStr = stripSurroundingQuotes(input.path.trim())
       const name = (input.name ?? '').trim()
@@ -511,37 +511,37 @@ export const sessionsRouter = os.router({
       }
       let p: string
       try { p = ws.validateToAdd(pathStr, profile) } catch (error) { throw new HttpError(400, (error as Error).message) }
-      const list = ws.load(profile)
+      const list = (await ws.load(profile))
       if (list.some((w) => w.path === p)) throw new HttpError(400, 'Workspace already in list')
       list.push({ path: p, name: name || basename(p) })
-      ws.save(list, profile)
+      await ws.save(list, profile)
       return { ok: true as const, workspaces: list }
     })),
-    remove: os.workspaces.remove.handler(({ input, context: { ctx } }) => run(() => {
+    remove: os.workspaces.remove.handler(({ input, context: { ctx } }) => run(async () => {
       const pathStr = input.path.trim()
       if (!pathStr) throw new HttpError(400, 'path is required')
       const profile = ctx.deps.activeProfile()
-      const list = ctx.deps.workspaces.load(profile).filter((w) => w.path !== pathStr)
-      ctx.deps.workspaces.save(list, profile)
+      const list = (await ctx.deps.workspaces.load(profile)).filter((w) => w.path !== pathStr)
+      await ctx.deps.workspaces.save(list, profile)
       return { ok: true as const, workspaces: list }
     })),
-    rename: os.workspaces.rename.handler(({ input, context: { ctx } }) => run(() => {
+    rename: os.workspaces.rename.handler(({ input, context: { ctx } }) => run(async () => {
       const pathStr = input.path.trim()
       const name = input.name.trim()
       if (!pathStr || !name) throw new HttpError(400, 'path and name are required')
       const profile = ctx.deps.activeProfile()
-      const list = ctx.deps.workspaces.load(profile)
+      const list = (await ctx.deps.workspaces.load(profile))
       const entry = list.find((w) => w.path === pathStr)
       if (!entry) throw new HttpError(404, 'Workspace not found')
       entry.name = name
-      ctx.deps.workspaces.save(list, profile)
+      await ctx.deps.workspaces.save(list, profile)
       return { ok: true as const, workspaces: list }
     })),
-    reorder: os.workspaces.reorder.handler(({ input, context: { ctx } }) => run(() => {
+    reorder: os.workspaces.reorder.handler(({ input, context: { ctx } }) => run(async () => {
       const paths = input.paths
       if (!Array.isArray(paths) || !paths.length) throw new HttpError(400, 'paths is required and must be a list')
       const profile = ctx.deps.activeProfile()
-      const list = ctx.deps.workspaces.load(profile)
+      const list = (await ctx.deps.workspaces.load(profile))
       const byPath = new Map(list.map((w) => [w.path, w]))
       const reordered: typeof list = []
       const seen = new Set<string>()
@@ -551,7 +551,7 @@ export const sessionsRouter = os.router({
         if (entry && !seen.has(p)) { reordered.push(entry); seen.add(p) }
       }
       for (const w of list) if (!seen.has(w.path)) reordered.push(w)
-      ctx.deps.workspaces.save(reordered, profile)
+      await ctx.deps.workspaces.save(reordered, profile)
       return { ok: true as const, workspaces: reordered }
     })),
   },
@@ -818,14 +818,14 @@ export async function fileOpsSession(ctx: RequestContext, sid: string, opts: { s
     const profile = ctx.deps.activeProfile()
     if (!isSafeSessionId(sid) || !stateDbHasSession(ctx.deps.cliSessions.dbPath(profile), sid)) throw new HttpError(404, 'Session not found')
     if (!ctx.deps.workspaces.profileSupportsLocalIo(profile)) throw new HttpError(400, REMOTE_WORKSPACE_UNSUPPORTED_CODE, { message: REMOTE_WORKSPACE_UNSUPPORTED_MESSAGE })
-    return { workspace: ctx.deps.workspaces.lastWorkspace(profile), profile, recovered: false, session: null }
+    return { workspace: (await ctx.deps.workspaces.lastWorkspace(profile)), profile, recovered: false, session: null }
   }
   if (!ctx.deps.profilesMatch(session.profile, ctx.deps.activeProfile())) throw new HttpError(404, 'Session not found')
   if (!ctx.deps.workspaces.profileSupportsLocalIo(session.profile)) throw new HttpError(400, REMOTE_WORKSPACE_UNSUPPORTED_CODE, { message: REMOTE_WORKSPACE_UNSUPPORTED_MESSAGE })
   let workspace = session.workspace
   let recovered = false
   try {
-    ;[workspace, recovered] = ctx.deps.workspaces.resolveImplicitWithRecovery(session.workspace, (p) => ctx.deps.workspaces.lastWorkspace(p), session.profile)
+    ;[workspace, recovered] = (await ctx.deps.workspaces.resolveImplicitWithRecovery(session.workspace, async (p) => (await ctx.deps.workspaces.lastWorkspace(p)), session.profile))
   } catch (error) {
     if (opts.strictWorkspace) throw new HttpError(404, error instanceof Error ? error.message : 'Workspace is not trusted')
     workspace = session.workspace

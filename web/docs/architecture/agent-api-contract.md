@@ -115,7 +115,16 @@ custody and stop; unrelated descendants and ambiguous ownership still refuse.
 
 Supervised dashboard/serve writers from the same installation's native ledger
 join that same lease. Native loaded launchd inventory and systemd MainPID
-ownership identify their exact supervisor. Talaria records the original service,
+ownership identify their exact supervisor. Admission and recovery share the same
+backend identity resolver. Legacy ledger rows with absent, empty or null home/profile
+metadata require the native live-process home reader and one unambiguous profile
+from the native home inventory, within the allowed canonical homes. Populated
+ledger metadata must agree. PID birth identity is checked around evidence collection
+and supervisor discovery, then rechecked at custody and readiness boundaries.
+Symlink spelling never substitutes for canonical ownership. Recovery verifies the
+successor's original supervisor and authenticated listener before clearing only
+that service's debt; it never backfills the Agent-owned ledger.
+Talaria records the original service,
 profile, endpoint, configuration digest and process tree before requesting the
 backend's native retirement prepare/commit fence. Busy or indeterminate work
 refuses the update. After committed admission closure, SIGTERM runs the native
@@ -125,11 +134,75 @@ Unexpected children, respawn or an unproved stop prevent source mutation.
 
 Lifecycle calls use the backend's existing owner-local session credential.
 For a dashboard protected by native basic auth, the owning OS user's existing
-configured signing key can authenticate a short-lived native session. Neither
-session credentials nor retirement permits are persisted in recovery records.
+configured signing key can authenticate a short-lived native session. Admission,
+retirement and supervised-service readiness use the same resolver: nonempty
+credentials from the attested backend's exec environment, then its owning
+profile's native file-backed secret scope, then its native basic-auth config.
+Blank values fall through as in the native provider. Only the username and
+signing key are needed; the updater does not require or send the password/hash.
+Profile dotenv parsing and external-source hydration use the Agent's existing
+scope primitives, without loading those values into the updater environment or
+falling through to its launch credentials. Config environment references are
+resolved under that same restricted scope, including for the main profile.
+Native base64/hex/raw signing-key
+decoding is preserved without the native decoder's global environment access.
+A missing or unreadable credential, process-random key, or changed key that the
+intended endpoint rejects never authorizes a writer stop or clears recovery debt.
+Concurrent profiles retain separate credentials on success, error and cancellation.
+Neither session credentials nor retirement permits are persisted in recovery records.
 A backend whose native authentication cannot be established remains an
 actionable refusal; Talaria does not alter authentication or service config.
 Unknown, manual, Desktop-owned and foreign-profile backends remain refused.
+
+Both admission and recovery check the running backend's OpenAPI schema for the
+identity GET and retirement POST, before stopping any service. Missing APIs are
+reported as an unsupported runtime only with live evidence: an authenticated
+matching identity, or a protected sessions route that challenges an anonymous
+request and accepts the existing credential, plus a schema omitting identity
+and a repeated missing identity response. The latter does not verify the
+listener's PID or role. A generic 404, malformed schema, changing identity,
+transport failure, or 401/403 cannot establish this capability diagnosis.
+An unavailable schema fails closed. Authentication failures remain distinct.
+
+A supervised POSIX legacy backend may instead enter the shared updater's bounded
+refresh bootstrap. In addition to authenticated capability evidence, Talaria
+requires OS socket ownership for the exact backend PID, its native birth/ledger
+identity, canonical home/profile, supervisor ancestry, original endpoint and
+configuration digest. Linux uses the process's socket inodes; macOS uses the OS
+listener inventory. Unknown, foreign, manual, Desktop and ambiguous owners still
+refuse. A clean installed source baseline and usable current dependencies are
+required; bootstrap never changes Agent source or service configuration.
+
+The first apply/force request returns `refresh_confirmation` with the service
+names and a private single-use token. The existing confirmation dialog warns
+that active dashboard work may be interrupted. It does not claim the legacy
+runtime is idle. No services remain paused while confirmation is pending.
+The token expires after five minutes and binds the authenticated operator,
+profile and update-notification intent, mode, selected immutable revision,
+checkout, profile homes, exact process tree/birth identities, endpoint and
+supervisor configuration. Force and unchecked-version consent do not authorize
+refresh; unattended callers receive a refusal. Cancellation closes that update
+intent. A consumed, expired or changed confirmation cannot refresh anything.
+
+After reacquiring the native checkout lock, Talaria rechecks those identities
+and atomically records a `legacy_refresh` recovery obligation before SIGTERM to
+that exact backend. It waits for all old writer descendants and adopts an
+attested capable successor, or attempts to start the original service once per
+worker if inactive. Failed-worker cleanup cannot repeat that start; a fresh
+recovery attempt may retry the retained obligation.
+It never force-kills, uses a force-restart command, rewrites configuration or
+signals a replacement incarnation. Missing modern APIs, failed start, slow
+shutdown and unverified readiness preserve source and durable debt. Crash/EOF
+recovery may start or adopt a verified successor on safe source; it never
+replays the interruption signal. The additive `refreshing` phase makes older companion readers refuse and retain
+uncertain debt. Once all old writers have exited and a capable successor is
+verified, the entry returns to their existing `recorded` phase.
+
+The capable successor then enters ordinary retirement custody with all other
+writers. The same selected update continues through retained-cron checks,
+source replacement, dependency repair, stash handling and verified service
+restoration. Success means the selected revision and restored services are
+verified. Recovery keeps unresolved obligations while restoring safe siblings.
 
 The native gateway recovery reader verifies a launchd PID, which can be a wrapper
 without a working dashboard listener. Backend debt and supervised-gateway

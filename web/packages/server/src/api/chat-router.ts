@@ -102,7 +102,7 @@ async function expandPromptBuiltin(ctx: RequestContext, s: Session, msg: string,
   if (!msg.startsWith('/') || !sidecar) return null
   // Only `/init` reads the workspace, and the sidecar refuses it without one; the turn reports a bad workspace itself.
   let cwd = ''
-  try { cwd = ctx.deps.sessions.turnWorkspace(s, workspace) } catch { cwd = '' }
+  try { cwd = (await ctx.deps.sessions.turnWorkspace(s, workspace)) } catch { cwd = '' }
   let expanded: SidecarResult<'commands.expand_prompt'>
   try {
     expanded = await sidecar.call('commands.expand_prompt', {
@@ -162,7 +162,7 @@ async function startChat(ctx: RequestContext, body: Record<string, unknown>, set
   if (compressionRecoveryPayload(s) && !attachments.length && isGenericContinuationIntent(msg)) {
     throw new HttpError(409, 'This session exhausted context compression. Start a focused continuation, then describe the next narrow task.', { type: 'compression_recovery_required', compression_recovery: s.compression_recovery, session_id: s.session_id })
   }
-  const workspace = ctx.deps.sessions.turnWorkspace(s, body.workspace)
+  const workspace = (await ctx.deps.sessions.turnWorkspace(s, body.workspace))
   const [model, provider, normalized] = ctx.deps.sessions.turnModel(s, body)
   if (body.moa_config) throw new HttpError(503, 'MoA overrides need the Agent command registry (checkpoint 7).')
   const response = (await ctx.deps.turns.start(s, { msg, ...(prompt === null ? {} : { prompt }), attachments, workspace, model, modelProvider: provider, normalizedModel: normalized, source: 'webui', voiceTurn: body.voice_turn === true, connectCard: body.connect_card === true, ...settle }))
@@ -249,9 +249,9 @@ export const chatRouter = os.router({
       const streamId = str(input.stream_id)
       if (!(await streamVisibleToRequest(ctx, streamId))) throw new HttpError(404, 'Session not found')
       const active = ctx.deps.registry.liveIds.has(streamId)
-      const owner = streamOwnerSessionId(ctx, streamId)
+      const owner = (await streamOwnerSessionId(ctx, streamId))
       const payload: { active: boolean; stream_id: string; replay_available: boolean; journal?: Record<string, unknown>; blocking_stream_id: string | null } = { active, stream_id: streamId, replay_available: false, blocking_stream_id: owner ? (await ctx.deps.sessions.activeRunBlocking(owner)) : null }
-      const summary = streamId ? ctx.deps.journal.findRunSummary(streamId) : null
+      const summary = streamId ? (await ctx.deps.journal.findRunSummary(streamId)) : null
       if (summary) {
         payload.replay_available = true
         const terminal = summary.terminal
@@ -330,7 +330,7 @@ export const chatRouter = os.router({
     if (kickoff) {
       // TAL-542: after the goal RPCs, so the stale-model check reads a catalog for the profile the session now runs under.
       await ctx.deps.sessions.deps.warmSessionModelRepair?.(s.profile)
-      const workspace = ctx.deps.sessions.turnWorkspace(s, body.workspace)
+      const workspace = (await ctx.deps.sessions.turnWorkspace(s, body.workspace))
       const [model, provider, normalized] = ctx.deps.sessions.turnModel(s, body)
       const started = (await ctx.deps.turns.start(s, { msg: kickoff, attachments: [], workspace, model, modelProvider: provider, normalizedModel: normalized, source: 'webui', goalRelated: true }))
       if (started._status !== undefined && started._status >= 400) {
@@ -362,22 +362,22 @@ export const chatRouter = os.router({
       // and the hidden bg session file is removed afterwards.
       const taskId = randomUUID().replace(/-/g, '').slice(0, 8)
       // TAL-372: the parent session keeps the task's record and result, so every client and a restart see it.
-      ctx.deps.background.trackCommand(parent.session_id, taskId, prompt)
+      await ctx.deps.background.trackCommand(parent.session_id, taskId, prompt)
       const cleanup = async (): Promise<void> => { try { (await ctx.deps.sessionStore.delete(bg.session_id, { tombstone: false })) } catch { /* best effort */ } }
       const started = (await ctx.deps.turns.start(bg, {
         msg: prompt, attachments: [], workspace: parent.workspace, model, modelProvider, source: 'webui',
         // Python: the last non-error assistant reply with content, else "(no answer produced)".
-        onDone: async (answer) => { ctx.deps.background.settleCommand(parent.session_id, taskId, 'completed', answer || '(no answer produced)'); (await cleanup()) },
-        onFailed: async () => { ctx.deps.background.settleCommand(parent.session_id, taskId, 'failed', '(background task failed)'); (await cleanup()) },
+        onDone: async (answer) => { (await ctx.deps.background.settleCommand(parent.session_id, taskId, 'completed', answer || '(no answer produced)')); (await cleanup()) },
+        onFailed: async () => { (await ctx.deps.background.settleCommand(parent.session_id, taskId, 'failed', '(background task failed)')); (await cleanup()) },
       }))
       if (started._status !== undefined && started._status >= 400) {
         // Admission refused (profile deleting, session busy…): nothing runs, so the tracked task and hidden
         // session must not linger as "running".
-        ctx.deps.background.forgetCommand(parent.session_id, taskId)
+        await ctx.deps.background.forgetCommand(parent.session_id, taskId)
         await cleanup()
         throw new HttpError(started._status, started.error ?? 'background start failed')
       }
-      ctx.deps.background.setCommandStream(parent.session_id, taskId, str(started.stream_id))
+      await ctx.deps.background.setCommandStream(parent.session_id, taskId, str(started.stream_id))
       return { ok: true as const, task_id: taskId, stream_id: str(started.stream_id), session_id: bg.session_id }
     })),
     tasks: os.background.tasks.handler(({ input, context: { ctx } }) => run(async () => {
@@ -393,7 +393,7 @@ export const chatRouter = os.router({
     })),
     dismiss: os.background.dismiss.handler(({ input, context: { ctx } }) => run(async () => {
       const s = (await visibleSession(ctx, input.session_id))
-      const task = ctx.deps.background.dismiss(s.session_id, input.task_id)
+      const task = (await ctx.deps.background.dismiss(s.session_id, input.task_id))
       if (!task) throw new HttpError(404, 'Background task not found')
       return { ok: true as const, task }
     })),

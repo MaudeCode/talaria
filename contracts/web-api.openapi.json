@@ -56686,6 +56686,10 @@
                     ],
                     "type": "string"
                   },
+                  "agent_refresh_token": {
+                    "type": "string",
+                    "pattern": "^[a-f0-9]{32}$"
+                  },
                   "confirmed_agent_revision": {
                     "type": "string",
                     "pattern": "^[a-f0-9]{40}$"
@@ -56744,6 +56748,27 @@
                     "lock": {},
                     "confirmation_required": {
                       "type": "boolean"
+                    },
+                    "refresh_confirmation": {
+                      "type": "object",
+                      "properties": {
+                        "token": {
+                          "type": "string",
+                          "pattern": "^[a-f0-9]{32}$"
+                        },
+                        "services": {
+                          "type": "array",
+                          "minItems": 1,
+                          "items": {
+                            "type": "string",
+                            "minLength": 1
+                          }
+                        }
+                      },
+                      "required": [
+                        "token",
+                        "services"
+                      ]
                     },
                     "candidate_revision": {
                       "type": "string"
@@ -56830,6 +56855,10 @@
                     ],
                     "type": "string"
                   },
+                  "agent_refresh_token": {
+                    "type": "string",
+                    "pattern": "^[a-f0-9]{32}$"
+                  },
                   "confirmed_agent_revision": {
                     "type": "string",
                     "pattern": "^[a-f0-9]{40}$"
@@ -56888,6 +56917,27 @@
                     "lock": {},
                     "confirmation_required": {
                       "type": "boolean"
+                    },
+                    "refresh_confirmation": {
+                      "type": "object",
+                      "properties": {
+                        "token": {
+                          "type": "string",
+                          "pattern": "^[a-f0-9]{32}$"
+                        },
+                        "services": {
+                          "type": "array",
+                          "minItems": 1,
+                          "items": {
+                            "type": "string",
+                            "minLength": 1
+                          }
+                        }
+                      },
+                      "required": [
+                        "token",
+                        "services"
+                      ]
                     },
                     "candidate_revision": {
                       "type": "string"
@@ -56974,6 +57024,10 @@
                     ],
                     "type": "string"
                   },
+                  "agent_refresh_token": {
+                    "type": "string",
+                    "pattern": "^[a-f0-9]{32}$"
+                  },
                   "confirmed_agent_revision": {
                     "type": "string",
                     "pattern": "^[a-f0-9]{40}$"
@@ -57032,6 +57086,27 @@
                     "lock": {},
                     "confirmation_required": {
                       "type": "boolean"
+                    },
+                    "refresh_confirmation": {
+                      "type": "object",
+                      "properties": {
+                        "token": {
+                          "type": "string",
+                          "pattern": "^[a-f0-9]{32}$"
+                        },
+                        "services": {
+                          "type": "array",
+                          "minItems": 1,
+                          "items": {
+                            "type": "string",
+                            "minLength": 1
+                          }
+                        }
+                      },
+                      "required": [
+                        "token",
+                        "services"
+                      ]
                     },
                     "candidate_revision": {
                       "type": "string"

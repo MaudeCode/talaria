@@ -1,5 +1,6 @@
 /** `projects.json` (Python `load_projects`/`save_projects` with the one-time profile backfill). */
-import { existsSync, readFileSync, writeFileSync } from 'node:fs'
+import type { DocumentBackend } from './sessions/storage/backend.js'
+import { updateDocument } from './sessions/storage/document.js'
 import { randomUUID } from 'node:crypto'
 
 export interface Project { project_id: string; name: string; color?: string | null; profile?: string | null; created_at?: number; [key: string]: unknown }
@@ -11,7 +12,7 @@ export class ProjectStore {
   private migrated = false
   private operations: Promise<void> = Promise.resolve()
 
-  constructor(readonly file: string, private readonly readIndexRows: () => Record<string, unknown>[] | Promise<Record<string, unknown>[]>, private readonly isRootProfile: (name: string) => boolean = (name) => name === 'default') {}
+  constructor(private readonly documents: DocumentBackend, private readonly readIndexRows: () => Record<string, unknown>[] | Promise<Record<string, unknown>[]>, private readonly isRootProfile: (name: string) => boolean = (name) => name === 'default') {}
 
   private sameProfile(row: string | null | undefined, active: string): boolean {
     const r = row || 'default'
@@ -52,41 +53,32 @@ export class ProjectStore {
 
   /** The session-index backfill can yield; keep the whole project edit under the same lock. */
   mutate<T>(edit: (projects: Project[]) => T, opts: { migrate?: boolean } = {}): Promise<T> {
-    return this.serialize(async () => {
-      const projects = await this.loadNow(opts)
-      const previous = JSON.stringify(projects)
+    return this.serialize(async () => (await updateDocument(this.documents, 'projects', 'projects', async (raw) => {
+      const projects = Array.isArray(raw) ? raw as Project[] : []
+      if ((opts.migrate ?? true) && !this.migrated) await this.backfillProfiles(projects)
       const result = edit(projects)
-      if (JSON.stringify(projects) !== previous) this.save(projects)
-      return result
-    })
+      return { value: projects, result }
+    }, { replaceInvalid: true })))
   }
 
   private async loadNow(opts: { migrate?: boolean }): Promise<Project[]> {
-    if (!existsSync(this.file)) return []
-    let projects: Project[]
-    try {
-      const parsed = JSON.parse(readFileSync(this.file, 'utf8')) as unknown
-      projects = Array.isArray(parsed) ? (parsed as Project[]) : []
-    } catch {
-      return []
-    }
-    if ((opts.migrate ?? true) && !this.migrated) {
-      if ((await this.backfillProfiles(projects))) {
-        try {
-          this.save(projects)
-          this.migrated = true
-        } catch {
-          /* retry on a later call */
-        }
-      } else {
-        this.migrated = true
-      }
+    let raw: unknown
+    try { raw = (await this.documents.get('projects', 'projects'))?.value } catch { return [] }
+    const projects = Array.isArray(raw) ? raw as Project[] : []
+    if ((opts.migrate ?? true) && !this.migrated && Array.isArray(raw)) {
+      const result = await updateDocument(this.documents, 'projects', 'projects', async (value) => {
+        const current = Array.isArray(value) ? value as Project[] : []
+        await this.backfillProfiles(current)
+        return { value: current, result: current }
+      }, { replaceInvalid: true })
+      this.migrated = true
+      return result
     }
     return projects
   }
 
-  save(projects: Project[]): void {
-    writeFileSync(this.file, JSON.stringify(projects, null, 2), 'utf8')
+  async save(projects: Project[]): Promise<void> {
+    await updateDocument(this.documents, 'projects', 'projects', () => ({ value: projects, result: undefined }), { replaceInvalid: true })
   }
 
   /** Tag legacy untagged projects with the profile of an assigned session, else `default`. */

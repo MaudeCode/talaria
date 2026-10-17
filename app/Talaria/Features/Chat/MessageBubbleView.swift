@@ -11,7 +11,7 @@ struct MessageBubbleView: View {
     @AppStorage(ChatTranscriptDisplaySettings.showsAssistantTurnTimestampsKey) private var showsAssistantTurnTimestamps = false
     @AppStorage(ChatTranscriptDisplaySettings.showsResponseSpeedKey) private var showsResponseSpeed = false
     /// Device-local disclosure for a body the server collapsed (TAL-456) or a prompt it folds (TAL-452).
-    @State private var isExpanded = false
+    @ChatRetainedState("message-body") private var isExpanded = false
 
     let message: ChatMessage
     let loadAttachmentImage: ((String) async -> Data?)?
@@ -39,6 +39,7 @@ struct MessageBubbleView: View {
         liveTokensPerSecond: Double? = nil
     ) {
         self.message = message
+        _isExpanded = ChatRetainedState(wrappedValue: false, "message-body:\(message.id)")
         self.loadAttachmentImage = loadAttachmentImage
         self.loadAttachmentData = loadAttachmentData
         self.loadTranscriptMediaImage = loadTranscriptMediaImage

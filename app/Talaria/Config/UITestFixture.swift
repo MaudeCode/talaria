@@ -15,6 +15,7 @@ struct UITestFixtureEnvironment {
     nonisolated static let historyPagingArgument = "--ui-test-history-paging"
     nonisolated static let historyTurnBoundaryArgument = "--ui-test-history-turn-boundary"
     nonisolated static let historyLatencyArgument = "--ui-test-history-latency"
+    nonisolated static let largeHistoryWindowArgument = "--ui-test-large-history-window"
     /// Serves a long pasted prompt the server marked `_collapsible` (TAL-452).
     nonisolated static let longPromptArgument = "--ui-test-long-prompt"
     /// Serves a reply with `diff`, `patch`, `log` and `text` code blocks (TAL-447).
@@ -831,7 +832,9 @@ final class UITestFixtureURLProtocol: URLProtocol, @unchecked Sendable {
                 prompt["_ts"] = 2_000_000_000 + index
                 return prompt
             }
-            let boundaryTurn = ProcessInfo.processInfo.arguments.contains(UITestFixtureEnvironment.historyTurnBoundaryArgument) && (1_940..<1_960).contains(index)
+            let initialStart = ProcessInfo.processInfo.arguments.contains(UITestFixtureEnvironment.largeHistoryWindowArgument) ? 1_000 : 1_950
+            let boundaryTurn = ProcessInfo.processInfo.arguments.contains(UITestFixtureEnvironment.historyTurnBoundaryArgument)
+                && ((initialStart - 10)..<(initialStart + 10)).contains(index)
             let isUser = index.isMultiple(of: 2) && !boundaryTurn
             let content = isUser ? "History prompt \(index)."
                 : "History answer \(index).\n\n## Details\n\n" + String(repeating: "A paragraph with **emphasis** and `code`.\n\n", count: 1 + index % 5)
@@ -839,7 +842,7 @@ final class UITestFixtureURLProtocol: URLProtocol, @unchecked Sendable {
             var message: [String: Any] = ["role": isUser ? "user" : "assistant", "content": content,
                     "message_id": "history-\(index)", "_ts": 2_000_000_000 + index]
             if boundaryTurn { message["_turn_id"] = "history-boundary-turn" }
-            if boundaryTurn, index == 1_959 {
+            if boundaryTurn, index == initialStart + 9 {
                 let table = "| Channel | Count |\n| --- | ---: |\n" + (0..<24).map { "| Fixture \($0) | \($0 + 20) |" }.joined(separator: "\n")
                 var rows: [[String: Any]] = []
                 for phase in 0..<4 {
@@ -861,7 +864,9 @@ final class UITestFixtureURLProtocol: URLProtocol, @unchecked Sendable {
         if ProcessInfo.processInfo.arguments.contains(UITestFixtureEnvironment.historyPagingArgument) {
             let items = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems ?? []
             let end = min(2_000, Int(items.first { $0.name == "msg_before" }?.value ?? "") ?? 2_000)
-            let start = max(0, end - 50)
+            let isInitial = items.first { $0.name == "msg_before" } == nil
+            let pageSize = isInitial && ProcessInfo.processInfo.arguments.contains(UITestFixtureEnvironment.largeHistoryWindowArgument) ? 1_000 : 50
+            let start = max(0, end - pageSize)
             var detail = session(id: sessionID, title: sessionTitle)
             detail["messages"] = historyMessages(from: start, to: end)
             detail["_messages_offset"] = start

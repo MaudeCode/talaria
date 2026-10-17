@@ -13,6 +13,8 @@ struct ActiveChatStreamSnapshot: Equatable {
     let reasoningAnchorMessageID: String?
     let contextWindowSnapshot: ContextWindowSnapshot?
     let localAttachmentPreviews: [String: [String: Data]]
+    var recentMessagesOffset: Int? = nil
+    var recentHasOlderMessages = false
 }
 
 struct ActiveChatStreamSnapshotKey: Hashable {

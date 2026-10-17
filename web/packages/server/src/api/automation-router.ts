@@ -96,13 +96,13 @@ export const automationRouter = os.router({
       const spec: Dict = { ...input }
       // A board named without a slug gets one from its name.
       if (!str(spec.slug).trim()) spec.slug = boardSlug(str(spec.name))
-      if ('default_workdir' in spec) { const raw = str(spec.default_workdir).trim(); spec.default_workdir = raw ? ctx.deps.workspaces.resolveTrusted(raw, activeProfileName(ctx)) : '' }
+      if ('default_workdir' in spec) { const raw = str(spec.default_workdir).trim(); spec.default_workdir = raw ? (await ctx.deps.workspaces.resolveTrusted(raw, activeProfileName(ctx))) : '' }
       return ctx.deps.kanban.sidecar().call('kanban.create_board', { profile_home: home(ctx), board_spec: spec })
     }))),
     switchBoard: os.kanban.switchBoard.handler(({ input, context: { ctx } }) => run(() => kb(() => ctx.deps.kanban.sidecar().call('kanban.switch_board', { profile_home: home(ctx), slug: pathParam(ctx, 'slug', input.slug) })))),
     updateBoard: os.kanban.updateBoard.handler(({ input, context: { ctx } }) => run(() => kb(async () => {
       const { slug, ...spec } = input
-      if ('default_workdir' in spec) { const raw = str(spec.default_workdir).trim(); spec.default_workdir = raw ? ctx.deps.workspaces.resolveTrusted(raw, activeProfileName(ctx)) : '' }
+      if ('default_workdir' in spec) { const raw = str(spec.default_workdir).trim(); spec.default_workdir = raw ? (await ctx.deps.workspaces.resolveTrusted(raw, activeProfileName(ctx))) : '' }
       if (typeof spec.archived === 'string') spec.archived = truthyQuery(spec.archived)
       return ctx.deps.kanban.sidecar().call('kanban.update_board', { profile_home: home(ctx), slug: pathParam(ctx, 'slug', slug), board_spec: spec })
     }))),
@@ -131,7 +131,7 @@ export const automationRouter = os.router({
   extensions: {
     status: os.extensions.status.handler(({ context: { ctx } }) => run(() => ctx.deps.extensions.status() as Promise<never>)),
     registry: os.extensions.registry.handler(({ context: { ctx } }) => run(() => ctx.deps.extensions.registry())),
-    manifests: os.extensions.manifests.handler(({ context: { ctx } }) => run(() => manifestList(ctx))),
+    manifests: os.extensions.manifests.handler(({ context: { ctx } }) => run(async () => (await manifestList(ctx)))),
     toggle: os.extensions.toggle.handler(({ input, context: { ctx } }) => run(async () => {
       // A listed plugin row persists `dashboard_plugins.<id>`; every other id is an extension override.
       const id = typeof input.id === 'string' ? input.id.trim() : ''
@@ -140,8 +140,8 @@ export const automationRouter = os.router({
       return ctx.deps.extensions.status() as Promise<never>
     })),
     consent: os.extensions.consent.handler(({ input, context: { ctx } }) => run(() => ctx.deps.extensions.setConsent(input.id, input.approved) as Promise<never>)),
-    install: os.extensions.install.handler(({ input, context: { ctx } }) => run(() => ctx.deps.extensions.install(input.id, input.download_url, input.sha256))),
-    uninstall: os.extensions.uninstall.handler(({ input, context: { ctx } }) => run(() => ctx.deps.extensions.uninstall(input.id))),
+    install: os.extensions.install.handler(({ input, context: { ctx } }) => run(async () => (await ctx.deps.extensions.install(input.id, input.download_url, input.sha256)))),
+    uninstall: os.extensions.uninstall.handler(({ input, context: { ctx } }) => run(async () => (await ctx.deps.extensions.uninstall(input.id)))),
   },
   terminal: {
     start: os.terminal.start.handler(({ input, context: { ctx } }) => run(async () => {
@@ -150,7 +150,7 @@ export const automationRouter = os.router({
       const { workspace, profile } = (await terminalSession(ctx, sid))
       let cwd: string
       // Python answered `resolve_trusted_workspace`'s ValueError text unsanitised.
-      try { cwd = ctx.deps.workspaces.resolveTrusted(workspace, profile) } catch (error) { throw new HttpError(400, (error as Error).message) }
+      try { cwd = (await ctx.deps.workspaces.resolveTrusted(workspace, profile)) } catch (error) { throw new HttpError(400, (error as Error).message) }
       if (ctx.deps.git.workspaceBusy(cwd)) throw new HttpError(409, WORKSPACE_BUSY_MESSAGE)
       try {
         const term = ctx.deps.terminals.start(sid, cwd, { rows: input.rows, cols: input.cols, restart: Boolean(input.restart) })
@@ -195,7 +195,7 @@ export const automationRouter = os.router({
 async function manifestList(ctx: RequestContext): Promise<{ protocol_version: 1; manifests: Dict[] }> {
   const out = await ctx.deps.extensions.manifests()
   const seen = new Set(out.manifests.map((m) => m.id))
-  out.manifests.push(...ctx.deps.dashboardPlugins.manifests().filter((m) => !seen.has(m.id)))
+  out.manifests.push(...(await ctx.deps.dashboardPlugins.manifests()).filter((m) => !seen.has(m.id)))
   return out
 }
 

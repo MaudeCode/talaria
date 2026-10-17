@@ -8,13 +8,43 @@ import XCTest
 /// says to VoiceOver, its button trait, and where it sits against its neighbours.
 @MainActor
 final class TranscriptHostedTests: XCTestCase {
+    func testAnimatedNavigationReachesNewlyMountedRichRows() async throws {
+        let previousArguments = FixtureLaunchArguments.scenario
+        FixtureLaunchArguments.scenario = [UITestFixtureEnvironment.launchArgument]
+        addTeardownBlock { FixtureLaunchArguments.scenario = previousArguments }
+        for count in [50, 75, 50, 75] {
+            let first = 2_000 - count
+            let neighbor = (first + 3).isMultiple(of: 2) ? first + 4 : first + 3
+            var commands: ChatTranscriptScrollProxy?
+            let window = try hostWindow(PagedHistoryTranscript(initialStart: first, richContent: true,
+                load: { _ in false }, onScrollRequest: { commands = $0 }), animationsEnabled: true)
+            let ready = await awaitCondition { commands != nil }
+            XCTAssertTrue(ready)
+            let position = try XCTUnwrap(historyObserver(in: window)?.coordinator?.scrollPositionController)
+            try XCTUnwrap(commands).scrollTo(id: ChatTranscriptView.containerID(for: "transcript:\(first + 2)"),
+                anchor: .top, animation: .easeOut(duration: 0.25))
+            let arrived = await awaitCondition {
+                position.readingAnchorRowID == ChatTranscriptView.containerID(for: "transcript:\(first + 2)")
+                    && HostedAccessibility.elements(in: window).contains {
+                        $0.accessibilityLabel?.hasPrefix("History answer \(neighbor).") == true
+                    }
+            }
+            XCTAssertTrue(arrived, "An animated jump must reach the measured destination and admit its rich neighbor; count \(count), reader \(position.readingAnchorRowID ?? "nil")")
+            window.isHidden = true
+            window.rootViewController = nil
+            commands = nil
+        }
+    }
+
     func testHistoryInsertionWorkWithAlreadyLoadedRows() async throws {
         // Rich rows must not start live LinkPresentation/WebKit work under XCTest.
         let previousArguments = FixtureLaunchArguments.scenario
         FixtureLaunchArguments.scenario = [UITestFixtureEnvironment.launchArgument]
         addTeardownBlock { FixtureLaunchArguments.scenario = previousArguments }
         var samples: [[String: Double]] = []
-        for count in [50, 75] {
+        // Repeated hosted readers also exercise deferred scroll/layout handoffs.
+        for sample in 0..<6 {
+            let count = sample.isMultiple(of: 2) ? 50 : 75
             let first = 2_000 - count
             var requested: [Int] = []
             var started: TimeInterval?
@@ -90,7 +120,7 @@ final class TranscriptHostedTests: XCTestCase {
 
     func testHistoryPrefetchStartsBeforeTheLastViewport() async throws {
         var requests = 0
-        var proxy: Binding<ScrollPosition>?
+        var proxy: ChatTranscriptScrollProxy?
         defer { proxy = nil }
         let window = try hostWindow(PagedHistoryTranscript(initialStart: 1_900, load: { _ in requests += 1; return false }, onScrollRequest: { proxy = $0 }))
         let scroll = try XCTUnwrap(historyScroll(in: window))
@@ -115,7 +145,7 @@ final class TranscriptHostedTests: XCTestCase {
 
     private func assertHistoryResponsePreservesReader(holdCompletion: Bool) async throws {
         var requested: [Int] = []
-        var proxy: Binding<ScrollPosition>?
+        var proxy: ChatTranscriptScrollProxy?
         var finishRequest: (() -> Void)?
         var inserted = false
         var laidOut = false
@@ -185,14 +215,13 @@ final class TranscriptHostedTests: XCTestCase {
             previous = current
             try await Task.sleep(for: .milliseconds(20))
         }
-        XCTFail("The reader must settle before the held response is released")
-        return previous[0]
+        return try XCTUnwrap(nil as CGFloat?, "The reader must settle before the held response is released")
     }
 
     func testScrollingNearTheTopLoadsHistoryWithoutATap() async throws {
         var requests = 0
         var finish: ((Bool) -> Void)?
-        var proxy: Binding<ScrollPosition>?
+        var proxy: ChatTranscriptScrollProxy?
         defer { finish?(false); proxy = nil }
         let window = try hostWindow(NavigationStack {
             PagedHistoryTranscript(load: { _ in
@@ -234,7 +263,7 @@ final class TranscriptHostedTests: XCTestCase {
 
     func testContinuousHistoryLoadsAllTwoThousandRowsAndPreservesPosition() async throws {
         var requested: [Int] = []
-        var proxy: Binding<ScrollPosition>?
+        var proxy: ChatTranscriptScrollProxy?
         var finishRequest: (() -> Void)?
         var insertedStart = 1_950
         defer { finishRequest?(); proxy = nil }
@@ -281,7 +310,7 @@ final class TranscriptHostedTests: XCTestCase {
     func testANewTopAppearanceDuringLoadingRunsAfterThePageSettles() async throws {
         var requests = 0
         var finish: ((Bool) -> Void)?
-        var proxy: Binding<ScrollPosition>?
+        var proxy: ChatTranscriptScrollProxy?
         var referenceScroll: UIScrollView?
         var observedNearTop: Bool?
         defer { finish?(false); proxy = nil; referenceScroll = nil }
@@ -370,6 +399,12 @@ final class TranscriptHostedTests: XCTestCase {
     /// stays the user's message (TAL-371).
     func testWakeupsRenderAsCompletionLinesWithTheirReplies() async throws {
         let window = try await hostFixtureChat(["--ui-test-background-updates"])
+        let ready = await awaitCondition {
+            HostedAccessibility.elements(in: window).filter {
+                HostedAccessibility.identifier(of: $0) == "background-update-lines"
+            }.count == 4
+        }
+        XCTAssertTrue(ready, "All four background-update rows must finish realization before checking order")
         let found = await awaitElement(in: window) { HostedAccessibility.identifier(of: $0) == "background-update-lines" }
         let batch = try XCTUnwrap(found, "The wakeup did not render as completion lines")
         let updates = HostedAccessibility.elements(in: window).filter {
@@ -485,7 +520,7 @@ final class TranscriptHostedTests: XCTestCase {
 
 
 @MainActor
-private func historyTranscript(messages supplied: [ChatMessage]? = nil, messageCount: Int = 50, messageOffset: Int? = nil, hasOlderMessages: Bool = true, onMetrics: @escaping (ChatScrollMetrics) -> Void = { _ in }, shouldRender: @escaping (ChatMessage) -> Bool = { _ in true }, scrollRequest: Int = 0, onScrollRequest: @escaping (Binding<ScrollPosition>) -> Void = { _ in }, load: @escaping (@MainActor () -> Void) async -> Bool) -> some View {
+private func historyTranscript(messages supplied: [ChatMessage]? = nil, messageCount: Int = 50, messageOffset: Int? = nil, hasOlderMessages: Bool = true, onMetrics: @escaping (ChatScrollMetrics) -> Void = { _ in }, shouldRender: @escaping (ChatMessage) -> Bool = { _ in true }, scrollRequest: Int = 0, onScrollRequest: @escaping (ChatTranscriptScrollProxy) -> Void = { _ in }, load: @escaping (@MainActor () -> Void) async -> Bool) -> some View {
     let messages = supplied ?? (0..<messageCount).map { index in
         ChatMessage(role: "user", content: "History row \(index). Synthetic transcript text.", timestamp: nil, messageId: "history-\(index)")
     }
@@ -533,7 +568,7 @@ private struct PagedHistoryTranscript: View {
     let shouldRender: (ChatMessage) -> Bool
     let onReady: (@escaping () -> Void) -> Void
     let load: ((@MainActor () -> Void) async -> Bool)?
-    let onScrollRequest: ((Binding<ScrollPosition>) -> Void)?
+    let onScrollRequest: ((ChatTranscriptScrollProxy) -> Void)?
     let onRequest: @MainActor (Int) async -> Void
     let onComplete: @MainActor () async -> Void
 
@@ -543,7 +578,7 @@ private struct PagedHistoryTranscript: View {
          shouldRender: @escaping (ChatMessage) -> Bool = { _ in true },
          onReady: @escaping (@escaping () -> Void) -> Void = { _ in },
          load: ((@MainActor () -> Void) async -> Bool)? = nil,
-         onScrollRequest: ((Binding<ScrollPosition>) -> Void)? = nil,
+         onScrollRequest: ((ChatTranscriptScrollProxy) -> Void)? = nil,
          onComplete: @escaping @MainActor () async -> Void = {}, onRequest: @escaping @MainActor (Int) async -> Void = { _ in }) {
         _start = State(initialValue: initialStart)
         self.hasDisclosure = hasDisclosure
@@ -590,12 +625,12 @@ private struct PagedHistoryTranscript: View {
 }
 
 // Preserve the fixture's named destinations while exercising the same typed API as the app.
-private extension Binding where Value == ScrollPosition {
+private extension ChatTranscriptScrollProxy {
     func scrollTo(_ id: String, anchor: UnitPoint) {
-        if id == "chat-transcript-content" { wrappedValue.scrollTo(edge: .top) }
+        if id == "chat-transcript-content" { scrollTo(id: id, anchor: .top) }
         else {
             let target = ChatTranscriptView.containerID(for: id == "bottom" ? "transcript:1999" : id)
-            wrappedValue.scrollTo(id: target, anchor: anchor)
+            scrollTo(id: target, anchor: anchor)
         }
     }
 }

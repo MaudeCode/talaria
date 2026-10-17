@@ -1,0 +1,124 @@
+#!/usr/bin/env python3
+"""Drive the hosted history regression with a real simulator gesture.
+
+Use the agent-device executable, config and session returned by T3 device_open.
+The selected simulator must be idle; test-ios owns its lease, build and cleanup.
+"""
+
+import argparse
+import hashlib
+import json
+import os
+from pathlib import Path
+import re
+import signal
+import subprocess
+import sys
+import time
+import uuid
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--simulator-id", required=True)
+    parser.add_argument("--agent-device", required=True)
+    parser.add_argument("--config", required=True)
+    parser.add_argument("--session", required=True)
+    parser.add_argument("--large-history", action="store_true", help="Start with 1,000 loaded messages")
+    args = parser.parse_args()
+    app = Path(__file__).resolve().parents[1]
+    run_id = str(uuid.uuid4())
+    evidence = app / ".codex-tmp/xctest/history-drag" / run_id
+    evidence.mkdir(parents=True)
+    ready = evidence / "ready"
+    finished = evidence / "driver-finished"
+    log = evidence / "xcodebuild.log"
+    flags = ["--platform", "ios", "--udid", args.simulator_id,
+             "--config", args.config, "--session", args.session]
+    environment = dict(os.environ, TALARIA_SIMULATOR_ID=args.simulator_id,
+                       TALARIA_NATIVE_HISTORY_DRAG=run_id)
+    method = "testLargeLoadedHistoryInsertionPreservesReaderDuringNativeDrag" if args.large_history else "testHistoryInsertionPreservesReaderDuringNativeDrag"
+    case = f"TalariaTests/ChatHostedTests/{method}"
+    command = ["scripts/test-ios", case]
+    print(f"Native history evidence: {evidence}", flush=True)
+
+    def drive(*arguments):
+        result = subprocess.run([args.agent_device, *arguments, *flags],
+                                text=True, capture_output=True, timeout=60)
+        if result.returncode:
+            raise RuntimeError(result.stderr or result.stdout)
+
+    def interrupted(_signum, _frame):
+        raise KeyboardInterrupt
+
+    signal.signal(signal.SIGTERM, interrupted)
+    driver_open = False
+    with log.open("w") as output:
+        process = subprocess.Popen(command, cwd=app, env=environment,
+                                   stdout=output, stderr=subprocess.STDOUT)
+        try:
+            deadline = time.monotonic() + 360
+            while not ready.exists():
+                if process.poll() is not None:
+                    raise RuntimeError(f"The test exited before gesture readiness; inspect {log}")
+                if time.monotonic() >= deadline:
+                    raise RuntimeError(f"Gesture readiness was not reached; inspect {log}")
+                time.sleep(0.1)
+            drive("open", "dev.kil.talaria.xctest")
+            driver_open = True
+            try:
+                drive("scroll", "up", "--pixels", "150", "--duration-ms", "1200")
+            finally:
+                drive("close")
+                driver_open = False
+                finished.touch()
+            status = process.wait(timeout=90)
+        finally:
+            if driver_open:
+                try:
+                    drive("close")
+                except Exception as error:
+                    print(f"Driver cleanup failed: {error}", file=sys.stderr)
+                finally:
+                    finished.touch()
+            if process.poll() is None:
+                process.terminate()
+                process.wait(timeout=30)
+
+    match = re.search(r"Result bundle: (.+)", log.read_text())
+    if not match:
+        raise RuntimeError(f"No result bundle was reported; inspect {log}")
+    bundle = match.group(1)
+    summary = subprocess.check_output(
+        ["xcrun", "xcresulttool", "get", "test-results", "summary", "--path", bundle], text=True)
+    (evidence / "summary.json").write_text(summary)
+    subprocess.run(["xcrun", "xcresulttool", "export", "attachments", "--path", bundle,
+                    "--output-path", str(evidence / "attachments")], check=True)
+    (evidence / "run.json").write_text(json.dumps({
+        "command": command,
+        "baselineOrHead": subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=app, text=True).strip(),
+        "simulatorID": args.simulator_id,
+        "resultBundle": bundle,
+        "sourceHashes": {
+            name: hashlib.sha256((app / name).read_bytes()).hexdigest()
+            for name in ["Talaria/Features/Chat/ChatTranscriptView.swift",
+                         "Talaria/Features/Chat/ChatTranscriptRow.swift",
+                         "Talaria/Features/Chat/ChatTranscriptSupportingViews.swift",
+                         "TalariaTests/ChatHostedTests.swift"]
+        },
+        "exitStatus": status,
+    }, indent=2) + "\n")
+    for attachment in (evidence / "attachments").glob("*.json"):
+        samples = json.loads(attachment.read_text())
+        if isinstance(samples, list) and samples and "readerDelta" in samples[0]:
+            print(json.dumps({
+                "samples": len(samples),
+                "messages": sorted({sample["messageIndex"] for sample in samples}),
+                "largestReaderDelta": max(abs(sample["readerDelta"]) for sample in samples),
+                "largestFrameGapMilliseconds": max((sample["gapMilliseconds"] for sample in samples[1:]), default=0),
+            }), flush=True)
+    return status
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

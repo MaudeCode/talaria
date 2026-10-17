@@ -1,3 +1,5 @@
+import { initializeStore } from '../test/storage.js'
+import { JsonDocuments } from '../test/storage.js'
 /** TAL-953: the post-update gateway restart waits for a synthetic gateway's `active_agents` to drain. */
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
@@ -17,7 +19,7 @@ const stamp = (offsetS = 0): string => new Date((NOW + offsetS) * 1000).toISOStr
 const flush = async (): Promise<void> => { for (let i = 0; i < 10; i += 1) await new Promise<void>((resolve) => { setImmediate(resolve) }) }
 
 /** A Hermes home with a synthetic gateway, a notification store, and a queue whose polls advance only on `tick()`. */
-function setup(stateDir = mkdtempSync(join(tmpdir(), 'talaria-gateway-restart-')), restart: () => Promise<Dict> = () => Promise.resolve({ status: 'completed' }), updating = { now: false }, probe: () => void = () => undefined) {
+async function setup(stateDir = mkdtempSync(join(tmpdir(), 'talaria-gateway-restart-')), restart: () => Promise<Dict> = () => Promise.resolve({ status: 'completed' }), updating = { now: false }, probe: () => void = () => undefined) {
   dirs.push(stateDir)
   const home = join(stateDir, 'home')
   const gateway = (state: { pid?: number | null; gateway_state?: string; active_agents?: number; updated_at?: string } = {}): void => {
@@ -26,7 +28,7 @@ function setup(stateDir = mkdtempSync(join(tmpdir(), 'talaria-gateway-restart-')
     if (state.pid !== null) writeFileSync(join(home, 'gateway.pid'), JSON.stringify({ pid: state.pid ?? process.pid }))
     writeFileSync(join(home, 'gateway_state.json'), JSON.stringify({ gateway_state: state.gateway_state ?? 'running', active_agents: state.active_agents ?? 0, updated_at: state.updated_at ?? stamp() }))
   }
-  const store = new UpdateNotificationStore(stateDir)
+  const store = (await initializeStore(new UpdateNotificationStore(new JsonDocuments(stateDir))))
   const calls: string[] = []
   const profiles: string[] = []
   const waiters: (() => void)[] = []
@@ -40,18 +42,18 @@ function setup(stateDir = mkdtempSync(join(tmpdir(), 'talaria-gateway-restart-')
   })
   const tick = async (): Promise<void> => { await flush(); for (const wake of waiters.splice(0)) wake(); await flush() }
   /** What `applyWithNotification` records for a finished Agent update before handing it to the queue. */
-  const waiting = (detail: string | null = null, profile = 'default'): string => {
-    const row = store.begin({ ...OWNER, profile }, 'agent')
-    store.transition(row.id, 'waiting_for_idle', null, undefined, detail)
+  const waiting = async (detail: string | null = null, profile = 'default'): Promise<string> => {
+    const row = (await store.begin({ ...OWNER, profile }, 'agent'))
+    await store.transition(row.id, 'waiting_for_idle', null, undefined, detail)
     return row.id
   }
-  const row = (id: string) => store.list(OWNER).notifications.find((entry) => entry.id === id)
+  const row = async (id: string) => (await store.list(OWNER)).notifications.find((entry) => entry.id === id)
   return { stateDir, home, gateway, store, queue, calls, profiles, tick, waiting, row }
 }
 
 describe('gatewayRestartBlockers', () => {
   it('blocks only a live gateway with running work', async () => {
-    const t = setup()
+    const t = (await setup())
     t.gateway({ active_agents: 2 })
     expect(await gatewayRestartBlockers(t.home, t.home, NOW)).toMatchObject({ active_runs: 2, restart_blocked: true })
     t.gateway({ active_agents: 0 })
@@ -66,7 +68,7 @@ describe('gatewayRestartBlockers', () => {
   })
 
   it('keeps a live gateway whose running work cannot be read blocked', async () => {
-    const t = setup()
+    const t = (await setup())
     t.gateway({ active_agents: 0 })
     writeFileSync(join(t.home, 'gateway_state.json'), JSON.stringify({ gateway_state: 'running', updated_at: stamp() }))
     expect(await gatewayRestartBlockers(t.home, t.home, NOW)).toMatchObject({ active_runs: 0, restart_blocked: true })
@@ -77,7 +79,7 @@ describe('gatewayRestartBlockers', () => {
   })
 
   it('counts both the root host gateway and the named profile\'s own gateway', async () => {
-    const t = setup()
+    const t = (await setup())
     const profile = join(t.stateDir, 'profiles', 'work')
     mkdirSync(profile, { recursive: true })
     const own = (agents: number): void => {
@@ -97,54 +99,54 @@ describe('gatewayRestartBlockers', () => {
 
 describe('GatewayRestartQueue', () => {
   it('holds the restart while the gateway is busy and restarts exactly once when it goes idle', async () => {
-    const t = setup()
+    const t = (await setup())
     t.gateway({ active_agents: 2 })
-    const id = t.waiting()
-    expect(t.queue.schedule(id, 'default')).toBe(id)
+    const id = (await t.waiting())
+    expect((await t.queue.schedule(id, 'default'))).toBe(id)
     await t.tick()
     await t.tick()
     expect(t.calls).toEqual([])
-    expect(t.row(id)).toMatchObject({
+    expect((await t.row(id))).toMatchObject({
       phase: 'waiting_for_idle', can_dismiss: false,
       message: 'Waiting for 2 running gateway tasks to finish before restarting the gateway.',
       actions: [{ id: GATEWAY_RESTART_NOW, label: 'Restart now', style: 'destructive', acknowledges: false }],
     })
     t.gateway({ active_agents: 1 })
     await t.tick()
-    expect(t.row(id)?.message).toBe('Waiting for 1 running gateway task to finish before restarting the gateway.')
+    expect((await t.row(id))?.message).toBe('Waiting for 1 running gateway task to finish before restarting the gateway.')
     t.gateway({ active_agents: 0 })
     await t.tick()
     await t.tick()
     await t.tick()
     expect(t.calls).toEqual(['gateway.restart'])
-    expect(t.row(id)).toMatchObject({ phase: 'succeeded', actions: [], can_dismiss: true })
+    expect((await t.row(id))).toMatchObject({ phase: 'succeeded', actions: [], can_dismiss: true })
   })
 
   it.each([
     ['stopped', { pid: null, gateway_state: 'stopped', active_agents: 2 }],
     ['stale', { pid: null, active_agents: 2, updated_at: stamp(-600) }],
   ] as const)('restarts a %s gateway immediately', async (_name, state) => {
-    const t = setup()
+    const t = (await setup())
     t.gateway(state)
-    const id = t.waiting()
-    t.queue.schedule(id, 'default')
+    const id = (await t.waiting())
+    await t.queue.schedule(id, 'default')
     await t.tick()
     expect(t.calls).toEqual(['gateway.restart'])
-    expect(t.row(id)?.phase).toBe('succeeded')
+    expect((await t.row(id))?.phase).toBe('succeeded')
   })
 
   it('Restart now restarts at once while the gateway is still busy and ends the wait', async () => {
-    const t = setup()
+    const t = (await setup())
     t.gateway({ active_agents: 3 })
-    const id = t.waiting()
-    t.queue.schedule(id, 'default')
+    const id = (await t.waiting())
+    await t.queue.schedule(id, 'default')
     await t.tick()
     expect(t.calls).toEqual([])
     expect(t.queue.restartNow('another-id')).toBe(false)
     expect(t.queue.restartNow(id)).toBe(true)
     await flush()
     expect(t.calls).toEqual(['gateway.restart'])
-    expect(t.row(id)?.phase).toBe('succeeded')
+    expect((await t.row(id))?.phase).toBe('succeeded')
     await t.tick()
     await t.tick()
     expect(t.calls).toEqual(['gateway.restart'])
@@ -153,65 +155,65 @@ describe('GatewayRestartQueue', () => {
 
   it('starts no restart, even a forced one, while another update changes the Agent source', async () => {
     const updating = { now: true }
-    const t = setup(undefined, undefined, updating)
+    const t = (await setup(undefined, undefined, updating))
     t.gateway({ active_agents: 0 })
-    const id = t.waiting()
-    t.queue.schedule(id, 'default')
+    const id = (await t.waiting())
+    await t.queue.schedule(id, 'default')
     await t.tick()
     t.queue.restartNow(id)
     await t.tick()
     await t.tick()
     expect(t.calls).toEqual([])
-    expect(t.row(id)?.phase).toBe('waiting_for_idle')
+    expect((await t.row(id))?.phase).toBe('waiting_for_idle')
     updating.now = false
     await t.tick()
     expect(t.calls).toEqual(['gateway.restart'])
-    expect(t.row(id)?.phase).toBe('succeeded')
+    expect((await t.row(id))?.phase).toBe('succeeded')
   })
 
   it('rechecks the update lock after the blocker probe, so an update that starts mid-probe holds the restart', async () => {
     const updating = { now: false }
     let probes = 0
-    const t = setup(undefined, undefined, updating, () => { probes += 1; if (probes === 1) updating.now = true })
+    const t = (await setup(undefined, undefined, updating, () => { probes += 1; if (probes === 1) updating.now = true }))
     t.gateway({ active_agents: 0 })
-    const id = t.waiting()
-    t.queue.schedule(id, 'default')
+    const id = (await t.waiting())
+    await t.queue.schedule(id, 'default')
     await t.tick()
     await t.tick()
     expect(t.calls).toEqual([])
-    expect(t.row(id)?.phase).toBe('waiting_for_idle')
+    expect((await t.row(id))?.phase).toBe('waiting_for_idle')
     updating.now = false
     await t.tick()
     expect(t.calls).toEqual(['gateway.restart'])
   })
 
   it('a second update while one waits reuses the waiting record instead of starting a second wait', async () => {
-    const t = setup()
+    const t = (await setup())
     t.gateway({ active_agents: 1 })
-    const first = t.waiting()
-    t.queue.schedule(first, 'default')
-    const second = t.waiting('stash kept')
-    expect(t.queue.schedule(second, 'default', 'stash kept')).toBe(first)
-    expect(t.row(second)).toMatchObject({ phase: 'succeeded', actions: [], detail: expect.stringContaining('stash kept') as string })
+    const first = (await t.waiting())
+    await t.queue.schedule(first, 'default')
+    const second = (await t.waiting('stash kept'))
+    expect((await t.queue.schedule(second, 'default', 'stash kept'))).toBe(first)
+    expect((await t.row(second))).toMatchObject({ phase: 'succeeded', actions: [], detail: expect.stringContaining('stash kept') as string })
     t.gateway({ active_agents: 0 })
     await t.tick()
     await t.tick()
     expect(t.calls).toEqual(['gateway.restart'])
-    expect(t.row(first)?.phase).toBe('succeeded')
+    expect((await t.row(first))?.phase).toBe('succeeded')
   })
 
   it('a waiting record survives a server restart, and the restarted server resumes it', async () => {
-    const before = setup()
+    const before = (await setup())
     before.gateway({ active_agents: 2 })
-    const id = before.waiting('stash kept', 'work')
-    before.queue.schedule(id, 'work')
+    const id = (await before.waiting('stash kept', 'work'))
+    await before.queue.schedule(id, 'work')
     await before.tick()
     await before.queue.quiesce()
     expect(before.calls).toEqual([])
-    const after = setup(before.stateDir)
+    const after = (await setup(before.stateDir))
     after.gateway({ active_agents: 2 })
-    expect(after.row(id)).toMatchObject({ phase: 'waiting_for_idle', actions: [{ id: GATEWAY_RESTART_NOW }] })
-    after.queue.resume()
+    expect((await after.row(id))).toMatchObject({ phase: 'waiting_for_idle', actions: [{ id: GATEWAY_RESTART_NOW }] })
+    await after.queue.resume()
     await after.tick()
     expect(after.calls).toEqual([])
     after.gateway({ active_agents: 0 })
@@ -221,17 +223,17 @@ describe('GatewayRestartQueue', () => {
     // Resumed outside any request, it still probes and restarts the profile the update ran under.
     expect(new Set(after.profiles)).toEqual(new Set(['probe:work', 'restart:work']))
     expect(before.calls).toEqual([])
-    expect(after.row(id)).toMatchObject({ phase: 'succeeded', detail: 'stash kept' })
+    expect((await after.row(id))).toMatchObject({ phase: 'succeeded', detail: 'stash kept' })
   })
 
   it('quiesce lets a restart in flight finish before Web exits', async () => {
     let finish!: () => void
-    const t = setup(undefined, () => new Promise((resolve) => { finish = () => { resolve({ status: 'completed' }) } }))
+    const t = (await setup(undefined, () => new Promise((resolve) => { finish = () => { resolve({ status: 'completed' }) } })))
     t.gateway({ active_agents: 0 })
-    const id = t.waiting()
-    t.queue.schedule(id, 'default')
+    const id = (await t.waiting())
+    await t.queue.schedule(id, 'default')
     await flush()
-    expect(t.row(id)?.phase).toBe('restarting')
+    expect((await t.row(id))?.phase).toBe('restarting')
     expect(t.queue.restarting()).toBe(true)
     let quiesced = false
     const done = t.queue.quiesce().then(() => { quiesced = true })
@@ -239,20 +241,20 @@ describe('GatewayRestartQueue', () => {
     expect(quiesced).toBe(false)
     finish()
     await done
-    expect(t.row(id)?.phase).toBe('succeeded')
+    expect((await t.row(id))?.phase).toBe('succeeded')
     expect(t.queue.restarting()).toBe(false)
   })
 
-  it('shares the waiting record with every server owner, so another owner can follow it and restart now', () => {
-    const t = setup()
+  it('shares the waiting record with every server owner, so another owner can follow it and restart now', async () => {
+    const t = (await setup())
     t.gateway({ active_agents: 1 })
-    const id = t.waiting()
-    t.queue.schedule(id, 'default')
+    const id = (await t.waiting())
+    await t.queue.schedule(id, 'default')
     const other: UpdateNotificationScope = { owner: 'oidc:other', profile: 'default', serverOwner: true, tab: 'tab-other-owner' }
-    t.store.watch(other, id)
-    expect(t.store.list(other).tab_update).toMatchObject({ id, phase: 'waiting_for_idle' })
-    expect(t.store.action(other, id, GATEWAY_RESTART_NOW)).toMatchObject({ id })
-    expect(t.store.list({ owner: 'member', profile: 'default', serverOwner: false }).notifications.some((row) => row.id === id)).toBe(false)
+    await t.store.watch(other, id)
+    expect((await t.store.list(other)).tab_update).toMatchObject({ id, phase: 'waiting_for_idle' })
+    expect((await t.store.action(other, id, GATEWAY_RESTART_NOW))).toMatchObject({ id })
+    expect((await t.store.list({ owner: 'member', profile: 'default', serverOwner: false })).notifications.some((row) => row.id === id)).toBe(false)
   })
 
   it('every server shutdown quiesces the queue', async () => {
@@ -264,17 +266,17 @@ describe('GatewayRestartQueue', () => {
 
   it('retries one transient failure and reports a failed restart with the manual command', async () => {
     const outcomes = [{ status: 'failed', message: 'launchd rotating' }, { status: 'completed' }]
-    const t = setup(undefined, () => Promise.resolve(outcomes.shift() ?? { status: 'failed', message: 'still down' }))
+    const t = (await setup(undefined, () => Promise.resolve(outcomes.shift() ?? { status: 'failed', message: 'still down' })))
     t.gateway({ active_agents: 0 })
-    const ok = t.waiting()
-    t.queue.schedule(ok, 'default')
+    const ok = (await t.waiting())
+    await t.queue.schedule(ok, 'default')
     await t.tick()
     expect(t.calls).toEqual(['gateway.restart', 'gateway.restart'])
-    expect(t.row(ok)?.phase).toBe('succeeded')
-    const failed = t.waiting()
-    t.queue.schedule(failed, 'default')
+    expect((await t.row(ok))?.phase).toBe('succeeded')
+    const failed = (await t.waiting())
+    await t.queue.schedule(failed, 'default')
     await t.tick()
     await t.tick()
-    expect(t.row(failed)).toMatchObject({ phase: 'failed', detail: expect.stringContaining('Run `hermes gateway restart` manually.') as string })
+    expect((await t.row(failed))).toMatchObject({ phase: 'failed', detail: expect.stringContaining('Run `hermes gateway restart` manually.') as string })
   })
 })

@@ -86,3 +86,32 @@ xcrun xcresulttool get test-results metrics --path <result-bundle> --compact
 ```
 
 `scripts/test-ios` prints the result bundle path when it starts.
+
+## History insertion during a native drag
+
+`ChatHostedTests/testHistoryInsertionPreservesReaderDuringNativeDrag` and its
+`testLargeLoadedHistoryInsertionPreservesReaderDuringNativeDrag` variant require
+an external native gesture driver. Run `scripts/test-history-drag` as described
+in `DEVELOPMENT.md`; add `--large-history` for 1,000 already-loaded messages.
+Ordinary CI skips these two cases rather than substituting a stationary scroll.
+
+The fixture holds an older page until a real UIKit drag begins. A continuous
+`UIUpdateLink` samples the rendered message and its local point under the finger,
+including the finger's pan translation. Every sample must retain the same message
+within 2 points; the longest display-update gap during the drag must stay below
+100 ms. The first sample excludes the wait for the external driver. The test also
+recycles and revisits expanded work, then checks a second prepend.
+
+These Debug simulator thresholds detect large regressions; they are not a phone
+frame-rate guarantee. The iPhone verdict remains required for this change.
+On the iPhone 17 Pro simulator running iOS 27.0, the original lazy prepend lost
+the reader during dragging. Keeping every lightweight row mounted preserved the
+reader but stalled for 212 ms with 1,000 loaded messages. Aggregating distant rows
+into spacers retained the reader within 0.67 points, with 58 ms and 81 ms maximum
+update gaps in two independent runs. The window's deterministic extent and
+node-count assertions run in `ChatTranscriptRowCacheTests` in ordinary CI.
+
+The final navigation/admission correction passed both native cases again: 79
+samples at the normal page and 76 with 1,000 loaded messages, with maximum
+update gaps of 72 ms and 65 ms respectively. Both retained one rendered reader
+within 0.67 points and passed expanded-work recycling and a second prepend.

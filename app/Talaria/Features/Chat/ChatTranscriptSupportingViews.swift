@@ -76,8 +76,171 @@ final class ChatScrollPositionController {
         case hold
     }
 
-    /// Lazy row sizing must update SwiftUI's own position, not only UIKit's offset.
+    /// Restores an anchored row through the transcript's shared navigation owner.
     var onHoldAnchor: ((String, UnitPoint) -> Void)?
+    var onPreservationEnded: (() -> Void)?
+    var onNativeScrollLayoutComplete: ((Int) -> Void)?
+    var isPreservingPosition: Bool { contentSizeObservation != nil }
+    var isUserInteracting: Bool {
+        scrollView.map { $0.isDragging || $0.isTracking || $0.isDecelerating } ?? false
+    }
+
+    var preservationAnchorRowID: String? { isPreservingPosition ? anchor?.rowID : nil }
+    var viewportTop: CGFloat? {
+        scrollView.map { $0.contentOffset.y + $0.adjustedContentInset.top }
+    }
+
+    var realizedRowsNearViewport: Set<String> {
+        guard let scrollView else { return [] }
+        let top = scrollView.contentOffset.y + scrollView.adjustedContentInset.top
+        let bottom = scrollView.contentOffset.y + scrollView.bounds.height - scrollView.adjustedContentInset.bottom
+        let margin = max(0, bottom - top) * 3
+        return Set(rowMinY.compactMap { id, minY in
+            guard !inactiveRowIDs.contains(id), let height = rowFrames[id]?.height,
+                  minY < bottom + margin, minY + height > top - margin else { return nil }
+            return id
+        })
+    }
+
+    /// Realizing an estimated row can change the prefix above the reader, just
+    /// like inserting a page. Reuse the same measured-row preservation window.
+    func preserveReaderForRealization(isFollowingLatest: Bool) -> Bool {
+        guard pendingLayoutRevision == nil, pendingNativeScrollRevision == nil, let scrollView,
+              let rowID = readingAnchorRowID,
+              let minY = rowMinY[rowID], let height = rowFrames[rowID]?.height else { return false }
+        let top = scrollView.contentOffset.y + scrollView.adjustedContentInset.top
+        let bottom = scrollView.contentOffset.y + scrollView.bounds.height - scrollView.adjustedContentInset.bottom
+        guard minY < bottom, minY + height > top else { return false }
+        if isFollowingLatest, !scrollView.isDragging, !scrollView.isDecelerating,
+           scrollView.contentSize.height - bottom <= 1 { return false }
+        if isPreservingPosition {
+            if mode == .prepend, hasRestoredMeasuredReader, rowID != anchor?.rowID {
+                anchor = anchorSnapshot(rowID)
+                baselineOffsetY = scrollView.contentOffset.y
+                baselineContentHeight = scrollView.contentSize.height
+                baselinePanTranslationY = scrollView.panGestureRecognizer.translation(in: scrollView).y
+            }
+            return false
+        }
+        return capture(anchorRowID: rowID) && restoreAfterPrepend(whileInteracting: true)
+    }
+
+    private var pendingNativeScrollRevision: Int?
+    private var pendingNativeScrollTarget: (id: String, anchor: UnitPoint)?
+    private var nativeScrollWaitsForArrival = true
+    private var nativeScrollUpdateLink: UIUpdateLink?
+    var isNavigating: Bool { pendingNativeScrollRevision != nil }
+    func prepareNativeScroll(revision: Int, targetID: String? = nil, anchor: UnitPoint = .top,
+                             waitsForArrival: Bool = true) {
+        cancelPreservation()
+        cancelNativeScroll()
+        pendingNativeScrollRevision = revision
+        pendingNativeScrollTarget = targetID.map { ($0, anchor) }
+        nativeScrollWaitsForArrival = waitsForArrival
+    }
+
+    private func cancelNativeScroll() {
+        pendingNativeScrollRevision = nil
+        pendingNativeScrollTarget = nil
+        nativeScrollUpdateLink?.isEnabled = false
+        nativeScrollUpdateLink = nil
+    }
+
+    private var hasReachedNativeScrollTarget: Bool {
+        guard let target = pendingNativeScrollTarget else { return true }
+        guard let scrollView, let destination = measuredScrollOffsetY(for: target.id, anchor: target.anchor) else { return false }
+        return !nativeScrollWaitsForArrival || abs(destination - scrollView.contentOffset.y) <= 2
+    }
+
+    /// Use the native scroll animation so each displayed step reports its offset.
+    @discardableResult
+    func scrollToMeasuredRow(_ id: String, anchor: UnitPoint, animated: Bool) -> Bool {
+        guard let scrollView, let y = measuredScrollOffsetY(for: id, anchor: anchor) else { return false }
+        scrollView.setContentOffset(CGPoint(x: scrollView.contentOffset.x, y: y),
+                                    animated: animated && UIView.areAnimationsEnabled)
+        return true
+    }
+
+    /// Movement and acknowledgement share the eager slot's measured destination.
+    private func measuredScrollOffsetY(for id: String, anchor: UnitPoint) -> CGFloat? {
+        guard let scrollView, !inactiveRowIDs.contains(id), let minY = rowMinY[id],
+              let height = rowFrames[id]?.height else { return nil }
+        let inset = scrollView.adjustedContentInset
+        let viewportHeight = scrollView.bounds.height - inset.top - inset.bottom
+        let target = minY + height * anchor.y - inset.top - viewportHeight * anchor.y
+        let minimum = -inset.top
+        let maximum = max(minimum, scrollView.contentSize.height - scrollView.bounds.height + inset.bottom)
+        let destination = min(maximum, max(minimum, target))
+        return destination.isFinite ? destination : nil
+    }
+
+    func hasMeasuredRow(_ id: String) -> Bool {
+        measuredScrollOffsetY(for: id, anchor: .top) != nil
+    }
+
+    private func acknowledgeNativeScrollLayout(revision: Int) {
+        guard pendingNativeScrollRevision == revision, nativeScrollUpdateLink == nil else { return }
+        guard let scene = scrollView?.window?.windowScene else {
+            guard hasReachedNativeScrollTarget else { return }
+            pendingNativeScrollRevision = nil
+            pendingNativeScrollTarget = nil
+            onNativeScrollLayoutComplete?(revision)
+            return
+        }
+        // Layout can complete before an animated command reaches its destination.
+        let link = UIUpdateLink(windowScene: scene)
+        link.addAction(to: .afterUpdateComplete) { [weak self] link, _ in
+            guard let self, self.nativeScrollUpdateLink === link,
+                  self.pendingNativeScrollRevision == revision else { return }
+            guard self.hasReachedNativeScrollTarget else { return }
+            link.isEnabled = false
+            self.nativeScrollUpdateLink = nil
+            self.pendingNativeScrollRevision = nil
+            self.pendingNativeScrollTarget = nil
+            self.onNativeScrollLayoutComplete?(revision)
+        }
+        nativeScrollUpdateLink = link
+        link.requiresContinuousUpdates = true
+        link.isEnabled = true
+    }
+
+    var isRealizingRows: Bool { !pendingRowRealizations.isEmpty || rowRealizationTask != nil }
+    private var pendingRowRealizations: [String: (priority: Int, action: () -> Void)] = [:]
+    private var rowRealizationTask: Task<Void, Never>?
+    private var rowRealizationEpoch = 0
+
+    /// Spread offscreen rich-content construction across updates instead of
+    /// admitting a whole viewport's Markdown in the page-commit frame.
+    func enqueueRowRealization(id: String, priority: Int, action: @escaping () -> Void) {
+        pendingRowRealizations[id] = (priority, action)
+        guard rowRealizationTask == nil else { return }
+        let epoch = rowRealizationEpoch
+        rowRealizationTask = Task { @MainActor [weak self] in
+            while !Task.isCancelled {
+                guard let self, self.rowRealizationEpoch == epoch,
+                      !self.pendingRowRealizations.isEmpty else { break }
+                if self.pendingLayoutRevision == nil, self.pendingNativeScrollRevision == nil,
+                   let next = self.pendingRowRealizations.min(by: {
+                       $0.value.priority == $1.value.priority ? $0.key < $1.key : $0.value.priority < $1.value.priority
+                   }) {
+                    self.pendingRowRealizations[next.key] = nil
+                    next.value.action()
+                }
+                try? await Task.sleep(for: .milliseconds(17))
+            }
+            if let self, self.rowRealizationEpoch == epoch { self.rowRealizationTask = nil }
+        }
+    }
+
+    func cancelRowRealization(id: String) { pendingRowRealizations[id] = nil }
+
+    private func cancelRowRealizations() {
+        rowRealizationEpoch += 1
+        rowRealizationTask?.cancel()
+        rowRealizationTask = nil
+        pendingRowRealizations.removeAll()
+    }
+
     private var rowFrames: [String: CGRect] = [:]
     private var heldRowViewportOffset: CGFloat?
     private var heldRowBaselineHeight: CGFloat?
@@ -153,6 +316,8 @@ final class ChatScrollPositionController {
     }
 
     func detach() {
+        cancelNativeScroll()
+        cancelRowRealizations()
         finishPendingLayout()
         cancelPreservation()
         scrollView = nil
@@ -183,6 +348,7 @@ final class ChatScrollPositionController {
     }
 
     func forgetRow(_ rowID: String) {
+        if pendingNativeScrollTarget?.id == rowID { cancelNativeScroll() }
         inactiveRowIDs.insert(rowID)
         rowMinY[rowID] = nil
         if mode != .hold || rowID != anchor?.rowID { rowFrames[rowID] = nil }
@@ -218,7 +384,12 @@ final class ChatScrollPositionController {
         let top = scrollView.contentOffset.y + scrollView.adjustedContentInset.top
         // Geometry delivery can outlive disappearance in a lazy stack.
         let activeRows = rowMinY.filter { !inactiveRowIDs.contains($0.key) }
-        return activeRows.filter { $0.value <= top }.max { $0.value < $1.value }?.key
+        let bottom = scrollView.contentOffset.y + scrollView.bounds.height - scrollView.adjustedContentInset.bottom
+        return activeRows.filter { id, minY in
+            guard let height = rowFrames[id]?.height else { return false }
+            return minY < bottom && minY + height > top
+        }.min { $0.value < $1.value }?.key
+            ?? activeRows.filter { $0.value <= top }.max { $0.value < $1.value }?.key
             ?? activeRows.min { $0.value < $1.value }?.key
     }
 
@@ -254,13 +425,15 @@ final class ChatScrollPositionController {
     }
 
     func userDidBeginDragging() {
+        cancelNativeScroll()
         guard let scrollView else { return }
         baselinePanTranslationY = scrollView.panGestureRecognizer.translation(in: scrollView).y
     }
 
     /// The observer acknowledges this page after UIKit layout, including a page of only hidden rows.
-    func contentDidLayout(revision: Int) {
+    func contentDidLayout(revision: Int, nativeScrollRevision: Int = 0) {
         guard pendingLayoutRevision == nil || pendingLayoutRevision == revision else { return }
+        acknowledgeNativeScrollLayout(revision: nativeScrollRevision)
         flushPendingCompensation()
         if pendingLayoutRevision == revision { finishPendingLayout() }
     }
@@ -283,10 +456,9 @@ final class ChatScrollPositionController {
     }
 
     private func snapshotRowViewport(_ rowID: String, in scrollView: UIScrollView) {
-        guard let frame = rowFrames[rowID] else { return }
-        let viewportTop = scrollView.convert(CGPoint(x: 0, y: scrollView.contentOffset.y + scrollView.adjustedContentInset.top), to: nil).y
-        heldRowViewportOffset = viewportTop - frame.minY
-        heldRowBaselineHeight = frame.height
+        guard let minY = rowMinY[rowID], let height = rowFrames[rowID]?.height else { return }
+        heldRowViewportOffset = scrollView.contentOffset.y + scrollView.adjustedContentInset.top - minY
+        heldRowBaselineHeight = height
     }
 
     private func nativeAnchorPoint(rowHeight: CGFloat, in scrollView: UIScrollView) -> UnitPoint? {
@@ -336,6 +508,7 @@ final class ChatScrollPositionController {
     }
 
     func holdPosition(anchorRowID: String?, resync: @escaping () -> Void, completion: @escaping () -> Void) {
+        cancelNativeScroll()
         // Inside a prepend window, rows inserted above the reader may still be
         // measuring. The pin keeps following them through its anchor: the tapped
         // row, or for a control outside any row (always below the inserted
@@ -446,6 +619,7 @@ final class ChatScrollPositionController {
     }
 
     func cancelPreservation() {
+        let wasPreserving = isPreservingPosition
         let completion = holdCompletion
         holdCompletion = nil
         compensationEpoch += 1
@@ -476,6 +650,7 @@ final class ChatScrollPositionController {
         prependWindowEnd = nil
         isApplyingCompensation = false
         completion?()
+        if wasPreserving { onPreservationEnded?() }
     }
 
     nonisolated private static func handleObservedContentSizeChange(

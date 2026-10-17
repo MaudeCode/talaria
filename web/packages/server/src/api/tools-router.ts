@@ -1,4 +1,5 @@
 /** Skills, memory, prompts, commands, notes, insights, logs, health, MCP, plugins, updates, diagnostics (Python `api/routes.py` handlers of the same paths). */
+import type { InferContractRouterInputs } from '@orpc/contract'
 import { implement } from '@orpc/server'
 import { createHash } from 'node:crypto'
 import { join } from 'node:path'
@@ -32,7 +33,7 @@ import { normalizeChannel, updatesCheckView } from '../tools/updates.js'
 import { pyBool } from '../settings.js'
 import { str } from '../util.js'
 import { redactString } from '../redact.js'
-import { GATEWAY_RESTART_NOW, type UpdateNotificationScope, type UpdateNotificationTarget } from '../tools/update-notifications.js'
+import { GATEWAY_RESTART_NOW, type UpdateNotificationScope } from '../tools/update-notifications.js'
 import type { SessionInfo } from '../auth/store.js'
 
 const os = implement(toolsContract).$context<ApiContext>().use(requestSessionIdGuard)
@@ -208,44 +209,47 @@ async function updateNotificationScope(ctx: RequestContext, tab?: string): Promi
 
 async function applyWithNotification(
   ctx: RequestContext,
-  target: UpdateNotificationTarget,
-  apply: () => Promise<Dict>,
-  confirmed = false,
-  tab?: string,
+  input: InferContractRouterInputs<typeof toolsContract>['updates']['apply'],
+  action: 'apply' | 'force' | 'clearLock',
 ): Promise<Dict> {
-  const scope = await updateNotificationScope(ctx, tab)
+  const target = updateTarget(input.target)
+  const confirmed = input.confirmed_agent_revision !== undefined || input.agent_refresh_token !== undefined
+  const scope = await updateNotificationScope(ctx, input.tab_id)
   const active = ctx.deps.updateNotifications.activeUpdate(scope, target)
-  if (active) ctx.deps.updateNotifications.watch(scope, active.id)
+  if (active) (await ctx.deps.updateNotifications.watch(scope, active.id))
   if (active && (active.phase === 'applying' || active.phase === 'restarting')) {
     return { ok: false, status: 'already_in_progress', message: 'Update already in progress', notification_id: active.id }
   }
-  const notification = active ?? ctx.deps.updateNotifications.begin(scope, target)
-  if (active?.phase === 'awaiting_confirmation' && confirmed) ctx.deps.updateNotifications.transition(notification.id, 'applying')
+  const notification = active ?? (await ctx.deps.updateNotifications.begin(scope, target))
+  if (active?.phase === 'awaiting_confirmation' && confirmed) (await ctx.deps.updateNotifications.transition(notification.id, 'applying'))
   try {
-    const result = await apply()
+    const options = { agentChannel: input.agent_channel, confirmedRevision: input.confirmed_agent_revision, version: input.version, refreshToken: input.agent_refresh_token, mutationIntent: principalHash(scope.owner, scope.profile, notification.id) }
+    const result = action === 'apply' ? await ctx.deps.updates.apply(target, bodyChannel(input.channel), () => true, options)
+      : action === 'force' ? await ctx.deps.updates.force(target, bodyChannel(input.channel), options)
+        : await ctx.deps.updates.clearLock(target, options)
     const verifiedIdentity = typeof result.verified_revision === 'string'
       ? { revision: result.verified_revision, version: typeof result.verified_version === 'string' ? result.verified_version : null }
       : undefined
-    if (result.confirmation_required === true) ctx.deps.updateNotifications.transition(notification.id, 'awaiting_confirmation', null, verifiedIdentity)
-    else if (result.restart_blocked === true) ctx.deps.updateNotifications.transition(notification.id, 'blocked', null, verifiedIdentity, result.message)
-    else if (result.ok !== true) ctx.deps.updateNotifications.transition(notification.id, 'failed', null, verifiedIdentity, result.message || result.error)
+    if (result.confirmation_required === true) (await ctx.deps.updateNotifications.transition(notification.id, 'awaiting_confirmation', null, verifiedIdentity, result.message))
+    else if (result.restart_blocked === true) (await ctx.deps.updateNotifications.transition(notification.id, 'blocked', null, verifiedIdentity, result.message))
+    else if (result.ok !== true) (await ctx.deps.updateNotifications.transition(notification.id, 'failed', null, verifiedIdentity, result.message || result.error))
     else if (target === 'webui' && result.restart_scheduled === true) {
-      ctx.deps.updateNotifications.transition(notification.id, 'restarting', str(result.sourceRevision || result.candidate_revision), verifiedIdentity)
+      await ctx.deps.updateNotifications.transition(notification.id, 'restarting', str(result.sourceRevision || result.candidate_revision), verifiedIdentity)
     } else if (result.gateway_restart === 'waiting_for_idle' || (target === 'agent' && ctx.deps.gatewayRestarts.pendingId() !== null)) {
       // TAL-953: the gateway restarts once its own work drains. A restart already waiting covers this update too, and a
       // repeated request that found the Agent current follows that wait rather than reporting success before it.
       const detail = result.stash_conflict === true ? str(result.message) : null
-      ctx.deps.updateNotifications.transition(notification.id, 'waiting_for_idle', null, verifiedIdentity, detail)
-      const pending = ctx.deps.gatewayRestarts.schedule(notification.id, scope.profile, detail)
-      if (pending !== notification.id) ctx.deps.updateNotifications.watch(scope, pending)
+      await ctx.deps.updateNotifications.transition(notification.id, 'waiting_for_idle', null, verifiedIdentity, detail)
+      const pending = (await ctx.deps.gatewayRestarts.schedule(notification.id, scope.profile, detail))
+      if (pending !== notification.id) (await ctx.deps.updateNotifications.watch(scope, pending))
       return { ...result, notification_id: pending }
     } else {
       // A kept Agent stash needs the user's attention; its recovery commands ride on the success record.
-      ctx.deps.updateNotifications.transition(notification.id, 'succeeded', null, verifiedIdentity, result.stash_conflict === true ? result.message : undefined)
+      await ctx.deps.updateNotifications.transition(notification.id, 'succeeded', null, verifiedIdentity, result.stash_conflict === true ? result.message : undefined)
     }
     return { ...result, notification_id: notification.id }
   } catch (error) {
-    ctx.deps.updateNotifications.transition(notification.id, 'failed', null, undefined, error instanceof Error ? error.message : null)
+    await ctx.deps.updateNotifications.transition(notification.id, 'failed', null, undefined, error instanceof Error ? error.message : null)
     throw error
   }
 }
@@ -313,9 +317,9 @@ async function memoryWorkspace(ctx: RequestContext, sessionId: string, workspace
   }
   const profile = activeProfileName(ctx)
   if (!ctx.deps.workspaces.profileSupportsLocalIo(profile)) return null
-  const raw = workspace || (ctx.deps.config.env.TERMINAL_CWD ?? '') || ctx.deps.workspaces.lastWorkspace(profile)
+  const raw = workspace || (ctx.deps.config.env.TERMINAL_CWD ?? '') || (await ctx.deps.workspaces.lastWorkspace(profile))
   if (!raw) return null
-  try { return ctx.deps.workspaces.resolveTrusted(raw, profile) } catch { return null }
+  try { return (await ctx.deps.workspaces.resolveTrusted(raw, profile)) } catch { return null }
 }
 
 /** The external notes drawer's Joplin access; 404 while the drawer is disabled. */
@@ -432,7 +436,7 @@ export const toolsRouter = os.router({
       }
       // TAL-904: a chat's command runs under that chat's session and the workspace its next turn would use. An unknown
       // chat (404) or a workspace that turn would refuse (400) refuses the command rather than run it half-bound.
-      const chat = sessionId ? { session_id: sessionId, workspace: ctx.deps.sessions.turnWorkspace((await ctx.deps.sessionStore.get(sessionId, { metadataOnly: true }))) } : {}
+      const chat = sessionId ? { session_id: sessionId, workspace: (await ctx.deps.sessions.turnWorkspace((await ctx.deps.sessionStore.get(sessionId, { metadataOnly: true })))) } : {}
       try {
         return { output: (await runningSidecar(ctx).call('commands.exec', { profile_home: home(ctx), command, ...chat }, { timeoutMs: 120_000 })).output }
       } catch (error) {
@@ -513,11 +517,11 @@ export const toolsRouter = os.router({
       await ctx.deps.agentConfig.update(home(ctx), (config) => { applyDashboardConfig(config, next) })
       return next
     })),
-    projectOs: os.ops.projectOs.handler(({ input, context: { ctx } }) => run(() => {
+    projectOs: os.ops.projectOs.handler(({ input, context: { ctx } }) => run(async () => {
       const profile = activeProfileName(ctx)
       return projectOsDashboard(str(input.board), {
         localIo: ctx.deps.workspaces.profileSupportsLocalIo(profile),
-        lastWorkspace: ctx.deps.workspaces.lastWorkspace(profile),
+        lastWorkspace: (await ctx.deps.workspaces.lastWorkspace(profile)),
         boards: async () => (await runningSidecar(ctx).call('kanban.boards', { profile_home: home(ctx), include_archived: true })).boards,
         git: async (repoRoot) => gitBadge(await ctx.deps.git.status(repoRoot, { useCache: true })),
         cwd: process.cwd(),
@@ -649,13 +653,13 @@ export const toolsRouter = os.router({
     return { ok: true as const, key: result.key, written: [...result.written, ...secretFields.map((field) => field.key)], settings: pluginSettingsFieldsView(ctx, result.fields) }
   }))),
   updates: {
-    check: os.updates.check.handler(({ context: { ctx } }) => run(() => {
-      const settings = ctx.deps.settings.load()
+    check: os.updates.check.handler(({ context: { ctx } }) => run(async () => {
+      const settings = (await ctx.deps.settings.load())
       if (settings.check_for_updates === false) return updatesCheckView({ disabled: true }) as never
       return updatesCheckView(ctx.deps.updates.cachedStatus(!pyBool(settings.ignore_agent_updates))) as never
     })),
     checkNow: os.updates.checkNow.handler(({ input, context: { ctx } }) => run(async () => {
-      const settings = ctx.deps.settings.load()
+      const settings = (await ctx.deps.settings.load())
       const force = pyBool(input.force)
       if (settings.check_for_updates === false && !force) return updatesCheckView({ disabled: true }) as never
       // An explicit body channel wins over a debounced, not-yet-saved setting.
@@ -663,39 +667,39 @@ export const toolsRouter = os.router({
       ctx.deps.log(`[updates] checking for updates (force=${String(force)}, channel=${channel})`)
       return updatesCheckView(await ctx.deps.updates.check(force, !pyBool(settings.ignore_agent_updates), channel, input.agent_channel)) as never
     })),
-    apply: os.updates.apply.handler(({ input, context: { ctx } }) => run(() => { const target = updateTarget(input.target); return applyWithNotification(ctx, target, () => ctx.deps.updates.apply(target, bodyChannel(input.channel), () => true, { agentChannel: input.agent_channel, confirmedRevision: input.confirmed_agent_revision, version: input.version }), input.confirmed_agent_revision !== undefined, input.tab_id) as never })),
-    force: os.updates.force.handler(({ input, context: { ctx } }) => run(() => { const target = updateTarget(input.target); return applyWithNotification(ctx, target, () => ctx.deps.updates.force(target, bodyChannel(input.channel), { agentChannel: input.agent_channel, confirmedRevision: input.confirmed_agent_revision, version: input.version }), input.confirmed_agent_revision !== undefined, input.tab_id) as never })),
-    clearLock: os.updates.clearLock.handler(({ input, context: { ctx } }) => run(() => { const target = updateTarget(input.target); return applyWithNotification(ctx, target, () => ctx.deps.updates.clearLock(target, { agentChannel: input.agent_channel, confirmedRevision: input.confirmed_agent_revision, version: input.version }), input.confirmed_agent_revision !== undefined, input.tab_id) as never })),
-    summary: os.updates.summary.handler(({ input, context: { ctx } }) => run(() => ctx.deps.updates.summarize(input.target, ctx.deps.settings.load().check_for_updates === false) as never)),
+    apply: os.updates.apply.handler(({ input, context: { ctx } }) => run(() => applyWithNotification(ctx, input, 'apply'))),
+    force: os.updates.force.handler(({ input, context: { ctx } }) => run(() => applyWithNotification(ctx, input, 'force'))),
+    clearLock: os.updates.clearLock.handler(({ input, context: { ctx } }) => run(() => applyWithNotification(ctx, input, 'clearLock'))),
+    summary: os.updates.summary.handler(({ input, context: { ctx } }) => run(async () => ctx.deps.updates.summarize(input.target, (await ctx.deps.settings.load()).check_for_updates === false) as never)),
   },
   updateNotifications: {
     list: os.updateNotifications.list.handler(({ input, context: { ctx } }) => run(async () => {
       const scope = await updateNotificationScope(ctx, input.tab_id)
-      const frontendBuild = ctx.deps.updateNotifications.syncTabBuild(scope, input.loaded_build ?? null, ctx.deps.spa.buildId())
-      return { ...ctx.deps.updateNotifications.list(scope), frontend_build: frontendBuild } as never
+      const frontendBuild = (await ctx.deps.updateNotifications.syncTabBuild(scope, input.loaded_build ?? null, ctx.deps.spa.buildId()))
+      return { ...(await ctx.deps.updateNotifications.list(scope)), frontend_build: frontendBuild } as never
     })),
     read: os.updateNotifications.read.handler(({ input, context: { ctx } }) => run(async () => {
-      const notification = ctx.deps.updateNotifications.read(await updateNotificationScope(ctx, input.tab_id), input.id)
+      const notification = (await ctx.deps.updateNotifications.read(await updateNotificationScope(ctx, input.tab_id), input.id))
       if (!notification) throw new HttpError(404, 'Update notification not found')
       return notification as never
     })),
     dismiss: os.updateNotifications.dismiss.handler(({ input, context: { ctx } }) => run(async () => {
-      const result = ctx.deps.updateNotifications.dismiss(await updateNotificationScope(ctx, input.tab_id), input.id)
+      const result = (await ctx.deps.updateNotifications.dismiss(await updateNotificationScope(ctx, input.tab_id), input.id))
       if (result === 'acknowledgement_required') throw new HttpError(409, 'This notification requires acknowledgement before it can be dismissed')
       return { ok: true as const }
     })),
     clear: os.updateNotifications.clear.handler(({ input, context: { ctx } }) => run(async () => {
       const scope = await updateNotificationScope(ctx, input.tab_id)
-      const frontendBuild = ctx.deps.updateNotifications.syncTabBuild(scope, input.loaded_build ?? null, ctx.deps.spa.buildId())
-      return { ...ctx.deps.updateNotifications.clear(scope), frontend_build: frontendBuild } as never
+      const frontendBuild = (await ctx.deps.updateNotifications.syncTabBuild(scope, input.loaded_build ?? null, ctx.deps.spa.buildId()))
+      return { ...(await ctx.deps.updateNotifications.clear(scope)), frontend_build: frontendBuild } as never
     })),
     cancel: os.updateNotifications.cancel.handler(({ input, context: { ctx } }) => run(async () => {
-      const notification = ctx.deps.updateNotifications.cancelUpdate(await updateNotificationScope(ctx), input.id)
+      const notification = (await ctx.deps.updateNotifications.cancelUpdate(await updateNotificationScope(ctx), input.id))
       if (!notification) throw new HttpError(404, 'Awaiting update notification not found')
       return notification as never
     })),
     action: os.updateNotifications.action.handler(({ input, context: { ctx } }) => run(async () => {
-      const notification = ctx.deps.updateNotifications.action(await updateNotificationScope(ctx, input.tab_id), input.id, input.action_id)
+      const notification = (await ctx.deps.updateNotifications.action(await updateNotificationScope(ctx, input.tab_id), input.id, input.action_id))
       if (!notification) throw new HttpError(404, 'Notification action not found')
       if (input.action_id === GATEWAY_RESTART_NOW) ctx.deps.gatewayRestarts.restartNow(notification.id)
       return notification as never

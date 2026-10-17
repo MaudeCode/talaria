@@ -1,3 +1,4 @@
+import SwiftData
 import SwiftUI
 import XCTest
 @testable import Talaria
@@ -134,6 +135,70 @@ final class SessionListHostedTests: XCTestCase {
         fixture.releaseHeldLoads()
         let synced = await awaitNoElement(in: reopened) { $0.accessibilityLabel == "Syncing messages with the server" }
         XCTAssertTrue(synced, "Syncing messages stayed after the server answered")
+    }
+
+    func testReopenedToolHeavyChatPaintsItsCompleteRecentWindowWhileDetailIsHeld() async throws {
+        let fixture = try FixtureApp([UITestFixtureEnvironment.holdTranscriptReloadsArgument], for: self)
+        let session = try await fixture.session()
+        // Consume the fixture's first detail; every subsequent detail stays held until release.
+        _ = try await fixture.client.session(id: UITestFixtureURLProtocol.sessionID)
+        let decoder = JSONDecoder()
+        decoder.keyDecodingStrategy = .convertFromSnakeCase
+        let body = try ChatViewModelSendTests.toolHeavyRecentSessionJSON()
+        let detail = try XCTUnwrap(decoder.decode(SessionResponse.self, from: Data(body.utf8)).session)
+        // The legacy cache exercises the old raw-row crop in the same real build.
+        try CacheStore.cacheMessages(
+            detail.messages ?? [], serverURL: UITestFixtureEnvironment.serverURL,
+            sessionID: UITestFixtureURLProtocol.sessionID, in: fixture.cache.mainContext
+        )
+        let legacyWindow = try CacheStore.cachedTranscriptWindow(
+            serverURL: UITestFixtureEnvironment.serverURL, sessionID: UITestFixtureURLProtocol.sessionID,
+            in: fixture.cache.mainContext
+        )
+        XCTAssertEqual(legacyWindow.messages, Array((detail.messages ?? []).suffix(50)))
+        XCTAssertEqual(legacyWindow.messagesOffset, 0)
+        XCTAssertNil(legacyWindow.recentMessagesOffset)
+        let legacy = try hostWindow(fixture.chat(session))
+        _ = try await requireElement(in: legacy, label: "Syncing messages with the server")
+        _ = try await requireElement(in: legacy, label: "Recent answer 24")
+        attachHostedScreenshot(legacy, name: "legacy-cache-before-sync-phone")
+        legacy.isHidden = true
+        legacy.rootViewController = nil
+
+        try CacheStore.cacheMessages(
+            detail.messages ?? [], serverURL: UITestFixtureEnvironment.serverURL,
+            sessionID: UITestFixtureURLProtocol.sessionID, in: fixture.cache.mainContext,
+            messagesOffset: detail.messagesOffset, hasOlderMessages: detail.messagesTruncated == true
+        )
+        let recentWindow = try CacheStore.cachedTranscriptWindow(
+            serverURL: UITestFixtureEnvironment.serverURL, sessionID: UITestFixtureURLProtocol.sessionID,
+            in: fixture.cache.mainContext
+        )
+        XCTAssertEqual(recentWindow.messages, detail.messages)
+        XCTAssertEqual(recentWindow.messagesOffset, 200)
+        XCTAssertEqual(recentWindow.recentMessagesOffset, 200)
+        XCTAssertTrue(recentWindow.hasOlderMessages)
+        let reopened = try hostWindow(fixture.chat(session))
+        _ = try await requireElement(in: reopened, label: "Syncing messages with the server")
+        _ = try await requireElement(in: reopened, label: "Recent answer 24")
+        let observer = try XCTUnwrap(reopened.firstView(ofType: ChatScrollObserver.ObserverView.self))
+        let position = try XCTUnwrap(observer.coordinator?.scrollPositionController)
+        var ancestor = observer.superview
+        while ancestor != nil, !(ancestor is UIScrollView) { ancestor = ancestor?.superview }
+        let recentScroll = try XCTUnwrap(ancestor as? UIScrollView)
+        let settled = await awaitCondition { !position.isPreservingPosition }
+        XCTAssertTrue(settled)
+        position.onHoldAnchor?(ChatTranscriptView.containerID(for: "transcript:200"), .top)
+        let oldestIsVisible = await awaitCondition {
+            guard let question = HostedAccessibility.element(in: reopened, label: "Recent question 0") else { return false }
+            return question.accessibilityFrame.intersects(recentScroll.convert(recentScroll.bounds, to: nil))
+        }
+        XCTAssertTrue(oldestIsVisible, "The first server row must remain reachable in the cached window before reconciliation")
+        _ = try await requireElement(in: reopened, label: "Syncing messages with the server")
+        attachHostedScreenshot(reopened, name: "recent-window-before-sync-phone")
+        fixture.releaseHeldLoads()
+        let synced = await awaitNoElement(in: reopened) { $0.accessibilityLabel == "Syncing messages with the server" }
+        XCTAssertTrue(synced)
     }
 
     /// A server that reports the Agent's `state.db` as corrupt gets one notice above the Chats list that VoiceOver

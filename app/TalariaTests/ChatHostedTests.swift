@@ -1,3 +1,4 @@
+import SwiftData
 import SwiftUI
 import UIKit
 import XCTest
@@ -23,6 +24,42 @@ final class ChatHostedTests: XCTestCase {
         let waiting = await awaitElement(in: window, label: "Held steering prompt")
         XCTAssertNotNil(waiting)
         XCTAssertEqual(draft.text, "Newer draft")
+    }
+
+    func testCachedReopenKeepsLatestContentStationaryWhenSyncFinishes() async throws {
+        let fixture = try FixtureApp([UITestFixtureEnvironment.holdTranscriptReloadsArgument], for: self)
+        let response = try await fixture.client.session(id: UITestFixtureURLProtocol.sessionID)
+        let messages = try XCTUnwrap(response.session?.messages)
+        try CacheStore.cacheMessages(
+            messages, serverURL: UITestFixtureEnvironment.serverURL,
+            sessionID: UITestFixtureURLProtocol.sessionID, in: fixture.cache.mainContext,
+            messagesOffset: 0, hasOlderMessages: false
+        )
+
+        let reopened = try hostWindow(fixture.sessionList(), size: CGSize(width: 402, height: 874), animationsEnabled: true)
+        let row = try await requireElement(in: reopened) { $0.accessibilityLabel?.hasPrefix(UITestFixtureURLProtocol.sessionTitle) == true }
+        XCTAssertTrue(HostedAccessibility.activate(row))
+        _ = try await requireElement(in: reopened, label: "Syncing messages with the server")
+        settle(0.5)
+        let scroll = try transcriptScrollView(in: reopened)
+        let beforeOffset = scroll.contentOffset.y
+        let beforeHeight = scroll.contentSize.height
+        let beforeInset = scroll.adjustedContentInset.bottom
+        let anchor = try await requireElement(in: reopened, label: "Fixture link request")
+        let beforeAnchorY = anchor.accessibilityFrame.minY
+        attachHostedScreenshot(reopened, name: "cached-reopen-syncing-bottom")
+
+        fixture.releaseHeldLoads()
+        let synced = await awaitNoElement(in: reopened) { $0.accessibilityLabel == "Syncing messages with the server" }
+        XCTAssertTrue(synced)
+        settle(0.5)
+        attachHostedScreenshot(reopened, name: "cached-reopen-after-sync")
+        let afterAnchor = try await requireElement(in: reopened, label: "Fixture link request")
+        let metrics = XCTAttachment(string: "offset: \(beforeOffset) -> \(scroll.contentOffset.y); height: \(beforeHeight) -> \(scroll.contentSize.height); bottom inset: \(beforeInset) -> \(scroll.adjustedContentInset.bottom); anchor Y: \(beforeAnchorY) -> \(afterAnchor.accessibilityFrame.minY)")
+        metrics.name = "cache reopen scroll metrics"
+        metrics.lifetime = .keepAlways
+        add(metrics)
+        XCTAssertEqual(afterAnchor.accessibilityFrame.minY, beforeAnchorY, accuracy: 3, "Sync completion moved an unchanged message on screen")
     }
 
     func testSyncingBesideGoalDoesNotReserveTranscriptSpaceInNarrowStack() async throws {
@@ -145,41 +182,124 @@ final class ChatHostedTests: XCTestCase {
         try await assertFullChatHistoryInsertion(expandDisclosure: true, boundaryTurn: true)
     }
 
-    private func assertFullChatHistoryInsertion(expandDisclosure: Bool, boundaryTurn: Bool = false) async throws {
+    private func nativeHistoryDragDirectory() throws -> URL {
+        let runtime = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent()
+            .appendingPathComponent(".codex-tmp/xctest")
+        guard let token = try? String(contentsOf: runtime.appendingPathComponent("native-history-drag"), encoding: .utf8),
+              let runID = UUID(uuidString: token) else {
+            throw XCTSkip("Use scripts/test-history-drag to supply real native gestures")
+        }
+        return runtime.appendingPathComponent("history-drag/\(runID.uuidString.lowercased())")
+    }
+
+    func testExpandedMessageSurvivesRecyclingItsRenderedBody() async throws {
+        let state = RecycledBodyFixture()
+        let window = try hostWindow(RecycledBodyView(state: state))
+        HostedAccessibility.activate(try await requireElement(in: window, label: "Show more"))
+        _ = try await requireElement(in: window, label: "Show less")
+        state.showsBody = false
+        let removed = await awaitNoElement(in: window) { $0.accessibilityLabel == "Show less" }
+        XCTAssertTrue(removed)
+        state.showsBody = true
+        let restored = await awaitElement(in: window, label: "Show less")
+        XCTAssertNotNil(restored, "A recycled message must retain its expanded body")
+    }
+
+    func testFetchedToolOutputSurvivesRecyclingItsRenderedBody() async throws {
+        var tool = ToolCall(id: "retained-tool", name: "fixture_tool", preview: "Clipped output", args: nil,
+                            isCompleted: true, startedAt: 0)
+        tool.resultTruncated = true
+        let state = RecycledBodyFixture(tool: tool)
+        defer { state.releaseToolResult() }
+        let suite = "TalariaTests.retained-tool.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let window = try hostWindow(RecycledBodyView(state: state).defaultAppStorage(defaults))
+        if let header = HostedAccessibility.elements(in: window).first(where: {
+            $0.accessibilityHint == "Double tap to expand details."
+        }) { HostedAccessibility.activate(header) }
+        HostedAccessibility.activate(try await requireElement(in: window, label: "Show full output"))
+        let requested = await awaitCondition { state.isToolResultPending }
+        XCTAssertTrue(requested)
+        state.showsBody = false
+        let loadingRemoved = await awaitNoElement(in: window) { $0.accessibilityLabel == "Loading…" }
+        XCTAssertTrue(loadingRemoved)
+        state.showsBody = true
+        let loadingElement = await awaitElement(in: window, label: "Loading…")
+        let loading = try XCTUnwrap(loadingElement, "Recycling must retain the expanded tool's in-flight fetch")
+        XCTAssertTrue(loading.accessibilityTraits.contains(.notEnabled))
+        state.releaseToolResult()
+        _ = try await requireElement(in: window, label: "Full retained tool output")
+        XCTAssertEqual(state.toolResultCalls, 1)
+        state.showsBody = false
+        let removed = await awaitNoElement(in: window) { $0.accessibilityLabel == "Full retained tool output" }
+        XCTAssertTrue(removed)
+        state.showsBody = true
+        let restored = await awaitElement(in: window, label: "Full retained tool output")
+        XCTAssertNotNil(restored, "Recycling must retain the expanded tool's fetched output")
+        XCTAssertNil(HostedAccessibility.element(in: window, label: "Show full output"))
+    }
+
+    /// Driven by scripts/test-history-drag; ordinary hosted runs have no external gesture driver.
+    func testHistoryInsertionPreservesReaderDuringNativeDrag() async throws {
+        try await assertFullChatHistoryInsertion(expandDisclosure: true, boundaryTurn: true, nativeDrag: true)
+    }
+
+    func testLargeLoadedHistoryInsertionPreservesReaderDuringNativeDrag() async throws {
+        try await assertFullChatHistoryInsertion(expandDisclosure: true, boundaryTurn: true, nativeDrag: true, largeHistory: true)
+    }
+
+    private func assertFullChatHistoryInsertion(expandDisclosure: Bool, boundaryTurn: Bool = false, nativeDrag: Bool = false, largeHistory: Bool = false) async throws {
+        let nativeRunDirectory = nativeDrag ? try nativeHistoryDragDirectory() : nil
         var scenario = [UITestFixtureEnvironment.historyPagingArgument,
                         UITestFixtureEnvironment.holdTranscriptReloadsArgument]
+        if largeHistory { scenario.append(UITestFixtureEnvironment.largeHistoryWindowArgument) }
+        let initialStart = largeHistory ? 1_000 : 1_950
         if boundaryTurn { scenario.append(UITestFixtureEnvironment.historyTurnBoundaryArgument) }
         else if expandDisclosure { scenario.append(UITestFixtureEnvironment.longPromptArgument) }
         let fixture = try FixtureApp(scenario, for: self)
         let window = try hostWindow(fixture.chat(try await fixture.session()))
         _ = try await requireElement(in: window) { $0.accessibilityLabel?.hasPrefix("History answer 1999.") == true }
         let scroll = try transcriptScrollView(in: window)
+        let isVisible: (NSObject) -> Bool = { element in
+            window.convert(scroll.bounds, from: scroll).intersection(window.bounds)
+                .intersects(window.convert(element.accessibilityFrame, from: nil))
+        }
         let coordinator = try XCTUnwrap(window.firstView(ofType: ChatScrollObserver.ObserverView.self)?.coordinator)
         let controller = try XCTUnwrap(coordinator.scrollPositionController)
+        let entrySettled = await awaitCondition {
+            !controller.isNavigating && !controller.isPreservingPosition && !controller.isRealizingRows
+        }
+        XCTAssertTrue(entrySettled, "Entry realization must settle before positioning the fixture reader")
+        controller.userDidBeginDragging()
         coordinator.onFollowEvent(.userScrollBegin)
-        let readerID = boundaryTurn ? "history-1959" : "history-1954"
+        let readerID = boundaryTurn ? "history-\(initialStart + 9)" : "history-1954"
         let decoder = JSONDecoder()
         decoder.keyDecodingStrategy = .convertFromSnakeCase
         let initialPage = try decoder.decode([ChatMessage].self, from: JSONSerialization.data(
-            withJSONObject: UITestFixtureURLProtocol.historyMessages(from: 1_950, to: 2_000)))
-        let readerRow = try XCTUnwrap(ChatViewModel.transcriptMessages(from: initialPage, messageOffset: 1_950)
+            withJSONObject: UITestFixtureURLProtocol.historyMessages(from: initialStart, to: 2_000)))
+        let readerRow = try XCTUnwrap(ChatViewModel.transcriptMessages(from: initialPage, messageOffset: initialStart)
             .first { $0.message.messageId == readerID })
-        controller.onHoldAnchor?(ChatTranscriptView.containerID(for: readerRow.renderID), boundaryTurn ? .top : .center)
-        let held = await awaitCondition { UITestFixtureHold.shared.pendingCount > 0 }
+        try await navigateTranscript(to: ChatTranscriptView.containerID(for: readerRow.renderID), anchor: boundaryTurn ? .top : .center, using: controller)
+        let held = await awaitCondition { self.hasHeldHistoryPage(before: initialStart) }
         XCTAssertTrue(held, "The real view model must request its older page before measuring insertion")
         if expandDisclosure {
             if boundaryTurn {
                 HostedAccessibility.activate(try await requireElement(in: window) {
                     $0.accessibilityLabel == "Worked" && $0.accessibilityHint == "Double tap to expand work."
+                        && isVisible($0)
                 })
                 _ = try await requireElement(in: window) { $0.accessibilityLabel?.hasPrefix("Boundary work 0.") == true }
             } else {
-                HostedAccessibility.activate(try await requireElement(in: window, label: "Show more"))
+                HostedAccessibility.activate(try await requireElement(in: window) {
+                    $0.accessibilityLabel == "Show more" && isVisible($0)
+                })
                 _ = try await requireElement(in: window, label: "Show less")
             }
             let settled = await awaitCondition { !controller.isHoldingPosition }
             XCTAssertTrue(settled)
         }
+        try await Task.sleep(for: .milliseconds(200))
         let reader: NSObject
         if boundaryTurn {
             reader = try await requireElement(in: window) { $0.accessibilityLabel?.hasPrefix("Boundary work 0.") == true }
@@ -188,37 +308,72 @@ final class ChatHostedTests: XCTestCase {
         } else {
             reader = try await requireElement(in: window, label: "History prompt 1954.")
         }
-        try await Task.sleep(for: .milliseconds(200))
         let viewport = window.convert(scroll.bounds, from: scroll).intersection(window.bounds)
         let frame = window.convert(reader.accessibilityFrame, from: nil).intersection(viewport)
         XCTAssertFalse(frame.isEmpty, "The reader must be visibly on screen before releasing the page")
         let point = CGPoint(x: frame.midX, y: frame.midY)
         let registry = try messageMenuRegistry(in: window)
-        let before = try XCTUnwrap(registry.hit(at: scroll.convert(point, from: window), in: scroll))
+        var before = try XCTUnwrap(registry.hit(at: scroll.convert(point, from: window), in: scroll))
         XCTAssertEqual(before.content.messageID, readerID)
         let oldHeight = scroll.contentSize.height
         var samples: [[String: Double]] = []
         var largestMovement: CGFloat = 0
         var missingReader = false
         var previousTick = ProcessInfo.processInfo.systemUptime
+        var initialTranslation: CGFloat?
+        var dragSamples = 0
+        var pageReleased = false
+        if let nativeRunDirectory {
+            try FileManager.default.createDirectory(at: nativeRunDirectory, withIntermediateDirectories: true)
+            try Data("ready".utf8).write(to: nativeRunDirectory.appendingPathComponent("ready"))
+        }
         let updateLink = UIUpdateLink(windowScene: try XCTUnwrap(window.windowScene))
         updateLink.addAction(to: .afterUpdateComplete) { _, _ in
             guard samples.count < 120 else { return }
             let now = ProcessInfo.processInfo.systemUptime
-            let hit = registry.hit(at: scroll.convert(point, from: window), in: scroll)
+            let translation = scroll.panGestureRecognizer.translation(in: scroll).y
+            var samplePoint = point
+            if nativeDrag {
+                guard scroll.isDragging else { return }
+                if initialTranslation == nil {
+                    initialTranslation = translation
+                    before = registry.hit(at: scroll.convert(point, from: window), in: scroll) ?? before
+                    XCTAssertEqual(before.content.messageID, readerID, "The drag must start on the chosen reader")
+                    fixture.releaseHeldLoads()
+                    pageReleased = true
+                }
+                samplePoint.y += translation - (initialTranslation ?? translation)
+                guard viewport.contains(samplePoint) else { return }
+                dragSamples += 1
+            }
+            let hit = registry.hit(at: scroll.convert(samplePoint, from: window), in: scroll)
             let delta = (hit?.localPoint.y ?? 0) - before.localPoint.y
             if hit?.content.messageID != before.content.messageID { missingReader = true }
             else { largestMovement = max(largestMovement, abs(delta)) }
             samples.append(["gapMilliseconds": (now - previousTick) * 1_000,
                             "readerDelta": Double(delta), "offset": Double(scroll.contentOffset.y),
-                            "height": Double(scroll.contentSize.height),
+                            "height": Double(scroll.contentSize.height), "translation": Double(translation),
+                            "pointY": Double(samplePoint.y),
+                            "dragging": scroll.isDragging ? 1 : 0,
                             "messageIndex": Double(Int(hit?.content.messageID.replacingOccurrences(of: "history-", with: "") ?? "") ?? -1)])
             previousTick = now
         }
+        updateLink.requiresContinuousUpdates = nativeDrag
         updateLink.isEnabled = true
         defer { updateLink.isEnabled = false }
-        fixture.releaseHeldLoads()
-        try await Task.sleep(for: .milliseconds(1_500))
+        if nativeDrag {
+            let started = await awaitCondition(timeout: 45) { pageReleased }
+            XCTAssertTrue(started, "The reproduction requires a real native drag")
+            try await Task.sleep(for: .seconds(3))
+            XCTAssertGreaterThan(dragSamples, 3, "Sample the moving reader, not just its final position")
+            let driverFinished = await awaitCondition(timeout: 15) {
+                nativeRunDirectory.map { FileManager.default.fileExists(atPath: $0.appendingPathComponent("driver-finished").path) } ?? false
+            }
+            XCTAssertTrue(driverFinished, "The native driver must close before the simulator lease is released")
+        } else {
+            fixture.releaseHeldLoads()
+            try await Task.sleep(for: .milliseconds(1_500))
+        }
         XCTAssertGreaterThan(samples.count, 0, "The test must observe committed display frames")
         updateLink.isEnabled = false
         coordinator.onFollowEvent(.userScrollEnd(isAtBottom: false))
@@ -229,11 +384,51 @@ final class ChatHostedTests: XCTestCase {
         XCTAssertGreaterThan(scroll.contentSize.height, oldHeight + 500, "The older page must actually render")
         XCTAssertFalse(missingReader, "Insertion must keep the same rendered message under the reader throughout layout")
         XCTAssertLessThanOrEqual(largestMovement, 2, "Insertion must not visibly jump before settling")
+        if nativeDrag {
+            let largestGap = samples.dropFirst().map { $0["gapMilliseconds"] ?? 0 }.max() ?? 0
+            XCTAssertLessThanOrEqual(largestGap, 100, "History insertion must not stall the moving display")
+        }
         if expandDisclosure {
             if boundaryTurn {
                 XCTAssertNotNil(HostedAccessibility.elements(in: window).first {
                     $0.accessibilityLabel == "Worked" && $0.accessibilityHint == "Double tap to collapse work."
                 }, "Paging inside a turn must retain its expanded work")
+                // Recycle the actual rich row, then return to its stable native target.
+                // Its disclosure belongs to the row slot, not the removed view body.
+                let latestRow = try XCTUnwrap(ChatViewModel.transcriptMessages(from: initialPage, messageOffset: initialStart).last)
+                try await navigateTranscript(to: ChatTranscriptView.containerID(for: latestRow.renderID), anchor: .bottom, using: controller)
+                let recycled = await awaitNoElement(in: window) { $0.accessibilityLabel?.hasPrefix("Boundary work 0.") == true }
+                XCTAssertTrue(recycled, "The expanded row must actually leave realization before revisiting it")
+                try await navigateTranscript(to: ChatTranscriptView.containerID(for: readerRow.renderID), anchor: .top, using: controller)
+                _ = try await requireElement(in: window) { $0.accessibilityLabel?.hasPrefix("Boundary work 0.") == true }
+                // Start another page after moving away and back: the window now
+                // contains retained heights and state from the first prepend.
+                let previousStart = initialStart - 50
+                let previousPage = try decoder.decode([ChatMessage].self, from: JSONSerialization.data(
+                    withJSONObject: UITestFixtureURLProtocol.historyMessages(from: previousStart, to: initialStart)))
+                let nextReaderID = "history-\(previousStart + 1)"
+                let nextReaderRow = try XCTUnwrap(ChatViewModel.transcriptMessages(from: previousPage, messageOffset: previousStart)
+                    .first { $0.message.messageId == nextReaderID })
+                try await navigateTranscript(to: ChatTranscriptView.containerID(for: nextReaderRow.renderID), anchor: .top, using: controller)
+                _ = try await requireElement(in: window) {
+                    $0.accessibilityLabel?.hasPrefix("History answer \(previousStart + 1).") == true
+                }
+                let secondHeld = await awaitCondition { self.hasHeldHistoryPage(before: previousStart) }
+                XCTAssertTrue(secondHeld, "Revisiting the prefix must request a second older page")
+                try await Task.sleep(for: .milliseconds(200))
+                // A tall answer's first paragraph can be above the viewport;
+                // measure an actually visible piece of that same message.
+                let nextPoint = try XCTUnwrap(stride(from: viewport.minY + 80, to: viewport.maxY - 80, by: 10)
+                    .map { CGPoint(x: viewport.midX, y: $0) }
+                    .first { registry.hit(at: scroll.convert($0, from: window), in: scroll)?.content.messageID == nextReaderID })
+                let nextBefore = try XCTUnwrap(registry.hit(at: scroll.convert(nextPoint, from: window), in: scroll))
+                XCTAssertEqual(nextBefore.content.messageID, nextReaderID)
+                fixture.releaseHeldLoads()
+                try await Task.sleep(for: .milliseconds(1_500))
+                let nextAfter = try XCTUnwrap(registry.hit(at: scroll.convert(nextPoint, from: window), in: scroll))
+                XCTAssertEqual(nextAfter.content.messageID, nextReaderID)
+                XCTAssertEqual(nextAfter.localPoint.y, nextBefore.localPoint.y, accuracy: 2,
+                               "A second prepend must preserve the revisited reader")
             } else {
                 XCTAssertNotNil(HostedAccessibility.element(in: window, label: "Show less"),
                                 "A page must preserve the expanded disclosure state")
@@ -328,7 +523,7 @@ final class ChatHostedTests: XCTestCase {
         let chip = await awaitElement(in: window, where: containing("Background tasks · 2"))
         XCTAssertFalse(HostedAccessibility.elements(in: window).contains(where: finishedRow), "A task row shows outside the sheet")
 
-        HostedAccessibility.activate(try XCTUnwrap(elements(named: "Worked", in: window).first, "The delegation row has no Worked disclosure"))
+        HostedAccessibility.activate(try await requireElement(in: window, label: "Worked", "The delegation row has no Worked disclosure"))
         let progress = await awaitElement(in: window, where: containing("2 of 3 done · 1 failed"))
         XCTAssertNotNil(progress, "The delegation row does not show its subagents' progress")
 
@@ -539,6 +734,26 @@ final class ChatHostedTests: XCTestCase {
         return try XCTUnwrap(stored["registry"] as? ChatMessageMenuRegistry)
     }
 
+    private func hasHeldHistoryPage(before offset: Int) -> Bool {
+        UITestFixtureHold.shared.pendingRequests.contains { request in
+            guard let url = request.url, url.path == "/api/session" else { return false }
+            return URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems?.contains {
+                $0.name == "msg_before" && $0.value == String(offset)
+            } == true
+        }
+    }
+
+    /// Mounting a buffered target is not arrival; wait before interacting with it.
+    private func navigateTranscript(to id: String, anchor: UnitPoint, using controller: ChatScrollPositionController) async throws {
+        controller.cancelPreservation()
+        let navigate = try XCTUnwrap(controller.onHoldAnchor, "The transcript must register its navigation owner")
+        navigate(id, anchor)
+        let arrived = await awaitCondition {
+            !controller.isNavigating && !controller.isPreservingPosition && !controller.isRealizingRows
+        }
+        XCTAssertTrue(arrived, "The requested reader must finish navigation and realization before fixture interaction; navigating \(controller.isNavigating), preserving \(controller.isPreservingPosition), realizing \(controller.isRealizingRows), top \(String(describing: controller.viewportTop))")
+    }
+
     private func transcriptScrollView(in window: UIWindow) throws -> UIScrollView {
         var scroll: UIScrollView?
         waitUntil {
@@ -548,5 +763,46 @@ final class ChatHostedTests: XCTestCase {
             return scroll != nil
         }
         return try XCTUnwrap(scroll, "The transcript's native scroll handler did not attach")
+    }
+}
+
+@MainActor @Observable
+private final class RecycledBodyFixture {
+    var showsBody = true
+    let rowState = ChatTranscriptRowState()
+    let tool: ToolCall?
+    @ObservationIgnored private var toolResultContinuation: CheckedContinuation<Void, Never>?
+    var toolResultCalls = 0
+    var isToolResultPending: Bool { toolResultContinuation != nil }
+    init(tool: ToolCall? = nil) { self.tool = tool }
+
+    func toolResult() async -> ToolResultView {
+        toolResultCalls += 1
+        await withCheckedContinuation { toolResultContinuation = $0 }
+        return ToolResultView(text: "Full retained tool output")
+    }
+
+    func releaseToolResult() {
+        let continuation = toolResultContinuation
+        toolResultContinuation = nil
+        continuation?.resume()
+    }
+}
+
+private struct RecycledBodyView: View {
+    let state: RecycledBodyFixture
+    var body: some View {
+        if state.showsBody {
+            Group {
+                if let tool = state.tool {
+                    ToolCallCardView(toolCall: tool)
+                        .environment(\.chatFullToolResultLoader) { _ in await state.toolResult() }
+                } else {
+                    MessageBubbleView(message: ChatMessage(role: "user", content: "Full retained fixture body", timestamp: nil,
+                                                          messageId: "retained-body", displayExcerpt: "Excerpt"))
+                }
+            }
+            .environment(\.chatTranscriptRowState, state.rowState)
+        }
     }
 }

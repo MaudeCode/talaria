@@ -79,6 +79,24 @@ describe('SystemSection "Check now"', () => {
     expect(screen.queryByText(/1 commits behind/)).not.toBeInTheDocument()
   })
 
+  it.each([false, true])('renders legacy refresh consent and preserves the selected update, accept=%s', async (accept) => {
+    vi.mocked(api.fetchUpdatesCheck).mockResolvedValue({ webui: current, agent: behind(1) })
+    vi.mocked(api.applyUpdates).mockResolvedValueOnce({ ok: false, confirmation_required: true, candidate_revision: 'b'.repeat(40), agent_channel: 'stable', refresh_confirmation: { token: 'c'.repeat(32), services: ['synthetic.dashboard'] }, notification_id: '00000000-0000-4000-8000-000000000001' }).mockResolvedValueOnce({ ok: true, verified_revision: 'b'.repeat(40) })
+    renderSystem()
+    await userEvent.click(await screen.findByRole('button', { name: /update agent/i }))
+    const dialog = await screen.findByRole('alertdialog')
+    expect(dialog).toHaveTextContent('synthetic.dashboard')
+    expect(dialog).toHaveTextContent('Active dashboard work may be interrupted')
+    await userEvent.click(within(dialog).getByRole('button', { name: accept ? 'Refresh and update' : 'Cancel' }))
+    if (accept) {
+      await waitFor(() => expect(api.applyUpdates).toHaveBeenCalledTimes(2))
+      expect(api.applyUpdates).toHaveBeenLastCalledWith('apply', undefined, 'agent', { agent_channel: 'stable', agent_refresh_token: 'c'.repeat(32) })
+    } else {
+      expect(api.applyUpdates).toHaveBeenCalledTimes(1)
+      expect(api.cancelUpdateNotification).toHaveBeenCalledWith('00000000-0000-4000-8000-000000000001')
+    }
+  })
+
   it('requires confirmation for an unsupported Agent and cancellation never applies it', async () => {
     vi.mocked(api.fetchUpdatesCheck).mockResolvedValue({ webui: current, agent: behind(4914) })
     vi.mocked(api.applyUpdates).mockResolvedValue({ ok: false, confirmation_required: true, candidate_revision: 'b'.repeat(40), supported_version: '0.21.3', supported_revision: 'a'.repeat(40), agent_channel: 'stable', notification_id: '00000000-0000-4000-8000-000000000001' })

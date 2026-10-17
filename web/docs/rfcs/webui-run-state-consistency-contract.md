@@ -2,7 +2,7 @@
 
 - **Status:** Accepted (review contract for run-state changes)
 - **Created:** 2026-05-16
-- **Updated:** 2026-09-27
+- **Updated:** 2026-10-17
 - **Related:** [`live-to-final-assistant-replies.md`](live-to-final-assistant-replies.md), [`session-sse-contract-v1.md`](session-sse-contract-v1.md)
 
 ## Problem
@@ -49,8 +49,8 @@ The server owns every layer except the client's live timeline:
   `automatic_turns_held` carries the hold.
 - `packages/server/src/sessions/streams.ts` (`StreamRegistry`) holds live
   channels, stream owners, and active runs.
-- `packages/server/src/sessions/journal.ts` (`RunJournal`) writes one JSONL
-  journal per stream under `sessions/_run_journal/<sid>/<stream_id>.jsonl`.
+- `StorageBackend.journals` owns durable run events. Its JSON adapter in
+  `packages/server/src/sessions/storage/json-journal.ts` writes one JSONL journal per stream under `sessions/_run_journal/<sid>/<stream_id>.jsonl`.
 - `packages/server/src/sessions/anchor.ts` builds the `activity_scene_v1` each
   completed turn carries, so Web and iOS render one projection of live,
   settled, replayed, and recovered activity.

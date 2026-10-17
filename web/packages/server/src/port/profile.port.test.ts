@@ -1,3 +1,5 @@
+import { initializeStore } from '../test/storage.js'
+import { JsonDocuments } from '../test/storage.js'
 /**
  * Profile regressions: isolation semantics, profile-home routing, per-profile
  * system projects, profile visibility, cross-profile crons, per-profile
@@ -5,7 +7,7 @@
  */
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, statSync, symlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { dirname, join } from 'node:path'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { FakeSidecar } from '../sidecar/fake.js'
 import { bootTestServer, type TestServer } from '../test/harness.js'
@@ -228,7 +230,7 @@ describe('profile home routing and root aliases', () => {
 describe('per-profile system projects', () => {
   let dir = ''
   let indexRows: Json[] = []
-  const store = (isRoot: (n: string) => boolean = (n) => n === 'default'): ProjectStore => new ProjectStore(join(dir, 'projects.json'), () => indexRows, isRoot)
+  const store = (isRoot: (n: string) => boolean = (n) => n === 'default'): ProjectStore => new ProjectStore(new JsonDocuments(dirname(join(dir, 'projects.json'))), () => indexRows, isRoot)
   beforeAll(() => { dir = mkdtempSync(join(tmpdir(), 'talaria-projects-')) })
   afterAll(() => { rmSync(dir, { recursive: true, force: true }); })
   const reset = (projects: Json[] = []): void => { writeFileSync(join(dir, 'projects.json'), JSON.stringify(projects)); indexRows = [] }
@@ -789,9 +791,9 @@ describe('profiles, crons, workspaces, skills, and sessions across profiles', ()
     const file = join(s.deps.config.stateDir, 'deleted-profiles.json')
     expect(JSON.parse(readFileSync(file, 'utf8')) as string[]).toContain('ephemeral')
     // A restarted server reads the tombstones back: the stale cookie is still refused.
-    const restarted = new ProfileService({ ...(s.deps.profiles as unknown as { deps: ConstructorParameters<typeof ProfileService>[0] }).deps })
-    expect(restarted.beginWrite('ephemeral')).toBe('missing')
-    expect(typeof restarted.beginWrite('work')).toBe('function')
+    const restarted = (await initializeStore(new ProfileService({ ...(s.deps.profiles as unknown as { deps: ConstructorParameters<typeof ProfileService>[0] }).deps })))
+    expect((await restarted.beginWrite('ephemeral'))).toBe('missing')
+    expect(typeof (await restarted.beginWrite('work'))).toBe('function')
   })
 
   it('a profile being cloned from cannot be deleted until the clone finishes', async () => {
@@ -866,7 +868,7 @@ describe('profiles, crons, workspaces, skills, and sessions across profiles', ()
     const cookie = (switched.headers.get('set-cookie') ?? '').split(';')[0] ?? ''
     const first = String(((await json(await post(s, '/api/session/new', { profile: 'memo2' }, { cookie }))).session as Json).session_id)
     // An admitted request holds its write lease...
-    const release = s.deps.profiles.beginWrite('memo2')
+    const release = (await s.deps.profiles.beginWrite('memo2'))
     expect(typeof release).toBe('function')
     sidecar.respond('profiles.delete', (params) => { rmSync(join(s.state, 'profiles', params.name), { recursive: true, force: true }); return { ok: true } })
     const deleting = post(s, '/api/profile/delete', { name: 'memo2' }, asWork())
@@ -902,7 +904,7 @@ describe('profiles, crons, workspaces, skills, and sessions across profiles', ()
       expect(rpcs).toBe(0)
       expect(existsSync(join(s.state, 'profiles', 'sticky'))).toBe(true)
       expect(s.deps.profiles.isDeleting('sticky')).toBe(false)
-      expect(typeof s.deps.profiles.beginWrite('sticky')).toBe('function')
+      expect(typeof (await s.deps.profiles.beginWrite('sticky'))).toBe('function')
     } finally {
       rmSync(file, { recursive: true, force: true })
       if (previous !== null) writeFileSync(file, previous)
@@ -927,7 +929,7 @@ describe('profiles, crons, workspaces, skills, and sessions across profiles', ()
       expect(res.status).toBe(503)
       expect(String((await json(res)).error)).toContain('deletion record could not be cleared')
       // The in-memory mark and the durable record agree: writes stay refused.
-      expect(s.deps.profiles.beginWrite('phoenix')).toBe('missing')
+      expect((await s.deps.profiles.beginWrite('phoenix'))).toBe('missing')
       expect(creates).toBe(1)
     } finally {
       rmSync(file, { recursive: true, force: true })
@@ -939,21 +941,21 @@ describe('profiles, crons, workspaces, skills, and sessions across profiles', ()
     expect(retry.status, await retry.clone().text()).toBe(200)
     expect(creates).toBe(1)
     expect(sidecar.calls.some((c) => c.method === 'config.set' && str((c.params as Json).profile_home).endsWith('phoenix') && JSON.stringify((c.params as Json).config).includes('https://llm.example/v1'))).toBe(true)
-    expect(typeof s.deps.profiles.beginWrite('phoenix')).toBe('function')
+    expect(typeof (await s.deps.profiles.beginWrite('phoenix'))).toBe('function')
     expect(JSON.parse(readFileSync(file, 'utf8')) as string[]).not.toContain('phoenix')
   })
 
-  it('an unreadable tombstone record fails named-profile writes closed until it can be read again', () => {
+  it('an unreadable tombstone record fails named-profile writes closed until it can be read again', async () => {
     const file = join(s.deps.config.stateDir, 'deleted-profiles.json')
     const previous = existsSync(file) ? readFileSync(file, 'utf8') : null
     writeFileSync(file, '{not json')
-    const broken = new ProfileService({ ...(s.deps.profiles as unknown as { deps: ConstructorParameters<typeof ProfileService>[0] }).deps })
-    expect(broken.beginWrite('work')).toBe('unreadable')
-    expect(typeof broken.beginWrite('default')).toBe('function')
+    const broken = (await initializeStore(new ProfileService({ ...(s.deps.profiles as unknown as { deps: ConstructorParameters<typeof ProfileService>[0] }).deps })))
+    expect((await broken.beginWrite('work'))).toBe('unreadable')
+    expect(typeof (await broken.beginWrite('default'))).toBe('function')
     // Repaired record: the next lease attempt re-reads it and honours its contents.
     writeFileSync(file, JSON.stringify(['gone-profile']))
-    expect(typeof broken.beginWrite('work')).toBe('function')
-    expect(broken.beginWrite('gone-profile')).toBe('missing')
+    expect(typeof (await broken.beginWrite('work'))).toBe('function')
+    expect((await broken.beginWrite('gone-profile'))).toBe('missing')
     if (previous === null) rmSync(file, { force: true }); else writeFileSync(file, previous)
   })
 

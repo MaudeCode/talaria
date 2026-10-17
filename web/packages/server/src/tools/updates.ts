@@ -10,12 +10,14 @@
  * stash/pull or force reset, then the gateway restarts through the sidecar.
  * Nothing here deletes git locks; `clearLock` only inventories them.
  */
+import { backupPersistedStores } from '../sessions/storage/json-installation.js'
+export { backupPersistedStores, CHANNEL_SWITCH_BACKUPS } from '../sessions/storage/json-installation.js'
 import { UpdatesSummarySchema, type SidecarResult } from '@maudecode/talaria-web-contracts'
 import { z } from 'zod'
 import { readCapped } from '../http/capped.js'
 import { execFile } from 'node:child_process'
 import { createHash } from 'node:crypto'
-import { copyFileSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, renameSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, lstatSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, renameSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { delimiter, dirname, isAbsolute, join, resolve } from 'node:path'
 import type { Dict } from '../config/agent-config.js'
@@ -577,31 +579,6 @@ export async function checkWebUpdate(webRoot: string | null, currentVersion: str
 /** Packaged-install collaborators: the Experimental registry, Web's state dir for channel-switch backups, and the candidate self-check timeout. */
 export interface PackagedUpdateOptions { registry?: ExperimentalRegistry | undefined; stateDir?: string | undefined; selfCheckTimeoutMs?: number | undefined; skipFailedVersion?: boolean | undefined }
 
-export const CHANNEL_SWITCH_BACKUPS = 5
-/** Web's persisted stores (`settings.json`, the project store, the workspace store) as seen from the state dir. */
-const PERSISTED_STORES = ['settings.json', 'projects.json', 'workspaces.json', 'last_workspace.txt']
-
-/** Copy the persisted stores to `<stateDir>/backups/channel-switch-<UTC timestamp>/`, keeping the newest few; throws on failure. */
-export function backupPersistedStores(stateDir: string, now: Date = new Date(), keep = CHANNEL_SWITCH_BACKUPS): string {
-  const root = join(stateDir, 'backups')
-  mkdirSync(root, { recursive: true })
-  const name = `channel-switch-${now.toISOString().replace(/[:.]/g, '-')}`
-  const target = join(root, name)
-  if (existsSync(target)) throw new Error(`${name} already exists`)
-  // Only a complete copy is published under the name that counts toward the retained backups.
-  const partial = mkdtempSync(join(root, `.${name}-`))
-  try {
-    for (const store of PERSISTED_STORES) if (existsSync(join(stateDir, store))) copyFileSync(join(stateDir, store), join(partial, store))
-    renameSync(partial, target)
-  } catch (error) {
-    rmSync(partial, { recursive: true, force: true })
-    throw error
-  }
-  const backups = readdirSync(root).filter((name) => name.startsWith('channel-switch-')).sort()
-  for (const old of backups.slice(0, Math.max(0, backups.length - keep))) rmSync(join(root, old), { recursive: true, force: true })
-  return target
-}
-
 async function applyNpmWebUpdate(webRoot: string | null, channel: Channel, getJson: GetJson, id: ReleaseIdentity, npmRun: BuildRun, canApply: () => boolean, packaged: PackagedUpdateOptions, version?: string): Promise<Dict> {
   const installed = await npmInstallInfo(webRoot, npmRun)
   if (!installed) return { ok: false, manual_update: true, message: 'Automatic npm updates require a direct global @maudecode/talaria-web installation.' }
@@ -817,7 +794,7 @@ export interface AgentUpdatePolicy {
   beforeMutation?: (path: string, revision: string) => Promise<void>
 }
 /** `version` (TAL-946) names a listed Stable release `ref` for either target; omitted, an update takes the newest. */
-export interface UpdateOptions { skipFailedVersion?: boolean | undefined; agentChannel?: Channel | undefined; confirmedRevision?: string | undefined; version?: string | undefined }
+export interface UpdateOptions { skipFailedVersion?: boolean | undefined; agentChannel?: Channel | undefined; confirmedRevision?: string | undefined; version?: string | undefined; refreshToken?: string | undefined; mutationIntent?: string | undefined }
 type AgentSupport = 'supported' | 'unchecked'
 /** Only an exact verified revision is supported: a moved tag, a non-tag HEAD, Experimental `main` and a missing record are all unchecked. */
 const agentSupport = (sha: unknown, policy: AgentUpdatePolicy): AgentSupport =>
@@ -911,7 +888,7 @@ async function retainedCronCompatibility(path: string, revision: string, git: Gi
 }
 
 /** Both update paths check retained obligations before repair intent, stash, cleanup, or source mutation. */
-async function prepareAgentMutation(path: string, info: Dict, git: GitRun, policy?: AgentUpdatePolicy, mode: 'source' | 'repair' | 'local-recovery' = 'source'): Promise<Dict | null> {
+async function prepareAgentMutation(path: string, info: Dict, git: GitRun, policy?: AgentUpdatePolicy, mode: 'source' | 'repair' | 'local-recovery' = 'source', recordIntent = true): Promise<Dict | null> {
   const warning = mode === 'source' ? confirmAgent(info, policy) : null
   if (warning) return warning
   try {
@@ -922,7 +899,7 @@ async function prepareAgentMutation(path: string, info: Dict, git: GitRun, polic
         message: `The target Agent cannot reconcile retained ${obligations}. Reconcile these records with a capable Agent before retrying the update.` }
     }
   } catch (error) { return { ok: false, target: 'agent', message: `Agent recovery compatibility could not be verified: ${sanitizeGitDiagnostic((error as Error).message)}` } }
-  try { if (mode !== 'repair') await policy?.beforeMutation?.(path, str(info.latest_sha)) }
+  try { if (recordIntent && mode !== 'repair') await policy?.beforeMutation?.(path, str(info.latest_sha)) }
   catch (error) { return { ok: false, target: 'agent', message: `Agent update could not prepare dependency sync: ${sanitizeGitDiagnostic((error as Error).message)}` } }
   return null
 }
@@ -938,8 +915,13 @@ async function withAgentMutation(path: string, info: Dict, git: GitRun, policy: 
     return held ?? mutate(leasedGit)
   }
   if (!policy?.withMutation) return guarded(git)
-  try { return await policy.withMutation(path, str(info.latest_sha), guarded) }
-  catch (error) { return { ok: false, target: 'agent', message: `Agent update could not safely quiesce or resume its writers: ${sanitizeGitDiagnostic((error as Error).message)}` } }
+  const preflight = await prepareAgentMutation(path, info, git, policy, mode, false)
+  if (preflight) return preflight
+  try {
+    const result = await policy.withMutation(path, str(info.latest_sha), guarded)
+    return result.refresh_confirmation ? { ...result, target: 'agent', confirmation_required: true, candidate_revision: info.latest_sha, agent_channel: info.channel } : result
+  }
+  catch (error) { return { ok: false, target: 'agent', message: `Agent update could not safely quiesce or resume its writers: ${sanitizeGitDiagnostic((error as Error).message, 1000)}` } }
 }
 
 /** Fetch, confirm the immutable Agent target, stash, fast-forward, and restore the stash. */
@@ -1308,7 +1290,7 @@ export interface UpdateServiceDeps {
   refreshWebuiVersion?: () => string
   agentDir: () => string | null
   agentHomes?: () => readonly string[]
-  agentMutation?: (path: string, revision: string, mutate: (git: GitRun, sync: UpdateServiceDeps['agentSync']) => Promise<Dict>) => Promise<Dict>
+  agentMutation?: (path: string, revision: string, mutate: (git: GitRun, sync: UpdateServiceDeps['agentSync']) => Promise<Dict>, consent?: Pick<UpdateOptions, 'mutationIntent' | 'refreshToken'>) => Promise<Dict>
   /** Repair dependencies through the sidecar even while its imported Agent is stale. */
   agentSync?: (agentDir: string) => Promise<SidecarResult<'runtime.sync_dependencies'>>
   channel: () => Channel
@@ -1318,8 +1300,8 @@ export interface UpdateServiceDeps {
   checkEnabled?: () => boolean
   summarizeAutomatically?: () => boolean
   autoNotification?: {
-    begin: () => string
-    transition: (id: string, phase: 'restarting' | 'succeeded' | 'blocked' | 'failed', expectedIdentity?: string | null, verifiedIdentity?: { revision: string | null; version: string | null }, detail?: unknown) => void
+    begin: () => Promise<string>
+    transition: (id: string, phase: 'restarting' | 'succeeded' | 'blocked' | 'failed', expectedIdentity?: string | null, verifiedIdentity?: { revision: string | null; version: string | null }, detail?: unknown) => void | Promise<void>
   }
   blockers: () => RestartBlockers
   /** Re-exec the server once active work drains (`restartWhenSafe`). */
@@ -1420,19 +1402,19 @@ export class UpdateService {
     this.publishedTags.set(repoUrl, { at: this.now(), tag })
     return tag
   }
-  private agentPolicy(confirmedRevision?: string): AgentUpdatePolicy {
+  private agentPolicy(options: UpdateOptions = {}, force = false): AgentUpdatePolicy {
     const supported = dict(this.deps.identity.release().compatibleAgent)
     const marker = agentSyncMarker(this.deps.agentDir(), this.deps.stateDir)
     return {
       supportedRevisions: supportedAgents(this.deps.webRoot).map((agent) => agent.sourceRevision),
-      supportedRevision: str(supported.sourceRevision), supportedVersion: str(supported.version), ...(confirmedRevision ? { confirmedRevision } : {}),
+      supportedRevision: str(supported.sourceRevision), supportedVersion: str(supported.version), ...(options.confirmedRevision ? { confirmedRevision: options.confirmedRevision } : {}),
       ...(this.deps.agentHomes ? { retainedStateHomes: this.deps.agentHomes } : {}),
       repairPending: Boolean(marker && existsSync(marker)),
       ...(this.deps.agentMutation ? { withMutation: async (path: string, revision: string, mutate: (git: GitRun) => Promise<Dict>) => {
         const result = await this.deps.agentMutation!(path, revision, async (git, sync) => {
           const applied = await mutate(git)
           return applied.ok ? this.finishAgent(applied, path, sync, false) : applied
-        })
+        }, { refreshToken: options.refreshToken, mutationIntent: options.mutationIntent ? JSON.stringify([options.mutationIntent, force, options.agentChannel ?? this.agentChannel(), options.version ?? '', options.confirmedRevision ?? '']) : undefined })
         if (result.ok) {
           const intent = agentSyncMarker(path, this.deps.stateDir)
           try { if (intent) rmSync(intent, { force: true }) }
@@ -1561,19 +1543,19 @@ export class UpdateService {
       if (web.error || web.manual_update) { this.deps.log(`[updates] automatic Web update unavailable: ${str(web.error || web.message)}`); return web }
       if (!(Number(web.behind) > 0 || web.metadata_repair === true)) return web
       if (readUpdateRollback(this.deps.stateDir)?.failedVersion === str(web.latest_version).replace(/^web-(?:exp-)?v/, '')) return web
-      notificationId = this.deps.autoNotification?.begin() ?? null
+      notificationId = (await this.deps.autoNotification?.begin()) ?? null
       const result = await this.apply('webui', channel, stillEnabled, { skipFailedVersion: true })
       if (notificationId) {
-        if (result.restart_blocked === true) this.deps.autoNotification?.transition(notificationId, 'blocked', null, undefined, result.message)
-        else if (result.ok !== true) this.deps.autoNotification?.transition(notificationId, 'failed', null, undefined, result.message || result.error)
-        else if (result.restart_scheduled === true) this.deps.autoNotification?.transition(notificationId, 'restarting', str(result.sourceRevision || result.candidate_revision))
-        else this.deps.autoNotification?.transition(notificationId, 'succeeded')
+        if (result.restart_blocked === true) await this.deps.autoNotification?.transition(notificationId, 'blocked', null, undefined, result.message)
+        else if (result.ok !== true) await this.deps.autoNotification?.transition(notificationId, 'failed', null, undefined, result.message || result.error)
+        else if (result.restart_scheduled === true) await this.deps.autoNotification?.transition(notificationId, 'restarting', str(result.sourceRevision || result.candidate_revision))
+        else await this.deps.autoNotification?.transition(notificationId, 'succeeded')
       }
       this.deps.log(`[updates] automatic Web update: ${str(result.message || (result.ok ? 'applied' : 'failed'))}`)
       if (!result.ok) this.cache.webui = { ...web, message: result.message, error: result.restart_blocked ? undefined : result.message }
       return result
     } catch (error) {
-      if (notificationId) this.deps.autoNotification?.transition(notificationId, 'failed', null, undefined, (error as Error).message)
+      if (notificationId) await this.deps.autoNotification?.transition(notificationId, 'failed', null, undefined, (error as Error).message)
       this.deps.log(`[updates] automatic Web update failed: ${(error as Error).message}`)
       return { ok: false, error: (error as Error).message }
     } finally { this.autoRunning = false }
@@ -1647,8 +1629,8 @@ export class UpdateService {
       }, 'repair')
     } else {
       result = force
-        ? await forceAgentUpdate(path, this.git, this.deps.log, options.agentChannel ?? this.agentChannel(), this.agentPolicy(options.confirmedRevision), options.version, this.publishedTag)
-        : await applyAgentUpdate(path, this.git, options.agentChannel ?? this.agentChannel(), this.agentPolicy(options.confirmedRevision), options.version, this.publishedTag)
+        ? await forceAgentUpdate(path, this.git, this.deps.log, options.agentChannel ?? this.agentChannel(), this.agentPolicy(options, force), options.version, this.publishedTag)
+        : await applyAgentUpdate(path, this.git, options.agentChannel ?? this.agentChannel(), this.agentPolicy(options, force), options.version, this.publishedTag)
     }
     if (this.deps.agentMutation) {
       if (result.ok && result.restart_scheduled) { this.autoRestartScheduled = true; this.stopAutoApply(); this.deps.scheduleRestart() }
@@ -1710,25 +1692,40 @@ export class UpdateService {
   private async commitItems(target: 'webui' | 'agent', current: string, latest: string): Promise<SummaryItem[]> {
     if (!SHA.test(current) || !SHA.test(latest)) throw new Error('Update range is unavailable')
     if (target === 'webui') {
-      const installedAt = dict(dict(dict(await this.deps.getJson(`/commits/${current}`, { asset: false })).commit).committer).date
-      if (typeof installedAt !== 'string' || !Number.isFinite(Date.parse(installedAt))) throw new Error('Commit date is unavailable')
-      const items: SummaryItem[] = []
-      const seen = new Set<string>()
+      // Ancestry picks the range; GitHub's `since` filters by each commit's own committer date, so a branch
+      // merged after the installed build can hold older-dated pending commits (TAL-1105).
+      const range = new Map<string, SummaryItem>()
+      let since = Infinity
       for (let page = 1; ; page++) {
-        const commits = await this.deps.getJson(`/commits?sha=${latest}&path=web&since=${encodeURIComponent(installedAt)}&per_page=100&page=${String(page)}`, { asset: false })
-        if (!Array.isArray(commits)) throw new Error('Commit page is unavailable')
-        let reached = false
-        const before = items.length
-        for (const raw of commits) {
-          const commit = dict(raw)
-          if (commit.sha === current) { reached = true; break }
-          const text = str(dict(commit.commit).message).split('\n')[0] ?? ''
-          if (!SHA.test(str(commit.sha)) || !text.trim()) throw new Error('Commit page is incomplete')
-          const id = str(commit.sha)
-          if (!seen.has(id)) { seen.add(id); items.push({ id, text: text.trim() }) }
+        const compared = dict(await this.deps.getJson(`/compare/${current}...${latest}?per_page=100&page=${String(page)}`, { asset: false }))
+        const total = compared.total_commits
+        if (!['ahead', 'identical'].includes(str(compared.status)) || !Array.isArray(compared.commits) || typeof total !== 'number' || !Number.isInteger(total) || total < 0) throw new Error('Commit range is unavailable')
+        const before = range.size
+        for (const raw of compared.commits) {
+          const id = str(dict(raw).sha)
+          const commit = dict(dict(raw).commit)
+          const text = (str(commit.message).split('\n')[0] ?? '').trim()
+          const committed = Date.parse(str(dict(commit.committer).date))
+          if (!SHA.test(id) || !text || !Number.isFinite(committed)) throw new Error('Commit range is incomplete')
+          range.set(id, { id, text })
+          since = Math.min(since, committed)
         }
-        if (reached || commits.length < 100) return items.reverse()
-        if (items.length === before) throw new Error('Commit pagination made no progress')
+        if (range.size >= total) break
+        if (range.size === before) throw new Error('Commit range pagination made no progress')
+      }
+      if (!range.size) return []
+      const touched = new Set<string>()
+      for (let page = 1; ; page++) {
+        const commits = await this.deps.getJson(`/commits?sha=${latest}&path=web&since=${encodeURIComponent(new Date(since).toISOString())}&per_page=100&page=${String(page)}`, { asset: false })
+        if (!Array.isArray(commits)) throw new Error('Commit page is unavailable')
+        const before = touched.size
+        for (const raw of commits) {
+          const id = str(dict(raw).sha)
+          if (!SHA.test(id)) throw new Error('Commit page is incomplete')
+          touched.add(id)
+        }
+        if (commits.length < 100) return [...range.values()].filter((item) => touched.has(item.id))
+        if (touched.size === before) throw new Error('Commit pagination made no progress')
       }
     }
     const path = this.deps.agentDir()

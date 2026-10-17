@@ -4,7 +4,7 @@ import TalariaKit
 struct ChatTranscriptMessageBlock: View, Equatable {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.chatDisclosureToggled) private var chatDisclosureToggled
-    @State private var expandedCompletedActivityIDs = Set<String>()
+    @ChatRetainedState("completed-activity") private var expandedCompletedActivityIDs = Set<String>()
 
     let transcriptMessage: TranscriptMessage
     let transcriptBlockSpacing: CGFloat
@@ -410,7 +410,8 @@ struct ChatTranscriptMessageBlock: View, Equatable {
                 ReasoningBlockView(
                     text: reasoning.text,
                     titles: reasoning.titles,
-                    isActive: isActive ?? (layout.isLive && index == activityRows.count - 1)
+                    isActive: isActive ?? (layout.isLive && index == activityRows.count - 1),
+                    stateID: row.id
                 )
             }
         case .tools(let toolCalls):

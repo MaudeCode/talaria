@@ -53,9 +53,9 @@ export class GatewayRestartQueue {
    * under (persisted on the record, since a resumed wait runs outside any request). A waiting restart is reused: `id`
    * closes as covered by it, and its id is returned.
    */
-  schedule(id: string, profile: string, detail: string | null = null): string {
+  async schedule(id: string, profile: string, detail: string | null = null): Promise<string> {
     if (this.pending) {
-      if (this.pending.id !== id) this.deps.notifications.transition(id, 'succeeded', null, undefined, [REUSED, detail].filter(Boolean).join('\n\n'))
+      if (this.pending.id !== id) (await this.deps.notifications.transition(id, 'succeeded', null, undefined, [REUSED, detail].filter(Boolean).join('\n\n')))
       return this.pending.id
     }
     let wake = (): void => undefined
@@ -67,8 +67,8 @@ export class GatewayRestartQueue {
   }
 
   /** Resume the waits a previous server process recorded; the newest one carries any older ones. */
-  resume(): void {
-    for (const row of this.deps.notifications.waitingGatewayRestarts()) this.schedule(row.id, row.profile, row.detail)
+  async resume(): Promise<void> {
+    for (const row of this.deps.notifications.waitingGatewayRestarts()) (await this.schedule(row.id, row.profile, row.detail))
   }
 
   /** The Restart now action: restart while the gateway is still busy. False when `id` is not the waiting restart. */
@@ -107,19 +107,19 @@ export class GatewayRestartQueue {
       let blockers: RestartBlockers
       // An unreadable gateway state keeps waiting rather than restarting over running work.
       try { blockers = await this.deps.blockers(pending.profile) } catch (error) { this.deps.log(`[updates] gateway restart blockers unavailable: ${(error as Error).message}`); return HELD }
-      this.deps.notifications.gatewayWaiting(pending.id, blockers.active_runs)
+      await this.deps.notifications.gatewayWaiting(pending.id, blockers.active_runs)
       return blockers
     }, { maxWaitMs: Infinity, ...(this.deps.pollMs ? { pollMs: this.deps.pollMs } : {}), sleep: (ms) => pending.forced ? this.sleep(ms) : Promise.race([this.sleep(ms), woken]) })
     while (this.inFlight) await this.inFlight
   }
 
   private async restartGateway({ id, profile }: { id: string; profile: string }, detail: string | null): Promise<void> {
-    this.deps.notifications.transition(id, 'restarting')
+    await this.deps.notifications.transition(id, 'restarting')
     const [ok, gateway] = await this.attempt(profile)
     this.deps.log(`[updates] gateway restart after the Agent update: ${str(gateway.status) || 'failed'}`)
-    if (ok) { this.deps.notifications.transition(id, 'succeeded', null, undefined, detail); return }
+    if (ok) { (await this.deps.notifications.transition(id, 'succeeded', null, undefined, detail)); return }
     const failure = gateway.message ? `Hermes Agent was updated, but the gateway restart did not complete: ${str(gateway.message)}. Run \`hermes gateway restart\` manually.` : 'Hermes Agent was updated, but the gateway restart did not complete. Run `hermes gateway restart` manually.'
-    this.deps.notifications.transition(id, 'failed', null, undefined, [failure, detail].filter(Boolean).join('\n\n'))
+    await this.deps.notifications.transition(id, 'failed', null, undefined, [failure, detail].filter(Boolean).join('\n\n'))
   }
 
   /** Python `_ensure_gateway_restart_for_agent_update`: retry once after a transient supervisor handoff failure. */

@@ -46,7 +46,7 @@ export function SystemSection() {
   const [agentChannelDraft, setAgentChannelDraft] = useState<string>()
   const agentChannel = agentChannelDraft ?? str('agent_update_channel', 'stable')
   const setAgentChannel = (v: string) => { setAgentChannelDraft(v); save.mutate({ agent_update_channel: v }, { onError: fail, onSettled: () => { setAgentChannelDraft(undefined); void qc.invalidateQueries({ queryKey: keys.updates.check }) } }) }
-  const [agentConfirmation, setAgentConfirmation] = useState<{ revision: string; supported: string; version: string; channel: 'stable' | 'experimental'; ref?: string; notificationId?: string } | null>(null)
+  const [agentConfirmation, setAgentConfirmation] = useState<{ result: z.infer<typeof UpdateApplySchema>; request: ApplyRequest } | null>(null)
   const acceptedAgentConfirmation = useRef(false)
   // The server reads persisted settings (channel, ignore-agent) for the forced check, so let every
   // in-flight settings save settle first; the cache then holds whatever actually persisted.
@@ -69,14 +69,14 @@ export function SystemSection() {
       await waitForSettings()
       const version = request.version ? { version: request.version } : {}
       return target === 'webui' ? api.applyUpdates('apply', settledChannel() ?? channel, 'webui', version)
-        : api.applyUpdates('apply', undefined, 'agent', { agent_channel: request.agentChannel ?? settledAgentChannel(), ...(request.confirmedRevision ? { confirmed_agent_revision: request.confirmedRevision } : {}), ...version })
+        : api.applyUpdates('apply', undefined, 'agent', { agent_channel: request.agentChannel ?? settledAgentChannel(), ...(request.confirmedRevision ? { confirmed_agent_revision: request.confirmedRevision } : {}), ...(request.refreshToken ? { agent_refresh_token: request.refreshToken } : {}), ...version })
     },
     onMutate: () => { progress?.begin(target) },
     onSuccess: (r: z.infer<typeof UpdateApplySchema>, request: ApplyRequest) => {
       if (r.confirmation_required && r.candidate_revision && r.agent_channel) {
         progress?.dismiss(r.notification_id)
         acceptedAgentConfirmation.current = false
-        setAgentConfirmation({ revision: r.candidate_revision, supported: r.supported_revision ?? '—', version: r.supported_version ?? '—', channel: r.agent_channel, ...(request.version ? { ref: request.version } : {}), ...(r.notification_id ? { notificationId: r.notification_id } : {}) })
+        setAgentConfirmation({ result: r, request: { ...request, agentChannel: r.agent_channel } })
       } else progress?.settle(target, r)
       void qc.invalidateQueries({ queryKey: keys.updates.check })
       void qc.invalidateQueries({ queryKey: keys.updateNotifications })
@@ -204,7 +204,7 @@ export function SystemSection() {
         </section>
       )}
       <ConfirmDialog open={confirmShutdown} onOpenChange={setConfirmShutdown} title={m.system_shutdown()} description={m.system_shutdown_confirm()} confirmLabel={m.system_shutdown()} cancelLabel={m.cancel()} danger onConfirm={() => shutdown.mutate()} />
-      <ConfirmDialog open={agentConfirmation !== null} onOpenChange={(open) => { if (!open && agentConfirmation) { const pending = agentConfirmation; setAgentConfirmation(null); if (acceptedAgentConfirmation.current) { acceptedAgentConfirmation.current = false; return } if (pending.notificationId) void api.cancelUpdateNotification(pending.notificationId).catch(fail).finally(() => qc.invalidateQueries({ queryKey: keys.updateNotifications })) } }} title={m.system_agent_unsupported_title()} description={agentConfirmation ? `${m.system_agent_unsupported_warning()} ${m.system_agent_unsupported_identity({ version: agentConfirmation.version, supported: agentConfirmation.supported.slice(0, 12), candidate: agentConfirmation.revision.slice(0, 12) })}` : ''} confirmLabel={m.system_agent_update_anyway()} cancelLabel={m.cancel()} danger onConfirm={() => { if (agentConfirmation) { const pending = agentConfirmation; acceptedAgentConfirmation.current = true; setAgentConfirmation(null); applyAgent.mutate({ confirmedRevision: pending.revision, agentChannel: pending.channel, ...(pending.ref ? { version: pending.ref } : {}) }) } }} />
+      <ConfirmDialog open={agentConfirmation !== null} onOpenChange={(open) => { if (!open && agentConfirmation) { const pending = agentConfirmation; setAgentConfirmation(null); if (acceptedAgentConfirmation.current) { acceptedAgentConfirmation.current = false; return } if (pending.result.notification_id) void api.cancelUpdateNotification(pending.result.notification_id).catch(fail).finally(() => qc.invalidateQueries({ queryKey: keys.updateNotifications })) } }} title={agentConfirmation?.result.refresh_confirmation ? m.system_agent_refresh_title() : m.system_agent_unsupported_title()} description={agentConfirmation ? agentConfirmation.result.refresh_confirmation ? m.system_agent_refresh_warning({ services: agentConfirmation.result.refresh_confirmation.services.join(', '), revision: agentConfirmation.result.candidate_revision?.slice(0, 12) ?? '' }) : `${m.system_agent_unsupported_warning()} ${m.system_agent_unsupported_identity({ version: agentConfirmation.result.supported_version ?? '—', supported: (agentConfirmation.result.supported_revision ?? '—').slice(0, 12), candidate: (agentConfirmation.result.candidate_revision ?? '').slice(0, 12) })}` : ''} confirmLabel={agentConfirmation?.result.refresh_confirmation ? m.system_agent_refresh_confirm() : m.system_agent_update_anyway()} cancelLabel={m.cancel()} danger onConfirm={() => { if (agentConfirmation) { const pending = agentConfirmation; acceptedAgentConfirmation.current = true; setAgentConfirmation(null); applyAgent.mutate({ ...pending.request, ...(pending.result.refresh_confirmation ? { refreshToken: pending.result.refresh_confirmation.token } : pending.result.candidate_revision ? { confirmedRevision: pending.result.candidate_revision } : {}) }) } }} />
     </div>
   )
 }
@@ -213,7 +213,7 @@ const WEB = 'Talaria Web'
 const AGENT = 'Hermes Agent'
 type Target = z.infer<typeof UpdateTargetSchema>
 type UpdateVersion = z.infer<typeof UpdateVersionSchema>
-interface ApplyRequest { version?: string; confirmedRevision?: string; agentChannel?: 'stable' | 'experimental' }
+interface ApplyRequest { refreshToken?: string; version?: string; confirmedRevision?: string; agentChannel?: 'stable' | 'experimental' }
 type Tone = 'update' | 'ok' | 'warn' | 'quiet'
 interface Support { label: string; unchecked: boolean }
 

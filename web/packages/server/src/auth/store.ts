@@ -4,10 +4,8 @@
  * switch backends without a forced logout: `.pbkdf2_key`, `.signing_key`,
  * `.sessions.json`, `.login_attempts.json`.
  */
-import { chmodSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
-import { mkdir } from 'node:fs/promises'
-import { dirname, resolve } from 'node:path'
-import { atomicWriteTextAsync } from '../fs/atomic.js'
+import { RevisionConflict, type DocumentBackend } from '../sessions/storage/backend.js'
+import { readDocument, updateDocument } from '../sessions/storage/document.js'
 import { truthy, type Env } from '../config.js'
 import type { SettingsStore } from '../settings.js'
 import { COOKIE_NAME_RE } from './cookies.js'
@@ -50,14 +48,14 @@ export function sessionExpiry(record: unknown): number | null {
 }
 
 export interface AuthStoreOptions {
-  stateDir: string
+  documents: DocumentBackend
   env: Env
   settings: SettingsStore
   log?: (line: string) => void
   /** Seconds since the epoch; tests inject a clock. */
   now?: () => number
   /** At least one passkey credential is registered (feature flag applied by the caller). */
-  passkeysEnabled?: () => boolean
+  passkeysEnabled?: () => Promise<boolean>
   /** Last-known OIDC auth posture (sync for the auth gate); stays on while the operator config is unreadable. */
   oidcEnabled?: () => boolean
   /** Last-known OIDC config resolved and complete, so SSO can be offered. */
@@ -68,11 +66,6 @@ export interface AuthStoreOptions {
   passkeyConfigFlag?: () => unknown
   /** Writes one serialized table; tests inject a slow or failing writer. */
   persistWrite?: (file: string, text: string) => Promise<void>
-}
-
-async function writeSecretFile(file: string, text: string): Promise<void> {
-  await mkdir(dirname(file), { recursive: true })
-  await atomicWriteTextAsync(file, text, { mode: 0o600 })
 }
 
 /**
@@ -115,20 +108,20 @@ class WriteBehind {
 const UNREADABLE_PASSWORD_HASH = 'unreadable'
 
 export class AuthStore {
-  readonly stateDir: string
+  private readonly documents: DocumentBackend
   readonly env: Env
   readonly settings: SettingsStore
   readonly now: () => number
   private readonly log: (line: string) => void
-  private readonly sessionsFile: string
-  private readonly attemptsFile: string
-  private sessions: Record<string, StoredSession>
-  private attempts: Record<string, number[]>
+  private readonly sessionsFile = 'sessions'
+  private readonly attemptsFile = 'login-attempts'
+  private sessions: Record<string, StoredSession> = {}
+  private attempts: Record<string, number[]> = {}
   private pbkdf2KeyCache: Buffer | null = null
   private signingKeyCache: Buffer | null = null
   private passwordHash: { computed: boolean; value: string | null; pending: Promise<string | null> | null } = { computed: false, value: null, pending: null }
   private readonly warned = new Set<string>()
-  passkeysEnabled: () => boolean
+  passkeysEnabled: () => Promise<boolean>
   oidcEnabled: () => boolean
   oidcAvailable: () => boolean
   private readonly oidcProbe: () => Promise<unknown>
@@ -143,21 +136,53 @@ export class AuthStore {
   }))
 
   constructor(opts: AuthStoreOptions) {
-    this.stateDir = opts.stateDir
+    this.documents = opts.documents
     this.env = opts.env
     this.settings = opts.settings
     this.now = opts.now ?? (() => Date.now() / 1000)
     this.log = opts.log ?? ((line) => { console.error(line) })
-    this.sessionsFile = resolve(this.stateDir, '.sessions.json')
-    this.attemptsFile = resolve(this.stateDir, '.login_attempts.json')
-    this.sessions = this.loadSessions()
-    this.attempts = this.loadLoginAttempts()
-    this.passkeysEnabled = opts.passkeysEnabled ?? (() => false)
+    this.passkeysEnabled = opts.passkeysEnabled ?? (() => Promise.resolve(false))
     this.oidcEnabled = opts.oidcEnabled ?? (() => false)
     this.oidcAvailable = opts.oidcAvailable ?? (() => false)
     this.oidcProbe = opts.oidcProbe ?? (() => Promise.resolve())
     this.passkeyConfigFlag = opts.passkeyConfigFlag ?? (() => undefined)
-    this.persistWrite = opts.persistWrite ?? writeSecretFile
+    this.persistWrite = opts.persistWrite ?? (async (key, text) => { await this.persistDocument(key, JSON.parse(text) as unknown); })
+  }
+
+  async initialize(): Promise<void> {
+    this.sessions = await this.loadSessions()
+    this.attempts = await this.loadLoginAttempts()
+    this.signingKeyCache ??= await this.loadKey('signing-key')
+  }
+
+  private readonly persistedSnapshots = new Map<string, Record<string, unknown>>()
+
+  private async persistDocument(key: string, value: unknown): Promise<void> {
+    const desired = value as Record<string, unknown>
+    const previous = this.persistedSnapshots.get(key) ?? {}
+    await updateDocument(this.documents, 'auth', key, (raw) => {
+      const current = raw && typeof raw === 'object' && !Array.isArray(raw) ? raw as Record<string, unknown> : {}
+      for (const field of new Set([...Object.keys(previous), ...Object.keys(desired)])) {
+        if (JSON.stringify(previous[field]) === JSON.stringify(desired[field])) continue
+        if (key === this.attemptsFile) {
+          const before = Array.isArray(previous[field]) ? previous[field] as number[] : []
+          const after = Array.isArray(desired[field]) ? desired[field] as number[] : []
+          const remaining = [...(Array.isArray(current[field]) ? current[field] as number[] : [])]
+          const added = [...after]
+          for (const at of before) {
+            const keep = added.indexOf(at)
+            if (keep >= 0) added.splice(keep, 1)
+            else { const drop = remaining.indexOf(at); if (drop >= 0) remaining.splice(drop, 1) }
+          }
+          remaining.push(...added)
+          if (remaining.length) current[field] = remaining
+          else Reflect.deleteProperty(current, field)
+        } else if (field in desired) current[field] = desired[field]
+        else Reflect.deleteProperty(current, field)
+      }
+      return { value: current, result: undefined }
+    }, { replaceInvalid: true })
+    this.persistedSnapshots.set(key, structuredClone(desired))
   }
 
   /**
@@ -170,7 +195,7 @@ export class AuthStore {
 
   private warnPersistence(prefix: string, artifact: string, error: unknown, consequence: string): void {
     const err = error as { name?: string; message?: string }
-    this.log(`[webui] WARNING: ${prefix} at ${artifact} (STATE_DIR=${this.stateDir}): ${err.name ?? 'Error'}: ${err.message ?? String(error)}; ${consequence}`)
+    this.log(`[webui] WARNING: ${prefix} at ${artifact} (storage=auth): ${err.name ?? 'Error'}: ${err.message ?? String(error)}; ${consequence}`)
   }
 
   warnOnce(key: string, message: string): void {
@@ -181,34 +206,32 @@ export class AuthStore {
 
   // ── keys ──────────────────────────────────────────────────────────────────
 
-  private loadKey(filename: string): Buffer {
-    const file = resolve(this.stateDir, filename)
+  private async loadKey(keyName: string): Promise<Buffer> {
+    let record
     try {
-      if (existsSync(file)) {
-        const raw = readFileSync(file)
-        if (raw.length >= 32) return raw.subarray(0, 32)
-      }
-    } catch (error) {
-      this.warnPersistence('Auth key read failed', file, error, 'generating a new key and continuing')
-    }
+      record = await this.documents.get('auth', keyName)
+      const raw = typeof record?.value === 'string' ? Buffer.from(record.value, 'base64') : Buffer.alloc(0)
+      if (raw.length >= 32) return raw.subarray(0, 32)
+    } catch (error) { this.warnPersistence('Auth key read failed', keyName, error, 'generating a new key and continuing') }
     const key = newKey()
-    try {
-      mkdirSync(this.stateDir, { recursive: true })
-      writeFileSync(file, key)
-      chmodSync(file, 0o600)
-    } catch (error) {
-      this.warnPersistence('Auth key persistence failed', file, error, 'returning the generated key so startup can continue')
+    try { await this.documents.put('auth', keyName, key.toString('base64'), record?.revision ?? null) }
+    catch (error) {
+      if (error instanceof RevisionConflict) {
+        const winner = await this.documents.get('auth', keyName)
+        if (typeof winner?.value === 'string') return Buffer.from(winner.value, 'base64').subarray(0, 32)
+      }
+      this.warnPersistence('Auth key persistence failed', keyName, error, 'returning the generated key so startup can continue')
     }
     return key
   }
 
-  pbkdf2Key(): Buffer {
-    this.pbkdf2KeyCache ??= this.loadKey('.pbkdf2_key')
+  async pbkdf2Key(): Promise<Buffer> {
+    this.pbkdf2KeyCache ??= await this.loadKey('pbkdf2-key')
     return this.pbkdf2KeyCache
   }
 
   signingKey(): Buffer {
-    this.signingKeyCache ??= this.loadKey('.signing_key')
+    if (!this.signingKeyCache) throw new Error('Auth store is not initialized')
     return this.signingKeyCache
   }
 
@@ -218,8 +241,8 @@ export class AuthStore {
     this.signingKeyCache = signingKey
   }
 
-  hashPassword(password: string, salt?: Buffer): Promise<string> {
-    return hashPassword(password, salt ?? this.pbkdf2Key())
+  async hashPassword(password: string, salt?: Buffer): Promise<string> {
+    return hashPassword(password, salt ?? (await this.pbkdf2Key()))
   }
 
   // ── password hash / enablement ────────────────────────────────────────────
@@ -237,7 +260,7 @@ export class AuthStore {
       const envPw = (this.env.HERMES_WEBUI_PASSWORD ?? '').trim()
       let stored: unknown
       try {
-        stored = this.settings.readRaw({ strict: true }).password_hash
+        stored = (await this.settings.readRaw({ strict: true })).password_hash
       } catch (error) {
         // An unreadable settings.json (permissions, I/O, corrupt JSON) must not read as "no password": report a hash
         // that no input can match, and do not cache so the next request retries the read.
@@ -279,8 +302,8 @@ export class AuthStore {
    * Feature flag AND at least one registered credential (Python `are_passkeys_enabled`). With credentials on disk and
    * the flag unknown (sidecar down, config changed underneath), the gate stays closed rather than opening the API.
    */
-  passkeysAvailable(): boolean {
-    return this.passkeysEnabled() && this.passkeyFeatureFlagState() !== false
+  async passkeysAvailable(): Promise<boolean> {
+    return await this.passkeysEnabled() && this.passkeyFeatureFlagState() !== false
   }
 
   isTrustedAuthEnabled(): boolean {
@@ -289,7 +312,7 @@ export class AuthStore {
 
   async isAuthEnabled(): Promise<boolean> {
     if (await this.isPasswordAuthEnabled()) return true
-    if (this.passkeysAvailable() || this.isTrustedAuthEnabled()) return true
+    if (await this.passkeysAvailable() || this.isTrustedAuthEnabled()) return true
     return this.isOidcEnabled()
   }
 
@@ -311,7 +334,7 @@ export class AuthStore {
     if (!expected) return false
     if (safeEqual(await this.hashPassword(plain), expected)) return true
     const legacySalt = this.signingKey()
-    if (!legacySalt.equals(this.pbkdf2Key()) && safeEqual(await this.hashPassword(plain, legacySalt), expected)) {
+    if (!legacySalt.equals((await this.pbkdf2Key())) && safeEqual(await this.hashPassword(plain, legacySalt), expected)) {
       await this.settings.save({ _set_password: plain })
       return true
     }
@@ -326,17 +349,17 @@ export class AuthStore {
       const val = Number.parseInt(envV, 10)
       if (val >= 60 && val <= 86400 * 365) return val
     }
-    const v = this.settings.load().session_ttl_seconds
+    const v = this.settings.peek().session_ttl_seconds
     if (typeof v === 'number' && Number.isInteger(v) && v >= 60 && v <= 86400 * 365) return v
     return SESSION_TTL
   }
 
-  resolveSessionSliding(): boolean {
+  async resolveSessionSliding(): Promise<boolean> {
     const value = (this.env.HERMES_WEBUI_SESSION_SLIDING ?? '').trim().toLowerCase()
     if (value) return ['1', 'true', 'yes', 'on'].includes(value)
     let webui: unknown
     try {
-      webui = this.settings.readRaw({ strict: true }).webui ?? {}
+      webui = (await this.settings.readRaw({ strict: true })).webui ?? {}
     } catch (error) {
       this.warnOnce('session-sliding-settings', `Cannot read session sliding policy (${(error as Error).name}); session renewal is disabled`)
       return false
@@ -356,11 +379,13 @@ export class AuthStore {
 
   // ── sessions ──────────────────────────────────────────────────────────────
 
-  private loadSessions(): Record<string, StoredSession> {
+  private async loadSessions(): Promise<Record<string, StoredSession>> {
     let data: unknown
     try {
-      if (!existsSync(this.sessionsFile)) return {}
-      data = JSON.parse(readFileSync(this.sessionsFile, 'utf8'))
+      const record = await readDocument(this.documents, 'auth', this.sessionsFile, { replaceInvalid: true })
+      this.persistedSnapshots.set(this.sessionsFile, record?.value && typeof record.value === 'object' && !Array.isArray(record.value) ? structuredClone(record.value) as Record<string, unknown> : {})
+      if (!record) return {}
+      data = record.value
       if (!data || typeof data !== 'object' || Array.isArray(data)) throw new Error('malformed sessions file: expected dict')
     } catch (error) {
       const prefix = (error as NodeJS.ErrnoException).code ? 'Auth session store read failed' : 'Ignoring malformed auth session store'
@@ -543,10 +568,12 @@ export class AuthStore {
 
   // ── login rate limit ──────────────────────────────────────────────────────
 
-  private loadLoginAttempts(): Record<string, number[]> {
+  private async loadLoginAttempts(): Promise<Record<string, number[]>> {
     try {
-      if (!existsSync(this.attemptsFile)) return {}
-      const data = JSON.parse(readFileSync(this.attemptsFile, 'utf8')) as unknown
+      const record = await readDocument(this.documents, 'auth', this.attemptsFile, { replaceInvalid: true })
+      this.persistedSnapshots.set(this.attemptsFile, record?.value && typeof record.value === 'object' && !Array.isArray(record.value) ? structuredClone(record.value) as Record<string, unknown> : {})
+      if (!record) return {}
+      const data = record.value
       if (!data || typeof data !== 'object' || Array.isArray(data)) return {}
       const now = this.now()
       const attempts: Record<string, number[]> = {}

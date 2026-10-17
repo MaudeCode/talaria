@@ -25,9 +25,9 @@ describe('stale-stream cleanup with a run journal', () => {
     Object.assign(session, { active_stream_id: streamId, pending_user_message: 'summarize the repo', pending_attachments: [], pending_started_at: Date.now() / 1000 - 120 })
     seed?.(session as unknown as Json)
     await s.deps.sessionStore.save(session)
-    const writer = s.deps.journal.writer(sid, streamId)
-    for (const [event, payload] of frames) writer.appendSseEvent(event, payload)
-    writer.close()
+    const writer = (await s.deps.journal.writer(sid, streamId))
+    for (const [event, payload] of frames) (await writer.appendSseEvent(event, payload))
+    await writer.close()
     return sid
   }
   const recovered = async (sid: string) => {

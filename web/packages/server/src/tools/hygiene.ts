@@ -65,7 +65,6 @@ export interface HygieneDeps {
   stateDir: string
   port: () => number
   journal: RunJournal
-  activeJournalPaths: () => Set<string>
   now: () => number
   log: (line: string) => void
   /** Extra per-tick sweeps (completion dedupe, terminal idle reaper). */
@@ -115,7 +114,7 @@ export class HygieneTicker {
     const { signal } = this.abort
     if (this.retentionLastRun !== null && now - this.retentionLastRun < RETENTION_INTERVAL_S) return this.pending()
     this.retentionLastRun = now
-    this.retention = this.deps.journal.pruneSettled({ now, signal, isActive: (path) => this.deps.activeJournalPaths().has(path) })
+    this.retention = this.deps.journal.pruneSettled({ now, signal })
       .then((result) => { if (result.pruned) this.deps.log(`[webui] run-journal retention pruned ${String(result.pruned)} files (${String(result.bytes_reclaimed)} bytes)`) })
       .catch((error: unknown) => { this.warn('run-journal retention', error) })
       .finally(() => { this.retention = null })

@@ -2847,7 +2847,7 @@ struct ChatView: View {
         responseCompletionBackgroundTask = .invalid
     }
 
-    private func scrollToBottom(_ position: Binding<ScrollPosition>) {
+    private func scrollToBottom(_ position: ChatTranscriptScrollProxy) {
         // Deliberate jump to the latest content. Snap without animation while a
         // response is streaming so the tap lands immediately instead of racing
         // the short follow animations already chasing incoming tokens.
@@ -2859,7 +2859,7 @@ struct ChatView: View {
     }
 
     private func scrollToLatestTranscriptMessage(
-        _ position: Binding<ScrollPosition>,
+        _ position: ChatTranscriptScrollProxy,
         animated: Bool = true,
         isUserInitiated: Bool = false
     ) {
@@ -2875,7 +2875,7 @@ struct ChatView: View {
     }
 
     private func scrollToLatestContent(
-        _ position: Binding<ScrollPosition>,
+        _ position: ChatTranscriptScrollProxy,
         animated: Bool = true,
         isUserInitiated: Bool = false
     ) {
@@ -2891,7 +2891,7 @@ struct ChatView: View {
     }
 
     private func scheduleFollowScroll(
-        _ position: Binding<ScrollPosition>,
+        _ position: ChatTranscriptScrollProxy,
         targetID: String,
         anchor: UnitPoint,
         animated: Bool,
@@ -2926,19 +2926,15 @@ struct ChatView: View {
             // taller server transcript replacing the cached one doesn't animate a jump
             // (#289). Evaluated at fire time so it's robust to onChange ordering.
             let isCacheFirstSnapWindow = cacheFirstSnapUntil.map { Date() < $0 } ?? false
+            let animation: Animation?
             if animated, !isCacheFirstSnapWindow {
-                // While streaming, follow with the short cadence-synced curve so
-                // back-to-back triggers retarget smoothly; otherwise keep the
-                // regular follow-scroll feel.
-                let animation = viewModel.activeStreamID != nil
+                animation = viewModel.activeStreamID != nil
                     ? ChatMotion.streamingFollow(reduceMotion: reduceMotion)
                     : ChatMotion.scrollToLatest(reduceMotion: reduceMotion)
-                withAnimation(animation) {
-                    position.wrappedValue.scrollTo(id: targetID, anchor: anchor)
-                }
             } else {
-                position.wrappedValue.scrollTo(id: targetID, anchor: anchor)
+                animation = nil
             }
+            position.scrollTo(id: targetID, anchor: anchor, animation: animation)
         }
     }
 

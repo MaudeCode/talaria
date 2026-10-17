@@ -16,7 +16,7 @@ public enum CacheStore {
         )
 
         return try context.fetch(descriptor)
-            .filter { $0.archived != true && $0.expiresAt > now }
+            .filter { $0.transcriptOnly != true && $0.archived != true && $0.expiresAt > now }
             .sorted { ($0.listPosition ?? .max) < ($1.listPosition ?? .max) }
             .map(SessionSummary.init(cachedSession:))
     }
@@ -56,6 +56,29 @@ public enum CacheStore {
             return cachedMessages.reversed().map(ChatMessage.init(cachedMessage:))
         }
         return cachedMessages.map(ChatMessage.init(cachedMessage:))
+    }
+
+    /// Restores the server-selected page without applying a second raw-row limit. Legacy or
+    /// partially evicted pages use the existing bounded fallback until the next successful load.
+    @MainActor
+    public static func cachedTranscriptWindow(
+        serverURL: URL,
+        sessionID: String,
+        in context: ModelContext,
+        legacyLimit: Int = 50,
+        now: Date = Date()
+    ) throws -> (messages: [ChatMessage], messagesOffset: Int, hasOlderMessages: Bool, recentMessagesOffset: Int?) {
+        let key = CachedSession.cacheKey(serverURLString: serverURL.absoluteString, sessionID: sessionID)
+        if let row = try cachedSession(cacheKey: key, in: context),
+           let offset = row.recentMessagesOffset,
+           let count = row.recentMessagesCount,
+           let expiresAt = row.recentMessagesExpiresAt, expiresAt > now {
+            let messages = try cachedMessages(serverURL: serverURL, sessionID: sessionID, in: context, now: now)
+            if messages.count == count {
+                return (messages, offset, row.recentMessagesTruncated == true, offset)
+            }
+        }
+        return (try cachedMessages(serverURL: serverURL, sessionID: sessionID, in: context, limit: legacyLimit, now: now), 0, false, nil)
     }
 
     @MainActor
@@ -98,7 +121,7 @@ public enum CacheStore {
         }
 
         for staleSession in existingSessions where !freshKeys.contains(staleSession.cacheKey) {
-            context.delete(staleSession)
+            removeFromCachedList(staleSession, in: context, now: cachedAt)
         }
 
         try performMaintenance(in: context, now: cachedAt)
@@ -119,7 +142,7 @@ public enum CacheStore {
 
         if session.archived == true {
             if let cachedSession = try cachedSession(cacheKey: cacheKey, in: context) {
-                context.delete(cachedSession)
+                removeFromCachedList(cachedSession, in: context, now: cachedAt)
             }
         } else if let cachedSession = try cachedSession(cacheKey: cacheKey, in: context) {
             cachedSession.apply(session, cachedAt: cachedAt)
@@ -179,6 +202,8 @@ public enum CacheStore {
         serverURL: URL,
         sessionID: String,
         in context: ModelContext,
+        messagesOffset: Int? = nil,
+        hasOlderMessages: Bool = false,
         cachedAt: Date = Date()
     ) throws {
         let serverURLString = serverURL.absoluteString
@@ -224,6 +249,19 @@ public enum CacheStore {
         for staleMessage in existingMessages where !freshKeys.contains(staleMessage.cacheKey) {
             context.delete(staleMessage)
         }
+
+        let key = CachedSession.cacheKey(serverURLString: serverURLString, sessionID: sessionID)
+        var session = try cachedSession(cacheKey: key, in: context)
+        if session == nil, messagesOffset != nil {
+            let row = CachedSession(serverURLString: serverURLString, session: SessionSummary(sessionId: sessionID), cachedAt: cachedAt)
+            row.transcriptOnly = true
+            context.insert(row)
+            session = row
+        }
+        session?.recentMessagesOffset = messagesOffset
+        session?.recentMessagesTruncated = messagesOffset.map { _ in hasOlderMessages }
+        session?.recentMessagesCount = messagesOffset.map { _ in messages.count }
+        session?.recentMessagesExpiresAt = messagesOffset.map { _ in cachedAt.addingTimeInterval(CachePolicy.ttl) }
 
         try performMaintenance(in: context, now: cachedAt)
         try context.save()
@@ -275,6 +313,15 @@ public enum CacheStore {
     }
 
     @MainActor
+    private static func removeFromCachedList(_ session: CachedSession, in context: ModelContext, now: Date) {
+        if (session.recentMessagesExpiresAt ?? .distantPast) > now {
+            session.transcriptOnly = true
+        } else {
+            context.delete(session)
+        }
+    }
+
+    @MainActor
     private static func performMaintenance(in context: ModelContext, now: Date) throws {
         try deleteExpiredSessions(in: context, now: now)
         try deleteExpiredMessages(in: context, now: now)
@@ -289,6 +336,7 @@ public enum CacheStore {
             }
         )
         for session in try context.fetch(descriptor) {
+            guard (session.recentMessagesExpiresAt ?? .distantPast) <= now else { continue }
             context.delete(session)
         }
     }
@@ -300,7 +348,9 @@ public enum CacheStore {
                 cachedMessage.expiresAt <= now
             }
         )
-        for message in try context.fetch(descriptor) {
+        let messages = try context.fetch(descriptor)
+        try invalidateTranscriptWindows(for: messages, in: context)
+        for message in messages {
             context.delete(message)
         }
     }
@@ -318,8 +368,22 @@ public enum CacheStore {
             ]
         )
         descriptor.fetchLimit = overflowCount
-        for message in try context.fetch(descriptor) {
+        let messages = try context.fetch(descriptor)
+        try invalidateTranscriptWindows(for: messages, in: context)
+        for message in messages {
             context.delete(message)
+        }
+    }
+
+    @MainActor
+    private static func invalidateTranscriptWindows(for messages: [CachedMessage], in context: ModelContext) throws {
+        let keys = Set(messages.map { CachedSession.cacheKey(serverURLString: $0.serverURLString, sessionID: $0.sessionID) })
+        for key in keys {
+            guard let session = try cachedSession(cacheKey: key, in: context) else { continue }
+            session.recentMessagesOffset = nil
+            session.recentMessagesTruncated = nil
+            session.recentMessagesCount = nil
+            session.recentMessagesExpiresAt = nil
         }
     }
 

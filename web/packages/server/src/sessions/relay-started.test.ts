@@ -1,9 +1,12 @@
+import { JsonDocuments } from '../test/storage.js'
+import { testProfileIdentity } from '../test/storage.js'
+import { initializeStore } from '../test/storage.js'
 import { generateKeyPairSync } from 'node:crypto'
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
-import { PresenceLeases, profileIdentity, RelayPublisher, type RelayConfig, type RelayPublisherDeps } from './relay.js'
+import { PresenceLeases, RelayPublisher, type RelayConfig, type RelayPublisherDeps } from './relay.js'
 import { StreamRegistry } from './streams.js'
 
 type Row = Record<string, unknown>
@@ -21,9 +24,9 @@ const PUB = 'https://pub.example'
 const startedPath = (profileId: string, sid: string): string => `https://relay.example/v1/publishers/${encodeURIComponent(PUB)}/profiles/${profileId}/sessions/${sid}/started`
 const started = (): Sent[] => sent.filter((s) => s.url.endsWith('/started'))
 
-function publisher(): RelayPublisher {
+async function publisher(): Promise<RelayPublisher> {
   const deps = {
-    stateDir: home,
+    documents: new JsonDocuments(home, (profile) => join(home, profile)),
     registry: new StreamRegistry(), presence: new PresenceLeases(() => clock), now: () => clock, log: vi.fn(),
     pending: { approvalPending: () => ({ pending: null, pending_count: 0 }), clarifyPending: () => ({ pending: null, pending_count: 0 }) },
     store: { get: () => { throw new Error('unused') }, readIndexEntries: () => index },
@@ -32,10 +35,10 @@ function publisher(): RelayPublisher {
     profilesMatch: (row: string | null | undefined, active: string | null | undefined) => (row ?? 'default') === active,
     fetch: () => (url: string, init: { body: string }) => { sent.push({ url, body: JSON.parse(init.body) as Row }); return respond(url) },
   } as unknown as RelayPublisherDeps
-  return new RelayPublisher(config, deps)
+  return (await initializeStore(new RelayPublisher(config, deps)))
 }
 
-beforeEach(() => {
+beforeEach(async () => {
   home = mkdtempSync(join(tmpdir(), 'talaria-relay-started-'))
   clock = 1_800_000_000
   index = []
@@ -47,7 +50,7 @@ beforeEach(() => {
   for (const profile of ['default', 'work']) mkdirSync(join(home, profile))
   config = {
     url: 'https://relay.example', publisher_id: PUB, key_id: 'key-1', private_key_path: keyPath,
-    profiles: { default: { identity: profileIdentity(join(home, 'default')), profile_id: 'prf_default' }, work: { identity: profileIdentity(join(home, 'work')), profile_id: 'prf_work' } },
+    profiles: { default: { identity: (await testProfileIdentity(join(home, 'default'))), profile_id: 'prf_default' }, work: { identity: (await testProfileIdentity(join(home, 'work'))), profile_id: 'prf_work' } },
   }
 })
 afterEach(() => { rmSync(home, { recursive: true, force: true }) })
@@ -55,7 +58,7 @@ afterEach(() => { rmSync(home, { recursive: true, force: true }) })
 it('announces each new Web and Agent-discovered session once, never the sessions that existed before', async () => {
   index = [{ session_id: 'web-old', created_at: clock - 5, message_count: 3, profile: null }]
   agent = { default: [{ id: 'cli-old', started_at: clock - 5 }] }
-  const p = publisher()
+  const p = (await publisher())
   await p.publishStarted()
   expect(started()).toEqual([])
 
@@ -73,16 +76,16 @@ it('announces each new Web and Agent-discovered session once, never the sessions
   index[1]!.message_count = 9
   agent.default![1] = { id: 'cli-new-segment-2', _lineage_root_id: 'cli-new', started_at: clock - 1 }
   await p.publishStarted()
-  await publisher().publishStarted()
+  await (await publisher()).publishStarted()
   expect(started()).toHaveLength(2)
 })
 
 it('sends each session only to the relay scope of the profile that owns it', async () => {
-  await publisher().publishStarted()
+  await (await publisher()).publishStarted()
   clock += 10
   index = [{ session_id: 'web-a', created_at: clock, message_count: 1, profile: 'default' }, { session_id: 'web-b', created_at: clock, message_count: 1, profile: 'work' }]
   agent = { work: [{ id: 'cli-b', started_at: clock }] }
-  await publisher().publishStarted()
+  await (await publisher()).publishStarted()
   expect(started().map((s) => [s.url, s.body.profileId])).toEqual([
     [startedPath('prf_default', 'web-a'), 'prf_default'],
     [startedPath('prf_work', 'web-b'), 'prf_work'],
@@ -91,33 +94,33 @@ it('sends each session only to the relay scope of the profile that owns it', asy
 })
 
 it('retries a failed or interrupted event under the same event ID after a restart', async () => {
-  await publisher().publishStarted()
+  await (await publisher()).publishStarted()
   clock += 10
   index = [{ session_id: 'web-new', created_at: clock, message_count: 1, profile: null }]
   respond = () => Promise.resolve(new Response('busy', { status: 503 }))
-  await expect(publisher().publishStarted()).rejects.toThrow('HTTP 503')
+  await expect((await publisher()).publishStarted()).rejects.toThrow('HTTP 503')
   respond = () => Promise.reject(new Error('socket hang up'))
-  await expect(publisher().publishStarted()).rejects.toThrow('Could not reach Talaria Relay')
+  await expect((await publisher()).publishStarted()).rejects.toThrow('Could not reach Talaria Relay')
   respond = () => Promise.resolve(new Response('{}'))
-  const restarted = publisher()
+  const restarted = (await publisher())
   await restarted.publishStarted()
   await restarted.publishStarted()
   expect(started().map((s) => s.body.eventId)).toEqual(['started:web-new', 'started:web-new', 'started:web-new'])
 })
 
 it('drops an event the relay permanently rejects instead of retrying it forever', async () => {
-  await publisher().publishStarted()
+  await (await publisher()).publishStarted()
   clock += 10
   index = [{ session_id: 'web-new', created_at: clock, message_count: 1, profile: null }]
   respond = () => Promise.resolve(new Response('not found', { status: 404 }))
-  const p = publisher()
+  const p = (await publisher())
   await p.publishStarted()
   await p.publishStarted()
   expect(started()).toHaveLength(1)
 })
 
 it('keeps observing new sessions while the relay is slow', async () => {
-  const p = publisher()
+  const p = (await publisher())
   await p.publishStarted()
   clock += 10
   let release: () => void = () => undefined
@@ -136,7 +139,7 @@ it('keeps observing new sessions while the relay is slow', async () => {
 
 it('announces the chat whose change wakes the first pass after an upgrade', async () => {
   // Tracking starts when the publisher starts, not when its first pass runs after that chat began.
-  const p = publisher()
+  const p = (await publisher())
   clock += 1
   index = [{ session_id: 'web-first', created_at: clock, message_count: 1, profile: null }]
   clock += 1

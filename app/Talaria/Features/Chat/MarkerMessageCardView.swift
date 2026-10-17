@@ -11,7 +11,13 @@ struct MarkerMessageCardView: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @Environment(\.chatDisclosureToggled) private var chatDisclosureToggled
-    @State private var isExpanded = false
+    @ChatRetainedState("marker-expansion") private var isExpanded = false
+
+    init(kind: ChatMarkerMessageKind, content: String?) {
+        self.kind = kind
+        self.content = content
+        _isExpanded = ChatRetainedState(wrappedValue: false, "marker:\(String(describing: kind))")
+    }
 
     var body: some View {
         let cardBody = (content ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
@@ -141,8 +147,15 @@ struct BackgroundUpdateLinesView: View {
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.chatDisclosureToggled) private var chatDisclosureToggled
-    @State private var isExpanded = false
-    @State private var showsFullBody = false
+    @ChatRetainedState("background-expansion") private var isExpanded = false
+    @ChatRetainedState("background-body") private var showsFullBody = false
+
+    init(update: BackgroundUpdate, message: ChatMessage) {
+        self.update = update
+        self.message = message
+        _isExpanded = ChatRetainedState(wrappedValue: false, "background:\(message.id):expanded")
+        _showsFullBody = ChatRetainedState(wrappedValue: false, "background:\(message.id):body")
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {

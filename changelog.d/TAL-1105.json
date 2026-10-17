@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Experimental update summaries now include changes from pull requests that started before your installed build.",
+      "highlight": false,
+      "components": ["web"]
+    }
+  ]
+}
