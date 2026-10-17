@@ -18,8 +18,9 @@ pytestmark = pytest.mark.skipif(not NODE or not (SERVER / 'test/harness.js').exi
 
 
 @pytest.mark.parametrize('mode', ['apply', 'force'])
-def test_http_update_refreshes_legacy_services_and_finishes_selected_revision(tmp_path, mode):
-    with supervised_agent(tmp_path, dashboards=2, legacy=True, refresh=True, dependency_sync=True) as (root, home, base, target, sidecar, configs):
+@pytest.mark.parametrize('transient', [False, True])
+def test_http_update_refreshes_legacy_services_and_finishes_selected_revision(tmp_path, mode, transient):
+    with supervised_agent(tmp_path, dashboards=2, legacy=True, refresh=True, dependency_sync=True, transient=transient) as (root, home, base, target, sidecar, configs):
         # The original sidecar is idle. The server's sidecar owns the actual update RPCs.
         sidecar.close()
         git(root, 'tag', 'v1.0.0', base)

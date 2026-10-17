@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Agent updates tolerate completed helper processes while still verifying every running service before making changes.",
+      "highlight": false,
+      "components": ["web"]
+    }
+  ]
+}
