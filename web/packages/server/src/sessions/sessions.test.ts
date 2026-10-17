@@ -14,7 +14,7 @@ import { SidecarError } from '../sidecar/client.js'
 import { str } from '../util.js'
 import { diffHunks } from '../text/diff.js'
 import { withPendingUserTurn, withoutRunningTurnOutput } from './merge.js'
-import { RunJournalWriter } from './journal.js'
+import { JsonJournalWriter as RunJournalWriter } from './storage/json-journal.js'
 import typedRows from '../test/fixtures/agent-typed-rows.json' with { type: 'json' }
 
 type Json = Record<string, unknown>
@@ -2490,7 +2490,7 @@ describe('session detail transcript cursor (TAL-316)', () => {
 
   it('returns the persisted transcript unchanged and no cursor when the running turn has no journal', async () => {
     const { sid, release } = await runningTurn()
-    const findRunSummary = vi.spyOn(s.deps.journal, 'findRunSummary').mockReturnValue(null)
+    const findRunSummary = vi.spyOn(s.deps.journal, 'findRunSummary').mockResolvedValue(null)
     try {
       const session = await detail(sid)
       expect(session.transcript_seq).toBeNull()
@@ -2503,7 +2503,7 @@ describe('session detail transcript cursor (TAL-316)', () => {
 
   it('ships a running turn without a journal as an open running scene of its persisted rows, in every window (TAL-374)', async () => {
     const { sid, release } = await runningTurn()
-    const findRunSummary = vi.spyOn(s.deps.journal, 'findRunSummary').mockReturnValue(null)
+    const findRunSummary = vi.spyOn(s.deps.journal, 'findRunSummary').mockResolvedValue(null)
     try {
       for (const query of ['', '&msg_limit=50']) {
         const session = await detail(sid, query)
@@ -2645,7 +2645,7 @@ describe('session detail keeps the running turn\'s prompt (TAL-368)', () => {
       expect(prompts.map((m) => m.content)).toEqual(['continue', 'from state db'])
       expect(prompts[1]).toMatchObject({ _turn_id: streamId, _active_turn_user: true, attachments: [{ name: 'plan.md', path: '/tmp/plan.md', mime: 'text/markdown' }] })
       // Without a journal the persisted rows stand as they are, still with one prompt.
-      const findRunSummary = vi.spyOn(s.deps.journal, 'findRunSummary').mockReturnValue(null)
+      const findRunSummary = vi.spyOn(s.deps.journal, 'findRunSummary').mockResolvedValue(null)
       try {
         expect(users(await detail(sid)).map((m) => m.content)).toEqual(['continue', 'from state db'])
       } finally {
@@ -2663,7 +2663,7 @@ describe('session detail keeps the running turn\'s prompt (TAL-368)', () => {
     db.prepare('INSERT INTO sessions (id, source, started_at) VALUES (?, ?, ?)').run(sid, 'webui', 1000)
     for (const [role, content, ts] of [['user', 'continue', 1000], ['assistant', 'earlier reply', 1001], ['user', 'long degraded run', startedAt + 0.1], ['assistant', 'step one', startedAt + 1], ['assistant', 'step two', startedAt + 2], ['assistant', 'step three', startedAt + 3]] as const) db.prepare('INSERT INTO messages (session_id, role, content, timestamp) VALUES (?, ?, ?, ?)').run(sid, role, content, ts)
     db.close()
-    const findRunSummary = vi.spyOn(s.deps.journal, 'findRunSummary').mockReturnValue(null)
+    const findRunSummary = vi.spyOn(s.deps.journal, 'findRunSummary').mockResolvedValue(null)
     try {
       const window = await detail(sid, '&msg_limit=1')
       expect((window.messages as Json[]).map((m) => m.content)).toEqual(['long degraded run', 'step one', 'step two', 'step three'])
@@ -2679,7 +2679,7 @@ describe('session detail keeps the running turn\'s prompt (TAL-368)', () => {
 
   it('projects the prompt without a journal, and a cancelled turn settles to one row with its attachments', async () => {
     const { sid, streamId } = await heldTurn('cancel me', history, [{ name: 'cat.png', path: '/tmp/cat.png', mime: 'image/png' }])
-    const findRunSummary = vi.spyOn(s.deps.journal, 'findRunSummary').mockReturnValue(null)
+    const findRunSummary = vi.spyOn(s.deps.journal, 'findRunSummary').mockResolvedValue(null)
     try {
       const session = await detail(sid)
       expect(session.transcript_seq).toBeNull()

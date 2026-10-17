@@ -45,7 +45,7 @@ async function serve(args: string[]): Promise<number> {
       log(`[sidecar] failed to start: ${(error as Error).message}; chat is unavailable until it recovers`)
     }
   }
-  const deps = createDeps({ webRoot, sidecar })
+  const deps = await createDeps({ webRoot, sidecar })
   // Every exit path (SIGINT/SIGTERM shutdown, `/api/shutdown`, self-update restart) reaps embedded terminals first.
   process.on('exit', () => { deps.updates.stopAutoApply(); deps.terminals.closeAll({ immediate: true }) })
   process.once('SIGINT', () => { deps.updates.stopAutoApply() })
@@ -57,11 +57,11 @@ async function serve(args: string[]): Promise<number> {
   const app = createApp(deps)
   const running = await startServer(app, deps.config)
   if (process.connected) process.send?.('ready')
-  deps.relay.start()
+  await deps.relay.start()
   deps.completions.start()
   deps.hygiene.start()
   deps.updates.startAutoApply()
-  deps.gatewayRestarts.resume()
+  await deps.gatewayRestarts.resume()
   log(`  Then open:     ${running.scheme}://localhost:${running.port}`)
   await new Promise<void>(() => undefined)
   return 0
@@ -70,7 +70,7 @@ async function serve(args: string[]): Promise<number> {
 export async function main(argv: string[]): Promise<number> {
   const [first, ...rest] = argv
   if (first === 'ctl') return runCtl({ env: process.env, webRoot, home: process.env.HOME ?? '', serveCommand, log, warn }, rest)
-  if (first === 'serve') return serve(rest)
+  if (first === 'serve') return (await serve(rest))
   if (first === '-h' || first === '--help' || first === 'help') {
     log('Usage: talaria-web [port] [--host HOST] [--no-browser] [--skip-agent-install] [--foreground]\n       talaria-web serve [args]\n       talaria-web ctl <start|stop|restart|status|logs>\n       talaria-web self-check')
     return 0

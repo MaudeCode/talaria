@@ -5,10 +5,9 @@
  * `sessions/_background/<sid>.json`, so reloads, restarts and every client read the same history, and reading never
  * consumes anything. The Agent stays authoritative for its own work: a receipt only fills in what it no longer reports.
  */
-import { rmSync, mkdirSync, readFileSync } from 'node:fs'
-import { join } from 'node:path'
 import type { BackgroundLink, BackgroundTask } from '@maudecode/talaria-web-contracts'
-import { atomicWriteText } from '../fs/atomic.js'
+import type { DocumentBackend } from './storage/backend.js'
+import { updateDocument } from './storage/document.js'
 import type { SidecarLike } from '../sidecar/client.js'
 import { str } from '../util.js'
 import { isDict, stripToolCallXml } from './merge.js'
@@ -45,7 +44,6 @@ export interface ChildSession { goal: string; session_id: string }
 export interface DelegationRow { delegation_id: string; state: string; dispatched_at: number | null; completed_at: number | null; updated_at: number | null; goals: string[]; child_statuses: string[]; has_result: boolean; live_status: string | null; children?: ChildSession[] | undefined }
 export interface ProcessRow { process_id: string; command: string; started_at: number | null; exited: boolean; exited_at: number | null; exit_code: number | null; completion_reason: string; watched: boolean }
 
-const DIR_NAME = '_background'
 const RECORD_LIMIT = 200
 const RESULT_LIMIT = 64_000
 const TITLE_LIMIT = 160
@@ -176,77 +174,76 @@ export function taskView(r: Receipt, opts: { unconfirmed?: boolean } = {}): Back
 export class BackgroundTaskStore {
   private readonly cache = new Map<string, Receipt[]>()
 
-  constructor(private readonly sessionDir: string, private readonly now: () => number, private readonly onChange?: (sid: string) => void | Promise<void>) {}
+  constructor(private readonly documents: DocumentBackend, private readonly now: () => number, private readonly onChange?: (sid: string) => void | Promise<void>) {}
 
-  private path(sid: string): string { return join(this.sessionDir, DIR_NAME, `${sid}.json`) }
+  private parse(raw: unknown): Receipt[] { return isDict(raw) && Array.isArray(raw.tasks) ? raw.tasks.filter(isDict) as unknown as Receipt[] : [] }
+  private bounded(receipts: Receipt[]): Receipt[] {
+    return receipts.length <= RECORD_LIMIT ? receipts : [...receipts.filter((receipt) => !isTerminal(receipt.status)), ...receipts.filter((receipt) => isTerminal(receipt.status)).sort((a, b) => (b.completed_at ?? 0) - (a.completed_at ?? 0)).slice(0, RECORD_LIMIT)]
+  }
 
-  list(sid: string): Receipt[] {
+  async list(sid: string): Promise<Receipt[]> {
     if (!isSafeSessionId(sid)) return []
     const cached = this.cache.get(sid)
     if (cached) return cached
-    let receipts: Receipt[] = []
-    try {
-      const parsed: unknown = JSON.parse(readFileSync(this.path(sid), 'utf8'))
-      // ponytail: receipts are trusted as this server wrote them; validate per field if the file ever comes from elsewhere.
-      if (isDict(parsed) && Array.isArray(parsed.tasks)) receipts = parsed.tasks.filter(isDict) as unknown as Receipt[]
-    } catch { receipts = [] }
+    let receipts: Receipt[]
+    try { receipts = this.parse((await this.documents.get('background', sid))?.value) } catch { receipts = [] }
     this.cache.set(sid, receipts)
     return receipts
   }
 
-  get(sid: string, taskId: string): Receipt | undefined { return this.list(sid).find((r) => r.task_id === taskId) }
+  async get(sid: string, taskId: string): Promise<Receipt | undefined> { return (await this.list(sid)).find((receipt) => receipt.task_id === taskId) }
 
-  /** Apply updates; writes and notifies only when something a client sees changed. */
-  update(sid: string, updates: (Partial<Receipt> & Pick<Receipt, 'task_id' | 'kind'>)[], opts: { notify?: boolean } = {}): boolean {
+  private async mutate<T>(sid: string, edit: (receipts: Receipt[]) => T, opts: { skipUnchanged?: boolean } = {}): Promise<T> {
+    const committed = await updateDocument(this.documents, 'background', sid, (raw) => {
+      const receipts = this.parse(raw)
+      const before = JSON.stringify(receipts)
+      const result = edit(receipts)
+      const tasks = this.bounded(receipts)
+      return { value: { version: 1, tasks }, result: { tasks, result }, skip: opts.skipUnchanged === true && before === JSON.stringify(tasks) }
+    }, { replaceInvalid: true })
+    this.cache.set(sid, committed.tasks)
+    return committed.result
+  }
+
+  async update(sid: string, updates: (Partial<Receipt> & Pick<Receipt, 'task_id' | 'kind'>)[], opts: { notify?: boolean } = {}): Promise<boolean> {
     if (!isSafeSessionId(sid) || !updates.length) return false
     const now = this.now()
-    const receipts = [...this.list(sid)]
-    let changed = false
-    for (const update of updates) {
-      const index = receipts.findIndex((r) => r.task_id === update.task_id)
-      const merged = mergeReceipt(index >= 0 ? receipts[index] : undefined, update, now)
-      if (sameReceipt(receipts[index], merged)) continue
-      if (index >= 0) receipts[index] = merged
-      else receipts.push(merged)
-      changed = true
-    }
-    if (!changed) return false
-    this.write(sid, receipts)
-    if (opts.notify !== false) void this.onChange?.(sid)
-    return true
+    const changed = await this.mutate(sid, (receipts) => {
+      let changed = false
+      for (const update of updates) {
+        const index = receipts.findIndex((receipt) => receipt.task_id === update.task_id)
+        const merged = mergeReceipt(index >= 0 ? receipts[index] : undefined, update, now)
+        if (sameReceipt(receipts[index], merged)) continue
+        if (index >= 0) receipts[index] = merged
+        else receipts.push(merged)
+        changed = true
+      }
+      return changed
+    })
+    if (changed && opts.notify !== false) void this.onChange?.(sid)
+    return changed
   }
 
-  /** Flags that are not task state: dismissal, the running stream. */
-  mark(sid: string, taskId: string, fields: Partial<Pick<Receipt, 'dismissed_at' | 'stream_id'>>): Receipt | null {
-    const receipts = [...this.list(sid)]
-    const index = receipts.findIndex((r) => r.task_id === taskId)
-    if (index < 0) return null
-    receipts[index] = { ...receipts[index]!, ...fields }
-    this.write(sid, receipts)
-    if (fields.dismissed_at !== undefined) void this.onChange?.(sid)
-    return receipts[index]
+  async mark(sid: string, taskId: string, fields: Partial<Pick<Receipt, 'dismissed_at' | 'stream_id'>>): Promise<Receipt | null> {
+    const receipt = await this.mutate(sid, (receipts) => {
+      const index = receipts.findIndex((receipt) => receipt.task_id === taskId)
+      if (index < 0) return null
+      receipts[index] = { ...receipts[index]!, ...fields }
+      return receipts[index]
+    }, { skipUnchanged: true })
+    if (receipt && fields.dismissed_at !== undefined) void this.onChange?.(sid)
+    return receipt
   }
 
-  /** The session was deleted: its records go from memory too (the file goes with the session's other files). */
   evict(sid: string): void { this.cache.delete(sid) }
 
-  delete(sid: string): void {
+  async delete(sid: string): Promise<void> {
     this.cache.delete(sid)
-    try { rmSync(this.path(sid), { force: true }) } catch { /* best effort */ }
+    try { await this.documents.delete('background', sid) } catch { /* best effort */ }
   }
 
-  /** Drop a `/background` task that never started. */
-  forget(sid: string, taskId: string): void {
-    const receipts = this.list(sid).filter((r) => r.task_id !== taskId)
-    this.write(sid, receipts)
-  }
-
-  private write(sid: string, receipts: Receipt[]): void {
-    // Newest RECORD_LIMIT by start; running work is never pruned.
-    const kept = receipts.length <= RECORD_LIMIT ? receipts : [...receipts.filter((r) => !isTerminal(r.status)), ...receipts.filter((r) => isTerminal(r.status)).sort((a, b) => (b.completed_at ?? 0) - (a.completed_at ?? 0)).slice(0, RECORD_LIMIT)]
-    this.cache.set(sid, kept)
-    mkdirSync(join(this.sessionDir, DIR_NAME), { recursive: true })
-    atomicWriteText(this.path(sid), JSON.stringify({ version: 1, tasks: kept }))
+  async forget(sid: string, taskId: string): Promise<void> {
+    await this.mutate(sid, (receipts) => { const index = receipts.findIndex((receipt) => receipt.task_id === taskId); if (index >= 0) receipts.splice(index, 1) })
   }
 }
 
@@ -302,25 +299,25 @@ export interface BackgroundActivityDeps {
 export class BackgroundActivity {
   constructor(private readonly deps: BackgroundActivityDeps) {}
 
-  receipts(sid: string): Receipt[] { return this.deps.store.list(sid) }
+  async receipts(sid: string): Promise<Receipt[]> { return (await this.deps.store.list(sid)) }
 
-  trackCommand(sid: string, taskId: string, prompt: string): void {
-    this.deps.store.update(sid, [{ task_id: taskId, kind: 'background_command', status: 'running', title: taskTitle(prompt), started_at: this.deps.now() }])
+  async trackCommand(sid: string, taskId: string, prompt: string): Promise<void> {
+    await this.deps.store.update(sid, [{ task_id: taskId, kind: 'background_command', status: 'running', title: taskTitle(prompt), started_at: this.deps.now() }])
   }
 
-  setCommandStream(sid: string, taskId: string, streamId: string): void { this.deps.store.mark(sid, taskId, { stream_id: streamId || null }) }
+  async setCommandStream(sid: string, taskId: string, streamId: string): Promise<void> { (await this.deps.store.mark(sid, taskId, { stream_id: streamId || null })) }
 
   /** The `/background` turn finished: its answer, or the failure text old clients showed, is the result. */
-  settleCommand(sid: string, taskId: string, outcome: 'completed' | 'failed', text: string): void {
-    this.deps.store.update(sid, [{ task_id: taskId, kind: 'background_command', status: outcome, result: bounded(text) }])
+  async settleCommand(sid: string, taskId: string, outcome: 'completed' | 'failed', text: string): Promise<void> {
+    await this.deps.store.update(sid, [{ task_id: taskId, kind: 'background_command', status: outcome, result: bounded(text) }])
   }
 
-  forgetCommand(sid: string, taskId: string): void { this.deps.store.forget(sid, taskId) }
+  async forgetCommand(sid: string, taskId: string): Promise<void> { (await this.deps.store.forget(sid, taskId)) }
 
   /** A drained completion settles (or flags) its record. */
-  recordEvent(sid: string, evt: Dict, prompt: string): void {
+  async recordEvent(sid: string, evt: Dict, prompt: string): Promise<void> {
     const receipt = eventReceipt(evt, prompt, this.deps.now())
-    if (receipt) this.deps.store.update(sid, [receipt])
+    if (receipt) (await this.deps.store.update(sid, [receipt]))
   }
 
   /** The session's records, refreshed from the Agent; work it cannot confirm right now shows `unknown`. */
@@ -341,15 +338,15 @@ export class BackgroundActivity {
       const reported = [...agent.delegations.map((r) => delegationReceipt(r, now)), ...agent.processes.map(processReceipt)]
       // The Agent answered: running work it no longer has is lost, and its record (the card and the delegation row alike)
       // says unknown until the Agent reports it again.
-      const lost = this.deps.store.list(sid).filter((r) => LIVE.has(r.status) && r.status !== 'unknown' && !confirmed(r)).map((r) => ({ task_id: r.task_id, kind: r.kind, status: 'unknown' as const }))
+      const lost = (await this.deps.store.list(sid)).filter((r) => LIVE.has(r.status) && r.status !== 'unknown' && !confirmed(r)).map((r) => ({ task_id: r.task_id, kind: r.kind, status: 'unknown' as const }))
       const reportedIds = new Set(reported.map((r) => r.task_id))
-      this.deps.store.update(sid, [...reported.map((r) => (confirmed(r as Receipt) || !RUNNING_LIKE.has(r.status ?? 'running') ? r : { ...r, status: 'unknown' as const })), ...lost.filter((r) => !reportedIds.has(r.task_id))])
+      await this.deps.store.update(sid, [...reported.map((r) => (confirmed(r as Receipt) || !RUNNING_LIKE.has(r.status ?? 'running') ? r : { ...r, status: 'unknown' as const })), ...lost.filter((r) => !reportedIds.has(r.task_id))])
     } else {
       // The Agent cannot be asked: a running delegation's record says unknown too, so its transcript row matches the
       // card; it returns to running once the Agent reports it again.
-      this.deps.store.update(sid, this.deps.store.list(sid).filter((r) => r.kind === 'delegation' && RUNNING_LIKE.has(r.status)).map((r) => ({ task_id: r.task_id, kind: r.kind, status: 'unknown' as const })))
+      await this.deps.store.update(sid, (await this.deps.store.list(sid)).filter((r) => r.kind === 'delegation' && RUNNING_LIKE.has(r.status)).map((r) => ({ task_id: r.task_id, kind: r.kind, status: 'unknown' as const })))
     }
-    const tasks = this.deps.store.list(sid).map((r) => taskView(r, { unconfirmed: !agent && !confirmed(r) }))
+    const tasks = (await this.deps.store.list(sid)).map((r) => taskView(r, { unconfirmed: !agent && !confirmed(r) }))
     tasks.sort((a, b) => (b.started_at ?? b.updated_at) - (a.started_at ?? a.updated_at))
     return { tasks, agent_available: agent !== null, agents_working: tasks.some((t) => t.kind === 'delegation' && (t.status === 'running' || t.status === 'attention')) }
   }
@@ -359,7 +356,7 @@ export class BackgroundActivity {
    * Leaked tool-call XML is removed, as from a transcript reply (TAL-302).
    */
   async result(sid: string, profile: string | null, taskId: string): Promise<string | null> {
-    const receipt = this.deps.store.get(sid, taskId)
+    const receipt = (await this.deps.store.get(sid, taskId))
     if (!receipt) return null
     if (receipt.result) return stripToolCallXml(receipt.result)
     const sidecar = this.deps.sidecar()
@@ -368,8 +365,8 @@ export class BackgroundActivity {
   }
 
   /** Dismissal is read state, separate from the task: the record stays in the history and leaves the tray. */
-  dismiss(sid: string, taskId: string): BackgroundTask | null {
-    const receipt = this.deps.store.mark(sid, taskId, { dismissed_at: this.deps.now() })
+  async dismiss(sid: string, taskId: string): Promise<BackgroundTask | null> {
+    const receipt = (await this.deps.store.mark(sid, taskId, { dismissed_at: this.deps.now() }))
     return receipt ? taskView(receipt) : null
   }
 }

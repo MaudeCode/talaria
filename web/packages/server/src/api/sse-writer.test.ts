@@ -123,25 +123,25 @@ describe('event streams deliver past the old 4 MiB cut-off', () => {
   const ids = (list: SseFrame[]): (string | null)[] => list.map((f) => f.id)
   const expectedIds = (run: string, n: number): string[] => Array.from({ length: n }, (_, i) => `${run}:${String(i + 1)}`)
   /** Journal `n` token frames and a `stream_end`; `put` also publishes each to the live channel, `journal: false` publishes only. */
-  const run = (runId: string, n: number, opts: { put?: (item: [string, unknown, string]) => void; journal?: boolean } = {}): void => {
-    const w = opts.journal === false ? null : s.deps.journal.writer(sid, runId)
+  const run = async (runId: string, n: number, opts: { put?: (item: [string, unknown, string]) => void; journal?: boolean } = {}): Promise<void> => {
+    const w = opts.journal === false ? null : (await s.deps.journal.writer(sid, runId))
     for (let i = 1; i <= n + 1; i += 1) {
       const event = i <= n ? 'token' : 'stream_end'
       const data = i <= n ? { text: FRAME_TEXT } : {}
-      const id = w ? w.appendSseEvent(event, data).event_id : `${runId}:${String(i)}`
+      const id = w ? (await w.appendSseEvent(event, data)).event_id : `${runId}:${String(i)}`
       opts.put?.([event, data, id])
     }
-    w?.close()
+    await w?.close()
   }
 
   it('a finished run replays every frame of a journal past 4 MiB', async () => {
-    run('run-finished', 3000)
+    await run('run-finished', 3000)
     const got = await frames(read(`${s.base}/api/chat/stream?stream_id=run-finished&replay=1`))
     expect(ids(got)).toEqual(expectedIds('run-finished', 3001))
   })
 
   it('a replay to a paused reader keeps unsent data near the socket high-water mark, then delivers every frame', async () => {
-    run('run-paused', 4000)
+    await run('run-paused', 4000)
     const spy = vi.spyOn(SseWriter.prototype, 'event')
     try {
       const client = read(`${s.base}/api/chat/stream?stream_id=run-paused&replay=1`, true)
@@ -157,23 +157,23 @@ describe('event streams deliver past the old 4 MiB cut-off', () => {
   })
 
   /** A journal from before tool frames carried a public `id`: `pairs` tool calls, odd ones with the Agent's `tid`, even ones without. */
-  const legacyRun = (runId: string, pairs: number): void => {
-    const w = s.deps.journal.writer(sid, runId)
+  const legacyRun = async (runId: string, pairs: number): Promise<void> => {
+    const w = (await s.deps.journal.writer(sid, runId))
     for (let k = 1; k <= pairs; k += 1) {
       const tid = k % 2 ? `call-${String(k)}` : ''
-      w.appendSseEvent('tool', { tid, name: `tool-${String(k % 5)}`, preview: TOOL_TEXT })
-      w.appendSseEvent('tool_complete', { tid, name: `tool-${String(k % 5)}`, result: TOOL_TEXT })
+      await w.appendSseEvent('tool', { tid, name: `tool-${String(k % 5)}`, preview: TOOL_TEXT })
+      await w.appendSseEvent('tool_complete', { tid, name: `tool-${String(k % 5)}`, result: TOOL_TEXT })
     }
-    w.appendSseEvent('stream_end', {})
-    w.close()
+    await w.appendSseEvent('stream_end', {})
+    await w.close()
   }
 
   // Rows parsed beyond what the replay has sent: the run-summary lookups' bounded tails (512 rows each) plus a 64 KiB page
   // per reader. A legacy replay walks the journal twice (rows and tool pairing), so its sent rows count twice. How many rows
   // reach the socket before the stall depends on the OS socket buffers, so they are subtracted out.
   it.each([
-    { kind: 'token', runId: 'run-paged', write: () => { run('run-paged', 6000) }, readsPerRow: 1 },
-    { kind: 'pre-id tool', runId: 'run-legacy', write: () => { legacyRun('run-legacy', 3000) }, readsPerRow: 2 },
+    { kind: 'token', runId: 'run-paged', write: async () => { (await run('run-paged', 6000)) }, readsPerRow: 1 },
+    { kind: 'pre-id tool', runId: 'run-legacy', write: async () => { (await legacyRun('run-legacy', 3000)) }, readsPerRow: 2 },
   ])('a $kind replay to a paused reader parses the journal a page at a time rather than whole', async ({ runId, write, readsPerRow }) => {
     write()
     const parse = vi.spyOn(JSON, 'parse')
@@ -193,7 +193,7 @@ describe('event streams deliver past the old 4 MiB cut-off', () => {
   })
 
   it('a pre-id tool journal replays each completion with its call\'s id', async () => {
-    legacyRun('run-legacy-ids', 40)
+    await legacyRun('run-legacy-ids', 40)
     const got = (await frames(read(`${s.base}/api/chat/stream?stream_id=run-legacy-ids&replay=1`))).filter((f) => f.event !== 'stream_end')
     const toolIds = got.map((f) => (f.data as { id?: string }).id)
     for (let k = 1; k <= 40; k += 1) {
@@ -216,7 +216,7 @@ describe('event streams deliver past the old 4 MiB cut-off', () => {
 
   it('a live run resumes every journaled frame past 4 MiB', async () => {
     const channel = s.deps.registry.create('run-resume', sid)
-    run('run-resume', 3000)
+    await run('run-resume', 3000)
     channel.lastEventId = 'run-resume:3001'
     const got = await frames(read(`${s.base}/api/chat/stream?stream_id=run-resume&replay=1`))
     s.deps.registry.retire('run-resume')
@@ -232,7 +232,7 @@ describe('event streams deliver past the old 4 MiB cut-off', () => {
     const channel = s.deps.registry.create('run-gap', sid)
     const client = read(`${s.base}/api/chat/stream?stream_id=run-gap`, true)
     await subscribed(() => channel.subscriberCount)
-    run('run-gap', 12_000, { put: (item) => { channel.put(item) } })
+    await run('run-gap', 12_000, { put: (item) => { channel.put(item) } })
     client.resume()
     const got = await frames(client)
     s.deps.registry.retire('run-gap')
@@ -246,7 +246,7 @@ describe('event streams deliver past the old 4 MiB cut-off', () => {
     await subscribed(() => channel.subscriberCount)
     channel.put(['bg_task_complete', { session_id: sid, n: 1 }, null])
     channel.put(['bg_task_complete', { session_id: sid, n: 2 }, null])
-    run('run-signal', 12_000, { put: (item) => { channel.put(item) } })
+    await run('run-signal', 12_000, { put: (item) => { channel.put(item) } })
     client.resume()
     const got = await frames(client)
     s.deps.registry.retire('run-signal')
@@ -259,7 +259,7 @@ describe('event streams deliver past the old 4 MiB cut-off', () => {
     const channel = s.deps.registry.create('run-lost', sid)
     const client = read(`${s.base}/api/chat/stream?stream_id=run-lost`, true)
     await subscribed(() => channel.subscriberCount)
-    run('run-lost', 12_000, { put: (item) => { channel.put(item) }, journal: false })
+    await run('run-lost', 12_000, { put: (item) => { channel.put(item) }, journal: false })
     client.resume()
     const got = await frames(client)
     s.deps.registry.retire('run-lost')
@@ -276,7 +276,7 @@ describe('event streams deliver past the old 4 MiB cut-off', () => {
     s.deps.registry.registerActiveRun({ stream_id: 'run-journal-gap', session_id: sid, started_at: 0, phase: 'running', workspace: '', model: null, provider: null, ephemeral: false })
     const client = read(`${s.base}/api/sessions/${sid}/events`, true)
     await subscribed(() => channel.subscriberCount)
-    run('run-journal-gap', 12_000, { put: (item) => { channel.put(item) } })
+    await run('run-journal-gap', 12_000, { put: (item) => { channel.put(item) } })
     client.resume()
     const got = (await frames(client)).filter((f) => f.event !== 'session_snapshot')
     s.deps.registry.retire('run-journal-gap')

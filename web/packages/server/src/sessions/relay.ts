@@ -9,10 +9,10 @@ import { filterAsync } from '../util.js'
  */
 import { readCapped } from '../http/capped.js'
 import { createHash, createPrivateKey, generateKeyPairSync, randomUUID, sign as cryptoSign, type KeyObject } from 'node:crypto'
-import { existsSync, mkdirSync, readFileSync } from 'node:fs'
-import { dirname, join } from 'node:path'
+import { readFileSync, statSync } from 'node:fs'
 import { z } from 'zod'
-import { atomicWriteText } from '../fs/atomic.js'
+import type { DocumentBackend } from './storage/backend.js'
+import { updateDocument } from './storage/document.js'
 import type { ActiveRun, StreamRegistry } from './streams.js'
 import type { PendingPrompts } from './pending.js'
 import type { SessionStore } from './store.js'
@@ -43,7 +43,7 @@ class RelayHttpError extends Error {
 }
 
 export interface RelayProfile { identity: string; profile_id: string }
-export interface RelayConfig { url: string; publisher_id: string; key_id: string; private_key_path: string; profiles: Record<string, RelayProfile> }
+export interface RelayConfig { url: string; publisher_id: string; key_id: string; private_key_path: string; private_key_document?: string; profiles: Record<string, RelayProfile> }
 
 /** Python `RelayConfig._validated_origin`: a bare origin with no path, query, credentials, or fragment. */
 export function validatedOrigin(raw: string, httpsOnly = false): string {
@@ -57,13 +57,11 @@ export function validatedOrigin(raw: string, httpsOnly = false): string {
   return value
 }
 
-export function relayStatePath(stateDir: string): string { return join(stateDir, 'talaria-relay.json') }
-
 /** Python `RelayConfig.from_state`: null when absent or a v1 file (registration is required again); throws on corruption. */
-export function loadRelayConfig(stateDir: string): RelayConfig | null {
-  const path = relayStatePath(stateDir)
-  if (!existsSync(path)) return null
-  const values: unknown = JSON.parse(readFileSync(path, 'utf8'))
+export async function loadRelayConfig(documents: DocumentBackend): Promise<RelayConfig | null> {
+  const record = await documents.get('relay', 'config')
+  if (!record) return null
+  const values = record.value
   if (!values || typeof values !== 'object' || Array.isArray(values)) throw new Error('saved relay configuration is not an object')
   const v = values as Record<string, unknown>
   if (v.version !== 2) return null
@@ -75,13 +73,13 @@ export function loadRelayConfig(stateDir: string): RelayConfig | null {
     if (!name || !p || typeof p !== 'object' || typeof p.identity !== 'string' || !p.identity || typeof p.profile_id !== 'string' || !p.profile_id) throw new Error('saved relay profiles are invalid')
     normalized[name] = { identity: p.identity, profile_id: p.profile_id }
   }
-  return { url: validatedOrigin(str(v.url)), publisher_id: validatedOrigin(str(v.publisher_id)), key_id: str(v.key_id), private_key_path: str(v.private_key_path), profiles: normalized }
+  return { url: validatedOrigin(str(v.url)), publisher_id: validatedOrigin(str(v.publisher_id)), key_id: str(v.key_id), private_key_path: str(v.private_key_path), ...(typeof v.private_key_document === 'string' ? { private_key_document: v.private_key_document } : {}), profiles: normalized }
 }
 
-export function saveRelayConfig(stateDir: string, config: RelayConfig): void {
+export async function saveRelayConfig(documents: DocumentBackend, config: RelayConfig): Promise<void> {
   const payload = { key_id: config.key_id, private_key_path: config.private_key_path, profiles: sortedProfiles(config.profiles), publisher_id: config.publisher_id, url: config.url, version: 2 }
-  mkdirSync(stateDir, { recursive: true })
-  atomicWriteText(relayStatePath(stateDir), JSON.stringify(payload, null, 2) + '\n')
+  const value = { ...payload, ...(config.private_key_document ? { private_key_document: config.private_key_document } : {}) }
+  await updateDocument(documents, 'relay', 'config', () => ({ value, result: undefined }), { replaceInvalid: true })
 }
 
 function sortedProfiles(profiles: Record<string, RelayProfile>): Record<string, RelayProfile> {
@@ -97,7 +95,6 @@ const DeletedViewSchema = z.object({
 type DeletedView = z.infer<typeof DeletedViewSchema>
 interface QueuedView { profile: string | null; through: number; deleted?: DeletedView }
 const DeletedViewsSchema = z.object({ version: z.literal(1), views: z.array(DeletedViewSchema) })
-const deletedViewsPath = (stateDir: string): string => join(stateDir, 'talaria-relay-deleted.json')
 
 // A staged deletion cannot clear a session that survived a failed removal or a restart before removal.
 async function hasSessionData(store: SessionStore, sid: string): Promise<boolean> {
@@ -105,36 +102,32 @@ async function hasSessionData(store: SessionStore, sid: string): Promise<boolean
   return (await store.exists(sid))
 }
 
-function loadDeletedViews(stateDir: string): DeletedView[] {
-  let raw: string
-  try { raw = readFileSync(deletedViewsPath(stateDir), 'utf8') } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return []
-    throw error
-  }
-  // Corrupt or unreadable pending state must never be overwritten with an empty queue.
-  return DeletedViewsSchema.parse(JSON.parse(raw)).views
+function parseDeletedViews(raw: unknown): DeletedView[] { return raw === undefined ? [] : DeletedViewsSchema.parse(raw).views }
+
+async function loadDeletedViews(documents: DocumentBackend): Promise<DeletedView[]> { return parseDeletedViews((await documents.get('relay', 'deleted'))?.value) }
+
+async function mutateDeletedViews<T>(documents: DocumentBackend, edit: (views: DeletedView[]) => T | Promise<T>): Promise<T> {
+  return (await updateDocument(documents, 'relay', 'deleted', async (raw) => {
+    const views = parseDeletedViews(raw)
+    const result = await edit(views)
+    return { value: { version: 1, views }, result }
+  }))
 }
 
-function saveDeletedViews(stateDir: string, views: DeletedView[]): void {
-  mkdirSync(stateDir, { recursive: true })
-  atomicWriteText(deletedViewsPath(stateDir), JSON.stringify({ version: 1, views }) + '\n', { mode: 0o600 })
+/** The profile identity lives in the selected backend, with the JSON adapter retaining its old private file. */
+export async function profileIdentity(deps: Pick<RelayPublisherDeps, 'documents' | 'profileHome'>, profile: string): Promise<string> {
+  if (!statSync(deps.profileHome(profile)).isDirectory()) throw new Error('Hermes profile is unavailable')
+  return (await updateDocument(deps.documents, 'relay-identities', profile, (raw) => {
+    const identity = typeof raw === 'string' ? raw.trim() : `pfi_${randomUUID().replace(/-/g, '')}`
+    if (!/^pfi_[0-9a-f]{32}$/.test(identity)) throw new Error('invalid Talaria Relay profile identity')
+    return { value: typeof raw === 'string' ? raw : identity + '\n', result: identity }
+  }))
 }
 
-/** Python `_profile_identity`: a persistent `pfi_<32 hex>` per profile home, minted on first use (0600). */
-export function profileIdentity(profileHome: string): string {
-  const path = join(profileHome, '.talaria-relay-profile-id')
-  let identity: string
-  if (existsSync(path)) identity = readFileSync(path, 'utf8').trim()
-  else {
-    identity = `pfi_${randomUUID().replace(/-/g, '')}`
-    atomicWriteText(path, identity + '\n', { mode: 0o600 })
-  }
-  if (!/^pfi_[0-9a-f]{32}$/.test(identity)) throw new Error('invalid Talaria Relay profile identity')
-  return identity
-}
-
-function loadKey(path: string): KeyObject {
-  const key = createPrivateKey(readFileSync(path))
+async function loadKey(documents: DocumentBackend, config: RelayConfig): Promise<KeyObject> {
+  const value = config.private_key_document ? (await documents.get('relay-keys', config.private_key_document))?.value : readFileSync(config.private_key_path, 'utf8')
+  if (typeof value !== 'string') throw new Error('Talaria publisher key is missing')
+  const key = createPrivateKey(value)
   if (key.asymmetricKeyType !== 'ed25519') throw new Error('Talaria publisher key must be an Ed25519 private key')
   return key
 }
@@ -196,7 +189,7 @@ export class PresenceLeases {
 // ── publisher ─────────────────────────────────────────────────────────────
 
 export interface RelayPublisherDeps {
-  stateDir: string
+  documents: DocumentBackend
   registry: StreamRegistry
   pending: PendingPrompts
   store: SessionStore
@@ -217,9 +210,7 @@ export interface RelayState { sessionId: string; streamId: string | null; eventI
 
 /** Python `TalariaRelayPublisher`: coalesces changes into signed complete snapshots with capped backoff. */
 export class RelayPublisher {
-  private readonly key: KeyObject
-  private readonly revisionPath: string
-  private readonly startedPath: string
+  private key!: KeyObject
   private startedUnsupportedLogged = false
   private lastRevision = 0
   private terminal = new Map<string, ActiveRun & { relay_phase: string; terminal_at: number }>()
@@ -234,16 +225,12 @@ export class RelayPublisher {
   private timer: NodeJS.Timeout | null = null
   private failures = 0
 
-  constructor(readonly config: RelayConfig, private readonly deps: RelayPublisherDeps) {
-    this.key = loadKey(config.private_key_path)
-    this.revisionPath = join(dirname(config.private_key_path), 'talaria-relay-revision')
-    this.startedPath = join(dirname(config.private_key_path), 'talaria-relay-started.json')
-    // Tracking starts now, before any session event can wake the first pass, so the chat that wakes it is announced.
-    try {
-      const ledger = this.loadStarted()
-      if (this.trackProfiles(ledger)) this.saveStarted(ledger)
-    } catch { /* the first pass starts tracking instead */ }
-    try { this.lastRevision = Number.parseInt(readFileSync(this.revisionPath, 'utf8'), 10) || 0 } catch { this.lastRevision = 0 }
+  constructor(readonly config: RelayConfig, private readonly deps: RelayPublisherDeps) {}
+
+  async initialize(): Promise<void> {
+    this.key = await loadKey(this.deps.documents, this.config)
+    try { await this.mutateStarted((ledger) => { this.trackProfiles(ledger) }) } catch { /* the first pass retries */ }
+    try { this.lastRevision = Number.parseInt(str((await this.deps.documents.get('relay', 'revision'))?.value), 10) || 0 } catch { this.lastRevision = 0 }
   }
 
   /** Carry unpublished terminal state, queued views, and the revision floor from the publisher being replaced. */
@@ -253,10 +240,10 @@ export class RelayPublisher {
     this.lastRevision = Math.max(this.lastRevision, previous.lastRevision)
   }
 
-  start(publishInitial = true): void {
+  async start(publishInitial = true): Promise<void> {
     if (this.loop) return
     this.loop = this.run()
-    if (publishInitial || loadDeletedViews(this.deps.stateDir).length) this.changed()
+    if (publishInitial || (await loadDeletedViews(this.deps.documents)).length) this.changed()
   }
 
   stop(): void {
@@ -286,18 +273,17 @@ export class RelayPublisher {
 
   /** Bind an unconfigured deletion once, before sending, so retries cannot cross relay or profile identities. */
   private async pendingDeleted(): Promise<DeletedView[]> {
-    const views = loadDeletedViews(this.deps.stateDir)
-    let changed = false
-    for (const view of views) {
-      if (view.scope) continue
-      const cfg = this.config.profiles[view.profile]
-      if (!cfg || (view.identity !== null && cfg.identity !== view.identity) || !this.publishes(view.profile, cfg)) continue
-      view.identity = cfg.identity
-      view.scope = { url: this.config.url, publisherId: this.config.publisher_id, profileId: cfg.profile_id }
-      changed = true
-    }
-    if (changed) saveDeletedViews(this.deps.stateDir, views)
-    return (await filterAsync(views, async (view) => !(await hasSessionData(this.deps.store, view.sessionId))))
+    const views = await mutateDeletedViews(this.deps.documents, async (views) => {
+      for (const view of views) {
+        if (view.scope) continue
+        const cfg = this.config.profiles[view.profile]
+        if (!cfg || (view.identity !== null && cfg.identity !== view.identity) || !await this.publishes(view.profile, cfg)) continue
+        view.identity = cfg.identity
+        view.scope = { url: this.config.url, publisherId: this.config.publisher_id, profileId: cfg.profile_id }
+      }
+      return views
+    })
+    return filterAsync(views, async (view) => !await hasSessionData(this.deps.store, view.sessionId))
   }
 
   /** Send the views queued before the snapshot just published, so the relay already holds every outcome they saw. */
@@ -306,7 +292,7 @@ export class RelayPublisher {
       if (view.deleted && (await hasSessionData(this.deps.store, sid))) continue
       let accepted = false
       for (const [profile, cfg] of Object.entries(this.config.profiles)) {
-        if (!this.deps.profilesMatch(view.profile, profile) || !this.publishes(profile, cfg)) continue
+        if (!this.deps.profilesMatch(view.profile, profile) || !(await this.publishes(profile, cfg))) continue
         if (view.deleted && (view.deleted.identity !== cfg.identity || view.deleted.scope?.url !== this.config.url || view.deleted.scope.publisherId !== this.config.publisher_id || view.deleted.scope.profileId !== cfg.profile_id)) continue
         const path = `/v1/publishers/${encodeURIComponent(this.config.publisher_id)}/profiles/${encodeURIComponent(cfg.profile_id)}/sessions/${encodeURIComponent(sid)}/viewed`
         try {
@@ -321,7 +307,7 @@ export class RelayPublisher {
         }
       }
       if (view.deleted) {
-        if (accepted) saveDeletedViews(this.deps.stateDir, loadDeletedViews(this.deps.stateDir).filter((entry) => entry.id !== view.deleted!.id || entry.through !== view.through))
+        if (accepted) await mutateDeletedViews(this.deps.documents, (views) => { const index = views.findIndex((entry) => entry.id === view.deleted!.id && entry.through === view.through); if (index >= 0) views.splice(index, 1) })
       } else if (this.views.get(sid) === view) this.views.delete(sid)
     }
   }
@@ -395,14 +381,23 @@ export class RelayPublisher {
       if (!alertEligible) state.alertEligible = false
       states.push(state)
     }
-    if (states.length) atomicWriteText(this.revisionPath, `${String(this.lastRevision)}\n`)
+    if (states.length) await updateDocument(this.deps.documents, 'relay', 'revision', (raw) => {
+      let floor = Number.parseInt(str(raw), 10) || 0
+      for (const state of states) {
+        state.revision = Math.max(state.revision, floor + 1)
+        state.eventId = `snapshot:${String(state.revision)}:${state.sessionId}`
+        floor = state.revision
+      }
+      this.lastRevision = Math.max(this.lastRevision, floor)
+      return { value: `${String(this.lastRevision)}\n`, result: undefined }
+    })
     return states
   }
 
   async publishSnapshot(isolatePermanent = false): Promise<void> {
     let retryable: RelayHttpError | null = null
     for (const [profile, cfg] of Object.entries(this.config.profiles)) {
-      if (!this.publishes(profile, cfg)) continue
+      if (!(await this.publishes(profile, cfg))) continue
       try {
         await this.publishProfileSnapshot(profile, cfg.profile_id)
       } catch (error) {
@@ -415,9 +410,9 @@ export class RelayPublisher {
     if (retryable) throw retryable
   }
 
-  private publishes(profile: string, cfg: RelayProfile): boolean {
+  private async publishes(profile: string, cfg: RelayProfile): Promise<boolean> {
     if (cfg.identity) {
-      try { if (profileIdentity(this.deps.profileHome(profile)) !== cfg.identity) return false } catch { return false }
+      try { if ((await profileIdentity(this.deps, profile)) !== cfg.identity) return false } catch { return false }
     }
     return !this.disabledProfiles.has(cfg.profile_id)
   }
@@ -426,7 +421,7 @@ export class RelayPublisher {
   async publishProfile(profileId: string, expectedIdentity: string): Promise<void> {
     for (const [profile, cfg] of Object.entries(this.config.profiles)) {
       if (cfg.profile_id !== profileId) continue
-      if (cfg.identity !== expectedIdentity || profileIdentity(this.deps.profileHome(profile)) !== expectedIdentity) throw new RelayPairingError('Hermes profile changed during relay enrollment', 409)
+      if (cfg.identity !== expectedIdentity || (await profileIdentity(this.deps, profile)) !== expectedIdentity) throw new RelayPairingError('Hermes profile changed during relay enrollment', 409)
       await this.publishProfileSnapshot(profile, profileId)
       return
     }
@@ -434,10 +429,9 @@ export class RelayPublisher {
   }
 
   // The ledger is reread for every change, so a restarted or replacement publisher resends an unsent event under its ID.
-  private loadStarted(): StartedLedger {
+  private parseStarted(raw: unknown): StartedLedger {
     const ledger: StartedLedger = new Map()
-    let raw: unknown
-    try { raw = JSON.parse(readFileSync(this.startedPath, 'utf8')) } catch { return ledger }
+
     const profiles = (raw as { profiles?: unknown } | null)?.profiles
     if (!Array.isArray(profiles)) return ledger
     for (const p of profiles as { profileId?: unknown; floor?: unknown; sessions?: unknown }[]) {
@@ -451,9 +445,17 @@ export class RelayPublisher {
     return ledger
   }
 
-  private saveStarted(ledger: StartedLedger): void {
+  private startedDocument(ledger: StartedLedger): unknown {
     const profiles = [...ledger].map(([profileId, p]) => ({ profileId, floor: p.floor, sessions: [...p.sessions].map(([sessionId, e]) => ({ sessionId, startedAt: e.startedAt, sent: e.sent })) }))
-    atomicWriteText(this.startedPath, JSON.stringify({ version: 1, profiles }) + '\n')
+    return { version: 1, profiles }
+  }
+
+  private async mutateStarted<T>(edit: (ledger: StartedLedger) => T | Promise<T>): Promise<T> {
+    return (await updateDocument(this.deps.documents, 'relay', 'started', async (raw) => {
+      const ledger = this.parseStarted(raw)
+      const result = await edit(ledger)
+      return { value: this.startedDocument(ledger), result }
+    }, { replaceInvalid: true }))
   }
 
   /** Give each enrolled profile without a ledger entry a floor of now; true when the ledger changed. */
@@ -473,19 +475,21 @@ export class RelayPublisher {
     // Agent rows come from the listing worker first, so the ledger's load-to-save stays synchronous.
     const agentRows = new Map<string, Record<string, unknown>[]>()
     for (const [profile, cfg] of Object.entries(this.config.profiles)) {
-      if (!this.publishes(profile, cfg)) continue
+      if (!(await this.publishes(profile, cfg))) continue
       try { agentRows.set(profile, await this.deps.agentSessions(profile)) } catch { agentRows.set(profile, []) }
     }
-    const ledger = this.loadStarted()
-    const nowMs = Math.floor(this.deps.now() * 1000)
-    let changed = this.trackProfiles(ledger)
     let index: Record<string, unknown>[] = []
-    try { index = (await this.deps.store.readIndexEntries()) } catch { index = [] }
+    try { index = await this.deps.store.readIndexEntries() } catch { /* no resident index */ }
+    const eligible = new Set<string>()
+    for (const [profile, cfg] of Object.entries(this.config.profiles)) if (await this.publishes(profile, cfg)) eligible.add(profile)
+    return (await this.mutateStarted((ledger) => {
+    const nowMs = Math.floor(this.deps.now() * 1000)
+    this.trackProfiles(ledger)
     for (const [profile, cfg] of Object.entries(this.config.profiles)) {
-      if (!this.publishes(profile, cfg)) continue
+      if (!eligible.has(profile)) continue
       const entry = ledger.get(cfg.profile_id)!
       const floor = Math.max(entry.floor, nowMs - STARTED_WINDOW_MS)
-      for (const [sid, e] of entry.sessions) if (e.startedAt < floor) { entry.sessions.delete(sid); changed = true }
+      for (const [sid, e] of entry.sessions) if (e.startedAt < floor) { entry.sessions.delete(sid) }
       // A compressed Agent chat keeps its lineage root's id and start, so later segments are not new sessions.
       const agent = agentRows.get(profile) ?? []
       const seen = [
@@ -497,18 +501,17 @@ export class RelayPublisher {
         const startedAt = Math.floor(Number(created) * 1000)
         if (!sid || sid.length > 191 || !Number.isSafeInteger(startedAt) || startedAt < floor || entry.sessions.has(sid)) continue
         entry.sessions.set(sid, { startedAt, sent: false })
-        changed = true
       }
     }
-    if (changed) this.saveStarted(ledger)
     return ledger
+    }))
   }
 
   /** Announce each newly observed session once, oldest first, to the relay scope of the profile that owns it. */
   async publishStarted(): Promise<void> {
     const ledger = await this.observeStarted()
     for (const [profile, cfg] of Object.entries(this.config.profiles)) {
-      if (!this.publishes(profile, cfg)) continue
+      if (!(await this.publishes(profile, cfg))) continue
       const unsent = [...(ledger.get(cfg.profile_id)?.sessions ?? [])].filter(([, e]) => !e.sent).sort((a, b) => a[1].startedAt - b[1].startedAt)
       for (const [sid, e] of unsent) {
         const path = `/v1/publishers/${encodeURIComponent(this.config.publisher_id)}/profiles/${encodeURIComponent(cfg.profile_id)}/sessions/${encodeURIComponent(sid)}/started`
@@ -523,9 +526,7 @@ export class RelayPublisher {
             this.deps.log('[relay] Talaria relay does not support session-started events (HTTP 404); devices refresh on their own schedule')
           }
         }
-        const latest = this.loadStarted()
-        const sent = latest.get(cfg.profile_id)?.sessions.get(sid)
-        if (sent && !sent.sent) { sent.sent = true; this.saveStarted(latest) }
+        await this.mutateStarted((latest) => { const sent = latest.get(cfg.profile_id)?.sessions.get(sid); if (sent) sent.sent = true })
       }
     }
   }
@@ -582,16 +583,17 @@ export class RelayService {
   current(): RelayPublisher | null { return this.publisher }
 
   /** Python `start_talaria_relay_publisher`: resume from saved state; invalid state disables the publisher. */
-  start(): boolean {
+  async start(): Promise<boolean> {
     if (this.publisher) return true
     let candidate: RelayPublisher | null = null
     try {
-      const config = loadRelayConfig(this.deps.stateDir)
+      const config = (await loadRelayConfig(this.deps.documents))
       if (!config) return false
       candidate = new RelayPublisher(config, this.deps)
+      await candidate.initialize()
       this.candidate = candidate
       this.adopt(candidate, null)
-      candidate.start(false)
+      await candidate.start(false)
       return true
     } catch (error) {
       candidate?.stop()
@@ -632,27 +634,27 @@ export class RelayService {
     const key = JSON.stringify([name, sid])
     const live = (await hasSessionData(this.deps.store, sid))
     if (!live && this.clearedDeleted.has(key)) return
-    const views = loadDeletedViews(this.deps.stateDir)
+    await mutateDeletedViews(this.deps.documents, async (views) => {
     const queued = views.find((view) => view.sessionId === sid && view.profile === name)
     if (queued && live) {
       const through = Math.max(queued.through, Math.floor(this.deps.now() * 1000))
-      if (through !== queued.through) { queued.through = through; saveDeletedViews(this.deps.stateDir, views) }
+      if (through !== queued.through) { queued.through = through }
     } else if (!queued) {
       let config = publisher?.config ?? null
       if (!config) {
-        try { config = loadRelayConfig(this.deps.stateDir) } catch { /* preserve unconfigured cleanup */ }
+        try { config = (await loadRelayConfig(this.deps.documents)) } catch { /* preserve unconfigured cleanup */ }
       }
       const cfg = config?.profiles[name]
       let identity = cfg?.identity ?? null
       if (identity === null) {
-        try { identity = profileIdentity(this.deps.profileHome(name)) } catch { /* bind when this profile becomes available */ }
+        try { identity = (await profileIdentity(this.deps, name)) } catch { /* bind when this profile becomes available */ }
       }
       views.push({
         id: randomUUID(), sessionId: sid, profile: name, through: Math.floor(this.deps.now() * 1000), identity,
         scope: config && cfg ? { url: config.url, publisherId: config.publisher_id, profileId: cfg.profile_id } : null,
       })
-      saveDeletedViews(this.deps.stateDir, views)
     }
+    })
     this.clearedDeleted.add(key)
     publisher?.changed()
   }
@@ -669,6 +671,7 @@ export class RelayService {
   /** Python `configure_talaria_relay_publisher`: validate with a real snapshot before swapping publishers. */
   private async configure(config: RelayConfig, validate: { profileId: string; identity: string } | null): Promise<void> {
     const candidate = new RelayPublisher(config, this.deps)
+    await candidate.initialize()
     const previous = this.publisher
     this.candidate = candidate
     if (previous) candidate.inherit(previous)
@@ -680,7 +683,7 @@ export class RelayService {
       throw new RelayPairingError(error instanceof RelayPairingError ? error.message : 'Could not publish the initial Talaria Relay snapshot', error instanceof RelayPairingError ? error.status : 502)
     }
     this.adopt(candidate, previous)
-    candidate.start(false)
+    await candidate.start(false)
     candidate.changed()
   }
 
@@ -727,21 +730,21 @@ export class RelayService {
     let identity: string
     try {
       canonical = this.deps.canonicalProfile(profile)
-      identity = profileIdentity(this.deps.profileHome(canonical))
+      identity = (await profileIdentity(this.deps, canonical))
     } catch {
       throw new RelayPairingError('Hermes profile is unavailable', 403)
     }
-    const existing = loadRelayConfig(this.deps.stateDir)
+    const existing = (await loadRelayConfig(this.deps.documents))
     if (existing) {
       if (existing.url !== relayUrl || existing.publisher_id !== publisherId) throw new RelayPairingError('This Hermes server is registered to a different relay', 409)
       const known = existing.profiles[canonical]
       const profileId = known?.identity === identity ? known.profile_id : `prf_${randomUUID().replace(/-/g, '')}`
       const requestBody = JSON.stringify({ invitation, publisherId, profileId })
       const path = '/v1/pairings/profile/redeem'
-      const payload = await this.relayPost(existing.url + path, requestBody, signedHeaders(loadKey(existing.private_key_path), existing.key_id, 'POST', path, requestBody, this.deps.now), 'Talaria Relay rejected the profile enrollment')
+      const payload = await this.relayPost(existing.url + path, requestBody, signedHeaders((await loadKey(this.deps.documents, existing)), existing.key_id, 'POST', path, requestBody, this.deps.now), 'Talaria Relay rejected the profile enrollment')
       if (payload.protocolVersion !== 2 || payload.publisherId !== publisherId || payload.profileId !== profileId) throw new RelayPairingError('Talaria Relay returned an invalid response', 502)
       const config: RelayConfig = { ...existing, profiles: { ...existing.profiles, [canonical]: { identity, profile_id: profileId } } }
-      saveRelayConfig(this.deps.stateDir, config)
+      await saveRelayConfig(this.deps.documents, config)
       await this.configure(config, { profileId, identity })
       return { ok: true, publisher_id: publisherId }
     }
@@ -759,11 +762,10 @@ export class RelayService {
     }
     let finalPublisher: string
     try { finalPublisher = validatedOrigin(pairedPublisher) } catch { throw new RelayPairingError('Talaria Relay returned an invalid response', 502) }
-    const keyPath = join(this.deps.stateDir, `talaria-relay-publisher-${createHash('sha256').update(keyId, 'utf8').digest('hex').slice(0, 16)}.pem`)
-    mkdirSync(this.deps.stateDir, { recursive: true })
-    atomicWriteText(keyPath, privateKey.export({ type: 'pkcs8', format: 'pem' }).toString(), { mode: 0o600 })
-    const config: RelayConfig = { url: relayUrl, publisher_id: finalPublisher, key_id: keyId, private_key_path: keyPath, profiles: { [canonical]: { identity, profile_id: pairedProfile } } }
-    saveRelayConfig(this.deps.stateDir, config)
+    const keyDocument = createHash('sha256').update(keyId, 'utf8').digest('hex').slice(0, 16)
+    await updateDocument(this.deps.documents, 'relay-keys', keyDocument, () => ({ value: privateKey.export({ type: 'pkcs8', format: 'pem' }).toString(), result: undefined }))
+    const config: RelayConfig = { url: relayUrl, publisher_id: finalPublisher, key_id: keyId, private_key_path: '', private_key_document: keyDocument, profiles: { [canonical]: { identity, profile_id: pairedProfile } } }
+    await saveRelayConfig(this.deps.documents, config)
     await this.configure(config, { profileId: pairedProfile, identity })
     return { ok: true, publisher_id: finalPublisher }
   }

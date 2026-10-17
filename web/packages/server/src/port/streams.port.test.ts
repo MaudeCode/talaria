@@ -1,3 +1,4 @@
+import { jsonJournal } from '../test/storage.js'
 /**
  * Chat-stream, cancel, journal, projection, and persistence regressions.
  */
@@ -34,54 +35,54 @@ describe('run journal deletion', () => {
   let s: TestServer
   beforeAll(async () => { s = await bootTestServer() })
   afterAll(() => s.close())
-  const write = (sid: string, run: string): void => { const w = s.deps.journal.writer(sid, run); w.appendSseEvent('token', { text: 'x' }); w.close() }
+  const write = async (sid: string, run: string): Promise<void> => { const w = (await s.deps.journal.writer(sid, run)); (await w.appendSseEvent('token', { text: 'x' })); (await w.close()) }
 
-  it('deleting a session journal removes its directory and its events', () => {
-    write('sess-a', 'run-a1')
-    expect(existsSync(join(s.deps.journal.root(), 'sess-a'))).toBe(true)
-    expect(s.deps.journal.deleteSession('sess-a')).toBe(true)
-    expect(existsSync(join(s.deps.journal.root(), 'sess-a'))).toBe(false)
-    expect(s.deps.journal.readRunEvents('sess-a', 'run-a1')).toEqual([])
+  it('deleting a session journal removes its directory and its events', async () => {
+    await write('sess-a', 'run-a1')
+    expect(existsSync(join(jsonJournal(s.deps.journal).root(), 'sess-a'))).toBe(true)
+    expect((await s.deps.journal.deleteSession('sess-a'))).toBe(true)
+    expect(existsSync(join(jsonJournal(s.deps.journal).root(), 'sess-a'))).toBe(false)
+    expect((await s.deps.journal.readRunEvents('sess-a', 'run-a1'))).toEqual([])
   })
 
-  it('other sessions keep their journals', () => {
-    write('sess-b', 'run-b1')
-    write('sess-c', 'run-c1')
-    expect(s.deps.journal.deleteSession('sess-b')).toBe(true)
-    expect(existsSync(join(s.deps.journal.root(), 'sess-c'))).toBe(true)
+  it('other sessions keep their journals', async () => {
+    await write('sess-b', 'run-b1')
+    await write('sess-c', 'run-c1')
+    expect((await s.deps.journal.deleteSession('sess-b'))).toBe(true)
+    expect(existsSync(join(jsonJournal(s.deps.journal).root(), 'sess-c'))).toBe(true)
   })
 
-  it('missing, traversal, and empty ids are refused', () => {
-    expect(s.deps.journal.deleteSession('never-existed')).toBe(false)
-    expect(s.deps.journal.deleteSession('../sess-c')).toBe(false)
-    expect(s.deps.journal.deleteSession('')).toBe(false)
+  it('missing, traversal, and empty ids are refused', async () => {
+    expect((await s.deps.journal.deleteSession('never-existed'))).toBe(false)
+    expect((await s.deps.journal.deleteSession('../sess-c'))).toBe(false)
+    expect((await s.deps.journal.deleteSession(''))).toBe(false)
   })
 
-  it('paged reads match whole-file reads across page boundaries, multibyte text, and seq bounds', () => {
-    const w = s.deps.journal.writer('sess-pages', 'run-pages')
+  it('paged reads match whole-file reads across page boundaries, multibyte text, and seq bounds', async () => {
+    const w = (await s.deps.journal.writer('sess-pages', 'run-pages'))
     // Rows of mixed widths so lines and multibyte characters straddle the 64 KiB page edges.
-    for (let i = 1; i <= 400; i += 1) w.appendSseEvent('token', { text: `${'é🙂'.repeat(i * 7)}${String(i)}` })
-    w.close()
+    for (let i = 1; i <= 400; i += 1) (await w.appendSseEvent('token', { text: `${'é🙂'.repeat(i * 7)}${String(i)}` }))
+    await w.close()
     const seqs = (rows: { seq: number }[]): number[] => rows.map((r) => r.seq)
-    const paged = [...s.deps.journal.iterRunEvents('sess-pages', 'run-pages')]
+    const paged = await collectRows(s.deps.journal.iterRunEvents('sess-pages', 'run-pages'))
     expect(seqs(paged)).toEqual(Array.from({ length: 400 }, (_, i) => i + 1))
     expect(paged.map((r) => (r.payload as { text: string }).text)).toEqual(Array.from({ length: 400 }, (_, i) => `${'é🙂'.repeat((i + 1) * 7)}${String(i + 1)}`))
-    expect(seqs([...s.deps.journal.iterRunEvents('sess-pages', 'run-pages', { afterSeq: 120, maxSeq: 333 })])).toEqual(Array.from({ length: 213 }, (_, i) => i + 121))
-    expect(seqs(s.deps.journal.readRunEvents('sess-pages', 'run-pages', { afterSeq: 120, maxSeq: 333 }))).toEqual(Array.from({ length: 213 }, (_, i) => i + 121))
-    expect([...s.deps.journal.iterRunEvents('sess-pages', 'never-written')]).toEqual([])
+    expect(seqs(await collectRows(s.deps.journal.iterRunEvents('sess-pages', 'run-pages', { afterSeq: 120, maxSeq: 333 })))).toEqual(Array.from({ length: 213 }, (_, i) => i + 121))
+    expect(seqs((await s.deps.journal.readRunEvents('sess-pages', 'run-pages', { afterSeq: 120, maxSeq: 333 })))).toEqual(Array.from({ length: 213 }, (_, i) => i + 121))
+    expect(await collectRows(s.deps.journal.iterRunEvents('sess-pages', 'never-written'))).toEqual([])
   })
 
-  it('dot ids are refused and legitimate journals survive', () => {
-    expect(s.deps.journal.deleteSession('.')).toBe(false)
-    expect(s.deps.journal.deleteSession('..')).toBe(false)
-    expect(existsSync(join(s.deps.journal.root(), 'sess-c'))).toBe(true)
+  it('dot ids are refused and legitimate journals survive', async () => {
+    expect((await s.deps.journal.deleteSession('.'))).toBe(false)
+    expect((await s.deps.journal.deleteSession('..'))).toBe(false)
+    expect(existsSync(join(jsonJournal(s.deps.journal).root(), 'sess-c'))).toBe(true)
   })
 
   it('deleting a session over HTTP removes its run journal', async () => {
     const sid = await newSession(s)
-    write(sid, 'run-http')
+    await write(sid, 'run-http')
     expect((await post(s, '/api/session/delete', { session_id: sid })).status).toBe(200)
-    expect(existsSync(join(s.deps.journal.root(), sid))).toBe(false)
+    expect(existsSync(join(jsonJournal(s.deps.journal).root(), sid))).toBe(false)
   })
 })
 
@@ -1081,3 +1082,5 @@ describe('chat streams, cancel, and error settlement', () => {
     expect(messages.at(-1)).toMatchObject({ _error: true })
   })
 })
+
+async function collectRows<T>(rows: AsyncIterable<T>): Promise<T[]> { const result: T[] = []; for await (const row of rows) result.push(row); return result }

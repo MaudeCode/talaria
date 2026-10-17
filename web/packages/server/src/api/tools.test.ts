@@ -1070,13 +1070,13 @@ describe('skills, memory, prompts, commands, mcp, health, updates, diagnostics',
     mkdirSync(join(repo, 'docs', 'project-os'), { recursive: true })
     writeFileSync(join(repo, '.ax', 'status', 'heartbeat.json'), JSON.stringify({ phase: 'review' }))
     writeFileSync(join(repo, 'docs', 'project-os', 'PROJECT.md'), '# P\nGateway parity\n')
-    const previous = s.deps.workspaces.lastWorkspace()
-    s.deps.workspaces.setLastWorkspace(repo)
+    const previous = (await s.deps.workspaces.lastWorkspace())
+    await s.deps.workspaces.setLastWorkspace(repo)
     try {
       const body = await json(await s.get('/api/project-os/dashboard'))
       expect(body).toMatchObject({ repo_root: repo, workspace: repo, selected_board_slug: null, heartbeat: { phase: 'review' }, handoff: null, goal_summary: 'Gateway parity', docs: { project: { path: 'docs/project-os/PROJECT.md' } } })
     } finally {
-      s.deps.workspaces.setLastWorkspace(previous)
+      await s.deps.workspaces.setLastWorkspace(previous)
       rmSync(repo, { recursive: true, force: true })
     }
   })
@@ -1223,8 +1223,8 @@ describe('skills, memory, prompts, commands, mcp, health, updates, diagnostics',
     const held = holdUpdate(s.deps.updates)
     const tabUpdate = async (tab: string) => (await json(await s.get(`/api/update-notifications?tab_id=${tab}`))).tab_update as Json | null
     try {
-      const automatic = s.deps.updateNotifications.begin({ owner: '*', profile: 'default', serverOwner: true }, 'agent')
-      s.deps.updateNotifications.transition(automatic.id, 'succeeded')
+      const automatic = (await s.deps.updateNotifications.begin({ owner: '*', profile: 'default', serverOwner: true }, 'agent'))
+      await s.deps.updateNotifications.transition(automatic.id, 'succeeded')
       expect(await tabUpdate('tab-starter')).toBeNull()
       const first = post(s, '/api/updates/apply', { target: 'webui', tab_id: 'tab-starter' })
       await held.admitted

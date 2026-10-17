@@ -1,3 +1,4 @@
+import { FakeAuthenticator, cborEncode, b64u } from '../test/passkeys.js'
 import { createHash, createPrivateKey, createPublicKey, generateKeyPairSync, randomBytes, sign as cryptoSign } from 'node:crypto'
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { join, resolve } from 'node:path'
@@ -12,7 +13,6 @@ import { ConfigUnavailable } from '../config/agent-config.js'
 import { tmpdir } from 'node:os'
 
 type Json = Record<string, unknown>
-const b64u = (b: Buffer): string => b.toString('base64url')
 const post = (s: TestServer, path: string, body: unknown, headers: Record<string, string> = {}): Promise<Response> => s.get(path, { method: 'POST', body: JSON.stringify(body), headers: { 'content-type': 'application/json', ...headers } })
 const json = async (res: Response): Promise<Json> => (await res.json()) as Json
 const cookieOf = (res: Response, name: string): string | null => res.headers.getSetCookie().map((c) => c.split(';')[0] ?? '').find((c) => c.startsWith(name + '='))?.slice(name.length + 1) ?? null
@@ -241,50 +241,6 @@ describe('OIDC unconfigured', () => {
 
 // ── passkeys ──────────────────────────────────────────────────────────────
 
-function cborEncode(value: unknown): Buffer {
-  const head = (major: number, n: number): Buffer => {
-    if (n < 24) return Buffer.from([(major << 5) | n])
-    if (n < 256) return Buffer.from([(major << 5) | 24, n])
-    const b = Buffer.alloc(3); b[0] = (major << 5) | 25; b.writeUInt16BE(n, 1); return b
-  }
-  if (typeof value === 'number') return value >= 0 ? head(0, value) : head(1, -1 - value)
-  if (typeof value === 'string') { const b = Buffer.from(value, 'utf8'); return Buffer.concat([head(3, b.length), b]) }
-  if (Buffer.isBuffer(value)) return Buffer.concat([head(2, value.length), value])
-  if (value instanceof Map) return Buffer.concat([head(5, value.size), ...[...value.entries()].flatMap(([k, v]) => [cborEncode(k), cborEncode(v)])])
-  throw new Error('unsupported')
-}
-
-class FakeAuthenticator {
-  readonly key = generateKeyPairSync('ec', { namedCurve: 'P-256' })
-  readonly credentialId = randomBytes(16)
-  counter = 0
-  private authData(rpId: string, flags: number, extra: Buffer): Buffer {
-    const head = Buffer.alloc(37)
-    createHash('sha256').update(rpId, 'ascii').digest().copy(head, 0)
-    head[32] = flags
-    head.writeUInt32BE(this.counter, 33)
-    return Buffer.concat([head, extra])
-  }
-  register(options: Json, origin: string): Json {
-    const rp = options.rp as Json
-    const pub = this.key.publicKey.export({ format: 'jwk' })
-    const cose = new Map<number, unknown>([[1, 2], [3, -7], [-1, 1], [-2, Buffer.from(String(pub.x), 'base64url')], [-3, Buffer.from(String(pub.y), 'base64url')]])
-    const idLen = Buffer.alloc(2); idLen.writeUInt16BE(this.credentialId.length)
-    const credData = Buffer.concat([Buffer.alloc(16), idLen, this.credentialId, cborEncode(cose)])
-    const authData = this.authData(String(rp.id), 0x41, credData)
-    const clientData = Buffer.from(JSON.stringify({ type: 'webauthn.create', challenge: options.challenge, origin }))
-    const attestation = cborEncode(new Map<string, unknown>([['fmt', 'none'], ['attStmt', new Map()], ['authData', authData]]))
-    return { id: b64u(this.credentialId), rawId: b64u(this.credentialId), type: 'public-key', response: { clientDataJSON: b64u(clientData), attestationObject: b64u(attestation) } }
-  }
-  assert(options: Json, origin: string, opts: { advance?: boolean } = {}): Json {
-    if (opts.advance !== false) this.counter += 1
-    const authData = this.authData(String(options.rpId), 0x01, Buffer.alloc(0))
-    const clientData = Buffer.from(JSON.stringify({ type: 'webauthn.get', challenge: options.challenge, origin }))
-    const signature = cryptoSign('sha256', Buffer.concat([authData, createHash('sha256').update(clientData).digest()]), this.key.privateKey)
-    return { id: b64u(this.credentialId), rawId: b64u(this.credentialId), type: 'public-key', response: { clientDataJSON: b64u(clientData), authenticatorData: b64u(authData), signature: b64u(signature) } }
-  }
-}
-
 describe('passkeys', () => {
   let s: TestServer
   let origin: string
@@ -368,8 +324,8 @@ describe('passkeys', () => {
     expect((await post(s, '/api/auth/passkeys', {})).status).toBe(401)
   })
 
-  it('clearing passwords through settings also clears passkeys', () => {
-    s.deps.clearPasskeys()
+  it('clearing passwords through settings also clears passkeys', async () => {
+    await s.deps.clearPasskeys()
     expect(JSON.parse(readFileSync(join(s.state, 'passkeys.json'), 'utf8'))).toEqual([])
     expect(existsSync(join(s.state, '.passkey_challenges.json'))).toBe(true)
   })
@@ -472,7 +428,7 @@ describe('OIDC enablement', () => {
   const OIDC_ENV = { HERMES_WEBUI_OIDC_ISSUER: ISSUER, HERMES_WEBUI_OIDC_CLIENT_ID: 'web-client', HERMES_WEBUI_OIDC_ALLOW_CLAIM: 'groups', HERMES_WEBUI_OIDC_ALLOW_VALUES: 'admins', HERMES_WEBUI_OIDC_TRUSTED_PRIVATE_HOSTS: 'idp.example' }
   const modes: Record<string, { env: Record<string, string>; setup?: (s: TestServer) => void }> = {
     password: { env: { HERMES_WEBUI_PASSWORD: 'hunter22' } },
-    passkey: { env: { HERMES_WEBUI_PASSKEY: '1' }, setup: (s) => { s.deps.auth.passkeysEnabled = () => true } },
+    passkey: { env: { HERMES_WEBUI_PASSKEY: '1' }, setup: (s) => { s.deps.auth.passkeysEnabled = () => Promise.resolve(true) } },
     'trusted header': { env: { HERMES_WEBUI_TRUSTED_AUTH_HEADER: 'X-Remote-User' } },
   }
   const firstAuth: Record<string, (s: TestServer) => Promise<Json>> = {
@@ -590,14 +546,14 @@ describe('auth gate fails closed on unknown or unreadable auth state', () => {
     const s = await bootTestServer()
     try {
       // A registered credential with the flag only in config.yaml: the flag is unknown while the snapshot is cold.
-      s.deps.auth.passkeysEnabled = () => true
+      s.deps.auth.passkeysEnabled = () => Promise.resolve(true)
       s.deps.auth.passkeyConfigFlag = () => null
-      expect(s.deps.auth.passkeysAvailable()).toBe(true)
+      expect((await s.deps.auth.passkeysAvailable())).toBe(true)
       expect(await s.deps.auth.isAuthEnabled()).toBe(true)
       expect((await s.get('/api/sessions')).status).toBe(401)
       // The flag read back as false: passkeys are off and the gate opens.
       s.deps.auth.passkeyConfigFlag = () => false
-      expect(s.deps.auth.passkeysAvailable()).toBe(false)
+      expect((await s.deps.auth.passkeysAvailable())).toBe(false)
     } finally { await s.close() }
   })
 

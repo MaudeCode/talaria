@@ -120,10 +120,10 @@ describe('request-profile session visibility', () => {
   })
 
   it('a finished run replays from the journal only to the owning profile', async () => {
-    const w = s.deps.journal.writer(sid, 'run1234abcd')
-    w.appendSseEvent('token', { text: 'hi' })
-    w.appendSseEvent('done', { session_id: sid })
-    w.close()
+    const w = (await s.deps.journal.writer(sid, 'run1234abcd'))
+    await w.appendSseEvent('token', { text: 'hi' })
+    await w.appendSseEvent('done', { session_id: sid })
+    await w.close()
     expect((await s.get('/api/chat/stream?stream_id=run1234abcd', { headers: work.headers })).status).toBe(404)
     expect((await s.get('/api/chat/stream/status?stream_id=run1234abcd', { headers: work.headers })).status).toBe(404)
     expect((await post(s, work, '/api/chat/cancel', { stream_id: 'run1234abcd' })).status).toBe(404)

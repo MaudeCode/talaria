@@ -76,9 +76,9 @@ export class DashboardPlugins {
   }
 
   /** Python `_dashboard_plugin_enabled`: opt-in per plugin under `dashboard_plugins` in settings.json. */
-  enabled(name: string): boolean {
+  async enabled(name: string): Promise<boolean> {
     try {
-      const prefs = this.deps.settings.load().dashboard_plugins
+      const prefs = (await this.deps.settings.load()).dashboard_plugins
       return isDict(prefs) && pyBool(prefs[name])
     } catch {
       return false
@@ -91,22 +91,22 @@ export class DashboardPlugins {
     await this.deps.settings.save({ dashboard_plugins: { [name]: enabled } })
   }
 
-  private enabledPlugin(name: string): Plugin | null {
-    if (!this.enabled(name)) return null
+  private async enabledPlugin(name: string): Promise<Plugin | null> {
+    if (!(await this.enabled(name))) return null
     return this.list().find((p) => p.name === name) ?? null
   }
 
   /** Python `_from_dashboard_plugin`: one panel entry per plugin for `/api/extensions/manifests`. */
-  manifests(): Dict[] {
-    return this.list().map(({ name, manifest }) => {
+  async manifests(): Promise<Dict[]> {
+    return Promise.all(this.list().map(async ({ name, manifest }) => {
       const tab = isDict(manifest.tab) ? manifest.tab : {}
       return {
         id: name, name: text(manifest.label || manifest.name, 80) || name, version: text(manifest.version, 40), description: text(manifest.description, 300),
-        source: 'plugin', enabled: this.enabled(name), can_toggle: true, panel: `dashboard-plugins/${name}/index.html`,
+        source: 'plugin', enabled: (await this.enabled(name)), can_toggle: true, panel: `dashboard-plugins/${name}/index.html`,
         nav: { label: text(tab.name || manifest.label || manifest.name, 40) || name },
         capabilities: ['settings', 'storage', 'toast', 'session'], permissions: {}, settings_schema: [], theme: null, tts: null, sidecar: null, legacy_injection: false, warnings: [],
       }
-    })
+    }))
   }
 
   /** `/plugins/<rel>`: only the shared `plugin.css` under the plugin base. */
@@ -120,8 +120,8 @@ export class DashboardPlugins {
    * Python `serve_plugin_static`: built assets under `dist/` or `static/` with an allowlisted extension, no dotfiles.
    * Any other path resolves inside `dist/`, so a `dist/index.html` served as the panel can use its own relative URLs.
    */
-  asset(name: string, rel: string): PluginFile | null {
-    const plugin = this.enabledPlugin(name)
+  async asset(name: string, rel: string): Promise<PluginFile | null> {
+    const plugin = (await this.enabledPlugin(name))
     if (!plugin) return null
     const top = rel.split('/')[0]
     return this.builtAsset(plugin, top === 'dist' || top === 'static' ? rel : `dist/${rel}`)
@@ -146,8 +146,8 @@ export class DashboardPlugins {
    * Python `_serve_dashboard_plugin_panel`: `dist/index.html` as-is, or for a legacy IIFE plugin (`dist/index.js`,
    * optional `dist/style.css`) a wrapper that mounts it beside the extension SDK.
    */
-  panel(name: string): PluginFile | null {
-    const plugin = this.enabledPlugin(name)
+  async panel(name: string): Promise<PluginFile | null> {
+    const plugin = (await this.enabledPlugin(name))
     if (!plugin) return null
     const own = this.builtAsset(plugin, 'dist/index.html')
     if (own) return own
@@ -161,9 +161,9 @@ export class DashboardPlugins {
   }
 
   /** The tab page at a plugin's `tab.path`: `dist/index.html`, the plugin's `static/index.html`, or an IIFE shell. */
-  tabPage(path: string): PluginFile | null {
+  async tabPage(path: string): Promise<PluginFile | null> {
     const listed = this.list().find((p) => p.tabPath === path)
-    const plugin = listed && this.enabled(listed.name) ? listed : null
+    const plugin = listed && (await this.enabled(listed.name)) ? listed : null
     if (!plugin) return null
     const own = this.builtAsset(plugin, 'dist/index.html')
     // The tab page resolves relative URLs like the panel document beside it, at any mount depth.

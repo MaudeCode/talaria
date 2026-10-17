@@ -8,8 +8,10 @@
  * here. ponytail: one live-id cache with a 24h TTL replaces the Python
  * publisher/provenance machinery; `refresh()` evicts it.
  */
+import type { DocumentBackend } from '../sessions/storage/backend.js'
+import { updateDocument } from '../sessions/storage/document.js'
 import { homeDotenvKeys } from '../cli/dotenv.js'
-import { existsSync, mkdirSync, readFileSync, renameSync, statSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readFileSync, statSync } from 'node:fs'
 import { createHash, randomUUID } from 'node:crypto'
 import { join } from 'node:path'
 import { atomicWriteText } from '../fs/atomic.js'
@@ -165,9 +167,9 @@ export interface CatalogDeps {
   /** Whether `profileHome` is the default profile's home (`$HERMES_HOME`). */
   isRootProfileHome: (profileHome: string) => boolean
   /** WebUI state directory; holds `.quota_scope_id`, the stable public identity namespace for quota sources. */
-  stateDir?: string
+  documents?: DocumentBackend
   /** Settings `provider_quota_thresholds` for a profile; defaults when absent. */
-  quotaThresholds?: (profile: string) => QuotaThresholds
+  quotaThresholds?: (profile: string) => Promise<QuotaThresholds>
 }
 
 /** Python `_BESPOKE_CATALOG_PROVIDERS`: cards whose catalog is resolved by their own rule, never the generic live probe. */
@@ -1059,7 +1061,7 @@ export class ProviderCatalog {
         if (Object.keys(cooled).length) g.limit = { scope: 'models', models: cooled }
       }
     }
-    const thresholds = this.deps.quotaThresholds?.(profile) ?? QUOTA_THRESHOLD_DEFAULTS
+    const thresholds = (await this.deps.quotaThresholds?.(profile)) ?? QUOTA_THRESHOLD_DEFAULTS
     // An account limit already says the login is out; the quota level would only repeat it.
     const levels = await Promise.all(catalog.groups.map((g) => (g.limit?.scope === 'account' ? Promise.resolve(null) : this.pickerQuotaLevel(profileHome, g.provider_id, thresholds))))
     catalog.groups.forEach((g, i) => { const level = levels[i]; if (level) g.quota_level = level })
@@ -1357,27 +1359,23 @@ export class ProviderCatalog {
   private quotaScopeCache: string | null = null
 
   /** Python `_quota_server_scope_id`: a 32-hex id persisted at `<state>/.quota_scope_id` (created atomically once). */
-  private quotaServerScopeId(): string {
+  private async quotaServerScopeId(): Promise<string> {
     if (this.quotaScopeCache) return this.quotaScopeCache
-    const dir = this.deps.stateDir
-    if (!dir) { this.quotaScopeCache = randomUUID().replaceAll('-', ''); return this.quotaScopeCache }
-    const path = join(dir, '.quota_scope_id')
-    let stored = ''
-    try { stored = readFileSync(path, 'utf8').trim().toLowerCase() } catch { stored = '' }
-    if (!/^[0-9a-f]{32}$/.test(stored)) {
-      stored = randomUUID().replaceAll('-', '')
-      mkdirSync(dir, { recursive: true })
-      const temporary = `${path}.tmp.${String(process.pid)}`
-      writeFileSync(temporary, `${stored}\n`, 'utf8')
-      renameSync(temporary, path)
-    }
+    const documents = this.deps.documents
+    if (!documents) { this.quotaScopeCache = randomUUID().replaceAll('-', ''); return this.quotaScopeCache }
+    const stored = await updateDocument(documents, 'catalog', 'quota-scope', (value) => {
+      const previous = typeof value === 'string' ? value.trim().toLowerCase() : ''
+      if (/^[0-9a-f]{32}$/.test(previous)) return { value, result: previous }
+      const id = randomUUID().replaceAll('-', '')
+      return { value: `${id}\n`, result: id }
+    })
     this.quotaScopeCache = stored
     return stored
   }
 
   /** Python `_quota_profile_scope_id`. */
-  quotaProfileScopeId(profile: string): string {
-    return `qscope_${createHash('sha256').update(`${this.quotaServerScopeId()}\0${profile}`).digest('hex').slice(0, 32)}`
+  async quotaProfileScopeId(profile: string): Promise<string> {
+    return `qscope_${createHash('sha256').update(`${(await this.quotaServerScopeId())}\0${profile}`).digest('hex').slice(0, 32)}`
   }
 
   /**
@@ -1389,7 +1387,7 @@ export class ProviderCatalog {
     const at = this.deps.now()
     const { payload: status, pooled: pooledIds } = await this.providerRows(profileHome)
     const active = status.active_provider
-    const scopeId = this.quotaProfileScopeId(profile)
+    const scopeId = (await this.quotaProfileScopeId(profile))
     // Python `_quota_source_id(profile, provider, credential_id)`: a pool account's id, or "provider" for the provider's own key.
     const sourceId = (pid: string, credential: string): string => `qsrc_${createHash('sha256').update(`${scopeId}\0${pid}\0${credential}`).digest('hex').slice(0, 32)}`
     // A provider configured only through `hermes auth add` has no key in .env or config.yaml, yet its pool accounts are
@@ -1413,7 +1411,7 @@ export class ProviderCatalog {
     let descriptors = uniqueQuotaSources(perProvider.flat())
     const requested = str(opts.sourceId).trim() || null
     if (requested) descriptors = descriptors.filter((d) => d.source_id === requested)
-    const thresholds = this.deps.quotaThresholds?.(profile) ?? QUOTA_THRESHOLD_DEFAULTS
+    const thresholds = (await this.deps.quotaThresholds?.(profile)) ?? QUOTA_THRESHOLD_DEFAULTS
     const sources = await Promise.all(descriptors.map(async (d) => {
       const q = await this.quota(profileHome, d.provider_id, { refresh: opts.refresh ?? false, at, credential: d.credential })
       const limits = dict(q.account_limits)

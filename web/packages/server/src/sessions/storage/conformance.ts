@@ -137,3 +137,134 @@ export function runSessionBackendConformance(name: string, makeStorage: () => Se
     })
   })
 }
+
+export interface DocumentBackendFixture {
+  backend: import('./backend.js').DocumentBackend
+  failNextWrite(): void
+  cleanup(): void | Promise<void>
+}
+
+export function runDocumentBackendConformance(name: string, make: () => DocumentBackendFixture | Promise<DocumentBackendFixture>): void {
+  describe(`${name} document backend conformance`, () => {
+    let fixture: DocumentBackendFixture
+    beforeEach(async () => { fixture = await make() })
+    afterEach(async () => { await fixture.cleanup() })
+
+    it('creates, lists, reads and conditionally deletes documents', async () => {
+      const backend = fixture.backend
+      expect(await backend.get('drafts', 'first')).toBeNull()
+      expect(await backend.list('drafts')).toEqual([])
+      const revision = await backend.put('drafts', 'first', { text: 'first', files: [] }, null)
+      expect(await backend.get('drafts', 'first')).toEqual({ value: { text: 'first', files: [] }, revision })
+      expect(await backend.list('drafts')).toEqual([{ key: 'first', revision }])
+      expect(await backend.delete('drafts', 'first', revision)).toBe(true)
+      expect(await backend.delete('drafts', 'first', null)).toBe(false)
+      expect(await backend.get('drafts', 'first')).toBeNull()
+    })
+
+    it('rejects stale creation, replacement and deletion without changing committed data', async () => {
+      const backend = fixture.backend
+      const first = await backend.put('drafts', 'first', { text: 'first' }, null)
+      const second = await backend.put('drafts', 'first', { text: 'second' }, first)
+      for (const expected of [null, first]) {
+        await expect(backend.put('drafts', 'first', { text: 'lost' }, expected)).rejects.toBeInstanceOf(RevisionConflict)
+        await expect(backend.delete('drafts', 'first', expected)).rejects.toBeInstanceOf(RevisionConflict)
+      }
+      expect(await backend.get('drafts', 'first')).toEqual({ value: { text: 'second' }, revision: second })
+    })
+
+    it('publishes one winner under competing updates and preserves the old bytes after failed publication', async () => {
+      const backend = fixture.backend
+      const revision = await backend.put('drafts', 'first', { text: 'first' }, null)
+      fixture.failNextWrite()
+      await expect(backend.put('drafts', 'first', { text: 'partial' }, revision)).rejects.toThrow('injected publication failure')
+      expect(await backend.get('drafts', 'first')).toEqual({ value: { text: 'first' }, revision })
+      const results = await Promise.allSettled(['a', 'b'].map((text) => backend.put('drafts', 'first', { text }, revision)))
+      expect(results.map((result) => result.status).sort()).toEqual(['fulfilled', 'rejected'])
+      const failed = results.find((result) => result.status === 'rejected')
+      expect(failed?.status === 'rejected' && failed.reason).toBeInstanceOf(RevisionConflict)
+    })
+
+    it('bounds document reads before parsing an oversized value', async () => {
+      await fixture.backend.put('drafts', 'first', { text: 'x'.repeat(100) }, null)
+      await expect(fixture.backend.get('drafts', 'first', { maxBytes: 32 })).rejects.toMatchObject({ reason: 'too-large' })
+      expect((await fixture.backend.get('drafts', 'first'))?.value).toEqual({ text: 'x'.repeat(100) })
+    })
+
+    it('isolates namespaces and refuses traversal keys', async () => {
+      await fixture.backend.put('drafts', 'same', { text: 'draft' }, null)
+      await fixture.backend.put('shares', 'same', { title: 'share' }, null)
+      expect((await fixture.backend.get('drafts', 'same'))?.value).toEqual({ text: 'draft' })
+      expect((await fixture.backend.get('shares', 'same'))?.value).toEqual({ title: 'share' })
+      for (const key of ['..', '../outside', '/outside']) await expect(fixture.backend.put('drafts', key, {}, null)).rejects.toThrow()
+    })
+  })
+}
+
+export interface JournalBackendFixture {
+  backend: import('./backend.js').JournalBackend
+  cleanup(): void | Promise<void>
+}
+
+export function runJournalBackendConformance(name: string, make: () => JournalBackendFixture | Promise<JournalBackendFixture>): void {
+  describe(`${name} journal backend conformance`, () => {
+    let fixture: JournalBackendFixture
+    beforeEach(async () => { fixture = await make() })
+    afterEach(async () => { await fixture.backend.close(); await fixture.cleanup() })
+    const rows = async (from = 1): Promise<import('../journal.js').JournalEvent[]> => {
+      const result: import('../journal.js').JournalEvent[] = []
+      for await (const row of fixture.backend.read('session', 'stream', from)) result.push(row)
+      return result
+    }
+
+    it.each(['eager', 'terminal-only'] as const)('keeps contiguous cursors across reopen with %s durability', async (durability) => {
+      const backend = fixture.backend
+      expect(await backend.summary('session', 'stream')).toBeNull()
+      let writer = await backend.open('session', 'stream', { durability })
+      await writer.append({ event: 'token', payload: { text: 'first' } }, { terminal: false })
+      await writer.close()
+      writer = await backend.open('session', 'stream', { durability })
+      const terminal = await writer.append({ event: 'done', payload: {} }, { terminal: true })
+      expect(terminal).toMatchObject({ seq: 2, event_id: 'stream:2', terminal: true })
+      expect(await backend.summary('session', 'stream')).toMatchObject({ last_seq: 2, terminal: true })
+      expect((await rows()).map((row) => row.event_id)).toEqual(['stream:1', 'stream:2'])
+      expect((await rows(2)).map((row) => row.event_id)).toEqual(['stream:2'])
+      expect(await rows(3)).toEqual([])
+      expect(await backend.streams('session')).toEqual(['stream'])
+      await writer.close()
+    })
+
+    it('rejects journal ids that could escape their namespace', async () => {
+      for (const sid of ['.', '..', '../outside']) await expect(fixture.backend.open(sid, 'stream', { durability: 'eager' })).rejects.toThrow()
+    })
+
+    it('supports a reader while its writer appends', async () => {
+      const writer = await fixture.backend.open('session', 'stream', { durability: 'terminal-only' })
+      await writer.append({ event: 'token', payload: { text: 'first' } }, { terminal: false })
+      const reader = fixture.backend.read('session', 'stream', 1)[Symbol.asyncIterator]()
+      const first = await reader.next()
+      expect(first.done ? null : first.value.event_id).toBe('stream:1')
+      await writer.append({ event: 'token', payload: { text: 'second' } }, { terminal: false })
+      const second = await reader.next()
+      expect(second.done ? null : second.value.event_id).toBe('stream:2')
+      await reader.return?.()
+      await writer.close()
+    })
+
+    it('preserves active runs, prunes closed terminal runs to summaries, and deletes them', async () => {
+      const backend = fixture.backend
+      const writer = await backend.open('session', 'stream', { durability: 'terminal-only' })
+      await writer.append({ event: 'done', payload: {} }, { terminal: true })
+      const cutoff = Date.now() / 1000 + 1
+      expect(await backend.prune(cutoff)).toBe(0)
+      await writer.close()
+      expect(await backend.prune(cutoff)).toBe(1)
+      expect(await rows()).toEqual([])
+      expect(await backend.summary('session', 'stream')).toMatchObject({ terminal: true, last_seq: 1, journal_pruned: true })
+      expect(await backend.streams('session')).toEqual(['stream'])
+      expect(await backend.deleteSession('session')).toBe(true)
+      expect(await backend.summary('session', 'stream')).toBeNull()
+      expect(await backend.streams('session')).toEqual([])
+    })
+  })
+}

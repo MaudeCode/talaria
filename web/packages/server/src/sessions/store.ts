@@ -19,13 +19,13 @@ export interface SessionStoreDeps {
   drafts: DraftStore
   events: SessionEventBus
   /** Defaults for a brand-new session (last workspace of the profile, effective default model). */
-  defaults: (profile: string | null) => SessionDefaults
+  defaults: (profile: string | null) => SessionDefaults | Promise<SessionDefaults>
   activeStreamIds: () => Set<string>
   now: () => number
   log: (line: string) => void
   cacheMax: () => number
   /** TAL-372: a deleted session's other in-memory state goes with it. */
-  onDeleted?: (sid: string) => void
+  onDeleted?: (sid: string) => void | Promise<void>
 }
 
 
@@ -89,8 +89,8 @@ export class SessionStore {
 
   // ── creation / resolution ────────────────────────────────────────────────
 
-  private construct(init: SessionInit, profile: string | null): Session {
-    const session = new Session(init, this.deps.defaults(profile))
+  private async construct(init: SessionInit, profile: string | null): Promise<Session> {
+    const session = new Session(init, (await this.deps.defaults(profile)))
     // New-session defaults must not replace the title supplied by the read projection.
     if (typeof init.title === 'string') session.title = init.title
     return session
@@ -99,7 +99,7 @@ export class SessionStore {
   /** In-memory only until the first message is persisted (Python `new_session`). */
   async newSession(opts: { workspace?: string | null; model?: string | null; modelProvider?: string | null; profile?: string | null; projectId?: string | null; worktree?: { path: string; branch: string; repo_root: string; created_at: number } | null; enabledToolsets?: string[] | null } = {}): Promise<Session> {
     const profile = opts.profile ?? null
-    const defaults = this.deps.defaults(profile)
+    const defaults = (await this.deps.defaults(profile))
     const wt = opts.worktree ?? null
     const s = new Session(
       {
@@ -141,11 +141,11 @@ export class SessionStore {
       if (stored.revision === null || stored.revision !== await this.revision(sid)) continue
       const [rows, collapsed] = collapseAdjacentDuplicatePartials(messages)
       data.messages = rows
-      const session = this.construct(data, (data.profile as string | null | undefined) ?? null)
+      const session = (await this.construct(data, (data.profile as string | null | undefined) ?? null))
       session.sidecarLoadedSignature = stored.revision
       this.persistedMessages.set(session, messages.map((row) => JSON.stringify(row)))
       if (collapsed && (opts.repairDuplicates ?? true)) { try { await this.save(session, { touchUpdatedAt: false, skipIndex: true }) } catch { /* best effort */ } }
-      try { if (opts.drafts ?? true) session.composer_draft = this.deps.drafts.read(sid, session.composer_draft) } catch { /* ignore */ }
+      try { if (opts.drafts ?? true) session.composer_draft = (await this.deps.drafts.read(sid, session.composer_draft)) } catch { /* ignore */ }
       return session
     }
     throw new RevisionConflict(sid)
@@ -161,7 +161,7 @@ export class SessionStore {
       if (parsed?.session_id !== sid) return null
       parsed.messages = []
       parsed.tool_calls = []
-      const session = this.construct(parsed, (parsed.profile as string | null | undefined) ?? null)
+      const session = (await this.construct(parsed, (parsed.profile as string | null | undefined) ?? null))
       session.metadataMessageCount = stored.messageCount ?? (opts.indexMessageCounts ?? await this.indexMessageCounts()).get(sid) ?? null
       session.loadedMetadataOnly = true
       session.sidecarLoadedSignature = stored.revision
@@ -405,8 +405,8 @@ export class SessionStore {
       if (!await this.backend.delete(sid, { tombstone: opts.tombstone ?? true })) return false
       this.sessions.delete(sid)
       try { await this.pruneFromIndex(sid) } catch { /* ignore */ }
-      try { this.deps.drafts.delete(sid) } catch { /* ignore */ }
-      this.deps.onDeleted?.(sid)
+      try { (await this.deps.drafts.delete(sid)) } catch { /* ignore */ }
+      await this.deps.onDeleted?.(sid)
       return true
     })
   }

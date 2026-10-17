@@ -60,9 +60,9 @@ describe('canonical Agent ownership (TAL-1036)', () => {
     session.pending_user_message = 'unsettled Talaria prompt'
     session.pending_started_at = s.deps.sessions.deps.now() - 120
     await s.deps.sessionStore.save(session)
-    const writer = s.deps.journal.writer(sid, stream)
-    writer.appendSseEvent('token', { text: 'unsettled Talaria output' })
-    writer.close()
+    const writer = (await s.deps.journal.writer(sid, stream))
+    await writer.appendSseEvent('token', { text: 'unsettled Talaria output' })
+    await writer.close()
     const before = stored()
     const file = readFileSync(join(s.state, 'sessions', `${sid}.json`), 'utf8')
     s.deps.sessionStore.sessions.delete(sid)
@@ -719,7 +719,7 @@ describe('canonical Agent ownership (TAL-1036)', () => {
     const sid = fixture.sessions.cli!
     db.prepare("UPDATE state_meta SET value = json_set(value, '$.policy.source', 'cron') WHERE key = ?").run(`gateway.local_policy.v1:${sid}`)
     await s.deps.sessionStore.save(new Session({ session_id: sid, source_tag: 'cron' }, { workspace: join(s.state, 'workspace'), model: 'fixture' }))
-    expect(s.deps.sessions.wireRow((await s.deps.sessionStore.get(sid))).can_branch).toBe(false)
+    expect((await s.deps.sessions.wireRow((await s.deps.sessionStore.get(sid)))).can_branch).toBe(false)
     expect((await post(s, '/api/session/branch', { session_id: sid })).status).toBe(403)
   })
 
@@ -792,7 +792,7 @@ describe('canonical Agent ownership (TAL-1036)', () => {
       // The sidecar belongs to work, not the active default home's canonical id.
       const work = new Session({ session_id: sid, profile: 'work', source_tag: 'cli' }, { workspace: join(s.state, 'workspace'), model: 'fixture' })
       expect((await s.deps.sessions.isReadOnly(work))).toBe(false)
-      expect(s.deps.sessions.wireRow(work)).toMatchObject({ read_only: false })
+      expect((await s.deps.sessions.wireRow(work))).toMatchObject({ read_only: false })
     } finally { other.close() }
     db.exec("DELETE FROM state_meta WHERE key GLOB 'gateway.local_policy.v1:*'; DELETE FROM session_admissions; UPDATE sessions SET source = 'cli'")
     s.deps.cliSessions.invalidate()

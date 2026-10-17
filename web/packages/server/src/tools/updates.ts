@@ -10,12 +10,14 @@
  * stash/pull or force reset, then the gateway restarts through the sidecar.
  * Nothing here deletes git locks; `clearLock` only inventories them.
  */
+import { backupPersistedStores } from '../sessions/storage/json-installation.js'
+export { backupPersistedStores, CHANNEL_SWITCH_BACKUPS } from '../sessions/storage/json-installation.js'
 import { UpdatesSummarySchema, type SidecarResult } from '@maudecode/talaria-web-contracts'
 import { z } from 'zod'
 import { readCapped } from '../http/capped.js'
 import { execFile } from 'node:child_process'
 import { createHash } from 'node:crypto'
-import { copyFileSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, renameSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, lstatSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, renameSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { delimiter, dirname, isAbsolute, join, resolve } from 'node:path'
 import type { Dict } from '../config/agent-config.js'
@@ -576,31 +578,6 @@ export async function checkWebUpdate(webRoot: string | null, currentVersion: str
 
 /** Packaged-install collaborators: the Experimental registry, Web's state dir for channel-switch backups, and the candidate self-check timeout. */
 export interface PackagedUpdateOptions { registry?: ExperimentalRegistry | undefined; stateDir?: string | undefined; selfCheckTimeoutMs?: number | undefined; skipFailedVersion?: boolean | undefined }
-
-export const CHANNEL_SWITCH_BACKUPS = 5
-/** Web's persisted stores (`settings.json`, the project store, the workspace store) as seen from the state dir. */
-const PERSISTED_STORES = ['settings.json', 'projects.json', 'workspaces.json', 'last_workspace.txt']
-
-/** Copy the persisted stores to `<stateDir>/backups/channel-switch-<UTC timestamp>/`, keeping the newest few; throws on failure. */
-export function backupPersistedStores(stateDir: string, now: Date = new Date(), keep = CHANNEL_SWITCH_BACKUPS): string {
-  const root = join(stateDir, 'backups')
-  mkdirSync(root, { recursive: true })
-  const name = `channel-switch-${now.toISOString().replace(/[:.]/g, '-')}`
-  const target = join(root, name)
-  if (existsSync(target)) throw new Error(`${name} already exists`)
-  // Only a complete copy is published under the name that counts toward the retained backups.
-  const partial = mkdtempSync(join(root, `.${name}-`))
-  try {
-    for (const store of PERSISTED_STORES) if (existsSync(join(stateDir, store))) copyFileSync(join(stateDir, store), join(partial, store))
-    renameSync(partial, target)
-  } catch (error) {
-    rmSync(partial, { recursive: true, force: true })
-    throw error
-  }
-  const backups = readdirSync(root).filter((name) => name.startsWith('channel-switch-')).sort()
-  for (const old of backups.slice(0, Math.max(0, backups.length - keep))) rmSync(join(root, old), { recursive: true, force: true })
-  return target
-}
 
 async function applyNpmWebUpdate(webRoot: string | null, channel: Channel, getJson: GetJson, id: ReleaseIdentity, npmRun: BuildRun, canApply: () => boolean, packaged: PackagedUpdateOptions, version?: string): Promise<Dict> {
   const installed = await npmInstallInfo(webRoot, npmRun)
@@ -1318,8 +1295,8 @@ export interface UpdateServiceDeps {
   checkEnabled?: () => boolean
   summarizeAutomatically?: () => boolean
   autoNotification?: {
-    begin: () => string
-    transition: (id: string, phase: 'restarting' | 'succeeded' | 'blocked' | 'failed', expectedIdentity?: string | null, verifiedIdentity?: { revision: string | null; version: string | null }, detail?: unknown) => void
+    begin: () => Promise<string>
+    transition: (id: string, phase: 'restarting' | 'succeeded' | 'blocked' | 'failed', expectedIdentity?: string | null, verifiedIdentity?: { revision: string | null; version: string | null }, detail?: unknown) => void | Promise<void>
   }
   blockers: () => RestartBlockers
   /** Re-exec the server once active work drains (`restartWhenSafe`). */
@@ -1561,19 +1538,19 @@ export class UpdateService {
       if (web.error || web.manual_update) { this.deps.log(`[updates] automatic Web update unavailable: ${str(web.error || web.message)}`); return web }
       if (!(Number(web.behind) > 0 || web.metadata_repair === true)) return web
       if (readUpdateRollback(this.deps.stateDir)?.failedVersion === str(web.latest_version).replace(/^web-(?:exp-)?v/, '')) return web
-      notificationId = this.deps.autoNotification?.begin() ?? null
+      notificationId = (await this.deps.autoNotification?.begin()) ?? null
       const result = await this.apply('webui', channel, stillEnabled, { skipFailedVersion: true })
       if (notificationId) {
-        if (result.restart_blocked === true) this.deps.autoNotification?.transition(notificationId, 'blocked', null, undefined, result.message)
-        else if (result.ok !== true) this.deps.autoNotification?.transition(notificationId, 'failed', null, undefined, result.message || result.error)
-        else if (result.restart_scheduled === true) this.deps.autoNotification?.transition(notificationId, 'restarting', str(result.sourceRevision || result.candidate_revision))
-        else this.deps.autoNotification?.transition(notificationId, 'succeeded')
+        if (result.restart_blocked === true) await this.deps.autoNotification?.transition(notificationId, 'blocked', null, undefined, result.message)
+        else if (result.ok !== true) await this.deps.autoNotification?.transition(notificationId, 'failed', null, undefined, result.message || result.error)
+        else if (result.restart_scheduled === true) await this.deps.autoNotification?.transition(notificationId, 'restarting', str(result.sourceRevision || result.candidate_revision))
+        else await this.deps.autoNotification?.transition(notificationId, 'succeeded')
       }
       this.deps.log(`[updates] automatic Web update: ${str(result.message || (result.ok ? 'applied' : 'failed'))}`)
       if (!result.ok) this.cache.webui = { ...web, message: result.message, error: result.restart_blocked ? undefined : result.message }
       return result
     } catch (error) {
-      if (notificationId) this.deps.autoNotification?.transition(notificationId, 'failed', null, undefined, (error as Error).message)
+      if (notificationId) await this.deps.autoNotification?.transition(notificationId, 'failed', null, undefined, (error as Error).message)
       this.deps.log(`[updates] automatic Web update failed: ${(error as Error).message}`)
       return { ok: false, error: (error as Error).message }
     } finally { this.autoRunning = false }

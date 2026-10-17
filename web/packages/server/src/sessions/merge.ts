@@ -4,7 +4,7 @@
  * `_extract_tool_calls_from_messages`, `_build_partial_message`).
  */
 import { buildActiveTurnToken, completedToolIndex } from '../redact.js'
-import { RunJournal, type JournalEvent } from './journal.js'
+import { selectAuthoritativeTerminalEvent, type JournalEvent } from './journal.js'
 import { str } from '../util.js'
 import { stateDbMessageKey, stateDbMessageFingerprint, stateDbRowId, stateDbIdentityKeys, stateDbMessageRepresented } from './state-db-identity.js'
 import { stripAttachedFilesMarker, stripWorkspacePrefix, type Message } from './session.js'
@@ -802,7 +802,7 @@ export function journalOutputRows(events: JournalEvent[], turnId: string): { row
     at = e.created_at || at
   }
   flush()
-  const done = RunJournal.selectAuthoritativeTerminalEvent(events)
+  const done = selectAuthoritativeTerminalEvent(events)
   if (done?.event !== 'done') return { rows, answered: false }
   // The last row answers only with visible prose and no calls after it (a reasoning-only segment is no answer).
   const last = rows[rows.length - 1]

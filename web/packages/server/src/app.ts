@@ -57,9 +57,9 @@ export interface App {
   upgrade: (req: IncomingMessage, socket: Duplex, head: Buffer) => Promise<void>
 }
 
-function sendBytes(ctx: RequestContext, body: Buffer, contentType: string, opts: { cacheControl: string; headers?: HeaderMap; gz?: Buffer | null; etag?: string }): void {
+async function sendBytes(ctx: RequestContext, body: Buffer, contentType: string, opts: { cacheControl: string; headers?: HeaderMap; gz?: Buffer | null; etag?: string }): Promise<void> {
   if (opts.etag && ctx.header('if-none-match') === opts.etag) {
-    ctx.send({ status: 304, headers: { ETag: opts.etag, 'Cache-Control': opts.cacheControl } })
+    await ctx.send({ status: 304, headers: { ETag: opts.etag, 'Cache-Control': opts.cacheControl } })
     return
   }
   const headers: HeaderMap = { 'Content-Type': contentType, 'Cache-Control': opts.cacheControl, Vary: 'Accept-Encoding', ...opts.headers }
@@ -69,85 +69,85 @@ function sendBytes(ctx: RequestContext, body: Buffer, contentType: string, opts:
     headers['Content-Encoding'] = 'gzip'
     payload = opts.gz
   }
-  ctx.send({ status: 200, headers, body: payload })
+  await ctx.send({ status: 200, headers, body: payload })
 }
 
-function notFound(ctx: RequestContext): void {
+async function notFound(ctx: RequestContext): Promise<void> {
   // Python `handle_kanban_*`: an unknown Kanban path names itself and points at a stale cached bundle.
   if (ctx.path.startsWith('/api/kanban/') || ctx.path === '/api/kanban') {
-    ctx.json({ error: `unknown Kanban endpoint: ${ctx.method} ${ctx.path}. If this appeared after a WebUI update, your browser may be running a stale cached bundle; use Hard refresh now, then reopen Kanban.` }, { status: 404 })
+    await ctx.json({ error: `unknown Kanban endpoint: ${ctx.method} ${ctx.path}. If this appeared after a WebUI update, your browser may be running a stale cached bundle; use Hard refresh now, then reopen Kanban.` }, { status: 404 })
     return
   }
-  ctx.json({ error: 'not found' }, { status: 404 })
+  await ctx.json({ error: 'not found' }, { status: 404 })
 }
 
 /** Serve the shell, hashed assets, service worker, and manifest; false when the path is not a frontend route. */
-function handleSpa(ctx: RequestContext): boolean {
+async function handleSpa(ctx: RequestContext): Promise<boolean> {
   const { spa, version } = ctx.deps
   const path = ctx.path
   if (path === '/sw.js') {
     const sw = spa.serviceWorker(version)
-    if (sw) sendBytes(ctx, sw, 'application/javascript; charset=utf-8', { cacheControl: 'no-store', headers: { 'Service-Worker-Allowed': '/' } })
-    else notFound(ctx)
+    if (sw) (await sendBytes(ctx, sw, 'application/javascript; charset=utf-8', { cacheControl: 'no-store', headers: { 'Service-Worker-Allowed': '/' } }))
+    else (await notFound(ctx))
     return true
   }
-  const distFile = (rel: string, cacheControl?: string) => {
+  const distFile = async (rel: string, cacheControl?: string) => {
     const asset = spa.asset(rel)
     if (!asset) {
-      notFound(ctx)
+      await notFound(ctx)
       return true
     }
     const cc = cacheControl ?? (rel.startsWith('assets/') ? 'public, max-age=31536000, immutable' : 'no-cache')
-    sendBytes(ctx, asset.body, asset.contentType, { cacheControl: cc, gz: asset.gz, etag: asset.etag })
+    await sendBytes(ctx, asset.body, asset.contentType, { cacheControl: cc, gz: asset.gz, etag: asset.etag })
     return true
   }
-  if (['/manifest.json', '/manifest.webmanifest', '/session/manifest.json', '/session/manifest.webmanifest'].includes(path)) return distFile('manifest.webmanifest', 'no-cache')
-  if (path.startsWith('/assets/')) return distFile(path.slice(1))
-  if (path.startsWith('/static/dist/')) return distFile(path.slice('/static/dist/'.length))
+  if (['/manifest.json', '/manifest.webmanifest', '/session/manifest.json', '/session/manifest.webmanifest'].includes(path)) return (await distFile('manifest.webmanifest', 'no-cache'))
+  if (path.startsWith('/assets/')) return (await distFile(path.slice(1)))
+  if (path.startsWith('/static/dist/')) return (await distFile(path.slice('/static/dist/'.length)))
   // Legacy alias: `/session/static/<rel>` is `/static/<rel>` (deep-linked shells before the relative base href).
   const staticRel = path.startsWith('/static/') ? path.slice('/static/'.length) : path.startsWith('/session/static/') ? path.slice('/session/static/'.length) : null
   if (staticRel !== null) {
     const asset = ctx.deps.staticFiles.get(staticRel)
     if (!asset) {
-      notFound(ctx)
+      await notFound(ctx)
       return true
     }
     // A `?v=<version>` fingerprint makes the URL immutable; `unknown` and a digest-less `-dirty` are not fingerprints.
     const token = ctx.query.get('v') ?? ''
     const fingerprinted = token !== '' && token !== 'unknown' && !token.endsWith('-dirty')
-    sendBytes(ctx, asset.body, asset.contentType, { cacheControl: fingerprinted ? 'public, max-age=31536000, immutable' : 'public, max-age=300', gz: asset.gz, etag: asset.etag })
+    await sendBytes(ctx, asset.body, asset.contentType, { cacheControl: fingerprinted ? 'public, max-age=31536000, immutable' : 'public, max-age=300', gz: asset.gz, etag: asset.etag })
     return true
   }
   if (isSpaPath(path)) {
     if (!spa.available()) {
       ctx.deps.log('[webui] WARNING: Failed to serve WebUI shell route: static/dist/index.html is missing')
-      ctx.text(SHELL_ERROR_HTML, { status: 503, contentType: 'text/html; charset=utf-8' })
+      await ctx.text(SHELL_ERROR_HTML, { status: 503, contentType: 'text/html; charset=utf-8' })
       return true
     }
     const extra: HeaderMap = { 'X-Frame-Options': 'DENY' }
     if (path === '/share' || path.startsWith('/share/')) extra['X-Robots-Tag'] = 'noindex, nofollow'
     try {
-      const html = Buffer.from(spa.renderShell(path, { lang: shellLanguage(ctx) || 'en', version }), 'utf8')
-      sendBytes(ctx, html, 'text/html; charset=utf-8', { cacheControl: 'no-store', headers: extra })
+      const html = Buffer.from(spa.renderShell(path, { lang: (await shellLanguage(ctx)) || 'en', version }), 'utf8')
+      await sendBytes(ctx, html, 'text/html; charset=utf-8', { cacheControl: 'no-store', headers: extra })
     } catch (error) {
       ctx.deps.log(`[webui] WARNING: Failed to serve WebUI shell route: ${String(error)}`)
-      ctx.text(SHELL_ERROR_HTML, { status: 503, contentType: 'text/html; charset=utf-8' })
+      await ctx.text(SHELL_ERROR_HTML, { status: 503, contentType: 'text/html; charset=utf-8' })
     }
     return true
   }
   return false
 }
 
-function serveFavicon(ctx: RequestContext): void {
+async function serveFavicon(ctx: RequestContext): Promise<void> {
   try {
     const data = readFileSync(resolve(ctx.deps.config.staticRoot, 'brand', 'favicon.ico'))
-    ctx.send({ status: 200, headers: { 'Content-Type': 'image/x-icon', 'Cache-Control': 'public, max-age=86400' }, body: data })
+    await ctx.send({ status: 200, headers: { 'Content-Type': 'image/x-icon', 'Cache-Control': 'public, max-age=86400' }, body: data })
   } catch {
-    notFound(ctx)
+    await notFound(ctx)
   }
 }
 
-function preflight(ctx: RequestContext): void {
+async function preflight(ctx: RequestContext): Promise<void> {
   const origin = (ctx.header('origin') ?? '').trim()
   const headers: HeaderMap = {}
   const allowed = origin && checkSameOriginBrowserRequest(
@@ -160,7 +160,7 @@ function preflight(ctx: RequestContext): void {
     headers['Access-Control-Allow-Methods'] = 'GET, POST, PUT, PATCH, DELETE, OPTIONS'
     headers['Access-Control-Allow-Headers'] = 'Content-Type, Authorization'
   }
-  ctx.send({ status: 200, headers, security: false })
+  await ctx.send({ status: 200, headers, security: false })
 }
 
 /** Every implemented procedure, keyed like the contract. */
@@ -304,7 +304,7 @@ export function createApp(deps: AppDeps, opts: CreateAppOptions = {}): App {
         headers['content-security-policy-report-only'] = buildCspReportOnlyPolicy(ctx.cspExtras)
         headers['report-to'] = CSP_REPORT_TO
         const status = result.response.status
-        ctx.beforeOrpcResponse(status)
+        await ctx.beforeOrpcResponse(status)
         Object.assign(headers, lowerKeys(ctx.extraResponseHeaders))
         if (ctx.pendingCookies.length) {
           headers['set-cookie'] = [...ctx.pendingCookies]
@@ -354,28 +354,28 @@ export function createApp(deps: AppDeps, opts: CreateAppOptions = {}): App {
     let releaseWrite: (() => void) | null = null
     try {
       if (ctx.method === 'OPTIONS') {
-        preflight(ctx)
+        await preflight(ctx)
         return
       }
       const profile = await getProfileCookie(ctx)
       if (profile) ctx.requestProfile = profile
       const path = ctx.path
       if (path.startsWith('/api/') && (ctx.header('origin') ?? '').trim().toLowerCase() === 'null') {
-        ctx.rawJson(403, { error: 'Sandboxed documents cannot call the API directly' })
+        await ctx.rawJson(403, { error: 'Sandboxed documents cannot call the API directly' })
         return
       }
       const isCspReport = path === '/api/csp-report' && ctx.method === 'POST'
       if (!isCspReport && !(await checkAuth(ctx))) return
       // Python `_startup_exempt`: the public surface (login, auth status, OIDC, passkeys, share reads) answers during recovery.
       if (!deps.startup.ready && path.startsWith('/api/') && !STARTUP_IMMEDIATE_PATHS.has(path) && !isPublicPath(path) && !(await deps.startup.wait())) {
-        startupUnavailable(ctx)
+        await startupUnavailable(ctx)
         return
       }
       // Python ran `_check_csrf` before `_guard_request_session_visibility`: a cross-origin unsafe request answers 403
       // even when it names a foreign session id.
       const unsafe = ctx.method !== 'GET' && ctx.method !== 'HEAD'
       if (unsafe && path.startsWith('/api/') && !isCspReport && !isCsrfExemptPath(path) && !(await checkCsrf(ctx))) {
-        ctx.json({ error: csrfError(ctx.csrfFailure) }, { status: 403 })
+        await ctx.json({ error: csrfError(ctx.csrfFailure) }, { status: 403 })
         return
       }
       if (path.startsWith('/api/') && !(await guardQuerySessionId(ctx))) return
@@ -384,7 +384,7 @@ export function createApp(deps: AppDeps, opts: CreateAppOptions = {}): App {
       // falls back to the process profile.
       if (path.startsWith('/api/') && !isPublicPath(path) && path !== '/api/profile/switch' && path !== '/api/profiles' && deps.profiles.escapes(activeProfileName(ctx))) {
         if (profile !== null && ctx.requestProfile === profile) ctx.queueCookie(clearProfileCookieHeader(ctx))
-        ctx.json({ error: escapedProfileMessage(activeProfileName(ctx)) }, { status: 400 })
+        await ctx.json({ error: escapedProfileMessage(activeProfileName(ctx)) }, { status: 400 })
         return
       }
       // A profile-scoped write racing that profile's deletion RPC could resurrect a partially populated home
@@ -392,17 +392,17 @@ export function createApp(deps: AppDeps, opts: CreateAppOptions = {}): App {
       // lifetime — deletion waits for leases to drain, and a request arriving during deletion is refused (409).
       // The delete route is the lifecycle owner (mark + drain), so it must not lease the profile it is deleting.
       if (unsafe && path.startsWith('/api/') && path !== '/api/profile/delete' && path !== '/api/profile/switch') {
-        const lease = deps.profiles.beginWrite(activeProfileName(ctx))
+        const lease = (await deps.profiles.beginWrite(activeProfileName(ctx)))
         if (lease === 'deleting') {
-          ctx.json({ error: `Profile '${activeProfileName(ctx)}' is being deleted.` }, { status: 409 })
+          await ctx.json({ error: `Profile '${activeProfileName(ctx)}' is being deleted.` }, { status: 409 })
           return
         }
         if (lease === 'missing') {
-          ctx.json({ error: `Profile '${activeProfileName(ctx)}' does not exist.` }, { status: 404 })
+          await ctx.json({ error: `Profile '${activeProfileName(ctx)}' does not exist.` }, { status: 404 })
           return
         }
         if (lease === 'unreadable') {
-          ctx.json({ error: 'Profile deletion records are unreadable; retry in a moment.' }, { status: 503 })
+          await ctx.json({ error: 'Profile deletion records are unreadable; retry in a moment.' }, { status: 503 })
           return
         }
         releaseWrite = lease
@@ -411,9 +411,9 @@ export function createApp(deps: AppDeps, opts: CreateAppOptions = {}): App {
       // is unresolved; settle it here (a cache hit is one stat) so an edited config.yaml costs one RPC, not a request.
       if (path.startsWith('/api/')) await Promise.resolve().then(() => deps.agentConfig.read(deps.profileHome(deps.activeProfile()))).catch(() => undefined)
       if (ctx.method === 'GET' || ctx.method === 'HEAD') {
-        if (handleSpa(ctx)) return
+        if ((await handleSpa(ctx))) return
         if (path.startsWith('/extensions/')) {
-          handleExtensionStatic(ctx)
+          await handleExtensionStatic(ctx)
           return
         }
         if (path.startsWith(PREVIEW_PREFIX)) {
@@ -421,10 +421,10 @@ export function createApp(deps: AppDeps, opts: CreateAppOptions = {}): App {
           return
         }
         if (path === '/favicon.ico') {
-          serveFavicon(ctx)
+          await serveFavicon(ctx)
           return
         }
-        if (handleDashboardPlugin(ctx)) return
+        if ((await handleDashboardPlugin(ctx))) return
         const raw = RAW_GET_ROUTES[path]
         if (raw) {
           await runRaw(ctx, raw)
@@ -441,7 +441,7 @@ export function createApp(deps: AppDeps, opts: CreateAppOptions = {}): App {
           return
         }
         if (RAW_POST_ROUTES[path]) {
-          ctx.json({ error: `POST required for ${path}` }, { status: 405 })
+          await ctx.json({ error: `POST required for ${path}` }, { status: 405 })
           return
         }
       } else if (ctx.method === 'POST') {
@@ -462,7 +462,7 @@ export function createApp(deps: AppDeps, opts: CreateAppOptions = {}): App {
       const declared = Number(ctx.header('content-length') ?? '0')
       const cap = bodyCap(path)
       if (ctx.method !== 'GET' && ctx.method !== 'HEAD' && Number.isFinite(declared) && declared > cap.bytes) {
-        ctx.json({ error: `Request body too large (${String(declared)} bytes, max ${String(cap.bytes)})` }, { status: cap.status })
+        await ctx.json({ error: `Request body too large (${String(declared)} bytes, max ${String(cap.bytes)})` }, { status: cap.status })
         return
       }
       const { matched } = await orpc.handle(req, res, { context: { ctx } })
@@ -470,12 +470,12 @@ export function createApp(deps: AppDeps, opts: CreateAppOptions = {}): App {
         ctx.markFinished(res.statusCode)
         return
       }
-      notFound(ctx)
+      await notFound(ctx)
     } catch (error) {
       if (ctx.isFinished) return
       deps.log(`[webui] ERROR ${ctx.method} ${loggedUrl(req.url)}\n${error instanceof Error ? (error.stack ?? error.message) : String(error)}`)
       try {
-        ctx.json({ error: 'Internal server error' }, { status: 500 })
+        await ctx.json({ error: 'Internal server error' }, { status: 500 })
       } catch {
         /* client gone */
       }

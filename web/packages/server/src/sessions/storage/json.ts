@@ -1,4 +1,7 @@
 /* eslint-disable @typescript-eslint/require-await -- The JSON adapter deliberately keeps each file transaction synchronous behind the async port. */
+import { JsonJournal } from './json-journal.js'
+import { JsonDocuments } from './json-documents.js'
+import { dirname } from 'node:path'
 import { existsSync, lstatSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, unlinkSync } from 'node:fs'
 import { join } from 'node:path'
 import { isSafeSessionId, type Message } from '../session.js'
@@ -7,14 +10,25 @@ import { readMetadataJsonPrefixWithSignature, statSignature, writeAtomic } from 
 import { sessionSearchMatches, sessionSearchMessageText } from './search-text.js'
 import { diagnoseJson, repairJson, restoreJsonBackup } from './json-recovery.js'
 
-export interface JsonStorageOptions { directory: string; now: () => number; stampingSince: () => number }
+export interface JsonStorageOptions { directory: string; stateDir?: string; profileHome?: (profile: string) => string; env?: Record<string, string | undefined>; now: () => number; stampingSince: () => number | Promise<number> }
 
 export class JsonStorage implements StorageBackend {
   readonly kind = 'json'
   readonly sessions: JsonSessions
+  readonly documents: JsonDocuments
+  readonly journals: JsonJournal
   readonly directory: string
-  constructor(options: JsonStorageOptions) { this.directory = options.directory; this.sessions = new JsonSessions(options) }
-  async close(): Promise<void> { this.sessions.closed = true }
+  constructor(options: JsonStorageOptions) {
+    this.directory = options.directory
+    this.sessions = new JsonSessions(options)
+    this.documents = new JsonDocuments(options.stateDir ?? dirname(options.directory), options.profileHome, options.directory)
+    this.journals = new JsonJournal(options.directory, options.env)
+  }
+  async close(): Promise<void> {
+    await this.journals.close()
+    this.sessions.closed = true
+    await this.documents.close()
+  }
 }
 
 class JsonSessions implements SessionBackend {
@@ -177,8 +191,8 @@ class JsonSessions implements SessionBackend {
   }
   readonly shrinkBackup = {
     discard: async (sid: string): Promise<void> => { rmSync(`${this.path(sid)}.bak`, { force: true }) },
-    restore: async (sid: string): Promise<boolean> => restoreJsonBackup(this.options.directory, sid, this.options.stampingSince()),
+    restore: async (sid: string): Promise<boolean> => restoreJsonBackup(this.options.directory, sid, await this.options.stampingSince()),
   }
-  async diagnose(): Promise<StorageIssue[]> { this.check(); return diagnoseJson(this.options.directory, this.options.stampingSince()) }
-  async repair(issue: StorageIssue): Promise<boolean> { this.check(); return repairJson(this.options.directory, issue, this.options.stampingSince()) }
+  async diagnose(): Promise<StorageIssue[]> { this.check(); return diagnoseJson(this.options.directory, await this.options.stampingSince()) }
+  async repair(issue: StorageIssue): Promise<boolean> { this.check(); return repairJson(this.options.directory, issue, await this.options.stampingSince()) }
 }

@@ -310,25 +310,25 @@ export async function checkAuth(ctx: RequestContext): Promise<boolean> {
   const hasSession = Boolean(cookieVal && auth.verifySession(cookieVal))
   if (path === '/api/auth/logout') {
     if (hasSession) return true
-    ctx.rawJson(401, { error: 'Authentication required' })
+    await ctx.rawJson(401, { error: 'Authentication required' })
     return false
   }
   const info = await ensureTrustedAuthSession(ctx)
   if (info) {
     if (OPERATOR_ONLY_PATHS.has(path) && !(await sessionCanManageServer(ctx, info))) {
-      ctx.rawJson(403, { error: 'Owner session required' })
+      await ctx.rawJson(403, { error: 'Owner session required' })
       return false
     }
     if (!trustedSessionAllowsActiveProfile(ctx, info)) {
-      if (path.startsWith('/api/')) ctx.rawJson(403, { error: 'Profile access forbidden' })
-      else ctx.send({ status: 403, headers: { 'Content-Type': 'text/plain; charset=utf-8' }, body: 'Profile access forbidden', security: false })
+      if (path.startsWith('/api/')) (await ctx.rawJson(403, { error: 'Profile access forbidden' }))
+      else (await ctx.send({ status: 403, headers: { 'Content-Type': 'text/plain; charset=utf-8' }, body: 'Profile access forbidden', security: false }))
       return false
     }
     ctx.authRefreshCookie = ctx.trusted.cookieValue ?? cookieVal
     return true
   }
   if (path.startsWith('/api/')) {
-    ctx.rawJson(401, { error: 'Authentication required' })
+    await ctx.rawJson(401, { error: 'Authentication required' })
     return false
   }
   const loginPath = (path || '/').replace(/\/+$/, '')
@@ -336,12 +336,12 @@ export async function checkAuth(ctx: RequestContext): Promise<boolean> {
     let target = loginPath.replace(/^\/+/, '').includes('/') ? '../login' : 'login'
     const inner = safeLoginInnerNext(ctx.query)
     if (inner) target += '?next=' + quotePath(inner)
-    ctx.redirect(target, { security: false })
+    await ctx.redirect(target, { security: false })
     return false
   }
   let pathWithQuery = path || '/'
   if (ctx.search) pathWithQuery += ctx.search
-  ctx.redirect('login?next=' + quotePath(pathWithQuery), { security: false })
+  await ctx.redirect('login?next=' + quotePath(pathWithQuery), { security: false })
   return false
 }
 
@@ -379,7 +379,7 @@ export async function authStatusPayload(ctx: RequestContext): Promise<AuthStatus
     loggedIn = Boolean(sessionInfo)
   }
   const passkeyFlag = auth.passkeyFeatureFlagEnabled()
-  const passkeys = passkeyFlag ? ctx.deps.passkeys.registered().length : 0
+  const passkeys = passkeyFlag ? (await ctx.deps.passkeys.registered()).length : 0
   const passwordAuthEnabled = (await auth.getPasswordHash()) !== null
   const payload: AuthStatus = {
     auth_enabled: authEnabled,
@@ -392,7 +392,7 @@ export async function authStatusPayload(ctx: RequestContext): Promise<AuthStatus
     passkeys_enabled: passkeys > 0,
     passkeys_count: passkeys,
     passkey_feature_flag: passkeyFlag,
-    auth_disabled_acknowledged: authEnabled ? false : Boolean(ctx.deps.settings.load().auth_disabled_acknowledged),
+    auth_disabled_acknowledged: authEnabled ? false : Boolean((await ctx.deps.settings.load()).auth_disabled_acknowledged),
     can_manage_server: await sessionCanManageServer(ctx, sessionInfo),
   }
   if (auth.isTrustedAuthEnabled() || sessionInfo?.auth_type === 'trusted') payload.trusted_auth_enabled = true

@@ -136,7 +136,7 @@ describe('Web source updates (test_tal203_source_update.py)', () => {
     const { svc, restarts, installs, version } = npmService({
       autoApply: () => enabled,
       blockers: () => ({ active_streams: blocked ? 1 : 0, active_runs: 0, blocking_stream_ids: blocked ? ['s'] : [], blocking_run_ids: [], restart_blocked: blocked }),
-      autoNotification: { begin: () => { notificationEvents.push('begin'); return `notice-${String(notificationEvents.length)}` }, transition: (_id, phase) => { notificationEvents.push(phase) } },
+      autoNotification: { begin: () => { notificationEvents.push('begin'); return Promise.resolve(`notice-${String(notificationEvents.length)}`) }, transition: (_id, phase) => { notificationEvents.push(phase) } },
     })
     expect(await svc.autoApplyOnce()).toBeNull()
     enabled = true
@@ -404,7 +404,7 @@ describe('Web source updates (test_tal203_source_update.py)', () => {
   it('reports a failed update and skips automatic reinstallation but permits manual retry (TAL-1014)', async () => {
     const stateDir = tmp()
     write(join(stateDir, 'update-rollback.json'), JSON.stringify({ version: '2.0.0', previousVersion: '1.0.0', failedVersion: '2.0.0' }))
-    const begin = vi.fn(() => 'unexpected-notification')
+    const begin = vi.fn(() => Promise.resolve('unexpected-notification'))
     const { svc, installs, restarts } = npmService({ stateDir, autoApply: () => true, autoNotification: { begin, transition: vi.fn() } })
     const failed_update = { version: '2.0.0', restored_version: '1.0.0' }
     expect((await svc.check(true)).webui).toMatchObject({ failed_update })

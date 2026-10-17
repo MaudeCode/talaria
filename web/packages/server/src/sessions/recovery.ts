@@ -9,11 +9,11 @@
  * `recovery_stamping_since` marker may predate that provenance, so next to a readable live transcript it goes to manual
  * review instead.
  */
-import { existsSync, mkdirSync, readdirSync, readFileSync, statSync } from 'node:fs'
-import { join } from 'node:path'
+import { existsSync } from 'node:fs'
 import type { DatabaseSync } from 'node:sqlite'
 import type { RecoveryAudit, RecoveryAuditItem, RecoveryRepair } from '@maudecode/talaria-web-contracts'
-import { atomicWriteText } from '../fs/atomic.js'
+import type { DocumentBackend } from './storage/backend.js'
+import { updateDocument } from './storage/document.js'
 import { str } from '../util.js'
 import type { StorageIssue } from './storage/backend.js'
 import { isSafeSessionId, Session, type Message } from './session.js'
@@ -30,17 +30,15 @@ export interface RecoveryDeps {
   stateDbPath: string
   profile: string
   stampingSince: number
-  journalDirectory: string
   isReadOnly: (sid: string, profile: string) => boolean
   log: (line: string) => void
 }
 
-const STAMPING_MARKER = 'recovery_stamping_since'
+
 /** Python `STATE_DB_RECOVERY_BUSY_TIMEOUT_MS`: a recovery scan waits out a writer rather than read a lock as "nothing missing". */
 const STATE_DB_RECOVERY_BUSY_TIMEOUT_MS = 5000
-const TURN_JOURNAL_DIR = '_turn_journal'
-const TURN_JOURNAL_ID_RE = /^[A-Za-z0-9_.-]+$/
 const TERMINAL_TURN_EVENTS = new Set(['completed', 'interrupted'])
+const createdAt = (event: Dict): number => { const value = Number(event.created_at ?? 0); return Number.isFinite(value) ? value : 0 }
 const WORKTREE_FIELDS = ['worktree_path', 'worktree_branch', 'worktree_repo_root', 'worktree_created_at'] as const
 
 const isDict = (v: unknown): v is Dict => Boolean(v) && typeof v === 'object' && !Array.isArray(v)
@@ -49,16 +47,13 @@ const isDict = (v: unknown): v is Dict => Boolean(v) && typeof v === 'object' &&
  * Epoch seconds since which this server stamps every deliberate shrink, recorded in the state directory on first start.
  * A missing or unreadable marker is recorded anew: a later marker only sends more backups to manual review.
  */
-export function recoveryStampingSince(stateDir: string): number {
-  const path = join(stateDir, STAMPING_MARKER)
-  try {
-    const value = Number(readFileSync(path, 'utf8').trim())
-    if (Number.isFinite(value) && value > 0) return value
-  } catch { /* record it below */ }
-  const now = Date.now() / 1000
-  mkdirSync(stateDir, { recursive: true })
-  atomicWriteText(path, `${String(now)}\n`)
-  return now
+export async function recoveryStampingSince(documents: DocumentBackend): Promise<number> {
+  return (await updateDocument(documents, 'recovery', 'stamping-since', (value) => {
+    const stored = Number(typeof value === 'string' ? value.trim() : '')
+    if (Number.isFinite(stored) && stored > 0) return { value, result: stored }
+    const now = Date.now() / 1000
+    return { value: `${String(now)}\n`, result: now }
+  }, { replaceInvalid: true }))
 }
 
 // ── state.db ─────────────────────────────────────────────────────────────
@@ -112,7 +107,7 @@ function readStateDb(path: string, persisted: Set<string>): StateDbView {
 }
 
 /** Python `_state_db_row_to_sidecar`, through `Session` so the document matches every field the store persists. */
-function sidecarFromStateDbRow(row: MissingRow, store: SessionStore, profile: string): Dict {
+async function sidecarFromStateDbRow(row: MissingRow, store: SessionStore, profile: string): Promise<Dict> {
   const source = 'webui' // the scan reads only WebUI-origin rows
   const started = Number(row.started_at) || 0
   const last = Number(row.messages.at(-1)?.timestamp) || 0
@@ -122,45 +117,11 @@ function sidecarFromStateDbRow(row: MissingRow, store: SessionStore, profile: st
     session_id: row.id, title: str(row.title) || 'Recovered WebUI Session', ...workspace, model: str(row.model) || 'unknown', profile,
     created_at: started, updated_at: last || started, parent_session_id: row.parent_session_id ?? null, ...worktree,
     source_tag: source, ...normalizeAgentSessionSource(source), messages: row.messages,
-  }, store.deps.defaults(profile))
+  }, (await store.deps.defaults(profile)))
   return session.toDocument()
 }
 
 // ── turn journal (read-only) ─────────────────────────────────────────────
-
-const createdAt = (event: Dict): number => { const n = Number(event.created_at ?? 0); return Number.isFinite(n) ? n : 0 }
-
-/**
- * Python `iter_turn_journal_session_ids` + `read_turn_journal`: each session's events across its pid shards
- * (`<sid>~<pid>.jsonl`) and legacy file, oldest first. Only journals an earlier backend left behind exist; this server
- * never writes one.
- */
-function readTurnJournals(sessionDir: string): Map<string, Dict[]> {
-  const dir = join(sessionDir, TURN_JOURNAL_DIR)
-  const out = new Map<string, Dict[]>()
-  let names: string[]
-  try { names = readdirSync(dir).sort() } catch { return out }
-  for (const name of names) {
-    if (!name.endsWith('.jsonl')) continue
-    const stem = name.slice(0, -'.jsonl'.length)
-    const tilde = stem.indexOf('~')
-    const sid = tilde > 0 ? stem.slice(0, tilde) : stem
-    if (!TURN_JOURNAL_ID_RE.test(sid)) continue
-    let text: string
-    try {
-      if (!statSync(join(dir, name)).isFile()) continue
-      text = readFileSync(join(dir, name), 'utf8')
-    } catch { continue }
-    const events = out.get(sid) ?? []
-    for (const line of text.split('\n')) {
-      if (!line.trim()) continue
-      try { const event = JSON.parse(line) as unknown; if (isDict(event)) events.push(event) } catch { /* a torn line */ }
-    }
-    out.set(sid, events)
-  }
-  for (const events of out.values()) events.sort((a, b) => createdAt(a) - createdAt(b))
-  return out
-}
 
 /** What a turn sent: its trimmed text and attachment names, or null when it sent nothing identifiable. */
 function turnKey(content: unknown, attachments: unknown): string | null {
@@ -260,7 +221,7 @@ export async function auditSessionRecovery(deps: RecoveryDeps): Promise<Recovery
     else items.push(item(row.id, 'state_db_missing_sidecar', 'repairable', 'materialize_from_state_db'))
   }
   if (s.db.unreadable) items.push(item('', 'state_db_unreadable', 'unsafe_to_repair', 'manual_review'))
-  for (const [sid, events] of readTurnJournals(deps.journalDirectory)) {
+  for (const [sid, events] of await deps.store.deps.storage.journals.recoveryEvents()) {
     let doc: Dict | null = null
     try { if (await deps.store.exists(sid)) doc = { messages: await deps.store.readMessages(sid, { start: 0, end: Infinity }) } } catch { /* corrupt */ }
     items.push(...pendingJournalTurns(doc, sid, events))
@@ -309,7 +270,7 @@ async function materializeSidecars(deps: RecoveryDeps, s: Scan): Promise<Recover
       if (busy(store, row.id)) { result.details.push({ session_id: row.id, materialized: false, skipped: 'session_active' }); return }
       try {
         if (await store.exists(row.id)) { result.details.push({ session_id: row.id, materialized: false, skipped: 'sidecar_appeared_during_reconcile' }); return }
-        await store.save(new Session(sidecarFromStateDbRow(row, store, deps.profile), store.deps.defaults(deps.profile)), { touchUpdatedAt: false, skipIndex: true })
+        await store.save(new Session((await sidecarFromStateDbRow(row, store, deps.profile)), (await store.deps.defaults(deps.profile))), { touchUpdatedAt: false, skipIndex: true })
       } catch (error) { result.details.push({ session_id: row.id, materialized: false, error: (error as Error).message }); return }
       store.sessions.delete(row.id)
       result.materialized += 1

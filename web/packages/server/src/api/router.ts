@@ -80,7 +80,7 @@ export async function bootstrapPayload(ctx: RequestContext): Promise<Bootstrap> 
     if (cookieVal && deps.auth.verifySession(cookieVal)) csrfToken = deps.auth.csrfTokenForSession(cookieVal) ?? ''
   }
   const authenticated = !auth.auth_enabled || auth.logged_in
-  const settings = authenticated ? deps.settings.load() : {}
+  const settings = authenticated ? (await deps.settings.load()) : {}
   let profile: Bootstrap['profile'] = null
   let onboarding: Bootstrap['onboarding'] = null
   let features: Bootstrap['features'] = { dashboard: false, terminal_remote_backend: false, extensions: false, single_profile_mode: false }
@@ -94,7 +94,7 @@ export async function bootstrapPayload(ctx: RequestContext): Promise<Bootstrap> 
     webui_version: deps.version,
     max_upload_bytes: deps.config.maxUploadBytes,
     csrf_token: csrfToken,
-    language: authenticated ? shellLanguage(ctx) : '',
+    language: authenticated ? (await shellLanguage(ctx)) : '',
     bot_name: displayBotName(authenticated ? settings.bot_name : null),
     assistant_name: authenticated ? deps.assistantName(activeProfileName(ctx)) : 'Hermes',
     auth,
@@ -108,10 +108,10 @@ export async function bootstrapPayload(ctx: RequestContext): Promise<Bootstrap> 
 const SHELL_LANG_RE = /^[a-z]{2,3}(?:-[A-Za-z0-9]{2,8})*$/
 
 /** The `language` setting as a BCP 47 tag for the shell `lang` attribute, or ``. */
-export function shellLanguage(ctx: RequestContext): string {
+export async function shellLanguage(ctx: RequestContext): Promise<string> {
   let lang = ''
   try {
-    const raw = ctx.deps.settings.load().language
+    const raw = (await ctx.deps.settings.load()).language
     lang = typeof raw === 'string' ? raw.trim() : ''
   } catch {
     return ''
@@ -154,9 +154,9 @@ export const coreRouter = os.router({
     if (result.status !== 200) throw new RawResponse(result.status, result.body, result.headers ?? {})
     return result.body
   }),
-  bootstrap: os.bootstrap.handler(({ context }) => bootstrapPayload(context.ctx)),
+  bootstrap: os.bootstrap.handler(async ({ context }) => (await bootstrapPayload(context.ctx))),
   auth: {
-    status: os.auth.status.handler(({ context }): Promise<AuthStatus> => authStatusPayload(context.ctx)),
+    status: os.auth.status.handler(async ({ context }): Promise<AuthStatus> => (await authStatusPayload(context.ctx))),
     login: os.auth.login.handler(async ({ input, context }) => {
       const { ctx } = context
       const auth = ctx.deps.auth
@@ -205,7 +205,7 @@ export const coreRouter = os.router({
       if (!ctx.deps.auth.passkeyFeatureFlagEnabled()) throw new HttpError(404, 'Passkey support is disabled. Set HERMES_WEBUI_PASSKEY=1 or webui_passkey_enabled: true to enable.')
       if (!(await ctx.deps.auth.isAuthEnabled())) throw new HttpError(400, 'Auth not enabled')
       const [rpId, origin] = passkeyRp(ctx)
-      return { ok: true as const, publicKey: passkeyCall(() => ctx.deps.passkeys.authenticationOptions(rpId, origin)) }
+      return { ok: true as const, publicKey: (await passkeyCall(async () => (await ctx.deps.passkeys.authenticationOptions(rpId, origin)))) }
     }),
     passkeyLogin: os.auth.passkeyLogin.handler(async ({ input, context }) => {
       const { ctx } = context
@@ -215,7 +215,7 @@ export const coreRouter = os.router({
       const clientIp = rateLimitClientIp(ctx)
       if (!auth.checkLoginRate(clientIp)) throw new HttpError(429, 'Too many attempts. Try again in a minute.')
       try {
-        ctx.deps.passkeys.finishLogin(input)
+        await ctx.deps.passkeys.finishLogin(input)
       } catch (error) {
         if (!(error instanceof PasskeyError)) throw error
         auth.recordLoginAttempt(clientIp)
@@ -229,39 +229,39 @@ export const coreRouter = os.router({
       if (!ctx.deps.auth.passkeyFeatureFlagEnabled()) throw new HttpError(404, 'Passkey support is disabled.')
       await requirePasskeyManagementAuth(ctx)
       const [rpId, origin] = passkeyRp(ctx)
-      return { ok: true as const, publicKey: passkeyCall(() => ctx.deps.passkeys.registrationOptions(rpId, origin)) }
+      return { ok: true as const, publicKey: (await passkeyCall(async () => (await ctx.deps.passkeys.registrationOptions(rpId, origin)))) }
     }),
     passkeyRegister: os.auth.passkeyRegister.handler(async ({ input, context }) => {
       const { ctx } = context
       if (!ctx.deps.auth.passkeyFeatureFlagEnabled()) throw new HttpError(404, 'Passkey support is disabled.')
       await requirePasskeyManagementAuth(ctx)
-      const result = passkeyCall(() => ctx.deps.passkeys.finishRegistration(input))
-      return { ...result, credentials: ctx.deps.passkeys.registered() as never }
+      const result = (await passkeyCall(async () => (await ctx.deps.passkeys.finishRegistration(input))))
+      return { ...result, credentials: (await ctx.deps.passkeys.registered()) as never }
     }),
     passkeyDelete: os.auth.passkeyDelete.handler(async ({ input, context }) => {
       const { ctx } = context
       if (!ctx.deps.auth.passkeyFeatureFlagEnabled()) throw new HttpError(404, 'Passkey support is disabled.')
       await requirePasskeyManagementAuth(ctx)
-      const creds = ctx.deps.passkeys.registered()
+      const creds = (await ctx.deps.passkeys.registered())
       if ((await ctx.deps.auth.getPasswordHash()) === null && creds.length <= 1 && creds.some((c) => c.id === input.id)) {
         throw new HttpError(409, 'Set a password or disable auth before removing the last passkey.')
       }
       try {
-        return ctx.deps.passkeys.delete(input.id) as never
+        return (await ctx.deps.passkeys.delete(input.id)) as never
       } catch (error) {
         if (error instanceof PasskeyError) throw new HttpError(404, error.message)
         throw error
       }
     }),
-    passkeys: os.auth.passkeys.handler(({ context }) => passkeyList(context.ctx)),
-    passkeysPost: os.auth.passkeysPost.handler(({ context }) => passkeyList(context.ctx)),
+    passkeys: os.auth.passkeys.handler(async ({ context }) => (await passkeyList(context.ctx))),
+    passkeysPost: os.auth.passkeysPost.handler(async ({ context }) => (await passkeyList(context.ctx))),
   },
 })
 
 /** The passkey list; owner-only for both methods through `OPERATOR_ONLY_PATHS`. */
-function passkeyList(ctx: RequestContext): PasskeysList {
+async function passkeyList(ctx: RequestContext): Promise<PasskeysList> {
   if (!ctx.deps.auth.passkeyFeatureFlagEnabled()) return { credentials: [], disabled: true }
-  return { credentials: ctx.deps.passkeys.registered() as PasskeysList['credentials'] }
+  return { credentials: (await ctx.deps.passkeys.registered()) as PasskeysList['credentials'] }
 }
 
 /** Python `_client_ip_for_rate_limit` + trusted-proxy forwarding: the key for the login, native OIDC start, and TTS limiters. */
@@ -314,7 +314,7 @@ async function requirePasskeyManagementAuth(ctx: RequestContext): Promise<void> 
 export type CoreRouter = typeof coreRouter
 
 /** Python `_send_still_starting`: the phase is in the text, and the connection closes after the 503. */
-export function startupUnavailable(ctx: RequestContext): void {
+export async function startupUnavailable(ctx: RequestContext): Promise<void> {
   const phase = ctx.deps.startup.phase
-  ctx.json({ error: `Server is still starting: ${phase}`, phase, condition: STARTUP_RECOVERY_CONDITION }, { status: 503, headers: { 'Retry-After': '5', Connection: 'close' } })
+  await ctx.json({ error: `Server is still starting: ${phase}`, phase, condition: STARTUP_RECOVERY_CONDITION }, { status: 503, headers: { 'Retry-After': '5', Connection: 'close' } })
 }

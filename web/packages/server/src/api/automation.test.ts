@@ -1,3 +1,4 @@
+import { JsonDocuments } from '../test/storage.js'
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, unlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -997,14 +998,14 @@ describe('extension state file limits (parity)', () => {
     const ids = Array.from({ length: 520 }, (_, i) => `ext-${String(i)}`)
     writeFileSync(join(root, 'manifest.json'), JSON.stringify({ extensions: ids.map((id) => ({ id, name: id, scripts: [`${id}.js`] })) }))
     writeFileSync(join(stateDir, 'extension-overrides.json'), JSON.stringify({ version: 1, disabled_extensions: ids, sidecar_proxy_consents: Object.fromEntries(ids.map((id) => [id, 'http://127.0.0.1:4567'])) }))
-    const service = new ExtensionService({ env: { HERMES_WEBUI_EXTENSION_DIR: root, HERMES_WEBUI_EXTENSION_MANIFEST: 'manifest.json' }, stateDir, isAuthEnabled: () => Promise.resolve(false), fetch, log: () => undefined })
+    const service = new ExtensionService({ documents: new JsonDocuments(stateDir), env: { HERMES_WEBUI_EXTENSION_DIR: root, HERMES_WEBUI_EXTENSION_MANIFEST: 'manifest.json' }, stateDir, isAuthEnabled: () => Promise.resolve(false), fetch, log: () => undefined })
     try {
       const status = await service.status()
       expect((status.counts as Json).user_disabled).toBe(512)
       expect((status.extensions as Json[]).find((e) => e.id === 'ext-512')).toMatchObject({ user_disabled: false })
       expect(status.warnings).toEqual(expect.arrayContaining([{ code: 'extension_state_truncated', source: 'extension_state' }]))
       expect(service.enabledSync()).toBe(true)
-      const bare = new ExtensionService({ env: { HERMES_WEBUI_EXTENSION_DIR: root }, stateDir, isAuthEnabled: () => Promise.resolve(false), fetch, log: () => undefined })
+      const bare = new ExtensionService({ documents: new JsonDocuments(stateDir), env: { HERMES_WEBUI_EXTENSION_DIR: root }, stateDir, isAuthEnabled: () => Promise.resolve(false), fetch, log: () => undefined })
       expect(bare.enabledSync()).toBe(true)
       // `urlsplit` semantics for loopback origins: no path (not even `/`), verbatim port, literal hosts only.
       expect(normalizeLoopbackOrigin('http://127.0.0.1:8080/')).toBeNull()
@@ -1025,7 +1026,7 @@ describe('extension manifest toggle decision (TAL-685)', () => {
     writeFileSync(join(root, 'manifest.json'), JSON.stringify({ extensions: [
       { id: 'live', name: 'Live' }, { id: 'off', name: 'Off', enabled: false },
     ] }))
-    const service = new ExtensionService({ env: { HERMES_WEBUI_EXTENSION_DIR: root, HERMES_WEBUI_EXTENSION_MANIFEST: 'manifest.json' }, stateDir, isAuthEnabled: () => Promise.resolve(false), fetch, log: () => undefined })
+    const service = new ExtensionService({ documents: new JsonDocuments(stateDir), env: { HERMES_WEBUI_EXTENSION_DIR: root, HERMES_WEBUI_EXTENSION_MANIFEST: 'manifest.json' }, stateDir, isAuthEnabled: () => Promise.resolve(false), fetch, log: () => undefined })
     try {
       expect((await service.manifests()).manifests.map((m) => [m.id, m.can_toggle])).toEqual([['live', true], ['off', false]])
     } finally {
@@ -1179,7 +1180,7 @@ describe('extension state transactions (review round 41)', () => {
     writeFileSync(join(root, 'manifest.json'), JSON.stringify({ extensions: [{ id: 'ext-one', name: 'Ext One', sidecar: { type: 'loopback', origin: 'http://127.0.0.1:4567' } }] }))
     let releaseAuth: (v: boolean) => void = () => undefined
     const gate = new Promise<boolean>((r) => { releaseAuth = r })
-    const service = new ExtensionService({ env: { HERMES_WEBUI_EXTENSION_DIR: root, HERMES_WEBUI_EXTENSION_MANIFEST: 'manifest.json' }, stateDir, isAuthEnabled: () => gate, fetch, log: () => undefined })
+    const service = new ExtensionService({ documents: new JsonDocuments(stateDir), env: { HERMES_WEBUI_EXTENSION_DIR: root, HERMES_WEBUI_EXTENSION_MANIFEST: 'manifest.json' }, stateDir, isAuthEnabled: () => gate, fetch, log: () => undefined })
     try {
       const consent = service.setConsent('ext-one', true)
       const toggle = service.setEnabled('ext-one', false)

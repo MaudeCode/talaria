@@ -1,0 +1,46 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`preserves main bytes for workspace, background, quota and relay state 1`] = `
+{
+  "agent/.talaria-relay-profile-id": "pfi_00000000000040008000000000000007
+",
+  "agent/profiles/work/webui_state/last_workspace.txt": "/test/workspace",
+  "agent/profiles/work/webui_state/workspaces.json": "[
+  {
+    "path": "/test/workspace",
+    "name": "Work"
+  }
+]",
+  "agent/webui/.quota_scope_id": "00000000000040008000000000000007
+",
+  "agent/webui/last_workspace.txt": "/test/workspace",
+  "agent/webui/sessions/_background/session.json": "{"version":1,"tasks":[{"task_id":"task","kind":"process","status":"completed","title":"Background","started_at":null,"updated_at":1000,"completed_at":1000,"exit_code":null,"agents":null,"result":"finished","agent_result":false,"stream_id":null,"dismissed_at":null}]}",
+  "agent/webui/talaria-relay-deleted.json": "{"version":1,"views":[{"id":"00000000-0000-4000-8000-000000000007","sessionId":"deleted-session","profile":"default","through":1000000,"identity":"pfi_00000000000040008000000000000007","scope":{"url":"https://relay.test","publisherId":"https://publisher.test","profileId":"profile"}}]}
+",
+  "agent/webui/talaria-relay-publisher-0123456789abcdef.pem": "[synthetic private key bytes checked above]",
+  "agent/webui/talaria-relay-revision": "1000000
+",
+  "agent/webui/talaria-relay-started.json": "{"version":1,"profiles":[{"profileId":"profile","floor":1000000,"sessions":[]}]}
+",
+  "agent/webui/talaria-relay.json": "{
+  "key_id": "key",
+  "private_key_path": "<root>/agent/webui/talaria-relay-publisher-0123456789abcdef.pem",
+  "profiles": {
+    "default": {
+      "identity": "pfi_00000000000040008000000000000007",
+      "profile_id": "profile"
+    }
+  },
+  "publisher_id": "https://publisher.test",
+  "url": "https://relay.test",
+  "version": 2
+}
+",
+  "agent/webui/workspaces.json": "[
+  {
+    "path": "/test/workspace",
+    "name": "Work"
+  }
+]",
+}
+`;

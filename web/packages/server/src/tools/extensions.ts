@@ -5,7 +5,8 @@ import { resolvePathLikePython } from '../workspace/paths.js'
 import { createHash } from 'node:crypto'
 import { closeSync, existsSync, fstatSync, lstatSync, mkdirSync, readFileSync, readdirSync, statSync, writeFileSync } from 'node:fs'
 import { dirname, join, relative, resolve, sep } from 'node:path'
-import { atomicWriteText } from '../fs/atomic.js'
+import { InvalidDocument, type DocumentBackend } from '../sessions/storage/backend.js'
+import { readDocument } from '../sessions/storage/document.js'
 import { readZip } from '../workspace/unzip.js'
 import { isDict, type Dict } from '../config/agent-config.js'
 import { str } from '../util.js'
@@ -38,7 +39,7 @@ const SKIN_TOKENS = new Set<string>(SKIN_TOKEN_NAMES)
 const DECLARATION_ID_RE = /^[a-z0-9][a-z0-9_-]{0,31}$/
 const TEXT_MIME = new Set(['text/css', 'application/javascript', 'text/html', 'image/svg+xml', 'text/plain'])
 
-export interface ExtensionDeps { env: Record<string, string | undefined>; stateDir: string; isAuthEnabled: () => Promise<boolean>; fetch: typeof fetch; log: (line: string) => void }
+export interface ExtensionDeps { env: Record<string, string | undefined>; stateDir: string; documents: DocumentBackend; isAuthEnabled: () => Promise<boolean>; fetch: typeof fetch; log: (line: string) => void }
 
 export const validId = (v: unknown): v is string => typeof v === 'string' && ID_RE.test(v.trim())
 interface Diagnostics { warnings: { code: string; source: string }[] }
@@ -252,8 +253,7 @@ export class ExtensionService {
   constructor(private readonly deps: ExtensionDeps) {}
 
   private get defaultRoot(): string { return join(this.deps.stateDir, 'extensions') }
-  private get stateFile(): string { return join(this.deps.stateDir, 'extension-overrides.json') }
-  private get installFile(): string { return join(this.deps.stateDir, 'extension-install-manifest.json') }
+  private readonly revisions = new Map<string, string | null>()
 
   root(): string | null {
     const raw = (this.deps.env.HERMES_WEBUI_EXTENSION_DIR ?? '').trim()
@@ -269,16 +269,21 @@ export class ExtensionService {
     try { mkdirSync(this.defaultRoot, { recursive: true }); return lstatSync(this.defaultRoot).isSymbolicLink() ? null : resolve(this.defaultRoot) } catch { return null }
   }
 
-  private loadState(d: Diagnostics | null): State {
+  private async loadState(d: Diagnostics | null): Promise<State> {
     const empty: State = { version: 1, disabled_extensions: [], sidecar_proxy_consents: {} }
     const src = 'extension_state'
     let parsed: unknown
     try {
-      if (!existsSync(this.stateFile) || !statSync(this.stateFile).isFile()) return empty
-      const raw = readFileSync(this.stateFile)
-      if (raw.length > MAX_STATE_BYTES) { warn(d, 'extension_state_oversized', src); return empty }
-      parsed = JSON.parse(raw.toString('utf8'))
-    } catch { warn(d, 'extension_state_unreadable', src); return empty }
+      const record = await readDocument(this.deps.documents, 'extensions', 'overrides', { replaceInvalid: true, maxBytes: MAX_STATE_BYTES })
+      this.revisions.set('overrides', record?.revision ?? null)
+      if (!record) return empty
+      if (Buffer.byteLength(JSON.stringify(record.value)) > MAX_STATE_BYTES) { warn(d, 'extension_state_oversized', src); return empty }
+      parsed = record.value
+    } catch (error) {
+      if (error instanceof InvalidDocument && error.reason === 'too-large') this.revisions.set('overrides', error.revision)
+      warn(d, error instanceof InvalidDocument && error.reason === 'too-large' ? 'extension_state_oversized' : 'extension_state_unreadable', src)
+      return empty
+    }
     if (!isDict(parsed)) { warn(d, 'extension_state_invalid', src); return empty }
     const disabledRaw = parsed.disabled_extensions ?? []
     if (!Array.isArray(disabledRaw)) { warn(d, 'extension_state_invalid', src); return empty }
@@ -310,18 +315,17 @@ export class ExtensionService {
     return { version: 1, disabled_extensions: disabled, sidecar_proxy_consents: consents }
   }
 
-  private writeState(state: { disabled_extensions: string[]; sidecar_proxy_consents: Record<string, string> }): void {
-    mkdirSync(this.deps.stateDir, { recursive: true })
-    atomicWriteText(this.stateFile, JSON.stringify({ version: 1, disabled_extensions: [...new Set(state.disabled_extensions.filter(validId))].sort(), sidecar_proxy_consents: state.sidecar_proxy_consents }, null, 2))
+  private async writeState(state: { disabled_extensions: string[]; sidecar_proxy_consents: Record<string, string> }): Promise<void> {
+    this.revisions.set('overrides', await this.deps.documents.put('extensions', 'overrides', { version: 1, disabled_extensions: [...new Set(state.disabled_extensions.filter(validId))].sort(), sidecar_proxy_consents: state.sidecar_proxy_consents }, this.revisions.get('overrides') ?? null))
   }
 
-  private loadInstallManifest(): { version: 1; installed: Record<string, { version: string; files: string[]; installed_at: string }> } {
+  private async loadInstallManifest(): Promise<{ version: 1; installed: Record<string, { version: string; files: string[]; installed_at: string }> }> {
     const empty = { version: 1 as const, installed: {} }
     try {
-      if (!existsSync(this.installFile)) return empty
-      const raw = readFileSync(this.installFile)
-      if (raw.length > MAX_INSTALL_MANIFEST_BYTES) return empty
-      const parsed = JSON.parse(raw.toString('utf8')) as unknown
+      const record = await readDocument(this.deps.documents, 'extensions', 'install-manifest', { replaceInvalid: true, maxBytes: MAX_INSTALL_MANIFEST_BYTES })
+      this.revisions.set('install-manifest', record?.revision ?? null)
+      if (!record || Buffer.byteLength(JSON.stringify(record.value)) > MAX_INSTALL_MANIFEST_BYTES) return empty
+      const parsed = record.value
       if (!isDict(parsed) || !isDict(parsed.installed)) return empty
       const installed: Record<string, { version: string; files: string[]; installed_at: string }> = {}
       for (const [id, entry] of Object.entries(parsed.installed)) {
@@ -330,12 +334,11 @@ export class ExtensionService {
         if (Object.keys(installed).length >= 256) break
       }
       return { version: 1, installed }
-    } catch { return empty }
+    } catch (error) { if (error instanceof InvalidDocument && error.reason === 'too-large') this.revisions.set('install-manifest', error.revision); return empty }
   }
 
-  private writeInstallManifest(manifest: { version: 1; installed: Record<string, unknown> }): void {
-    mkdirSync(this.deps.stateDir, { recursive: true })
-    atomicWriteText(this.installFile, JSON.stringify(manifest, null, 2))
+  private async writeInstallManifest(manifest: { version: 1; installed: Record<string, unknown> }): Promise<void> {
+    this.revisions.set('install-manifest', await this.deps.documents.put('extensions', 'install-manifest', manifest, this.revisions.get('install-manifest') ?? null))
   }
 
   private manifestPath(root: string): [string | null, string] {
@@ -353,8 +356,8 @@ export class ExtensionService {
     return [manifest, 'configured']
   }
 
-  private galleryManifest(root: string, d: Diagnostics | null): Dict | null {
-    const installed = this.loadInstallManifest().installed
+  private async galleryManifest(root: string, d: Diagnostics | null): Promise<Dict | null> {
+    const installed = (await this.loadInstallManifest()).installed
     const entries: Dict[] = []
     for (const id of Object.keys(installed).sort()) {
       if (!validId(id)) continue
@@ -389,13 +392,13 @@ export class ExtensionService {
     return entries.length ? { extensions: entries } : null
   }
 
-  private loadManifest(root: string, d: Diagnostics | null): [unknown, Dict] {
+  private async loadManifest(root: string, d: Diagnostics | null): Promise<[unknown, Dict]> {
     const [file, pathStatus] = this.manifestPath(root)
     const status: Dict = { configured: pathStatus !== 'not_configured', loaded: false, status: pathStatus, _asset_base: '', entry_count: 0, script_count: 0, stylesheet_count: 0, sidecar_count: 0 }
     if (!file) {
       if (pathStatus === 'invalid_path') warn(d, 'manifest_invalid_path', 'manifest')
       else if (pathStatus === 'not_configured') {
-        const gallery = this.galleryManifest(root, d)
+        const gallery = (await this.galleryManifest(root, d))
         if (gallery) return [gallery, { ...status, loaded: true, status: 'gallery_installed' }]
       }
       return [null, status]
@@ -527,14 +530,14 @@ export class ExtensionService {
     const d: Diagnostics = { warnings: [] }
     const envDir = (this.deps.env.HERMES_WEBUI_EXTENSION_DIR ?? '').trim()
     const root = this.root()
-    const state = this.loadState(d)
+    const state = (await this.loadState(d))
     const disabled = new Set(state.disabled_extensions)
     const manifestConfigured = Boolean((this.deps.env.HERMES_WEBUI_EXTENSION_MANIFEST ?? '').trim())
     if (envDir && !root) warn(d, 'extension_dir_unavailable', 'extension_dir')
     if (!root) {
       return { manifest: null, assetBase: '', sidecarsById: new Map(), status: { enabled: false, extension_dir_configured: true, extension_dir_valid: false, script_urls: [], stylesheet_urls: [], sidecars: [], counts: { script_urls: 0, stylesheet_urls: 0, sidecars: 0, manifest_extensions: 0, user_disabled: 0 }, manifest: { configured: manifestConfigured, loaded: false, status: manifestConfigured ? 'extension_disabled' : 'not_configured', entry_count: 0, script_count: 0, stylesheet_count: 0, sidecar_count: 0 }, extensions: [], warnings: d.warnings } }
     }
-    const [manifest, status] = this.loadManifest(root, d)
+    const [manifest, status] = (await this.loadManifest(root, d))
     const consentIds = new Set(Object.keys(state.sidecar_proxy_consents))
     const ext = manifest !== null ? this.extensionState(manifest, disabled, d, consentIds) : { extensions: [], knownIds: new Set<string>(), manifestDisabled: new Set<string>() }
     const urls = manifest !== null ? await this.manifestUrls(manifest, status, disabled, state, d) : { scripts: [], stylesheets: [], sidecars: [], sidecarsById: new Map<string, Dict>() }
@@ -544,13 +547,13 @@ export class ExtensionService {
     return { manifest, assetBase: str(status._asset_base), sidecarsById: urls.sidecarsById, status: {
       enabled: true, extension_dir_configured: true, extension_dir_valid: true, script_urls: scriptUrls, stylesheet_urls: stylesheetUrls, sidecars: urls.sidecars,
       counts: { script_urls: scriptUrls.length, stylesheet_urls: stylesheetUrls.length, sidecars: urls.sidecars.length, manifest_extensions: ext.extensions.length, user_disabled: [...disabled].filter((id) => ext.knownIds.has(id)).length },
-      manifest: publicStatus, extensions: ext.extensions, gallery_installed: this.loadInstallManifest().installed, warnings: d.warnings,
+      manifest: publicStatus, extensions: ext.extensions, gallery_installed: (await this.loadInstallManifest()).installed, warnings: d.warnings,
     } }
   }
 
-  private loaded(root: string, d: Diagnostics): { manifest: unknown; state: State; disabled: Set<string> } {
-    const state = this.loadState(d)
-    const [manifest, status] = this.loadManifest(root, d)
+  private async loaded(root: string, d: Diagnostics): Promise<{ manifest: unknown; state: State; disabled: Set<string> }> {
+    const state = (await this.loadState(d))
+    const [manifest, status] = (await this.loadManifest(root, d))
     if (manifest === null || status.loaded !== true) throw new ExtensionError('Extension manifest is not loaded', 409)
     return { manifest, state, disabled: new Set(state.disabled_extensions) }
   }
@@ -564,33 +567,33 @@ export class ExtensionService {
   setEnabled(idRaw: unknown, enabled: unknown): Promise<Dict> {
     if (!validId(idRaw)) throw new ExtensionError('Invalid extension id', 400)
     if (typeof enabled !== 'boolean') throw new ExtensionError('enabled must be a boolean', 400)
-    return this.mutateState(async () => this.setEnabledLocked(idRaw.trim(), enabled))
+    return this.mutateState(async () => (await this.setEnabledLocked(idRaw.trim(), enabled)))
   }
 
   private async setEnabledLocked(id: string, enabled: boolean): Promise<Dict> {
     const root = this.root()
     if (!root) throw new ExtensionError('Extensions are not configured', 404)
     const d: Diagnostics = { warnings: [] }
-    const { manifest, state, disabled } = this.loaded(root, d)
+    const { manifest, state, disabled } = (await this.loaded(root, d))
     const ext = this.extensionState(manifest, disabled, d, new Set(Object.keys(state.sidecar_proxy_consents)))
     if (!ext.knownIds.has(id)) throw new ExtensionError('Extension not found', 404)
     if (ext.manifestDisabled.has(id)) throw new ExtensionError('Extension is disabled by its manifest', 409)
     if (enabled) disabled.delete(id); else disabled.add(id)
-    this.writeState({ disabled_extensions: [...disabled], sidecar_proxy_consents: Object.fromEntries(Object.entries(state.sidecar_proxy_consents).filter(([k]) => ext.knownIds.has(k))) })
+    await this.writeState({ disabled_extensions: [...disabled], sidecar_proxy_consents: Object.fromEntries(Object.entries(state.sidecar_proxy_consents).filter(([k]) => ext.knownIds.has(k))) })
     return this.status()
   }
 
   setConsent(idRaw: unknown, approved: unknown): Promise<Dict> {
     if (!validId(idRaw)) throw new ExtensionError('Invalid extension id', 400)
     if (typeof approved !== 'boolean') throw new ExtensionError('approved must be a boolean', 400)
-    return this.mutateState(() => this.setConsentLocked(idRaw.trim(), approved))
+    return this.mutateState(async () => (await this.setConsentLocked(idRaw.trim(), approved)))
   }
 
   private async setConsentLocked(id: string, approved: boolean): Promise<Dict> {
     const root = this.root()
     if (!root) throw new ExtensionError('Extensions are not configured', 404)
     const d: Diagnostics = { warnings: [] }
-    const { manifest, state, disabled } = this.loaded(root, d)
+    const { manifest, state, disabled } = (await this.loaded(root, d))
     const consents = { ...state.sidecar_proxy_consents }
     const ext = this.extensionState(manifest, disabled, d, new Set(Object.keys(consents)))
     if (!ext.knownIds.has(id)) throw new ExtensionError('Extension not found', 404)
@@ -603,7 +606,7 @@ export class ExtensionService {
       if (sidecar.proxy_auth === 'token-v1') throw new ExtensionError('Sidecar token-v1 proxy auth is not available in this release.', 409)
       consents[id] = str(sidecar.origin)
     } else Reflect.deleteProperty(consents, id)
-    this.writeState({ disabled_extensions: [...disabled], sidecar_proxy_consents: Object.fromEntries(Object.entries(consents).filter(([k]) => ext.knownIds.has(k))) })
+    await this.writeState({ disabled_extensions: [...disabled], sidecar_proxy_consents: Object.fromEntries(Object.entries(consents).filter(([k]) => ext.knownIds.has(k))) })
     return this.status()
   }
 
@@ -616,7 +619,7 @@ export class ExtensionService {
     if (!root) throw new ExtensionError('Extensions are not configured', 404)
     const id = idRaw.trim()
     const d: Diagnostics = { warnings: [] }
-    const { manifest, state, disabled } = this.loaded(root, d)
+    const { manifest, state, disabled } = (await this.loaded(root, d))
     const ext = this.extensionState(manifest, disabled, d, new Set(Object.keys(state.sidecar_proxy_consents)))
     if (!ext.knownIds.has(id)) throw new ExtensionError('Extension not found', 404)
     const { byId } = await this.sidecarRecords(manifest, disabled, state, d)
@@ -669,106 +672,110 @@ export class ExtensionService {
   }
 
   async install(idRaw: unknown, downloadUrl: unknown, sha256: unknown): Promise<{ installed: true; id: string; version: string }> {
-    if (!validId(idRaw)) throw new ExtensionError('Invalid extension id')
-    const id = idRaw.trim()
-    if (typeof downloadUrl !== 'string' || !downloadUrl.startsWith('https://')) throw new ExtensionError('Invalid download URL')
-    let host = ''
-    try { host = new URL(downloadUrl).hostname } catch { host = '' }
-    if (!ALLOWED_DOWNLOAD_HOSTS.has(host)) throw new ExtensionError('Invalid download URL')
-    if (typeof sha256 !== 'string' || !/^[0-9a-f]{64}$/.test(sha256)) throw new ExtensionError('Invalid sha256')
-    const root = this.writableRoot()
-    if (!root) throw new ExtensionError('Extensions not configured', 404)
-    let raw: Buffer
-    try {
-      const res = await this.galleryFetch(downloadUrl, 30_000)
-      if (!res.ok) throw new Error(`download ${String(res.status)}`)
-      const capped = await readCapped(res, MAX_ZIP_BYTES)
-      if (!capped) throw new ExtensionError('Download too large')
-      raw = capped
-    } catch (error) {
-      throw new ExtensionError(error instanceof ExtensionError ? error.message : 'Download failed', error instanceof ExtensionError ? error.status : 502)
-    }
-    if (createHash('sha256').update(raw).digest('hex') !== sha256) throw new ExtensionError('SHA-256 mismatch')
-    let entries: ReturnType<typeof readZip>
-    try { entries = readZip(raw) } catch { throw new ExtensionError('Invalid zip archive') }
-    const files = entries.filter((e) => e.name && !e.isDir)
-    if (files.reduce((acc, e) => acc + e.size, 0) > MAX_ZIP_BYTES * 10) throw new ExtensionError('Archive uncompressed size exceeds limit')
-    if (files.length > 1024) throw new ExtensionError('Archive contains too many files')
-    const prefix = files.every((e) => e.name.startsWith(`${id}/`)) ? `${id}/` : ''
-    const stripped = (name: string): string => (prefix && name.startsWith(prefix) ? name.slice(prefix.length) : name)
-    const anchor = resolvePathLikePython(root)
-    const extDir = resolve(anchor, id)
-    for (const e of files) {
-      const decoded = fullyUnquote(stripped(e.name))
-      if (!decoded || !isSafeArchiveMember(decoded)) throw new ExtensionError('Unsafe archive member')
-      const target = resolve(extDir, decoded)
-      if (!target.startsWith(anchor + sep) || !target.startsWith(extDir + sep)) throw new ExtensionError('Zip-slip detected')
-    }
-    let version = 'unknown'
-    for (const vfile of ['extension.json', 'manifest.json']) {
-      const entry = entries.find((e) => e.name === prefix + vfile)
-      if (!entry) continue
-      try { const m = JSON.parse(entry.read().toString('utf8')) as unknown; if (isDict(m) && typeof m.version === 'string') { version = m.version; break } } catch { /* ignore */ }
-    }
-    try { if (lstatSync(extDir).isSymbolicLink()) throw new ExtensionError('Extension directory is a symlink', 400) } catch (error) { if (error instanceof ExtensionError) throw error }
-    try { makeAnchoredDir(anchor, extDir) } catch { throw new ExtensionError('Extension directory is a symlink', 400) }
-    const written: string[] = []
-    const rollback = (): void => {
-      for (const p of written) { try { unlinkAnchored(anchor, p) } catch { /* gone */ } }
-      try { rmdirAnchored(anchor, extDir) } catch { /* not empty, or gone */ }
-    }
-    try {
-      // Every destination is created or truncated through the anchored walk from the extension root, so a symlink
-      // already inside the extension (or a parent swapped mid-extraction) can never redirect a write outside it.
-      for (const e of files) {
-        const dest = resolve(extDir, fullyUnquote(stripped(e.name)))
-        let fd: number
-        try { fd = openAnchoredCreateFd(anchor, dest) } catch (error) { if (!(error instanceof FileExistsError)) throw error; fd = openAnchoredWriteFd(anchor, dest) }
-        try { writeFileSync(fd, e.read()) } finally { closeSync(fd) }
-        written.push(dest)
+    return await this.mutateState(async () => {
+      if (!validId(idRaw)) throw new ExtensionError('Invalid extension id')
+      const id = idRaw.trim()
+      if (typeof downloadUrl !== 'string' || !downloadUrl.startsWith('https://')) throw new ExtensionError('Invalid download URL')
+      let host = ''
+      try { host = new URL(downloadUrl).hostname } catch { host = '' }
+      if (!ALLOWED_DOWNLOAD_HOSTS.has(host)) throw new ExtensionError('Invalid download URL')
+      if (typeof sha256 !== 'string' || !/^[0-9a-f]{64}$/.test(sha256)) throw new ExtensionError('Invalid sha256')
+      const root = this.writableRoot()
+      if (!root) throw new ExtensionError('Extensions not configured', 404)
+      let raw: Buffer
+      try {
+        const res = await this.galleryFetch(downloadUrl, 30_000)
+        if (!res.ok) throw new Error(`download ${String(res.status)}`)
+        const capped = await readCapped(res, MAX_ZIP_BYTES)
+        if (!capped) throw new ExtensionError('Download too large')
+        raw = capped
+      } catch (error) {
+        throw new ExtensionError(error instanceof ExtensionError ? error.message : 'Download failed', error instanceof ExtensionError ? error.status : 502)
       }
-    } catch { rollback(); throw new ExtensionError('Extraction failed', 500) }
-    try {
-      const manifest = this.loadInstallManifest()
-      const record = { version, files: written.map((p) => relative(extDir, p).split(sep).join('/')), installed_at: new Date().toISOString() }
-      const next = { version: 1 as const, installed: { ...manifest.installed, [id]: record } }
-      if (Buffer.byteLength(JSON.stringify(next, null, 2)) > MAX_INSTALL_MANIFEST_BYTES) throw new ExtensionError('Install manifest would exceed size limit')
-      this.writeInstallManifest(next)
-    } catch (error) {
-      rollback()
-      throw error instanceof ExtensionError ? error : new ExtensionError('Failed to record install', 500)
-    }
-    return { installed: true, id, version }
+      if (createHash('sha256').update(raw).digest('hex') !== sha256) throw new ExtensionError('SHA-256 mismatch')
+      let entries: ReturnType<typeof readZip>
+      try { entries = readZip(raw) } catch { throw new ExtensionError('Invalid zip archive') }
+      const files = entries.filter((e) => e.name && !e.isDir)
+      if (files.reduce((acc, e) => acc + e.size, 0) > MAX_ZIP_BYTES * 10) throw new ExtensionError('Archive uncompressed size exceeds limit')
+      if (files.length > 1024) throw new ExtensionError('Archive contains too many files')
+      const prefix = files.every((e) => e.name.startsWith(`${id}/`)) ? `${id}/` : ''
+      const stripped = (name: string): string => (prefix && name.startsWith(prefix) ? name.slice(prefix.length) : name)
+      const anchor = resolvePathLikePython(root)
+      const extDir = resolve(anchor, id)
+      for (const e of files) {
+        const decoded = fullyUnquote(stripped(e.name))
+        if (!decoded || !isSafeArchiveMember(decoded)) throw new ExtensionError('Unsafe archive member')
+        const target = resolve(extDir, decoded)
+        if (!target.startsWith(anchor + sep) || !target.startsWith(extDir + sep)) throw new ExtensionError('Zip-slip detected')
+      }
+      let version = 'unknown'
+      for (const vfile of ['extension.json', 'manifest.json']) {
+        const entry = entries.find((e) => e.name === prefix + vfile)
+        if (!entry) continue
+        try { const m = JSON.parse(entry.read().toString('utf8')) as unknown; if (isDict(m) && typeof m.version === 'string') { version = m.version; break } } catch { /* ignore */ }
+      }
+      try { if (lstatSync(extDir).isSymbolicLink()) throw new ExtensionError('Extension directory is a symlink', 400) } catch (error) { if (error instanceof ExtensionError) throw error }
+      try { makeAnchoredDir(anchor, extDir) } catch { throw new ExtensionError('Extension directory is a symlink', 400) }
+      const written: string[] = []
+      const rollback = (): void => {
+        for (const p of written) { try { unlinkAnchored(anchor, p) } catch { /* gone */ } }
+        try { rmdirAnchored(anchor, extDir) } catch { /* not empty, or gone */ }
+      }
+      try {
+        // Every destination is created or truncated through the anchored walk from the extension root, so a symlink
+        // already inside the extension (or a parent swapped mid-extraction) can never redirect a write outside it.
+        for (const e of files) {
+          const dest = resolve(extDir, fullyUnquote(stripped(e.name)))
+          let fd: number
+          try { fd = openAnchoredCreateFd(anchor, dest) } catch (error) { if (!(error instanceof FileExistsError)) throw error; fd = openAnchoredWriteFd(anchor, dest) }
+          try { writeFileSync(fd, e.read()) } finally { closeSync(fd) }
+          written.push(dest)
+        }
+      } catch { rollback(); throw new ExtensionError('Extraction failed', 500) }
+      try {
+        const manifest = (await this.loadInstallManifest())
+        const record = { version, files: written.map((p) => relative(extDir, p).split(sep).join('/')), installed_at: new Date().toISOString() }
+        const next = { version: 1 as const, installed: { ...manifest.installed, [id]: record } }
+        if (Buffer.byteLength(JSON.stringify(next, null, 2)) > MAX_INSTALL_MANIFEST_BYTES) throw new ExtensionError('Install manifest would exceed size limit')
+        await this.writeInstallManifest(next)
+      } catch (error) {
+        rollback()
+        throw error instanceof ExtensionError ? error : new ExtensionError('Failed to record install', 500)
+      }
+      return { installed: true, id, version }
+    })
   }
 
-  uninstall(idRaw: unknown): { uninstalled: true; id: string } {
-    if (!validId(idRaw)) throw new ExtensionError('Invalid extension id')
-    const id = idRaw.trim()
-    const root = this.root()
-    if (!root) throw new ExtensionError('Extensions not configured', 404)
-    const manifest = this.loadInstallManifest()
-    const entry = manifest.installed[id]
-    if (!entry) throw new ExtensionError('Extension not installed', 404)
-    const anchor = resolvePathLikePython(root)
-    const extDir = resolve(anchor, id)
-    for (const rel of entry.files) {
-      if (!isSafeArchiveMember(rel)) continue
-      const target = resolve(extDir, rel)
-      if (!target.startsWith(extDir + sep)) continue
-      try { unlinkAnchored(anchor, target) } catch { /* gone */ }
-    }
-    // Prune now-empty directories, enumerating and removing each through the anchored walk so a directory replaced by
-    // a symlink is skipped rather than followed into its target.
-    const prune = (dir: string): void => {
-      let subdirs: string[]
-      try { subdirs = withAnchoredDir(anchor, dir, (child) => readdirSync(child('.'), { withFileTypes: true }).filter((e) => e.isDirectory()).map((e) => e.name)) } catch { return }
-      for (const name of subdirs) prune(join(dir, name))
-      try { rmdirAnchored(anchor, dir) } catch { /* not empty, or gone */ }
-    }
-    prune(extDir)
-    Reflect.deleteProperty(manifest.installed, id)
-    this.writeInstallManifest(manifest)
-    return { uninstalled: true, id }
+  async uninstall(idRaw: unknown): Promise<{ uninstalled: true; id: string }> {
+    return await this.mutateState(async () => {
+      if (!validId(idRaw)) throw new ExtensionError('Invalid extension id')
+      const id = idRaw.trim()
+      const root = this.root()
+      if (!root) throw new ExtensionError('Extensions not configured', 404)
+      const manifest = (await this.loadInstallManifest())
+      const entry = manifest.installed[id]
+      if (!entry) throw new ExtensionError('Extension not installed', 404)
+      const anchor = resolvePathLikePython(root)
+      const extDir = resolve(anchor, id)
+      for (const rel of entry.files) {
+        if (!isSafeArchiveMember(rel)) continue
+        const target = resolve(extDir, rel)
+        if (!target.startsWith(extDir + sep)) continue
+        try { unlinkAnchored(anchor, target) } catch { /* gone */ }
+      }
+      // Prune now-empty directories, enumerating and removing each through the anchored walk so a directory replaced by
+      // a symlink is skipped rather than followed into its target.
+      const prune = (dir: string): void => {
+        let subdirs: string[]
+        try { subdirs = withAnchoredDir(anchor, dir, (child) => readdirSync(child('.'), { withFileTypes: true }).filter((e) => e.isDirectory()).map((e) => e.name)) } catch { return }
+        for (const name of subdirs) prune(join(dir, name))
+        try { rmdirAnchored(anchor, dir) } catch { /* not empty, or gone */ }
+      }
+      prune(extDir)
+      Reflect.deleteProperty(manifest.installed, id)
+      await this.writeInstallManifest(manifest)
+      return { uninstalled: true, id }
+    })
   }
 
   /** Python `serve_extension_static`: bytes, MIME, sandbox CSP for HTML; null means 404. */

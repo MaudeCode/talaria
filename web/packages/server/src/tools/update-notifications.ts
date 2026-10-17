@@ -1,7 +1,6 @@
-import { existsSync, mkdirSync, readFileSync } from 'node:fs'
-import { dirname, resolve } from 'node:path'
 import { createHash, randomUUID } from 'node:crypto'
-import { atomicWriteSecretJson } from '../fs/atomic.js'
+import { readDocument } from '../sessions/storage/document.js'
+import type { DocumentBackend } from '../sessions/storage/backend.js'
 
 export type UpdateNotificationTarget = 'webui' | 'agent'
 export type UpdateNotificationPhase = 'applying' | 'awaiting_confirmation' | 'waiting_for_idle' | 'restarting' | 'succeeded' | 'blocked' | 'failed' | 'unknown'
@@ -120,24 +119,25 @@ const wording = (target: UpdateNotificationTarget, phase: UpdateNotificationPhas
 }
 
 export class UpdateNotificationStore {
-  private rows: StoredUpdateNotification[]
-  private readonly file: string
+  private rows: StoredUpdateNotification[] = []
+  private revision: string | null = null
+  private writes: Promise<void> = Promise.resolve()
   /** Last check-in per tab refresh notice; kept in memory so polling never rewrites the store. */
   private readonly tabSeen = new Map<string, number>()
   private readonly loadedAt: number
 
-  constructor(stateDir: string, private readonly now: () => Date = () => new Date()) {
-    this.file = resolve(stateDir, 'update-notifications.json')
-    this.rows = this.load()
+  constructor(private readonly documents: DocumentBackend, private readonly now: () => Date = () => new Date()) {
     this.loadedAt = this.now().valueOf()
   }
+
+  async initialize(): Promise<void> { this.rows = await this.load() }
 
   /**
    * Compare the frontend build a tab loaded with the build this server now serves. A mismatch keeps one
    * persistent, tab-scoped refresh notice per tab; a match resolves and removes it. Unknown builds change nothing.
    */
-  syncTabBuild(scope: UpdateNotificationScope, loadedBuild: string | null, currentBuild: string | null): FrontendBuildState {
-    this.pruneClosedTabs()
+  async syncTabBuild(scope: UpdateNotificationScope, loadedBuild: string | null, currentBuild: string | null): Promise<FrontendBuildState> {
+    await this.pruneClosedTabs()
     const tab = scope.tab && TAB_ID.test(scope.tab) ? scope.tab : null
     const loaded = loadedBuild && FRONTEND_BUILD.test(loadedBuild) ? loadedBuild : null
     const current = currentBuild && FRONTEND_BUILD.test(currentBuild) ? currentBuild : null
@@ -148,7 +148,7 @@ export class UpdateNotificationStore {
       if (existing) {
         this.rows = this.rows.filter((row) => row !== existing)
         this.tabSeen.delete(existing.id)
-        this.save()
+        await this.save()
       }
       return state
     }
@@ -160,7 +160,7 @@ export class UpdateNotificationStore {
         existing.expected_identity = current
         existing.updated_at = stamp
         existing.read_at = null
-        this.save()
+        await this.save()
       }
       state.notification_id = existing.id
       return state
@@ -178,32 +178,32 @@ export class UpdateNotificationStore {
     if (!this.hasProtectedCapacity(row)) return state
     this.rows.push(row)
     this.tabSeen.set(row.id, this.now().valueOf())
-    this.save()
+    await this.save()
     state.notification_id = row.id
     return state
   }
 
-  begin(scope: UpdateNotificationScope, target: UpdateNotificationTarget): PublicUpdateNotification {
+  async begin(scope: UpdateNotificationScope, target: UpdateNotificationTarget): Promise<PublicUpdateNotification> {
     const text = wording(target, 'applying')
-    const created = this.create(scope, {
+    const created = (await this.create(scope, {
       kind: 'update', target, phase: 'applying', ...text,
       destination: { key: 'settings.system', label: 'Open System settings' },
       visibility: 'server',
-    })
-    this.watch(scope, created.id)
+    }))
+    await this.watch(scope, created.id)
     return created
   }
 
   /** Let the requesting tab follow an update operation it started or rejoined. Watchers live as long as the record; only a server owner's Update click adds one. */
-  watch(scope: UpdateNotificationScope, id: string): void {
+  async watch(scope: UpdateNotificationScope, id: string): Promise<void> {
     const tab = scope.tab && TAB_ID.test(scope.tab) ? scope.tab : null
     const row = this.rows.find((entry) => entry.id === id && entry.kind === 'update' && this.isVisible(entry, scope))
     if (!tab || !row) return
     row.watchers = [...row.watchers.filter((watcher) => watcher.tab !== tab), { tab, at: this.now().toISOString() }]
-    this.save()
+    await this.save()
   }
 
-  create(scope: UpdateNotificationScope, input: CreateUpdateNotificationInput): PublicUpdateNotification {
+  async create(scope: UpdateNotificationScope, input: CreateUpdateNotificationInput): Promise<PublicUpdateNotification> {
     const kind = safeToken(input.kind, '')
     const phase = safeToken(input.phase, '')
     const title = safeText(input.title, '', 160)
@@ -224,7 +224,7 @@ export class UpdateNotificationStore {
     }
     if (!this.hasProtectedCapacity(row)) throw new Error('Update notification protected capacity reached')
     this.rows.push(row)
-    this.save()
+    await this.save()
     return copy(row)
   }
 
@@ -233,7 +233,7 @@ export class UpdateNotificationStore {
     return row ? copy(row) : null
   }
 
-  transition(id: string, phase: UpdateNotificationPhase, expectedIdentity?: string | null, verifiedIdentity?: VerifiedUpdateIdentity, detail?: unknown): PublicUpdateNotification | null {
+  async transition(id: string, phase: UpdateNotificationPhase, expectedIdentity?: string | null, verifiedIdentity?: VerifiedUpdateIdentity, detail?: unknown): Promise<PublicUpdateNotification | null> {
     const row = this.rows.find((entry) => entry.id === id)
     if (!row) return null
     const phaseChanged = row.phase !== phase
@@ -254,18 +254,18 @@ export class UpdateNotificationStore {
       row.verified_revision = typeof verifiedIdentity.revision === 'string' && REVISION.test(verifiedIdentity.revision) ? verifiedIdentity.revision : null
       row.verified_version = safeText(verifiedIdentity.version, '', 80) || null
     }
-    this.save()
+    await this.save()
     return copy(row)
   }
 
   /** TAL-953: update the waiting gateway restart's message as its running task count changes. */
-  gatewayWaiting(id: string, tasks: number): void {
+  async gatewayWaiting(id: string, tasks: number): Promise<void> {
     const row = this.rows.find((entry) => entry.id === id && entry.kind === 'update' && entry.phase === 'waiting_for_idle')
     const message = gatewayWaitingMessage(tasks)
     if (!row || row.message === message) return
     row.message = message
     row.updated_at = this.now().toISOString()
-    this.save()
+    await this.save()
   }
 
   /** TAL-953: gateway restarts still waiting for idle, newest first, with the profile each update ran under, so a restarted server resumes them. */
@@ -274,8 +274,8 @@ export class UpdateNotificationStore {
       .sort((a, b) => b.created_at.localeCompare(a.created_at)).map((row) => ({ id: row.id, profile: row.profile, detail: row.detail }))
   }
 
-  list(scope: UpdateNotificationScope): UpdateNotificationList {
-    this.pruneClosedTabs()
+  async list(scope: UpdateNotificationScope): Promise<UpdateNotificationList> {
+    await this.pruneClosedTabs()
     const scoped = this.rows.filter((row) => this.isVisible(row, scope) && row.dismissed_at === null)
     const ordered = scoped.sort((a, b) => b.updated_at.localeCompare(a.updated_at))
     const protectedRows = ordered.filter(isProtected)
@@ -290,7 +290,7 @@ export class UpdateNotificationStore {
     return { scope_id: updateNotificationScopeId(scope), notifications, tab_update: tabUpdate ? copy(tabUpdate) : null, tab_joined_at: tabUpdate ? joinedAt(tabUpdate) : null, unread_count: visible.filter((row) => row.read_at === null).length, clearable_count: clearableCount, can_clear: clearableCount > 0 }
   }
 
-  clear(scope: UpdateNotificationScope): UpdateNotificationList {
+  async clear(scope: UpdateNotificationScope): Promise<UpdateNotificationList> {
     const stamp = this.now().toISOString()
     let changed = false
     for (const row of this.rows) {
@@ -298,26 +298,26 @@ export class UpdateNotificationStore {
       row.dismissed_at = stamp
       changed = true
     }
-    if (changed) this.save()
-    return this.list(scope)
+    if (changed) (await this.save())
+    return (await this.list(scope))
   }
 
-  read(scope: UpdateNotificationScope, id: string): PublicUpdateNotification | null {
+  async read(scope: UpdateNotificationScope, id: string): Promise<PublicUpdateNotification | null> {
     const row = this.visible(scope, id)
     if (!row) return null
-    if (row.read_at === null) { row.read_at = this.now().toISOString(); this.save() }
+    if (row.read_at === null) { row.read_at = this.now().toISOString(); (await this.save()) }
     return copy(row)
   }
 
-  dismiss(scope: UpdateNotificationScope, id: string): 'dismissed' | 'not_found' | 'acknowledgement_required' {
+  async dismiss(scope: UpdateNotificationScope, id: string): Promise<'dismissed' | 'not_found' | 'acknowledgement_required'> {
     const row = this.rows.find((entry) => entry.id === id && this.isVisible(entry, scope))
     if (!row) return 'not_found'
     if (!isDismissible(row)) return 'acknowledgement_required'
-    if (row.dismissed_at === null) { const stamp = this.now().toISOString(); row.dismissed_at = stamp; row.read_at ??= stamp; this.save() }
+    if (row.dismissed_at === null) { const stamp = this.now().toISOString(); row.dismissed_at = stamp; row.read_at ??= stamp; (await this.save()) }
     return 'dismissed'
   }
 
-  action(scope: UpdateNotificationScope, id: string, actionId: string): PublicUpdateNotification | null {
+  async action(scope: UpdateNotificationScope, id: string, actionId: string): Promise<PublicUpdateNotification | null> {
     const row = this.visible(scope, id)
     const action = row?.actions.find((candidate) => candidate.id === actionId)
     if (!row || !action) return null
@@ -330,11 +330,11 @@ export class UpdateNotificationStore {
       row.acknowledged_at = stamp
       row.acknowledged_action_id = action.id
     }
-    this.save()
+    await this.save()
     return copy(row)
   }
 
-  cancelUpdate(scope: UpdateNotificationScope, id: string): PublicUpdateNotification | null {
+  async cancelUpdate(scope: UpdateNotificationScope, id: string): Promise<PublicUpdateNotification | null> {
     const row = this.rows.find((entry) => entry.id === id && this.isVisible(entry, scope) && entry.kind === 'update')
     if (!row) return null
     if (row.phase === 'blocked' && row.message === 'The update was cancelled before installation.') return copy(row)
@@ -344,11 +344,11 @@ export class UpdateNotificationStore {
     row.message = 'The update was cancelled before installation.'
     row.updated_at = stamp
     row.read_at ??= stamp
-    this.save()
+    await this.save()
     return copy(row)
   }
 
-  reconcileInterruptedUpdates(currentWebIdentity: string | null, currentWebVersion: string | null = null): void {
+  async reconcileInterruptedUpdates(currentWebIdentity: string | null, currentWebVersion: string | null = null): Promise<void> {
     let changed = false
     for (const row of this.rows) {
       if (row.kind !== 'update' || (row.target !== 'webui' && row.target !== 'agent') || !['applying', 'restarting'].includes(row.phase)) continue
@@ -363,7 +363,7 @@ export class UpdateNotificationStore {
       }
       changed = true
     }
-    if (changed) this.save()
+    if (changed) (await this.save())
   }
 
   private visible(scope: UpdateNotificationScope, id: string): StoredUpdateNotification | null {
@@ -381,19 +381,20 @@ export class UpdateNotificationStore {
     return peers.filter((entry) => retentionBucket(entry) === retentionBucket(row)).length < PER_SCOPE_LIMIT && peers.length < GLOBAL_LIMIT
   }
 
-  private pruneClosedTabs(): void {
+  private async pruneClosedTabs(): Promise<void> {
     const cutoff = this.now().valueOf() - TAB_TTL_MS
     const closed = this.rows.filter((row) => row.tab_id !== null && (this.tabSeen.get(row.id) ?? this.loadedAt) < cutoff)
     if (closed.length === 0) return
     for (const row of closed) this.tabSeen.delete(row.id)
     this.rows = this.rows.filter((row) => !closed.includes(row))
-    this.save()
+    await this.save()
   }
 
-  private load(): StoredUpdateNotification[] {
-    if (!existsSync(this.file)) return []
+  private async load(): Promise<StoredUpdateNotification[]> {
     try {
-      const parsed: unknown = JSON.parse(readFileSync(this.file, 'utf8'))
+      const record = await readDocument(this.documents, 'update-notifications', 'update-notifications', { replaceInvalid: true })
+      this.revision = record?.revision ?? null
+      const parsed = record?.value
       if (!Array.isArray(parsed)) return []
       return parsed.flatMap((value): StoredUpdateNotification[] => {
         if (!isRecord(value)) return []
@@ -432,7 +433,7 @@ export class UpdateNotificationStore {
   }
 
   /** Tab refresh notices are bounded by `hasProtectedCapacity` and kept apart, so they never evict or block other notifications. */
-  private save(): void {
+  private async save(): Promise<void> {
     const tabNotices = this.rows.filter(isTabNotice)
     const sorted = this.rows.filter((row) => !isTabNotice(row)).sort((a, b) => b.updated_at.localeCompare(a.updated_at))
     const protectedRows = sorted.filter(isProtected)
@@ -452,8 +453,10 @@ export class UpdateNotificationStore {
       kept.push(row)
     }
     this.rows = [...kept.reverse(), ...tabNotices]
-    mkdirSync(dirname(this.file), { recursive: true })
-    atomicWriteSecretJson(this.file, this.rows)
+    const rows = structuredClone(this.rows)
+    const write = this.writes.catch(() => undefined).then(async () => { this.revision = await this.documents.put('update-notifications', 'update-notifications', rows, this.revision) })
+    this.writes = write
+    await write
   }
 }
 

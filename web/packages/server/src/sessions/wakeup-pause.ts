@@ -5,7 +5,8 @@
 import { createHash } from 'node:crypto'
 import { readFileSync, statSync } from 'node:fs'
 import { join } from 'node:path'
-import { atomicWriteText } from '../fs/atomic.js'
+import type { DocumentBackend } from './storage/backend.js'
+import { updateDocument } from './storage/document.js'
 import type { Session } from './session.js'
 import { isDict } from './merge.js'
 import { str } from '../util.js'
@@ -91,51 +92,42 @@ export function mergeWakeups(into: HeldWakeup[], entries: readonly HeldWakeup[])
  * turn admits it, and a restarted server finds every one.
  */
 export class HeldWakeups {
-  constructor(private readonly path: string) {}
+  constructor(private readonly documents: DocumentBackend) {}
 
-  /** Only a missing file is empty: any other read or parse failure throws, so no write replaces what it could not read. */
-  private read(): Record<string, HeldWakeup[]> {
-    let text: string
-    try { text = readFileSync(this.path, 'utf8') } catch (error) { if ((error as NodeJS.ErrnoException).code === 'ENOENT') return {}; throw error }
-    const raw = JSON.parse(text) as unknown
-    if (!isDict(raw)) throw new Error(`${this.path} is not a held wakeup map`)
-    const out: Record<string, HeldWakeup[]> = {}
+  private validate(raw: unknown): Record<string, HeldWakeup[]> {
+    if (raw === undefined) return {}
+    if (!isDict(raw)) throw new Error('Stored held wakeups are not a map')
     for (const [sid, entries] of Object.entries(raw)) {
-      if (!Array.isArray(entries) || !entries.every(isHeld)) throw new Error(`${this.path} holds a malformed entry for session ${sid}`)
-      out[sid] = entries
+      if (!Array.isArray(entries) || !entries.every(isHeld)) throw new Error(`Malformed held wakeup for session ${sid}`)
     }
-    return out
+    return raw as Record<string, HeldWakeup[]>
   }
 
-  /** Throws when the file cannot be written. */
-  private write(all: Record<string, HeldWakeup[]>): void {
-    for (const sid of Object.keys(all)) if (!all[sid]!.length) Reflect.deleteProperty(all, sid)
-    atomicWriteText(this.path, JSON.stringify(all))
+  private async read(): Promise<Record<string, HeldWakeup[]>> { return this.validate((await this.documents.get('held-wakeups', 'held'))?.value) }
+
+  async sessions(): Promise<string[]> { return Object.keys(await this.read()) }
+  async get(sid: string): Promise<HeldWakeup[]> { return (await this.read())[sid] ?? [] }
+
+  async hold(sid: string, entries: readonly HeldWakeup[]): Promise<void> {
+    await updateDocument(this.documents, 'held-wakeups', 'held', (raw) => {
+      const all = this.validate(raw)
+      const before = all[sid]?.length ?? 0
+      all[sid] = mergeWakeups(all[sid] ?? [], entries)
+      return { value: all, result: undefined, skip: all[sid].length === before }
+    })
   }
 
-  /** Throws when the file cannot be read. */
-  sessions(): string[] { return Object.keys(this.read()) }
-
-  /** Throws when the file cannot be read. */
-  get(sid: string): HeldWakeup[] { return this.read()[sid] ?? [] }
-
-  /** Throws when the file cannot be read or written. */
-  hold(sid: string, entries: readonly HeldWakeup[]): void {
-    const all = this.read()
-    const before = all[sid]?.length ?? 0
-    all[sid] = mergeWakeups(all[sid] ?? [], entries)
-    if (all[sid].length !== before) this.write(all)
+  async release(sid: string, entries?: readonly HeldWakeup[]): Promise<void> {
+    await updateDocument(this.documents, 'held-wakeups', 'held', (raw) => {
+      const all = this.validate(raw)
+      const held = all[sid] ?? []
+      const done = new Set((entries ?? held).map(heldKey))
+      all[sid] = held.filter((entry) => !done.has(heldKey(entry)))
+      for (const key of Object.keys(all)) if (!all[key]!.length) Reflect.deleteProperty(all, key)
+      return { value: all, result: undefined, skip: (all[sid]?.length ?? 0) === held.length }
+    })
   }
 
-  /** Drops delivered entries, or the whole session with no entries given; throws when the file cannot be read or written. */
-  release(sid: string, entries?: readonly HeldWakeup[]): void {
-    const all = this.read()
-    const held = all[sid]
-    if (!held) return
-    const done = new Set((entries ?? held).map(heldKey))
-    all[sid] = held.filter((e) => !done.has(heldKey(e)))
-    if (all[sid].length !== held.length) this.write(all)
-  }
 }
 
 /**
