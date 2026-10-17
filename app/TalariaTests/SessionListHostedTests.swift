@@ -258,7 +258,11 @@ final class SessionListHostedTests: XCTestCase {
         let send = try await requireElement(in: window, label: "Send")
         XCTAssertFalse(send.accessibilityTraits.contains(.notEnabled), "Send must accept local intent during creation")
         HostedAccessibility.activate(send)
-        let consumed = await awaitCondition { window.firstView(ofType: UITextView.self)?.text == "" }
+        if withImportedFile {
+            window.endEditing(true)
+            _ = try await requireElement(in: window, label: "Message")
+        }
+        let consumed = await awaitCondition { self.composerDraftText(in: window) == "" }
         XCTAssertTrue(consumed, "The submitted draft must clear while creation is held")
         attachHostedScreenshot(window, name: "first-send-pending-phone")
         XCTAssertEqual(HostedAccessibility.elements(in: window).filter { $0.accessibilityLabel == message }.count, 1)
@@ -282,7 +286,7 @@ final class SessionListHostedTests: XCTestCase {
                 return
             }
             XCTAssertEqual(UITestFixtureURLProtocol.initialUploadAttemptCount, 2)
-            let restored = await awaitCondition { window.firstView(ofType: UITextView.self)?.text == "First pending prompt" }
+            let restored = await awaitCondition { self.composerDraftText(in: window) == "First pending prompt" }
             XCTAssertTrue(restored)
             attachHostedScreenshot(window, name: "mixed-import-blocked-phone")
             HostedAccessibility.activate(try await requireElement(in: window, label: "Retry"))
@@ -321,7 +325,7 @@ final class SessionListHostedTests: XCTestCase {
             XCTAssertTrue(accepted)
             let draft = await fixture.environment.draftStore.draft(for: .session(server: UITestFixtureEnvironment.serverURL, session: session))
             XCTAssertEqual(draft?.text, "Newer draft", "Acceptance must consume only the original slash draft")
-            XCTAssertEqual(window.firstView(ofType: UITextView.self)?.text, "Newer draft")
+            XCTAssertEqual(composerDraftText(in: window), "Newer draft")
         }
     }
 
@@ -353,7 +357,7 @@ final class SessionListHostedTests: XCTestCase {
         let started = await awaitCondition { creation != nil }
         XCTAssertTrue(started)
         try await sendFromComposer(submittedDraft, in: window)
-        let consumed = await awaitCondition { window.firstView(ofType: UITextView.self)?.text == "" }
+        let consumed = await awaitCondition { self.composerDraftText(in: window) == "" }
         XCTAssertTrue(consumed)
         let durableDraft = await fixture.environment.draftStore.draft(for: .newChat(server: UITestFixtureEnvironment.serverURL))
         XCTAssertEqual(durableDraft?.text, submittedDraft, "A pending send must stay durable until acceptance")
@@ -366,7 +370,7 @@ final class SessionListHostedTests: XCTestCase {
         creation?.resume(returning: .failed("Synthetic refusal"))
         creation = nil
         let retry = try await requireElement(in: window, label: "Retry")
-        let restored = await awaitCondition { window.firstView(ofType: UITextView.self)?.text == "Newer draft\n\n\(submittedDraft)" }
+        let restored = await awaitCondition { self.composerDraftText(in: window) == "Newer draft\n\n\(submittedDraft)" }
         XCTAssertTrue(restored)
         HostedAccessibility.activate(retry)
         HostedAccessibility.activate(retry)
@@ -376,7 +380,7 @@ final class SessionListHostedTests: XCTestCase {
         creation?.resume(returning: .started(session))
         creation = nil
         _ = try await requireElement(in: window, label: "Select model")
-        XCTAssertEqual(window.firstView(ofType: UITextView.self)?.text, "Newer draft\n\n\(submittedDraft)")
+        XCTAssertEqual(composerDraftText(in: window), "Newer draft\n\n\(submittedDraft)")
     }
 
     func testLeavingAnUncreatedChatFencesLateAdoptionAndDraftMigration() async throws {
