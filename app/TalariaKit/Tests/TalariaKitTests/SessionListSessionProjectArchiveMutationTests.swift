@@ -584,6 +584,8 @@ extension SessionListMutationTests {
             requestedPaths.append(path ?? "")
 
             switch path {
+            case "/api/projects":
+                return apiTestJSONResponse(#"{"projects":[]}"#, for: request)
             case "/api/projects/create":
                 return apiTestJSONResponse(#"{"ok": true}"#, for: request)
             default:
@@ -602,7 +604,7 @@ extension SessionListMutationTests {
         let actionErrorMessage = await MainActor.run { viewModel.actionErrorMessage }
         let isCreatingProject = await MainActor.run { viewModel.isCreatingProject }
 
-        XCTAssertEqual(requestedPaths, ["/api/projects/create"])
+        XCTAssertEqual(requestedPaths, ["/api/projects/create", "/api/projects"])
         XCTAssertTrue(projectIDs.isEmpty)
         XCTAssertEqual(actionErrorMessage, "The server did not return the new project.")
         XCTAssertFalse(isCreatingProject)
@@ -615,6 +617,8 @@ extension SessionListMutationTests {
             requestedPaths.append(path ?? "")
 
             switch path {
+            case "/api/projects":
+                return apiTestJSONResponse(#"{"projects":[]}"#, for: request)
             case "/api/projects/create":
                 let response = HTTPURLResponse(
                     url: try XCTUnwrap(request.url),
@@ -640,7 +644,7 @@ extension SessionListMutationTests {
         let lastError = await MainActor.run { viewModel.lastError }
         let isCreatingProject = await MainActor.run { viewModel.isCreatingProject }
 
-        XCTAssertEqual(requestedPaths, ["/api/projects/create"])
+        XCTAssertEqual(requestedPaths, ["/api/projects/create", "/api/projects"])
         XCTAssertTrue(projectIDs.isEmpty)
         XCTAssertNotNil(actionErrorMessage)
         XCTAssertNotNil(lastError)
@@ -984,7 +988,7 @@ extension SessionListMutationTests {
     }
 
     @MainActor
-    func testSuccessfulMutationReturnsFalseWhenFollowUpReloadFails() async throws {
+    func testConfirmedArchiveStaysRemovedWhenFollowUpReloadFails() async throws {
         var loadCount = 0
         let viewModel = try makeViewModel { request in
             switch request.url?.path {
@@ -1013,12 +1017,11 @@ extension SessionListMutationTests {
         }
 
         await viewModel.load()
-        let before = viewModel.sessions
         let didArchive = await viewModel.archive(try XCTUnwrap(viewModel.sessions.first))
 
-        XCTAssertFalse(didArchive)
+        XCTAssertTrue(didArchive, "The write was confirmed even though the follow-up read failed")
         XCTAssertEqual(loadCount, 2)
-        XCTAssertEqual(viewModel.sessions, before)
+        XCTAssertTrue(viewModel.sessions.isEmpty, "A confirmed archive must not return when reconciliation fails")
         XCTAssertNotNil(viewModel.lastError)
         XCTAssertNotNil(viewModel.sessionLoadError)
     }

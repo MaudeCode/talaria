@@ -184,15 +184,25 @@ final class UITestFixtureHold: @unchecked Sendable {
 
     private let lock = NSLock()
     private var held: [() -> Void] = []
+    private var requests: [URLRequest] = []
 
-    func hold(_ send: @escaping () -> Void) {
-        lock.withLock { held.append(send) }
+    func hold(request: URLRequest? = nil, _ send: @escaping () -> Void) {
+        lock.withLock {
+            held.append(send)
+            if let request { requests.append(request) }
+        }
     }
+
+    var pendingCount: Int { lock.withLock { held.count } }
+    var pendingRequests: [URLRequest] { lock.withLock { requests } }
 
     /// Sends every held load.
     func release() {
         let loads = lock.withLock {
-            defer { held = [] }
+            defer {
+                held = []
+                requests = []
+            }
             return held
         }
         loads.forEach { $0() }
@@ -424,7 +434,10 @@ final class UITestFixtureURLProtocol: URLProtocol, @unchecked Sendable {
         transcriptReads = 0
         archivedSessionIDs = []
         backgroundDismissed.withLock { $0 = false }
-        didFailSessionCreation = false
+        sessionCreationFailureLock.withLock {
+            didFailSessionCreation = false
+            initialUploadAttempts = 0
+        }
         chatState.reset()
     }
 
@@ -465,8 +478,12 @@ final class UITestFixtureURLProtocol: URLProtocol, @unchecked Sendable {
 
         let holdsSessionList = url.path == "/api/sessions"
             && ProcessInfo.processInfo.arguments.contains(UITestFixtureEnvironment.holdSessionListArgument)
-        if Self.holdsTranscriptReload(for: url) || holdsSessionList {
-            UITestFixtureHold.shared.hold { [weak self] in
+        let holdsSteer = url.path == "/api/chat/steer"
+            && ProcessInfo.processInfo.arguments.contains("--ui-test-hold-steer")
+        let holdsStart = url.path == "/api/chat/start"
+            && ProcessInfo.processInfo.arguments.contains("--ui-test-hold-chat-start")
+        if Self.holdsTranscriptReload(for: url) || holdsSessionList || holdsSteer || holdsStart {
+            UITestFixtureHold.shared.hold(request: request) { [weak self] in
                 guard let self, !self.isStopped else { return }
                 self.sendResponse(for: url)
             }
@@ -488,9 +505,14 @@ final class UITestFixtureURLProtocol: URLProtocol, @unchecked Sendable {
 
     private func sendResponse(for url: URL) {
         let contentType = url.path.hasSuffix("/stream") ? "text/event-stream" : "application/json"
+        let statusCode: Int
+        if Self.failsInitialUpload(url) { statusCode = 500 }
+        else if Self.failsSessionCreation(url) {
+            statusCode = ProcessInfo.processInfo.arguments.contains("--ui-test-refuse-first-session-creation") ? 409 : 500
+        } else { statusCode = 200 }
         let response = HTTPURLResponse(
             url: url,
-            statusCode: Self.failsSessionCreation(url) ? 500 : 200,
+            statusCode: statusCode,
             httpVersion: "HTTP/1.1",
             headerFields: ["Content-Type": contentType]
         )!
@@ -511,11 +533,22 @@ final class UITestFixtureURLProtocol: URLProtocol, @unchecked Sendable {
 
     private static let sessionCreationFailureLock = NSLock()
     nonisolated(unsafe) private static var didFailSessionCreation = false
+    nonisolated(unsafe) private static var initialUploadAttempts = 0
+    static var initialUploadAttemptCount: Int { sessionCreationFailureLock.withLock { initialUploadAttempts } }
+
+    private static func failsInitialUpload(_ url: URL) -> Bool {
+        guard url.path == "/api/upload", ProcessInfo.processInfo.arguments.contains("--ui-test-fail-first-upload") else { return false }
+        return sessionCreationFailureLock.withLock {
+            initialUploadAttempts += 1
+            return initialUploadAttempts == 1
+        }
+    }
 
     /// True once, for the first new-chat request, under `--ui-test-fail-first-session-creation`.
     private static func failsSessionCreation(_ url: URL) -> Bool {
         guard url.path == "/api/session/new",
-              ProcessInfo.processInfo.arguments.contains(UITestFixtureEnvironment.failFirstSessionCreationArgument)
+              (ProcessInfo.processInfo.arguments.contains(UITestFixtureEnvironment.failFirstSessionCreationArgument)
+                  || ProcessInfo.processInfo.arguments.contains("--ui-test-refuse-first-session-creation"))
         else { return false }
         return sessionCreationFailureLock.withLock {
             defer { didFailSessionCreation = true }

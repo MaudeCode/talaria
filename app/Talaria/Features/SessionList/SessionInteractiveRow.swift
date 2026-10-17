@@ -32,7 +32,8 @@ struct SessionInteractiveRow: View {
                     showsWorkspace: showsWorkspace,
                     isViewingCachedData: viewModel.isViewingCachedData,
                     matchPreview: viewModel.contentMatchPreview(for: session, searchText: searchText),
-                    searchText: searchText
+                    searchText: searchText,
+                    pendingChange: viewModel.pendingChange(for: session)
                 )
             }
             .contentShape(Rectangle())
@@ -56,11 +57,12 @@ struct SessionInteractiveRow: View {
                     session: session,
                     projects: viewModel.projects,
                     isViewingCachedData: viewModel.isViewingCachedData,
-                    isRenamingSession: viewModel.isRenamingSession,
+                    isRenamingSession: viewModel.isMutating(session),
                     isCreatingProject: viewModel.isCreatingProject,
-                    isMovingSession: viewModel.isMovingSession,
+                    isMovingSession: viewModel.isMutating(session),
                     isLoadingProjects: viewModel.isLoadingProjects,
                     isMutating: viewModel.isMutating(session),
+                    pendingChange: viewModel.pendingChange(for: session),
                     actions: actions
                 )
             }

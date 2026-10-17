@@ -19,6 +19,7 @@ struct PendingNewChatView: View {
     let draftStore: ChatDraftStore
 
     @State private var createdSession: SessionSummary?
+    @State private var unconfirmedCreationMessage: String?
     @State private var draftMessage = ""
     @State private var didStartConversation = false
     /// The chat's screen exists before its session (TAL-636): it starts from this placeholder and
@@ -79,25 +80,27 @@ struct PendingNewChatView: View {
     /// Creates the chat's session for `ChatView`, which takes it on in place and moves the draft
     /// to it. A failure comes back as the message the composer's strip shows with Retry.
     private func createSession() async -> ChatSessionStartResult {
-        if let createdSession {
-            return .started(createdSession)
-        }
+        if let createdSession { return .started(createdSession) }
+        if let unconfirmedCreationMessage { return .failed(unconfirmedCreationMessage, canRetry: false) }
         viewModel.clearActionError()
-        let session = await viewModel.createSession(
+        let result = await viewModel.createSessionResult(
             modelContext: modelContext,
             profile: profileName,
             provider: providerID,
             projectID: projectID
         )
-        if let lastError = viewModel.lastError {
-            onAPIError(lastError)
-        }
-        guard let session else {
-            let message = viewModel.actionErrorMessage
-                ?? viewModel.lastError?.localizedDescription
-                ?? String(localized: "Could not start a new chat.")
+        guard !Task.isCancelled else { return .failed(String(localized: "Chat creation was cancelled.")) }
+        let session: SessionSummary
+        switch result {
+        case .started(let created): session = created
+        case .failed(var message, let canRetry, let error):
+            if let error { onAPIError(error) }
+            if !canRetry {
+                message += " " + String(localized: "Check Chats before starting another chat.")
+                unconfirmedCreationMessage = message
+            }
             viewModel.clearActionError()
-            return .failed(message)
+            return .failed(message, canRetry: canRetry, error: error)
         }
         SessionHaptics.sessionCreated(isEnabled: isHapticsEnabled)
         onSessionCreated(session)

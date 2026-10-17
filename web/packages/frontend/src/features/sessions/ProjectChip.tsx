@@ -1,9 +1,9 @@
 import { useState } from 'react'
-import { useMutation, useQueryClient } from '@tanstack/react-query'
+import { useResourceIntents, useResourceMutation } from './useResourceMutation'
+import { ResourcePending } from './ResourcePending'
 import { MoreHorizontal } from 'lucide-react'
 import { m } from '../../paraglide/messages.js'
 import * as api from '../../api/endpoints'
-import { keys } from '../../api/queryKeys'
 import type { z } from 'zod'
 import type { ProjectSchema } from '../../contracts'
 import { ContextMenu, Menu, MenuItem, MenuRadioGroup, MenuRadioItem, MenuSeparator } from '../../ui/Menu'
@@ -27,29 +27,27 @@ const PROJECT_COLORS: { hex: string; name: () => string }[] = [
 
 /** A sidebar project filter chip; right-click, long-press or the selected chip's actions button opens rename, recolor and delete (TAL-565). */
 export function ProjectChip({ project, active, onSelect, onDeleted }: { project: z.infer<typeof ProjectSchema>; active: boolean; onSelect: () => void; onDeleted: () => void }) {
-  const qc = useQueryClient()
   const [dialog, setDialog] = useState<'rename' | 'delete' | null>(null)
   const [name, setName] = useState(project.name)
   const id = project.project_id
   const fail = (e: unknown) => showToast(e instanceof Error ? e.message : String(e), 4000, 'error')
-  const refresh = () => { void qc.invalidateQueries({ queryKey: keys.projects }) }
-  const rename = useMutation({ mutationFn: () => api.renameProject(id, name.trim()), onSuccess: () => { setDialog(null); refresh() }, onError: fail })
-  const recolor = useMutation({ mutationFn: (color: string) => api.renameProject(id, project.name, color), onSuccess: refresh, onError: fail })
-  // Deleting unassigns the project's conversations, so the session rows change too.
-  const del = useMutation({ mutationFn: () => api.deleteProject(id), onSuccess: () => { onDeleted(); refresh(); void qc.invalidateQueries({ queryKey: keys.sessions.all }) }, onError: fail })
+  const pending = useResourceIntents()[`project:${id}`]
+  const rename = useResourceMutation({ resource: () => `project:${id}`, intent: (title: string) => ({ title, label: m.rename() }), mutationFn: (name) => api.renameProject(id, name), onSuccess: () => setDialog(null), onError: fail })
+  const recolor = useResourceMutation({ resource: () => `project:${id}`, intent: (color: string) => ({ color, label: m.project_color() }), mutationFn: (color) => api.renameProject(id, project.name, color), onError: fail })
+  const del = useResourceMutation({ resource: () => `project:${id}`, intent: () => ({ label: m.delete() }), mutationFn: () => api.deleteProject(id), onSuccess: onDeleted, onError: fail })
   const items = (
     <>
-      <MenuItem onClick={() => { setName(project.name); setDialog('rename') }}>{m.rename()}</MenuItem>
+      <MenuItem disabled={!!pending} onClick={() => { setName(project.name); setDialog('rename') }}>{m.rename()}</MenuItem>
       <MenuRadioGroup value={project.color ?? ''} onValueChange={(hex: string) => recolor.mutate(hex)} aria-label={m.project_color()} className="flex px-1">
         {PROJECT_COLORS.map((c) => (
           // A 32px target around a 16px dot keeps touch picks off the neighbouring color.
-          <MenuRadioItem key={c.hex} value={c.hex} closeOnClick aria-label={c.name()} title={c.name()} className="group flex h-8 w-8 shrink-0 cursor-pointer items-center justify-center rounded-md outline-none data-[highlighted]:bg-hover">
+          <MenuRadioItem key={c.hex} value={c.hex} disabled={!!pending} closeOnClick aria-label={c.name()} title={c.name()} className="group flex h-8 w-8 shrink-0 cursor-pointer items-center justify-center rounded-md outline-none data-[highlighted]:bg-hover">
             <span className="h-4 w-4 rounded-full group-data-[checked]:ring-2 group-data-[checked]:ring-text" style={{ background: c.hex }} aria-hidden="true" />
           </MenuRadioItem>
         ))}
       </MenuRadioGroup>
       <MenuSeparator />
-      <MenuItem className="text-error" onClick={() => setDialog('delete')}>{m.delete()}</MenuItem>
+      <MenuItem disabled={!!pending} className="text-error" onClick={() => setDialog('delete')}>{m.delete()}</MenuItem>
     </>
   )
   return (
@@ -57,9 +55,10 @@ export function ProjectChip({ project, active, onSelect, onDeleted }: { project:
       <ContextMenu
         label={m.project_menu()}
         trigger={
-          <span role="button" tabIndex={0} className={cn('project-chip', active && 'active')} onClick={onSelect} onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') onSelect() }}>
-            {project.color && <span className="color-dot" style={{ background: project.color }} aria-hidden="true" />}
-            <span>{project.name}</span>
+          <span role="button" aria-busy={!!pending} tabIndex={0} className={cn('project-chip', active && 'active')} onClick={onSelect} onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') onSelect() }}>
+            {(pending?.color ?? project.color) && <span className="color-dot" style={{ background: pending?.color ?? project.color ?? undefined }} aria-hidden="true" />}
+            <span>{pending?.title ?? project.name}</span>
+            <ResourcePending intent={pending} />
           </span>
         }
       >
@@ -73,8 +72,8 @@ export function ProjectChip({ project, active, onSelect, onDeleted }: { project:
       )}
       {dialog === 'rename' && (
         <Dialog open onOpenChange={(o) => { if (!o) setDialog(null) }} title={m.project_rename()}>
-          <form onSubmit={(e) => { e.preventDefault(); if (name.trim()) rename.mutate() }} className="flex flex-col gap-3">
-            <TextInput autoFocus value={name} onChange={(e) => setName(e.target.value)} placeholder={m.project_new_prompt()} aria-label={m.project_new_prompt()} maxLength={128} />
+          <form onSubmit={(e) => { e.preventDefault(); if (name.trim()) rename.mutate(name.trim()) }} className="flex flex-col gap-3">
+            <TextInput autoFocus disabled={rename.isPending} value={name} onChange={(e) => setName(e.target.value)} placeholder={m.project_new_prompt()} aria-label={m.project_new_prompt()} maxLength={128} />
             <div className="flex justify-end gap-2"><Button onClick={() => setDialog(null)}>{m.cancel()}</Button><Button type="submit" variant="primary" disabled={rename.isPending || !name.trim()}>{m.save()}</Button></div>
           </form>
         </Dialog>

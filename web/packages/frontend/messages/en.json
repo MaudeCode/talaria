@@ -2505,5 +2505,7 @@
 	"background_review_reviewed": "The parent reviewed this result.",
 	"background_review_failed": "The worker or parent review failed.",
 	"background_review_unknown": "The worker or parent review outcome is unknown.",
-	"background_review_parent": "Parent review: {state}"
+	"background_review_parent": "Parent review: {state}",
+	"resource_change_pending": "Pending: {action}",
+	"resource_change_busy": "Wait for the pending change to finish."
 }
