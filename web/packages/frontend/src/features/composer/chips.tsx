@@ -5,7 +5,7 @@ import { m } from '../../paraglide/messages.js'
 import { useModelsQuery, useWorkspacesQuery, useToolsetsCatalogQuery } from '../../app/queries'
 import { Menu, MenuGroup, MenuGroupLabel, MenuItem, MenuRadioGroup, MenuRadioItem, MenuSeparator } from '../../ui/Menu'
 import { cn } from '../../ui/cn'
-import { catalogEntryById } from '../../lib/modelEntry'
+import { catalogEntryById, catalogGroupLabel } from '../../lib/modelEntry'
 import { useLocale } from '../../i18n/useLocale'
 import { resetTime } from '../../i18n/units'
 import type { Models } from '@maudecode/talaria-web-contracts'
@@ -65,7 +65,7 @@ export function ModelChip({ model, optionId, onChange, row }: { model: string | 
       <MenuRadioGroup value={selected?.id ?? ''} onValueChange={(v: string) => onChange(v, catalogEntryById(models.data, v)?.provider_id ?? null)}>
         {groups.map((g) => (
           <MenuGroup key={g.provider}>
-            <MenuGroupLabel><span className="flex items-center justify-between gap-2"><span className="truncate">{g.provider}</span><GroupLimitBadge group={g} locale={locale} /></span></MenuGroupLabel>
+            <MenuGroupLabel><span className="flex items-center justify-between gap-2"><span className="truncate">{catalogGroupLabel(g)}</span><GroupLimitBadge group={g} locale={locale} /></span></MenuGroupLabel>
             {g.models.map((mm) => (
               <MenuRadioItem key={mm.id} value={mm.id} className={RADIO_CLASS}>
                 <span className="truncate">{mm.label ?? mm.id}</span>

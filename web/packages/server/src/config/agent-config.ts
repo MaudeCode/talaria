@@ -82,14 +82,14 @@ export class AgentConfig {
   }
 
   /** Synchronous last-known config for callers that cannot await (workspace resolution); refreshes in the background. */
-  peek(profileHome: string): Config | null {
+  peek(profileHome: string, opts: { refresh?: boolean } = {}): Config | null {
     let key: string
     try { key = this.statKey(profileHome) } catch { return null }
     const hit = this.cache.get(this.path(profileHome))
     if (hit?.key === key) return hit.config
     if (key === 'missing') return {}
     // A changed file invalidates the snapshot: callers gate on `null` (fail closed) until the matching read lands.
-    void this.read(profileHome).catch(() => undefined)
+    if (opts.refresh !== false) void this.read(profileHome).catch(() => undefined)
     return null
   }
 

@@ -32,6 +32,14 @@ const DEFAULTS = { warning_remaining_percent: 25, critical_remaining_percent: 10
 const quotasWith = (sources: Record<string, unknown>[]) => ProviderQuotasSchema.parse({ version: 1, computed_at: '2026-09-28T08:00:00Z', scope_id: 's', profile_id: 'default', active_provider: 'openrouter', requested_source_id: null, missing_source: false, sources })
 
 describe('ProvidersSection', () => {
+  it('renders a recovery notice and never calls unknown providers unconfigured', async () => {
+    providersResponse.current = { availability: { status: 'unavailable', authoritative: false, generation: 'test', unavailable_reason: 'Provider data is temporarily unavailable. Try again after Agent recovery finishes.' }, providers: [{ id: 'openai-codex', display_name: 'OpenAI Codex', has_key: false }], active_provider: 'openai-codex' }
+    renderSection()
+    expect(await screen.findByText('Temporarily unavailable')).toBeInTheDocument()
+    expect(screen.getByRole('status')).toHaveTextContent('Agent recovery')
+    expect(screen.queryByText('Not configured')).toBeNull()
+  })
+
   afterEach(() => { quotaResponse.current = null; providersResponse.current = null; vi.useRealTimers() })
 
   it('sets up a self-hosted provider from its row and rereads the providers it activated (TAL-570)', async () => {

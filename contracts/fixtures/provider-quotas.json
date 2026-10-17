@@ -104,7 +104,14 @@
       "urgency": {
         "remaining": "healthy",
         "pace": "warning"
-      }
+      },
+      "computed_at": "2026-09-28T08:00:00Z"
     }
-  ]
+  ],
+  "availability": {
+    "status": "available",
+    "authoritative": true,
+    "unavailable_reason": null,
+    "generation": "synthetic-generation"
+  }
 }

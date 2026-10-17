@@ -24,6 +24,7 @@ final class ProvidersViewModel {
     private(set) var quotaErrorMessage: String?
     private(set) var quotaProfileID: String?
     private(set) var quotaScopeID: String?
+    private var quotaSourceGeneration: String?
 
     private let client: APIClient
     private let quotaSnapshotStore: ProviderQuotaWidgetSnapshotStore?
@@ -75,11 +76,14 @@ final class ProvidersViewModel {
         }
         if let snapshot = self.quotaSnapshotStore?.load(),
            !snapshot.sources.isEmpty,
-           snapshot.sources.allSatisfy({ $0.scopeLabel.hasPrefix("\(self.quotaServerLabel) · ") }) {
+           snapshot.serverID == ResponseCache.serverIdentity(for: server),
+           snapshot.profileID == (ActiveServerProfile.name(for: server) ?? "default") {
             // Older builds cached `removed` rows; Insights renders only live server sources.
-            quotaSources = snapshot.sources.filter { $0.status != "removed" }.map(Self.cachedQuotaSource)
+            quotaSources = snapshot.sources.filter { $0.status != "removed" }.map(\.quotaSource)
             hasStableQuotaSources = true
             quotaScopeID = snapshot.sources.first?.scopeID
+            quotaProfileID = snapshot.profileID
+            quotaSourceGeneration = snapshot.sourceGeneration
         }
     }
 
@@ -95,6 +99,7 @@ final class ProvidersViewModel {
             guard generation == loadGeneration else { return }
             providers = response.providers ?? []
             activeProviderID = response.activeProvider
+            errorMessage = response.availability?.unavailableReason
         } catch is CancellationError {
             // The owning view was dismissed (or the refresh gesture was torn
             // down) mid-request — don't surface "cancelled" as a load error.
@@ -123,7 +128,7 @@ final class ProvidersViewModel {
             let response = try await client.providerQuotas(refresh: refresh)
             guard generation == quotaLoadGeneration else { return }
             applyQuotaResponse(response, sequence: sequence)
-            if refresh { lastForcedQuotaRefreshSuccess = ContinuousClock.now }
+            if refresh && response.hasAuthoritativeMembership { lastForcedQuotaRefreshSuccess = ContinuousClock.now }
         } catch is CancellationError {
             // The view was dismissed while quota was loading.
         } catch let error as URLError where error.code == .cancelled {
@@ -189,10 +194,15 @@ final class ProvidersViewModel {
             else { return }
             // The server list owns which rows exist: a targeted read replaces its own row
             // or drops it when missing, and never adds a row the full list lacks.
+            if response.availability?.generation != quotaSourceGeneration {
+                await loadQuotas()
+                return
+            }
+            quotaErrorMessage = response.availability?.unavailableReason
             targetedQuotaRefreshSequences[sourceID] = sequence
-            if response.missingSource {
+            if response.hasAuthoritativeMembership && response.missingSource {
                 quotaSources.removeAll { $0.id == sourceID }
-            } else if let refreshed = response.sources.first(where: { $0.id == sourceID }),
+            } else if let refreshed = response.retainingUnconfirmedSources(quotaSources, scopeID: quotaScopeID, generation: quotaSourceGeneration).first(where: { $0.id == sourceID }),
                       let index = quotaSources.firstIndex(where: { $0.id == sourceID }) {
                 quotaSources[index] = refreshed
             }
@@ -212,18 +222,22 @@ final class ProvidersViewModel {
     /// state, kept or dropped, even where this older list says otherwise.
     private func applyQuotaResponse(_ response: ProviderQuotasResponse, sequence: Int) {
         let sameScope = quotaProfileID == response.profileID && quotaScopeID == response.scopeID
-        let newerIDs = sameScope
+        let sameGeneration = quotaSourceGeneration == response.availability?.generation
+        quotaErrorMessage = response.availability?.unavailableReason
+        let newerIDs = sameScope && sameGeneration
             ? Set(targetedQuotaRefreshSequences.filter { $0.value > sequence }.keys)
             : []
         let current = Dictionary(quotaSources.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
-        let incomingIDs = Set(response.sources.map(\.id))
-        quotaSources = response.sources.compactMap { newerIDs.contains($0.id) ? current[$0.id] : $0 }
+        let incoming = response.retainingUnconfirmedSources(quotaSources, scopeID: quotaScopeID, generation: quotaSourceGeneration)
+        let incomingIDs = Set(incoming.map(\.id))
+        quotaSources = incoming.compactMap { newerIDs.contains($0.id) ? current[$0.id] : $0 }
             + quotaSources.filter { newerIDs.contains($0.id) && !incomingIDs.contains($0.id) }
         targetedQuotaRefreshSequences = targetedQuotaRefreshSequences.filter { $0.value > sequence }
         hasStableQuotaSources = true
         hasServerQuotaSources = true
         quotaProfileID = response.profileID
         quotaScopeID = response.scopeID
+        quotaSourceGeneration = response.availability?.generation
         persistQuotaWidgetSnapshot()
     }
 
@@ -240,7 +254,10 @@ final class ProvidersViewModel {
         guard quotaSnapshotStore.save(
                 scopeID: quotaScopeID,
                 sources: widgetSources,
-                updatedSourceIDs: updatedSourceIDs
+                updatedSourceIDs: updatedSourceIDs,
+                serverID: ResponseCache.serverIdentity(for: quotaServer),
+                profileID: quotaProfileID,
+                sourceGeneration: quotaSourceGeneration
               )
         else { return }
         reloadQuotaWidgets()
@@ -272,27 +289,6 @@ final class ProvidersViewModel {
         )
     }
 
-    private static func cachedQuotaSource(_ source: ProviderQuotaWidgetSource) -> ProviderQuotaSource {
-        ProviderQuotaSource(
-            id: source.sourceID,
-            providerID: source.providerID ?? "",
-            providerLabel: source.providerLabel,
-            accountLabel: source.accountLabel,
-            isActiveProvider: source.isActiveProvider,
-            supported: source.status != "unsupported",
-            status: source.status,
-            plan: source.plan,
-            windows: source.windows,
-            quota: source.quota,
-            retryAfter: source.retryAfter,
-            fetchedAt: source.fetchedAt,
-            paceWindowIndex: source.paceWindowIndex,
-            sessionWindowIndex: source.sessionWindowIndex,
-            weeklyWindowIndex: source.weeklyWindowIndex,
-            computedAt: source.computedAt,
-            urgency: source.urgency
-        )
-    }
 
     /// The server marks the active card (TAL-603). A pre-TAL-603 server omits `is_active`; delete the
     /// exact-match fallback once every supported server ships the field.

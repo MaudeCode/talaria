@@ -3062,7 +3062,7 @@ describe('stale cross-provider session models at chat start (TAL-542)', () => {
   })
 
   it('switches a providerless model from another vendor to the profile default, and persists it (#1734)', async () => {
-    useConfig('openai-codex', 'gpt-5.5')
+    useConfig('openai-codex', 'gpt-5.5', { 'openai-codex': ['gpt-5.5', 'gpt-5.4-mini'] })
     // Codex lists `gpt-5.4-mini` under its own bare id, so the stale `openai/` id starts on that one rather than the default.
     for (const [stale, effective] of [['gemini-3.1-pro-preview', 'gpt-5.5'], ['google/gemini-3.1-pro-preview', 'gpt-5.5'], ['openai/gpt-5.4-mini', 'gpt-5.4-mini']]) {
       const sid = await sessionWith(stale!, null)
@@ -3174,10 +3174,11 @@ describe('stale cross-provider session models at chat start (TAL-542)', () => {
       writeFileSync(join(s.state, '.env'), 'TALARIA_TEST_EDIT=2\n')
       const second = s.deps.catalog.liveModelIds(s.state, 'deepseek')
       await vi.waitFor(() => { expect(pending).toHaveLength(2) })
-      pending[0]?.(['ds-old'])
       pending[1]?.(['ds-new'])
-      expect(await first).toEqual(['ds-old'])
       expect(await second).toEqual(['ds-new'])
+      pending[0]?.(['ds-old'])
+      expect(await first).toEqual([])
+      expect(await s.deps.catalog.liveModelIds(s.state, 'deepseek')).toEqual(['ds-new'])
     } finally {
       sidecar.respond('providers.model_ids', (p) => ({ provider: p.provider, model_ids: [] }))
     }

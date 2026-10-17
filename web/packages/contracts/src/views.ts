@@ -637,11 +637,15 @@ export const ModelGroupLimitSchema = z.discriminatedUnion('scope', [
  * account-scope window in the provider's last account-usage read (a model-family window never counts), absent without one
  * and while the group is account-limited.
  */
+export const CatalogAvailabilitySchema = z.object({ status: z.enum(['available', 'stale', 'unavailable']), authoritative: z.boolean(), unavailable_reason: NullableString, generation: z.string().min(1).describe('Opaque source generation; cached data from another generation must never be merged.') })
+export type CatalogAvailability = z.infer<typeof CatalogAvailabilitySchema>
 export const ModelGroupSchema = z.looseObject({
+  availability: CatalogAvailabilitySchema.optional(),
   provider: z.string(), provider_id: z.string().optional(), models: z.array(ModelEntrySchema), extra_models: z.array(ModelEntrySchema).optional(),
   limit: ModelGroupLimitSchema.optional(), quota_level: QuotaLevelSchema.optional(),
 })
-export const ModelsSchema = z.looseObject({ active_provider: NullableString.optional(), default_model: z.string().optional(), default_provider_id: NullableString.optional(), default_bare_id: z.string().optional(), default_option_id: NullableString.optional(), groups: z.array(ModelGroupSchema), aliases: z.record(z.string(), Json).optional(), configured_model_badges: z.record(z.string(), Json).optional() })
+export const ModelsSchema = z.looseObject({ availability: CatalogAvailabilitySchema.optional(), active_provider: NullableString.optional(), default_model: z.string().optional(), default_provider_id: NullableString.optional(), default_bare_id: z.string().optional(), default_option_id: NullableString.optional(), groups: z.array(ModelGroupSchema), aliases: z.record(z.string(), Json).optional(), configured_model_badges: z.record(z.string(), Json).optional() })
+export const ModelsLiveSchema = z.looseObject({ availability: CatalogAvailabilitySchema.optional(), provider: z.string().optional(), source: z.string().optional(), models: z.array(ModelEntrySchema), count: z.number().optional(), error: z.string().optional() })
 export type Models = z.infer<typeof ModelsSchema>
 /** TAL-603: where a card's credential comes from; `other` is a source the server cannot name, shown as its raw `key_source`. */
 export const KeySourceKindSchema = z.enum(['env', 'oauth', 'config', 'pool', 'plugin', 'other'])
@@ -657,7 +661,7 @@ export const ProviderSchema = z.looseObject({
   is_custom: z.boolean().optional(), key_source: z.string().optional(), base_url: NullableString.optional(), auth_error: NullableString.optional(), env_var: NullableString.optional(), models: z.array(ModelEntrySchema).optional(), models_total: z.number().optional(),
   is_active: z.boolean().optional(), key_source_kind: KeySourceKindSchema.nullable().optional(), removable: z.boolean().optional(),
 })
-export const ProvidersSchema = z.looseObject({ providers: z.array(ProviderSchema), active_provider: NullableString.optional() })
+export const ProvidersSchema = z.looseObject({ availability: CatalogAvailabilitySchema.optional(), providers: z.array(ProviderSchema), active_provider: NullableString.optional() })
 /** TAL-411: the server's classification per colour basis; `/api/provider/quotas` only, at the profile's thresholds. */
 export const QuotaUrgencySchema = z.looseObject({ remaining: QuotaLevelSchema, pace: QuotaLevelSchema.describe('Burn rate and pace tolerance; the remaining classification when the window has no pace.') })
 /** TAL-409: a window's pace as of the envelope's `computed_at`. Stale once `valid_until` (the window's reset) passes. */
@@ -682,6 +686,7 @@ export const QuotaWindowSchema = z.looseObject({
 })
 const QuotaWindowIndex = z.number().int().nullable().optional()
 export const QuotaSourceSchema = z.looseObject({
+  computed_at: z.string().optional().describe('Original reference time of this source, retained with stale windows.'),
   source_id: z.string(), provider_id: z.string().optional(), provider_label: z.string().optional(), account_label: z.string().optional(), status: z.string().optional(), supported: z.boolean().optional(), message: z.string().nullable().optional(),
   is_active_provider: z.boolean().optional(), quota: Json.optional(), windows: z.array(QuotaWindowSchema).optional(), balances: Json.optional(), plan: Json.optional(), details: Json.optional(), unavailable_reason: Json.optional(), retry_after: Json.optional(), fetched_at: Json.optional(),
   pace_window_index: QuotaWindowIndex.describe('The window a pace-coloured widget shows: the weekly one, else the first 5h/session window.'),
@@ -702,8 +707,8 @@ export const ProviderQuotaSchema = z.looseObject({
   account_limits: QuotaAccountLimitsSchema.nullable().optional(),
 })
 /** Python `get_provider_quotas`: the stable identity envelope the iOS quota widget persists (`scope_id`/`profile_id`). */
-export const ProviderQuotasSchema = z.looseObject({
-  version: z.number(), computed_at: z.string().describe('ISO-8601 UTC reference time of every window `pace`.'), scope_id: z.string(), profile_id: z.string(), active_provider: NullableString, requested_source_id: NullableString,
+export const ProviderQuotasSchema = z.looseObject({ availability: CatalogAvailabilitySchema.optional(),
+  version: z.number(), computed_at: z.string().describe('ISO-8601 UTC request reference time; coalesced or stale sources retain their own computed_at.'), scope_id: z.string(), profile_id: z.string(), active_provider: NullableString, requested_source_id: NullableString,
   missing_source: z.boolean().describe('True when `?source=` names a source id this scope no longer has; `sources` is then empty.'),
   sources: z.array(QuotaSourceSchema).describe('Each live source id exactly once, ordered by `provider_id`, then `account_label`, then `source_id`. Clients render this list as-is; a `?source=` read returns that one row.'),
 })

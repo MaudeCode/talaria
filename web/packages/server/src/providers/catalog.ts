@@ -16,7 +16,7 @@ import { createHash, randomUUID } from 'node:crypto'
 import { join } from 'node:path'
 import { atomicWriteText } from '../fs/atomic.js'
 import type { SidecarLike } from '../sidecar/client.js'
-import type { KeySourceKind, SidecarParams, SidecarResult } from '@maudecode/talaria-web-contracts'
+import type { CatalogAvailability, KeySourceKind, SidecarParams, SidecarResult } from '@maudecode/talaria-web-contracts'
 import { str } from '../util.js'
 import { QUOTA_THRESHOLD_DEFAULTS, type QuotaThresholds } from '../settings.js'
 import { loadEnvFile } from './env-file.js'
@@ -30,7 +30,10 @@ import {
 
 export interface ModelEntry { id: string; label: string; supports_fast_tier?: boolean; supported_speed_tiers?: SpeedTier[]; provider_id?: string; bare_id?: string; limit?: { scope: 'model'; resets_at: string } }
 type PluginProvider = SidecarResult<'plugins.providers'>['providers'][number]
+interface QuotaSourceRow extends Dict { source_id: string; provider_id: string; account_label: string }
+interface CatalogLookup<T> { value: T | null; authoritative: boolean }
 export interface ModelGroup {
+  availability?: CatalogAvailability
   provider: string; provider_id: string; models: ModelEntry[]; extra_models?: ModelEntry[]
   limit?: { scope: 'account'; resets_at: string } | { scope: 'models'; models: Record<string, string> }; quota_level?: QuotaLevel
 }
@@ -120,7 +123,7 @@ export function splitPickerOverflow(models: ModelEntry[], selected: string, prov
   if (idx >= 0) { const displaced = visible[visible.length - 1]!; visible[visible.length - 1] = extras[idx]!; extras[idx] = displaced }
   return [visible, extras]
 }
-export interface ModelsCatalog { active_provider: string | null; default_model: string; default_provider_id?: string | null; default_bare_id?: string; default_option_id?: string | null; groups: ModelGroup[]; aliases: Record<string, string>; configured_model_badges: Record<string, { role: string; label: string; provider: string }> }
+export interface ModelsCatalog { availability?: CatalogAvailability; active_provider: string | null; default_model: string; default_provider_id?: string | null; default_bare_id?: string; default_option_id?: string | null; groups: ModelGroup[]; aliases: Record<string, string>; configured_model_badges: Record<string, { role: string; label: string; provider: string }> }
 
 /**
  * TAL-388: stamp each auxiliary slot with its display value and the catalog entry whose provider/model pair equals the
@@ -507,16 +510,16 @@ export function uniqueQuotaSources<T extends { source_id: string; provider_id: s
 }
 
 /** `removable` (TAL-641): `setProviderKey(…, null)` would leave the provider keyless: its own `.env` var holds the only key. */
-interface KeyProbe { hasKey: boolean; keySource: string; authError: string | null; isOauth: boolean; removable: boolean }
+interface KeyProbe { authoritative: boolean; hasKey: boolean; keySource: string; authError: string | null; isOauth: boolean; removable: boolean }
 
 export class ProviderCatalog {
   /** Failed live lookups by home, provider, and the `sourceFingerprint` they ran under (TAL-542). */
   private readonly liveFailed = new Set<string>()
   /** `source`: the `sourceFingerprint` the ids were fetched under; another one makes them stale (TAL-542). `ttl`: seconds they stay fresh. */
-  private readonly liveIds = new Map<string, { at: number; ids: string[]; source: string; ttl: number }>()
+  private readonly liveIds = new Map<string, { at: number; ids: string[]; source: string; ttl: number; confirmed: boolean }>()
   private readonly liveInflight = new Map<string, Promise<string[]>>()
   /** `pooled`: the fill's `poolProviders` answer, null when unknown (TAL-638). */
-  private readonly providersCache = new Map<string, { at: number; key: string; payload: { providers: Dict[]; active_provider: string | null }; pooled: string[] | null }>()
+  private readonly providersCache = new Map<string, { at: number; key: string; payload: { providers: Dict[]; active_provider: string | null; availability: CatalogAvailability }; pooled: string[] | null }>()
   /** TAL-301: the last catalog served per profile home, for the sync session payloads' `model_option_id`. */
   private readonly lastModels = new Map<string, ModelsCatalog>()
   /** TAL-542: per `lastModels` catalog, the `sourceFingerprint` it was built from, when, and the providers whose group came from a failed live lookup. */
@@ -532,13 +535,16 @@ export class ProviderCatalog {
     return { groups: this.liveIds.size, models, age_seconds: oldest === null ? null : Math.max(0, Math.round(this.deps.now() - oldest)) }
   }
 
-  invalidate(profileHome?: string, provider?: string): void {
+  invalidate(profileHome?: string, provider?: string, opts: { preserveConfirmed?: boolean } = {}): void {
     for (const key of [...this.liveIds.keys()]) {
       if (profileHome && !key.startsWith(`${profileHome}\0`)) continue
       if (provider && !key.endsWith(`\0${provider}`)) continue
-      this.liveIds.delete(key)
+      if (opts.preserveConfirmed) this.liveIds.get(key)!.ttl = 0
+      else this.liveIds.delete(key)
     }
     this.providersCache.clear()
+    if (opts.preserveConfirmed) return
+    for (const key of [...this.lastQuotaSources.keys()]) if (!profileHome || key.startsWith(`${profileHome}\0`)) this.lastQuotaSources.delete(key)
     // Credentials changed: the last pool answers no longer stand in for a failed lookup.
     for (const key of [...this.lastPoolAnswers.keys()]) if (!profileHome || key.startsWith(`${profileHome}\0`)) this.lastPoolAnswers.delete(key)
     // The picker catalog changed: option ids rebuild on the next read rather than pairing against the old one.
@@ -566,9 +572,17 @@ export class ProviderCatalog {
    */
   private sourceFingerprint(profileHome: string): string {
     const stamp = (name: string): string => {
-      try { const st = statSync(join(profileHome, name), { bigint: true }); return `${String(st.mtimeNs)}:${String(st.size)}:${String(st.ino)}` } catch { return 'missing' }
+      try { const st = statSync(join(profileHome, name), { bigint: true }); return `${String(st.mtimeNs)}:${String(st.ctimeNs)}:${String(st.size)}:${String(st.ino)}` } catch { return 'missing' }
     }
-    return [this.deps.config.fingerprint(profileHome), ...['.env', 'auth.json', 'plugins'].map(stamp)].join('|')
+    const names = new Set([...Object.values(PROVIDER_ENV_VAR), ...Object.values(PROVIDER_ENV_VAR_ALIASES).flat()])
+    const config = this.deps.config.peek(profileHome, { refresh: false }) ?? {}
+    for (const cp of [modelSection(config), ...Object.values(dict(config.providers)).filter(isDict), ...customProviderEntries(config)]) {
+      for (const name of [str(cp.key_env).trim(), /^\$\{([^}]+)\}$/.exec(str(cp.api_key).trim())?.[1]]) if (name) names.add(name)
+    }
+    const credentials = [...names].sort().map((name) => [name, this.processEnv(name, profileHome)])
+    const models = ['HERMES_MODEL', 'OPENAI_MODEL', 'LLM_MODEL'].map((name) => [name, this.deps.env[name]])
+    const environment = createHash('sha256').update(JSON.stringify([credentials, models])).digest('hex')
+    return [profileHome, environment, this.deps.config.fingerprint(profileHome), ...['.env', 'auth.json', 'plugins'].map(stamp)].join('|')
   }
 
   /** The last catalog built for this home, younger than `maxAgeS`, while its source files are unchanged since (TAL-542). */
@@ -638,18 +652,16 @@ export class ProviderCatalog {
     return false
   }
 
-  private async authStatus(profileHome: string, pid: string): Promise<Dict | null> {
-    const sidecar = this.deps.sidecar()
-    if (!sidecar) return null
-    try {
-      return (await sidecar.call('providers.auth_status', { profile_home: profileHome, provider: pid })).status
-    } catch {
-      return null
-    }
+  private async authStatus(profileHome: string, pid: string): Promise<CatalogLookup<Dict>> {
+    return this.poolLookup(profileHome, `auth\0${pid}`, async (sidecar) => {
+      const { status } = await sidecar.call('providers.auth_status', { profile_home: profileHome, provider: pid })
+      return { logged_in: status.logged_in, key_source: str(status.key_source), error: str(status.error) }
+    })
   }
 
   /** `pooled`: the providers whose persisted credential pool holds an added account (TAL-638). */
   private async probeKey(profileHome: string, pid: string, config: Config, envValues: Record<string, string>, pooled: ReadonlySet<string>): Promise<KeyProbe> {
+    let authoritative = true
     let hasKey = this.providerHasKey(pid, config, envValues, profileHome)
     let isOauth = OAUTH_PROVIDERS.has(pid)
     let keySource = 'none'
@@ -657,7 +669,9 @@ export class ProviderCatalog {
     let removable = false
     if (isOauth) {
       keySource = 'oauth'
-      const status = await this.authStatus(profileHome, pid)
+      const lookup = await this.authStatus(profileHome, pid)
+      authoritative = lookup.authoritative
+      const status = lookup.value
       if (status?.logged_in) {
         hasKey = true
         keySource = str(status.key_source) || 'oauth'
@@ -689,7 +703,9 @@ export class ProviderCatalog {
       hasKey = true
       keySource = 'credential_pool'
     } else if (!providerEnvVar(pid) && /^[a-z][a-z0-9_-]{0,63}$/.test(pid)) {
-      const status = await this.authStatus(profileHome, pid)
+      const lookup = await this.authStatus(profileHome, pid)
+      authoritative = lookup.authoritative
+      const status = lookup.value
       if (status?.logged_in) {
         hasKey = true
         const raw = str(status.key_source)
@@ -697,7 +713,7 @@ export class ProviderCatalog {
         isOauth = true
       }
     }
-    return { hasKey, keySource, authError, isOauth, removable }
+    return { authoritative, hasKey, keySource, authError, isOauth, removable }
   }
 
   /** Live model ids from the Agent for one provider, cached per profile home. */
@@ -712,16 +728,18 @@ export class ProviderCatalog {
     if (inflight && !opts.force) return inflight
     const sidecar = this.deps.sidecar()
     // No sidecar is a failed lookup for this source: the ids it keeps showing never confirm a stale-model repair (TAL-542).
-    if (!sidecar) { this.liveFailed.add(flightKey); return hit?.ids ?? [] }
+    if (!sidecar) { this.liveFailed.add(flightKey); return hit?.source === source && source === this.sourceFingerprint(profileHome) ? hit.ids : [] }
     const run = sidecar.call('providers.model_ids', { profile_home: profileHome, provider: pid, ...(opts.force ? { force_refresh: true } : {}) }, { timeoutMs: 30_000 })
       .then((r) => {
-        this.liveIds.set(key, { at: this.deps.now(), ids: r.model_ids, source, ttl: r.fallback ? FALLBACK_TTL_S : LIVE_TTL_S })
+        if (source !== this.sourceFingerprint(profileHome)) { this.liveFailed.add(flightKey); return [] }
+        if (r.fallback && hit?.source === source && hit.confirmed) { this.liveFailed.add(flightKey); return hit.ids }
+        this.liveIds.set(key, { at: this.deps.now(), ids: r.model_ids, source, ttl: r.fallback ? FALLBACK_TTL_S : LIVE_TTL_S, confirmed: !r.fallback })
         // TAL-799: the Agent's curated placeholder for an unreachable catalog is a failed lookup that still lists models.
         if (r.fallback) this.liveFailed.add(flightKey)
         else this.liveFailed.delete(flightKey)
         return r.model_ids
       })
-      .catch((error: unknown) => { this.deps.log(`[catalog] live model ids for ${pid} failed: ${str((error as Error).message)}`); this.liveFailed.add(flightKey); return hit?.ids ?? [] })
+      .catch((error: unknown) => { this.deps.log(`[catalog] live model ids for ${pid} failed: ${str((error as Error).message)}`); this.liveFailed.add(flightKey); return hit?.source === source && source === this.sourceFingerprint(profileHome) ? hit.ids : [] })
       .finally(() => { this.liveInflight.delete(flightKey) })
     this.liveInflight.set(flightKey, run)
     return run
@@ -736,53 +754,44 @@ export class ProviderCatalog {
    * TAL-288: the model-provider plugins installed and enabled in this profile, as the sidecar reads them from the Agent.
    * A failed lookup lists none, so every other provider stays usable; an id that cannot be a provider routing hint is dropped.
    */
-  private async pluginProviders(profileHome: string): Promise<PluginProvider[]> {
-    const sidecar = this.deps.sidecar()
-    if (!sidecar) return []
-    try {
+  private async pluginProviders(profileHome: string): Promise<CatalogLookup<PluginProvider[]>> {
+    return this.poolLookup(profileHome, 'plugins', async (sidecar) => {
       const { providers } = await sidecar.call('plugins.providers', { profile_home: profileHome }, { timeoutMs: PLUGIN_LIST_TIMEOUT_MS })
       return providers.filter((p, i, all) => /^[a-z0-9][a-z0-9._-]{0,63}$/.test(p.name) && all.findIndex((q) => q.name === p.name) === i)
-    } catch (error) {
-      this.deps.log(`[catalog] plugin providers failed: ${str((error as Error).message)}`)
-      return []
-    }
+    })
   }
 
   /**
    * TAL-798: the GGUFs staged for the Agent's managed llama.cpp provider, selectable before its server runs (a turn boots
    * it). Null when none are staged or the listing failed, so every other provider stays usable.
    */
-  private async localModels(profileHome: string): Promise<SidecarResult<'providers.local_models'> | null> {
-    const sidecar = this.deps.sidecar()
-    if (!sidecar) return null
-    try {
-      const local = await sidecar.call('providers.local_models', { profile_home: profileHome }, { timeoutMs: PLUGIN_LIST_TIMEOUT_MS })
-      return local.provider_id && local.models.length ? local : null
-    } catch (error) {
-      this.deps.log(`[catalog] local models failed: ${str((error as Error).message)}`)
-      return null
-    }
+  private async localModels(profileHome: string): Promise<CatalogLookup<SidecarResult<'providers.local_models'>>> {
+    return this.poolLookup(profileHome, 'local-models', async (sidecar) => sidecar.call('providers.local_models', { profile_home: profileHome }, { timeoutMs: PLUGIN_LIST_TIMEOUT_MS }))
   }
 
   /** Python `get_providers`. */
-  async providers(profileHome: string): Promise<{ providers: Dict[]; active_provider: string | null }> {
+  async providers(profileHome: string): Promise<{ providers: Dict[]; active_provider: string | null; availability: CatalogAvailability }> {
     return structuredClone((await this.providerRows(profileHome)).payload)
   }
 
   /** The cached `providers` answer, shared with `quotas`; callers never mutate it. */
-  private async providerRows(profileHome: string): Promise<{ payload: { providers: Dict[]; active_provider: string | null }; pooled: string[] | null }> {
+  private async providerRows(profileHome: string): Promise<{ payload: { providers: Dict[]; active_provider: string | null; availability: CatalogAvailability }; pooled: string[] | null }> {
     const config = await this.deps.config.read(profileHome)
     const envValues = loadEnvFile(join(profileHome, '.env'))
-    const cacheKey = JSON.stringify([config, envValues])
+    const source = this.sourceFingerprint(profileHome)
+    const cacheKey = source
     const hit = this.providersCache.get(profileHome)
     if (hit?.key === cacheKey && this.deps.now() - hit.at < PROVIDERS_TTL_S) return hit
-    const pooledIds = await this.poolProviders(profileHome)
+    const pool = await this.poolProviders(profileHome)
+    const pooledIds = pool.value
+    const pluginLookup = await this.pluginProviders(profileHome)
+    let authoritative = pool.authoritative && pluginLookup.authoritative
     const pooled = new Set(pooledIds ?? [])
     const active = activeProviderFromConfig(config)
     const known = new Set<string>([...Object.keys(PROVIDER_DISPLAY), ...Object.keys(PROVIDER_MODELS), ...OAUTH_PROVIDERS])
     // A plugin never stands in for a built-in provider, by id or alias (that would route to the built-in's billing); it
     // does own a `providers.<id>` config entry.
-    const plugins = (await this.pluginProviders(profileHome)).filter((p) => !known.has(p.name) && !known.has(providerIdentity(p.name)))
+    const plugins = (pluginLookup.value ?? []).filter((p) => !known.has(p.name) && !known.has(providerIdentity(p.name)))
     const pluginIds = new Set(plugins.map((p) => p.name))
     const providersCfg = dict(config.providers)
     for (const key of Object.keys(providersCfg)) {
@@ -793,6 +802,7 @@ export class ProviderCatalog {
     const rows: Dict[] = []
     for (const pid of [...known].sort()) {
       const probe = await this.probeKey(profileHome, pid, config, envValues, pooled)
+      authoritative &&= probe.authoritative
       if (pid === 'openai' && !probe.hasKey && looksLikeCodexOauthToken(str(envValues[providerEnvVar('openai') ?? ''] ?? this.deps.env.OPENAI_API_KEY))) continue
       const configured = probe.hasKey || selfHostedEndpoint(pid, config)
       let models: ModelEntry[] = pid === 'openrouter' ? FALLBACK_MODELS.map((m) => ({ id: m.id, label: m.label })) : [...(PROVIDER_MODELS[pid] ?? [])]
@@ -873,13 +883,15 @@ export class ProviderCatalog {
       row.key_source_kind = keySourceKind(row)
       row.models_total = Math.max(Number(row.models_total), (row.models as ModelEntry[]).length)
     }
-    const entry = { at: this.deps.now(), key: cacheKey, payload: { providers: rows, active_provider: active }, pooled: pooledIds }
-    this.providersCache.set(profileHome, entry)
+    authoritative &&= source === this.sourceFingerprint(profileHome)
+    const availability = this.availability(source, authoritative, Boolean(pool.value))
+    const entry = { at: this.deps.now(), key: cacheKey, payload: { providers: rows, active_provider: active, availability }, pooled: pooledIds }
+    if (authoritative) this.providersCache.set(profileHome, entry)
     return entry
   }
 
   /** Python `get_available_models` (static catalog + live ids for keyed providers). */
-  async models(profileHome: string): Promise<ModelsCatalog> {
+  async models(profileHome: string, attempt = 0): Promise<ModelsCatalog> {
     const source = this.sourceFingerprint(profileHome)
     const unconfirmed = new Set<string>()
     const config = await this.deps.config.read(profileHome)
@@ -887,7 +899,8 @@ export class ProviderCatalog {
     const model = modelSection(config)
     const defaultModel = effectiveDefaultModel(config, this.deps.env)
     const cfgBaseUrl = str(model.base_url).trim()
-    const local = await this.localModels(profileHome)
+    const localLookup = await this.localModels(profileHome)
+    const local = localLookup.value?.models.length ? localLookup.value : null
     const configured = activeProviderFromConfig(config)
     // A `custom` main model at the running local server's endpoint is that server: its Local group owns the selection.
     const atLocalServer = configured === 'custom' && Boolean(cfgBaseUrl) && cfgBaseUrl.replace(/\/+$/, '') === str(local?.current_endpoint).replace(/\/+$/, '')
@@ -922,7 +935,8 @@ export class ProviderCatalog {
     // ready plugin providers (TAL-288), under their own name, and providers keyed only through the credential pool (TAL-638).
     const signedIn = new Set<string>()
     const pluginNames = new Map<string, string>()
-    for (const row of (await this.providerRows(profileHome)).payload.providers) {
+    const providerState = (await this.providerRows(profileHome)).payload
+    for (const row of providerState.providers) {
       if (row.has_key !== true || (row.is_oauth !== true && row.is_plugin_provider !== true && row.key_source !== 'credential_pool')) continue
       signedIn.add(str(row.id))
       if (row.is_plugin_provider === true) pluginNames.set(str(row.id), str(row.display_name) || str(row.id))
@@ -979,6 +993,7 @@ export class ProviderCatalog {
       }
       const providerCfg = dict(providersCfg[rawKeyFor.get(pid) ?? pid])
       let raw: ModelEntry[] = []
+      let allowFallback = false
       if ('models' in providerCfg && providerCfg.models_discovered !== true) raw = configuredModelOptions(providerCfg.models)
       if (!raw.length) {
         // TAL-799: a provider without credentials lists the Agent's curated catalog too; the static tables only cover a missing sidecar.
@@ -986,12 +1001,13 @@ export class ProviderCatalog {
         const live = await this.liveModelIds(profileHome, pid)
         const failed = this.liveLookupFailed(profileHome, pid, source)
         // TAL-542: a failed lookup, or a curated list no account confirmed, leaves this group unconfirmed, so the stale-model repair never trusts it.
-        if (failed || !keyed) unconfirmed.add(pid)
+        allowFallback = failed || !keyed
+        if (allowFallback) unconfirmed.add(pid)
         if (live.length) raw = live.map((id) => ({ id, label: pid === 'nous' ? `${formatOllamaLabel(id.includes('/') ? id.slice(id.indexOf('/') + 1) : id)} (via Nous)` : labelForModel(id, []) }))
         // Python (#1567): an authenticated Nous account with an empty live catalog shows no group; only a failed lookup falls back to the curated list.
         else if (keyed && pid === 'nous' && !failed) continue
       }
-      if (!raw.length) raw = pid === 'openrouter' ? FALLBACK_MODELS.map((m) => ({ id: m.id, label: m.label })) : [...(PROVIDER_MODELS[pid] ?? [])]
+      if (!raw.length && allowFallback) raw = pid === 'openrouter' ? FALLBACK_MODELS.map((m) => ({ id: m.id, label: m.label })) : [...(PROVIDER_MODELS[pid] ?? [])]
       for (const id of configuredIds.get(pid) ?? []) if (!raw.some((m) => m.id === id)) raw.push({ id, label: labelForModel(id, groups) })
       if (raw.length) groups.push({ provider: pluginNames.get(pid) ?? displayName(pid), provider_id: pid, models: applyProviderPrefix(raw, pid, active) })
     }
@@ -1024,13 +1040,21 @@ export class ProviderCatalog {
     const rawAliases = model.aliases
     if (isDict(rawAliases)) for (const [k, v] of Object.entries(rawAliases)) if (k && v) aliases[k.trim()] = str(v).trim()
     const [defaultBare, defaultProvider] = parseProviderQualifiedModel(defaultModel) ?? [defaultModel, active]
-    const defaults = { active_provider: active, default_model: defaultModel, default_provider_id: defaultProvider, default_bare_id: defaultBare }
+    if (source !== this.sourceFingerprint(profileHome)) {
+      if (attempt === 0) return this.models(profileHome, 1)
+      throw new Error('Provider configuration changed during catalog lookup. Try again.')
+    }
+    if (!providerState.availability.authoritative || !localLookup.authoritative) for (const g of kept) unconfirmed.add(g.provider_id)
+    const previous = this.currentModels(profileHome)
+    const availability = this.availability(source, providerState.availability.authoritative && localLookup.authoritative && !unconfirmed.size && source === this.sourceFingerprint(profileHome), previous?.availability?.status === 'available' || previous?.availability?.status === 'stale')
+    for (const g of kept) g.availability = this.availability(source, !unconfirmed.has(g.provider_id) && providerState.availability.authoritative, Boolean(previous?.groups.some((old) => old.provider_id === g.provider_id && old.availability?.status !== 'unavailable')))
+    const defaults = { availability, active_provider: active, default_model: defaultModel, default_provider_id: defaultProvider, default_bare_id: defaultBare }
     if (!kept.length && pickerDefault) {
       const providerId = active ?? 'default'
-      return this.remember(profileHome, { source, unconfirmed }, { ...defaults, groups: [{ provider: 'Default', provider_id: providerId, models: stampModelEntries([{ id: defaultModel, label: labelForModel(defaultModel, []) }], providerId) }], aliases: {}, configured_model_badges: {} })
+      return this.remember(profileHome, { source, unconfirmed, attempt }, { ...defaults, groups: [{ provider: 'Default', provider_id: providerId, models: stampModelEntries([{ id: defaultModel, label: labelForModel(defaultModel, []) }], providerId) }], aliases: {}, configured_model_badges: {} })
     }
     const stamped = kept.map((g) => ({ ...g, models: stampModelEntries(g.models, g.provider_id), ...(g.extra_models ? { extra_models: stampModelEntries(g.extra_models, g.provider_id) } : {}) }))
-    return this.remember(profileHome, { source, unconfirmed }, { ...defaults, groups: stamped, aliases, configured_model_badges: this.badges(kept, active, defaultModel, fallbackCfg) })
+    return this.remember(profileHome, { source, unconfirmed, attempt }, { ...defaults, groups: stamped, aliases, configured_model_badges: this.badges(kept, active, defaultModel, fallbackCfg) })
   }
 
   /**
@@ -1081,6 +1105,7 @@ export class ProviderCatalog {
     if (!ACCOUNT_USAGE_PROVIDERS.has(pid)) return null
     const key = `${profileHome}\0${pid}\0`
     let cached = this.accountUsageCache.get(key)
+    if (cached?.source !== this.sourceFingerprint(profileHome)) cached = undefined
     if (!cached || this.deps.now() - cached.at > ACCOUNT_USAGE_CACHE_TTL_S) {
       let read = this.pickerUsageReads.get(key)
       if (!read) {
@@ -1095,7 +1120,7 @@ export class ProviderCatalog {
       }
     }
     const limits = cached?.limits
-    if (!cached || !limits?.available || this.deps.now() - cached.at > PICKER_USAGE_MAX_AGE_S) return null
+    if (cached?.source !== this.sourceFingerprint(profileHome) || !limits?.available || this.deps.now() - cached.at > PICKER_USAGE_MAX_AGE_S) return null
     const raw = (Array.isArray(limits.windows) ? limits.windows : []).filter((w) => isDict(w) && w.scope !== 'model')
     const tightest = normalizeQuotaWindows(raw, this.deps.now()).windows
       .reduce<QuotaWindow | undefined>((a, w) => (w.remaining_percent !== null && w.remaining_percent < (a?.remaining_percent ?? Infinity) ? w : a), undefined)
@@ -1103,11 +1128,16 @@ export class ProviderCatalog {
   }
 
   /** Stamps the default's entry id and keeps the catalog for `modelOptionFor`. */
-  private async remember(profileHome: string, meta: { source: string; unconfirmed: ReadonlySet<string> }, catalog: ModelsCatalog): Promise<ModelsCatalog> {
+  private async remember(profileHome: string, meta: { source: string; unconfirmed: ReadonlySet<string>; attempt: number }, catalog: ModelsCatalog): Promise<ModelsCatalog> {
+    if (catalog.availability) for (const group of catalog.groups) group.availability ??= catalog.availability
     await this.stampSpeedTiers(profileHome, catalog.groups.flatMap((g) => [...g.models, ...(g.extra_models ?? [])]))
+    if (meta.source !== this.sourceFingerprint(profileHome)) {
+      if (meta.attempt === 0) return this.models(profileHome, 1)
+      throw new Error('Provider configuration changed during catalog lookup. Try again.')
+    }
     catalog.default_option_id = catalogOptionId(catalog, catalog.default_bare_id ?? null, catalog.default_provider_id ?? null)
     this.lastModels.set(profileHome, catalog)
-    this.lastModelsMeta.set(profileHome, { ...meta, at: this.deps.now() })
+    this.lastModelsMeta.set(profileHome, { source: meta.source, unconfirmed: meta.unconfirmed, at: this.deps.now() })
     return structuredClone(catalog)
   }
 
@@ -1136,13 +1166,15 @@ export class ProviderCatalog {
   }
 
   /** Python `_handle_live_models`. */
-  async liveModels(profileHome: string, providerRaw: string): Promise<Dict> {
+  async liveModels(profileHome: string, providerRaw: string, attempt = 0): Promise<Dict> {
+    const fingerprint = this.sourceFingerprint(profileHome)
     const config = await this.deps.config.read(profileHome)
     let provider = providerRaw.trim().toLowerCase() || str(modelSection(config).provider).trim().toLowerCase()
     if (!provider) return { error: 'no_provider', models: [] }
     provider = resolveProviderAlias(provider)
     let ids = await this.liveModelIds(profileHome, provider)
-    let source = this.liveLookupFailed(profileHome, provider) ? 'fallback' : 'live'
+    if (fingerprint !== this.sourceFingerprint(profileHome)) return attempt === 0 ? this.liveModels(profileHome, providerRaw, 1) : { availability: this.availability(this.sourceFingerprint(profileHome), false, false), provider, source: 'unavailable', models: [], count: 0 }
+    let source = this.liveLookupFailed(profileHome, provider, fingerprint) ? 'fallback' : 'live'
     if (!ids.length) {
       const fromConfig: string[] = []
       if (provider === 'custom' || provider.startsWith('custom:')) {
@@ -1151,13 +1183,14 @@ export class ProviderCatalog {
           if ((provider.startsWith('custom:') && slug === provider) || (provider === 'custom' && !slug)) fromConfig.push(...[str(cp.model).trim(), ...configuredModelIds(cp.models)].filter(Boolean))
         }
       }
-      ids = fromConfig.length ? [...new Set(fromConfig)] : (PROVIDER_MODELS[provider] ?? []).map((m) => m.id)
-      source = fromConfig.length ? 'config' : 'static'
+      if (fromConfig.length) { ids = [...new Set(fromConfig)]; source = 'config' }
+      else if (source === 'fallback') { ids = (PROVIDER_MODELS[provider] ?? []).map((m) => m.id); source = 'static' }
     }
     if (provider !== 'nous' && ids.length > MODEL_PICKER_OVERFLOW_THRESHOLD) ids = ids.slice(0, MODEL_PICKER_VISIBLE_TARGET)
     const models = stampModelEntries(ids.filter(Boolean).map((id) => ({ id, label: labelForModel(id, []) })), provider)
     await this.stampSpeedTiers(profileHome, models)
-    return { provider, source, models, count: models.length }
+    if (fingerprint !== this.sourceFingerprint(profileHome)) return attempt === 0 ? this.liveModels(profileHome, providerRaw, 1) : { availability: this.availability(this.sourceFingerprint(profileHome), false, false), provider, source: 'unavailable', models: [], count: 0 }
+    return { availability: this.availability(fingerprint, source === 'live' || source === 'config', source === 'fallback' && models.length > 0), provider, source, models, count: models.length }
   }
 
   private async stampSpeedTiers(profileHome: string, entries: ModelEntry[]): Promise<void> {
@@ -1228,13 +1261,15 @@ export class ProviderCatalog {
   }
 
   /** Account-usage snapshots by profile home, provider, and pool account. */
-  private readonly accountUsageCache = new Map<string, { at: number; limits: Dict | null }>()
+  private readonly accountUsageCache = new Map<string, { at: number; limits: Dict | null; source: string; sequence: number }>()
+  private quotaReadSequence = 0
 
   /**
    * Python `get_provider_quota`. `credential` scopes the read to one credential-pool account (TAL-548): a benched account
    * answers with its local pool state, and every other read uses that account's key.
    */
-  async quota(profileHome: string, providerRaw: string | null, opts: { refresh?: boolean; at?: number; credential?: PoolEntry | null } = {}): Promise<Dict> {
+  async quota(profileHome: string, providerRaw: string | null, opts: { refresh?: boolean; at?: number; credential?: PoolEntry | null; sequence?: number } = {}): Promise<Dict> {
+    const sequence = opts.sequence ?? ++this.quotaReadSequence
     const at = opts.at ?? this.deps.now()
     const computed_at = isoAt(at)
     const config = await this.deps.config.read(profileHome)
@@ -1251,7 +1286,9 @@ export class ProviderCatalog {
       let limits: Dict | null = null
       // Python `_ACCOUNT_USAGE_CACHE_TTL_SECONDS`: a snapshot answers repeat polls for 45 s unless `refresh` is set.
       const cacheKey = `${profileHome}\0${provider}\0${credential?.credential_id ?? ''}`
-      const cached = this.accountUsageCache.get(cacheKey)
+      const hit = this.accountUsageCache.get(cacheKey)
+      const source = this.sourceFingerprint(profileHome)
+      const cached = hit?.source === source ? hit : undefined
       if (cached && !opts.refresh && this.deps.now() - cached.at <= ACCOUNT_USAGE_CACHE_TTL_S) limits = cached.limits
       else if (sidecar) {
         try {
@@ -1261,7 +1298,10 @@ export class ProviderCatalog {
         } catch (error) {
           limits = { available: false, unavailable_reason: str((error as Error).message), windows: [], details: [] }
         }
-        this.accountUsageCache.set(cacheKey, { at: this.deps.now(), limits })
+        if (source === this.sourceFingerprint(profileHome)) {
+          if ((this.accountUsageCache.get(cacheKey)?.sequence ?? -1) <= sequence) this.accountUsageCache.set(cacheKey, { at: this.deps.now(), limits, source, sequence })
+        }
+        else limits = null
       }
       // The cache keeps the Agent's raw windows; pace is recomputed as of every response.
       if (limits) limits = { ...limits, ...normalizeQuotaWindows(limits.windows, at), fetched_at: isoUtc(limits.fetched_at) }
@@ -1302,7 +1342,7 @@ export class ProviderCatalog {
       return answer(false, 'unavailable', status === 403 ? 'OpenCode Go account limits require an active subscription.' : 'OpenCode Go account limits are temporarily unavailable.', { account_limits: null })
     }
     // Python `_local_pool_snapshot`: any other provider with a credential pool shows its accounts' local state.
-    const entries = credential ? [credential] : (await this.poolEntries(profileHome, provider, null)) ?? []
+    const entries = credential ? [credential] : (await this.poolEntries(profileHome, provider, null)).value ?? []
     if (entries.length) {
       const limits = credential ? poolEntryLimits(credential, at) : poolLimits(entries, at)
       return limits.available ? answer(true, 'available', `${name} credential pool status loaded.`, { label: 'Credential pool', account_limits: limits }) : answer(false, 'unavailable', `${name} credential pool: all credentials are unavailable.`, { account_limits: limits })
@@ -1314,33 +1354,36 @@ export class ProviderCatalog {
    * TAL-548: the provider's credential-pool accounts as the sidecar reads them locally. Each says whether it holds
    * `apiKey`, the provider's configured key. Null when the pool is unknown (see `poolLookup`).
    */
-  private poolEntries(profileHome: string, pid: string, apiKey: string | null): Promise<PoolEntry[] | null> {
+  private poolEntries(profileHome: string, pid: string, apiKey: string | null): Promise<CatalogLookup<PoolEntry[]>> {
     return this.poolLookup(profileHome, `pool\0${pid}`, async (sidecar) => (await sidecar.call('usage.pool', { profile_home: profileHome, provider: pid, ...(apiKey ? { api_key: apiKey } : {}) })).entries)
   }
 
   /** The last answer of each credential-pool lookup, by profile home and lookup. */
-  private readonly lastPoolAnswers = new Map<string, unknown>()
+  private readonly lastPoolAnswers = new Map<string, { source: string; value: unknown }>()
 
   /**
    * TAL-548: one credential-pool lookup through the sidecar. A failed lookup answers with the last answer to the same
    * lookup, else null: an unknown pool, never an empty one, so no pool account is ever reported as removed.
    */
-  private async poolLookup<T>(profileHome: string, lookup: string, call: (sidecar: SidecarLike) => Promise<T>): Promise<T | null> {
+  private async poolLookup<T>(profileHome: string, lookup: string, call: (sidecar: SidecarLike) => Promise<T>): Promise<CatalogLookup<T>> {
+    const source = this.sourceFingerprint(profileHome)
     const key = `${profileHome}\0${lookup}`
     try {
       const sidecar = this.deps.sidecar()
       if (!sidecar) throw new Error('the sidecar is not running')
       const answer = await call(sidecar)
-      this.lastPoolAnswers.set(key, answer)
-      return answer
+      if (source !== this.sourceFingerprint(profileHome)) return { value: null, authoritative: false }
+      this.lastPoolAnswers.set(key, { source, value: answer })
+      return { value: answer, authoritative: true }
     } catch (error) {
       this.deps.log(`[catalog] credential pool lookup ${lookup.replace('\0', ' ')} failed: ${str((error as Error).message)}`)
-      return (this.lastPoolAnswers.get(key) as T | undefined) ?? null
+      const hit = this.lastPoolAnswers.get(key)
+      return { value: hit?.source === source && source === this.sourceFingerprint(profileHome) ? hit.value as T : null, authoritative: false }
     }
   }
 
   /** TAL-548: the providers whose persisted credential pool holds an added account; none when the sidecar cannot say. */
-  private poolProviders(profileHome: string): Promise<string[] | null> {
+  private poolProviders(profileHome: string): Promise<CatalogLookup<string[]>> {
     return this.poolLookup(profileHome, 'providers', async (sidecar) => (await sidecar.call('usage.pool_providers', { profile_home: profileHome })).providers)
   }
 
@@ -1383,7 +1426,9 @@ export class ProviderCatalog {
    * credential-pool account, else one for its own key (Python `_quota_source_descriptors`, TAL-548). Each source id appears
    * once (two custom providers can share a slug), ordered by provider, account label, then source id.
    */
-  async quotas(profileHome: string, profile: string, opts: { sourceId?: string | null; refresh?: boolean } = {}): Promise<Dict> {
+  async quotas(profileHome: string, profile: string, opts: { sourceId?: string | null; refresh?: boolean } = {}, attempt = 0): Promise<Dict> {
+    const sequence = ++this.quotaReadSequence
+    const source = this.sourceFingerprint(profileHome)
     const at = this.deps.now()
     const { payload: status, pooled: pooledIds } = await this.providerRows(profileHome)
     const active = status.active_provider
@@ -1393,7 +1438,7 @@ export class ProviderCatalog {
     // A provider configured only through `hermes auth add` has no key in .env or config.yaml, yet its pool accounts are
     // sources, including a signed-out OAuth provider's. An unknown pool (a failed lookup with no earlier answer) never
     // reports a requested source as missing.
-    let poolUnknown = pooledIds === null
+    let poolUnknown = !status.availability.authoritative
     const pooled = new Set(pooledIds ?? [])
     const config = await this.deps.config.read(profileHome)
     const perProvider = await Promise.all(status.providers.filter((p) => p.has_key || p.is_custom || pooled.has(str(p.id))).map(async (p) => {
@@ -1401,28 +1446,74 @@ export class ProviderCatalog {
       const label = str(p.display_name) || pid
       const apiKey = this.apiKeyFor(pid, profileHome, config)
       const found = await this.poolEntries(profileHome, pid, apiKey)
-      if (!found) poolUnknown = true
-      const entries = found ?? []
+      if (!found.authoritative) poolUnknown = true
+      const entries = found.value ?? []
       const accounts = entries.map((e) => ({ source_id: sourceId(pid, e.credential_id), provider_id: pid, provider_label: label, account_label: e.label, credential: e }))
       // The provider's own key is a source unless a pool account already holds it.
-      const ownKey = !entries.length || (apiKey !== null && !entries.some((e) => e.matches_api_key))
+      const ownKey = found.authoritative && ((!entries.length && (p.has_key === true || p.is_custom === true) && !pooled.has(pid)) || (apiKey !== null && !entries.some((e) => e.matches_api_key)))
       return ownKey ? [{ source_id: sourceId(pid, 'provider'), provider_id: pid, provider_label: label, account_label: label, credential: null }, ...accounts] : accounts
     }))
     let descriptors = uniqueQuotaSources(perProvider.flat())
+    const membership = new Set(descriptors.map((d) => d.source_id))
     const requested = str(opts.sourceId).trim() || null
     if (requested) descriptors = descriptors.filter((d) => d.source_id === requested)
     const thresholds = (await this.deps.quotaThresholds?.(profile)) ?? QUOTA_THRESHOLD_DEFAULTS
-    const sources = await Promise.all(descriptors.map(async (d) => {
-      const q = await this.quota(profileHome, d.provider_id, { refresh: opts.refresh ?? false, at, credential: d.credential })
+    let sources: QuotaSourceRow[] = await Promise.all(descriptors.map(async (d) => {
+      const q = await this.quota(profileHome, d.provider_id, { refresh: opts.refresh ?? false, at, credential: d.credential, sequence })
       const limits = dict(q.account_limits)
       return classifyQuotaSource({
-        source_id: d.source_id, provider_id: d.provider_id, provider_label: d.provider_label, account_label: d.account_label,
+        computed_at: isoAt(at), source_id: d.source_id, provider_id: d.provider_id, provider_label: d.provider_label, account_label: d.account_label,
         is_active_provider: d.provider_id === active, supported: q.supported === true, status: str(limits.status) || str(q.status) || 'unavailable',
         plan: limits.plan ?? null, windows: (limits.windows ?? []) as QuotaWindow[], pace_window_index: (limits.pace_window_index ?? null) as number | null, session_window_index: limits.session_window_index ?? null, weekly_window_index: limits.weekly_window_index ?? null, quota: q.quota ?? null, balances: q.balances ?? [], details: limits.details ?? [],
         unavailable_reason: limits.unavailable_reason ?? null, retry_after: limits.retry_after ?? null, fetched_at: limits.fetched_at ?? null, message: q.message ?? null,
       }, thresholds)
     }))
-    return { version: 1, computed_at: isoAt(at), scope_id: scopeId, profile_id: profile, active_provider: active, requested_source_id: requested, missing_source: Boolean(requested && !descriptors.length && !poolUnknown), sources }
+    if (source !== this.sourceFingerprint(profileHome) && attempt === 0) return this.quotas(profileHome, profile, opts, 1)
+    poolUnknown ||= source !== this.sourceFingerprint(profileHome)
+    const cacheKey = `${profileHome}\0${scopeId}`
+    const cached = source === this.sourceFingerprint(profileHome) ? this.lastQuotaSources.get(cacheKey) : undefined
+    const prior = cached?.source === source ? cached : undefined
+    const previous = prior?.sources ?? []
+    if (!poolUnknown) {
+      sources = sources.map((s) => {
+        const old = previous.find((p) => p.source_id === s.source_id)
+        return s.status === 'unavailable' && old ? this.staleQuotaSource(old, str(s.unavailable_reason || s.message)) : s
+      })
+      const latestMembership = prior && prior.sequence > sequence ? prior.membership : membership
+      const sourceSequences = new Map(prior?.sourceSequences)
+      const merged = new Map(previous.filter((s) => latestMembership.has(str(s.source_id))).map((s) => [str(s.source_id), s]))
+      for (const value of sources) {
+        const id = str(value.source_id)
+        if (!latestMembership.has(id) || (sourceSequences.get(id) ?? -1) > sequence) continue
+        merged.set(id, value)
+        sourceSequences.set(id, sequence)
+      }
+      for (const id of sourceSequences.keys()) if (!latestMembership.has(id)) sourceSequences.delete(id)
+      const snapshot = uniqueQuotaSources([...merged.values()])
+      this.lastQuotaSources.set(cacheKey, { source, sequence: Math.max(sequence, prior?.sequence ?? -1), membership: latestMembership, sources: snapshot, sourceSequences })
+      // A delayed read answers with the newest confirmed projection, including confirmed removals.
+      sources = snapshot.filter((s) => !requested || s.source_id === requested)
+
+    } else {
+      sources = previous.filter((s) => !requested || s.source_id === requested).map((s) => this.staleQuotaSource(s))
+    }
+    const currentSource = this.sourceFingerprint(profileHome)
+    if (currentSource !== source) { poolUnknown = true; sources = [] }
+    const latestMembership = this.lastQuotaSources.get(cacheKey)?.membership
+    const availability = this.availability(currentSource, !poolUnknown, sources.length > 0)
+    return { availability, version: 1, computed_at: isoAt(at), scope_id: scopeId, profile_id: profile, active_provider: active, requested_source_id: requested, missing_source: Boolean(requested && !poolUnknown && !latestMembership?.has(requested)), sources }
+  }
+
+  private readonly lastQuotaSources = new Map<string, { source: string; sequence: number; membership: Set<string>; sources: QuotaSourceRow[]; sourceSequences: Map<string, number> }>()
+
+  private staleQuotaSource(source: QuotaSourceRow, reason = 'Provider data is temporarily unavailable. Showing last-confirmed data.'): QuotaSourceRow {
+    return { ...source, status: 'stale', unavailable_reason: reason, message: reason, urgency: { remaining: 'stale', pace: 'stale' } }
+  }
+
+  private availability(source: string, authoritative: boolean, cached: boolean): CatalogAvailability {
+    return { authoritative, status: authoritative ? 'available' : cached ? 'stale' : 'unavailable',
+      unavailable_reason: authoritative ? null : cached ? 'Provider data is temporarily unavailable. Showing last-confirmed data.' : 'Provider data is temporarily unavailable. Try again.',
+      generation: createHash('sha256').update(source).digest('hex') }
   }
 
   /** Python `get_provider_cost_history` (OpenRouter only; daily snapshots under `<home>/cost-snapshots`). */

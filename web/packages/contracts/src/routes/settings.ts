@@ -1,6 +1,6 @@
 import { oc } from '@orpc/contract'
 import { z } from 'zod'
-import { SettingsSchema, ReasoningStatusSchema, PersonalitiesSchema, ModelsSchema, ProvidersSchema, ProfileSchema, ProfilesSchema, ActiveProfileSchema, ProfileSwitchSchema, AuxiliaryModelsSchema, ProviderQuotaSchema, ProviderQuotasSchema, ProviderCostHistorySchema, OnboardingStatusSchema, OnboardingProbeSchema, OnboardingOAuthSchema } from '../views.js'
+import { SettingsSchema, ReasoningStatusSchema, PersonalitiesSchema, ModelsSchema, ModelsLiveSchema, ProvidersSchema, ProfileSchema, ProfilesSchema, ActiveProfileSchema, ProfileSwitchSchema, AuxiliaryModelsSchema, ProviderQuotaSchema, ProviderQuotasSchema, ProviderCostHistorySchema, OnboardingStatusSchema, OnboardingProbeSchema, OnboardingOAuthSchema } from '../views.js'
 
 /** Settings, profiles, models, providers, reasoning, personalities, and onboarding. */
 
@@ -27,7 +27,7 @@ export const settingsContract = {
   },
   models: {
     list: oc.route({ method: 'GET', path: '/api/models', tags }).input(z.object({ freshness: z.string().optional() })).output(ModelsSchema),
-    live: oc.route({ method: 'GET', path: '/api/models/live', tags }).input(z.object({ provider: z.string().optional() })).output(Loose),
+    live: oc.route({ method: 'GET', path: '/api/models/live', tags }).input(z.object({ provider: z.string().optional() })).output(ModelsLiveSchema),
     refresh: oc.route({ method: 'POST', path: '/api/models/refresh', tags, summary: "Evict the live model cache for one provider (or all when omitted) and answer the rebuilt catalog; a named provider is re-read past the Agent's own catalog cache." }).input(z.object({ provider: z.string().optional() })).output(z.object({ ok: z.literal(true), provider: z.string().nullable(), models: ModelsSchema })),
     auxiliary: oc.route({ method: 'GET', path: '/api/model/auxiliary', tags }).output(AuxiliaryModelsSchema),
     set: oc.route({ method: 'POST', path: '/api/model/set', tags, summary: 'scope=main sets config.yaml model.default; scope=auxiliary assigns one task slot (`__reset__` clears all) and answers the refreshed auxiliary state. An auxiliary `model` may be a `/api/models` entry id; provider `auto` with an empty model clears the override.' }).input(AdvancedBody.extend({ scope: z.string().optional(), task: z.string().optional(), provider: z.string().optional(), model: z.string().optional(), session_id: z.string().optional(), model_provider: z.string().nullable().optional(), explicit: z.boolean().optional() })).output(z.looseObject({ ok: z.boolean().optional(), session: Json.optional(), error: z.string().optional(), auxiliary: AuxiliaryModelsSchema.optional() })),

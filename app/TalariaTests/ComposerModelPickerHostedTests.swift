@@ -7,6 +7,35 @@ import TalariaKit
 /// headings and the cooling-down model rows.
 @MainActor
 final class ComposerModelPickerHostedTests: XCTestCase {
+    func testPickerAndQuotaRowShowRecoveryAuthority() throws {
+        let decoder = JSONDecoder()
+        decoder.keyDecodingStrategy = .convertFromSnakeCase
+        let models = try decoder.decode(ModelsResponse.self, from: Data(#"{"availability":{"status":"stale","authoritative":false,"generation":"synthetic","unavailable_reason":"Provider data is temporarily unavailable. Showing last-confirmed data."},"default_model":"gpt-6.1-sol","groups":[{"provider":"OpenAI Codex","provider_id":"openai-codex","models":[{"id":"gpt-6.1-sol","label":"GPT-6.1 Sol"}]}]}"#.utf8))
+        func picker(_ groups: [ModelCatalogGroup]) -> ComposerModelPickerSheet {
+            ComposerModelPickerSheet(modelGroups: groups, selectedModelID: "gpt-6.1-sol", selectedModelProviderID: "openai-codex", selectedModelOptionID: "gpt-6.1-sol", favoriteModelKeys: [], recentModelKeys: [], onSelect: { _ in }, onToggleFavorite: { _ in }, onDeleteSavedCustom: { _ in })
+        }
+        let baseline = try hostWindow(picker([ModelCatalogGroup(id: "openai-codex", name: models.catalogGroups[0].name, providerID: "openai-codex", models: models.catalogGroups[0].models)]))
+        let baselineHeading = try XCTUnwrap(HostedAccessibility.elements(in: baseline, labelContaining: "openai-codex").last)
+        HostedAccessibility.activate(baselineHeading)
+        attachHostedScreenshot(baseline, name: "catalog-before")
+        baseline.isHidden = true
+        let window = try hostWindow(picker(models.catalogGroups))
+        XCTAssertTrue(HostedAccessibility.labels(in: window).contains { $0.contains("Last-confirmed data") })
+        let heading = try XCTUnwrap(HostedAccessibility.elements(in: window, labelContaining: "Last-confirmed data").first)
+        HostedAccessibility.activate(heading)
+        XCTAssertTrue(waitUntil { HostedAccessibility.labels(in: window).contains { $0.contains("GPT-6.1 Sol") } })
+        attachHostedScreenshot(window, name: "catalog-recovery-after")
+        window.isHidden = true
+        let quota = try decoder.decode(ProviderQuotasResponse.self, from: Data(#"{"sources":[{"source_id":"qsrc_test","provider_id":"openai-codex","provider_label":"OpenAI Codex","status":"stale","unavailable_reason":"Provider data is temporarily unavailable. Showing last-confirmed data.","windows":[{"label":"Session","remaining_percent":75}]}]}"#.utf8))
+        let row = try hostWindow(NavigationStack {
+            List {
+                ProviderQuotaRow(source: quota.sources[0], displayName: "Test account", percentageMode: .remaining, isRefreshing: false, isPinned: false, canPin: true, refresh: {}, togglePin: {}, hide: {})
+            }.navigationTitle("Provider quotas")
+        })
+        XCTAssertTrue(HostedAccessibility.labels(in: row).contains { $0.contains("last-confirmed data") })
+        attachHostedScreenshot(row, name: "quota-recovery-after")
+    }
+
     func testPickerShowsRateLimitsAndQuotaLevelsFromTheCatalog() throws {
         let today = Calendar.current.startOfDay(for: Date())
         let modelResetsAt = today.addingTimeInterval(23 * 3600 + 59 * 60)

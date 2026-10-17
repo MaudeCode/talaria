@@ -285,7 +285,7 @@ export const settingsRouter = os.router({
     live: os.models.live.handler(({ input, context: { ctx } }) => run(() => ctx.deps.catalog.liveModels(home(ctx), str(input.provider)))),
     refresh: os.models.refresh.handler(({ input, context: { ctx } }) => run(async () => {
       const provider = str(input.provider).trim().toLowerCase() || null
-      ctx.deps.catalog.invalidate(home(ctx), provider ?? undefined)
+      ctx.deps.catalog.invalidate(home(ctx), provider ?? undefined, { preserveConfirmed: true })
       ctx.deps.agentConfig.invalidate(home(ctx))
       // The Agent keeps its own catalog cache; a provider refresh reaches past it.
       if (provider) await ctx.deps.catalog.liveModelIds(home(ctx), provider, { force: true })

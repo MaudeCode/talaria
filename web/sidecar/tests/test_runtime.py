@@ -58,6 +58,29 @@ def test_active_update_with_retained_recovery_is_not_classified_as_incomplete(tm
     assert 'incomplete' not in str(failure.value).lower()
 
 
+@pytest.mark.parametrize("method", ["providers.auth_status", "providers.model_ids", "plugins.providers", "usage.pool_providers", "usage.pool", "usage.account"])
+def test_catalog_reads_keep_agent_recovery_admission(method):
+    from talaria_sidecar.methods import Registry
+    from talaria_sidecar.methods import providers, usage, commands
+    from talaria_sidecar.methods import runtime as runtime_methods
+    from talaria_sidecar.runtime import AgentRuntimeStale
+
+    class HeldRuntime:
+        def load(self):
+            pass
+
+        def ensure_current(self):
+            raise AgentRuntimeStale("incomplete", "Agent update recovery is incomplete.")
+
+    registry = Registry(HeldRuntime())
+    providers.register(registry)
+    usage.register(registry)
+    runtime_methods.register(registry)
+    commands.register(registry)
+    with pytest.raises(AgentRuntimeStale, match="recovery is incomplete"):
+        registry.methods[method](None, {})
+
+
 @requires_agent
 def test_handshake_reports_the_pinned_agent(sidecar: SidecarProcess) -> None:
     result = sidecar.result("runtime.handshake", {"rpc_version": SIDECAR_RPC_VERSION})

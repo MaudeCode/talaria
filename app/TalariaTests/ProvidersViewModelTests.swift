@@ -18,6 +18,31 @@ final class ProvidersViewModelTests: APIClientTestCase {
     }
 
     @MainActor
+    func testRecoveryKeepsLastConfirmedSourcesUntilAnAuthoritativeEmptyResponse() async throws {
+        var step = 0
+        let client = makeScopedClient { request in
+            defer { step += 1 }
+            let source = step == 0 ? #"[{"source_id":"qsrc_test","provider_id":"openai-codex","status":"available","windows":[{"label":"5h","remaining_percent":75}]}]"# : "[]"
+            let authority = step == 0 || step >= 3
+            let status = authority ? "available" : "unavailable"
+            return apiTestJSONResponse("""
+            {"version":1,"scope_id":"qscope_test","profile_id":"default","missing_source":false,"availability":{"status":"\(status)","authoritative":\(authority),"generation":"test-generation","unavailable_reason":\(authority ? "null" : "\"Agent recovery is incomplete.\"")},"sources":\(source)}
+            """, for: request)
+        }
+        let model = ProvidersViewModel(server: Self.serverURL, client: client)
+        await model.loadQuotas()
+        await model.loadQuotas(refresh: true)
+        XCTAssertEqual(model.quotaSources.map(\.id), ["qsrc_test"])
+        XCTAssertEqual(model.quotaSources.first?.status, "unavailable")
+        XCTAssertNotNil(model.quotaErrorMessage)
+        await model.refreshQuota(sourceID: "qsrc_test")
+        XCTAssertEqual(model.quotaSources.map(\.id), ["qsrc_test"])
+        await model.loadQuotas()
+        XCTAssertTrue(model.quotaSources.isEmpty)
+        XCTAssertNil(model.quotaErrorMessage)
+    }
+
+    @MainActor
     func testLoadQuotasKeepsDuplicateProviderAccountsDistinct() async throws {
         let client = makeClient { request in
             XCTAssertEqual(request.url?.path, "/api/provider/quotas")
@@ -160,7 +185,9 @@ final class ProvidersViewModelTests: APIClientTestCase {
         }
         XCTAssertTrue(store.save(
             scopeID: "qscope_default",
-            sources: [row("qsrc_codex_new", "available"), row("qsrc_codex_old", "removed")]
+            sources: [row("qsrc_codex_new", "available"), row("qsrc_codex_old", "removed")],
+            serverID: ResponseCache.serverIdentity(for: Self.serverURL),
+            profileID: "default"
         ))
 
         let model = ProvidersViewModel(
@@ -171,6 +198,12 @@ final class ProvidersViewModelTests: APIClientTestCase {
         )
 
         XCTAssertEqual(model.quotaSources.map(\.id), ["qsrc_codex_new"])
+        let other = ProvidersViewModel(server: URL(string: "https://other.example.test")!, client: makeClient { request in apiTestJSONResponse("{}", for: request) }, quotaSnapshotStore: store)
+        XCTAssertTrue(other.quotaSources.isEmpty)
+        ActiveServerProfile.record("another-profile", for: Self.serverURL)
+        defer { ActiveServerProfile.record(nil, for: Self.serverURL) }
+        let anotherProfile = ProvidersViewModel(server: Self.serverURL, client: makeClient { request in apiTestJSONResponse("{}", for: request) }, quotaSnapshotStore: store)
+        XCTAssertTrue(anotherProfile.quotaSources.isEmpty)
     }
 
     @MainActor

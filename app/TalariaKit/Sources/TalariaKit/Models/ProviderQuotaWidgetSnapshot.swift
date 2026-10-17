@@ -14,6 +14,7 @@ public struct ProviderQuotaWidgetSource: Codable, Equatable, Identifiable, Senda
     public let accountLabel: String
     public let isActiveProvider: Bool
     public let status: String
+    public let unavailableReason: String?
     public let plan: String?
     public let windows: [ProviderQuotaWindow]
     public let quota: ProviderQuotaAmount?
@@ -46,7 +47,8 @@ public struct ProviderQuotaWidgetSource: Codable, Equatable, Identifiable, Senda
         sessionWindowIndex: Int? = nil,
         weeklyWindowIndex: Int? = nil,
         computedAt: String? = nil,
-        urgency: ProviderQuotaUrgencyLevels? = nil
+        urgency: ProviderQuotaUrgencyLevels? = nil,
+        unavailableReason: String? = nil
     ) {
         self.sourceID = sourceID
         self.scopeID = scopeID
@@ -57,6 +59,7 @@ public struct ProviderQuotaWidgetSource: Codable, Equatable, Identifiable, Senda
         self.accountLabel = accountLabel
         self.isActiveProvider = isActiveProvider
         self.status = status
+        self.unavailableReason = unavailableReason
         self.plan = plan
         self.windows = windows
         self.quota = quota
@@ -88,6 +91,31 @@ public struct ProviderQuotaWidgetSource: Codable, Equatable, Identifiable, Senda
             sessionWindowIndex: source.sessionWindowIndex,
             weeklyWindowIndex: source.weeklyWindowIndex,
             computedAt: source.computedAt,
+            urgency: source.urgency,
+            unavailableReason: source.unavailableReason
+        )
+    }
+
+    public var quotaSource: ProviderQuotaSource {
+        let source = self
+        return ProviderQuotaSource(
+            id: source.sourceID,
+            providerID: source.providerID ?? "",
+            providerLabel: source.providerLabel,
+            accountLabel: source.accountLabel,
+            isActiveProvider: source.isActiveProvider,
+            supported: source.status != "unsupported",
+            status: source.status,
+            plan: source.plan,
+            windows: source.windows,
+            quota: source.quota,
+            unavailableReason: source.unavailableReason,
+            retryAfter: source.retryAfter,
+            fetchedAt: source.fetchedAt,
+            paceWindowIndex: source.paceWindowIndex,
+            sessionWindowIndex: source.sessionWindowIndex,
+            weeklyWindowIndex: source.weeklyWindowIndex,
+            computedAt: source.computedAt,
             urgency: source.urgency
         )
     }
@@ -112,7 +140,8 @@ public struct ProviderQuotaWidgetSource: Codable, Equatable, Identifiable, Senda
             sessionWindowIndex: sessionWindowIndex,
             weeklyWindowIndex: weeklyWindowIndex,
             computedAt: computedAt,
-            urgency: urgency
+            urgency: urgency,
+            unavailableReason: unavailableReason
         )
     }
 }
@@ -122,8 +151,14 @@ public struct ProviderQuotaWidgetSnapshot: Codable, Equatable, Sendable {
 
     let updatedAt: Date
     public let sources: [ProviderQuotaWidgetSource]
+    public let serverID: String?
+    public let profileID: String?
+    public let sourceGeneration: String?
 
-    public init(updatedAt: Date, sources: [ProviderQuotaWidgetSource]) {
+    public init(updatedAt: Date, sources: [ProviderQuotaWidgetSource], serverID: String? = nil, profileID: String? = nil, sourceGeneration: String? = nil) {
+        self.serverID = serverID
+        self.profileID = profileID
+        self.sourceGeneration = sourceGeneration
         self.updatedAt = updatedAt
         self.sources = sources
     }
@@ -149,6 +184,9 @@ public struct ProviderQuotaWidgetSnapshotStore {
         scopeID: String,
         sources: [ProviderQuotaWidgetSource],
         updatedSourceIDs: Set<String>? = nil,
+        serverID: String? = nil,
+        profileID: String? = nil,
+        sourceGeneration: String? = nil,
         at date: Date = Date()
     ) -> Bool {
         guard sources.allSatisfy({ $0.scopeID == scopeID }) else { return false }
@@ -164,7 +202,7 @@ public struct ProviderQuotaWidgetSnapshotStore {
         }
         guard let defaults,
               let data = try? JSONEncoder().encode(
-                ProviderQuotaWidgetSnapshot(updatedAt: date, sources: persistedSources)
+                ProviderQuotaWidgetSnapshot(updatedAt: date, sources: persistedSources, serverID: serverID, profileID: profileID, sourceGeneration: sourceGeneration)
               )
         else {
             return false
@@ -182,7 +220,8 @@ public struct ProviderQuotaWidgetSnapshotStore {
         var seen = Set<String>()
         return ProviderQuotaWidgetSnapshot(
             updatedAt: snapshot.updatedAt,
-            sources: snapshot.sources.filter { seen.insert($0.sourceID).inserted }
+            sources: snapshot.sources.filter { seen.insert($0.sourceID).inserted },
+            serverID: snapshot.serverID, profileID: snapshot.profileID, sourceGeneration: snapshot.sourceGeneration
         )
     }
 

@@ -42,7 +42,8 @@ struct ProviderQuotaRow: View {
                 }
             } else if let quota = source.quota {
                 openRouterQuota(quota)
-            } else if source.status != "available" {
+            }
+            if source.status != "available" {
                 statusLine
             }
 
@@ -196,7 +197,7 @@ struct ProviderQuotaRow: View {
         } else if let remaining = quota.limitRemaining {
             Text("\(remaining.formatted()) credits remaining")
                 .font(.footnote)
-        } else {
+        } else if source.status == "available" {
             statusLine
         }
     }

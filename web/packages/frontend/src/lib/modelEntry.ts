@@ -1,3 +1,4 @@
+import { m } from '../paraglide/messages.js'
 import type { Models } from '@maudecode/talaria-web-contracts'
 
 export type ModelEntry = Models['groups'][number]['models'][number]
@@ -10,4 +11,10 @@ export function catalogEntryById(catalog: Models | undefined, id: string | null 
     if (hit) return hit
   }
   return undefined
+}
+
+/** The server's authority verdict stays visible in every catalog group label. */
+export function catalogGroupLabel(group: Models['groups'][number]): string {
+  const status = group.availability?.status
+  return status === 'stale' ? `${group.provider} · ${m.catalog_last_confirmed()}` : status === 'unavailable' ? `${group.provider} · ${m.catalog_unavailable()}` : group.provider
 }

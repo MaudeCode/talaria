@@ -1,6 +1,35 @@
 import Foundation
 
+/// Server-owned catalog authority, shared by models, providers and quota sources.
+public struct CatalogAvailability: Codable, Equatable, Sendable {
+    public let status: String?
+    public let authoritative: Bool?
+    public let unavailableReason: String?
+    public let generation: String?
+
+    enum CodingKeys: String, CodingKey {
+        case status, authoritative, unavailableReason, generation
+    }
+
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        status = try? c.decodeIfPresent(String.self, forKey: .status)
+        authoritative = try? c.decodeIfPresent(Bool.self, forKey: .authoritative)
+        unavailableReason = try? c.decodeIfPresent(String.self, forKey: .unavailableReason)
+        generation = try? c.decodeIfPresent(String.self, forKey: .generation)
+    }
+
+    public var displayLabel: String? {
+        switch status {
+        case "stale": String(localized: "Last-confirmed data")
+        case "unavailable": String(localized: "Temporarily unavailable")
+        default: nil
+        }
+    }
+}
+
 public struct ModelsResponse: Decodable, Equatable {
+    public let availability: CatalogAvailability?
     let groups: [JSONValue]?
     let models: [JSONValue]?
     public let defaultModel: String?
@@ -12,6 +41,7 @@ public struct ModelsResponse: Decodable, Equatable {
     public let defaultOptionID: String?
 
     private enum CodingKeys: String, CodingKey {
+        case availability
         case groups
         case models
         case defaultModel
@@ -20,6 +50,18 @@ public struct ModelsResponse: Decodable, Equatable {
         case defaultBareID = "defaultBareId"
         case defaultOptionID = "defaultOptionId"
     }
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        availability = try? c.decodeIfPresent(CatalogAvailability.self, forKey: .availability)
+        groups = try? c.decodeIfPresent([JSONValue].self, forKey: .groups)
+        models = try? c.decodeIfPresent([JSONValue].self, forKey: .models)
+        defaultModel = c.decodeLossyStringIfPresent(forKey: .defaultModel)
+        activeProvider = c.decodeLossyStringIfPresent(forKey: .activeProvider)
+        defaultProviderID = c.decodeLossyStringIfPresent(forKey: .defaultProviderID)
+        defaultBareID = c.decodeLossyStringIfPresent(forKey: .defaultBareID)
+        defaultOptionID = c.decodeLossyStringIfPresent(forKey: .defaultOptionID)
+    }
+
 }
 
 public struct CommandsResponse: Decodable, Equatable {
@@ -147,21 +189,25 @@ extension Array where Element == AgentCommand {
 /// `auth_error`, `is_self_hosted`, `base_url`, and `is_plugin_provider` — so every
 /// field stays optional and decoding never fails on a partial entry.
 public struct ProvidersResponse: Decodable, Equatable {
+    public let availability: CatalogAvailability?
     public let providers: [ProviderSummary]?
     public let activeProvider: String?
 
-    init(providers: [ProviderSummary]?, activeProvider: String?) {
+    init(providers: [ProviderSummary]?, activeProvider: String?, availability: CatalogAvailability? = nil) {
+        self.availability = availability
         self.providers = providers
         self.activeProvider = activeProvider
     }
 
     enum CodingKeys: String, CodingKey {
+        case availability
         case providers
         case activeProvider
     }
 
     public init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
+        availability = try? container.decodeIfPresent(CatalogAvailability.self, forKey: .availability)
         providers = try? container.decodeIfPresent([ProviderSummary].self, forKey: .providers)
         activeProvider = container.decodeLossyStringIfPresent(forKey: .activeProvider)
     }

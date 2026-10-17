@@ -148,3 +148,11 @@ and paging. `range.test.ts` verifies off-page parent proof through indexed turns
 without scanning the cached prefix. `CacheStoreTests` retains the explicit
 outcomes for offline display;
 `TranscriptHostedTests` exercises the existing synthetic background-update UI.
+
+Catalog recovery authority uses `contracts/fixtures/catalog-recovery.json` in the
+contract schema, native model and Web cache tests. Server
+`providers/catalog-recovery.test.ts` drives real HTTP responses through synthetic
+OAuth pool recovery holds, source replacement, profile/server isolation, confirmed
+removal and recovery. Native provider view-model and hosted picker/quota-row tests
+cover retention and unavailable wording; Web `catalog-recovery.spec.ts` covers
+both responsive layouts. Sidecar admission tests keep these reads guarded.

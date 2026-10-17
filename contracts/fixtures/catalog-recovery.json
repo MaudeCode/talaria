@@ -1,0 +1,152 @@
+{
+  "models": {
+    "availability": {
+      "status": "stale",
+      "authoritative": false,
+      "unavailable_reason": "Provider data is temporarily unavailable. Showing last-confirmed data.",
+      "generation": "synthetic-generation"
+    },
+    "active_provider": "openai-codex",
+    "default_model": "gpt-6.1-sol",
+    "default_provider_id": "openai-codex",
+    "default_bare_id": "gpt-6.1-sol",
+    "default_option_id": "gpt-6.1-sol",
+    "groups": [
+      {
+        "provider": "OpenAI Codex",
+        "provider_id": "openai-codex",
+        "availability": {
+          "status": "stale",
+          "authoritative": false,
+          "unavailable_reason": "Provider data is temporarily unavailable. Showing last-confirmed data.",
+          "generation": "synthetic-generation"
+        },
+        "models": [
+          {
+            "id": "gpt-6.1-sol",
+            "label": "GPT-6.1 Sol",
+            "bare_id": "gpt-6.1-sol",
+            "provider_id": "openai-codex"
+          }
+        ]
+      }
+    ]
+  },
+  "quotas": {
+    "version": 1,
+    "computed_at": "2026-09-28T08:00:00Z",
+    "scope_id": "qscope_7db910e89e3a2372073d47b80ac9f2cc",
+    "profile_id": "default",
+    "active_provider": "anthropic",
+    "requested_source_id": null,
+    "missing_source": false,
+    "sources": [
+      {
+        "source_id": "qsrc_69e3029fba20a8b0ea82fff362e093f5",
+        "provider_id": "anthropic",
+        "provider_label": "Anthropic",
+        "account_label": "Anthropic",
+        "status": "stale",
+        "supported": true,
+        "message": "Provider data is temporarily unavailable. Showing last-confirmed data.",
+        "is_active_provider": true,
+        "quota": null,
+        "windows": [
+          {
+            "label": "Session",
+            "used_percent": 10,
+            "remaining_percent": 90,
+            "reset_at": "2026-09-28T12:00:00Z",
+            "detail": null,
+            "window_seconds": 18000,
+            "pace": {
+              "expected_remaining_percent": 80,
+              "pace_delta_percent": 10,
+              "burn_rate": 0.5,
+              "minutes_to_reset": 240,
+              "projected_minutes_to_empty": 540,
+              "elapsed_minutes": 60,
+              "valid_until": "2026-09-28T12:00:00Z",
+              "status": "under"
+            },
+            "forecast": {
+              "outcome": "safe",
+              "budget_unit": "hour",
+              "budget_percent": 22.5,
+              "depletion_margin_minutes": 300
+            },
+            "projection_eligible": false,
+            "urgency": {
+              "remaining": "healthy",
+              "pace": "healthy"
+            }
+          },
+          {
+            "label": "Weekly",
+            "used_percent": 32,
+            "remaining_percent": 68,
+            "reset_at": "2026-10-03T08:00:00Z",
+            "detail": null,
+            "window_seconds": 604800,
+            "pace": {
+              "expected_remaining_percent": 71.4,
+              "pace_delta_percent": -3.4,
+              "burn_rate": 1.12,
+              "minutes_to_reset": 7200,
+              "projected_minutes_to_empty": 6120,
+              "elapsed_minutes": 2880,
+              "valid_until": "2026-10-03T08:00:00Z",
+              "status": "over"
+            },
+            "forecast": {
+              "outcome": "warning",
+              "budget_unit": "day",
+              "budget_percent": 13.6,
+              "depletion_margin_minutes": -1080
+            },
+            "projection_eligible": true,
+            "urgency": {
+              "remaining": "healthy",
+              "pace": "warning"
+            }
+          },
+          {
+            "label": "Monthly",
+            "used_percent": 5,
+            "remaining_percent": 95,
+            "reset_at": "2026-10-15T00:00:00Z",
+            "detail": null,
+            "window_seconds": null,
+            "pace": null,
+            "forecast": null,
+            "projection_eligible": false,
+            "urgency": {
+              "remaining": "healthy",
+              "pace": "healthy"
+            }
+          }
+        ],
+        "balances": [],
+        "plan": "max",
+        "details": [],
+        "unavailable_reason": "Provider data is temporarily unavailable. Showing last-confirmed data.",
+        "retry_after": null,
+        "fetched_at": "2026-09-28T07:59:30Z",
+        "pace_window_index": 1,
+        "session_window_index": 0,
+        "weekly_window_index": 1,
+        "urgency": {
+          "remaining": "stale",
+          "pace": "stale"
+        },
+        "computed_at": "2026-09-28T08:00:00Z"
+      }
+    ],
+    "availability": {
+      "status": "stale",
+      "authoritative": false,
+      "unavailable_reason": "Provider data is temporarily unavailable. Showing last-confirmed data.",
+      "generation": "synthetic-generation"
+    }
+  }
+}

@@ -1,3 +1,4 @@
+import { catalogGroupLabel } from '../../lib/modelEntry'
 import { useState, type ReactNode } from 'react'
 import { Check, ChevronLeft, ChevronRight } from 'lucide-react'
 import { m } from '../../paraglide/messages.js'
@@ -118,8 +119,8 @@ function AuxiliaryModelPicker({ task, onDone }: { task: AuxTask; onDone: () => v
           </OptionButton>
         )}
         {models.isPending ? <LoadingState /> : models.isError ? <ErrorState error={models.error} onRetry={() => { void models.refetch() }} /> : groups.length === 0 ? <EmptyState>{m.model_search_no_results()}</EmptyState> : groups.map((g) => (
-          <section key={g.provider_id ?? g.provider} aria-label={g.provider} className="mt-2">
-            <h3 className="px-2 py-1 text-xs font-medium uppercase tracking-wide text-muted">{g.provider}</h3>
+          <section key={g.provider_id ?? g.provider} aria-label={catalogGroupLabel(g)} className="mt-2">
+            <h3 className="px-2 py-1 text-xs font-medium uppercase tracking-wide text-muted">{catalogGroupLabel(g)}</h3>
             {g.rows.map((mm) => (
               <OptionButton key={mm.id} selected={mm.id === task.selected_option_id} disabled={save.isPending} onClick={() => pick(mm.id, g.provider_id)}>
                 {mm.label ?? mm.id}

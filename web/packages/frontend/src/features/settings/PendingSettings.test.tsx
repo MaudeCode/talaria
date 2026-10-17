@@ -33,7 +33,7 @@ it('renders actual preference and conversation controls before their writes fini
   vi.mocked(api.saveSettings).mockReturnValue(deferred<typeof initial>().promise)
   setup()
   await userEvent.click(screen.getByRole('combobox', { name: 'Send Key' }))
-  await userEvent.click(screen.getByRole('option', { name: /Ctrl/ }))
+  await userEvent.click(await screen.findByRole('option', { name: /Ctrl/ }))
   expect(screen.getByRole('combobox', { name: 'Send Key' })).toHaveTextContent(/Ctrl/)
   for (const name of ['Show non-WebUI sessions', 'Notification sound', 'Browser notifications', 'Render markdown in user messages']) {
     const control = screen.getByRole('switch', { name })

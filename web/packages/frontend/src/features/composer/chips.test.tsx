@@ -44,6 +44,14 @@ function renderChip(props: { model: string | null; optionId: string | null }, on
 }
 
 describe('ModelChip', () => {
+  it('labels a fallback model group unavailable while keeping the configured model selected', async () => {
+    catalog = { ...PLUGIN_CATALOG, default_model: 'gpt-6.1-sol', default_option_id: 'gpt-6.1-sol', groups: [{ provider: 'OpenAI Codex', provider_id: 'openai-codex', availability: { status: 'unavailable', authoritative: false, generation: 'test', unavailable_reason: 'Agent recovery is incomplete.' }, models: [{ id: 'gpt-6.1-sol', label: 'GPT-6.1 Sol', bare_id: 'gpt-6.1-sol', provider_id: 'openai-codex' }] }] }
+    renderChip({ model: null, optionId: null })
+    await userEvent.click(screen.getByRole('button'))
+    const group = await screen.findByRole('group', { name: 'OpenAI Codex · Temporarily unavailable' })
+    expect(within(group).getByRole('menuitemradio', { name: 'GPT-6.1 Sol' })).toHaveAttribute('aria-checked', 'true')
+  })
+
   it('a plugin provider model keeps the plugin provider when another provider lists the same model', async () => {
     catalog = PLUGIN_CATALOG
     const onChange = vi.fn()
