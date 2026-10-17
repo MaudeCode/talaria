@@ -52,7 +52,7 @@ def git(root, *args):
 
 
 @contextmanager
-def supervised_agent(tmp_path, *, dashboards=1, depth=1, gateways=True, dependency_sync=False, readiness=None, legacy=False, refresh=False, manager="launchd", stop_seconds=None):
+def supervised_agent(tmp_path, *, dashboards=1, depth=1, gateways=True, dependency_sync=False, readiness=None, legacy=False, refresh=False, manager="launchd", stop_seconds=None, modern_first=False):
     root, home, _, _ = native_agent(tmp_path)
     modules = root / 'hermes_cli'
     (root / 'synthetic_services.py').write_text('''import json, os, subprocess, sys, time, psutil
@@ -121,7 +121,9 @@ signal.signal(signal.SIGTERM,stop)
 try:
  while not (folder/'disarm').exists():
   if child.poll() is not None:
-   if (folder/'respawn').exists(): child=subprocess.Popen(argv)
+   if (folder/'respawn-once').exists():
+    (folder/'respawn-once').unlink(); child=subprocess.Popen(argv)
+   elif (folder/'respawn').exists(): child=subprocess.Popen(argv)
    elif cfg.get('refresh'): break
   time.sleep(.01)
 finally:
@@ -309,7 +311,7 @@ UpdateLock.acquire_checkout=acquire_checkout
             cfg['port'] = listener.getsockname()[1]
             sockets.append(listener)
             (served_home / 'backend-config.json').write_text(json.dumps(cfg))
-            if refresh: (served_home / 'refresh-once').touch()
+            if refresh and not (modern_first and i == 1): (served_home / 'refresh-once').touch()
         folder = home / 'services' / label
         folder.mkdir()
         (folder / 'config.json').write_text(json.dumps(cfg))
@@ -1222,22 +1224,27 @@ def test_unsupported_lifecycle_recovery_keeps_debt_and_restores_sibling(tmp_path
 
 
 @pytest.mark.parametrize('mode', ['normal', 'force'])
-@pytest.mark.parametrize('depth,manager', [(0, 'launchd'), (2, 'launchd'), (1, 'systemd')])
-def test_legacy_refresh_confirmation_continues_original_update(tmp_path, mode, depth, manager):
-    with supervised_agent(tmp_path, dashboards=2, depth=depth, dependency_sync=True, legacy=True, refresh=True, manager=manager) as (root, home, base, target, sidecar, configs):
+@pytest.mark.parametrize('depth,manager,mixed,respawn', [(0, 'launchd', False, False), (2, 'launchd', False, True), (1, 'systemd', True, True)])
+def test_legacy_refresh_confirmation_continues_original_update(tmp_path, mode, depth, manager, mixed, respawn):
+    with supervised_agent(tmp_path, dashboards=2, depth=depth, dependency_sync=True, legacy=True, refresh=True, manager=manager, modern_first=mixed) as (root, home, base, target, sidecar, configs):
         homes = list({c['home'] for c in configs})
+        legacy_configs = configs[2:] if mixed else configs[1:]
+        if respawn:
+            for cfg in legacy_configs: (home / 'services' / cfg['label'] / 'respawn-once').touch()
         before = {c['label']: (Path(c['home']) / 'backend.pid').read_text() for c in configs[1:]}
         pending = rpc(sidecar, root, 'begin', revision=target, homes=homes, intent='synthetic-owner:' + mode)
         assert not pending['ok']
         assert pending.get('refresh_confirmation'), pending
         confirmation = pending['refresh_confirmation']
-        assert sorted(confirmation['services']) == sorted(c['label'] for c in configs[1:])
+        assert sorted(confirmation['services']) == sorted(c['label'] for c in legacy_configs)
         assert git(root, 'rev-parse', 'HEAD') == base
         assert all((Path(c['home']) / 'backend.pid').read_text() == before[c['label']] for c in configs[1:])
         assert not list((home / '.talaria-agent-services').glob('*.json'))
         begun = rpc(sidecar, root, 'begin', revision=target, homes=homes, intent='synthetic-owner:' + mode, refresh_token=confirmation['token'])
         assert begun['ok'], begun
         assert not list((home / 'services').glob('*/service.pid'))
+        if respawn:
+            assert all(not (home / 'services' / c['label'] / 'starts').exists() for c in legacy_configs), 'bootstrap must adopt the supervisor successor'
         args = ['merge', '--ff-only', target] if mode == 'normal' else ['reset', '--hard', target]
         assert rpc(sidecar, root, 'git', token=begun['token'], args=args, timeout_ms=10000)['ok']
         assert rpc(sidecar, root, 'sync', token=begun['token'])['ok']
@@ -1245,9 +1252,12 @@ def test_legacy_refresh_confirmation_continues_original_update(tmp_path, mode, d
         assert git(root, 'rev-parse', 'HEAD') == target
         assert all((Path(c['home']) / 'backend.pid').read_text() != before[c['label']] for c in configs[1:])
         assert not list((home / '.talaria-agent-services').glob('*.json'))
+        for cfg in configs:
+            starts = 2 if cfg in legacy_configs and not respawn else 1
+            assert (home / 'services' / cfg['label'] / 'starts').read_text().splitlines() == ['start'] * starts
 
 
-@pytest.mark.parametrize('changed', ['operator', 'revision', 'homes', 'config', 'endpoint', 'replay'])
+@pytest.mark.parametrize('changed', ['operator', 'revision', 'homes', 'config', 'endpoint', 'profile', 'birth', 'replay'])
 def test_legacy_refresh_rejects_changed_or_replayed_consent(tmp_path, changed):
     with supervised_agent(tmp_path, refresh=True, gateways=False) as (root, home, base, target, sidecar, configs):
         params = dict(revision=target, homes=[str(home)], intent='synthetic-owner:normal')
@@ -1265,6 +1275,14 @@ def test_legacy_refresh_rejects_changed_or_replayed_consent(tmp_path, changed):
         if changed == 'endpoint':
             path = home / 'services' / configs[0]['label'] / 'config.json'
             cfg = json.loads(path.read_text()); cfg['port'] += 1; path.write_text(json.dumps(cfg))
+        if changed == 'profile':
+            path = home / 'services' / configs[0]['label'] / 'config.json'
+            cfg = json.loads(path.read_text()); cfg['profile'] = 'changed'; path.write_text(json.dumps(cfg))
+        if changed == 'birth':
+            (home / 'services' / configs[0]['label'] / 'respawn-once').touch()
+            os.kill(int(before), signal.SIGTERM)  # Change only the test-owned incarnation to invalidate the old consent.
+            wait_for(lambda: (home / 'backend.pid').exists() and (home / 'backend.pid').read_text() != before)
+            before = (home / 'backend.pid').read_text()
         if changed == 'replay':
             wrong = {**params, 'intent': 'different-owner:normal'}
             assert not rpc(sidecar, root, 'begin', **wrong, refresh_token=confirmation['token'])['ok']
@@ -1273,7 +1291,7 @@ def test_legacy_refresh_rejects_changed_or_replayed_consent(tmp_path, changed):
         assert not result.get('refresh_confirmation')
         assert (home / 'backend.pid').read_text() == before
         assert git(root, 'rev-parse', 'HEAD') == base
-        assert not (home / 'signals').exists()
+        assert ((home / 'signals').read_text().splitlines() if (home / 'signals').exists() else []) == (['TERM'] if changed == 'birth' else [])
         assert not list((home / '.talaria-agent-services').glob('*.json'))
 
 
@@ -1393,3 +1411,41 @@ def test_refresh_persists_incarnation_before_signal_and_definitive_refusal_is_re
         recovery.refresh(entry, stopped, None)
     assert recovery.state['entries'] == [sibling]
     assert saved[-1]['entries'] == [sibling]
+
+
+@pytest.mark.parametrize('failure', ['active-modern', 'missing-successor-api', 'wrong-successor', 'unsafe-source', 'unsafe-dependencies'])
+def test_refresh_failure_never_mutates_source_or_interrupts_modern_work(tmp_path, failure):
+    with supervised_agent(tmp_path, dashboards=2, gateways=False, refresh=True, modern_first=True, readiness=.25) as (root, home, base, target, sidecar, configs):
+        homes = [c['home'] for c in configs]
+        params = dict(revision=target, homes=homes, intent='synthetic-owner')
+        modern = home / 'backend.pid'
+        before = modern.read_text()
+        if failure == 'unsafe-source': (root / 'run_agent.py').write_text('# local source edit\n')
+        if failure == 'unsafe-dependencies': (root / '.interrupted').touch()
+        pending = rpc(sidecar, root, 'begin', **params)
+        assert pending.get('refresh_confirmation'), pending
+        legacy_home = Path(configs[-1]['home'])
+        if failure == 'active-modern': (home / 'busy').touch()
+        if failure == 'missing-successor-api': (legacy_home / 'missing-retirement').touch()
+        if failure == 'wrong-successor': (legacy_home / 'foreign-listener').touch()
+        result = rpc(sidecar, root, 'begin', **params, refresh_token=pending['refresh_confirmation']['token'])
+        assert not result['ok'], result
+        assert git(root, 'rev-parse', 'HEAD') == base
+        assert modern.read_text() == before
+        assert not (home / 'signals').exists(), 'the busy/untouched modern writer must never be interrupted'
+        if failure.startswith('unsafe-'):
+            assert not (legacy_home / 'signals').exists()
+        elif failure != 'active-modern':
+            debt = next((home / '.talaria-agent-services').glob('*.json'))
+            assert [e['label'] for e in json.loads(debt.read_text())['entries']] == [configs[-1]['label']]
+
+
+def test_legacy_listener_requires_the_attested_os_process():
+    from talaria_sidecar import agent_services as services
+    import socket
+    with socket.socket() as listener:
+        listener.bind(('127.0.0.1', 0)); listener.listen()
+        entry = dict(pid=os.getpid(), host='127.0.0.1', port=listener.getsockname()[1], label='synthetic.listener')
+        services.verify_listener(entry)
+        with pytest.raises((RuntimeError, OSError)):
+            services.verify_listener({**entry, 'pid': os.getppid()})
