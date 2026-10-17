@@ -21,6 +21,12 @@ def wait_for(predicate):
     assert predicate()
 
 
+def wait_for_agent_exit(root, home):
+    """Wait for all disposable Agent processes, including restarted supervisors."""
+    wait_for(lambda: not any(str(root) in args or str(home) in args
+                             for _, _, _, args in process_snapshot()))
+
+
 def native_agent(tmp_path):
     root, home = tmp_path / 'agent', tmp_path / 'home'
     root.mkdir()
@@ -222,8 +228,7 @@ def own_agent(root, home, base, target, env=None):
         wait_for(lambda: not (home / 'active').exists())
         writer.wait(timeout=5)
         # Crash recovery publishes its journal before the supervisor exits.
-        wait_for(lambda: not any(str(root) in args or str(home) in args
-                                 for _, _, _, args in process_snapshot()))
+        wait_for_agent_exit(root, home)
 
 
 @pytest.fixture

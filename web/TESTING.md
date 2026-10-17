@@ -86,7 +86,8 @@ Linux kernels without the optional proc children entry use that same process sna
 discovery, including startup failure and cancellation.
 In-process chat tests receive a fresh Agent cache per case without extending other test mocks
 into the process-leak scan. Native-supervisor fixtures wait for
-their disposable source/home processes to exit; a published recovery journal is not exit proof.
+their disposable source/home processes to exit, including restarted supervisors; a published
+recovery journal or removed PID marker is not exit proof.
 
 One merged JUnit report remains beside each compatibility receipt. Per-case durations and
 failure/error/skip information are preserved, with slow tests and modules printed after the run.
