@@ -26,6 +26,8 @@ final class ChatAttachmentCoordinator {
     private(set) var uploadAttachmentErrorMessage: String?
     private(set) var localAttachmentPreviews: [String: [String: Data]] = [:]
     private var activeUploadCount = 0
+    /// Files already carried by the first pending row while its remaining imports are staged.
+    var startupAttachmentCount = 0
     private(set) var uploadStartGeneration = 0
     /// The server's per-message attachment cap, learned from its upload responses (TAL-635).
     private(set) var maxAttachmentsPerMessage: Int?
@@ -120,7 +122,7 @@ final class ChatAttachmentCoordinator {
     /// silently on send; staging stops at the cap instead (TAL-635). Nil while there is room.
     private var reachedAttachmentCap: Int? {
         guard let maxAttachmentsPerMessage,
-              pendingAttachments.count + activeUploadCount >= maxAttachmentsPerMessage
+              pendingAttachments.count + activeUploadCount + startupAttachmentCount >= maxAttachmentsPerMessage
         else { return nil }
         return maxAttachmentsPerMessage
     }
@@ -309,7 +311,7 @@ final class ChatAttachmentCoordinator {
             }
         }
         if !previews.isEmpty {
-            localAttachmentPreviews[localMessageID] = previews
+            localAttachmentPreviews[localMessageID, default: [:]].merge(previews) { _, latest in latest }
         }
 
         if queued == nil { pendingAttachments.removeAll() }

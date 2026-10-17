@@ -1,0 +1,9 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Send the first message while a chat opens, clear streaming drafts immediately, and see pending edits and regenerated replies.",
+      "highlight": false
+    }
+  ]
+}

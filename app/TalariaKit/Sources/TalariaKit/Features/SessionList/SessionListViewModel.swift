@@ -1325,6 +1325,19 @@ public final class SessionListViewModel {
         provider: String? = nil,
         projectID: String? = nil
     ) async -> SessionSummary? {
+        switch await createSessionResult(modelContext: modelContext, profile: profile, provider: provider, projectID: projectID) {
+        case .started(let session): return session
+        case .failed: return nil
+        }
+    }
+
+    public func createSessionResult(
+        modelContext: ModelContext? = nil,
+        profile: String? = nil,
+        provider: String? = nil,
+        projectID: String? = nil
+    ) async -> ChatSessionStartResult {
+        var didRequestCreation = false
         isCreatingSession = true
         actionErrorMessage = nil
         lastError = nil
@@ -1343,6 +1356,8 @@ public final class SessionListViewModel {
             } else {
                 requestedModel = nil
             }
+            try Task.checkCancellation()
+            didRequestCreation = true
             let response = try await client.createSession(
                 workspace: workspace,
                 model: requestedModel?.id,
@@ -1350,16 +1365,19 @@ public final class SessionListViewModel {
                 profile: Self.nonEmpty(profile),
                 projectID: Self.nonEmpty(projectID)
             )
+            try Task.checkCancellation()
 
             guard let sessionDetail = response.session else {
-                actionErrorMessage = String(localized: "The server did not return the new session.")
-                return nil
+                let message = String(localized: "The server did not return the new session.")
+                actionErrorMessage = message
+                return .failed(message, canRetry: false)
             }
 
             let newSession = SessionSummary(from: sessionDetail)
             guard newSession.sessionId?.isEmpty == false else {
-                actionErrorMessage = String(localized: "The server did not return the new session ID.")
-                return nil
+                let message = String(localized: "The server did not return the new session ID.")
+                actionErrorMessage = message
+                return .failed(message, canRetry: false)
             }
 
             if newSession.shouldAppearInSessionList {
@@ -1374,13 +1392,17 @@ public final class SessionListViewModel {
                 }
             }
 
-            return newSession
+            return .started(newSession)
         } catch {
-            guard !APIError.isCancellation(error) else { return nil }
-
+            let result = ChatSessionStartResult.failed(
+                error.localizedDescription,
+                canRetry: !didRequestCreation || APIError.isDefinitiveWriteFailure(error),
+                error: error
+            )
+            guard !APIError.isCancellation(error) else { return result }
             lastError = error
             actionErrorMessage = error.localizedDescription
-            return nil
+            return result
         }
     }
 

@@ -7,6 +7,235 @@ import UniformTypeIdentifiers
 
 @MainActor
 extension ChatViewModelSendTests {
+    func testAcceptedStartAfterNavigationRemainsAcceptedWithoutAttachingAStream() async throws {
+        for accepted in [true, false] {
+            let requests = DeferredRequests()
+            let host = "tal1080-late-start.test"
+            let arrived = expectation(description: "start held before navigation")
+            DeferredMockURLProtocol.setOnRequest({ request in
+                _ = requests.append(request)
+                arrived.fulfill()
+            }, forHost: host)
+            defer { DeferredMockURLProtocol.setOnRequest(nil, forHost: host) }
+            let stream = SpySSEStreamingClient()
+            let viewModel = try makeViewModel(streamClient: stream, server: URL(string: "https://\(host)")!, protocolClasses: [DeferredMockURLProtocol.self]) { _ in
+                throw URLError(.badURL)
+            }
+            let send = Task { await viewModel.sendMessage("Submitted prompt") }
+            await fulfillment(of: [arrived], timeout: 10)
+            viewModel.suspendStreamForNavigation()
+            requests.request(at: 0).complete(withJSON: accepted ? #"{"stream_id":"accepted-run"}"# : #"{"error":"Refused"}"#)
+            let didStart = await send.value
+            XCTAssertEqual(didStart, accepted, "Navigation must not turn a server-accepted send into a retryable failure")
+            XCTAssertNil(viewModel.activeStreamID)
+            XCTAssertTrue(stream.startedURLs.isEmpty, "An accepted late response must not reconnect the departed chat")
+            XCTAssertFalse(viewModel.isStartingChat)
+        }
+    }
+
+    func testHistoryResendsAcceptedAfterNavigationDoNotAttachAStream() async throws {
+        for edits in [true, false] { try await assertHistoryResendWhileHeld(edits: edits, acceptedAfterNavigation: true) }
+    }
+
+    func testPendingFirstSendKeepsAttachmentCapDuringStartup() async throws {
+        var uploads = 0
+        let viewModel = try makeViewModel { request in
+            XCTAssertEqual(request.url?.path, "/api/upload")
+            uploads += 1
+            return apiTestJSONResponse(#"{"filename":"intent.txt","path":"/tmp/intent.txt","size":4,"mime":"text/plain","is_image":false,"max_attachments_per_message":1}"#, for: request)
+        }
+        let staged = await viewModel.uploadAttachment(data: Data("file".utf8), filename: "intent.txt")
+        let original = try XCTUnwrap(staged)
+        let didStart = await viewModel.sendMessage("First prompt", waitForSession: {
+            let extra = await viewModel.uploadAttachment(data: Data("extra".utf8), filename: "extra.txt")
+            XCTAssertNil(extra, "Files already carried by the pending send still count toward the server's cap during startup")
+            return false
+        })
+        XCTAssertFalse(didStart)
+        XCTAssertEqual(uploads, 1)
+        XCTAssertEqual(viewModel.pendingAttachments.map(\.id), [original.id])
+    }
+
+    func testFirstSendWaitsWithOneRowThenAdoptsAndSendsExactlyOnce() async throws {
+        let requests = DeferredRequests()
+        let host = "tal1080-first.test"
+        let startArrived = expectation(description: "first start held")
+        DeferredMockURLProtocol.setOnRequest({ request in
+            switch request.request.url?.path {
+            case "/api/workspaces":
+                request.complete(withJSON: #"{"workspaces":[{"path":"/tmp/workspace"},{"path":"/tmp/saved"}]}"#)
+                return
+            case "/api/profiles": request.complete(withJSON: #"{"profiles":[],"active":"original-profile"}"#); return
+            case "/api/models": request.complete(withJSON: #"{"groups":[]}"#); return
+            case "/api/reasoning": request.complete(withJSON: #"{"reasoning_effort":"medium"}"#); return
+            case "/api/commands": request.complete(withJSON: #"{"commands":[]}"#); return
+            case "/api/session/update":
+                request.complete(withJSON: #"{"session":{"session_id":"session-abc","workspace":"/tmp/saved"}}"#)
+                return
+            default: break
+            }
+            if request.request.url?.path == "/api/upload" {
+                request.complete(withJSON: #"{"filename":"intent.txt","path":"/tmp/intent.txt","size":4,"mime":"text/plain","is_image":false}"#)
+                return
+            }
+            _ = requests.append(request)
+            startArrived.fulfill()
+        }, forHost: host)
+        defer { DeferredMockURLProtocol.setOnRequest(nil, forHost: host) }
+        let viewModel = try makeViewModel(sessionSummary: SessionSummary(title: "New Chat"), server: URL(string: "https://\(host)")!, protocolClasses: [DeferredMockURLProtocol.self]) { _ in
+            throw URLError(.badURL)
+        }
+        var creation: CheckedContinuation<Bool, Never>?
+        var initialFile: PendingAttachment?
+        let waiting = expectation(description: "waiting for creation")
+        let send = Task {
+            await viewModel.sendMessage("First prompt", waitForSession: {
+                await withCheckedContinuation {
+                    creation = $0
+                    waiting.fulfill()
+                }
+            }, sessionAttachments: {
+                viewModel.pendingAttachments.filter { $0.id == initialFile?.id }
+            })
+        }
+        await fulfillment(of: [waiting], timeout: 10)
+        XCTAssertEqual(viewModel.messages.compactMap(\.content), ["First prompt"])
+        let rowID = viewModel.messages.first?.messageId
+        XCTAssertTrue(viewModel.isStartingChat)
+        XCTAssertFalse(viewModel.hasSession)
+        XCTAssertNil(viewModel.activeStreamID)
+        XCTAssertEqual(requests.count, 0)
+        let repeated = await viewModel.sendMessage("Duplicate", waitForSession: { XCTFail("Repeated Send started creation"); return false })
+        XCTAssertFalse(repeated)
+        viewModel.adoptCreatedSession(try makeSession(model: "original-model", modelProvider: "original-provider", profile: "original-profile"))
+        await viewModel.loadComposerConfiguration()
+        await viewModel.restoreDraftSettings(
+            ChatDraftSettings(workspacePath: "/tmp/saved"),
+            expectedInteractionGeneration: viewModel.composerConfigurationInteractionGeneration
+        )
+        XCTAssertEqual(viewModel.selectedWorkspacePath, "/tmp/saved", "A pending first row must not prevent restoring its submitted configuration")
+        initialFile = await viewModel.uploadAttachment(data: Data("file".utf8), filename: "intent.txt")
+        XCTAssertNotNil(initialFile)
+        let newerFile = await viewModel.uploadAttachment(data: Data("newer".utf8), filename: "newer.txt")
+        creation?.resume(returning: true)
+        await fulfillment(of: [startArrived], timeout: 10)
+        let body = try apiTestJSONBody(from: requests.request(at: 0).request)
+        XCTAssertEqual(body["session_id"] as? String, "session-abc")
+        XCTAssertEqual(body["message"] as? String, "First prompt")
+        XCTAssertEqual(body["workspace"] as? String, "/tmp/saved")
+        XCTAssertEqual(body["model"] as? String, "original-model")
+        XCTAssertEqual(body["model_provider"] as? String, "original-provider")
+        XCTAssertEqual(body["profile"] as? String, "original-profile")
+        XCTAssertEqual((body["attachments"] as? [[String: Any]])?.first?["path"] as? String, "/tmp/intent.txt")
+        XCTAssertEqual((body["attachments"] as? [[String: Any]])?.count, 1)
+        XCTAssertEqual(viewModel.messages.first?.attachments?.first?.name, "intent.txt")
+        XCTAssertEqual(viewModel.messages.first?.messageId, rowID)
+        requests.request(at: 0).complete(withJSON: #"{"stream_id":"first-stream"}"#)
+        let didStart = await send.value
+        XCTAssertTrue(didStart)
+        XCTAssertEqual(viewModel.messages.count, 1)
+        XCTAssertEqual(viewModel.activeStreamID, "first-stream")
+        XCTAssertEqual(viewModel.pendingAttachments.map(\.id), [try XCTUnwrap(newerFile).id])
+    }
+
+    func testFailedCreationAndNavigationNeverStartAPendingFirstSend() async throws {
+        for leavesChat in [false, true] {
+            let viewModel = try makeViewModel(sessionSummary: SessionSummary(title: "New Chat")) { _ in
+                XCTFail("Uncreated or abandoned intent must not reach the server")
+                throw URLError(.badURL)
+            }
+            var creation: CheckedContinuation<Bool, Never>?
+            let waiting = expectation(description: "creation held")
+            let send = Task {
+                await viewModel.sendMessage("Retryable prompt", waitForSession: {
+                    await withCheckedContinuation { creation = $0; waiting.fulfill() }
+                })
+            }
+            await fulfillment(of: [waiting], timeout: 10)
+            if leavesChat { viewModel.suspendStreamForNavigation() }
+            creation?.resume(returning: leavesChat)
+            let didStart = await send.value
+            XCTAssertFalse(didStart)
+            XCTAssertTrue(viewModel.messages.isEmpty)
+            XCTAssertNil(viewModel.activeStreamID)
+            XCTAssertFalse(viewModel.isStartingChat)
+        }
+    }
+
+    func testEditShowsResendWhileStartIsHeldAndFailureKeepsTruncatedHistory() async throws {
+        try await assertHistoryResendWhileHeld(edits: true)
+    }
+
+    func testRegenerateUsesPendingSendCoreWhileTruncateAndStartAreHeld() async throws {
+        try await assertHistoryResendWhileHeld(edits: false)
+    }
+
+    private func assertHistoryResendWhileHeld(edits: Bool, acceptedAfterNavigation: Bool = false) async throws {
+        let requests = DeferredRequests()
+        let staleRequests = DeferredRequests()
+        let sessionReads = LockedCounter()
+        let host = "tal1080-history.test"
+        let staleArrived = expectation(description: "old transcript held")
+        let truncateArrived = expectation(description: "truncate held")
+        let startArrived = expectation(description: "resend start held")
+        DeferredMockURLProtocol.setOnRequest({ request in
+            switch request.request.url?.path {
+            case "/api/session":
+                if sessionReads.increment() > 1 {
+                    _ = staleRequests.append(request)
+                    staleArrived.fulfill()
+                    return
+                }
+                request.complete(withJSON: #"{"session":{"session_id":"session-abc","confirms_deep_truncate":true,"messages":[{"role":"user","content":"Original","message_id":"u-1"},{"role":"assistant","content":"Deleted answer","message_id":"a-1"}]}}"#)
+            case "/api/session/truncate":
+                _ = requests.append(request)
+                truncateArrived.fulfill()
+            case "/api/chat/start":
+                _ = requests.append(request)
+                startArrived.fulfill()
+            default:
+                XCTFail("Unexpected request: \(request.request.url?.path ?? "nil")")
+                request.fail(with: URLError(.badURL))
+            }
+        }, forHost: host)
+        defer { DeferredMockURLProtocol.setOnRequest(nil, forHost: host) }
+        let stream = SpySSEStreamingClient()
+        let viewModel = try makeViewModel(streamClient: stream, server: URL(string: "https://\(host)")!, protocolClasses: [DeferredMockURLProtocol.self]) { _ in
+            throw URLError(.badURL)
+        }
+        await viewModel.loadMessages()
+        let staleLoad = Task { await viewModel.loadMessages() }
+        await fulfillment(of: [staleArrived], timeout: 10)
+        let index = edits ? 0 : 1
+        let context = try XCTUnwrap(viewModel.actionContext(for: viewModel.messages[index], visibleIndex: index))
+        let resend = Task {
+            edits ? await viewModel.editMessage(context, newText: "Edited")
+                : await viewModel.regenerateAssistantResponse(context)
+        }
+        await fulfillment(of: [truncateArrived], timeout: 10)
+        XCTAssertTrue(edits ? viewModel.isEditingMessage : viewModel.isRegeneratingMessage)
+        XCTAssertEqual(viewModel.messages.compactMap(\.content), ["Original", "Deleted answer"], "History stays until the server accepts truncation")
+        requests.request(at: 0).complete(withJSON: edits
+            ? #"{"session":{"session_id":"session-abc","messages":[]}}"#
+            : #"{"session":{"session_id":"session-abc","messages":[{"role":"user","content":"Original","message_id":"u-1"}]}}"#)
+        await fulfillment(of: [startArrived], timeout: 10)
+        XCTAssertEqual(viewModel.messages.compactMap(\.content), [edits ? "Edited" : "Original"], "The resend row must appear before startChat answers")
+        XCTAssertTrue(viewModel.isStartingChat)
+        XCTAssertNil(viewModel.activeStreamID)
+        if acceptedAfterNavigation { viewModel.suspendStreamForNavigation() }
+        requests.request(at: 1).complete(withJSON: acceptedAfterNavigation ? #"{"stream_id":"accepted-run"}"# : #"{"error":"Refused"}"#)
+        let didStart = await resend.value
+        XCTAssertEqual(didStart, acceptedAfterNavigation)
+        let keptText = acceptedAfterNavigation ? [edits ? "Edited" : "Original"] : (edits ? [] : ["Original"])
+        XCTAssertEqual(viewModel.messages.compactMap(\.content), keptText, "A failed resend must not resurrect server-deleted history")
+        XCTAssertEqual(viewModel.messageActionErrorMessage, acceptedAfterNavigation ? nil : "Refused")
+        XCTAssertEqual(viewModel.returnedComposerTexts, edits && !acceptedAfterNavigation ? ["Edited"] : [])
+        XCTAssertTrue(stream.startedURLs.isEmpty)
+        staleRequests.request(at: 0).complete(withJSON: #"{"session":{"session_id":"session-abc","confirms_deep_truncate":true,"messages":[{"role":"user","content":"Original","message_id":"u-1"},{"role":"assistant","content":"Deleted answer","message_id":"a-1"}]}}"#)
+        await staleLoad.value
+        XCTAssertEqual(viewModel.messages.compactMap(\.content), keptText, "A pre-truncate reload cannot resurrect deleted history after a failed resend")
+    }
+
     func testSkillShortcutWithoutArgsReturnsLocalSkillInfoWithoutStartingChat() async throws {
         var didRequestSkills = false
         let viewModel = try makeViewModel { request in
