@@ -21,6 +21,12 @@ describe('contracts package', () => {
     expect(responses.map((r) => r.redirected)).toEqual([true, false, false, false, false])
   })
 
+  it('preserves scoped legacy refresh confirmation and rejects malformed consent', () => {
+    const pending = UpdateApplySchema.parse(shared('fixtures/agent-update-refresh.json'))
+    expect(pending.refresh_confirmation).toEqual({ token: 'c'.repeat(32), services: ['synthetic.dashboard'] })
+    expect(UpdateApplySchema.safeParse({ ...pending, refresh_confirmation: { token: 'not-a-token', services: [] } }).success).toBe(false)
+  })
+
   it('preserves the shared Agent update hold and its separate recovery verdicts', () => {
     const hold = UpdateApplySchema.parse(shared('fixtures/agent-update-hold.json'))
     expect(hold.ok).toBe(false)

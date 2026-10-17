@@ -789,6 +789,51 @@ describe('Agent checkout updates', () => {
     } finally { await server.close() }
   })
 
+  it.each(['apply', 'force'] as const)('continues the selected %s update after a scoped legacy refresh confirmation', async (action) => {
+    const a = agentInstall(true)
+    const sidecar = new FakeSidecar()
+    sidecar.describe = { ...sidecar.describe!, agent_dir: a.agent }
+    const refreshToken = 'c'.repeat(32)
+    const events: string[] = []
+    let intent: string | undefined
+    sidecar.respond('runtime.agent_mutation', async (params) => {
+      if (params.action === 'begin') {
+        if (!params.refresh_token) {
+          intent = params.intent
+          events.push('confirm')
+          return { ok: false, skipped: false, detail: 'Active dashboard work may be interrupted.', refresh_confirmation: { token: refreshToken, services: ['synthetic.dashboard'] } }
+        }
+        expect(params.intent).toBe(intent)
+        expect(params.refresh_token).toBe(refreshToken)
+        expect(params.revision).toBe(a.v2)
+        events.push('refresh')
+        return { ok: true, skipped: false, detail: '', token: 'a'.repeat(32) }
+      }
+      if (params.action === 'git') {
+        const result = await runGit(params.args, a.agent, params.timeout_ms)
+        return { ok: result.ok, skipped: false, detail: result.out }
+      }
+      events.push(params.action)
+      return { ok: true, skipped: false, detail: '' }
+    })
+    const server = await bootTestServer({ sidecar })
+    try {
+      const wired = (server.deps.updates as unknown as { deps: UpdateServiceDeps }).deps
+      wired.scheduleRestart = () => { events.push('restart') }
+      const request = async (extra: Dict = {}) => (await server.get(`/api/updates/${action}`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ target: 'agent', confirmed_agent_revision: a.v2, ...extra }) })).json() as Promise<Dict>
+      const pending = await request()
+      expect(pending).toMatchObject({ ok: false, confirmation_required: true, candidate_revision: a.v2, agent_channel: 'stable', refresh_confirmation: { token: refreshToken, services: ['synthetic.dashboard'] } })
+      expect(intent).toBeTruthy()
+      expect(git(a.agent, 'rev-parse', 'HEAD')).toBe(a.v1)
+      expect(existsSync(join(server.state, 'agent-dependency-sync', createHash('sha256').update(a.agent).digest('hex')))).toBe(false)
+      const history = await (await server.get('/api/update-notifications')).json() as { notifications: Dict[] }
+      expect(history.notifications.find((row) => row.id === pending.notification_id)).toMatchObject({ phase: 'awaiting_confirmation', message: 'Active dashboard work may be interrupted.' })
+      expect(await request({ agent_refresh_token: refreshToken })).toMatchObject({ ok: true, verified_revision: a.v2, gateway_restart: 'resumed' })
+      expect(git(a.agent, 'rev-parse', 'HEAD')).toBe(a.v2)
+      expect(events).toEqual(['confirm', 'refresh', 'sync', 'finish', 'restart'])
+    } finally { await server.close() }
+  })
+
   it.each(['apply', 'force'] as const)('preserves lifecycle capability guidance in %s results and notifications', async (action) => {
     const a = agentInstall(true)
     const sidecar = new FakeSidecar()

@@ -1,0 +1,8 @@
+{
+  "entries": [{
+    "category": "Fixed",
+    "summary": "Agent updates can refresh a verified legacy dashboard with your confirmation, then finish the selected update and restore its services.",
+    "highlight": false,
+    "components": ["web"]
+  }]
+}

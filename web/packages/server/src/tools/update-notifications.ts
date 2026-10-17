@@ -239,6 +239,7 @@ export class UpdateNotificationStore {
     const phaseChanged = row.phase !== phase
     row.phase = phase
     if (row.target) Object.assign(row, wording(row.target, phase))
+    if (phase === 'awaiting_confirmation') row.message = safeText(detail, row.message, 500)
     row.updated_at = this.now().toISOString()
     if (phaseChanged) row.read_at = null
     row.expected_identity = expectedIdentity?.trim().slice(0, 160) || null

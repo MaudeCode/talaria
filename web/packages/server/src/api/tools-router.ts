@@ -1,4 +1,5 @@
 /** Skills, memory, prompts, commands, notes, insights, logs, health, MCP, plugins, updates, diagnostics (Python `api/routes.py` handlers of the same paths). */
+import type { InferContractRouterInputs } from '@orpc/contract'
 import { implement } from '@orpc/server'
 import { createHash } from 'node:crypto'
 import { join } from 'node:path'
@@ -32,7 +33,7 @@ import { normalizeChannel, updatesCheckView } from '../tools/updates.js'
 import { pyBool } from '../settings.js'
 import { str } from '../util.js'
 import { redactString } from '../redact.js'
-import { GATEWAY_RESTART_NOW, type UpdateNotificationScope, type UpdateNotificationTarget } from '../tools/update-notifications.js'
+import { GATEWAY_RESTART_NOW, type UpdateNotificationScope } from '../tools/update-notifications.js'
 import type { SessionInfo } from '../auth/store.js'
 
 const os = implement(toolsContract).$context<ApiContext>().use(requestSessionIdGuard)
@@ -208,12 +209,12 @@ async function updateNotificationScope(ctx: RequestContext, tab?: string): Promi
 
 async function applyWithNotification(
   ctx: RequestContext,
-  target: UpdateNotificationTarget,
-  apply: () => Promise<Dict>,
-  confirmed = false,
-  tab?: string,
+  input: InferContractRouterInputs<typeof toolsContract>['updates']['apply'],
+  action: 'apply' | 'force' | 'clearLock',
 ): Promise<Dict> {
-  const scope = await updateNotificationScope(ctx, tab)
+  const target = updateTarget(input.target)
+  const confirmed = input.confirmed_agent_revision !== undefined || input.agent_refresh_token !== undefined
+  const scope = await updateNotificationScope(ctx, input.tab_id)
   const active = ctx.deps.updateNotifications.activeUpdate(scope, target)
   if (active) (await ctx.deps.updateNotifications.watch(scope, active.id))
   if (active && (active.phase === 'applying' || active.phase === 'restarting')) {
@@ -222,11 +223,14 @@ async function applyWithNotification(
   const notification = active ?? (await ctx.deps.updateNotifications.begin(scope, target))
   if (active?.phase === 'awaiting_confirmation' && confirmed) (await ctx.deps.updateNotifications.transition(notification.id, 'applying'))
   try {
-    const result = await apply()
+    const options = { agentChannel: input.agent_channel, confirmedRevision: input.confirmed_agent_revision, version: input.version, refreshToken: input.agent_refresh_token, mutationIntent: principalHash(scope.owner, scope.profile, notification.id) }
+    const result = action === 'apply' ? await ctx.deps.updates.apply(target, bodyChannel(input.channel), () => true, options)
+      : action === 'force' ? await ctx.deps.updates.force(target, bodyChannel(input.channel), options)
+        : await ctx.deps.updates.clearLock(target, options)
     const verifiedIdentity = typeof result.verified_revision === 'string'
       ? { revision: result.verified_revision, version: typeof result.verified_version === 'string' ? result.verified_version : null }
       : undefined
-    if (result.confirmation_required === true) (await ctx.deps.updateNotifications.transition(notification.id, 'awaiting_confirmation', null, verifiedIdentity))
+    if (result.confirmation_required === true) (await ctx.deps.updateNotifications.transition(notification.id, 'awaiting_confirmation', null, verifiedIdentity, result.message))
     else if (result.restart_blocked === true) (await ctx.deps.updateNotifications.transition(notification.id, 'blocked', null, verifiedIdentity, result.message))
     else if (result.ok !== true) (await ctx.deps.updateNotifications.transition(notification.id, 'failed', null, verifiedIdentity, result.message || result.error))
     else if (target === 'webui' && result.restart_scheduled === true) {
@@ -663,9 +667,9 @@ export const toolsRouter = os.router({
       ctx.deps.log(`[updates] checking for updates (force=${String(force)}, channel=${channel})`)
       return updatesCheckView(await ctx.deps.updates.check(force, !pyBool(settings.ignore_agent_updates), channel, input.agent_channel)) as never
     })),
-    apply: os.updates.apply.handler(({ input, context: { ctx } }) => run(async () => { const target = updateTarget(input.target); return (await applyWithNotification(ctx, target, () => ctx.deps.updates.apply(target, bodyChannel(input.channel), () => true, { agentChannel: input.agent_channel, confirmedRevision: input.confirmed_agent_revision, version: input.version }), input.confirmed_agent_revision !== undefined, input.tab_id)) as never })),
-    force: os.updates.force.handler(({ input, context: { ctx } }) => run(async () => { const target = updateTarget(input.target); return (await applyWithNotification(ctx, target, () => ctx.deps.updates.force(target, bodyChannel(input.channel), { agentChannel: input.agent_channel, confirmedRevision: input.confirmed_agent_revision, version: input.version }), input.confirmed_agent_revision !== undefined, input.tab_id)) as never })),
-    clearLock: os.updates.clearLock.handler(({ input, context: { ctx } }) => run(async () => { const target = updateTarget(input.target); return (await applyWithNotification(ctx, target, () => ctx.deps.updates.clearLock(target, { agentChannel: input.agent_channel, confirmedRevision: input.confirmed_agent_revision, version: input.version }), input.confirmed_agent_revision !== undefined, input.tab_id)) as never })),
+    apply: os.updates.apply.handler(({ input, context: { ctx } }) => run(() => applyWithNotification(ctx, input, 'apply'))),
+    force: os.updates.force.handler(({ input, context: { ctx } }) => run(() => applyWithNotification(ctx, input, 'force'))),
+    clearLock: os.updates.clearLock.handler(({ input, context: { ctx } }) => run(() => applyWithNotification(ctx, input, 'clearLock'))),
     summary: os.updates.summary.handler(({ input, context: { ctx } }) => run(async () => ctx.deps.updates.summarize(input.target, (await ctx.deps.settings.load()).check_for_updates === false) as never)),
   },
   updateNotifications: {

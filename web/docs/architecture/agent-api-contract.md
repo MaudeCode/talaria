@@ -164,13 +164,43 @@ listener's PID or role. A generic 404, malformed schema, changing identity,
 transport failure, or 401/403 cannot establish this capability diagnosis.
 An unavailable schema fails closed. Authentication failures remain distinct.
 
-An unsupported runtime receives no automatic stop or refresh, including on
-force update. Finish its active work, then have the owner use the original
-supervisor's established graceful refresh procedure. Verify the capable
-successor's lifecycle APIs, installation, canonical profile, PID and original
-endpoint before retrying the Agent update. The disk revision is not runtime
-capability evidence. Recovery keeps the incompatible service's obligation and
-reports this same guidance while independently restoring safe siblings.
+A supervised POSIX legacy backend may instead enter the shared updater's bounded
+refresh bootstrap. In addition to authenticated capability evidence, Talaria
+requires OS socket ownership for the exact backend PID, its native birth/ledger
+identity, canonical home/profile, supervisor ancestry, original endpoint and
+configuration digest. Linux uses the process's socket inodes; macOS uses the OS
+listener inventory. Unknown, foreign, manual, Desktop and ambiguous owners still
+refuse. A clean installed source baseline and usable current dependencies are
+required; bootstrap never changes Agent source or service configuration.
+
+The first apply/force request returns `refresh_confirmation` with the service
+names and a private single-use token. The existing confirmation dialog warns
+that active dashboard work may be interrupted. It does not claim the legacy
+runtime is idle. No services remain paused while confirmation is pending.
+The token expires after five minutes and binds the authenticated operator,
+profile and update-notification intent, mode, selected immutable revision,
+checkout, profile homes, exact process tree/birth identities, endpoint and
+supervisor configuration. Force and unchecked-version consent do not authorize
+refresh; unattended callers receive a refusal. Cancellation closes that update
+intent. A consumed, expired or changed confirmation cannot refresh anything.
+
+After reacquiring the native checkout lock, Talaria rechecks those identities
+and atomically records a `legacy_refresh` recovery obligation before SIGTERM to
+that exact backend. It waits for all old writer descendants and adopts an
+attested capable successor, or starts the original service once if inactive.
+It never force-kills, uses a force-restart command, rewrites configuration or
+signals a replacement incarnation. Missing modern APIs, failed start, slow
+shutdown and unverified readiness preserve source and durable debt. Crash/EOF
+recovery may start or adopt a verified successor on safe source; it never
+replays the interruption signal. The additive `refreshing` phase makes older companion readers refuse and retain
+uncertain debt. Once all old writers have exited and a capable successor is
+verified, the entry returns to their existing `recorded` phase.
+
+The capable successor then enters ordinary retirement custody with all other
+writers. The same selected update continues through retained-cron checks,
+source replacement, dependency repair, stash handling and verified service
+restoration. Success means the selected revision and restored services are
+verified. Recovery keeps unresolved obligations while restoring safe siblings.
 
 The native gateway recovery reader verifies a launchd PID, which can be a wrapper
 without a working dashboard listener. Backend debt and supervised-gateway
