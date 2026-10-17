@@ -740,32 +740,69 @@ def test_dependency_failure_keeps_both_services_stopped_until_repair(tmp_path, l
         assert not debt.exists()
 
 
-def test_native_gated_dashboard_accepts_owner_local_retirement_session(tmp_path):
+@pytest.mark.parametrize('named', [False, True])
+@pytest.mark.parametrize('source', ['dotenv', 'config', 'exec'])
+def test_native_gated_dashboard_accepts_owner_local_retirement_session(tmp_path, named, source):
     from conftest import AGENT_PYTHON, isolated_env, SIDECAR_ROOT
     home = tmp_path / 'home'
     home.mkdir()
     script = '''import os
 from pathlib import Path
+from unittest.mock import Mock, patch
 from plugins.dashboard_auth import basic
 from hermes_cli.dashboard_auth import registry
 from hermes_cli import dashboard_procs
 from hermes_cli import web_server
 from hermes_cli import web_server_idle_proof
 from hermes_cli.backend_retirement import retirement
-from talaria_sidecar.agent_services import _local_session
+from talaria_sidecar import agent_services as services
+from hermes_cli.env_loader import load_hermes_dotenv
 from fastapi.testclient import TestClient
 secret='synthetic-native-signing-key-for-this-test-only'
-(home:=Path(os.environ['HERMES_HOME'])).joinpath('config.yaml').write_text('dashboard:\\n  basic_auth:\\n    username: synthetic-owner\\n    secret: '+secret+'\\n')
+launch=Path(os.environ['HERMES_HOME'])
+home=launch/'profiles'/'named' if os.environ['NAMED']=='1' else launch
+home.mkdir(parents=True,exist_ok=True)
+keys={'HERMES_DASHBOARD_BASIC_AUTH_USERNAME':'synthetic-owner','HERMES_DASHBOARD_BASIC_AUTH_SECRET':secret}
+source=os.environ['SOURCE']
+if source=='config':
+ (home/'config.yaml').write_text('dashboard:\\n  basic_auth:\\n    username: synthetic-owner\\n    secret: '+secret+'\\n')
+else:
+ (home/'.env').write_text('\\n'.join(k+'="'+v+'" # owner credential' for k,v in keys.items())+'\\n')
+from hermes_constants import set_hermes_home_override,reset_hermes_home_override
+override=set_hermes_home_override(home)
+try:
+ load_hermes_dotenv(hermes_home=home)
+ os.environ['HERMES_DASHBOARD_BASIC_AUTH_PASSWORD']='disposable-password'
+ provider=basic.BasicAuthProvider(**basic._settings())
+finally:
+ reset_hermes_home_override(override)
+if source=='exec': (home/'.env').unlink()
+for key in (*keys,'HERMES_DASHBOARD_BASIC_AUTH_PASSWORD'): os.environ.pop(key,None)
 registry._providers.clear(); registry._scoped_providers.clear()
-provider=basic.BasicAuthProvider(username='synthetic-owner',password_hash=basic.hash_password('disposable-password'),secret=basic._resolve_secret({'secret':secret}))
 registry.register_global_provider(provider)
 web_server.app.state.auth_required=True
 web_server.app.state.bound_host='127.0.0.1'
-dashboard_procs._pid_environ=lambda pid: {}
+dashboard_procs._pid_environ=lambda pid: keys if source=='exec' else {}
 web_server_idle_proof.idle_proof=lambda: {'idle':True}
-token=_local_session({'pid':os.getpid(),'home':str(home)})
-assert token and provider.verify_session(access_token=token) is not None
+before=dict(os.environ)
+token=services._local_session({'pid':os.getpid(),'home':str(home)})
+assert token and provider.verify_session(access_token=token) is not None, 'owner dotenv session was not authenticated'
 client=TestClient(web_server.app,base_url='http://127.0.0.1')
+connection=Mock()
+responses=[]
+def request(method,path,body,headers):
+ assert path in {'/api/host/identity','/api/health/retirement'}
+ assert 'disposable-password' not in str(headers) and secret not in str(headers)
+ response=client.request(method,path,content=body,headers=headers)
+ responses.append(response.status_code)
+ connection.getresponse.return_value=Mock(status=response.status_code,read=lambda limit: response.content)
+connection.request.side_effect=request
+services.http.client.HTTPConnection=lambda *a,**kw: connection
+services._auth=lambda entry: ''
+entry=dict(pid=os.getpid(),home=str(home),host='127.0.0.1',port=12345,label='synthetic.dashboard')
+assert services.backend_request(entry)['pid']==os.getpid()
+assert responses==[401,200],responses
+assert dict(os.environ)==before, 'lifecycle auth changed the updater environment'
 headers={'Authorization':'Bearer '+token}
 identity=client.get('/api/host/identity',headers=headers)
 assert identity.status_code==200, identity.text
@@ -773,16 +810,149 @@ assert identity.json()['pid']==os.getpid()
 assert retirement.acquire()
 assert client.post('/api/health/retirement',headers=headers,json={'action':'prepare'}).json()['ok'] is False
 retirement.release()
-permit=client.post('/api/health/retirement',headers=headers,json={'action':'prepare'}).json()
+if source=='dotenv':
+ owed=dict(entry,kind='launchd',domain='synthetic',purpose='dashboard',profile='named' if os.environ['NAMED']=='1' else 'default',
+           phase='recorded',config_stamp='synthetic',processes={})
+ recovery=services.ServiceRecovery(home,home,Mock(),Mock(),Mock())
+ recovery.state.update(entries=[owed],tree={'baselines':[{'synthetic':True}]})
+ recovery.save()
+ ledger=lambda *a: [(dict(owed,create_time=1),True)]
+ with patch.object(services,'_config_stamp',return_value='synthetic'), patch.object(services,'backend_entry',return_value=owed), \\
+      patch.object(services,'bind_processes'), patch.object(services,'verify_processes'), patch.object(services,'READY_SECONDS',0):
+  recovery.identity._pid_alive_matches.return_value=True
+  assert recovery._ready(owed,ledger), 'recovery must authenticate with the same owner credentials'
+  original=(home/'.env').read_text()
+  for invalid in ('HERMES_DASHBOARD_BASIC_AUTH_USERNAME=synthetic-owner\\nHERMES_DASHBOARD_BASIC_AUTH_SECRET=wrong synthetic signing key!\\n',''):
+   (home/'.env').write_text(invalid)
+   try: recovery._wait_ready(owed,ledger)
+   except RuntimeError as error:
+    assert 'recovery remains owed' in str(error)
+    assert all(value not in str(error) for value in (secret,token,'disposable-password'))
+   else: raise AssertionError('invalid credentials cleared recovery debt')
+   assert recovery.path.exists()
+   assert all(value not in recovery.path.read_text() for value in (secret,token,'disposable-password'))
+  (home/'.env').write_text(original)
+  recovery._wait_ready(owed,ledger)
+  assert not recovery.path.exists(), 'retry must clear only authenticated recovery debt'
+permit=services.backend_request(entry,'prepare')
 assert permit['ok'] and permit['idle']
-assert client.post('/api/health/retirement',headers=headers,json={'action':'commit','token':permit['token']}).json()['ok']
+assert services.backend_request(entry,'cancel',permit['token'])['ok']
+permit=services.backend_request(entry,'prepare')
+assert services.backend_request(entry,'commit',permit['token'])['ok']
+assert dict(os.environ)==before
 assert not retirement.acquire()
 print('native gated retirement accepted; active work preserved')
+'''
+    env = isolated_env(home, PYTHONPATH=str(SIDECAR_ROOT) + os.pathsep + str(AGENT_DIR), HERMES_DISABLE_LAZY_INSTALLS='1',
+                       NAMED='1' if named else '0', SOURCE=source)
+    result = subprocess.run([AGENT_PYTHON, '-c', script], cwd=AGENT_DIR, env=env, capture_output=True, text=True, timeout=60)
+    assert result.returncode == 0, result.stderr[-5000:]
+    assert 'native gated retirement accepted' in result.stdout
+
+
+def test_native_lifecycle_credentials_are_scoped_and_preserve_decoding(tmp_path):
+    from conftest import isolated_env, SIDECAR_ROOT
+    home = tmp_path / 'home'
+    home.mkdir()
+    script = r'''import base64, os, threading
+from concurrent.futures import ThreadPoolExecutor
+from pathlib import Path
+from unittest.mock import patch
+from plugins.dashboard_auth import basic
+from hermes_cli import dashboard_procs, env_loader
+from agent.secret_scope import current_secret_scope
+from talaria_sidecar import agent_services as services
+from talaria_sidecar.home import scoped_home
+root=Path(os.environ['HERMES_HOME'])
+prefix='HERMES_DASHBOARD_BASIC_AUTH_'
+env={}
+dashboard_procs._pid_environ=lambda pid: env
+def files(home, values, config=''):
+ home.mkdir(parents=True,exist_ok=True)
+ (home/'.env').write_text('\n'.join(prefix+k+'='+v for k,v in values.items())+'\n')
+ (home/'config.yaml').write_text(config)
+def session(home): return services._local_session(dict(pid=os.getpid(),home=str(home)))
+def check(home, raw, username='owner'):
+ # Use the native resolver only to establish the reference key, outside concurrent calls.
+ with patch.dict(os.environ,{prefix+'SECRET':raw}): key=basic._resolve_secret({})
+ token=session(home)
+ payload=basic._unsign(token,key,'access') if token else None
+ assert payload and payload['sub']==username, 'owner credential resolution disagrees with native auth'
+ return key
+raws=['short!', 'synthetic signing key with spaces!',base64.b64encode(b'base64 synthetic key only').decode(),b'hex synthetic key only'.hex()]
+for raw in raws:
+ files(root,{'USERNAME':'"owner"','SECRET':'"'+raw+'"'})
+ check(root,raw)
+# Empty dotenv values fall through to the native config; nonempty exec values take precedence.
+config='dashboard:\n  basic_auth:\n    username: config-owner\n    secret: config synthetic signing key!\n'
+files(root,{'USERNAME':'""','SECRET':"''"},config)
+check(root,'config synthetic signing key!','config-owner')
+env.update({prefix+'USERNAME':' exec-owner ',prefix+'SECRET':' exec synthetic signing key! '})
+check(root,'exec synthetic signing key!','exec-owner')
+env.clear()
+files(root,{'USERNAME':'owner','SECRET':'synthetic scope-only signing key!'})
+env_loader._SECRET_SOURCE_VALUES_BY_HOME[str(root.resolve())]={prefix+'SECRET':'file-backed external signing key!'}
+env_loader._APPLIED_HOMES.add(str(root.resolve()))
+check(root,'file-backed external signing key!')
+env_loader.reset_secret_source_cache(root)
+# Updater launch credentials must never fill a missing owner field, even for the launch home.
+os.environ.update({prefix+'USERNAME':'updater',prefix+'SECRET':'updater synthetic signing key!'})
+files(root,{},'dashboard:\n  basic_auth:\n    username: owner\n    secret: ${HERMES_DASHBOARD_BASIC_AUTH_SECRET}\n')
+with patch.dict(os.environ,{prefix+'SECRET':'updater synthetic signing key!'}): updater_key=basic._resolve_secret({})
+token=session(root)
+assert token is None or basic._unsign(token,updater_key,'access') is None, 'config interpolation leaked the updater signing key'
+files(root,{'ALIAS':'"profile alias synthetic signing key!"'},
+      'dashboard:\n  basic_auth:\n    username: owner\n    secret: ${HERMES_DASHBOARD_BASIC_AUTH_ALIAS}\n')
+check(root,'profile alias synthetic signing key!')
+for values in ({},{'USERNAME':'owner'},{'SECRET':'synthetic scope-only signing key!'}):
+ files(root,values)
+ assert session(root) is None, 'updater credentials leaked into an owner session'
+(root/'.env').unlink()
+assert session(root) is None
+(root/'.env').mkdir()
+assert session(root) is None, 'unreadable dotenv must not use updater credentials'
+(root/'.env').rmdir()
+dashboard_procs._pid_environ=lambda pid: None
+files(root,{'USERNAME':'owner','SECRET':'synthetic scope-only signing key!'})
+assert session(root) is None, 'unreadable process identity must refuse file credentials'
+dashboard_procs._pid_environ=lambda pid: {}
+homes=[root/'profiles'/name for name in ('first','second')]
+keys=[]
+for i,home in enumerate(homes):
+ raw='profile '+str(i)+' synthetic signing key!'
+ files(home,{'USERNAME':'owner'+str(i),'SECRET':'"'+raw+'"'})
+ keys.append(check(home,raw,'owner'+str(i)))
+before=dict(os.environ)
+outer=current_secret_scope()
+barrier=threading.Barrier(2)
+with ThreadPoolExecutor(2) as pool:
+ # Both profiles resolve repeatedly with different keys in the same process.
+ def resolve(i):
+  with scoped_home(homes[i]):
+   scope=current_secret_scope()
+   barrier.wait(timeout=10)
+   for _ in range(10):
+    token=session(homes[i])
+    assert basic._unsign(token,keys[i],'access')['sub']=='owner'+str(i)
+    assert basic._unsign(token,keys[1-i],'access') is None
+    assert current_secret_scope() is scope
+ list(pool.map(resolve,range(2)))
+for failure in (RuntimeError,KeyboardInterrupt):
+ with scoped_home(homes[0]):
+  scope=current_secret_scope()
+  try:
+   with patch.object(basic,'_sign',side_effect=failure('synthetic failure')): session(homes[0])
+  except failure: pass
+  else: raise AssertionError('expected signing failure')
+  assert current_secret_scope() is scope
+assert current_secret_scope() is outer
+assert dict(os.environ)==before, 'credential resolution changed process environment'
+print('native credential precedence, decoding, isolation and cleanup verified')
 '''
     env = isolated_env(home, PYTHONPATH=str(SIDECAR_ROOT) + os.pathsep + str(AGENT_DIR), HERMES_DISABLE_LAZY_INSTALLS='1')
     result = subprocess.run([AGENT_PYTHON, '-c', script], cwd=AGENT_DIR, env=env, capture_output=True, text=True, timeout=60)
     assert result.returncode == 0, result.stderr[-5000:]
-    assert 'native gated retirement accepted' in result.stdout
+    assert 'native credential precedence, decoding, isolation and cleanup verified' in result.stdout
 
 
 @pytest.mark.parametrize('legacy', [False, True])

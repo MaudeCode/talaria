@@ -134,8 +134,22 @@ Unexpected children, respawn or an unproved stop prevent source mutation.
 
 Lifecycle calls use the backend's existing owner-local session credential.
 For a dashboard protected by native basic auth, the owning OS user's existing
-configured signing key can authenticate a short-lived native session. Neither
-session credentials nor retirement permits are persisted in recovery records.
+configured signing key can authenticate a short-lived native session. Admission,
+retirement and supervised-service readiness use the same resolver: nonempty
+credentials from the attested backend's exec environment, then its owning
+profile's native file-backed secret scope, then its native basic-auth config.
+Blank values fall through as in the native provider. Only the username and
+signing key are needed; the updater does not require or send the password/hash.
+Profile dotenv parsing and external-source hydration use the Agent's existing
+scope primitives, without loading those values into the updater environment or
+falling through to its launch credentials. Config environment references are
+resolved under that same restricted scope, including for the main profile.
+Native base64/hex/raw signing-key
+decoding is preserved without the native decoder's global environment access.
+A missing or unreadable credential, process-random key, or changed key that the
+intended endpoint rejects never authorizes a writer stop or clears recovery debt.
+Concurrent profiles retain separate credentials on success, error and cancellation.
+Neither session credentials nor retirement permits are persisted in recovery records.
 A backend whose native authentication cannot be established remains an
 actionable refusal; Talaria does not alter authentication or service config.
 Unknown, manual, Desktop-owned and foreign-profile backends remain refused.
