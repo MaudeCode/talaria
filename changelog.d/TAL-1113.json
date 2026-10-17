@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Agent update recovery recognizes profile gateways that are already running.",
+      "highlight": false,
+      "components": ["web"]
+    }
+  ]
+}

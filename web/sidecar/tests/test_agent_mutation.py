@@ -280,7 +280,7 @@ def supervised_inventory(tmp_path, monkeypatch):
     rows = []
     parent = {41001: 1, 41002: 41001, 41003: 1, 41004: 41003, os.getpid(): os.getppid(), os.getppid(): 1}
     modules = {}
-    for name in ['gateway', 'gateway.status', 'hermes_cli', 'hermes_cli.gateway',
+    for name in ['gateway', 'gateway.status', 'gateway.status_inline_source', 'hermes_cli', 'hermes_cli.gateway',
                  'hermes_cli.main_dashboard', 'hermes_cli.dashboard_procs', 'hermes_cli.update_inventory',
                  'hermes_cli.update_receipt']:
         module = types.ModuleType(name)
@@ -290,6 +290,9 @@ def supervised_inventory(tmp_path, monkeypatch):
     status = modules['gateway.status']
     status.get_process_start_time = lambda pid: pid * 10
     status.get_running_pid_identity_strict = lambda path: (41002, 410020)
+    status._read_process_cmdline = lambda pid: 'hermes gateway run'
+    modules['gateway.status_inline_source'].command_line_runs_inline_source = lambda tokens: False
+    modules['gateway.status_inline_source'].inline_bootstrap_argv = lambda tokens: None
     status._pid_exists = lambda pid: pid in parent
     gateway = modules['hermes_cli.gateway']
     gateway._is_pid_ancestor_of_current_process = lambda pid: False
@@ -314,8 +317,13 @@ def supervised_inventory(tmp_path, monkeypatch):
     monkeypatch.setattr(agent_mutation, '_writer_ledger', lambda root, identity: [(r, True) for r in rows])
     service = {'kind': 'launchd', 'domain': 'gui/12345', 'label': 'synthetic.gateway',
                'plist': str(tmp_path / 'synthetic.gateway.plist'), 'pid': 41001, 'home': str(home)}
+    def gateway_on_home(home, excluded):
+        runtime = status.get_running_pid_identity_strict(Path(home) / 'gateway.pid')
+        return runtime[0] if runtime and runtime[0] not in excluded else None
+
     pause = types.SimpleNamespace(_discover_systemd=lambda: [], _discover_launchd=lambda: [dict(service)],
-        _left_running=lambda units, jobs: (units, jobs, []), _home_of=lambda pid: str(home))
+        _left_running=lambda units, jobs: (units, jobs, []), _home_of=lambda pid: str(home),
+        _gateway_on_home=gateway_on_home)
     pause._discover_bare = lambda excluded: ([], [] if 41002 in excluded else ['gateway PID 41002 is supervised by synthetic.gateway'])
     identity = types.SimpleNamespace(_pid_alive_matches=lambda pid, ct, **kw: pid in parent)
     return tmp_path, home, pause, identity, rows, parent, modules
