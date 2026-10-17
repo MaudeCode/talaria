@@ -278,6 +278,15 @@ alone cannot erase gateway readiness debt. Custody is written to the companion
 before retiring any overlapping native service obligation, so the native reader
 cannot separately replay that supervisor or regenerate its configured wrapper.
 
+Discovery and recovery share Talaria's gateway-home adapter. For inline Python
+launchers it uses the installed Agent's `status_inline_source` parser to decode
+the effective argv, then applies the native gateway-command and profile matchers.
+The live owning home, PID/lock records, birth identity, supervisor ancestry and
+configuration must still agree. Unknown inline code, unreadable commands or an
+Agent without the native parser cannot discharge debt. This adapter never
+executes bootstrap source or patches Agent globals. A verified running successor
+is adopted without restarting it.
+
 Each backend obligation clears only after a live same-install/profile ledger
 identity, exact supervisor ancestry, unchanged service configuration and an
 authenticated identity response at its original endpoint all agree. A fresh

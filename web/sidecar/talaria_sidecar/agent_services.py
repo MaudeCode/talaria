@@ -185,6 +185,49 @@ def snapshot(entry, *, records=None, expected=None):
     raise RuntimeError(f'{_name(entry)} process inventory kept changing after {SNAPSHOT_ATTEMPTS} samples; retry when descendants settle. Source was not changed and recovery remains owed.')
 
 
+def _gateway_home_matches(home, runtime, pause):
+    """Keep native identity policy, decoding only native-recognized inline launchers."""
+    from gateway import status
+    home = Path(home).resolve()
+    observed = pause._home_of(runtime[0])
+    command = status._read_process_cmdline(runtime[0])
+    if not observed or Path(observed).resolve() != home or not command:
+        return False
+    try:
+        from gateway.status_inline_source import command_line_runs_inline_source, inline_bootstrap_argv
+    except ImportError:
+        return False  # Older Agents cannot prove this launcher; retain recovery debt.
+    try:
+        tokens = [t.strip("\"'").replace('\\', '/') for t in shlex.split(command, posix=False)]
+    except ValueError:
+        return False
+    if not command_line_runs_inline_source(tokens):
+        return pause._gateway_on_home(str(home), set()) == runtime[0]
+    argv = inline_bootstrap_argv(tokens)
+    if argv is None:
+        return False
+    for index, arg in enumerate(argv):
+        if arg.startswith('HERMES_HOME='):
+            if not status._same_hermes_home(arg.removeprefix('HERMES_HOME='), home):
+                return False
+            argv[index] = 'HERMES_HOME=' + str(home)
+    effective = ' '.join(argv)
+    if (not status.looks_like_gateway_command_line(effective)
+            or not status._command_line_belongs_to_profile(effective, home)
+            or status._process_is_stopped(runtime[0])):
+        return False
+    profile = status.profile_flag_value(effective)
+    if profile is not None and profile != (status._profile_name_for_home(home) or 'default'):
+        return False
+    pid_path = home / 'gateway.pid'
+    records = [status._read_gateway_lock_record(status._get_gateway_lock_path(pid_path))]
+    if pid_path.exists():
+        records.append(status._read_pid_record(pid_path))
+    if any(not record or status.recorded_gateway_home_conflicts(record, expected_home=home) for record in records):
+        return False
+    return status.get_running_pid_identity_strict(pid_path) == runtime
+
+
 def gateway_entries(entries, homes, pause, *, allow_starting=False):
     if not entries:
         return []
@@ -198,7 +241,7 @@ def gateway_entries(entries, homes, pause, *, allow_starting=False):
         runtime = get_running_pid_identity_strict(home / 'gateway.pid')
         if runtime is None and allow_starting:
             continue  # Lock admission can precede PID publication; callers retain custody while waiting.
-        if runtime is None or not pause._home_of(runtime[0]) or Path(pause._home_of(runtime[0])).resolve() != home:
+        if runtime is None or not _gateway_home_matches(home, runtime, pause):
             raise RuntimeError(f'{_name(entry)} has no verified gateway in its owning profile.')
         entry.update(service_pid=entry['pid'], pid=runtime[0], ct=runtime[1], home=str(home))
         entry['processes'] = snapshot(entry, expected={str(entry['pid']): {'birth': entry['ct']}})
@@ -951,7 +994,7 @@ class ServiceRecovery:
             candidate = self._gateway_candidate(entry)
             if candidate is None:
                 return False
-            ready = self.pause._gateway_on_home(entry['home'], set()) == candidate['pid']
+            ready = _gateway_home_matches(entry['home'], (candidate['pid'], candidate['ct']), self.pause)
             verify_processes(candidate, self.records)
             return ready
         if entry.get('legacy_refresh') and any(self.records.identity_is_live({'pid': int(pid), 'ct': p['ct']})

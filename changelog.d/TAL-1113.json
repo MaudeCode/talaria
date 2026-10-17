@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Agent update recovery recognizes running profile gateways launched through inline Python bootstraps.",
+      "highlight": false,
+      "components": ["web"]
+    }
+  ]
+}

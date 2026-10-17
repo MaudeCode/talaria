@@ -781,6 +781,7 @@ def get_process_start_time(pid):
   with (file.parent/'sampled-exits').open('a') as log: log.write(str(pid)+'\\n')
  return birth(pid)
 def _pid_exists(pid): return alive(pid)
+def _read_process_cmdline(pid): return 'hermes gateway run' if alive(pid) else None
 def get_running_pid_identity_strict(path):
  try: pid=int((Path(path).parent/'active').read_text())
  except FileNotFoundError:
@@ -798,6 +799,7 @@ def get_running_pid_identity_strict(path):
             if isinstance(function, ast.FunctionDef) and function.name in lock_functions:
                 status.write(ast.unparse(function) + '\n')
     (root / 'gateway/host_rendezvous.py').write_text("ROLE_SERVE='serve'\ndef read_record(role): return None\n")
+    (root / 'gateway/status_inline_source.py').write_text('def command_line_runs_inline_source(tokens): return False\ndef inline_bootstrap_argv(tokens): return None\n')
     (root / 'hermes_constants.py').write_text("import os\nfrom pathlib import Path\ndef get_default_hermes_root(): return Path(os.environ['HERMES_HOME'])\n")
     for name in ['update_pause_record.py', 'update_cmd_pause_gate.py']:
         (modules / name).write_bytes((AGENT_DIR / 'hermes_cli' / name).read_bytes())
