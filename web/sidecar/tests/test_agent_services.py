@@ -493,7 +493,7 @@ def git(root, *args):
 
 
 @contextmanager
-def supervised_agent(tmp_path, *, dashboards=1, depth=1, gateways=True, dependency_sync=False, readiness=None, legacy=False, refresh=False, manager="launchd", stop_seconds=None, modern_first=False, gateway_respawn=False, gateway_profiles=1):
+def supervised_agent(tmp_path, *, dashboards=1, depth=1, gateways=True, dependency_sync=False, readiness=None, legacy=False, refresh=False, manager="launchd", stop_seconds=None, modern_first=False, gateway_respawn=False, gateway_profiles=1, transient=False):
     root, home, _, _ = native_agent(tmp_path)
     modules = root / 'hermes_cli'
     writer = root / 'writer.py'
@@ -768,7 +768,13 @@ def _try_acquire_file_lock(handle):
  except BlockingIOError: return False
 def _release_file_lock(handle): fcntl.flock(handle,fcntl.LOCK_UN)
 def _build_pid_record(): return {'pid':os.getpid(),'start_time':birth(os.getpid()),'kind':'gateway','hermes_home':str(Path(os.environ['HERMES_HOME']))}
-def get_process_start_time(pid): return birth(pid)
+def get_process_start_time(pid):
+ for file in (HOME/'services').glob('*/helper.pid'):
+  if int(file.read_text())!=pid: continue
+  with (file.parent/'helper-control').open('w') as control: control.write('exit')
+  with (file.parent/'helper-ack').open() as ack: assert ack.read()=='reaped'
+  with (file.parent/'sampled-exits').open('a') as log: log.write(str(pid)+'\\n')
+ return birth(pid)
 def _pid_exists(pid): return alive(pid)
 def get_running_pid_identity_strict(path):
  try: pid=int((Path(path).parent/'active').read_text())
@@ -820,7 +826,7 @@ UpdateLock.acquire_checkout=acquire_checkout
         label = f'synthetic.{purpose}.{i}'
         served_home = home if i in {0, gateway_profiles} else home / 'profiles' / f'profile{i}'
         served_home.mkdir(parents=True, exist_ok=True)
-        cfg = dict(label=label, purpose=purpose, depth=depth, home=str(served_home), profile='default' if served_home == home else f'profile{i}', legacy=legacy, refresh=refresh, manager=manager)
+        cfg = dict(label=label, purpose=purpose, depth=depth, home=str(served_home), profile='default' if served_home == home else f'profile{i}', legacy=legacy, refresh=refresh, manager=manager, transient=transient)
         if purpose != 'gateway':
             listener = socket.socket()
             listener.bind(('127.0.0.1', 0))
