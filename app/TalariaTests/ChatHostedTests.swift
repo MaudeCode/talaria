@@ -7,6 +7,29 @@ import TalariaKit
 /// The fixture chat's media, long bodies, background work and pending steers, hosted in process (TAL-856).
 @MainActor
 final class ChatHostedTests: XCTestCase {
+    func testStreamingSendConsumesDraftWhileSteerIsHeldAndPreservesNewTyping() async throws {
+        let fixture = try FixtureApp(["--ui-test-chat-controls", "--ui-test-hold-steer"], for: self)
+        let window = try hostWindow(fixture.chat(try await fixture.session()))
+        try await sendFromComposer("Run the deterministic fixture", in: window)
+        _ = try await requireElement(in: window, label: "Waiting for control input.")
+        try await sendFromComposer("Held steering prompt", in: window)
+        _ = try await requireElement(in: window, label: "Held steering prompt")
+        let composer = await composerTextView(in: window)
+        let draft = try XCTUnwrap(composer)
+        XCTAssertEqual(draft.text, "", "A streaming send must consume its draft before the steer answers")
+        let screenshot = XCTAttachment(image: UIGraphicsImageRenderer(bounds: window.bounds).image { _ in
+            window.drawHierarchy(in: window.bounds, afterScreenUpdates: true)
+        })
+        screenshot.name = "streaming-send-pending-phone"
+        screenshot.lifetime = .keepAlways
+        add(screenshot)
+        try await typeIntoComposer("Newer draft", in: window)
+        fixture.releaseHeldLoads()
+        let waiting = await awaitElement(in: window, label: "Held steering prompt")
+        XCTAssertNotNil(waiting)
+        XCTAssertEqual(draft.text, "Newer draft")
+    }
+
     func testSyncingBesideGoalDoesNotReserveTranscriptSpaceInNarrowStack() async throws {
         let fixture = try FixtureApp(["--ui-test-hold-transcript-reloads", "--ui-test-goal"], for: self)
         let session = try await fixture.session()

@@ -132,7 +132,7 @@ struct ComposerSecondaryControlsView<Leading: View>: View {
 /// A new chat's session as the composer shows it while the server creates it (TAL-636).
 enum ComposerSessionStart: Equatable {
     case starting
-    case failed(String)
+    case failed(String, canRetry: Bool = true)
 }
 
 /// The control strip while a new chat's session is starting: a spinner, or the error with Retry,
@@ -152,7 +152,7 @@ struct ComposerSessionStartStrip: View {
                 Text("Starting chat…")
                     .font(AppFont.footnote())
                     .foregroundStyle(.secondary)
-            case .failed(let message):
+            case .failed(let message, let canRetry):
                 Image(systemName: "exclamationmark.triangle.fill")
                     .font(AppFont.footnote())
                     .foregroundStyle(.orange)
@@ -161,13 +161,15 @@ struct ComposerSessionStartStrip: View {
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
                 Spacer(minLength: 0)
-                Button(action: onRetry) {
-                    Text("Retry")
-                        .font(AppFont.footnote().weight(.semibold))
-                        .chatMinimumHitTarget(horizontalPadding: 12, verticalPadding: ComposerMetaControlLabel.hitPadding, in: Rectangle())
+                if canRetry {
+                    Button(action: onRetry) {
+                        Text("Retry")
+                            .font(AppFont.footnote().weight(.semibold))
+                            .chatMinimumHitTarget(horizontalPadding: 12, verticalPadding: ComposerMetaControlLabel.hitPadding, in: Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .foregroundStyle(.tint)
                 }
-                .buttonStyle(.plain)
-                .foregroundStyle(.tint)
             }
         }
         .lineLimit(1)

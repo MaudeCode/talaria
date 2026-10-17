@@ -1249,10 +1249,9 @@ struct MessageComposerView: View {
     }
 
     private var isActionButtonDisabled: Bool {
-        // A new chat cannot send until its session exists (TAL-636); typing still works.
-        if isReadOnly || sessionStart != nil {
-            return true
-        }
+        // A new chat accepts local intent while creation runs; the shared send owns the pending row.
+        if isReadOnly { return true }
+        if case .some(.failed(_, canRetry: false)) = sessionStart { return true }
 
         if isAnsweringClarification {
             return (trimmedDraftMessage.isEmpty && clarificationSelectedChoices.isEmpty) || isSending

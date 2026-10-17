@@ -31,7 +31,10 @@ public final class ChatViewModel {
     public private(set) var isLoading = false
     public private(set) var isLoadingOlderMessages = false
     public private(set) var isStartingChat = false
+    public var isSubmittingMessage: Bool { isStartingChat || isSendingVoiceNote || isEditingMessage || isRegeneratingMessage }
+    @ObservationIgnored private var sendOwnershipGeneration = 0
     @ObservationIgnored private var isStartingMessageSend = false
+    @ObservationIgnored private var pendingFirstMessageID: String?
     @ObservationIgnored private var messageSendWaiters: [CheckedContinuation<Void, Never>] = []
     @ObservationIgnored private var sessionLoadRequestGeneration = 0
     @ObservationIgnored private var latestSettledSessionLoadRequestGeneration = 0
@@ -1277,7 +1280,9 @@ public final class ChatViewModel {
         expectedInteractionGeneration: Int
     ) async {
         guard canContinueDraftSettingsRestore(expectedInteractionGeneration) else { return }
-        guard messages.isEmpty, activeStreamID == nil else { return }
+        let hasOnlyPendingFirstMessage = pendingFirstMessageID != nil
+            && messages.allSatisfy { $0.messageId == pendingFirstMessageID }
+        guard messages.isEmpty || hasOnlyPendingFirstMessage, activeStreamID == nil else { return }
         let settings = rawSettings.normalized()
 
         if let profileName = settings.profileName {
@@ -2500,24 +2505,30 @@ public final class ChatViewModel {
     }
 
     /// `queuedAttachments` sends a queued message's own files; nil sends the composer's staged ones.
+    /// New-chat startup runs after the pending row appears. Its file callback identifies only the
+    /// original imports/restores, so files staged during the wait belong to the newer draft.
     public func sendMessage(
         _ draft: String,
         queuedAttachments: [PendingAttachment]? = nil,
-        modelContext: ModelContext? = nil
+        modelContext: ModelContext? = nil,
+        waitForSession: (@MainActor () async -> Bool)? = nil,
+        sessionAttachments: (@MainActor () -> [PendingAttachment])? = nil
     ) async -> Bool {
-        await performMessageSend(draft, queuedAttachments: queuedAttachments, modelContext: modelContext).didStart
+        await performMessageSend(draft, queuedAttachments: queuedAttachments, modelContext: modelContext, waitForSession: waitForSession, sessionAttachments: sessionAttachments).didStart
     }
 
     private func performMessageSend(
         _ draft: String,
         queuedAttachments: [PendingAttachment]?,
-        modelContext: ModelContext?
+        modelContext: ModelContext?,
+        waitForSession: (@MainActor () async -> Bool)? = nil,
+        sessionAttachments: (@MainActor () -> [PendingAttachment])? = nil
     ) async -> ChatSendOutcome {
         // Reentrancy guard, mirroring `sendVoiceNote`. It must run before
         // `prepareForSend` so a rejected send never consumes the composer's
         // staged attachments, and before `performChatSend` so a rejected caller
         // never reaches that method's `defer { isStartingChat = false }`.
-        guard !isStartingChat, !isSendingVoiceNote else { return ChatSendOutcome(didStart: false) }
+        guard !isSubmittingMessage else { return ChatSendOutcome(didStart: false) }
         guard !isViewingCachedData else {
             sendErrorMessage = String(localized: "Reconnect to the server to send a message.")
             return ChatSendOutcome(didStart: false)
@@ -2533,7 +2544,7 @@ public final class ChatViewModel {
         }
         guard !message.isEmpty || hasSendableAttachments else { return ChatSendOutcome(didStart: false) }
 
-        guard let sessionID else {
+        guard sessionID != nil || waitForSession != nil else {
             sendErrorMessage = String(localized: "The server did not provide a session ID.")
             return ChatSendOutcome(didStart: false)
         }
@@ -2552,7 +2563,9 @@ public final class ChatViewModel {
             apiPayloads: attachmentPreparation.apiPayloads,
             // A queued message keeps its files in the queue when its send fails, not in the composer.
             attachmentsToRestoreOnFailure: queuedAttachments == nil ? attachmentPreparation.attachments : [],
-            modelContext: modelContext
+            modelContext: modelContext,
+            waitForSession: waitForSession,
+            sessionAttachments: sessionAttachments
         )
         if outcome.didStart {
             for attachment in attachmentPreparation.attachments {
@@ -2580,7 +2593,7 @@ public final class ChatViewModel {
         // `defer { … = false }` (clearing the flag while the other still runs, and
         // firing two concurrent `startChat`s). The UI already blocks this; the guard
         // keeps a future caller (accessibility shortcut, test harness) safe too.
-        guard !isSendingVoiceNote, !isStartingChat else { return ChatSendOutcome(didStart: false) }
+        guard !isSubmittingMessage else { return ChatSendOutcome(didStart: false) }
         guard !isViewingCachedData else {
             setUploadAttachmentError(String(localized: "Reconnect to the server to send a voice note."))
             return ChatSendOutcome(didStart: false)
@@ -2671,12 +2684,11 @@ public final class ChatViewModel {
         )
     }
 
-    /// Shared optimistic-append + `startChat` + rollback core used by both the
-    /// text composer (`sendMessage`) and the voice-note flow (`sendVoiceNote`).
+    /// Shared pending-row + `startChat` + rollback core for text, voice notes, and accepted history resends.
     /// `attachmentsToRestoreOnFailure` is re-staged into the composer if the send
     /// fails — empty for voice notes, whose clip isn't a composer attachment.
     private func performChatSend(
-        sessionID: String,
+        sessionID: String?,
         localMessageID: String,
         displayContent: String,
         messageForAPI: String,
@@ -2684,7 +2696,10 @@ public final class ChatViewModel {
         apiPayloads: [JSONValue]?,
         attachmentsToRestoreOnFailure: [PendingAttachment],
         voiceTurn: Bool = false,
-        modelContext: ModelContext?
+        modelContext: ModelContext?,
+        waitForSession: (@MainActor () async -> Bool)? = nil,
+        sessionAttachments: (@MainActor () -> [PendingAttachment])? = nil,
+        appendsUserMessage: Bool = true
     ) async -> ChatSendOutcome {
         // Single-owner backstop for the shared start pipeline: only one caller may
         // own the optimistic row, the `startChat` request, and `isStartingChat` at a
@@ -2697,6 +2712,10 @@ public final class ChatViewModel {
             restorePendingAttachments(attachmentsToRestoreOnFailure)
             return ChatSendOutcome(didStart: false)
         }
+        let ownership = sendOwnershipGeneration
+        let preparesSession = waitForSession != nil
+        attachmentCoordinator.startupAttachmentCount = preparesSession ? messageAttachments.count : 0
+        pendingFirstMessageID = preparesSession && appendsUserMessage ? localMessageID : nil
         isStartingChat = true
         isStartingMessageSend = true
         sendErrorMessage = nil
@@ -2716,8 +2735,42 @@ public final class ChatViewModel {
             messageId: localMessageID,
             attachments: messageAttachments.isEmpty ? nil : messageAttachments
         )
-        messages.append(optimisticMessage)
+        if appendsUserMessage { messages.append(optimisticMessage) }
+        if let sessionID { cacheCurrentMessages(sessionID: sessionID, modelContext: modelContext) }
 
+        // The first row exists while creation/configuration/uploads are unresolved. Only this
+        // send owns it; session adoption never invents a stream or another user row.
+        if preparesSession {
+            guard let waitForSession, await waitForSession(),
+                  ownership == sendOwnershipGeneration, !Task.isCancelled else {
+                rollbackOptimisticMessage(id: localMessageID)
+                restorePendingAttachments(attachmentsToRestoreOnFailure)
+                return ChatSendOutcome(didStart: false)
+            }
+        }
+        attachmentCoordinator.startupAttachmentCount = 0
+        guard ownership == sendOwnershipGeneration, !Task.isCancelled,
+              let sessionID = sessionID ?? self.sessionID else {
+            rollbackOptimisticMessage(id: localMessageID)
+            restorePendingAttachments(attachmentsToRestoreOnFailure)
+            return ChatSendOutcome(didStart: false)
+        }
+        guard !isViewingCachedData, !isSessionReadOnly else {
+            rollbackOptimisticMessage(id: localMessageID)
+            restorePendingAttachments(attachmentsToRestoreOnFailure)
+            sendErrorMessage = String(localized: "Reconnect to a writable session to send a message.")
+            return ChatSendOutcome(didStart: false)
+        }
+        // Initial imports are staged against the real session while the same row waits.
+        let initialFiles = preparesSession
+            ? attachmentCoordinator.prepareForSend(sessionAttachments?() ?? [], localMessageID: localMessageID) : nil
+        for file in initialFiles?.attachments ?? [] { attachmentCoordinator.removePendingAttachment(id: file.id) }
+        let sendAttachments = messageAttachments + (initialFiles?.messageAttachments ?? [])
+        let sendPayloads = (apiPayloads ?? []) + (initialFiles?.apiPayloads ?? [])
+        let restoredFiles = attachmentsToRestoreOnFailure + (initialFiles?.attachments ?? [])
+        if let index = messages.firstIndex(where: { $0.messageId == localMessageID }), !sendAttachments.isEmpty {
+            messages[index].attachments = sendAttachments
+        }
         cacheCurrentMessages(sessionID: sessionID, modelContext: modelContext)
 
         do {
@@ -2731,19 +2784,24 @@ public final class ChatViewModel {
                 modelProvider: requestModelProvider,
                 profile: requestProfileName,
                 explicitModelPick: explicitModelPick,
-                attachments: apiPayloads,
+                attachments: sendPayloads.isEmpty ? nil : sendPayloads,
                 voiceTurn: voiceTurn
             )
 
-            guard let streamID = response.streamId else {
+            guard ownership == sendOwnershipGeneration, !Task.isCancelled else { return ChatSendOutcome(didStart: false) }
+            guard let streamID = Self.nonEmpty(response.streamId) else {
                 sendErrorMessage = response.error ?? String(localized: "The server did not return a stream ID.")
                 rollbackOptimisticMessage(id: localMessageID)
                 cacheCurrentMessages(sessionID: sessionID, modelContext: modelContext)
-                restorePendingAttachments(attachmentsToRestoreOnFailure)
+                restorePendingAttachments(restoredFiles)
                 return ChatSendOutcome(didStart: false)
             }
 
             completeExplicitModelPickForChatStart(explicitModelPick)
+            for file in initialFiles?.attachments ?? [] {
+                if let name = file.draftFileName { await attachmentCoordinator.deleteDraftCopy(named: name) }
+            }
+            guard ownership == sendOwnershipGeneration, !Task.isCancelled else { return ChatSendOutcome(didStart: true) }
             streamCoordinator.start(
                 streamID: streamID,
                 armsAggregateForLocalWork: true,
@@ -2751,10 +2809,11 @@ public final class ChatViewModel {
             )
             return ChatSendOutcome(didStart: true)
         } catch {
+            guard ownership == sendOwnershipGeneration, !Task.isCancelled else { return ChatSendOutcome(didStart: false) }
             if let streamID = (error as? APIError)?.activeStreamID {
                 rollbackOptimisticMessage(id: localMessageID)
                 cacheCurrentMessages(sessionID: sessionID, modelContext: modelContext)
-                restorePendingAttachments(attachmentsToRestoreOnFailure)
+                restorePendingAttachments(restoredFiles)
                 await attachToServerStartedRun(streamID: streamID, modelContext: modelContext)
                 // The server kept the earlier run, not this newly submitted text.
                 // Report an unaccepted send so ChatView restores the draft while
@@ -2765,7 +2824,7 @@ public final class ChatViewModel {
             sendErrorMessage = error.localizedDescription
             rollbackOptimisticMessage(id: localMessageID)
             cacheCurrentMessages(sessionID: sessionID, modelContext: modelContext)
-            restorePendingAttachments(attachmentsToRestoreOnFailure)
+            restorePendingAttachments(restoredFiles)
             return ChatSendOutcome(didStart: false, error: error)
         }
     }
@@ -2773,7 +2832,9 @@ public final class ChatViewModel {
     /// Follows a run that started outside this view model's own send. The server transcript is reconciled first,
     /// so the SSE tokens attach to the persisted turn instead of creating a second bubble with only the tail.
     private func attachToServerStartedRun(streamID: String, modelContext: ModelContext?) async {
+        let ownership = sendOwnershipGeneration
         await loadMessages(modelContext: modelContext, waitsForPendingMessageSend: false)
+        guard ownership == sendOwnershipGeneration, !Task.isCancelled else { return }
         _ = restoreActiveStreamSnapshotIfAvailable(streamID: streamID)
         streamingAssistantMessageID = TranscriptTurnClassifier
             .currentTurnAssistantAnchorIDs(in: messages, messageOffset: messagesOffset)
@@ -2796,6 +2857,8 @@ public final class ChatViewModel {
     private func finishMessageSend() {
         isStartingChat = false
         isStartingMessageSend = false
+        pendingFirstMessageID = nil
+        attachmentCoordinator.startupAttachmentCount = 0
         let waiters = messageSendWaiters
         messageSendWaiters.removeAll()
         for waiter in waiters {
@@ -4353,6 +4416,8 @@ public final class ChatViewModel {
             return false
         }
 
+        guard !isSubmittingMessage else { return false }
+        let ownership = sendOwnershipGeneration
         isEditingMessage = true
         messageActionErrorMessage = nil
         lastError = nil
@@ -4368,44 +4433,26 @@ public final class ChatViewModel {
                 modelContext: modelContext
             ) else { return false }
 
-            // Now send the edited text through the normal chat flow
-            let explicitModelPick = explicitModelPickForChatStart()
-            let sentAt = Date()
-            let chatResponse = try await client.startChat(
+            guard ownership == sendOwnershipGeneration, !Task.isCancelled else { return false }
+            let outcome = await performChatSend(
                 sessionID: sessionID,
-                message: editedText,
-                workspace: currentWorkspace,
-                model: currentModel,
-                modelProvider: requestModelProvider,
-                profile: requestProfileName,
-                explicitModelPick: explicitModelPick
+                localMessageID: "local-\(UUID().uuidString)",
+                displayContent: editedText,
+                messageForAPI: editedText,
+                messageAttachments: [],
+                apiPayloads: nil,
+                attachmentsToRestoreOnFailure: [],
+                modelContext: modelContext,
+                appendsUserMessage: true
             )
-
-            guard let streamID = chatResponse.streamId else {
-                messageActionErrorMessage = chatResponse.error ?? String(localized: "The server did not return a stream ID after editing.")
-                return false
+            guard ownership == sendOwnershipGeneration, !Task.isCancelled else { return false }
+            if !outcome.didStart {
+                messageActionErrorMessage = sendErrorMessage
+                returnedComposerTexts.append(editedText)
             }
-
-            completeExplicitModelPickForChatStart(explicitModelPick)
-            // Append the optimistic user message
-            messages.append(
-                ChatMessage(
-                    role: "user",
-                    content: editedText,
-                    timestamp: Date().timeIntervalSince1970,
-                    messageId: "local-\(UUID().uuidString)"
-                )
-            )
-
-            streamCoordinator.prepareForNewResponse()
-            responseCompletionNeedsTranscriptRefresh = false
-            streamCoordinator.start(
-                streamID: streamID,
-                armsAggregateForLocalWork: true,
-                runStartedAt: chatResponse.runStartedAt(sentAt: sentAt)
-            )
-            return true
+            return outcome.didStart
         } catch {
+            guard ownership == sendOwnershipGeneration, !Task.isCancelled else { return false }
             lastError = error
             messageActionErrorMessage = error.localizedDescription
             return false
@@ -4447,6 +4494,8 @@ public final class ChatViewModel {
             return false
         }
 
+        guard !isSubmittingMessage else { return false }
+        let ownership = sendOwnershipGeneration
         isRegeneratingMessage = true
         messageActionErrorMessage = nil
         lastError = nil
@@ -4462,33 +4511,25 @@ public final class ChatViewModel {
                 modelContext: modelContext
             ) else { return false }
 
-            let explicitModelPick = explicitModelPickForChatStart()
-            let sentAt = Date()
-            let chatResponse = try await client.startChat(
+            guard ownership == sendOwnershipGeneration, !Task.isCancelled else { return false }
+            let outcome = await performChatSend(
                 sessionID: sessionID,
-                message: userText,
-                workspace: currentWorkspace,
-                model: currentModel,
-                modelProvider: requestModelProvider,
-                profile: requestProfileName,
-                explicitModelPick: explicitModelPick
+                localMessageID: "local-\(UUID().uuidString)",
+                displayContent: userText,
+                messageForAPI: userText,
+                messageAttachments: [],
+                apiPayloads: nil,
+                attachmentsToRestoreOnFailure: [],
+                modelContext: modelContext,
+                appendsUserMessage: false
             )
-
-            guard let streamID = chatResponse.streamId else {
-                messageActionErrorMessage = chatResponse.error ?? String(localized: "The server did not return a stream ID after regenerating.")
-                return false
+            guard ownership == sendOwnershipGeneration, !Task.isCancelled else { return false }
+            if !outcome.didStart {
+                messageActionErrorMessage = sendErrorMessage
             }
-
-            completeExplicitModelPickForChatStart(explicitModelPick)
-            streamCoordinator.prepareForNewResponse()
-            responseCompletionNeedsTranscriptRefresh = false
-            streamCoordinator.start(
-                streamID: streamID,
-                armsAggregateForLocalWork: true,
-                runStartedAt: chatResponse.runStartedAt(sentAt: sentAt)
-            )
-            return true
+            return outcome.didStart
         } catch {
+            guard ownership == sendOwnershipGeneration, !Task.isCancelled else { return false }
             lastError = error
             messageActionErrorMessage = error.localizedDescription
             return false
@@ -4546,11 +4587,13 @@ public final class ChatViewModel {
             }
         }
 
+        let ownership = sendOwnershipGeneration
         let truncateResponse = try await client.truncateSession(
             id: sessionID,
             keepCount: context.fullHistoryIndex,
             confirmToken: confirmToken
         )
+        guard ownership == sendOwnershipGeneration, !Task.isCancelled else { return false }
         if truncateResponse.confirmRequired == true {
             deepTruncateConfirmation = DeepTruncateConfirmation(
                 context: context,
@@ -4561,6 +4604,7 @@ public final class ChatViewModel {
             return false
         }
 
+        streamCoordinator.invalidateSessionLoads()
         if let session = truncateResponse.session {
             messages = session.messages ?? []
             updateOlderMessagePagination(from: session, loadedMessageCount: messages.count)
@@ -4754,6 +4798,7 @@ public final class ChatViewModel {
     }
 
     public func suspendStreamForNavigation() {
+        sendOwnershipGeneration &+= 1
         suspendActiveStreamConnection()
     }
 

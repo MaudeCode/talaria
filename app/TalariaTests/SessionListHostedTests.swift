@@ -184,7 +184,7 @@ final class SessionListHostedTests: XCTestCase {
 
     /// A New Chat whose session fails to start says so in its composer, with Send off, and Retry starts it (TAL-636).
     func testNewChatReportsAFailedStartInItsComposerAndRetries() async throws {
-        let fixture = try FixtureApp(["--ui-test-fail-first-session-creation"], for: self)
+        let fixture = try FixtureApp(["--ui-test-refuse-first-session-creation"], for: self)
         let window = try hostWindow(fixture.sessionList())
         HostedAccessibility.activate(try await requireElement(in: window, label: "New Chat"))
 
@@ -194,6 +194,154 @@ final class SessionListHostedTests: XCTestCase {
         HostedAccessibility.activate(retry)
         _ = try await requireElement(in: window, label: "Select model", "Retry did not start the chat")
         XCTAssertNil(HostedAccessibility.element(in: window, label: "Retry"))
+    }
+
+    func testUnconfirmedCreationDoesNotOfferNonIdempotentRetry() async throws {
+        let fixture = try FixtureApp(["--ui-test-fail-first-session-creation"], for: self)
+        let window = try hostWindow(fixture.sessionList())
+        HostedAccessibility.activate(try await requireElement(in: window, label: "New Chat"))
+        let resolved = await awaitCondition {
+            HostedAccessibility.elements(in: window).contains {
+                $0.accessibilityLabel == "Retry" || $0.accessibilityLabel?.contains("Check Chats") == true
+            }
+        }
+        XCTAssertTrue(resolved, "The creation result must have reached its failure strip")
+        XCTAssertNil(HostedAccessibility.element(in: window, label: "Retry"), "A lost creation result cannot safely create another session")
+    }
+
+    func testFirstSendConsumesDraftAndShowsOneRowWhileCreationIsHeld() async throws {
+        try await assertFirstSendDuringCreation(withImportedFile: false)
+    }
+
+    func testFirstSendKeepsImportedFilesDurableUntilTheServerAccepts() async throws {
+        try await assertFirstSendDuringCreation(withImportedFile: true)
+    }
+
+    private func assertFirstSendDuringCreation(withImportedFile: Bool) async throws {
+        let fixture = try FixtureApp(withImportedFile ? ["--ui-test-hold-chat-start"] : [], for: self)
+        let session = try await fixture.session()
+        var creation: CheckedContinuation<ChatSessionStartResult, Never>?
+        var creationCount = 0
+        let window = try hostWindow(NavigationStack {
+            ChatView(
+                session: SessionSummary(title: "New Chat"),
+                server: UITestFixtureEnvironment.serverURL,
+                onAPIError: { _ in },
+                initialAttachments: withImportedFile
+                    ? [SharedAttachmentImport(filename: "intent.txt", typeIdentifier: "public.plain-text", data: Data("Synthetic file".utf8))] : [],
+                loadsInitialMessages: false,
+                draftStore: fixture.environment.draftStore,
+                startSession: {
+                    creationCount += 1
+                    return await withCheckedContinuation { creation = $0 }
+                }
+            )
+        }.environment(\.scenePhase, .active).modelContainer(fixture.cache))
+        defer { creation?.resume(returning: .failed("Test ended")) }
+        let started = await awaitCondition { creation != nil }
+        XCTAssertTrue(started)
+        try await typeIntoComposer("First pending prompt", in: window)
+        let send = try await requireElement(in: window, label: "Send")
+        XCTAssertFalse(send.accessibilityTraits.contains(.notEnabled), "Send must accept local intent during creation")
+        HostedAccessibility.activate(send)
+        let consumed = await awaitCondition { window.firstView(ofType: UITextView.self)?.text == "" }
+        XCTAssertTrue(consumed, "The submitted draft must clear while creation is held")
+        let screenshot = XCTAttachment(image: UIGraphicsImageRenderer(bounds: window.bounds).image { _ in
+            window.drawHierarchy(in: window.bounds, afterScreenUpdates: true)
+        })
+        screenshot.name = "first-send-pending-phone"
+        screenshot.lifetime = .keepAlways
+        add(screenshot)
+        XCTAssertEqual(HostedAccessibility.elements(in: window).filter { $0.accessibilityLabel == "First pending prompt" }.count, 1)
+        XCTAssertEqual(creationCount, 1)
+        creation?.resume(returning: .started(session))
+        creation = nil
+        if withImportedFile {
+            let posted = await awaitCondition { UITestFixtureHold.shared.pendingCount > 0 }
+            XCTAssertTrue(posted)
+            let held = await fixture.environment.draftStore.draft(for: .session(server: UITestFixtureEnvironment.serverURL, session: session))
+            XCTAssertEqual(held?.text, "First pending prompt")
+            XCTAssertEqual(held?.attachments.count, 1, "The submitted file must remain durable until startChat answers")
+            XCTAssertNotNil(held?.attachments.first?.file)
+            fixture.releaseHeldLoads()
+        }
+        _ = try await requireElement(in: window, label: "Select model")
+    }
+
+    func testFailedFirstSendPreservesNewTypingAndRepeatedRetryJoinsCreation() async throws {
+        let fixture = try FixtureApp(for: self)
+        let session = try await fixture.session()
+        var creation: CheckedContinuation<ChatSessionStartResult, Never>?
+        var creationCount = 0
+        let window = try hostWindow(ChatView(
+            session: SessionSummary(title: "New Chat"),
+            server: UITestFixtureEnvironment.serverURL,
+            onAPIError: { _ in },
+            loadsInitialMessages: false,
+            draftStore: fixture.environment.draftStore,
+            startSession: {
+                creationCount += 1
+                return await withCheckedContinuation { creation = $0 }
+            }
+        ).environment(\.scenePhase, .active).modelContainer(fixture.cache))
+        defer { creation?.resume(returning: .failed("Test ended")) }
+        let started = await awaitCondition { creation != nil }
+        XCTAssertTrue(started)
+        try await sendFromComposer("Submitted prompt", in: window)
+        let pending = await awaitElement(in: window, label: "Submitted prompt")
+        XCTAssertNotNil(pending)
+        try await typeIntoComposer("Newer draft", in: window)
+        let heldDraft = await fixture.environment.draftStore.draft(for: .newChat(server: UITestFixtureEnvironment.serverURL))
+        XCTAssertEqual(heldDraft?.text, "Newer draft\n\nSubmitted prompt", "Both drafts must stay durable while creation is unresolved")
+        creation?.resume(returning: .failed("Synthetic refusal"))
+        creation = nil
+        let retry = try await requireElement(in: window, label: "Retry")
+        let restored = await awaitCondition { window.firstView(ofType: UITextView.self)?.text == "Newer draft\n\nSubmitted prompt" }
+        XCTAssertTrue(restored)
+        HostedAccessibility.activate(retry)
+        HostedAccessibility.activate(retry)
+        let retried = await awaitCondition { creation != nil }
+        XCTAssertTrue(retried)
+        XCTAssertEqual(creationCount, 2, "Repeated Retry must join the one replacement creation")
+        creation?.resume(returning: .started(session))
+        creation = nil
+        _ = try await requireElement(in: window, label: "Select model")
+        XCTAssertEqual(window.firstView(ofType: UITextView.self)?.text, "Newer draft\n\nSubmitted prompt")
+    }
+
+    func testLeavingAnUncreatedChatFencesLateAdoptionAndDraftMigration() async throws {
+        let fixture = try FixtureApp(for: self)
+        let session = try await fixture.session()
+        var creation: CheckedContinuation<ChatSessionStartResult, Never>?
+        var creationReturned = false
+        let window = try hostWindow(ChatView(
+            session: SessionSummary(title: "New Chat"),
+            server: UITestFixtureEnvironment.serverURL,
+            onAPIError: { _ in },
+            initialDraft: "Abandoned prompt",
+            loadsInitialMessages: false,
+            draftStore: fixture.environment.draftStore,
+            startSession: {
+                let result = await withCheckedContinuation { creation = $0 }
+                XCTAssertTrue(Task.isCancelled, "Leaving the view must cancel its creation owner")
+                creationReturned = true
+                return result
+            }
+        ).environment(\.scenePhase, .active).modelContainer(fixture.cache))
+        defer { creation?.resume(returning: .failed("Test ended")) }
+        let started = await awaitCondition { creation != nil }
+        XCTAssertTrue(started)
+        window.rootViewController = UIHostingController(rootView: Color.clear)
+        let newKey = ChatDraftKey.newChat(server: UITestFixtureEnvironment.serverURL)
+        fixture.environment.draftStore.setDraft("Replacement draft", for: newKey)
+        creation?.resume(returning: .started(session))
+        creation = nil
+        let returned = await awaitCondition { creationReturned }
+        XCTAssertTrue(returned)
+        let migrated = await fixture.environment.draftStore.draft(for: .session(server: UITestFixtureEnvironment.serverURL, session: session))
+        let current = await fixture.environment.draftStore.draft(for: newKey)
+        XCTAssertNil(migrated, "A closed chat must not adopt a late session or move another chat's draft")
+        XCTAssertEqual(current?.text, "Replacement draft")
     }
 }
 

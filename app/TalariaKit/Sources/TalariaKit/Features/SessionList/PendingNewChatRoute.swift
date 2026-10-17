@@ -1,5 +1,11 @@
 import Foundation
 
+/// One creation request's outcome, kept with its own error and retry safety across navigation.
+public enum ChatSessionStartResult {
+    case started(SessionSummary)
+    case failed(String, canRetry: Bool = true, error: Error? = nil)
+}
+
 public struct PendingNewChatRoute: Identifiable, Hashable {
     public let id = UUID()
     public let initialDraft: String
