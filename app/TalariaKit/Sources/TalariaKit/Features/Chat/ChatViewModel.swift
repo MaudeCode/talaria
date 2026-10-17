@@ -2943,8 +2943,41 @@ public final class ChatViewModel {
         ServerCacheGeneration.current(for: server) == cacheGeneration
     }
 
+    @ObservationIgnored private var isTranscriptScrolling = false
+    @ObservationIgnored private var deferredTranscriptCache: (sessionID: String, context: ModelContext)?
+
+    /// Keep synchronous offline-cache work out of a drag and its momentum.
+    public func handleTranscriptScroll(_ event: ChatScrollPolicy.FollowEvent) {
+        switch event {
+        case .userScrollBegin:
+            isTranscriptScrolling = true
+        case .reset:
+            // Let the next cache request persist the current snapshot without blocking the intent event.
+            isTranscriptScrolling = false
+        case .userScrollEnd(_):
+            isTranscriptScrolling = false
+            guard let pending = deferredTranscriptCache else { return }
+            deferredTranscriptCache = nil
+            guard pending.sessionID == sessionID else { return }
+            do {
+                try cacheMessagesIfCurrent(messages, sessionID: pending.sessionID, in: pending.context)
+            } catch {
+                cacheErrorMessage = error.localizedDescription
+            }
+        default:
+            break
+        }
+    }
+
     private func cacheMessagesIfCurrent(_ messages: [ChatMessage], sessionID: String, in modelContext: ModelContext) throws {
-        guard ownsCurrentCache else { return }
+        guard ownsCurrentCache else { deferredTranscriptCache = nil; return }
+        if messages.isEmpty { isTranscriptScrolling = false }
+        if isTranscriptScrolling {
+            // Keep the context, not an array snapshot that would force streaming copy-on-write.
+            deferredTranscriptCache = (sessionID, modelContext)
+            return
+        }
+        deferredTranscriptCache = nil
         try CacheStore.cacheMessages(messages, serverURL: server, sessionID: sessionID, in: modelContext)
     }
 
@@ -2952,6 +2985,8 @@ public final class ChatViewModel {
     /// screen or the app goes to the background (TAL-437), so reopening it or relaunching the app
     /// paints it at once while the server load and replay catch up.
     public func persistTranscript(modelContext: ModelContext) {
+        isTranscriptScrolling = false
+        deferredTranscriptCache = nil
         // An empty or offline transcript has nothing newer than the cache, and writing an empty
         // one would delete the saved rows.
         guard let sessionID, !messages.isEmpty, !isViewingCachedData else { return }

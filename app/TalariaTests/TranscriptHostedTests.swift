@@ -7,9 +7,72 @@ import XCTest
 /// says to VoiceOver, its button trait, and where it sits against its neighbours.
 @MainActor
 final class TranscriptHostedTests: XCTestCase {
+    func testHistoryInsertionWorkWithAlreadyLoadedRows() async throws {
+        // Rich rows must not start live LinkPresentation/WebKit work under XCTest.
+        let previousArguments = FixtureLaunchArguments.scenario
+        FixtureLaunchArguments.scenario = [UITestFixtureEnvironment.launchArgument]
+        addTeardownBlock { FixtureLaunchArguments.scenario = previousArguments }
+        var samples: [[String: Double]] = []
+        for count in [50, 75] {
+            let first = 2_000 - count
+            var requested: [Int] = []
+            var started: TimeInterval?
+            var inserted: TimeInterval?
+            var previousHeight: CGFloat = 0
+            var referenceScroll: UIScrollView?
+            var readHistory: (() -> Void)?
+            defer { readHistory = nil }
+            var initialRowBodies = 0
+            var oldRowBodies = 0
+            var newRowBodies = 0
+            let window = try hostWindow(PagedHistoryTranscript(initialStart: first, richContent: true, onMetrics: { _ in
+                if started != nil, inserted == nil, let scroll = referenceScroll, scroll.contentSize.height > previousHeight + 1 {
+                    inserted = ProcessInfo.processInfo.systemUptime
+                }
+            }, onInsert: { _ in
+                previousHeight = referenceScroll?.contentSize.height ?? 0
+                started = ProcessInfo.processInfo.systemUptime
+            }, shouldRender: { message in
+                if started == nil { initialRowBodies += 1 }
+                if started != nil {
+                    if let id = message.messageId, Int(id.dropFirst("history-".count)) ?? 0 >= first { oldRowBodies += 1 }
+                    else { newRowBodies += 1 }
+                }
+                return true
+            }, onReady: { readHistory = $0 }, onRequest: { cursor in
+                requested.append(cursor)
+            }))
+            let scroll = try XCTUnwrap(historyScroll(in: window))
+            referenceScroll = scroll
+            try await Task.sleep(for: .milliseconds(150))
+            let read = try XCTUnwrap(readHistory)
+            read()
+            var longestTick: TimeInterval = 0
+            for _ in 0..<500 where inserted == nil {
+                let tick = ProcessInfo.processInfo.systemUptime
+                try await Task.sleep(for: .milliseconds(8))
+                longestTick = max(longestTick, ProcessInfo.processInfo.systemUptime - tick)
+            }
+            let start = try XCTUnwrap(started, "Requests \(requested); initial bodies \(initialRowBodies); viewport \(type(of: scroll)) bounds \(scroll.bounds) offset \(scroll.contentOffset) content \(scroll.contentSize)")
+            let end = try XCTUnwrap(inserted, "The real transcript must finish laying out its older page")
+            XCTAssertEqual(requested, [first])
+            XCTAssertLessThanOrEqual(oldRowBodies, 50, "A 50-row prepend must bound existing-row layout work independently of loaded history")
+            samples.append(["alreadyLoadedRows": Double(count), "insertMilliseconds": (end - start) * 1_000,
+                            "longestTickMilliseconds": longestTick * 1_000, "oldRowBodies": Double(oldRowBodies),
+                            "newRowBodies": Double(newRowBodies)])
+            window.isHidden = true
+            window.rootViewController = nil
+        }
+        let data = try JSONSerialization.data(withJSONObject: samples, options: [.prettyPrinted, .sortedKeys])
+        let attachment = XCTAttachment(data: data, uniformTypeIdentifier: "public.json")
+        attachment.name = "History insertion profile"
+        attachment.lifetime = .keepAlways
+        add(attachment)
+    }
+
     func testFastUpwardScrollingKeepsLoadingWithoutLeavingThePrefetchRegion() async throws {
         var requested: [Int] = []
-        let window = try hostWindow(PagedHistoryTranscript(sparseOlderPages: true) { requested.append($0) })
+        let window = try hostWindow(PagedHistoryTranscript(sparseOlderPages: true, onRequest: { requested.append($0) }))
         let scroll = try XCTUnwrap(historyScroll(in: window))
         try await Task.sleep(for: .milliseconds(150))
         // A fast reader repeatedly reaches the loaded edge while a prepend is settling.
@@ -26,53 +89,128 @@ final class TranscriptHostedTests: XCTestCase {
 
     func testHistoryPrefetchStartsBeforeTheLastViewport() async throws {
         var requests = 0
-        let window = try hostWindow(historyTranscript(messageCount: 100) { _ in requests += 1; return false })
+        var proxy: Binding<ScrollPosition>?
+        defer { proxy = nil }
+        let window = try hostWindow(PagedHistoryTranscript(initialStart: 1_900, load: { _ in requests += 1; return false }, onScrollRequest: { proxy = $0 }))
         let scroll = try XCTUnwrap(historyScroll(in: window))
-        try await Task.sleep(for: .milliseconds(150))
-        let viewportHeight = scroll.bounds.height - scroll.adjustedContentInset.top - scroll.adjustedContentInset.bottom
-        scroll.contentOffset.y = viewportHeight * 3 - scroll.adjustedContentInset.top
+        let ready = await awaitCondition { proxy != nil }
+        XCTAssertTrue(ready)
+        let native = try XCTUnwrap(proxy)
+        // Leave at least three viewports above the reader, outside the old two-viewport buffer.
+        native.scrollTo("transcript:1900", anchor: UnitPoint(x: 0.5, y: -3.5))
         for _ in 0..<20 where requests == 0 { try await Task.sleep(for: .milliseconds(25)) }
-        XCTAssertEqual(requests, 1, "Prefetch must start with three viewports of history still available")
+        let viewportHeight = scroll.bounds.height - scroll.adjustedContentInset.top - scroll.adjustedContentInset.bottom
+        XCTAssertGreaterThan(scroll.contentOffset.y + scroll.adjustedContentInset.top, viewportHeight * 3)
+        XCTAssertEqual(requests, 1, "Prefetch must start with at least three viewports of history still available")
+    }
+
+    func testHistoryInsertionIsPreservedBeforeTheLoaderReturns() async throws {
+        try await assertHistoryResponsePreservesReader(holdCompletion: true)
     }
 
     func testHistoryResponsePreservesWhereTheReaderMovedWhilePageWasInFlight() async throws {
+        try await assertHistoryResponsePreservesReader(holdCompletion: false)
+    }
+
+    private func assertHistoryResponsePreservesReader(holdCompletion: Bool) async throws {
         var requested: [Int] = []
-        let window = try hostWindow(PagedHistoryTranscript(responseDelay: .milliseconds(150)) { requested.append($0) })
+        var proxy: Binding<ScrollPosition>?
+        var finishRequest: (() -> Void)?
+        var inserted = false
+        var laidOut = false
+        var referenceScroll: UIScrollView?
+        var oldHeight: CGFloat = 0
+        var completed = false
+        var finishCompletion: (() -> Void)?
+        defer { finishRequest?(); finishCompletion?(); proxy = nil; referenceScroll = nil }
+        let window = try hostWindow(PagedHistoryTranscript(onMetrics: { _ in
+                if inserted, let scroll = referenceScroll, abs(scroll.contentSize.height - oldHeight) > 1 { laidOut = true }
+            }, onInsert: { _ in
+                oldHeight = referenceScroll?.contentSize.height ?? 0
+                inserted = true
+            }, onScrollRequest: { proxy = $0 }, onComplete: {
+                if holdCompletion {
+                    await withCheckedContinuation { continuation in finishCompletion = { continuation.resume() } }
+                }
+                completed = true
+            }, onRequest: { cursor in
+                requested.append(cursor)
+                await withCheckedContinuation { continuation in finishRequest = { continuation.resume() } }
+            }))
         let scroll = try XCTUnwrap(historyScroll(in: window))
-        scroll.contentOffset.y = 100
-        for _ in 0..<30 where requested.isEmpty { try await Task.sleep(for: .milliseconds(10)) }
+        referenceScroll = scroll
+        let ready = await awaitCondition { proxy != nil }
+        XCTAssertTrue(ready)
+        try XCTUnwrap(proxy).scrollTo("transcript:1952", anchor: .top)
+        let pending = await awaitCondition { finishRequest != nil }
+        XCTAssertTrue(pending)
         XCTAssertEqual(requested, [1950])
-        scroll.contentOffset.y = 300
+        try XCTUnwrap(proxy).scrollTo("transcript:1956", anchor: .top)
         let label = "History row 1956. Synthetic transcript text."
-        let before = try await requireElement(in: window, label: label).accessibilityFrame.minY
-        _ = try await requireElement(in: window, label: "History row 1900. Synthetic transcript text.")
-        try await Task.sleep(for: .milliseconds(100))
+        let before = try await settledReaderY(in: window, scroll: scroll, label: label)
+        let release = try XCTUnwrap(finishRequest)
+        finishRequest = nil
+        release()
+        let committed = await awaitCondition { laidOut }
+        XCTAssertTrue(committed)
+        let during = try await requireElement(in: window, label: label).accessibilityFrame.minY
+        XCTAssertEqual(during, before, accuracy: 2, "The insertion must preserve the reader's latest position")
+        if holdCompletion {
+            XCTAssertFalse(completed, "Position must be restored before the asynchronous loader completes")
+        }
+        finishCompletion?()
+        finishCompletion = nil
+        try await Task.sleep(for: .milliseconds(200))
         let after = try await requireElement(in: window, label: label).accessibilityFrame.minY
-        XCTAssertEqual(after, before, accuracy: 2, "A response must preserve the reader's latest position, not jump back to the request's position")
+        XCTAssertEqual(after, before, accuracy: 2, "Finishing the loader must not move the reader")
+    }
+
+    private func settledReaderY(in window: UIWindow, scroll: UIScrollView, label: String) async throws -> CGFloat {
+        var previous: [CGFloat] = []
+        var stableTurns = 0
+        for _ in 0..<100 {
+            let row = try await requireElement(in: window, label: label)
+            let viewport = window.convert(scroll.bounds, from: scroll).intersection(window.bounds)
+            guard viewport.intersects(window.convert(row.accessibilityFrame, from: nil)) else {
+                stableTurns = 0
+                try await Task.sleep(for: .milliseconds(20))
+                continue
+            }
+            let current = [row.accessibilityFrame.minY, scroll.contentOffset.y, scroll.contentSize.height]
+            if previous.count == current.count, zip(current, previous).allSatisfy({ abs($0 - $1) < 0.1 }) {
+                stableTurns += 1
+                if stableTurns >= 5 { return current[0] }
+            } else { stableTurns = 0 }
+            previous = current
+            try await Task.sleep(for: .milliseconds(20))
+        }
+        XCTFail("The reader must settle before the held response is released")
+        return previous[0]
     }
 
     func testScrollingNearTheTopLoadsHistoryWithoutATap() async throws {
         var requests = 0
         var finish: ((Bool) -> Void)?
+        var proxy: Binding<ScrollPosition>?
+        defer { finish?(false); proxy = nil }
         let window = try hostWindow(NavigationStack {
-            historyTranscript { _ in
+            PagedHistoryTranscript(load: { _ in
                 requests += 1
                 return await withCheckedContinuation { continuation in
                     finish = { result in finish = nil; continuation.resume(returning: result) }
                 }
-            }
+            }, onScrollRequest: { proxy = $0 })
             .navigationTitle("Transcript history")
         })
-        let scroll = try XCTUnwrap(historyScroll(in: window))
         try await Task.sleep(for: .milliseconds(150))
         XCTAssertEqual(requests, 0, "Opening at the latest row must not page history")
-        scroll.contentOffset.y = 100
+        try XCTUnwrap(proxy).scrollTo("transcript:1952", anchor: .top)
         for _ in 0..<30 where requests == 0 { try await Task.sleep(for: .milliseconds(50)) }
         XCTAssertEqual(requests, 1, "The top sentinel must request history before the reader reaches the top")
         XCTAssertNil(HostedAccessibility.element(in: window, label: "Load older messages"))
-        for _ in 0..<5 { scroll.contentOffset.y = 100; try await Task.sleep(for: .milliseconds(20)) }
+        for _ in 0..<5 { proxy?.scrollTo("transcript:1952", anchor: .top); try await Task.sleep(for: .milliseconds(20)) }
         XCTAssertEqual(requests, 1, "Repeated appearances must not overlap requests")
-        scroll.contentOffset.y = -scroll.adjustedContentInset.top
+        proxy?.scrollTo("chat-transcript-content", anchor: .top)
         try await Task.sleep(for: .milliseconds(250))
         attachHistoryImage(window, name: "History loading")
         finish?(false)
@@ -80,8 +218,9 @@ final class TranscriptHostedTests: XCTestCase {
         XCTAssertNotNil(retry, "Failed history must offer inline retry")
         try await Task.sleep(for: .milliseconds(250))
         attachHistoryImage(window, name: "History retry")
-        scroll.contentOffset.y = 1_000
-        scroll.contentOffset.y = 0
+        proxy?.scrollTo("bottom", anchor: .bottom)
+        try await Task.sleep(for: .milliseconds(50))
+        proxy?.scrollTo("chat-transcript-content", anchor: .top)
         try await Task.sleep(for: .milliseconds(100))
         XCTAssertEqual(requests, 1, "Failed history must stop automatic requests")
         if let retry { HostedAccessibility.activate(retry) }
@@ -94,30 +233,46 @@ final class TranscriptHostedTests: XCTestCase {
 
     func testContinuousHistoryLoadsAllTwoThousandRowsAndPreservesPosition() async throws {
         var requested: [Int] = []
-        let window = try hostWindow(PagedHistoryTranscript { requested.append($0) })
+        var proxy: Binding<ScrollPosition>?
+        var finishRequest: (() -> Void)?
+        var insertedStart = 1_950
+        defer { finishRequest?(); proxy = nil }
+        let window = try hostWindow(PagedHistoryTranscript(onInsert: { insertedStart = $0 }, onScrollRequest: { proxy = $0 }, onRequest: { cursor in
+            requested.append(cursor)
+            await withCheckedContinuation { continuation in finishRequest = { continuation.resume() } }
+        }))
         let scroll = try XCTUnwrap(historyScroll(in: window))
-        try await Task.sleep(for: .milliseconds(150))
+        let ready = await awaitCondition { proxy != nil }
+        XCTAssertTrue(ready)
         let pages = Array(stride(from: 1_950, through: 50, by: -50))
-        // A larger prefetch buffer can load several pages before the next gesture.
-        for _ in pages where requested.count < pages.count {
-            let start = (requested.last ?? 2_000) - 50
-            let previousCount = requested.count
-            scroll.contentOffset.y = 100
+        for start in pages {
+            XCTAssertEqual(insertedStart, start)
+            try XCTUnwrap(proxy).scrollTo("transcript:\(start + 2)", anchor: .top)
+            let pending = await awaitCondition { finishRequest != nil }
+            XCTAssertTrue(pending)
+            XCTAssertEqual(requested.last, start)
             let label = "History row \(start + 3). Synthetic transcript text."
-            let before = try await requireElement(in: window, label: label).accessibilityFrame.minY
-            for _ in 0..<40 where requested.count == previousCount { try await Task.sleep(for: .milliseconds(25)) }
-            XCTAssertEqual(requested.dropFirst(previousCount).first, start)
+            let before = try await settledReaderY(in: window, scroll: scroll, label: label)
+            let beforeOffset = scroll.contentOffset.y
+            let beforeAnchor = historyObserver(in: window)?.coordinator?.scrollPositionController?.readingAnchorRowID
+            let oldHeight = scroll.contentSize.height
+            let release = try XCTUnwrap(finishRequest)
+            finishRequest = nil
+            release()
+            let committed = await awaitCondition { insertedStart == start - 50 && scroll.contentSize.height != oldHeight }
+            XCTAssertTrue(committed)
             try await Task.sleep(for: .milliseconds(100))
-            let after = try await requireElement(in: window, label: label).accessibilityFrame.minY
-            XCTAssertEqual(after, before, accuracy: 2, "Prepending a page moved the reader at offset \(start)")
-            // Programmatic UIKit offsets have no drag to release the controller's existing one-second prepend window.
+            let afterElement = await awaitElement(in: window, label: label)
+            let after = try XCTUnwrap(afterElement, "Reader \(label), anchor \(beforeAnchor ?? "nil"); offset \(beforeOffset) → \(scroll.contentOffset.y); height \(oldHeight) → \(scroll.contentSize.height); cursors \(requested)").accessibilityFrame.minY
+            XCTAssertEqual(after, before, accuracy: 2, "Prepending a page moved the reader at offset \(start); anchor \(beforeAnchor ?? "nil")")
+            // A programmatic jump has no pan event to advance an active prepend baseline.
             try await Task.sleep(for: .milliseconds(1_050))
-            XCTAssertEqual(requested, Array(pages.prefix(requested.count)), "Prefetch bursts must keep every cursor ordered and unique")
+            XCTAssertEqual(requested, Array(pages.prefix(requested.count)), "Every cursor must remain ordered and unique")
             let settled = try await requireElement(in: window, label: label).accessibilityFrame.minY
             XCTAssertEqual(settled, before, accuracy: 2)
         }
         XCTAssertEqual(requested, pages)
-        scroll.contentOffset.y = 0
+        proxy?.scrollTo("transcript:0", anchor: .top)
         _ = try await requireElement(in: window, label: "History row 0. Synthetic transcript text.")
         XCTAssertNil(HostedAccessibility.element(in: window, label: "Load older messages"))
     }
@@ -125,20 +280,33 @@ final class TranscriptHostedTests: XCTestCase {
     func testANewTopAppearanceDuringLoadingRunsAfterThePageSettles() async throws {
         var requests = 0
         var finish: ((Bool) -> Void)?
-        let window = try hostWindow(historyTranscript { _ in
+        var proxy: Binding<ScrollPosition>?
+        var referenceScroll: UIScrollView?
+        var observedNearTop: Bool?
+        defer { finish?(false); proxy = nil; referenceScroll = nil }
+        let window = try hostWindow(PagedHistoryTranscript(onMetrics: { _ in
+            if let scroll = referenceScroll, let geometry = ChatScrollMetrics.geometry(of: scroll) {
+                observedNearTop = ChatScrollPolicy.shouldPrefetchHistory(geometry: geometry)
+            }
+        }, load: { _ in
             requests += 1
             return await withCheckedContinuation { continuation in
                 finish = { result in finish = nil; continuation.resume(returning: result) }
             }
-        })
+        }, onScrollRequest: { proxy = $0 }))
         let scroll = try XCTUnwrap(historyScroll(in: window))
-        scroll.contentOffset.y = 100
+        referenceScroll = scroll
+        let ready = await awaitCondition { proxy != nil }
+        XCTAssertTrue(ready)
+        try XCTUnwrap(proxy).scrollTo("transcript:1952", anchor: .top)
         for _ in 0..<30 where requests == 0 { try await Task.sleep(for: .milliseconds(50)) }
         XCTAssertEqual(requests, 1)
-        scroll.contentOffset.y = scroll.contentSize.height - scroll.bounds.height
-        try await Task.sleep(for: .milliseconds(100))
-        scroll.contentOffset.y = 0
-        try await Task.sleep(for: .milliseconds(100))
+        proxy?.scrollTo("bottom", anchor: .bottom)
+        let left = await awaitCondition { observedNearTop == false }
+        XCTAssertTrue(left, "The native bottom jump must leave the prefetch region before returning")
+        proxy?.scrollTo("chat-transcript-content", anchor: .top)
+        let returned = await awaitCondition { observedNearTop == true }
+        XCTAssertTrue(returned, "The observer must acknowledge top re-entry while the request is held")
         XCTAssertEqual(requests, 1, "A repeated appearance must not overlap a page")
         finish?(true)
         for _ in 0..<40 where requests < 2 { try await Task.sleep(for: .milliseconds(50)) }
@@ -146,41 +314,55 @@ final class TranscriptHostedTests: XCTestCase {
         finish?(false)
     }
 
+    private func historyObserver(in view: UIView) -> ChatScrollObserver.ObserverView? {
+        if let observer = view as? ChatScrollObserver.ObserverView { return observer }
+        return view.subviews.lazy.compactMap { self.historyObserver(in: $0) }.first
+    }
+
     private func historyScroll(in view: UIView) -> UIScrollView? {
-        if let scroll = view as? UIScrollView { return scroll }
-        return view.subviews.lazy.compactMap { self.historyScroll(in: $0) }.first
+        var ancestor = historyObserver(in: view)?.superview
+        while let current = ancestor {
+            if let scroll = current as? UIScrollView { return scroll }
+            ancestor = current.superview
+        }
+        return nil
     }
 
     func testPrependPreservesPositionWithAnExpandedDisclosure() async throws {
         var requested: [Int] = []
-        let window = try hostWindow(PagedHistoryTranscript(hasDisclosure: true) { requested.append($0) })
+        var readHistory: (() -> Void)?
+        var finishRequest: (() -> Void)?
+        defer { finishRequest?(); readHistory = nil }
+        let window = try hostWindow(PagedHistoryTranscript(hasDisclosure: true, onReady: { readHistory = $0 }, onRequest: { cursor in
+            requested.append(cursor)
+            await withCheckedContinuation { continuation in
+                finishRequest = { continuation.resume() }
+            }
+        }))
         let scroll = try XCTUnwrap(historyScroll(in: window))
+        try await Task.sleep(for: .milliseconds(150))
+        try XCTUnwrap(readHistory)()
         let showMore = try await requireElement(in: window, label: "Show more")
         HostedAccessibility.activate(showMore)
         _ = try await requireElement(in: window, label: "Show less")
-        scroll.contentOffset.y = 100
-        let label = "History row 1953. Synthetic transcript text."
-        let before = try await requireElement(in: window, label: label).accessibilityFrame.minY
+        try await Task.sleep(for: .milliseconds(150))
+        let before = try await requireElement(in: window, label: "Show less").accessibilityFrame.minY
         let beforeOffset = scroll.contentOffset.y
         let beforeHeight = scroll.contentSize.height
-        for _ in 0..<40 where requested.isEmpty { try await Task.sleep(for: .milliseconds(25)) }
+        XCTAssertEqual(requested, [1950])
+        let release = try XCTUnwrap(finishRequest)
+        finishRequest = nil
+        release()
+        for _ in 0..<60 where scroll.contentSize.height == beforeHeight { try await Task.sleep(for: .milliseconds(10)) }
+        XCTAssertNotEqual(scroll.contentSize.height, beforeHeight, "The older page must be laid out before comparing position")
         try await Task.sleep(for: .milliseconds(150))
-        let after = try await requireElement(in: window, label: label).accessibilityFrame.minY
-        XCTAssertEqual(requested.first, 1950)
-        let pages = Array(stride(from: 1_950, through: 50, by: -50))
-        XCTAssertEqual(requested, Array(pages.prefix(requested.count)))
+        let after = try await requireElement(in: window, label: "Show less").accessibilityFrame.minY
+        XCTAssertEqual(requested, [1950])
         XCTAssertEqual(after, before, accuracy: 2, "Prepend cursors \(requested); offset \(beforeOffset) → \(scroll.contentOffset.y); height \(beforeHeight) → \(scroll.contentSize.height)")
+        attachHistoryImage(window, name: "Expanded disclosure after history insertion")
     }
 
-    private func attachHistoryImage(_ window: UIWindow, name: String) {
-        let image = UIGraphicsImageRenderer(bounds: window.bounds).image { _ in
-            window.drawHierarchy(in: window.bounds, afterScreenUpdates: true)
-        }
-        let attachment = XCTAttachment(image: image)
-        attachment.name = name
-        attachment.lifetime = .keepAlways
-        add(attachment)
-    }
+
 
 
     /// A server wakeup renders as completion lines above its reply; a silent reply stays hidden and a typed marker
@@ -302,7 +484,7 @@ final class TranscriptHostedTests: XCTestCase {
 
 
 @MainActor
-private func historyTranscript(messages supplied: [ChatMessage]? = nil, messageCount: Int = 50, messageOffset: Int? = nil, hasOlderMessages: Bool = true, load: @escaping (@MainActor () -> Void) async -> Bool) -> some View {
+private func historyTranscript(messages supplied: [ChatMessage]? = nil, messageCount: Int = 50, messageOffset: Int? = nil, hasOlderMessages: Bool = true, onMetrics: @escaping (ChatScrollMetrics) -> Void = { _ in }, shouldRender: @escaping (ChatMessage) -> Bool = { _ in true }, scrollRequest: Int = 0, onScrollRequest: @escaping (Binding<ScrollPosition>) -> Void = { _ in }, load: @escaping (@MainActor () -> Void) async -> Bool) -> some View {
     let messages = supplied ?? (0..<messageCount).map { index in
         ChatMessage(role: "user", content: "History row \(index). Synthetic transcript text.", timestamp: nil, messageId: "history-\(index)")
     }
@@ -318,8 +500,8 @@ private func historyTranscript(messages supplied: [ChatMessage]? = nil, messageC
         showsThinkingAndToolCards: false, shouldFollowLatestMessage: false,
         isDisclosureSettling: false, latestTranscriptMessageRole: nil, isScrolledNearBottom: false,
         activeStreamID: nil, streamingScrollTrigger: 0, cacheFirstReconcileScrollToken: 0,
-        bottomAnchorID: "bottom", transcriptMessageSpacing: 12, transcriptBlockSpacing: 8,
-        transcriptBottomInsetHeight: 0, scrollToBottomRequest: 0, followReplayRequest: 0,
+        transcriptMessageSpacing: 12, transcriptBlockSpacing: 8,
+        transcriptBottomInsetHeight: 0, scrollToBottomRequest: scrollRequest, followReplayRequest: 0,
         assistantName: "Assistant", localAttachmentPreviews: [:], listeningMessageID: nil,
         isViewingCachedData: false, isSessionReadOnly: false, canBranch: false,
         hasOlderMessages: hasOlderMessages, isLoadingOlderMessages: false,
@@ -327,9 +509,9 @@ private func historyTranscript(messages supplied: [ChatMessage]? = nil, messageC
         loadAttachmentImage: { _ in nil }, loadAttachmentData: { _ in nil },
         loadTranscriptMediaImage: { _ in nil }, loadTranscriptMediaData: { _ in nil },
         transcriptMediaCacheNamespace: "history-test", actionContext: { _, _ in nil },
-        shouldRenderMessageRow: { _ in true }, onLoadMessages: {}, onLoadOlderMessages: load,
-        onUpdateScrollMetrics: { _ in }, onFollowEvent: { _ in }, onDisclosureToggle: {},
-        onFollowSuppressed: {}, onDismissKeyboard: {}, onScrollToBottom: { _ in },
+        shouldRenderMessageRow: shouldRender, onLoadMessages: {}, onLoadOlderMessages: load,
+        onUpdateScrollMetrics: onMetrics, onFollowEvent: { _ in }, onDisclosureToggle: { {} },
+        onFollowSuppressed: {}, onDismissKeyboard: {}, onScrollToBottom: onScrollRequest,
         onScrollToLatestTranscriptMessage: { _ in }, onScrollToLatestContent: { _, _ in },
         onPreviewAttachment: { _, _ in }, onPreviewTranscriptMedia: { _ in },
         onToggleListening: { _ in }, onSelectText: { _ in }, onRegenerate: { _ in },
@@ -340,25 +522,79 @@ private func historyTranscript(messages supplied: [ChatMessage]? = nil, messageC
 /// Hosts the transcript directly because FixtureApp's canned session does not page.
 @MainActor
 private struct PagedHistoryTranscript: View {
-    @State private var start = 1_950
-    var hasDisclosure = false
-    var sparseOlderPages = false
-    var responseDelay = Duration.zero
-    let onRequest: (Int) -> Void
+    @State private var start: Int
+    @State private var readHistoryRequest = 0
+    let hasDisclosure: Bool
+    let sparseOlderPages: Bool
+    let richContent: Bool
+    let onMetrics: (ChatScrollMetrics) -> Void
+    let onInsert: (Int) -> Void
+    let shouldRender: (ChatMessage) -> Bool
+    let onReady: (@escaping () -> Void) -> Void
+    let load: ((@MainActor () -> Void) async -> Bool)?
+    let onScrollRequest: ((Binding<ScrollPosition>) -> Void)?
+    let onRequest: @MainActor (Int) async -> Void
+    let onComplete: @MainActor () async -> Void
+
+    init(initialStart: Int = 1_950, hasDisclosure: Bool = false, sparseOlderPages: Bool = false,
+         richContent: Bool = false,
+         onMetrics: @escaping (ChatScrollMetrics) -> Void = { _ in }, onInsert: @escaping (Int) -> Void = { _ in },
+         shouldRender: @escaping (ChatMessage) -> Bool = { _ in true },
+         onReady: @escaping (@escaping () -> Void) -> Void = { _ in },
+         load: ((@MainActor () -> Void) async -> Bool)? = nil,
+         onScrollRequest: ((Binding<ScrollPosition>) -> Void)? = nil,
+         onComplete: @escaping @MainActor () async -> Void = {}, onRequest: @escaping @MainActor (Int) async -> Void = { _ in }) {
+        _start = State(initialValue: initialStart)
+        self.hasDisclosure = hasDisclosure
+        self.sparseOlderPages = sparseOlderPages
+        self.richContent = richContent
+        self.onMetrics = onMetrics
+        self.onInsert = onInsert
+        self.shouldRender = shouldRender
+        self.onReady = onReady
+        self.load = load
+        self.onScrollRequest = onScrollRequest
+        self.onRequest = onRequest
+        self.onComplete = onComplete
+    }
 
     var body: some View {
         let messages = (start..<2_000).map { index in
-            if hasDisclosure && index == 1993 {
+            if hasDisclosure && index == 1953 {
                 return ChatMessage(role: "user", content: String(repeating: "Expanded history fixture.\n", count: 30), timestamp: nil, messageId: "history-\(index)", displayExcerpt: "Expanded history fixture.", collapsible: true)
+            }
+            if richContent && !index.isMultiple(of: 2) {
+                return ChatMessage(role: "assistant", content: "History answer \(index).\n\n## Details\n\nA paragraph with **emphasis**, `code`, and a [synthetic link](https://example.test).\n\n```swift\nlet value = \(index)\nprint(value)\n```\n\n- First item\n- Second item\n", timestamp: nil, messageId: "history-\(index)")
             }
             return ChatMessage(role: "user", content: "History row \(index). Synthetic transcript text.", timestamp: nil, messageId: "history-\(index)", display: sparseOlderPages && index < 1_950 && index % 50 != 0 ? .hidden : .row)
         }
-        historyTranscript(messages: messages, messageOffset: start, hasOlderMessages: start > 0) { beforePrepend in
-            onRequest(start)
-            try? await Task.sleep(for: responseDelay)
+        historyTranscript(messages: messages, messageOffset: start, hasOlderMessages: start > 0, onMetrics: onMetrics, shouldRender: shouldRender,
+                          scrollRequest: readHistoryRequest, onScrollRequest: { proxy in
+            if let onScrollRequest { onScrollRequest(proxy) }
+            else { proxy.scrollTo("transcript:\(start + 2)", anchor: .top) }
+        }) { beforePrepend in
+            if let load { return await load(beforePrepend) }
+            await onRequest(start)
             beforePrepend()
             start = max(0, start - 50)
+            onInsert(start)
+            await onComplete()
             return true
+        }
+        .onAppear {
+            onReady { readHistoryRequest += 1 }
+            if onScrollRequest != nil { readHistoryRequest += 1 }
+        }
+    }
+}
+
+// Preserve the fixture's named destinations while exercising the same typed API as the app.
+private extension Binding where Value == ScrollPosition {
+    func scrollTo(_ id: String, anchor: UnitPoint) {
+        if id == "chat-transcript-content" { wrappedValue.scrollTo(edge: .top) }
+        else {
+            let target = ChatTranscriptView.containerID(for: id == "bottom" ? "transcript:1999" : id)
+            wrappedValue.scrollTo(id: target, anchor: anchor)
         }
     }
 }

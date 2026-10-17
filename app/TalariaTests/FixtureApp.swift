@@ -66,6 +66,11 @@ final class FixtureApp {
         }
     }
 
+    /// Entry opens at the latest row; older fixture rows may be unmounted by lazy layout.
+    static func isLoadedTranscriptRow(_ element: NSObject) -> Bool {
+        element.accessibilityLabel?.hasPrefix("Fixture message 48 ") == true
+    }
+
     /// Answers every load the scenario held, as the UI tests' `releaseHeldLoads` did.
     func releaseHeldLoads() {
         UITestFixtureHold.shared.release()
@@ -116,6 +121,17 @@ extension XCTestCase {
     ) async throws -> UIWindow {
         let fixture = try FixtureApp(scenario, for: self)
         return try hostWindow(fixture.chat(try await fixture.session(sessionID)), size: size, traits: traits)
+    }
+
+    @MainActor
+    func attachHistoryImage(_ window: UIWindow, name: String) {
+        let image = UIGraphicsImageRenderer(bounds: window.bounds).image { _ in
+            window.drawHierarchy(in: window.bounds, afterScreenUpdates: true)
+        }
+        let attachment = XCTAttachment(image: image)
+        attachment.name = name
+        attachment.lifetime = .keepAlways
+        add(attachment)
     }
 
     /// Waits for an element that satisfies `match` to appear in `window`'s accessibility tree. It sleeps between looks
@@ -215,12 +231,20 @@ extension XCTestCase {
     /// composer's draft follows.
     @MainActor
     func typeIntoComposer(_ text: String, in window: UIWindow) async throws {
-        // A chat with a transcript shows its composer as the collapsed "Message" shell until it is tapped.
-        var found = await composerTextView(in: window, timeout: 2)
-        if found == nil, let shell = await awaitElement(in: window, label: "Message") {
-            HostedAccessibility.activate(shell)
-            found = await composerTextView(in: window)
+        // A delayed expanded editor can mount without ever showing a collapsed shell.
+        var found: UITextView?
+        var expandedShell = false
+        let deadline = Date().addingTimeInterval(10)
+        while found == nil && Date() < deadline {
+            found = await composerTextView(in: window, timeout: 0)
+            if found != nil { break }
+            if !expandedShell, let shell = HostedAccessibility.element(in: window, label: "Message") {
+                HostedAccessibility.activate(shell)
+                expandedShell = true
+            }
+            try await Task.sleep(for: .milliseconds(50))
         }
+        if found == nil { found = await composerTextView(in: window, timeout: 0) }
         let input = try XCTUnwrap(found, "The chat has no composer text view")
         input.becomeFirstResponder()
         input.insertText(text)

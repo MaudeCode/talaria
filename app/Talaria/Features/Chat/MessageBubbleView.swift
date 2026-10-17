@@ -5,6 +5,7 @@ struct MessageBubbleView: View {
     @Environment(\.colorScheme) private var colorScheme
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.chatDisclosureToggled) private var chatDisclosureToggled
     @Environment(\.pendingSteerControls) private var pendingSteerControls
     @AppStorage(ChatTranscriptDisplaySettings.showsAssistantTurnTimestampsKey) private var showsAssistantTurnTimestamps = false
     @AppStorage(ChatTranscriptDisplaySettings.showsResponseSpeedKey) private var showsResponseSpeed = false
@@ -507,6 +508,7 @@ struct MessageBubbleView: View {
     private var collapseToggle: some View {
         if message.displayExcerpt != nil || (isUserMessage && message.collapsible), !isStreaming {
             Button(isExpanded ? String(localized: "Show less") : String(localized: "Show more")) {
+                chatDisclosureToggled()
                 isExpanded.toggle()
             }
             .font(AppFont.body())

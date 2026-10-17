@@ -5,6 +5,83 @@ import XCTest
 // TAL-437: a chat left mid-run, or an app backgrounded mid-run, reopens on its partial answer.
 @MainActor
 extension ChatViewModelSendTests {
+    func testHistoryCacheCoalescesPagesUntilScrollingSettles() async throws {
+        let (viewModel, context, server) = try await makePagedHistoryCacheFixture()
+        viewModel.handleTranscriptScroll(.userScrollBegin)
+        let first = await viewModel.loadOlderMessages(modelContext: context)
+        XCTAssertTrue(first)
+        XCTAssertEqual(viewModel.messages.count, 100)
+        XCTAssertEqual(try CacheStore.cachedMessages(serverURL: server, sessionID: "session-abc", in: context).count, 50,
+                       "Loading history during a gesture must not synchronously rewrite the offline cache")
+        let second = await viewModel.loadOlderMessages(modelContext: context)
+        XCTAssertTrue(second)
+        XCTAssertEqual(viewModel.messages.count, 150)
+        XCTAssertEqual(try CacheStore.cachedMessages(serverURL: server, sessionID: "session-abc", in: context).count, 50)
+        viewModel.handleTranscriptScroll(.userScrollEnd(isAtBottom: false))
+        let cached = try CacheStore.cachedMessages(serverURL: server, sessionID: "session-abc", in: context)
+        XCTAssertEqual(cached.map(\.messageId), (0..<150).map { "history-\($0)" })
+    }
+
+    func testHistoryCachePersistsOnExitBeforeTheGestureSettles() async throws {
+        let (viewModel, context, server) = try await makePagedHistoryCacheFixture()
+        viewModel.handleTranscriptScroll(.userScrollBegin)
+        let loaded = await viewModel.loadOlderMessages(modelContext: context)
+        XCTAssertTrue(loaded)
+        XCTAssertEqual(try CacheStore.cachedMessages(serverURL: server, sessionID: "session-abc", in: context).count, 50)
+        viewModel.persistTranscript(modelContext: context)
+        XCTAssertEqual(try CacheStore.cachedMessages(serverURL: server, sessionID: "session-abc", in: context).count, 100)
+        let savedAt = try XCTUnwrap(context.fetch(FetchDescriptor<CachedMessage>()).first).cachedAt
+        viewModel.handleTranscriptScroll(.userScrollEnd(isAtBottom: false))
+        XCTAssertEqual(try XCTUnwrap(context.fetch(FetchDescriptor<CachedMessage>()).first).cachedAt, savedAt,
+                       "Closing the chat must also release its pending save, not replay it after exit")
+    }
+
+    func testHistoryCacheDoesNotRestoreAnIdentityResetWhileScrolling() async throws {
+        let (viewModel, context, server) = try await makePagedHistoryCacheFixture()
+        viewModel.handleTranscriptScroll(.userScrollBegin)
+        _ = await viewModel.loadOlderMessages(modelContext: context)
+        ServerCacheGeneration.advance(for: server)
+        try CacheStore.clearCache(for: server, in: context)
+        viewModel.handleTranscriptScroll(.userScrollEnd(isAtBottom: false))
+        XCTAssertEqual(try CacheStore.cachedMessages(serverURL: server, sessionID: "session-abc", in: context), [])
+    }
+
+    func testHistoryCacheResetReleasesDeferralForTheNextSnapshot() async throws {
+        let (viewModel, context, server) = try await makePagedHistoryCacheFixture()
+        viewModel.handleTranscriptScroll(.userScrollBegin)
+        _ = await viewModel.loadOlderMessages(modelContext: context)
+        viewModel.handleTranscriptScroll(.reset)
+        _ = await viewModel.loadOlderMessages(modelContext: context)
+        XCTAssertEqual(try CacheStore.cachedMessages(serverURL: server, sessionID: "session-abc", in: context).count, 150)
+    }
+
+    func testHistoryCacheDoesNotDeferAnAuthoritativeEmptySnapshot() async throws {
+        let (viewModel, context, server) = try await makePagedHistoryCacheFixture()
+        viewModel.handleTranscriptScroll(.userScrollBegin)
+        _ = await viewModel.loadOlderMessages(modelContext: context)
+        viewModel.clearTranscript()
+        viewModel.cacheCompletedResponse(modelContext: context)
+        XCTAssertEqual(try CacheStore.cachedMessages(serverURL: server, sessionID: "session-abc", in: context), [])
+    }
+
+    private func makePagedHistoryCacheFixture() async throws -> (ChatViewModel, ModelContext, URL) {
+        let context = try makeContext()
+        let server = try XCTUnwrap(URL(string: "https://example.test"))
+        let viewModel = try makeViewModel { request in
+            XCTAssertEqual(request.url?.path, "/api/session")
+            let params = URLComponents(url: try XCTUnwrap(request.url), resolvingAgainstBaseURL: false)?.queryItems ?? []
+            let end = params.first(where: { $0.name == "msg_before" })?.value.flatMap(Int.init) ?? 150
+            let start = max(0, end - 50)
+            let messages = (start..<end).map { ["role": "user", "content": "History row \($0).", "message_id": "history-\($0)"] }
+            let data = try JSONSerialization.data(withJSONObject: ["session": ["session_id": "session-abc", "messages": messages,
+                "_messages_offset": start, "_messages_truncated": start > 0]])
+            return apiTestJSONResponse(String(decoding: data, as: UTF8.self), for: request)
+        }
+        await viewModel.loadMessages(modelContext: context)
+        XCTAssertEqual(try CacheStore.cachedMessages(serverURL: server, sessionID: "session-abc", in: context).count, 50)
+        return (viewModel, context, server)
+    }
+
     func testLeavingAChatMidRunSavesThePartialAnswerForTheNextOpen() async throws {
         let context = try makeContext()
         let streamClient = SpySSEStreamingClient()
