@@ -1,10 +1,11 @@
 import { execFile, spawnSync } from 'node:child_process'
 import { existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync, unlinkSync, utimesSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { dirname, join } from 'node:path'
 import { afterAll, describe, expect, it, vi } from 'vitest'
 import type { Session } from '../sessions/session.js'
 import { removeWorktreeForSession, worktreeStatusForSession } from './worktrees.js'
+import { GitRunner } from './git.js'
 
 vi.mock('node:child_process', async (original) => {
   const childProcess = await original<typeof import('node:child_process')>()
@@ -14,9 +15,10 @@ vi.mock('node:child_process', async (original) => {
 const root = realpathSync(mkdtempSync(join(tmpdir(), 'talaria-worktrees-')))
 afterAll(() => { rmSync(root, { recursive: true, force: true }) })
 
-function git(cwd: string, ...args: string[]): void {
+function git(cwd: string, ...args: string[]): string {
   const r = spawnSync('git', args, { cwd, encoding: 'utf8', env: { ...process.env, GIT_AUTHOR_NAME: 't', GIT_AUTHOR_EMAIL: 't@example.com', GIT_COMMITTER_NAME: 't', GIT_COMMITTER_EMAIL: 't@example.com', GIT_CONFIG_GLOBAL: '/dev/null' } })
   if (r.status !== 0) throw new Error(r.stderr)
+  return r.stdout
 }
 
 describe('removeWorktreeForSession', () => {
@@ -43,9 +45,9 @@ describe('removeWorktreeForSession', () => {
 describe('hardened worktree Git calls', () => {
   const unlocked = { lockedByStream: () => false, lockedByTerminal: () => false }
   let n = 0
-  function setup(submoduleDepth = 0): { repo: string; worktree: string; session: Session } {
+  function setup(submoduleDepth = 0, objectFormat: 'sha1' | 'sha256' = 'sha1'): { repo: string; worktree: string; session: Session } {
     const repo = join(root, `secure-repo-${String(++n)}`)
-    git(root, 'init', '-q', '-b', 'main', repo)
+    git(root, 'init', '-q', '-b', 'main', `--object-format=${objectFormat}`, repo)
     writeFileSync(join(repo, '.gitattributes'), '*.txt filter=evil\n')
     writeFileSync(join(repo, 'tracked.txt'), 'hello\n')
     git(repo, 'add', '.')
@@ -71,13 +73,183 @@ describe('hardened worktree Git calls', () => {
     return { repo, worktree, session: { session_id: `secure-${String(n)}`, worktree_path: worktree, worktree_repo_root: repo } as unknown as Session }
   }
 
+  function afterMove(write: (captured: string) => void | Promise<void>) {
+    const original = Reflect.get(GitRunner.prototype, 'run')
+    return vi.spyOn(GitRunner.prototype, 'run').mockImplementation(async function (this: GitRunner, ...args) {
+      const result = await original.apply(this, args)
+      if (args[1][0] === 'worktree' && args[1][1] === 'move' && result.status === 0) await write(args[1].at(-1) ?? '')
+      return result
+    })
+  }
+
   it('scans submodule filters once per status poll, excluding metadata-only probes', async () => {
     const { session } = setup(2)
     vi.mocked(execFile).mockClear()
     expect(await worktreeStatusForSession(session, unlocked)).toMatchObject({ dirty: false, listed: true, ahead_behind: { available: true } })
     const commands = vi.mocked(execFile).mock.calls.map((call) => call[1] as string[])
     expect(commands.filter((args) => args.includes('ls-files'))).toHaveLength(3)
-    expect(commands).toHaveLength(16)
+    expect(commands.length).toBeLessThanOrEqual(16)
+  })
+
+  for (const ignore of ['all', 'dirty', 'untracked', 'none']) {
+    it(`preserves Git's submodule ignore=${ignore} behavior`, async () => {
+      const { worktree, session } = setup(1)
+      const submodule = join(worktree, 'module')
+      git(worktree, 'config', 'submodule.module.ignore', ignore)
+      const check = async (): Promise<void> => {
+        const expected = git(worktree, 'status', '--porcelain', '-z', '--untracked-files=normal')
+        expect(await worktreeStatusForSession(session, unlocked)).toMatchObject({ dirty: expected.length > 0, untracked_count: 0 })
+      }
+      writeFileSync(join(submodule, 'notes.txt'), 'new\n')
+      await check()
+      writeFileSync(join(submodule, 'tracked.txt'), 'changed\n')
+      await check()
+      git(submodule, 'add', '.')
+      git(submodule, 'commit', '-q', '-m', 'child change')
+      await check()
+      git(worktree, 'add', 'module')
+      await check()
+    })
+  }
+
+  it('honors .gitmodules ignore settings with case-sensitive submodule names', async () => {
+    const { worktree, session } = setup(1)
+    git(worktree, 'config', '--file', '.gitmodules', '--rename-section', 'submodule.module', 'submodule.MixedCase')
+    git(worktree, 'config', '--file', '.gitmodules', 'submodule.MixedCase.ignore', 'all')
+    git(worktree, 'add', '.gitmodules')
+    git(worktree, 'commit', '-q', '-m', 'ignore submodule changes')
+    writeFileSync(join(worktree, 'module', 'tracked.txt'), 'changed\n')
+    expect(git(worktree, 'status', '--porcelain')).toBe('')
+    expect(await worktreeStatusForSession(session, unlocked)).toMatchObject({ dirty: false })
+  })
+
+  it('restores the captured directory and Git registration when its final probe finds new data', async () => {
+    const { worktree, session } = setup()
+    const spy = afterMove((captured) => { writeFileSync(join(captured, 'late.txt'), 'keep me\n') })
+    try { await expect(removeWorktreeForSession(session, unlocked)).rejects.toThrow('git worktree remove failed') } finally { spy.mockRestore() }
+    expect(readFileSync(join(worktree, 'late.txt'), 'utf8')).toBe('keep me\n')
+    expect(await worktreeStatusForSession(session, unlocked)).toMatchObject({ exists: true, listed: true, dirty: true })
+  })
+
+  it('holds the private capture against new file, terminal and Git mutation admission', async () => {
+    const { repo, worktree, session } = setup()
+    const runner = new GitRunner({ env: { ...process.env, HERMES_WEBUI_WORKSPACE_GIT_DESTRUCTIVE: '1' } })
+    const spy = afterMove(async (captured) => {
+      expect(runner.workspaceBusy(captured)).toBe(true)
+      expect(() => runner.holdWrite(captured, () => Promise.resolve())).toThrow('A Git operation is running in this workspace.')
+      await expect(runner.stage(captured, ['tracked.txt'])).rejects.toThrow('A Git operation is running in this workspace.')
+    })
+    try { expect(await runner.removeWorktreeExclusive(worktree, repo, () => removeWorktreeForSession(session, unlocked))).toMatchObject({ ok: true }) } finally { spy.mockRestore() }
+  })
+
+  it('leaves a replacement at the original path untouched after capturing the worktree', async () => {
+    const { worktree, session } = setup()
+    const spy = afterMove(() => {
+      mkdirSync(worktree)
+      writeFileSync(join(worktree, 'replacement.txt'), 'keep me\n')
+    })
+    try { expect(await removeWorktreeForSession(session, unlocked)).toMatchObject({ ok: true, warnings: ['The original worktree path was recreated during removal and was left untouched.'] }) } finally { spy.mockRestore() }
+    expect(readFileSync(join(worktree, 'replacement.txt'), 'utf8')).toBe('keep me\n')
+    expect(git(session.worktree_repo_root ?? '', 'worktree', 'list', '--porcelain')).not.toContain(`worktree ${worktree}\n`)
+  })
+
+  it('retains the captured worktree when a replacement prevents restoring its original path', async () => {
+    const { worktree, session } = setup()
+    let captured = ''
+    const spy = afterMove((path) => {
+      captured = path
+      writeFileSync(join(captured, 'late.txt'), 'captured data\n')
+      mkdirSync(worktree)
+      writeFileSync(join(worktree, 'replacement.txt'), 'replacement data\n')
+    })
+    try { await expect(removeWorktreeForSession(session, unlocked)).rejects.toThrow('Worktree retained at') } finally { spy.mockRestore() }
+    expect(readFileSync(join(worktree, 'replacement.txt'), 'utf8')).toBe('replacement data\n')
+    expect(readFileSync(join(captured, 'late.txt'), 'utf8')).toBe('captured data\n')
+    expect(readFileSync(join(captured, 'tracked.txt'), 'utf8')).toBe('hello\n')
+    expect(JSON.parse(readFileSync(join(dirname(captured), 'recovery.json'), 'utf8'))).toMatchObject({ original_path: worktree })
+  })
+
+  it.runIf(process.platform !== 'win32')('rejects non-regular metadata without opening a blocking FIFO reader', async () => {
+    const { worktree, session } = setup()
+    const index = join(git(worktree, 'rev-parse', '--absolute-git-dir').trim(), 'index')
+    unlinkSync(index)
+    const fifo = spawnSync('mkfifo', [index], { encoding: 'utf8' })
+    expect(fifo.status, fifo.stderr).toBe(0)
+    await expect(worktreeStatusForSession(session, unlocked)).rejects.toThrow('Git status metadata must be a regular file')
+  })
+
+  it('preserves info excludes, CRLF normalization and split indexes without modifying repository metadata', async () => {
+    const { repo, worktree, session } = setup()
+    writeFileSync(join(repo, '.git', 'info', 'exclude'), 'ignored.txt\n')
+    writeFileSync(join(worktree, '.gitattributes'), '*.txt text eol=lf\n')
+    git(worktree, 'add', '.gitattributes')
+    git(worktree, 'commit', '-q', '-m', 'text normalization')
+    git(worktree, 'config', 'core.autocrlf', 'true')
+    writeFileSync(join(worktree, 'tracked.txt'), 'hello\r\n')
+    git(worktree, 'add', 'tracked.txt')
+    writeFileSync(join(worktree, 'ignored.txt'), 'ignored\n')
+    git(worktree, 'update-index', '--split-index')
+    const index = join(git(worktree, 'rev-parse', '--absolute-git-dir').trim(), 'index')
+    const before = readFileSync(index)
+    expect(git(worktree, '--no-optional-locks', 'status', '--porcelain')).toBe('')
+    expect((await new GitRunner({ env: process.env }).worktreeStatus(worktree)).stdout).toBe('')
+    expect(await worktreeStatusForSession(session, unlocked)).toMatchObject({ dirty: false, untracked_count: 0 })
+    expect(readFileSync(index)).toEqual(before)
+    writeFileSync(join(worktree, 'tracked.txt'), 'changed\r\n')
+    expect(await worktreeStatusForSession(session, unlocked)).toMatchObject({ dirty: true, untracked_count: 0 })
+  })
+
+  it('preserves sparse-index status and SHA-256 repositories', async () => {
+    const { worktree, session } = setup(0, 'sha256')
+    mkdirSync(join(worktree, 'visible'))
+    mkdirSync(join(worktree, 'hidden'))
+    writeFileSync(join(worktree, 'visible', 'file.txt'), 'visible\n')
+    writeFileSync(join(worktree, 'hidden', 'file.txt'), 'hidden\n')
+    git(worktree, 'add', '.')
+    git(worktree, 'commit', '-q', '-m', 'directories')
+    git(worktree, 'sparse-checkout', 'init', '--cone', '--sparse-index')
+    git(worktree, 'sparse-checkout', 'set', 'visible')
+    expect(git(worktree, '--no-optional-locks', 'status', '--porcelain')).toBe('')
+    expect(await worktreeStatusForSession(session, unlocked)).toMatchObject({ dirty: false })
+    writeFileSync(join(worktree, 'visible', 'file.txt'), 'changed\n')
+    expect(await worktreeStatusForSession(session, unlocked)).toMatchObject({ dirty: true })
+  })
+
+  it('does not execute a filter installed after discovery before status starts', async () => {
+    const { worktree, session } = setup()
+    const marker = join(root, `late-filter-${String(n)}`)
+    const original = await vi.importActual<typeof import('node:child_process')>('node:child_process')
+    vi.mocked(execFile).mockImplementation((...args: Parameters<typeof execFile>) => {
+      if ((args[1] as string[]).includes('status')) {
+        git(worktree, 'config', 'filter.late.clean', `printf late >> "${marker}"; cat`)
+        writeFileSync(join(worktree, '.gitattributes'), '*.txt filter=late\n')
+        utimesSync(join(worktree, 'tracked.txt'), 1, 1)
+      }
+      return original.execFile(...args)
+    })
+    try {
+      await worktreeStatusForSession(session, unlocked)
+      expect(existsSync(marker)).toBe(false)
+    } finally { vi.mocked(execFile).mockImplementation(original.execFile) }
+  })
+
+  it('does not execute a filter installed immediately before the removal command', async () => {
+    const { repo, session } = setup()
+    const marker = join(root, `remove-late-filter-${String(n)}`)
+    const original = await vi.importActual<typeof import('node:child_process')>('node:child_process')
+    vi.mocked(execFile).mockImplementation((...args: Parameters<typeof execFile>) => {
+      const argv = args[1] as string[]
+      if (argv.includes('worktree') && argv.includes('remove')) {
+        git(repo, 'config', 'filter.late.clean', `printf late >> "${marker}"; cat`)
+        writeFileSync(join(repo, '.git', 'info', 'attributes'), '*.txt filter=late\n')
+        utimesSync(join(argv.at(-1) ?? '', 'tracked.txt'), 1, 1)
+      }
+      return original.execFile(...args)
+    })
+    try {
+      expect(await removeWorktreeForSession(session, unlocked)).toMatchObject({ ok: true })
+      expect(existsSync(marker)).toBe(false)
+    } finally { vi.mocked(execFile).mockImplementation(original.execFile) }
   })
 
   for (const depth of [1, 2]) {

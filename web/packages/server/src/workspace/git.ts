@@ -7,10 +7,10 @@
  * against repo-local config, and bounded by a timeout.
  */
 import { execFile } from 'node:child_process'
-import { closeSync, existsSync, fstatSync, lstatSync, mkdtempSync, mkdirSync, readFileSync, realpathSync, rmSync, statSync, writeFileSync } from 'node:fs'
-import { tmpdir } from 'node:os'
+import { closeSync, constants as fsConstants, existsSync, fstatSync, lstatSync, mkdtempSync, mkdirSync, openSync, readdirSync, readFileSync, readSync, realpathSync, rmSync, statSync, symlinkSync, writeFileSync } from 'node:fs'
+import { homedir, tmpdir } from 'node:os'
 import { dirname, join, relative, resolve, sep } from 'node:path'
-import { isWithin, resolvePathLikePython } from './paths.js'
+import { expandHome, isWithin, resolvePathLikePython } from './paths.js'
 import { openAnchoredFd, rmtreeAnchored, safeResolveWs, unlinkAnchored } from './fs.js'
 import { str } from '../util.js'
 import { diffHunks, hunkTotals } from '../text/diff.js'
@@ -27,7 +27,7 @@ export const WORKSPACE_GIT_DESTRUCTIVE_ENV = 'HERMES_WEBUI_WORKSPACE_GIT_DESTRUC
 export const WORKSPACE_BUSY_MESSAGE = 'A Git operation is running in this workspace.'
 const ACTIVE_RUN_MESSAGE = 'A session run is active. Wait for it to finish before running this Git operation.'
 export const WORKSPACE_WRITE_BUSY_MESSAGE = 'A file operation is running in this workspace.'
-const GIT_ENV_SCRUB_KEYS = ['GIT_DIR', 'GIT_WORK_TREE', 'GIT_CONFIG_GLOBAL', 'GIT_CONFIG_SYSTEM', 'GIT_CONFIG_COUNT', 'GIT_CONFIG_PARAMETERS', 'GIT_ASKPASS', 'SSH_ASKPASS', 'GIT_SSH', 'GIT_SSH_COMMAND', 'GIT_GLOB_PATHSPECS', 'GIT_NOGLOB_PATHSPECS', 'GIT_ICASE_PATHSPECS']
+const GIT_ENV_SCRUB_KEYS = ['GIT_DIR', 'GIT_WORK_TREE', 'GIT_COMMON_DIR', 'GIT_CONFIG', 'GIT_CONFIG_GLOBAL', 'GIT_CONFIG_SYSTEM', 'GIT_CONFIG_COUNT', 'GIT_CONFIG_PARAMETERS', 'GIT_ASKPASS', 'SSH_ASKPASS', 'GIT_SSH', 'GIT_SSH_COMMAND', 'GIT_GLOB_PATHSPECS', 'GIT_NOGLOB_PATHSPECS', 'GIT_ICASE_PATHSPECS']
 const GIT_ENV_SCRUB_PREFIXES = ['GIT_CONFIG_KEY_', 'GIT_CONFIG_VALUE_']
 const BRANCH_SWITCH_STASH_PREFIX = 'hermes-webui branch switch'
 const GIT_HARDENED_CONFIG: [string, string][] = [
@@ -49,6 +49,7 @@ const GIT_DESTRUCTIVE_HARDENED_CONFIG: [string, string][] = [
   ['core.alternateRefsCommand', ''],
 ]
 const CONFLICT_CODES = new Set(['DD', 'AU', 'UD', 'UA', 'DU', 'AA', 'UU'])
+const STATUS_CONFIG_KEYS = /^(core\.(autocrlf|eol|filemode|ignorecase|symlinks|ignorestat|checkstat|trustctime|protecthfs|protectntfs|precomposeunicode|excludesfile|attributesfile|quotepath)|(?:diff|status)\.(renames|renamelimit))$/
 
 export class GitWorkspaceError extends Error {
   constructor(message: string, readonly code = 'git_failed', options?: ErrorOptions) {
@@ -95,12 +96,22 @@ interface RunOptions {
   forceDestructiveHardening?: boolean
   disableFilterAttributes?: boolean
   neutralizeFilterPrograms?: boolean
-  /** Additional worktrees whose config a subprocess (such as `worktree remove`) will read. */
-  filterConfigCwds?: string[]
   neutralizeRemoteHelpers?: boolean
 }
 
 export interface GitResult { status: number; stdout: string; stderr: string }
+
+/** Porcelain v1 records retain their second NUL field for a rename/copy's source path. */
+export function porcelainStatusEntries(output: string): string[][] {
+  const fields = output.split('\0')
+  const entries: string[][] = []
+  for (let i = 0; i < fields.length; i++) {
+    const record = fields[i]
+    if (!record) continue
+    entries.push(/[RC]/.test(record.slice(0, 2)) ? [record, fields[++i] ?? ''] : [record])
+  }
+  return entries
+}
 
 export interface GitSpawn { status: number | null; stdout: string; stderr: string; error?: NodeJS.ErrnoException }
 
@@ -208,6 +219,8 @@ export class GitRunner {
   private readonly busy = new Map<string, number>()
   /** Workspaces an asynchronous writer (worktree creation) is changing; working-tree mutations stay out. */
   private readonly writing = new Map<string, number>()
+  /** Private removal captures share the workspace hold but reject Git mutations even under a router's own hold. */
+  private readonly removing = new Map<string, number>()
 
   constructor(readonly deps: GitRunnerDeps) {}
 
@@ -242,10 +255,11 @@ export class GitRunner {
 
   /**
    * Worktree removal: serialized with Git mutations in the main checkout and in the worktree (the same per-repo locks),
-   * and held busy so no run, terminal, or file write starts there. `fn`'s synchronous lock checks run inside the hold.
+   * and its parent is held busy so no run, terminal, file write or Git mutation starts at the private capture location.
    */
   async removeWorktreeExclusive<T>(worktree: string, repoRoot: string | null, fn: () => Promise<T>): Promise<T> {
-    const inWorktree = (): Promise<T> => this.withLock(worktree, () => this.holdWorkspace(worktree, fn))
+    const parent = dirname(resolvePathLikePython(worktree))
+    const inWorktree = (): Promise<T> => this.withLock(worktree, () => this.holdWorkspace(parent, () => holding(this.removing, parent, fn)))
     return repoRoot ? await this.withLock(repoRoot, inWorktree) : await inWorktree()
   }
 
@@ -292,22 +306,8 @@ export class GitRunner {
     return names
   }
 
-  private async filterNames(cwd: string, env: Record<string, string>, includeSubmodules = false, visited = new Set<string>()): Promise<Set<string>> {
-    const names = await this.namesLocalAndWorktree(cwd, env, String.raw`^filter\..*\.(clean|smudge|process|required)$`, /^filter\.(.+)\.(clean|smudge|process|required)$/)
-    if (!includeSubmodules) return names
-    // Status enters initialized submodules even with submodule.recurse=false. Enumerate gitlinks without inspecting files.
-    const root = resolvePathLikePython((await this.run(cwd, ['rev-parse', '--show-toplevel'], { check: true, env })).stdout.replace(/\r?\n$/, ''))
-    if (visited.has(root)) return names
-    visited.add(root)
-    const index = await this.run(root, ['ls-files', '--stage', '-z'], { check: true, env })
-    for (const entry of index.stdout.split('\0')) {
-      const match = /^160000 [a-f0-9]+ [0-3]\t(.+)$/s.exec(entry)
-      if (!match?.[1]) continue
-      const submodule = safeResolveWs(root, match[1])
-      if (submodule === root || !existsSync(join(submodule, '.git'))) continue
-      for (const name of await this.filterNames(submodule, env, true, visited)) names.add(name)
-    }
-    return names
+  private async filterNames(cwd: string, env: Record<string, string>): Promise<Set<string>> {
+    return await this.namesLocalAndWorktree(cwd, env, String.raw`^filter\..*\.(clean|smudge|process|required)$`, /^filter\.(.+)\.(clean|smudge|process|required)$/)
   }
 
   private async mergeDriverNames(cwd: string, env: Record<string, string>): Promise<Set<string>> {
@@ -326,6 +326,157 @@ export class GitRunner {
     return (await this.filterNames(cwd, this.cleanEnv())).size > 0
   }
 
+  /** Hold the opened inode and reject devices/FIFOs before reading repository-controlled metadata. */
+  private static withStatusFile<T>(path: string, read: (fd: number, size: number) => T): T | null {
+    let fd: number
+    try { fd = openSync(path, fsConstants.O_RDONLY | (fsConstants.O_NONBLOCK ?? 0)) } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === 'ENOENT') return null
+      throw error
+    }
+    try {
+      const stat = fstatSync(fd)
+      if (!stat.isFile()) throw new GitWorkspaceError('Git status metadata must be a regular file', 'git_failed')
+      return read(fd, stat.size)
+    } finally { closeSync(fd) }
+  }
+
+  /** A private metadata view never loads executable repository/global configuration, even if the originals change. */
+  private async withStatusRepository<T>(cwd: string, remaining: () => number, read: (prefix: string[], env: Record<string, string>, ignores: Map<string, string>) => Promise<T>): Promise<T> {
+    const location = await this.run(cwd, ['rev-parse', '--absolute-git-dir', '--verify', 'HEAD'], { timeoutMs: remaining() })
+    const output = location.stdout.replace(/\r?\n$/, '')
+    const split = output.lastIndexOf('\n')
+    const gitDir = location.status === 0 ? output.slice(0, split).replace(/\r$/, '') : output
+    const head = location.status === 0 ? output.slice(split + 1) : 'ref: refs/heads/status-probe'
+    if (!gitDir || (location.status !== 0 && location.status !== 128) || (location.status === 0 && !/^(?:[a-f0-9]{40}|[a-f0-9]{64})$/.test(head))) {
+      const message = (location.stderr || 'Git repository metadata could not be read').trim()
+      throw new GitWorkspaceError(message, classifyGitError(message, ['rev-parse']))
+    }
+    let common = gitDir
+    const commonPath = GitRunner.withStatusFile(join(gitDir, 'commondir'), (fd, size) => {
+      if (size > DIFF_SIZE_LIMIT) throw new GitWorkspaceError('Git common directory path is too large', 'git_failed')
+      const bytes = Buffer.alloc(DIFF_SIZE_LIMIT + 1)
+      let offset = 0
+      while (offset < bytes.length) {
+        remaining()
+        const count = readSync(fd, bytes, offset, bytes.length - offset, null)
+        if (!count) break
+        offset += count
+      }
+      if (offset > DIFF_SIZE_LIMIT) throw new GitWorkspaceError('Git common directory path is too large', 'git_failed')
+      return bytes.subarray(0, offset).toString('utf8')
+    })
+    if (commonPath !== null) common = resolve(gitDir, commonPath.replace(/\r?\n$/, ''))
+    const config = await this.run(cwd, ['-c', `include.path=${join(cwd, '.gitmodules')}`, 'config', '--includes', '--null', '--list', '--show-scope'], { check: true, timeoutMs: remaining() })
+    const values = new Map<string, string>()
+    const modules = new Map<string, string>()
+    const entries = config.stdout.split('\0')
+    for (let i = 0; i + 1 < entries.length; i += 2) {
+      const scope = entries[i]
+      const entry = entries[i + 1] ?? ''
+      const split = entry.indexOf('\n')
+      if (split < 0) continue
+      const key = entry.slice(0, split)
+      if (scope === 'command') {
+        if (/^submodule\..+\.(path|ignore)$/.test(key)) modules.set(key, entry.slice(split + 1))
+      } else values.set(key, entry.slice(split + 1))
+    }
+    const ignores = new Map<string, string>()
+    for (const [key, path] of modules) {
+      if (!key.endsWith('.path')) continue
+      const ignore = values.get(`${key.slice(0, -5)}.ignore`) ?? modules.get(`${key.slice(0, -5)}.ignore`) ?? values.get('diff.ignoresubmodules') ?? 'none'
+      if (!['none', 'untracked', 'dirty', 'all'].includes(ignore)) throw new GitWorkspaceError('Invalid submodule ignore setting', 'git_failed')
+      ignores.set(path, ignore)
+    }
+    const root = mkdtempSync(join(tmpdir(), 'talaria-git-status-'))
+    try {
+      const objectFormat = values.get('extensions.objectformat') ?? 'sha1'
+      if (!['sha1', 'sha256'].includes(objectFormat)) throw new GitWorkspaceError('Unsupported Git repository format', 'git_failed')
+      mkdirSync(join(root, 'info'))
+      mkdirSync(join(root, 'refs'))
+      writeFileSync(join(root, 'config'), `[core]\nrepositoryFormatVersion = ${objectFormat === 'sha256' ? '1' : '0'}\nbare = false\n${objectFormat === 'sha256' ? '[extensions]\nobjectFormat = sha256\n' : ''}`)
+      writeFileSync(join(root, 'HEAD'), `${head}\n`)
+      const copy = (directory: string, file: string): void => {
+        GitRunner.withStatusFile(join(directory, file), (source) => {
+          const target = openSync(join(root, file), 'wx', 0o600)
+          try {
+            const chunk = Buffer.allocUnsafe(64 * 1024)
+            for (;;) {
+              remaining()
+              const bytes = readSync(source, chunk, 0, chunk.length, null)
+              if (!bytes) break
+              writeFileSync(target, chunk.subarray(0, bytes))
+            }
+          } finally { closeSync(target) }
+        })
+      }
+      for (const file of ['index', ...readdirSync(gitDir).filter((name) => /^sharedindex\.[a-f0-9]+$/.test(name))]) {
+        copy(gitDir, file)
+      }
+      for (const file of ['shallow', 'info/attributes', 'info/exclude', 'info/sparse-checkout']) {
+        copy(common, file)
+      }
+      symlinkSync(join(common, 'objects'), join(root, 'objects'), process.platform === 'win32' ? 'junction' : 'dir')
+      const originalEnv = this.cleanEnv()
+      const home = originalEnv.HOME || homedir()
+      const xdg = originalEnv.XDG_CONFIG_HOME || join(home, '.config')
+      if (!values.has('core.attributesfile')) values.set('core.attributesfile', join(xdg, 'git', 'attributes'))
+      if (!values.has('core.excludesfile')) values.set('core.excludesfile', join(xdg, 'git', 'ignore'))
+      const prefix = [`--git-dir=${root}`, `--work-tree=${cwd}`]
+      for (const [key, raw] of values) {
+        if (!STATUS_CONFIG_KEYS.test(key)) continue
+        const value = key === 'core.attributesfile' || key === 'core.excludesfile' ? resolve(cwd, expandHome(raw, home)) : raw
+        prefix.push('-c', `${key}=${value}`)
+      }
+      return await read(prefix, { HOME: root, XDG_CONFIG_HOME: root, GIT_CONFIG_NOSYSTEM: '1', GIT_OPTIONAL_LOCKS: '0', GIT_INDEX_FILE: join(root, 'index'), GIT_OBJECT_DIRECTORY: join(root, 'objects'), GIT_ALTERNATE_OBJECT_DIRECTORIES: '' }, ignores)
+    } finally { rmSync(root, { recursive: true, force: true }) }
+  }
+
+  /** Worktree lifecycle probes need only porcelain v1; child worktrees are inspected through the same private view. */
+  async worktreeStatus(cwd: string, timeoutMs = GIT_TIMEOUT_MS): Promise<GitResult> {
+    const deadline = Date.now() + timeoutMs
+    const remaining = (): number => {
+      const ms = deadline - Date.now()
+      if (ms <= 0) throw new GitWorkspaceError('Git command timed out', 'timeout', { cause: Object.assign(new Error('git timed out'), { code: 'ETIMEDOUT' }) })
+      return ms
+    }
+    const visited = new Set<string>()
+    const inspect = async (path: string): Promise<GitResult & { trackedDirty: boolean; untrackedDirty: boolean }> => {
+      visited.add(resolvePathLikePython(path))
+      return this.withStatusRepository(path, remaining, async (prefix, env, ignores) => {
+        const run = (args: string[]): Promise<GitResult> => this.run(path, [...prefix, ...args], { check: true, timeoutMs: remaining(), env })
+        // Commit differences remain visible; Git must not run a child status against live submodule configuration.
+        const result = await run(['status', '--porcelain', '-z', '--untracked-files=normal', '--ignore-submodules=dirty'])
+        const index = await run(['ls-files', '--stage', '-z'])
+        const records = porcelainStatusEntries(result.stdout)
+        for (let i = records.length - 1; i >= 0; i--) {
+          const record = records[i]?.[0] ?? ''
+          if (ignores.get(record.slice(3)) !== 'all' || record.startsWith('??')) continue
+          if (record.startsWith(' ')) records.splice(i, 1)
+          else { const fields = records[i]; if (fields) fields[0] = `${record[0]} ${record.slice(2)}` }
+        }
+        result.stdout = records.length ? `${records.flat().join('\0')}\0` : ''
+        let trackedDirty = records.some(([record]) => !record?.startsWith('??'))
+        let untrackedDirty = records.some(([record]) => record?.startsWith('??'))
+        for (const entry of index.stdout.split('\0')) {
+          const match = /^160000 [a-f0-9]+ [0-3]\t(.+)$/s.exec(entry)
+          if (!match?.[1]) continue
+          const ignore = ignores.get(match[1]) ?? 'none'
+          if (ignore === 'all' || ignore === 'dirty') continue
+          const child = safeResolveWs(path, match[1])
+          if (visited.has(child) || !existsSync(join(child, '.git'))) continue
+          const childStatus = await inspect(child)
+          const untracked = ignore !== 'untracked' && childStatus.untrackedDirty
+          if (childStatus.trackedDirty || untracked) result.stdout += ` M ${match[1]}\0`
+          trackedDirty ||= childStatus.trackedDirty
+          untrackedDirty ||= untracked
+        }
+        return { ...result, trackedDirty, untrackedDirty }
+      })
+    }
+    const { status, stdout, stderr } = await inspect(cwd)
+    return { status, stdout, stderr }
+  }
+
   async run(ctxOrCwd: GitContext | string, args: string[], opts: RunOptions = {}): Promise<GitResult> {
     const cwd = typeof ctxOrCwd === 'string' ? ctxOrCwd : ctxOrCwd.repoRoot
     const runEnv = this.cleanEnv(opts.env)
@@ -341,11 +492,7 @@ export class GitRunner {
         writeFileSync(attributesFile, '')
       }
       if (opts.disableFilterAttributes || opts.neutralizeFilterPrograms) {
-        const names = new Set<string>()
-        for (const path of new Set([cwd, ...(opts.filterConfigCwds ?? [])])) {
-          for (const name of await this.filterNames(path, runEnv, true)) names.add(name)
-        }
-        for (const name of [...names].sort()) {
+        for (const name of [...await this.filterNames(cwd, runEnv)].sort()) {
           if (!GitRunner.legal(name)) continue
           extraConfigs.push([`filter.${name}.clean`, 'cat'], [`filter.${name}.smudge`, 'cat'], [`filter.${name}.process`, ''], [`filter.${name}.required`, 'false'])
         }
@@ -465,6 +612,7 @@ export class GitRunner {
   }
 
   private assertRepoFree(repoRoot: string): void {
+    if (overlapsAny(this.removing, repoRoot)) throw new GitWorkspaceError(WORKSPACE_BUSY_MESSAGE, 'operation_in_progress')
     if (this.deps.activeRunIn?.(repoRoot)) throw new GitWorkspaceError(ACTIVE_RUN_MESSAGE, 'active_stream')
     if (overlapsAny(this.writing, repoRoot)) throw new GitWorkspaceError(WORKSPACE_WRITE_BUSY_MESSAGE, 'operation_in_progress')
   }

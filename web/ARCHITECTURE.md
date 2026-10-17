@@ -64,6 +64,18 @@ hand-written endpoint schemas.
 | Sidecar | `sidecar/client.ts`, `discover.ts`, `fake.ts` | newline-delimited JSON-RPC 2.0 over stdio with streamed frames and cancellation; restart with backoff; Agent discovery; the Vitest fake |
 | CLI | `cli/launcher.ts`, `ctl.ts`, `dotenv.ts`, `supervise.ts`, `bin/*` | `talaria-web` bootstrap, `ctl`, `.env` precedence, the serve supervisor, `talaria-web-mcp` |
 
+Worktree lifecycle status probes use private Git metadata and copied indexes. Only non-executable
+status settings enter that view; live repository filter definitions and configuration includes cannot
+be loaded by its status command. Initialized submodules use the same boundary, preserving their
+ignore settings. A single deadline covers metadata preparation and the recursive probe.
+Normal removal first moves the directory to a private sibling location, checks that captured directory,
+then removes it without Git's unsafe internal status invocation. Failed checks restore the path and
+registration. If a replacement occupies the original path, the captured worktree stays at the recovery
+path in the error, and cleanup never deletes it. A flushed `recovery.json` beside a retained capture records
+its original path and repository. After an interrupted move, use `git worktree repair <capture>/tree`
+if needed, then `git worktree move <capture>/tree <original_path>` to restore it. An explicitly forced
+removal retains its existing semantics.
+
 State ownership: WebUI-owned files (sessions, settings, auth records, journals, shares, drafts, relay
 config, extension state) are written only by the server. Agent-owned files (`config.yaml`, `.env`, profiles,
 skills, memories) are read and written as file formats by the server; `state.db` writes and the
