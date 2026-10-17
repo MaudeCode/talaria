@@ -11,7 +11,7 @@ from contextlib import contextmanager
 
 import pytest
 
-from conftest import AGENT_DIR, SidecarProcess, assert_matches, requires_agent
+from conftest import AGENT_DIR, SidecarProcess, assert_matches, requires_agent, process_snapshot
 
 
 def wait_for(predicate):
@@ -19,6 +19,12 @@ def wait_for(predicate):
     while not predicate() and time.monotonic() < deadline:
         time.sleep(.02)
     assert predicate()
+
+
+def wait_for_agent_exit(root, home):
+    """Wait for all disposable Agent processes, including restarted supervisors."""
+    wait_for(lambda: not any(str(root) in args or str(home) in args
+                             for _, _, _, args in process_snapshot()))
 
 
 def native_agent(tmp_path):
@@ -51,7 +57,13 @@ class UpdateLock:
   except OSError: return False
   FD=self.file.fileno(); return True
  def acquire_checkout(self,root): return self.acquire()
- def release(self): self.file.close()
+ def release(self):
+  gate=os.environ.get('SYNTHETIC_LOCK_RELEASE_GATE')
+  if gate:
+   import time
+   path=Path(gate); path.with_suffix('.ready').touch()
+   while not path.exists(): time.sleep(.01)
+  self.file.close()
 ''',
         'update_custody': '''import subprocess
 from . import update_lock
@@ -215,6 +227,8 @@ def own_agent(root, home, base, target, env=None):
         (home / 'stop').touch()
         wait_for(lambda: not (home / 'active').exists())
         writer.wait(timeout=5)
+        # Crash recovery publishes its journal before the supervisor exits.
+        wait_for_agent_exit(root, home)
 
 
 @pytest.fixture
@@ -628,8 +642,19 @@ def test_native_journal_accepts_a_complete_atomic_restore_at_an_unmoved_head(nat
 
 
 @requires_agent
-def test_native_journal_retains_a_killed_atomic_restore_at_an_unmoved_head(native_journal_owner):
+def test_native_journal_retains_a_killed_atomic_restore_at_an_unmoved_head(native_journal_owner, monkeypatch):
     root, home, base, target, patch = native_journal_owner
+    release = home / 'release-lock'
+    snapshot = process_snapshot
+
+    def release_after_snapshot():
+        rows = snapshot()
+        release.touch()
+        return rows
+
+    # Keep the supervisor alive after it publishes UNOWNED. Teardown must
+    # observe that child and wait for its natural exit, not just its journal.
+    monkeypatch.setitem(globals(), 'process_snapshot', release_after_snapshot)
     binary = home / 'bin'
     binary.mkdir()
     real_git = shutil.which('git')
@@ -644,7 +669,8 @@ if sys.argv[1:2]==['apply'] and '--numstat' not in sys.argv:
 os.execv({real_git!r},[{real_git!r},*sys.argv[1:]])
 ''')
     proxy.chmod(0o700)
-    with own_agent(root, home, base, target, {'PATH': str(binary) + os.pathsep + os.environ['PATH']}) as (*_, sidecar):
+    with own_agent(root, home, base, target, {'PATH': str(binary) + os.pathsep + os.environ['PATH'],
+                                           'SYNTHETIC_LOCK_RELEASE_GATE': str(release)}) as (*_, sidecar):
         begun = rpc(sidecar, root, 'begin', revision=target, homes=[str(home)])
         assert begun['ok'], begun
         sidecar.request('runtime.agent_mutation', {'action': 'git', 'agent_dir': str(root), 'token': begun['token'], 'args': ['apply', str(patch)], 'timeout_ms': 300000})
@@ -654,6 +680,7 @@ os.execv({real_git!r},[{real_git!r},*sys.argv[1:]])
             journals = list(home.glob('.hermes-update-paused-gateways.*.json'))
             return (home / 'resumed').exists() or any(json.loads(path.read_text()).get('owner', {}).get('pid') == 0 for path in journals)
         wait_for(settled)
+        wait_for(lambda: release.with_suffix('.ready').exists())
         assert not (home / 'resumed').exists(), 'an unmoved HEAD must not certify a half-written patch'
         assert list(home.glob('.hermes-update-paused-gateways.*.json'))
 
@@ -715,8 +742,9 @@ def test_service_gateway_ambiguity_refuses_custody(supervised_inventory, unsafe)
         modules['gateway.status'].get_process_start_time = lambda pid: pid * 10 + (1 if pid == changed else 0)
     else:
         records.identity = lambda pid: {'ct': pid + 1}
-    with pytest.raises(RuntimeError, match='identity/ancestry changed'):
-        agent_services.verify_processes(entry, records)
+    for stopping in (False, True):
+        with pytest.raises(RuntimeError, match='identity/ancestry changed'):
+            agent_services.verify_processes(entry, records, stopping=stopping)
 
 
 @pytest.mark.parametrize('unsafe', ['foreign', 'unknown-service', 'desktop', 'desktop-env', 'birth'])

@@ -21,6 +21,8 @@ CI (`.github/workflows/web-verify.yml`) runs the server, sidecar (one job per su
 in `sidecar/agent_support.json`, each provisioned with
 `scripts/check-agent-compatibility.py --skip-docker --release TAG`), and frontend jobs selected by
 `scripts/changed-components.py`.
+Each Agent job first runs the synthetic runner checks so isolation and cleanup failures surface
+before the longer real-Agent suite.
 
 ## Server tests
 
@@ -58,6 +60,80 @@ CI builds that runtime in each supported-Agent matrix job, so the combined proof
 runs there. Without those build artifacts locally the proof is explicitly skipped; the
 process-only sidecar suite still runs independently. The proof uses synthetic
 release records and local Git remotes, with no provider or live service access.
+
+Full sidecar suites use `TALARIA_SIDECAR_WORKERS`, a positive integer. The automatic count is the
+CPU count available to the process, capped at 4. Set `TALARIA_SIDECAR_WORKERS=1` for a serial full
+suite, or explicitly request a higher count, including 8. CI sets its count explicitly. File/node
+selectors, `-k`, `-m`, and other pytest options run serially and pass through unchanged; `--junitxml`
+alone still permits parallel execution. For example:
+
+```sh
+TALARIA_SIDECAR_WORKERS=4 sidecar/scripts/test.sh
+TALARIA_SIDECAR_WORKERS=1 sidecar/scripts/test.sh
+sidecar/scripts/test.sh tests/test_checkpoints.py -k restore
+sidecar/scripts/test.sh tests/test_suite_runner.py
+```
+
+The runner initializes pytest once, collects the complete suite, and assigns whole modules to
+disjoint groups balanced by case count. Each worker has its own HOME, TMPDIR, pytest basetemp,
+log, execution journal, and JUnit report. A collection failure, incomplete/duplicate execution,
+crashed worker, or missing/invalid report fails compatibility. Worker process groups and detached
+test processes naming the disposable state directory are cleaned up on every exit; Linux also
+reaps terminated orphans throughout execution, preserving worker exit statuses. The existing
+per-test process-leak fixture still detects and kills leaks. Both cleanup paths use an untruncated
+process snapshot, including when readline changes the native terminal-width environment.
+Linux kernels without the optional proc children entry use that same process snapshot for orphan
+discovery, including startup failure and cancellation.
+In-process chat tests receive a fresh Agent cache per case without extending other test mocks
+into the process-leak scan. Native-supervisor fixtures wait for
+their disposable source/home processes to exit, including restarted supervisors; a published
+recovery journal or removed PID marker is not exit proof.
+Service scenarios synchronize on live successor identity and terminal recovery completion.
+Real-process coverage also forces natural exit between liveness and identity probes;
+normal custody and live identity changes remain refusals in both verification modes.
+Direct Agent helpers inherit the sidecar's no-lazy-install policy, so native Git selection uses
+the available Git without provisioning PM in each disposable home. Tests that exercise bootstrap
+policy can explicitly override that default.
+
+One merged JUnit report remains beside each compatibility receipt. Per-case durations and
+failure/error/skip information are preserved, with slow tests and modules printed after the run.
+Worker logs and collection/execution journals remain under `<report>.workers/run-*`, including
+on failure. Direct runs without a report retain them under `web/.codex-tmp/sidecar-pytest/run-*`.
+The receipt schema, Agent probes, supported identities, and Docker verification are unchanged.
+
+`scripts/check-release-agent.py` treats the same worker setting as one host-wide budget. It divides
+that budget between concurrently checked releases, or queues releases when the budget is smaller
+than their count. It prints the budget and each release's allocation; each suite prints its own
+worker count and the total budget. The independent CI matrix jobs each own their runner's budget.
+Synthetic release-budget checks run with `python3 scripts/test-check-release-agent.py` from the root.
+
+To compare settings, keep the Talaria source, pinned Agent identity/interpreter, host, and warmed
+Agent cache fixed. Run `scripts/check-agent-compatibility.py --skip-docker --release TAG --receipt PATH`
+from the root at 1, 2, 4, and 8 workers, record wall duration and sampled peak process-tree RSS,
+and compare receipt verdicts/counts and collected/executed node IDs. Repeat promising settings
+before choosing one; CPU count alone does not establish the fastest setting.
+
+CI selected four workers in the [completed same-host comparison](https://github.com/MaudeCode/talaria/actions/runs/39075250998)
+at source `acb68fede353e0853c4b0bc2b88c3dd2c4ea5796`, with warmed immutable Agent v0.22.2,
+Python 3.14.3, and a four-CPU Linux runner. All 977 cases retained the same verdict, counts,
+node IDs, probe evidence, and skip set at every setting. Four and eight workers were repeated
+before selection.
+
+| Workers | Runs | Median wall seconds | Max sampled tree RSS MiB |
+|---:|---:|---:|---:|
+| 1 | 1 | 1017.198 | 510.5 |
+| 2 | 1 | 605.513 | 703.1 |
+| 4 | 2 | 403.149 | 1108.5 |
+| 8 | 2 | 404.066 | 1524.0 |
+
+Four workers improved median wall duration 2.523x over serial and passed a fresh canonical run
+at 403.330s with 1092.0 MiB sampled peak tree RSS. The recorded memory budget was 11991.5 MiB
+(75% of host RAM). Eight workers passed both repeats but provided no measured median improvement
+over four and used more memory; the close timings do not establish resource contention.
+Separate full one/four/eight-worker comparisons on v0.22.0 and v0.22.1 also preserved all 977
+node IDs, complete probe evidence, counts, and their version-specific skip sets. Four workers
+improved those releases' wall durations 2.467x and 2.568x, respectively. CI sets four explicitly;
+the automatic local count stays capped at four, and `TALARIA_SIDECAR_WORKERS=1` remains the serial escape hatch.
 
 ## Frontend tests
 

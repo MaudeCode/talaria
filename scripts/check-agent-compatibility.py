@@ -299,7 +299,7 @@ def check(args, kind, identity, receipt, junit):
                "UV_CACHE_DIR": str(state / "uv-cache"), "HERMES_HOME": str(state / "home/hermes"),
                "HERMES_WEBUI_STATE_DIR": str(state / "home/webui"), "PIP_CONFIG_FILE": os.devnull,
                "GIT_CONFIG_NOSYSTEM": "1", "GIT_TERMINAL_PROMPT": "0"}
-        for key in ("LD_LIBRARY_PATH", "PLAYWRIGHT_BROWSERS_PATH"):
+        for key in ("LD_LIBRARY_PATH", "PLAYWRIGHT_BROWSERS_PATH", "TALARIA_SIDECAR_WORKERS", "TALARIA_SIDECAR_TOTAL_WORKERS"):
             if key in os.environ:
                 env[key] = os.environ[key]
         with agent_checkout(args, kind, identity, env) as agent:

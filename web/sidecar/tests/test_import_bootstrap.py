@@ -9,6 +9,22 @@ from conftest import AGENT_DIR, AGENT_PYTHON, isolated_env, requires_agent
 
 
 @requires_agent
+@pytest.mark.parametrize("override, allowed", [(None, False), ("0", True)])
+def test_agent_helpers_preserve_native_lazy_install_policy(tmp_path, override, allowed):
+    home = tmp_path / "home"
+    hermes = home / ".hermes"
+    hermes.mkdir(parents=True)
+    extra = {} if override is None else {"HERMES_DISABLE_LAZY_INSTALLS": override}
+    result = subprocess.run(
+        [AGENT_PYTHON, "-c", "from pm.install import lazy_installs_allowed; print(lazy_installs_allowed())"],
+        env=isolated_env(hermes, PYTHONPATH=str(AGENT_DIR), **extra),
+        capture_output=True, text=True, timeout=60,
+    )
+    assert result.returncode == 0, result.stderr
+    assert result.stdout.strip() == str(allowed), "helper permitted an unintended package install"
+
+
+@requires_agent
 @pytest.mark.parametrize("reload_env", [False, True])
 def test_chat_import_does_not_adopt_sync_or_exec_a_blessed_checkout(tmp_path, reload_env):
     if not (AGENT_DIR / "hermes_cli/venv_sync.py").exists():
