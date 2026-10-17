@@ -144,6 +144,28 @@
         "skipped": false,
         "detail": ""
       }
+    },
+    {
+      "params": {
+        "action": "begin",
+        "agent_dir": "<agent>",
+        "revision": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "homes": [
+          "<home>"
+        ],
+        "intent": "synthetic-update-intent"
+      },
+      "result": {
+        "ok": false,
+        "skipped": false,
+        "detail": "Active dashboard work may be interrupted by a graceful refresh.",
+        "refresh_confirmation": {
+          "token": "cccccccccccccccccccccccccccccccc",
+          "services": [
+            "synthetic.dashboard"
+          ]
+        }
+      }
     }
   ]
 }

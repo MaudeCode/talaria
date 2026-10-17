@@ -50,6 +50,15 @@ test counts, Python and Web revisions. Supported releases are cached in
 `sidecar/agent_support.json` is deleted, with any interpreter uv downloaded for it, by the next run whose record
 no longer lists it. Candidates (`--identity`) and canaries (`--main`) use a temporary checkout removed at exit.
 
+The combined updater proof in `sidecar/tests/test_agent_update_flow.py` drives
+real HTTP apply/force requests through the Node runtime and Python mutation
+lease against disposable supervised backends. Build contracts and server first,
+use Node 24 on PATH, then run `sidecar/scripts/test.sh tests/test_agent_update_flow.py`.
+CI builds that runtime in each supported-Agent matrix job, so the combined proof
+runs there. Without those build artifacts locally the proof is explicitly skipped; the
+process-only sidecar suite still runs independently. The proof uses synthetic
+release records and local Git remotes, with no provider or live service access.
+
 ## Frontend tests
 
 `packages/frontend/src/**/*.test.ts(x)` run in jsdom against the in-memory contract server; `e2e/*.spec.ts`

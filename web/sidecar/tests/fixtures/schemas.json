@@ -285,6 +285,28 @@
       "token": {
         "type": "string",
         "pattern": "^[a-f0-9]{32}$"
+      },
+      "refresh_confirmation": {
+        "type": "object",
+        "properties": {
+          "token": {
+            "type": "string",
+            "pattern": "^[a-f0-9]{32}$"
+          },
+          "services": {
+            "minItems": 1,
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        },
+        "required": [
+          "token",
+          "services"
+        ],
+        "additionalProperties": false
       }
     },
     "required": [

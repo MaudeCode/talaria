@@ -234,7 +234,7 @@ test('the Agent confirmation can cancel or continue without claiming success, an
     // A cancelled record is terminal, so the server creates a new one for the next attempt.
     const id = `${AGENT_ID.slice(0, -1)}${bodies.length}`
     if (!body.confirmed_agent_revision) {
-      server.tabUpdate = record(id, 'awaiting_confirmation', 'agent')
+      server.tabUpdate = { ...record(id, 'awaiting_confirmation', 'agent'), message: 'Active dashboard work may be interrupted by a graceful refresh.' }
       return route.fulfill({ json: { ok: false, confirmation_required: true, candidate_revision: 'b'.repeat(40), supported_revision: 'a'.repeat(40), supported_version: '0.21.3', agent_channel: 'stable', notification_id: id } })
     }
     const awaiting = server.tabUpdate!.id
@@ -267,4 +267,54 @@ test('the Agent confirmation can cancel or continue without claiming success, an
   expect(bodies).toHaveLength(3)
   await updating.getByRole('button', { name: 'Close', exact: true }).click()
   await expect(updating).toBeHidden()
+})
+
+test('legacy dashboard confirmation supports cancel, retry and update continuation', async ({ page }, testInfo) => {
+  const server = await serveNotifications(page)
+  await serveUpdatesCheck(page, { web: 0, agent: 1 })
+  const applies: Record<string, unknown>[] = []
+  const id = '00000000-0000-4000-8000-000000000110'
+  const revision = 'b'.repeat(40)
+  const refreshToken = 'c'.repeat(32)
+  await page.route('**/api/updates/apply', async (route) => {
+    const body = route.request().postDataJSON() as Record<string, unknown>
+    applies.push(body)
+    if (applies.length === 1) {
+      const message = 'synthetic.dashboard running backend lifecycle APIs are unsupported. Finish active work, then have the owner gracefully refresh this service through its original supervisor.'
+      server.tabUpdate = { ...record(id, 'failed', 'agent'), detail: message }
+      return route.fulfill({ json: { ok: false, message, notification_id: id } })
+    }
+    if (!body.agent_refresh_token) {
+      server.tabUpdate = { ...record(id, 'awaiting_confirmation', 'agent'), message: 'Active dashboard work may be interrupted by a graceful refresh.' }
+      return route.fulfill({ json: { ok: false, confirmation_required: true, candidate_revision: revision, agent_channel: 'stable', refresh_confirmation: { token: refreshToken, services: ['synthetic.dashboard'] }, notification_id: id } })
+    }
+    expect(body.agent_refresh_token).toBe(refreshToken)
+    expect(body.confirmed_agent_revision).toBeUndefined()
+    server.tabUpdate = record(id, 'succeeded', 'agent')
+    return route.fulfill({ json: { ok: true, verified_revision: revision, notification_id: id } })
+  })
+  await page.goto('/settings/system')
+  await settle(page)
+  await page.getByRole('button', { name: 'Update Agent', exact: true }).click()
+  const progress = page.getByRole('dialog', { name: 'Updating Hermes Agent' })
+  await expect(progress).toContainText('original supervisor')
+  await page.screenshot({ path: testInfo.outputPath('before-legacy-refusal.png') })
+  await progress.getByRole('button', { name: 'Close', exact: true }).click()
+  await page.getByRole('button', { name: 'Update Agent', exact: true }).click()
+  const confirmation = page.getByRole('alertdialog', { name: 'Refresh legacy dashboard?' })
+  await expect(confirmation).toContainText('Active dashboard work may be interrupted')
+  await expect(confirmation).toContainText('synthetic.dashboard')
+  await page.screenshot({ path: testInfo.outputPath('after-legacy-confirmation.png') })
+  const box = await confirmation.boundingBox()
+  const viewport = page.viewportSize()!
+  expect(box && box.x >= 0 && box.x + box.width <= viewport.width && box.y >= 0 && box.y + box.height <= viewport.height).toBe(true)
+  await confirmation.getByRole('button', { name: 'Cancel', exact: true }).click()
+  expect(applies).toHaveLength(2)
+  await page.getByRole('button', { name: 'Update Agent', exact: true }).click()
+  await expect(confirmation).toBeVisible()
+  await confirmation.getByRole('button', { name: 'Refresh and update', exact: true }).click()
+  await expect(progress).toContainText('Hermes Agent was updated successfully')
+  expect(await page.locator('.notification-toast').filter({ hasText: 'Active dashboard work may be interrupted' }).count()).toBe(0)
+  await page.screenshot({ path: testInfo.outputPath('after-legacy-completed.png') })
+  expect(applies).toHaveLength(4)
 })

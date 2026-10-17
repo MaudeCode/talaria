@@ -1,4 +1,7 @@
 {
+  "system_agent_refresh_title": "Refresh legacy dashboard?",
+  "system_agent_refresh_warning": "Gracefully refresh {services}, then continue the Agent update to {revision}. Active dashboard work may be interrupted. Cancel to finish that work first.",
+  "system_agent_refresh_confirm": "Refresh and update",
 	"offline_title": "Connection lost",
 	"offline_browser_detail": "Your browser reports that this device is offline.",
 	"offline_network_detail": "Hermes is unreachable from this browser right now.",

@@ -754,9 +754,10 @@ export async function createDeps(opts: CreateDepsOptions): Promise<AppDeps> {
     },
     agentDir: () => sidecar?.describe?.agent_dir ?? null,
     agentHomes,
-    agentMutation: async (path, revision, mutate) => {
+    agentMutation: async (path, revision, mutate, consent) => {
       if (!sidecar) throw new Error('Hermes Agent sidecar is unavailable')
-      const begin = await sidecar.call('runtime.agent_mutation', { action: 'begin', agent_dir: path, revision, homes: agentHomes() }, { timeoutMs: 330_000 })
+      const begin = await sidecar.call('runtime.agent_mutation', { action: 'begin', agent_dir: path, revision, homes: agentHomes(), ...(consent?.mutationIntent ? { intent: consent.mutationIntent } : {}), ...(consent?.refreshToken ? { refresh_token: consent.refreshToken } : {}) }, { timeoutMs: 330_000 })
+      if (begin.refresh_confirmation) return { ok: false, refresh_confirmation: begin.refresh_confirmation, message: begin.detail }
       if (!begin.ok || !begin.token) throw new Error(begin.detail || 'Agent writer quiescence was not verified.')
       const token = begin.token
       const leasedGit: import('./tools/updates.js').GitRun = async (args, cwd, timeoutMs = 10_000) => {

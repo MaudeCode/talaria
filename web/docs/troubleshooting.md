@@ -316,30 +316,29 @@ Related references:
 - [`docs/EXTENSIONS.md`](EXTENSIONS.md) — WebUI extension injection, security model, examples.
 
 
-## Agent update says the running backend lifecycle APIs are unsupported
+## Agent update asks to refresh a legacy dashboard
 
-The named dashboard/serve service accepted authentication but its running API
-lacks the identity or admission-closing retirement protocol needed for a safe
-Agent update. A newer checkout on disk does not upgrade an already-running
-process. If identity is missing, Talaria cannot verify the listener's PID or
-role and says so. A 401/403 instead means authentication failed; a generic
-404 or unreachable listener alone does not prove an old backend.
+A newer Agent checkout on disk does not upgrade an already-running dashboard.
+When the running service lacks modern lifecycle APIs, Update Agent can offer
+**Refresh and update** for an attested launchd or systemd service. The dialog
+names the service and selected revision. Active dashboard work may be
+interrupted, so finish that work or choose Cancel before continuing.
 
-1. Finish active work in that dashboard and its served profile.
-2. With the owner's authorization, use the original service/supervisor's
-   established graceful restart or refresh procedure. This is an owner action;
-   Talaria cannot close admission safely on the incompatible runtime.
-3. Verify the successor serves authenticated `GET /api/host/identity` and
-   advertises `POST /api/health/retirement` in `/openapi.json`, with the intended
-   installation, profile, PID, original supervisor and endpoint. A wrapper PID
-   or a listening port alone is insufficient. Do not commit retirement merely
-   as a diagnostic probe.
-4. Retry the Agent update. Normal and force updates use the same safety checks.
-   If a previous attempt owes service recovery, the obligation stays recorded
-   until the capable successor is verified. Safe sibling services can recover
-   independently.
+Confirmation gracefully refreshes that exact process through its original
+supervisor, verifies a capable successor and continues the selected update.
+Force update and confirmation of an untested version do not grant this separate
+interruption consent. An expired or changed confirmation requires a fresh
+attempt; it cannot act on a different process or target.
 
-Keep authentication, ledger and recovery records intact. Do not force-kill the
-service, disable it permanently, or bypass updater custody checks. Failure to
-read the live API schema or verify the successor remains a refusal requiring
-repair; it is not successful recovery.
+If graceful shutdown, modern successor readiness or service restoration fails,
+Talaria reports failure and retains recovery debt. Retry Update Agent after the
+cause is resolved. Recovery adopts an already verified successor and does not
+repeat an interruption signal or start duplicates. A refresh failure preserves
+source. A later update/repair failure retains the normal dependency-repair
+obligation and never reports installed success before restoration is verified.
+
+Authentication failures, a generic 404, foreign listener, unknown ownership,
+changed service configuration, unsafe source/dependencies or missing modern
+APIs remain refusals. Keep authentication, ledger and recovery records intact.
+Do not bypass custody checks, force-kill a service or rewrite its configuration
+to clear a refusal. Safe sibling services can recover independently.

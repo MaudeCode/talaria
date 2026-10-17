@@ -5,6 +5,7 @@
  * that must survive a round trip (documented passthrough).
  */
 import { z } from 'zod'
+import { AgentRefreshConfirmationSchema } from './sidecar/runtime.js'
 import { SpeedTierSchema } from './speed.js'
 import { CanonicalBotChatSchema, GatewayModeSchema, PluginSettingFieldSchema, SkillCatalogIdentitySchema } from './sidecar/namespaces.js'
 
@@ -904,7 +905,7 @@ export type UpdatesSummary = z.infer<typeof UpdatesSummarySchema>
 export const UpdateApplySchema = z.looseObject({
   recovery_compatibility: z.object({ manual_execution: z.boolean(), bot_chat_delivery: z.boolean() }).optional()
     .describe('Whether the target Agent can reconcile retained manual execution and pending Bot Chat records. A false value blocks the update before any source or repair-intent change.'),
-  ok: z.boolean().optional(), status: z.string().optional(), error: z.string().optional(), message: z.string().optional(), lock: Json.optional(), confirmation_required: z.boolean().optional(), candidate_revision: z.string().optional(), supported_revision: z.string().optional(), supported_version: z.string().optional(), agent_channel: z.enum(['stable', 'experimental']).optional(), notification_id: z.uuid().optional(), channel_switch: z.boolean().optional(), backup_dir: z.string().nullable().optional(), backup_failed: z.boolean().optional(), stash_conflict: z.boolean().optional(), gateway_restart: z.string().optional().describe('TAL-953: `waiting_for_idle` when an Agent update left the gateway restart to wait for the gateway\'s running work; the update notification reports its outcome.') })
+  ok: z.boolean().optional(), status: z.string().optional(), error: z.string().optional(), message: z.string().optional(), lock: Json.optional(), confirmation_required: z.boolean().optional(), refresh_confirmation: AgentRefreshConfirmationSchema.optional(), candidate_revision: z.string().optional(), supported_revision: z.string().optional(), supported_version: z.string().optional(), agent_channel: z.enum(['stable', 'experimental']).optional(), notification_id: z.uuid().optional(), channel_switch: z.boolean().optional(), backup_dir: z.string().nullable().optional(), backup_failed: z.boolean().optional(), stash_conflict: z.boolean().optional(), gateway_restart: z.string().optional().describe('TAL-953: `waiting_for_idle` when an Agent update left the gateway restart to wait for the gateway\'s running work; the update notification reports its outcome.') })
 export const UpdateNotificationPhaseSchema = z.enum(['applying', 'awaiting_confirmation', 'waiting_for_idle', 'restarting', 'succeeded', 'blocked', 'failed', 'unknown'])
 export const UpdateNotificationActionSchema = z.object({
   id: z.string().min(1).max(64).regex(/^[a-z0-9][a-z0-9_-]*$/),

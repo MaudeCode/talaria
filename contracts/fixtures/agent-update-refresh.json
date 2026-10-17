@@ -1,0 +1,14 @@
+{
+  "ok": false,
+  "target": "agent",
+  "confirmation_required": true,
+  "candidate_revision": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+  "agent_channel": "stable",
+  "refresh_confirmation": {
+    "token": "cccccccccccccccccccccccccccccccc",
+    "services": [
+      "synthetic.dashboard"
+    ]
+  },
+  "message": "Active dashboard work may be interrupted by a graceful refresh."
+}

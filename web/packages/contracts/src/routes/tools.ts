@@ -11,7 +11,7 @@ const tags = ['tools']
 const Ok = z.object({ ok: z.literal(true) })
 
 
-const AgentOptions = { agent_channel: z.enum(['stable', 'experimental']).optional(), confirmed_agent_revision: z.string().regex(/^[a-f0-9]{40}$/).optional() }
+const AgentOptions = { agent_channel: z.enum(['stable', 'experimental']).optional(), agent_refresh_token: z.string().regex(/^[a-f0-9]{32}$/).optional(), confirmed_agent_revision: z.string().regex(/^[a-f0-9]{40}$/).optional() }
 const Target = z.object({ target: z.string().optional(), channel: z.string().nullable().optional(), ...AgentOptions,
   version: z.string().min(1).max(128).optional().describe('TAL-946: a Stable `versions[].ref` of this target to install instead of the newest. Rejected when it is not listed or on Experimental.'),
   tab_id: TabIdSchema.optional() })

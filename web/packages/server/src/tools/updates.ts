@@ -794,7 +794,7 @@ export interface AgentUpdatePolicy {
   beforeMutation?: (path: string, revision: string) => Promise<void>
 }
 /** `version` (TAL-946) names a listed Stable release `ref` for either target; omitted, an update takes the newest. */
-export interface UpdateOptions { skipFailedVersion?: boolean | undefined; agentChannel?: Channel | undefined; confirmedRevision?: string | undefined; version?: string | undefined }
+export interface UpdateOptions { skipFailedVersion?: boolean | undefined; agentChannel?: Channel | undefined; confirmedRevision?: string | undefined; version?: string | undefined; refreshToken?: string | undefined; mutationIntent?: string | undefined }
 type AgentSupport = 'supported' | 'unchecked'
 /** Only an exact verified revision is supported: a moved tag, a non-tag HEAD, Experimental `main` and a missing record are all unchecked. */
 const agentSupport = (sha: unknown, policy: AgentUpdatePolicy): AgentSupport =>
@@ -888,7 +888,7 @@ async function retainedCronCompatibility(path: string, revision: string, git: Gi
 }
 
 /** Both update paths check retained obligations before repair intent, stash, cleanup, or source mutation. */
-async function prepareAgentMutation(path: string, info: Dict, git: GitRun, policy?: AgentUpdatePolicy, mode: 'source' | 'repair' | 'local-recovery' = 'source'): Promise<Dict | null> {
+async function prepareAgentMutation(path: string, info: Dict, git: GitRun, policy?: AgentUpdatePolicy, mode: 'source' | 'repair' | 'local-recovery' = 'source', recordIntent = true): Promise<Dict | null> {
   const warning = mode === 'source' ? confirmAgent(info, policy) : null
   if (warning) return warning
   try {
@@ -899,7 +899,7 @@ async function prepareAgentMutation(path: string, info: Dict, git: GitRun, polic
         message: `The target Agent cannot reconcile retained ${obligations}. Reconcile these records with a capable Agent before retrying the update.` }
     }
   } catch (error) { return { ok: false, target: 'agent', message: `Agent recovery compatibility could not be verified: ${sanitizeGitDiagnostic((error as Error).message)}` } }
-  try { if (mode !== 'repair') await policy?.beforeMutation?.(path, str(info.latest_sha)) }
+  try { if (recordIntent && mode !== 'repair') await policy?.beforeMutation?.(path, str(info.latest_sha)) }
   catch (error) { return { ok: false, target: 'agent', message: `Agent update could not prepare dependency sync: ${sanitizeGitDiagnostic((error as Error).message)}` } }
   return null
 }
@@ -915,7 +915,12 @@ async function withAgentMutation(path: string, info: Dict, git: GitRun, policy: 
     return held ?? mutate(leasedGit)
   }
   if (!policy?.withMutation) return guarded(git)
-  try { return await policy.withMutation(path, str(info.latest_sha), guarded) }
+  const preflight = await prepareAgentMutation(path, info, git, policy, mode, false)
+  if (preflight) return preflight
+  try {
+    const result = await policy.withMutation(path, str(info.latest_sha), guarded)
+    return result.refresh_confirmation ? { ...result, target: 'agent', confirmation_required: true, candidate_revision: info.latest_sha, agent_channel: info.channel } : result
+  }
   catch (error) { return { ok: false, target: 'agent', message: `Agent update could not safely quiesce or resume its writers: ${sanitizeGitDiagnostic((error as Error).message, 1000)}` } }
 }
 
@@ -1285,7 +1290,7 @@ export interface UpdateServiceDeps {
   refreshWebuiVersion?: () => string
   agentDir: () => string | null
   agentHomes?: () => readonly string[]
-  agentMutation?: (path: string, revision: string, mutate: (git: GitRun, sync: UpdateServiceDeps['agentSync']) => Promise<Dict>) => Promise<Dict>
+  agentMutation?: (path: string, revision: string, mutate: (git: GitRun, sync: UpdateServiceDeps['agentSync']) => Promise<Dict>, consent?: Pick<UpdateOptions, 'mutationIntent' | 'refreshToken'>) => Promise<Dict>
   /** Repair dependencies through the sidecar even while its imported Agent is stale. */
   agentSync?: (agentDir: string) => Promise<SidecarResult<'runtime.sync_dependencies'>>
   channel: () => Channel
@@ -1397,19 +1402,19 @@ export class UpdateService {
     this.publishedTags.set(repoUrl, { at: this.now(), tag })
     return tag
   }
-  private agentPolicy(confirmedRevision?: string): AgentUpdatePolicy {
+  private agentPolicy(options: UpdateOptions = {}, force = false): AgentUpdatePolicy {
     const supported = dict(this.deps.identity.release().compatibleAgent)
     const marker = agentSyncMarker(this.deps.agentDir(), this.deps.stateDir)
     return {
       supportedRevisions: supportedAgents(this.deps.webRoot).map((agent) => agent.sourceRevision),
-      supportedRevision: str(supported.sourceRevision), supportedVersion: str(supported.version), ...(confirmedRevision ? { confirmedRevision } : {}),
+      supportedRevision: str(supported.sourceRevision), supportedVersion: str(supported.version), ...(options.confirmedRevision ? { confirmedRevision: options.confirmedRevision } : {}),
       ...(this.deps.agentHomes ? { retainedStateHomes: this.deps.agentHomes } : {}),
       repairPending: Boolean(marker && existsSync(marker)),
       ...(this.deps.agentMutation ? { withMutation: async (path: string, revision: string, mutate: (git: GitRun) => Promise<Dict>) => {
         const result = await this.deps.agentMutation!(path, revision, async (git, sync) => {
           const applied = await mutate(git)
           return applied.ok ? this.finishAgent(applied, path, sync, false) : applied
-        })
+        }, { refreshToken: options.refreshToken, mutationIntent: options.mutationIntent ? JSON.stringify([options.mutationIntent, force, options.agentChannel ?? this.agentChannel(), options.version ?? '', options.confirmedRevision ?? '']) : undefined })
         if (result.ok) {
           const intent = agentSyncMarker(path, this.deps.stateDir)
           try { if (intent) rmSync(intent, { force: true }) }
@@ -1624,8 +1629,8 @@ export class UpdateService {
       }, 'repair')
     } else {
       result = force
-        ? await forceAgentUpdate(path, this.git, this.deps.log, options.agentChannel ?? this.agentChannel(), this.agentPolicy(options.confirmedRevision), options.version, this.publishedTag)
-        : await applyAgentUpdate(path, this.git, options.agentChannel ?? this.agentChannel(), this.agentPolicy(options.confirmedRevision), options.version, this.publishedTag)
+        ? await forceAgentUpdate(path, this.git, this.deps.log, options.agentChannel ?? this.agentChannel(), this.agentPolicy(options, force), options.version, this.publishedTag)
+        : await applyAgentUpdate(path, this.git, options.agentChannel ?? this.agentChannel(), this.agentPolicy(options, force), options.version, this.publishedTag)
     }
     if (this.deps.agentMutation) {
       if (result.ok && result.restart_scheduled) { this.autoRestartScheduled = true; this.stopAutoApply(); this.deps.scheduleRestart() }

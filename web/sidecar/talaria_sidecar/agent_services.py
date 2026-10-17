@@ -17,6 +17,7 @@ import plistlib
 import shlex
 import signal
 import subprocess
+import sys
 import tempfile
 import threading
 import time
@@ -273,6 +274,38 @@ def wait_stopped(entry, records, stopped, *, writers_only=False):
         raise RuntimeError(f'{_name(entry)} supervisor is still active; source was not changed and recovery remains owed.')
 
 
+def verify_listener(entry):
+    """A legacy HTTP response has no PID identity; require OS socket ownership as well."""
+    _endpoint(entry)
+    pid, port = entry['pid'], entry['port']
+    if sys.platform.startswith('linux'):
+        owned = set()
+        for path in Path(f'/proc/{pid}/fd').iterdir():
+            with contextlib.suppress(FileNotFoundError):
+                owned.add(os.readlink(path))
+        listeners = set()
+        for table in ('tcp', 'tcp6'):
+            try:
+                rows = Path('/proc/net/' + table).read_text().splitlines()[1:]
+            except FileNotFoundError:
+                if table == 'tcp6':
+                    continue
+                raise
+            for line in rows:
+                fields = line.split()
+                if int(fields[1].split(':')[1], 16) == port and fields[3] == '0A':
+                    listeners.add('socket:[' + fields[9] + ']')
+        matched = bool(listeners) and listeners <= owned
+    elif sys.platform == 'darwin':
+        result = subprocess.run(['/usr/sbin/lsof', '-nP', f'-iTCP:{port}', '-sTCP:LISTEN', '-Fp'],
+                                capture_output=True, text=True, timeout=10, check=False)
+        matched = result.returncode == 0 and {int(line[1:]) for line in result.stdout.splitlines() if line.startswith('p')} == {pid}
+    else:
+        matched = False
+    if not matched:
+        raise RuntimeError(f'{_name(entry)} legacy listener ownership could not be proved; source was not changed.')
+
+
 def _auth(entry):
     from gateway import host_rendezvous as host
     from hermes_cli.dashboard_procs import _pid_environ
@@ -462,6 +495,7 @@ class ServiceRecovery:
     def __init__(self, root, home, records, identity, pause):
         self.root, self.records, self.identity, self.pause = root, records, identity, pause
         self.path = recovery_path(root, home)
+        self._refresh_starts = set()  # Finally recovery must not retry a failed bootstrap in this worker.
         try:
             self.state = json.loads(self.path.read_text())
         except FileNotFoundError:
@@ -473,7 +507,8 @@ class ServiceRecovery:
             raise RuntimeError('Backend recovery evidence has an unknown identity or format; source was not changed.')
         if self.state['entries'] and (not self.state['tree'].get('baselines') or any(
                 not isinstance(e, dict) or e.get('purpose') not in {'gateway', 'dashboard', 'serve'}
-                or e.get('phase') not in {'recorded', 'retiring', 'stopped'} or not isinstance(e.get('processes'), dict)
+                or e.get('phase') not in {'recorded', 'retiring', 'stopped', 'refreshing'}
+                or (e.get('phase') == 'refreshing' and e.get('legacy_refresh') is not True) or not isinstance(e.get('processes'), dict)
                 for e in self.state['entries'])):
             raise RuntimeError('Service recovery lacks complete source/process custody evidence; source was not changed.')
 
@@ -559,6 +594,61 @@ class ServiceRecovery:
         owed['phase'] = 'stopped'
         self.save()
 
+    def refresh(self, entry, stopped, ledger):
+        owed = next(e for e in self.state['entries'] if _service_key(e) == _service_key(entry))
+        if owed.get('legacy_refresh'):
+            raise RuntimeError(f'{_name(entry)} legacy shutdown remains owed; no signal was replayed.')
+        if _config_stamp(owed) != owed['config_stamp']:
+            raise RuntimeError(f'{_name(entry)} configuration changed before legacy refresh.')
+        verify_processes(owed, self.records)
+        verify_listener(owed)
+        owed.update(legacy_refresh=True, phase='refreshing')
+        self.save()  # Older readers reject this phase and retain debt; no reader replays its signal.
+        verify_processes(owed, self.records)
+        verify_listener(owed)
+        if _config_stamp(owed) != owed['config_stamp']:
+            raise RuntimeError(f'{_name(owed)} configuration changed before legacy refresh.')
+        verify_processes(owed, self.records)
+        try:
+            if stopped.is_set():
+                raise InterruptedError('Legacy refresh was cancelled before interruption.')
+            os.kill(owed['pid'], signal.SIGTERM)
+        except ProcessLookupError:
+            pass  # The consented incarnation already exited; only a verified successor can discharge debt.
+        except (PermissionError, InterruptedError) as exc:
+            self.state['entries'].remove(owed)
+            self.save()  # The OS definitively refused delivery, so a new confirmation may retry it.
+            raise RuntimeError(f'{_name(owed)} graceful refresh was cancelled or its signal was refused; source was not changed.') from exc
+        self._refresh_successor(owed, stopped, ledger)
+
+    def _refresh_successor(self, owed, stopped, ledger):
+        wait_stopped(owed, self.records, stopped, writers_only=True)
+        deadline = time.monotonic() + READY_SECONDS
+        started = False
+        while True:
+            candidate = self._ready(owed, ledger)
+            if candidate:
+                if any(self.records.identity_is_live({'pid': int(pid), 'ct': p['ct']})
+                       for pid, p in owed['processes'].items()
+                       if int(pid) != owed['service_pid'] or int(pid) == owed['pid']):
+                    raise RuntimeError(f'{_name(owed)} old writer descendants remain; recovery remains owed.')
+                owed.clear()
+                owed.update(candidate, phase='recorded', config_stamp=_config_stamp(candidate))
+                self.save()
+                return
+            if not _service_pid(owed)[1] and not started:
+                key = _service_key(owed)
+                if key in self._refresh_starts:
+                    raise RuntimeError(f'{_name(owed)} legacy refresh start was already attempted; retry Agent update recovery. Source was not changed and recovery remains owed.')
+                whole, why = self.records.tree_is_whole(self.state['tree'], self.root)
+                if not whole or self.state.get('sync_failed'):
+                    raise RuntimeError('Legacy refresh source/dependency recovery remains owed: ' + why)
+                self._refresh_starts.add(key)
+                _start(owed, self.pause)
+                started = True
+            if stopped.wait(.05) or time.monotonic() >= deadline:
+                raise RuntimeError(f'{_name(owed)} legacy refresh readiness is unverified; source was not changed and recovery remains owed.')
+
     def gateway_requested(self, entry):
         if not entry.get('processes'):
             return
@@ -588,6 +678,14 @@ class ServiceRecovery:
         for entry in list(self.state['entries']):
             try:
                 if self._ready(entry, ledger):
+                    self.state['entries'].remove(entry)
+                    self.save()
+                    continue
+                if entry.get('legacy_refresh'):
+                    # EOF/crash recovery may adopt/start a successor, but never replay interruption consent.
+                    if self.records.identity_is_live({'pid': entry['pid'], 'ct': entry['processes'][str(entry['pid'])]['ct']}):
+                        raise RuntimeError(f'{_name(entry)} legacy shutdown remains owed; no signal was replayed.')
+                    self._refresh_successor(entry, threading.Event(), ledger)
                     self.state['entries'].remove(entry)
                     self.save()
                     continue
@@ -649,6 +747,10 @@ class ServiceRecovery:
             ready = self.pause._gateway_on_home(entry['home'], set()) == runtime[0]
             verify_processes(candidate, self.records)
             return ready
+        if entry.get('legacy_refresh') and any(self.records.identity_is_live({'pid': int(pid), 'ct': p['ct']})
+                for pid, p in entry['processes'].items()
+                if int(pid) != entry['service_pid'] or int(pid) == entry['pid']):
+            return False
         candidates = [row for row, live in ledger(self.root, self.identity) if live is True
                       and row.get('purpose') == entry['purpose']
                       and row.get('host') == entry['host'] and row.get('port') == entry['port']]
@@ -664,6 +766,8 @@ class ServiceRecovery:
             return False
         bind_processes(candidate, self.records)
         try:
+            if entry.get('legacy_refresh'):
+                verify_listener(candidate)
             backend_request(candidate)
             if entry['phase'] == 'recorded' and row['pid'] == entry['pid']:
                 permit = backend_request(candidate, 'prepare')
@@ -678,4 +782,4 @@ class ServiceRecovery:
             raise
         except RuntimeError:
             return False
-        return True
+        return candidate
