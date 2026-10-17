@@ -17,6 +17,7 @@ import subprocess
 import sys
 import threading
 import time
+from collections import OrderedDict
 from contextlib import contextmanager
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
@@ -197,6 +198,14 @@ def serve_model(handler: type[OneToolCallModel]):
         yield f"http://127.0.0.1:{server.server_address[1]}/v1"
     finally:
         server.shutdown()
+
+
+@pytest.fixture(autouse=True)
+def isolated_chat_agent_cache(monkeypatch):
+    # Do not import chat into synthetic runner projects or bootstrap probes.
+    chat = sys.modules.get('talaria_sidecar.methods.chat')
+    if chat is not None:
+        monkeypatch.setattr(chat, '_AGENT_CACHE', OrderedDict())
 
 
 @pytest.fixture(autouse=True)

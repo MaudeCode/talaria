@@ -52,7 +52,6 @@ def _params(stream_id: str, session_id: str = "s1") -> dict:
 
 def _patch(monkeypatch):
     FakeAgent.instances.clear()
-    chat._AGENT_CACHE.clear()
     monkeypatch.setattr(chat, "_resolve_runtime", lambda provider, model: {"model": "m", "provider": "p"})
     monkeypatch.setattr(chat, "_agent_class", lambda: FakeAgent)
     monkeypatch.setattr(chat, "_profile_toolsets", lambda: ["file", "web"])

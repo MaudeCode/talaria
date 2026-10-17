@@ -84,6 +84,8 @@ per-test process-leak fixture still detects and kills leaks. Both cleanup paths 
 process snapshot, including when readline changes the native terminal-width environment.
 Linux kernels without the optional proc children entry use that same process snapshot for orphan
 discovery, including startup failure and cancellation.
+In-process chat tests receive a fresh Agent cache per case. Native-supervisor fixtures wait for
+their disposable source/home processes to exit; a published recovery journal is not exit proof.
 
 One merged JUnit report remains beside each compatibility receipt. Per-case durations and
 failure/error/skip information are preserved, with slow tests and modules printed after the run.
