@@ -1,4 +1,4 @@
-import { matchQuery, useMutation, useQuery, useQueryClient, type QueryKey, type QueryClient } from '@tanstack/react-query'
+import { matchQuery, useMutation, useQuery, useQueryClient, type QueryKey, type QueryClient, type Query } from '@tanstack/react-query'
 import { getStreamContext } from '../../stream/connection'
 import { keys } from '../../api/queryKeys'
 import * as api from '../../api/endpoints'
@@ -30,8 +30,13 @@ export function useResourceIntents<T = unknown>(): Record<string, ResourceIntent
   return Object.fromEntries(Object.entries(data).filter(([, intent]) => intent.context === getStreamContext())) as Record<string, ResourceIntent<T>>
 }
 
-function cancelResourceReads(qc: QueryClient, queryKey?: QueryKey, readKeys?: QueryKey[]) {
-  return Promise.all((queryKey ? [queryKey] : [keys.sessions.all, keys.projects]).map((queryKey) => qc.cancelQueries({ queryKey, ...(readKeys ? { predicate: (query) => readKeys.some((key) => matchQuery({ queryKey: key }, query)) } : {}) })))
+/** Cancellation and refetch must cover the same required snapshots. */
+function resourceReadFilter(readKeys?: ResourceRead[]) {
+  return readKeys ? { predicate: (query: Query) => readKeys.some((key) => matchQuery('queryKey' in key ? key : { queryKey: key }, query)) } : {}
+}
+
+function cancelResourceReads(qc: QueryClient, queryKey?: QueryKey, readKeys?: ResourceRead[]) {
+  return Promise.all((queryKey ? [queryKey] : [keys.sessions.all, keys.projects]).map((queryKey) => qc.cancelQueries({ queryKey, ...resourceReadFilter(readKeys) })))
 }
 
 async function reconcile(qc: QueryClient, current: () => boolean, resource: string, queryKey?: QueryKey, readKeys?: ResourceRead[]) {
@@ -81,7 +86,7 @@ async function reconcileSnapshot(qc: QueryClient, current: () => boolean, resour
   await cancelResourceReads(qc, queryKey, readKeys)
   if (!current()) return
   if (queryKey) {
-    await qc.invalidateQueries({ queryKey, refetchType: 'all', ...(readKeys ? { predicate: (query) => readKeys.some((key) => matchQuery('queryKey' in key ? key : { queryKey: key }, query)) } : {}) }, { throwOnError: true })
+    await qc.invalidateQueries({ queryKey, refetchType: 'all', ...resourceReadFilter(readKeys) }, { throwOnError: true })
     return
   }
   const projects = qc.getQueryCache().find({ queryKey: keys.projects, exact: true })
