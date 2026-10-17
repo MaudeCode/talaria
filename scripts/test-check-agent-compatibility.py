@@ -197,6 +197,20 @@ class CheckerTests(unittest.TestCase):
         with patch("sys.argv", ["check-agent-compatibility.py", *argv]):
             checker.main()
 
+    def test_worker_policy_reaches_the_shared_test_entry_point(self):
+        original = self.tools.run
+        environments = []
+        def run(command, **kwargs):
+            if str(command[0]).endswith('/sidecar/scripts/test.sh'):
+                environments.append(kwargs['env'])
+            return original(command, **kwargs)
+        with patch.dict(os.environ, {'TALARIA_SIDECAR_WORKERS': '8', 'TALARIA_SIDECAR_TOTAL_WORKERS': '12'}), \
+                patch.object(checker.subprocess, 'run', side_effect=run):
+            self.main('--skip-docker')
+        self.assertEqual(len(environments), 1)
+        self.assertEqual(environments[0]['TALARIA_SIDECAR_WORKERS'], '8')
+        self.assertEqual(environments[0]['TALARIA_SIDECAR_TOTAL_WORKERS'], '12')
+
     def receipt(self, *argv):
         path = self.root / "receipts/result.json"
         try:
