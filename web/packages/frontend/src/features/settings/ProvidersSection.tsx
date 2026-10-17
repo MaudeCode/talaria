@@ -53,7 +53,7 @@ export function ProvidersSection() {
     <div className="flex flex-col gap-3" data-section="providers">
       <div className="flex items-center justify-between text-xs text-muted">
         <span>{m.providers_active()}: <strong className="text-text">{active ?? '—'}</strong></span>
-        <Button onClick={() => { void qc.cancelQueries({ queryKey: keys.providerQuotas }).then(() => qc.fetchQuery({ queryKey: keys.providerQuotas, queryFn: () => fetchQuotas(true), staleTime: 0 })).then(() => { void qc.invalidateQueries({ queryKey: keys.providerCostHistory }) }).catch(() => undefined) }}>{m.providers_quota_refresh()}</Button>
+        <Button onClick={() => { void qc.cancelQueries({ queryKey: keys.providerQuotas }).then(() => qc.query({ queryKey: keys.providerQuotas, queryFn: () => fetchQuotas(true), staleTime: 0 })).then(() => { void qc.invalidateQueries({ queryKey: keys.providerCostHistory }) }).catch(() => undefined) }}>{m.providers_quota_refresh()}</Button>
       </div>
       {quotaNotice && <p role="status" className="text-xs text-muted">{quotaNotice}</p>}
       <QuotaThresholdsForm />
