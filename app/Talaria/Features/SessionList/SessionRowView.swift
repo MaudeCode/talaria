@@ -15,6 +15,7 @@ struct SessionRowView: View {
     var matchPreview: String? = nil
     /// The search text the excerpt is highlighted against.
     var searchText = ""
+    var pendingChange: PendingResourceChange? = nil
 
     var body: some View {
         HStack(alignment: .top, spacing: 10) {
@@ -30,11 +31,11 @@ struct SessionRowView: View {
         .frame(minHeight: rowMinimumHeight, alignment: .center)
         .contentShape(Rectangle())
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel(accessibilitySummary)
+        .accessibilityLabel([accessibilitySummary, pendingChange?.status].compactMap { $0 }.joined(separator: ", "))
     }
 
     private var displayTitle: String {
-        SessionRowPresentation.displayTitle(for: session)
+        pendingChange?.title ?? SessionRowPresentation.displayTitle(for: session)
     }
 
     private var metadataLabel: String? {
@@ -48,6 +49,11 @@ struct SessionRowView: View {
     private var rowContent: some View {
         VStack(alignment: .leading, spacing: rowContentSpacing) {
             titleArea
+            if let pendingChange {
+                Text(pendingChange.status)
+                    .font(AppFont.caption())
+                    .foregroundStyle(.secondary)
+            }
 
             if showsSupplementalContent {
                 supplementalArea

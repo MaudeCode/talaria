@@ -204,7 +204,7 @@ struct SessionListView: View {
             .sheet(item: $sessionPendingRename) { session in
                 SessionRenameSheet(
                     initialTitle: SessionRowPresentation.displayTitle(for: session),
-                    isSaving: viewModel.isRenamingSession
+                    isSaving: viewModel.isMutating(session)
                 ) {
                     sessionPendingRename = nil
                 } onSave: { title in
@@ -267,7 +267,7 @@ struct SessionListView: View {
             .sheet(item: $projectPendingRename) { project in
                 ProjectRenameSheet(
                     project: project,
-                    isSaving: viewModel.isRenamingProject
+                    isSaving: viewModel.pendingChange(for: project) != nil
                 ) {
                     projectPendingRename = nil
                 } onSave: { name, color in
@@ -730,7 +730,8 @@ struct SessionListView: View {
                 session: session,
                 server: server,
                 onAPIError: { authManager.handleAPIError($0, server: server) },
-                draftStore: draftStore
+                draftStore: draftStore,
+                sessionListOwner: viewModel
             )
                 .id(session.id)
         case .newChat(let route):

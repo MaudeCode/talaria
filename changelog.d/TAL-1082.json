@@ -1,0 +1,9 @@
+{
+  "entries": [
+    {
+      "category": "Changed",
+      "summary": "Chat and project actions show pending changes immediately while the server saves them.",
+      "highlight": false
+    }
+  ]
+}
