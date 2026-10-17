@@ -322,17 +322,22 @@ public final class SessionListViewModel {
             // A chat opened here already has its own cache, which the chat keeps current. Checked
             // again after the request, in case the chat saved a newer transcript meanwhile.
             guard !hasCachedTranscript(sessionID, in: modelContext),
-                  let messages = try? await client.session(
+                  let detail = try? await client.session(
                     id: sessionID,
                     messageLimit: ChatViewModel.messagePageLimit,
                     expandRenderable: true
-                  ).session?.messages,
+                  ).session,
+                  let messages = detail.messages,
                   cacheVersion == resourceCacheVersion(for: sessionID),
                   !messages.isEmpty,
                   !hasCachedTranscript(sessionID, in: modelContext)
             else { continue }
             try? writeCacheIfCurrent {
-                try CacheStore.cacheMessages(messages, serverURL: server, sessionID: sessionID, in: modelContext)
+                try CacheStore.cacheMessages(
+                    messages, serverURL: server, sessionID: sessionID, in: modelContext,
+                    messagesOffset: detail.messagesOffset,
+                    hasOlderMessages: (detail.messagesOffset ?? 0) > 0 || detail.messagesTruncated == true
+                )
             }
         }
     }

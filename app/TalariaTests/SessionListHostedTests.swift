@@ -1,3 +1,4 @@
+import SwiftData
 import SwiftUI
 import XCTest
 @testable import Talaria
@@ -134,6 +135,48 @@ final class SessionListHostedTests: XCTestCase {
         fixture.releaseHeldLoads()
         let synced = await awaitNoElement(in: reopened) { $0.accessibilityLabel == "Syncing messages with the server" }
         XCTAssertTrue(synced, "Syncing messages stayed after the server answered")
+    }
+
+    func testReopenedToolHeavyChatPaintsItsCompleteRecentWindowWhileDetailIsHeld() async throws {
+        let fixture = try FixtureApp([UITestFixtureEnvironment.holdTranscriptReloadsArgument], for: self)
+        let session = try await fixture.session()
+        // Consume the fixture's first detail; every subsequent detail stays held until release.
+        _ = try await fixture.client.session(id: UITestFixtureURLProtocol.sessionID)
+        let decoder = JSONDecoder()
+        decoder.keyDecodingStrategy = .convertFromSnakeCase
+        let body = try ChatViewModelSendTests.toolHeavyRecentSessionJSON()
+        let detail = try XCTUnwrap(decoder.decode(SessionResponse.self, from: Data(body.utf8)).session)
+        // The legacy cache exercises the old raw-row crop in the same real build.
+        try CacheStore.cacheMessages(
+            detail.messages ?? [], serverURL: UITestFixtureEnvironment.serverURL,
+            sessionID: UITestFixtureURLProtocol.sessionID, in: fixture.cache.mainContext
+        )
+        let legacy = try hostWindow(fixture.chat(session))
+        _ = try await requireElement(in: legacy, label: "Syncing messages with the server")
+        _ = try await requireElement(in: legacy, label: "Recent answer 24")
+        XCTAssertNil(HostedAccessibility.element(in: legacy, label: "Recent question 0"))
+        let legacyScroll = try XCTUnwrap(legacy.firstView(ofType: UIScrollView.self))
+        legacyScroll.setContentOffset(CGPoint(x: 0, y: -legacyScroll.adjustedContentInset.top), animated: false)
+        legacy.layoutIfNeeded()
+        attachHostedScreenshot(legacy, name: "legacy-cache-before-sync-phone")
+        legacy.isHidden = true
+
+        try CacheStore.cacheMessages(
+            detail.messages ?? [], serverURL: UITestFixtureEnvironment.serverURL,
+            sessionID: UITestFixtureURLProtocol.sessionID, in: fixture.cache.mainContext,
+            messagesOffset: detail.messagesOffset, hasOlderMessages: detail.messagesTruncated == true
+        )
+        let reopened = try hostWindow(fixture.chat(session))
+        _ = try await requireElement(in: reopened, label: "Syncing messages with the server")
+        _ = try await requireElement(in: reopened, label: "Recent question 0", "The first half of the server page was cut from the cached paint")
+        _ = try await requireElement(in: reopened, label: "Recent answer 24")
+        let recentScroll = try XCTUnwrap(reopened.firstView(ofType: UIScrollView.self))
+        recentScroll.setContentOffset(CGPoint(x: 0, y: -recentScroll.adjustedContentInset.top), animated: false)
+        reopened.layoutIfNeeded()
+        attachHostedScreenshot(reopened, name: "recent-window-before-sync-phone")
+        fixture.releaseHeldLoads()
+        let synced = await awaitNoElement(in: reopened) { $0.accessibilityLabel == "Syncing messages with the server" }
+        XCTAssertTrue(synced)
     }
 
     /// A server that reports the Agent's `state.db` as corrupt gets one notice above the Chats list that VoiceOver

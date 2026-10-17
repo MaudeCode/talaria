@@ -62,6 +62,13 @@ public final class CachedSession {
     var canDelete: Bool?
     var canDuplicate: Bool?
     var canBranch: Bool?
+    /// Metadata-only rows never add a session to the server-owned list.
+    var transcriptOnly: Bool?
+    /// The complete recent server page, stored atomically with its message rows. Nil marks a legacy/incomplete cache.
+    var recentMessagesOffset: Int?
+    var recentMessagesTruncated: Bool?
+    var recentMessagesCount: Int?
+    var recentMessagesExpiresAt: Date?
     var cachedAt: Date
     var expiresAt: Date
 
@@ -80,6 +87,7 @@ public final class CachedSession {
     }
 
     func apply(_ session: SessionSummary, cachedAt: Date = Date()) {
+        transcriptOnly = false
         title = session.title
         workspace = session.workspace
         workspaceName = session.workspaceName
