@@ -113,7 +113,7 @@ from the root at 1, 2, 4, and 8 workers, record wall duration and sampled peak p
 and compare receipt verdicts/counts and collected/executed node IDs. Repeat promising settings
 before choosing one; CPU count alone does not establish the fastest setting.
 
-CI uses eight workers based on the [completed same-host comparison](https://github.com/MaudeCode/talaria/actions/runs/39069042876)
+Eight workers was selected in the [completed same-host comparison](https://github.com/MaudeCode/talaria/actions/runs/39069042876)
 at source `d2b6e13a422f8e152737d1928a6eac50c6570bc2`, with warmed immutable Agent v0.22.2,
 Python 3.14.3, and a four-CPU Linux runner. All 928 cases retained the same verdict, counts,
 node IDs, and skip set at every setting. Four and eight workers were repeated before selection.
