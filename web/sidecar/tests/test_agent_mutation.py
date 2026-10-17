@@ -281,7 +281,8 @@ def supervised_inventory(tmp_path, monkeypatch):
     parent = {41001: 1, 41002: 41001, 41003: 1, 41004: 41003, os.getpid(): os.getppid(), os.getppid(): 1}
     modules = {}
     for name in ['gateway', 'gateway.status', 'hermes_cli', 'hermes_cli.gateway',
-                 'hermes_cli.main_dashboard', 'hermes_cli.dashboard_procs', 'hermes_cli.update_inventory']:
+                 'hermes_cli.main_dashboard', 'hermes_cli.dashboard_procs', 'hermes_cli.update_inventory',
+                 'hermes_cli.update_receipt']:
         module = types.ModuleType(name)
         module.__path__ = []
         modules[name] = module
@@ -302,6 +303,7 @@ def supervised_inventory(tmp_path, monkeypatch):
     (tmp_path / 'synthetic.dashboard.plist').write_bytes(plistlib.dumps({'Label': 'synthetic.dashboard', 'ProgramArguments': ['hermes', 'dashboard']}))
     modules['hermes_cli.dashboard_procs']._hermes_home_for_pid = lambda pid: str(home)
     modules['hermes_cli.dashboard_procs']._pid_environ = lambda pid: {}
+    modules['hermes_cli.update_receipt']._profile_homes = lambda: [('default', home)]
     modules['hermes_cli.update_inventory']._is_desktop_ssh_ledger_entry = lambda row: False
     original_run = subprocess.run
     def run(argv, **kwargs):
@@ -726,7 +728,8 @@ def test_unmanageable_backend_is_an_actionable_refusal(supervised_inventory, uns
         _owners(root, {home}, pause, identity)
 
 
-def test_systemd_backend_wrapper_uses_native_unit_and_profile_ownership(supervised_inventory, monkeypatch):
+@pytest.mark.parametrize('legacy', [False, True])
+def test_systemd_backend_wrapper_uses_native_unit_and_profile_ownership(supervised_inventory, monkeypatch, legacy):
     from talaria_sidecar.agent_mutation import _owners
     root, home, pause, identity, rows, parents, modules = supervised_inventory
     pause._discover_launchd = lambda: []
@@ -741,7 +744,10 @@ def test_systemd_backend_wrapper_uses_native_unit_and_profile_ownership(supervis
     scope = types.ModuleType('hermes_cli.update_fleet_scope')
     scope.systemd_unit_hermes_home = lambda command, unit: str(home)
     monkeypatch.setitem(sys.modules, scope.__name__, scope)
-    rows.append(dict(purpose='dashboard', pid=41004, create_time=1, hermes_home=str(home), profile='default', host='127.0.0.1', port=9417, argv='hermes dashboard'))
+    row = dict(purpose='dashboard', pid=41004, create_time=1, host='127.0.0.1', port=9417, argv='hermes dashboard')
+    if not legacy:
+        row.update(hermes_home=str(home), profile='default')
+    rows.append(row)
     entry = _owners(root, {home}, pause, identity)[0]
     assert (entry['kind'], entry['scope'], entry['unit'], entry['service_pid'], entry['pid']) == ('systemd', 'user', 'hermes-dashboard.service', 41003, 41004)
     scope.systemd_unit_hermes_home = lambda command, unit: str(root / 'foreign')

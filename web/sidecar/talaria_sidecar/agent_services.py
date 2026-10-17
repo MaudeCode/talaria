@@ -133,9 +133,10 @@ def _plist(domain, label, argv, dashboard):
     return str(matches[0])
 
 
-def backend_entry(row, homes, pause, identity):
-    from hermes_cli import main_dashboard as dashboard
-    from hermes_cli import dashboard_procs, update_inventory
+def _backend_identity(row, homes, identity):
+    from hermes_cli import dashboard_procs, update_inventory, update_receipt
+    if row.get('create_time') is None or identity._pid_alive_matches(row['pid'], row['create_time'], strict=True) is not True:
+        raise RuntimeError(f"Agent backend PID {row['pid']} birth identity is unverified.")
     env = dashboard_procs._pid_environ(row['pid'])
     if env is None:
         raise RuntimeError(f"Agent backend PID {row['pid']} ownership environment is unreadable.")
@@ -143,19 +144,29 @@ def backend_entry(row, homes, pause, identity):
     desktop = env.get('HERMES_DESKTOP') == '1' and bool(env.get('HERMES_DASHBOARD_SESSION_TOKEN'))
     if desktop or row.get('isolated') or update_inventory._is_desktop_ssh_ledger_entry(row):
         raise RuntimeError(f"Agent backend PID {row['pid']} is Desktop/isolated-owned; its owner must stop it.")
-    home = Path(row['hermes_home']).resolve() if row.get('hermes_home') else None
     observed = dashboard_procs._hermes_home_for_pid(row['pid'])
-    if home not in homes or not observed or Path(observed).resolve() != home:
+    home = Path(observed).resolve() if observed else None
+    if home not in homes or (row.get('hermes_home') and Path(row['hermes_home']).resolve() != home):
         raise RuntimeError(f"Agent backend PID {row['pid']} has an unknown or foreign owning profile.")
-    if row.get('create_time') is None or identity._pid_alive_matches(row['pid'], row['create_time'], strict=True) is not True:
-        raise RuntimeError(f"Agent backend PID {row['pid']} birth identity is unverified.")
+    profiles = {name for name, path in update_receipt._profile_homes() if Path(path).resolve() == home}
+    if len(profiles) != 1 or (row.get('profile') and row['profile'] not in profiles):
+        raise RuntimeError(f"Agent backend PID {row['pid']} has conflicting or ambiguous profile ownership.")
+    if identity._pid_alive_matches(row['pid'], row['create_time'], strict=True) is not True:
+        raise RuntimeError(f"Agent backend PID {row['pid']} birth identity changed during discovery.")
+    return home, profiles.pop()
+
+
+def backend_entry(row, homes, pause, identity):
+    from hermes_cli import main_dashboard as dashboard
+    from hermes_cli import update_inventory
+    home, profile = _backend_identity(row, homes, identity)
     parents = _process_table()
     ancestors = _ancestors(row['pid'], parents)
     jobs = dashboard._loaded_launchd_backend_jobs()
     # Native ownership also admits argv-only matches; this lease requires a live ancestry witness.
     candidates = [job for job in jobs if job[3] in ancestors]
     owner = dashboard._launchd_job_owning_backend(row['pid'], shlex.split(row.get('argv') or ''), candidates, ancestors=ancestors)
-    entry = dict(pid=row['pid'], purpose=row['purpose'], home=str(home), profile=row.get('profile') or 'default',
+    entry = dict(pid=row['pid'], purpose=row['purpose'], home=str(home), profile=profile,
                  host=row.get('host'), port=row.get('port'))
     if owner:
         domain, label, service_pid = owner
@@ -182,6 +193,8 @@ def backend_entry(row, homes, pause, identity):
         entry.update(kind='systemd', unit=unit, scope=scope, cgroup=cgroup, service_pid=service_pid)
     _endpoint(entry)
     entry['processes'] = snapshot(entry)
+    if identity._pid_alive_matches(row['pid'], row['create_time'], strict=True) is not True:
+        raise RuntimeError(f"Agent backend PID {row['pid']} birth identity changed during discovery.")
     return entry
 
 
@@ -561,9 +574,7 @@ class ServiceRecovery:
             verify_processes(candidate, self.records)
             return ready
         candidates = [row for row, live in ledger(self.root, self.identity) if live is True
-                      and row.get('purpose') == entry['purpose'] and row.get('hermes_home')
-                      and Path(row['hermes_home']).resolve() == Path(entry['home']).resolve()
-                      and (row.get('profile') or 'default') == entry['profile']
+                      and row.get('purpose') == entry['purpose']
                       and row.get('host') == entry['host'] and row.get('port') == entry['port']]
         if len(candidates) != 1:
             return False
@@ -571,10 +582,10 @@ class ServiceRecovery:
         if (row['pid'] == entry['pid'] and entry['phase'] != 'recorded'
                 and self.records.identity_is_live({'pid': entry['pid'], 'ct': entry['processes'][str(entry['pid'])]['ct']})):
             return False  # A committed retirement on the original process closes admission permanently.
-        candidate = {**entry, 'pid': row['pid'], 'service_pid': _service_pid(entry)[1]}
-        if not candidate['service_pid'] or self.identity._pid_alive_matches(row['pid'], row.get('create_time'), strict=True) is not True:
+        candidate = backend_entry(row, {Path(entry['home']).resolve()}, self.pause, self.identity)
+        if (candidate['profile'] != entry['profile'] or _service_key(candidate) != _service_key(entry)
+                or _config_stamp(candidate) != entry['config_stamp']):
             return False
-        candidate['processes'] = snapshot(candidate)
         bind_processes(candidate, self.records)
         try:
             backend_request(candidate)
@@ -585,6 +596,8 @@ class ServiceRecovery:
                 if backend_request(candidate, 'cancel', permit['token']).get('ok') is not True:
                     return False
             verify_processes(candidate, self.records)
+            if self.identity._pid_alive_matches(row['pid'], row['create_time'], strict=True) is not True:
+                return False
         except RuntimeError:
             return False
         return True

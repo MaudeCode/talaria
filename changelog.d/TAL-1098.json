@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Agent updates can safely pause and restore supervised dashboards with older process records.",
+      "highlight": false,
+      "components": ["web"]
+    }
+  ]
+}

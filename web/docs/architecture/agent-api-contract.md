@@ -115,7 +115,16 @@ custody and stop; unrelated descendants and ambiguous ownership still refuse.
 
 Supervised dashboard/serve writers from the same installation's native ledger
 join that same lease. Native loaded launchd inventory and systemd MainPID
-ownership identify their exact supervisor. Talaria records the original service,
+ownership identify their exact supervisor. Admission and recovery share the same
+backend identity resolver. Legacy ledger rows with absent, empty or null home/profile
+metadata require the native live-process home reader and one unambiguous profile
+from the native home inventory, within the allowed canonical homes. Populated
+ledger metadata must agree. PID birth identity is checked around evidence collection
+and supervisor discovery, then rechecked at custody and readiness boundaries.
+Symlink spelling never substitutes for canonical ownership. Recovery verifies the
+successor's original supervisor and authenticated listener before clearing only
+that service's debt; it never backfills the Agent-owned ledger.
+Talaria records the original service,
 profile, endpoint, configuration digest and process tree before requesting the
 backend's native retirement prepare/commit fence. Busy or indeterminate work
 refuses the update. After committed admission closure, SIGTERM runs the native
