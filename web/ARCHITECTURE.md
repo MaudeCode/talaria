@@ -64,6 +64,19 @@ hand-written endpoint schemas.
 | Sidecar | `sidecar/client.ts`, `discover.ts`, `fake.ts` | newline-delimited JSON-RPC 2.0 over stdio with streamed frames and cancellation; restart with backoff; Agent discovery; the Vitest fake |
 | CLI | `cli/launcher.ts`, `ctl.ts`, `dotenv.ts`, `supervise.ts`, `bin/*` | `talaria-web` bootstrap, `ctl`, `.env` precedence, the serve supervisor, `talaria-web-mcp` |
 
+Worktree lifecycle status probes use private Git metadata and copied indexes. Only non-executable
+status settings enter that view; live repository filter definitions and configuration includes cannot
+be loaded by its status command. Initialized submodules use the same boundary, preserving their
+ignore settings. Copied index timestamps never advance, preserving Git's racy-stat content checks.
+A single deadline covers metadata preparation and the recursive probe.
+Normal removal preserves Git's final non-forced clean check at the original path. That internal status
+inherits a private common-directory configuration and a snapshot index guarded by the original
+`index.lock`. Late file or open-descriptor writes are checked by Git before deletion. Gitlinks,
+including uninitialized submodules, require explicit force because they could become populated during
+that internal check; `force_required` reports this policy. Explicitly forced removal retains its existing
+semantics. An interrupted normal removal can leave an index lock; verify that no remover or Git writer is still running before removing
+that stale lock.
+
 State ownership: WebUI-owned files (sessions, settings, auth records, journals, shares, drafts, relay
 config, extension state) are written only by the server. Agent-owned files (`config.yaml`, `.env`, profiles,
 skills, memories) are read and written as file formats by the server; `state.db` writes and the

@@ -2,7 +2,7 @@
 import { randomUUID } from 'node:crypto'
 import { lstatSync, readdirSync, readFileSync, readlinkSync, realpathSync, renameSync, statSync, symlinkSync, unlinkSync } from 'node:fs'
 import { basename, dirname, join, posix } from 'node:path'
-import { spawnGit } from './git.js'
+import { GitRunner, GitWorkspaceError, porcelainStatusEntries, type GitResult, type GitWorktreeStatus } from './git.js'
 import { resolvePathLikePython } from './paths.js'
 import { pyOsError } from '../util.js'
 import type { Session } from '../sessions/session.js'
@@ -11,19 +11,24 @@ import type { WorktreeStatus } from '@maudecode/talaria-web-contracts'
 /** The `OSError`/`TimeoutExpired` text Python interpolated into `Failed to remove worktree: {exc}`. */
 export class GitSpawnFailure extends Error {}
 
-async function git(args: string[], cwd: string, timeoutMs = 2_000): Promise<{ status: number; stdout: string; stderr: string } | null> {
-  const r = await spawnGit(cwd, args, timeoutMs)
-  if (r.error) return null
-  return { status: r.status ?? 1, stdout: r.stdout, stderr: r.stderr }
+async function git(args: string[], cwd: string, timeoutMs = 2_000): Promise<GitResult | GitWorktreeStatus | null> {
+  try { return await gitOrThrow(args, cwd, timeoutMs) } catch (error) {
+    if (error instanceof GitSpawnFailure || (error instanceof GitWorkspaceError && error.code === 'not_a_repo')) return null
+    throw error
+  }
 }
 
-async function gitOrThrow(args: string[], cwd: string, timeoutMs: number): Promise<{ status: number; stdout: string; stderr: string }> {
-  const r = await spawnGit(cwd, args, timeoutMs)
-  if (r.error) {
-    const code = r.error.code
-    throw new GitSpawnFailure(code === 'ETIMEDOUT' ? `Command '${JSON.stringify(['git', ...args]).replaceAll('"', "'").replaceAll(',', ', ')}' timed out after ${String(timeoutMs / 1000)} seconds` : pyOsError(r.error, 'git'))
+async function gitOrThrow(args: string[], cwd: string, timeoutMs: number): Promise<GitResult | GitWorktreeStatus> {
+  try {
+    const runner = new GitRunner({ env: process.env })
+    if (args[0] === 'status') return await runner.worktreeStatus(cwd, timeoutMs)
+    if (args[0] === 'worktree' && args[1] === 'remove' && !args.includes('--force')) return await runner.removeWorktree(cwd, args.at(-1) ?? '', timeoutMs)
+    return await runner.run(cwd, args, { timeoutMs })
+  } catch (error) {
+    if (!(error instanceof GitWorkspaceError) || !(error.cause instanceof Error)) throw error
+    const cause = error.cause as NodeJS.ErrnoException
+    throw new GitSpawnFailure(cause.code === 'ETIMEDOUT' ? `Command '${JSON.stringify(['git', ...args]).replaceAll('"', "'").replaceAll(',', ', ')}' timed out after ${String(timeoutMs / 1000)} seconds` : pyOsError(cause, 'git'))
   }
-  return { status: r.status ?? 1, stdout: r.stdout, stderr: r.stderr }
 }
 
 function resolvePath(path: unknown): string | null {
@@ -115,19 +120,16 @@ function unlinkIncludeLink(worktreePath: string, repoRoot: string, entry: string
   return { path, target }
 }
 
-/** `[dirty, untracked count, ignored include symlinks]`; the Agent's own include symlinks are not user state. */
-async function statusPorcelain(worktreePath: string, repoRoot: string | null): Promise<[boolean, number, string[]]> {
+/** `[dirty, untracked count, ignored include symlinks, gitlinks]`; the Agent's include links are not user state. */
+async function statusPorcelain(worktreePath: string, repoRoot: string | null): Promise<[boolean, number, string[], boolean]> {
   const result = await git(['status', '--porcelain', '-z', '--untracked-files=normal'], worktreePath)
-  if (result?.status !== 0) return [false, 0, []]
-  const entries = result.stdout.split('\0')
+  if (result?.status !== 0) return [false, 0, [], false]
+  const entries = porcelainStatusEntries(result.stdout)
   const counted: string[] = []
   const links: string[] = []
   let include: Set<string> | undefined
-  for (let i = 0; i < entries.length; i++) {
-    const entry = entries[i] ?? ''
+  for (const [entry] of entries) {
     if (!entry) continue
-    // A rename or copy carries its source path as the next NUL-separated field.
-    if (/[RC]/.test(entry.slice(0, 2))) i++
     if (entry.startsWith('?? ')) {
       include ??= includeSymlinkPaths(worktreePath, repoRoot)
       const covered = coveredIncludeLinks(worktreePath, entry.slice(3).replace(/\/+$/, ''), include)
@@ -135,7 +137,7 @@ async function statusPorcelain(worktreePath: string, repoRoot: string | null): P
     }
     counted.push(entry)
   }
-  return [counted.length > 0, counted.filter((e) => e.startsWith('??')).length, links]
+  return [counted.length > 0, counted.filter((e) => e.startsWith('??')).length, links, 'hasGitlinks' in result && result.hasGitlinks]
 }
 
 async function aheadBehind(worktreePath: string): Promise<{ ahead: number; behind: number; available: boolean; upstream: string | null }> {
@@ -175,15 +177,15 @@ async function probeWorktree(session: Session, locks: WorktreeLocks): Promise<{ 
   const lockedByStream = locks.lockedByStream(session)
   const lockedByTerminal = locks.lockedByTerminal(session.session_id, worktreePath)
   const listed = await worktreeListed(worktreePath, session.worktree_repo_root)
-  const [dirty, untracked, includeLinks] = exists ? await statusPorcelain(worktreePath, resolvePath(session.worktree_repo_root)) : [false, 0, []]
+  const [dirty, untracked, includeLinks, hasGitlinks] = exists ? await statusPorcelain(worktreePath, resolvePath(session.worktree_repo_root)) : [false, 0, [], false]
   const aheadBehindStatus = exists ? await aheadBehind(worktreePath) : { ahead: 0, behind: 0, available: false, upstream: null }
   const status: WorktreeStatus = {
     path: worktreePath, exists, dirty, untracked_count: untracked, ahead_behind: aheadBehindStatus,
     locked_by_stream: lockedByStream, locked_by_terminal: lockedByTerminal, listed,
     // `removeWorktreeForSession`'s gates: a missing directory is always removable, a lock blocks removal outright,
-    // and uncommitted, untracked, or unpushed work needs `force`.
+    // and uncommitted, untracked, unpushed work or gitlinks need `force`.
     removable: !exists || !(lockedByStream || lockedByTerminal),
-    force_required: dirty || untracked > 0 || aheadBehindStatus.ahead > 0,
+    force_required: dirty || untracked > 0 || aheadBehindStatus.ahead > 0 || hasGitlinks,
   }
   return { status, includeLinks }
 }
@@ -229,7 +231,7 @@ export async function removeWorktreeForSession(session: Session, locks: Worktree
     const args = ['worktree', 'remove']
     if (force) args.push('--force')
     args.push(worktreePath)
-    let result: { status: number; stdout: string; stderr: string }
+    let result: GitResult
     try {
       result = await gitOrThrow(args, repoRoot, 10_000)
     } catch (error) {
