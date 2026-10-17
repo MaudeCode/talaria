@@ -120,6 +120,7 @@ jobs:
         working-directory: .
         env:
           RELEASE: ${{ matrix.release }}
+          TALARIA_SIDECAR_WORKERS: '4'
           # Read-only, for the Agent release API's published-release check.
           GITHUB_TOKEN: ${{ github.token }}
         run: python3 scripts/check-agent-compatibility.py --skip-docker --release "$RELEASE" --receipt "$RUNNER_TEMP/agent-compatibility/$RELEASE.json"

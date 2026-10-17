@@ -59,6 +59,44 @@ runs there. Without those build artifacts locally the proof is explicitly skippe
 process-only sidecar suite still runs independently. The proof uses synthetic
 release records and local Git remotes, with no provider or live service access.
 
+Full sidecar suites use `TALARIA_SIDECAR_WORKERS`, a positive integer. The automatic count is the
+CPU count available to the process, capped at 4. Set `TALARIA_SIDECAR_WORKERS=1` for a serial full
+suite, or explicitly request a higher count, including 8. CI sets its count explicitly. File/node
+selectors, `-k`, `-m`, and other pytest options run serially and pass through unchanged; `--junitxml`
+alone still permits parallel execution. For example:
+
+```sh
+TALARIA_SIDECAR_WORKERS=4 sidecar/scripts/test.sh
+TALARIA_SIDECAR_WORKERS=1 sidecar/scripts/test.sh
+sidecar/scripts/test.sh tests/test_checkpoints.py -k restore
+sidecar/scripts/test.sh tests/test_suite_runner.py
+```
+
+The runner initializes pytest once, collects the complete suite, and assigns whole modules to
+disjoint groups balanced by case count. Each worker has its own HOME, TMPDIR, pytest basetemp,
+log, execution journal, and JUnit report. A collection failure, incomplete/duplicate execution,
+crashed worker, or missing/invalid report fails compatibility. Worker process groups and detached
+test processes naming the disposable state directory are cleaned up on every exit; Linux also
+reaps orphan descendants. The existing per-test process-leak fixture still detects and kills leaks.
+
+One merged JUnit report remains beside each compatibility receipt. Per-case durations and
+failure/error/skip information are preserved, with slow tests and modules printed after the run.
+Worker logs and collection/execution journals remain under `<report>.workers/run-*`, including
+on failure. Direct runs without a report retain them under `web/.codex-tmp/sidecar-pytest/run-*`.
+The receipt schema, Agent probes, supported identities, and Docker verification are unchanged.
+
+`scripts/check-release-agent.py` treats the same worker setting as one host-wide budget. It divides
+that budget between concurrently checked releases, or queues releases when the budget is smaller
+than their count. It prints the budget and each release's allocation; each suite prints its own
+worker count and the total budget. The independent CI matrix jobs each own their runner's budget.
+Synthetic release-budget checks run with `python3 scripts/test-check-release-agent.py` from the root.
+
+To compare settings, keep the Talaria source, pinned Agent identity/interpreter, host, and warmed
+Agent cache fixed. Run `scripts/check-agent-compatibility.py --skip-docker --release TAG --receipt PATH`
+from the root at 1, 2, 4, and 8 workers, record wall duration and sampled peak process-tree RSS,
+and compare receipt verdicts/counts and collected/executed node IDs. Repeat promising settings
+before choosing one; CPU count alone does not establish the fastest setting.
+
 ## Frontend tests
 
 `packages/frontend/src/**/*.test.ts(x)` run in jsdom against the in-memory contract server; `e2e/*.spec.ts`

@@ -3,12 +3,22 @@
 
 import argparse
 import json
+import os
 import subprocess
+import sys
 import tempfile
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT / "web/sidecar/scripts"))
+from suite_runner import worker_count
+
+
+def worker_allocations(releases, budget):
+    active = min(len(releases), budget)
+    return {tag: budget // active + (index < budget % active) if len(releases) <= budget else 1
+            for index, tag in enumerate(releases)}
 
 
 def main():
@@ -38,7 +48,9 @@ def main():
             try:
                 path = checkout(tag)
                 return subprocess.run(["python3", str(path / "scripts/check-agent-compatibility.py"), "--release", tag, *receipt],
-                                      cwd=path, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+                                      cwd=path, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True,
+                                      env={**os.environ, "TALARIA_SIDECAR_WORKERS": str(allocations[tag]),
+                                           "TALARIA_SIDECAR_TOTAL_WORKERS": str(budget)})
             except (subprocess.CalledProcessError, OSError) as error:
                 # Reported as this release failing, so the other releases still finish and print.
                 return subprocess.CompletedProcess(tag, 1, stdout=f"{error}\n")
@@ -48,8 +60,11 @@ def main():
         releases = json.loads(subprocess.check_output(["python3", str(listing / "scripts/check-agent-compatibility.py"), "--list"],
                                                       cwd=listing))
         failed = []
+        budget = worker_count(os.environ.get("TALARIA_SIDECAR_WORKERS"))
+        allocations = worker_allocations(releases, budget)
+        print(f"Sidecar host worker budget={budget}; release allocations={allocations}", flush=True)
         # Releases run concurrently; each one's output prints as one block when it finishes so the job log stays readable.
-        with ThreadPoolExecutor(max_workers=len(releases)) as pool:
+        with ThreadPoolExecutor(max_workers=min(len(releases), budget)) as pool:
             futures = {pool.submit(check, tag): tag for tag in releases}
             for future in as_completed(futures):
                 tag, result = futures[future], future.result()
