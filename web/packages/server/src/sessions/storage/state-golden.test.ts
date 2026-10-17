@@ -25,20 +25,22 @@ vi.mock('node:crypto', async (original) => ({ ...await original<typeof import('n
 it('preserves main JSON bytes for every document namespace and run-journal compaction', async () => {
   const state = mkdtempSync(join(tmpdir(), 'talaria-state-golden-'))
   const sessions = join(state, 'sessions')
+  const workspace = join(state, 'workspace')
   mkdirSync(sessions)
+  mkdirSync(workspace)
   vi.spyOn(Date, 'now').mockReturnValue(1_000_000)
   try {
     const drafts = new DraftStore(testSessionDocuments(sessions))
     await drafts.write('session', { text: 'draft', files: ['image.png'] }, '1000')
     await expect(Promise.resolve().then(async () => (await drafts.write('session', { text: 'stale', files: [] }, '999')))).rejects.toBeInstanceOf(DraftVersionConflict)
     const shares = new ShareStore(new JsonDocuments(dirname(join(state, 'shares'))), () => 1000)
-    const session = new Session({ session_id: 'session' }, { workspace: '/test/workspace', model: null, modelProvider: null })
+    const session = new Session({ session_id: 'session' }, { workspace, model: null, modelProvider: null })
     const meta = await shares.createOrRefresh(session, { title: 'Shared', messages: [{ role: 'user', content: 'hello' }], message_count: 1 })
     session.share_token = meta.share_token
     await shares.revoke(session)
     await new HeldWakeups(testSessionDocuments(dirname(join(sessions, '_wakeup_held.json')))).hold('session', [{ process_id: 'process', wakeup_prompt: 'finished' }])
     await new ProjectStore(new JsonDocuments(dirname(join(state, 'projects.json'))), () => []).save([{ project_id: 'project', name: 'Project', profile: 'default' }])
-    const settings = new SettingsStore({ documents: new JsonDocuments(state), stateDir: state, env: {}, defaultWorkspace: '/test/workspace', botName: 'Hermes' })
+    const settings = new SettingsStore({ documents: new JsonDocuments(state), stateDir: state, env: { HERMES_WEBUI_DEFAULT_WORKSPACE: workspace }, defaultWorkspace: workspace, botName: 'Hermes' })
     await settings.save({ theme: 'light' })
     const auth = new AuthStore({ documents: new JsonDocuments(state), env: {}, settings, now: () => 1000 })
     auth.setKeysForTest(Buffer.alloc(32, 1), Buffer.alloc(32, 2))
@@ -78,8 +80,10 @@ it('preserves main JSON bytes for every document namespace and run-journal compa
     const journalBytes = readFileSync(journalPath, 'utf8')
     utimesSync(journalPath, 1000, 1000)
     await journal.pruneSettled({ now: 2000, retentionSeconds: 1, keepRecent: 0 })
+    const settingsBytes = readFileSync(join(state, 'settings.json'), 'utf8')
+    expect((JSON.parse(settingsBytes) as { default_workspace: string }).default_workspace).toBe(workspace)
     const files: Record<string, string> = {}
-    const scan = (dir: string): void => { for (const entry of readdirSync(dir, { withFileTypes: true })) { const path = join(dir, entry.name); if (entry.isDirectory()) scan(path); else files[relative(state, path)] = readFileSync(path, 'utf8') } }
+    const scan = (dir: string): void => { for (const entry of readdirSync(dir, { withFileTypes: true })) { const path = join(dir, entry.name); if (entry.isDirectory()) scan(path); else files[relative(state, path)] = readFileSync(path, 'utf8').replaceAll(JSON.stringify(workspace), JSON.stringify('<workspace>')) } }
     scan(state)
     expect({ files, journalBytes }).toMatchSnapshot()
   } finally { vi.restoreAllMocks(); rmSync(state, { recursive: true, force: true }) }

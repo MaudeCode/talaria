@@ -41,7 +41,7 @@ exports[`preserves main JSON bytes for every document namespace and run-journal 
     "sessions/_run_journal/session/stream.summary.json": "{"session_id":"session","run_id":"stream","stream_id":"stream","event_count":2,"last_seq":2,"last_event_id":"stream:2","terminal":true,"terminal_state":"completed","last_event":"done","journal_pruned":true,"journal_pruned_at":2000,"original_size":418,"original_mtime":1000}",
     "sessions/_wakeup_held.json": "{"session":[{"process_id":"process","wakeup_prompt":"finished"}]}",
     "settings.json": "{
-  "default_workspace": "/Users/kilian/workspace",
+  "default_workspace": "<workspace>",
   "onboarding_completed": false,
   "send_key": "enter",
   "show_token_usage": false,
