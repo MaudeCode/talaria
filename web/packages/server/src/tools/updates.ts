@@ -939,7 +939,7 @@ async function withAgentMutation(path: string, info: Dict, git: GitRun, policy: 
   }
   if (!policy?.withMutation) return guarded(git)
   try { return await policy.withMutation(path, str(info.latest_sha), guarded) }
-  catch (error) { return { ok: false, target: 'agent', message: `Agent update could not safely quiesce or resume its writers: ${sanitizeGitDiagnostic((error as Error).message)}` } }
+  catch (error) { return { ok: false, target: 'agent', message: `Agent update could not safely quiesce or resume its writers: ${sanitizeGitDiagnostic((error as Error).message, 1000)}` } }
 }
 
 /** Fetch, confirm the immutable Agent target, stash, fast-forward, and restore the stash. */

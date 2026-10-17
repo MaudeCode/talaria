@@ -141,13 +141,25 @@ from hermes_cli.backend_retirement import retirement
 cfg=json.loads((home/'backend-config.json').read_text())
 class Handler(BaseHTTPRequestHandler):
  def log_message(self,*args): pass
- def reply(self,data):
-  blob=json.dumps(data).encode(); self.send_response(200); self.send_header('Content-Length',str(len(blob))); self.end_headers(); self.wfile.write(blob)
+ def reply(self,data,status=200):
+  blob=json.dumps(data).encode(); self.send_response(status); self.send_header('Content-Length',str(len(blob))); self.end_headers(); self.wfile.write(blob)
  def do_GET(self):
-  if (home/'refuse-auth').exists(): self.send_response(401); self.end_headers(); return
+  if (home/'refuse-auth').exists(): self.reply({},401); return
+  missing=(home/'missing-identity').exists()
+  if self.path=='/openapi.json':
+   paths={'/api/sessions':{'get':{}}}
+   if not missing: paths['/api/host/identity']={'get':{}}
+   if not (home/'missing-retirement').exists(): paths['/api/health/retirement']={'post':{}}
+   self.reply({'openapi':'3.1.0','paths':paths}); return
+  if self.path.startswith('/api/sessions'):
+   if self.headers.get('Authorization')!='Bearer synthetic-local-token': self.reply({},401); return
+   self.reply({'sessions':[]}); return
+  if missing: self.reply({},404); return
   self.reply({'ok':True,'role':'serve','pid':os.getpid() if not (home/'foreign-listener').exists() else 1})
  def do_POST(self):
+  if (home/'missing-retirement').exists(): self.reply({},404); return
   body=json.loads(self.rfile.read(int(self.headers['Content-Length'])))
+  with (home/'retirement-actions').open('a') as log: log.write(body['action']+'\\n')
   self.reply(retirement.prepare() if body['action']=='prepare' else getattr(retirement,body['action'])(body.get('token')))
 server=ThreadingHTTPServer(('127.0.0.1',cfg['port']),Handler)
 (home/'backend.pid').write_text(str(os.getpid()))
@@ -359,6 +371,65 @@ def test_legacy_backends_hold_source_and_dependency_custody(tmp_path, mode):
         assert all((Path(c['home']) / 'backend.pid').exists() for c in configs[1:])
         assert not list((home / '.talaria-agent-services').glob('*.json'))
         assert all((home / 'services' / c['label'] / 'starts').read_text().splitlines() == ['start'] for c in configs)
+
+
+@pytest.mark.parametrize('missing', ['identity', 'retirement', 'both'])
+def test_unsupported_lifecycle_refuses_shared_lease_before_any_stop(tmp_path, missing):
+    with supervised_agent(tmp_path, dashboards=2, dependency_sync=True, legacy=True) as (root, home, base, target, sidecar, configs):
+        served = Path(configs[-1]['home'])
+        marker = served / ('missing-' + ('identity' if missing == 'both' else missing))
+        marker.touch()
+        if missing == 'both': (served / 'missing-retirement').touch()
+        (served / 'busy').touch()
+        (root / 'VERSION').write_text('local edit\n')
+        (root / 'untracked').write_text('local work\n')
+        (home / 'fail-sync').touch()
+        (root / '.git/info/exclude').write_text('__pycache__/\n.native-lock\n')
+        original = (root / 'run_agent.py').read_text()
+        (root / 'run_agent.py').write_text(original + '# saved work\n')
+        git(root, 'stash', 'push', '-m', 'retained work')
+        (root / 'run_agent.py').write_text(original + '# local edit\n')
+        heads = [git(root, 'rev-parse', 'HEAD'), git(root, 'stash', 'list', '--format=%H'), git(root, 'status', '--porcelain')]
+        pids = {c['label']: (home / 'services' / c['label'] / 'service.pid').read_text() for c in configs}
+        backends = {c['label']: (Path(c['home']) / 'backend.pid').read_text() for c in configs[1:]}
+        for _ in range(2):  # Both update modes share this admission boundary; retries stay read-only.
+            result = rpc(sidecar, root, 'begin', revision=target, homes=list({c['home'] for c in configs}))
+            assert not result['ok'], result
+            assert 'lifecycle APIs are unsupported' in result['detail'], result
+            assert configs[-1]['label'] in result['detail']
+            assert 'Finish active work' in result['detail']
+            assert 'original supervisor' in result['detail']
+            assert 'refused authenticated' not in result['detail']
+            if missing in {'identity', 'both'}: assert 'listener identity remains unverified' in result['detail']
+            assert heads == [git(root, 'rev-parse', 'HEAD'), git(root, 'stash', 'list', '--format=%H'), git(root, 'status', '--porcelain')]
+            assert (root / 'run_agent.py').read_text() == original + '# local edit\n'
+            assert (root / 'VERSION').read_text() == 'local edit\n'
+            assert (root / 'untracked').read_text() == 'local work\n'
+            assert (home / 'fail-sync').exists()
+            assert all((home / 'services' / c['label'] / 'service.pid').read_text() == pids[c['label']] for c in configs)
+            assert all((Path(c['home']) / 'backend.pid').read_text() == backends[c['label']] for c in configs[1:])
+            assert not list(home.glob('**/retirement-actions'))
+            assert not list((home / 'services').glob('*/starts'))
+            assert not list((home / '.talaria-agent-services').glob('*.json'))
+        # Owner finishes work and uses the original disposable supervisor to refresh.
+        marker.unlink()
+        if missing == 'both': (served / 'missing-retirement').unlink()
+        (served / 'busy').unlink()
+        (home / 'fail-sync').unlink()
+        cfg = configs[-1]
+        (home / 'services' / cfg['label'] / 'disarm').touch()
+        wait_for(lambda: not (home / 'services' / cfg['label'] / 'service.pid').exists())
+        env = {**os.environ, 'HERMES_HOME': str(home)}
+        subprocess.run([AGENT_PYTHON, '-c', 'from synthetic_services import start; start(' + repr(cfg['label']) + ')'], cwd=root, env=env, check=True)
+        wait_for(lambda: (served / 'backend.pid').exists())
+        assert (served / 'backend.pid').read_text() != backends[cfg['label']]
+        begun = rpc(sidecar, root, 'begin', revision=target, homes=list({c['home'] for c in configs}))
+        assert begun['ok'], begun
+        finished = rpc(sidecar, root, 'finish', token=begun['token'])
+        assert finished['ok'], finished
+        assert not list((home / '.talaria-agent-services').glob('*.json'))
+        assert all((Path(c['home']) / 'backend.pid').exists() for c in configs[1:])
+        assert all((home / 'services' / c['label'] / 'starts').read_text().splitlines() == (['start', 'start'] if c == cfg else ['start']) for c in configs)
 
 
 @pytest.mark.parametrize('profile', ['default', 'named'])
@@ -843,3 +914,117 @@ def test_service_recovery_keeps_handshake_responsive_and_admission_closed(tmp_pa
         release.set()
         wait_for(lambda: not file.exists())
     runtime.ensure_current()
+
+
+@pytest.mark.parametrize('case,unsupported', [
+    ('missing-identity', True), ('missing-both', True), ('missing-retirement', True),
+    ('auth-401', False), ('auth-403', False), ('generic-404', False), ('public-sessions', False),
+    ('bad-credential', False), ('bad-schema', False), ('malformed-identity', False),
+    ('mismatched-identity', False), ('changing-identity', False), ('transient-503', False),
+    ('unreachable', False), ('native-session', True), ('retirement-post', True), ('schema-unavailable', False), ('malformed-operation', False), ('changing-retirement-identity', False),
+])
+def test_backend_lifecycle_capability_evidence(monkeypatch, case, unsupported):
+    from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+    import threading
+    from talaria_sidecar import agent_services as services
+    calls = []
+    identity_calls = 0
+    missing_identity = case in {'missing-identity', 'missing-both', 'generic-404', 'public-sessions', 'bad-credential', 'bad-schema', 'changing-identity', 'native-session'}
+    missing_retirement = case in {'missing-both', 'missing-retirement', 'retirement-post', 'changing-retirement-identity'}
+
+    class Handler(BaseHTTPRequestHandler):
+        def log_message(self, *args): pass
+
+        def do_GET(self):
+            nonlocal identity_calls
+            calls.append((self.path, self.headers.get('Authorization')))
+            status, result = 200, {}
+            if self.path == '/api/host/identity':
+                identity_calls += 1
+                status = 404 if missing_identity else 200
+                if case == 'auth-401': status = 401
+                if case == 'auth-403': status = 403
+                if case == 'transient-503': status = 503
+                result = {'ok': True, 'pid': 123, 'role': 'serve'}
+                if case == 'malformed-identity': result = []
+                if case == 'mismatched-identity': result['pid'] = 456
+                if case in {'changing-identity', 'changing-retirement-identity'} and identity_calls > 1:
+                    status, result['pid'] = 200, 456
+            elif self.path == '/openapi.json':
+                paths = {'/api/sessions': {'get': {}}}
+                if not missing_identity or case == 'generic-404': paths['/api/host/identity'] = {'get': {}}
+                if not missing_retirement: paths['/api/health/retirement'] = {'post': {}}
+                result = {'openapi': '3.1.0', 'paths': paths}
+                if case == 'bad-schema': result = {'paths': []}
+                if case == 'schema-unavailable': status = 503
+                if case == 'malformed-operation': paths['/api/health/retirement'] = 'post'
+            elif self.path.startswith('/api/sessions'):
+                status = 200 if self.headers.get('Authorization') == 'Bearer fixture-private-session' or case == 'public-sessions' else 401
+                if case == 'bad-credential': status = 401
+                result = {'sessions': []}
+            blob = json.dumps(result).encode()
+            self.send_response(status)
+            self.send_header('Content-Length', str(len(blob)))
+            self.end_headers()
+            self.wfile.write(blob)
+
+        def do_POST(self):
+            self.send_response(404)
+            self.end_headers()
+
+    server = ThreadingHTTPServer(('127.0.0.1', 0), Handler)
+    entry = dict(pid=123, host='127.0.0.1', port=server.server_port, label='synthetic.dashboard', home='/synthetic')
+    monkeypatch.setattr(services, '_auth', lambda entry: '' if case == 'native-session' else 'fixture-private-session')
+    monkeypatch.setattr(services, '_local_session', lambda entry: 'fixture-private-session' if case == 'native-session' else None)
+    thread = threading.Thread(target=server.serve_forever, kwargs={'poll_interval': .01}, daemon=True)
+    thread.start()
+    try:
+        if case == 'unreachable':
+            server.shutdown()
+            server.server_close()
+        with pytest.raises(RuntimeError) as failure:
+            services.backend_request(entry, 'prepare' if case == 'retirement-post' else None)
+        assert isinstance(failure.value, services.BackendLifecycleUnsupported) == unsupported
+        assert 'fixture-private-session' not in str(failure.value)
+        if case in {'auth-401', 'auth-403'}:
+            assert 'refused authenticated' in str(failure.value)
+        if case == 'transient-503':
+            assert 'HTTP 503' in str(failure.value) and 'refused authenticated' not in str(failure.value)
+        if case == 'missing-identity':
+            assert ('/api/sessions?limit=1', None) in calls
+            assert ('/api/sessions?limit=1', 'Bearer fixture-private-session') in calls
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join()
+
+
+@pytest.mark.parametrize('missing', ['identity', 'retirement'])
+def test_unsupported_lifecycle_recovery_keeps_debt_and_restores_sibling(tmp_path, missing):
+    with supervised_agent(tmp_path, dashboards=2, legacy=True, readiness=.3) as (root, home, base, target, sidecar, configs):
+        begun = rpc(sidecar, root, 'begin', revision=target, homes=list({c['home'] for c in configs}))
+        assert begun['ok'], begun
+        marker = home / ('missing-' + missing)
+        marker.touch()
+        finished = rpc(sidecar, root, 'finish', token=begun['token'])
+        assert not finished['ok'], finished
+        assert 'lifecycle APIs are unsupported' in finished['detail'], finished
+        assert 'recovery remains owed' in finished['detail'], finished
+        path = next((home / '.talaria-agent-services').glob('*.json'))
+        debt = json.loads(path.read_text())
+        assert [e['label'] for e in debt['entries']] == [configs[1]['label']]
+        assert (Path(configs[2]['home']) / 'backend.pid').exists()
+        assert (home / 'active').exists()
+        original = (home / 'backend.pid').read_text()
+        sidecar.close()
+        with contextlib.closing(SidecarProcess(home, agent_dir=root, python=AGENT_PYTHON, env={'PATH': str(home / 'bin') + os.pathsep + os.environ['PATH']})) as replacement:
+            replacement.result('runtime.handshake', {'rpc_version': __import__('talaria_sidecar').SIDECAR_RPC_VERSION}, timeout=30)
+            # The retained incompatible listener is never stopped or counted as recovered.
+            attempt = rpc(replacement, root, 'begin', revision=target, homes=list({c['home'] for c in configs}))
+            assert not attempt['ok'], attempt
+            assert json.loads(path.read_text())['entries'] == debt['entries']
+            assert (home / 'backend.pid').read_text() == original
+            marker.unlink()
+            replacement.result('runtime.handshake', {'rpc_version': __import__('talaria_sidecar').SIDECAR_RPC_VERSION}, timeout=30)
+            wait_for(lambda: not path.exists())
+        assert all((home / 'services' / c['label'] / 'starts').read_text().splitlines() == ['start'] for c in configs)

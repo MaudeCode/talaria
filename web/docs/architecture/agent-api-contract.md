@@ -140,6 +140,24 @@ A backend whose native authentication cannot be established remains an
 actionable refusal; Talaria does not alter authentication or service config.
 Unknown, manual, Desktop-owned and foreign-profile backends remain refused.
 
+Both admission and recovery check the running backend's OpenAPI schema for the
+identity GET and retirement POST, before stopping any service. Missing APIs are
+reported as an unsupported runtime only with live evidence: an authenticated
+matching identity, or a protected sessions route that challenges an anonymous
+request and accepts the existing credential, plus a schema omitting identity
+and a repeated missing identity response. The latter does not verify the
+listener's PID or role. A generic 404, malformed schema, changing identity,
+transport failure, or 401/403 cannot establish this capability diagnosis.
+An unavailable schema fails closed. Authentication failures remain distinct.
+
+An unsupported runtime receives no automatic stop or refresh, including on
+force update. Finish its active work, then have the owner use the original
+supervisor's established graceful refresh procedure. Verify the capable
+successor's lifecycle APIs, installation, canonical profile, PID and original
+endpoint before retrying the Agent update. The disk revision is not runtime
+capability evidence. Recovery keeps the incompatible service's obligation and
+reports this same guidance while independently restoring safe siblings.
+
 The native gateway recovery reader verifies a launchd PID, which can be a wrapper
 without a working dashboard listener. Backend debt and supervised-gateway
 readiness debt therefore live separately

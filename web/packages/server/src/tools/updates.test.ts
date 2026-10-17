@@ -789,6 +789,31 @@ describe('Agent checkout updates', () => {
     } finally { await server.close() }
   })
 
+  it.each(['apply', 'force'] as const)('preserves lifecycle capability guidance in %s results and notifications', async (action) => {
+    const a = agentInstall(true)
+    const sidecar = new FakeSidecar()
+    sidecar.describe = { ...sidecar.describe!, agent_dir: a.agent }
+    const detail = 'synthetic.dashboard running backend lifecycle APIs are unsupported for safe Agent update custody. Backend listener identity remains unverified. Finish active work, then have the owner gracefully refresh this service through its original supervisor. Verify the successor lifecycle APIs and intended installation/profile/PID, then retry the Agent update. Any retained service recovery remains owed.'
+    sidecar.respond('runtime.agent_mutation', () => ({ ok: false, skipped: false, detail }))
+    writeFileSync(join(a.agent, 'README'), 'local edit\n')
+    writeFileSync(join(a.agent, 'untracked'), 'local work\n')
+    const before = git(a.agent, 'status', '--porcelain')
+    const server = await bootTestServer({ sidecar })
+    try {
+      const response = await server.get(`/api/updates/${action}`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ target: 'agent', confirmed_agent_revision: a.v2 }) })
+      expect(response.status).toBe(200)
+      const result = await response.json() as Dict
+      expect(result).toMatchObject({ ok: false })
+      expect(result.message).toContain(detail)
+      const history = await (await server.get('/api/update-notifications')).json() as { notifications: Dict[] }
+      expect(history.notifications.find((row) => row.id === result.notification_id)).toMatchObject({ phase: 'failed', detail: result.message })
+      expect(git(a.agent, 'rev-parse', 'HEAD')).toBe(a.v1)
+      expect(git(a.agent, 'status', '--porcelain')).toBe(before)
+      expect(git(a.agent, 'stash', 'list')).toBe('')
+      expect(sidecar.calls.filter((call) => call.method === 'runtime.agent_mutation').map((call) => (call.params as Dict).action)).toEqual(['begin'])
+    } finally { await server.close() }
+  })
+
   it.each(['apply', 'force'] as const)('refuses a source revision changed while acquiring the %s writer lease', async (action) => {
     const a = agentInstall()
     let changed = ''
