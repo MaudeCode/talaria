@@ -134,9 +134,19 @@ def merge_reports(jobs, destination):
         covered = [case.find("properties/property[@name='talaria_nodeid']") for case in cases]
         if any(prop is None for prop in covered) or set(prop.get("value") for prop in covered) != set(expected):
             raise ValueError(f"JUnit coverage differs from collection in {job}")
+        by_node = defaultdict(list)
+        for case, prop in zip(cases, covered):
+            by_node[prop.get("value")].append(case)
+        for records in by_node.values():
+            # Pytest emits two records only for a call failure plus a teardown
+            # error. Repeated successful records would inflate receipt counts.
+            if len(records) > 1 and (len(records) != 2 or
+                    sum(case.find("failure") is not None for case in records) != 1 or
+                    sum(case.find("error") is not None for case in records) != 1):
+                raise ValueError(f"duplicate JUnit testcase in {job}")
         for suite in suites:
             cases = suite.findall("testcase")
-            counts = {"tests": len(cases), **{key: sum(case.find(tag) is not None for case in cases)
+            counts = {"tests": len(cases), **{key: sum(len(case.findall(tag)) for case in cases)
                       for key, tag in (("failures", "failure"), ("errors", "error"), ("skipped", "skipped"))}}
             if any(int(suite.get(key, "-1")) != count for key, count in counts.items()):
                 raise ValueError(f"JUnit counts differ from testcases in {job}")

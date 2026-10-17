@@ -89,6 +89,16 @@ def test_merged_outcomes_and_durations(project):
         @pytest.fixture
         def broken(): raise RuntimeError('synthetic setup failure')
         def test_error(broken): pass
+        @pytest.fixture
+        def double_broken(request):
+            request.addfinalizer(lambda: pytest.fail('synthetic finalizer failure'))
+            raise RuntimeError('synthetic setup failure')
+        def test_two_setup_errors(double_broken): pass
+        @pytest.fixture
+        def teardown_error():
+            yield
+            pytest.fail('synthetic teardown failure')
+        def test_call_and_teardown_error(teardown_error): assert False, 'synthetic call failure'
     """))
     (project / "tests/test_other.py").write_text("def test_other(): pass\n")
     report = project / "result.xml"
@@ -96,13 +106,13 @@ def test_merged_outcomes_and_durations(project):
     assert result.returncode != 0
     suites = ET.parse(report).findall("testsuite")
     assert {key: sum(int(suite.get(key)) for suite in suites) for key in ('tests', 'failures', 'errors', 'skipped')} == {
-        'tests': 5, 'failures': 1, 'errors': 1, 'skipped': 1,
+        'tests': 8, 'failures': 2, 'errors': 4, 'skipped': 1,
     }
     assert all(float(case.get('time')) >= 0 for suite in suites for case in suite.findall('testcase'))
     assert 'Slow modules:' in result.stdout
 
 
-@pytest.mark.parametrize("damage", ["crash", "missing", "malformed", "omitted", "duplicate", "junit-count", "junit-coverage"])
+@pytest.mark.parametrize("damage", ["crash", "missing", "malformed", "omitted", "duplicate", "junit-count", "junit-coverage", "junit-duplicate"])
 def test_partial_evidence_never_succeeds(project, damage):
     source = "import atexit, os, pathlib, json, sys\ndef test_ok():\n"
     if damage == "crash":
@@ -115,6 +125,7 @@ def test_partial_evidence_never_succeeds(project, damage):
             "duplicate": "data['started'] *= 2; manifest.write_text(json.dumps(data))",
             "junit-count": "report.write_text(report.read_text().replace('tests=\"1\"', 'tests=\"2\"'))",
             "junit-coverage": "report.write_text(report.read_text().replace('talaria_nodeid', 'missing_nodeid'))",
+            "junit-duplicate": "import xml.etree.ElementTree as ET; tree = ET.parse(report); suite = tree.getroot().find('testsuite'); suite.append(ET.fromstring(ET.tostring(suite.find('testcase')))); suite.set('tests', '2'); tree.write(report)",
         }
         source += textwrap.indent(textwrap.dedent(f"""
             def damage():
