@@ -22,9 +22,9 @@ import SwiftUI
 /// reading-older chrome, and how far a gesture-free scroll must carry the
 /// reader before it counts as leaving.
 public enum ChatScrollPolicy {
-    /// Buffer two viewports while reading history; keep one viewport at the latest edge.
+    /// Buffer four viewports while reading history; keep one viewport at the latest edge.
     public static func shouldPrefetchHistory(geometry: ScrollGeometry) -> Bool {
-        let screens: CGFloat = isAtBottom(distanceFromBottom: geometry.distanceFromBottom) ? 1 : 2
+        let screens: CGFloat = isAtBottom(distanceFromBottom: geometry.distanceFromBottom) ? 1 : 4
         return geometry.offsetY <= geometry.visibleHeight * screens
     }
 

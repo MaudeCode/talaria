@@ -26,12 +26,13 @@ final class TranscriptHostedTests: XCTestCase {
 
     func testHistoryPrefetchStartsBeforeTheLastViewport() async throws {
         var requests = 0
-        let window = try hostWindow(historyTranscript { _ in requests += 1; return false })
+        let window = try hostWindow(historyTranscript(messageCount: 100) { _ in requests += 1; return false })
         let scroll = try XCTUnwrap(historyScroll(in: window))
         try await Task.sleep(for: .milliseconds(150))
-        scroll.contentOffset.y = scroll.bounds.height * 1.5
+        let viewportHeight = scroll.bounds.height - scroll.adjustedContentInset.top - scroll.adjustedContentInset.bottom
+        scroll.contentOffset.y = viewportHeight * 3 - scroll.adjustedContentInset.top
         for _ in 0..<20 where requests == 0 { try await Task.sleep(for: .milliseconds(25)) }
-        XCTAssertEqual(requests, 1, "Prefetch must start with more than one viewport of history still available")
+        XCTAssertEqual(requests, 1, "Prefetch must start with three viewports of history still available")
     }
 
     func testHistoryResponsePreservesWhereTheReaderMovedWhilePageWasInFlight() async throws {
@@ -96,19 +97,26 @@ final class TranscriptHostedTests: XCTestCase {
         let window = try hostWindow(PagedHistoryTranscript { requested.append($0) })
         let scroll = try XCTUnwrap(historyScroll(in: window))
         try await Task.sleep(for: .milliseconds(150))
-        for start in stride(from: 1_950, through: 50, by: -50) {
+        let pages = Array(stride(from: 1_950, through: 50, by: -50))
+        // A larger prefetch buffer can load several pages before the next gesture.
+        for _ in pages where requested.count < pages.count {
+            let start = (requested.last ?? 2_000) - 50
+            let previousCount = requested.count
             scroll.contentOffset.y = 100
             let label = "History row \(start + 3). Synthetic transcript text."
             let before = try await requireElement(in: window, label: label).accessibilityFrame.minY
-            for _ in 0..<40 where requested.last != start { try await Task.sleep(for: .milliseconds(25)) }
-            XCTAssertEqual(requested.last, start)
+            for _ in 0..<40 where requested.count == previousCount { try await Task.sleep(for: .milliseconds(25)) }
+            XCTAssertEqual(requested.dropFirst(previousCount).first, start)
             try await Task.sleep(for: .milliseconds(100))
             let after = try await requireElement(in: window, label: label).accessibilityFrame.minY
             XCTAssertEqual(after, before, accuracy: 2, "Prepending a page moved the reader at offset \(start)")
             // Programmatic UIKit offsets have no drag to release the controller's existing one-second prepend window.
             try await Task.sleep(for: .milliseconds(1_050))
+            XCTAssertEqual(requested, Array(pages.prefix(requested.count)), "Prefetch bursts must keep every cursor ordered and unique")
+            let settled = try await requireElement(in: window, label: label).accessibilityFrame.minY
+            XCTAssertEqual(settled, before, accuracy: 2)
         }
-        XCTAssertEqual(requested, Array(stride(from: 1_950, through: 50, by: -50)))
+        XCTAssertEqual(requested, pages)
         scroll.contentOffset.y = 0
         _ = try await requireElement(in: window, label: "History row 0. Synthetic transcript text.")
         XCTAssertNil(HostedAccessibility.element(in: window, label: "Load older messages"))
@@ -153,11 +161,15 @@ final class TranscriptHostedTests: XCTestCase {
         scroll.contentOffset.y = 100
         let label = "History row 1953. Synthetic transcript text."
         let before = try await requireElement(in: window, label: label).accessibilityFrame.minY
+        let beforeOffset = scroll.contentOffset.y
+        let beforeHeight = scroll.contentSize.height
         for _ in 0..<40 where requested.isEmpty { try await Task.sleep(for: .milliseconds(25)) }
         try await Task.sleep(for: .milliseconds(150))
         let after = try await requireElement(in: window, label: label).accessibilityFrame.minY
-        XCTAssertEqual(requested, [1950])
-        XCTAssertEqual(after, before, accuracy: 2)
+        XCTAssertEqual(requested.first, 1950)
+        let pages = Array(stride(from: 1_950, through: 50, by: -50))
+        XCTAssertEqual(requested, Array(pages.prefix(requested.count)))
+        XCTAssertEqual(after, before, accuracy: 2, "Prepend cursors \(requested); offset \(beforeOffset) → \(scroll.contentOffset.y); height \(beforeHeight) → \(scroll.contentSize.height)")
     }
 
     private func attachHistoryImage(_ window: UIWindow, name: String) {
@@ -290,8 +302,8 @@ final class TranscriptHostedTests: XCTestCase {
 
 
 @MainActor
-private func historyTranscript(messages supplied: [ChatMessage]? = nil, messageOffset: Int? = nil, hasOlderMessages: Bool = true, load: @escaping (@MainActor () -> Void) async -> Bool) -> some View {
-    let messages = supplied ?? (0..<50).map { index in
+private func historyTranscript(messages supplied: [ChatMessage]? = nil, messageCount: Int = 50, messageOffset: Int? = nil, hasOlderMessages: Bool = true, load: @escaping (@MainActor () -> Void) async -> Bool) -> some View {
+    let messages = supplied ?? (0..<messageCount).map { index in
         ChatMessage(role: "user", content: "History row \(index). Synthetic transcript text.", timestamp: nil, messageId: "history-\(index)")
     }
     return ChatTranscriptView(
