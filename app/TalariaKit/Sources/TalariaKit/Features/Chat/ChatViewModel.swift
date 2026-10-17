@@ -1539,9 +1539,7 @@ public final class ChatViewModel {
                 lastError = nil
                 errorMessage = nil
                 cacheCurrentMessages(sessionID: sessionID, modelContext: modelContext)
-                if renderedCacheFirst {
-                    cacheFirstReconcileScrollToken += 1
-                }
+                requestCacheFirstReconcileScrollIfNeeded(cacheFirstPlaceholder)
                 latestSettledSessionLoadRequestGeneration = loadRequestGeneration
                 isConfirmingRunState = false
                 return
@@ -1567,11 +1565,7 @@ public final class ChatViewModel {
                 previousMessages: previousMessages,
                 previousMessagesOffset: previousMessagesOffset
             )
-            if renderedCacheFirst {
-                // The taller server transcript has now replaced the lighter cache-first
-                // render; signal the view to re-pin to the bottom without a visible jump.
-                cacheFirstReconcileScrollToken += 1
-            }
+            requestCacheFirstReconcileScrollIfNeeded(cacheFirstPlaceholder)
             latestServerLoadHadAssistantResponseAfterLatestUser = Self.hasAssistantResponseAfterLatestUser(
                 in: messages
             )
@@ -1749,6 +1743,12 @@ public final class ChatViewModel {
         hasOlderMessages = window.hasOlderMessages
         recentMessagesOffset = window.recentMessagesOffset
         recentHasOlderMessages = window.hasOlderMessages
+    }
+
+    private func requestCacheFirstReconcileScrollIfNeeded(_ placeholder: [ChatMessage]) {
+        // A complete, unchanged cached paint already has its final position.
+        guard !placeholder.isEmpty, messages != placeholder else { return }
+        cacheFirstReconcileScrollToken += 1
     }
 
     /// Undo a cache-first placeholder (#289) when the reload fails without adopting

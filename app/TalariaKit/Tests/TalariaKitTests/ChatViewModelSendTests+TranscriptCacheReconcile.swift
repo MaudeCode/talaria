@@ -42,6 +42,7 @@ extension ChatViewModelSendTests {
         XCTAssertEqual(reopened.messages, expected)
         XCTAssertEqual(reopened.displayedTranscriptMessages.map(\.renderID), expectedRows)
         XCTAssertFalse(reopened.isSyncingTranscript)
+        XCTAssertEqual(reopened.cacheFirstReconcileScrollToken, 0, "An unchanged restored window must not request another scroll after sync")
     }
 
     func testCacheReadFailureStillLoadsTheCompleteServerWindow() async throws {
