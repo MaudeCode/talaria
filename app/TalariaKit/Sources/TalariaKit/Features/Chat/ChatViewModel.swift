@@ -155,7 +155,7 @@ public final class ChatViewModel {
     /// Paged rows belong to one server turn: a regenerated reply at the same position is a new turn id, so it never
     /// picks up the previous answer's rows. Only an unstamped (older-server) row falls back to its anchor.
     private static func earlierSceneRowsKey(_ transcriptMessage: TranscriptMessage) -> String {
-        transcriptMessage.message.turnId.map { "turn:\($0)" } ?? transcriptMessage.anchorID
+        TranscriptTurnClassifier.assistantTurnKey(for: transcriptMessage.message) ?? transcriptMessage.anchorID
     }
 
     /// Pages a completed turn's omitted scene rows (the server sends only the tail) until the scene is complete.

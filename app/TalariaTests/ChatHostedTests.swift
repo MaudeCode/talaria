@@ -2,7 +2,7 @@ import SwiftUI
 import UIKit
 import XCTest
 @testable import Talaria
-import TalariaKit
+@testable import TalariaKit
 
 /// The fixture chat's media, long bodies, background work and pending steers, hosted in process (TAL-856).
 @MainActor
@@ -126,10 +126,30 @@ final class ChatHostedTests: XCTestCase {
         try await assertFullChatHistoryInsertion(expandDisclosure: true)
     }
 
-    private func assertFullChatHistoryInsertion(expandDisclosure: Bool) async throws {
+    func testTranscriptScrollViewWaitsForNativeAttachmentAfterTextAppears() throws {
+        let window = try hostWindow(Text("History answer 1999."))
+        let scroll = UIScrollView(frame: window.bounds)
+        let host = ChatMessageMenuHostView(registry: ChatMessageMenuRegistry())
+        let timer = Timer.scheduledTimer(withTimeInterval: 0.02, repeats: false) { _ in
+            MainActor.assumeIsolated {
+                scroll.addSubview(host)
+                window.addSubview(scroll)
+            }
+        }
+        defer { timer.invalidate() }
+        XCTAssertTrue(try transcriptScrollView(in: window) === scroll,
+                      "Visible text can precede the transcript's native attachment")
+    }
+
+    func testHistoryInsideALongTurnPreservesTheExpandedWorkAndReader() async throws {
+        try await assertFullChatHistoryInsertion(expandDisclosure: true, boundaryTurn: true)
+    }
+
+    private func assertFullChatHistoryInsertion(expandDisclosure: Bool, boundaryTurn: Bool = false) async throws {
         var scenario = [UITestFixtureEnvironment.historyPagingArgument,
                         UITestFixtureEnvironment.holdTranscriptReloadsArgument]
-        if expandDisclosure { scenario.append(UITestFixtureEnvironment.longPromptArgument) }
+        if boundaryTurn { scenario.append(UITestFixtureEnvironment.historyTurnBoundaryArgument) }
+        else if expandDisclosure { scenario.append(UITestFixtureEnvironment.longPromptArgument) }
         let fixture = try FixtureApp(scenario, for: self)
         let window = try hostWindow(fixture.chat(try await fixture.session()))
         _ = try await requireElement(in: window) { $0.accessibilityLabel?.hasPrefix("History answer 1999.") == true }
@@ -137,17 +157,33 @@ final class ChatHostedTests: XCTestCase {
         let coordinator = try XCTUnwrap(window.firstView(ofType: ChatScrollObserver.ObserverView.self)?.coordinator)
         let controller = try XCTUnwrap(coordinator.scrollPositionController)
         coordinator.onFollowEvent(.userScrollBegin)
-        controller.onHoldAnchor?(ChatTranscriptView.containerID(for: "transcript:1954"), .center)
+        let readerID = boundaryTurn ? "history-1959" : "history-1954"
+        let decoder = JSONDecoder()
+        decoder.keyDecodingStrategy = .convertFromSnakeCase
+        let initialPage = try decoder.decode([ChatMessage].self, from: JSONSerialization.data(
+            withJSONObject: UITestFixtureURLProtocol.historyMessages(from: 1_950, to: 2_000)))
+        let readerRow = try XCTUnwrap(ChatViewModel.transcriptMessages(from: initialPage, messageOffset: 1_950)
+            .first { $0.message.messageId == readerID })
+        controller.onHoldAnchor?(ChatTranscriptView.containerID(for: readerRow.renderID), boundaryTurn ? .top : .center)
         let held = await awaitCondition { UITestFixtureHold.shared.pendingCount > 0 }
         XCTAssertTrue(held, "The real view model must request its older page before measuring insertion")
         if expandDisclosure {
-            HostedAccessibility.activate(try await requireElement(in: window, label: "Show more"))
-            _ = try await requireElement(in: window, label: "Show less")
+            if boundaryTurn {
+                HostedAccessibility.activate(try await requireElement(in: window) {
+                    $0.accessibilityLabel == "Worked" && $0.accessibilityHint == "Double tap to expand work."
+                })
+                _ = try await requireElement(in: window) { $0.accessibilityLabel?.hasPrefix("Boundary work 0.") == true }
+            } else {
+                HostedAccessibility.activate(try await requireElement(in: window, label: "Show more"))
+                _ = try await requireElement(in: window, label: "Show less")
+            }
             let settled = await awaitCondition { !controller.isHoldingPosition }
             XCTAssertTrue(settled)
         }
         let reader: NSObject
-        if expandDisclosure {
+        if boundaryTurn {
+            reader = try await requireElement(in: window) { $0.accessibilityLabel?.hasPrefix("Boundary work 0.") == true }
+        } else if expandDisclosure {
             reader = try await requireElement(in: window) { $0.accessibilityLabel?.hasPrefix("Fixture prompt line 1\n") == true }
         } else {
             reader = try await requireElement(in: window, label: "History prompt 1954.")
@@ -159,7 +195,7 @@ final class ChatHostedTests: XCTestCase {
         let point = CGPoint(x: frame.midX, y: frame.midY)
         let registry = try messageMenuRegistry(in: window)
         let before = try XCTUnwrap(registry.hit(at: scroll.convert(point, from: window), in: scroll))
-        XCTAssertEqual(before.content.messageID, "history-1954")
+        XCTAssertEqual(before.content.messageID, readerID)
         let oldHeight = scroll.contentSize.height
         var samples: [[String: Double]] = []
         var largestMovement: CGFloat = 0
@@ -194,8 +230,14 @@ final class ChatHostedTests: XCTestCase {
         XCTAssertFalse(missingReader, "Insertion must keep the same rendered message under the reader throughout layout")
         XCTAssertLessThanOrEqual(largestMovement, 2, "Insertion must not visibly jump before settling")
         if expandDisclosure {
-            XCTAssertNotNil(HostedAccessibility.element(in: window, label: "Show less"),
-                            "A page must preserve the expanded disclosure state")
+            if boundaryTurn {
+                XCTAssertNotNil(HostedAccessibility.elements(in: window).first {
+                    $0.accessibilityLabel == "Worked" && $0.accessibilityHint == "Double tap to collapse work."
+                }, "Paging inside a turn must retain its expanded work")
+            } else {
+                XCTAssertNotNil(HostedAccessibility.element(in: window, label: "Show less"),
+                                "A page must preserve the expanded disclosure state")
+            }
         }
     }
 
@@ -498,9 +540,13 @@ final class ChatHostedTests: XCTestCase {
     }
 
     private func transcriptScrollView(in window: UIWindow) throws -> UIScrollView {
-        let host = try XCTUnwrap(window.firstView(ofType: ChatMessageMenuHostView.self))
-        return try XCTUnwrap(host.superview.flatMap {
-            sequence(first: $0, next: \.superview).first { $0 is UIScrollView } as? UIScrollView
-        })
+        var scroll: UIScrollView?
+        waitUntil {
+            scroll = window.firstView(ofType: ChatMessageMenuHostView.self)?.superview.flatMap {
+                sequence(first: $0, next: \.superview).first { $0 is UIScrollView } as? UIScrollView
+            }
+            return scroll != nil
+        }
+        return try XCTUnwrap(scroll, "The transcript's native scroll handler did not attach")
     }
 }

@@ -205,6 +205,7 @@ struct ChatScrollObserver: UIViewRepresentable {
         @objc private func handlePanGesture(_ gesture: UIPanGestureRecognizer) {
             switch gesture.state {
             case .began:
+                scrollPositionController?.userDidBeginDragging()
                 cancelSettle()
                 isUserScrollSessionActive = true
                 onFollowEvent(.userScrollBegin)

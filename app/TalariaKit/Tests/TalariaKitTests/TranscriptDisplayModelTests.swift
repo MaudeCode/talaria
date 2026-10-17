@@ -7,6 +7,22 @@ import UniformTypeIdentifiers
 @testable import TalariaKit
 
 final class TranscriptMessageTests: XCTestCase {
+    func testSplitTurnRowsKeepDistinctIdentitiesAcrossPrependAndAppend() throws {
+        let earlier = ChatMessage(role: "assistant", content: "Earlier", timestamp: 1, messageId: "earlier", turnId: "run")
+        let marker = ChatMessage(role: "user", content: "Compacted", timestamp: 2, messageId: "marker", markerKind: .contextCompaction)
+        let tail = ChatMessage(role: "assistant", content: "Tail", timestamp: 3, messageId: "tail", turnId: "run")
+        let initial = ChatViewModel.transcriptMessages(from: [earlier, marker, tail], messageOffset: 1)
+        let expanded = ChatViewModel.transcriptMessages(from: [
+            ChatMessage(role: "assistant", content: "Oldest", timestamp: 0, messageId: "oldest", turnId: "run"),
+            earlier, marker, tail,
+            ChatMessage(role: "assistant", content: "New tail", timestamp: 4, messageId: "new-tail", turnId: "run")
+        ])
+        XCTAssertEqual(Set(initial.map(\.renderID)).count, initial.count)
+        XCTAssertEqual(Set(expanded.map(\.renderID)).count, expanded.count)
+        XCTAssertEqual(initial.map(\.renderID), expanded.map(\.renderID),
+                       "Both pieces of a split turn must retain their own identity")
+    }
+
     func testOnlyTheCurrentAssistantTurnOwnsASeparateActiveStream() throws {
         let messages = [
             ChatMessage(role: "user", content: "First", timestamp: 1, messageId: "u1"),
@@ -22,6 +38,22 @@ final class TranscriptMessageTests: XCTestCase {
         XCTAssertFalse(oldTurn.ownsActiveStream(hasLiveActivity: false, streamingAssistantMessageID: "a2"))
         XCTAssertTrue(currentTurn.ownsActiveStream(hasLiveActivity: false, streamingAssistantMessageID: "a2"))
         XCTAssertTrue(oldTurn.ownsActiveStream(hasLiveActivity: true, streamingAssistantMessageID: nil))
+    }
+
+    func testTranscriptTurnIdentitySurvivesPrependingEarlierSegmentsOfTheSameTurn() throws {
+        let messages = (1_940..<2_000).map { index in
+            ChatMessage(role: index == 1_940 ? "user" : "assistant",
+                        content: "Segment \(index)", timestamp: Double(index),
+                        messageId: "segment-\(index)", turnId: "long-running-turn")
+        }
+        let initial = ChatViewModel.transcriptMessages(from: Array(messages.dropFirst(10)), messageOffset: 1_950)
+        let expanded = ChatViewModel.transcriptMessages(from: messages, messageOffset: 1_940)
+        let before = try XCTUnwrap(initial.last)
+        let after = try XCTUnwrap(expanded.last)
+        XCTAssertEqual(before.anchorID, after.anchorID)
+        XCTAssertEqual(before.renderID, after.renderID,
+                       "A page inside a turn must not replace the lazy row holding the reader")
+        XCTAssertEqual(after.assistantSegments.count, 59)
     }
 
     func testTranscriptMessagesGroupAssistantTurnsByServerTurnID() {

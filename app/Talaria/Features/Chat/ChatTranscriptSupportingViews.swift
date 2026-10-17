@@ -97,8 +97,12 @@ final class ChatScrollPositionController {
     /// a hold armed while the older-message request is in flight cannot be
     /// mistaken for the prepend capture when the request lands.
     private var hasPrependCapture = false
+    private var hasRestoredMeasuredReader = false
+    private var isRealizingReaderNatively = false
     private var baselineContentHeight: CGFloat?
     private var baselineOffsetY: CGFloat?
+    private var baselinePanTranslationY: CGFloat?
+    private var prependUpdateLink: UIUpdateLink?
     private var contentSizeObservation: NSKeyValueObservation?
     private var contentOffsetObservation: NSKeyValueObservation?
     private var completionTask: Task<Void, Never>?
@@ -182,6 +186,25 @@ final class ChatScrollPositionController {
         inactiveRowIDs.insert(rowID)
         rowMinY[rowID] = nil
         if mode != .hold || rowID != anchor?.rowID { rowFrames[rowID] = nil }
+        if usesLazyLayout, isCompensatingPrepend, !hasRestoredMeasuredReader, !isRealizingReaderNatively,
+           rowID == anchor?.rowID, let scrollView, scrollView.window != nil,
+           !scrollView.isDragging, !scrollView.isDecelerating,
+           let onHoldAnchor, let height = heldRowBaselineHeight, height > 0, height.isFinite {
+            // Only SwiftUI can realize a discarded lazy row; UIKit restores its exact measured offset.
+            let point = nativeAnchorPoint(rowHeight: height, in: scrollView) ?? .top
+            isRealizingReaderNatively = true
+            onHoldAnchor(rowID, point)
+            return
+        }
+        if mode == .prepend, hasRestoredMeasuredReader, rowID == anchor?.rowID, contentSizeObservation != nil,
+           let scrollView, scrollView.isDragging || scrollView.isDecelerating,
+           let readerID = readingAnchorRowID,
+           let replacement = anchorSnapshot(readerID) {
+            // A fling can carry the restored reader outside the lazy viewport.
+            anchor = replacement
+            baselineOffsetY = scrollView.contentOffset.y
+            baselineContentHeight = scrollView.contentSize.height
+        }
         reapplyIfAnchor(rowID)
     }
 
@@ -210,7 +233,9 @@ final class ChatScrollPositionController {
 
         baselineContentHeight = scrollView.contentSize.height
         baselineOffsetY = scrollView.contentOffset.y
+        baselinePanTranslationY = scrollView.panGestureRecognizer.translation(in: scrollView).y
         anchor = anchorRowID.flatMap(anchorSnapshot)
+        if usesLazyLayout, let anchor { snapshotRowViewport(anchor.rowID, in: scrollView) }
         if let contentRevision {
             rowGeometryRevision = contentRevision
             // Offscreen lazy rows may retain frames from an earlier page. The
@@ -226,6 +251,11 @@ final class ChatScrollPositionController {
     func shouldPrefetchHistory() -> Bool {
         guard let scrollView, let geometry = ChatScrollMetrics.geometry(of: scrollView) else { return false }
         return ChatScrollPolicy.shouldPrefetchHistory(geometry: geometry)
+    }
+
+    func userDidBeginDragging() {
+        guard let scrollView else { return }
+        baselinePanTranslationY = scrollView.panGestureRecognizer.translation(in: scrollView).y
     }
 
     /// The observer acknowledges this page after UIKit layout, including a page of only hidden rows.
@@ -250,6 +280,21 @@ final class ChatScrollPositionController {
     private func anchorSnapshot(_ rowID: String) -> (rowID: String, baselineMinY: CGFloat)? {
         guard !inactiveRowIDs.contains(rowID) else { return nil }
         return rowMinY[rowID].map { (rowID, $0) }
+    }
+
+    private func snapshotRowViewport(_ rowID: String, in scrollView: UIScrollView) {
+        guard let frame = rowFrames[rowID] else { return }
+        let viewportTop = scrollView.convert(CGPoint(x: 0, y: scrollView.contentOffset.y + scrollView.adjustedContentInset.top), to: nil).y
+        heldRowViewportOffset = viewportTop - frame.minY
+        heldRowBaselineHeight = frame.height
+    }
+
+    private func nativeAnchorPoint(rowHeight: CGFloat, in scrollView: UIScrollView) -> UnitPoint? {
+        guard rowHeight > 0, rowHeight.isFinite, let heldRowViewportOffset else { return nil }
+        let viewportHeight = scrollView.bounds.height - scrollView.adjustedContentInset.top - scrollView.adjustedContentInset.bottom
+        let span = rowHeight - viewportHeight
+        guard abs(span) > 1 else { return nil }
+        return UnitPoint(x: 0.5, y: heldRowViewportOffset / span)
     }
 
     /// Arms compensation before SwiftUI performs the prepend layout. Returns
@@ -310,11 +355,7 @@ final class ChatScrollPositionController {
 
         holdCompletion = completion
         baselineOffsetY = scrollView.contentOffset.y
-        if let holdAnchor, let frame = rowFrames[holdAnchor.rowID] {
-            let viewportTop = scrollView.convert(CGPoint(x: 0, y: scrollView.contentOffset.y + scrollView.adjustedContentInset.top), to: nil).y
-            heldRowViewportOffset = viewportTop - frame.minY
-            heldRowBaselineHeight = frame.height
-        }
+        if let holdAnchor { snapshotRowViewport(holdAnchor.rowID, in: scrollView) }
         anchor = holdAnchor
         prependWindowEnd = carriedPrependWindowEnd
         resyncAfterHold = resync
@@ -382,6 +423,16 @@ final class ChatScrollPositionController {
             Self.handleObservedOffsetChange(for: self, scrollView: scrollView, deltaY: current.y - previous.y)
         }
 
+        if mode == .prepend, usesLazyLayout, let scene = scrollView.window?.windowScene {
+            let link = UIUpdateLink(windowScene: scene)
+            link.addAction(to: .afterUpdateComplete) { [weak self] link, _ in
+                guard let self, self.prependUpdateLink === link else { return }
+                self.acknowledgeRestoredReader()
+            }
+            prependUpdateLink = link
+            link.isEnabled = true
+        }
+
         completionTask = Task { @MainActor [weak self] in
             try? await Task.sleep(for: .seconds(window))
             guard !Task.isCancelled, let self else { return }
@@ -404,6 +455,10 @@ final class ChatScrollPositionController {
         heldRowBaselineHeight = nil
         lastNativeHoldAnchor = nil
         hasPrependCapture = false
+        hasRestoredMeasuredReader = false
+        isRealizingReaderNatively = false
+        prependUpdateLink?.isEnabled = false
+        prependUpdateLink = nil
         contentSizeObservation = nil
         contentOffsetObservation = nil
         completionTask?.cancel()
@@ -416,6 +471,7 @@ final class ChatScrollPositionController {
         lastObservedContentHeight = nil
         baselineContentHeight = nil
         baselineOffsetY = nil
+        baselinePanTranslationY = nil
         anchor = nil
         prependWindowEnd = nil
         isApplyingCompensation = false
@@ -486,7 +542,13 @@ final class ChatScrollPositionController {
             || (usesLazyLayout && compensationScheduled)
         if scrollView.isDragging || scrollView.isTracking || scrollView.isDecelerating {
             if mode == .prepend, let baselineOffsetY {
-                if sizeIsChanging { requestCompensation() }
+                let translation = scrollView.panGestureRecognizer.translation(in: scrollView).y
+                let fingerMovement = baselinePanTranslationY.map { $0 - translation } ?? 0
+                baselinePanTranslationY = translation
+                if scrollView.isDragging, abs(fingerMovement) > 0.001 {
+                    // Finger movement remains distinct from a structural offset during measurement.
+                    self.baselineOffsetY = baselineOffsetY + fingerMovement
+                } else if sizeIsChanging { requestCompensation() }
                 else { self.baselineOffsetY = baselineOffsetY + deltaY }
             } else {
                 cancelPreservation()
@@ -505,6 +567,10 @@ final class ChatScrollPositionController {
 
     private func compensatedOffsetY(in scrollView: UIScrollView) -> CGFloat? {
         guard let baselineOffsetY else { return nil }
+        if usesLazyLayout, mode == .prepend, hasRestoredMeasuredReader || isRealizingReaderNatively {
+            // Bridge until the actual reader is restored, rather than an early background layout.
+            guard let anchor, !inactiveRowIDs.contains(anchor.rowID), rowMinY[anchor.rowID] != nil else { return nil }
+        }
         if mode == .hold, let anchor,
            inactiveRowIDs.contains(anchor.rowID) || rowMinY[anchor.rowID] == nil { return nil }
 
@@ -568,20 +634,21 @@ final class ChatScrollPositionController {
     private func applyCompensation() {
         guard let scrollView else { return }
         if mode == .hold, let onHoldAnchor {
-            guard let anchor, let frame = rowFrames[anchor.rowID], let heldRowViewportOffset else { return }
+            guard let anchor, let frame = rowFrames[anchor.rowID] else { return }
             // A layout acknowledgement can precede the expanded frame. Using the
             // collapsed height here would send the newly tall row to its end.
-            guard frame.height > 0, frame.height.isFinite, frame.height != heldRowBaselineHeight else { return }
-            let viewportHeight = scrollView.bounds.height - scrollView.adjustedContentInset.top - scrollView.adjustedContentInset.bottom
-            let span = frame.height - viewportHeight
-            guard abs(span) > 1 else { return }
-            let point = UnitPoint(x: 0.5, y: heldRowViewportOffset / span)
+            guard frame.height != heldRowBaselineHeight,
+                  let point = nativeAnchorPoint(rowHeight: frame.height, in: scrollView) else { return }
             guard point != lastNativeHoldAnchor else { return }
             lastNativeHoldAnchor = point
             onHoldAnchor(anchor.rowID, point)
             return
         }
-        guard let targetY = compensatedOffsetY(in: scrollView), abs(scrollView.contentOffset.y - targetY) > 0.5 else { return }
+        guard let targetY = compensatedOffsetY(in: scrollView) else { return }
+        guard abs(scrollView.contentOffset.y - targetY) > 0.5 else {
+            if prependUpdateLink == nil { acknowledgeRestoredReader() }
+            return
+        }
         if mode == .hold {
             didRevertSwiftUIOffset = true
         }
@@ -590,6 +657,16 @@ final class ChatScrollPositionController {
         offset.y = targetY
         scrollView.setContentOffset(offset, animated: false)
         isApplyingCompensation = false
+        if prependUpdateLink == nil { acknowledgeRestoredReader() }
+    }
+
+    private func acknowledgeRestoredReader() {
+        guard mode == .prepend, let scrollView, let baselineOffsetY, let anchor,
+              !inactiveRowIDs.contains(anchor.rowID), rowMinY[anchor.rowID] != nil,
+              let target = compensatedOffsetY(in: scrollView),
+              abs(baselineOffsetY + anchorShift(in: scrollView) - target) <= 0.5,
+              abs(scrollView.contentOffset.y - target) <= 0.5 else { return }
+        hasRestoredMeasuredReader = true
     }
 
     nonisolated static func compensatedOffsetY(
