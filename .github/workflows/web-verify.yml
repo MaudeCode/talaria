@@ -85,7 +85,7 @@ jobs:
     needs: agent-releases
     name: Sidecar pytest against Agent ${{ matrix.release }}
     runs-on: ubuntu-latest
-    timeout-minutes: 90
+    timeout-minutes: 45
     strategy:
       fail-fast: false
       matrix:
@@ -126,95 +126,7 @@ jobs:
           TALARIA_SIDECAR_WORKERS: '4'
           # Read-only, for the Agent release API's published-release check.
           GITHUB_TOKEN: ${{ github.token }}
-        run: |
-          python3 - <<'PY'
-          import collections
-          import json
-          import os
-          from pathlib import Path
-          import platform
-          import statistics
-          import subprocess
-          import sys
-          import time
-          import xml.etree.ElementTree as ET
-
-          root = Path.cwd()
-          tag = os.environ['RELEASE']
-          base = Path(os.environ['RUNNER_TEMP']) / 'agent-compatibility'
-          base.mkdir(parents=True, exist_ok=True)
-          checker = root / 'scripts/check-agent-compatibility.py'
-          active = json.loads((root / 'web/sidecar/agent_dependency.json').read_text())['x-talaria']['releaseTag']
-          results = []
-          reference = None
-          memory_budget = os.sysconf('SC_PAGE_SIZE') * os.sysconf('SC_PHYS_PAGES') * .75 / 1024
-
-          def trial(workers, receipt):
-              global reference
-              started, peak = time.monotonic(), 0
-              receipt.parent.mkdir(parents=True, exist_ok=True)
-              command = [sys.executable, str(checker), '--skip-docker', '--release', tag, '--receipt', str(receipt)]
-              with receipt.with_suffix('.log').open('w') as log:
-                  proc = subprocess.Popen(command, env={**os.environ, 'TALARIA_SIDECAR_WORKERS': str(workers)}, stdout=log, stderr=subprocess.STDOUT)
-                  while proc.poll() is None:
-                      listing = subprocess.check_output(['ps', '-eo', 'pid=,ppid=,rss='], text=True)
-                      rows = [tuple(map(int, row.split())) for row in listing.splitlines() if len(row.split()) == 3]
-                      owned = {proc.pid}
-                      while True:
-                          expanded = owned | {pid for pid, parent, rss in rows if parent in owned}
-                          if expanded == owned:
-                              break
-                          owned = expanded
-                      peak = max(peak, sum(rss for pid, parent, rss in rows if pid in owned))
-                      time.sleep(.25)
-              result = json.loads(receipt.read_text()) if receipt.exists() else {}
-              record = {'workers': workers, 'wallSeconds': round(time.monotonic() - started, 3), 'peakTreeRssKiB': peak,
-                        'exit': proc.returncode, 'counts': result.get('tests'), 'receipt': str(receipt.relative_to(base))}
-              results.append(record)
-              (base / f'{tag}.benchmark.json').write_text(json.dumps({'host': platform.platform(), 'cpus': os.cpu_count(),
-                  'memoryBudgetKiB': memory_budget, 'source': result.get('webRevision'), 'results': results}, indent=2) + '\n')
-              print(json.dumps(record), flush=True)
-              if proc.returncode or result.get('result') != 'success':
-                  print(receipt.with_suffix('.log').read_text()[-16000:], flush=True)
-                  raise RuntimeError(f'Agent {tag}, {workers} workers failed; retain diagnostics and diagnose before choosing a setting')
-              identity = {key: result[key] for key in ('sourceRevision', 'version', 'python', 'webRevision', 'tests')}
-              nodes = collections.Counter(prop.get('value') for prop in ET.parse(receipt.with_suffix('.junit.xml')).findall('.//testcase/properties/property[@name="talaria_nodeid"]'))
-              if reference is None:
-                  reference = identity, nodes
-              assert (identity, nodes) == reference, 'serial/parallel identity, verdict, counts, or node-ID coverage differed'
-              return record
-
-          # Provision the immutable Agent and initialize pytest before any measured run.
-          subprocess.run([sys.executable, str(checker), '--skip-docker', '--skip-sidecar-tests', '--release', tag,
-                          '--command', str(root / 'web/sidecar/scripts/test.sh'), '--collect-only'], check=True)
-          if tag == active:
-              for index, workers in enumerate((4, 1, 2, 8, 4, 8)):
-                  trial(workers, base / tag / f'{index:02d}-{workers}.json')
-              def medians():
-                  return {workers: statistics.median(row['wallSeconds'] for row in results if row['workers'] == workers)
-                          for workers in (1, 2, 4, 8) if all(row['peakTreeRssKiB'] <= memory_budget for row in results if row['workers'] == workers)}
-              timings = medians()
-              selected = min(timings, key=timings.get)
-              if selected == 2:
-                  trial(2, base / tag / 'repeat-2.json')
-                  timings = medians()
-                  selected = min(timings, key=timings.get)
-              assert selected != 1 and timings[selected] < timings[1], 'no observed full-suite improvement; do not enable a parallel default'
-              print('SELECTED', selected, 'median durations', timings, flush=True)
-          else:
-              trial(1, base / tag / 'serial.json')
-              trial(4, base / tag / 'four.json')
-              # Both promising counts are checked while active-pin tuning runs.
-              selected = 8
-          # Preserve a fresh canonical compatibility receipt and report per release.
-          trial(selected, base / f'{tag}.json')
-          summary = Path(os.environ['GITHUB_STEP_SUMMARY'])
-          with summary.open('a') as output:
-              output.write(f'### {tag}: bounded sidecar worker tuning\n\n| Workers | Wall seconds | Peak tree RSS MiB | Counts |\n|---|---:|---:|---|\n')
-              for row in results:
-                  output.write(f"| {row['workers']} | {row['wallSeconds']} | {row['peakTreeRssKiB']/1024:.1f} | {row['counts']} |\n")
-              output.write(f'\nSelected workers: {selected}. All trial identities, counts and node IDs matched.\n')
-          PY
+        run: python3 scripts/check-agent-compatibility.py --skip-docker --release "$RELEASE" --receipt "$RUNNER_TEMP/agent-compatibility/$RELEASE.json"
 
       - name: Retain the Agent compatibility receipt
         if: always()

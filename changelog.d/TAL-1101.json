@@ -1,1 +1,1 @@
-{"skip":"Agent compatibility test orchestration only; no app behavior changes."}
+{"skip":"Test orchestration and fixture synchronization only; no app behavior changes."}

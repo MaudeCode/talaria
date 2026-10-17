@@ -113,24 +113,27 @@ from the root at 1, 2, 4, and 8 workers, record wall duration and sampled peak p
 and compare receipt verdicts/counts and collected/executed node IDs. Repeat promising settings
 before choosing one; CPU count alone does not establish the fastest setting.
 
-Eight workers was selected in the [completed same-host comparison](https://github.com/MaudeCode/talaria/actions/runs/39069042876)
-at source `d2b6e13a422f8e152737d1928a6eac50c6570bc2`, with warmed immutable Agent v0.22.2,
-Python 3.14.3, and a four-CPU Linux runner. All 928 cases retained the same verdict, counts,
-node IDs, and skip set at every setting. Four and eight workers were repeated before selection.
+CI selected four workers in the [completed same-host comparison](https://github.com/MaudeCode/talaria/actions/runs/39075250998)
+at source `acb68fede353e0853c4b0bc2b88c3dd2c4ea5796`, with warmed immutable Agent v0.22.2,
+Python 3.14.3, and a four-CPU Linux runner. All 977 cases retained the same verdict, counts,
+node IDs, probe evidence, and skip set at every setting. Four and eight workers were repeated
+before selection.
 
 | Workers | Runs | Median wall seconds | Max sampled tree RSS MiB |
 |---:|---:|---:|---:|
-| 1 | 1 | 1038.959 | 514.3 |
-| 2 | 1 | 564.081 | 700.6 |
-| 4 | 2 | 487.290 | 914.9 |
-| 8 | 2 | 387.048 | 1343.6 |
+| 1 | 1 | 1017.198 | 510.5 |
+| 2 | 1 | 605.513 | 703.1 |
+| 4 | 2 | 403.149 | 1108.5 |
+| 8 | 2 | 404.066 | 1524.0 |
 
-Eight workers improved median wall duration 2.684x over serial and passed a fresh canonical run
-at 383.816s with 1372.3 MiB sampled peak tree RSS. The recorded memory budget was 11992.3 MiB
-(75% of host RAM). Separate full one/four/eight-worker comparisons on v0.22.0 and v0.22.1 also
-preserved all 928 node IDs, complete probe evidence, counts, and their version-specific skip sets.
-Eight workers improved those releases' wall durations 2.627x and 2.797x, respectively. The
-automatic local count stays capped at four; `TALARIA_SIDECAR_WORKERS=1` remains the serial escape hatch.
+Four workers improved median wall duration 2.523x over serial and passed a fresh canonical run
+at 403.330s with 1092.0 MiB sampled peak tree RSS. The recorded memory budget was 11991.5 MiB
+(75% of host RAM). Eight workers passed both repeats but provided no measured median improvement
+over four and used more memory; the close timings do not establish resource contention.
+Separate full one/four/eight-worker comparisons on v0.22.0 and v0.22.1 also preserved all 977
+node IDs, complete probe evidence, counts, and their version-specific skip sets. Four workers
+improved those releases' wall durations 2.467x and 2.568x, respectively. CI sets four explicitly;
+the automatic local count stays capped at four, and `TALARIA_SIDECAR_WORKERS=1` remains the serial escape hatch.
 
 ## Frontend tests
 
