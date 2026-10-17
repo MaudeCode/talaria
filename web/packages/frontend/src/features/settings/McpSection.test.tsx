@@ -23,7 +23,7 @@ function renderMcp() {
 describe('McpSection', () => {
   it('toggling a server PATCHes it and shows the status the server reports next', async () => {
     renderMcp()
-    const toggle = await screen.findByRole('switch', { name: 'github: Enabled' })
+    const toggle = await screen.findByRole('switch', { name: 'github' })
     const row = toggle.closest('li')!
     expect(within(row).getByText('Active')).toBeInTheDocument()
     expect(within(row).getByText('Unreachable')).toBeInTheDocument()
@@ -32,7 +32,7 @@ describe('McpSection', () => {
     await waitFor(() => expect(within(row).getByText('Disabled')).toBeInTheDocument())
     expect(within(row).queryByText('Active')).not.toBeInTheDocument()
     expect(within(row).queryByText('Unreachable')).not.toBeInTheDocument()
-    expect(within(row).getByRole('switch', { name: 'github: Disabled' })).not.toBeChecked()
+    expect(within(row).getByRole('switch', { name: 'github' })).not.toBeChecked()
   })
 
   it('search asks the server for matching tools and renders only its answer', async () => {

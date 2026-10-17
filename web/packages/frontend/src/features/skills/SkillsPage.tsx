@@ -28,7 +28,7 @@ export function SkillsPage() {
     return list.filter((s) => (!category || s.category === category) && (!q || s.name.toLowerCase().includes(q) || (s.description ?? '').toLowerCase().includes(q)))
   }, [list, query, category])
   const intents = useResourceIntents<boolean>()
-  const toggle = useResourceMutation({ resource: ({ name }: { name: string; enabled: boolean }) => `skill:${name}`, intent: ({ enabled }) => ({ value: enabled, label: m.save() }), queryKey: keys.skills.all, readKeys: () => [keys.skills.all], mutationFn: ({ name, enabled }: { name: string; enabled: boolean }) => api.toggleSkill(name, enabled), onError: (e) => showToast(e instanceof Error ? e.message : String(e), 4000, 'error') })
+  const toggle = useResourceMutation({ resource: ({ name }: { name: string; enabled: boolean }) => `skill:${name}`, intent: ({ enabled }) => ({ value: enabled, label: m.save() }), queryKey: keys.skills.all, readKeys: () => [{ queryKey: keys.skills.all, exact: true }], mutationFn: ({ name, enabled }: { name: string; enabled: boolean }) => api.toggleSkill(name, enabled), onError: (e) => showToast(e instanceof Error ? e.message : String(e), 4000, 'error') })
 
   if (selected) return <SkillDetail name={selected} onBack={() => setSelected(null)} />
   return (
@@ -65,7 +65,7 @@ export function SkillsPage() {
               {s.category && <span className="rounded-full border border-border px-2 py-0.5 text-[10px] uppercase tracking-wider text-muted">{s.category}</span>}
               {use > 0 && <span className="text-[11px] text-muted">{m.skill_uses({ n: use })}</span>}
               <span className="flex items-center gap-1 text-xs text-muted">
-                <ResourceSwitch intent={intents[`skill:${s.name}`]} checked={!s.disabled} onCheckedChange={(checked) => toggle.mutate({ name: s.name, enabled: checked })} aria-label={`${s.name}: ${s.disabled ? m.skill_disabled() : m.skill_enabled()}`} />
+                <ResourceSwitch intent={intents[`skill:${s.name}`]} checked={!s.disabled} onCheckedChange={(checked) => toggle.mutate({ name: s.name, enabled: checked })} aria-label={s.name} />
               </span>
             </li>
           )

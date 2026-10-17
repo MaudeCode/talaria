@@ -10,9 +10,14 @@ export function ResourcePending({ intent }: { intent: ResourceIntent | undefined
 }
 
 /** The existing switch with requested presentation; effective state stays in the server snapshot. */
-export function ResourceSwitch({ intent, checked, disabled, ...props }: ComponentProps<typeof Switch> & { intent: ResourceIntent<boolean> | undefined }) {
+export function ResourceSwitch({ intent, checked, disabled, stateLabel, ...props }: ComponentProps<typeof Switch> & { intent: ResourceIntent<boolean> | undefined; stateLabel?: (checked: boolean) => string }) {
+  const requested = intent?.value ?? checked
+  const control = <Switch {...props} checked={requested} disabled={disabled || !!intent} aria-busy={!!intent || undefined} />
   return <span className="inline-flex flex-wrap items-center justify-end gap-2">
     <ResourcePending intent={intent} />
-    <Switch {...props} checked={intent?.value ?? checked} disabled={disabled || !!intent} aria-busy={!!intent || undefined} />
+    {stateLabel ? <label className="inline-flex min-h-11 cursor-pointer items-center gap-1 text-xs text-muted">
+      {control}
+      <span aria-hidden="true">{stateLabel(!!requested)}</span>
+    </label> : control}
   </span>
 }

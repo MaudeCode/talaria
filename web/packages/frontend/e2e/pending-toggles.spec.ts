@@ -30,14 +30,18 @@ for (const kind of ['skill', 'mcp', 'extension', 'connector'] as const) {
     })
     await page.goto({ skill: '/skills', mcp: '/settings/system', extension: '/settings/extensions', connector: '/settings/connectors' }[kind])
     await settle(page)
-    const toggle = page.getByRole('switch', { name: /^alpha[: ]/ })
+    const toggle = page.getByRole('switch', { name: /^alpha(?:[: ]|$)/ })
     await toggle.scrollIntoViewIfNeeded()
-    await toggle.click()
+    if (kind === 'extension') {
+      const label = page.locator('[data-extension-id="alpha"] label')
+      expect((await label.boundingBox())!.height).toBeGreaterThanOrEqual(44)
+      await label.getByText('Disabled', { exact: true }).click()
+    } else await toggle.click()
     await writing
     try {
       await expect(toggle).toBeChecked({ timeout: 1000 })
       await expect(toggle).toHaveAttribute('aria-busy', 'true')
-      const peer = page.getByRole('switch', { name: /^beta[: ]/ })
+      const peer = page.getByRole('switch', { name: /^beta(?:[: ]|$)/ })
       if (kind === 'connector') await expect(peer).toBeDisabled()
       else await expect(peer).toBeEnabled()
       expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)
