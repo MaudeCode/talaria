@@ -91,6 +91,9 @@ recovery journal or removed PID marker is not exit proof.
 Service scenarios synchronize on live successor identity and terminal recovery completion.
 Real-process coverage also forces natural exit between liveness and identity probes;
 normal custody and live identity changes remain refusals in both verification modes.
+Direct Agent helpers inherit the sidecar's no-lazy-install policy, so native Git selection uses
+the available Git without provisioning PM in each disposable home. Tests that exercise bootstrap
+policy can explicitly override that default.
 
 One merged JUnit report remains beside each compatibility receipt. Per-case durations and
 failure/error/skip information are preserved, with slow tests and modules printed after the run.

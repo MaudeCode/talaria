@@ -65,6 +65,9 @@ def isolated_env(hermes_home: pathlib.Path, *, home: pathlib.Path | None = None,
         # A tirith scan downloads tirith into the home and leaves a detached
         # threat-DB updater writing there after the test ends.
         "TIRITH_ENABLED": "0",
+        # Direct Agent helpers use the sidecar's existing no-install policy too;
+        # otherwise native Git selection boots PM inside every disposable home.
+        "HERMES_DISABLE_LAZY_INSTALLS": "1",
     }
     # GitHub's relocated Linux Python (actions/setup-python) only loads libpython with this set.
     if os.environ.get("LD_LIBRARY_PATH"):

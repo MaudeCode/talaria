@@ -203,7 +203,9 @@ jobs:
               print('SELECTED', selected, 'median durations', timings, flush=True)
           else:
               trial(1, base / tag / 'serial.json')
-              selected = 4
+              trial(4, base / tag / 'four.json')
+              # Both promising counts are checked while active-pin tuning runs.
+              selected = 8
           # Preserve a fresh canonical compatibility receipt and report per release.
           trial(selected, base / f'{tag}.json')
           summary = Path(os.environ['GITHUB_STEP_SUMMARY'])
