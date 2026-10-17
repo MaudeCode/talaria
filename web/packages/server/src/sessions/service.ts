@@ -65,20 +65,21 @@ export async function ensureAgentRuntimeCurrent(sidecar: SidecarLike | null): Pr
 const CHAT_READINESS_CHECK_TIMEOUT_MS = 5_000
 
 /**
- * TAL-951: whether a chat turn would be admitted now. The sidecar status gives the verdict, and a ready sidecar also
- * runs turn admission's live loaded-revision check, since the Agent checkout can change after the handshake. A check
+ * TAL-951: whether a chat turn would be admitted now. Ready and source-stale incompatible sidecars both run turn
+ * admission's live check: recovery state can change after the handshake. A check
  * that cannot answer fails closed as `sidecar_unavailable`.
  */
 export async function currentChatReadiness(sidecar: SidecarLike | null): Promise<ChatReadiness> {
   const readiness = chatReadiness(sidecar)
-  if (!sidecar || !readiness.available) return readiness
+  if (!sidecar || (!readiness.available && readiness.condition !== 'agent_runtime_stale')) return readiness
   try {
     await sidecar.call('runtime.ensure_current', {}, { timeoutMs: CHAT_READINESS_CHECK_TIMEOUT_MS })
   } catch (error) {
     if (error instanceof SidecarError && error.condition === 'agent_runtime_stale') return { available: false, ...runtimeFailureDetails(error.condition, error.data), condition: 'agent_runtime_stale' }
     return { available: false, condition: error instanceof SidecarError && error.condition === 'agent_incompatible' ? 'agent_incompatible' : 'sidecar_unavailable' }
   }
-  return readiness
+  // The live guard can clear after a rollback, but the client's incompatible admission gate still refuses chat.
+  return readiness.available ? readiness : { available: false, ...runtimeFailureDetails('agent_runtime_stale'), condition: 'agent_runtime_stale' }
 }
 
 function staleRuntimeFailure(error: SidecarError): HttpFailure {

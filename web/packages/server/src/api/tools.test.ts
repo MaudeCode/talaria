@@ -1308,7 +1308,7 @@ describe('agent health chat readiness', () => {
         ['restarting', false, { available: false, condition: 'sidecar_unavailable' }],
         ['stopped', false, { available: false, condition: 'sidecar_unavailable' }],
         ['incompatible', false, { available: false, condition: 'agent_incompatible' }],
-        ['incompatible', true, { available: false, condition: 'agent_runtime_stale', agent_update_state: handshake.update_state, agent_runtime_reason: 'unknown', retryable: true, restart_scheduled: false }],
+        ['incompatible', true, { available: false, condition: 'agent_runtime_stale', agent_runtime_reason: 'unknown', retryable: true, restart_scheduled: false }],
       ]
       for (const [status, stale, expected] of cases) {
         sidecar.status = status

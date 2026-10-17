@@ -44,4 +44,28 @@ describe('Agent recovery readiness across HTTP and replay', () => {
       }
     } finally { await s.close() }
   })
+
+  it('refreshes recovery transitions for a stale incompatible handshake and fails closed on probe errors', async () => {
+    const sidecar = new FakeSidecar()
+    const s = await bootTestServer({ sidecar })
+    const chat = async () => (await (await s.get('/api/health/agent')).json() as { chat: unknown }).chat
+    sidecar.status = 'incompatible'
+    sidecar.describe = { ...sidecar.describe!, stale: true, update_state: 'active' }
+    try {
+      for (const [state, reason] of [['active', 'update_active'], ['incomplete', 'recovery_incomplete'], ['stale', 'unknown'], ['unknown', 'unknown'], ['unverified', 'source_changed']] as const) {
+        sidecar.respond('runtime.ensure_current', (_params, _emit, opts) => {
+          expect(opts.timeoutMs).toBeLessThanOrEqual(5_000)
+          throw new SidecarError('Agent updated successfully', { condition: 'agent_runtime_stale', data: { agent_update_state: state, agent_source_changed: true } })
+        })
+        expect(await chat()).toMatchObject({ available: false, condition: 'agent_runtime_stale', agent_update_state: state, agent_runtime_reason: reason })
+      }
+      // A restored source does not bypass the client's incompatible admission gate or reuse the old active verdict.
+      sidecar.respond('runtime.ensure_current', undefined)
+      expect(await chat()).toMatchObject({ available: false, condition: 'agent_runtime_stale', agent_runtime_reason: 'unknown' })
+      for (const error of [new SidecarError('probe timed out', { condition: 'sidecar_timeout' }), new Error('probe failed')]) {
+        sidecar.respond('runtime.ensure_current', () => { throw error })
+        expect(await chat()).toEqual({ available: false, condition: 'sidecar_unavailable' })
+      }
+    } finally { await s.close() }
+  })
 })
