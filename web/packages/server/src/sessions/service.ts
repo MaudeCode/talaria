@@ -25,7 +25,7 @@ import { auditSessionRecovery, repairSafeSessionRecovery, type RecoveryDeps } fr
 import { agentSessionRowsExisting, agentSessionRowsExistingAsync, CANONICAL_READ_ONLY_REASON, OWNERSHIP_UNAVAILABLE_REASON, CONVERSATION_ROUND_THRESHOLD, countConversationRounds, stateDbCompressionLineage, stateDbTailToolContent, stateDbLineageReport, stateDbLocalTarget, stateDbSessionMessages, stateDbSessionRead, stateDbSessionTailRead, stateDbSessionRow, stateDbSessionSources, stateDbSessionSourcesAsync, stateDbTimestampSeconds, type StateDbRead, type StateDbSessionSource } from './state-db.js'
 import { completionIncomplete, fallbackHandoffSummary, HANDOFF_SYSTEM_PROMPT, handoffMarker, handoffPayload, handoffTranscript, messageHandoffPayload, sameHandoff } from './handoff.js'
 import { anchorMessageKey, anchorSummary, CompressionJobs, compressionReference, visibleMessagesForAnchor, type CompressionJob } from './compress.js'
-import { chatReadiness, SidecarError, type SidecarLike } from '../sidecar/client.js'
+import { chatReadiness, runtimeFailureDetails, SidecarError, type SidecarLike } from '../sidecar/client.js'
 import { agentSteerText, ApiMessageSummary, appendStateDbIdentityRows, attachedFilesPrompt, attachmentObjects, checkpointTurnStart, dedupeContext, isContextCompressionMarker, journalOutputRows, looksLikeCurrentUserTurn, stoppedTurnContext, mergeSessionMessagesAppendOnly, messageIdentity, pendingUserRow, reasoningFieldsText, sanitizeMessagesForApi, stateDbSeenId, stripWorkspacePrefix, withAttachmentObjects, withBodyExcerpts, withDisplayMedia, withMarkerKinds, withMirrorSources, withSceneRowMedia, withPendingUserTurn, withToolCallOutcomes, withoutRunningTurnOutput, type ToolResultView } from './merge.js'
 import { withBackgroundUpdates } from './background-updates.js'
 import { markedStateDbGeneration, stateDbIdentityKeys, stampStateDbGeneration, stateDbMessageRepresented } from './state-db-identity.js'
@@ -75,13 +75,14 @@ export async function currentChatReadiness(sidecar: SidecarLike | null): Promise
   try {
     await sidecar.call('runtime.ensure_current', {}, { timeoutMs: CHAT_READINESS_CHECK_TIMEOUT_MS })
   } catch (error) {
-    return { available: false, condition: error instanceof SidecarError && error.condition === 'agent_runtime_stale' ? 'agent_runtime_stale' : 'sidecar_unavailable' }
+    if (error instanceof SidecarError && error.condition === 'agent_runtime_stale') return { available: false, ...runtimeFailureDetails(error.condition, error.data), condition: 'agent_runtime_stale' }
+    return { available: false, condition: error instanceof SidecarError && error.condition === 'agent_incompatible' ? 'agent_incompatible' : 'sidecar_unavailable' }
   }
   return readiness
 }
 
 function staleRuntimeFailure(error: SidecarError): HttpFailure {
-  return new HttpFailure(409, error.message, { type: 'agent_runtime_stale', retryable: true, restart_scheduled: false, ...(error.data.agent_update_state !== undefined ? { agent_update_state: error.data.agent_update_state } : {}) })
+  return new HttpFailure(409, error.message, runtimeFailureDetails(error.condition, error.data))
 }
 
 export interface SessionServiceDeps {

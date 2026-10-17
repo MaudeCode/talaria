@@ -27,11 +27,8 @@ from . import SIDECAR_RPC_VERSION
 from .errors import RpcError
 
 PIN_PATH = Path(__file__).resolve().parent.parent / "agent_dependency.json"
-_RESTART_REQUIRED_MESSAGE = (
-    "Hermes Agent was updated while Talaria Web was running. "
-    "Talaria Web cannot verify that the Agent update completed safely. "
-    "Check the Agent update outcome and environment first. "
-    "Restart Talaria Web manually before retrying this action."
+_RUNTIME_UNAVAILABLE_MESSAGE = (
+    "Agent runtime is unavailable. Check the Agent update outcome before retrying this action."
 )
 _AGENT_UPDATE_MARKER = ".hermes-update-in-progress"
 _AGENT_RECOVERY_MARKERS = (".update-incomplete", ".lazy-refresh-incomplete")
@@ -43,10 +40,15 @@ _MARKER_SAFE_OPEN_AVAILABLE = bool(_O_NOFOLLOW) and bool(_O_NONBLOCK)
 
 
 class AgentRuntimeStale(RpcError):
-    def __init__(self, update_state: str | None, message: str = _RESTART_REQUIRED_MESSAGE):
-        data = {"retryable": True, "restart_scheduled": False}
+    def __init__(self, update_state: str | None, message: str | None = None, *, source_changed: bool = False):
+        data = {"retryable": True, "restart_scheduled": False, "agent_source_changed": source_changed}
         if update_state is not None:
             data["agent_update_state"] = update_state
+        if message is None:
+            message = {
+                "active": "Agent update is in progress. Wait for it to finish before starting new work.",
+                "incomplete": "Agent update recovery is incomplete. Finish the Agent update before starting new work.",
+            }.get(update_state, _RUNTIME_UNAVAILABLE_MESSAGE)
         super().__init__(message, condition="agent_runtime_stale", data=data)
 
 
@@ -266,6 +268,7 @@ class AgentRuntime:
         self.hermes_home = Path(hermes_home)
         self._stale_lock = threading.Lock()
         self._stale = False
+        self._source_changed = False
         self._stale_stamp: tuple | None = None
         self.agent_dir = Path(agent_dir).resolve() if agent_dir else None
         self.pin = read_pin()
@@ -324,8 +327,8 @@ class AgentRuntime:
 
     def update_transaction_state(self) -> str:
         live = _read_live_agent_update(self.hermes_home / _AGENT_UPDATE_MARKER)
-        if live == "unknown":
-            return "unknown"
+        if live in {"unknown", "active"}:
+            return live
         repair = self.web_repair_state()
         if repair == "unknown":
             return "unknown"
@@ -373,6 +376,7 @@ class AgentRuntime:
                     fresh = None
                 if fresh is not None:
                     break
+            self._source_changed = fresh is not None and fresh != self.revision
             self._stale = fresh != self.revision
             self._stale_stamp = stamp if fresh is not None else None
             return self._stale
@@ -381,10 +385,9 @@ class AgentRuntime:
         """Refuse Agent work until source drift or a durable Web update obligation is reconciled."""
         repair = self.web_repair_state()
         if repair != "absent":
-            raise AgentRuntimeStale("unknown" if repair == "unknown" else "incomplete",
-                                    "Agent update recovery is incomplete. Finish the Agent update before starting new work.")
+            raise AgentRuntimeStale("unknown" if repair == "unknown" else self.update_transaction_state())
         if self.is_stale():
-            raise AgentRuntimeStale(self.update_transaction_state())
+            raise AgentRuntimeStale(self.update_transaction_state(), source_changed=self._source_changed)
 
     # ── handshake ─────────────────────────────────────────────────────────
     def describe(self) -> dict:
@@ -402,6 +405,7 @@ class AgentRuntime:
             "pinned_image": self.pin["image"],
             "compatible": self.loaded,
             "stale": self.is_stale(),
+            "agent_source_changed": self._source_changed,
             "update_state": self.update_transaction_state(),
             "import_error": self.import_error,
         }

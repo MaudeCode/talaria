@@ -1,6 +1,6 @@
 import { oc } from '@orpc/contract'
 import { z } from 'zod'
-import { LoginResponseSchema } from '../views.js'
+import { AgentRuntimeMetadataSchema, LoginResponseSchema } from '../views.js'
 
 /**
  * Core routes: liveness, the public bootstrap document, and password
@@ -10,7 +10,7 @@ import { LoginResponseSchema } from '../views.js'
 
 const NullableString = z.string().nullable()
 
-export const ErrorBodySchema = z.object({ error: z.string() }).catchall(z.unknown())
+export const ErrorBodySchema = z.object({ error: z.string(), condition: z.string().optional(), type: z.string().optional(), ...AgentRuntimeMetadataSchema.shape }).catchall(z.unknown())
 export type ErrorBody = z.infer<typeof ErrorBodySchema>
 
 export const AuthStatusSchema = z.object({

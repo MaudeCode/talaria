@@ -1,5 +1,5 @@
 import { z } from 'zod'
-import { ClarifyStepSchema, VaultPromptSchema, ConnectorOperationViewSchema, ContextUsageFields, PendingSteerSchema, SessionGoalSchema, SessionNoticeSchema, SteerWithdrawnSchema, ToolDisplayFields, ToolResultViewSchema, TodoStateSchema, TurnTerminalStateSchema } from './views.js'
+import { AgentRuntimeMetadataSchema, ClarifyStepSchema, VaultPromptSchema, ConnectorOperationViewSchema, ContextUsageFields, PendingSteerSchema, SessionGoalSchema, SessionNoticeSchema, SteerWithdrawnSchema, ToolDisplayFields, ToolResultViewSchema, TodoStateSchema, TurnTerminalStateSchema } from './views.js'
 
 /**
  * Wire events of `GET /api/chat/stream` and the per-session relay
@@ -22,7 +22,7 @@ const Compression = z.looseObject({ session_id: z.string().optional(), old_sessi
 const Compressing = Compression.extend({ started_at: z.number().optional() })
 const Title = z.looseObject({ session_id: z.string().optional(), title: z.string().optional(), status: z.string().optional(), reason: z.string().optional(), message: z.string().optional(), message_key: z.string().optional(), message_args: z.array(z.unknown()).optional(), raw_preview: z.string().optional(), prefill: z.unknown().optional() })
 const Warning = z.looseObject({ type: z.string().optional(), message: z.string().optional() })
-const AppError = z.looseObject({ terminal_state: TurnTerminalStateSchema.optional(), type: z.string().optional(), message: z.string().optional(), details: z.unknown().optional(), hint: z.string().optional(), session_id: z.string().optional(), old_session_id: z.string().optional(), new_session_id: z.string().optional(), continuation_session_id: z.string().optional(), status: z.union([z.string(), z.number()]).optional(), session: z.unknown().optional(), code: z.string().optional() })
+const AppError = z.looseObject({ ...AgentRuntimeMetadataSchema.shape, condition: z.string().optional(), terminal_state: TurnTerminalStateSchema.optional(), type: z.string().optional(), message: z.string().optional(), details: z.unknown().optional(), hint: z.string().optional(), session_id: z.string().optional(), old_session_id: z.string().optional(), new_session_id: z.string().optional(), continuation_session_id: z.string().optional(), status: z.union([z.string(), z.number()]).optional(), session: z.unknown().optional(), code: z.string().optional() })
 /** `usage`: the session's token counters and turn timings, with the same context-ring figures as `session` (TAL-299). */
 const Done = z.looseObject({ terminal_state: TurnTerminalStateSchema.optional(), session: z.unknown().optional(), usage: z.looseObject(ContextUsageFields).optional(), status: z.string().optional(), ephemeral: z.boolean().optional(), answer: z.string().optional() })
 const Cancel = z.looseObject({ terminal_state: TurnTerminalStateSchema.optional(), type: z.string().optional(), message: z.string().optional(), hint: z.string().optional(), status: z.string().optional(), session_id: z.string().optional(), session: z.unknown().optional() })

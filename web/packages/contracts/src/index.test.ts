@@ -3,11 +3,28 @@ import { describe, expect, it } from 'vitest'
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { z } from 'zod'
-import { ChatEventSchema, ClarifyPendingEnvelopeSchema, MemoryWriteRefusalSchema, ModelsSchema, SIDECAR_RPC_VERSION, SkillsSchema, SpeechPrepareSchema, TranscribeResponseSchema, TranscribeStreamEndSchema, TranscribeStreamEventSchema, TranscribeStreamStartSchema, UpdatesCheckSchema, UpdateNotificationsSchema, UpdateApplySchema, SteerSendNowResponseSchema } from './index.js'
+import { AgentHealthSchema, ErrorBodySchema, ChatEventSchema, ClarifyPendingEnvelopeSchema, MemoryWriteRefusalSchema, ModelsSchema, SIDECAR_RPC_VERSION, SkillsSchema, SpeechPrepareSchema, TranscribeResponseSchema, TranscribeStreamEndSchema, TranscribeStreamEventSchema, TranscribeStreamStartSchema, UpdatesCheckSchema, UpdateNotificationsSchema, UpdateApplySchema, SteerSendNowResponseSchema } from './index.js'
 
 const shared = (path: string): unknown => JSON.parse(readFileSync(resolve(import.meta.dirname, '../../../../contracts', path), 'utf8'))
 
 describe('contracts package', () => {
+  it('preserves the shared readiness projection across health, refusal, and replay', () => {
+    const fixture = shared('fixtures/chat-readiness.json') as { recovery: { health: unknown; http: unknown; event: unknown }[]; completed_update: unknown; legacy: unknown }
+    for (const row of fixture.recovery) {
+      const health = AgentHealthSchema.parse(row.health)
+      const http = ErrorBodySchema.parse(row.http)
+      const event = ChatEventSchema.parse(row.event)
+      expect(health.chat?.available).toBe(false)
+      if (!health.chat || health.chat.available || event.event !== 'apperror') throw new Error('invalid recovery fixture')
+      for (const key of ['agent_runtime_reason', 'agent_update_state', 'retryable', 'restart_scheduled'] as const) {
+        expect(http[key]).toEqual(health.chat[key])
+        expect(event.data[key]).toEqual(health.chat[key])
+      }
+    }
+    expect(AgentHealthSchema.parse(fixture.completed_update).chat).toEqual({ available: true, condition: null })
+    expect(AgentHealthSchema.parse(fixture.legacy).chat).toEqual({ available: false, condition: 'agent_runtime_stale' })
+  })
+
   it('accepts all five explicit background review states and additive older rows (TAL-1022)', () => {
     const fixture = shared('fixtures/background-review.json') as { messages: unknown[] }
     const messages = fixture.messages.map((m) => MessageSchema.parse(m))

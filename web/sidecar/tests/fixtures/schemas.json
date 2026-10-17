@@ -80,6 +80,9 @@
       "stale": {
         "type": "boolean"
       },
+      "agent_source_changed": {
+        "type": "boolean"
+      },
       "update_state": {
         "type": "string",
         "enum": [
@@ -162,6 +165,9 @@
         "type": "boolean"
       },
       "stale": {
+        "type": "boolean"
+      },
+      "agent_source_changed": {
         "type": "boolean"
       },
       "update_state": {

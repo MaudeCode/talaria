@@ -848,10 +848,18 @@ export const ProjectOsDashboardSchema = z.object({
   onboarding: z.looseObject({ active: z.boolean(), doc_source: z.enum(['project-os', 'root']) }).optional(), goal_summary: z.string(),
 })
 export type ProjectOsDashboard = z.infer<typeof ProjectOsDashboardSchema>
+/** One server projection used by chat readiness, HTTP refusals, and persisted stream errors. */
+export const AgentRuntimeMetadataSchema = z.object({
+  agent_runtime_reason: z.enum(['update_active', 'recovery_incomplete', 'source_changed', 'unknown']).optional(),
+  agent_update_state: z.string().optional(),
+  retryable: z.boolean().optional(),
+  restart_scheduled: z.boolean().optional(),
+})
+export type AgentRuntimeMetadata = z.infer<typeof AgentRuntimeMetadataSchema>
 /** TAL-951: whether Web chat can run, from the Agent sidecar's status; `condition` says why not, null when available. */
 export const ChatReadinessSchema = z.discriminatedUnion('available', [
   z.object({ available: z.literal(true), condition: z.null() }),
-  z.object({ available: z.literal(false), condition: z.enum(['sidecar_unavailable', 'agent_incompatible', 'agent_runtime_stale']) }),
+  z.object({ available: z.literal(false), condition: z.enum(['sidecar_unavailable', 'agent_incompatible', 'agent_runtime_stale']), ...AgentRuntimeMetadataSchema.shape }),
 ])
 export type ChatReadiness = z.infer<typeof ChatReadinessSchema>
 /** Messaging-gateway liveness (`alive`, `details`, `gateway_chat`) for Settings → System, plus Web chat readiness in `chat`. */
