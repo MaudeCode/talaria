@@ -113,6 +113,21 @@ verified runtime is excluded from bare discovery. Parent chains, canonical
 process identities and native birth stamps are bracketed and rechecked before
 custody and stop; unrelated descendants and ambiguous ownership still refuse.
 
+Discovery, recovery readiness and custody binding share a four-attempt process
+sampler. Each attempt brackets repeated birth and, when binding, canonical
+identity probes with complete ancestry inventories. A non-anchor descendant
+that the native liveness reader definitively reports exited triggers a fresh
+sample of all remaining live writers. Unreaped dead children are rechecked at
+every inventory; unknown liveness never counts as exited. Newly discovered
+children must be attested on a fresh attempt. Observed parent and birth
+identities survive retries, so reparenting, recycled PIDs, changed supervisor or
+runtime anchors, and live unreadable identities refuse custody. Persistent
+churn exhausts the budget with a retryable error and leaves source/recovery
+obligations intact. Stop verification permits departure only after stopping is
+already authorized, rechecks a failed identity probe for that exit race, and
+refreshes the final ancestry inventory to reject new descendants. Its separate
+supervisor-respawn guard remains in force.
+
 Supervised dashboard/serve writers from the same installation's native ledger
 join that same lease. Native loaded launchd inventory and systemd MainPID
 ownership identify their exact supervisor. Admission and recovery share the same
