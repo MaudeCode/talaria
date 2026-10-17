@@ -2,7 +2,7 @@ import SwiftUI
 import UIKit
 import XCTest
 @testable import Talaria
-import TalariaKit
+@testable import TalariaKit
 
 /// The fixture chat's media, long bodies, background work and pending steers, hosted in process (TAL-856).
 @MainActor
@@ -29,7 +29,7 @@ final class ChatHostedTests: XCTestCase {
         let fixture = try FixtureApp(["--ui-test-hold-transcript-reloads", "--ui-test-goal"], for: self)
         let session = try await fixture.session()
         let window = try hostWindow(fixture.chat(session), size: CGSize(width: 320, height: 844))
-        _ = try await requireElement(in: window) { $0.accessibilityLabel?.hasPrefix("Fixture message 1 ") == true }
+        _ = try await requireElement(in: window, where: FixtureApp.isLoadedTranscriptRow)
         _ = try await requireElement(in: window) { $0.accessibilityLabel?.hasPrefix("Goal parked") == true }
         NotificationCenter.default.post(name: .talariaReauthenticated, object: UITestFixtureEnvironment.serverURL)
         _ = try await requireElement(in: window, label: "Syncing messages with the server")
@@ -118,16 +118,200 @@ final class ChatHostedTests: XCTestCase {
     }
 
     /// Very long bodies open collapsed to the server's excerpts and expand and collapse in place (TAL-456).
+    func testHistoryInsertionKeepsRenderedReaderStillInTheFullChat() async throws {
+        try await assertFullChatHistoryInsertion(expandDisclosure: false)
+    }
+
+    func testHistoryInsertionKeepsExpandedReaderStillInTheFullChat() async throws {
+        try await assertFullChatHistoryInsertion(expandDisclosure: true)
+    }
+
+    func testTranscriptScrollViewWaitsForNativeAttachmentAfterTextAppears() throws {
+        let window = try hostWindow(Text("History answer 1999."))
+        let scroll = UIScrollView(frame: window.bounds)
+        let host = ChatMessageMenuHostView(registry: ChatMessageMenuRegistry())
+        let timer = Timer.scheduledTimer(withTimeInterval: 0.02, repeats: false) { _ in
+            MainActor.assumeIsolated {
+                scroll.addSubview(host)
+                window.addSubview(scroll)
+            }
+        }
+        defer { timer.invalidate() }
+        XCTAssertTrue(try transcriptScrollView(in: window) === scroll,
+                      "Visible text can precede the transcript's native attachment")
+    }
+
+    func testHistoryInsideALongTurnPreservesTheExpandedWorkAndReader() async throws {
+        try await assertFullChatHistoryInsertion(expandDisclosure: true, boundaryTurn: true)
+    }
+
+    private func assertFullChatHistoryInsertion(expandDisclosure: Bool, boundaryTurn: Bool = false) async throws {
+        var scenario = [UITestFixtureEnvironment.historyPagingArgument,
+                        UITestFixtureEnvironment.holdTranscriptReloadsArgument]
+        if boundaryTurn { scenario.append(UITestFixtureEnvironment.historyTurnBoundaryArgument) }
+        else if expandDisclosure { scenario.append(UITestFixtureEnvironment.longPromptArgument) }
+        let fixture = try FixtureApp(scenario, for: self)
+        let window = try hostWindow(fixture.chat(try await fixture.session()))
+        _ = try await requireElement(in: window) { $0.accessibilityLabel?.hasPrefix("History answer 1999.") == true }
+        let scroll = try transcriptScrollView(in: window)
+        let coordinator = try XCTUnwrap(window.firstView(ofType: ChatScrollObserver.ObserverView.self)?.coordinator)
+        let controller = try XCTUnwrap(coordinator.scrollPositionController)
+        coordinator.onFollowEvent(.userScrollBegin)
+        let readerID = boundaryTurn ? "history-1959" : "history-1954"
+        let decoder = JSONDecoder()
+        decoder.keyDecodingStrategy = .convertFromSnakeCase
+        let initialPage = try decoder.decode([ChatMessage].self, from: JSONSerialization.data(
+            withJSONObject: UITestFixtureURLProtocol.historyMessages(from: 1_950, to: 2_000)))
+        let readerRow = try XCTUnwrap(ChatViewModel.transcriptMessages(from: initialPage, messageOffset: 1_950)
+            .first { $0.message.messageId == readerID })
+        controller.onHoldAnchor?(ChatTranscriptView.containerID(for: readerRow.renderID), boundaryTurn ? .top : .center)
+        let held = await awaitCondition { UITestFixtureHold.shared.pendingCount > 0 }
+        XCTAssertTrue(held, "The real view model must request its older page before measuring insertion")
+        if expandDisclosure {
+            if boundaryTurn {
+                HostedAccessibility.activate(try await requireElement(in: window) {
+                    $0.accessibilityLabel == "Worked" && $0.accessibilityHint == "Double tap to expand work."
+                })
+                _ = try await requireElement(in: window) { $0.accessibilityLabel?.hasPrefix("Boundary work 0.") == true }
+            } else {
+                HostedAccessibility.activate(try await requireElement(in: window, label: "Show more"))
+                _ = try await requireElement(in: window, label: "Show less")
+            }
+            let settled = await awaitCondition { !controller.isHoldingPosition }
+            XCTAssertTrue(settled)
+        }
+        let reader: NSObject
+        if boundaryTurn {
+            reader = try await requireElement(in: window) { $0.accessibilityLabel?.hasPrefix("Boundary work 0.") == true }
+        } else if expandDisclosure {
+            reader = try await requireElement(in: window) { $0.accessibilityLabel?.hasPrefix("Fixture prompt line 1\n") == true }
+        } else {
+            reader = try await requireElement(in: window, label: "History prompt 1954.")
+        }
+        try await Task.sleep(for: .milliseconds(200))
+        let viewport = window.convert(scroll.bounds, from: scroll).intersection(window.bounds)
+        let frame = window.convert(reader.accessibilityFrame, from: nil).intersection(viewport)
+        XCTAssertFalse(frame.isEmpty, "The reader must be visibly on screen before releasing the page")
+        let point = CGPoint(x: frame.midX, y: frame.midY)
+        let registry = try messageMenuRegistry(in: window)
+        let before = try XCTUnwrap(registry.hit(at: scroll.convert(point, from: window), in: scroll))
+        XCTAssertEqual(before.content.messageID, readerID)
+        let oldHeight = scroll.contentSize.height
+        var samples: [[String: Double]] = []
+        var largestMovement: CGFloat = 0
+        var missingReader = false
+        var previousTick = ProcessInfo.processInfo.systemUptime
+        let updateLink = UIUpdateLink(windowScene: try XCTUnwrap(window.windowScene))
+        updateLink.addAction(to: .afterUpdateComplete) { _, _ in
+            guard samples.count < 120 else { return }
+            let now = ProcessInfo.processInfo.systemUptime
+            let hit = registry.hit(at: scroll.convert(point, from: window), in: scroll)
+            let delta = (hit?.localPoint.y ?? 0) - before.localPoint.y
+            if hit?.content.messageID != before.content.messageID { missingReader = true }
+            else { largestMovement = max(largestMovement, abs(delta)) }
+            samples.append(["gapMilliseconds": (now - previousTick) * 1_000,
+                            "readerDelta": Double(delta), "offset": Double(scroll.contentOffset.y),
+                            "height": Double(scroll.contentSize.height),
+                            "messageIndex": Double(Int(hit?.content.messageID.replacingOccurrences(of: "history-", with: "") ?? "") ?? -1)])
+            previousTick = now
+        }
+        updateLink.isEnabled = true
+        defer { updateLink.isEnabled = false }
+        fixture.releaseHeldLoads()
+        try await Task.sleep(for: .milliseconds(1_500))
+        XCTAssertGreaterThan(samples.count, 0, "The test must observe committed display frames")
+        updateLink.isEnabled = false
+        coordinator.onFollowEvent(.userScrollEnd(isAtBottom: false))
+        let data = try JSONSerialization.data(withJSONObject: samples, options: [.prettyPrinted, .sortedKeys])
+        let attachment = XCTAttachment(data: data, uniformTypeIdentifier: "public.json")
+        attachment.name = "Full chat history insertion frames"; attachment.lifetime = .keepAlways; add(attachment)
+        attachHistoryImage(window, name: "Full chat after history insertion")
+        XCTAssertGreaterThan(scroll.contentSize.height, oldHeight + 500, "The older page must actually render")
+        XCTAssertFalse(missingReader, "Insertion must keep the same rendered message under the reader throughout layout")
+        XCTAssertLessThanOrEqual(largestMovement, 2, "Insertion must not visibly jump before settling")
+        if expandDisclosure {
+            if boundaryTurn {
+                XCTAssertNotNil(HostedAccessibility.elements(in: window).first {
+                    $0.accessibilityLabel == "Worked" && $0.accessibilityHint == "Double tap to collapse work."
+                }, "Paging inside a turn must retain its expanded work")
+            } else {
+                XCTAssertNotNil(HostedAccessibility.element(in: window, label: "Show less"),
+                                "A page must preserve the expanded disclosure state")
+            }
+        }
+    }
+
     func testLongBodiesOpenCollapsedAndExpandInPlace() async throws {
         let window = try await hostFixtureChat(["--ui-test-long-bodies"])
-        _ = try await requireElement(in: window, label: "Show more", "A long body did not open collapsed")
-        let showMore = try XCTUnwrap(elements(named: "Show more", in: window).last)
-        XCTAssertEqual(try messageMenuTarget(at: showMore, in: window), .control, "A long press on Show more opens the message menu")
-        HostedAccessibility.activate(showMore)
-        let showLess = try await requireElement(in: window, label: "Show less", "The collapsed body did not expand")
-        HostedAccessibility.activate(showLess)
-        let collapsed = await awaitNoElement(in: window) { $0.accessibilityLabel == "Show less" }
-        XCTAssertTrue(collapsed, "The expanded body did not collapse again")
+        // Lazy layout exposes controls only near the viewport. Exercise the
+        // actual route to the end of a 100k-character expanded body.
+        for cycle in 1...3 {
+            _ = try await requireElement(in: window, label: "Short reply 25.")
+            let scroll = try transcriptScrollView(in: window)
+            let controller = try XCTUnwrap(window.firstView(ofType: ChatScrollObserver.ObserverView.self)?.coordinator?.scrollPositionController)
+            var previousTailFrame: CGRect?
+            var stableEntrySamples = 0
+            let entered = await awaitCondition {
+                let viewport = window.convert(scroll.bounds, from: scroll).intersection(window.bounds)
+                guard !controller.isHoldingPosition,
+                      let tail = self.elements(named: "Short reply 25.", in: window).first(where: {
+                          viewport.intersects(window.convert($0.accessibilityFrame, from: nil))
+                      }) else { stableEntrySamples = 0; return false }
+                let frame = window.convert(tail.accessibilityFrame, from: nil)
+                stableEntrySamples = frame == previousTailFrame ? stableEntrySamples + 1 : 0
+                previousTailFrame = frame
+                return stableEntrySamples >= 5
+            }
+            XCTAssertTrue(entered, "The latest row must finish entry before toggling the last body")
+            let latestDisclosure = await awaitElement(in: window) { element in
+                guard element.accessibilityLabel == "Show more" else { return false }
+                let viewport = window.convert(scroll.bounds, from: scroll).intersection(window.bounds)
+                return viewport.intersects(window.convert(element.accessibilityFrame, from: nil))
+                    && (try? self.messageMenuHit(at: element, in: window)?.content.messageID) == "long-body-user-48"
+            }
+            let showMore = try XCTUnwrap(latestDisclosure, "The last 100k-character body must be visible at entry")
+            XCTAssertEqual(try messageMenuTarget(at: showMore, in: window), .control, "A long press on Show more opens the message menu")
+            let controlFrame = window.convert(showMore.accessibilityFrame, from: nil)
+            let readerPoint = CGPoint(x: controlFrame.midX, y: controlFrame.midY)
+            let beforeHit = try XCTUnwrap(messageMenuHit(at: readerPoint, in: window))
+            let beforeHeight = beforeHit.rowSize.height
+            HostedAccessibility.activate(showMore)
+            let expanded = await awaitCondition {
+                guard let hit = try? self.messageMenuHit(at: readerPoint, in: window), hit.content.messageID == beforeHit.content.messageID else { return false }
+                return hit.rowSize.height > beforeHeight + 1_000
+            }
+            XCTAssertTrue(expanded, "Cycle \(cycle): the full body must expand beyond its excerpt")
+            let settled = await awaitCondition { !controller.isHoldingPosition }
+            XCTAssertTrue(settled)
+            attachHistoryImage(window, name: "Expansion layout, cycle \(cycle)")
+            let afterHit = try XCTUnwrap(messageMenuHit(at: readerPoint, in: window), "Expansion left no message under the reader; offset=\(scroll.contentOffset.y), height=\(scroll.contentSize.height), point=\(readerPoint)")
+            XCTAssertEqual(afterHit.content.messageID, beforeHit.content.messageID)
+            XCTAssertEqual(afterHit.localPoint.y, beforeHit.localPoint.y, accuracy: 2, "Cycle \(cycle): expansion moved the visible body")
+            let expandedHeight = afterHit.rowSize.height
+            attachHistoryImage(window, name: "Expanded large body, cycle \(cycle)")
+            // The collapse control follows the full body; reach it as a user does.
+            let jump = try await requireElement(in: window, label: "Scroll to latest message")
+            XCTAssertTrue(HostedAccessibility.activate(jump))
+            let visibleCollapse = await awaitElement(in: window) { element in
+                let viewport = window.convert(scroll.bounds, from: scroll).intersection(window.bounds)
+                return element.accessibilityLabel == "Show less"
+                    && viewport.intersects(window.convert(element.accessibilityFrame, from: nil))
+            }
+            let showLess = try XCTUnwrap(visibleCollapse, "The collapse control must become visible after native scrolling")
+            HostedAccessibility.activate(showLess)
+            let collapsed = await awaitCondition {
+                let viewport = window.convert(scroll.bounds, from: scroll).intersection(window.bounds)
+                return self.elements(named: "Show more", in: window).contains { element in
+                    guard viewport.intersects(window.convert(element.accessibilityFrame, from: nil)),
+                          let hit = try? self.messageMenuHit(at: element, in: window),
+                          hit.content.messageID == beforeHit.content.messageID else { return false }
+                    return hit.rowSize.height < expandedHeight - 1_000 && abs(hit.rowSize.height - beforeHeight) <= 2
+                }
+            }
+            XCTAssertTrue(collapsed, "The expanded body did not collapse again")
+            let removed = await awaitNoElement(in: window) { $0.accessibilityLabel == "Show less" }
+            XCTAssertTrue(removed)
+        }
         // An unfocused composer is its collapsed "Message" shell.
         let composer = await awaitElement(in: window, label: "Message")
         XCTAssertNotNil(composer, "The composer went away")
@@ -337,21 +521,32 @@ final class ChatHostedTests: XCTestCase {
 
     /// The message row a long press at `element`'s centre lands on, from the press handler's own registry.
     private func messageMenuHit(at element: NSObject, in window: UIWindow) throws -> ChatMessageMenuRegistry.Hit? {
+        let frame = window.convert(element.accessibilityFrame, from: nil)
+        return try messageMenuHit(at: CGPoint(x: frame.midX, y: frame.midY), in: window)
+    }
+
+    private func messageMenuHit(at point: CGPoint, in window: UIWindow) throws -> ChatMessageMenuRegistry.Hit? {
+        let registry = try messageMenuRegistry(in: window)
+        let scrollView = try transcriptScrollView(in: window)
+        return registry.hit(at: scrollView.convert(point, from: window), in: scrollView)
+    }
+
+    private func messageMenuRegistry(in window: UIWindow) throws -> ChatMessageMenuRegistry {
         let host = try XCTUnwrap(window.firstView(ofType: ChatMessageMenuHostView.self), "The transcript has no long-press handler")
         let stored = Dictionary(uniqueKeysWithValues: Mirror(reflecting: host).children.compactMap { child in
             child.label.map { ($0, child.value) }
         })
-        let registry = try XCTUnwrap(stored["registry"] as? ChatMessageMenuRegistry)
-        let scrollView = try transcriptScrollView(in: window)
-        let frame = window.convert(element.accessibilityFrame, from: nil)
-        let point = scrollView.convert(CGPoint(x: frame.midX, y: frame.midY), from: window)
-        return registry.hit(at: point, in: scrollView)
+        return try XCTUnwrap(stored["registry"] as? ChatMessageMenuRegistry)
     }
 
     private func transcriptScrollView(in window: UIWindow) throws -> UIScrollView {
-        let host = try XCTUnwrap(window.firstView(ofType: ChatMessageMenuHostView.self))
-        return try XCTUnwrap(host.superview.flatMap {
-            sequence(first: $0, next: \.superview).first { $0 is UIScrollView } as? UIScrollView
-        })
+        var scroll: UIScrollView?
+        waitUntil {
+            scroll = window.firstView(ofType: ChatMessageMenuHostView.self)?.superview.flatMap {
+                sequence(first: $0, next: \.superview).first { $0 is UIScrollView } as? UIScrollView
+            }
+            return scroll != nil
+        }
+        return try XCTUnwrap(scroll, "The transcript's native scroll handler did not attach")
     }
 }

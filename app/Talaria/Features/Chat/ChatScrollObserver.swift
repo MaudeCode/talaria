@@ -9,23 +9,26 @@ import TalariaKit
 struct ChatScrollObserver: UIViewRepresentable {
     let isStreaming: Bool
     let scrollPositionController: ChatScrollPositionController?
+    let contentRevision: Int
     let onFollowEvent: @MainActor (ChatScrollPolicy.FollowEvent) -> Void
     let onMetrics: @MainActor (ChatScrollMetrics) -> Void
 
     init(
         isStreaming: Bool,
         scrollPositionController: ChatScrollPositionController? = nil,
+        contentRevision: Int = 0,
         onFollowEvent: @escaping @MainActor (ChatScrollPolicy.FollowEvent) -> Void = { _ in },
         onMetrics: @escaping @MainActor (ChatScrollMetrics) -> Void
     ) {
         self.isStreaming = isStreaming
         self.scrollPositionController = scrollPositionController
+        self.contentRevision = contentRevision
         self.onFollowEvent = onFollowEvent
         self.onMetrics = onMetrics
     }
 
     private var metricContext: MetricContext {
-        MetricContext(isStreaming: isStreaming)
+        MetricContext(isStreaming: isStreaming, contentRevision: contentRevision)
     }
 
     func makeCoordinator() -> Coordinator {
@@ -49,6 +52,7 @@ struct ChatScrollObserver: UIViewRepresentable {
         context.coordinator.updateMetricContext(metricContext)
 
         context.coordinator.attachIfNeeded(from: uiView, delivery: .deferred)
+        uiView.setNeedsLayout()
     }
 
     static func dismantleUIView(_ uiView: ObserverView, coordinator: Coordinator) {
@@ -58,6 +62,7 @@ struct ChatScrollObserver: UIViewRepresentable {
 
     struct MetricContext: Equatable {
         let isStreaming: Bool
+        var contentRevision = 0
     }
 
     @MainActor
@@ -89,6 +94,7 @@ struct ChatScrollObserver: UIViewRepresentable {
         override func layoutSubviews() {
             super.layoutSubviews()
             coordinator?.reportMetrics(delivery: .deferred)
+            coordinator?.reportContentLayout()
         }
     }
 
@@ -199,6 +205,7 @@ struct ChatScrollObserver: UIViewRepresentable {
         @objc private func handlePanGesture(_ gesture: UIPanGestureRecognizer) {
             switch gesture.state {
             case .began:
+                scrollPositionController?.userDidBeginDragging()
                 cancelSettle()
                 isUserScrollSessionActive = true
                 onFollowEvent(.userScrollBegin)
@@ -273,15 +280,15 @@ struct ChatScrollObserver: UIViewRepresentable {
         }
 
         private func geometry(of scrollView: UIScrollView) -> ChatScrollPolicy.ScrollGeometry? {
-            let inset = scrollView.adjustedContentInset
-            let visibleHeight = scrollView.bounds.height - inset.top - inset.bottom
-            guard visibleHeight > 0 else { return nil }
+            ChatScrollMetrics.geometry(of: scrollView)
+        }
 
-            return ChatScrollPolicy.ScrollGeometry(
-                offsetY: scrollView.contentOffset.y + inset.top,
-                contentHeight: scrollView.contentSize.height,
-                visibleHeight: visibleHeight
-            )
+        func reportContentLayout() {
+            let revision = metricContext.contentRevision
+            let controller = scrollPositionController
+            DispatchQueue.main.async { [weak controller] in
+                MainActor.assumeIsolated { controller?.contentDidLayout(revision: revision) }
+            }
         }
 
         func reportMetrics(delivery: MetricDelivery) {
@@ -297,7 +304,8 @@ struct ChatScrollObserver: UIViewRepresentable {
                 distanceFromBottom: geometry.distanceFromBottom,
                 isUserInteracting: isUserInteracting,
                 movedAwayFromBottom: !isUserInteracting && !isPinned
-                    && ChatScrollPolicy.isScrollingAwayFromBottom(previous: deliveredGeometry, current: geometry)
+                    && ChatScrollPolicy.isScrollingAwayFromBottom(previous: deliveredGeometry, current: geometry),
+                distanceFromTop: max(0, scrollView.contentOffset.y + scrollView.adjustedContentInset.top)
             )
             // The transcript only needs a callback when the derived metrics move,
             // but the away-from-bottom check compares viewports, so the geometry

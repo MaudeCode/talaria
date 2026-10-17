@@ -50,7 +50,7 @@ export function ChatView({ sessionId }: { sessionId: string | null }) {
 
   const navigate = useNavigate()
   const settings = useSettingsQuery()
-  const { query, session, rows, base, live, truncated, loadOlder, loadingOlder, refresh } = useTranscript(sessionId)
+  const { query, session, rows, base, live, truncated, loadOlder, loadingOlder, olderError, refresh } = useTranscript(sessionId)
   const intent = useTurnIntent(sessionId)
   const { onEdit, dialog: editDialog, operation, runHistory } = useEditMessage(sessionId, refresh)
   const clarify = useClarify(sessionId, live)
@@ -368,8 +368,9 @@ export function ChatView({ sessionId }: { sessionId: string | null }) {
             autoRead={(settings.data as Record<string, unknown> | undefined)?.tts_auto_read === true}
             truncated={truncated}
             loadedFrom={base}
-            onLoadOlder={() => { void loadOlder() }}
+            onLoadOlder={(retry, beforePrepend) => { void loadOlder(retry, beforePrepend) }}
             loadingOlder={loadingOlder}
+            olderError={olderError}
             emptyState={query.isPending && !knownEmpty ? <TranscriptSkeleton /> : null}
             pendingUserText={pendingUserText}
             pendingAttachments={intent.send?.attachments}

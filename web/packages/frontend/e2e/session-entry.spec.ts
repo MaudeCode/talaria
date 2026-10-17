@@ -1,7 +1,8 @@
 import type { Page, Route } from '@playwright/test'
 import { expect, test } from './fixtures'
 
-test.use({ serviceWorkers: 'block' })
+// Per-action DOM traces serialize the full 2,000-row fixture; retain failure screenshots.
+test.use({ serviceWorkers: 'block', trace: 'off', screenshot: 'only-on-failure' })
 
 /** A synthetic overflowing transcript; every session numbers its messages from 1, so their first row keys collide. */
 const transcript = (sid: string, turns: number, from = 0) => Array.from({ length: turns }, (_, i) => [
@@ -140,3 +141,129 @@ test('loading older rows keeps the reader where they are', async ({ page }) => {
   await page.waitForTimeout(300)
   expect(await distance(page)).toBeGreaterThan(200)
 })
+
+for (const virtualize of [false, true]) {
+  test(`history scrolls through 2,000 rows without duplicate pages or moving the reader: virtualize=${virtualize}`, async ({ page }, testInfo) => {
+    const messages = transcript('history', 1_000)
+    const requests: number[] = []
+    let release: (() => void) | undefined
+    await page.route('**/api/settings', (route) => route.fulfill({ json: { virtualize_transcript: virtualize } }))
+    await page.route('**/api/session?**', async (route) => {
+      const params = new URL(route.request().url()).searchParams
+      const end = Number(params.get('msg_before') ?? messages.length)
+      const start = Math.max(0, end - 120)
+      if (params.has('msg_before')) {
+        requests.push(end)
+        await new Promise<void>((resolve) => { release = resolve })
+      }
+      await route.fulfill({ json: { session: { session_id: 'history', title: 'History', messages: messages.slice(start, end), _messages_truncated: start > 0, _messages_offset: start } } })
+    })
+    await page.goto('/session/history')
+    await shows(page, 'history')
+    await expect.poll(() => distance(page)).toBeLessThan(2)
+    for (let end = 1880; end > 0; end -= 120) {
+      await page.locator('#messages').evaluate((el) => { el.dispatchEvent(new WheelEvent('wheel', { deltaY: -1, bubbles: true })); el.scrollTop = el.clientHeight / 2 })
+      await expect.poll(() => requests.at(-1)).toBe(end)
+      if (end === 1880 && !virtualize) {
+        await page.screenshot({ path: testInfo.outputPath('history-loading.png') })
+        await testInfo.attach('History prefetch', { path: testInfo.outputPath('history-loading.png'), contentType: 'image/png' })
+      }
+      // Capture the row actually under the reader while the response is held.
+      const anchor = await page.locator('#messages').evaluate((pane) => {
+        const top = pane.getBoundingClientRect().top
+        const row = [...pane.querySelectorAll<HTMLElement>('[data-message-key]')].find((row) => row.getBoundingClientRect().bottom > top)!
+        return { key: row.dataset.messageKey!, top: row.getBoundingClientRect().top }
+      })
+      release!()
+      await expect.poll(() => page.locator('[data-history-sentinel]').getByRole('status').count()).toBe(0)
+      const row = page.locator(`[data-message-key="${anchor.key}"]`)
+      await expect(row).toBeAttached()
+      await expect.poll(async () => Math.abs((await row.boundingBox())!.y - anchor.top), { message: `Page ending at ${end}, anchor ${JSON.stringify(anchor)}` }).toBeLessThan(2)
+    }
+    expect(requests).toEqual(Array.from({ length: 16 }, (_, index) => 1880 - index * 120))
+    await expect(page.getByRole('button', { name: 'Load older messages' })).toHaveCount(0)
+    await expect(page.locator('[data-history-sentinel]')).toHaveCount(0)
+    await page.locator('#messages').evaluate((el) => { el.dispatchEvent(new WheelEvent('wheel', { deltaY: -1, bubbles: true })); el.scrollTop = 0 })
+    await expect(page.getByText('history question 1', { exact: true })).toBeInViewport()
+    expect(await page.locator('[data-message-key]').evaluateAll((rows) => new Set(rows.map((row) => row.getAttribute('data-message-key'))).size === rows.length)).toBe(true)
+  })
+}
+
+test('history errors wait for retry and resume a paged message deep link', async ({ page, errors }, testInfo) => {
+  const messages = transcript('retry-history', 120)
+  let requests = 0
+  await page.route('**/api/session?**', (route) => {
+    const before = new URL(route.request().url()).searchParams.get('msg_before')
+    if (before && ++requests === 1) return route.fulfill({ status: 400, json: { error: 'Synthetic history failure' } })
+    const end = Number(before ?? messages.length)
+    const start = Math.max(0, end - 120)
+    return route.fulfill({ json: { session: { session_id: 'retry-history', messages: messages.slice(start, end), _messages_truncated: start > 0, _messages_offset: start } } })
+  })
+  await page.goto('/session/retry-history?msg=1')
+  const retry = page.locator('[data-history-sentinel]').getByRole('button', { name: 'Retry' })
+  await expect(retry).toBeVisible()
+  expect(errors).toHaveLength(2)
+  expect(errors).toEqual(expect.arrayContaining([expect.stringMatching(/^400 GET .*session_id=retry-history/), expect.stringContaining('status of 400')]))
+  errors.length = 0
+  await page.locator('#messages').evaluate((el) => { el.scrollTop = 500; el.dispatchEvent(new Event('scroll')); el.scrollTop = 0 })
+  await page.screenshot({ path: testInfo.outputPath('history-retry.png') })
+  expect(requests).toBe(1)
+  await retry.click()
+  await expect(page.locator('[data-message-key="1"]')).toBeInViewport()
+  expect(requests).toBe(2)
+})
+
+for (const [virtualize, repeats] of [[false, 1], [true, 1], [false, 50], [true, 50]] as const) {
+  test(`a boundary-spanning assistant turn keeps its visible text after rekeying: virtualize=${virtualize}, repeats=${repeats}`, async ({ page }) => {
+    const messages = transcript('boundary', 300).map((message, index) => index >= 330 && index < 370
+      ? { ...message, role: 'assistant', content: `Boundary piece ${index + 1}.`.repeat(repeats), _turn_id: 'boundary-turn' }
+      : message)
+    const requests: number[] = []
+    let release: (() => void) | undefined
+    await page.route('**/api/settings', (route) => route.fulfill({ json: { virtualize_transcript: virtualize } }))
+    await page.route('**/api/session?**', async (route) => {
+      const params = new URL(route.request().url()).searchParams
+      expect(params.get('msg_limit')).toBe('120')
+      const end = Number(params.get('msg_before') ?? messages.length)
+      const start = Math.max(0, end - 120)
+      if (params.has('msg_before')) {
+        requests.push(end)
+        await new Promise<void>((resolve) => { release = resolve })
+      }
+      await route.fulfill({ json: { session: { session_id: 'boundary', messages: messages.slice(start, end), _messages_offset: start, _messages_truncated: start > 0 } } })
+    })
+    await page.goto('/session/boundary')
+    await shows(page, 'boundary')
+    await expect.poll(() => distance(page)).toBeLessThan(2)
+    const readTop = () => page.locator('#messages').evaluate((pane) => {
+      pane.dispatchEvent(new WheelEvent('wheel', { deltaY: -1, bubbles: true }))
+      pane.scrollTop = 180
+    })
+    try {
+      await expect.poll(async () => { await readTop(); return requests.at(-1) }).toBe(480)
+      await expect(page.locator('[data-history-sentinel]').getByRole('status')).toHaveCount(1)
+      release!()
+      // Loading may not have painted when the route first arrives. Wait for the first
+      // prepend to commit before scrolling into the next page's prefetch region.
+      await expect(page.locator(virtualize ? '[data-virtual-history]' : '[data-message-key="361"]')).toBeAttached()
+      await expect(page.locator('[data-history-sentinel]').getByRole('status')).toHaveCount(0)
+      await expect.poll(async () => { await readTop(); return requests.at(-1) }).toBe(360)
+      const group = page.locator('[data-message-key="361"]')
+      await expect(group).toBeInViewport()
+      const anchor = await group.evaluate((row) => {
+        const top = document.getElementById('messages')!.getBoundingClientRect().top
+        const paragraph = [...row.querySelectorAll('p')].find((part) => part.getBoundingClientRect().bottom > top)!
+        return { text: paragraph.textContent, top: paragraph.getBoundingClientRect().top }
+      })
+      release!()
+      await expect(group).toHaveCount(0)
+      const preserved = page.getByText(anchor.text, { exact: true })
+      await expect(preserved).toBeInViewport()
+      await expect.poll(async () => Math.abs((await preserved.boundingBox())!.y - anchor.top)).toBeLessThan(2)
+      await expect(page.locator('[data-history-sentinel]').getByRole('status')).toHaveCount(0)
+      expect(requests).toEqual([480, 360])
+    } finally {
+      release?.()
+    }
+  })
+}

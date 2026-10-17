@@ -122,7 +122,7 @@ final class SessionListHostedTests: XCTestCase {
         let fixture = try FixtureApp(["--ui-test-hold-transcript-reloads"], for: self)
         let session = try await fixture.session()
         let first = try hostWindow(fixture.chat(session))
-        let loaded = await awaitElement(in: first) { $0.accessibilityLabel?.hasPrefix("Fixture message 1 ") == true }
+        let loaded = await awaitElement(in: first, where: FixtureApp.isLoadedTranscriptRow)
         XCTAssertNotNil(loaded, "The chat's first load never answered")
         first.isHidden = true
 

@@ -41,7 +41,9 @@ private enum TurnDiffPresentation: Identifiable {
 }
 
 struct ChatView: View {
-    private let bottomAnchorID = "chat-bottom-anchor"
+    private var bottomAnchorID: String {
+        latestTranscriptMessageID ?? ChatTranscriptView.emptyContainerID
+    }
     private let transcriptMessageSpacing: CGFloat = 10
     private let transcriptBlockSpacing: CGFloat = 6
     private let composerAccessoryVerticalSpacing: CGFloat = 8
@@ -1313,7 +1315,6 @@ struct ChatView: View {
             activeStreamID: viewModel.activeStreamID,
             streamingScrollTrigger: viewModel.streamingScrollTrigger,
             cacheFirstReconcileScrollToken: viewModel.cacheFirstReconcileScrollToken,
-            bottomAnchorID: bottomAnchorID,
             transcriptMessageSpacing: transcriptMessageSpacing,
             transcriptBlockSpacing: transcriptBlockSpacing,
             transcriptBottomInsetHeight: transcriptBottomInsetHeight,
@@ -1350,8 +1351,8 @@ struct ChatView: View {
             onLoadMessages: {
                 await loadMessages(isUserRefresh: true, joinsLoadInFlight: true)
             },
-            onLoadOlderMessages: {
-                await loadOlderMessages()
+            onLoadOlderMessages: { beforePrepend in
+                await loadOlderMessages(beforePrepend: beforePrepend)
             },
             onUpdateScrollMetrics: updateScrollMetrics,
             onFollowEvent: handleFollowEvent,
@@ -1619,7 +1620,7 @@ struct ChatView: View {
     }
 
     private var latestTranscriptMessageID: String? {
-        transcriptMessages.last?.id
+        transcriptMessages.last.map { ChatTranscriptView.containerID(for: $0.id) }
     }
 
     private var latestTranscriptMessageRole: String? {
@@ -1795,7 +1796,7 @@ struct ChatView: View {
         }
     }
 
-    private func loadOlderMessages() async -> Bool {
+    private func loadOlderMessages(beforePrepend: @MainActor () -> Void) async -> Bool {
         followLatch.isFollowing = false
         if !isReadingOlderTranscript {
             withAnimation(ChatMotion.quickState(reduceMotion: reduceMotion)) {
@@ -1803,7 +1804,7 @@ struct ChatView: View {
             }
         }
 
-        let didLoad = await viewModel.loadOlderMessages(modelContext: modelContext)
+        let didLoad = await viewModel.loadOlderMessages(modelContext: modelContext, beforePrepend: beforePrepend)
         if let lastError = viewModel.lastError {
             onAPIError(lastError)
         }
@@ -2846,26 +2847,26 @@ struct ChatView: View {
         responseCompletionBackgroundTask = .invalid
     }
 
-    private func scrollToBottom(_ proxy: ScrollViewProxy) {
+    private func scrollToBottom(_ position: Binding<ScrollPosition>) {
         // Deliberate jump to the latest content. Snap without animation while a
         // response is streaming so the tap lands immediately instead of racing
         // the short follow animations already chasing incoming tokens.
         scrollToLatestContent(
-            proxy,
+            position,
             animated: viewModel.activeStreamID == nil,
             isUserInitiated: true
         )
     }
 
     private func scrollToLatestTranscriptMessage(
-        _ proxy: ScrollViewProxy,
+        _ position: Binding<ScrollPosition>,
         animated: Bool = true,
         isUserInitiated: Bool = false
     ) {
         guard let latestTranscriptMessageID else { return }
 
         scheduleFollowScroll(
-            proxy,
+            position,
             targetID: latestTranscriptMessageID,
             anchor: .bottom,
             animated: animated,
@@ -2874,14 +2875,14 @@ struct ChatView: View {
     }
 
     private func scrollToLatestContent(
-        _ proxy: ScrollViewProxy,
+        _ position: Binding<ScrollPosition>,
         animated: Bool = true,
         isUserInitiated: Bool = false
     ) {
         guard !viewModel.messages.isEmpty else { return }
 
         scheduleFollowScroll(
-            proxy,
+            position,
             targetID: bottomAnchorID,
             anchor: .bottom,
             animated: animated,
@@ -2890,7 +2891,7 @@ struct ChatView: View {
     }
 
     private func scheduleFollowScroll(
-        _ proxy: ScrollViewProxy,
+        _ position: Binding<ScrollPosition>,
         targetID: String,
         anchor: UnitPoint,
         animated: Bool,
@@ -2933,10 +2934,10 @@ struct ChatView: View {
                     ? ChatMotion.streamingFollow(reduceMotion: reduceMotion)
                     : ChatMotion.scrollToLatest(reduceMotion: reduceMotion)
                 withAnimation(animation) {
-                    proxy.scrollTo(targetID, anchor: anchor)
+                    position.wrappedValue.scrollTo(id: targetID, anchor: anchor)
                 }
             } else {
-                proxy.scrollTo(targetID, anchor: anchor)
+                position.wrappedValue.scrollTo(id: targetID, anchor: anchor)
             }
         }
     }
@@ -3002,6 +3003,7 @@ struct ChatView: View {
     }
 
     private func handleFollowEvent(_ event: ChatScrollPolicy.FollowEvent) {
+        viewModel.handleTranscriptScroll(event)
         // An explicit jump to the live edge — a send or a scroll-to-bottom tap —
         // overrides a disclosure toggle that is still settling. The suspension
         // exists to protect the position the reader just left, and they have now
@@ -3020,15 +3022,12 @@ struct ChatView: View {
         }
     }
 
-    /// Suspends follow scrolls and the bottom anchor through a disclosure
-    /// animation; the transcript view pins the offset itself. The latch is
-    /// untouched, and a follow the suspension blocked replays once the toggle
-    /// has settled, so a stream's last trigger is not lost.
-    private func suspendBottomAnchorForDisclosure() {
+    /// The transcript ends this suspension when its position hold actually
+    /// settles or is cancelled. A fixed timer can expire during lazy measurement.
+    /// The latch stays intact, and any suppressed final follow replays afterward.
+    private func suspendBottomAnchorForDisclosure() -> () -> Void {
         let generation = disclosureSettle.begin()
-
-        Task { @MainActor in
-            try? await Task.sleep(for: .seconds(ChatScrollPolicy.disclosureAnchorSuspension))
+        return {
             if disclosureSettle.expire(generation: generation, isFollowing: shouldFollowLatestMessage) {
                 followReplayRequest += 1
             }

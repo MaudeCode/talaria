@@ -22,6 +22,8 @@ final class ChatMessageMenuRegistry {
         /// The press point in the row's coordinate space, which is also the
         /// space the row's link regions are measured in.
         let localPoint: CGPoint
+        /// Actual rendered geometry, independent of the lazy transcript's estimated total height.
+        let rowSize: CGSize
         let content: ChatMessageMenuContent
     }
 
@@ -41,13 +43,13 @@ final class ChatMessageMenuRegistry {
     }
 
     func hit(at point: CGPoint, in coordinateSpace: UIView) -> Hit? {
-        entries = entries.filter { $0.value.view?.window != nil }
+        entries = entries.filter { $0.value.view != nil }
 
         for entry in entries.values {
-            guard let view = entry.view else { continue }
+            guard let view = entry.view, view.window != nil else { continue }
             let localPoint = view.convert(point, from: coordinateSpace)
             guard view.bounds.contains(localPoint), let content = entry.content() else { continue }
-            return Hit(localPoint: localPoint, content: content)
+            return Hit(localPoint: localPoint, rowSize: view.bounds.size, content: content)
         }
 
         return nil
@@ -64,18 +66,18 @@ struct ChatMessageInteractionMarker: UIViewRepresentable {
     }
 
     func updateUIView(_ uiView: ChatMessageInteractionMarkerView, context: Context) {
-        uiView.registry = registry
-        registry?.register(uiView, content: content)
+        uiView.configure(registry: registry, content: content)
     }
 
     static func dismantleUIView(_ uiView: ChatMessageInteractionMarkerView, coordinator: ()) {
-        uiView.registry?.unregister(uiView)
+        uiView.configure(registry: nil, content: nil)
     }
 }
 
 @MainActor
 final class ChatMessageInteractionMarkerView: UIView {
-    weak var registry: ChatMessageMenuRegistry?
+    private weak var registry: ChatMessageMenuRegistry?
+    private var content: (() -> ChatMessageMenuContent?)?
 
     override init(frame: CGRect) {
         super.init(frame: frame)
@@ -88,9 +90,23 @@ final class ChatMessageInteractionMarkerView: UIView {
         fatalError("init(coder:) has not been implemented")
     }
 
-    override func removeFromSuperview() {
-        registry?.unregister(self)
-        super.removeFromSuperview()
+    func configure(registry: ChatMessageMenuRegistry?, content: (() -> ChatMessageMenuContent?)?) {
+        if self.registry !== registry { self.registry?.unregister(self) }
+        self.registry = registry
+        self.content = content
+        updateRegistration()
+    }
+
+    override func didMoveToWindow() {
+        super.didMoveToWindow()
+        updateRegistration()
+    }
+
+    private func updateRegistration() {
+        guard let registry else { return }
+        guard window != nil, let content else { registry.unregister(self); return }
+        // Lazy rows can leave and re-enter the window without updateUIView.
+        registry.register(self, content: content)
     }
 }
 

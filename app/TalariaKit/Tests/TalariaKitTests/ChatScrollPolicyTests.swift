@@ -333,6 +333,18 @@ final class ChatScrollPolicyTests: XCTestCase {
 
     private typealias Geometry = ChatScrollPolicy.ScrollGeometry
 
+    func testLayoutGrowthCannotOptOutOfFollowingTheLatestRow() {
+        let atBottom = Geometry(offsetY: 4300, contentHeight: 5000, visibleHeight: 700)
+        XCTAssertFalse(ChatScrollPolicy.isScrollingAwayFromBottom(
+            previous: atBottom,
+            current: Geometry(offsetY: 4300, contentHeight: 5600, visibleHeight: 700)
+        ), "Lazy measurement without reader movement must not disable following")
+        XCTAssertFalse(ChatScrollPolicy.isScrollingAwayFromBottom(
+            previous: atBottom,
+            current: Geometry(offsetY: 4500, contentHeight: 6000, visibleHeight: 700)
+        ), "A follow adjustment toward the bottom must not become an opt-out while rows measure")
+    }
+
     func testDistanceGrowingPastStreamingThresholdIsAScrollAway() {
         let atBottom = Geometry(offsetY: 4300, contentHeight: 5000, visibleHeight: 700)
         // Status-bar scroll: the lazy stack may re-measure on the way, so the
