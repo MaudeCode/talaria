@@ -808,7 +808,7 @@ def check(home, raw, username='owner'):
  payload=basic._unsign(token,key,'access') if token else None
  assert payload and payload['sub']==username, 'owner credential resolution disagrees with native auth'
  return key
-raws=['synthetic signing key with spaces!',base64.b64encode(b'base64 synthetic key only').decode(),b'hex synthetic key only'.hex()]
+raws=['short!', 'synthetic signing key with spaces!',base64.b64encode(b'base64 synthetic key only').decode(),b'hex synthetic key only'.hex()]
 for raw in raws:
  files(root,{'USERNAME':'"owner"','SECRET':'"'+raw+'"'})
  check(root,raw)

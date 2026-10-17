@@ -333,8 +333,6 @@ def _local_session(entry):
                     break
             except (ValueError, TypeError):
                 pass
-        if len(key) < 16:
-            return None
         return basic._sign({'sub': username, 'kind': 'access', 'exp': int(time.time()) + 60}, key)
 
 
