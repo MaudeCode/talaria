@@ -67,14 +67,15 @@ hand-written endpoint schemas.
 Worktree lifecycle status probes use private Git metadata and copied indexes. Only non-executable
 status settings enter that view; live repository filter definitions and configuration includes cannot
 be loaded by its status command. Initialized submodules use the same boundary, preserving their
-ignore settings. A single deadline covers metadata preparation and the recursive probe.
-Normal removal first moves the directory to a private sibling location, checks that captured directory,
-then removes it without Git's unsafe internal status invocation. Failed checks restore the path and
-registration. If a replacement occupies the original path, the captured worktree stays at the recovery
-path in the error, and cleanup never deletes it. A flushed `recovery.json` beside a retained capture records
-its original path and repository. After an interrupted move, use `git worktree repair <capture>/tree`
-if needed, then `git worktree move <capture>/tree <original_path>` to restore it. An explicitly forced
-removal retains its existing semantics.
+ignore settings. Copied index timestamps never advance, preserving Git's racy-stat content checks.
+A single deadline covers metadata preparation and the recursive probe.
+Normal removal preserves Git's final non-forced clean check at the original path. That internal status
+inherits a private common-directory configuration and a snapshot index guarded by the original
+`index.lock`. Late file or open-descriptor writes are checked by Git before deletion. Gitlinks,
+including uninitialized submodules, require explicit force because they could become populated during
+that internal check; `force_required` reports this policy. Explicitly forced removal retains its existing
+semantics. An interrupted normal removal can leave an index lock; verify that no remover or Git writer is still running before removing
+that stale lock.
 
 State ownership: WebUI-owned files (sessions, settings, auth records, journals, shares, drafts, relay
 config, extension state) are written only by the server. Agent-owned files (`config.yaml`, `.env`, profiles,

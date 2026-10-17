@@ -7,7 +7,7 @@
  * against repo-local config, and bounded by a timeout.
  */
 import { execFile } from 'node:child_process'
-import { closeSync, constants as fsConstants, existsSync, fstatSync, lstatSync, mkdtempSync, mkdirSync, openSync, readdirSync, readFileSync, readSync, realpathSync, rmSync, statSync, symlinkSync, writeFileSync } from 'node:fs'
+import { closeSync, constants as fsConstants, existsSync, fstatSync, futimesSync, lstatSync, mkdtempSync, mkdirSync, openSync, readdirSync, readFileSync, readSync, realpathSync, rmSync, rmdirSync, statSync, symlinkSync, unlinkSync, writeFileSync } from 'node:fs'
 import { homedir, tmpdir } from 'node:os'
 import { dirname, join, relative, resolve, sep } from 'node:path'
 import { expandHome, isWithin, resolvePathLikePython } from './paths.js'
@@ -58,6 +58,15 @@ export class GitWorkspaceError extends Error {
   }
 }
 
+function gitDeadline(timeoutMs: number): () => number {
+  const deadline = Date.now() + timeoutMs
+  return () => {
+    const ms = deadline - Date.now()
+    if (ms <= 0) throw new GitWorkspaceError('Git command timed out', 'timeout', { cause: Object.assign(new Error('git timed out'), { code: 'ETIMEDOUT' }) })
+    return ms
+  }
+}
+
 export interface GitContext { workspace: string; repoRoot: string; workspacePrefix: string }
 export interface GitFile {
   path: string; old_path: string | null; workspace_path: string; status: string; staged: boolean; unstaged: boolean; untracked: boolean
@@ -97,9 +106,15 @@ interface RunOptions {
   disableFilterAttributes?: boolean
   neutralizeFilterPrograms?: boolean
   neutralizeRemoteHelpers?: boolean
+  /** Trusted private config directory, also inherited by Git's own worktree-removal status subprocess. */
+  commonDir?: string
 }
 
+/** Unlike GitContext's caller paths, these identify the administrative files behind a private status view. */
+interface StatusRepositoryMetadata { gitDir: string; commonDir: string; privateDir: string; refStorage: string }
+
 export interface GitResult { status: number; stdout: string; stderr: string }
+export interface GitWorktreeStatus extends GitResult { hasGitlinks: boolean }
 
 /** Porcelain v1 records retain their second NUL field for a rename/copy's source path. */
 export function porcelainStatusEntries(output: string): string[][] {
@@ -219,8 +234,6 @@ export class GitRunner {
   private readonly busy = new Map<string, number>()
   /** Workspaces an asynchronous writer (worktree creation) is changing; working-tree mutations stay out. */
   private readonly writing = new Map<string, number>()
-  /** Private removal captures share the workspace hold but reject Git mutations even under a router's own hold. */
-  private readonly removing = new Map<string, number>()
 
   constructor(readonly deps: GitRunnerDeps) {}
 
@@ -255,11 +268,10 @@ export class GitRunner {
 
   /**
    * Worktree removal: serialized with Git mutations in the main checkout and in the worktree (the same per-repo locks),
-   * and its parent is held busy so no run, terminal, file write or Git mutation starts at the private capture location.
+   * and held busy so no run, terminal, or file write starts there. `fn`'s synchronous lock checks run inside the hold.
    */
   async removeWorktreeExclusive<T>(worktree: string, repoRoot: string | null, fn: () => Promise<T>): Promise<T> {
-    const parent = dirname(resolvePathLikePython(worktree))
-    const inWorktree = (): Promise<T> => this.withLock(worktree, () => this.holdWorkspace(parent, () => holding(this.removing, parent, fn)))
+    const inWorktree = (): Promise<T> => this.withLock(worktree, () => this.holdWorkspace(worktree, fn))
     return repoRoot ? await this.withLock(repoRoot, inWorktree) : await inWorktree()
   }
 
@@ -327,21 +339,21 @@ export class GitRunner {
   }
 
   /** Hold the opened inode and reject devices/FIFOs before reading repository-controlled metadata. */
-  private static withStatusFile<T>(path: string, read: (fd: number, size: number) => T): T | null {
+  private static withStatusFile<T>(path: string, read: (fd: number, size: number, mtimeNs: bigint) => T): T | null {
     let fd: number
     try { fd = openSync(path, fsConstants.O_RDONLY | (fsConstants.O_NONBLOCK ?? 0)) } catch (error) {
       if ((error as NodeJS.ErrnoException).code === 'ENOENT') return null
       throw error
     }
     try {
-      const stat = fstatSync(fd)
+      const stat = fstatSync(fd, { bigint: true })
       if (!stat.isFile()) throw new GitWorkspaceError('Git status metadata must be a regular file', 'git_failed')
-      return read(fd, stat.size)
+      return read(fd, Number(stat.size), stat.mtimeNs)
     } finally { closeSync(fd) }
   }
 
   /** A private metadata view never loads executable repository/global configuration, even if the originals change. */
-  private async withStatusRepository<T>(cwd: string, remaining: () => number, read: (prefix: string[], env: Record<string, string>, ignores: Map<string, string>) => Promise<T>): Promise<T> {
+  private async withStatusRepository<T>(cwd: string, remaining: () => number, read: (prefix: string[], env: Record<string, string>, ignores: Map<string, string>, metadata: StatusRepositoryMetadata) => Promise<T>): Promise<T> {
     const location = await this.run(cwd, ['rev-parse', '--absolute-git-dir', '--verify', 'HEAD'], { timeoutMs: remaining() })
     const output = location.stdout.replace(/\r?\n$/, '')
     const split = output.lastIndexOf('\n')
@@ -396,7 +408,7 @@ export class GitRunner {
       writeFileSync(join(root, 'config'), `[core]\nrepositoryFormatVersion = ${objectFormat === 'sha256' ? '1' : '0'}\nbare = false\n${objectFormat === 'sha256' ? '[extensions]\nobjectFormat = sha256\n' : ''}`)
       writeFileSync(join(root, 'HEAD'), `${head}\n`)
       const copy = (directory: string, file: string): void => {
-        GitRunner.withStatusFile(join(directory, file), (source) => {
+        GitRunner.withStatusFile(join(directory, file), (source, _size, mtimeNs) => {
           const target = openSync(join(root, file), 'wx', 0o600)
           try {
             const chunk = Buffer.allocUnsafe(64 * 1024)
@@ -406,13 +418,23 @@ export class GitRunner {
               if (!bytes) break
               writeFileSync(target, chunk.subarray(0, bytes))
             }
+            if (file === 'index' || file.startsWith('sharedindex.')) {
+              // A newer index timestamp would suppress Git's racy-stat content check; round conservatively earlier.
+              let margin = 1
+              do {
+                remaining()
+                const stamp = new Date(Number(mtimeNs / 1_000_000n) - margin)
+                futimesSync(target, stamp, stamp)
+                margin *= 2
+              } while (fstatSync(target, { bigint: true }).mtimeNs > mtimeNs)
+            }
           } finally { closeSync(target) }
         })
       }
       for (const file of ['index', ...readdirSync(gitDir).filter((name) => /^sharedindex\.[a-f0-9]+$/.test(name))]) {
         copy(gitDir, file)
       }
-      for (const file of ['shallow', 'info/attributes', 'info/exclude', 'info/sparse-checkout']) {
+      for (const file of ['packed-refs', 'shallow', 'info/attributes', 'info/exclude', 'info/sparse-checkout']) {
         copy(common, file)
       }
       symlinkSync(join(common, 'objects'), join(root, 'objects'), process.platform === 'win32' ? 'junction' : 'dir')
@@ -427,26 +449,22 @@ export class GitRunner {
         const value = key === 'core.attributesfile' || key === 'core.excludesfile' ? resolve(cwd, expandHome(raw, home)) : raw
         prefix.push('-c', `${key}=${value}`)
       }
-      return await read(prefix, { HOME: root, XDG_CONFIG_HOME: root, GIT_CONFIG_NOSYSTEM: '1', GIT_OPTIONAL_LOCKS: '0', GIT_INDEX_FILE: join(root, 'index'), GIT_OBJECT_DIRECTORY: join(root, 'objects'), GIT_ALTERNATE_OBJECT_DIRECTORIES: '' }, ignores)
+      return await read(prefix, { HOME: root, XDG_CONFIG_HOME: root, GIT_CONFIG_NOSYSTEM: '1', GIT_OPTIONAL_LOCKS: '0', GIT_INDEX_FILE: join(root, 'index'), GIT_OBJECT_DIRECTORY: join(root, 'objects'), GIT_ALTERNATE_OBJECT_DIRECTORIES: '' }, ignores, { gitDir, commonDir: common, privateDir: root, refStorage: values.get('extensions.refstorage') ?? 'files' })
     } finally { rmSync(root, { recursive: true, force: true }) }
   }
 
   /** Worktree lifecycle probes need only porcelain v1; child worktrees are inspected through the same private view. */
-  async worktreeStatus(cwd: string, timeoutMs = GIT_TIMEOUT_MS): Promise<GitResult> {
-    const deadline = Date.now() + timeoutMs
-    const remaining = (): number => {
-      const ms = deadline - Date.now()
-      if (ms <= 0) throw new GitWorkspaceError('Git command timed out', 'timeout', { cause: Object.assign(new Error('git timed out'), { code: 'ETIMEDOUT' }) })
-      return ms
-    }
+  async worktreeStatus(cwd: string, timeoutMs = GIT_TIMEOUT_MS): Promise<GitWorktreeStatus> {
+    const remaining = gitDeadline(timeoutMs)
     const visited = new Set<string>()
-    const inspect = async (path: string): Promise<GitResult & { trackedDirty: boolean; untrackedDirty: boolean }> => {
+    const inspect = async (path: string): Promise<GitWorktreeStatus & { trackedDirty: boolean; untrackedDirty: boolean }> => {
       visited.add(resolvePathLikePython(path))
       return this.withStatusRepository(path, remaining, async (prefix, env, ignores) => {
         const run = (args: string[]): Promise<GitResult> => this.run(path, [...prefix, ...args], { check: true, timeoutMs: remaining(), env })
         // Commit differences remain visible; Git must not run a child status against live submodule configuration.
         const result = await run(['status', '--porcelain', '-z', '--untracked-files=normal', '--ignore-submodules=dirty'])
         const index = await run(['ls-files', '--stage', '-z'])
+        const gitlinks = index.stdout.split('\0').filter((entry) => entry.startsWith('160000 '))
         const records = porcelainStatusEntries(result.stdout)
         for (let i = records.length - 1; i >= 0; i--) {
           const record = records[i]?.[0] ?? ''
@@ -457,7 +475,7 @@ export class GitRunner {
         result.stdout = records.length ? `${records.flat().join('\0')}\0` : ''
         let trackedDirty = records.some(([record]) => !record?.startsWith('??'))
         let untrackedDirty = records.some(([record]) => record?.startsWith('??'))
-        for (const entry of index.stdout.split('\0')) {
+        for (const entry of gitlinks) {
           const match = /^160000 [a-f0-9]+ [0-3]\t(.+)$/s.exec(entry)
           if (!match?.[1]) continue
           const ignore = ignores.get(match[1]) ?? 'none'
@@ -470,16 +488,64 @@ export class GitRunner {
           trackedDirty ||= childStatus.trackedDirty
           untrackedDirty ||= untracked
         }
-        return { ...result, trackedDirty, untrackedDirty }
+        return { ...result, hasGitlinks: gitlinks.length > 0, trackedDirty, untrackedDirty }
       })
     }
-    const { status, stdout, stderr } = await inspect(cwd)
-    return { status, stdout, stderr }
+    const { status, stdout, stderr, hasGitlinks } = await inspect(cwd)
+    return { status, stdout, stderr, hasGitlinks }
+  }
+
+  /** Keep Git's own final clean check, but make its inherited configuration private and non-executable. */
+  async removeWorktree(repoRoot: string, worktree: string, timeoutMs = GIT_TIMEOUT_MS): Promise<GitResult> {
+    const remaining = gitDeadline(timeoutMs)
+    const target = resolvePathLikePython(worktree)
+    const listed = await this.run(repoRoot, ['worktree', 'list', '--porcelain', '-z'], { check: true, timeoutMs: remaining() })
+    const paths = listed.stdout.split('\0').filter((field) => field.startsWith('worktree ')).map((field) => resolvePathLikePython(field.slice(9)))
+    if (paths[0] === target || !paths.slice(1).includes(target)) throw new GitWorkspaceError('Not a registered linked worktree', 'git_failed')
+    const callerCommon = (await this.run(repoRoot, ['rev-parse', '--path-format=absolute', '--git-common-dir'], { check: true, timeoutMs: remaining() })).stdout.replace(/\r?\n$/, '')
+    const gitDir = (await this.run(target, ['rev-parse', '--absolute-git-dir'], { check: true, timeoutMs: remaining() })).stdout.replace(/\r?\n$/, '')
+    const registryRoot = join(callerCommon, 'worktrees')
+    if (dirname(resolvePathLikePython(gitDir)) !== resolvePathLikePython(registryRoot)) throw new GitWorkspaceError('Worktree Git directory does not belong to the repository', 'git_failed')
+    const lockPath = join(gitDir, 'index.lock')
+    let lock: number
+    try { lock = openSync(lockPath, 'wx', 0o600) } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === 'EEXIST') throw new GitWorkspaceError('The worktree index is locked by another Git operation', 'operation_in_progress')
+      throw error
+    }
+    let identity: ReturnType<typeof fstatSync> | undefined
+    try {
+      identity = fstatSync(lock)
+      return await this.withStatusRepository(target, remaining, async (prefix, env, _ignores, metadata) => {
+        if (metadata.gitDir !== gitDir || resolvePathLikePython(metadata.commonDir) !== resolvePathLikePython(callerCommon)) throw new GitWorkspaceError('Worktree metadata changed during removal', 'operation_in_progress')
+        const entries = await this.run(worktree, [...prefix, 'ls-files', '--stage', '-z'], { check: true, timeoutMs: remaining(), env })
+        // An uninitialized gitlink could become populated between Git's submodule guard and its internal status.
+        if (entries.stdout.split('\0').some((entry) => entry.startsWith('160000 '))) return { status: 128, stdout: '', stderr: 'Worktrees containing submodules require force=true to remove' }
+        const linkType = process.platform === 'win32' ? 'junction' : 'dir'
+        rmdirSync(join(metadata.privateDir, 'refs'))
+        if (existsSync(join(metadata.commonDir, 'refs'))) symlinkSync(join(metadata.commonDir, 'refs'), join(metadata.privateDir, 'refs'), linkType)
+        else mkdirSync(join(metadata.privateDir, 'refs'))
+        if (metadata.refStorage === 'reftable') {
+          writeFileSync(join(metadata.privateDir, 'config'), '\n[core]\nrepositoryFormatVersion = 1\n[extensions]\nrefStorage = reftable\n', { flag: 'a' })
+          symlinkSync(join(metadata.commonDir, 'reftable'), join(metadata.privateDir, 'reftable'), linkType)
+        } else if (metadata.refStorage !== 'files') throw new GitWorkspaceError('Unsupported Git reference format', 'git_failed')
+        const registry = join(metadata.privateDir, 'worktrees')
+        mkdirSync(registry)
+        symlinkSync(gitDir, join(registry, 'target'), linkType)
+        return this.run(repoRoot, [...prefix, 'worktree', 'remove', worktree], { timeoutMs: remaining(), env, commonDir: metadata.privateDir })
+      })
+    } finally {
+      try {
+        const current = lstatSync(lockPath)
+        if (current.dev === identity?.dev && current.ino === identity.ino) unlinkSync(lockPath)
+      } catch { /* Git may already have removed its administrative directory */ }
+      finally { closeSync(lock) }
+    }
   }
 
   async run(ctxOrCwd: GitContext | string, args: string[], opts: RunOptions = {}): Promise<GitResult> {
     const cwd = typeof ctxOrCwd === 'string' ? ctxOrCwd : ctxOrCwd.repoRoot
     const runEnv = this.cleanEnv(opts.env)
+    if (opts.commonDir) runEnv.GIT_COMMON_DIR = opts.commonDir
     const effectiveDestructive = Boolean(opts.destructive) && this.destructiveEnabled()
     const hardenedDestructive = effectiveDestructive || Boolean(opts.forceDestructiveHardening)
     let attributesFile: string | null = null
@@ -612,7 +678,6 @@ export class GitRunner {
   }
 
   private assertRepoFree(repoRoot: string): void {
-    if (overlapsAny(this.removing, repoRoot)) throw new GitWorkspaceError(WORKSPACE_BUSY_MESSAGE, 'operation_in_progress')
     if (this.deps.activeRunIn?.(repoRoot)) throw new GitWorkspaceError(ACTIVE_RUN_MESSAGE, 'active_stream')
     if (overlapsAny(this.writing, repoRoot)) throw new GitWorkspaceError(WORKSPACE_WRITE_BUSY_MESSAGE, 'operation_in_progress')
   }

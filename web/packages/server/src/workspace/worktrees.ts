@@ -1,8 +1,8 @@
 /** WebUI-managed Agent git worktrees (Python `api/worktrees.py`). */
 import { randomUUID } from 'node:crypto'
-import { lstatSync, mkdtempSync, readdirSync, readFileSync, readlinkSync, realpathSync, renameSync, rmdirSync, statSync, symlinkSync, unlinkSync, writeFileSync } from 'node:fs'
-import { basename, dirname, join, posix, relative } from 'node:path'
-import { GitRunner, GitWorkspaceError, porcelainStatusEntries, type GitResult } from './git.js'
+import { lstatSync, readdirSync, readFileSync, readlinkSync, realpathSync, renameSync, statSync, symlinkSync, unlinkSync } from 'node:fs'
+import { basename, dirname, join, posix } from 'node:path'
+import { GitRunner, GitWorkspaceError, porcelainStatusEntries, type GitResult, type GitWorktreeStatus } from './git.js'
 import { resolvePathLikePython } from './paths.js'
 import { pyOsError } from '../util.js'
 import type { Session } from '../sessions/session.js'
@@ -11,17 +11,18 @@ import type { WorktreeStatus } from '@maudecode/talaria-web-contracts'
 /** The `OSError`/`TimeoutExpired` text Python interpolated into `Failed to remove worktree: {exc}`. */
 export class GitSpawnFailure extends Error {}
 
-async function git(args: string[], cwd: string, timeoutMs = 2_000): Promise<GitResult | null> {
+async function git(args: string[], cwd: string, timeoutMs = 2_000): Promise<GitResult | GitWorktreeStatus | null> {
   try { return await gitOrThrow(args, cwd, timeoutMs) } catch (error) {
     if (error instanceof GitSpawnFailure || (error instanceof GitWorkspaceError && error.code === 'not_a_repo')) return null
     throw error
   }
 }
 
-async function gitOrThrow(args: string[], cwd: string, timeoutMs: number): Promise<GitResult> {
+async function gitOrThrow(args: string[], cwd: string, timeoutMs: number): Promise<GitResult | GitWorktreeStatus> {
   try {
     const runner = new GitRunner({ env: process.env })
     if (args[0] === 'status') return await runner.worktreeStatus(cwd, timeoutMs)
+    if (args[0] === 'worktree' && args[1] === 'remove' && !args.includes('--force')) return await runner.removeWorktree(cwd, args.at(-1) ?? '', timeoutMs)
     return await runner.run(cwd, args, { timeoutMs })
   } catch (error) {
     if (!(error instanceof GitWorkspaceError) || !(error.cause instanceof Error)) throw error
@@ -119,14 +120,10 @@ function unlinkIncludeLink(worktreePath: string, repoRoot: string, entry: string
   return { path, target }
 }
 
-/** `[dirty, untracked count, ignored include symlinks]`; the Agent's own include symlinks are not user state. */
-async function statusPorcelain(worktreePath: string, repoRoot: string | null, strict: boolean): Promise<[boolean, number, string[]]> {
-  const args = ['status', '--porcelain', '-z', '--untracked-files=normal']
-  const result = strict ? await gitOrThrow(args, worktreePath, 2_000) : await git(args, worktreePath)
-  if (result?.status !== 0) {
-    if (strict) throw new Error('Worktree status could not be verified before removal')
-    return [false, 0, []]
-  }
+/** `[dirty, untracked count, ignored include symlinks, gitlinks]`; the Agent's include links are not user state. */
+async function statusPorcelain(worktreePath: string, repoRoot: string | null): Promise<[boolean, number, string[], boolean]> {
+  const result = await git(['status', '--porcelain', '-z', '--untracked-files=normal'], worktreePath)
+  if (result?.status !== 0) return [false, 0, [], false]
   const entries = porcelainStatusEntries(result.stdout)
   const counted: string[] = []
   const links: string[] = []
@@ -140,7 +137,7 @@ async function statusPorcelain(worktreePath: string, repoRoot: string | null, st
     }
     counted.push(entry)
   }
-  return [counted.length > 0, counted.filter((e) => e.startsWith('??')).length, links]
+  return [counted.length > 0, counted.filter((e) => e.startsWith('??')).length, links, 'hasGitlinks' in result && result.hasGitlinks]
 }
 
 async function aheadBehind(worktreePath: string): Promise<{ ahead: number; behind: number; available: boolean; upstream: string | null }> {
@@ -173,28 +170,33 @@ export async function worktreeStatusForSession(session: Session, locks: Worktree
   return (await probeWorktree(session, locks)).status
 }
 
-async function probeWorktree(session: Session, locks: WorktreeLocks, strict = false, capturedPath?: string): Promise<{ status: WorktreeStatus; includeLinks: string[] }> {
-  const worktreePath = capturedPath ?? resolvePath(session.worktree_path)
+async function probeWorktree(session: Session, locks: WorktreeLocks): Promise<{ status: WorktreeStatus; includeLinks: string[] }> {
+  const worktreePath = resolvePath(session.worktree_path)
   if (!worktreePath) throw new Error('Session is not worktree-backed')
   const exists = isDir(worktreePath)
   const lockedByStream = locks.lockedByStream(session)
   const lockedByTerminal = locks.lockedByTerminal(session.session_id, worktreePath)
   const listed = await worktreeListed(worktreePath, session.worktree_repo_root)
-  const [dirty, untracked, includeLinks] = exists ? await statusPorcelain(worktreePath, resolvePath(session.worktree_repo_root), strict) : [false, 0, []]
+  const [dirty, untracked, includeLinks, hasGitlinks] = exists ? await statusPorcelain(worktreePath, resolvePath(session.worktree_repo_root)) : [false, 0, [], false]
   const aheadBehindStatus = exists ? await aheadBehind(worktreePath) : { ahead: 0, behind: 0, available: false, upstream: null }
   const status: WorktreeStatus = {
     path: worktreePath, exists, dirty, untracked_count: untracked, ahead_behind: aheadBehindStatus,
     locked_by_stream: lockedByStream, locked_by_terminal: lockedByTerminal, listed,
     // `removeWorktreeForSession`'s gates: a missing directory is always removable, a lock blocks removal outright,
-    // and uncommitted, untracked, or unpushed work needs `force`.
+    // and uncommitted, untracked, unpushed work or gitlinks need `force`.
     removable: !exists || !(lockedByStream || lockedByTerminal),
-    force_required: dirty || untracked > 0 || aheadBehindStatus.ahead > 0,
+    force_required: dirty || untracked > 0 || aheadBehindStatus.ahead > 0 || hasGitlinks,
   }
   return { status, includeLinks }
 }
 
-function removalWarnings(status: WorktreeStatus, force: boolean): string[] {
+export async function removeWorktreeForSession(session: Session, locks: WorktreeLocks, opts: { force?: boolean } = {}): Promise<Record<string, unknown>> {
+  const worktreePath = resolvePath(session.worktree_path)
+  if (!worktreePath) throw new Error('Session is not worktree-backed')
+  const { status, includeLinks } = await probeWorktree(session, locks)
+  if (!status.exists) return { ok: true, removed_path: worktreePath, warnings: ['Worktree directory no longer exists on disk.'] }
   const warnings: string[] = []
+  const force = Boolean(opts.force)
   if (status.locked_by_stream) throw new Error('Worktree is locked by an active streaming session')
   if (status.locked_by_terminal) throw new Error('Worktree is locked by an active terminal session')
   if (status.dirty && !force) throw new Error('Worktree has uncommitted changes. Use force=true to override.')
@@ -208,38 +210,17 @@ function removalWarnings(status: WorktreeStatus, force: boolean): string[] {
     if (force) warnings.push(`${ahead} unpushed commit(s) will be removed.`)
     else throw new Error(`Worktree has ${ahead} unpushed commit(s). Use force=true to override.`)
   }
-  return warnings
-}
-
-export async function removeWorktreeForSession(session: Session, locks: WorktreeLocks, opts: { force?: boolean } = {}): Promise<Record<string, unknown>> {
-  const worktreePath = resolvePath(session.worktree_path)
-  if (!worktreePath) throw new Error('Session is not worktree-backed')
-  const { status, includeLinks } = await probeWorktree(session, locks)
-  if (!status.exists) return { ok: true, removed_path: worktreePath, warnings: ['Worktree directory no longer exists on disk.'] }
-  const force = Boolean(opts.force)
-  const warnings = removalWarnings(status, force)
   const repoRoot = session.worktree_repo_root
   if (!repoRoot) throw new Error('Session missing worktree_repo_root')
   // A stream or terminal may have started while the Git probes above were awaited.
   if (locks.lockedByStream(session)) throw new Error('Worktree is locked by an active streaming session')
   if (locks.lockedByTerminal(session.session_id, worktreePath)) throw new Error('Worktree is locked by an active terminal session')
   await git(['worktree', 'unlock', worktreePath], repoRoot, 5_000)
-  // Remove only the Agent's include links, never their targets, before the final probe of the captured directory.
+  // A plain `worktree remove` refuses any untracked entry; drop the Agent's include symlinks (never their targets)
+  // so git still guards everything else. Each is rechecked first: one replaced since the probe stays for git to refuse.
   const resolvedRoot = resolvePath(repoRoot)
   // A worktree that survives a failed removal gets them back.
   const unlinked: { path: string; target: string }[] = []
-  let currentPath = worktreePath
-  let privateParent: string | undefined
-  const runRemoval = async (args: string[]): Promise<void> => {
-    let result: GitResult
-    try { result = await gitOrThrow(args, repoRoot, 10_000) } catch (error) {
-      throw new Error(`Failed to remove worktree: ${error instanceof Error ? error.message : String(error)}`)
-    }
-    if (result.status !== 0) {
-      const stderr = result.stderr.trim().split('\n').pop() ?? ''
-      throw new Error(`git worktree remove failed: ${stderr || result.stdout.trim()}`)
-    }
-  }
   try {
     if (!force && resolvedRoot) {
       for (const link of includeLinks) {
@@ -247,47 +228,22 @@ export async function removeWorktreeForSession(session: Session, locks: Worktree
         if (removed) unlinked.push(removed)
       }
     }
-    if (!force) {
-      // Capture the directory before the last safe probe. Git's normal remove would run status against live config.
-      privateParent = mkdtempSync(join(dirname(worktreePath), '.talaria-worktree-remove-'))
-      writeFileSync(join(privateParent, 'recovery.json'), JSON.stringify({ original_path: worktreePath, repo_root: resolvedRoot }), { mode: 0o600, flush: true })
-      const moved = join(privateParent, 'tree')
-      try { await runRemoval(['worktree', 'move', worktreePath, moved]) } finally {
-        if (isDir(moved)) currentPath = moved
-      }
-      try { removalWarnings((await probeWorktree(session, locks, true, currentPath)).status, false) } catch (error) {
-        throw new Error(`git worktree remove failed: ${error instanceof Error ? error.message : String(error)}`)
-      }
+    const args = ['worktree', 'remove']
+    if (force) args.push('--force')
+    args.push(worktreePath)
+    let result: GitResult
+    try {
+      result = await gitOrThrow(args, repoRoot, 10_000)
+    } catch (error) {
+      throw new Error(`Failed to remove worktree: ${error instanceof Error ? error.message : String(error)}`)
     }
-    await runRemoval(['worktree', 'remove', '--force', currentPath])
-    if (currentPath !== worktreePath) {
-      try { lstatSync(worktreePath); warnings.push('The original worktree path was recreated during removal and was left untouched.') } catch { /* no replacement */ }
+    if (result.status !== 0) {
+      const stderr = result.stderr.trim().split('\n').pop() ?? ''
+      throw new Error(`git worktree remove failed: ${stderr || result.stdout.trim()}`)
     }
   } catch (error) {
-    let failure = error
-    if (currentPath !== worktreePath && isDir(currentPath)) {
-      try {
-        try { lstatSync(worktreePath); throw new Error('The original path is occupied') } catch (occupied) {
-          if ((occupied as NodeJS.ErrnoException).code !== 'ENOENT') throw occupied
-        }
-        renameSync(currentPath, worktreePath)
-        currentPath = worktreePath
-        await runRemoval(['worktree', 'repair', worktreePath])
-      } catch (restore) {
-        failure = new Error(`${error instanceof Error ? error.message : String(error)}. Worktree retained at ${currentPath}; restoring its original location failed: ${restore instanceof Error ? restore.message : String(restore)}`)
-      }
-    }
-    for (const { path, target } of unlinked) try { symlinkSync(target, join(currentPath, relative(worktreePath, path))) } catch { /* something else took its place */ }
-    throw failure
-  } finally {
-    if (privateParent) {
-      try { lstatSync(join(privateParent, 'tree')) } catch (error) {
-        if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
-          try { unlinkSync(join(privateParent, 'recovery.json')) } catch { /* already gone or not ours to unlink */ }
-          try { rmdirSync(privateParent) } catch { /* best effort after the capture is gone */ }
-        }
-      }
-    }
+    for (const { path, target } of unlinked) try { symlinkSync(target, path) } catch { /* something else took its place */ }
+    throw error
   }
   await git(['worktree', 'prune'], repoRoot, 5_000)
   return { ok: true, removed_path: worktreePath, warnings: warnings.length ? warnings : null }

@@ -1,7 +1,7 @@
 import { execFile, spawnSync } from 'node:child_process'
-import { existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync, unlinkSync, utimesSync, writeFileSync } from 'node:fs'
+import { closeSync, existsSync, futimesSync, lstatSync, mkdirSync, mkdtempSync, openSync, readFileSync, realpathSync, rmSync, symlinkSync, unlinkSync, utimesSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { dirname, join } from 'node:path'
+import { join } from 'node:path'
 import { afterAll, describe, expect, it, vi } from 'vitest'
 import type { Session } from '../sessions/session.js'
 import { removeWorktreeForSession, worktreeStatusForSession } from './worktrees.js'
@@ -45,9 +45,9 @@ describe('removeWorktreeForSession', () => {
 describe('hardened worktree Git calls', () => {
   const unlocked = { lockedByStream: () => false, lockedByTerminal: () => false }
   let n = 0
-  function setup(submoduleDepth = 0, objectFormat: 'sha1' | 'sha256' = 'sha1'): { repo: string; worktree: string; session: Session } {
+  function setup(submoduleDepth = 0, objectFormat: 'sha1' | 'sha256' = 'sha1', initializeModules = true, refStorage: 'files' | 'reftable' = 'files'): { repo: string; worktree: string; session: Session } {
     const repo = join(root, `secure-repo-${String(++n)}`)
-    git(root, 'init', '-q', '-b', 'main', `--object-format=${objectFormat}`, repo)
+    git(root, 'init', '-q', '-b', 'main', `--object-format=${objectFormat}`, ...(refStorage === 'files' ? [] : ['--ref-format=reftable']), repo)
     writeFileSync(join(repo, '.gitattributes'), '*.txt filter=evil\n')
     writeFileSync(join(repo, 'tracked.txt'), 'hello\n')
     git(repo, 'add', '.')
@@ -68,18 +68,20 @@ describe('hardened worktree Git calls', () => {
     }
     const worktree = join(root, `secure-wt-${String(n)}`)
     git(repo, 'worktree', 'add', '-q', '-b', `secure-wt-${String(n)}`, worktree)
-    if (source) git(worktree, '-c', 'protocol.file.allow=always', 'submodule', 'update', '--init', '--recursive')
+    if (source && initializeModules) git(worktree, '-c', 'protocol.file.allow=always', 'submodule', 'update', '--init', '--recursive')
     git(worktree, 'branch', '--set-upstream-to=main')
     return { repo, worktree, session: { session_id: `secure-${String(n)}`, worktree_path: worktree, worktree_repo_root: repo } as unknown as Session }
   }
 
-  function afterMove(write: (captured: string) => void | Promise<void>) {
-    const original = Reflect.get(GitRunner.prototype, 'run')
-    return vi.spyOn(GitRunner.prototype, 'run').mockImplementation(async function (this: GitRunner, ...args) {
-      const result = await original.apply(this, args)
-      if (args[1][0] === 'worktree' && args[1][1] === 'move' && result.status === 0) await write(args[1].at(-1) ?? '')
-      return result
-    })
+  function racyIndex(worktree: string): number {
+    const stamp = 1_000_000_000
+    git(worktree, 'config', 'core.trustctime', 'false')
+    git(worktree, 'config', 'core.checkStat', 'minimal')
+    utimesSync(join(worktree, 'tracked.txt'), stamp, stamp)
+    git(worktree, 'update-index', '--refresh')
+    const index = join(git(worktree, 'rev-parse', '--absolute-git-dir').trim(), 'index')
+    utimesSync(index, stamp - 1, stamp - 1)
+    return stamp
   }
 
   it('scans submodule filters once per status poll, excluding metadata-only probes', async () => {
@@ -121,52 +123,6 @@ describe('hardened worktree Git calls', () => {
     writeFileSync(join(worktree, 'module', 'tracked.txt'), 'changed\n')
     expect(git(worktree, 'status', '--porcelain')).toBe('')
     expect(await worktreeStatusForSession(session, unlocked)).toMatchObject({ dirty: false })
-  })
-
-  it('restores the captured directory and Git registration when its final probe finds new data', async () => {
-    const { worktree, session } = setup()
-    const spy = afterMove((captured) => { writeFileSync(join(captured, 'late.txt'), 'keep me\n') })
-    try { await expect(removeWorktreeForSession(session, unlocked)).rejects.toThrow('git worktree remove failed') } finally { spy.mockRestore() }
-    expect(readFileSync(join(worktree, 'late.txt'), 'utf8')).toBe('keep me\n')
-    expect(await worktreeStatusForSession(session, unlocked)).toMatchObject({ exists: true, listed: true, dirty: true })
-  })
-
-  it('holds the private capture against new file, terminal and Git mutation admission', async () => {
-    const { repo, worktree, session } = setup()
-    const runner = new GitRunner({ env: { ...process.env, HERMES_WEBUI_WORKSPACE_GIT_DESTRUCTIVE: '1' } })
-    const spy = afterMove(async (captured) => {
-      expect(runner.workspaceBusy(captured)).toBe(true)
-      expect(() => runner.holdWrite(captured, () => Promise.resolve())).toThrow('A Git operation is running in this workspace.')
-      await expect(runner.stage(captured, ['tracked.txt'])).rejects.toThrow('A Git operation is running in this workspace.')
-    })
-    try { expect(await runner.removeWorktreeExclusive(worktree, repo, () => removeWorktreeForSession(session, unlocked))).toMatchObject({ ok: true }) } finally { spy.mockRestore() }
-  })
-
-  it('leaves a replacement at the original path untouched after capturing the worktree', async () => {
-    const { worktree, session } = setup()
-    const spy = afterMove(() => {
-      mkdirSync(worktree)
-      writeFileSync(join(worktree, 'replacement.txt'), 'keep me\n')
-    })
-    try { expect(await removeWorktreeForSession(session, unlocked)).toMatchObject({ ok: true, warnings: ['The original worktree path was recreated during removal and was left untouched.'] }) } finally { spy.mockRestore() }
-    expect(readFileSync(join(worktree, 'replacement.txt'), 'utf8')).toBe('keep me\n')
-    expect(git(session.worktree_repo_root ?? '', 'worktree', 'list', '--porcelain')).not.toContain(`worktree ${worktree}\n`)
-  })
-
-  it('retains the captured worktree when a replacement prevents restoring its original path', async () => {
-    const { worktree, session } = setup()
-    let captured = ''
-    const spy = afterMove((path) => {
-      captured = path
-      writeFileSync(join(captured, 'late.txt'), 'captured data\n')
-      mkdirSync(worktree)
-      writeFileSync(join(worktree, 'replacement.txt'), 'replacement data\n')
-    })
-    try { await expect(removeWorktreeForSession(session, unlocked)).rejects.toThrow('Worktree retained at') } finally { spy.mockRestore() }
-    expect(readFileSync(join(worktree, 'replacement.txt'), 'utf8')).toBe('replacement data\n')
-    expect(readFileSync(join(captured, 'late.txt'), 'utf8')).toBe('captured data\n')
-    expect(readFileSync(join(captured, 'tracked.txt'), 'utf8')).toBe('hello\n')
-    expect(JSON.parse(readFileSync(join(dirname(captured), 'recovery.json'), 'utf8'))).toMatchObject({ original_path: worktree })
   })
 
   it.runIf(process.platform !== 'win32')('rejects non-regular metadata without opening a blocking FIFO reader', async () => {
@@ -252,6 +208,108 @@ describe('hardened worktree Git calls', () => {
     } finally { vi.mocked(execFile).mockImplementation(original.execFile) }
   })
 
+  for (const writer of ['untracked file', 'open descriptor', 'racy descriptor']) {
+    it(`preserves a late ${writer} write immediately before normal deletion`, async () => {
+      const { worktree, session } = setup()
+      const original = await vi.importActual<typeof import('node:child_process')>('node:child_process')
+      const stamp = writer === 'racy descriptor' ? racyIndex(worktree) : undefined
+      const fd = writer !== 'untracked file' ? openSync(join(worktree, 'tracked.txt'), 'r+') : undefined
+      vi.mocked(execFile).mockImplementation((...args: Parameters<typeof execFile>) => {
+        const argv = args[1] as string[]
+        if (argv.includes('worktree') && argv.includes('remove')) {
+          if (fd !== undefined) {
+            writeFileSync(fd, stamp !== undefined ? 'other\n' : 'late tracked data\n')
+            if (stamp !== undefined) {
+              futimesSync(fd, stamp, stamp)
+              expect(git(argv.at(-1) ?? worktree, '--no-optional-locks', 'status', '--porcelain')).toContain(' M tracked.txt')
+            }
+          }
+          else writeFileSync(join(argv.at(-1) ?? '', 'late.txt'), 'late untracked data\n')
+        }
+        return original.execFile(...args)
+      })
+      let failure: unknown
+      try { await removeWorktreeForSession(session, unlocked) } catch (error) { failure = error } finally {
+        vi.mocked(execFile).mockImplementation(original.execFile)
+        if (fd !== undefined) closeSync(fd)
+      }
+      const path = join(worktree, fd !== undefined ? 'tracked.txt' : 'late.txt')
+      expect(existsSync(path)).toBe(true)
+      expect(readFileSync(path, 'utf8')).toBe(stamp !== undefined ? 'other\n' : fd !== undefined ? 'late tracked data\n' : 'late untracked data\n')
+      expect(failure).toBeInstanceOf(Error)
+      expect(await worktreeStatusForSession(session, unlocked)).toMatchObject({ exists: true, listed: true, dirty: true })
+    })
+  }
+
+  it('preserves Git racy-index detection when snapshotting cached file stats', async () => {
+    const { worktree, session } = setup()
+    const stamp = racyIndex(worktree)
+    writeFileSync(join(worktree, 'tracked.txt'), 'other\n')
+    utimesSync(join(worktree, 'tracked.txt'), stamp, stamp)
+    expect(git(worktree, '--no-optional-locks', 'status', '--porcelain')).toContain(' M tracked.txt')
+    expect(await worktreeStatusForSession(session, unlocked)).toMatchObject({ dirty: true, force_required: true })
+  })
+
+  it('preserves a foreign index lock and restores the worktree when normal removal cannot acquire it', async () => {
+    const { worktree, session } = setup()
+    const gitDir = git(worktree, 'rev-parse', '--absolute-git-dir').trim()
+    writeFileSync(join(gitDir, 'index.lock'), 'another writer\n')
+    await expect(removeWorktreeForSession(session, unlocked)).rejects.toThrow('index is locked')
+    expect(readFileSync(join(gitDir, 'index.lock'), 'utf8')).toBe('another writer\n')
+    expect(readFileSync(join(worktree, 'tracked.txt'), 'utf8')).toBe('hello\n')
+    expect(await worktreeStatusForSession(session, unlocked)).toMatchObject({ exists: true, listed: true, dirty: false })
+  })
+
+  it('requires explicit force for uninitialized gitlinks that could become populated during the final check', async () => {
+    const { worktree, session } = setup(1, 'sha1', false)
+    expect(await worktreeStatusForSession(session, unlocked)).toMatchObject({ dirty: false, force_required: true })
+    await expect(removeWorktreeForSession(session, unlocked)).rejects.toThrow('submodules require force=true')
+    expect(await worktreeStatusForSession(session, unlocked)).toMatchObject({ exists: true, listed: true, dirty: false })
+    expect(await removeWorktreeForSession(session, unlocked, { force: true })).toMatchObject({ ok: true })
+    expect(existsSync(worktree)).toBe(false)
+  })
+
+  it('removes a clean worktree whose branch references have been packed', async () => {
+    const { repo, worktree, session } = setup()
+    const head = git(repo, 'rev-parse', 'HEAD')
+    git(repo, 'pack-refs', '--all', '--prune')
+    expect(await removeWorktreeForSession(session, unlocked)).toMatchObject({ ok: true })
+    expect(existsSync(worktree)).toBe(false)
+    expect(git(repo, 'rev-parse', 'HEAD')).toBe(head)
+    expect(git(repo, 'worktree', 'list', '--porcelain').match(/^worktree /gm)).toHaveLength(1)
+  })
+
+  it('uses the isolated removal boundary with reftable repositories when supported by Git', async ({ skip }) => {
+    const probe = spawnSync('git', ['init', '-q', '--ref-format=reftable', join(root, 'reftable-probe')], { encoding: 'utf8', env: { ...process.env, GIT_CONFIG_GLOBAL: '/dev/null', GIT_CONFIG_NOSYSTEM: '1' } })
+    if (probe.status !== 0 && /unknown option.*ref-format/.test(probe.stderr)) return skip()
+    expect(probe.status, probe.stderr).toBe(0)
+    const { repo, worktree, session } = setup(0, 'sha1', true, 'reftable')
+    const head = git(repo, 'rev-parse', 'HEAD')
+    expect(await worktreeStatusForSession(session, unlocked)).toMatchObject({ dirty: false })
+    expect(await removeWorktreeForSession(session, unlocked)).toMatchObject({ ok: true })
+    expect(existsSync(worktree)).toBe(false)
+    expect(git(repo, 'rev-parse', 'HEAD')).toBe(head)
+  })
+
+  it('refuses to remove the main worktree through a synthetic lifecycle request', async () => {
+    const { repo, session } = setup()
+    session.worktree_path = repo
+    await expect(removeWorktreeForSession(session, unlocked)).rejects.toThrow('Not a registered linked worktree')
+    expect(readFileSync(join(repo, 'tracked.txt'), 'utf8')).toBe('hello\n')
+  })
+
+  it('refuses an unregistered separate-Git-directory checkout', async () => {
+    const { session } = setup()
+    const foreign = join(root, `foreign-${String(n)}`)
+    git(root, 'init', '-q', '--separate-git-dir', join(root, `foreign-metadata-${String(n)}`), foreign)
+    writeFileSync(join(foreign, 'keep.txt'), 'keep me\n')
+    git(foreign, 'add', '.')
+    git(foreign, 'commit', '-q', '-m', 'foreign')
+    session.worktree_path = foreign
+    await expect(removeWorktreeForSession(session, unlocked)).rejects.toThrow('Not a registered linked worktree')
+    expect(readFileSync(join(foreign, 'keep.txt'), 'utf8')).toBe('keep me\n')
+  })
+
   for (const depth of [1, 2]) {
     for (const operation of ['status', 'remove', 'remove --force'] as const) {
       it(`does not execute depth-${String(depth)} submodule filters during ${operation}`, async () => {
@@ -261,7 +319,7 @@ describe('hardened worktree Git calls', () => {
         git(submodule, 'config', 'filter.evil.clean', `printf clean >> "${marker}"; cat`)
         utimesSync(join(submodule, 'tracked.txt'), 1, 1)
         if (operation === 'status') {
-          expect(await worktreeStatusForSession(session, unlocked)).toMatchObject({ dirty: false, untracked_count: 0, force_required: false })
+          expect(await worktreeStatusForSession(session, unlocked)).toMatchObject({ dirty: false, untracked_count: 0, force_required: true })
           writeFileSync(join(submodule, 'tracked.txt'), 'changed\n')
           expect(await worktreeStatusForSession(session, unlocked)).toMatchObject({ dirty: true, untracked_count: 0, force_required: true })
         } else if (operation === 'remove') {
