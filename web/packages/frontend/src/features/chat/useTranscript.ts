@@ -7,8 +7,8 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import * as api from '../../api/endpoints'
 import { keys } from '../../api/queryKeys'
-import type { Message, Session } from '../../contracts'
-import { attachToStream, hasLiveConnection, reconcileSession, discardSession, teardown } from '../../stream/connection'
+import { SessionSchema, type Message, type Session } from '../../contracts'
+import { attachToStream, hasLiveConnection, reconcileSession, discardSession, getStreamContext, teardown } from '../../stream/connection'
 import { getStreamState, useLiveTurn } from '../../stream/store'
 import { writePersisted } from '../../lib/persisted'
 
@@ -52,6 +52,8 @@ export function useTranscript(sessionId: string | null) {
   const older = useMemo(() => (olderState.sid === sessionId ? olderState.items : []), [olderState, sessionId])
   const setOlder = useCallback((update: (prev: Message[]) => Message[]) => setOlderState((s) => ({ sid: sessionId, items: update(s.sid === sessionId ? s.items : []) })), [sessionId])
   const [loadingOlder, setLoadingOlder] = useState(false)
+  const historyGeneration = useRef(0)
+  useEffect(() => () => { historyGeneration.current++ }, [sessionId])
   const attachedStream = useRef<string | null>(null)
   const query = useQuery({
     queryKey: keys.sessions.detail(sessionId ?? ''),
@@ -111,8 +113,11 @@ export function useTranscript(sessionId: string | null) {
     const before = (session._messages_offset ?? 0) - older.length
     if (before <= 0) return
     setLoadingOlder(true)
+    const generation = historyGeneration.current
+    const scope = getStreamContext()
     try {
       const res = await api.fetchSession(sessionId, { messages: true, msg_limit: TRANSCRIPT_WINDOW, msg_before: before, resolve_model: false })
+      if (generation !== historyGeneration.current || scope !== getStreamContext()) return
       const chunk = res.session.messages ?? []
       setOlder((prev) => [...chunk, ...prev])
     } finally {
@@ -120,7 +125,23 @@ export function useTranscript(sessionId: string | null) {
     }
   }, [sessionId, session, older.length, loadingOlder, setOlder])
 
-  const refresh = useCallback(() => qc.invalidateQueries({ queryKey: keys.sessions.detail(sessionId ?? '') }), [qc, sessionId])
+  const refresh = useCallback(async (accepted?: unknown, historyCut = false) => {
+    if (accepted !== undefined || historyCut) historyGeneration.current++
+    const scope = getStreamContext()
+    const parsed = SessionSchema.safeParse(accepted)
+    if (sessionId && parsed.success && parsed.data.session_id === sessionId && parsed.data.messages) {
+      await qc.cancelQueries({ queryKey: keys.sessions.detail(sessionId) })
+      if (scope !== getStreamContext()) return
+      setOlder(() => [])
+      discardSession(sessionId)
+      qc.setQueryData(keys.sessions.detail(sessionId), { session: parsed.data })
+      void qc.invalidateQueries({ queryKey: keys.sessions.all, predicate: (query) => query.queryKey[1] !== 'detail' })
+      return
+    }
+    // Older/mutation row-only responses need a fresh authoritative transcript.
+    if (accepted !== undefined || historyCut) setOlder(() => [])
+    await qc.invalidateQueries({ queryKey: keys.sessions.detail(sessionId ?? '') })
+  }, [qc, sessionId, setOlder])
 
   return { query, session, rows, base, live, truncated, loadOlder, loadingOlder, refresh }
 }

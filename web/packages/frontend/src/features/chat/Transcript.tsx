@@ -2,6 +2,7 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } fr
 import { useVirtualizer } from '@tanstack/react-virtual'
 import { ArrowDown, ArrowUp } from 'lucide-react'
 import { Link } from '@tanstack/react-router'
+import type { Attachment } from '../../contracts'
 import { m } from '../../paraglide/messages.js'
 import type { LiveTurn } from '../../stream/reducer'
 import { isTerminal } from '../../stream/reducer'
@@ -38,8 +39,10 @@ export interface TranscriptProps {
   onLoadOlder: () => void
   loadingOlder: boolean
   emptyState: React.ReactNode
-  /** A new chat's first send, shown as the live user row before its session and turn exist (sendMotion.ts). */
+  /** Local submitted intent, shown through the existing user renderer until the server identifies its row. */
   pendingUserText?: string | undefined
+  pendingAttachments?: Attachment[] | undefined
+  pendingPreviousStreamId?: string | undefined
   showJumpButtons: boolean
   /** `virtualize_transcript` setting; off by default because variable-height rows made long chats oscillate. */
   virtualizeLongTranscripts: boolean
@@ -69,11 +72,12 @@ export function Transcript(props: TranscriptProps) {
   const continued = useMemo(() => (showLive && live && !live.claimsPersistedRows ? rows.find((row) => isReplyRow(row.message) && (row.turnKey === live.streamId || row.turnKey === live.turnId)) : undefined), [rows, live, showLive])
   const continuedTools = useMemo(() => (continued ? toolIdsOf(persistedActivity(continued)) : undefined), [continued])
   const lastRowIsUser = rows.length > 0 && rows[rows.length - 1]?.message.role === 'user' && !rows[rows.length - 1]?.message._marker_kind && !rows[rows.length - 1]?.message._delivery
-  const showLiveUser = !!live && !isTerminal(live.status) && live.userText.trim() !== '' && !lastRowIsUser && !rows.some((r) => r.message.role === 'user' && messageKey(r.message) === live.userMessageId)
-  // One slot for the user's newest text: the pending first send until the turn starts, then the live user row, so the
-  // handover neither flashes nor duplicates.
-  // A persisted user row as the tail means the server already carries the pending text; never show it twice.
-  const liveUserText = showLiveUser ? (live?.userText ?? '') : !live && pendingUserText && !lastRowIsUser ? pendingUserText : ''
+  const showLiveUser = !!live && !isTerminal(live.status) && (live.userText.trim() !== '' || live.userAttachments.length > 0) && (live.userMessageId !== null || !lastRowIsUser) && !rows.some((r) => r.message.role === 'user' && messageKey(r.message) === live.userMessageId)
+  // The submitted occurrence uses one slot until the server's identified row takes over.
+  // Reconcile a newly observed turn by server identity, including a terminal snapshot that beats the POST response.
+  const persistedPending = !!live && live.streamId !== props.pendingPreviousStreamId && rows.some((row) => row.message.role === 'user' && ((live.userMessageId !== null && messageKey(row.message) === live.userMessageId) || row.message._turn_id === live.streamId || (live.turnId !== null && row.message._turn_id === live.turnId)))
+  const pending = pendingUserText !== undefined && !persistedPending
+  const liveUserText = pending ? pendingUserText : showLiveUser ? (live?.userText ?? '') : ''
   useAutoRead(props.autoRead === true, rows, live, !showLive)
   const lastAssistantIndex = useMemo(() => rows.findLastIndex((row) => isReplyRow(row.message)), [rows])
   const virtualize = virtualizeLongTranscripts && rows.length > VIRTUALIZE_AT
@@ -119,7 +123,7 @@ export function Transcript(props: TranscriptProps) {
   // Follow while pinned: track every size change of the content (each streamed line, each
   // folding disclosure) and of the pane itself before paint, instead of catching up in jumps.
   const innerRef = useRef<HTMLDivElement>(null)
-  const empty = rows.length === 0 && !showLive && !liveUserText
+  const empty = rows.length === 0 && !showLive && !pending && !liveUserText
   // The disclosure provider below is keyed by this scope, so a new session brings a new pane to observe.
   const scope = props.disclosureScope ?? sessionId
   useLayoutEffect(() => {
@@ -217,11 +221,7 @@ export function Transcript(props: TranscriptProps) {
                 })}
               </div>
             ) : rows.map((row, i) => renderRow(row, i))}
-            {liveUserText && (
-              <div className="msg-row" data-role="user" data-live-user="1">
-                <div className="msg-body whitespace-pre-wrap break-words">{liveUserText}</div>
-              </div>
-            )}
+            {(pending || showLiveUser) && <UserMessageRow row={{ index: -1, key: 'pending-user', message: { role: 'user', content: liveUserText, attachments: pending ? props.pendingAttachments ?? [] : live?.userAttachments ?? [] } }} renderMarkdown={renderUserMarkdown} sessionId={sessionId} actions={{}} pending />}
             {showLive && live && <LiveTurnView turn={live} name={assistantName} mode={mode} userVisible omitToolIds={continuedTools} />}
             {/* The settled error row carries the message; only the frame's continuation link lives outside the session. */}
             {!showLive && live?.error?.continuationSessionId && <Link to="/session/$sessionId" params={{ sessionId: live.error.continuationSessionId }} className="mt-1 inline-block text-[13px] text-accent-text underline">{m.live_continuation()}</Link>}

@@ -11,8 +11,8 @@ import { keys } from '../../api/queryKeys'
 import { useBootstrap } from '../../app/bootstrap'
 import { useSettingsQuery, useWorkspacesQuery } from '../../app/queries'
 import type { Session, SessionsList } from '../../contracts'
-import { configureStream, cancelTurn, startTurn } from '../../stream/connection'
-import { dispatch } from '../../stream/store'
+import { configureStream, cancelTurn, getStreamContext, startTurn } from '../../stream/connection'
+import { dispatch, useTurnIntent } from '../../stream/store'
 import { isTerminal, runStart } from '../../stream/reducer'
 import { useTranscript, type VisibleMessage } from './useTranscript'
 import { useEditMessage } from './useEditMessage'
@@ -47,6 +47,8 @@ export function ChatView({ sessionId }: { sessionId: string | null }) {
   const navigate = useNavigate()
   const settings = useSettingsQuery()
   const { query, session, rows, base, live, truncated, loadOlder, loadingOlder, refresh } = useTranscript(sessionId)
+  const intent = useTurnIntent(sessionId)
+  const { onEdit, dialog: editDialog, operation, runHistory } = useEditMessage(sessionId, refresh)
   const clarify = useClarify(sessionId, live)
   const vaultPrompt = useVaultPrompt(sessionId, live)
   useMarkViewed(sessionId, query.isFetchedAfterMount || (query.isSuccess && !query.isStale), live && isTerminal(live.status) ? live.streamId : null)
@@ -54,6 +56,7 @@ export function ChatView({ sessionId }: { sessionId: string | null }) {
   const { sidePanelOpen } = useShellState()
   const [queued, setQueued] = useQueuedTurns(sessionId)
   const draining = useRef(false)
+  const [failedQueued, setFailedQueued] = useState<string | null>(null)
   const [yolo, setYolo] = useState(false)
   // Choices made on the unsaved chat (no session yet) apply when the session is created.
   const [pending, setPending] = useState<{ model?: string; model_provider?: string | null; workspace?: string; enabled_toolsets?: string[] | null }>({})
@@ -72,21 +75,24 @@ export function ChatView({ sessionId }: { sessionId: string | null }) {
   // Queue drain: when the live turn settles, send the next queued message. A queue a reload restored onto a session
   // whose run ended meanwhile has no turn to settle; the server reporting no active stream starts it instead.
   useEffect(() => {
-    if (!sessionId || !session || (live ? !isTerminal(live.status) : session.active_stream_id)) return
+    if (!sessionId || !session || intent.send || intent.stop || operation || (live ? !isTerminal(live.status) : session.active_stream_id)) return
     const next = queued[0]
-    if (!next || draining.current) return
+    if (!next || draining.current || failedQueued === next.id) return
     // One drain in flight at a time; the item leaves the queue only once its turn has started, so a
     // failed start keeps it and a re-render mid-request cannot start the next item concurrently.
     draining.current = true
-    void startTurn({ sessionId, message: next.text, request: { ...next.request, ...(next.attachments.length ? { attachments: next.attachments } : {}) } })
-      .then(() => setQueued((q) => q.filter((t) => t.id !== next.id)))
-      .catch((e: unknown) => showToast(e instanceof Error ? e.message : String(e), 4000, 'error'))
+    const scope = getStreamContext()
+    void startTurn({ sessionId, message: next.text, queueId: next.id, request: { ...next.request, ...(next.attachments.length ? { attachments: next.attachments } : {}) } })
+      .then(() => { if (scope === getStreamContext()) setQueued((q) => q.filter((t) => t.id !== next.id)) })
+      .catch((e: unknown) => { if (scope !== getStreamContext()) return; setFailedQueued(next.id); showToast(e instanceof Error ? e.message : String(e), 4000, 'error') })
       .finally(() => { draining.current = false })
-  }, [sessionId, session, queued, live, setQueued])
+  }, [sessionId, session, queued, live, setQueued, intent, operation, failedQueued])
 
   const ensureSession = useCallback(async (onCreated?: (sessionId: string) => void): Promise<Session> => {
     if (session) return session
+    const scope = getStreamContext()
     const created = await createSessionNow({ ...(settings.data?.default_workspace ? { workspace: settings.data.default_workspace } : {}), ...pending, profile: bootstrap.profile?.name ?? 'default' })
+    if (scope !== getStreamContext()) throw new DOMException('Context changed', 'AbortError')
     onCreated?.(created.session_id)
     qc.setQueryData(keys.sessions.detail(created.session_id), { session: created })
     bindFirstSend(created.session_id)
@@ -139,23 +145,20 @@ export function ChatView({ sessionId }: { sessionId: string | null }) {
 
   // Regenerate, `/retry`, and the error notice's Retry: the server drops the last exchange, then its prompt and files are resent.
   // One at a time: a second retry while the first is pending would drop the exchange before it too.
-  const regenerating = useRef(false)
   const onRegenerate = useCallback(async () => {
-    if (!sessionId || !session || regenerating.current) return
-    regenerating.current = true
-    try {
+    if (!sessionId || !session) return false
+    return runHistory(m.history_retrying(), async (current) => {
       const r = await api.retrySession(sessionId)
-      if ('error' in r) { showToast(r.error, 4000, 'error'); return }
-      await refresh()
-      // Old-server fallback: without `last_user_prompt` the stored text may carry server-added lines, so it returns to the
-      // composer to review instead of being resent; on the next task, after a `/retry` has cleared the composer.
-      if (r.last_user_prompt === undefined) { const text = r.last_user_text; setTimeout(() => returnToComposer(sessionId, text), 0); return }
+      if (!current()) return
+      if ('error' in r) { showToast(r.error, 4000, 'error'); return false }
+      await refresh(undefined, true)
+      if (!current()) return
+      // Old-server payloads return to the composer for review rather than resending normalized text.
+      if (r.last_user_prompt === undefined) { returnToComposer(sessionId, r.last_user_text); return }
       const attachments = r.last_user_attachments ?? []
-      await startTurn({ sessionId, message: r.last_user_prompt, request: { ...turnRequest(session, bootstrap.profile?.name ?? 'default'), ...(attachments.length ? { attachments } : {}) } })
-    } catch (e) {
-      showToast(e instanceof Error ? e.message : String(e), 4000, 'error')
-    } finally { regenerating.current = false }
-  }, [sessionId, session, refresh, bootstrap.profile])
+      await startTurn({ sessionId, message: r.last_user_prompt, recover: true, request: { ...turnRequest(session, bootstrap.profile?.name ?? 'default'), ...(attachments.length ? { attachments } : {}) } })
+    })
+  }, [sessionId, session, refresh, bootstrap.profile, runHistory])
 
   // Manual compression: start, poll the job to done/error, then load the compacted session (a new id when the server forks).
   // Leaving the session unmounts this view and stops the poll, so it never navigates from the session shown next.
@@ -205,15 +208,15 @@ export function ChatView({ sessionId }: { sessionId: string | null }) {
     void followCompression(sessionId, () => Promise.resolve(runningJob))
   }, [sessionId, runningJob, compressingSince, followCompression])
 
-  const onLocalCommand = useCallback(async (name: string, args: string): Promise<boolean> => {
+  const onLocalCommand = useCallback(async (name: string, args: string): Promise<boolean | 'refused'> => {
     switch (name) {
       case 'stop': if (sessionId) await cancelTurn(sessionId); return true
       case 'new': removePersisted('hermes-webui-session'); await navigate({ to: '/', search: { action: 'new-chat' } }); return true
-      case 'clear': if (sessionId) { await api.clearSession(sessionId); await refresh() } return true
+      case 'clear': if (sessionId) return await runHistory(m.history_clearing(), async (current) => { const r = await api.clearSession(sessionId); if (current()) await refresh(r.session) }) ? true : 'refused'; return true
       case 'terminal': setTerminalOpen((t) => !t); return true
       case 'title': if (sessionId && args) { await api.renameSession(sessionId, args); await refresh(); void qc.invalidateQueries({ queryKey: keys.sessions.all }) } return true
-      case 'retry': if (sessionId) { await onRegenerate() } return true
-      case 'undo': if (sessionId) { await api.undoSession(sessionId); await refresh() } return true
+      case 'retry': if (sessionId) return await onRegenerate() ? true : 'refused'; return true
+      case 'undo': if (sessionId) return await runHistory(m.history_undoing(), async (current) => { const r = await api.undoSession(sessionId); if (!current()) return; if ('error' in r) { showToast(r.error, 4000, 'error'); return false } await refresh(undefined, true) }) ? true : 'refused'; return true
       case 'compress': if (sessionId) { void runCompression(sessionId) } return true
       case 'usage': if (sessionId) { const u = await api.fetchSessionUsage(sessionId); showToast(`${(u.input_tokens ?? 0).toLocaleString()} in · ${(u.output_tokens ?? 0).toLocaleString()} out${u.estimated_cost ? ` · $${u.estimated_cost.toFixed(4)}` : ''}`, 4000) } return true
       case 'yolo': onToggleYolo(); return true
@@ -245,9 +248,8 @@ export function ChatView({ sessionId }: { sessionId: string | null }) {
       case 'voice': showToast(m.voice_error(), 3000); return true
       default: return false
     }
-  }, [sessionId, navigate, refresh, qc, onToggleYolo, onModelChange, onWorkspaceChange, onRegenerate, reasoning, setReasoning, runCompression])
+  }, [sessionId, navigate, refresh, qc, onToggleYolo, onModelChange, onWorkspaceChange, onRegenerate, reasoning, setReasoning, runCompression, runHistory])
 
-  const { onEdit, dialog: editDialog } = useEditMessage(sessionId, refresh)
   const onBranch = useCallback(async (row: VisibleMessage) => {
     if (!sessionId) return
     const r = await api.branchSession(sessionId, row.index + 1)
@@ -274,8 +276,8 @@ export function ChatView({ sessionId }: { sessionId: string | null }) {
   // A first send in flight has already left the hero (sendMotion.ts).
   const knownEmpty = !sessionId || readPersisted('hermes-webui-session-empty') === sessionId
   const firstSend = useFirstSend()
-  const pendingUserText = firstSend && !firstSend.failed && ownsFirstSend(firstSend, sessionId) ? firstSend.text : undefined
-  const hero = !live && !pendingUserText && (!sessionId || (query.isSuccess ? rows.length === 0 : knownEmpty))
+  const pendingUserText = intent.send && (!intent.send.error || intent.send.uncertain || intent.send.recover) ? intent.send.text : firstSend && !firstSend.failed && ownsFirstSend(firstSend, sessionId) ? firstSend.text : undefined
+  const hero = !live && pendingUserText === undefined && (!sessionId || (query.isSuccess ? rows.length === 0 : knownEmpty))
   useEffect(() => {
     if (!sessionId || !query.isSuccess) return
     if (rows.length === 0) writePersisted('hermes-webui-session-empty', sessionId)
@@ -364,6 +366,8 @@ export function ChatView({ sessionId }: { sessionId: string | null }) {
             loadingOlder={loadingOlder}
             emptyState={query.isPending && !knownEmpty ? <TranscriptSkeleton /> : null}
             pendingUserText={pendingUserText}
+            pendingAttachments={intent.send?.attachments}
+            pendingPreviousStreamId={intent.send?.previousStreamId}
             showJumpButtons={(settings.data as Record<string, unknown> | undefined)?.session_jump_buttons !== false}
             virtualizeLongTranscripts={(settings.data as Record<string, unknown> | undefined)?.virtualize_transcript === true}
           />
@@ -400,11 +404,11 @@ export function ChatView({ sessionId }: { sessionId: string | null }) {
           yolo={yoloOn}
           onToggleYolo={onToggleYolo}
           queued={queued}
-          locked={compressingSince !== null}
+          locked={compressingSince !== null || operation !== null}
           onQueue={(entry) => setQueued((q) => [...q, entry])}
           onQueueChange={setQueued}
           clarify={clarify}
-          notices={runtime.notices}
+          notices={[...runtime.notices, ...(operation ? [{ id: 'history', content: <span role="status">{operation}</span> }] : []), ...(failedQueued && queued.some((q) => q.id === failedQueued) ? [{ id: 'queue-failed', tone: 'error' as const, content: m.composer_queue_failed(), action: { label: m.retry(), run: () => setFailedQueued(null) } }] : [])]}
         />
         </div>
         </div>

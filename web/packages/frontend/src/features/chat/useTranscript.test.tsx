@@ -58,3 +58,20 @@ it('paints retained output before delayed detail/status and reconnects once on A
   })
   expect(result.current.live && liveText(result.current.live)).toBe('Already visible. Unseen.')
 })
+
+
+it('an accepted history cut fences an older page that was already loading', async () => {
+  const prior = sessionFixture({ session_id: 'cut', messages: [{ role: 'user', id: 5, content: 'Current' }], _messages_offset: 4, _messages_truncated: true })
+  const page = deferred<Awaited<ReturnType<typeof api.fetchSession>>>()
+  vi.mocked(api.fetchSession).mockReturnValue(page.promise)
+  const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+  qc.setQueryData(keys.sessions.detail('cut'), { session: prior })
+  const wrapper = ({ children }: { children: ReactNode }) => <QueryClientProvider client={qc}>{children}</QueryClientProvider>
+  const { result } = renderHook(() => useTranscript('cut'), { wrapper })
+  let loading!: Promise<void>
+  act(() => { loading = result.current.loadOlder() })
+  await act(async () => { await result.current.refresh(sessionFixture({ session_id: 'cut', messages: [] })) })
+  expect(result.current.rows).toEqual([])
+  await act(async () => { page.resolve({ session: sessionFixture({ session_id: 'cut', messages: [{ role: 'user', id: 1, content: 'Removed' }] }) }); await loading })
+  expect(result.current.rows).toEqual([])
+})

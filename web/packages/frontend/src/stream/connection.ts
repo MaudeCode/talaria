@@ -8,13 +8,16 @@ import * as api from '../api/endpoints'
 import { openChatStream, SSE_CLOSED, type SseHandle } from '../api/sse'
 import { keys } from '../api/queryKeys'
 import type { ChatEvent } from '../contracts/sse'
-import type { ChatStartRequest, ChatStartResponse, Session } from '../contracts'
-import { forgetOwnSteer, returnStoppedSteer } from '../features/composer/composerReturn'
+import type { ChatStartRequest, ChatStartResponse, Session, Attachment } from '../contracts'
+import { forgetOwnSteer, resetComposerReturns, returnStoppedSteer } from '../features/composer/composerReturn'
 import { RELAY_CLOSE_EVENTS } from '../contracts/sse'
-import { dispatch, getStreamState } from './store'
+import { clearTurnIntents, dispatch, getStreamState, getTurnIntent, setTurnIntent } from './store'
 import { isTerminal } from './reducer'
 import { setTodoState } from '../features/todos/todoStore'
 import { showToast } from '../features/toast/toast'
+import { m } from '../paraglide/messages.js'
+import type { PendingFile } from '../features/composer/Attachments'
+import { endFirstSend, getFirstSend } from '../features/chat/firstSend'
 import { isApiError } from '../contracts/common'
 
 interface Replay { afterSeq: number; afterEventId: string }
@@ -27,6 +30,12 @@ interface Live {
   reconnectAttempts: number
   owner: object
 }
+
+let context = {}
+/** Changes whenever auth, profile or server context is discarded. */
+export const getStreamContext = (): object => context
+const starts = new Map<string, { owner: object; promise: Promise<ChatStartResponse> }>()
+const stops = new Map<string, { owner: object; promise: Promise<boolean> }>()
 
 const live = new Map<string, Live>()
 const owners = new Map<string, object>()
@@ -207,30 +216,94 @@ async function settleFromServer(sessionId: string, streamId: string, owner: obje
   }
 }
 
-export interface StartTurnInput { sessionId: string; message: string; request: Omit<ChatStartRequest, 'session_id' | 'message'> }
+export interface StartTurnInput { sessionId: string; message: string; request: Omit<ChatStartRequest, 'session_id' | 'message'> & { attachments?: Attachment[] }; files?: PendingFile[]; recover?: boolean; queueId?: string }
 
-/** Send a turn: POST /api/chat/start, adopt the server turn identity, open the stream. */
-export async function startTurn(input: StartTurnInput) {
+/** One admission per session; all callers share the same pending row and request. */
+export function startTurn(input: StartTurnInput): Promise<ChatStartResponse> {
+  const pending = starts.get(input.sessionId)
+  if (pending) return pending.promise
+  if (getTurnIntent(input.sessionId).send?.uncertain) return Promise.reject(new Error(m.composer_send_uncertain()))
   const owner = owners.get(input.sessionId) ?? {}
+  const scope = context
+  const client = queryClient
+  const first = getFirstSend()
   owners.set(input.sessionId, owner)
-  try {
-    const res = await api.startChat({ session_id: input.sessionId, message: input.message, ...input.request })
-    if (owners.get(input.sessionId) === owner) adoptTurn(input.sessionId, input.message, res)
-    return res
-  } finally {
-    if (owners.get(input.sessionId) === owner && !live.has(input.sessionId) && !attaching.has(input.sessionId)) owners.delete(input.sessionId)
-  }
+  const send = { queueId: input.queueId, previousStreamId: getStreamState().turns[input.sessionId]?.streamId, text: input.message, attachments: input.request.attachments ?? [], request: input.request, ...(input.files ? { files: input.files } : {}), recover: input.recover ?? !!input.files }
+  setTurnIntent(input.sessionId, { ...getTurnIntent(input.sessionId), send })
+  const current = () => scope === context && getTurnIntent(input.sessionId).send === send
+  let admitted = false
+  const promise = (async () => {
+    try {
+      const res = await api.startChat({ session_id: input.sessionId, message: input.message, ...input.request })
+      if (res.ok === false) throw new Error(res.reason ?? m.composer_send_refused())
+      admitted = true
+      if (!current()) return res
+      if (res.stream_id && owners.get(input.sessionId) === owner) {
+        const turn = getStreamState().turns[input.sessionId]
+        // A session relay may already have delivered this turn's terminal snapshot before the POST returned.
+        if (!(turn?.streamId === res.stream_id && isTerminal(turn.status))) adoptTurn(input.sessionId, input.message, res, input.request.attachments)
+      }
+      // Suppressed/no-stream admissions have no live row to take over the pending slot.
+      if (!res.stream_id) {
+        const result = res.session ? { session: res.session } : await api.fetchSession(input.sessionId, { messages: true })
+        if (current()) {
+          // FirstSend must retire while TurnIntent still owns the row; otherwise its fallback revives it after settlement.
+          if (first?.sessionId === input.sessionId && getFirstSend() === first) endFirstSend()
+          client?.setQueryData(keys.sessions.detail(input.sessionId), result)
+        }
+      }
+      return res
+    } catch (error) {
+      if (current()) {
+        let uncertain = admitted || isApiError(error) && error.kind !== 'http'
+        if (uncertain) {
+          try {
+            const result = await api.fetchSession(input.sessionId, { messages: true })
+            if (!current()) throw error
+            client?.setQueryData(keys.sessions.detail(input.sessionId), result)
+            // An uncertain POST is never replayed. Reattach to authoritative execution if it exists.
+            if (result.session.active_stream_id) {
+              if (owners.get(input.sessionId) === owner) await attachToStream(input.sessionId, result.session.active_stream_id, result.session)
+              // Observation alone cannot prove that this particular submission was admitted.
+            }
+            // Keep the intent blocked: an idle snapshot cannot prove a timed-out POST will not admit later.
+          } catch { /* Keep the submitted payload until the outcome can be reconciled. */ }
+          uncertain = true
+        }
+        if (!current()) throw error
+        const intent = getTurnIntent(input.sessionId)
+        if (intent.send && (input.files || input.recover || uncertain)) setTurnIntent(input.sessionId, { ...intent, send: { ...intent.send, error: error instanceof Error ? error.message : String(error), uncertain } })
+      }
+      throw error
+    } finally {
+      if (scope === context && starts.get(input.sessionId)?.owner === send) {
+        starts.delete(input.sessionId)
+        const intent = getTurnIntent(input.sessionId)
+        if (!intent.send?.error) setTurnIntent(input.sessionId, { ...intent, send: undefined })
+        if (owners.get(input.sessionId) === owner && !live.has(input.sessionId) && !attaching.has(input.sessionId)) owners.delete(input.sessionId)
+      }
+    }
+  })()
+  starts.set(input.sessionId, { owner: send, promise })
+  return promise
+}
+
+/** Retry only a refused admission, using its authoritative prompt/files without cutting history again. */
+export function retryPendingTurn(sessionId: string): Promise<ChatStartResponse> | undefined {
+  const send = getTurnIntent(sessionId).send
+  if (!send?.error || send.uncertain) return
+  return startTurn({ sessionId, message: send.text, request: send.request, recover: true })
 }
 
 /** Follow a turn the server admitted for this message: from `chat.start`, or a steer it started as a turn (TAL-460). */
-export function adoptTurn(sessionId: string, message: string, res: ChatStartResponse): void {
+export function adoptTurn(sessionId: string, message: string, res: ChatStartResponse, attachments: Attachment[] = []): void {
   // A silent control message is admitted without a turn (`status: suppressed`).
   if (!res.stream_id) { invalidateSession(sessionId); return }
   teardown(sessionId)
   retained.delete(sessionId)
   const owner = {}
   owners.set(sessionId, owner)
-  dispatch({ type: 'start', sessionId, streamId: res.stream_id, turnId: res.turn_id ?? null, userMessageId: res.user_message_id === undefined || res.user_message_id === null ? null : String(res.user_message_id), userText: message, now: Date.now(), serverStartedAt: res.pending_started_at })
+  dispatch({ type: 'start', sessionId, streamId: res.stream_id, turnId: res.turn_id ?? null, userMessageId: res.user_message_id === undefined || res.user_message_id === null ? null : String(res.user_message_id), userText: message, userAttachments: attachments, now: Date.now(), serverStartedAt: res.pending_started_at })
   open(sessionId, res.stream_id, null, owner)
   invalidateSession(sessionId)
 }
@@ -241,7 +314,7 @@ export function attachToStream(sessionId: string, streamId: string, run: Pick<Se
   if (existing?.streamId === streamId && existing.handle.readyState() !== SSE_CLOSED) return Promise.resolve()
   const pending = attaching.get(sessionId)
   if (pending?.streamId === streamId) return pending.promise
-  if (getStreamState().turns[sessionId]?.streamId !== streamId) discardSession(sessionId)
+  if (getStreamState().turns[sessionId]?.streamId !== streamId) discardSession(sessionId, true)
   else teardown(sessionId)
   retained.delete(sessionId)
   const owner = {}
@@ -265,23 +338,51 @@ export function attachToStream(sessionId: string, streamId: string, run: Pick<Se
   return promise
 }
 
-/** Explicit user stop: backend cancel; the terminal `cancel` event settles the turn. */
-export async function cancelTurn(sessionId: string): Promise<boolean> {
+/** Explicit user stop: show intent immediately, then wait for authoritative worker release. */
+export function cancelTurn(sessionId: string): Promise<boolean> {
+  const pending = stops.get(sessionId)
+  if (pending) return pending.promise
   const turn = getStreamState().turns[sessionId]
-  if (!turn || isTerminal(turn.status)) return false
+  const streamId = getTurnIntent(sessionId).stop?.streamId ?? (turn && !isTerminal(turn.status) ? turn.streamId : null)
+  if (!streamId) return Promise.resolve(false)
+  const scope = context
   const owner = owners.get(sessionId)
-  try {
-    const res = await api.cancelChat(turn.streamId)
-    if (owners.get(sessionId) !== owner) return res.cancelled
-    if (!res.cancelled) {
-      dispatch({ type: 'settle', sessionId, streamId: turn.streamId, session: null })
-      closeLive(sessionId)
-      showToast('Stream is no longer active', 2000)
+  const stop = { streamId, failed: false }
+  setTurnIntent(sessionId, { ...getTurnIntent(sessionId), stop })
+  const current = () => scope === context && getTurnIntent(sessionId).stop === stop
+  const promise = (async () => {
+    try {
+      const response = await api.cancelChat(streamId)
+      if (!response.ok) throw new Error(response.error ?? m.composer_stop_failed())
+      if (!current() || (getStreamState().turns[sessionId] && getStreamState().turns[sessionId]?.streamId !== streamId)) return false
+      // A terminal event or cancel acknowledgement is not worker-release proof.
+      for (let attempt = 0; attempt < 360; attempt++) {
+        if (!current()) return false
+        const status = await api.fetchStreamStatus(streamId)
+        if (!current() || (getStreamState().turns[sessionId] && getStreamState().turns[sessionId]?.streamId !== streamId)) return false
+        if (!status.active && status.blocking_stream_id === null) {
+          await settleFromServer(sessionId, streamId, owner ?? {})
+          if (current()) { setTurnIntent(sessionId, { ...getTurnIntent(sessionId), stop: undefined }); invalidateSession(sessionId) }
+          return true
+        }
+        await new Promise((resolve) => window.setTimeout(resolve, 500))
+      }
+      throw new Error(m.composer_stop_failed())
+    } catch (error) {
+      if (current()) {
+        setTurnIntent(sessionId, { ...getTurnIntent(sessionId), stop: { streamId, failed: true } })
+        showToast(error instanceof Error ? error.message : String(error), 4000, 'error')
+      }
+      return false
+    } finally {
+      if (scope === context && stops.get(sessionId)?.owner === stop) {
+        stops.delete(sessionId)
+        if (getStreamState().turns[sessionId] && getStreamState().turns[sessionId]?.streamId !== streamId && getTurnIntent(sessionId).stop?.streamId === streamId) setTurnIntent(sessionId, { ...getTurnIntent(sessionId), stop: undefined })
+      }
     }
-    return true
-  } catch {
-    return false
-  }
+  })()
+  stops.set(sessionId, { owner: stop, promise })
+  return promise
 }
 
 function suspend(sessionId: string): void {
@@ -307,20 +408,27 @@ export function teardown(sessionId: string): void {
 }
 
 /** Destructive lifecycle exit: deleted session, new context, or authoritative run replacement. */
-export function discardSession(sessionId: string): void {
+export function discardSession(sessionId: string, preserveIntent = false): void {
+  if (!preserveIntent) { starts.delete(sessionId); stops.delete(sessionId); setTurnIntent(sessionId, {}) }
   suspend(sessionId)
   retained.delete(sessionId)
   dispatch({ type: 'teardown', sessionId })
 }
 
 export function teardownAll(): void {
+  context = {}
+  starts.clear()
+  stops.clear()
+  clearTurnIntents()
+  endFirstSend()
+  resetComposerReturns()
   for (const sid of new Set([...owners.keys(), ...live.keys(), ...Object.keys(getStreamState().turns)])) discardSession(sid)
 }
 
 /** Apply a fresh detail only to the run that existed when its request began. */
 export function reconcileSession(sessionId: string, session: Session, expectedStreamId: string | undefined): void {
   const turn = getStreamState().turns[sessionId]
-  if (turn && !isTerminal(turn.status) && turn.streamId === expectedStreamId && session.active_stream_id !== turn.streamId) discardSession(sessionId)
+  if (turn && !isTerminal(turn.status) && turn.streamId === expectedStreamId && session.active_stream_id !== turn.streamId) discardSession(sessionId, true)
 }
 
 export function hasLiveConnection(sessionId: string): boolean {

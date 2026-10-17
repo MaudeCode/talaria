@@ -11,12 +11,19 @@ const chips = (page: Page) => page.locator('.attach-tray li')
 
 /** One synthetic session, its draft autosave, and an upload endpoint that records which session each file went to. */
 async function mockSession(page: Page, sid: string, uploads: string[] = []) {
+  const uploadedPaths = new Set<string>()
   await page.route('**/api/session?**', (route) => route.fulfill({ json: { session: { session_id: sid, title: 'Attach', messages: [] } } }))
   await page.route('**/api/session/draft', (route) => route.fulfill({ json: { ok: true } }))
+  await page.route('**/api/file/raw**', (route) => {
+    const query = new URL(route.request().url()).searchParams
+    return uploadedPaths.has(JSON.stringify([query.get('session_id'), query.get('path')])) ? route.fulfill({ contentType: 'image/png', body: PNG }) : route.fallback()
+  })
   await page.route('**/api/upload**', async (route) => {
     const target = new URL(route.request().url()).searchParams.get('session_id') ?? ''
     uploads.push(target)
-    await route.fulfill({ json: { filename: `f${uploads.length}.png`, path: `/tmp/${target}/f${uploads.length}.png`, size: PNG.length, mime: 'image/png', is_image: true } })
+    const path = `/tmp/${target}/f${uploads.length}.png`
+    uploadedPaths.add(JSON.stringify([target, path]))
+    await route.fulfill({ json: { filename: `f${uploads.length}.png`, path, size: PNG.length, mime: 'image/png', is_image: true } })
   })
   return uploads
 }
