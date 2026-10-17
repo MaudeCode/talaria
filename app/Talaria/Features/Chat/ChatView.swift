@@ -2465,6 +2465,16 @@ struct ChatView: View {
     }
 
     private func uploadInitialAttachmentsIfNeeded() async {
+        // Once staged, imports live in the coordinator rather than the raw import buffer.
+        // Startup Retry must reuse that durable owner and its sequential upload drain.
+        let failedImports = viewModel.pendingAttachments.filter {
+            guard initialImportedAttachmentIDs.contains($0.id), case .failed = $0.uploadPhase else { return false }
+            return true
+        }
+        for attachment in failedImports {
+            guard !Task.isCancelled else { return }
+            await viewModel.retryAttachment(id: attachment.id)
+        }
         guard !didUploadInitialAttachments, !initialAttachments.isEmpty else { return }
         viewModel.setUploadAttachmentError(nil)
         let imports = initialAttachments

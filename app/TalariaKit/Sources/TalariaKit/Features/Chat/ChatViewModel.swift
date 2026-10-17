@@ -2848,7 +2848,10 @@ public final class ChatViewModel {
         // The first row exists while creation/configuration/uploads are unresolved. Only this
         // send owns it; session adoption never invents a stream or another user row.
         if preparesSession {
-            guard let waitForSession, await waitForSession(),
+            let sessionReady = await waitForSession?() ?? false
+            // The row's reservation ends before either adoption or rollback returns its files.
+            attachmentCoordinator.startupAttachmentCount = 0
+            guard sessionReady,
                   ownership == sendOwnershipGeneration, !Task.isCancelled else {
                 rollbackOptimisticMessage(id: localMessageID)
                 restorePendingAttachments(attachmentsToRestoreOnFailure)
