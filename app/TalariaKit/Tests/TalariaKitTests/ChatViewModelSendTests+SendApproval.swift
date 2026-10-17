@@ -1167,6 +1167,213 @@ extension ChatViewModelSendTests {
     }
 
     @MainActor
+    func testVoicePreparationFailureRetainsReplayableBytesAndRetryUsesSameRow() async throws {
+        var transcriptions = 0
+        var starts = 0
+        let store = RecordingSendDraftAttachmentStore()
+        let viewModel = try makeViewModel(draftAttachmentStore: store) { request in
+            switch request.url?.path {
+            case "/api/transcribe":
+                transcriptions += 1
+                return apiTestJSONResponse(transcriptions == 1 ? #"{"error":"STT unavailable"}"# : #"{"transcript":"Recovered"}"#, for: request)
+            case "/api/upload": return apiTestJSONResponse(#"{"path":"/tmp/retry.m4a","mime":"audio/mp4"}"#, for: request)
+            case "/api/chat/start": starts += 1; return apiTestJSONResponse(#"{"stream_id":"voice-retry"}"#, for: request)
+            default: throw URLError(.badURL)
+            }
+        }
+        let outcome = await viewModel.sendVoiceNote(audioData: Data("replay".utf8), filename: "retry.m4a")
+        XCTAssertFalse(outcome.didStart)
+        XCTAssertEqual(starts, 0)
+        let row = try XCTUnwrap(viewModel.messages.first)
+        let data = await viewModel.attachmentRawData(path: row.id)
+        XCTAssertEqual(data, Data("replay".utf8))
+        XCTAssertEqual(row.localVoicePhase, .failed("STT unavailable"))
+        let replacement = await viewModel.sendVoiceNote(audioData: Data("new recording".utf8), filename: "replacement.m4a")
+        XCTAssertFalse(replacement.didStart)
+        XCTAssertNotNil(replacement.error)
+        XCTAssertEqual(viewModel.messages.map(\.id), [row.id])
+        await viewModel.retryVoiceNote(messageID: row.id)
+        XCTAssertEqual(starts, 1)
+        XCTAssertEqual(viewModel.messages.count, 1)
+        XCTAssertEqual(viewModel.messages.first?.id, row.id)
+        XCTAssertNil(viewModel.pendingVoiceDraft)
+    }
+
+    @MainActor
+    func testVoiceNotePausedDuringTranscriptionCannotStartAfterBackgrounding() async throws {
+        for background in [false, true] {
+            let started = expectation(description: "STT held")
+            let gate = DispatchSemaphore(value: 0)
+            defer { gate.signal() }
+            let viewModel = try makeViewModel { request in
+                XCTAssertEqual(request.url?.path, "/api/transcribe", "Suspended preparation cannot upload or start a turn")
+                started.fulfill(); gate.wait()
+                return apiTestJSONResponse(#"{"transcript":"Late"}"#, for: request)
+            }
+            let task = Task { await viewModel.sendVoiceNote(audioData: Data("saved".utf8), filename: "saved.m4a") }
+            await fulfillment(of: [started], timeout: 10)
+            if background { viewModel.suspendStreamForBackground() } else { task.cancel() }
+            gate.signal()
+            let outcome = await task.value
+            XCTAssertFalse(outcome.didStart)
+            XCTAssertEqual(viewModel.messages.count, 1)
+            XCTAssertNotNil(viewModel.pendingVoiceDraft)
+            XCTAssertEqual(viewModel.messages.first?.content, "")
+            guard case .failed = viewModel.messages.first?.localVoicePhase else { return XCTFail("Interrupted preparation must remain retryable") }
+        }
+    }
+
+    @MainActor
+    func testVoiceUploadAndExplicitStartFailuresRetryWithoutAnotherTranscriptionOrRow() async throws {
+        for failure in ["upload", "start"] {
+            var transcriptions = 0
+            var uploads = 0
+            var starts = 0
+            let viewModel = try makeViewModel { request in
+                switch request.url?.path {
+                case "/api/transcribe":
+                    transcriptions += 1
+                    return apiTestJSONResponse(#"{"transcript":"Prepared"}"#, for: request)
+                case "/api/upload":
+                    uploads += 1
+                    return apiTestJSONResponse(failure == "upload" && uploads == 1 ? #"{"error":"Upload refused"}"# : #"{"path":"/tmp/prepared.m4a","mime":"audio/mp4"}"#, for: request)
+                case "/api/chat/start":
+                    starts += 1
+                    return apiTestJSONResponse(failure == "start" && starts == 1 ? #"{"error":"Start refused"}"# : #"{"stream_id":"prepared-stream"}"#, for: request)
+                default: throw URLError(.badURL)
+                }
+            }
+            let first = await viewModel.sendVoiceNote(audioData: Data("original".utf8), filename: "prepared.m4a")
+            XCTAssertFalse(first.didStart)
+            let id = try XCTUnwrap(viewModel.messages.first?.id)
+            XCTAssertNotNil(viewModel.pendingVoiceDraft)
+            await viewModel.retryVoiceNote(messageID: id)
+            XCTAssertEqual(transcriptions, 1)
+            XCTAssertEqual(uploads, failure == "upload" ? 2 : 1)
+            XCTAssertEqual(starts, failure == "start" ? 2 : 1)
+            XCTAssertEqual(viewModel.messages.map(\.id), [id])
+            XCTAssertNil(viewModel.pendingVoiceDraft)
+        }
+    }
+
+    @MainActor
+    func testFailedVoiceRestoresFromItsDraftWithReplayableBytesAndScopeFence() async throws {
+        let store = RecordingSendDraftAttachmentStore()
+        let original = try makeViewModel(draftAttachmentStore: store) { request in
+            apiTestJSONResponse(#"{"error":"Not ready"}"#, for: request)
+        }
+        _ = await original.sendVoiceNote(audioData: Data("durable audio".utf8), filename: "retained.m4a")
+        let draft = try XCTUnwrap(original.pendingVoiceDraft)
+        let reopened = try makeViewModel(draftAttachmentStore: store) { _ in throw URLError(.badURL) }
+        await reopened.restoreVoiceNote(draft)
+        XCTAssertEqual(reopened.messages.map(\.id), [draft.id])
+        let data = await reopened.attachmentRawData(path: draft.id)
+        XCTAssertEqual(data, Data("durable audio".utf8))
+        let other = try makeViewModel(draftAttachmentStore: store, server: URL(string: "https://other.test")!) { _ in throw URLError(.badURL) }
+        await other.restoreVoiceNote(draft)
+        XCTAssertTrue(other.messages.isEmpty)
+        let otherProfile = try makeViewModel(draftAttachmentStore: store) { _ in
+            XCTFail("A note from another profile must not reach the network")
+            throw URLError(.badURL)
+        }
+        let profileDraft = ChatDraftVoiceNote(id: draft.id, file: draft.file, filename: draft.filename,
+                                             context: draft.context + "other-profile", timestamp: draft.timestamp,
+                                             transcript: draft.transcript, uncertainStart: false)
+        await otherProfile.restoreVoiceNote(profileDraft)
+        await otherProfile.retryVoiceNote(messageID: draft.id)
+        XCTAssertEqual(otherProfile.pendingVoiceDraft?.context, profileDraft.context)
+        XCTAssertEqual(otherProfile.messages.map(\.id), [draft.id])
+
+    }
+
+    @MainActor
+    func testLostVoiceStartResponseCannotIssueAnotherNonIdempotentStart() async throws {
+        var starts = 0
+        var confirmed = false
+        var receiptPath = "/tmp/older-voice.m4a"
+        let viewModel = try makeViewModel { request in
+            switch request.url?.path {
+            case "/api/transcribe": return apiTestJSONResponse(#"{"transcript":"Uncertain"}"#, for: request)
+            case "/api/upload": return apiTestJSONResponse(#"{"path":"/tmp/uncertain.m4a","mime":"audio/mp4"}"#, for: request)
+            case "/api/chat/start": starts += 1; throw URLError(.networkConnectionLost)
+            case "/api/session":
+                return apiTestJSONResponse(confirmed
+                    ? #"{"session":{"session_id":"session-abc","messages":[{"role":"user","content":"Uncertain","timestamp":2000000000,"message_id":"server-voice","attachments":[{"name":"uncertain.m4a","path":"/tmp/uncertain.m4a","mime":"audio/mp4"}]}]}}"#.replacingOccurrences(of: "/tmp/uncertain.m4a", with: receiptPath)
+                    : #"{"session":{"session_id":"session-abc","messages":[]}}"#, for: request)
+            default: throw URLError(.badURL)
+            }
+        }
+        _ = await viewModel.sendVoiceNote(audioData: Data("uncertain".utf8), filename: "uncertain.m4a")
+        let id = try XCTUnwrap(viewModel.messages.first?.id)
+        await viewModel.retryVoiceNote(messageID: id)
+        XCTAssertEqual(starts, 1)
+        XCTAssertEqual(viewModel.messages.map(\.id), [id])
+        XCTAssertEqual(viewModel.pendingVoiceDraft?.uncertainStart, true)
+        confirmed = true
+        await viewModel.retryVoiceNote(messageID: id)
+        XCTAssertNotNil(viewModel.pendingVoiceDraft, "An older clip with the same transcript and name cannot confirm this send")
+        XCTAssertTrue(viewModel.messages.contains { $0.id == id })
+        receiptPath = "/tmp/uncertain.m4a"
+        await viewModel.retryVoiceNote(messageID: id)
+        XCTAssertEqual(starts, 1)
+        XCTAssertNil(viewModel.pendingVoiceDraft)
+        XCTAssertEqual(viewModel.messages.map(\.id), ["server-voice"])
+    }
+
+    @MainActor
+    func testTextAndQueueAdmissionCannotConsumeUnfinishedAttachments() async throws {
+        var starts = 0
+        let viewModel = try makeViewModel { request in
+            XCTAssertEqual(request.url?.path, "/api/chat/start")
+            starts += 1
+            return apiTestJSONResponse(#"{"stream_id":"existing-stream"}"#, for: request)
+        }
+        let began = await viewModel.sendMessage("First")
+        XCTAssertTrue(began)
+        let staged = await viewModel.stageAttachment(data: Data("local".utf8), filename: "local.txt")
+        let attachment = try XCTUnwrap(staged)
+        let direct = await viewModel.sendMessage("Later")
+        XCTAssertFalse(direct)
+        XCTAssertEqual(viewModel.sendErrorMessage, "Finish uploading or remove failed attachments before sending.")
+        let queued = await viewModel.submitStreamingMessage("Later", behavior: .queue)
+        guard case .unsupported = queued else { return XCTFail("An unfinished attachment cannot enter the send queue") }
+        XCTAssertEqual(viewModel.pendingAttachments.map(\.id), [attachment.id])
+        XCTAssertTrue(viewModel.queuedMessagePreviews.isEmpty)
+        XCTAssertEqual(starts, 1)
+    }
+
+    @MainActor
+    func testVoiceNoteIsVisibleBeforeTranscriptionCompletes() async throws {
+        let started = expectation(description: "transcription held")
+        let gate = DispatchSemaphore(value: 0)
+        defer { gate.signal() }
+        let viewModel = try makeViewModel { request in
+            switch request.url?.path {
+            case "/api/transcribe":
+                started.fulfill()
+                gate.wait()
+                return apiTestJSONResponse(#"{"transcript":"Hello"}"#, for: request)
+            case "/api/upload":
+                return apiTestJSONResponse(#"{"path":"/tmp/note.m4a","mime":"audio/mp4","is_image":false}"#, for: request)
+            case "/api/chat/start":
+                return apiTestJSONResponse(#"{"stream_id":"stream-voice"}"#, for: request)
+            default: throw URLError(.badURL)
+            }
+        }
+        let task = Task { await viewModel.sendVoiceNote(audioData: Data("clip".utf8), filename: "note.m4a") }
+        await fulfillment(of: [started], timeout: 10)
+        XCTAssertEqual(viewModel.messages.count, 1, "Voice note must be visible while transcription is unresolved")
+        let localID = viewModel.messages.first?.id
+        XCTAssertEqual(viewModel.messages.first?.attachments?.first?.name, "note.m4a")
+        gate.signal()
+        let outcome = await task.value
+        XCTAssertTrue(outcome.didStart)
+        XCTAssertEqual(viewModel.messages.count, 1)
+        XCTAssertEqual(viewModel.messages.first?.id, localID)
+        XCTAssertEqual(viewModel.messages.first?.content, "Hello")
+    }
+
+    @MainActor
     func testSendMessageDuringVoiceNoteIsRejectedWithoutConsumingAttachments() async throws {
         // Hold transcription open: a regular send attempted mid-voice-note must be
         // rejected before it stages the composer's attachments.
@@ -1236,7 +1443,8 @@ extension ChatViewModelSendTests {
         let didStart = await viewModel.sendMessage("Summarize this")
 
         XCTAssertFalse(didStart)
-        XCTAssertTrue(viewModel.messages.isEmpty)
+        XCTAssertEqual(viewModel.messages.count, 1)
+        XCTAssertEqual(viewModel.messages.first?.localVoicePhase, .preparing)
         XCTAssertEqual(viewModel.pendingAttachments.map(\.name), ["photo.png"])
         XCTAssertTrue(viewModel.isSendingVoiceNote)
 

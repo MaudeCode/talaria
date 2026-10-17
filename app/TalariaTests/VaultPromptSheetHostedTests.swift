@@ -8,7 +8,7 @@ import TalariaKit
 /// visible identifier and code, and Submit or Skip.
 @MainActor
 final class VaultPromptSheetHostedTests: XCTestCase {
-    func testUnlockMasksTheMasterPasswordAndSendsIt() throws {
+    func testUnlockMasksTheMasterPasswordAndSendsIt() async throws {
         var responses: [[String: String]?] = []
         let window = try hostWindow(VaultPromptSheet(vault: try vault("unlock"), isResponding: false, errorMessage: nil) { responses.append($0) })
         XCTAssertNotNil(HostedAccessibility.element(in: window, label: "Unlock Bitwarden"), "\(HostedAccessibility.labels(in: window))")
@@ -20,8 +20,11 @@ final class VaultPromptSheetHostedTests: XCTestCase {
         XCTAssertTrue(submit.accessibilityTraits.contains(.notEnabled), "Nothing typed, nothing to send")
 
         type("correct horse", into: try XCTUnwrap(fields.first))
-        XCTAssertFalse(submit.accessibilityTraits.contains(.notEnabled))
-        HostedAccessibility.activate(submit)
+        let enabled = await awaitElement(in: window) {
+            $0.accessibilityLabel == "Unlock" && !$0.accessibilityTraits.contains(.notEnabled)
+        }
+        let ready = try XCTUnwrap(enabled, "Typing the password must enable the current Unlock control")
+        HostedAccessibility.activate(ready)
         XCTAssertEqual(responses, [["master_password": "correct horse"]])
     }
 

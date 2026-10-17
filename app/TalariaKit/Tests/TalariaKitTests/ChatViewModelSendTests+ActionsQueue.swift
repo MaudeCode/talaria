@@ -54,6 +54,7 @@ extension ChatViewModelSendTests {
         XCTAssertFalse(didStart)
         XCTAssertEqual(uploads, 1)
         XCTAssertEqual(viewModel.pendingAttachments.map(\.id), [original.id])
+        XCTAssertTrue(viewModel.pendingAttachments.allSatisfy(\.isReadyToSend), "Returning a failed startup's files must release its cap reservation")
     }
 
     func testFirstSendWaitsWithOneRowThenAdoptsAndSendsExactlyOnce() async throws {

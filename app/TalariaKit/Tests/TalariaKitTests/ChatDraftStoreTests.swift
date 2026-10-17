@@ -705,6 +705,22 @@ final class ChatDraftStoreTests: XCTestCase {
         XCTAssertEqual(drafts.count, 1)
     }
 
+    func testVoiceDraftRoundTripsWithoutConsumingTypedInputOrAttachments() async throws {
+        let directory = temporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let persistence = ChatDraftFilePersistence(directoryURL: directory)
+        let key = ChatDraftKey(serverID: "https://example.test", context: .session("voice-session"))
+        let voice = ChatDraftVoiceNote(id: "local-voice", file: "saved-voice.m4a", filename: "voice.m4a",
+                                     context: "https://example.test|voice-session|default", timestamp: 1,
+                                     transcript: "Retained", uncertainStart: true,
+                                     uploadedAttachment: MessageAttachment(name: "voice.m4a", path: "/tmp/voice.m4a", mime: "audio/mp4"))
+        let draft = ChatDraft(text: "New typed draft", attachments: [Self.sampleAttachment()], voiceNote: voice)
+        try await persistence.write([key: draft])
+        let loaded = await persistence.load()
+        XCTAssertEqual(loaded[key], draft)
+        XCTAssertTrue(try XCTUnwrap(loaded[key]).referencedFiles.contains("saved-voice.m4a"))
+    }
+
     func testFilePersistenceRoundTripsAttachmentsAndSettings() async throws {
         let directory = temporaryDirectory()
         defer { try? FileManager.default.removeItem(at: directory) }

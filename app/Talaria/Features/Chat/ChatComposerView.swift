@@ -68,6 +68,7 @@ struct MessageComposerView: View {
     let attachmentUploadCount: Int
     let attachmentUploadGeneration: Int
     let isSendingVoiceNote: Bool
+    var hasUnsentVoiceNote: Bool = false
     /// When true, dictation auto-starts once this composer appears with the app active —
     /// the "New Chat with Voice" App Intent (#338). Defaults to false for normal composers.
     let autoStartsVoiceInput: Bool
@@ -1140,6 +1141,10 @@ struct MessageComposerView: View {
             || sessionStart != nil
     }
 
+    private var hasUnreadyAttachments: Bool {
+        pendingAttachments.contains { !$0.isReadyToSend }
+    }
+
     private var isVoiceInputDisabled: Bool {
         guard !isAnsweringClarification else { return true }
         if voiceInput.isListening {
@@ -1151,6 +1156,7 @@ struct MessageComposerView: View {
             || isCompressingSession
             || isWaitingForStream
             || isUploadingAttachment
+            || hasUnreadyAttachments
             || isUpdatingConfiguration
             || voiceInput.isRequestingPermission
     }
@@ -1162,6 +1168,7 @@ struct MessageComposerView: View {
         isAnsweringClarification || isReadOnly || sessionStart != nil
             || isSending
             || isSendingVoiceNote
+            || hasUnsentVoiceNote
             || isCompressingSession
             || isUploadingAttachment
             || isUpdatingConfiguration
@@ -1271,6 +1278,7 @@ struct MessageComposerView: View {
             || isSending
             || isCompressingSession
             || isUploadingAttachment
+            || hasUnreadyAttachments
             || isUpdatingConfiguration
     }
 
