@@ -166,6 +166,7 @@ security, effective policy, model/integration choices, and update controls remai
 Disjoint writes run concurrently, repeated edits to a field persist in submission order, and
 late full responses cannot replace another field's confirmed write. Completion is fenced by
 the connection context and query-cache identity. Pending values never enter boot snapshots.
+Numeric TextInput drafts clear when their owning save settles; a newer incomplete edit stays local.
 
 ## 6. Contracts
 

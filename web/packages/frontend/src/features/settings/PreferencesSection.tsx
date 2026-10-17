@@ -23,7 +23,7 @@ function Toggle({ label, hint, settingKey, fallback = false, disabled }: { label
 }
 
 export function PreferencesSection() {
-  const { settings, str, set, bool, num } = useSettingField()
+  const { settings, str, set, setAsync, bool, num } = useSettingField()
   const models = useModelsQuery()
   const setDefault = useSetDefaultModel()
   const auxiliary = useAuxiliaryModelsQuery()
@@ -93,7 +93,7 @@ export function PreferencesSection() {
         </Select>
       </FieldRow>
       <FieldRow label={m.settings_label_pinned_limit()} hint={m.settings_desc_pinned_limit()} htmlFor="settingsPinnedLimit" inline>
-        <TextInput id="settingsPinnedLimit" type="number" retainDraft min={1} max={50} className="w-20" value={num('pinned_sessions_limit', 3)} onChange={(e) => { const n = Number(e.target.value); if (Number.isInteger(n) && n > 0) set({ pinned_sessions_limit: n }) }} />
+        <TextInput id="settingsPinnedLimit" type="number" retainDraft min={1} max={50} className="w-20" value={num('pinned_sessions_limit', 3)} onChange={(e) => { const n = Number(e.target.value); if (Number.isInteger(n) && n > 0) return setAsync({ pinned_sessions_limit: n }) }} />
       </FieldRow>
       <FieldRow label={m.settings_label_external_sessions()} htmlFor="settings-show_cli_sessions" inline><Switch id="settings-show_cli_sessions" checked={bool('show_cli_sessions')} onCheckedChange={(checked) => set({ show_cli_sessions: checked })} /></FieldRow>
       <Toggle label={m.settings_label_claude_code_sessions()} settingKey="show_claude_code_sessions" />

@@ -59,6 +59,38 @@ it('keeps an empty numeric draft across unrelated refreshes and restores the con
   expect(input).toHaveValue(9)
 })
 
+it.each(['normalization', 'failure'] as const)('reconciles the focused numeric draft after its owning save %s', async (outcome) => {
+  const held = deferred<typeof initial>()
+  vi.mocked(api.saveSettings).mockImplementation(() => held.promise.then((value) => {
+    if (outcome === 'failure') throw new Error('Save refused')
+    return value
+  }))
+  setup()
+  const input = document.getElementById('settingsPinnedLimit')!
+  await userEvent.click(input)
+  fireEvent.change(input, { target: { value: '100' } })
+  expect(input).toHaveValue(100)
+  await waitFor(() => expect(api.saveSettings).toHaveBeenCalledWith({ pinned_sessions_limit: 100 }))
+  held.resolve(initial)
+  await waitFor(() => expect(input).toHaveValue(3))
+  expect(input).toHaveFocus()
+})
+
+it('preserves a newer incomplete numeric draft when an older save settles', async () => {
+  const held = deferred<typeof initial>()
+  vi.mocked(api.saveSettings).mockReturnValue(held.promise)
+  setup()
+  const input = document.getElementById('settingsPinnedLimit')!
+  await userEvent.click(input)
+  fireEvent.change(input, { target: { value: '10' } })
+  await waitFor(() => expect(api.saveSettings).toHaveBeenCalledWith({ pinned_sessions_limit: 10 }))
+  await userEvent.clear(input)
+  held.resolve(initial)
+  await waitFor(() => expect(api.fetchSettings).toHaveBeenCalled())
+  expect(input).toHaveValue(null)
+  expect(input).toHaveFocus()
+})
+
 it('retains submitted and newer text drafts when a save fails and shows the existing error', async () => {
   const held = deferred<typeof initial>()
   vi.mocked(api.saveSettings).mockImplementation(() => held.promise.then(() => { throw new Error('Save refused') }))

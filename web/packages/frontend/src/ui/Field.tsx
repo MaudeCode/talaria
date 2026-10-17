@@ -1,4 +1,4 @@
-import { useState, type ReactNode, type InputHTMLAttributes } from 'react'
+import { useRef, useState, type ChangeEvent, type ReactNode, type InputHTMLAttributes } from 'react'
 import { Switch as BaseSwitch } from '@base-ui/react/switch'
 import { Popover } from '@base-ui/react/popover'
 import { CircleHelp } from 'lucide-react'
@@ -33,9 +33,19 @@ export function HelpTip({ label, children, className = 'translate-y-[3px] align-
   )
 }
 
-export function TextInput({ className, retainDraft = false, value, onChange, onBlur, ...props }: InputHTMLAttributes<HTMLInputElement> & { retainDraft?: boolean }) {
+/** A returned save promise releases only its own retained draft, including on refusal. */
+export function TextInput({ className, retainDraft = false, value, onChange, onBlur, ...props }: Omit<InputHTMLAttributes<HTMLInputElement>, 'onChange'> & { retainDraft?: boolean; onChange?: (event: ChangeEvent<HTMLInputElement>) => void | Promise<void> }) {
   const [draft, setDraft] = useState<string | null>(null)
-  return <input {...props} value={retainDraft ? draft ?? value : value} onChange={(e) => { if (retainDraft) setDraft(e.target.value); onChange?.(e) }} onBlur={(e) => { setDraft(null); onBlur?.(e) }} className={cn('h-9 w-full rounded-md border border-border bg-input px-3 text-sm text-text placeholder:text-muted focus:border-accent', className)} />
+  const revision = useRef(0)
+  return <input {...props} value={retainDraft ? draft ?? value : value} onChange={(e) => {
+    const owned = ++revision.current
+    if (retainDraft) setDraft(e.target.value)
+    const write = onChange?.(e)
+    if (retainDraft && write) {
+      const clear = () => { if (revision.current === owned) setDraft(null) }
+      void write.then(clear, clear)
+    }
+  }} onBlur={(e) => { revision.current++; setDraft(null); onBlur?.(e) }} className={cn('h-9 w-full rounded-md border border-border bg-input px-3 text-sm text-text placeholder:text-muted focus:border-accent', className)} />
 }
 
 /** Boolean setting control (legacy `.plugin-toggle-switch` geometry: 32x18 track, 12px thumb). Renders a `role="switch"` button. */
