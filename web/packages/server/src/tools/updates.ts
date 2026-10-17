@@ -1687,8 +1687,8 @@ export class UpdateService {
   private async commitItems(target: 'webui' | 'agent', current: string, latest: string): Promise<SummaryItem[]> {
     if (!SHA.test(current) || !SHA.test(latest)) throw new Error('Update range is unavailable')
     if (target === 'webui') {
-      // Ancestry picks the range; GitHub's `since` filters by each commit's own date, so a branch merged
-      // after the installed build can hold older-dated pending commits (TAL-1105).
+      // Ancestry picks the range; GitHub's `since` filters by each commit's own committer date, so a branch
+      // merged after the installed build can hold older-dated pending commits (TAL-1105).
       const range = new Map<string, SummaryItem>()
       let since = Infinity
       for (let page = 1; ; page++) {
@@ -1700,10 +1700,10 @@ export class UpdateService {
           const id = str(dict(raw).sha)
           const commit = dict(dict(raw).commit)
           const text = (str(commit.message).split('\n')[0] ?? '').trim()
-          const dates = [dict(commit.author).date, dict(commit.committer).date].map((date) => typeof date === 'string' ? Date.parse(date) : NaN)
-          if (!SHA.test(id) || !text || dates.some((date) => !Number.isFinite(date))) throw new Error('Commit range is incomplete')
+          const committed = Date.parse(str(dict(commit.committer).date))
+          if (!SHA.test(id) || !text || !Number.isFinite(committed)) throw new Error('Commit range is incomplete')
           range.set(id, { id, text })
-          since = Math.min(since, ...dates)
+          since = Math.min(since, committed)
         }
         if (range.size >= total) break
         if (range.size === before) throw new Error('Commit range pagination made no progress')

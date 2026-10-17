@@ -72,11 +72,11 @@ const stableGetJson: GetJson = (_path, { asset }) => Promise.resolve(asset ? {
   contracts: { appWeb: { web: [1] }, webRelay: { web: [2] } }, agent: COMPAT.compatibleAgent,
 } : [{ tag_name: `release-set-${STABLE_SOURCE}`, published_at: '2026-01-01', assets: [{ name: 'release-set.json', id: 1 }] }])
 
-interface HistoryCommit { sha: string; message: string; date: string; web?: boolean }
-const commitJson = (c: HistoryCommit): Dict => ({ sha: c.sha, commit: { message: c.message, author: { date: c.date }, committer: { date: c.date } } })
+interface HistoryCommit { sha: string; message: string; date: string; authored?: string; web?: boolean }
+const commitJson = (c: HistoryCommit): Dict => ({ sha: c.sha, commit: { message: c.message, author: { date: c.authored ?? c.date }, committer: { date: c.date } } })
 /**
  * GitHub over one synthetic main, newest ancestor first. Compare follows ancestry; `/commits?path=web`
- * filters `since` by each commit's own date and orders by date, so a commit can sit above another in
+ * filters `since` by each commit's committer `date` and orders by it, so a commit can sit above another in
  * history while being dated before it. Other paths fall through to `fallback`.
  */
 function githubHistory(main: HistoryCommit[], fallback: GetJson = stableGetJson): GetJson {
@@ -178,11 +178,12 @@ describe('Experimental npm updates (TAL-378)', () => {
     const history = githubHistory([
       { sha: NEW_EXP, message: 'Merge pull request #2 from MaudeCode/fix/TAL-2-branch', date: '2026-10-17T15:00:00Z' },
       { sha: 'c'.repeat(40), message: 'TAL-3: Relay pairing retries', date: '2026-10-17T14:55:00Z', web: false },
-      { sha: 'd'.repeat(40), message: 'TAL-2: Dashboards sign in with the owning profile', date: '2026-10-17T14:26:00Z' },
+      { sha: 'd'.repeat(40), message: 'TAL-2: Dashboards sign in with the owning profile', date: '2026-10-17T14:26:00Z', authored: '2020-01-01T00:00:00Z' },
       { sha: OLD_EXP, message: 'Merge pull request #1 from MaudeCode/fix/TAL-1-branch', date: '2026-10-17T14:50:00Z' },
       { sha: 'e'.repeat(40), message: 'TAL-1: Already installed change', date: '2026-10-17T14:30:00Z' },
     ])
-    const getJson: GetJson = (path, opts) => diverged && path.startsWith('/compare/') ? Promise.resolve({ status: 'diverged', total_commits: 0, commits: [] }) : history(path, opts)
+    const paths: string[] = []
+    const getJson: GetJson = (path, opts) => { paths.push(path); return diverged && path.startsWith('/compare/') ? Promise.resolve({ status: 'diverged', total_commits: 0, commits: [] }) : history(path, opts) }
     const prompts: string[] = []
     const svc = new UpdateService({
       webRoot: n.packageRoot, git: runGit, npm: n.npm, getJson, experimental: fakeGhcr(TARBALL).registry, identity: identity(running), webuiVersion: 'web-exp',
@@ -198,6 +199,8 @@ describe('Experimental npm updates (TAL-378)', () => {
     expect(prompts[0]).toContain('- TAL-2: Dashboards sign in with the owning profile\n- Merge pull request #2')
     expect(prompts[0]).not.toContain('Relay pairing')
     expect(prompts[0]).not.toContain('Already installed')
+    // A rebased commit's old author date must not widen the path scan.
+    expect(paths).toContain(`/commits?sha=${NEW_EXP}&path=web&since=${encodeURIComponent('2026-10-17T14:26:00.000Z')}&per_page=100&page=1`)
   })
 
   it('reads every compare and Web commit page, appends from the prior SHA, and keeps its list on a failed page (TAL-1009)', async () => {
