@@ -6,6 +6,7 @@ struct MessageBubbleView: View {
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.chatDisclosureToggled) private var chatDisclosureToggled
+    @Environment(\.voiceNoteControls) private var voiceNoteControls
     @Environment(\.pendingSteerControls) private var pendingSteerControls
     @AppStorage(ChatTranscriptDisplaySettings.showsAssistantTurnTimestampsKey) private var showsAssistantTurnTimestamps = false
     @AppStorage(ChatTranscriptDisplaySettings.showsResponseSpeedKey) private var showsResponseSpeed = false
@@ -64,6 +65,7 @@ struct MessageBubbleView: View {
 
     private var userMessageRow: some View {
         VStack(alignment: .trailing, spacing: 8) {
+            voicePreparationStatus
             steeringHintHeader
 
             if let attachments = message.attachments, !attachments.isEmpty {
@@ -88,6 +90,31 @@ struct MessageBubbleView: View {
         }
         .frame(maxWidth: .infinity, alignment: .trailing)
         .padding(.vertical, 2)
+    }
+
+    @ViewBuilder
+    private var voicePreparationStatus: some View {
+        if let phase = message.localVoicePhase {
+            HStack(spacing: 8) {
+                switch phase {
+                case .preparing:
+                    ProgressView().controlSize(.small)
+                    Text("Preparing voice note")
+                case .sending:
+                    ProgressView().controlSize(.small)
+                    Text("Sending voice note")
+                case .failed(let error), .uncertain(let error):
+                    Text(error)
+                    Button("Retry") { voiceNoteControls.retry(message.id) }
+                        .frame(minHeight: 44)
+                    Button("Remove", role: .destructive) { voiceNoteControls.remove(message.id) }
+                        .frame(minHeight: 44)
+                }
+            }
+            .font(AppFont.footnote())
+            .foregroundStyle(.secondary)
+            .accessibilityIdentifier("voice-note-preparation")
+        }
     }
 
     @ViewBuilder
@@ -579,3 +606,18 @@ extension EnvironmentValues {
 /// cookie. Deduplicates concurrent requests and caches in memory.
 
 // MARK: - Assistant turn timestamp formatting
+
+/// Voice preparation is device-owned; pending steer actions come from a different server contract.
+struct VoiceNoteControls {
+    var retry: (String) -> Void = { _ in }
+    var remove: (String) -> Void = { _ in }
+}
+private struct VoiceNoteControlsKey: EnvironmentKey {
+    static let defaultValue = VoiceNoteControls()
+}
+extension EnvironmentValues {
+    var voiceNoteControls: VoiceNoteControls {
+        get { self[VoiceNoteControlsKey.self] }
+        set { self[VoiceNoteControlsKey.self] = newValue }
+    }
+}

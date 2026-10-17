@@ -9,15 +9,20 @@ struct ComposerAttachmentThumbnailView: View {
     let onRemove: () -> Void
     let onOpen: () -> Void
 
+    @Environment(\.retryPendingAttachment) private var retry
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @Environment(\.layoutDirection) private var layoutDirection
 
     var body: some View {
-        Button(action: onOpen) {
+        Button {
+            if case .failed = attachment.uploadPhase { retry(attachment.id) } else { onOpen() }
+        } label: {
             thumbnail
         }
         .buttonStyle(.plain)
-        .accessibilityLabel("Open attachment \(attachment.name)")
+        .disabled(attachment.uploadPhase == .staged || attachment.uploadPhase == .uploading)
+        .overlay(alignment: .bottom) { ComposerAttachmentUploadStatus(attachment: attachment).allowsHitTesting(false).accessibilityHidden(true) }
+        .accessibilityLabel(photoActionLabel)
         .overlay(alignment: .topTrailing) {
             Button(action: onRemove) {
                 Image(systemName: "xmark")
@@ -35,6 +40,14 @@ struct ComposerAttachmentThumbnailView: View {
         // The badge pokes past the corner; the padding keeps it inside the strip.
         .padding(.top, 5)
         .padding(.trailing, 5)
+    }
+
+    private var photoActionLabel: String {
+        switch attachment.uploadPhase {
+        case .failed(let error): String(localized: "Retry upload \(attachment.name). \(error)")
+        case .staged, .uploading: String(localized: "Uploading \(attachment.name)")
+        case .ready: String(localized: "Open attachment \(attachment.name)")
+        }
     }
 
     private var thumbnail: some View {
@@ -87,7 +100,13 @@ struct ComposerFileLinkView: View {
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
+            .disabled(!attachment.isReadyToSend)
             .accessibilityLabel("Open attachment \(attachment.name)")
+
+            if case .failed(let error) = attachment.uploadPhase {
+                Text(error).font(AppFont.footnote()).foregroundStyle(.secondary).lineLimit(2).padding(.leading, 8)
+            }
+            ComposerAttachmentUploadStatus(attachment: attachment)
 
             // The remove target takes its full 44 pt in layout, so it never overlaps the link's.
             Button(action: onRemove) {
@@ -103,5 +122,39 @@ struct ComposerFileLinkView: View {
         // A full 44 pt row holds the remove button, so stacked links never share a target.
         .frame(minHeight: 44)
         .fixedSize(horizontal: false, vertical: true)
+    }
+}
+
+/// Both file links and photo thumbnails use the same per-item upload and retry presentation.
+struct ComposerAttachmentUploadStatus: View {
+    let attachment: PendingAttachment
+    @Environment(\.retryPendingAttachment) private var retry
+
+    var body: some View {
+        switch attachment.uploadPhase {
+        case .ready: EmptyView()
+        case .staged, .uploading:
+            ProgressView().controlSize(.small)
+                .accessibilityLabel("Uploading \(attachment.name)")
+        case .failed(let error):
+            Button { retry(attachment.id) } label: {
+                Image(systemName: "arrow.clockwise.circle.fill")
+                    .frame(minWidth: 44, minHeight: 44)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("Retry upload \(attachment.name)")
+            .accessibilityHint(error)
+        }
+    }
+}
+
+private struct RetryPendingAttachmentKey: EnvironmentKey {
+    static let defaultValue: (UUID) -> Void = { _ in }
+}
+extension EnvironmentValues {
+    var retryPendingAttachment: (UUID) -> Void {
+        get { self[RetryPendingAttachmentKey.self] }
+        set { self[RetryPendingAttachmentKey.self] = newValue }
     }
 }

@@ -290,6 +290,9 @@ final class SessionListHostedTests: XCTestCase {
             XCTAssertTrue(restored)
             attachHostedScreenshot(window, name: "mixed-import-blocked-phone")
             HostedAccessibility.activate(try await requireElement(in: window, label: "Retry"))
+            let retried = await awaitCondition { UITestFixtureURLProtocol.initialUploadAttemptCount == 3 }
+            XCTAssertTrue(retried, "Retry must upload the retained failed initial file")
+            guard retried else { return }
             _ = try await requireElement(in: window, label: "Select model")
             XCTAssertEqual(creationCount, 1, "Retrying imports must reuse the created session")
             XCTAssertEqual(UITestFixtureURLProtocol.initialUploadAttemptCount, 3, "Only the failed import should retry")

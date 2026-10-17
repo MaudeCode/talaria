@@ -1,0 +1,9 @@
+{
+  "entries": [
+    {
+      "category": "Changed",
+      "summary": "Attachments appear as soon as they are saved on your device, with upload status and retry controls. Voice notes appear while preparing and keep their recording if preparation fails.",
+      "highlight": false
+    }
+  ]
+}

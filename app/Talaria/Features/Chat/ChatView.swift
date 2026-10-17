@@ -167,8 +167,8 @@ struct ChatView: View {
     /// Records hydration found, handed to the restore pass that runs alongside
     /// the transcript load rather than in front of it.
     @State private var draftAttachmentsAwaitingRestore: [ChatDraftAttachment] = []
-    /// Restored attachment records whose re-upload failed; they stay in the
-    /// draft for a later retry and are unioned into every attachment sync.
+    /// Saved records without a visible pending owner stay here for a later restore.
+    /// Visible failed uploads own their retry and durable copy in the coordinator.
     @State private var draftAttachmentsPendingRetry: [ChatDraftAttachment] = []
     @State private var lastSyncedDraftAttachments: [ChatDraftAttachment] = []
     @State private var restoredDraftSettings: ChatDraftSettings?
@@ -304,6 +304,7 @@ struct ChatView: View {
             attachmentUploadCount: viewModel.attachmentUploadCount,
             attachmentUploadGeneration: viewModel.attachmentUploadGeneration,
             isSendingVoiceNote: viewModel.isSendingVoiceNote,
+            hasUnsentVoiceNote: viewModel.pendingVoiceDraft != nil,
             autoStartsVoiceInput: prompt == nil && autoStartsVoiceInput,
             voiceInputRequestID: 0,
             apiClient: viewModel.client,
@@ -390,13 +391,12 @@ struct ChatView: View {
                 Task { await handlePastedImages(images) }
             },
             onRemoveAttachment: { id in
-                let removedAttachment = viewModel.pendingAttachments.first(where: { $0.id == id })
+                // The receipt also fences a restore response that is still in flight.
+                lastSyncedDraftAttachments.removeAll { $0.id == id }
+                draftAttachmentsPendingRetry.removeAll { $0.id == id }
                 viewModel.removePendingAttachment(id: id)
-                // Explicit discard: the record drops out of the draft via the
-                // observation sync; delete its now-unreferenced local copy.
-                if let file = removedAttachment?.draftFileName {
-                    Task { await draftAttachmentStore.delete(named: file) }
-                }
+                if lastSyncedDraftAttachments.isEmpty { isRestoringDraftAttachments = false }
+                syncDraftAttachments()
             },
             onPreviewAttachment: { attachment in
                 presentPreviewRestoringComposerFocusIfNeeded {
@@ -561,8 +561,13 @@ struct ChatView: View {
                 ChatDraftSyncModifier(
                     pendingAttachments: viewModel.pendingAttachments,
                     composerSettings: currentComposerSettings,
+                    voiceNote: viewModel.pendingVoiceDraft,
                     onAttachmentsChange: { syncDraftAttachments() },
-                    onSettingsChange: syncDraftSettings
+                    onSettingsChange: syncDraftSettings,
+                    onVoiceNoteChange: { note in
+                        guard didHydrateDraft else { return }
+                        draftStore.setVoiceNote(note, for: draftKey)
+                    }
                 )
             )
             .onReceive(NotificationCenter.default.publisher(for: .talariaReauthenticated)) { notification in
@@ -582,6 +587,10 @@ struct ChatView: View {
             .onChange(of: TalariaCompletionStore.shared.completions) {
                 scheduleCompletionAcknowledgement()
             }
+    }
+
+    private var chatWithVisibility: some View {
+        chatWithLifecycle
             .onDisappear {
                 sessionStartGeneration &+= 1
                 sessionStartTask?.cancel()
@@ -590,6 +599,7 @@ struct ChatView: View {
                 completionAcknowledgementGeneration += 1
                 completionAcknowledgementTask?.cancel()
                 completionAcknowledgementTask = nil
+                if didHydrateDraft { draftStore.setVoiceNote(viewModel.pendingVoiceDraft, for: draftKey) }
                 flushDraftsBestEffort()
                 activeStreamStatusRefreshTask?.cancel()
                 activeStreamStatusRefreshTask = nil
@@ -619,7 +629,7 @@ struct ChatView: View {
     }
 
     private var chatWithToolbar: some View {
-        chatWithLifecycle
+        chatWithVisibility
             // Before `.toolbar`: applied after it, the inspector hides the chat's navigation bar.
             .inspector(isPresented: filesInspectorIsPresented) {
                 // Built only while shown: a hidden browser's "Files" title replaces the chat's.
@@ -702,6 +712,7 @@ struct ChatView: View {
 
     var body: some View {
         chatWithToolbar
+            .environment(\.retryPendingAttachment) { id in Task { await viewModel.retryAttachment(id: id) } }
             .navigationDestination(item: $forkedSession) { session in
                 ChatView(session: session, server: server, onAPIError: onAPIError)
             }
@@ -1393,6 +1404,10 @@ struct ChatView: View {
         .environment(\.chatFullToolResultLoader) { toolCallID in
             try await viewModel.fullToolResult(toolCallID: toolCallID)
         }
+        .environment(\.voiceNoteControls, VoiceNoteControls(
+            retry: { id in Task { await viewModel.retryVoiceNote(messageID: id, modelContext: modelContext) } },
+            remove: { viewModel.removeVoiceNote(messageID: $0) }
+        ))
         .environment(\.pendingSteerControls, PendingSteerControls(
             actions: viewModel.pendingSteerActions,
             inFlight: viewModel.steerActionsInFlight,
@@ -1673,7 +1688,7 @@ struct ChatView: View {
                 }
                 await beginSessionWork()
                 guard !Task.isCancelled, generation == sessionStartGeneration else { return false }
-                let importFailure = initialAttachments.isEmpty ? nil
+                let importFailure = initialAttachments.isEmpty && viewModel.pendingAttachments.allSatisfy(\.isReadyToSend) ? nil
                     : String(localized: "Couldn't upload every attachment. Retry before sending.")
                 if let error = viewModel.uploadAttachmentErrorMessage ?? importFailure ?? (!draftAttachmentsPendingRetry.isEmpty
                     ? draftRestoreFailureMessage(retryCount: draftAttachmentsPendingRetry.count, droppedCount: 0) : nil) {
@@ -2181,6 +2196,7 @@ struct ChatView: View {
         }
         didHydrateDraft = true
 
+        if let voiceNote = persistedDraft?.voiceNote { await viewModel.restoreVoiceNote(voiceNote) }
         restoredDraftSettings = persistedDraft?.settings
         lastSyncedDraftAttachments = persistedDraft?.attachments ?? []
         if let persistedDraft, !persistedDraft.attachments.isEmpty {
@@ -2211,6 +2227,7 @@ struct ChatView: View {
         var wasCancelled = false
 
         for (offset, record) in records.enumerated() {
+            guard lastSyncedDraftAttachments.contains(where: { $0.id == record.id }) else { continue }
             if Task.isCancelled {
                 // Leaving the chat mid-restore is not a restore failure. Every
                 // record from here on is untried, so carry the whole remainder
@@ -2218,7 +2235,9 @@ struct ChatView: View {
                 // anything missing from it would be dropped from the draft and
                 // later swept from disk.
                 wasCancelled = true
-                pendingRetry.append(contentsOf: records[offset...])
+                pendingRetry.append(contentsOf: records[offset...].filter { record in
+                    lastSyncedDraftAttachments.contains { $0.id == record.id }
+                })
                 break
             }
             guard let fileName = record.file else {
@@ -2243,7 +2262,10 @@ struct ChatView: View {
                 continue
             }
 
-            if await viewModel.reuploadDraftAttachment(record, data: data) == nil {
+            let uploaded = await viewModel.reuploadDraftAttachment(record, data: data)
+            guard lastSyncedDraftAttachments.contains(where: { $0.id == record.id }) else { continue }
+            // A visible failed row already owns its durable copy and retry action.
+            if uploaded == nil, !viewModel.pendingAttachments.contains(where: { $0.id == record.id }) {
                 pendingRetry.append(record)
             }
         }
@@ -2279,7 +2301,7 @@ struct ChatView: View {
     }
 
     /// Mirrors the composer's staged attachments into the persisted draft.
-    /// Restored records whose re-upload failed are unioned back in so a
+    /// Saved records that could not be staged are unioned back in so a
     /// mid-restore or post-restore sync can't silently drop them. Gated during
     /// hydration/restore so an empty or partial composer never overwrites the
     /// persisted set.
@@ -2419,29 +2441,51 @@ struct ChatView: View {
         }
     }
 
-    private func uploadInitialAttachmentsIfNeeded() async {
-        guard !didUploadInitialAttachments, !initialAttachments.isEmpty else {
-            return
+    /// All imports stage their complete selection before this one sequential network drain.
+    private func stageAttachments<Item>(
+        _ items: [Item],
+        onStaged: (Int, PendingAttachment) -> Void = { _, _ in },
+        load: (Item) async throws -> (data: Data, filename: String, preview: Data?)
+    ) async {
+        guard viewModel.clarificationPrompt == nil else { return }
+        let context = viewModel.attachmentStagingContext
+        var ids: [UUID] = []
+        for (index, item) in items.enumerated() {
+            guard !Task.isCancelled, context == viewModel.attachmentStagingContext else { return }
+            do {
+                let file = try await load(item)
+                guard !Task.isCancelled, context == viewModel.attachmentStagingContext else { return }
+                if let attachment = await viewModel.stageAttachment(data: file.data, filename: file.filename, previewData: file.preview) {
+                    ids.append(attachment.id)
+                    onStaged(index, attachment)
+                }
+            } catch { viewModel.setUploadAttachmentError(error.localizedDescription) }
         }
+        guard context == viewModel.attachmentStagingContext else { return }
+        await viewModel.uploadStagedAttachments(ids: ids)
+    }
 
-        viewModel.setUploadAttachmentError(nil)
-        var retry: [SharedAttachmentImport] = []
-        let imports = initialAttachments
-        for (index, attachment) in imports.enumerated() {
-            guard !Task.isCancelled else {
-                initialAttachments = retry + imports.dropFirst(index)
-                return
-            }
-            let staged = await viewModel.uploadAttachment(
-                data: attachment.data,
-                filename: attachment.filename,
-                previewData: previewData(for: attachment)
-            )
-            if let staged { initialImportedAttachmentIDs.insert(staged.id) }
-            else { retry.append(attachment) }
+    private func uploadInitialAttachmentsIfNeeded() async {
+        // Once staged, imports live in the coordinator rather than the raw import buffer.
+        // Startup Retry must reuse that durable owner and its sequential upload drain.
+        let failedImports = viewModel.pendingAttachments.filter {
+            guard initialImportedAttachmentIDs.contains($0.id), case .failed = $0.uploadPhase else { return false }
+            return true
         }
-        initialAttachments = retry
-        didUploadInitialAttachments = retry.isEmpty
+        for attachment in failedImports {
+            guard !Task.isCancelled else { return }
+            await viewModel.retryAttachment(id: attachment.id)
+        }
+        guard !didUploadInitialAttachments, !initialAttachments.isEmpty else { return }
+        viewModel.setUploadAttachmentError(nil)
+        let imports = initialAttachments
+        var stagedIndices = Set<Int>()
+        await stageAttachments(imports, onStaged: { index, attachment in
+            stagedIndices.insert(index)
+            initialImportedAttachmentIDs.insert(attachment.id)
+        }) { ($0.data, $0.filename, previewData(for: $0)) }
+        initialAttachments = imports.enumerated().compactMap { stagedIndices.contains($0.offset) ? nil : $0.element }
+        didUploadInitialAttachments = initialAttachments.isEmpty
     }
 
     private func previewData(for attachment: SharedAttachmentImport) -> Data? {
@@ -2456,36 +2500,14 @@ struct ChatView: View {
     }
 
     private func handlePhotoSelection(_ item: PhotosPickerItem) async {
-        guard viewModel.clarificationPrompt == nil else { return }
-        do {
-            guard let data = try await item.loadTransferable(type: Data.self) else {
-                viewModel.setUploadAttachmentError(String(localized: "Could not read the selected photo."))
-                return
-            }
-            let filename = "image_\(Int(Date().timeIntervalSince1970))_\(UUID().uuidString.prefix(4)).jpg"
-            await viewModel.uploadAttachment(data: data, filename: filename, previewData: data)
-        } catch {
-            viewModel.setUploadAttachmentError(error.localizedDescription)
+        await stageAttachments([item]) { item in
+            guard let data = try await item.loadTransferable(type: Data.self) else { throw PastedFileError.unreadableURL }
+            return (data, "image_\(UUID().uuidString.prefix(8)).jpg", data)
         }
     }
 
     private func handleSelectedFileURLs(_ urls: [URL]) async {
-        guard viewModel.clarificationPrompt == nil else { return }
-        let fileURLs = urls.filter(\.isFileURL)
-
-        guard !fileURLs.isEmpty else {
-            viewModel.setUploadAttachmentError(String(localized: "Select a file to attach it."))
-            return
-        }
-
-        for url in fileURLs {
-            do {
-                let file = try loadPastedFile(from: url, suggestedName: nil)
-                await viewModel.uploadAttachment(data: file.data, filename: file.filename)
-            } catch {
-                viewModel.setUploadAttachmentError(error.localizedDescription)
-            }
-        }
+        await handlePastedFileURLs(urls)
     }
 
     private func isFileImporterCancellation(_ error: Error) -> Bool {
@@ -2505,13 +2527,9 @@ struct ChatView: View {
             return
         }
 
-        for provider in fileProviders {
-            do {
-                let file = try await loadPastedFile(from: provider)
-                await viewModel.uploadAttachment(data: file.data, filename: file.filename)
-            } catch {
-                viewModel.setUploadAttachmentError(error.localizedDescription)
-            }
+        await stageAttachments(fileProviders) { provider in
+            let file = try await loadPastedFile(from: provider)
+            return (file.data, file.filename, nil)
         }
     }
 
@@ -2526,13 +2544,9 @@ struct ChatView: View {
             return
         }
 
-        for provider in imageProviders {
-            do {
-                let image = try await loadPastedImage(from: provider)
-                await viewModel.uploadAttachment(data: image.data, filename: image.filename, previewData: image.data)
-            } catch {
-                viewModel.setUploadAttachmentError(error.localizedDescription)
-            }
+        await stageAttachments(imageProviders) { provider in
+            let image = try await loadPastedImage(from: provider)
+            return (image.data, image.filename, image.data)
         }
     }
 
@@ -2543,13 +2557,9 @@ struct ChatView: View {
             return
         }
 
-        for image in images {
-            guard let data = image.jpegData(compressionQuality: 0.92) ?? image.pngData() else {
-                viewModel.setUploadAttachmentError(String(localized: "Could not read the pasted image."))
-                continue
-            }
-
-            await viewModel.uploadAttachment(data: data, filename: pastedImageFilename(), previewData: data)
+        await stageAttachments(images) { image in
+            guard let data = image.jpegData(compressionQuality: 0.92) ?? image.pngData() else { throw PastedFileError.unreadableURL }
+            return (data, pastedImageFilename(), data)
         }
     }
 
@@ -2587,13 +2597,9 @@ struct ChatView: View {
             return
         }
 
-        for url in fileURLs {
-            do {
-                let file = try loadPastedFile(from: url, suggestedName: nil)
-                await viewModel.uploadAttachment(data: file.data, filename: file.filename)
-            } catch {
-                viewModel.setUploadAttachmentError(error.localizedDescription)
-            }
+        await stageAttachments(fileURLs) { url in
+            let file = try loadPastedFile(from: url, suggestedName: nil)
+            return (file.data, file.filename, nil)
         }
     }
 
@@ -3190,11 +3196,14 @@ private extension SlashCommandExecutionResult {
 private struct ChatDraftSyncModifier: ViewModifier {
     let pendingAttachments: [PendingAttachment]
     let composerSettings: ChatDraftSettings
+    var voiceNote: ChatDraftVoiceNote? = nil
     let onAttachmentsChange: () -> Void
     let onSettingsChange: (ChatDraftSettings) -> Void
+    var onVoiceNoteChange: (ChatDraftVoiceNote?) -> Void = { _ in }
 
     func body(content: Content) -> some View {
         content
+            .onChange(of: voiceNote) { _, note in onVoiceNoteChange(note) }
             .onChange(of: pendingAttachments) { _, _ in
                 onAttachmentsChange()
             }

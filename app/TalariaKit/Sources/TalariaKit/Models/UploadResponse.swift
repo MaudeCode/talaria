@@ -19,11 +19,18 @@ public struct PendingAttachment: Identifiable, Equatable {
     public let mime: String
     public let size: Int?
     public let isImage: Bool
-    public let thumbnailData: Data?
+    public internal(set) var thumbnailData: Data?
     /// File name of the durable app-owned draft copy in ChatDraftAttachmentStore.
     /// Fresh composer attachments always have one; standalone sends such as voice
     /// notes do not participate in draft persistence and leave it nil.
     public let draftFileName: String?
+    public var uploadPhase: UploadPhase
+
+    public enum UploadPhase: Equatable {
+        case staged, uploading, ready, failed(String)
+    }
+
+    public var isReadyToSend: Bool { uploadPhase == .ready && !path.isEmpty }
 
     public init(
         id: UUID = UUID(),
@@ -33,7 +40,8 @@ public struct PendingAttachment: Identifiable, Equatable {
         size: Int? = nil,
         isImage: Bool,
         thumbnailData: Data? = nil,
-        draftFileName: String? = nil
+        draftFileName: String? = nil,
+        uploadPhase: UploadPhase = .ready
     ) {
         self.id = id
         self.name = name
@@ -43,6 +51,7 @@ public struct PendingAttachment: Identifiable, Equatable {
         self.isImage = isImage
         self.thumbnailData = thumbnailData
         self.draftFileName = draftFileName
+        self.uploadPhase = uploadPhase
     }
 }
 
