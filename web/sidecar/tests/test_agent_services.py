@@ -487,6 +487,51 @@ finally:
     assert result.returncode == 0, result.stderr[-5000:]
 
 
+@pytest.mark.parametrize('stopping', [False, True])
+def test_native_process_exit_between_liveness_and_identity_probes(tmp_path, stopping):
+    from conftest import isolated_env, SIDECAR_ROOT
+    home = tmp_path / 'home'
+    home.mkdir()
+    script = '''import os, subprocess, sys
+from pathlib import Path
+from talaria_sidecar import agent_services as services
+from hermes_cli import update_pause_record as records
+import gateway.status as status
+marker=Path(os.environ['HERMES_HOME'])/'exit'
+child=subprocess.Popen([sys.executable,'-c',
+ 'import sys,time; from pathlib import Path; marker=Path(sys.argv[1]); print("ready",flush=True); exec("while not marker.exists(): time.sleep(.001)")',str(marker)],stdout=subprocess.PIPE,text=True)
+try:
+ assert child.stdout.readline().strip()=='ready'
+ entry=dict(kind='launchd',label='synthetic.gateway',domain='synthetic',pid=child.pid,service_pid=child.pid)
+ entry['processes']=services.snapshot(entry)
+ for pid,expected in entry['processes'].items():
+  expected['ct']=records.identity(int(pid))['ct']; assert expected['ct'] is not None
+ services._service_pid=lambda entry:(False,None)
+ original_exists=status._pid_exists
+ def observed_then_exit(pid):
+  observed=original_exists(pid)
+  if pid==child.pid and observed:
+   marker.touch(); assert child.wait(timeout=5)==0
+  return observed
+ status._pid_exists=observed_then_exit
+ if os.environ['TEST_STOPPING']=='1':
+  services.verify_processes(entry,records,stopping=True)
+ else:
+  try: services.verify_processes(entry,records)
+  except RuntimeError as error: assert 'identity/ancestry changed' in str(error),str(error)
+  else: raise AssertionError('normal custody must reject a process that exits during verification')
+ assert child.returncode==0
+ print('natural-exit verification boundary preserved')
+finally:
+ if child.poll() is None: child.kill(); child.wait()
+'''
+    env = isolated_env(home, PYTHONPATH=str(SIDECAR_ROOT) + os.pathsep + str(AGENT_DIR),
+                       TEST_STOPPING=str(int(stopping)))
+    result = subprocess.run([AGENT_PYTHON, '-c', script], cwd=AGENT_DIR, env=env, capture_output=True, text=True, timeout=30)
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert 'natural-exit verification boundary preserved' in result.stdout
+
+
 def git(root, *args):
     return subprocess.check_output(['git', '-c', 'user.name=Synthetic', '-c', 'user.email=synthetic@example.invalid',
                                    '-c', 'commit.gpgsign=false', '-C', str(root), *args], text=True).strip()

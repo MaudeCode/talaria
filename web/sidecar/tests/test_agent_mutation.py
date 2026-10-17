@@ -734,8 +734,9 @@ def test_service_gateway_ambiguity_refuses_custody(supervised_inventory, unsafe)
         modules['gateway.status'].get_process_start_time = lambda pid: pid * 10 + (1 if pid == changed else 0)
     else:
         records.identity = lambda pid: {'ct': pid + 1}
-    with pytest.raises(RuntimeError, match='identity/ancestry changed'):
-        agent_services.verify_processes(entry, records)
+    for stopping in (False, True):
+        with pytest.raises(RuntimeError, match='identity/ancestry changed'):
+            agent_services.verify_processes(entry, records, stopping=stopping)
 
 
 @pytest.mark.parametrize('unsafe', ['foreign', 'unknown-service', 'desktop', 'desktop-env', 'birth'])

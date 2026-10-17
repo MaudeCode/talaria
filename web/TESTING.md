@@ -89,6 +89,8 @@ into the process-leak scan. Native-supervisor fixtures wait for
 their disposable source/home processes to exit, including restarted supervisors; a published
 recovery journal or removed PID marker is not exit proof.
 Service scenarios synchronize on live successor identity and terminal recovery completion.
+Real-process coverage also forces natural exit between liveness and identity probes;
+normal custody and live identity changes remain refusals in both verification modes.
 
 One merged JUnit report remains beside each compatibility receipt. Per-case durations and
 failure/error/skip information are preserved, with slow tests and modules printed after the run.
