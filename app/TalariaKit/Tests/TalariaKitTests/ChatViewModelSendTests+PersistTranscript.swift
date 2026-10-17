@@ -134,6 +134,80 @@ extension ChatViewModelSendTests {
         XCTAssertEqual(reopened.messagesOffset, 200)
     }
 
+    func testTranscriptReplacementsRefreshTheCachedRecentWindow() async throws {
+        for mutation in ["compress", "edit", "regenerate", "retry"] {
+            let context = try makeContext()
+            let initial = try Self.toolHeavyRecentSessionJSON()
+            let replacement = #"{"session":{"session_id":"session-abc","_messages_offset":0,"_messages_truncated":false,"messages":[{"role":"user","content":"Kept prompt","message_id":"kept-user","_display":"row"},{"role":"assistant","content":"Replacement answer","message_id":"kept-answer","_display":"row"}]}}"#
+            let reads = LockedCounter()
+            let model = try makeViewModel { request in
+                switch request.url?.path {
+                case "/api/session":
+                    return apiTestJSONResponse(reads.increment() == 1 ? initial : replacement, for: request)
+                case "/api/session/compress/start":
+                    return apiTestJSONResponse(replacement.replacingOccurrences(of: #"{"session":"#, with: #"{"ok":true,"status":"done","session":"#), for: request)
+                case "/api/session/truncate":
+                    return apiTestJSONResponse(replacement, for: request)
+                case "/api/session/retry":
+                    return apiTestJSONResponse(#"{"ok":true,"last_user_text":"Retry the prompt"}"#, for: request)
+                case "/api/chat/start":
+                    return apiTestJSONResponse(#"{"session_id":"session-abc","stream_id":"stream-replacement"}"#, for: request)
+                default:
+                    XCTFail("Unexpected request: \(request.url?.path ?? "nil")")
+                    throw URLError(.badURL)
+                }
+            }
+            await model.loadMessages(modelContext: context)
+            XCTAssertEqual(model.messagesOffset, 200)
+            switch mutation {
+            case "compress", "retry":
+                _ = await model.executeSlashCommand(try XCTUnwrap(SlashCommandCatalog.command(named: mutation)))
+            case "edit":
+                let action = try XCTUnwrap(model.actionContext(for: model.messages[96], visibleIndex: 96))
+                let sent = await model.editMessage(action, newText: "Edited prompt", confirmToken: "confirmed", modelContext: context)
+                XCTAssertTrue(sent)
+            default:
+                let action = try XCTUnwrap(model.actionContext(for: model.messages[99], visibleIndex: 99))
+                let sent = await model.regenerateAssistantResponse(action, confirmToken: "confirmed", modelContext: context)
+                XCTAssertTrue(sent)
+            }
+            XCTAssertEqual(model.messagesOffset, 0, mutation)
+            XCTAssertEqual(model.messages.first?.content, "Kept prompt", mutation)
+            model.persistTranscript(modelContext: context)
+            let cached = try CacheStore.cachedTranscriptWindow(serverURL: URL(string: "https://example.test")!, sessionID: "session-abc", in: context)
+            XCTAssertEqual(cached.messages, model.messages, "\(mutation) must not slice the replacement using the old offset")
+            XCTAssertEqual(cached.messagesOffset, 0, mutation)
+            XCTAssertFalse(cached.hasOlderMessages, mutation)
+            ChatViewModel.resetActiveStreamSnapshotsForTesting()
+            let reopened = try makeViewModel { apiTestJSONResponse(replacement, for: $0) }
+            reopened.prepareInitialMessageLoad(modelContext: context)
+            XCTAssertEqual(reopened.messages, model.messages, mutation)
+            XCTAssertEqual(reopened.messagesOffset, 0, mutation)
+        }
+    }
+
+    func testRejectedCacheFirstPlaceholderClearsItsRecentWindowBoundary() async throws {
+        let context = try makeContext()
+        let initial = try Self.toolHeavyRecentSessionJSON()
+        let first = try makeViewModel { apiTestJSONResponse(initial, for: $0) }
+        await first.loadMessages(modelContext: context)
+        let reopened = try makeViewModel { request in
+            if request.url?.path == "/api/session" {
+                let response = HTTPURLResponse(url: request.url!, statusCode: 400, httpVersion: nil, headerFields: nil)!
+                return (response, Data(#"{"error":"Synthetic rejected load"}"#.utf8))
+            }
+            return apiTestJSONResponse(#"{"session_id":"session-abc","stream_id":"stream-after-rejection"}"#, for: request)
+        }
+        await reopened.loadMessages(modelContext: context)
+        XCTAssertTrue(reopened.messages.isEmpty)
+        XCTAssertNotNil(reopened.errorMessage)
+        let sent = await reopened.sendMessage("New prompt after the rejected load", modelContext: context)
+        XCTAssertTrue(sent)
+        let cached = try CacheStore.cachedTranscriptWindow(serverURL: URL(string: "https://example.test")!, sessionID: "session-abc", in: context)
+        XCTAssertEqual(cached.messages.compactMap(\.content), ["New prompt after the rejected load"])
+        XCTAssertNil(cached.recentMessagesOffset, "A rejected placeholder cannot certify a recent server window")
+    }
+
     func testPersistingAnEmptyTranscriptKeepsTheSavedOne() async throws {
         let context = try makeContext()
         let server = try XCTUnwrap(URL(string: "https://example.test"))

@@ -1766,6 +1766,10 @@ public final class ChatViewModel {
         messages = previousMessages
         messagesOffset = previousMessagesOffset
         hasOlderMessages = previousMessagesOffset > 0
+        if previousMessages.isEmpty {
+            recentMessagesOffset = nil
+            recentHasOlderMessages = false
+        }
     }
 
     @discardableResult
@@ -1819,7 +1823,7 @@ public final class ChatViewModel {
                 in: messages
             )
             responseCompletionNeedsTranscriptRefresh = false
-            updateOlderMessagePagination(from: session, loadedMessageCount: messages.count)
+            updateOlderMessagePagination(from: session, loadedMessageCount: messages.count, preservingRecentWindow: true)
             isViewingCachedData = false
             contextWindowSnapshot = ContextWindowSnapshot(session: session)
             if let title = session.title, titleVersionAtFetch == sessionListOwner?.resourceMetadataVersion(for: sessionID), ownsCurrentCache {
@@ -2137,13 +2141,21 @@ public final class ChatViewModel {
         return Array(reloadedMessages[overlapIndex...])
     }
 
-    private func updateOlderMessagePagination(from session: SessionDetail?, loadedMessageCount: Int) {
+    private func updateOlderMessagePagination(
+        from session: SessionDetail?,
+        loadedMessageCount: Int,
+        preservingRecentWindow: Bool = false
+    ) {
         let resolvedOffset = Self.resolvedMessagesOffset(
             from: session,
             loadedMessageCount: loadedMessageCount
         )
         messagesOffset = resolvedOffset
         hasOlderMessages = resolvedOffset > 0 || session?.messagesTruncated == true
+        if !preservingRecentWindow {
+            recentMessagesOffset = resolvedOffset
+            recentHasOlderMessages = hasOlderMessages
+        }
     }
 
     nonisolated private static func resolvedMessagesOffset(
