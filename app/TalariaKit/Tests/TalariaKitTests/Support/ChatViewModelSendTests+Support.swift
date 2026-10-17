@@ -310,17 +310,19 @@ final class SpySpeechSynthesizer: ChatSpeechSynthesizing {
 }
 
 actor RecordingSendDraftAttachmentStore: ChatDraftAttachmentStoring {
+    private var bytes: [String: Data] = [:]
     private var nextFileNumber = 1
     private var deletedFileNames: [String] = []
 
     func save(data: Data, suggestedFilename: String) async throws -> String {
         let fileName = "saved-\(nextFileNumber)-\(URL(fileURLWithPath: suggestedFilename).lastPathComponent)"
         nextFileNumber += 1
+        bytes[fileName] = data
         return fileName
     }
 
     func data(named fileName: String) async throws -> Data {
-        Data()
+        bytes[fileName] ?? Data()
     }
 
     func delete(named fileName: String) async {

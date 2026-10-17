@@ -1149,7 +1149,7 @@ public final class ChatViewModel {
             return nil
         }
 
-        guard activeStreamID == nil else {
+        guard activeStreamID == nil, !isSendingVoiceNote, !isStartingChat, !attachmentCoordinator.isUploadingAttachment else {
             composerConfigurationErrorMessage = String(localized: "Wait for the current response to finish before changing profiles.")
             return nil
         }
@@ -1163,6 +1163,7 @@ public final class ChatViewModel {
             return nil
         }
 
+        suspendMediaPreparation()
         isUpdatingComposerConfiguration = true
         composerConfigurationErrorMessage = nil
         lastError = nil
@@ -1328,6 +1329,19 @@ public final class ChatViewModel {
         )
     }
 
+    public var attachmentStagingContext: String { "\(mediaGeneration)|\(attachmentContextID)" }
+
+    @discardableResult
+    public func stageAttachment(data: Data, filename: String, previewData: Data? = nil) async -> PendingAttachment? {
+        await attachmentCoordinator.stageAttachment(data: data, filename: filename, previewData: previewData)
+    }
+
+    public func uploadStagedAttachments(ids: [UUID]? = nil) async { await attachmentCoordinator.uploadStagedAttachments(ids: ids) }
+    public func retryAttachment(id: UUID) async {
+        attachmentCoordinator.setUploadAttachmentError(nil)
+        _ = await attachmentCoordinator.retryAttachment(id: id)
+    }
+
     /// Re-uploads a restored draft attachment from its durable local copy,
     /// preserving the draft record's identity. Quiet on failure (returns nil):
     /// the caller reports in aggregate and keeps the record for a later retry.
@@ -1353,7 +1367,10 @@ public final class ChatViewModel {
     }
 
     public func attachmentRawData(path: String) async -> Data? {
-        await attachmentCoordinator.attachmentRawData(path: path)
+        if let note = pendingVoiceDraft, path == note.id || path == note.uploadedAttachment?.path {
+            return try? await attachmentCoordinator.localData(named: note.file)
+        }
+        return await attachmentCoordinator.attachmentRawData(path: path)
     }
 
     public func transcriptMediaThumbnailData(for reference: TranscriptMediaReference) async -> Data? {
@@ -1993,6 +2010,27 @@ public final class ChatViewModel {
         previousMessages: [ChatMessage],
         previousMessagesOffset: Int
     ) {
+        defer {
+            if let note = pendingVoiceDraft,
+               let local = previousMessages.first(where: { $0.id == note.id }) {
+                // A repeated transcript and display filename are not a receipt. Require the unique
+                // uploaded path as well before releasing bytes after an uncertain start.
+                let uploadedKey = MessageAttachment(path: note.uploadedAttachment?.path).identityKey
+                let serverMessages = (session?.messages ?? []).filter { message in
+                    guard let uploadedKey else { return false }
+                    return (message.attachments ?? []).contains { MessageAttachment(path: $0.path).identityKey == uploadedKey }
+                }
+                if note.uncertainStart, Self.equivalentUserMessageIndex(
+                    in: serverMessages, excluding: [], localMessage: local, turnID: nil, comparesClocks: true
+                ) != nil {
+                    pendingVoiceDraft = nil
+                    messages.removeAll { $0.id == note.id }
+                    Task { await attachmentCoordinator.deleteDraftCopy(named: note.file) }
+                } else if !messages.contains(where: { $0.id == note.id }) {
+                    Self.insertLocalOptimisticMessage(local, into: &messages)
+                }
+            }
+        }
         let reloadedMessagesOffset = Self.resolvedMessagesOffset(
             from: session,
             loadedMessageCount: reloadedMessages.count
@@ -2511,6 +2549,7 @@ public final class ChatViewModel {
         // send is valid when it carries staged files: read them before `prepareForSend` consumes them.
         let message = draft.trimmingCharacters(in: .whitespacesAndNewlines)
         let attachmentsToSend = queuedAttachments ?? attachmentCoordinator.pendingAttachments
+        guard attachmentsToSend.allSatisfy(\.isReadyToSend) else { return ChatSendOutcome(didStart: false) }
         let hasSendableAttachments = attachmentsToSend.contains {
             !$0.path.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
         }
@@ -2546,112 +2585,176 @@ public final class ChatViewModel {
         return outcome
     }
 
-    /// Records → transcribes → uploads → sends a server-transcribed voice note
-    /// (Telegram-style). The sent message's text is the transcript and its sole
-    /// attachment is the audio clip, rendered as a playable note by the inline
-    /// audio player. Aborts (toast, no partial send) if transcription fails or
-    /// returns nothing. The outcome says whether the chat send started and carries
-    /// the error this voice note hit, captured before the `defer` below releases the
-    /// pipeline to a queued send that clears `lastError` (TAL-150).
+    private struct VoiceNotePreparationError: LocalizedError {
+        let message: String
+        init(_ message: String) { self.message = message }
+        var errorDescription: String? { message }
+    }
+
+    public private(set) var pendingVoiceDraft: ChatDraftVoiceNote?
+    private var mediaGeneration = 0
+
+    public func restoreVoiceNote(_ draft: ChatDraftVoiceNote) async {
+        // Reading can fail transiently while device protection is locked; keep the receipt for retry.
+        let resourcePrefix = attachmentResourceContextID
+        guard pendingVoiceDraft == nil, !isSendingVoiceNote, draft.isValid,
+              draft.context.hasPrefix(resourcePrefix), !Task.isCancelled else { return }
+        pendingVoiceDraft = draft
+        if !draft.uncertainStart { pendingVoiceDraft?.uploadedAttachment = nil }
+        messages.removeAll { $0.id == draft.id }
+        var message = ChatMessage(role: "user", content: draft.transcript ?? "", timestamp: draft.timestamp, messageId: draft.id,
+                                  attachments: [pendingVoiceDraft?.uploadedAttachment ?? MessageAttachment(name: draft.filename, path: draft.id, mime: "audio/mp4", size: nil, isImage: false)])
+        message.localVoicePhase = .failed(draft.context == attachmentContextID
+            ? String(localized: "Voice note has not been sent. Try again.")
+            : String(localized: "This voice note belongs to another profile. Switch back to retry, or remove it."))
+        messages.append(message)
+    }
+
     @discardableResult
     public func sendVoiceNote(audioData: Data, filename: String, modelContext: ModelContext? = nil) async -> ChatSendOutcome {
-        // Reentrancy guard: bail if a voice note OR a regular chat send is already
-        // in flight. It has to live here rather than only in `performChatSend`,
-        // because transcription and upload run before that call and must not start
-        // at all while another send owns the pipeline. Without it two overlapping
-        // sends would both flip `isStartingChat`/`isSendingVoiceNote` and race their
-        // `defer { … = false }` (clearing the flag while the other still runs, and
-        // firing two concurrent `startChat`s). The UI already blocks this; the guard
-        // keeps a future caller (accessibility shortcut, test harness) safe too.
         guard !isSendingVoiceNote, !isStartingChat else { return ChatSendOutcome(didStart: false) }
-        guard !isViewingCachedData else {
-            setUploadAttachmentError(String(localized: "Reconnect to the server to send a voice note."))
-            return ChatSendOutcome(didStart: false)
+        guard pendingVoiceDraft == nil else {
+            let error = VoiceNotePreparationError(String(localized: "Retry or remove the unsent voice note before recording another."))
+            setUploadAttachmentError(error.localizedDescription)
+            return ChatSendOutcome(didStart: false, error: error)
         }
-        guard !audioData.isEmpty else { return ChatSendOutcome(didStart: false) }
+        guard !isViewingCachedData, sessionID != nil, !audioData.isEmpty else { return ChatSendOutcome(didStart: false) }
         guard audioData.count <= PendingAttachment.maximumUploadBytes else {
             setUploadAttachmentError(PendingAttachment.uploadTooLargeMessage(filename: filename))
             return ChatSendOutcome(didStart: false)
         }
-        guard let sessionID else {
-            setUploadAttachmentError(String(localized: "The server did not provide a session ID."))
-            return ChatSendOutcome(didStart: false)
-        }
-
         isSendingVoiceNote = true
-        setUploadAttachmentError(nil)
-        sendErrorMessage = nil
-        lastError = nil
-        // Releasing the pipeline is the queue's natural trigger. A successful voice
-        // note starts a stream, so the drain no-ops and stream completion drives it
-        // as usual; a failed one leaves no stream behind, so without this a message
-        // queued during the voice note would wait for the next unrelated trigger.
-        defer {
-            isSendingVoiceNote = false
-            drainQueuedSlashMessageIfIdle()
-        }
-
-        // 1. Transcribe via server STT. Any error or empty transcript aborts the
-        //    whole send — no fallback, no partial message (per the issue).
-        let transcript: String
+        let generation = mediaGeneration
+        let context = attachmentContextID
+        defer { finishVoiceNotePreparation() }
         do {
-            let response = try await client.transcribeAudio(data: audioData, filename: filename)
-            if let serverError = response.error?.trimmingCharacters(in: .whitespacesAndNewlines),
-               !serverError.isEmpty {
-                setUploadAttachmentError(serverError)
+            let file = try await attachmentCoordinator.saveLocalAudio(data: audioData, filename: filename)
+            guard context == attachmentContextID, generation == mediaGeneration, !Task.isCancelled else {
+                await attachmentCoordinator.deleteDraftCopy(named: file)
                 return ChatSendOutcome(didStart: false)
             }
-            let text = (response.transcript ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
-            guard !text.isEmpty else {
-                setUploadAttachmentError(String(localized: "Couldn't transcribe that voice note. Try recording again."))
-                return ChatSendOutcome(didStart: false)
-            }
-            transcript = text
+            let id = "local-\(UUID().uuidString)"
+            let timestamp = Date().timeIntervalSince1970
+            pendingVoiceDraft = ChatDraftVoiceNote(id: id, file: file, filename: filename, context: context, timestamp: timestamp, transcript: nil, uncertainStart: false)
+            var message = ChatMessage(
+                role: "user", content: "", timestamp: timestamp, messageId: id,
+                attachments: [MessageAttachment(name: filename, path: id, mime: "audio/mp4", size: audioData.count, isImage: false)]
+            )
+            message.localVoicePhase = .preparing
+            messages.append(message)
+            return await prepareAndSendVoiceNote(modelContext: modelContext)
         } catch {
-            lastError = error
             setUploadAttachmentError(error.localizedDescription)
             return ChatSendOutcome(didStart: false, error: error)
         }
+    }
 
-        // 2. Upload the clip as a standalone attachment (kept out of the composer's
-        //    pending list). On failure the coordinator already surfaced the error,
-        //    reporting its thrown error through `lastError`; no other send can clear
-        //    that while this voice note owns the pipeline.
-        guard let pending = await attachmentCoordinator.uploadStandaloneAttachment(
-            data: audioData,
-            filename: filename
-        ) else {
-            return ChatSendOutcome(didStart: false, error: lastError)
+    public func retryVoiceNote(messageID: String, modelContext: ModelContext? = nil) async {
+        guard pendingVoiceDraft?.id == messageID, pendingVoiceDraft?.context == attachmentContextID,
+              !isSendingVoiceNote, !isStartingChat, !isViewingCachedData, activeStreamID == nil else { return }
+        isSendingVoiceNote = true
+        defer { finishVoiceNotePreparation() }
+        _ = await prepareAndSendVoiceNote(modelContext: modelContext)
+    }
+
+    private func finishVoiceNotePreparation() {
+        if let note = pendingVoiceDraft, note.context != attachmentContextID {
+            setVoicePhase(.failed(String(localized: "This voice note belongs to another profile. Switch back to retry, or remove it.")), id: note.id)
+        } else if Task.isCancelled, let note = pendingVoiceDraft {
+            let message = String(localized: "Voice note preparation was interrupted. Try again.")
+            setVoicePhase(note.uncertainStart ? .uncertain(message) : .failed(message), id: note.id)
         }
+        isSendingVoiceNote = false
+        drainQueuedSlashMessageIfIdle()
+    }
 
-        // 3. Send a chat message: text = transcript, attachments = [the clip].
-        let messageAttachment = MessageAttachment(
-            name: pending.name,
-            path: pending.path,
-            mime: pending.mime,
-            size: pending.size,
-            isImage: pending.isImage
-        )
-        let localMessageID = "local-\(UUID().uuidString)"
-        // The API message text is the bare transcript, never with a
-        // "[Attached files: <clip>.m4a]" suffix appended. That suffix
-        // is the agent's only signal about a non-image attachment (the server
-        // strips attachment metadata before the model call and never embeds audio),
-        // so it makes the agent try to "inspect" / transcribe the clip itself
-        // instead of just answering the transcript. The clip still rides along in
-        // `messageAttachments` / `apiPayloads` purely so the inline player renders
-        // and persists; it's display-only and never reaches the model. (#330)
-        return await performChatSend(
-            sessionID: sessionID,
-            localMessageID: localMessageID,
-            displayContent: transcript,
-            messageForAPI: transcript,
-            messageAttachments: [messageAttachment],
-            apiPayloads: [pending.toJSONValue()],
-            attachmentsToRestoreOnFailure: [],
-            voiceTurn: true,
-            modelContext: modelContext
-        )
+    public func removeVoiceNote(messageID: String) {
+        guard !isSendingVoiceNote, let note = pendingVoiceDraft, note.id == messageID else { return }
+        pendingVoiceDraft = nil
+        messages.removeAll { $0.id == messageID }
+        Task { await attachmentCoordinator.deleteDraftCopy(named: note.file) }
+    }
+
+    private func setVoicePhase(_ phase: ChatMessage.LocalVoicePhase, id: String) {
+        guard let index = messages.firstIndex(where: { $0.id == id }) else { return }
+        messages[index].localVoicePhase = phase
+    }
+
+    private func prepareAndSendVoiceNote(modelContext: ModelContext?) async -> ChatSendOutcome {
+        guard var note = pendingVoiceDraft, note.context == attachmentContextID, let sessionID else {
+            return ChatSendOutcome(didStart: false)
+        }
+        let generation = mediaGeneration
+        let isCurrent = { self.pendingVoiceDraft?.id == note.id && self.attachmentContextID == note.context && self.mediaGeneration == generation && !Task.isCancelled }
+        setUploadAttachmentError(nil)
+        sendErrorMessage = nil
+        lastError = nil
+        setVoicePhase(.preparing, id: note.id)
+        do {
+            // A transport failure after start may have committed the turn. Refresh before any retry,
+            // and fail closed if the server still cannot prove whether it accepted it.
+            if note.uncertainStart {
+                await loadMessages(modelContext: modelContext, waitsForPendingMessageSend: false)
+                guard isCurrent() else { return ChatSendOutcome(didStart: false) }
+                setVoicePhase(.uncertain(String(localized: "Couldn't confirm whether the server received this voice note. Refresh before retrying.")), id: note.id)
+                return ChatSendOutcome(didStart: false)
+            }
+            let data = try await attachmentCoordinator.localData(named: note.file)
+            guard isCurrent() else { return ChatSendOutcome(didStart: false) }
+            if note.transcript == nil {
+                let response = try await client.transcribeAudio(data: data, filename: note.filename)
+                guard isCurrent() else { return ChatSendOutcome(didStart: false) }
+                if let error = response.error, !error.isEmpty { throw VoiceNotePreparationError(error) }
+                let text = (response.transcript ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+                guard !text.isEmpty else { throw VoiceNotePreparationError(String(localized: "Couldn't transcribe that voice note. Try again.")) }
+                note.transcript = text
+                pendingVoiceDraft = note
+                if let index = messages.firstIndex(where: { $0.id == note.id }) { messages[index].content = text }
+            }
+            if note.uploadedAttachment == nil {
+                guard let attachment = await attachmentCoordinator.uploadStandaloneAttachment(data: data, filename: note.filename) else {
+                    throw VoiceNotePreparationError(uploadAttachmentErrorMessage ?? String(localized: "Upload failed."))
+                }
+                guard isCurrent() else { return ChatSendOutcome(didStart: false) }
+                note.uploadedAttachment = MessageAttachment(name: attachment.name, path: attachment.path, mime: attachment.mime, size: attachment.size, isImage: attachment.isImage)
+                pendingVoiceDraft = note
+            }
+            guard isCurrent(), let attachment = note.uploadedAttachment, let transcript = note.transcript else { return ChatSendOutcome(didStart: false) }
+            note.uncertainStart = true
+            note.timestamp = Date().timeIntervalSince1970
+            pendingVoiceDraft = note
+            setVoicePhase(.sending, id: note.id)
+            let result = await performChatSend(
+                sessionID: sessionID, localMessageID: note.id, displayContent: transcript, messageForAPI: transcript,
+                messageAttachments: [attachment],
+                apiPayloads: [PendingAttachment(name: attachment.name ?? note.filename, path: attachment.path ?? "", mime: attachment.mime ?? "audio/mp4", size: attachment.size, isImage: attachment.isImage ?? false).toJSONValue()], attachmentsToRestoreOnFailure: [], voiceTurn: true, modelContext: modelContext
+            )
+            guard pendingVoiceDraft?.id == note.id, attachmentContextID == note.context, mediaGeneration == generation else { return result }
+            if result.didStart {
+                if let index = messages.firstIndex(where: { $0.id == note.id }) { messages[index].localVoicePhase = nil }
+                pendingVoiceDraft = nil
+                await attachmentCoordinator.deleteDraftCopy(named: note.file)
+            } else {
+                // An explicit server refusal is safe to retry. A lost response is ambiguous.
+                if let error = result.error as? APIError {
+                    switch error {
+                    case .http(let status, _): note.uncertainStart = status >= 500 || status == 408
+                    case .unauthorized, .invalidServerURL: note.uncertainStart = false
+                    case .network, .decoding: note.uncertainStart = true
+                    }
+                } else { note.uncertainStart = result.error != nil }
+                pendingVoiceDraft = note
+                let message = sendErrorMessage ?? String(localized: "Voice note was not sent.")
+                setVoicePhase(note.uncertainStart ? .uncertain(message) : .failed(message), id: note.id)
+            }
+            return result
+        } catch {
+            guard isCurrent() else { return ChatSendOutcome(didStart: false) }
+            lastError = error
+            setUploadAttachmentError(error.localizedDescription)
+            setVoicePhase(.failed(error.localizedDescription), id: note.id)
+            return ChatSendOutcome(didStart: false, error: error)
+        }
     }
 
     /// Shared optimistic-append + `startChat` + rollback core used by both the
@@ -2699,7 +2802,13 @@ public final class ChatViewModel {
             messageId: localMessageID,
             attachments: messageAttachments.isEmpty ? nil : messageAttachments
         )
-        messages.append(optimisticMessage)
+        if let index = messages.firstIndex(where: { $0.id == localMessageID }) {
+            var adopted = optimisticMessage
+            adopted.localVoicePhase = messages[index].localVoicePhase
+            messages[index] = adopted
+        } else {
+            messages.append(optimisticMessage)
+        }
 
         cacheCurrentMessages(sessionID: sessionID, modelContext: modelContext)
 
@@ -2919,6 +3028,7 @@ public final class ChatViewModel {
     }
 
     private func rollbackOptimisticMessage(id: String) {
+        guard pendingVoiceDraft?.id != id else { return }
         messages.removeAll { $0.messageId == id }
         attachmentCoordinator.removeLocalPreviews(messageID: id)
     }
@@ -3006,6 +3116,9 @@ public final class ChatViewModel {
         _ action: ServerSideAction,
         args: String
     ) async -> SlashCommandExecutionResult {
+        if [.queue, .steer, .interrupt].contains(action), let error = attachmentSendReadinessError {
+            return .unsupported(friendlyMessage: error)
+        }
         switch action {
         case .model:
             return await switchModelFromSlashCommand(args)
@@ -3056,10 +3169,16 @@ public final class ChatViewModel {
         }
     }
 
+    private var attachmentSendReadinessError: String? {
+        attachmentCoordinator.pendingAttachments.allSatisfy(\.isReadyToSend)
+            ? nil : String(localized: "Finish uploading or remove failed attachments before sending.")
+    }
+
     public func submitStreamingMessage(
         _ draft: String,
         behavior: StreamingSendBehavior
     ) async -> SlashCommandExecutionResult {
+        if let error = attachmentSendReadinessError { return .unsupported(friendlyMessage: error) }
         switch behavior.sending(withFiles: !attachmentCoordinator.pendingAttachments.isEmpty) {
         case .steer:
             return await steerResponseFromSlashCommand(draft)
@@ -4723,11 +4842,23 @@ public final class ChatViewModel {
         }
     }
 
+    private func suspendMediaPreparation() {
+        // Once start is in flight its outcome must be reconciled, never treated as a cancelled send.
+        guard !isStartingMessageSend else { return }
+        mediaGeneration += 1
+        attachmentCoordinator.suspendPendingUploads()
+        if let note = pendingVoiceDraft {
+            setVoicePhase(.failed(String(localized: "Preparation paused. Try again to send this voice note.")), id: note.id)
+        }
+    }
+
     public func suspendStreamForBackground() {
+        suspendMediaPreparation()
         suspendActiveStreamConnection()
     }
 
     public func suspendStreamForNavigation() {
+        suspendMediaPreparation()
         suspendActiveStreamConnection()
     }
 
@@ -5974,6 +6105,14 @@ extension ChatViewModel: ChatPendingActionCoordinatorDelegate {
 
 extension ChatViewModel: ChatAttachmentCoordinatorDelegate {
     var attachmentSessionID: String? { sessionID }
+    private var attachmentResourceContextID: String {
+        [server.absoluteString, sessionID ?? ""].map { "\($0.utf8.count):\($0)" }.joined()
+    }
+
+    var attachmentContextID: String {
+        let profile = requestProfileName ?? ""
+        return "\(attachmentResourceContextID)\(profile.utf8.count):\(profile)"
+    }
     var attachmentIsViewingCachedData: Bool { isViewingCachedData }
 
     func attachmentCoordinatorWillUpload() {

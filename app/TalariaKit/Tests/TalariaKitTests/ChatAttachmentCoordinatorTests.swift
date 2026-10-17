@@ -10,6 +10,128 @@ final class ChatAttachmentCoordinatorTests: APIClientTestCase {
         super.tearDown()
     }
 
+    func testAttachmentIsVisibleBeforeUploadCompletes() async throws {
+        let started = expectation(description: "upload held")
+        let state = DeferredUploadState()
+        let client = makeDeferredUploadClient { request, transport in
+            state.setFirstUploadCompletion {
+                transport.complete(with: apiTestJSONResponse(
+                    #"{"path":"/tmp/notes.txt","mime":"text/plain","is_image":false}"#,
+                    for: request
+                ))
+            }
+            started.fulfill()
+        }
+        let coordinator = makeCoordinator(client: client)
+        let task = Task { await coordinator.uploadAttachment(data: Data("notes".utf8), filename: "notes.txt") }
+        await fulfillment(of: [started], timeout: 10)
+        XCTAssertEqual(coordinator.pendingAttachments.map(\.name), ["notes.txt"], "Durably staged file must be visible while upload is unresolved")
+        let stagedID = coordinator.pendingAttachments.first?.id
+        try XCTUnwrap(state.firstUploadCompletion())()
+        let uploaded = await task.value
+        XCTAssertEqual(uploaded?.id, stagedID, "Upload must adopt the same staged item")
+    }
+
+    func testRemovedStagedAttachmentCannotReturnFromLateUpload() async throws {
+        let started = expectation(description: "upload held")
+        let state = DeferredUploadState()
+        let client = makeDeferredUploadClient { request, transport in
+            state.setFirstUploadCompletion {
+                transport.complete(with: apiTestJSONResponse(#"{"path":"/tmp/notes.txt"}"#, for: request))
+            }
+            started.fulfill()
+        }
+        let coordinator = makeCoordinator(client: client)
+        let task = Task { await coordinator.uploadAttachment(data: Data("notes".utf8), filename: "notes.txt") }
+        await fulfillment(of: [started], timeout: 10)
+        if let id = coordinator.pendingAttachments.first?.id { coordinator.removePendingAttachment(id: id) }
+        try XCTUnwrap(state.firstUploadCompletion())()
+        _ = await task.value
+        XCTAssertTrue(coordinator.pendingAttachments.isEmpty, "A removed local intent cannot be resurrected by an obsolete receipt")
+    }
+
+    func testWholeSelectionIsVisibleBeforeSequentialUploadAndNewCapStopsLaterRequests() async throws {
+        let started = expectation(description: "first held")
+        let state = DeferredUploadState()
+        let client = makeDeferredUploadClient { request, transport in
+            XCTAssertEqual(state.nextUploadIndex(), 1, "Files beyond the newly learned cap cannot upload")
+            state.setFirstUploadCompletion {
+                transport.complete(with: apiTestJSONResponse(#"{"path":"/tmp/one.txt","max_attachments_per_message":1}"#, for: request))
+            }
+            started.fulfill()
+        }
+        let coordinator = makeCoordinator(client: client)
+        for name in ["one.txt", "two.txt", "three.txt"] {
+            await coordinator.stageAttachment(data: Data(name.utf8), filename: name)
+        }
+        let ids = coordinator.pendingAttachments.map(\.id)
+        let task = Task { await coordinator.uploadStagedAttachments() }
+        await fulfillment(of: [started], timeout: 10)
+        XCTAssertEqual(coordinator.pendingAttachments.map(\.name), ["one.txt", "two.txt", "three.txt"])
+        XCTAssertTrue(coordinator.pendingAttachments.allSatisfy { !$0.isReadyToSend })
+        try XCTUnwrap(state.firstUploadCompletion())()
+        await task.value
+        XCTAssertEqual(coordinator.pendingAttachments.map(\.id), ids)
+        XCTAssertTrue(coordinator.pendingAttachments[0].isReadyToSend)
+        XCTAssertFalse(coordinator.pendingAttachments[1].isReadyToSend)
+        XCTAssertFalse(coordinator.pendingAttachments[2].isReadyToSend)
+    }
+
+    func testFailedUploadRetriesTheSameDurableCopyAndIdentity() async throws {
+        var attempts = 0
+        let store = RecordingAttachmentStore()
+        let client = makeClient { request in
+            attempts += 1
+            return apiTestJSONResponse(attempts == 1 ? #"{"error":"Try again"}"# : #"{"path":"/tmp/retried.txt"}"#, for: request)
+        }
+        let coordinator = makeCoordinator(client: client, attachmentStore: store)
+        _ = await coordinator.uploadAttachment(data: Data("retry".utf8), filename: "retry.txt")
+        let staged = try XCTUnwrap(coordinator.pendingAttachments.first)
+        XCTAssertEqual(staged.uploadPhase, .failed("Try again"))
+        let result = await coordinator.retryAttachment(id: staged.id)
+        XCTAssertEqual(result?.id, staged.id)
+        XCTAssertEqual(result?.draftFileName, staged.draftFileName)
+        XCTAssertEqual(coordinator.pendingAttachments.count, 1)
+        let saved = await store.savedNames()
+        XCTAssertEqual(saved.count, 1)
+    }
+
+    func testSuspensionFencesLateUploadWithoutDeletingRetryableBytes() async throws {
+        for changesContext in [false, true] {
+            let started = expectation(description: "held upload")
+            let state = DeferredUploadState()
+            let store = RecordingAttachmentStore()
+            let client = makeDeferredUploadClient { request, transport in
+                state.setFirstUploadCompletion { transport.complete(with: apiTestJSONResponse(#"{"path":"/tmp/late.txt"}"#, for: request)) }
+                started.fulfill()
+            }
+            let coordinator = makeCoordinator(client: client, attachmentStore: store)
+            let task = Task { await coordinator.uploadAttachment(data: Data("late".utf8), filename: "late.txt") }
+            await fulfillment(of: [started], timeout: 10)
+            if changesContext { delegateSpies.last?.attachmentSessionID = "replacement-session" } else { coordinator.suspendPendingUploads() }
+            try XCTUnwrap(state.firstUploadCompletion())()
+            let result = await task.value
+            XCTAssertNil(result)
+            XCTAssertEqual(coordinator.pendingAttachments.count, 1)
+            XCTAssertFalse(coordinator.pendingAttachments[0].isReadyToSend)
+            let deleted = await store.deletedNames()
+            XCTAssertTrue(deleted.isEmpty)
+            XCTAssertFalse(coordinator.isUploadingAttachment)
+        }
+    }
+
+    func testRejectedSelectionErrorSurvivesTheRemainingUploads() async throws {
+        let client = makeClient { request in apiTestJSONResponse(#"{"path":"/tmp/valid.txt"}"#, for: request) }
+        let coordinator = makeCoordinator(client: client)
+        let rejected = await coordinator.stageAttachment(data: Data(count: PendingAttachment.maximumUploadBytes + 1), filename: "oversized.bin")
+        XCTAssertNil(rejected)
+        await coordinator.stageAttachment(data: Data("valid".utf8), filename: "valid.txt")
+        await coordinator.uploadStagedAttachments()
+        XCTAssertEqual(coordinator.pendingAttachments.count, 1)
+        XCTAssertTrue(coordinator.pendingAttachments[0].isReadyToSend)
+        XCTAssertEqual(coordinator.uploadAttachmentErrorMessage, PendingAttachment.uploadTooLargeMessage(filename: "oversized.bin"), "A successful sibling upload cannot conceal a rejected selection")
+    }
+
     func testUploadSuccessAddsPendingAttachmentAndPreparesLocalPreview() async throws {
         let imageData = try XCTUnwrap(Self.imageData())
         var uploadedFilename: String?
@@ -82,8 +204,9 @@ final class ChatAttachmentCoordinatorTests: APIClientTestCase {
         await coordinator.uploadAttachment(data: Data("large".utf8), filename: "large.bin")
 
         XCTAssertEqual(uploadCount, 2)
-        XCTAssertEqual(coordinator.pendingAttachments.count, 1)
+        XCTAssertEqual(coordinator.pendingAttachments.count, 2)
         XCTAssertEqual(coordinator.pendingAttachments.first?.name, "notes.txt")
+        XCTAssertEqual(coordinator.pendingAttachments.last?.uploadPhase, .failed("Upload failed."))
         XCTAssertEqual(coordinator.uploadAttachmentErrorMessage, "Upload failed.")
     }
 
@@ -164,7 +287,7 @@ final class ChatAttachmentCoordinatorTests: APIClientTestCase {
         await firstUpload.value
 
         XCTAssertFalse(coordinator.isUploadingAttachment)
-        XCTAssertEqual(coordinator.pendingAttachments.map(\.name).sorted(), ["one.txt", "two.txt"])
+        XCTAssertEqual(coordinator.pendingAttachments.map(\.name), ["one.txt", "two.txt"])
     }
 
     func testRemovePendingAttachmentRemovesOnlyMatchingAttachment() async throws {
@@ -418,7 +541,8 @@ final class ChatAttachmentCoordinatorTests: APIClientTestCase {
         // Restore failures must not surface a per-item banner or delegate
         // error; the caller reports in aggregate and keeps the draft record.
         XCTAssertNil(restored)
-        XCTAssertTrue(coordinator.pendingAttachments.isEmpty)
+        XCTAssertEqual(coordinator.pendingAttachments.count, 1)
+        XCTAssertFalse(coordinator.pendingAttachments[0].isReadyToSend)
         XCTAssertNil(coordinator.uploadAttachmentErrorMessage)
         XCTAssertTrue(delegate.failedErrors.isEmpty)
     }
@@ -523,6 +647,7 @@ final class ChatAttachmentCoordinatorTests: APIClientTestCase {
 }
 
 private actor RecordingAttachmentStore: ChatDraftAttachmentStoring {
+    private var bytes: [String: Data] = [:]
     private let saveError: Error?
     private var saves: [String] = []
     private var deletes: [String] = []
@@ -537,11 +662,12 @@ private actor RecordingAttachmentStore: ChatDraftAttachmentStoring {
         }
         let fileName = "saved-\(saves.count + 1)-\(URL(fileURLWithPath: suggestedFilename).lastPathComponent)"
         saves.append(fileName)
+        bytes[fileName] = data
         return fileName
     }
 
     func data(named fileName: String) async throws -> Data {
-        Data()
+        bytes[fileName] ?? Data()
     }
 
     func delete(named fileName: String) async {

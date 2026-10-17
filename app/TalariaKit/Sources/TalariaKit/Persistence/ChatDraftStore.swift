@@ -14,6 +14,34 @@ public struct ChatDraftAttachment: Equatable, Sendable {
     public let file: String?
 }
 
+/// A submitted voice note owns a draft attachment copy independently of the typed composer.
+public struct ChatDraftVoiceNote: Codable, Equatable, Sendable {
+    public let id: String
+    public let file: String
+    public let filename: String
+    public let context: String
+    public internal(set) var timestamp: Double
+    public internal(set) var transcript: String?
+    public internal(set) var uncertainStart: Bool
+    public internal(set) var uploadedAttachment: MessageAttachment?
+
+    public init(id: String, file: String, filename: String, context: String, timestamp: Double, transcript: String?, uncertainStart: Bool, uploadedAttachment: MessageAttachment? = nil) {
+        self.id = id
+        self.file = file
+        self.filename = filename
+        self.context = context
+        self.timestamp = timestamp
+        self.transcript = transcript
+        self.uncertainStart = uncertainStart
+        self.uploadedAttachment = uploadedAttachment
+    }
+
+    var isValid: Bool {
+        id.hasPrefix("local-") && !file.isEmpty && file != "." && file != ".."
+            && file == URL(fileURLWithPath: file).lastPathComponent && timestamp.isFinite
+    }
+}
+
 /// Effective composer choices snapshotted for a draft context. Restored for
 /// new-chat contexts after revalidation against the live server configuration;
 /// existing sessions keep loading their configuration from the server.
@@ -87,15 +115,19 @@ public struct ChatDraft: Equatable, Sendable {
     public var text = ""
     public var attachments: [ChatDraftAttachment] = []
     public var settings: ChatDraftSettings?
+    public var voiceNote: ChatDraftVoiceNote?
 
-    public init(text: String = "", attachments: [ChatDraftAttachment] = [], settings: ChatDraftSettings? = nil) {
+    var referencedFiles: [String] { attachments.compactMap(\.file) + [voiceNote?.file].compactMap { $0 } }
+
+    public init(text: String = "", attachments: [ChatDraftAttachment] = [], settings: ChatDraftSettings? = nil, voiceNote: ChatDraftVoiceNote? = nil) {
+        self.voiceNote = voiceNote
         self.text = text
         self.attachments = attachments
         self.settings = settings
     }
 
     var isEmpty: Bool {
-        text.isEmpty && attachments.isEmpty && (settings?.isEmpty ?? true)
+        text.isEmpty && attachments.isEmpty && voiceNote == nil && (settings?.isEmpty ?? true)
     }
 }
 
@@ -339,6 +371,7 @@ public actor ChatDraftFilePersistence: ChatDraftPersisting {
         let text: String?
         let attachments: [FailableAttachment]?
         let settings: SettingsRecord?
+        let voiceNote: ChatDraftVoiceNote?
 
         private enum CodingKeys: String, CodingKey {
             case serverID
@@ -347,6 +380,7 @@ public actor ChatDraftFilePersistence: ChatDraftPersisting {
             case text
             case attachments
             case settings
+            case voiceNote
         }
 
         init(key: ChatDraftKey, draft: ChatDraft) {
@@ -359,6 +393,7 @@ public actor ChatDraftFilePersistence: ChatDraftPersisting {
                 context = "newChat"
                 sessionID = nil
             }
+            voiceNote = draft.voiceNote
             text = draft.text
             attachments = draft.attachments.map { FailableAttachment(value: AttachmentRecord($0)) }
             settings = draft.settings.map { SettingsRecord($0) }
@@ -373,6 +408,7 @@ public actor ChatDraftFilePersistence: ChatDraftPersisting {
             sessionID = (try? container.decodeIfPresent(String.self, forKey: .sessionID)) ?? nil
             text = (try? container.decodeIfPresent(String.self, forKey: .text)) ?? nil
             attachments = (try? container.decodeIfPresent([FailableAttachment].self, forKey: .attachments)) ?? nil
+            voiceNote = (try? container.decodeIfPresent(ChatDraftVoiceNote.self, forKey: .voiceNote)).flatMap { $0.isValid ? $0 : nil }
             settings = (try? container.decodeIfPresent(SettingsRecord.self, forKey: .settings)) ?? nil
         }
 
@@ -404,7 +440,8 @@ public actor ChatDraftFilePersistence: ChatDraftPersisting {
             let draft = ChatDraft(
                 text: text ?? "",
                 attachments: (attachments ?? []).compactMap(\.value?.attachment),
-                settings: settings?.settings
+                settings: settings?.settings,
+                voiceNote: voiceNote
             )
             guard !draft.isEmpty else { return nil }
             return (key, draft)
@@ -535,6 +572,11 @@ public final class ChatDraftStore {
     public func setAttachments(_ attachments: [ChatDraftAttachment], for key: ChatDraftKey) {
         markChangedBeforeLoad(key)
         updateDraft(for: key) { $0.attachments = attachments }
+    }
+
+    public func setVoiceNote(_ note: ChatDraftVoiceNote?, for key: ChatDraftKey) {
+        markChangedBeforeLoad(key)
+        updateDraft(for: key) { $0.voiceNote = note }
     }
 
     /// Replaces the draft's settings snapshot without disturbing its text or
@@ -671,8 +713,8 @@ public final class ChatDraftStore {
         guard !discardedKeys.isEmpty else { return }
 
         let discardedDrafts = discardedKeys.compactMap { drafts.removeValue(forKey: $0) }
-        let stillReferencedFiles = Set(drafts.values.flatMap { $0.attachments.compactMap(\.file) })
-        let filesToDelete = Set(discardedDrafts.flatMap { $0.attachments.compactMap(\.file) })
+        let stillReferencedFiles = Set(drafts.values.flatMap { $0.referencedFiles })
+        let filesToDelete = Set(discardedDrafts.flatMap { $0.referencedFiles })
             .subtracting(stillReferencedFiles)
         schedulePersist()
 
@@ -718,7 +760,7 @@ public final class ChatDraftStore {
         guard let attachmentStore else { return }
 
         let referencedFiles = Set(drafts.values.flatMap { draft in
-            draft.attachments.compactMap(\.file)
+            draft.referencedFiles
         })
         let maxAge = attachmentSweepMaxAge
         Task {

@@ -1,7 +1,7 @@
 import SwiftUI
 import XCTest
 @testable import Talaria
-import TalariaKit
+@testable import TalariaKit
 
 /// The fixture chat's transcript rows, hosted in process against the UI fixture's scenarios (TAL-856): what each row
 /// says to VoiceOver, its button trait, and where it sits against its neighbours.
@@ -122,4 +122,89 @@ final class TranscriptHostedTests: XCTestCase {
             window.isHidden = true
         }
     }
+}
+
+@MainActor
+extension TranscriptHostedTests {
+    func testPendingPhotoFileAndVoicePresentationAtPhoneAndPadWidths() async throws {
+        let bytes = UIGraphicsImageRenderer(size: CGSize(width: 80, height: 80)).pngData { context in
+            UIColor.systemTeal.setFill()
+            context.fill(CGRect(x: 0, y: 0, width: 80, height: 80))
+        }
+        let audio = silentWave()
+        let photo = PendingAttachment(name: "Photo.png", path: "local-photo", mime: "image/png", isImage: true,
+                                      thumbnailData: bytes, uploadPhase: .uploading)
+        let file = PendingAttachment(name: "Notes.txt", path: "local-file", mime: "text/plain", isImage: false,
+                                     uploadPhase: .failed("Upload failed. Try again."))
+        var voice = ChatMessage(role: "user", content: "", timestamp: 1, messageId: "local-voice",
+                                attachments: [MessageAttachment(name: "Voice.wav", path: "local-voice", mime: "audio/wav")])
+        voice.localVoicePhase = .preparing
+        for size in [HostedSize.phone, HostedSize.padLandscape] {
+            let before = try hostWindow(
+                VStack { Spacer(); TextField("Message", text: .constant("New typed draft")) }
+                    .padding(20).background(Color(.systemBackground)), size: size
+            )
+            attachMediaEvidence(before, name: size == HostedSize.phone ? "before-local-media-phone" : "before-local-media-pad")
+            before.isHidden = true
+            var retries = 0
+            let window = try hostWindow(
+                VStack(spacing: 16) {
+                    MessageBubbleView(message: voice, loadAttachmentData: { _ in audio })
+                    Spacer()
+                    ComposerAttachmentStripView(photos: [photo], onRemove: { _ in }, onPreview: { _ in })
+                    ComposerFileLinkView(attachment: file, onRemove: {}, onOpen: {})
+                    TextField("Message", text: .constant("New typed draft"))
+                }
+                .padding(20)
+                .background(Color(.systemBackground))
+                .environment(\.retryPendingAttachment, { _ in retries += 1 }),
+                size: size
+            )
+            let uploading = await awaitElement(in: window, label: "Uploading Photo.png")
+            XCTAssertNotNil(uploading, "Missing upload state: \(HostedAccessibility.labels(in: window))")
+            let retry = try XCTUnwrap(HostedAccessibility.element(in: window, label: "Retry upload Notes.txt"))
+            HostedAccessibility.activate(retry)
+            XCTAssertEqual(retries, 1)
+            let preparing = await awaitElement(in: window, label: "Preparing voice note")
+            XCTAssertNotNil(preparing)
+            let play = await awaitElement(in: window, label: "Play Voice.wav")
+            _ = try XCTUnwrap(play, "The local voice note must be replayable during preparation")
+            attachMediaEvidence(window, name: size == HostedSize.phone ? "local-media-phone" : "local-media-pad")
+            window.isHidden = true
+        }
+    }
+
+    private func attachMediaEvidence(_ window: UIWindow, name: String) {
+        let image = UIGraphicsImageRenderer(bounds: window.bounds).image { _ in
+            window.drawHierarchy(in: window.bounds, afterScreenUpdates: true)
+        }
+        let evidence = XCTAttachment(image: image)
+        evidence.name = name
+        evidence.lifetime = .keepAlways
+        add(evidence)
+    }
+
+
+    private func silentWave() -> Data {
+        var data = Data()
+        func number<T: FixedWidthInteger>(_ value: T) {
+            var littleEndian = value.littleEndian
+            withUnsafeBytes(of: &littleEndian) { data.append(contentsOf: $0) }
+        }
+        data.append(Data("RIFF".utf8))
+        number(UInt32(36 + 16_000))
+        data.append(Data("WAVEfmt ".utf8))
+        number(UInt32(16))
+        number(UInt16(1))
+        number(UInt16(1))
+        number(UInt32(8_000))
+        number(UInt32(16_000))
+        number(UInt16(2))
+        number(UInt16(16))
+        data.append(Data("data".utf8))
+        number(UInt32(16_000))
+        data.append(Data(count: 16_000))
+        return data
+    }
+
 }

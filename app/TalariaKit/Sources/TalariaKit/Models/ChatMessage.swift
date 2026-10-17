@@ -55,6 +55,12 @@ public struct ChatMessage: Decodable, Equatable, Identifiable {
     /// How the server says to show this row (TAL-600); nil from an older server or for a row this device made.
     public internal(set) var display: Display?
 
+    /// Device-owned preparation only; never decoded from server content.
+    public internal(set) var localVoicePhase: LocalVoicePhase? = nil
+    public enum LocalVoicePhase: Equatable {
+        case preparing, sending, failed(String), uncertain(String)
+    }
+
     /// TAL-600: `row` on its own, `inScene` only inside its turn's activity scene, `hidden` not at all.
     public enum Display: String, Equatable {
         case row, hidden

@@ -118,7 +118,8 @@ extension ChatViewModelSendTests {
 
         await viewModel.uploadAttachment(data: Data("large".utf8), filename: "large.bin")
 
-        XCTAssertEqual(viewModel.pendingAttachments.count, 1)
+        XCTAssertEqual(viewModel.pendingAttachments.count, 2)
+        XCTAssertFalse(viewModel.pendingAttachments[1].isReadyToSend)
         XCTAssertEqual(viewModel.pendingAttachments.first?.name, "notes.txt")
         XCTAssertNotNil(viewModel.uploadAttachmentErrorMessage)
         XCTAssertNotNil(viewModel.lastError)
