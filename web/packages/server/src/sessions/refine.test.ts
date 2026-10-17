@@ -55,7 +55,7 @@ describe('/refine from Web', () => {
     expect(refines).toHaveLength(2)
     expect(refines[0]).toMatchObject({ profile_home: s.deps.profileHome('default'), session_id: sid, focus: '', messages: TRANSCRIPT.map(({ role, content }) => ({ role, content })) })
     // TAL-903: the workspace pair a turn sends, so the agent built here is the one the next turn reuses.
-    expect(refines[0]).toMatchObject({ workspace: s.deps.sessions.turnWorkspace((await s.deps.sessionStore.get(sid))), workspace_local: true })
+    expect(refines[0]).toMatchObject({ workspace: (await s.deps.sessions.turnWorkspace((await s.deps.sessionStore.get(sid)))), workspace_local: true })
     expect(refines[1]).toMatchObject({ focus: 'keep deploy steps' })
     expect(methods()).not.toContain('chat.start')
     expect(methods()).not.toContain('commands.exec')

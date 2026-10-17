@@ -5,9 +5,11 @@ import { pyOsError, str } from '../util.js'
  * resolution, suggestions, and add-validation. Remote terminal backends
  * (SSH/Docker) resolve through the profile's config.yaml, supplied by a hook.
  */
-import { accessSync, constants, existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from 'node:fs'
+import { accessSync, constants, readdirSync, statSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { basename, isAbsolute, posix, resolve, sep } from 'node:path'
+import type { DocumentBackend } from '../sessions/storage/backend.js'
+import { updateDocument } from '../sessions/storage/document.js'
 import { expandHome, isWithin, resolvePathLikePython } from './paths.js'
 
 export const PROFILE_NAME_RE = /^[a-z0-9][a-z0-9_-]{0,63}$/
@@ -20,7 +22,7 @@ export interface TerminalConfig { backend?: string; cwd?: string }
 
 export interface WorkspaceDeps {
   /** Global STATE_DIR (default profile state). */
-  stateDir: string
+  documents: DocumentBackend
   /** Boot-time default workspace. */
   defaultWorkspace: () => string
   /** Home directory for a logical profile name; throws on an invalid name. */
@@ -124,25 +126,21 @@ export class WorkspaceRegistry {
     return resolvePathLikePython(this.deps.profileHome(raw))
   }
 
-  /** Per-profile `webui_state/` dir; the literal default profile uses the global state dir. Writers create it. */
-  stateDir(profile: string | null): string {
+  private profileKey(profile: string | null): string {
     if (profile !== null) {
-      if (profile.trim() === 'default') return this.deps.stateDir
-      const home = this.profileHomeParam(profile)
-      return this.deps.isRootProfileHome(home) ? this.deps.stateDir : resolve(home, 'webui_state')
+      if (profile.trim() === 'default') return 'default'
+      return this.deps.isRootProfileHome(this.profileHomeParam(profile)) ? 'default' : profile.trim()
     }
     const name = this.deps.activeProfile()
-    return name && name !== 'default' ? resolve(this.deps.profileHome(name), 'webui_state') : this.deps.stateDir
+    return name && name !== 'default' ? name : 'default'
   }
 
-  private workspacesFile(profile: string | null): string | null {
-    try { return resolve(this.stateDir(profile), 'workspaces.json') } catch { return null }
+  private async readLast(profile: string | null): Promise<string | null> {
+    try {
+      const value = (await this.deps.documents.get('workspaces', `${this.profileKey(profile)}.last`))?.value
+      return typeof value === 'string' ? this.validLastWorkspace(value.trim(), profile, this.remoteTerminalCwd(profile)) : null
+    } catch { return null }
   }
-  private lastWorkspaceFile(profile: string | null): string | null {
-    try { return resolve(this.stateDir(profile), 'last_workspace.txt') } catch { return null }
-  }
-  private get globalWorkspacesFile(): string { return resolve(this.deps.stateDir, 'workspaces.json') }
-  private get globalLastWorkspaceFile(): string { return resolve(this.deps.stateDir, 'last_workspace.txt') }
 
   homePath(): string {
     return resolvePathLikePython('~', this.home)
@@ -202,15 +200,10 @@ export class WorkspaceRegistry {
    * Python `get_profile_default_workspace` (`GET /api/profile/active`): a named profile's own last workspace first,
    * never the global one (#5169), then the profile's configured default.
    */
-  profileDefaultWorkspace(profile: string | null = null): string {
+  async profileDefaultWorkspace(profile: string | null = null): Promise<string> {
     if (profile?.trim() && !this.deps.isRootProfileHome(this.profileHomeParam(profile))) {
-      const file = this.lastWorkspaceFile(profile)
-      if (file !== null && existsSync(file)) {
-        try {
-          const p = this.validLastWorkspace(readFileSync(file, 'utf8').trim(), profile, this.remoteTerminalCwd(profile))
-          if (p) return p
-        } catch { /* fall through */ }
-      }
+      const path = await this.readLast(profile)
+      if (path) return path
     }
     return this.profileConfigDefaultWorkspace(profile)
   }
@@ -279,60 +272,33 @@ export class WorkspaceRegistry {
     return result
   }
 
-  load(profile: string | null = null): WorkspaceEntry[] {
-    return this.read(profile, false)
+  async load(profile: string | null = null): Promise<WorkspaceEntry[]> {
+    return (await this.read(profile, false))
   }
 
   /** TAL-303: the registry as named for display: never rewritten on read, and complete before a profile's config is cached. */
-  entries(profile: string | null = null): WorkspaceEntry[] {
-    return this.read(profile, true)
+  async entries(profile: string | null = null): Promise<WorkspaceEntry[]> {
+    return (await this.read(profile, true))
   }
 
-  private read(profile: string | null, forNames: boolean): WorkspaceEntry[] {
-    const persist = !forNames
-    const file = this.workspacesFile(profile)
-    if (file !== null && existsSync(file)) {
-      try {
-        const raw = JSON.parse(readFileSync(file, 'utf8')) as unknown
-        const cleaned = this.cleanWorkspaceList(raw, profile, forNames)
-        if (persist && Array.isArray(raw) && cleaned.length !== raw.length) {
-          try { writeFileSync(file, JSON.stringify(cleaned, null, 2), 'utf8') } catch { /* best effort */ }
+  private async read(profile: string | null, forNames: boolean): Promise<WorkspaceEntry[]> {
+    try {
+      const key = `${this.profileKey(profile)}.registry`
+      const record = await this.deps.documents.get('workspaces', key)
+      if (record) {
+        const cleaned = this.cleanWorkspaceList(record.value, profile, forNames)
+        if (!forNames && Array.isArray(record.value) && cleaned.length !== record.value.length) {
+          try { await this.deps.documents.put('workspaces', key, cleaned, record.revision) } catch { /* next read reconciles a competing edit */ }
         }
         return cleaned.length ? cleaned : [{ path: this.profileConfigDefaultWorkspace(profile), name: 'Home' }]
-      } catch {
-        /* fall through */
       }
-    }
-    let isDefault = true
-    try {
-      isDefault = profile !== null ? this.deps.isRootProfileHome(this.profileHomeParam(profile)) : ['default', ''].includes(this.deps.activeProfile())
-    } catch {
-      isDefault = true
-    }
-    if (isDefault) {
-      const migrated = this.migrateGlobalWorkspaces(forNames)
-      if (migrated.length) return migrated
-    }
+    } catch { /* malformed or unavailable registry falls back to the profile default */ }
     return [{ path: this.profileConfigDefaultWorkspace(profile), name: 'Home' }]
   }
 
-  private migrateGlobalWorkspaces(forNames: boolean): WorkspaceEntry[] {
-    if (!existsSync(this.globalWorkspacesFile)) return []
-    try {
-      const raw = JSON.parse(readFileSync(this.globalWorkspacesFile, 'utf8')) as unknown
-      const cleaned = this.cleanWorkspaceList(raw, null, forNames)
-      if (!forNames && Array.isArray(raw) && cleaned.length !== raw.length) writeFileSync(this.globalWorkspacesFile, JSON.stringify(cleaned, null, 2), 'utf8')
-      return cleaned
-    } catch {
-      return []
-    }
-  }
-
-  save(workspaces: WorkspaceEntry[], profile: string | null = null): void {
-    const file = this.workspacesFile(profile)
-    if (file === null) throw new Error(`cannot save workspaces for invalid profile ${JSON.stringify(profile)}`)
-    mkdirSync(resolve(file, '..'), { recursive: true })
-    writeFileSync(file, JSON.stringify(workspaces, null, 2), 'utf8')
+  async save(workspaces: WorkspaceEntry[], profile: string | null = null): Promise<void> {
+    const key = `${this.profileKey(profile)}.registry`
+    await updateDocument(this.deps.documents, 'workspaces', key, () => ({ value: workspaces, result: undefined }), { replaceInvalid: true })
   }
 
   private validLastWorkspace(raw: string, profile: string | null, remoteCwd: string | null): string | null {
@@ -342,51 +308,29 @@ export class WorkspaceRegistry {
   }
 
   /** Profile `last_workspace.txt` -> profile config -> live default (never the global file). */
-  profileDefaultWorkspaceForBoot(profile: string | null = null): string {
-    const remoteCwd = this.remoteTerminalCwd(profile)
-    const file = this.lastWorkspaceFile(profile)
-    if (file !== null && existsSync(file)) {
-      try {
-        const p = this.validLastWorkspace(readFileSync(file, 'utf8').trim(), profile, remoteCwd)
-        if (p) return p
-      } catch { /* ignore */ }
-    }
-    return this.profileConfigDefaultWorkspace(profile)
+  async profileDefaultWorkspaceForBoot(profile: string | null = null): Promise<string> {
+    return await this.readLast(profile) ?? this.profileConfigDefaultWorkspace(profile)
   }
 
-  lastWorkspace(profile: string | null = null): string {
-    const remoteCwd = this.remoteTerminalCwd(profile)
-    const file = this.lastWorkspaceFile(profile)
-    if (file !== null && existsSync(file)) {
-      try {
-        const p = this.validLastWorkspace(readFileSync(file, 'utf8').trim(), profile, remoteCwd)
-        if (p) return p
-      } catch { /* ignore */ }
-    }
+  async lastWorkspace(profile: string | null = null): Promise<string> {
+    const path = await this.readLast(profile)
+    if (path) return path
     let globalAllowed = false
     if (profile === null) globalAllowed = ['', 'default'].includes(this.deps.activeProfile())
     else if (profile.trim() === 'default') globalAllowed = true
-    else {
-      try { globalAllowed = this.deps.isRootProfileHome(this.profileHomeParam(profile)) } catch { globalAllowed = false }
-    }
-    if (globalAllowed && existsSync(this.globalLastWorkspaceFile)) {
+    else { try { globalAllowed = this.deps.isRootProfileHome(this.profileHomeParam(profile)) } catch { /* invalid profile */ } }
+    if (globalAllowed) {
       try {
-        const p = this.validLastWorkspace(readFileSync(this.globalLastWorkspaceFile, 'utf8').trim(), profile, remoteCwd)
-        if (p) return p
-      } catch { /* ignore */ }
+        const value = (await this.deps.documents.get('workspaces', 'default.last'))?.value
+        const global = typeof value === 'string' ? this.validLastWorkspace(value.trim(), profile, this.remoteTerminalCwd(profile)) : null
+        if (global) return global
+      } catch { /* fall back to profile configuration */ }
     }
     return this.profileConfigDefaultWorkspace(profile)
   }
 
-  setLastWorkspace(path: string, profile: string | null = null): void {
-    try {
-      const file = this.lastWorkspaceFile(profile)
-      if (file === null) return
-      mkdirSync(resolve(file, '..'), { recursive: true })
-      writeFileSync(file, path, 'utf8')
-    } catch {
-      /* best effort */
-    }
+  async setLastWorkspace(path: string, profile: string | null = null): Promise<void> {
+    try { await updateDocument(this.deps.documents, 'workspaces', `${this.profileKey(profile)}.last`, () => ({ value: path, result: undefined })) } catch { /* legacy best effort */ }
   }
 
   /** Python `_workspace_access_error`. */
@@ -406,7 +350,7 @@ export class WorkspaceRegistry {
     return null
   }
 
-  trustedRoots(profile: string | null = null): string[] {
+  async trustedRoots(profile: string | null = null): Promise<string[]> {
     const roots: string[] = []
     const add = (candidate: string | null | undefined) => {
       if (!candidate) return
@@ -418,15 +362,15 @@ export class WorkspaceRegistry {
     }
     add(this.homePath())
     add(this.deps.defaultWorkspace())
-    for (const w of this.load(profile)) add(w.path)
+    for (const w of (await this.load(profile))) add(w.path)
     roots.sort((a, b) => a.length - b.length)
     return roots
   }
 
   /** Directory suggestions under trusted roots only (Python `list_workspace_suggestions`). */
-  suggest(prefix = '', limit = 12, profile: string | null = null): string[] {
+  async suggest(prefix = '', limit = 12, profile: string | null = null): Promise<string[]> {
     if (!this.profileSupportsLocalIo(profile)) return []
-    const roots = this.trustedRoots(profile)
+    const roots = (await this.trustedRoots(profile))
     if (!roots.length) return []
     const raw = prefix.trim()
     if (!raw) return roots.slice(0, limit)
@@ -475,7 +419,7 @@ export class WorkspaceRegistry {
   }
 
   /** Python `resolve_trusted_workspace`: home, saved list, or under the boot default. */
-  resolveTrusted(path: string | null | undefined, profile: string | null = null): string {
+  async resolveTrusted(path: string | null | undefined, profile: string | null = null): Promise<string> {
     if (!path) {
       if (!this.profileSupportsLocalIo(profile)) {
         const remote = this.remoteTerminalWorkspaceCandidate(this.profileConfigDefaultWorkspace(profile), profile)
@@ -497,7 +441,7 @@ export class WorkspaceRegistry {
     if (home !== '/' && isWithin(candidate, home)) return candidate
     if (isBlockedWorkspacePath(candidate, path)) throw new Error(`Path points to a system directory: ${candidate}`)
     try {
-      const saved = new Set(this.load(profile).map((w) => this.resolvePath(w.path, profile)))
+      const saved = new Set((await this.load(profile)).map((w) => this.resolvePath(w.path, profile)))
       if (saved.has(candidate)) return candidate
     } catch { /* ignore */ }
     const bootDefault = resolvePathLikePython(this.deps.defaultWorkspace(), this.home)
@@ -513,9 +457,9 @@ export class WorkspaceRegistry {
   }
 
   /** Recover only a genuinely missing implicit workspace (Python `resolve_implicit_workspace_with_recovery`). */
-  resolveImplicitWithRecovery(candidate: string | null | undefined, fallback: (profile: string | null) => string, profile: string | null = null): [string, boolean] {
+  async resolveImplicitWithRecovery(candidate: string | null | undefined, fallback: (profile: string | null) => string | Promise<string>, profile: string | null = null): Promise<[string, boolean]> {
     try {
-      return [this.resolveTrusted(candidate, profile), false]
+      return [(await this.resolveTrusted(candidate, profile)), false]
     } catch (original) {
       if (!candidate) throw original
       let terminal: TerminalConfig | null | undefined
@@ -529,7 +473,7 @@ export class WorkspaceRegistry {
       try {
         statSync(local)
       } catch (error) {
-        if ((error as NodeJS.ErrnoException).code === 'ENOENT') return [this.resolveTrusted(fallback(profile), profile), true]
+        if ((error as NodeJS.ErrnoException).code === 'ENOENT') return [(await this.resolveTrusted((await fallback(profile)), profile)), true]
         throw original
       }
       throw original

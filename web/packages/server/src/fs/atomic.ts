@@ -65,7 +65,7 @@ export async function writeFullyAsync(handle: FileHandle, data: string | Uint8Ar
 }
 
 /** `atomicWriteText` on `node:fs/promises`, so a slow fsync never stalls the event loop. */
-export async function atomicWriteTextAsync(path: string, text: string, opts: { mode?: number } = {}): Promise<void> {
+export async function atomicWriteTextAsync(path: string, text: string, opts: { mode?: number; commit?: (staged: string, target: string) => void | Promise<void> } = {}): Promise<void> {
   let writePath = path
   try {
     if ((await lstat(path)).isSymbolicLink()) writePath = await realpath(path)
@@ -83,7 +83,8 @@ export async function atomicWriteTextAsync(path: string, text: string, opts: { m
     await handle.sync()
     await handle.close()
     if (mode !== undefined) await chmod(tmp, mode)
-    await rename(tmp, writePath)
+    if (opts.commit) await opts.commit(tmp, writePath)
+    else await rename(tmp, writePath)
   } catch (error) {
     await handle.close().catch(() => undefined)
     await unlink(tmp).catch(() => undefined)

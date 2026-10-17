@@ -1,3 +1,4 @@
+import type { JournalEvent, RunSummary, PruneOptions, PruneResult } from '../journal.js'
 import type { RecoveryAuditItem } from '@maudecode/talaria-web-contracts'
 import type { Message } from '../session.js'
 
@@ -54,5 +55,53 @@ export interface SessionBackend {
 export interface StorageBackend {
   readonly kind: string
   readonly sessions: SessionBackend
+  readonly documents: DocumentBackend
+  readonly journals: JournalBackend
+  close(): Promise<void>
+}
+
+
+export interface StoredDocument { value: unknown; revision: string }
+export interface DocumentBackend {
+  get(namespace: string, key: string, opts?: { maxBytes?: number }): Promise<StoredDocument | null>
+  put(namespace: string, key: string, value: unknown, expected: string | null): Promise<string>
+  delete(namespace: string, key: string, expected?: string | null): Promise<boolean>
+  list(namespace: string): Promise<{ key: string; revision: string }[]>
+}
+
+/** A malformed document still has an identity, so permissive stores can explicitly replace it with CAS. */
+export class InvalidDocument extends Error {
+  constructor(readonly revision: string, cause: unknown, readonly reason: 'invalid' | 'too-large' = 'invalid') { super(reason === 'too-large' ? 'Stored document exceeds byte limit' : 'Invalid stored document', { cause }) }
+}
+
+export interface JournalInput { event: string; payload: unknown; redacted?: boolean; created_at?: number }
+export interface JournalEventMeta { redacted?: boolean; createdAt?: number }
+export interface JournalWriter {
+  readonly sessionId: string
+  readonly runId: string
+  append(row: JournalInput, opts: { terminal: boolean }): Promise<JournalEvent>
+  appendSseEvent(event: string, payload: unknown, meta?: JournalEventMeta): Promise<JournalEvent>
+  close(): Promise<void>
+}
+export interface SessionJournalReplay { status: string; events: JournalEvent[]; cursor_run_id: string | null; cursor_seq: number | null }
+export interface JournalBackend {
+  open(sid: string, streamId: string, opts: { durability: 'eager' | 'terminal-only' }): Promise<JournalWriter>
+  read(sid: string, streamId: string, fromSeq: number): AsyncIterable<JournalEvent>
+  streams(sid: string): Promise<string[]>
+  sessionIds(): Promise<string[]>
+  recoveryEvents(): Promise<Map<string, Record<string, unknown>[]>>
+  prune(olderThan: number): Promise<number>
+  pruneSettled(opts?: PruneOptions): Promise<PruneResult>
+  summary(sid: string, streamId: string): Promise<RunSummary | null>
+  deleteSession(sid: string): Promise<boolean>
+  writer(sid: string, streamId: string): Promise<JournalWriter>
+  readRunEvents(sid: string, streamId: string, opts?: { afterSeq?: number | null; maxSeq?: number | null }): Promise<JournalEvent[]>
+  iterRunEvents(sid: string, streamId: string, opts?: { afterSeq?: number | null; maxSeq?: number | null }): AsyncGenerator<JournalEvent>
+  readRunEventTail(sid: string, streamId: string, maxBytes?: number, maxRows?: number): Promise<{ events: JournalEvent[]; truncated: boolean }>
+  latestRunSummary(sid: string, streamId: string): Promise<RunSummary>
+  findRunSummary(streamId: string): Promise<RunSummary | null>
+  sessionJournalFingerprint(sid: string): Promise<string>
+  readSessionRunEvents(sid: string, cursor: string | null | undefined): Promise<SessionJournalReplay>
+  staleInterruptedEvent(sid: string, streamId: string, afterSeq?: number | null, now?: number): Promise<JournalEvent | null>
   close(): Promise<void>
 }

@@ -112,22 +112,22 @@ export interface ServeFileOptions {
 }
 
 /** Serve a file with MIME/disposition, weak ETag revalidation, and single byte ranges. */
-export function serveFileBytes(ctx: RequestContext, target: string, opts: ServeFileOptions): void {
+export async function serveFileBytes(ctx: RequestContext, target: string, opts: ServeFileOptions): Promise<void> {
   let fd: number | null = null
   let fileSize: number
   try {
     fd = opts.anchorRoot ? openAnchoredFd(opts.anchorRoot, resolvePathLikePython(target), { wantDir: false }) : openSync(target, fsConstants.O_RDONLY)
     const st = fstatSync(fd)
     if (!st.isFile()) throw Object.assign(new Error('not a file'), { code: 'EISDIR' })
-    if (opts.denyHardLinks && st.nlink > 1) { closeSync(fd); ctx.json({ error: 'Path not in allowed location' }, { status: 403 }); return }
+    if (opts.denyHardLinks && st.nlink > 1) { closeSync(fd); (await ctx.json({ error: 'Path not in allowed location' }, { status: 403 })); return }
     fileSize = st.size
   } catch (error) {
     if (fd !== null) closeSync(fd)
     const code = (error as NodeJS.ErrnoException).code
-    if (code === 'EACCES' || code === 'EPERM') { ctx.json({ error: 'Permission denied' }, { status: 403 }); return }
-    if (error instanceof NotFoundError || code === 'ENOENT' || code === 'ENOTDIR' || code === 'EISDIR' || code === 'ELOOP') { ctx.json({ error: 'not found' }, { status: 404 }); return }
-    if (error instanceof Error && !code) { ctx.json({ error: sanitizeError(error) }, { status: 403 }); return }
-    ctx.json({ error: 'Could not stat file' }, { status: 500 })
+    if (code === 'EACCES' || code === 'EPERM') { (await ctx.json({ error: 'Permission denied' }, { status: 403 })); return }
+    if (error instanceof NotFoundError || code === 'ENOENT' || code === 'ENOTDIR' || code === 'EISDIR' || code === 'ELOOP') { (await ctx.json({ error: 'not found' }, { status: 404 })); return }
+    if (error instanceof Error && !code) { (await ctx.json({ error: sanitizeError(error) }, { status: 403 })); return }
+    await ctx.json({ error: 'Could not stat file' }, { status: 500 })
     return
   }
   try {
@@ -140,13 +140,13 @@ export function serveFileBytes(ctx: RequestContext, target: string, opts: ServeF
     }
     const baseHeaders: Record<string, string> = { 'Cache-Control': opts.cacheControl }
     if (etag && ifNoneMatchMatches(ctx.header('if-none-match'), etag)) {
-      ctx.send({ status: 304, headers: { ...baseHeaders, ETag: etag } })
+      await ctx.send({ status: 304, headers: { ...baseHeaders, ETag: etag } })
       return
     }
     const rangeHeader = ctx.header('range')
     const byteRange = parseRangeHeader(rangeHeader, fileSize)
     if (rangeHeader && !byteRange) {
-      ctx.send({ status: 416, headers: { 'Content-Range': `bytes */${String(fileSize)}`, 'Accept-Ranges': 'bytes' } })
+      await ctx.send({ status: 416, headers: { 'Content-Range': `bytes */${String(fileSize)}`, 'Accept-Ranges': 'bytes' } })
       return
     }
     const [start, end] = byteRange ?? [0, Math.max(0, fileSize - 1)]
@@ -161,12 +161,12 @@ export function serveFileBytes(ctx: RequestContext, target: string, opts: ServeF
     if (byteRange) headers['Content-Range'] = `bytes ${String(start)}-${String(end)}/${String(fileSize)}`
     if (opts.csp) Object.assign(headers, previewHeaders(opts.csp))
     if (!contentLength || snapshot) {
-      ctx.send({ status: byteRange ? 206 : 200, headers, body: snapshot ? snapshot.subarray(start, start + contentLength) : Buffer.alloc(0), security: !opts.csp })
+      await ctx.send({ status: byteRange ? 206 : 200, headers, body: snapshot ? snapshot.subarray(start, start + contentLength) : Buffer.alloc(0), security: !opts.csp })
       return
     }
     // Large files stream the selected span from the descriptor with backpressure (Python copied bounded chunks); the
     // stream owns the descriptor from here.
-    ctx.sendStream({ status: byteRange ? 206 : 200, headers: { ...headers, 'Content-Length': String(contentLength) }, security: !opts.csp }, createReadStream('', { fd, start, end: start + contentLength - 1, autoClose: true, highWaterMark: 256 * 1024 }))
+    await ctx.sendStream({ status: byteRange ? 206 : 200, headers: { ...headers, 'Content-Length': String(contentLength) }, security: !opts.csp }, createReadStream('', { fd, start, end: start + contentLength - 1, autoClose: true, highWaterMark: 256 * 1024 }))
     fd = -1
   } finally {
     if (fd !== -1) closeSync(fd)
@@ -191,7 +191,7 @@ export function htmlWithHeadTag(raw: Buffer, base: string): Buffer {
   return Buffer.from(text, 'utf8')
 }
 
-export function serveInlineHtmlPreview(ctx: RequestContext, target: string, cacheControl: string, csp: string, anchorRoot: string | null): void {
+export async function serveInlineHtmlPreview(ctx: RequestContext, target: string, cacheControl: string, csp: string, anchorRoot: string | null): Promise<void> {
   let body: Buffer | null = null
   try {
     const fd = anchorRoot ? openAnchoredFd(anchorRoot, resolvePathLikePython(target), { wantDir: false }) : openSync(target, fsConstants.O_RDONLY)
@@ -205,17 +205,17 @@ export function serveInlineHtmlPreview(ctx: RequestContext, target: string, cach
     }
   } catch (error) {
     const code = (error as NodeJS.ErrnoException).code
-    if (code === 'EACCES' || code === 'EPERM') { ctx.json({ error: 'Permission denied' }, { status: 403 }); return }
-    if (error instanceof NotFoundError || code === 'ENOENT' || code === 'ENOTDIR' || code === 'EISDIR' || code === 'ELOOP') { ctx.json({ error: 'not found' }, { status: 404 }); return }
-    if (error instanceof Error && !code) { ctx.json({ error: sanitizeError(error) }, { status: 403 }); return }
-    ctx.json({ error: 'Could not read file' }, { status: 500 })
+    if (code === 'EACCES' || code === 'EPERM') { (await ctx.json({ error: 'Permission denied' }, { status: 403 })); return }
+    if (error instanceof NotFoundError || code === 'ENOENT' || code === 'ENOTDIR' || code === 'EISDIR' || code === 'ELOOP') { (await ctx.json({ error: 'not found' }, { status: 404 })); return }
+    if (error instanceof Error && !code) { (await ctx.json({ error: sanitizeError(error) }, { status: 403 })); return }
+    await ctx.json({ error: 'Could not read file' }, { status: 500 })
     return
   }
   if (!body) {
-    serveFileBytes(ctx, target, { mime: 'text/html', disposition: 'attachment', cacheControl, anchorRoot })
+    await serveFileBytes(ctx, target, { mime: 'text/html', disposition: 'attachment', cacheControl, anchorRoot })
     return
   }
-  ctx.send({
+  await ctx.send({
     status: 200,
     security: false,
     headers: { 'Content-Type': 'text/html; charset=utf-8', 'Accept-Ranges': 'none', 'Cache-Control': cacheControl, 'Content-Disposition': contentDispositionValue('inline', basename(target)), ...previewHeaders(csp) },
@@ -294,14 +294,14 @@ export function safeLegacyTmpRoot(protectedRoots: string[]): string | null {
   }
 }
 
-export interface MediaPolicyDeps {
+export interface MediaPolicyDeps<T = string | null | Promise<string | null>> {
   home: string
   hermesHome: string
   stateDir: string
   /** `HERMES_WEBUI_MEDIA_SNAPSHOT_DIR` from the Python server: its leftover snapshot copies stay internal. */
   legacySnapshotDir?: string | undefined
   /** The active workspace when local IO is supported, else null. */
-  activeWorkspace: () => string | null
+  activeWorkspace: () => T
 }
 
 const DENY_FILENAMES = new Set(['settings.json', 'state.db', 'state.db-wal', 'state.db-shm', 'auth.json', 'auth.lock', 'config.yaml', 'config.yml', '.env', '.signing_key', '.pbkdf2_key', '.sessions.json', 'google_token.json', 'google_client_secret.json', 'gateway_state.json', 'channel_directory.json', 'jobs.json', 'passkeys.json', '.passkey_challenges.json', '.login_attempts.json'])
@@ -317,7 +317,7 @@ const withinCi = (child: string, root: string): boolean => { const c = norm(chil
 const equalCi = (a: string, b: string): boolean => norm(a) === norm(b)
 
 /** Python `_media_deny_reason`: hard-deny Hermes's own state and secret files. */
-export function mediaDenyReason(target: string, deps: MediaPolicyDeps): string | null {
+export function mediaDenyReasonResolved(target: string, deps: MediaPolicyDeps<string | null>): string | null {
   try {
     const st = statSync(target)
     if (st.isFile() && st.nlink > 1) return 'media file has multiple hard links'
@@ -364,13 +364,13 @@ export function mediaDenyReason(target: string, deps: MediaPolicyDeps): string |
 }
 
 /** What `/api/media` authorizes against, besides the session: the homes, the safe temp roots, the active workspace and `MEDIA_ALLOWED_ROOTS`. */
-export interface MediaAccessDeps {
+export interface MediaAccessDeps<T = string | null | Promise<string | null>> {
   home: string
   hermesHome: string
   /** `MEDIA_ALLOWED_ROOTS`, separated by the platform's path delimiter. */
   extraRoots: string
-  activeWorkspace: () => string | null
-  policy: MediaPolicyDeps
+  activeWorkspace: () => T
+  policy: MediaPolicyDeps<T>
 }
 
 /** The file a `/api/media?path=` value names. Python `Path(raw).resolve()`: no `~` expansion and no NUL bytes; throws on an invalid path. */
@@ -385,7 +385,7 @@ export function mediaTarget(rawPath: string): string {
  * component replaced by a symlink after the check fails the descriptor walk), the file's own directory for a
  * session-token grant, or null when the path is denied.
  */
-export function mediaAnchorRoot(target: string, session: Session | null, deps: MediaAccessDeps): string | null {
+export function mediaAnchorRootResolved(target: string, session: Session | null, deps: MediaAccessDeps<string | null>): string | null {
   const baseHermes = join(deps.home, '.hermes')
   const allowedRoots: string[] = [deps.hermesHome, baseHermes]
   const legacyTmp = safeLegacyTmpRoot([deps.home, deps.hermesHome, baseHermes])
@@ -402,11 +402,26 @@ export function mediaAnchorRoot(target: string, session: Session | null, deps: M
       if (statSync(rp).isDirectory()) allowedRoots.push(rp)
     } catch { /* skip */ }
   }
-  if (mediaDenyReason(target, deps.policy)) return null
+  if (mediaDenyReasonResolved(target, deps.policy)) return null
   for (const root of allowedRoots) {
     let resolvedRoot: string
     try { resolvedRoot = realpathSync(root) } catch { continue }
     if (target === resolvedRoot || isWithin(target, resolvedRoot)) return resolvedRoot
   }
   return sessionMediaTokenAllowsPath(session, target, SESSION_MEDIA_TOKEN_TYPES) ? dirname(target) : null
+}
+
+
+export async function resolveMediaAccess(deps: MediaAccessDeps): Promise<MediaAccessDeps<string | null>> {
+  const [workspace, policyWorkspace] = await Promise.all([deps.activeWorkspace(), deps.policy.activeWorkspace()])
+  return { ...deps, activeWorkspace: () => workspace, policy: { ...deps.policy, activeWorkspace: () => policyWorkspace } }
+}
+
+export async function mediaDenyReason(target: string, deps: MediaPolicyDeps): Promise<string | null> {
+  const workspace = await deps.activeWorkspace()
+  return (mediaDenyReasonResolved(target, { ...deps, activeWorkspace: () => workspace }))
+}
+
+export async function mediaAnchorRoot(target: string, session: Session | null, deps: MediaAccessDeps): Promise<string | null> {
+  return (mediaAnchorRootResolved(target, session, await resolveMediaAccess(deps)))
 }

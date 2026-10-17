@@ -1,3 +1,4 @@
+import { JsonDocuments } from './test/storage.js'
 import { closeSync, lstatSync, mkdirSync, mkdtempSync, openSync, readFileSync, readdirSync, rmSync, statSync, symlinkSync, writeFileSync, writeSync, chmodSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -11,7 +12,7 @@ beforeEach(() => { dir = mkdtempSync(join(tmpdir(), 'talaria-settings-')) })
 afterEach(() => { rmSync(dir, { recursive: true, force: true }) })
 
 function store(env: Record<string, string> = {}): SettingsStore {
-  const s = new SettingsStore({ file: join(dir, 'settings.json'), env, stateDir: dir, defaultWorkspace: join(dir, 'workspace'), botName: 'Hermes' })
+  const s = new SettingsStore({ documents: new JsonDocuments(dir), env, stateDir: dir, defaultWorkspace: join(dir, 'workspace'), botName: 'Hermes' })
   s.hooks = { hashPassword: (pw) => Promise.resolve(`hashed:${pw}`) }
   return s
 }
@@ -136,8 +137,8 @@ describe('atomicWriteTextAsync', () => {
 })
 
 describe('load', () => {
-  it('uses the defaults when no file exists and normalises appearance', () => {
-    const s = store().load()
+  it('uses the defaults when no file exists and normalises appearance', async () => {
+    const s = (await store().load())
     expect(s.theme).toBe('dark')
     expect(s.skin).toBe('default')
     expect(s.show_cli_sessions).toBe(true)
@@ -157,15 +158,15 @@ describe('load', () => {
     [{ theme: 'nord' }, ['dark', 'slate']],
     [{ theme: 'oled' }, ['dark', 'default']],
     [{ theme: 'weird', skin: 'nope' }, ['dark', 'default']],
-  ])('stored appearance %j resolves to %j', (stored, expected) => {
+  ])('stored appearance %j resolves to %j', async (stored, expected) => {
     write(stored)
-    const s = store().load()
+    const s = (await store().load())
     expect([s.theme, s.skin]).toEqual(expected)
   })
 
-  it('applies the legacy-key migrations', () => {
+  it('applies the legacy-key migrations', async () => {
     write({ activity_feed_expanded_default: 1, busy_input_mode: 'queue', simplified_tool_calling: false, assistant_language: 'fr', virtualize_transcript: true, onboarding_completed: true })
-    const s = store().load()
+    const s = (await store().load())
     expect(s.worklog_details_expanded_default).toBe(true)
     expect(s.default_message_mode).toBe('queue')
     expect(s).not.toHaveProperty('busy_input_mode')
@@ -175,33 +176,33 @@ describe('load', () => {
     // Established install without the CLI-sessions key is grandfathered off.
     expect(s.show_cli_sessions).toBe(false)
     write({ virtualize_transcript: true, virtualize_transcript_optin: true })
-    expect(store().load().virtualize_transcript).toBe(true)
+    expect((await store().load()).virtualize_transcript).toBe(true)
     write({ onboarding_completed: false })
-    expect(store().load().show_cli_sessions).toBe(true)
+    expect((await store().load()).show_cli_sessions).toBe(true)
   })
 
-  it('treats a malformed file as empty unless strict', () => {
+  it('treats a malformed file as empty unless strict', async () => {
     writeFileSync(join(dir, 'settings.json'), '{oops')
     const s = store()
-    expect(s.readRaw()).toEqual({})
-    expect(() => s.readRaw({ strict: true })).toThrow()
-    expect(s.load().theme).toBe('dark')
+    expect((await s.readRaw())).toEqual({})
+    await expect(s.readRaw({ strict: true })).rejects.toThrow()
+    expect((await s.load()).theme).toBe('dark')
   })
 })
 
 describe('save', () => {
   it('defaults automatic update summaries on and ignores non-booleans (TAL-1008)', async () => {
     const s = store()
-    expect(s.load().summarize_updates_automatically).toBe(true)
+    expect((await s.load()).summarize_updates_automatically).toBe(true)
     for (const value of ['false', 'true', 1, null, {}, []]) expect((await s.save({ summarize_updates_automatically: value })).summarize_updates_automatically).toBe(true)
     expect((await s.save({ summarize_updates_automatically: false })).summarize_updates_automatically).toBe(false)
-    expect(store().load().summarize_updates_automatically).toBe(false)
+    expect((await store().load()).summarize_updates_automatically).toBe(false)
   })
   it('requires an explicit boolean opt-in for automatic application', async () => {
     const s = store()
     for (const value of ['false', 'true', 1, {}, []]) expect((await s.save({ auto_apply_updates: value })).auto_apply_updates).toBe(false)
     expect((await s.save({ auto_apply_updates: true })).auto_apply_updates).toBe(true)
-    expect(store().load().auto_apply_updates).toBe(true)
+    expect((await store().load()).auto_apply_updates).toBe(true)
   })
   it('a dashboard_plugins patch replaces a malformed stored value instead of being dropped (TAL-685)', async () => {
     for (const bad of [null, 'x', ['a'], 3]) {
@@ -262,17 +263,17 @@ describe('save', () => {
 
   it('confirms external links by default and stores only exact, normalized trusted hosts (TAL-279)', async () => {
     const s = store()
-    expect(s.load()).toMatchObject({ confirm_external_links: true, trusted_link_hosts: [] })
+    expect((await s.load())).toMatchObject({ confirm_external_links: true, trusted_link_hosts: [] })
     await s.save({
       confirm_external_links: false,
       trusted_link_hosts: [' Docs.Example.COM ', 'docs.example.com', 'bücher.de', '[::1]', 'example.com:443', 'https://example.com', 'example.com/path', 'user@example.com', '*.example.com', '', 42],
     })
     expect(onDisk()).toMatchObject({ confirm_external_links: false, trusted_link_hosts: ['docs.example.com', 'xn--bcher-kva.de', '[::1]'] })
-    expect(store().load()).toMatchObject({ confirm_external_links: false, trusted_link_hosts: ['docs.example.com', 'xn--bcher-kva.de', '[::1]'] })
+    expect((await store().load())).toMatchObject({ confirm_external_links: false, trusted_link_hosts: ['docs.example.com', 'xn--bcher-kva.de', '[::1]'] })
     await s.save({ trusted_link_hosts: 'example.com' })
     expect(onDisk().trusted_link_hosts).toEqual(['docs.example.com', 'xn--bcher-kva.de', '[::1]'])
     write({ trusted_link_hosts: ['Hand.Edited.Example', 'not a host'] })
-    expect(store().load().trusted_link_hosts).toEqual(['hand.edited.example'])
+    expect((await store().load()).trusted_link_hosts).toEqual(['hand.edited.example'])
   })
 
   it('normalises theme and skin on save, dropping the skin when a legacy theme is set alone', async () => {
@@ -313,15 +314,15 @@ describe('save', () => {
     expect(onDisk().default_workspace).toBe(saved.default_workspace)
   })
 
-  it('applyStartupWorkspace rewrites a stale stored workspace once', () => {
+  it('applyStartupWorkspace rewrites a stale stored workspace once', async () => {
     write({ default_workspace: join(dir, 'gone', 'x'), theme: 'light' })
     const s = store()
-    s.applyStartupWorkspace()
+    await s.applyStartupWorkspace()
     expect(s.defaultWorkspace).toBe(join(dir, 'gone', 'x'))
     expect(onDisk().default_workspace).toBe(join(dir, 'gone', 'x'))
     const env = store({ HERMES_WEBUI_DEFAULT_WORKSPACE: join(dir, 'env-ws') })
     env.defaultWorkspace = join(dir, 'env-ws')
-    env.applyStartupWorkspace()
+    await env.applyStartupWorkspace()
     expect(onDisk().default_workspace).toBe(join(dir, 'env-ws'))
   })
 })
@@ -329,24 +330,24 @@ describe('save', () => {
 describe('provider quota thresholds (TAL-411)', () => {
   it('keeps one set per profile, patches field by field, and ignores invalid values', async () => {
     const s = store()
-    expect(s.quotaThresholds('default')).toEqual(QUOTA_THRESHOLD_DEFAULTS)
+    expect((await s.quotaThresholds('default'))).toEqual(QUOTA_THRESHOLD_DEFAULTS)
     await s.save({ provider_quota_thresholds: { warning_remaining_percent: 40, pace_minimum_elapsed_hours: 73, pace_tolerance_percent: 2.5, pace_warning_burn_rate_percent: '150' } }, { profile: 'work' })
     await s.save({ provider_quota_thresholds: { pace_tolerance_percent: 0 } }, { profile: 'work' })
-    expect(s.quotaThresholds('work')).toEqual({ ...QUOTA_THRESHOLD_DEFAULTS, warning_remaining_percent: 40, pace_tolerance_percent: 0 })
-    expect(s.quotaThresholds('default')).toEqual(QUOTA_THRESHOLD_DEFAULTS)
+    expect((await s.quotaThresholds('work'))).toEqual({ ...QUOTA_THRESHOLD_DEFAULTS, warning_remaining_percent: 40, pace_tolerance_percent: 0 })
+    expect((await s.quotaThresholds('default'))).toEqual(QUOTA_THRESHOLD_DEFAULTS)
     expect(onDisk().provider_quota_thresholds).toBeUndefined()
     // Without a request profile the key is ignored rather than stored loose.
     await s.save({ provider_quota_thresholds: { warning_remaining_percent: 50 } })
-    expect(s.quotaThresholds('default')).toEqual(QUOTA_THRESHOLD_DEFAULTS)
+    expect((await s.quotaThresholds('default'))).toEqual(QUOTA_THRESHOLD_DEFAULTS)
   })
 
   it('clamps critical to at most warning, for remaining percent and burn rate alike', async () => {
     const s = store()
     await s.save({ provider_quota_thresholds: { warning_remaining_percent: 20, critical_remaining_percent: 30, pace_warning_burn_rate_percent: 200, pace_critical_burn_rate_percent: 150 } }, { profile: 'default' })
-    expect(s.quotaThresholds('default')).toMatchObject({ warning_remaining_percent: 20, critical_remaining_percent: 20, pace_warning_burn_rate_percent: 200, pace_critical_burn_rate_percent: 200 })
+    expect((await s.quotaThresholds('default'))).toMatchObject({ warning_remaining_percent: 20, critical_remaining_percent: 20, pace_warning_burn_rate_percent: 200, pace_critical_burn_rate_percent: 200 })
     // A hand-edited file is read through the same validation.
     write({ provider_quota_thresholds_by_profile: { default: { warning_remaining_percent: 5, critical_remaining_percent: 9, pace_tolerance_percent: -1 } } })
-    expect(s.quotaThresholds('default')).toEqual({ ...QUOTA_THRESHOLD_DEFAULTS, warning_remaining_percent: 5, critical_remaining_percent: 5 })
+    expect((await s.quotaThresholds('default'))).toEqual({ ...QUOTA_THRESHOLD_DEFAULTS, warning_remaining_percent: 5, critical_remaining_percent: 5 })
   })
 })
 

@@ -1,0 +1,151 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`preserves main JSON bytes for every document namespace and run-journal compaction 1`] = `
+{
+  "files": {
+    ".login_attempts.json": "{"192.0.2.1":[1000]}",
+    ".passkey_challenges.json": "{}",
+    ".sessions.json": "{"0707070707070707070707070707070707070707070707070707070707070707":{"expiry":2593000,"auth_type":null,"username":"synthetic","bound_profile":null}}",
+    "deleted-profiles.json": "["deleted"]",
+    "extension-install-manifest.json": "{
+  "version": 1,
+  "installed": {}
+}",
+    "extension-overrides.json": "{
+  "version": 1,
+  "disabled_extensions": [
+    "sample"
+  ],
+  "sidecar_proxy_consents": {}
+}",
+    "passkeys.json": "[
+  {
+    "created_at": 1000,
+    "id": "BwcHBwcHBwcHBwcHBwcHBw",
+    "label": "Test",
+    "last_used_at": null,
+    "public_key_pem": "-----BEGIN PUBLIC KEY-----\\nMFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEaxfR8uEsQkf4vOblY6RA8ncDfYEt\\n6zOg9KE5RdiYwpZP40Li/hp/m47n60p8D54WK84zV2sxXs7LtkBoN79R9Q==\\n-----END PUBLIC KEY-----\\n",
+    "sign_count": 0
+  }
+]",
+    "projects.json": "[
+  {
+    "project_id": "project",
+    "name": "Project",
+    "profile": "default"
+  }
+]",
+    "recovery_stamping_since": "1000
+",
+    "sessions/_drafts/session.json": "{"text":"draft","files":["image.png"],"_draft_version":"1000"}",
+    "sessions/_run_journal/session/stream.summary.json": "{"session_id":"session","run_id":"stream","stream_id":"stream","event_count":2,"last_seq":2,"last_event_id":"stream:2","terminal":true,"terminal_state":"completed","last_event":"done","journal_pruned":true,"journal_pruned_at":2000,"original_size":418,"original_mtime":1000}",
+    "sessions/_wakeup_held.json": "{"session":[{"process_id":"process","wakeup_prompt":"finished"}]}",
+    "settings.json": "{
+  "default_workspace": "/Users/kilian/workspace",
+  "onboarding_completed": false,
+  "send_key": "enter",
+  "show_token_usage": false,
+  "show_quota_chip": false,
+  "show_conversation_outline": false,
+  "show_busy_placeholder_hint": false,
+  "new_chat_on_workspace_switch": false,
+  "virtualize_transcript": false,
+  "virtualize_transcript_optin": false,
+  "show_tps": false,
+  "fade_text_effect": false,
+  "show_cli_sessions": true,
+  "show_claude_code_sessions": true,
+  "show_cron_sessions": false,
+  "show_webhook_sessions": false,
+  "show_kanban_sessions": false,
+  "show_previous_messaging_sessions": false,
+  "sync_to_insights": false,
+  "check_for_updates": true,
+  "summarize_updates_automatically": true,
+  "auto_apply_updates": false,
+  "update_channel": "stable",
+  "agent_update_channel": "stable",
+  "ignore_agent_updates": false,
+  "theme": "light",
+  "skin": "default",
+  "font_size": "default",
+  "full_width_chat": false,
+  "chat_width": "comfortable",
+  "session_jump_buttons": false,
+  "render_user_markdown": false,
+  "large_text_paste_as_attachment": true,
+  "project_quick_create_buttons": false,
+  "structured_code_default_view": "auto",
+  "structured_code_auto_tree_lines": 10,
+  "session_endless_scroll": false,
+  "chat_activity_display_mode": "compact_worklog",
+  "transparent_stream_event_timestamps": true,
+  "auto_scroll_follow": true,
+  "worklog_details_expanded_default": false,
+  "hide_composer_attach": false,
+  "hide_composer_saved_prompts": false,
+  "hide_composer_mic": false,
+  "show_titlebar_profile": false,
+  "hide_composer_voice_mode": false,
+  "hide_composer_yolo": false,
+  "hide_composer_profile": false,
+  "hide_composer_workspace": false,
+  "hide_composer_mobile_config": false,
+  "hide_composer_model": false,
+  "hide_composer_quota_chip": false,
+  "hide_composer_reasoning": false,
+  "hide_composer_toolsets": false,
+  "hide_composer_status": false,
+  "hide_composer_context": false,
+  "hide_composer_bg_badge": false,
+  "pinned_sessions_limit": 3,
+  "inflight_state_max_sessions": 8,
+  "inflight_state_max_messages": 24,
+  "inflight_state_max_tool_calls": 48,
+  "inflight_state_max_string_chars": 60000,
+  "inflight_state_max_json_chars": 1500000,
+  "hidden_tabs": [],
+  "tab_order": [],
+  "composer_control_order": [],
+  "language": "en",
+  "bot_name": "Hermes",
+  "sound_enabled": false,
+  "rtl": false,
+  "notifications_enabled": false,
+  "show_thinking": true,
+  "simplified_tool_calling": true,
+  "terminal_auto_expand_on_output": false,
+  "workspace_todos_tab": false,
+  "api_redact_enabled": true,
+  "dashboard_plugins": {},
+  "sidebar_density": "compact",
+  "auto_title_refresh_every": "0",
+  "default_message_mode": "steer",
+  "password_hash": null,
+  "auth_disabled_acknowledged": false,
+  "provider_cost_budget": null,
+  "confirm_external_links": true,
+  "trusted_link_hosts": []
+}",
+    "shares/BwcHBwcHBwcHBwcHBwcHBwcH.json": "{
+  "token": "BwcHBwcHBwcHBwcHBwcHBwcH",
+  "source_session_id": "session",
+  "title": "Shared",
+  "messages": [
+    {
+      "role": "user",
+      "content": "hello"
+    }
+  ],
+  "message_count": 1,
+  "created_at": 1000,
+  "updated_at": 1000,
+  "revoked_at": 1000
+}",
+    "update-notifications.json": "[{"id":"00000000-0000-4000-8000-000000000007","owner":"synthetic","profile":"default","visibility":"profile","kind":"update","target":null,"phase":"succeeded","severity":"info","persistent":false,"requires_acknowledgement":false,"actions":[],"destination":null,"title":"Updated","message":"Done","created_at":"1970-01-01T00:16:40.000Z","updated_at":"1970-01-01T00:16:40.000Z","read_at":"1970-01-01T00:16:40.000Z","acknowledged_at":null,"acknowledged_action_id":null,"verified_revision":null,"verified_version":null,"detail":null,"performed_action_ids":[],"dismissed_at":"1970-01-01T00:16:40.000Z","expected_identity":null,"tab_id":null,"watchers":[]}]",
+  },
+  "journalBytes": "{"version":1,"event_id":"stream:1","seq":1,"run_id":"stream","session_id":"session","event":"token","type":"token","created_at":1000,"terminal":false,"terminal_state":null,"payload":{"text":"hello"}}
+{"version":1,"event_id":"stream:2","seq":2,"run_id":"stream","session_id":"session","event":"done","type":"done","created_at":1000,"terminal":true,"terminal_state":"completed","payload":{"terminal_state":"completed"}}
+",
+}
+`;

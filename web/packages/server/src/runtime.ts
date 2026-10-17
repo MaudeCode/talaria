@@ -51,7 +51,6 @@ import type { SidecarLike } from './sidecar/client.js'
 import { TurnRunner } from './sessions/turn.js'
 import { SessionChannels, StreamRegistry } from './sessions/streams.js'
 import { PendingPrompts } from './sessions/pending.js'
-import { RunJournal } from './sessions/journal.js'
 import { StreamSlots } from './api/sse-routes.js'
 import { AgentConfig, coerceProviderCostBudgetValue, dict as asDict, parseProviderQualifiedModel } from './config/agent-config.js'
 import { ProviderCatalog } from './providers/catalog.js'
@@ -73,6 +72,8 @@ export interface CreateDepsOptions extends LoadConfigOptions {
   now?: () => number
   version?: string
   home?: string
+  /** Select an adapter in embedding and isolated conformance tests. */
+  storage?: (config: import('./config.js').ServerConfig) => StorageBackend
   /** The Python sidecar (auxiliary completions, worktree creation); null runs without Agent-backed features. */
   sidecar?: SidecarLike | null
   /** Outbound HTTP (TTS proxies, dashboard probe, OpenRouter); tests inject a stub. */
@@ -93,40 +94,44 @@ export function packageVersion(): string | undefined {
   }
 }
 
-export function createDeps(opts: CreateDepsOptions): AppDeps {
+export async function createDeps(opts: CreateDepsOptions): Promise<AppDeps> {
   const log = opts.log ?? ((line) => { console.log(line) })
   const config = loadConfig(opts)
   const env: Env = config.env
   mkdirSync(config.stateDir, { recursive: true })
   mkdirSync(config.sessionDir, { recursive: true })
-  const settings = new SettingsStore({ file: config.settingsFile, env, stateDir: config.stateDir, defaultWorkspace: config.defaultWorkspace, botName: config.botName, log })
   const now = opts.now ?? (() => Date.now() / 1000)
-  const passkeys = new PasskeyStore(config.stateDir, now)
+  const storage = opts.storage?.(config) ?? createStorage(config, now, (name) => profileHome(name))
+  const settings = new SettingsStore({ documents: storage.documents, env, stateDir: config.stateDir, defaultWorkspace: config.defaultWorkspace, botName: config.botName, log })
+  await settings.load()
+  const passkeys = new PasskeyStore(storage.documents, now)
   // Resolved below once the sidecar-backed config store exists; the auth store reads it lazily.
   let oidc: OidcService | null = null
   let operatorConfigPeek: () => Record<string, unknown> | null = () => null
   const auth = new AuthStore({
-    stateDir: config.stateDir, env, settings, log, now,
-    passkeysEnabled: () => passkeys.available(),
+    documents: storage.documents, env, settings, log, now,
+    passkeysEnabled: async () => (await passkeys.available()),
     oidcEnabled: () => oidc?.enabledSync() ?? false,
     oidcAvailable: () => oidc?.availableSync() ?? false,
     oidcProbe: () => oidc?.resolve() ?? Promise.resolve(),
     passkeyConfigFlag: () => { const cfg = operatorConfigPeek(); return cfg === null ? null : cfg.webui_passkey_enabled },
   })
+  await auth.initialize()
   settings.hooks = {
-    hashPassword: (pw) => auth.hashPassword(pw),
+    hashPassword: async (pw) => (await auth.hashPassword(pw)),
     onPasswordChanged: () => { auth.invalidatePasswordHashCache() },
   }
-  settings.applyStartupWorkspace()
+  await settings.applyStartupWorkspace()
   config.defaultWorkspace = settings.defaultWorkspace
   const release = loadReleaseInfo({ webRoot: config.webRoot })
   const stampedRelease = loadReleaseInfo({ webRoot: config.webRoot }, { verifyCheckout: false })
   const runningSourceRevision = checkoutRevision(config.webRoot)
   // Container images bake `TALARIA_WEB_VERSION` (Python `api/_version.py`) because .git is not shipped.
   const version = opts.version ?? detectWebuiVersion(release, config.webRoot, (env.TALARIA_WEB_VERSION ?? '').trim() || packageVersion())
-  const updateNotifications = new UpdateNotificationStore(config.stateDir, () => new Date(now() * 1000))
+  const updateNotifications = new UpdateNotificationStore(storage.documents, () => new Date(now() * 1000))
+  await updateNotifications.initialize()
   const verifiedRunningVersion = /^web-(?:exp-)?v\d+\.\d+\.\d+$/.test(version) ? version : null
-  updateNotifications.reconcileInterruptedUpdates(runningSourceRevision ?? release.sourceRevision, verifiedRunningVersion)
+  await updateNotifications.reconcileInterruptedUpdates(runningSourceRevision ?? release.sourceRevision, verifiedRunningVersion)
   const home = opts.home ?? config.homeDir
   const PROFILE_RE = /^[a-z0-9][a-z0-9_-]{0,63}$/
   // Python `init_profile_state` + `switch_profile(process_wide=False)`: the sticky `~/.hermes/active_profile` is
@@ -156,7 +161,7 @@ export function createDeps(opts: CreateDepsOptions): AppDeps {
   // The agent's name on every client: a named profile's own name, else the root profile's `bot_name` setting.
   const assistantName = (profile: string | null): string => {
     if (profile && !isRootProfile(profile)) return profile.charAt(0).toUpperCase() + profile.slice(1)
-    try { return displayBotName(settings.load().bot_name) } catch { return displayBotName(null) }
+    try { return displayBotName(settings.peek().bot_name) } catch { return displayBotName(null) }
   }
   // Python `_resolve_profile_home_for_name`: root aliases and invalid names clamp to the base home; a named home resolving
   // outside the profiles root throws (Python `relative_to`), so no consumer runs it against the root or outside home.
@@ -190,12 +195,12 @@ export function createDeps(opts: CreateDepsOptions): AppDeps {
     return [typeof d === 'string' ? d.trim() : '', typeof p === 'string' && p ? p : null]
   }
   const events = new SessionEventBus(isRootProfile)
-  const drafts = new DraftStore(config.sessionDir)
+  const drafts = new DraftStore(storage.documents)
   const registry = new StreamRegistry()
   const activeStreamIds = registry.liveIds
   const runningCronJobs = new Map<string, number>()
   const workspaces = new WorkspaceRegistry({
-    stateDir: config.stateDir,
+    documents: storage.documents,
     defaultWorkspace: () => config.defaultWorkspace,
     profileHome,
     activeProfile,
@@ -213,34 +218,34 @@ export function createDeps(opts: CreateDepsOptions): AppDeps {
     return Number.isFinite(raw) && raw >= 1 ? raw : 100
   }
   const store = new SessionStore({
-    storage: createStorage(config, now),
+    storage,
     drafts,
     events,
     // Python `_profile_default_model_state`: the profile's own config.yaml model, else the global default. The provider
     // always comes with its model, so a provider-only profile never pairs with another profile's model.
-    defaults: (profile) => {
+    defaults: async (profile) => {
       let [model, provider] = profileDefaultModel(profile)
       if (!model) {
-        const s = settings.load()
+        const s = settings.peek()
         model = typeof s.default_model === 'string' ? s.default_model : ''
         provider = model && typeof s.default_model_provider === 'string' && s.default_model_provider ? s.default_model_provider : null
       }
       const [bare, modelProvider] = parseProviderQualifiedModel(model) ?? [model || null, provider]
-      return { workspace: workspaces.lastWorkspace(profile), model: bare, modelProvider }
+      return { workspace: (await workspaces.lastWorkspace(profile)), model: bare, modelProvider }
     },
     activeStreamIds: () => activeStreamIds,
     now,
     log,
     cacheMax,
-    onDeleted: (sid) => { backgroundStore.delete(sid) },
+    onDeleted: async (sid) => { (await backgroundStore.delete(sid)) },
   })
-  const projects = new ProjectStore(resolve(config.stateDir, 'projects.json'), async () => (await store.readIndexEntries()), isRootProfile)
-  const shares = new ShareStore(resolve(config.stateDir, 'shares'), now)
+  const projects = new ProjectStore(storage.documents, async () => (await store.readIndexEntries()), isRootProfile)
+  const shares = new ShareStore(storage.documents, now)
   const yoloSessions = new Set<string>()
   const attachmentDir = (sid: string): string => join(attachmentRoot(), (sid || 'session').replace(/[^\w.-]/g, '_').slice(0, 120))
-  const cliSessions = new CliSessionSource({ store, profileHome, profilesMatch, lastWorkspace: (p) => workspaces.lastWorkspace(p), backgroundProjectId: async (kind, p) => (await projects.ensureSystemProject(kind, p, { create: kind === 'webhook' || (await projects.hasUserProjects(p)) })), now, log })
+  const cliSessions = new CliSessionSource({ store, profileHome, profilesMatch, lastWorkspace: async (p) => (await workspaces.lastWorkspace(p)), backgroundProjectId: async (kind, p) => (await projects.ensureSystemProject(kind, p, { create: kind === 'webhook' || (await projects.hasUserProjects(p)) })), now, log })
   const gatewayWatchers = new GatewayWatcherRegistry({ profileHome, now, log, ...(opts.gatewayPollMs !== undefined ? { pollIntervalMs: opts.gatewayPollMs } : {}) })
-  const journal = new RunJournal(config.sessionDir, env)
+  const journal = storage.journals
   const contextLengths = new Map<string, number | null>()
   const contextInflight = new Map<string, Promise<number | null>>()
   const contextKey = (model: string | null, provider: string | null, profile: string | null): string | null => (model?.trim() ? `${profileHome(profile ?? activeProfile())}\0${provider?.trim() ?? ''}\0${model.trim()}` : null)
@@ -273,10 +278,10 @@ export function createDeps(opts: CreateDepsOptions): AppDeps {
       if (n > 0) profileOps.set(key, n); else profileOps.delete(key)
     }
   }
-  const mediaActiveWorkspace = (): string | null => {
+  const mediaActiveWorkspace = async (): Promise<string | null> => {
     if (!workspaces.profileSupportsLocalIo(null)) return null
     try {
-      const ws = resolvePathLikePython(workspaces.lastWorkspace(activeProfile()))
+      const ws = resolvePathLikePython((await workspaces.lastWorkspace(activeProfile())))
       return statSync(ws).isDirectory() ? ws : null
     } catch {
       return null
@@ -286,15 +291,14 @@ export function createDeps(opts: CreateDepsOptions): AppDeps {
   const mediaPolicy: MediaPolicyDeps = { home, hermesHome: config.hermesHome, stateDir: config.stateDir, legacySnapshotDir, activeWorkspace: mediaActiveWorkspace }
   const mediaAccess: MediaAccessDeps = { home: config.homeDir, hermesHome: config.hermesHome, extraRoots: env.MEDIA_ALLOWED_ROOTS ?? '', activeWorkspace: mediaActiveWorkspace, policy: mediaPolicy }
   // TAL-259: record when this server started stamping deliberate shrinks; older backups go to manual review.
-  try { recoveryStampingSince(config.stateDir) } catch (error) { log(`[webui] WARNING: could not record recovery_stamping_since: ${(error as Error).message}`) }
+  try { await recoveryStampingSince(storage.documents) } catch (error) { log(`[webui] WARNING: could not record recovery_stamping_since: ${(error as Error).message}`) }
   const sessions: SessionService = new SessionService({
-    recoveryJournalDirectory: config.sessionDir,
-    recoveryStampingSince: () => recoveryStampingSince(config.stateDir),
+    recoveryStampingSince: async () => await recoveryStampingSince(storage.documents),
     sidecar: () => sidecar,
     media: { access: mediaAccess, localIo: (profile) => workspaces.profileSupportsLocalIo(profile) },
     profileActivity,
     profileDeleting: (profile) => profiles.isDeleting(profile),
-    backgroundReceipts: (sid) => background.receipts(sid),
+    backgroundReceipts: async (sid) => (await background.receipts(sid)),
     backgroundPending: async (sid) => (await completions.pendingDelegations(sid)),
     journal,
     clearRelayCompletions: async (sid, profile) => { (await relay.clearDeleted(sid, profile)) },
@@ -340,8 +344,8 @@ export function createDeps(opts: CreateDepsOptions): AppDeps {
     isolatedProfileMode,
     profilesMatch,
     assistantName,
-    redactEnabled: () => { try { return settings.load().api_redact_enabled !== false } catch { return true } },
-    pinnedSessionsLimit: () => { const v = settings.load().pinned_sessions_limit; return typeof v === 'number' && v >= 1 ? v : 3 },
+    redactEnabled: () => { try { return settings.peek().api_redact_enabled !== false } catch { return true } },
+    pinnedSessionsLimit: () => { const v = settings.peek().pinned_sessions_limit; return typeof v === 'number' && v >= 1 ? v : 3 },
     // Chat runtime (checkpoint 6) replaces these with live stream and cron state.
     runtime: {
       activeStreamIds,
@@ -376,7 +380,7 @@ export function createDeps(opts: CreateDepsOptions): AppDeps {
     home,
     // Python `_sync_session_title_to_state_db`: with `sync_to_insights` on, the state.db row follows a rename.
     syncTitle: async (session, manual) => {
-      if (!sidecar || !pyBool(settings.load().sync_to_insights)) return
+      if (!sidecar || !pyBool(settings.peek().sync_to_insights)) return
       // Awaited by callers: the rename/regenerate response and the title stream's teardown follow the state.db write.
       try {
         const targetProfile = session.profile ?? activeProfile()
@@ -417,7 +421,7 @@ export function createDeps(opts: CreateDepsOptions): AppDeps {
   // A working-tree mutation refuses while a run is active anywhere it would change files.
   const git = new GitRunner({ env, activeRunIn: (path) => [...registry.activeRuns.values()].some((run) => Boolean(run.workspace) && pathsOverlap(run.workspace, path)) })
   const rollback = new RollbackStore({
-    sidecar: () => sidecar, profileHome: () => profileHome(activeProfile()), knownWorkspaces: () => workspaces.load(activeProfile()).map((w) => w.path),
+    sidecar: () => sidecar, profileHome: () => profileHome(activeProfile()), knownWorkspaces: async () => (await workspaces.load(activeProfile())).map((w) => w.path),
     // A run whose session cannot be read counts as one in the profile: refusing is the safe answer.
     activeRunInProfile: (home) => [...registry.activeRuns.values()].some((run) => {
       const session = store.sessions.get(run.session_id)
@@ -428,7 +432,7 @@ export function createDeps(opts: CreateDepsOptions): AppDeps {
   const channels = new SessionChannels()
   const pending = new PendingPrompts(events, now)
   // TAL-372: one durable record per piece of background work; a change refreshes every client showing the session.
-  const backgroundStore = new BackgroundTaskStore(config.sessionDir, now, async (sid) => {
+  const backgroundStore = new BackgroundTaskStore(storage.documents, now, async (sid) => {
     let profile: string | null = null
     try { profile = (await store.get(sid, { metadataOnly: true, promote: false, cacheOnMiss: false })).profile } catch { profile = null }
     events.publish('background_task', { profile, sessionId: sid })
@@ -441,7 +445,7 @@ export function createDeps(opts: CreateDepsOptions): AppDeps {
   const relay = new RelayService({
     registry, pending, store, presence: new PresenceLeases(now), profileHome, profilesMatch, fetch: () => lazyFetch, now, log,
     agentSessions: (profile) => readImportableAgentSessionRowsAsync(join(profileHome(profile), 'state.db')),
-    stateDir: config.stateDir, env, canonicalProfile: (p) => (isRootProfile(p) ? 'default' : p), addListener: (listener) => events.addListener(listener),
+    documents: storage.documents, env, canonicalProfile: (p) => (isRootProfile(p) ? 'default' : p), addListener: (listener) => events.addListener(listener),
   })
   const turns = new TurnRunner({
     store,
@@ -456,7 +460,7 @@ export function createDeps(opts: CreateDepsOptions): AppDeps {
     syncTitle: (session) => sessions.deps.syncTitle(session),
     // Python `sync_session_usage` after a settled turn: with `sync_to_insights` on, the state.db row carries the usage.
     syncUsage: async (session, model) => {
-      if (!sidecar || !pyBool(settings.load().sync_to_insights)) return
+      if (!sidecar || !pyBool(settings.peek().sync_to_insights)) return
       try {
         const targetProfile = session.profile ?? activeProfile()
         sessions.assertWritable(session, targetProfile)
@@ -474,7 +478,7 @@ export function createDeps(opts: CreateDepsOptions): AppDeps {
     profileConfig: async (profile) => { try { return await agentConfig.read(profileHome(profile ?? activeProfile())) } catch { return null } },
     personalities: (profile) => agentConfig.agentPersonalities(profileHome(profile ?? activeProfile())),
     providerLabel: (profile, provider) => catalog.providerLabel(profileHome(profile ?? activeProfile()), provider),
-    titleRefreshEvery: () => { try { const every = Number(settings.load().auto_title_refresh_every); return Number.isInteger(every) && every > 0 ? every : 0 } catch { return 0 } },
+    titleRefreshEvery: () => { try { const every = Number(settings.peek().auto_title_refresh_every); return Number.isInteger(every) && every > 0 ? every : 0 } catch { return 0 } },
     env,
     hermesHome: config.hermesHome,
     // Python `display_hermes_home`: the home shown to the model, `~`-relative when it sits under $HOME.
@@ -488,14 +492,14 @@ export function createDeps(opts: CreateDepsOptions): AppDeps {
     workspaces,
     now,
     log,
-    redactEnabled: () => { try { return settings.load().api_redact_enabled !== false } catch { return true } },
+    redactEnabled: () => { try { return settings.peek().api_redact_enabled !== false } catch { return true } },
     saveMode: () => ((env.HERMES_WEBUI_SESSION_SAVE_MODE ?? '').trim().toLowerCase() === 'eager' ? 'eager' : 'deferred'),
     toolsetsFor: (session) => session.enabled_toolsets,
     attachmentDir,
   })
   // Services read `deps.fetch` lazily so tests can swap the outbound HTTP client after boot.
   const lazyFetch: typeof fetch = (input, init) => deps.fetch(input, init)
-  const catalog = new ProviderCatalog({ sidecar: () => sidecar, config: agentConfig, env, now, log, costBudget: () => coerceProviderCostBudgetValue(settings.load().provider_cost_budget), quotaThresholds: (profile) => settings.quotaThresholds(profile), isRootProfileHome: (h) => resolvePathLikePython(h) === resolvePathLikePython(config.hermesHome), stateDir: config.stateDir })
+  const catalog = new ProviderCatalog({ sidecar: () => sidecar, config: agentConfig, env, now, log, costBudget: () => coerceProviderCostBudgetValue(settings.peek().provider_cost_budget), quotaThresholds: async (profile) => (await settings.quotaThresholds(profile)), isRootProfileHome: (h) => resolvePathLikePython(h) === resolvePathLikePython(config.hermesHome), documents: storage.documents })
   const agentStatus = () => {
     const describe = sidecar?.describe ?? null
     const found = Boolean(describe?.agent_dir)
@@ -509,7 +513,7 @@ export function createDeps(opts: CreateDepsOptions): AppDeps {
     isolatedProfileMode,
     isolatedProfileName,
     config: agentConfig,
-    defaultWorkspace: (profile) => workspaces.profileDefaultWorkspace(profile),
+    defaultWorkspace: async (profile) => (await workspaces.profileDefaultWorkspace(profile)),
     models: (h) => catalog.models(h),
     streamsActive: () => activeStreamIds.size > 0,
     profileRunsActive: (name) => {
@@ -528,9 +532,10 @@ export function createDeps(opts: CreateDepsOptions): AppDeps {
       for (const [profile, count] of profileOps) if (count > 0 && (profile === '*' || (profiles.isRootProfile(profile) ? profiles.isRootProfile(name) : profile === name))) return true
       return false
     },
-    tombstoneFile: join(config.stateDir, 'deleted-profiles.json'),
+    documents: storage.documents,
     log,
   }, now)
+  await profiles.initialize()
   rootAlias = (name) => profiles.isRootProfile(name)
   const onboarding = new Onboarding({
     settings,
@@ -541,7 +546,7 @@ export function createDeps(opts: CreateDepsOptions): AppDeps {
     sidecar: () => sidecar,
     agentStatus,
     isAuthEnabled: () => auth.isAuthEnabled(),
-    workspaces: () => ({ items: workspaces.load(activeProfile()), last: workspaces.lastWorkspace(activeProfile()) }),
+    workspaces: async () => ({ items: (await workspaces.load(activeProfile())), last: (await workspaces.lastWorkspace(activeProfile())) }),
     models: (h) => catalog.models(h),
     defaultWorkspace: () => config.defaultWorkspace,
     defaultModel: () => (env.HERMES_WEBUI_DEFAULT_MODEL ?? '').trim(),
@@ -579,7 +584,7 @@ export function createDeps(opts: CreateDepsOptions): AppDeps {
       },
     }
   }
-  completions = new CompletionDrain({ heldWakeupsPath: join(config.sessionDir, '_wakeup_held.json'), sidecar: () => sidecar, configPath: (home) => agentConfig.path(home), readConfig: (home) => agentConfig.read(home), env, baseHome, profileHome: (p) => profileHome(p ?? activeProfile()), activeProfile, store, channels, registry, isReadOnly: async (session) => (await sessions.isReadOnly(session)), startTurn: async (session, prompt, completionKeys, backgroundUpdate) => {
+  completions = new CompletionDrain({ documents: storage.documents, sidecar: () => sidecar, configPath: (home) => agentConfig.path(home), readConfig: (home) => agentConfig.read(home), env, baseHome, profileHome: (p) => profileHome(p ?? activeProfile()), activeProfile, store, channels, registry, isReadOnly: async (session) => (await sessions.isReadOnly(session)), startTurn: async (session, prompt, completionKeys, backgroundUpdate) => {
     // TAL-577: a wakeup passes the user-turn admission; a stale runtime answers a retryable 409, which defers it on a retry timer.
     // TAL-542: its model repair reads the cached catalog only (Python `prefer_cached_catalog`), never waiting on a build.
     try {
@@ -619,7 +624,7 @@ export function createDeps(opts: CreateDepsOptions): AppDeps {
     requestScope,
     isRootProfile,
     assistantName,
-    onboardingCompleted: () => truthy(env.HERMES_WEBUI_SKIP_ONBOARDING) || Boolean(settings.load().onboarding_completed),
+    onboardingCompleted: () => truthy(env.HERMES_WEBUI_SKIP_ONBOARDING) || Boolean(settings.peek().onboarding_completed),
     health: () => ({ sessions: store.sessions.size, activeStreams: activeStreamIds.size, activeRuns: registry.activeRuns.size, runs: [...registry.activeRuns.values()].map((r) => ({ phase: r.phase, started_at: r.started_at })), lastRunFinishedAt: registry.lastRunFinishedAt }),
     sessions,
     sessionStore: store,
@@ -664,11 +669,11 @@ export function createDeps(opts: CreateDepsOptions): AppDeps {
     oidc,
     passkeys,
     nativeOidcLimiter: new WindowLimiter(60, 10, now),
-    clearPasskeys: () => { passkeys.clear() },
+    clearPasskeys: async () => { (await passkeys.clear()) },
     skills: new SkillsService({ sidecar: () => sidecar, config: agentConfig, log }),
     mcp: new McpService({ sidecar: () => sidecar, config: agentConfig, health: mcpHealth }),
     completions,
-    hygiene: new HygieneTicker({ env, stateDir: config.stateDir, port: () => config.port, journal, activeJournalPaths: () => turns.activeJournalPaths(), now, log, sweeps: [() => { completions.sweep() }, async () => { (await turns.sweep()) }] }),
+    hygiene: new HygieneTicker({ env, stateDir: config.stateDir, port: () => config.port, journal, now, log, sweeps: [() => { completions.sweep() }, async () => { (await turns.sweep()) }] }),
     mcpHealth,
     nowSeconds: now,
     // Python `_webui_runtime_payload`: the four owner sections with their `available` flags.
@@ -711,7 +716,7 @@ export function createDeps(opts: CreateDepsOptions): AppDeps {
       modelOptionFor: async (home, model, provider) => { await catalog.warmModelOptions(home); return catalog.modelOptionFor(home, model, provider) },
     }),
     kanban: new KanbanService({ sidecar: () => sidecar, config: agentConfig }),
-    extensions: new ExtensionService({ env, stateDir: config.stateDir, isAuthEnabled: () => auth.isAuthEnabled(), fetch: lazyFetch, log }),
+    extensions: new ExtensionService({ documents: storage.documents, env, stateDir: config.stateDir, isAuthEnabled: () => auth.isAuthEnabled(), fetch: lazyFetch, log }),
     dashboardPlugins: new DashboardPlugins({ env, hermesHome: config.hermesHome, settings }),
     terminals,
     commitMessage: async (session, systemPrompt, userPrompt) => {
@@ -775,15 +780,15 @@ export function createDeps(opts: CreateDepsOptions): AppDeps {
       if (!sidecar) throw new Error('Hermes Agent sidecar is unavailable')
       return sidecar.call('runtime.sync_dependencies', { agent_dir: agentDir }, { timeoutMs: 330_000 })
     },
-    channel: () => normalizeChannel(settings.load().update_channel),
-    agentChannel: () => normalizeChannel(settings.load().agent_update_channel),
-    includeAgent: () => !pyBool(settings.load().ignore_agent_updates),
-    summarizeAutomatically: () => settings.load().check_for_updates !== false && settings.load().summarize_updates_automatically !== false,
-    autoApply: () => settings.load().check_for_updates !== false && settings.load().auto_apply_updates === true,
-    checkEnabled: () => !truthy(env.HERMES_WEBUI_TEST_NETWORK_BLOCK) && settings.load().check_for_updates !== false,
+    channel: () => normalizeChannel(settings.peek().update_channel),
+    agentChannel: () => normalizeChannel(settings.peek().agent_update_channel),
+    includeAgent: () => !pyBool(settings.peek().ignore_agent_updates),
+    summarizeAutomatically: () => settings.peek().check_for_updates !== false && settings.peek().summarize_updates_automatically !== false,
+    autoApply: () => settings.peek().check_for_updates !== false && settings.peek().auto_apply_updates === true,
+    checkEnabled: () => !truthy(env.HERMES_WEBUI_TEST_NETWORK_BLOCK) && settings.peek().check_for_updates !== false,
     autoNotification: {
-      begin: () => updateNotifications.begin({ owner: '*', profile: 'default', serverOwner: true }, 'webui').id,
-      transition: (id, phase, expectedIdentity, verifiedIdentity, detail) => { updateNotifications.transition(id, phase, expectedIdentity, verifiedIdentity, detail) },
+      begin: async () => (await updateNotifications.begin({ owner: '*', profile: 'default', serverOwner: true }, 'webui')).id,
+      transition: async (id, phase, expectedIdentity, verifiedIdentity, detail) => { (await updateNotifications.transition(id, phase, expectedIdentity, verifiedIdentity, detail)) },
     },
     blockers: restartBlockers,
     scheduleRestart: () => { setTimeout(() => { void waitUntilRestartSafe(restartBlockers, { maxWaitMs: Infinity, log }).then(() => { deps.requestRestart() }) }, 2000).unref() },
@@ -819,7 +824,8 @@ function readActiveProfileFile(hermesHome: string, pattern: RegExp): string {
   }
 }
 
-export function createStorage(config: import('./config.js').ServerConfig, now = () => Date.now() / 1000): StorageBackend {
+export function createStorage(config: import('./config.js').ServerConfig, now = () => Date.now() / 1000, profileHome: (profile: string) => string = (name) => name === 'default' ? config.hermesHome : join(config.hermesHome, 'profiles', name)): StorageBackend {
   if (config.storage !== 'json') throw new Error(`Unknown TALARIA_STORAGE=${JSON.stringify(config.storage)}; supported backends: json`)
-  return new JsonStorage({ directory: config.sessionDir, now, stampingSince: () => recoveryStampingSince(config.stateDir) })
+  const storage: StorageBackend = new JsonStorage({ directory: config.sessionDir, stateDir: config.stateDir, profileHome, env: config.env, now, stampingSince: async () => (await recoveryStampingSince(storage.documents)) })
+  return storage
 }

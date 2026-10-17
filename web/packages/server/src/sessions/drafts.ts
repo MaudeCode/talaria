@@ -2,9 +2,8 @@
  * Composer draft sidecars (Python `api/session_drafts.py`): tiny atomic files
  * under `sessions/_drafts/<sid>.json` with a monotonic decimal revision.
  */
-import { existsSync, mkdirSync, readFileSync, rmSync } from 'node:fs'
-import { join } from 'node:path'
-import { atomicWriteText } from '../fs/atomic.js'
+import { RevisionConflict, type DocumentBackend } from './storage/backend.js'
+import { readDocument } from './storage/document.js'
 import { isSafeSessionId } from './session.js'
 
 export interface Draft { text: string; files: unknown[]; [key: string]: unknown }
@@ -37,56 +36,37 @@ const cmp = (a: string, b: string): number => (a.length !== b.length ? a.length 
 const sameDraft = (a: Draft, b: Draft): boolean => JSON.stringify(a) === JSON.stringify(b)
 
 export class DraftStore {
-  constructor(readonly sessionDir: string) {}
+  constructor(private readonly documents: DocumentBackend) {}
 
-  dir(): string {
-    return join(this.sessionDir, '_drafts')
+  validate(sid: string): void { if (!isSafeSessionId(sid)) throw new Error('Invalid session_id') }
+
+  async exists(sid: string): Promise<boolean> { this.validate(sid); return await readDocument(this.documents, 'drafts', sid, { replaceInvalid: true }) !== null }
+
+  private recordState(value: unknown): [Draft, string | null] {
+    const record = value as Record<string, unknown> | null | undefined
+    return [normalizeDraft(value), normalizeDraftVersion(record?.[DRAFT_VERSION_KEY])]
   }
 
-  path(sid: string): string {
-    if (!isSafeSessionId(sid)) throw new Error('Invalid session_id')
-    return join(this.dir(), `${sid}.json`)
-  }
-
-  exists(sid: string): boolean {
-    return existsSync(this.path(sid))
-  }
-
-  private readRecord(path: string, fallback?: unknown): [Draft, string | null] {
-    if (!existsSync(path)) return [normalizeDraft(fallback), null]
-    const value = JSON.parse(readFileSync(path, 'utf8')) as unknown
-    let version: string | null = null
-    if (value && typeof value === 'object' && !Array.isArray(value) && (value as Record<string, unknown>)[DRAFT_VERSION_KEY] != null) {
-      version = normalizeDraftVersion((value as Record<string, unknown>)[DRAFT_VERSION_KEY])
-    }
-    return [normalizeDraft(value), version]
-  }
-
-  readState(sid: string, fallback?: unknown): [Draft, string | null] {
+  async readState(sid: string, fallback?: unknown): Promise<[Draft, string | null]> {
     try {
-      return this.readRecord(this.path(sid), fallback)
-    } catch {
-      return [normalizeDraft(fallback), null]
-    }
+      this.validate(sid)
+      const record = await this.documents.get('drafts', sid)
+      if (!record) return [normalizeDraft(fallback), null]
+      return this.recordState(record.value)
+    } catch { return [normalizeDraft(fallback), null] }
   }
 
-  read(sid: string, fallback?: unknown): Draft {
-    return this.readState(sid, fallback)[0]
-  }
+  async read(sid: string, fallback?: unknown): Promise<Draft> { return (await this.readState(sid, fallback))[0] }
 
   /** Persist a versioned draft; equal-version retries with identical payloads are accepted. */
-  write(sid: string, draft: unknown, version?: unknown): Draft {
+  async write(sid: string, draft: unknown, version?: unknown): Promise<Draft> {
     const normalized = normalizeDraft(draft)
     const normalizedVersion = normalizeDraftVersion(version)
-    const path = this.path(sid)
-    mkdirSync(this.dir(), { recursive: true })
-    let current: [Draft, string | null]
-    try {
-      current = this.readRecord(path)
-    } catch {
-      current = [normalizeDraft(null), null]
-    }
-    const [currentDraft, currentVersion] = current
+    this.validate(sid)
+    const current = await readDocument(this.documents, 'drafts', sid, { replaceInvalid: true })
+    let state: [Draft, string | null]
+    try { state = this.recordState(current?.value) } catch { state = [normalizeDraft(null), null] }
+    const [currentDraft, currentVersion] = state
     if (currentVersion !== null) {
       if (normalizedVersion === null || cmp(normalizedVersion, currentVersion) < 0) throw new DraftVersionConflict(currentDraft, currentVersion)
       if (cmp(normalizedVersion, currentVersion) === 0) {
@@ -96,17 +76,18 @@ export class DraftStore {
     }
     const record: Record<string, unknown> = { ...normalized }
     if (normalizedVersion !== null) record[DRAFT_VERSION_KEY] = normalizedVersion
-    atomicWriteText(path, JSON.stringify(record))
+    try { await this.documents.put('drafts', sid, record, current?.revision ?? null) }
+    catch (error) {
+      if (!(error instanceof RevisionConflict)) throw error
+      const winner = await this.documents.get('drafts', sid)
+      const [latest, latestVersion] = this.recordState(winner?.value)
+      throw new DraftVersionConflict(latest, latestVersion)
+    }
     return normalized
   }
 
-  delete(sid: string): void {
-    let path: string
-    try {
-      path = this.path(sid)
-    } catch {
-      return
-    }
-    rmSync(path, { force: true })
+  async delete(sid: string): Promise<void> {
+    try { this.validate(sid) } catch { return }
+    await this.documents.delete('drafts', sid)
   }
 }

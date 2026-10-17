@@ -24,7 +24,7 @@ const BACKGROUND_KINDS = ['cron', 'webhook', 'kanban'] as const
 export interface CliSessionsDeps {
   store: SessionStore
   profileHome: (profile: string) => string
-  lastWorkspace: (profile: string) => string
+  lastWorkspace: (profile: string) => string | Promise<string>
   profilesMatch: ListParams['profilesMatch']
   /** Python `_state_row_project_id`: the profile's Cron Jobs / Webhooks chip, or null when the profile has not opted into projects. */
   backgroundProjectId?: (kind: 'cron' | 'webhook', profile: string) => string | null | Promise<string | null>
@@ -198,7 +198,7 @@ export class CliSessionSource {
     const { sourceFilter } = slot
     const home = this.deps.profileHome(profile)
     let workspace: string | null = null
-    const cliWorkspace = (): string => { workspace ??= this.deps.lastWorkspace(profile); return workspace }
+    const cliWorkspace = async (): Promise<string> => { workspace ??= (await this.deps.lastWorkspace(profile)); return workspace }
     let cronNames: Map<string, string> | null = null
     const cronTitle = (sid: string): string | null => {
       if (!sid.startsWith('cron_')) return null
@@ -228,7 +228,7 @@ export class CliSessionSource {
       const sidecar = latestLineageSidecar(lineageIds, profile, (id) => metadata.get(id), this.deps.profilesMatch)
       if (sidecar?.title && (!lineage || !title || !looksLikeDefaultCliTitle(sidecar))) title = str(sidecar.title)
       return {
-        session_id: sid, title: title ?? defaultTitle, workspace: (lineage && str(sidecar?.workspace)) || cliWorkspace(), model: row.model || null,
+        session_id: sid, title: title ?? defaultTitle, workspace: (lineage && str(sidecar?.workspace)) || (await cliWorkspace()), model: row.model || null,
         message_count: Number(row.message_count) || Number(row.actual_message_count) || 0,
         created_at: row.started_at, updated_at: row.last_activity ?? row.started_at, pinned: Boolean(sidecar?.pinned), archived: Boolean(sidecar?.archived),
         project_id: sourceTag === 'cron' || sourceTag === 'webhook' ? await projectFor(sourceTag) : lineage ? str(sidecar?.project_id) || null : null, profile, source_tag: sourceTag, raw_source: row.raw_source ?? meta.raw_source,

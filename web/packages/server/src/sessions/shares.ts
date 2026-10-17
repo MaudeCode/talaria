@@ -6,10 +6,11 @@ import { str } from '../util.js'
  * references become inline images only when they resolve inside an allowed
  * root and pass the image allow-list.
  */
-import { closeSync, existsSync, fstatSync, mkdirSync, readFileSync, statSync } from 'node:fs'
+import { closeSync, fstatSync, readFileSync, statSync } from 'node:fs'
 import { randomBytes } from 'node:crypto'
-import { basename, extname, join, resolve } from 'node:path'
-import { atomicWriteText } from '../fs/atomic.js'
+import { basename, extname, resolve } from 'node:path'
+import type { DocumentBackend } from './storage/backend.js'
+import { readDocument } from './storage/document.js'
 import { redactSensitive } from '../redact.js'
 import { expandHome, isWithin, resolvePathLikePython } from '../workspace/paths.js'
 import { openAnchoredFd } from '../workspace/fs.js'
@@ -149,40 +150,32 @@ export function buildShareSnapshot(session: Session, messages: unknown[], opts: 
 export interface ShareMeta { share_token: string; share_title: string; share_message_count: number; share_created_at: number; share_updated_at: number }
 
 export class ShareStore {
-  constructor(readonly dir: string, private readonly now: () => number) {}
+  constructor(private readonly documents: DocumentBackend, private readonly now: () => number) {}
 
-  private pathFor(token: string): string {
+  private validate(token: string): string {
     const t = token.trim()
     if (!SHARE_TOKEN_RE.test(t)) throw new Error('Invalid share token')
-    return join(this.dir, `${t}.json`)
+    return t
   }
 
-  createOrRefresh(session: Session, snapshot: ShareSnapshot): ShareMeta {
-    mkdirSync(this.dir, { recursive: true })
+  async createOrRefresh(session: Session, snapshot: ShareSnapshot): Promise<ShareMeta> {
     const token = (session.share_token ?? '').trim() || randomBytes(18).toString('base64url')
     const now = this.now()
     const payload: Record<string, unknown> = {
       token, source_session_id: session.session_id, title: snapshot.title, messages: snapshot.messages, message_count: snapshot.message_count,
       created_at: now, updated_at: now, revoked_at: null,
     }
-    const path = this.pathFor(token)
-    if (existsSync(path)) {
-      try {
-        const existing = JSON.parse(readFileSync(path, 'utf8')) as unknown
-        if (isDict(existing)) payload.created_at = existing.created_at || now
-      } catch { /* malformed existing snapshot */ }
-    }
-    atomicWriteText(path, JSON.stringify(payload, null, 2), { mode: 0o600 })
+    this.validate(token)
+    const current = await readDocument(this.documents, 'shares', token, { replaceInvalid: true })
+    if (isDict(current?.value)) payload.created_at = current.value.created_at || now
+    await this.documents.put('shares', token, payload, current?.revision ?? null)
     return { share_token: token, share_title: snapshot.title, share_message_count: snapshot.message_count, share_created_at: payload.created_at as number, share_updated_at: now }
   }
 
   /** The public payload, or null when missing/revoked. */
-  load(token: string): Record<string, unknown> | null {
-    let path: string
-    try { path = this.pathFor(token) } catch { return null }
-    if (!existsSync(path)) return null
+  async load(token: string): Promise<Record<string, unknown> | null> {
     let payload: unknown
-    try { payload = JSON.parse(readFileSync(path, 'utf8')) } catch { return null }
+    try { payload = (await this.documents.get('shares', this.validate(token)))?.value } catch { return null }
     if (!isDict(payload) || payload.revoked_at) return null
     // A snapshot taken before TAL-302 may still carry inline thinking; it leaves as prose only, like a new one.
     const messages = (Array.isArray(payload.messages) ? payload.messages : []).map((m: unknown) => {
@@ -197,19 +190,15 @@ export class ShareStore {
     return pub
   }
 
-  revoke(session: Session): boolean {
+  async revoke(session: Session): Promise<boolean> {
     const token = (session.share_token ?? '').trim()
     if (!token) return false
-    let path: string
-    try { path = this.pathFor(token) } catch { return false }
-    if (existsSync(path)) {
-      let payload: Record<string, unknown> = {}
-      try {
-        const parsed = JSON.parse(readFileSync(path, 'utf8')) as unknown
-        if (isDict(parsed)) payload = parsed
-      } catch { payload = {} }
+    try { this.validate(token) } catch { return false }
+    const current = await readDocument(this.documents, 'shares', token, { replaceInvalid: true })
+    if (current) {
+      const payload = isDict(current.value) ? current.value : {}
       payload.revoked_at = this.now()
-      atomicWriteText(path, JSON.stringify(payload, null, 2), { mode: 0o600 })
+      await this.documents.put('shares', token, payload, current.revision)
     }
     return true
   }

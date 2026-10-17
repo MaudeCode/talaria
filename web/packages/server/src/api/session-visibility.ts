@@ -25,7 +25,7 @@ export async function guardQuerySessionId(ctx: RequestContext): Promise<boolean>
     return true
   }
   if (ctx.method === 'GET' && ctx.path === '/api/session') return true
-  ctx.json({ error: 'Session not found' }, { status: 404 })
+  await ctx.json({ error: 'Session not found' }, { status: 404 })
   return false
 }
 
@@ -43,17 +43,17 @@ export const requestSessionIdGuard = orpcBase.$context<ApiContext>().middleware(
 })
 
 /** Python `_stream_id_owner_session_id`: the live registry first, then the run journal once the run has finished. */
-export function streamOwnerSessionId(ctx: RequestContext, streamId: string): string | null {
+export async function streamOwnerSessionId(ctx: RequestContext, streamId: string): Promise<string | null> {
   const id = streamId.trim()
   if (!id) return null
   const live = ctx.deps.registry.ownerSessionId(id)
   if (live) return live
   if (!isSafeSessionId(id)) return null
-  return ctx.deps.journal.findRunSummary(id)?.session_id || null
+  return (await ctx.deps.journal.findRunSummary(id))?.session_id || null
 }
 
 /** Python `_stream_id_visible_to_request_profile`: a stream is visible when its owner session is (or it has no known owner). */
 export async function streamVisibleToRequest(ctx: RequestContext, streamId: string): Promise<boolean> {
-  const owner = streamOwnerSessionId(ctx, streamId)
+  const owner = (await streamOwnerSessionId(ctx, streamId))
   return !owner || (await sessionIdVisibleToRequest(ctx, owner))
 }

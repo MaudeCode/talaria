@@ -14,7 +14,7 @@ export const CHECKPOINT_STORE_BUSY_MESSAGE = 'Checkpoints are being restored or 
 export interface RollbackDeps {
   sidecar: () => SidecarLike | null
   profileHome: () => string
-  knownWorkspaces: () => string[]
+  knownWorkspaces: () => string[] | Promise<string[]>
   /** Whether a run in the profile at this home is active: its turn may be capturing a checkpoint into the same store. */
   activeRunInProfile: (profileHome: string) => boolean
 }
@@ -64,7 +64,7 @@ export class RollbackStore {
   }
 
   /** `allowed` adds paths the caller already vouches for (a session's own workspace) to the configured list. */
-  resolveWorkspace(workspace: unknown, allowed: string[] = []): string {
+  async resolveWorkspace(workspace: unknown, allowed: string[] = []): Promise<string> {
     if (!workspace || typeof workspace !== 'string') throw new Error('workspace is required')
     let resolved: string
     try {
@@ -76,7 +76,7 @@ export class RollbackStore {
     try { isDir = statSync(resolved).isDirectory() } catch { isDir = false }
     if (!isDir) throw new Error(`Workspace does not exist: ${workspace}`)
     const known = new Set<string>()
-    for (const p of [...this.deps.knownWorkspaces(), ...allowed]) {
+    for (const p of [...(await this.deps.knownWorkspaces()), ...allowed]) {
       try { known.add(realpathSync(p)) } catch { known.add(p) }
     }
     if (!known.has(resolved)) throw new Error(`Workspace not in configured list: ${workspace}`)
@@ -90,7 +90,7 @@ export class RollbackStore {
   }
 
   async list(workspace: unknown, allowed: string[] = []): Promise<Record<string, unknown>> {
-    const resolved = this.resolveWorkspace(workspace, allowed)
+    const resolved = (await this.resolveWorkspace(workspace, allowed))
     const { checkpoints, store } = await this.sidecar().call('checkpoints.list', { profile_home: this.deps.profileHome(), workspace: resolved })
     return {
       checkpoints: checkpoints.map((c) => ({ id: c.hash, commit: c.short_hash, message: c.reason, date: c.timestamp, date_display: formatLocalMinute(c.timestamp), files: c.files_changed, path: store })),
@@ -100,7 +100,7 @@ export class RollbackStore {
   }
 
   async diff(workspace: unknown, checkpoint: unknown, allowed: string[] = []): Promise<Record<string, unknown>> {
-    const resolved = this.resolveWorkspace(workspace, allowed)
+    const resolved = (await this.resolveWorkspace(workspace, allowed))
     const cid = validateCheckpointId(checkpoint)
     const sidecar = this.sidecar()
     const { diff } = await this.exclusive((home) => sidecar.call('checkpoints.diff', { profile_home: home, workspace: resolved, checkpoint: cid }))
@@ -110,7 +110,7 @@ export class RollbackStore {
 
   /** The Agent snapshots the workspace first, then checks the checkpoint out over it; a file added since is left in place. */
   async restore(workspace: unknown, checkpoint: unknown, allowed: string[] = []): Promise<Record<string, unknown>> {
-    const resolved = this.resolveWorkspace(workspace, allowed)
+    const resolved = (await this.resolveWorkspace(workspace, allowed))
     const cid = validateCheckpointId(checkpoint)
     const sidecar = this.sidecar()
     const rewritten = await this.exclusive(async (home) => {

@@ -40,11 +40,11 @@ export async function handleKanbanEventsStream(ctx: RequestContext): Promise<voi
   let helloBoard = board
   if (board) {
     try { helloBoard = (await ctx.deps.kanban.sidecar().call('kanban.normalize_board', { profile_home: home, board })).board } catch (error) {
-      try { kanbanFailure(error) } catch (mapped) { if (mapped instanceof HttpFailure) { ctx.json({ error: mapped.message }, { status: mapped.status }); return } }
+      try { kanbanFailure(error) } catch (mapped) { if (mapped instanceof HttpFailure) { (await ctx.json({ error: mapped.message }, { status: mapped.status })); return } }
       throw error
     }
   }
-  const sse = claimOrReject(ctx, true)
+  const sse = (await claimOrReject(ctx, true))
   if (!sse) return
   const abort = new AbortController()
   ctx.res.on('close', () => { abort.abort() })
@@ -74,19 +74,19 @@ export async function handleTerminalOutput(ctx: RequestContext): Promise<void> {
   try {
     await terminalGate(ctx)
   } catch (error) {
-    if (error instanceof HttpError) { ctx.json({ error: error.message }, { status: error.status }); return }
+    if (error instanceof HttpError) { (await ctx.json({ error: error.message }, { status: error.status })); return }
     throw error
   }
   const sid = str(ctx.query.get('session_id')).trim()
-  if (!sid) { ctx.json({ error: 'session_id required' }, { status: 400 }); return }
+  if (!sid) { (await ctx.json({ error: 'session_id required' }, { status: 400 })); return }
   let session
-  try { session = (await ctx.deps.sessionStore.get(sid, { metadataOnly: true })) } catch { ctx.json({ error: 'Session not found' }, { status: 404 }); return }
-  if (!ctx.deps.workspaces.profileSupportsLocalIo(session.profile)) { ctx.json({ error: 'remote_terminal_backend_unsupported', message: 'Embedded terminal is only supported for local terminal backends.' }, { status: 400 }); return }
+  try { session = (await ctx.deps.sessionStore.get(sid, { metadataOnly: true })) } catch { (await ctx.json({ error: 'Session not found' }, { status: 404 })); return }
+  if (!ctx.deps.workspaces.profileSupportsLocalIo(session.profile)) { (await ctx.json({ error: 'remote_terminal_backend_unsupported', message: 'Embedded terminal is only supported for local terminal backends.' }, { status: 400 })); return }
   const term = ctx.deps.terminals.get(sid)
-  if (!term) { ctx.json({ error: 'terminal not running' }, { status: 404 }); return }
+  if (!term) { (await ctx.json({ error: 'terminal not running' }, { status: 404 })); return }
   const lastId = (ctx.header('last-event-id') ?? '').trim()
   const afterSeq = lastId && /^\d+$/.test(lastId) ? Math.max(0, Number.parseInt(lastId, 10)) : null
-  const sse = claimOrReject(ctx, true)
+  const sse = (await claimOrReject(ctx, true))
   if (!sse) return
   const queue: TerminalItem[] = []
   let wake: (() => void) | null = null
@@ -124,29 +124,29 @@ export async function handleTerminalOutput(ctx: RequestContext): Promise<void> {
 }
 
 /** `/extensions/*`: always 200 or a bare 404 (Python `serve_extension_static`). */
-export function handleExtensionStatic(ctx: RequestContext): void {
+export async function handleExtensionStatic(ctx: RequestContext): Promise<void> {
   // Python `unquote` runs once on the request path.
   let rel: string
-  try { rel = decodeURIComponent(ctx.path.slice(EXTENSION_ROUTE_PREFIX.length)) } catch { ctx.json({ error: 'not found' }, { status: 404 }); return }
+  try { rel = decodeURIComponent(ctx.path.slice(EXTENSION_ROUTE_PREFIX.length)) } catch { (await ctx.json({ error: 'not found' }, { status: 404 })); return }
   const file = ctx.deps.extensions.staticFile(rel)
-  if (!file) { ctx.json({ error: 'not found' }, { status: 404 }); return }
-  sendPanelFile(ctx, file, file.html)
+  if (!file) { (await ctx.json({ error: 'not found' }, { status: 404 })); return }
+  await sendPanelFile(ctx, file, file.html)
 }
 
 /**
  * Extension- or plugin-controlled bytes from the WebUI's own origin: a sandboxed response gets the sandbox CSP (opaque
  * origin, so its HTML or SVG opened directly runs no privileged same-origin script).
  */
-function sendPanelFile(ctx: RequestContext, file: { body: Buffer; contentType: string }, sandbox: boolean): void {
+async function sendPanelFile(ctx: RequestContext, file: { body: Buffer; contentType: string }, sandbox: boolean): Promise<void> {
   const headers: Record<string, string | string[]> = { 'Content-Type': file.contentType, 'Cache-Control': 'no-store' }
-  if (!sandbox) { ctx.send({ status: 200, headers, body: file.body, security: true }); return }
+  if (!sandbox) { (await ctx.send({ status: 200, headers, body: file.body, security: true })); return }
   // HWEB-100: the page policy stays and a second CSP header adds the sandbox, so a panel opened directly is isolated.
   // Both allow framing by the app itself; the report-only twin (`frame-ancestors 'none'`) is left off, or every
   // in-app panel would report a violation.
   const security = ctx.securityHeaders({ frameable: true })
   const page = security['Content-Security-Policy']
   headers['Content-Security-Policy'] = [...(typeof page === 'string' ? [page] : []), EXTENSION_PANEL_SANDBOX_CSP]
-  ctx.send({ status: 200, headers: { ...security, ...headers }, body: file.body, security: false })
+  await ctx.send({ status: 200, headers: { ...security, ...headers }, body: file.body, security: false })
 }
 
 /**
@@ -154,27 +154,27 @@ function sendPanelFile(ctx: RequestContext, file: { body: Buffer; contentType: s
  * `/dashboard-plugins/<name>/<rel>` (built assets), and each plugin's tab page. Returns false when `path` is none
  * of them; a disabled or unknown plugin answers 404 on every surface.
  */
-export function handleDashboardPlugin(ctx: RequestContext): boolean {
+export async function handleDashboardPlugin(ctx: RequestContext): Promise<boolean> {
   const plugins = ctx.deps.dashboardPlugins
   const path = ctx.path
   let file: PluginFile | null
   if (path.startsWith('/plugins/')) {
     const css = plugins.sharedAsset(path.slice('/plugins/'.length))
-    if (css) sendPanelFile(ctx, css, false)
-    else ctx.json({ error: 'not found' }, { status: 404 })
+    if (css) (await sendPanelFile(ctx, css, false))
+    else (await ctx.json({ error: 'not found' }, { status: 404 }))
     return true
   }
   if (path.startsWith('/dashboard-plugins/')) {
     const panel = DashboardPlugins.panelName(path)
     const [name = '', ...rest] = path.slice('/dashboard-plugins/'.length).split('/')
-    file = panel === null ? plugins.asset(name, rest.join('/')) : plugins.panel(panel)
+    file = panel === null ? (await plugins.asset(name, rest.join('/'))) : (await plugins.panel(panel))
   } else {
     // Tab paths never claim a server-owned path, so API traffic skips the plugin scan.
-    file = isServerOwned(path) ? null : plugins.tabPage(path)
+    file = isServerOwned(path) ? null : (await plugins.tabPage(path))
     if (!file) return false
   }
-  if (file) sendPanelFile(ctx, file, true)
-  else ctx.json({ error: 'not found' }, { status: 404 })
+  if (file) (await sendPanelFile(ctx, file, true))
+  else (await ctx.json({ error: 'not found' }, { status: 404 }))
   return true
 }
 
@@ -202,24 +202,24 @@ export function matchSidecarProxy(path: string): [string, string] | null {
 export async function handleExtensionSidecarProxy(ctx: RequestContext, extensionId: string, proxyPath: string): Promise<void> {
   const env = ctx.deps.config.env
   const provenance = checkSameOriginBrowserRequest({ origin: ctx.header('origin'), referer: ctx.header('referer'), secFetchSite: ctx.header('sec-fetch-site'), host: ctx.header('host'), forwardedHost: ctx.header('x-forwarded-host'), realHost: ctx.header('x-real-host') }, env, { requireProvenance: true })
-  if (provenance !== null) { ctx.json({ error: csrfRejectionError(provenance) }, { status: 403 }); return }
+  if (provenance !== null) { (await ctx.json({ error: csrfRejectionError(provenance) }, { status: 403 })); return }
   // Python matched the id raw (`[^/]+`) and validated it as-is: a percent-malformed id is invalid, and an encoded
   // spelling of a valid id is not accepted either. The sub-path keeps its raw shape (`//`, trailing `/` are invalid).
   const rawTarget = (ctx.req.url ?? '').split('?')[0] ?? ''
   const rawMatch = /^\/api\/extensions\/([^/]+)\/sidecar\/(.*)$/.exec(rawTarget)
   const rawId = rawMatch?.[1] ?? extensionId
   const rawProxyPath = rawMatch?.[2] ?? proxyPath
-  if (!validId(rawId)) { ctx.json({ error: 'Invalid extension id' }, { status: 400 }); return }
-  if (rawProxyPath !== proxyPath && normalizeProxyPath(rawProxyPath) === null) { ctx.json({ error: 'Invalid sidecar proxy path' }, { status: 400 }); return }
+  if (!validId(rawId)) { (await ctx.json({ error: 'Invalid extension id' }, { status: 400 })); return }
+  if (rawProxyPath !== proxyPath && normalizeProxyPath(rawProxyPath) === null) { (await ctx.json({ error: 'Invalid sidecar proxy path' }, { status: 400 })); return }
   let body: Buffer | null = null
   if (ctx.method !== 'GET' && ctx.method !== 'HEAD') {
-    try { body = await ctx.readRawBody(20 * 1024 * 1024) } catch (error) { ctx.json({ error: str((error as Error).message) }, { status: /too large/i.test(str((error as Error).message)) ? 413 : 400 }); return }
+    try { body = await ctx.readRawBody(20 * 1024 * 1024) } catch (error) { (await ctx.json({ error: str((error as Error).message) }, { status: /too large/i.test(str((error as Error).message)) ? 413 : 400 })); return }
   }
   let target: { origin: string; upstream_url: string }
   try {
     target = await ctx.deps.extensions.proxyTarget(rawId, rawProxyPath, ctx.search.replace(/^\?/, ''))
   } catch (error) {
-    if (error instanceof ExtensionError) { ctx.json({ error: error.message }, { status: error.status }); return }
+    if (error instanceof ExtensionError) { (await ctx.json({ error: error.message }, { status: error.status })); return }
     throw error
   }
   const headers: Record<string, string> = {}
@@ -244,13 +244,13 @@ export async function handleExtensionSidecarProxy(ctx: RequestContext, extension
       let resolved: URL | null = null
       try { resolved = new URL(res.headers.get('location') ?? '', url) } catch { resolved = null }
       // Python's opener raised on a cross-origin hop or the hop limit, which surfaced as the generic reach failure.
-      if (resolved?.origin !== allowedOrigin || hop >= PROXY_MAX_REDIRECTS) { ctx.json({ error: 'Failed to reach extension sidecar' }, { status: 502 }); return }
+      if (resolved?.origin !== allowedOrigin || hop >= PROXY_MAX_REDIRECTS) { (await ctx.json({ error: 'Failed to reach extension sidecar' }, { status: 502 })); return }
       await res.body?.cancel()
       url = resolved.href
       if ((res.status === 301 || res.status === 302 || res.status === 303) && method !== 'GET' && method !== 'HEAD') { method = 'GET'; requestBody = null; delete headers['content-type']; delete headers['Content-Type'] }
     }
     const raw = await readCapped(res, PROXY_MAX_RESPONSE)
-    if (raw === null) { ctx.json({ error: 'Extension sidecar response too large' }, { status: 502 }); return }
+    if (raw === null) { (await ctx.json({ error: 'Extension sidecar response too large' }, { status: 502 })); return }
     const out: Record<string, string> = {}
     let contentType = false
     const responseBound = connectionBoundNames(res.headers.get('connection'))
@@ -262,10 +262,10 @@ export async function handleExtensionSidecarProxy(ctx: RequestContext, extension
     })
     if (!contentType) out['Content-Type'] = 'application/octet-stream'
     out['Cache-Control'] = 'no-store'
-    ctx.send({ status: res.status, headers: out, body: raw, security: true, gzip: false })
+    await ctx.send({ status: res.status, headers: out, body: raw, security: true, gzip: false })
   } catch (error) {
     ctx.deps.log(`[webui] extension sidecar proxy failed: ${str((error as Error).message)}`)
-    ctx.json({ error: 'Failed to reach extension sidecar' }, { status: 502 })
+    await ctx.json({ error: 'Failed to reach extension sidecar' }, { status: 502 })
   }
 }
 

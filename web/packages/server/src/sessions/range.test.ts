@@ -205,7 +205,7 @@ it.each([false, true])('keeps the full-build pending turn boundary with a journa
     const session = new Session({ session_id: sid, messages: rows, active_stream_id: turn, pending_user_message: 'pending', pending_started_at: started }, { workspace: server.state, model: null })
     server.deps.sessions.deps.runtime.activeStreamIds.add(turn)
     await server.deps.sessionStore.save(session)
-    if (journaled) { const writer = server.deps.journal.writer(sid, turn); writer.appendSseEvent('token', { text: 'persisted output' }); writer.close() }
+    if (journaled) { const writer = (await server.deps.journal.writer(sid, turn)); (await writer.appendSseEvent('token', { text: 'persisted output' })); (await writer.close()) }
     await assertWindows(server, session)
     const page = (await server.deps.sessions.detail(sid, { msg_limit: '1' }))
     expect((page.messages as Message[]).some((m) => m.content === 'pending')).toBe(true)

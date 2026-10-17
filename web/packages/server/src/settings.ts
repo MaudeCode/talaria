@@ -7,10 +7,7 @@
  * and are supplied by hooks the config domain wires in; the store itself never
  * reads config.yaml.
  */
-import { readFileSync, statSync } from 'node:fs'
-import { mkdirSync } from 'node:fs'
-import { dirname } from 'node:path'
-import { atomicWriteText } from './fs/atomic.js'
+import { InvalidDocument, RevisionConflict, type DocumentBackend } from './sessions/storage/backend.js'
 import { resolveDefaultWorkspace, type Env } from './config.js'
 import { normalizeTrustedLinkHosts } from './links.js'
 
@@ -251,7 +248,7 @@ export interface SettingsHooks {
 }
 
 export interface SettingsStoreOptions {
-  file: string
+  documents: DocumentBackend
   env: Env
   stateDir: string
   defaultWorkspace: string
@@ -261,7 +258,7 @@ export interface SettingsStoreOptions {
 }
 
 export class SettingsStore {
-  readonly file: string
+  private readonly documents: DocumentBackend
   hooks: SettingsHooks
   /** Incremented on every successful save so callers can detect changes cheaply. */
   writeVersion = 0
@@ -269,10 +266,10 @@ export class SettingsStore {
   private readonly stateDir: string
   defaultWorkspace: string
   private readonly botName: string
-  private cache: { key: string; raw: Settings } | null = null
+  private cache: Settings = {}
 
   constructor(opts: SettingsStoreOptions) {
-    this.file = opts.file
+    this.documents = opts.documents
     this.env = opts.env
     this.stateDir = opts.stateDir
     this.defaultWorkspace = opts.defaultWorkspace
@@ -285,39 +282,27 @@ export class SettingsStore {
   }
 
   /** The profile's quota thresholds, defaults filled in. */
-  quotaThresholds(profile: string): QuotaThresholds {
-    return mergeQuotaThresholds(QUOTA_THRESHOLD_DEFAULTS, thresholdsByProfile(this.readRaw())[profile])
+  async quotaThresholds(profile: string): Promise<QuotaThresholds> {
+    return mergeQuotaThresholds(QUOTA_THRESHOLD_DEFAULTS, thresholdsByProfile(await this.readRaw())[profile])
   }
 
-  /** Read settings.json; `strict` callers distinguish absence from an unreadable file. */
-  readRaw(opts: { strict?: boolean } = {}): Settings {
-    let st
+  /** Sync policies use the last loaded server snapshot; request handlers and writes refresh through the async port. */
+  peek(): Settings { return this.fromRaw(this.cache) }
+
+  async readRaw(opts: { strict?: boolean } = {}): Promise<Settings> {
     try {
-      st = statSync(this.file, { bigint: true })
-    } catch (error) {
-      if ((error as NodeJS.ErrnoException).code === 'ENOENT' || !opts.strict) return {}
-      throw error
-    }
-    const key = `${st.mtimeNs}:${st.size}:${st.ino}:${st.ctimeNs}`
-    if (this.cache?.key === key) return structuredClone(this.cache.raw)
-    let loaded: unknown
-    try {
-      loaded = JSON.parse(readFileSync(this.file, 'utf8'))
-    } catch (error) {
-      if (opts.strict) throw error
-      return {}
-    }
-    if (typeof loaded !== 'object' || loaded === null || Array.isArray(loaded)) {
-      if (opts.strict) throw new Error('settings.json must contain an object')
-      return {}
-    }
-    this.cache = { key, raw: loaded as Settings }
-    return structuredClone(loaded as Settings)
+      const record = await this.documents.get('settings', 'settings')
+      const loaded = record ? record.value : {}
+      if (typeof loaded !== 'object' || loaded === null || Array.isArray(loaded)) throw new Error('Settings must contain an object')
+      this.cache = loaded as Settings
+      return structuredClone(this.cache)
+    } catch (error) { if (opts.strict) throw error; return {} }
   }
 
-  load(): Settings {
+  async load(): Promise<Settings> { return this.fromRaw(await this.readRaw()) }
+
+  private fromRaw(stored: Settings): Settings {
     const settings = this.defaults()
-    const stored = this.readRaw()
     if (!('worklog_details_expanded_default' in stored) && 'activity_feed_expanded_default' in stored) {
       settings.worklog_details_expanded_default = pyBool(stored.activity_feed_expanded_default)
     }
@@ -353,9 +338,9 @@ export class SettingsStore {
     return persisted
   }
 
-  private writeSettings(persisted: Settings): void {
-    mkdirSync(dirname(this.file), { recursive: true })
-    atomicWriteText(this.file, JSON.stringify(persisted, null, 2))
+  private async writeSettings(persisted: Settings, expected: string | null): Promise<void> {
+    await this.documents.put('settings', 'settings', persisted, expected)
+    this.cache = structuredClone(persisted)
     this.writeVersion += 1
   }
 
@@ -371,127 +356,133 @@ export class SettingsStore {
       if (!this.hooks.hashPassword) throw new Error('password hashing is not wired')
       newPasswordHash = await this.hooks.hashPassword(rawPw.trim())
     }
-    const raw = this.readRaw()
-    const persistedSpeechKeys = this.persistedSpeechKeys(raw)
-    const current = this.load()
-    const appliedSpeechKeys = new Set<string>()
-    const allowed = new Set(Object.keys(this.defaults()))
-    for (const k of ['password_hash', 'default_model', 'simplified_tool_calling']) allowed.delete(k)
-    const composerKeys = new Set([...allowed].filter((k) => k.startsWith('hide_composer_')))
+    for (let attempt = 0; ; attempt += 1) {
+      let record
+      try { record = await this.documents.get('settings', 'settings') }
+      catch (error) { if (!(error instanceof InvalidDocument)) throw error; record = { value: {}, revision: error.revision } }
+      const raw = record?.value && typeof record.value === 'object' && !Array.isArray(record.value) ? record.value as Settings : {}
+      const persistedSpeechKeys = this.persistedSpeechKeys(raw)
+      const current = this.fromRaw(raw)
+      const appliedSpeechKeys = new Set<string>()
+      const allowed = new Set(Object.keys(this.defaults()))
+      for (const k of ['password_hash', 'default_model', 'simplified_tool_calling']) allowed.delete(k)
+      const composerKeys = new Set([...allowed].filter((k) => k.startsWith('hide_composer_')))
 
-    if (!('worklog_details_expanded_default' in settings) && 'activity_feed_expanded_default' in settings) {
-      settings.worklog_details_expanded_default = settings.activity_feed_expanded_default
-    }
-    delete settings.activity_feed_expanded_default
-    if (!('default_message_mode' in settings) && 'busy_input_mode' in settings) settings.default_message_mode = settings.busy_input_mode
-    delete settings.busy_input_mode
-    delete settings.simplified_tool_calling
+      if (!('worklog_details_expanded_default' in settings) && 'activity_feed_expanded_default' in settings) {
+        settings.worklog_details_expanded_default = settings.activity_feed_expanded_default
+      }
+      delete settings.activity_feed_expanded_default
+      if (!('default_message_mode' in settings) && 'busy_input_mode' in settings) settings.default_message_mode = settings.busy_input_mode
+      delete settings.busy_input_mode
+      delete settings.simplified_tool_calling
 
-    let pendingTheme = current.theme
-    let pendingSkin = current.skin
-    let themeExplicit = false
-    let skinExplicit = false
-    let passwordChanged = false
-    if (newPasswordHash !== null) {
-      current.password_hash = newPasswordHash
-      passwordChanged = true
-    }
-    const clearPw = settings._clear_password
-    delete settings._clear_password
-    if (pyBool(clearPw)) {
-      current.password_hash = null
-      passwordChanged = true
-    }
-    const dashboardPlugins = settings.dashboard_plugins
-    if (dashboardPlugins && typeof dashboardPlugins === 'object' && !Array.isArray(dashboardPlugins)) {
-      const currentDash = current.dashboard_plugins
-      // A malformed stored value (null, string, array) is replaced, so the patch is never silently dropped.
-      const merged = (currentDash && typeof currentDash === 'object' && !Array.isArray(currentDash) ? currentDash : {}) as Record<string, boolean>
-      for (const [k, v] of Object.entries(dashboardPlugins as Record<string, unknown>)) merged[k] = pyBool(v)
-      current.dashboard_plugins = merged
-    }
-    for (const [k, rawValue] of Object.entries(settings)) {
-      let v: unknown = rawValue
-      if (['auto_apply_updates', 'summarize_updates_automatically'].includes(k) && typeof v !== 'boolean') continue
-      if (k === 'provider_quota_thresholds' && opts.profile !== undefined) {
-        const byProfile = thresholdsByProfile(current)
-        byProfile[opts.profile] = mergeQuotaThresholds(mergeQuotaThresholds(QUOTA_THRESHOLD_DEFAULTS, byProfile[opts.profile]), v)
-        current[QUOTA_THRESHOLDS_BY_PROFILE_KEY] = byProfile
-        continue
+      let pendingTheme = current.theme
+      let pendingSkin = current.skin
+      let themeExplicit = false
+      let skinExplicit = false
+      let passwordChanged = false
+      if (newPasswordHash !== null) {
+        current.password_hash = newPasswordHash
+        passwordChanged = true
       }
-      if (k === 'dashboard_plugins' || !allowed.has(k)) continue
-      if (k === 'theme') {
-        if (typeof v === 'string' && v.trim()) { pendingTheme = v; themeExplicit = true }
-        continue
+      const clearPw = settings._clear_password
+      delete settings._clear_password
+      if (pyBool(clearPw)) {
+        current.password_hash = null
+        passwordChanged = true
       }
-      if (k === 'skin') {
-        if (typeof v === 'string' && v.trim()) { pendingSkin = v; skinExplicit = true }
-        continue
+      const dashboardPlugins = settings.dashboard_plugins
+      if (dashboardPlugins && typeof dashboardPlugins === 'object' && !Array.isArray(dashboardPlugins)) {
+        const currentDash = current.dashboard_plugins
+        // A malformed stored value (null, string, array) is replaced, so the patch is never silently dropped.
+        const merged = (currentDash && typeof currentDash === 'object' && !Array.isArray(currentDash) ? currentDash : {}) as Record<string, boolean>
+        for (const [k, v] of Object.entries(dashboardPlugins as Record<string, unknown>)) merged[k] = pyBool(v)
+        current.dashboard_plugins = merged
       }
-      const enumValues = ENUM_VALUES[k]
-      if (enumValues && !(typeof v === 'string' && enumValues.has(v))) continue
-      const intRange = INT_RANGES[k]
-      if (intRange) {
-        const n = pyInt(v)
-        if (n === null || n < intRange[0] || n > intRange[1]) continue
-        v = n
-      }
-      const floatRange = FLOAT_RANGES[k]
-      if (floatRange) {
-        const f = pyFloat(v)
-        if (f === null || !Number.isFinite(f) || f < floatRange[0] || f > floatRange[1]) continue
-        v = f
-      }
-      if (k === 'tts_engine') {
-        if (typeof v !== 'string') continue
-        v = v.trim()
-        if (!TTS_ENGINE_RE.test(v as string)) continue
-      }
-      if (k === 'tts_voice' && (typeof v !== 'string' || v.length > 200 || v.includes('\0'))) continue
-      if (k === 'language' && (typeof v !== 'string' || !LANG_RE.test(v))) continue
-      if (LIST_KEYS.has(k)) {
-        if (!Array.isArray(v)) continue
-        const seen = new Set<string>()
-        const cleaned: string[] = []
-        for (const item of v) {
-          if (typeof item !== 'string') continue
-          const s = item.trim()
-          if (!s || seen.has(s)) continue
-          if ((k === 'hidden_tabs' || k === 'tab_order') && (s === 'chat' || s === 'settings')) continue
-          if (k === 'composer_control_order' && !composerKeys.has(s)) continue
-          seen.add(s)
-          cleaned.push(s)
+      for (const [k, rawValue] of Object.entries(settings)) {
+        let v: unknown = rawValue
+        if (['auto_apply_updates', 'summarize_updates_automatically'].includes(k) && typeof v !== 'boolean') continue
+        if (k === 'provider_quota_thresholds' && opts.profile !== undefined) {
+          const byProfile = thresholdsByProfile(current)
+          byProfile[opts.profile] = mergeQuotaThresholds(mergeQuotaThresholds(QUOTA_THRESHOLD_DEFAULTS, byProfile[opts.profile]), v)
+          current[QUOTA_THRESHOLDS_BY_PROFILE_KEY] = byProfile
+          continue
         }
-        v = cleaned
+        if (k === 'dashboard_plugins' || !allowed.has(k)) continue
+        if (k === 'theme') {
+          if (typeof v === 'string' && v.trim()) { pendingTheme = v; themeExplicit = true }
+          continue
+        }
+        if (k === 'skin') {
+          if (typeof v === 'string' && v.trim()) { pendingSkin = v; skinExplicit = true }
+          continue
+        }
+        const enumValues = ENUM_VALUES[k]
+        if (enumValues && !(typeof v === 'string' && enumValues.has(v))) continue
+        const intRange = INT_RANGES[k]
+        if (intRange) {
+          const n = pyInt(v)
+          if (n === null || n < intRange[0] || n > intRange[1]) continue
+          v = n
+        }
+        const floatRange = FLOAT_RANGES[k]
+        if (floatRange) {
+          const f = pyFloat(v)
+          if (f === null || !Number.isFinite(f) || f < floatRange[0] || f > floatRange[1]) continue
+          v = f
+        }
+        if (k === 'tts_engine') {
+          if (typeof v !== 'string') continue
+          v = v.trim()
+          if (!TTS_ENGINE_RE.test(v as string)) continue
+        }
+        if (k === 'tts_voice' && (typeof v !== 'string' || v.length > 200 || v.includes('\0'))) continue
+        if (k === 'language' && (typeof v !== 'string' || !LANG_RE.test(v))) continue
+        if (LIST_KEYS.has(k)) {
+          if (!Array.isArray(v)) continue
+          const seen = new Set<string>()
+          const cleaned: string[] = []
+          for (const item of v) {
+            if (typeof item !== 'string') continue
+            const s = item.trim()
+            if (!s || seen.has(s)) continue
+            if ((k === 'hidden_tabs' || k === 'tab_order') && (s === 'chat' || s === 'settings')) continue
+            if (k === 'composer_control_order' && !composerKeys.has(s)) continue
+            seen.add(s)
+            cleaned.push(s)
+          }
+          v = cleaned
+        }
+        if (k === 'trusted_link_hosts') {
+          if (!Array.isArray(v)) continue
+          v = normalizeTrustedLinkHosts(v)
+        }
+        if (k === 'provider_cost_budget') {
+          if (v === null || v === undefined || v === '') { current[k] = null; continue }
+          const budget = coerceProviderCostBudget(v)
+          if (budget === null) continue
+          current[k] = budget
+          continue
+        }
+        if (typeof this.defaults()[k] === 'boolean') v = pyBool(v)
+        current[k] = v
+        if (SETTINGS_SPEECH_KEYS.has(k)) appliedSpeechKeys.add(k)
       }
-      if (k === 'trusted_link_hosts') {
-        if (!Array.isArray(v)) continue
-        v = normalizeTrustedLinkHosts(v)
+      let skinValue = pendingSkin
+      if (themeExplicit && !skinExplicit) {
+        const rawTheme = typeof pendingTheme === 'string' ? pendingTheme.trim().toLowerCase() : ''
+        if (!SETTINGS_THEME_VALUES.has(rawTheme)) skinValue = null
       }
-      if (k === 'provider_cost_budget') {
-        if (v === null || v === undefined || v === '') { current[k] = null; continue }
-        const budget = coerceProviderCostBudget(v)
-        if (budget === null) continue
-        current[k] = budget
-        continue
-      }
-      if (typeof this.defaults()[k] === 'boolean') v = pyBool(v)
-      current[k] = v
-      if (SETTINGS_SPEECH_KEYS.has(k)) appliedSpeechKeys.add(k)
+      ;[current.theme, current.skin] = normalizeAppearance(pendingTheme, skinValue)
+      current.default_workspace = resolveDefaultWorkspace(typeof current.default_workspace === 'string' ? current.default_workspace : null, { env: this.env, stateDir: this.stateDir })
+      const effectiveSpeech = new Set([...persistedSpeechKeys, ...appliedSpeechKeys])
+      try { await this.writeSettings(this.payloadForWrite(current, effectiveSpeech), record?.revision ?? null) }
+      catch (error) { if (error instanceof RevisionConflict && attempt < 1) continue; throw error }
+      if (passwordChanged) this.hooks.onPasswordChanged?.()
+      this.defaultWorkspace = current.default_workspace as string
+      current.default_model = this.hooks.defaultModel?.() ?? ''
+      return current
     }
-    let skinValue = pendingSkin
-    if (themeExplicit && !skinExplicit) {
-      const rawTheme = typeof pendingTheme === 'string' ? pendingTheme.trim().toLowerCase() : ''
-      if (!SETTINGS_THEME_VALUES.has(rawTheme)) skinValue = null
-    }
-    ;[current.theme, current.skin] = normalizeAppearance(pendingTheme, skinValue)
-    current.default_workspace = resolveDefaultWorkspace(typeof current.default_workspace === 'string' ? current.default_workspace : null, { env: this.env, stateDir: this.stateDir })
-    const effectiveSpeech = new Set([...persistedSpeechKeys, ...appliedSpeechKeys])
-    this.writeSettings(this.payloadForWrite(current, effectiveSpeech))
-    if (passwordChanged) this.hooks.onPasswordChanged?.()
-    this.defaultWorkspace = current.default_workspace as string
-    current.default_model = this.hooks.defaultModel?.() ?? ''
-    return current
   }
 
   /**
@@ -499,11 +490,10 @@ export class SettingsStore {
    * `default_workspace` wins over discovery unless the env override is set, and
    * a stale stored value is rewritten once.
    */
-  applyStartupWorkspace(): void {
-    let exists = false
-    try { exists = statSync(this.file).isFile() } catch { exists = false }
-    if (!exists) return
-    const startup = this.load()
+  async applyStartupWorkspace(): Promise<void> {
+    const record = await this.documents.get('settings', 'settings').catch(() => null)
+    if (!record) return
+    const startup = await this.load()
     if (!this.env.HERMES_WEBUI_DEFAULT_WORKSPACE) {
       this.defaultWorkspace = resolveDefaultWorkspace(typeof startup.default_workspace === 'string' ? startup.default_workspace : null, { env: this.env, stateDir: this.stateDir })
     }
@@ -511,7 +501,7 @@ export class SettingsStore {
     if (startup.default_workspace !== this.defaultWorkspace) {
       startup.default_workspace = this.defaultWorkspace
       try {
-        this.writeSettings(this.payloadForWrite(startup, this.persistedSpeechKeys(this.readRaw())))
+        await this.writeSettings(this.payloadForWrite(startup, this.persistedSpeechKeys(await this.readRaw())), record.revision)
       } catch {
         /* best effort, matches Python */
       }

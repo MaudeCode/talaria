@@ -65,15 +65,15 @@ export async function runRaw(ctx: RequestContext, handler: RawHandler): Promise<
   } catch (error) {
     if (ctx.isFinished) return
     if (error instanceof HttpError) {
-      ctx.json({ error: error.message, ...error.data }, { status: error.status })
+      await ctx.json({ error: error.message, ...error.data }, { status: error.status })
       return
     }
     if (error instanceof HttpFailure) {
-      ctx.json({ error: error.message, ...error.extra }, { status: error.status })
+      await ctx.json({ error: error.message, ...error.extra }, { status: error.status })
       return
     }
     if (error instanceof SessionNotFound) {
-      ctx.json({ error: 'Session not found' }, { status: 404 })
+      await ctx.json({ error: 'Session not found' }, { status: 404 })
       return
     }
     throw error
@@ -81,8 +81,8 @@ export async function runRaw(ctx: RequestContext, handler: RawHandler): Promise<
 }
 
 /** Retired by the `process_complete` -> `bg_task_complete` rename: always 410, naming the replacement. */
-function handleProcessCompleteAck(ctx: RequestContext): void {
-  ctx.json({ error: 'gone: /api/process-complete-ack was replaced by /api/bg-task-complete-ack as part of the process_complete -> bg_task_complete event rename', replaced_by: '/api/bg-task-complete-ack' }, { status: 410, headers: { 'X-Replaced-By': '/api/bg-task-complete-ack' } })
+async function handleProcessCompleteAck(ctx: RequestContext): Promise<void> {
+  await ctx.json({ error: 'gone: /api/process-complete-ack was replaced by /api/bg-task-complete-ack as part of the process_complete -> bg_task_complete event rename', replaced_by: '/api/bg-task-complete-ack' }, { status: 410, headers: { 'X-Replaced-By': '/api/bg-task-complete-ack' } })
 }
 
 /**
@@ -90,9 +90,9 @@ function handleProcessCompleteAck(ctx: RequestContext): void {
  * nothing behind a same-host reverse proxy); anything else gets the plain 404.
  */
 function testHook(handler: RawHandler): RawHandler {
-  return (ctx) => {
+  return async (ctx) => {
     if (!truthy(ctx.deps.config.env.HERMES_WEBUI_TEST_HOOKS) || !isLoopback(ctx.peer)) {
-      ctx.json({ error: 'not found' }, { status: 404 })
+      await ctx.json({ error: 'not found' }, { status: 404 })
       return
     }
     return handler(ctx)
@@ -100,20 +100,20 @@ function testHook(handler: RawHandler): RawHandler {
 }
 
 /** Queue a fake approval; `_injected` entries are answered locally, since no Agent is parked on them. */
-function handleApprovalInject(ctx: RequestContext): void {
+async function handleApprovalInject(ctx: RequestContext): Promise<void> {
   const sid = ctx.query.get('session_id') ?? ''
   if (!sid) throw new HttpError(400, 'session_id required')
   const key = ctx.query.get('pattern_key') || 'test_pattern'
   ctx.deps.pending.submitApproval(sid, { command: ctx.query.get('command') || 'rm -rf /tmp/test', pattern_key: key, pattern_keys: [key], description: 'test pattern', session_id: sid, _injected: true })
-  ctx.json({ ok: true, session_id: sid })
+  await ctx.json({ ok: true, session_id: sid })
 }
 
 /** Queue a fake clarify prompt (repeated `choices`); answered locally like an injected approval. */
-function handleClarifyInject(ctx: RequestContext): void {
+async function handleClarifyInject(ctx: RequestContext): Promise<void> {
   const sid = ctx.query.get('session_id') ?? ''
   if (!sid) throw new HttpError(400, 'session_id required')
   ctx.deps.pending.submitClarify(sid, { question: ctx.query.get('question') || 'Which option?', choices_offered: ctx.query.getAll('choices').filter(Boolean), session_id: sid, kind: 'clarify', _injected: true })
-  ctx.json({ ok: true, session_id: sid })
+  await ctx.json({ ok: true, session_id: sid })
 }
 
 function fileRawTarget(ctx: RequestContext, workspace: string, sid: string, rel: string): [string, string] | null {
@@ -137,10 +137,10 @@ async function handleFileRaw(ctx: RequestContext): Promise<void> {
   if (rel.includes('\0')) throw new HttpError(400, 'invalid path')
   const resolved = fileRawTarget(ctx, s.workspace, sid, rel)
   if (!resolved) {
-    ctx.json({ error: 'not found' }, { status: 404 })
+    await ctx.json({ error: 'not found' }, { status: 404 })
     return
   }
-  serveRawFile(ctx, resolved[0], resolved[1])
+  await serveRawFile(ctx, resolved[0], resolved[1])
 }
 
 /** Python `_handle_escape_file_raw`: `/api/file/raw` for a path under an escape grant, anchored at the grant root. */
@@ -153,11 +153,11 @@ async function handleEscapeFileRaw(ctx: RequestContext): Promise<void> {
     throw fileError(error, 404)
   }
   // The anchored open and fstat in `serveRawFile` answer a missing or non-file target with 404 through the pinned root.
-  anchoredAt(req, () => { serveRawFile(ctx, req.externalRoot, target) })
+  await anchoredAt(req, async () => { (await serveRawFile(ctx, req.externalRoot, target)) })
 }
 
 /** The `/api/file/raw` response: MIME, attachment for dangerous types unless an inline HTML preview, sandbox CSP, no-store. */
-function serveRawFile(ctx: RequestContext, anchorRoot: string, target: string): void {
+async function serveRawFile(ctx: RequestContext, anchorRoot: string, target: string): Promise<void> {
   const forceDownload = ctx.query.get('download') === '1'
   const mime = mimeFor(target)
   const inlinePreview = ctx.query.get('inline') === '1'
@@ -165,10 +165,10 @@ function serveRawFile(ctx: RequestContext, anchorRoot: string, target: string): 
   const disposition = forceDownload || (DANGEROUS_TYPES.has(mime) && !htmlInlineOk) ? 'attachment' : 'inline'
   const csp = inlinePreview && !forceDownload && disposition === 'inline' ? SANDBOX_CSP : null
   if (htmlInlineOk) {
-    serveInlineHtmlPreview(ctx, target, 'no-store', SANDBOX_CSP, anchorRoot)
+    await serveInlineHtmlPreview(ctx, target, 'no-store', SANDBOX_CSP, anchorRoot)
     return
   }
-  serveFileBytes(ctx, target, { mime, disposition, cacheControl: 'no-store', csp, anchorRoot })
+  await serveFileBytes(ctx, target, { mime, disposition, cacheControl: 'no-store', csp, anchorRoot })
 }
 
 /**
@@ -176,7 +176,7 @@ function serveRawFile(ctx: RequestContext, anchorRoot: string, target: string): 
  * signed grant rather than a cookie. Every response carries the sandbox CSP and no CORS header, so the page's scripts
  * can run and load assets but cannot read workspace files.
  */
-export function handleWorkspacePreview(ctx: RequestContext): void {
+export async function handleWorkspacePreview(ctx: RequestContext): Promise<void> {
   const rest = ctx.path.slice(PREVIEW_PREFIX.length)
   const slash = rest.indexOf('/')
   const root = slash > 0 ? previewGrantRoot(ctx.deps.auth.signingKey(), rest.slice(0, slash)) : null
@@ -189,12 +189,12 @@ export function handleWorkspacePreview(ctx: RequestContext): void {
     } catch { /* malformed escape or outside the root */ }
   }
   if (!root || !target) {
-    ctx.json({ error: 'not found' }, { status: 404 })
+    await ctx.json({ error: 'not found' }, { status: 404 })
     return
   }
   const mime = mimeFor(target)
-  if (mime === 'text/html') serveInlineHtmlPreview(ctx, target, 'no-store', SANDBOX_CSP, root)
-  else serveFileBytes(ctx, target, { mime, disposition: 'inline', cacheControl: 'no-store', csp: SANDBOX_CSP, anchorRoot: root })
+  if (mime === 'text/html') (await serveInlineHtmlPreview(ctx, target, 'no-store', SANDBOX_CSP, root))
+  else (await serveFileBytes(ctx, target, { mime, disposition: 'inline', cacheControl: 'no-store', csp: SANDBOX_CSP, anchorRoot: root }))
 }
 
 async function handleMedia(ctx: RequestContext): Promise<void> {
@@ -213,7 +213,7 @@ async function handleMedia(ctx: RequestContext): Promise<void> {
     localAllowed = deps.workspaces.profileSupportsLocalIo(mediaSession.profile)
   } else localAllowed = deps.workspaces.profileSupportsLocalIo(null)
   if (!localAllowed) {
-    ctx.json({ error: REMOTE_WORKSPACE_UNSUPPORTED_CODE, message: REMOTE_WORKSPACE_UNSUPPORTED_MESSAGE }, { status: 400 })
+    await ctx.json({ error: REMOTE_WORKSPACE_UNSUPPORTED_CODE, message: REMOTE_WORKSPACE_UNSUPPORTED_MESSAGE }, { status: 400 })
     return
   }
   let target: string
@@ -222,7 +222,7 @@ async function handleMedia(ctx: RequestContext): Promise<void> {
   } catch {
     throw new HttpError(400, 'Invalid path')
   }
-  const anchorRoot = mediaAnchorRoot(target, mediaSession, deps.mediaAccess)
+  const anchorRoot = (await mediaAnchorRoot(target, mediaSession, deps.mediaAccess))
   if (!anchorRoot) throw new HttpError(403, 'Path not in allowed location')
   const mime = mimeFor(target)
   const inlinePreview = ctx.query.get('inline') === '1'
@@ -231,7 +231,7 @@ async function handleMedia(ctx: RequestContext): Promise<void> {
   const disposition = mime !== 'image/svg+xml' && (INLINE_IMAGE_TYPES.has(mime) || (inlinePreview && inlinePreviewTypes.has(mime)) || htmlInlineOk) ? 'inline' : 'attachment'
   const csp = htmlInlineOk ? 'sandbox allow-scripts' : null
   // The pathname policy ran before the open; the hard-link rule is re-applied to the inode actually opened.
-  serveFileBytes(ctx, target, { mime, disposition, cacheControl: mime === 'text/html' ? 'no-store' : 'private, no-cache', csp, anchorRoot, denyHardLinks: true })
+  await serveFileBytes(ctx, target, { mime, disposition, cacheControl: mime === 'text/html' ? 'no-store' : 'private, no-cache', csp, anchorRoot, denyHardLinks: true })
 }
 
 /** Python `_folder_zip_limits`: `HERMES_WEBUI_FOLDER_ZIP_MAX_MB` / `_MAX_FILES` are honoured as given (ZIP64 covers large archives). */
@@ -293,7 +293,7 @@ async function handleFolderDownload(ctx: RequestContext): Promise<void> {
     throw new HttpError(400, 'invalid path')
   }
   if (!existsSync(target)) {
-    ctx.json({ error: 'not found' }, { status: 404 })
+    await ctx.json({ error: 'not found' }, { status: 404 })
     return
   }
   if (!statSync(target).isDirectory()) throw new HttpError(400, 'path must be a directory; use /api/file/raw for single files')
@@ -302,11 +302,11 @@ async function handleFolderDownload(ctx: RequestContext): Promise<void> {
   const maxFiles = folderZipMaxFiles(ctx.deps.config.env)
   const { files, limit } = collectFolder(target, workspaceRoot, maxBytes, maxFiles)
   if (limit === 'max_files') {
-    ctx.json({ error: 'too many files', limit: maxFiles, configure: 'HERMES_WEBUI_FOLDER_ZIP_MAX_FILES' }, { status: 413 })
+    await ctx.json({ error: 'too many files', limit: maxFiles, configure: 'HERMES_WEBUI_FOLDER_ZIP_MAX_FILES' }, { status: 413 })
     return
   }
   if (limit === 'max_bytes') {
-    ctx.json({ error: 'folder too large', limit_bytes: maxBytes, configure: 'HERMES_WEBUI_FOLDER_ZIP_MAX_MB' }, { status: 413 })
+    await ctx.json({ error: 'folder too large', limit_bytes: maxBytes, configure: 'HERMES_WEBUI_FOLDER_ZIP_MAX_MB' }, { status: 413 })
     return
   }
   const zipName = `${basename(target) || 'workspace'}.zip`
@@ -373,7 +373,7 @@ async function handleSessionExport(ctx: RequestContext): Promise<void> {
     contentType = 'application/json; charset=utf-8'
     ext = 'json'
   }
-  ctx.send({ status: 200, headers: { 'Content-Type': contentType, 'Content-Disposition': `attachment; filename="hermes-${sid}.${ext}"`, 'Cache-Control': 'no-store' }, body: Buffer.from(payload, 'utf8') })
+  await ctx.send({ status: 200, headers: { 'Content-Type': contentType, 'Content-Disposition': `attachment; filename="hermes-${sid}.${ext}"`, 'Cache-Control': 'no-store' }, body: Buffer.from(payload, 'utf8') })
 }
 
 /** The shared upload preamble: the declared-size gate, the bounded body read, and the multipart parse (answers on failure). */
@@ -382,7 +382,7 @@ export async function readUploadForm(ctx: RequestContext): Promise<MultipartResu
   const contentType = ctx.header('content-type') ?? ''
   const contentLength = Number.parseInt(ctx.header('content-length') ?? '0', 10) || 0
   if (contentLength > maxBytes) {
-    ctx.json({ error: `File too large (max ${String(Math.floor(maxBytes / 1024 / 1024))}MB)` }, { status: 413 })
+    await ctx.json({ error: `File too large (max ${String(Math.floor(maxBytes / 1024 / 1024))}MB)` }, { status: 413 })
     return null
   }
   let raw: Buffer
@@ -390,26 +390,26 @@ export async function readUploadForm(ctx: RequestContext): Promise<MultipartResu
     raw = await ctx.readRawBody(maxBytes)
   } catch {
     // Node's parser already answers a garbage or negative Content-Length with 400 before this handler runs.
-    ctx.json({ error: `Upload too large (max ${String(maxBytes)} bytes)` }, { status: 400 })
+    await ctx.json({ error: `Upload too large (max ${String(maxBytes)} bytes)` }, { status: 400 })
     return null
   }
   try {
     return parseMultipart(raw, contentType)
   } catch (error) {
-    ctx.json({ error: (error as Error).message }, { status: 400 })
+    await ctx.json({ error: (error as Error).message }, { status: 400 })
     return null
   }
 }
 
 /** The single `file` part of a chat upload, or null after answering 400. */
-export function uploadFile(ctx: RequestContext, form: MultipartResult): { filename: string; body: Buffer } | null {
+export async function uploadFile(ctx: RequestContext, form: MultipartResult): Promise<{ filename: string; body: Buffer } | null> {
   const file = form.files.file
   if (!file) {
-    ctx.json({ error: 'No file field in request' }, { status: 400 })
+    await ctx.json({ error: 'No file field in request' }, { status: 400 })
     return null
   }
   if (!file.filename) {
-    ctx.json({ error: 'No filename in upload' }, { status: 400 })
+    await ctx.json({ error: 'No filename in upload' }, { status: 400 })
     return null
   }
   return file
@@ -421,11 +421,11 @@ async function uploadSessionVisible(ctx: RequestContext, sessionId: string): Pro
   try {
     session = (await ctx.deps.sessionStore.get(sessionId, { metadataOnly: true }))
   } catch {
-    ctx.json({ error: 'Session not found' }, { status: 404 })
+    await ctx.json({ error: 'Session not found' }, { status: 404 })
     return false
   }
   if (!ctx.deps.profilesMatch(session.profile, ctx.deps.activeProfile())) {
-    ctx.json({ error: 'Session not found' }, { status: 404 })
+    await ctx.json({ error: 'Session not found' }, { status: 404 })
     return false
   }
   return true
@@ -435,16 +435,16 @@ async function handleUpload(ctx: RequestContext): Promise<void> {
   const form = await readUploadForm(ctx)
   if (!form) return
   const sessionId = form.fields.session_id ?? ctx.query.get('session_id') ?? ''
-  const file = uploadFile(ctx, form)
+  const file = (await uploadFile(ctx, form))
   if (!file || !(await uploadSessionVisible(ctx, sessionId))) return
   try {
-    ctx.json(ctx.deps.uploads.store(sessionId, file.filename, file.body))
+    await ctx.json(ctx.deps.uploads.store(sessionId, file.filename, file.body))
   } catch (error) {
-    if (error instanceof UploadConflict) { ctx.json({ error: error.message }, { status: 409 }); return }
-    if (error instanceof UploadRejected) { ctx.json({ error: error.message }, { status: 403 }); return }
-    if (error instanceof Error && error.message === 'Invalid filename') { ctx.json({ error: error.message }, { status: 400 }); return }
+    if (error instanceof UploadConflict) { (await ctx.json({ error: error.message }, { status: 409 })); return }
+    if (error instanceof UploadRejected) { (await ctx.json({ error: error.message }, { status: 403 })); return }
+    if (error instanceof Error && error.message === 'Invalid filename') { (await ctx.json({ error: error.message }, { status: 400 })); return }
     ctx.deps.log(`[webui] upload error: ${error instanceof Error ? (error.stack ?? error.message) : String(error)}`)
-    ctx.json({ error: 'Upload failed' }, { status: 500 })
+    await ctx.json({ error: 'Upload failed' }, { status: 500 })
   }
 }
 
@@ -453,7 +453,7 @@ async function handleUploadExtract(ctx: RequestContext): Promise<void> {
   const form = await readUploadForm(ctx)
   if (!form) return
   const sessionId = form.fields.session_id ?? ''
-  const file = uploadFile(ctx, form)
+  const file = (await uploadFile(ctx, form))
   if (!file || !(await uploadSessionVisible(ctx, sessionId))) return
   const { uploads } = ctx.deps
   try {
@@ -467,11 +467,11 @@ async function handleUploadExtract(ctx: RequestContext): Promise<void> {
       try { rmtreeAnchored(inbox, result.dest) } catch { /* ignore */ }
       throw error
     }
-    ctx.json({ ok: true, ...result, rollback_token: token })
+    await ctx.json({ ok: true, ...result, rollback_token: token })
   } catch (error) {
-    if (error instanceof ArchiveRejected) { ctx.json({ error: error.message }, { status: 400 }); return }
+    if (error instanceof ArchiveRejected) { (await ctx.json({ error: error.message }, { status: 400 })); return }
     ctx.deps.log(`[webui] upload extract error: ${error instanceof Error ? (error.stack ?? error.message) : String(error)}`)
-    ctx.json({ error: 'Archive extraction failed' }, { status: 500 })
+    await ctx.json({ error: 'Archive extraction failed' }, { status: 500 })
   }
 }
 
@@ -555,5 +555,5 @@ async function handleWorkspaceUpload(ctx: RequestContext): Promise<void> {
     ctx.deps.log(`[webui] workspace upload error: ${error instanceof Error ? (error.stack ?? error.message) : String(error)}`)
     throw new HttpError(500, 'Upload failed')
   }
-  ctx.json(results.length === 1 ? results[0] : { files: results, count: results.length })
+  await ctx.json(results.length === 1 ? results[0] : { files: results, count: results.length })
 }

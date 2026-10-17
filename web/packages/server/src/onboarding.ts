@@ -29,7 +29,7 @@ export interface OnboardingDeps {
   /** Whether the Agent runtime imports (sidecar handshake compatible). */
   agentStatus: () => { found: boolean; importsOk: boolean; missing: string[]; errors: Record<string, string> }
   isAuthEnabled: () => Promise<boolean>
-  workspaces: () => { items: { path: string; name: string }[]; last: string | null }
+  workspaces: () => Promise<{ items: { path: string; name: string }[]; last: string | null }>
   models: (profileHome: string) => Promise<ModelsCatalog>
   defaultWorkspace: () => string
   defaultModel: () => string
@@ -185,7 +185,7 @@ export class Onboarding {
 
   async status(): Promise<Dict> {
     const home = this.deps.profileHome()
-    const settings = this.deps.settings.load()
+    const settings = (await this.deps.settings.load())
     let cfg: Config = {}
     try { cfg = await this.deps.config.read(home) } catch (error) { this.deps.log(`[onboarding] config.yaml unavailable: ${str((error as Error).message)}`) }
     const agent = this.deps.agentStatus()
@@ -205,25 +205,25 @@ export class Onboarding {
       settings: { default_model: str(settings.default_model) || this.deps.defaultModel(), default_workspace: str(settings.default_workspace) || this.deps.defaultWorkspace(), password_enabled: await this.deps.isAuthEnabled(), bot_name: displayBotName(settings.bot_name) },
       system: { hermes_found: agent.found, imports_ok: agent.importsOk, missing_modules: agent.missing, import_errors: agent.errors, config_path: configPath, config_exists: configExists, ...runtime },
       setup: this.setupCatalog(cfg, home),
-      workspaces: this.deps.workspaces(),
+      workspaces: (await this.deps.workspaces()),
       models,
     }
   }
 
   async complete(): Promise<Dict> {
     await this.deps.settings.save({ onboarding_completed: true })
-    return this.status()
+    return (await this.status())
   }
 
   /** Python `apply_onboarding_setup`. */
   async setup(body: Dict): Promise<Dict> {
-    if (this.skipRequested()) return this.complete()
+    if (this.skipRequested()) return (await this.complete())
     const provider = str(body.provider).trim().toLowerCase()
     const model = str(body.model).trim()
     const apiKey = str(body.api_key).trim()
     const baseUrl = normalizeBaseUrl(body.base_url)
     const meta = SUPPORTED_PROVIDER_SETUPS[provider]
-    if (!meta) return this.complete()
+    if (!meta) return (await this.complete())
     if (!model) throw new OnboardingError('model is required')
     if (meta.requires_base_url) {
       if (!baseUrl) throw new OnboardingError('base_url is required for custom endpoints')
@@ -252,7 +252,7 @@ export class Onboarding {
     })
     // A sign-in provider has no API key: its credential is the Agent's own auth-store entry.
     if (apiKey && meta.env_var) await this.writeCredential(home, meta.env_var, apiKey)
-    return this.status()
+    return (await this.status())
   }
 
   /** A root-profile key written by setup reaches the running process and sidecar like a settings-panel edit does. */

@@ -1,3 +1,4 @@
+import { testSessionDocuments } from '../test/storage.js'
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -9,39 +10,39 @@ const tempDir = (): string => { const d = mkdtempSync(join(tmpdir(), 'bg-tasks-'
 afterEach(() => { for (const d of dirs.splice(0)) rmSync(d, { recursive: true, force: true }) })
 
 describe('background task records (TAL-372)', () => {
-  it('survive a restart: a new store over the same directory reads the same records and results', () => {
+  it('survive a restart: a new store over the same directory reads the same records and results', async () => {
     const dir = tempDir()
     const changes: string[] = []
-    const first = new BackgroundTaskStore(dir, () => 100, (sid) => { changes.push(sid) })
-    first.update('sess-1', [{ task_id: 'bg1', kind: 'background_command', status: 'running', title: 'summarize', started_at: 90 }])
-    first.update('sess-1', [{ task_id: 'bg1', kind: 'background_command', status: 'completed', result: 'the answer' }])
+    const first = new BackgroundTaskStore(testSessionDocuments(dir), () => 100, (sid) => { changes.push(sid) })
+    await first.update('sess-1', [{ task_id: 'bg1', kind: 'background_command', status: 'running', title: 'summarize', started_at: 90 }])
+    await first.update('sess-1', [{ task_id: 'bg1', kind: 'background_command', status: 'completed', result: 'the answer' }])
     expect(changes).toEqual(['sess-1', 'sess-1'])
-    const restarted = new BackgroundTaskStore(dir, () => 200)
-    expect(restarted.list('sess-1').map((r) => taskView(r))).toEqual([expect.objectContaining({ task_id: 'bg1', status: 'completed', title: 'summarize', completed_at: 100, result_available: true, pinned: true })])
-    expect(restarted.get('sess-1', 'bg1')?.result).toBe('the answer')
-    expect(restarted.list('other')).toEqual([])
+    const restarted = new BackgroundTaskStore(testSessionDocuments(dir), () => 200)
+    expect((await restarted.list('sess-1')).map((r) => taskView(r))).toEqual([expect.objectContaining({ task_id: 'bg1', status: 'completed', title: 'summarize', completed_at: 100, result_available: true, pinned: true })])
+    expect((await restarted.get('sess-1', 'bg1'))?.result).toBe('the answer')
+    expect((await restarted.list('other'))).toEqual([])
   })
 
   it('read a receipt an older server marked legacy_reported: it lists, dismisses and returns its result', async () => {
     const dir = tempDir()
     mkdirSync(join(dir, '_background'))
     writeFileSync(join(dir, '_background', 'sess-1.json'), JSON.stringify({ version: 1, tasks: [{ task_id: 'bg1', kind: 'background_command', status: 'completed', title: 'summarize', started_at: 90, updated_at: 100, completed_at: 100, exit_code: null, agents: null, result: 'the answer', agent_result: false, stream_id: null, dismissed_at: null, legacy_reported: true }] }))
-    const activity = new BackgroundActivity({ store: new BackgroundTaskStore(dir, () => 200), sidecar: () => null, profileHome: () => dir, liveStream: () => false, now: () => 200, log: () => undefined })
+    const activity = new BackgroundActivity({ store: new BackgroundTaskStore(testSessionDocuments(dir), () => 200), sidecar: () => null, profileHome: () => dir, liveStream: () => false, now: () => 200, log: () => undefined })
     expect((await activity.snapshot('sess-1', null)).tasks).toEqual([expect.objectContaining({ task_id: 'bg1', status: 'completed', result_available: true, pinned: true, dismissible: true })])
     expect(await activity.result('sess-1', null, 'bg1')).toBe('the answer')
-    expect(activity.dismiss('sess-1', 'bg1')).toMatchObject({ task_id: 'bg1', pinned: false, dismissible: false })
+    expect((await activity.dismiss('sess-1', 'bg1'))).toMatchObject({ task_id: 'bg1', pinned: false, dismissible: false })
     expect((await activity.snapshot('sess-1', null)).tasks).toEqual([expect.objectContaining({ task_id: 'bg1', pinned: false })])
   })
 
-  it('settle once: a later report never reopens or changes a finished record, and an unchanged report writes nothing', () => {
+  it('settle once: a later report never reopens or changes a finished record, and an unchanged report writes nothing', async () => {
     const changes: string[] = []
-    const store = new BackgroundTaskStore(tempDir(), () => 100, (sid) => { changes.push(sid) })
-    store.update('s', [{ task_id: 'd1', kind: 'delegation', status: 'running', title: 'Check logs' }])
-    store.update('s', [{ task_id: 'd1', kind: 'delegation', status: 'failed' }])
-    store.update('s', [{ task_id: 'd1', kind: 'delegation', status: 'running' }, { task_id: 'd1', kind: 'delegation', status: 'completed', result: 'late detail' }])
-    expect(store.list('s')).toEqual([expect.objectContaining({ task_id: 'd1', status: 'failed', result: 'late detail' })])
+    const store = new BackgroundTaskStore(testSessionDocuments(tempDir()), () => 100, (sid) => { changes.push(sid) })
+    await store.update('s', [{ task_id: 'd1', kind: 'delegation', status: 'running', title: 'Check logs' }])
+    await store.update('s', [{ task_id: 'd1', kind: 'delegation', status: 'failed' }])
+    await store.update('s', [{ task_id: 'd1', kind: 'delegation', status: 'running' }, { task_id: 'd1', kind: 'delegation', status: 'completed', result: 'late detail' }])
+    expect((await store.list('s'))).toEqual([expect.objectContaining({ task_id: 'd1', status: 'failed', result: 'late detail' })])
     const before = changes.length
-    expect(store.update('s', [{ task_id: 'd1', kind: 'delegation', status: 'completed' }])).toBe(false)
+    expect((await store.update('s', [{ task_id: 'd1', kind: 'delegation', status: 'completed' }]))).toBe(false)
     expect(changes).toHaveLength(before)
   })
 
@@ -52,58 +53,58 @@ describe('background task records (TAL-372)', () => {
     expect(eventReceipt({ type: 'watch_match', process_id: 'proc_w', command: 'tail log' }, '[IMPORTANT: matched]', 50)).toMatchObject({ kind: 'process', status: 'attention' })
   })
 
-  it('keep running work when pruning old history', () => {
+  it('keep running work when pruning old history', async () => {
     let clock = 0
-    const store = new BackgroundTaskStore(tempDir(), () => ++clock)
-    store.update('s', [{ task_id: 'live', kind: 'process', status: 'running', title: 'server' }])
-    for (let i = 0; i < 205; i++) store.update('s', [{ task_id: `p${i}`, kind: 'process', status: 'completed', title: 'x' }], { notify: false })
-    const ids = store.list('s').map((r) => r.task_id)
+    const store = new BackgroundTaskStore(testSessionDocuments(tempDir()), () => ++clock)
+    await store.update('s', [{ task_id: 'live', kind: 'process', status: 'running', title: 'server' }])
+    for (let i = 0; i < 205; i++) (await store.update('s', [{ task_id: `p${i}`, kind: 'process', status: 'completed', title: 'x' }], { notify: false }))
+    const ids = (await store.list('s')).map((r) => r.task_id)
     expect(ids).toContain('live')
     expect(ids).toHaveLength(201)
     expect(ids).not.toContain('p0')
   })
 
-  it('link a delegation row to its units by the call id, even when the result is clipped before the units list', () => {
+  it('link a delegation row to its units by the call id, even when the result is clipped before the units list', async () => {
     const clipped = '{"status": "dispatched", "mode": "background", "count": 3, "delegation_id": "call-1", "goals": ["Docs", "Tes'
     expect(dispatchedDelegationIds(clipped)).toEqual(['call-1'])
     expect(dispatchedDelegationIds('{"status": "completed", "delegation_id": "x"}')).toEqual([])
-    const store = new BackgroundTaskStore(tempDir(), () => 1)
-    store.update('s', [{ task_id: 'call-1-1', kind: 'delegation', status: 'attention', agents: { total: 1, completed: 0, failed: 0, running: 1 } }, { task_id: 'call-10', kind: 'delegation', status: 'running' }])
-    expect(backgroundLink(['call-1'], store.list('s'))).toEqual({ task_ids: ['call-1-1'], status: 'attention', agents: { total: 1, completed: 0, failed: 0, running: 1 } })
+    const store = new BackgroundTaskStore(testSessionDocuments(tempDir()), () => 1)
+    await store.update('s', [{ task_id: 'call-1-1', kind: 'delegation', status: 'attention', agents: { total: 1, completed: 0, failed: 0, running: 1 } }, { task_id: 'call-10', kind: 'delegation', status: 'running' }])
+    expect(backgroundLink(['call-1'], (await store.list('s')))).toEqual({ task_ids: ['call-1-1'], status: 'attention', agents: { total: 1, completed: 0, failed: 0, running: 1 } })
   })
 
-  it('let anyone dismiss work nobody can confirm, which then leaves the card until it is confirmed running again', () => {
-    const store = new BackgroundTaskStore(tempDir(), () => 5)
-    store.update('s', [{ task_id: 'proc_lost', kind: 'process', status: 'running', title: 'server' }])
-    const lost = store.get('s', 'proc_lost')!
+  it('let anyone dismiss work nobody can confirm, which then leaves the card until it is confirmed running again', async () => {
+    const store = new BackgroundTaskStore(testSessionDocuments(tempDir()), () => 5)
+    await store.update('s', [{ task_id: 'proc_lost', kind: 'process', status: 'running', title: 'server' }])
+    const lost = (await store.get('s', 'proc_lost'))!
     expect(taskView(lost, { unconfirmed: true })).toMatchObject({ status: 'unknown', pinned: true, dismissible: true })
-    const dismissed = store.mark('s', 'proc_lost', { dismissed_at: 6 })!
+    const dismissed = (await store.mark('s', 'proc_lost', { dismissed_at: 6 }))!
     expect(taskView(dismissed, { unconfirmed: true })).toMatchObject({ status: 'unknown', pinned: false, dismissible: false, active: false })
     expect(taskView(dismissed)).toMatchObject({ status: 'running', pinned: true, dismissible: false })
   })
 
-  it('keep a matched watch in attention while the process runs, and clear a recovered agent stall', () => {
-    const store = new BackgroundTaskStore(tempDir(), () => 1)
-    store.update('s', [{ task_id: 'proc_w', kind: 'process', status: 'running', title: 'tail log' }])
-    store.update('s', [{ task_id: 'proc_w', kind: 'process', status: 'attention' }])
-    store.update('s', [{ task_id: 'proc_w', kind: 'process', status: 'running' }])
-    expect(store.get('s', 'proc_w')?.status).toBe('attention')
-    store.update('s', [{ task_id: 'proc_w', kind: 'process', status: 'completed' }])
-    expect(store.get('s', 'proc_w')?.status).toBe('completed')
-    store.update('s', [{ task_id: 'd1', kind: 'delegation', status: 'attention' }, { task_id: 'd1', kind: 'delegation', status: 'running' }])
-    expect(store.get('s', 'd1')?.status).toBe('running')
+  it('keep a matched watch in attention while the process runs, and clear a recovered agent stall', async () => {
+    const store = new BackgroundTaskStore(testSessionDocuments(tempDir()), () => 1)
+    await store.update('s', [{ task_id: 'proc_w', kind: 'process', status: 'running', title: 'tail log' }])
+    await store.update('s', [{ task_id: 'proc_w', kind: 'process', status: 'attention' }])
+    await store.update('s', [{ task_id: 'proc_w', kind: 'process', status: 'running' }])
+    expect((await store.get('s', 'proc_w'))?.status).toBe('attention')
+    await store.update('s', [{ task_id: 'proc_w', kind: 'process', status: 'completed' }])
+    expect((await store.get('s', 'proc_w'))?.status).toBe('completed')
+    await store.update('s', [{ task_id: 'd1', kind: 'delegation', status: 'attention' }, { task_id: 'd1', kind: 'delegation', status: 'running' }])
+    expect((await store.get('s', 'd1'))?.status).toBe('running')
   })
 
-  it('keep the child sessions a delegation ran once seen, through completion and a restart, exposing only safe ids (TAL-494)', () => {
+  it('keep the child sessions a delegation ran once seen, through completion and a restart, exposing only safe ids (TAL-494)', async () => {
     const dir = tempDir()
-    const store = new BackgroundTaskStore(dir, () => 1)
-    store.update('s', [{ task_id: 'call-1-2', kind: 'delegation', status: 'running', children: [{ goal: 'Write tests', session_id: 'child-1' }] }])
+    const store = new BackgroundTaskStore(testSessionDocuments(dir), () => 1)
+    await store.update('s', [{ task_id: 'call-1-2', kind: 'delegation', status: 'running', children: [{ goal: 'Write tests', session_id: 'child-1' }] }])
     // The Agent forgets a finished child's id: the completion and a later report name none, or only another one.
-    store.update('s', [{ task_id: 'call-1-2', kind: 'delegation', status: 'completed' }])
-    store.update('s', [{ task_id: 'call-1-2', kind: 'delegation', status: 'completed', children: [{ goal: 'Run tests', session_id: 'child-2' }, { goal: 'Write tests', session_id: 'child-1' }] }])
-    const restarted = new BackgroundTaskStore(dir, () => 2)
-    expect(taskView(restarted.get('s', 'call-1-2')!).child_sessions).toEqual([{ goal: 'Write tests', session_id: 'child-1' }, { goal: 'Run tests', session_id: 'child-2' }])
-    restarted.update('s', [{ task_id: 'bad', kind: 'delegation', status: 'running', children: [{ goal: 'x', session_id: '../etc' }] }])
-    expect(taskView(restarted.get('s', 'bad')!).child_sessions).toEqual([])
+    await store.update('s', [{ task_id: 'call-1-2', kind: 'delegation', status: 'completed' }])
+    await store.update('s', [{ task_id: 'call-1-2', kind: 'delegation', status: 'completed', children: [{ goal: 'Run tests', session_id: 'child-2' }, { goal: 'Write tests', session_id: 'child-1' }] }])
+    const restarted = new BackgroundTaskStore(testSessionDocuments(dir), () => 2)
+    expect(taskView((await restarted.get('s', 'call-1-2'))!).child_sessions).toEqual([{ goal: 'Write tests', session_id: 'child-1' }, { goal: 'Run tests', session_id: 'child-2' }])
+    await restarted.update('s', [{ task_id: 'bad', kind: 'delegation', status: 'running', children: [{ goal: 'x', session_id: '../etc' }] }])
+    expect(taskView((await restarted.get('s', 'bad'))!).child_sessions).toEqual([])
   })
 })

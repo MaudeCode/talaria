@@ -116,7 +116,7 @@ describe('Agent v0.22.1 receipt-backed local reset', () => {
     db.close(); path = join(server.state, 'state.db'); db = new DatabaseSync(path); load(stage)
     await server.deps.settings.save({ show_cli_sessions: true })
     server.deps.cliSessions.invalidate()
-    await server.deps.sessionStore.save(new Session({ session_id: fixture.owner, profile: 'default', source_tag: 'cli', messages: [{ role: 'user', content: 'stale sidecar context' }, { role: 'assistant', content: 'old reply' }, { role: 'user', content: 'another old turn' }] }, server.deps.sessionStore.deps.defaults('default')))
+    await server.deps.sessionStore.save(new Session({ session_id: fixture.owner, profile: 'default', source_tag: 'cli', messages: [{ role: 'user', content: 'stale sidecar context' }, { role: 'assistant', content: 'old reply' }, { role: 'user', content: 'another old turn' }] }, (await server.deps.sessionStore.deps.defaults('default'))))
     const list = await (await server.get('/api/sessions')).json() as { sessions: Record<string, unknown>[]; cli_session_count: number }
     expect(list.sessions.map((r) => r.session_id)).toEqual(fixture.snapshots[stage].listedIds)
     expect(list.cli_session_count).toBe(1)
@@ -140,7 +140,7 @@ describe('Agent v0.22.1 receipt-backed local reset', () => {
     const server = await bootTestServer({ sidecar })
     onTestFinished(async () => { await server.close() })
     db.close(); path = join(server.state, 'state.db'); db = new DatabaseSync(path); load('multiple')
-    if (persisted) (await server.deps.sessionStore.save(new Session({ session_id: fixture.owner, profile: 'default', source_tag: 'cli', messages: [{ role: 'user', content: 'stale sidecar context' }, { role: 'assistant', content: 'old reply' }, { role: 'user', content: 'another old turn' }] }, server.deps.sessionStore.deps.defaults('default'))))
+    if (persisted) (await server.deps.sessionStore.save(new Session({ session_id: fixture.owner, profile: 'default', source_tag: 'cli', messages: [{ role: 'user', content: 'stale sidecar context' }, { role: 'assistant', content: 'old reply' }, { role: 'user', content: 'another old turn' }] }, (await server.deps.sessionStore.deps.defaults('default')))))
     const before = db.prepare('SELECT * FROM messages').all()
     for (const row of fixture.snapshots.multiple.sessions) {
       const response = await server.get('/api/chat/start', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ session_id: row.id, message: 'continue after reset' }) })
@@ -160,7 +160,7 @@ describe('Agent v0.22.1 receipt-backed local reset', () => {
       const current = row.id === 'reset-empty'
       ;(await server.deps.sessionStore.save(new Session({ session_id: row.id, profile: 'default', source_tag: 'cli', title: current ? 'Current saved title' : 'Old saved title', pinned: current,
         messages: current ? [{ role: 'user', content: 'latest context' }] : [{ role: 'user', content: 'old first' }, { role: 'assistant', content: 'old answer' }, { role: 'user', content: 'old second' }],
-      }, server.deps.sessionStore.deps.defaults('default'))))
+      }, (await server.deps.sessionStore.deps.defaults('default')))))
     }
     server.deps.cliSessions.invalidate()
     const list = await (await server.get('/api/sessions')).json() as { sessions: Record<string, unknown>[]; cli_session_count: number }
@@ -176,7 +176,7 @@ describe('Agent v0.22.1 receipt-backed local reset', () => {
     onTestFinished(async () => { await server.close() })
     db.close(); path = join(server.state, 'state.db'); db = new DatabaseSync(path); load('multiple')
     const ids = fixture.snapshots.multiple.sessions.map((row) => row.id)
-    const save = async (id: string) => { (await server.deps.sessionStore.save(new Session({ session_id: id, profile: 'default', source_tag: 'cli', messages: [{ role: 'user', content: 'first old turn' }, { role: 'assistant', content: 'old answer' }, { role: 'user', content: 'second old turn' }] }, server.deps.sessionStore.deps.defaults('default')))) }
+    const save = async (id: string) => { (await server.deps.sessionStore.save(new Session({ session_id: id, profile: 'default', source_tag: 'cli', messages: [{ role: 'user', content: 'first old turn' }, { role: 'assistant', content: 'old answer' }, { role: 'user', content: 'second old turn' }] }, (await server.deps.sessionStore.deps.defaults('default'))))) }
     for (const id of persisted === 'all' ? ids : [fixture.owner]) (await save(id))
     sidecar.respond('state_db.delete_cli_session', async () => {
       if (persisted === 'late-tip') (await save('late-tip'))
@@ -200,7 +200,7 @@ describe('Agent v0.22.1 receipt-backed local reset', () => {
       db.prepare('INSERT INTO messages (id, session_id, role, content, timestamp) VALUES (?, ?, ?, ?, ?)').run(100 + i, id, 'user', 'recent prompt', 3_000_000_001 + i)
     }
     const saved = { title: 'User saved title', pinned: true, archived: true, project_id: 'saved-project' }
-    await server.deps.sessionStore.save(new Session({ session_id: fixture.owner, profile: 'default', source_tag: 'cli', ...saved, messages: [{ role: 'user', content: 'old prompt' }] }, server.deps.sessionStore.deps.defaults('default')))
+    await server.deps.sessionStore.save(new Session({ session_id: fixture.owner, profile: 'default', source_tag: 'cli', ...saved, messages: [{ role: 'user', content: 'old prompt' }] }, (await server.deps.sessionStore.deps.defaults('default'))))
     await server.deps.settings.save({ show_cli_sessions: true })
     server.deps.cliSessions.invalidate()
     const response = await server.get(`/api/session?session_id=${fixture.owner}`)
@@ -243,7 +243,7 @@ describe('Agent v0.22.1 receipt-backed local reset', () => {
     onTestFinished(async () => { await server.close() })
     db.close(); path = join(server.state, 'state.db'); db = new DatabaseSync(path); load('multiple')
     for (const [id, profile] of [[fixture.owner, 'default'], ['reset-empty', 'other']] as const) {
-      await server.deps.sessionStore.save(new Session({ session_id: id, profile, source_tag: 'cli', title: profile, messages: [{ role: 'user', content: 'synthetic profile history' }] }, server.deps.sessionStore.deps.defaults(profile)))
+      await server.deps.sessionStore.save(new Session({ session_id: id, profile, source_tag: 'cli', title: profile, messages: [{ role: 'user', content: 'synthetic profile history' }] }, (await server.deps.sessionStore.deps.defaults(profile))))
     }
     const response = await server.get('/api/session/update', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ session_id: fixture.owner }) })
     expect(response.status, await response.text()).toBe(404)
@@ -260,7 +260,7 @@ describe('Agent v0.22.1 receipt-backed local reset', () => {
       db.prepare('INSERT INTO sessions (id, source, title, started_at, message_count) VALUES (?, ?, ?, ?, ?)').run(id, 'cli', id, 5000 + i, 1)
       db.prepare('INSERT INTO messages (id, session_id, role, content, timestamp) VALUES (?, ?, ?, ?, ?)').run(100 + i, id, 'user', 'recent prompt', 5001 + i)
     }
-    await server.deps.sessionStore.save(new Session({ session_id: fixture.owner, profile: 'default', source_tag: 'cli', title: 'Saved outside conversation', messages: [{ role: 'user', content: 'old first' }, { role: 'assistant', content: 'old answer' }, { role: 'user', content: 'old second' }] }, server.deps.sessionStore.deps.defaults('default')))
+    await server.deps.sessionStore.save(new Session({ session_id: fixture.owner, profile: 'default', source_tag: 'cli', title: 'Saved outside conversation', messages: [{ role: 'user', content: 'old first' }, { role: 'assistant', content: 'old answer' }, { role: 'user', content: 'old second' }] }, (await server.deps.sessionStore.deps.defaults('default'))))
     await server.deps.settings.save({ show_cli_sessions: true })
     server.deps.cliSessions.invalidate()
     const list = await (await server.get('/api/sessions')).json() as { sessions: Record<string, unknown>[] }

@@ -1,4 +1,5 @@
-import { join } from 'node:path'
+import { testSessionDocuments } from '../test/storage.js'
+import { JsonDocuments } from '../test/storage.js'
 import { sessionDirectory, sessionPath } from '../test/storage.js'
 import { readFileSync } from 'node:fs'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
@@ -27,12 +28,12 @@ describe('process heartbeats (TAL-790)', () => {
     await s.deps.sessionStore.save(session)
     const registry = new StreamRegistry()
     const events: string[] = [], prompts: string[] = [], consumed: string[] = []
-    const receipts = new BackgroundTaskStore(sessionDirectory(s.deps.sessionStore), () => 100)
+    const receipts = new BackgroundTaskStore(testSessionDocuments(sessionDirectory(s.deps.sessionStore)), () => 100)
     const activity = new BackgroundActivity({ store: receipts, sidecar: () => sidecar, profileHome: () => s.state, liveStream: () => false, now: () => 100, log: () => undefined })
     sidecar.respond('process.format_notification', ({ event }) => ({ text: agentText(event) }))
     sidecar.respond('process.mark_consumed', ({ process_id }) => { consumed.push(process_id); return { ok: true } })
     sidecar.respond('process.consumed', ({ process_ids }) => ({ consumed: process_ids }))
-    const drain = new CompletionDrain({ heldWakeupsPath: join(s.state, 'sessions', '_wakeup_held.json'), sidecar: () => sidecar, baseHome: s.state, profileHome: () => s.state, activeProfile: () => 'default', store: s.deps.sessionStore,
+    const drain = new CompletionDrain({ documents: new JsonDocuments(s.state), sidecar: () => sidecar, baseHome: s.state, profileHome: () => s.state, activeProfile: () => 'default', store: s.deps.sessionStore,
       registry, channels: { emit: (_sid: string, name: string) => { events.push(name); return 1 } } as unknown as SessionChannels,
       background: activity, startTurn: (_session, prompt) => { prompts.push(prompt); return { stream_id: `wake-${prompts.length}` } }, now: () => 100, log: () => undefined })
     return { sid, session, registry, events, prompts, consumed, receipts, drain }
@@ -44,8 +45,8 @@ describe('process heartbeats (TAL-790)', () => {
       for (const seq of [1, 2]) {
         const evt = heartbeat(sid, seq)
         expect(await drain.processOne(evt)).toBe(true)
-        expect(taskView(receipts.get(sid, 'proc_beat')!)).toMatchObject({ status: 'running', completed_at: null, result_available: false })
-        expect(receipts.get(sid, 'proc_beat')?.result).toContain(`test ${seq} passed`)
+        expect(taskView((await receipts.get(sid, 'proc_beat'))!)).toMatchObject({ status: 'running', completed_at: null, result_available: false })
+        expect((await receipts.get(sid, 'proc_beat'))?.result).toContain(`test ${seq} passed`)
         expect(prompts).toHaveLength(seq)
         expect(prompts[seq - 1]).toBe(agentText(evt))
         expect(events).toEqual([])
@@ -53,8 +54,8 @@ describe('process heartbeats (TAL-790)', () => {
         expect(eventUpdate(evt)).toEqual({ kind: 'process', attention: false })
       }
       await drain.processOne({ ...heartbeat(sid), type: 'completion', exit_code: 0, output: 'all tests passed' })
-      expect(taskView(receipts.get(sid, 'proc_beat')!)).toMatchObject({ status: 'completed', result_available: true, completed_at: 100 })
-      expect(receipts.get(sid, 'proc_beat')?.result).toContain('all tests passed')
+      expect(taskView((await receipts.get(sid, 'proc_beat'))!)).toMatchObject({ status: 'completed', result_available: true, completed_at: 100 })
+      expect((await receipts.get(sid, 'proc_beat'))?.result).toContain('all tests passed')
       expect(events).toEqual(['bg_task_complete', 'process_complete'])
       expect(consumed).toEqual(['proc_beat'])
       expect(prompts).toHaveLength(3)
@@ -105,13 +106,13 @@ describe('process heartbeats (TAL-790)', () => {
       expect(batchUpdate([{ event: beat, prompt: agentText(beat) }])).toMatchObject({ display_kind: 'hidden', attention: false })
       expect(batchUpdate([{ event: beat, prompt: agentText(beat) }, { event: { type: 'completion', exit_code: 1 }, prompt: 'failed' }])).not.toHaveProperty('display_kind')
       await drain.processOne({ ...beat, type: 'watch_match', pattern: 'error', output: 'error found' })
-      const alert = receipts.get(sid, 'proc_beat')?.result
+      const alert = (await receipts.get(sid, 'proc_beat'))?.result
       expect(alert).toContain('error found')
       await drain.processOne(beat)
-      expect(receipts.get(sid, 'proc_beat')).toMatchObject({ status: 'attention', result: alert })
+      expect((await receipts.get(sid, 'proc_beat'))).toMatchObject({ status: 'attention', result: alert })
       await drain.processOne({ ...beat, type: 'completion', exit_code: 1, output: 'tests failed' })
-      expect(receipts.get(sid, 'proc_beat')?.status).toBe('failed')
-      expect(receipts.get(sid, 'proc_beat')?.result).toContain('tests failed')
+      expect((await receipts.get(sid, 'proc_beat'))?.status).toBe('failed')
+      expect((await receipts.get(sid, 'proc_beat'))?.result).toContain('tests failed')
     } finally { drain.stop() }
   })
 
@@ -120,7 +121,7 @@ describe('process heartbeats (TAL-790)', () => {
     sidecar.respond('process.format_notification', () => ({ text: '' }))
     try {
       await drain.processOne(heartbeat(sid))
-      expect(receipts.get(sid, 'proc_beat')).toMatchObject({ status: 'running', result: 'test 1 passed' })
+      expect((await receipts.get(sid, 'proc_beat'))).toMatchObject({ status: 'running', result: 'test 1 passed' })
       expect(events).toEqual([])
       expect(prompts).toEqual([])
     } finally { drain.stop() }

@@ -1,7 +1,11 @@
+import { testSessionDocuments } from '../test/storage.js'
+import { jsonJournal } from '../test/storage.js'
+import { JsonJournal } from './storage/json-journal.js'
+import { JsonDocuments } from '../test/storage.js'
 import { sessionPath, sessionDirectory } from '../test/storage.js'
 import { appendFileSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, statSync, utimesSync, writeFileSync, existsSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { dirname, join } from 'node:path'
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
 import { SIDECAR_RPC_VERSION, type RuntimeDescribe, type SidecarResult } from '@maudecode/talaria-web-contracts'
 import { FakeSidecar } from '../sidecar/fake.js'
@@ -12,7 +16,6 @@ import { nextSessionItem, StreamRegistry, type SessionChannels } from './streams
 import { HygieneTicker, rotateWebuiLog, webuiLogPaths } from '../tools/hygiene.js'
 import { configFingerprint, McpHealthProber, probeServer } from '../tools/mcp-health.js'
 import { agentHealth, processStartTime, remoteGatewayBaseUrl, runtimeStatusIsFresh } from '../tools/health.js'
-import { RunJournal } from './journal.js'
 import { str } from '../util.js'
 import { withBackgroundUpdates, batchUpdate, recordBackgroundUpdate } from './background-updates.js'
 import { HeldWakeups } from './wakeup-pause.js'
@@ -128,7 +131,7 @@ describe('async delegation delivery claims (TAL-459)', () => {
     sidecar.respond('process.defer_delivery', (params) => { state.calls.push(`defer ${str((params.event as Json).delegation_id)}`); return { ok: true } })
     return state
   }
-  const drainWith = (startTurn: (prompt: string) => { _status?: number; stream_id?: string }): CompletionDrain => new CompletionDrain({ heldWakeupsPath: join(s.state, 'sessions', '_wakeup_held.json'),
+  const drainWith = (startTurn: (prompt: string) => { _status?: number; stream_id?: string }): CompletionDrain => new CompletionDrain({ documents: new JsonDocuments(s.state),
     sidecar: () => sidecar, baseHome: s.state, profileHome: () => s.state, activeProfile: () => 'default', store: s.deps.sessionStore, channels: s.deps.channels, registry: s.deps.registry,
     startTurn: (_session, prompt) => startTurn(prompt), now: () => Date.now() / 1000, log: () => undefined,
   })
@@ -141,7 +144,7 @@ describe('async delegation delivery claims (TAL-459)', () => {
     fresh.respond('process.recover', () => { if (failures-- > 0) throw new Error('busy'); return { homes: 2 } })
     const logged: string[] = []
     fresh.respond('process.drain', () => ({ events: [] }))
-    const drain = new CompletionDrain({ heldWakeupsPath: join(s.state, 'sessions', '_wakeup_held.json'),
+    const drain = new CompletionDrain({ documents: new JsonDocuments(s.state),
       sidecar: () => fresh, baseHome: '/base', profileHome: () => '/base/profiles/work', activeProfile: () => 'work', store: s.deps.sessionStore, channels: s.deps.channels,
       registry: s.deps.registry, startTurn: () => ({}), now: () => 0, log: (line) => { logged.push(line) },
     })
@@ -159,7 +162,7 @@ describe('async delegation delivery claims (TAL-459)', () => {
     let drains = 0
     fresh.respond('process.drain', () => { drains += 1; throw new Error('background process recovery failed for /base') })
     const logged: string[] = []
-    const drain = new CompletionDrain({ heldWakeupsPath: join(s.state, 'sessions', '_wakeup_held.json'),
+    const drain = new CompletionDrain({ documents: new JsonDocuments(s.state),
       sidecar: () => fresh, baseHome: '/base', profileHome: () => '/base', activeProfile: () => 'default', store: s.deps.sessionStore, channels: s.deps.channels,
       registry: s.deps.registry, startTurn: () => ({}), now: () => 0, log: (line) => { logged.push(line) }, pollMs: 5,
     })
@@ -202,7 +205,7 @@ describe('async delegation delivery claims (TAL-459)', () => {
     const delivered = new Set<string>()
     sidecar.respond('process.claim_delivery', (params) => { homes.push(`claim ${str(params.profile_home)}`); return { claim_id: params.profile_home === '/homes/b' ? 'claim-b' : '' } })
     sidecar.respond('process.complete_delivery', (params) => { homes.push(`complete ${str(params.profile_home)}`); if (params.profile_home === '/homes/b') delivered.add(str((params.event as Json).delegation_id)); return { ok: true } })
-    const drain = new CompletionDrain({ heldWakeupsPath: join(s.state, 'sessions', '_wakeup_held.json'),
+    const drain = new CompletionDrain({ documents: new JsonDocuments(s.state),
       sidecar: () => sidecar, baseHome: '/homes', profileHome: (profile) => `/homes/${profile ?? 'default'}`, activeProfile: () => 'a', store: s.deps.sessionStore, channels: s.deps.channels, registry: s.deps.registry,
       startTurn: () => ({ stream_id: 'run' }), now: () => Date.now() / 1000, log: () => undefined,
     })
@@ -243,7 +246,7 @@ describe('async delegation delivery claims (TAL-459)', () => {
     const channels = { emit: (_sid: string, name: string, payload: Json) => { if (name === 'bg_task_complete') notified.push(str(payload.task_id)); return 1 } } as unknown as SessionChannels
     // Each emit is past the coalescing window, so every notification surfaces at once and can be counted.
     let clock = 0
-    const drain = new CompletionDrain({ heldWakeupsPath: join(s.state, 'sessions', '_wakeup_held.json'),
+    const drain = new CompletionDrain({ documents: new JsonDocuments(s.state),
       sidecar: () => sidecar, baseHome: s.state, profileHome: () => s.state, activeProfile: () => 'default', store: s.deps.sessionStore, channels, registry,
       startTurn: (_session, prompt) => startTurn(prompt), now: () => (clock += 5), log: () => undefined,
       background: { recordEvent: (_sid, evt) => { recorded.push(evt) } },
@@ -467,7 +470,7 @@ describe('process notifications follow the owning profile (TAL-933, TAL-907)', (
     sidecar.respond('process.mark_consumed', (params) => { consumed.push(str(params.process_id)); return { ok: true } })
     sidecar.respond('process.requeue', (params) => { requeued.push(...(params.events as Json[])); return { requeued: params.events.length } })
     const channels = { emit: (_sid: string, name: string, payload: Json) => { if (name === 'bg_task_complete') notified.push(str(payload.task_id)); return 1 } } as unknown as SessionChannels
-    const drain = new CompletionDrain({ heldWakeupsPath: join(s.state, 'sessions', '_wakeup_held.json'),
+    const drain = new CompletionDrain({ documents: new JsonDocuments(s.state),
       sidecar: () => sidecar, baseHome: opts.root ?? '/homes', profileHome: (profile) => `${opts.root ?? '/homes'}/${profile ?? 'default'}`, activeProfile: () => 'a', store: s.deps.sessionStore, channels, registry: s.deps.registry,
       readConfig: (home: string) => { const config = configs[home]; return config instanceof Error ? Promise.reject(config) : Promise.resolve(config ?? {}) }, env: opts.env ?? {},
       background: { recordEvent: (_sid, evt) => { recorded.push(str(evt.process_id)) } },
@@ -934,7 +937,7 @@ describe('wakeups pause while the credential pool is empty (TAL-576)', () => {
     expect(heldIds(sid)).toEqual([`${sid}_2`])
     writeFileSync(join(s.state, 'auth.json'), JSON.stringify({ credential_pool: { openrouter: [{ api_key: 'sk-a' }, { api_key: 'sk-b' }, { api_key: 'sk-c' }] } }))
     // The pause lifts but the turn is refused: the held copy stays on disk.
-    const refused = new CompletionDrain({ heldWakeupsPath: join(s.state, 'sessions', '_wakeup_held.json'),
+    const refused = new CompletionDrain({ documents: new JsonDocuments(s.state),
       sidecar: () => sidecar, baseHome: s.state, profileHome: () => s.state, activeProfile: () => 'default', store: s.deps.sessionStore, channels: s.deps.channels, registry: s.deps.registry,
       startTurn: () => ({ _status: 500, error: 'boom' }), now: () => Date.now() / 1000, log: () => undefined,
     })
@@ -951,7 +954,7 @@ describe('wakeups pause while the credential pool is empty (TAL-576)', () => {
     restarted.respond('process.recover', () => { throw new Error('unrecoverable checkpoint') })
     restarted.respond('process.drain', () => ({ events: [] }))
     restarted.respond('process.mark_consumed', () => ({ ok: true }))
-    const resumed = new CompletionDrain({ heldWakeupsPath: join(s.state, 'sessions', '_wakeup_held.json'),
+    const resumed = new CompletionDrain({ documents: new JsonDocuments(s.state),
       sidecar: () => restarted, baseHome: s.state, profileHome: () => s.state, activeProfile: () => 'default', store: s.deps.sessionStore, channels: s.deps.channels, registry: s.deps.registry,
       startTurn: (_session, prompt) => { prompts.push(prompt); return { stream_id: 'resumed' } }, now: () => Date.now() / 1000, log: () => undefined,
     })
@@ -1014,7 +1017,7 @@ describe('wakeups pause while the credential pool is empty (TAL-576)', () => {
     expect(heldIndex()).not.toContain(sid)
   })
 
-  const standalone = (startTurn: (prompt: string) => { _status?: number; stream_id?: string }): CompletionDrain => new CompletionDrain({ heldWakeupsPath: join(s.state, 'sessions', '_wakeup_held.json'),
+  const standalone = (startTurn: (prompt: string) => { _status?: number; stream_id?: string }): CompletionDrain => new CompletionDrain({ documents: new JsonDocuments(s.state),
     sidecar: () => sidecar, baseHome: s.state, profileHome: () => s.state, activeProfile: () => 'default', store: s.deps.sessionStore, channels: s.deps.channels, registry: s.deps.registry,
     startTurn: (_session, prompt) => startTurn(prompt), now: () => Date.now() / 1000, log: () => undefined,
   })
@@ -1127,19 +1130,19 @@ describe('hygiene tick', () => {
 
   it('prunes settled run journals past retention while keeping the newest three and live writers', async () => {
     const dir = join(process.env.TMPDIR ?? '/tmp', `talaria-journal-${String(process.pid)}-${String(Date.now())}`)
-    const journal = new RunJournal(dir)
+    const journal = new JsonJournal(dir)
     const now = Date.now() / 1000
     for (let i = 0; i < 5; i += 1) {
-      const w = journal.writer('sess1', `run${String(i)}`)
-      w.appendSseEvent('token', { text: 'hi' })
-      w.appendSseEvent('done', { session: {} })
-      w.appendSseEvent('stream_end', {})
-      w.close()
+      const w = (await journal.writer('sess1', `run${String(i)}`))
+      await w.appendSseEvent('token', { text: 'hi' })
+      await w.appendSseEvent('done', { session: {} })
+      await w.appendSseEvent('stream_end', {})
+      await w.close()
     }
-    const live = journal.writer('sess1', 'live')
-    live.appendSseEvent('done', { session: {} })
-    live.appendSseEvent('stream_end', {})
-    live.close()
+    const live = (await journal.writer('sess1', 'live'))
+    await live.appendSseEvent('done', { session: {} })
+    await live.appendSseEvent('stream_end', {})
+    await live.close()
     const dryRun = await journal.pruneSettled({ now: now + 30 * 86400, retentionSeconds: 14 * 86400, keepRecent: 3, dryRun: true })
     expect(dryRun).toMatchObject({ examined: 6, terminal: 6, pruned: 3 })
     // Files are brand new: nothing is older than the cutoff unless the clock says so.
@@ -1154,25 +1157,25 @@ describe('hygiene tick', () => {
     expect(summaries).toEqual(['run1', 'run2', 'run3'])
     const pruned = JSON.parse(readFileSync(join(dir, '_run_journal', 'sess1', `${summaries[0] ?? ''}.summary.json`), 'utf8')) as Json
     expect(pruned).toMatchObject({ journal_pruned: true, terminal: true, terminal_state: 'completed' })
-    expect(journal.latestRunSummary('sess1', summaries[0] ?? '')).toMatchObject({ journal_pruned: true })
+    expect((await journal.latestRunSummary('sess1', summaries[0] ?? ''))).toMatchObject({ journal_pruned: true })
   })
 })
 
 describe('run-journal retention sweep', () => {
   const DAY = 86400
   const old = Date.now() / 1000 - 30 * DAY
-  const writeRun = (journal: RunJournal, sid: string, runId: string, opts: { terminal?: boolean; bytes?: number; mtime?: number } = {}): string => {
-    const w = journal.writer(sid, runId)
-    w.appendSseEvent('token', { text: 'x'.repeat(opts.bytes ?? 2) })
-    if (opts.terminal ?? true) { w.appendSseEvent('done', { session: {} }); w.appendSseEvent('stream_end', {}) }
-    w.close()
+  const writeRun = async (journal: JsonJournal, sid: string, runId: string, opts: { terminal?: boolean; bytes?: number; mtime?: number } = {}): Promise<string> => {
+    const w = (await journal.writer(sid, runId))
+    await w.appendSseEvent('token', { text: 'x'.repeat(opts.bytes ?? 2) })
+    if (opts.terminal ?? true) { (await w.appendSseEvent('done', { session: {} })); (await w.appendSseEvent('stream_end', {})) }
+    await w.close()
     const path = journal.pathFor(sid, runId)
     utimesSync(path, opts.mtime ?? old, opts.mtime ?? old)
     return path
   }
   const tree = (dir: string): string[] => readdirSync(dir, { recursive: true, withFileTypes: true }).filter((d) => d.isFile()).map((d) => { const p = join(d.parentPath, d.name); return `${p}:${String(statSync(p).size)}:${String(statSync(p).mtimeMs)}` }).sort()
-  const ticker = (journal: RunJournal, clock: { now: number }, log: string[] = [], active = new Set<string>()) =>
-    new HygieneTicker({ env: {}, stateDir: journal.sessionDir, port: () => 0, journal, activeJournalPaths: () => active, now: () => clock.now, log: (line) => log.push(line) })
+  const ticker = (journal: JsonJournal, clock: { now: number }, log: string[] = []) =>
+    new HygieneTicker({ env: {}, stateDir: journal.sessionDir, port: () => 0, journal, now: () => clock.now, log: (line) => log.push(line) })
   const dirs: string[] = []
   const tempDir = (): string => { const dir = mkdtempSync(join(tmpdir(), 'talaria-retention-')); dirs.push(dir); return dir }
   afterAll(() => { for (const dir of dirs) rmSync(dir, { recursive: true, force: true }) })
@@ -1187,17 +1190,17 @@ describe('run-journal retention sweep', () => {
     // The sweep yields normally for its first units of work, then holds until HTTP has been answered.
     const { gate, release } = gated()
     try {
-      const journal = s.deps.journal
+      const journal = jsonJournal(s.deps.journal)
       // Terminal and nonterminal journals, a few with tails past the 4 MiB read bound.
       for (let i = 0; i < 40; i += 1) {
-        for (let r = 0; r < 5; r += 1) writeRun(journal, `sess${String(i)}`, `run${String(r)}`, { bytes: i < 2 ? 5 * 1024 * 1024 : 64 * 1024, mtime: old + r })
-        writeRun(journal, `sess${String(i)}`, 'open', { terminal: false, mtime: old - 1 })
+        for (let r = 0; r < 5; r += 1) (await writeRun(journal, `sess${String(i)}`, `run${String(r)}`, { bytes: i < 2 ? 5 * 1024 * 1024 : 64 * 1024, mtime: old + r }))
+        await writeRun(journal, `sess${String(i)}`, 'open', { terminal: false, mtime: old - 1 })
       }
       let reached!: () => void
       const midSweep = new Promise<void>((resolve) => { reached = resolve })
       let pauses = 0
       const prune = journal.pruneSettled.bind(journal)
-      journal.pruneSettled = (opts) => prune({ ...opts, pause: () => { pauses += 1; if (pauses < 20) return new Promise((resolve) => setImmediate(resolve)); reached(); return gate } })
+      journal.pruneSettled = async (opts) => (await prune({ ...opts, pause: () => { pauses += 1; if (pauses < 20) return new Promise((resolve) => setImmediate(resolve)); reached(); return gate } }))
       let settled = false
       const sweep = Promise.resolve(s.deps.hygiene.tick()).then(() => { settled = true })
       await Promise.race([midSweep, sweep])
@@ -1222,10 +1225,10 @@ describe('run-journal retention sweep', () => {
     const s = await bootTestServer()
     const { gate, release } = gated()
     try {
-      const journal = s.deps.journal
-      for (let r = 0; r < 5; r += 1) writeRun(journal, 'sess', `run${String(r)}`, { mtime: old + r })
+      const journal = jsonJournal(s.deps.journal)
+      for (let r = 0; r < 5; r += 1) (await writeRun(journal, 'sess', `run${String(r)}`, { mtime: old + r }))
       const prune = journal.pruneSettled.bind(journal)
-      journal.pruneSettled = (opts) => prune({ ...opts, pause: () => gate })
+      journal.pruneSettled = async (opts) => (await prune({ ...opts, pause: () => gate }))
       void s.deps.hygiene.tick()
       const before = tree(s.state)
       // The server's own close (the harness close also deletes the state dir).
@@ -1243,8 +1246,8 @@ describe('run-journal retention sweep', () => {
   })
 
   it('runs one sweep at a time, recovers after a failure, and stops on shutdown', async () => {
-    const journal = new RunJournal(tempDir())
-    for (let r = 0; r < 5; r += 1) writeRun(journal, 'sess', `run${String(r)}`, { mtime: old + r })
+    const journal = new JsonJournal(tempDir())
+    for (let r = 0; r < 5; r += 1) (await writeRun(journal, 'sess', `run${String(r)}`, { mtime: old + r }))
     const clock = { now: Date.now() / 1000 }
     const log: string[] = []
     const t = ticker(journal, clock, log)
@@ -1255,7 +1258,7 @@ describe('run-journal retention sweep', () => {
     expect(log.at(-1)).toBe('[webui] WARNING: run-journal retention failed: disk gone')
     // A failed sweep releases its slot: the next interval runs a real one.
     let { gate, release } = gated()
-    journal.pruneSettled = (opts) => { calls += 1; return prune({ ...opts, pause: () => gate }) }
+    journal.pruneSettled = async (opts) => { calls += 1; return (await prune({ ...opts, pause: () => gate })) }
     clock.now += 6 * 3600
     const first = t.tick()
     expect(t.tick()).toBe(first)
@@ -1264,7 +1267,7 @@ describe('run-journal retention sweep', () => {
     await first
     expect(log.at(-1)).toMatch(/^\[webui\] run-journal retention pruned 2 files/)
     // Stop aborts the in-flight sweep at its next yield and prevents later sweeps.
-    for (let r = 5; r < 8; r += 1) writeRun(journal, 'sess', `run${String(r)}`, { mtime: old + r })
+    for (let r = 5; r < 8; r += 1) (await writeRun(journal, 'sess', `run${String(r)}`, { mtime: old + r }))
     ;({ gate, release } = gated())
     clock.now += 6 * 3600
     const stopped = t.tick()
@@ -1281,13 +1284,13 @@ describe('run-journal retention sweep', () => {
   })
 
   it('drains asynchronous hygiene sweeps on stop and logs their failures', async () => {
-    const journal = new RunJournal(tempDir())
+    const journal = new JsonJournal(tempDir())
     const log: string[] = []
     let reject!: (error: Error) => void
     const gate = new Promise<void>((_, fail) => { reject = fail })
     void gate.catch(() => { /* the baseline ticker discards this promise */ })
     let calls = 0
-    const ticker = new HygieneTicker({ env: {}, stateDir: journal.sessionDir, port: () => 0, journal, activeJournalPaths: () => new Set(), now: () => 1000, log: (line) => { log.push(line) }, sweeps: [() => { calls += 1; return gate }] })
+    const ticker = new HygieneTicker({ env: {}, stateDir: journal.sessionDir, port: () => 0, journal, now: () => 1000, log: (line) => { log.push(line) }, sweeps: [() => { calls += 1; return gate }] })
     try {
       const first = ticker.tick()
       await new Promise<void>((resolve) => setImmediate(resolve))
@@ -1306,8 +1309,8 @@ describe('run-journal retention sweep', () => {
   })
 
   it('never compacts a journal that gains a writer or changes while the sweep yields', async () => {
-    const journal = new RunJournal(tempDir())
-    const paths = ['run0', 'run1', 'run2', 'run3', 'run4', 'run5'].map((r, i) => writeRun(journal, 'sess', r, { mtime: old + i }))
+    const journal = new JsonJournal(tempDir())
+    const paths = await Promise.all(['run0', 'run1', 'run2', 'run3', 'run4', 'run5'].map(async (r, i) => (await writeRun(journal, 'sess', r, { mtime: old + i }))))
     const [activated, appended, replaced, racing, pruned] = paths as [string, string, string, string, string]
     const active = new Set<string>()
     // The racing journal already has a summary; rolling back restores it.
@@ -1343,8 +1346,8 @@ describe('run-journal retention sweep', () => {
   })
 
   it('stops during the metadata pass before parsing any journal', async () => {
-    const journal = new RunJournal(tempDir())
-    for (let r = 0; r < 6; r += 1) writeRun(journal, 'sess', `run${String(r)}`, { mtime: old + r })
+    const journal = new JsonJournal(tempDir())
+    for (let r = 0; r < 6; r += 1) (await writeRun(journal, 'sess', `run${String(r)}`, { mtime: old + r }))
     const controller = new AbortController()
     // The abort lands on the next loop turn, while the sweep is listing and stat-ing the session's journals.
     const result = await journal.pruneSettled({ now: Date.now() / 1000, retentionSeconds: 14 * DAY, keepRecent: 1, signal: controller.signal, pause: () => { setImmediate(() => { controller.abort() }); return Promise.resolve() } })
@@ -1353,21 +1356,21 @@ describe('run-journal retention sweep', () => {
 
   it('keeps nonterminal and recent journals, writes faithful summaries, and leaves dry runs and disabled retention untouched', async () => {
     const dir = tempDir()
-    const journal = new RunJournal(dir)
+    const journal = new JsonJournal(dir)
     const now = Date.now() / 1000
-    writeRun(journal, 'sess', 'a', { mtime: old })
-    writeRun(journal, 'sess', 'b', { mtime: old })
-    writeRun(journal, 'sess', 'c', { mtime: old })
-    const live = writeRun(journal, 'sess', 'live', { terminal: false, mtime: old - DAY })
+    await writeRun(journal, 'sess', 'a', { mtime: old })
+    await writeRun(journal, 'sess', 'b', { mtime: old })
+    await writeRun(journal, 'sess', 'c', { mtime: old })
+    const live = (await writeRun(journal, 'sess', 'live', { terminal: false, mtime: old - DAY }))
     appendFileSync(journal.pathFor('sess', 'a'), '{not json\n')
     utimesSync(journal.pathFor('sess', 'a'), old, old)
-    writeRun(journal, 'small', 'only', { mtime: old })
+    await writeRun(journal, 'small', 'only', { mtime: old })
     const before = tree(dir)
-    expect(await new RunJournal(dir, { HERMES_WEBUI_RUN_JOURNAL_RETENTION_DAYS: '0' }).pruneSettled({ now })).toEqual({ examined: 0, terminal: 0, pruned: 0, bytes_reclaimed: 0 })
+    expect(await new JsonJournal(dir, { HERMES_WEBUI_RUN_JOURNAL_RETENTION_DAYS: '0' }).pruneSettled({ now })).toEqual({ examined: 0, terminal: 0, pruned: 0, bytes_reclaimed: 0 })
     const dry = await journal.pruneSettled({ now, keepRecent: 1, dryRun: true })
     expect(dry).toMatchObject({ examined: 5, terminal: 3, pruned: 2 })
     expect(tree(dir)).toEqual(before)
-    const expected = RunJournal.summaryFromEvents('sess', 'a', journal.readRunEvents('sess', 'a'))
+    const expected = JsonJournal.summaryFromEvents('sess', 'a', (await journal.readRunEvents('sess', 'a')))
     expect(await journal.pruneSettled({ now, keepRecent: 1 })).toMatchObject({ pruned: 2 })
     // Equal mtimes keep the path that sorts last; the nonterminal journal and a session under the keep count stay.
     expect(['a', 'b', 'c', 'live'].map((r) => existsSync(journal.pathFor('sess', r)))).toEqual([false, false, true, true])
@@ -1376,7 +1379,7 @@ describe('run-journal retention sweep', () => {
     const summary = JSON.parse(readFileSync(join(dir, '_run_journal', 'sess', 'a.summary.json'), 'utf8')) as Json
     expect(summary).toMatchObject({ ...expected, journal_pruned: true, journal_pruned_at: now })
     expect(summary.original_mtime).toBeCloseTo(old, 3)
-    expect(journal.latestRunSummary('sess', 'a')).toMatchObject({ journal_pruned: true, terminal_state: 'completed' })
+    expect((await journal.latestRunSummary('sess', 'a'))).toMatchObject({ journal_pruned: true, terminal_state: 'completed' })
   })
 })
 
@@ -1853,7 +1856,7 @@ describe('durable parent admission for delivered delegation notifications (TAL-1
         restore = () => { spy.mockRestore() }
       }
       let starts = 0
-      drain = new CompletionDrain({ heldWakeupsPath: join(s.state, 'sessions', '_wakeup_held.json'), sidecar: () => sidecar, baseHome: s.state, profileHome: () => s.state, activeProfile: () => 'default', store: s.deps.sessionStore,
+      drain = new CompletionDrain({ documents: new JsonDocuments(s.state), sidecar: () => sidecar, baseHome: s.state, profileHome: () => s.state, activeProfile: () => 'default', store: s.deps.sessionStore,
         channels: s.deps.channels, registry: s.deps.registry, startTurn: () => { starts += 1; return { stream_id: 'retry-admitted' } }, now: () => Date.now() / 1000, log: () => undefined })
       vi.useFakeTimers()
       const routed = await drain.drainOnce()
@@ -1890,7 +1893,7 @@ it('does not show Waiting when only a held delivery acknowledgement remains (TAL
     recordBackgroundUpdate(session, turn, update)
     recordBackgroundUpdate(session, `delegation:${delegation}`, update)
     await server.deps.sessionStore.save(session)
-    new HeldWakeups(join(sessionDirectory(server.deps.sessionStore), '_wakeup_held.json')).hold(sid, [{ process_id: delegation, wakeup_prompt: 'result', event }])
+    await new HeldWakeups(testSessionDocuments(dirname(join(sessionDirectory(server.deps.sessionStore), '_wakeup_held.json')))).hold(sid, [{ process_id: delegation, wakeup_prompt: 'result', event }])
     const pending = (await json(await server.get(`/api/session?session_id=${sid}&messages=1&msg_limit=1`))).session as Json
     expect((pending.messages as Json[]).at(-1)?._background_update).toMatchObject({ review_state: 'waiting' })
     session.extra.completion_acceptances = { [JSON.stringify([realpathSync(server.state), delegation])]: turn }

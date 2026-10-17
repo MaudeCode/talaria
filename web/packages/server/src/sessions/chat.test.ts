@@ -2011,7 +2011,7 @@ describe('chat turns through the sidecar', () => {
     expect(existsSync(records)).toBe(true)
     expect((await post(s, '/api/session/delete', { session_id: sid })).status).toBe(200)
     expect(existsSync(records)).toBe(false)
-    expect(s.deps.background.receipts(sid)).toEqual([])
+    expect((await s.deps.background.receipts(sid))).toEqual([])
   })
 
   it('shows the work a delegation row started on that row, updated in place (TAL-372)', async () => {
@@ -2765,7 +2765,7 @@ describe('chat turns through the sidecar', () => {
     await new Promise((r) => setTimeout(r, 50))
     expect((await leftovers())).toEqual([])
     // The run journal keeps the error for a late subscriber, but no copy of the parent conversation.
-    const journaled = JSON.stringify(s.deps.journal.readRunEvents(String(failed.session_id), String(failed.stream_id)))
+    const journaled = JSON.stringify((await s.deps.journal.readRunEvents(String(failed.session_id), String(failed.stream_id))))
     expect(journaled).toContain('apperror')
     expect(journaled).not.toContain('first answer')
     // Text streamed but the result added no reply: the replayed history is still the parent's, not this answer.

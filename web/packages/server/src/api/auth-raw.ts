@@ -43,14 +43,14 @@ export async function requestBaseUrl(ctx: RequestContext): Promise<string> {
   return `${ctx.isSecureContext() ? 'https' : 'http'}://${effectiveRequestHost(ctx)}`
 }
 
-function redirectNoStore(ctx: RequestContext, location: string): void {
-  ctx.redirect(location, { headers: { 'Cache-Control': 'no-store', 'Content-Length': '0' } })
+async function redirectNoStore(ctx: RequestContext, location: string): Promise<void> {
+  await ctx.redirect(location, { headers: { 'Cache-Control': 'no-store', 'Content-Length': '0' } })
 }
 
 /** Python answered OIDC failures through `j()`: security headers, `application/json; charset=utf-8`, `no-store`. */
-function oidcFailure(ctx: RequestContext, error: unknown): void {
-  if (error instanceof OidcConfigError) ctx.json({ error: error.message }, { status: 404 })
-  else if (error instanceof OidcAuthError) ctx.json({ error: error.message }, { status: error.status })
+async function oidcFailure(ctx: RequestContext, error: unknown): Promise<void> {
+  if (error instanceof OidcConfigError) (await ctx.json({ error: error.message }, { status: 404 }))
+  else if (error instanceof OidcAuthError) (await ctx.json({ error: error.message }, { status: error.status }))
   else throw error
 }
 
@@ -62,10 +62,10 @@ export async function handleOidcStart(ctx: RequestContext): Promise<void> {
   try {
     location = await ctx.deps.oidc.authorizationRedirect(await requestBaseUrl(ctx), nextPath, nativeFlowId)
   } catch (error) {
-    oidcFailure(ctx, error)
+    await oidcFailure(ctx, error)
     return
   }
-  redirectNoStore(ctx, location)
+  await redirectNoStore(ctx, location)
 }
 
 export async function handleOidcCallback(ctx: RequestContext): Promise<void> {
@@ -79,19 +79,19 @@ export async function handleOidcCallback(ctx: RequestContext): Promise<void> {
     const nativeFlowId = oidc.consumeFailedProviderAuthorization(state)
     if (nativeFlowId) {
       try {
-        redirectNoStore(ctx, oidc.failNative(base, nativeFlowId, 'provider_error'))
+        await redirectNoStore(ctx, oidc.failNative(base, nativeFlowId, 'provider_error'))
       } catch (error) {
-        oidcFailure(ctx, error)
+        await oidcFailure(ctx, error)
       }
       return
     }
     const description = (query.get('error_description') ?? '').trim()
-    ctx.rawJson(401, { error: description || providerError })
+    await ctx.rawJson(401, { error: description || providerError })
     return
   }
   const code = (query.get('code') ?? '').trim()
   if (!state || !code) {
-    ctx.rawJson(400, { error: 'Missing OIDC callback state or code' })
+    await ctx.rawJson(400, { error: 'Missing OIDC callback state or code' })
     return
   }
   let result: Awaited<ReturnType<typeof oidc.completeCodeFlow>>
@@ -101,18 +101,18 @@ export async function handleOidcCallback(ctx: RequestContext): Promise<void> {
     const nativeFlowId = (error instanceof OidcConfigError || error instanceof OidcAuthError) ? error.nativeFlowId : null
     if (nativeFlowId) {
       try {
-        redirectNoStore(ctx, oidc.failNative(base, nativeFlowId, 'authentication_failed'))
+        await redirectNoStore(ctx, oidc.failNative(base, nativeFlowId, 'authentication_failed'))
         return
       } catch { /* fall through to the JSON error */ }
     }
-    oidcFailure(ctx, error)
+    await oidcFailure(ctx, error)
     return
   }
   if (result.native_flow_id) {
     try {
-      redirectNoStore(ctx, oidc.finishNative(base, result.native_flow_id, result))
+      await redirectNoStore(ctx, oidc.finishNative(base, result.native_flow_id, result))
     } catch (error) {
-      oidcFailure(ctx, error)
+      await oidcFailure(ctx, error)
     }
     return
   }
@@ -120,5 +120,5 @@ export async function handleOidcCallback(ctx: RequestContext): Promise<void> {
   const cookieVal = auth.createSession({ authType: 'oidc', username, boundProfile: result.bound_profile, oidcBinding: result.oidc_binding })
   ctx.queueCookie(ctx.authCookieHeader(cookieVal))
   if (result.bound_profile) ctx.queueCookie(await buildProfileCookie(ctx, result.bound_profile, cookieVal))
-  redirectNoStore(ctx, safeLoginRedirectPath(result.next_path))
+  await redirectNoStore(ctx, safeLoginRedirectPath(result.next_path))
 }

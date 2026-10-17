@@ -9,3 +9,23 @@ export function sessionDirectory(store: SessionStore): string {
 }
 export const sessionPath = (store: SessionStore, sid: string): string => join(sessionDirectory(store), `${sid}.json`)
 export const sessionIndexPath = (store: SessionStore): string => join(sessionDirectory(store), '_index.json')
+
+import { JsonDocuments } from '../sessions/storage/json-documents.js'
+export { JsonDocuments }
+
+export async function initializeStore<T extends { initialize(): Promise<void> }>(store: T): Promise<T> {
+  await store.initialize()
+  return store
+}
+
+import { JsonJournal } from '../sessions/storage/json-journal.js'
+import type { JournalBackend } from '../sessions/storage/backend.js'
+export function jsonJournal(journal: JournalBackend): JsonJournal {
+  if (!(journal instanceof JsonJournal)) throw new Error('This fixture requires JSON journals')
+  return journal
+}
+
+import { profileIdentity } from '../sessions/relay.js'
+export async function testProfileIdentity(home: string): Promise<string> { return (await profileIdentity({ documents: new JsonDocuments(join(home, 'webui'), () => home), profileHome: () => home }, 'default')) }
+
+export function testSessionDocuments(directory: string): JsonDocuments { return new JsonDocuments(directory, undefined, directory) }

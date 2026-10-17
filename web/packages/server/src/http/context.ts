@@ -152,7 +152,7 @@ export interface AppDeps {
   /** Running Agent version from the sidecar handshake, else the pinned version. */
   agentVersion: () => string
   /** Passkey credentials are dropped when password auth is cleared. */
-  clearPasskeys: () => void
+  clearPasskeys: () => void | Promise<void>
   // ── tools (checkpoint 7b) ──
   skills: SkillsService
   mcp: McpService
@@ -315,12 +315,12 @@ export class RequestContext {
   }
 
   /** Sliding renewal on a successful response (Python `refresh_session_for_response`). */
-  private refreshSessionForResponse(status: number): void {
+  private async refreshSessionForResponse(status: number): Promise<void> {
     const cookieValue = this.authRefreshCookie
     this.authRefreshCookie = null
     if (!cookieValue || status < 200 || status >= 400) return
     const auth = this.deps.auth
-    if (!auth.resolveSessionSliding()) return
+    if (!(await auth.resolveSessionSliding())) return
     const ttl = auth.resolveSessionTtl()
     if (auth.extendSession(cookieValue, ttl)) this.queueCookie(this.authCookieHeader(cookieValue, ttl))
   }
@@ -351,11 +351,11 @@ export class RequestContext {
     headers['Report-To'] = CSP_REPORT_TO
   }
 
-  send(opts: SendOptions): void {
+  async send(opts: SendOptions): Promise<void> {
     if (this.finished) return
     this.finished = true
     const status = opts.status ?? 200
-    this.refreshSessionForResponse(status)
+    await this.refreshSessionForResponse(status)
     const headers: HeaderMap = {}
     if (opts.security ?? true) Object.assign(headers, this.securityHeaders())
     Object.assign(headers, opts.headers ?? {})
@@ -375,11 +375,12 @@ export class RequestContext {
   }
 
   /** Stream a body with backpressure (large file spans); headers and cookies are applied like `send`, the stream owns its source. */
-  sendStream(opts: { status?: number; headers?: HeaderMap; security?: boolean }, body: NodeJS.ReadableStream & { destroy?: (error?: Error) => void }): void {
+  async sendStream(opts: { status?: number; headers?: HeaderMap; security?: boolean }, body: NodeJS.ReadableStream & { destroy?: (error?: Error) => void }): Promise<void> {
     if (this.finished) return
     this.finished = true
     const status = opts.status ?? 200
-    this.refreshSessionForResponse(status)
+    await this.refreshSessionForResponse(status)
+    if (this.res.destroyed) { body.destroy?.(); return }
     const headers: HeaderMap = {}
     if (opts.security ?? true) Object.assign(headers, this.securityHeaders())
     Object.assign(headers, opts.headers ?? {})
@@ -410,8 +411,8 @@ export class RequestContext {
   }
 
   /** Sliding renewal and queued-cookie flush for a response the oRPC adapter writes. */
-  beforeOrpcResponse(status: number): void {
-    this.refreshSessionForResponse(status)
+  async beforeOrpcResponse(status: number): Promise<void> {
+    await this.refreshSessionForResponse(status)
   }
 
   /** Called by the pipeline for responses written outside `send()` (oRPC). */
@@ -425,29 +426,29 @@ export class RequestContext {
     return this.finished
   }
 
-  json(payload: unknown, opts: { status?: number; headers?: HeaderMap; security?: boolean; etag?: string; pretty?: boolean } = {}): void {
+  async json(payload: unknown, opts: { status?: number; headers?: HeaderMap; security?: boolean; etag?: string; pretty?: boolean } = {}): Promise<void> {
     const status = opts.status ?? 200
     if (opts.etag && status === 200 && ifNoneMatchMatches(this.header('if-none-match') ?? '', opts.etag)) {
-      this.send({ status: 304, headers: { ETag: opts.etag, 'Cache-Control': 'no-store', ...opts.headers }, security: opts.security ?? true })
+      await this.send({ status: 304, headers: { ETag: opts.etag, 'Cache-Control': 'no-store', ...opts.headers }, security: opts.security ?? true })
       return
     }
     const body = opts.pretty === false ? JSON.stringify(payload) : JSON.stringify(payload, null, 2)
     const headers: HeaderMap = { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store', ...opts.headers }
     if (opts.etag) headers.ETag = opts.etag
-    this.send({ status, headers, body, gzip: true, security: opts.security ?? true })
+    await this.send({ status, headers, body, gzip: true, security: opts.security ?? true })
   }
 
   /** Bare `{"error":...}` responses the Python auth gate wrote without the security-header set. */
-  rawJson(status: number, payload: unknown, headers: HeaderMap = {}): void {
-    this.send({ status, headers: { 'Content-Type': 'application/json', ...headers }, body: JSON.stringify(payload), security: false })
+  async rawJson(status: number, payload: unknown, headers: HeaderMap = {}): Promise<void> {
+    await this.send({ status, headers: { 'Content-Type': 'application/json', ...headers }, body: JSON.stringify(payload), security: false })
   }
 
-  text(body: string | Buffer, opts: { status?: number; contentType?: string; headers?: HeaderMap } = {}): void {
-    this.send({ status: opts.status ?? 200, headers: { 'Content-Type': opts.contentType ?? 'text/plain; charset=utf-8', 'Cache-Control': 'no-store', ...opts.headers }, body })
+  async text(body: string | Buffer, opts: { status?: number; contentType?: string; headers?: HeaderMap } = {}): Promise<void> {
+    await this.send({ status: opts.status ?? 200, headers: { 'Content-Type': opts.contentType ?? 'text/plain; charset=utf-8', 'Cache-Control': 'no-store', ...opts.headers }, body })
   }
 
-  redirect(location: string, opts: { status?: number; headers?: HeaderMap; security?: boolean } = {}): void {
-    this.send({ status: opts.status ?? 302, headers: { Location: location, ...opts.headers }, security: opts.security ?? true })
+  async redirect(location: string, opts: { status?: number; headers?: HeaderMap; security?: boolean } = {}): Promise<void> {
+    await this.send({ status: opts.status ?? 302, headers: { Location: location, ...opts.headers }, security: opts.security ?? true })
   }
 
   /** Read and JSON-parse the request body as an object (Python `read_body`, 20 MiB cap). */

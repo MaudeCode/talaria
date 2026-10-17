@@ -114,10 +114,10 @@ export class SseWriter {
   }
 }
 
-export function claimOrReject(ctx: RequestContext, connectionClose: boolean): SseWriter | null {
+export async function claimOrReject(ctx: RequestContext, connectionClose: boolean): Promise<SseWriter | null> {
   const release = ctx.deps.streamSlots.claim(clientStreamKey(ctx))
   if (!release) {
-    ctx.json({ error: 'Client SSE stream limit reached', condition: 'client_stream_limit' }, { status: 503, headers: { Connection: 'close' } })
+    await ctx.json({ error: 'Client SSE stream limit reached', condition: 'client_stream_limit' }, { status: 503, headers: { Connection: 'close' } })
     return null
   }
   return new SseWriter(ctx, release, connectionClose)
@@ -163,18 +163,18 @@ function publicFramePayload(ctx: RequestContext, event: string, payload: unknown
  * run's journal is walked alongside the replay (its rows arrive in seq order), holding only the calls still open.
  */
 class LegacyToolIds {
-  private readonly runs = new Map<string, { rows: Generator<JournalEvent>; open: { name: unknown; tid: string; id: string }[]; seq: number; id: string | null }>()
+  private readonly runs = new Map<string, { rows: AsyncGenerator<JournalEvent>; open: { name: unknown; tid: string; id: string }[]; seq: number; id: string | null }>()
 
   constructor(private readonly journal: RunJournal) {}
 
-  idFor(entry: JournalEvent): string | null {
+  async idFor(entry: JournalEvent): Promise<string | null> {
     let run = this.runs.get(entry.run_id)
     if (!run) {
       run = { rows: this.journal.iterRunEvents(entry.session_id, entry.run_id), open: [], seq: 0, id: null }
       this.runs.set(entry.run_id, run)
     }
     while (run.seq < entry.seq) {
-      const next = run.rows.next()
+      const next = await run.rows.next()
       if (next.done) return null
       run.seq = next.value.seq
       run.id = pairLegacyTool(run.open, next.value)
@@ -182,7 +182,7 @@ class LegacyToolIds {
     return run.seq === entry.seq ? run.id : null
   }
 
-  close(): void { for (const run of this.runs.values()) run.rows.return(undefined) }
+  async close(): Promise<void> { for (const run of this.runs.values()) await run.rows.return(undefined) }
 }
 
 /** One row's tool id; a `tool` opens a call, a `tool_complete` closes the call it completes (done calls never match again). */
@@ -196,44 +196,44 @@ function pairLegacyTool(open: { name: unknown; tid: string; id: string }[], row:
   return index < 0 ? own : open.splice(index, 1)[0]!.id
 }
 
-function publicJournalPayload(ctx: RequestContext, entry: JournalEvent, legacy: LegacyToolIds): unknown {
+async function publicJournalPayload(ctx: RequestContext, entry: JournalEvent, legacy: LegacyToolIds): Promise<unknown> {
   const { payload } = entry
   if ((entry.event !== 'tool' && entry.event !== 'tool_complete') || !payload || typeof payload !== 'object' || Array.isArray(payload) || 'id' in payload) return publicFramePayload(ctx, entry.event, payload, entry.redacted)
   // A journal written before the public `id` carries the Agent's call id as `tid`, or nothing when the Agent sent none; the id
   // joins the frame before the redaction pass, like a live frame's.
-  const id = legacy.idFor(entry) ?? `tool-${entry.event_id}`
+  const id = (await legacy.idFor(entry)) ?? `tool-${entry.event_id}`
   return publicFramePayload(ctx, entry.event, withToolId(payload as Record<string, unknown>, id), entry.redacted)
 }
 
 async function replayRunJournal(ctx: RequestContext, sse: SseWriter, streamId: string, afterSeq: number | null, opts: { maxSeq?: number | null; includeStale?: boolean } = {}): Promise<{ found: boolean; terminal: boolean }> {
-  const summary = ctx.deps.journal.findRunSummary(streamId)
+  const summary = (await ctx.deps.journal.findRunSummary(streamId))
   if (!summary) return { found: false, terminal: false }
   let terminal = false
   const legacy = new LegacyToolIds(ctx.deps.journal)
   try {
-    for (const entry of ctx.deps.journal.iterRunEvents(summary.session_id, streamId, { afterSeq, maxSeq: opts.maxSeq ?? null })) {
+    for await (const entry of ctx.deps.journal.iterRunEvents(summary.session_id, streamId, { afterSeq, maxSeq: opts.maxSeq ?? null })) {
       if (!(await sse.ready())) return { found: true, terminal }
-      sse.event(entry.event || 'message', publicJournalPayload(ctx, entry, legacy), entry.event_id)
+      sse.event(entry.event || 'message', (await publicJournalPayload(ctx, entry, legacy)), entry.event_id)
       if (SSE_RELAY_CLOSE_EVENTS.has(entry.event)) terminal = true
     }
   } finally {
-    legacy.close()
+    await legacy.close()
   }
   if ((opts.includeStale ?? true) && !summary.terminal) {
-    const stale = ctx.deps.journal.staleInterruptedEvent(summary.session_id, streamId, afterSeq, ctx.deps.auth.now())
+    const stale = (await ctx.deps.journal.staleInterruptedEvent(summary.session_id, streamId, afterSeq, ctx.deps.auth.now()))
     if (stale) sse.event(stale.event, stale.payload, stale.event_id)
   }
   return { found: true, terminal }
 }
 
-function journalCoversGap(ctx: RequestContext, streamId: string, afterSeq: number | null, cutoff: number | null): boolean {
+async function journalCoversGap(ctx: RequestContext, streamId: string, afterSeq: number | null, cutoff: number | null): Promise<boolean> {
   if (cutoff === null) return false
   const floor = afterSeq === null ? 0 : Math.max(0, afterSeq)
   if (floor >= cutoff) return true
-  const summary = ctx.deps.journal.findRunSummary(streamId)
+  const summary = (await ctx.deps.journal.findRunSummary(streamId))
   if (!summary) return false
   const seqs = new Set<number>()
-  for (const e of ctx.deps.journal.iterRunEvents(summary.session_id, streamId, { afterSeq: floor, maxSeq: cutoff })) if (e.seq > floor && e.seq <= cutoff) seqs.add(e.seq)
+  for await (const e of ctx.deps.journal.iterRunEvents(summary.session_id, streamId, { afterSeq: floor, maxSeq: cutoff })) if (e.seq > floor && e.seq <= cutoff) seqs.add(e.seq)
   return seqs.size === cutoff - floor
 }
 
@@ -258,7 +258,7 @@ async function recoverDropped(ctx: RequestContext, sse: SseWriter, sub: StreamSu
   sub.gap = null
   if (journaled || gap.unjournaled) {
     const afterSeq = Math.max((from ?? 1) - 1, floor ?? 0)
-    if (gap.unjournaled || from === null || seq === null || !journalCoversGap(ctx, streamId, afterSeq, seq - 1)) {
+    if (gap.unjournaled || from === null || seq === null || !(await journalCoversGap(ctx, streamId, afterSeq, seq - 1))) {
       sse.event('apperror', interruptedFrame(sessionId, streamId, gap.dropped, 'The live stream fell behind a slow connection and the run journal cannot backfill the dropped frames.'))
       return false
     }
@@ -288,23 +288,23 @@ async function drainStream(ctx: RequestContext, sse: SseWriter, sub: StreamSubsc
 
 export async function handleChatStream(ctx: RequestContext): Promise<void> {
   const streamId = ctx.query.get('stream_id') ?? ''
-  const owner = streamOwnerSessionId(ctx, streamId)
-  if (owner && !(await ctx.deps.sessions.sessionIdVisible(owner))) { ctx.json({ error: 'Session not found' }, { status: 404 }); return }
+  const owner = (await streamOwnerSessionId(ctx, streamId))
+  if (owner && !(await ctx.deps.sessions.sessionIdVisible(owner))) { (await ctx.json({ error: 'Session not found' }, { status: 404 })); return }
   const cursor = resumeCursor(ctx, streamId)
   const channel = ctx.deps.registry.peek(streamId)
   if (!channel) {
-    const summary = streamId ? ctx.deps.journal.findRunSummary(streamId) : null
-    if (!summary) { ctx.json({ error: 'stream not found' }, { status: 404 }); return }
+    const summary = streamId ? (await ctx.deps.journal.findRunSummary(streamId)) : null
+    if (!summary) { (await ctx.json({ error: 'stream not found' }, { status: 404 })); return }
     let afterSeq = cursor.afterSeq
     if (afterSeq !== null && afterSeq > (summary.last_seq || 0)) afterSeq = 0
-    const sse = claimOrReject(ctx, true)
+    const sse = (await claimOrReject(ctx, true))
     if (!sse) return
     sse.start()
     try { await replayRunJournal(ctx, sse, streamId, afterSeq) } finally { sse.end() }
     return
   }
   const [sub, snapshot] = channel.subscribeWithSnapshot()
-  const sse = claimOrReject(ctx, true)
+  const sse = (await claimOrReject(ctx, true))
   if (!sse) { channel.unsubscribe(sub); return }
   sse.start()
   try {
@@ -320,7 +320,7 @@ export async function handleChatStream(ctx: RequestContext): Promise<void> {
       const cursorCoversSnapshot = snapshotCutoff !== null && afterSeq >= snapshotCutoff
       const droppedGapRequired = snapshot.offline_dropped_events > 0 && !cursorCoversSnapshot && (firstBuffered === null || afterSeq < firstBuffered - 1)
       const gapRequired = droppedGapRequired || (replayMaxSeq !== null && replayMaxSeq > afterSeq)
-      const covered = !gapRequired || journalCoversGap(ctx, streamId, afterSeq, replayMaxSeq)
+      const covered = !gapRequired || (await journalCoversGap(ctx, streamId, afterSeq, replayMaxSeq))
       let replayed = false
       let terminalReplayed = false
       if (covered) {
@@ -346,12 +346,12 @@ export async function handleChatStream(ctx: RequestContext): Promise<void> {
 /** `/api/session/stream`: the persistent per-session channel. */
 export async function handleSessionStream(ctx: RequestContext): Promise<void> {
   const sid = ctx.query.get('session_id') ?? ''
-  if (!sid) { ctx.json({ error: 'session_id is required' }, { status: 400 }); return }
-  if (!(await ctx.deps.sessions.sessionIdVisible(sid))) { ctx.json({ error: 'Session not found' }, { status: 404 }); return }
+  if (!sid) { (await ctx.json({ error: 'session_id is required' }, { status: 400 })); return }
+  if (!(await ctx.deps.sessions.sessionIdVisible(sid))) { (await ctx.json({ error: 'Session not found' }, { status: 404 })); return }
   const knownRaw = ctx.query.get('known_count') ?? ''
   const knownCount = knownRaw !== '' && /^-?\d+$/.test(knownRaw) ? Number.parseInt(knownRaw, 10) : null
   const sub = ctx.deps.channels.subscribe(sid)
-  const sse = claimOrReject(ctx, false)
+  const sse = (await claimOrReject(ctx, false))
   if (!sse) { ctx.deps.channels.unsubscribe(sid, sub); return }
   try {
     sse.start()
@@ -383,8 +383,8 @@ export async function handleSessionStream(ctx: RequestContext): Promise<void> {
 }
 
 /** Python `_gateway_sse_probe_payload`: status of the optional gateway stream only, never of `/api/session/stream`. */
-export function gatewayProbePayload(ctx: RequestContext, watcher: GatewayWatcher | null): [Record<string, unknown>, number] {
-  const enabled = Boolean(ctx.deps.settings.load().show_cli_sessions)
+export async function gatewayProbePayload(ctx: RequestContext, watcher: GatewayWatcher | null): Promise<[Record<string, unknown>, number]> {
+  const enabled = Boolean((await ctx.deps.settings.load()).show_cli_sessions)
   const alive = watcher?.isAlive() ?? false
   const payload: Record<string, unknown> = { enabled, fallback_poll_ms: 30000, ok: enabled && alive, watcher_running: alive, scope: 'gateway_sessions', session_stream_available: true, session_stream_path: '/api/session/stream' }
   if (!enabled) { payload.error = 'agent sessions not enabled'; return [payload, 404] }
@@ -420,10 +420,10 @@ export async function handleSessionEvents(ctx: RequestContext): Promise<void> {
   let gatewayStatus: Record<string, unknown> | null = null
   if (wantGateway) {
     watcher = ctx.deps.gatewayWatchers.get(ctx.deps.activeProfile())
-    gatewayStatus = gatewayProbePayload(ctx, watcher)[0]
+    gatewayStatus = (await gatewayProbePayload(ctx, watcher))[0]
   }
   const sub = ctx.deps.events.subscribe()
-  const sse = claimOrReject(ctx, false)
+  const sse = (await claimOrReject(ctx, false))
   if (!sse) { sub.close(); return }
   const abort = new AbortController()
   ctx.res.on('close', () => { abort.abort() })
@@ -473,10 +473,10 @@ export async function handleSessionEvents(ctx: RequestContext): Promise<void> {
  */
 export async function handleGatewayStream(ctx: RequestContext): Promise<void> {
   const watcher = ctx.deps.gatewayWatchers.get(ctx.deps.activeProfile())
-  const [probe, status] = gatewayProbePayload(ctx, watcher)
-  if (truthyQuery(ctx.query.get('probe'))) { ctx.json(probe, { status }); return }
-  if (status !== 200 || !watcher) { ctx.json({ error: probe.error }, { status }); return }
-  const sse = claimOrReject(ctx, false)
+  const [probe, status] = (await gatewayProbePayload(ctx, watcher))
+  if (truthyQuery(ctx.query.get('probe'))) { (await ctx.json(probe, { status })); return }
+  if (status !== 200 || !watcher) { (await ctx.json({ error: probe.error }, { status })); return }
+  const sse = (await claimOrReject(ctx, false))
   if (!sse) return
   const sub = watcher.subscribe()
   const abort = new AbortController()
@@ -502,30 +502,30 @@ export async function handleGatewayStream(ctx: RequestContext): Promise<void> {
 
 /** `/api/sessions/{sid}/events`: per-session journal relay with snapshot fallback. */
 export async function handleSessionJournalStream(ctx: RequestContext, sessionId: string): Promise<void> {
-  if (!(await ctx.deps.sessions.sessionIdVisible(sessionId))) { ctx.json({ error: 'Session not found' }, { status: 404 }); return }
+  if (!(await ctx.deps.sessions.sessionIdVisible(sessionId))) { (await ctx.json({ error: 'Session not found' }, { status: 404 })); return }
   let session: Session
-  try { session = (await ctx.deps.sessionStore.get(sessionId, { metadataOnly: true })) } catch { ctx.json({ error: 'Session not found' }, { status: 404 }); return }
+  try { session = (await ctx.deps.sessionStore.get(sessionId, { metadataOnly: true })) } catch { (await ctx.json({ error: 'Session not found' }, { status: 404 })); return }
   const resumeEventId = (ctx.header('last-event-id') ?? '').trim() || (ctx.query.get('after_event_id') ?? '').trim() || null
-  let idleFingerprint = ctx.deps.journal.sessionJournalFingerprint(sessionId)
-  const sse = claimOrReject(ctx, false)
+  let idleFingerprint = (await ctx.deps.journal.sessionJournalFingerprint(sessionId))
+  const sse = (await claimOrReject(ctx, false))
   if (!sse) return
   sse.start()
   const sent = new Set<string>()
   const sentOrder: string[] = []
   const note = (id: string): void => { sent.add(id); sentOrder.push(id); while (sentOrder.length > SESSION_SSE_SENT_EVENT_ID_LIMIT) sent.delete(sentOrder.shift()!) }
-  const emitReplay = async (events: Iterable<JournalEvent>, streamId: string | null, cutoff: number | null): Promise<void> => {
+  const emitReplay = async (events: Iterable<JournalEvent> | AsyncIterable<JournalEvent>, streamId: string | null, cutoff: number | null): Promise<void> => {
     const legacy = new LegacyToolIds(ctx.deps.journal)
     try {
-      for (const entry of events) {
+      for await (const entry of events) {
         if (!(await sse.ready())) return
         const seq = streamId ? sameRunSeq(entry.event_id, streamId) : null
         if (cutoff !== null && seq !== null && seq > cutoff) continue
         if (entry.event_id && sent.has(entry.event_id)) continue
-        sse.event(entry.event || 'message', publicJournalPayload(ctx, entry, legacy), entry.event_id)
+        sse.event(entry.event || 'message', (await publicJournalPayload(ctx, entry, legacy)), entry.event_id)
         if (entry.event_id) note(entry.event_id)
       }
     } finally {
-      legacy.close()
+      await legacy.close()
     }
   }
   const snapshot = async (activeStreamId: string | null): Promise<void> => {
@@ -545,7 +545,7 @@ export async function handleSessionJournalStream(ctx: RequestContext, sessionId:
     let replayOk = false
     let replayEvents: JournalEvent[] = []
     if (resumeEventId) {
-      const replay = ctx.deps.journal.readSessionRunEvents(sessionId, resumeEventId)
+      const replay = (await ctx.deps.journal.readSessionRunEvents(sessionId, resumeEventId))
       if (replay.status !== 'ok') (await snapshot(attached.streamId))
       else { replayOk = true; replayEvents = replay.events }
     }
@@ -555,7 +555,7 @@ export async function handleSessionJournalStream(ctx: RequestContext, sessionId:
         if (!(await sse.ready())) return
         attached = attach()
         if (attached.sub) break
-        const fp = ctx.deps.journal.sessionJournalFingerprint(sessionId)
+        const fp = (await ctx.deps.journal.sessionJournalFingerprint(sessionId))
         if (fp !== idleFingerprint) { idleFingerprint = fp; (await snapshot(attached.streamId)) }
         sse.comment('keepalive')
         await new Promise((r) => setTimeout(r, SSE_HEARTBEAT_INTERVAL_MS))
@@ -566,7 +566,7 @@ export async function handleSessionJournalStream(ctx: RequestContext, sessionId:
     let cutoff: number | null = null
     if (replayOk) {
       cutoff = sameRunSeq(attached.snapshot.last_event_id, streamId)
-      const reconciled = ctx.deps.journal.readSessionRunEvents(sessionId, resumeEventId)
+      const reconciled = (await ctx.deps.journal.readSessionRunEvents(sessionId, resumeEventId))
       if (reconciled.status === 'ok') await emitReplay(reconciled.events, streamId, cutoff)
       else (await snapshot(streamId))
     }
@@ -577,7 +577,7 @@ export async function handleSessionJournalStream(ctx: RequestContext, sessionId:
       if (!item) { sse.comment('keepalive'); continue }
       const [event, data, eventId, redacted] = item
       const seq = sameRunSeq(eventId, streamId)
-      if (!(await recoverDropped(ctx, sse, sub, streamId, sessionId, seq, cutoff, (gap) => emitReplay(ctx.deps.journal.iterRunEvents(sessionId, streamId, gap), streamId, null)))) return
+      if (!(await recoverDropped(ctx, sse, sub, streamId, sessionId, seq, cutoff, async (gap) => { await emitReplay(ctx.deps.journal.iterRunEvents(sessionId, streamId, gap), streamId, null); }))) return
       const terminal = SSE_RELAY_CLOSE_EVENTS.has(event)
       const alreadySent = (cutoff !== null && seq !== null && seq <= cutoff) || (eventId !== null && sent.has(eventId))
       if (alreadySent) { if (terminal) return; continue }
@@ -593,10 +593,10 @@ export async function handleSessionJournalStream(ctx: RequestContext, sessionId:
 
 async function promptStream(ctx: RequestContext, kind: 'approval' | 'clarify'): Promise<void> {
   const sid = ctx.query.get('session_id') ?? ''
-  if (!sid) { ctx.json({ error: 'session_id is required' }, { status: 400 }); return }
+  if (!sid) { (await ctx.json({ error: 'session_id is required' }, { status: 400 })); return }
   const [sub, initial] = kind === 'approval' ? ctx.deps.pending.subscribeApprovals(sid) : ctx.deps.pending.subscribeClarifies(sid)
   const release = (): void => { if (kind === 'approval') ctx.deps.pending.unsubscribeApprovals(sid, sub); else ctx.deps.pending.unsubscribeClarifies(sid, sub) }
-  const sse = claimOrReject(ctx, true)
+  const sse = (await claimOrReject(ctx, true))
   if (!sse) { release(); return }
   try {
     sse.start()
@@ -614,8 +614,8 @@ async function promptStream(ctx: RequestContext, kind: 'approval' | 'clarify'): 
   }
 }
 
-export const handleApprovalStream = (ctx: RequestContext): Promise<void> => promptStream(ctx, 'approval')
-export const handleClarifyStream = (ctx: RequestContext): Promise<void> => promptStream(ctx, 'clarify')
+export const handleApprovalStream = async (ctx: RequestContext): Promise<void> => { await promptStream(ctx, 'approval'); }
+export const handleClarifyStream = async (ctx: RequestContext): Promise<void> => { await promptStream(ctx, 'clarify'); }
 
 export function sessionEventsPathSessionId(path: string): string | null {
   const parts = path.replace(/^\/+|\/+$/g, '').split('/')
