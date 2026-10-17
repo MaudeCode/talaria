@@ -201,9 +201,7 @@ def run(args):
         try:
             if remaining:
                 job, proc = launch("serial", args)
-                code = proc.wait()
-                print((job / "output.log").read_text(), flush=True)
-                return code
+                return proc.wait()
             job, collection = launch("collection", ["--collect-only"])
             if collection.wait():
                 raise ValueError("pytest collection failed")
@@ -221,19 +219,23 @@ def run(args):
             failed = False
             for job, _, proc in jobs:
                 code = proc.wait()
-                print(f"{job.name}: exit={code}\n{(job / 'output.log').read_text()}", flush=True)
+                print(f"{job.name}: exit={code}", flush=True)
                 failed |= code != 0
             report_failed = merge_reports([(job, group) for job, group, _ in jobs], report or output / "junit.xml")
             return int(failed or report_failed)
         finally:
             for sig in (signal.SIGINT, signal.SIGTERM):
                 signal.signal(sig, signal.SIG_IGN)
-            cleanup(processes, state)
-            if (output / "collection/output.log").exists():
-                print((output / "collection/output.log").read_text(), flush=True)
-            for stream in streams:
-                stream.close()
-            print(f"Worker diagnostics retained: {output}", flush=True)
+            try:
+                cleanup(processes, state)
+            finally:
+                # Release checkouts may be disposable. Keep logs in the run
+                # output too, including cancellation and partial startup.
+                for stream in streams:
+                    stream.close()
+                    path = Path(stream.name)
+                    print(f"=== {path.parent.name}/output.log ===\n{path.read_text()}", flush=True)
+                print(f"Worker diagnostics retained: {output}", flush=True)
 
 
 def main():
