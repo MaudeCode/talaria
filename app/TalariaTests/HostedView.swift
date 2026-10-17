@@ -13,6 +13,16 @@ enum HostedSize {
 }
 
 extension XCTestCase {
+    @MainActor
+    func attachHostedScreenshot(_ window: UIWindow, name: String, lifetime: XCTAttachment.Lifetime = .keepAlways) {
+        let attachment = XCTAttachment(image: UIGraphicsImageRenderer(bounds: window.bounds).image { _ in
+            window.drawHierarchy(in: window.bounds, afterScreenUpdates: true)
+        })
+        attachment.name = name
+        attachment.lifetime = lifetime
+        add(attachment)
+    }
+
     /// Hosts `view` in a window of its own with animations off and returns the window, for tests that assert what a
     /// real screen lays out: which controls exist, their frames and traits, and what activating one does. The window's
     /// image is attached only when the test fails, and the window is hidden at teardown. A view's own window keeps it
@@ -40,12 +50,7 @@ extension XCTestCase {
         addTeardownBlock { [weak self] in
             MainActor.assumeIsolated {
                 if self?.testRun?.hasSucceeded == false {
-                    let attachment = XCTAttachment(image: UIGraphicsImageRenderer(bounds: window.bounds).image { _ in
-                        window.drawHierarchy(in: window.bounds, afterScreenUpdates: true)
-                    })
-                    attachment.name = "\(self?.name ?? "hosted") window"
-                    attachment.lifetime = .deleteOnSuccess
-                    self?.add(attachment)
+                    self?.attachHostedScreenshot(window, name: "\(self?.name ?? "hosted") window", lifetime: .deleteOnSuccess)
                 }
                 window.isHidden = true
                 window.rootViewController = nil

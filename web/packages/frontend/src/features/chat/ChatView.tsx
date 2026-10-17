@@ -1,3 +1,5 @@
+import { useResourceIntents, useResourceMutation } from '../sessions/useResourceMutation'
+import { ResourcePending } from '../sessions/ResourcePending'
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate, useSearch } from '@tanstack/react-router'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
@@ -44,6 +46,8 @@ import { bindFirstSend, ownsFirstSend, useFirstSend } from './firstSend'
 export function ChatView({ sessionId }: { sessionId: string | null }) {
   const bootstrap = useBootstrap()
   const qc = useQueryClient()
+  const { mutateAsync: renameSession } = useResourceMutation({ resource: () => `session:${sessionId}`, intent: (title: string) => ({ title, label: m.rename() }), mutationFn: (title) => { if (!sessionId) throw new Error(m.error_generic()); return api.renameSession(sessionId, title) } })
+
   const navigate = useNavigate()
   const settings = useSettingsQuery()
   const { query, session, rows, base, live, truncated, loadOlder, loadingOlder, refresh } = useTranscript(sessionId)
@@ -214,7 +218,7 @@ export function ChatView({ sessionId }: { sessionId: string | null }) {
       case 'new': removePersisted('hermes-webui-session'); await navigate({ to: '/', search: { action: 'new-chat' } }); return true
       case 'clear': if (sessionId) return await runHistory(m.history_clearing(), async (current) => { const r = await api.clearSession(sessionId); if (current()) await refresh(r.session) }) ? true : 'refused'; return true
       case 'terminal': setTerminalOpen((t) => !t); return true
-      case 'title': if (sessionId && args) { await api.renameSession(sessionId, args); await refresh(); void qc.invalidateQueries({ queryKey: keys.sessions.all }) } return true
+      case 'title': if (sessionId && args) { await renameSession(args) } return true
       case 'retry': if (sessionId) return await onRegenerate() ? true : 'refused'; return true
       case 'undo': if (sessionId) return await runHistory(m.history_undoing(), async (current) => { const r = await api.undoSession(sessionId); if (!current()) return; if ('error' in r) { showToast(r.error, 4000, 'error'); return false } await refresh(undefined, true) }) ? true : 'refused'; return true
       case 'compress': if (sessionId) { void runCompression(sessionId) } return true
@@ -248,7 +252,7 @@ export function ChatView({ sessionId }: { sessionId: string | null }) {
       case 'voice': showToast(m.voice_error(), 3000); return true
       default: return false
     }
-  }, [sessionId, navigate, refresh, qc, onToggleYolo, onModelChange, onWorkspaceChange, onRegenerate, reasoning, setReasoning, runCompression, runHistory])
+  }, [renameSession, sessionId, navigate, refresh, qc, onToggleYolo, onModelChange, onWorkspaceChange, onRegenerate, reasoning, setReasoning, runCompression, runHistory])
 
   const onBranch = useCallback(async (row: VisibleMessage) => {
     if (!sessionId) return
@@ -259,9 +263,10 @@ export function ChatView({ sessionId }: { sessionId: string | null }) {
 
   const mode = (settings.data?.chat_activity_display_mode as ActivityMode | undefined) ?? 'compact_worklog'
   const assistantName = session?.assistant_name ?? bootstrap.assistant_name
+  const resourceIntent = useResourceIntents()[`session:${sessionId}`]
   // Until the transcript arrives the header shows the title the sidebar already has for this session.
   const listedTitle = sessionId ? qc.getQueryData<SessionsList>(keys.sessions.list({}))?.sessions.find((r) => r.session_id === sessionId)?.title : undefined
-  const title = session?.title ?? listedTitle ?? ''
+  const title = resourceIntent?.title ?? session?.title ?? listedTitle ?? ''
   // TAL-639: an existing chat names only its own workspace, none until its record loads, so the Files page and
   // terminal never mount on the default and remount; the default stands in only for the unsaved chat.
   const workspace = sessionId ? session?.workspace : settings.data?.default_workspace
@@ -332,6 +337,7 @@ export function ChatView({ sessionId }: { sessionId: string | null }) {
         <div className="chat-header flex items-center gap-3 min-h-[52px] px-5 py-1.5 border-b border-border shrink-0 max-[641px]:hidden">
           <div className="chat-header-text min-w-0 flex-1 flex flex-col gap-px">
             <h1 className="chat-header-title m-0 text-[13.5px] font-[550] text-text whitespace-nowrap overflow-hidden text-ellipsis tracking-[-.01em]" id="topbarTitle">{session || listedTitle ? (title || m.untitled()) : bootstrap.bot_name}</h1>
+            <ResourcePending intent={resourceIntent} />
             {session && meta && <div className="chat-header-meta hidden text-[11px] text-muted whitespace-nowrap overflow-hidden text-ellipsis font-mono" id="topbarMeta">{meta}</div>}
           </div>
           {/* T3 Code keeps the terminal toggle in the thread header; phones reach it from the composer's overflow menu. */}

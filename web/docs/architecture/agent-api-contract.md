@@ -101,12 +101,66 @@ clean installations does not authorize an unsafe retained-state update. The
 sidecar and server regression suites cover these protections.
 
 Both Agent update paths acquire the Agent's native checkout lock and durably
-record a cooperative gateway pause before the compatibility scan. Unknown
+record writer recovery obligations before the compatibility scan. Unknown
 owners, foreign profile homes, unreadable identity evidence, or an unacknowledged
 drain refuse the update. Gateways exit through their own drain; the updater does
 not force-kill them. Attested supervisors are stopped only after the owned
-gateway exits, and their original identities and resume commands stay in the
-Agent's paused-gateway journal.
+gateway exits. Bare and Windows gateway obligations retain the Agent's native
+paused-gateway journal. Supervised POSIX services retain their exact supervisor
+in Talaria's companion record below. POSIX discovery distinguishes the supervisor PID
+from the gateway PID attested by the native profile PID/lock files. Only that
+verified runtime is excluded from bare discovery. Parent chains, canonical
+process identities and native birth stamps are bracketed and rechecked before
+custody and stop; unrelated descendants and ambiguous ownership still refuse.
+
+Supervised dashboard/serve writers from the same installation's native ledger
+join that same lease. Native loaded launchd inventory and systemd MainPID
+ownership identify their exact supervisor. Talaria records the original service,
+profile, endpoint, configuration digest and process tree before requesting the
+backend's native retirement prepare/commit fence. Busy or indeterminate work
+refuses the update. After committed admission closure, SIGTERM runs the native
+graceful shutdown; the lease waits for the backend and its writer descendants,
+then disarms the original supervisor. A timeout never escalates to SIGKILL.
+Unexpected children, respawn or an unproved stop prevent source mutation.
+
+Lifecycle calls use the backend's existing owner-local session credential.
+For a dashboard protected by native basic auth, the owning OS user's existing
+configured signing key can authenticate a short-lived native session. Neither
+session credentials nor retirement permits are persisted in recovery records.
+A backend whose native authentication cannot be established remains an
+actionable refusal; Talaria does not alter authentication or service config.
+Unknown, manual, Desktop-owned and foreign-profile backends remain refused.
+
+The native gateway recovery reader verifies a launchd PID, which can be a wrapper
+without a working dashboard listener. Backend debt and supervised-gateway
+readiness debt therefore live separately
+under `$HERMES_HOME/.talaria-agent-services/<checkout-hash>.json`, alongside the
+existing lease rather than in the gateway-only token. This additive companion
+extends the manual-execution recovery record pattern: private atomic writes and
+directory fsync, one native checkout lock, source-baseline/move evidence copied
+from the native journal, and dependency-repair intent recorded before repair.
+It never patches or replaces Agent source, its native journal, or the pin.
+
+The companion also records the gateway runtime and supervisor stop identities,
+completes an interrupted disarm under the native checkout lock, and verifies the
+actual gateway through native home-based PID/lock readiness. A fresh wrapper
+alone cannot erase gateway readiness debt. Custody is written to the companion
+before retiring any overlapping native service obligation, so the native reader
+cannot separately replay that supervisor or regenerate its configured wrapper.
+
+Each backend obligation clears only after a live same-install/profile ledger
+identity, exact supervisor ancestry, unchanged service configuration and an
+authenticated identity response at its original endpoint all agree. A fresh
+wrapper PID or unrelated listener is insufficient. Recovery adopts an already
+verified successor instead of starting a duplicate. Each service is settled
+independently; a failed restart retains its own obligation while safe siblings
+are restored. Services that were stopped before the attempt are never recorded
+or started. A new sidecar handshake retries retained backend debt through the
+same isolated recovery worker and checkout lock. Recovery runs asynchronously so
+supervisor/readiness waits do not consume the handshake's RPC deadline. Repeated
+handshakes share one recovery worker. Agent admission stays closed
+while that debt exists. Unsafe source, failed repair, failed graceful stop or
+unverified readiness retains durable debt for an explicit repair/retry.
 
 `runtime.agent_mutation` extends the dependency-sync supervisor's lifetime-lease
 and child-reaping design across the existing Web updater's operations:

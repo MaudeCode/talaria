@@ -1256,10 +1256,9 @@ struct MessageComposerView: View {
     }
 
     private var isActionButtonDisabled: Bool {
-        // A new chat cannot send until its session exists (TAL-636); typing still works.
-        if isReadOnly || sessionStart != nil {
-            return true
-        }
+        // A new chat accepts local intent while creation runs; the shared send owns the pending row.
+        if isReadOnly { return true }
+        if case .some(.failed(_, canRetry: false)) = sessionStart { return true }
 
         if isAnsweringClarification {
             return (trimmedDraftMessage.isEmpty && clarificationSelectedChoices.isEmpty) || isSending
@@ -1267,6 +1266,12 @@ struct MessageComposerView: View {
 
         if showsStopButton {
             return isCancellingStream
+        }
+
+        if sessionStart != nil, trimmedDraftMessage.hasPrefix("/") {
+            guard !isWaitingForStream,
+                  let message = SlashCommandExecutor.parse(trimmedDraftMessage, catalog: agentCommands)?.messageForIdleSend,
+                  !message.isEmpty || !pendingAttachments.isEmpty else { return true }
         }
 
         return (trimmedDraftMessage.isEmpty && pendingAttachments.isEmpty)
@@ -1307,7 +1312,7 @@ struct MessageComposerView: View {
     }
 
     private var sendOptions: [ComposerSendButton.Option] {
-        guard !isAnsweringClarification, !showsStopButton, !isActionButtonDisabled else { return [] }
+        guard sessionStart == nil, !isAnsweringClarification, !showsStopButton, !isActionButtonDisabled else { return [] }
         return ComposerSendButton.options(
             isWaitingForStream: isWaitingForStream,
             carriesFiles: !pendingAttachments.isEmpty,

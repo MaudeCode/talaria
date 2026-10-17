@@ -11,13 +11,15 @@ struct SessionRowContextMenu: View {
     let isMovingSession: Bool
     let isLoadingProjects: Bool
     let isMutating: Bool
+    var pendingChange: PendingResourceChange? = nil
     let actions: SessionListRowActions
 
     var body: some View {
-        let fullTitle = SessionRowPresentation.displayTitle(for: session)
+        let fullTitle = pendingChange?.title ?? SessionRowPresentation.displayTitle(for: session)
 
         Section("Full Title") {
             Text(fullTitle)
+            if let pendingChange { Text(pendingChange.status) }
 
             Button {
                 UIPasteboard.general.string = fullTitle

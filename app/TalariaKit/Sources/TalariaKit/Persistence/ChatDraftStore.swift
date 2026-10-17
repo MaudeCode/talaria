@@ -538,6 +538,7 @@ public final class ChatDraftStore {
     private let debounceDuration: Duration
     private let attachmentSweepMaxAge: TimeInterval
     private var drafts: [ChatDraftKey: ChatDraft] = [:]
+    private var textWriteIDs: [ChatDraftKey: UUID] = [:]
     private var keysChangedBeforeLoad: Set<ChatDraftKey> = []
     private var loadTask: Task<[ChatDraftKey: ChatDraft], Never>?
     private var persistTask: Task<Void, Never>?
@@ -561,10 +562,31 @@ public final class ChatDraftStore {
     }
 
     /// Updates the draft's typed text without disturbing its attachments or
-    /// settings.
-    public func setDraft(_ text: String, for key: ChatDraftKey) {
+    /// settings. Returns an in-process write identity for conditional acceptance cleanup.
+    @discardableResult
+    public func setDraft(_ text: String, for key: ChatDraftKey) -> UUID {
         markChangedBeforeLoad(key)
-        updateDraft(for: key) { $0.text = text }
+        let writeID = UUID()
+        updateDraft(for: key, textWriteID: writeID) { $0.text = text }
+        return writeID
+    }
+
+    /// An accepted send may settle after its view leaves or its draft moves. Only its last owned
+    /// text write can be consumed; another writer, even one writing identical text, wins.
+    @discardableResult
+    public func consumeAcceptedSubmission(
+        textWriteID: UUID,
+        currentText: String,
+        attachmentIDs: Set<UUID>
+    ) -> Bool {
+        guard let key = textWriteIDs.first(where: { $0.value == textWriteID })?.key,
+              drafts[key] != nil else { return false }
+        markChangedBeforeLoad(key)
+        updateDraft(for: key, textWriteID: UUID()) { draft in
+            draft.text = currentText
+            draft.attachments.removeAll { attachmentIDs.contains($0.id) }
+        }
+        return true
     }
 
     /// Replaces the draft's staged-attachment records without disturbing its
@@ -662,7 +684,11 @@ public final class ChatDraftStore {
         markChangedBeforeLoad(sourceKey)
         markChangedBeforeLoad(targetKey)
 
-        let movedDraft = drafts[sourceKey] ?? drafts[targetKey] ?? ChatDraft()
+        let sourceDraft = drafts[sourceKey]
+        let movedDraft = sourceDraft ?? drafts[targetKey] ?? ChatDraft()
+        let textWriteID = sourceDraft != nil ? textWriteIDs[sourceKey] : textWriteIDs[targetKey]
+        textWriteIDs.removeValue(forKey: sourceKey)
+        textWriteIDs[targetKey] = textWriteID
         drafts.removeValue(forKey: sourceKey)
         if movedDraft.isEmpty {
             drafts.removeValue(forKey: targetKey)
@@ -694,9 +720,12 @@ public final class ChatDraftStore {
         try await persistence.write(drafts)
     }
 
-    private func updateDraft(for key: ChatDraftKey, mutate: (inout ChatDraft) -> Void) {
+    private func updateDraft(for key: ChatDraftKey, textWriteID: UUID? = nil, mutate: (inout ChatDraft) -> Void) {
         var draft = drafts[key] ?? ChatDraft()
+        let previousText = draft.text
         mutate(&draft)
+        if let textWriteID { textWriteIDs[key] = textWriteID }
+        else if draft.text != previousText { textWriteIDs[key] = UUID() }
 
         if draft.isEmpty {
             guard drafts[key] != nil else { return }
@@ -709,6 +738,7 @@ public final class ChatDraftStore {
     }
 
     private func discardDrafts(matching shouldDiscard: (ChatDraftKey) -> Bool) async {
+        for key in textWriteIDs.keys.filter(shouldDiscard) { textWriteIDs.removeValue(forKey: key) }
         let discardedKeys = drafts.keys.filter(shouldDiscard)
         guard !discardedKeys.isEmpty else { return }
 

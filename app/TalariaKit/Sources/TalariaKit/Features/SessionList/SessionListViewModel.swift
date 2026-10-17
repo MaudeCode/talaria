@@ -50,12 +50,12 @@ public final class SessionListViewModel {
     public private(set) var sessions: [SessionSummary] = []
     public private(set) var isLoading = false
     public private(set) var isCreatingSession = false
-    public private(set) var isCreatingProject = false
+    public var isCreatingProject: Bool { pendingChanges["project:new"].map { !$0.requiresRefresh } ?? false }
     public private(set) var isLoadingProjects = false
-    public private(set) var isDeletingProject = false
-    public private(set) var isRenamingSession = false
-    public private(set) var isRenamingProject = false
-    public private(set) var isMovingSession = false
+    public var isDeletingProject: Bool { pendingChanges.contains { $0.key.hasPrefix("project:") && $0.value.title == nil } }
+    public var isRenamingSession: Bool { pendingChanges.contains { $0.key.hasPrefix("session:") && $0.value.title != nil } }
+    public var isRenamingProject: Bool { pendingChanges.contains { $0.key.hasPrefix("project:") && $0.key != "project:new" && $0.value.title != nil } }
+    public var isMovingSession: Bool { pendingChanges.values.contains { $0.isMoving } }
     public private(set) var isViewingCachedData = false
     public private(set) var projects: [ProjectSummary] = []
     public private(set) var errorMessage: String?
@@ -124,6 +124,29 @@ public final class SessionListViewModel {
     /// it is made — not when its request began — so a list load that started while
     /// that request was still pending is treated as older.
     private var claimCount = 0
+    public private(set) var pendingChanges: [String: PendingResourceChange] = [:]
+    private var resourceGeneration = 0
+    private var removedRows: [String: Int] = [:]
+    private var resourceCacheContext = UUID()
+    private var resourceCacheVersions: [String: UUID] = [:]
+    public func resourceCacheVersion(for id: String) -> UUID { resourceCacheVersions[id] ?? resourceCacheContext }
+
+    private var metadataVersions: [String: Int] = [:]
+
+    public func resourceMetadataVersion(for id: String) -> Int { metadataVersions[id] ?? 0 }
+    public func confirmedTitle(for id: String) -> String? { sessions.first { $0.sessionId == id }?.title }
+    private func resourceReadVersion(for id: String) -> (UUID, Int) {
+        (resourceCacheVersion(for: id), resourceMetadataVersion(for: id))
+    }
+
+    public func pendingChange(for session: SessionSummary) -> PendingResourceChange? {
+        session.sessionId.flatMap { pendingChanges["session:\($0)"] }
+    }
+
+    public func pendingChange(for project: ProjectSummary) -> PendingResourceChange? {
+        project.projectId.flatMap { pendingChanges["project:\($0)"] }
+    }
+
     /// Claimed rows, with the claim that made them, so a `/api/sessions` response
     /// that was already in flight cannot reinstate the stale metadata it captured
     /// or drop a row inserted after it was requested (TAL-176).
@@ -288,10 +311,13 @@ public final class SessionListViewModel {
     /// Warms the transcript cache for running chats this device has never opened (TAL-437), one
     /// bounded page each, so opening a run started elsewhere paints at once.
     public func prefetchRunningTranscripts(modelContext: ModelContext) async {
+        let scope = resourceGeneration
         for session in sessions where session.isStreaming == true {
+            guard scope == resourceGeneration else { return }
             guard let sessionID = Self.nonEmpty(session.sessionId) else { continue }
             let runKey = "\(sessionID)|\(session.activeStreamId ?? "")"
             guard !prefetchedRuns.contains(runKey) else { continue }
+            let cacheVersion = resourceCacheVersion(for: sessionID)
             prefetchedRuns.insert(runKey)
             // A chat opened here already has its own cache, which the chat keeps current. Checked
             // again after the request, in case the chat saved a newer transcript meanwhile.
@@ -301,6 +327,7 @@ public final class SessionListViewModel {
                     messageLimit: ChatViewModel.messagePageLimit,
                     expandRenderable: true
                   ).session?.messages,
+                  cacheVersion == resourceCacheVersion(for: sessionID),
                   !messages.isEmpty,
                   !hasCachedTranscript(sessionID, in: modelContext)
             else { continue }
@@ -377,6 +404,11 @@ public final class SessionListViewModel {
             agentStorage = response.agentStorage
             if let data = try? JSONEncoder().encode(response.agentStorage) {
                 agentStorageEntry?.save(data)
+            }
+            pendingChanges = pendingChanges.filter { key, change in
+                guard key.hasPrefix("session:") else { return true }
+                if let claim = change.snapshotClaim { return claim > claimCountAtStart }
+                return !change.requiresRefresh
             }
             isViewingCachedData = false
             isShowingCachedPaint = false
@@ -638,6 +670,7 @@ public final class SessionListViewModel {
             return loadedSession
         }
 
+        let version = resourceReadVersion(for: sessionID)
         actionErrorMessage = nil
         lastError = nil
 
@@ -654,6 +687,7 @@ public final class SessionListViewModel {
 
         do {
             let response = try await client.session(id: sessionID, includeMessages: false, messageLimit: nil)
+            guard version == resourceReadVersion(for: sessionID) else { return nil }
             guard let sessionDetail = response.session else {
                 actionErrorMessage = String(localized: "The server did not return the linked session.")
                 return nil
@@ -676,6 +710,7 @@ public final class SessionListViewModel {
 
             return session
         } catch {
+            guard version == resourceReadVersion(for: sessionID) else { return nil }
             lastError = error
             actionErrorMessage = error.localizedDescription
             return nil
@@ -703,6 +738,7 @@ public final class SessionListViewModel {
               let sessionId = Self.nonEmpty(session.sessionId)
         else { return session }
 
+        let version = resourceReadVersion(for: sessionId)
         actionErrorMessage = nil
         lastError = nil
 
@@ -714,7 +750,7 @@ public final class SessionListViewModel {
             ).session else {
                 throw APIError.http(statusCode: -1, body: nil)
             }
-            guard generation == openGeneration else { return nil }
+            guard generation == openGeneration, version == resourceReadVersion(for: sessionId) else { return nil }
 
             // A list refresh can land while the load is in flight, so the merge base is
             // the current row rather than the pre-await snapshot — otherwise
@@ -725,7 +761,7 @@ public final class SessionListViewModel {
             refreshRow(with: loadedSession, modelContext: modelContext)
             return loadedSession
         } catch {
-            guard !APIError.isCancellation(error), generation == openGeneration else { return nil }
+            guard !APIError.isCancellation(error), generation == openGeneration, version == resourceReadVersion(for: sessionId) else { return nil }
 
             lastError = error
             actionErrorMessage = error.localizedDescription
@@ -780,16 +816,8 @@ public final class SessionListViewModel {
         modelContext: ModelContext? = nil,
         animation: Animation? = nil
     ) async -> Bool {
-        guard let sessionId = Self.nonEmpty(session.sessionId) else {
-            actionErrorMessage = String(localized: "The server did not provide a session ID.")
-            return false
-        }
-
-        guard beginSessionMutation(sessionId) else { return false }
-        defer { endSessionMutation(sessionId) }
-
-        return await mutate(modelContext: modelContext, animation: animation) {
-            try await sessionMutator.setPinned(pinned, sessionID: sessionId)
+        await changeSession(session, label: pinned ? String(localized: "Pin") : String(localized: "Unpin"), modelContext: modelContext, animation: animation) { id in
+            try await self.sessionMutator.setPinned(pinned, sessionID: id)
         }
     }
 
@@ -798,37 +826,21 @@ public final class SessionListViewModel {
         modelContext: ModelContext? = nil,
         animation: Animation? = nil
     ) async -> Bool {
-        guard let sessionId = Self.nonEmpty(session.sessionId) else {
-            actionErrorMessage = String(localized: "The server did not provide a session ID.")
-            return false
-        }
-
-        guard beginSessionMutation(sessionId) else { return false }
-        var holdsMutation = true
-        defer { if holdsMutation { endSessionMutation(sessionId) } }
-
-        return await mutate(modelContext: modelContext, animation: animation) {
-            try await sessionMutator.archive(sessionID: sessionId)
-            // A list response requested before the archive must not restore the row.
-            claimedRows.removeValue(forKey: sessionId)
-            // Undo is offered now, so the reload below must not hold the session.
-            endSessionMutation(sessionId)
-            holdsMutation = false
-            offerArchiveUndo(for: sessionId)
+        await changeSession(session, label: String(localized: "Archive"), removing: true, offerUndo: true, modelContext: modelContext, animation: animation) { id in
+            try await self.sessionMutator.archive(sessionID: id)
         }
     }
 
     /// Unarchives the chat behind `archiveUndo`, then reloads the list so the
     /// server's order and fields win. A failure keeps the undo offered for retry.
     public func undoArchive(modelContext: ModelContext? = nil, animation: Animation? = nil) async -> Bool {
-        guard let undo = archiveUndo, beginSessionMutation(undo.sessionID) else { return false }
-        defer { endSessionMutation(undo.sessionID) }
-        // An attempt in flight or failed stays offered until it succeeds.
+        guard let undo = archiveUndo else { return false }
         archiveUndoTask?.cancel()
-
-        let didUndo = await mutate(modelContext: modelContext, animation: animation) {
-            try await sessionMutator.unarchive(sessionID: undo.sessionID)
-            if archiveUndo?.offer == undo.offer { archiveUndo = nil }
+        let didUndo = await changeSession(SessionSummary(sessionId: undo.sessionID), label: String(localized: "Restore"), modelContext: modelContext, animation: animation, confirmed: {
+            self.removedRows.removeValue(forKey: undo.sessionID)
+            if self.archiveUndo?.offer == undo.offer { self.archiveUndo = nil }
+        }) { id in
+            try await self.sessionMutator.unarchive(sessionID: id)
         }
         if archiveUndo?.offer == undo.offer { archiveUndo?.undoFailed = true }
         return didUndo
@@ -856,18 +868,8 @@ public final class SessionListViewModel {
         modelContext: ModelContext? = nil,
         animation: Animation? = nil
     ) async -> Bool {
-        guard let sessionId = Self.nonEmpty(session.sessionId) else {
-            actionErrorMessage = String(localized: "The server did not provide a session ID.")
-            return false
-        }
-
-        guard beginSessionMutation(sessionId) else { return false }
-        defer { endSessionMutation(sessionId) }
-
-        return await mutate(modelContext: modelContext, animation: animation) {
-            try await sessionMutator.delete(sessionID: sessionId)
-            // A list response requested before the delete must not restore the row.
-            claimedRows.removeValue(forKey: sessionId)
+        await changeSession(session, label: String(localized: "Delete"), removing: true, clearTranscript: true, modelContext: modelContext, animation: animation) { id in
+            try await self.sessionMutator.delete(sessionID: id)
         }
     }
 
@@ -890,7 +892,7 @@ public final class SessionListViewModel {
     public func canPerformBulkAction(_ action: SessionBulkAction) -> Bool {
         guard !isPerformingBulkAction, !isViewingCachedData else { return false }
         return selectedSessionsByID.values.contains {
-            action == .delete ? SessionRowActionPolicy.canDelete($0) : SessionRowActionPolicy.canArchive($0)
+            !isMutating($0) && (action == .delete ? SessionRowActionPolicy.canDelete($0) : SessionRowActionPolicy.canArchive($0))
         }
     }
 
@@ -942,51 +944,68 @@ public final class SessionListViewModel {
         modelContext: ModelContext? = nil,
         animation: Animation? = nil
     ) async -> [SessionSummary] {
-        let sessionIDs = selectedSessionsByID.keys.sorted()
-        guard !sessionIDs.isEmpty, !isPerformingBulkAction else { return [] }
+        let sessionIDs = selectedSessionsByID.keys.filter { !mutatingSessionIDs.contains($0) && pendingChanges["session:\($0)"] == nil }.sorted()
+        guard !sessionIDs.isEmpty, !isPerformingBulkAction, !isViewingCachedData, !isSwitchingActiveProfile else { return [] }
 
+        let scope = resourceGeneration
+        let label = action == .delete ? String(localized: "Delete") : action == .archive ? String(localized: "Archive") : String(localized: "Restore")
+        let changes = Dictionary(uniqueKeysWithValues: sessionIDs.map { ($0, PendingResourceChange(label: label, title: nil, color: nil)) })
+        for (id, change) in changes { pendingChanges["session:\(id)"] = change }
         isPerformingBulkAction = true
         mutatingSessionIDs.formUnion(sessionIDs)
         defer {
-            isPerformingBulkAction = false
-            mutatingSessionIDs.subtract(sessionIDs)
+            if scope == resourceGeneration {
+                isPerformingBulkAction = false
+                mutatingSessionIDs.subtract(sessionIDs)
+                for (id, change) in changes where pendingChanges["session:\(id)"]?.id == change.id && pendingChanges["session:\(id)"]?.requiresRefresh != true && pendingChanges["session:\(id)"]?.snapshotClaim == nil {
+                    pendingChanges.removeValue(forKey: "session:\(id)")
+                }
+            }
         }
         actionErrorMessage = nil
         lastError = nil
 
         // The route takes at most `bulkActionLimit` IDs a call (the contract's cap).
         var results: [SessionBulkResult] = []
+        var changed: [SessionSummary] = []
         do {
             for start in stride(from: 0, to: sessionIDs.count, by: Self.bulkActionLimit) {
                 let chunk = Array(sessionIDs[start..<min(start + Self.bulkActionLimit, sessionIDs.count)])
-                results += try await sessionMutator.bulk(action, sessionIDs: chunk).results ?? []
+                let response = try await sessionMutator.bulk(action, sessionIDs: chunk)
+                guard scope == resourceGeneration else { return [] }
+                let chunkResults = (response.results ?? []).filter { chunk.contains($0.sessionId ?? "") }
+                results += chunkResults
+                var removedIDs: [String] = []
+                for result in chunkResults {
+                    guard let id = result.sessionId else { continue }
+                    if result.ok == true, let session = selectedSessionsByID.removeValue(forKey: id) {
+                        metadataVersions[id, default: 0] += 1
+                        if action != .unarchive { removedIDs.append(id) }
+                        changed.append(session)
+                    }
+                    // Stop marking an answered item pending while later chunks run.
+                    pendingChanges.removeValue(forKey: "session:\(id)")
+                }
+                removeConfirmedRows(removedIDs, clearTranscript: action == .delete, modelContext: modelContext)
             }
         } catch {
+            guard scope == resourceGeneration else { return [] }
             if !APIError.isCancellation(error) {
                 lastError = error
                 actionErrorMessage = error.localizedDescription
             }
-            // Chunks the server already answered still count.
-            if results.isEmpty { return [] }
         }
-
-        var changed: [SessionSummary] = []
-        for result in results where result.ok == true {
-            guard let sessionId = result.sessionId,
-                  let session = selectedSessionsByID.removeValue(forKey: sessionId) else { continue }
-            // A list response requested before the change must not restore the row.
-            claimedRows.removeValue(forKey: sessionId)
-            changed.append(session)
-        }
+        guard scope == resourceGeneration else { return [] }
         var messages: [String] = []
-        if !selectedSessionsByID.isEmpty {
+        let failedIDs = sessionIDs.filter { selectedSessionsByID[$0] != nil }
+        if !failedIDs.isEmpty {
             let failure = results.first { $0.ok != true }?.error
                 ?? actionErrorMessage
                 ?? String(localized: "The server did not report a result.")
             messages.append(String(
-                localized: "Failed for \(selectedSessionsByID.count) of \(sessionIDs.count) chats: \(failure)"
+                localized: "Failed for \(failedIDs.count) of \(sessionIDs.count) chats: \(failure)"
             ))
-        } else {
+        } else if selectedSessionsByID.isEmpty {
             isSelectingSessions = false
         }
         let keptByAgent = results.filter { $0.ok == true && $0.stateDbCleanupFailed == true }.count
@@ -995,13 +1014,23 @@ public final class SessionListViewModel {
         }
         actionErrorMessage = messages.isEmpty ? nil : messages.joined(separator: "\n\n")
 
-        _ = await load(modelContext: modelContext, animation: animation)
+        claimCount += 1
+        for id in sessionIDs where pendingChanges["session:\(id)"] != nil {
+            pendingChanges["session:\(id)"]?.snapshotClaim = claimCount
+        }
+        let reconciled = await load(modelContext: modelContext, animation: animation)
+        guard scope == resourceGeneration else { return [] }
+        if !reconciled {
+            for id in sessionIDs where selectedSessionsByID[id] != nil {
+                if var pending = pendingChanges["session:\(id)"] { pending.requiresRefresh = true; pendingChanges["session:\(id)"] = pending }
+            }
+        }
         return changed
     }
 
     public func isMutating(_ session: SessionSummary) -> Bool {
         guard let sessionId = Self.nonEmpty(session.sessionId) else { return false }
-        return mutatingSessionIDs.contains(sessionId)
+        return mutatingSessionIDs.contains(sessionId) || pendingChanges["session:\(sessionId)"] != nil
     }
 
     public func rename(_ session: SessionSummary, to rawTitle: String, modelContext: ModelContext? = nil) async -> Bool {
@@ -1009,44 +1038,24 @@ public final class SessionListViewModel {
             actionErrorMessage = String(localized: "Reconnect to the server to rename a session.")
             return false
         }
-
-        guard let sessionId = Self.nonEmpty(session.sessionId) else {
-            actionErrorMessage = String(localized: "The server did not provide a session ID.")
-            return false
-        }
-
         guard let title = Self.nonEmpty(rawTitle) else {
             actionErrorMessage = String(localized: "Enter a session title.")
             return false
         }
+        guard pendingChange(for: session) == nil else { return false }
 
-        isRenamingSession = true
-        actionErrorMessage = nil
-        lastError = nil
-        defer { isRenamingSession = false }
-
-        do {
-            let response = try await sessionMutator.rename(sessionID: sessionId, title: title)
-            if let error = Self.nonEmpty(response.error) {
-                actionErrorMessage = error
-                return false
+        var renamed: SessionSummary?
+        return await changeSession(session, label: String(localized: "Rename"), title: title, modelContext: modelContext, reload: false, confirmed: {
+            if let renamed, let id = renamed.sessionId {
+                self.refreshRow(with: renamed, modelContext: modelContext)
             }
-
-            let resolvedTitle = Self.nonEmpty(response.session?.title) ?? title
-            let baseSession = sessions.first(where: { $0.sessionId == sessionId }) ?? session
-            let updatedSession = baseSession.replacingTitle(with: resolvedTitle)
-            // Claim the row rather than assigning it: a list load already in
-            // flight was requested before this rename and still carries the old
-            // title, so without the claim it would revert what the user typed.
-            refreshRow(with: updatedSession, modelContext: modelContext)
-
-            return true
-        } catch {
-            guard !APIError.isCancellation(error) else { return false }
-
-            lastError = error
-            actionErrorMessage = error.localizedDescription
-            return false
+        }) { id in
+            let response = try await self.sessionMutator.rename(sessionID: id, title: title)
+            guard response.session?.sessionId == id, let resolvedTitle = Self.nonEmpty(response.session?.title) else {
+                throw ResourceMutationError(message: String(localized: "The server did not return the renamed session title."))
+            }
+            let base = self.sessions.first { $0.sessionId == id } ?? session
+            renamed = base.replacingTitle(with: resolvedTitle)
         }
     }
 
@@ -1062,13 +1071,15 @@ public final class SessionListViewModel {
         }
 
         guard beginSessionMutation(sessionId) else { return nil }
-        defer { endSessionMutation(sessionId) }
+        let scope = resourceGeneration
+        defer { if scope == resourceGeneration { endSessionMutation(sessionId) } }
 
         actionErrorMessage = nil
         lastError = nil
 
         do {
             let result = try await sessionMutator.duplicate(sessionID: sessionId)
+            guard scope == resourceGeneration else { return nil }
 
             guard let duplicatedSession = result.session else {
                 actionErrorMessage = result.errorMessage
@@ -1076,6 +1087,7 @@ public final class SessionListViewModel {
             }
 
             await load(modelContext: modelContext)
+            guard scope == resourceGeneration else { return nil }
             if !sessions.contains(where: { $0.sessionId == duplicatedSession.sessionId }) {
                 // The reload may have been coalesced into a load already in flight,
                 // whose response predates the copy.
@@ -1091,6 +1103,7 @@ public final class SessionListViewModel {
             }
             return duplicatedSession
         } catch {
+            guard scope == resourceGeneration else { return nil }
             lastError = error
             actionErrorMessage = error.localizedDescription
             return nil
@@ -1117,7 +1130,8 @@ public final class SessionListViewModel {
         // actions while the download runs (the "progress state") and blocks a
         // double-tap from firing two exports.
         guard beginSessionMutation(sessionId) else { return nil }
-        defer { endSessionMutation(sessionId) }
+        let scope = resourceGeneration
+        defer { if scope == resourceGeneration { endSessionMutation(sessionId) } }
 
         actionErrorMessage = nil
         lastError = nil
@@ -1129,6 +1143,7 @@ public final class SessionListViewModel {
                 fallbackTitle: session.title
             )
 
+            guard scope == resourceGeneration else { return nil }
             let directory = Self.exportsRootDirectory
                 .appendingPathComponent(UUID().uuidString, isDirectory: true)
             try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
@@ -1150,7 +1165,8 @@ public final class SessionListViewModel {
     ///   `actionErrorMessage` is presented as a modal, so only a project action
     ///   the user actually requested may fail into it — otherwise a transient
     ///   `/api/projects` failure interrupts them once per list refresh.
-    public func loadProjects(silently: Bool = false) async {
+    @discardableResult
+    public func loadProjects(silently: Bool = false) async -> Bool {
         isLoadingProjects = true
         // A silent reload neither writes to the action-alert channel nor clears
         // it: an alert the user has not acknowledged yet — a rename that just
@@ -1173,32 +1189,27 @@ public final class SessionListViewModel {
             // A project the user created, renamed or deleted while this request
             // was in flight is newer than the snapshot it returns, so adopting
             // it would make that mutation disappear until the next refresh.
-            guard generation == projectsGeneration else { return }
+            guard generation == projectsGeneration else { return false }
             projects = response.projects ?? []
+            pendingChanges = pendingChanges.filter { !$0.key.hasPrefix("project:") || !$0.value.requiresRefresh }
+            return true
         } catch {
-            guard !APIError.isCancellation(error) else { return }
+            guard generation == projectsGeneration else { return false }
+            guard !APIError.isCancellation(error) else { return false }
 
             lastError = error
             if !silently {
                 actionErrorMessage = error.localizedDescription
             }
+            return false
         }
     }
 
     public func move(_ session: SessionSummary, to projectID: String?, modelContext: ModelContext? = nil) async {
-        guard let sessionId = Self.nonEmpty(session.sessionId) else {
-            actionErrorMessage = String(localized: "The server did not provide a session ID.")
-            return
-        }
+        let projectName = projects.first { $0.projectId == projectID }?.name ?? String(localized: "No Project")
 
-        guard beginSessionMutation(sessionId) else { return }
-        defer { endSessionMutation(sessionId) }
-
-        isMovingSession = true
-        defer { isMovingSession = false }
-
-        _ = await mutate(modelContext: modelContext) {
-            try await sessionMutator.move(sessionID: sessionId, to: projectID)
+        _ = await changeSession(session, label: String(localized: "Move to \(projectName)"), moving: true, modelContext: modelContext) { id in
+            try await self.sessionMutator.move(sessionID: id, to: projectID)
         }
     }
 
@@ -1208,162 +1219,99 @@ public final class SessionListViewModel {
         moving session: SessionSummary,
         modelContext: ModelContext? = nil
     ) async -> Bool {
-        actionErrorMessage = nil
-        lastError = nil
+        guard let id = Self.nonEmpty(session.sessionId), beginSessionMutation(id) else { return false }
+        let scope = resourceGeneration
+        var holdsCreationClaim = true
 
-        guard let sessionId = session.sessionId else {
-            actionErrorMessage = String(localized: "The server did not provide a session ID.")
-            return false
-        }
-
-        let name = rawName.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !name.isEmpty else {
-            actionErrorMessage = String(localized: "Enter a project name.")
-            return false
-        }
-
-        isCreatingProject = true
-        isMovingSession = true
         defer {
-            isCreatingProject = false
-            isMovingSession = false
+            if scope == resourceGeneration { if holdsCreationClaim { endSessionMutation(id) } }
         }
-
-        do {
-            let createResponse = try await client.createProject(name: name, color: color)
-            guard let project = createResponse.project else {
-                actionErrorMessage = createResponse.error ?? String(localized: "The server did not return the new project.")
-                return false
-            }
-
-            guard let projectID = project.projectId, !projectID.isEmpty else {
-                actionErrorMessage = createResponse.error ?? String(localized: "The server did not return the new project ID.")
-                return false
-            }
-
-            upsertProject(project)
-            try await sessionMutator.move(sessionID: sessionId, to: projectID)
-            await load(modelContext: modelContext)
-            return true
-        } catch {
-            guard !APIError.isCancellation(error) else { return false }
-
-            lastError = error
-            actionErrorMessage = error.localizedDescription
-            return false
-        }
+        guard let project = await createProject(named: rawName, color: color), scope == resourceGeneration else { return false }
+        // Release the creation claim before entering the shared move owner.
+        holdsCreationClaim = false
+        endSessionMutation(id)
+        await move(session, to: project.projectId, modelContext: modelContext)
+        return actionErrorMessage == nil && scope == resourceGeneration
     }
 
-    /// Creates a new project without moving any session into it.
-    ///
-    /// Mirrors ``createProject(named:color:moving:modelContext:)`` but skips the
-    /// `sessionMutator.move(...)` step, so the Projects sidebar's standalone
-    /// "Add project" button can make an empty, unassigned project.
     public func createEmptyProject(
         named rawName: String,
         color: String,
         modelContext: ModelContext? = nil
     ) async -> Bool {
-        actionErrorMessage = nil
-        lastError = nil
+        let scope = resourceGeneration
+        guard await createProject(named: rawName, color: color) != nil, scope == resourceGeneration else { return false }
+        _ = await load(modelContext: modelContext)
+        return true
+    }
 
-        let name = rawName.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !name.isEmpty else {
+    /// Both creation entry points share one provisional row and adopt only the returned server identity.
+    private func createProject(named rawName: String, color: String) async -> ProjectSummary? {
+        guard let name = Self.nonEmpty(rawName) else {
             actionErrorMessage = String(localized: "Enter a project name.")
-            return false
+            return nil
+        }
+        guard pendingChanges["project:new"] == nil else {
+            if pendingChanges["project:new"]?.requiresRefresh == true {
+                actionErrorMessage = String(localized: "The previous creation has an unknown outcome. Refresh projects before trying again.")
+            }
+            return nil
         }
 
-        isCreatingProject = true
-        defer { isCreatingProject = false }
-
-        do {
-            let createResponse = try await client.createProject(name: name, color: color)
-            guard let project = createResponse.project else {
-                actionErrorMessage = createResponse.error ?? String(localized: "The server did not return the new project.")
-                return false
+        var created: ProjectSummary?
+        let success = await changeResource(key: "project:new", label: String(localized: "Create"), title: name, color: color, reconcileFailure: true) {
+            let response = try await self.client.createProject(name: name, color: color)
+            try validateResourceMutation(ok: response.ok, error: response.error)
+            guard let project = response.project else {
+                throw ResourceMutationError(message: String(localized: "The server did not return the new project."))
             }
-
-            guard let projectID = project.projectId, !projectID.isEmpty else {
-                actionErrorMessage = createResponse.error ?? String(localized: "The server did not return the new project ID.")
-                return false
+            guard Self.nonEmpty(project.projectId) != nil else {
+                throw ResourceMutationError(message: String(localized: "The server did not return the new project ID."))
             }
-
-            upsertProject(project)
-            await load(modelContext: modelContext)
-            return true
-        } catch {
-            guard !APIError.isCancellation(error) else { return false }
-
-            lastError = error
-            actionErrorMessage = error.localizedDescription
-            return false
+            return project
+        } confirmed: { project in
+            created = project
+            self.upsertProject(project)
+        } reconcile: { committed in
+            if committed { return true }
+            return await self.loadProjects(silently: true)
         }
+        return success ? created : nil
     }
 
     public func delete(_ project: ProjectSummary, modelContext: ModelContext? = nil) async -> Bool {
-        guard let projectID = project.projectId, !projectID.isEmpty else {
-            actionErrorMessage = String(localized: "The server did not provide a project ID.")
-            return false
-        }
+        guard let id = Self.nonEmpty(project.projectId) else { return false }
+        guard pendingChanges["project:\(id)"] == nil else { return false }
 
-        isDeletingProject = true
-        actionErrorMessage = nil
-        lastError = nil
-        defer { isDeletingProject = false }
-
-        do {
-            _ = try await client.deleteProject(id: projectID)
-            projectsGeneration += 1
-            projects.removeAll { $0.projectId == projectID }
-            await load(modelContext: modelContext)
-            return true
-        } catch {
-            guard !APIError.isCancellation(error) else { return false }
-
-            lastError = error
-            actionErrorMessage = error.localizedDescription
-            return false
+        return await changeResource(key: "project:\(id)", label: String(localized: "Delete")) {
+            let response = try await self.client.deleteProject(id: id)
+            try validateResourceMutation(ok: response.ok, error: response.error)
+        } confirmed: { _ in
+            self.projectsGeneration += 1
+            self.projects.removeAll { $0.projectId == id }
+        } reconcile: { committed in
+            if !committed { await self.loadProjects(silently: true) }
+            return await self.load(modelContext: modelContext)
         }
     }
 
     public func rename(_ project: ProjectSummary, named rawName: String, color: String?) async -> Bool {
-        actionErrorMessage = nil
-        lastError = nil
-
-        guard let projectID = project.projectId, !projectID.isEmpty else {
-            actionErrorMessage = String(localized: "The server did not provide a project ID.")
-            return false
-        }
-
-        let name = rawName.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !name.isEmpty else {
+        guard let id = Self.nonEmpty(project.projectId), let name = Self.nonEmpty(rawName) else {
             actionErrorMessage = String(localized: "Enter a project name.")
             return false
         }
+        guard pendingChanges["project:\(id)"] == nil else { return false }
 
-        isRenamingProject = true
-        defer { isRenamingProject = false }
-
-        do {
-            let response = try await client.renameProject(id: projectID, name: name, color: color)
-            guard let renamedProject = response.project else {
-                actionErrorMessage = response.error ?? String(localized: "The server did not return the renamed project.")
-                return false
+        return await changeResource(key: "project:\(id)", label: String(localized: "Rename"), title: name, color: color) {
+            let response = try await self.client.renameProject(id: id, name: name, color: color)
+            try validateResourceMutation(ok: response.ok, error: response.error)
+            guard let project = response.project, project.projectId == id else {
+                throw ResourceMutationError(message: String(localized: "The server did not return the renamed project ID."))
             }
-
-            guard renamedProject.projectId?.isEmpty == false else {
-                actionErrorMessage = response.error ?? String(localized: "The server did not return the renamed project ID.")
-                return false
-            }
-
-            upsertProject(renamedProject)
-            return true
-        } catch {
-            guard !APIError.isCancellation(error) else { return false }
-
-            lastError = error
-            actionErrorMessage = error.localizedDescription
-            return false
+            return project
+        } confirmed: { self.upsertProject($0) } reconcile: { committed in
+            if committed { return true }
+            return await self.loadProjects(silently: true)
         }
     }
 
@@ -1377,6 +1325,19 @@ public final class SessionListViewModel {
         provider: String? = nil,
         projectID: String? = nil
     ) async -> SessionSummary? {
+        switch await createSessionResult(modelContext: modelContext, profile: profile, provider: provider, projectID: projectID) {
+        case .started(let session): return session
+        case .failed: return nil
+        }
+    }
+
+    public func createSessionResult(
+        modelContext: ModelContext? = nil,
+        profile: String? = nil,
+        provider: String? = nil,
+        projectID: String? = nil
+    ) async -> ChatSessionStartResult {
+        var didRequestCreation = false
         isCreatingSession = true
         actionErrorMessage = nil
         lastError = nil
@@ -1395,6 +1356,8 @@ public final class SessionListViewModel {
             } else {
                 requestedModel = nil
             }
+            try Task.checkCancellation()
+            didRequestCreation = true
             let response = try await client.createSession(
                 workspace: workspace,
                 model: requestedModel?.id,
@@ -1402,16 +1365,19 @@ public final class SessionListViewModel {
                 profile: Self.nonEmpty(profile),
                 projectID: Self.nonEmpty(projectID)
             )
+            try Task.checkCancellation()
 
             guard let sessionDetail = response.session else {
-                actionErrorMessage = String(localized: "The server did not return the new session.")
-                return nil
+                let message = String(localized: "The server did not return the new session.")
+                actionErrorMessage = message
+                return .failed(message, canRetry: false)
             }
 
             let newSession = SessionSummary(from: sessionDetail)
             guard newSession.sessionId?.isEmpty == false else {
-                actionErrorMessage = String(localized: "The server did not return the new session ID.")
-                return nil
+                let message = String(localized: "The server did not return the new session ID.")
+                actionErrorMessage = message
+                return .failed(message, canRetry: false)
             }
 
             if newSession.shouldAppearInSessionList {
@@ -1426,13 +1392,17 @@ public final class SessionListViewModel {
                 }
             }
 
-            return newSession
+            return .started(newSession)
         } catch {
-            guard !APIError.isCancellation(error) else { return nil }
-
+            let result = ChatSessionStartResult.failed(
+                error.localizedDescription,
+                canRetry: !didRequestCreation || APIError.isDefinitiveWriteFailure(error),
+                error: error
+            )
+            guard !APIError.isCancellation(error) else { return result }
             lastError = error
             actionErrorMessage = error.localizedDescription
-            return nil
+            return result
         }
     }
 
@@ -1507,6 +1477,8 @@ public final class SessionListViewModel {
         in newSessions: [SessionSummary],
         claimCountAtStart: Int
     ) -> [SessionSummary] {
+        removedRows = removedRows.filter { $0.value > claimCountAtStart }
+        let newSessions = newSessions.filter { removedRows[$0.sessionId ?? ""] == nil }
         guard !claimedRows.isEmpty else { return newSessions }
 
         claimedRows = claimedRows.filter { $0.value.claim > claimCountAtStart }
@@ -1542,7 +1514,8 @@ public final class SessionListViewModel {
     }
 
     private func beginSessionMutation(_ sessionId: String) -> Bool {
-        mutatingSessionIDs.insert(sessionId).inserted
+        guard !isSwitchingActiveProfile, pendingChanges["session:\(sessionId)"] == nil else { return false }
+        return mutatingSessionIDs.insert(sessionId).inserted
     }
 
     private func endSessionMutation(_ sessionId: String) {
@@ -1588,6 +1561,21 @@ public final class SessionListViewModel {
         let profileName = response.effectiveDefaultProfileName
         let profile = response.profile(matching: profileName) ?? fallbackProfile
 
+        if (activeProfileName != nil && activeProfileName != profileName) || isSwitchingActiveProfile {
+            resourceGeneration += 1
+            isPerformingBulkAction = false
+
+            pendingChanges = [:]
+            mutatingSessionIDs = []
+            claimedRows = [:]
+            removedRows = [:]
+            metadataVersions = [:]
+            resourceCacheContext = UUID()
+            resourceCacheVersions = [:]
+            dismissArchiveUndo()
+            loadGeneration += 1
+            projectsGeneration += 1
+        }
         activeProfileName = profileName
         activeProfileDisplayName = response.displayName(for: profileName)
             ?? profile?.displayName
@@ -1595,22 +1583,127 @@ public final class SessionListViewModel {
         activeProfileProvider = Self.nonEmpty(profile?.provider)
     }
 
-    private func mutate(
+    private func removeConfirmedRows(_ ids: [String], clearTranscript: Bool = false, modelContext: ModelContext?) {
+        guard !ids.isEmpty else { return }
+        let removedIDs = Set(ids)
+        for id in removedIDs {
+            claimCount += 1
+            removedRows[id] = claimCount
+            claimedRows.removeValue(forKey: id)
+            selectedSessionsByID.removeValue(forKey: id)
+            if clearTranscript { resourceCacheVersions[id] = UUID() }
+        }
+        sessions.removeAll { $0.sessionId.map(removedIDs.contains) == true }
+        if let modelContext {
+            do {
+                try writeCacheIfCurrent {
+                    if clearTranscript { try CacheStore.clearCache(for: server, sessionIDs: ids, in: modelContext) }
+                    else { try CacheStore.cacheSessions(sessions, serverURL: server, in: modelContext) }
+                }
+            }
+            catch { cacheErrorMessage = error.localizedDescription }
+        }
+    }
+
+    private func changeSession(
+        _ session: SessionSummary,
+        label: String,
+        title: String? = nil,
+        removing: Bool = false,
+        moving: Bool = false,
+        clearTranscript: Bool = false,
+        offerUndo: Bool = false,
         modelContext: ModelContext? = nil,
         animation: Animation? = nil,
-        _ operation: () async throws -> Void
+        reload: Bool = true,
+        confirmed: () -> Void = {},
+        operation: (String) async throws -> Void
     ) async -> Bool {
+        guard let id = Self.nonEmpty(session.sessionId) else {
+            actionErrorMessage = String(localized: "The server did not provide a session ID.")
+            return false
+        }
+        guard beginSessionMutation(id) else { return false }
+        let scope = resourceGeneration
+        var released = false
+        defer { if !released && scope == resourceGeneration { endSessionMutation(id) } }
+        return await changeResource(key: "session:\(id)", label: label, title: title, releaseAfterWrite: offerUndo, isMoving: moving, awaitsSessionSnapshot: reload && !offerUndo) {
+            try await operation(id)
+        } confirmed: { _ in
+            self.metadataVersions[id, default: 0] += 1
+            if removing { self.removeConfirmedRows([id], clearTranscript: clearTranscript, modelContext: modelContext) }
+            confirmed()
+            if offerUndo {
+                self.endSessionMutation(id)
+                released = true
+                self.offerArchiveUndo(for: id)
+            }
+        } reconcile: { committed in
+            if !reload && committed { return true }
+            return await self.load(modelContext: modelContext, animation: animation)
+        }
+    }
+
+    private func changeResource<Result>(
+        key: String,
+        label: String,
+        title: String? = nil,
+        color: String? = nil,
+        releaseAfterWrite: Bool = false,
+        reconcileFailure: Bool = false,
+        isMoving: Bool = false,
+        awaitsSessionSnapshot: Bool = false,
+        operation: () async throws -> Result,
+        confirmed: (Result) -> Void,
+        reconcile: (Bool) async -> Bool
+    ) async -> Bool {
+        guard !isViewingCachedData, !isSwitchingActiveProfile, pendingChanges[key] == nil else { return false }
+        let scope = resourceGeneration
+        let change = PendingResourceChange(label: label, title: title, color: color, isMoving: isMoving)
+        pendingChanges[key] = change
         actionErrorMessage = nil
         lastError = nil
-
+        defer {
+            if pendingChanges[key]?.id == change.id,
+               pendingChanges[key]?.requiresRefresh != true,
+               pendingChanges[key]?.snapshotClaim == nil {
+                pendingChanges.removeValue(forKey: key)
+            }
+        }
         do {
-            try await operation()
-            return await load(modelContext: modelContext, animation: animation)
+            let result = try await operation()
+            guard scope == resourceGeneration, ServerCacheGeneration.current(for: server) == cacheGeneration,
+                  pendingChanges[key]?.id == change.id else { return false }
+            confirmed(result)
+            if awaitsSessionSnapshot {
+                claimCount += 1
+                pendingChanges[key]?.snapshotClaim = claimCount
+            }
+            if releaseAfterWrite { pendingChanges.removeValue(forKey: key) }
+            let loaded = await reconcile(true)
+            guard scope == resourceGeneration else { return false }
+            if !loaded, !releaseAfterWrite { pendingChanges[key]?.requiresRefresh = true }
+            return true
         } catch {
-            guard !APIError.isCancellation(error) else { return false }
-
-            lastError = error
-            actionErrorMessage = error.localizedDescription
+            guard scope == resourceGeneration, ServerCacheGeneration.current(for: server) == cacheGeneration,
+                  pendingChanges[key]?.id == change.id else { return false }
+            // A lost creation acknowledgement needs reconciliation before another non-idempotent attempt.
+            let refused: Bool
+            if let error = error as? APIError {
+                switch error {
+                case .unauthorized, .invalidServerURL: refused = true
+                case .http(let status, _): refused = (400..<500).contains(status) && status != 408
+                default: refused = false
+                }
+            } else { refused = error is SessionMoveWhileStreamingError }
+            let loaded: Bool
+            if refused || !reconcileFailure { loaded = true } else { loaded = await reconcile(false) }
+            guard scope == resourceGeneration else { return false }
+            if !loaded { pendingChanges[key]?.requiresRefresh = true }
+            if !APIError.isCancellation(error) {
+                lastError = error
+                actionErrorMessage = error.localizedDescription
+            }
             return false
         }
     }
@@ -1629,4 +1722,16 @@ public struct SessionArchiveUndo: Equatable, Sendable {
 private struct RemoteSearchScope: Equatable {
     let query: String
     let projectID: String?
+}
+
+/// Submitted display values, never server metadata or inputs to grouping/filtering.
+public struct PendingResourceChange: Equatable {
+    public let id = UUID()
+    public let label: String
+    public let title: String?
+    public let color: String?
+    var isMoving = false
+    public internal(set) var requiresRefresh = false
+    var snapshotClaim: Int? = nil
+    public var status: String { String(localized: "Pending: \(label)") }
 }

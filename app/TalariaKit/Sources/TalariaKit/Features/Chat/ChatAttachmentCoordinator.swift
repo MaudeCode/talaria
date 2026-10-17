@@ -33,6 +33,8 @@ final class ChatAttachmentCoordinator {
     private var uploadErrorAttachmentID: UUID?
     private(set) var localAttachmentPreviews: [String: [String: Data]] = [:]
     private var activeUploadCount = 0
+    /// Files carried by the first pending row during session startup.
+    var startupAttachmentCount = 0
     private var stagingCount = 0
     private var generation = 0
     private var stagedContexts: [UUID: String] = [:]
@@ -70,7 +72,7 @@ final class ChatAttachmentCoordinator {
         var remaining = 8 * 1_024 * 1_024
         return attachments.enumerated().map { index, attachment in
             var bounded = attachment
-            if let cap = maxAttachmentsPerMessage, index >= cap {
+            if let cap = maxAttachmentsPerMessage, index + startupAttachmentCount >= cap {
                 bounded.uploadPhase = .failed(Self.attachmentCapMessage(cap))
             }
             if let data = attachment.thumbnailData, data.count <= remaining {
@@ -214,7 +216,7 @@ final class ChatAttachmentCoordinator {
             return nil
         }
         let expectedGeneration = generation
-        if let cap = maxAttachmentsPerMessage, index >= cap {
+        if let cap = maxAttachmentsPerMessage, index + startupAttachmentCount >= cap {
             recordUploadFailure(Self.attachmentCapMessage(cap), id: id, reportsErrors: reportsErrors)
             return nil
         }
@@ -280,7 +282,7 @@ final class ChatAttachmentCoordinator {
     /// silently on send; staging stops at the cap instead (TAL-635). Nil while there is room.
     private var reachedAttachmentCap: Int? {
         guard let maxAttachmentsPerMessage,
-              pendingAttachments.count + stagingCount >= maxAttachmentsPerMessage
+              pendingAttachments.count + stagingCount + startupAttachmentCount >= maxAttachmentsPerMessage
         else { return nil }
         return maxAttachmentsPerMessage
     }
@@ -490,7 +492,7 @@ final class ChatAttachmentCoordinator {
             }
         }
         if !previews.isEmpty {
-            localAttachmentPreviews[localMessageID] = previews
+            localAttachmentPreviews[localMessageID, default: [:]].merge(previews) { _, latest in latest }
         }
 
         if queued == nil {

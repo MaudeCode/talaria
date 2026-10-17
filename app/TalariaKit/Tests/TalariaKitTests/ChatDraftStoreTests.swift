@@ -4,6 +4,40 @@ import XCTest
 
 @MainActor
 final class ChatDraftStoreTests: XCTestCase {
+    func testLateAcceptedSubmissionFollowsItsDraftMoveAndRetainsUnsentFiles() async throws {
+        let store = ChatDraftStore(persistence: RecordingChatDraftPersistence())
+        let server = URL(string: "https://late-accept.test")!
+        let session = ChatDraftKey.session(server: server, sessionID: "created")
+        let newChat = ChatDraftKey.newChat(server: server)
+        let sent = Self.sampleAttachment()
+        let unsent = ChatDraftAttachment(id: UUID(), name: "newer.txt", mime: "text/plain", size: 1, isImage: false, file: "newer.txt")
+        let writeID = store.setDraft("Newer typing\n\nSubmitted prompt", for: session)
+        store.setAttachments([sent, unsent], for: session)
+        store.moveDraft(from: session, to: newChat)
+        XCTAssertTrue(store.consumeAcceptedSubmission(textWriteID: writeID, currentText: "Newer typing", attachmentIDs: [sent.id]))
+        XCTAssertFalse(store.consumeAcceptedSubmission(textWriteID: writeID, currentText: "Stale overwrite", attachmentIDs: []))
+        let draft = await store.draft(for: newChat)
+        XCTAssertEqual(draft?.text, "Newer typing")
+        XCTAssertEqual(draft?.attachments, [unsent])
+        let old = await store.draft(for: session)
+        XCTAssertNil(old)
+    }
+
+    func testLateAcceptedSubmissionCannotClearAnotherWritersIdenticalTextOrDeletedDraft() async {
+        let store = ChatDraftStore(persistence: RecordingChatDraftPersistence())
+        let key = ChatDraftKey.newChat(server: URL(string: "https://late-accept.test")!)
+        let writeID = store.setDraft("Submitted prompt", for: key)
+        store.setDraft("Submitted prompt", for: key)
+        XCTAssertFalse(store.consumeAcceptedSubmission(textWriteID: writeID, currentText: "", attachmentIDs: []))
+        let current = await store.draft(for: key)
+        XCTAssertEqual(current?.text, "Submitted prompt")
+        let discarded = store.setDraft("Submitted prompt", for: key)
+        await store.discardDraft(for: key)
+        XCTAssertFalse(store.consumeAcceptedSubmission(textWriteID: discarded, currentText: "", attachmentIDs: []))
+        let removed = await store.draft(for: key)
+        XCTAssertNil(removed)
+    }
+
     func testSessionDraftKeyUsesServerIdentityOrStableFallback() {
         let server = URL(string: "https://example.com")!
         let identifiedSession = SessionSummary(sessionId: "  session-1  ")

@@ -1,0 +1,1 @@
+{"entries":[{"category":"Fixed","summary":"Agent updates safely pause and restore supervised gateways and dashboards, including services started through wrappers.","highlight":false,"components":["web"]}]}

@@ -6,6 +6,7 @@ import subprocess
 import sys
 import time
 import shutil
+import types
 from contextlib import contextmanager
 
 import pytest
@@ -268,6 +269,78 @@ def update_in_progress(root): return FD is not None
 
 def rpc(sidecar, root, action, **params):
     return sidecar.result('runtime.agent_mutation', {'agent_dir': str(root), 'action': action, **params}, timeout=10)
+
+
+@pytest.fixture
+def supervised_inventory(tmp_path, monkeypatch):
+    """Native discovery boundaries; synthetic PIDs never reach a signal or real supervisor."""
+    from talaria_sidecar import agent_mutation
+    home = tmp_path / 'home'
+    home.mkdir()
+    rows = []
+    parent = {41001: 1, 41002: 41001, 41003: 1, 41004: 41003, os.getpid(): os.getppid(), os.getppid(): 1}
+    modules = {}
+    for name in ['gateway', 'gateway.status', 'hermes_cli', 'hermes_cli.gateway',
+                 'hermes_cli.main_dashboard', 'hermes_cli.dashboard_procs', 'hermes_cli.update_inventory']:
+        module = types.ModuleType(name)
+        module.__path__ = []
+        modules[name] = module
+        monkeypatch.setitem(sys.modules, name, module)
+    status = modules['gateway.status']
+    status.get_process_start_time = lambda pid: pid * 10
+    status.get_running_pid_identity_strict = lambda path: (41002, 410020)
+    status._pid_exists = lambda pid: pid in parent
+    gateway = modules['hermes_cli.gateway']
+    gateway._is_pid_ancestor_of_current_process = lambda pid: False
+    gateway._launchd_print_service_pid = lambda domain, label: (True, 41001 if label == 'synthetic.gateway' else 41003)
+    dash = modules['hermes_cli.main_dashboard']
+    dash._loaded_launchd_backend_jobs = lambda: [('gui/12345', 'synthetic.dashboard', ['hermes', 'dashboard'], 41003)]
+    dash._launchd_job_owning_backend = lambda pid, cmdline, jobs, ancestors=(): ('gui/12345', 'synthetic.dashboard', 41003) if jobs else None
+    dash._launchd_plist_dirs = lambda: [('agent', tmp_path)]
+    dash._get_systemd_service_for_pid = lambda pid: None
+    import plistlib
+    (tmp_path / 'synthetic.dashboard.plist').write_bytes(plistlib.dumps({'Label': 'synthetic.dashboard', 'ProgramArguments': ['hermes', 'dashboard']}))
+    modules['hermes_cli.dashboard_procs']._hermes_home_for_pid = lambda pid: str(home)
+    modules['hermes_cli.dashboard_procs']._pid_environ = lambda pid: {}
+    modules['hermes_cli.update_inventory']._is_desktop_ssh_ledger_entry = lambda row: False
+    original_run = subprocess.run
+    def run(argv, **kwargs):
+        if argv[:1] == ['ps']:
+            return subprocess.CompletedProcess(argv, 0, ''.join(f'{pid} {ppid}\n' for pid, ppid in parent.items()), '')
+        return original_run(argv, **kwargs)
+    monkeypatch.setattr(subprocess, 'run', run)
+    monkeypatch.setattr(agent_mutation, '_writer_ledger', lambda root, identity: [(r, True) for r in rows])
+    service = {'kind': 'launchd', 'domain': 'gui/12345', 'label': 'synthetic.gateway',
+               'plist': str(tmp_path / 'synthetic.gateway.plist'), 'pid': 41001, 'home': str(home)}
+    pause = types.SimpleNamespace(_discover_systemd=lambda: [], _discover_launchd=lambda: [dict(service)],
+        _left_running=lambda units, jobs: (units, jobs, []), _home_of=lambda pid: str(home))
+    pause._discover_bare = lambda excluded: ([], [] if 41002 in excluded else ['gateway PID 41002 is supervised by synthetic.gateway'])
+    identity = types.SimpleNamespace(_pid_alive_matches=lambda pid, ct, **kw: pid in parent)
+    return tmp_path, home, pause, identity, rows, parent, modules
+
+
+def test_wrapped_gateway_is_owned_by_its_verified_service(supervised_inventory):
+    from talaria_sidecar.agent_mutation import _owners
+    root, home, pause, identity, rows, _, _ = supervised_inventory
+    rows.append({'purpose': 'gateway', 'pid': 41002, 'create_time': 1, 'hermes_home': str(home)})
+    entries = _owners(root, {home}, pause, identity)
+    assert len(entries) == 1
+    assert entries[0]['pid'] == 41002
+    assert entries[0]['service_pid'] == 41001
+
+
+def test_supervised_dashboard_is_in_the_same_owned_writer_set(supervised_inventory):
+    from talaria_sidecar.agent_mutation import _owners
+    root, home, pause, identity, rows, _, _ = supervised_inventory
+    pause._discover_launchd = lambda: []
+    pause._discover_bare = lambda excluded: ([], [])
+    rows.append({'purpose': 'dashboard', 'pid': 41004, 'create_time': 1,
+                 'hermes_home': str(home), 'profile': 'default', 'host': '127.0.0.1', 'port': 9417, 'argv': 'hermes dashboard'})
+    entries = _owners(root, {home}, pause, identity)
+    assert len(entries) == 1
+    assert entries[0]['purpose'] == 'dashboard'
+    assert entries[0]['pid'] == 41004
+    assert entries[0]['service_pid'] == 41003
 
 
 def test_external_writer_is_quiesced_before_mutation_and_resumed_after_finish(owned):
@@ -573,3 +646,104 @@ os.execv({real_git!r},[{real_git!r},*sys.argv[1:]])
         wait_for(settled)
         assert not (home / 'resumed').exists(), 'an unmoved HEAD must not certify a half-written patch'
         assert list(home.glob('.hermes-update-paused-gateways.*.json'))
+
+
+@pytest.mark.parametrize('shape', ['direct', 'nested', 'duplicate', 'symlink'])
+def test_service_gateway_identity_shapes(supervised_inventory, shape):
+    from talaria_sidecar.agent_mutation import _owners
+    root, home, pause, identity, rows, parents, modules = supervised_inventory
+    if shape == 'direct':
+        modules['gateway.status'].get_running_pid_identity_strict = lambda path: (41001, 410010)
+        pause._discover_bare = lambda excluded: ([], [])
+    elif shape == 'nested':
+        parents[41005] = 41001
+        parents[41002] = 41005
+    elif shape == 'duplicate':
+        discover = pause._discover_launchd
+        pause._discover_launchd = lambda: discover() + discover()
+    else:
+        alias = root / 'home-alias'
+        alias.symlink_to(home, target_is_directory=True)
+        home = alias
+    entries = _owners(root, {home}, pause, identity)
+    assert len(entries) == 1
+    assert entries[0]['home'] == str(home.resolve())
+
+
+@pytest.mark.parametrize('unsafe', ['foreign-home', 'unknown-home', 'unrelated-child', 'ancestry', 'parent-birth', 'child-birth', 'canonical-reuse', 'updater-ancestor'])
+def test_service_gateway_ambiguity_refuses_custody(supervised_inventory, unsafe):
+    from talaria_sidecar.agent_mutation import _owners
+    from talaria_sidecar import agent_services
+    root, home, pause, identity, rows, parents, modules = supervised_inventory
+    if unsafe == 'foreign-home':
+        with pytest.raises(RuntimeError, match='outside'):
+            _owners(root, {root / 'foreign'}, pause, identity)
+        return
+    if unsafe == 'unknown-home':
+        pause._home_of = lambda pid: None
+        with pytest.raises(RuntimeError, match='no verified gateway'):
+            _owners(root, {home}, pause, identity)
+        return
+    if unsafe == 'updater-ancestor':
+        parents[os.getpid()] = 41001
+        with pytest.raises(RuntimeError, match='updater or an ancestor'):
+            _owners(root, {home}, pause, identity)
+        return
+    if unsafe == 'unrelated-child':
+        parents[41005] = 41001
+        pause._discover_bare = lambda excluded: ([], [] if 41005 in excluded else ['unrelated supervised gateway 41005'])
+        with pytest.raises(RuntimeError, match='unrelated supervised'):
+            _owners(root, {home}, pause, identity)
+        return
+    entry = _owners(root, {home}, pause, identity)[0]
+    records = types.SimpleNamespace(identity=lambda pid: {'ct': pid})
+    agent_services.bind_processes(entry, records)
+    if unsafe == 'ancestry':
+        parents[41002] = 1
+    elif unsafe in {'parent-birth', 'child-birth'}:
+        changed = 41001 if unsafe == 'parent-birth' else 41002
+        modules['gateway.status'].get_process_start_time = lambda pid: pid * 10 + (1 if pid == changed else 0)
+    else:
+        records.identity = lambda pid: {'ct': pid + 1}
+    with pytest.raises(RuntimeError, match='identity/ancestry changed'):
+        agent_services.verify_processes(entry, records)
+
+
+@pytest.mark.parametrize('unsafe', ['foreign', 'unknown-service', 'desktop', 'desktop-env', 'birth'])
+def test_unmanageable_backend_is_an_actionable_refusal(supervised_inventory, unsafe):
+    from talaria_sidecar.agent_mutation import _owners
+    root, home, pause, identity, rows, parents, modules = supervised_inventory
+    pause._discover_launchd = lambda: []
+    pause._discover_bare = lambda excluded: ([], [])
+    row = dict(purpose='dashboard', pid=41004, create_time=1, hermes_home=str(home), profile='default', host='127.0.0.1', port=9417, argv='hermes dashboard')
+    rows.append(row)
+    if unsafe == 'foreign': row['hermes_home'] = str(root / 'foreign')
+    if unsafe == 'unknown-service': modules['hermes_cli.main_dashboard']._loaded_launchd_backend_jobs = lambda: []
+    if unsafe == 'desktop': row['isolated'] = True
+    if unsafe == 'desktop-env': modules['hermes_cli.dashboard_procs']._pid_environ = lambda pid: {'HERMES_DESKTOP': '1', 'HERMES_DASHBOARD_SESSION_TOKEN': 'synthetic-token'}
+    if unsafe == 'birth': identity._pid_alive_matches = lambda *args, **kwargs: False
+    with pytest.raises(RuntimeError, match='backend|Backend'):
+        _owners(root, {home}, pause, identity)
+
+
+def test_systemd_backend_wrapper_uses_native_unit_and_profile_ownership(supervised_inventory, monkeypatch):
+    from talaria_sidecar.agent_mutation import _owners
+    root, home, pause, identity, rows, parents, modules = supervised_inventory
+    pause._discover_launchd = lambda: []
+    pause._discover_bare = lambda excluded: ([], [])
+    pause._manage_cmd = lambda scope: ['systemctl', '--user']
+    dash = modules['hermes_cli.main_dashboard']
+    dash._loaded_launchd_backend_jobs = lambda: []
+    dash._get_systemd_service_for_pid = lambda pid: 'hermes-dashboard.service' if pid == 41003 else None
+    dash._get_pid_cgroup_path = lambda pid: '/user.slice/user@12345.service/hermes-dashboard.service'
+    dash._extract_scope_from_cgroup = lambda group: 'user'
+    modules['hermes_cli.update_inventory']._serve_unit_matches_profile = lambda profile, unit: profile == 'default' and unit == 'hermes-dashboard.service'
+    scope = types.ModuleType('hermes_cli.update_fleet_scope')
+    scope.systemd_unit_hermes_home = lambda command, unit: str(home)
+    monkeypatch.setitem(sys.modules, scope.__name__, scope)
+    rows.append(dict(purpose='dashboard', pid=41004, create_time=1, hermes_home=str(home), profile='default', host='127.0.0.1', port=9417, argv='hermes dashboard'))
+    entry = _owners(root, {home}, pause, identity)[0]
+    assert (entry['kind'], entry['scope'], entry['unit'], entry['service_pid'], entry['pid']) == ('systemd', 'user', 'hermes-dashboard.service', 41003, 41004)
+    scope.systemd_unit_hermes_home = lambda command, unit: str(root / 'foreign')
+    with pytest.raises(RuntimeError, match='ownership of this backend profile'):
+        _owners(root, {home}, pause, identity)

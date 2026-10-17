@@ -84,6 +84,8 @@ def register(registry) -> None:
                 condition="sidecar_rpc_version_mismatch",
                 data={"server_rpc_version": requested, "sidecar_rpc_version": SIDECAR_RPC_VERSION},
             )
+        from ..agent_mutation import recover_retained
+        recover_retained(runtime)
         try:
             runtime.load()
         except RpcError:

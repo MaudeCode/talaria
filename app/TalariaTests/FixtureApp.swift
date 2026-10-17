@@ -196,6 +196,15 @@ extension XCTestCase {
         return condition()
     }
 
+    /// Reads either composer presentation; a missing composer is not an empty draft.
+    @MainActor
+    func composerDraftText(in window: UIWindow) -> String? {
+        if let input = window.firstView(ofType: ComposerTextView.PastingTextView.self) {
+            return input.text
+        }
+        return HostedAccessibility.element(in: window, label: "Message") == nil ? nil : ""
+    }
+
     /// The chat composer's text view, once the chat has one.
     @MainActor
     func composerTextView(in window: UIWindow, timeout: TimeInterval = 10) async -> UITextView? {

@@ -22,19 +22,23 @@ public struct SessionMutator {
     }
 
     public func setPinned(_ pinned: Bool, sessionID: String) async throws {
-        _ = try await client.pinSession(id: sessionID, pinned: pinned)
+        let response = try await client.pinSession(id: sessionID, pinned: pinned)
+        try validateResourceMutation(ok: response.ok, error: response.error)
     }
 
     public func archive(sessionID: String) async throws {
-        _ = try await client.archiveSession(id: sessionID, archived: true)
+        let response = try await client.archiveSession(id: sessionID, archived: true)
+        try validateResourceMutation(ok: response.ok, error: response.error)
     }
 
     public func unarchive(sessionID: String) async throws {
-        _ = try await client.archiveSession(id: sessionID, archived: false)
+        let response = try await client.archiveSession(id: sessionID, archived: false)
+        try validateResourceMutation(ok: response.ok, error: response.error)
     }
 
     public func delete(sessionID: String) async throws {
-        _ = try await client.deleteSession(id: sessionID)
+        let response = try await client.deleteSession(id: sessionID)
+        try validateResourceMutation(ok: response.ok, error: response.error)
     }
 
     func bulk(_ action: SessionBulkAction, sessionIDs: [String]) async throws -> SessionBulkResponse {
@@ -42,12 +46,15 @@ public struct SessionMutator {
     }
 
     public func rename(sessionID: String, title: String) async throws -> SessionMutationResponse {
-        try await client.renameSession(id: sessionID, title: title)
+        let response = try await client.renameSession(id: sessionID, title: title)
+        try validateResourceMutation(ok: response.ok, error: response.error)
+        return response
     }
 
     public func move(sessionID: String, to projectID: String?) async throws {
         do {
-            _ = try await client.moveSession(id: sessionID, projectID: projectID)
+            let response = try await client.moveSession(id: sessionID, projectID: projectID)
+            try validateResourceMutation(ok: response.ok, error: response.error)
         } catch let error as APIError {
             // Only a 503 carrying the server's JSON error payload is the documented
             // "session is busy (streaming)" refusal; a proxy/tunnel 503 has no JSON
@@ -88,4 +95,16 @@ public struct SessionMutator {
             errorMessage: nil
         )
     }
+}
+
+func validateResourceMutation(ok: Bool?, error: String?) throws {
+    if let error, !error.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+        throw ResourceMutationError(message: error)
+    }
+    if ok == false { throw ResourceMutationError(message: String(localized: "The server refused this change.")) }
+}
+
+struct ResourceMutationError: LocalizedError {
+    let message: String
+    var errorDescription: String? { message }
 }

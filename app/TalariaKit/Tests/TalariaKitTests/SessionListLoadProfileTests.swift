@@ -8,6 +8,26 @@ import UniformTypeIdentifiers
 
 @MainActor
 extension SessionListMutationTests {
+    func testCreationTracksOnlyIndeterminateWritesAsNeedingReconciliation() async throws {
+        for (failurePath, status, uncertain) in [
+            ("/api/workspaces", 500, false),
+            ("/api/session/new", 409, false),
+            ("/api/session/new", 500, true),
+            ("/api/session/new", 200, true),
+        ] {
+            let viewModel = try makeViewModel { request in
+                if request.url?.path == failurePath {
+                    let response = HTTPURLResponse(url: request.url!, statusCode: status, httpVersion: nil, headerFields: ["Content-Type": "application/json"])!
+                    return (response, Data(#"{"error":"Synthetic refusal or lost result"}"#.utf8))
+                }
+                return apiTestJSONResponse(#"{"workspaces":[],"last":"/tmp/fixture"}"#, for: request)
+            }
+            let result = await viewModel.createSessionResult()
+            guard case .failed(_, let canRetry, _) = result else { return XCTFail("Expected creation failure") }
+            XCTAssertEqual(!canRetry, uncertain, "\(failurePath), HTTP \(status)")
+        }
+    }
+
     /// Two list loads can no longer be in flight at once: the refresh queue
     /// serializes them, so a load requested while another is running is served
     /// as a follow-up afterwards rather than racing it. The newer request still

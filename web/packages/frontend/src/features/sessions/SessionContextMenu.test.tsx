@@ -1,11 +1,13 @@
 import { describe, expect, it, vi } from 'vitest'
-import { render, screen } from '@testing-library/react'
+import { render, screen, waitFor, act } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import type { SessionRow } from '../../contracts'
 
 vi.mock(import('@tanstack/react-router'), async (importOriginal) => ({ ...(await importOriginal()), useNavigate: () => vi.fn() }))
 import { SessionContextMenu } from './SessionContextMenu'
+import * as api from '../../api/endpoints'
+import { keys } from '../../api/queryKeys'
 
 const writable: SessionRow = { session_id: 'mine', title: 'Mine', is_streaming: false, read_only: false, can_branch: true, can_pin: true, can_archive: true, can_delete: true, can_duplicate: true, source_kind: 'webui', is_messaging_session: false, sort_ts: 0 }
 
@@ -27,4 +29,27 @@ describe('SessionContextMenu', () => {
     for (const offered of ['Pin', 'Duplicate', 'Archive']) expect(items.some((t) => t.startsWith(offered)), offered).toBe(true)
     for (const refused of ['Rename', 'Move', 'Delete']) expect(items.some((t) => t.startsWith(refused)), refused).toBe(false)
   })
+})
+
+
+it('removes confirmed deletion from every cached list and session resource', async () => {
+  let answer!: (value: Awaited<ReturnType<typeof api.deleteSession>>) => void
+  vi.spyOn(api, 'deleteSession').mockReturnValueOnce(new Promise((resolve) => { answer = resolve }))
+  const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+  for (const key of [keys.sessions.list({}), keys.sessions.list({ include_archived: true }), keys.sessions.search('Mine', {})]) {
+    qc.setQueryData(key, { sessions: [writable, { ...writable, session_id: 'keeper' }] })
+  }
+  qc.setQueryData(keys.sessions.detail('mine'), { session: writable })
+  qc.setQueryData(keys.sessions.usage('mine'), { usage: {} })
+  render(<QueryClientProvider client={qc}><SessionContextMenu row={writable} active={false} /></QueryClientProvider>)
+  await userEvent.click(screen.getByRole('button', { name: 'Conversation actions' }))
+  await userEvent.click(await screen.findByRole('menuitem', { name: 'Delete conversation' }))
+  await userEvent.click(screen.getByRole('button', { name: 'Delete' }))
+  await waitFor(() => expect(api.deleteSession).toHaveBeenCalledWith('mine'))
+  expect(qc.getQueryData<{ sessions: SessionRow[] }>(keys.sessions.list({}))?.sessions).toHaveLength(2)
+  act(() => { answer({ ok: true, state_db_cleanup_failed: false }) })
+  await waitFor(() => expect(qc.getQueryData<{ sessions: SessionRow[] }>(keys.sessions.list({}))?.sessions.map((r) => r.session_id)).toEqual(['keeper']))
+  expect(qc.getQueryData(keys.sessions.search('Mine', {}))).toEqual({ sessions: [{ ...writable, session_id: 'keeper' }] })
+  expect(qc.getQueryData(keys.sessions.detail('mine'))).toBeUndefined()
+  expect(qc.getQueryData(keys.sessions.usage('mine'))).toBeUndefined()
 })
