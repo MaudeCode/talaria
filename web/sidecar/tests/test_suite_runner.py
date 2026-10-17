@@ -202,6 +202,7 @@ def test_workers_and_detached_children_cleaned_on_abort(project, failure):
             proc.send_signal(signal.SIGTERM)
         output = proc.communicate(timeout=15)[0]
         assert proc.returncode != 0, output
+        assert 'worker-1/output.log' in output, 'aborted worker diagnostics were not retained in the run output'
         deadline = time.monotonic() + 5
         while process_is_live(child) and time.monotonic() < deadline:
             time.sleep(.02)
