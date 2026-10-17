@@ -1,6 +1,6 @@
 import { deferred, sessionFixture } from '../test/fixtures'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { QueryClient } from '@tanstack/react-query'
+import { QueryClient, QueryObserver } from '@tanstack/react-query'
 import { keys } from '../api/queryKeys'
 import { ApiError } from '../contracts/common'
 import type { ChatEvent } from '../contracts/sse'
@@ -30,6 +30,7 @@ const { attachToStream, resetConnectionsForTests, teardown, teardownAll, discard
 const { onReturnToComposer, rememberOwnSteer, returnToComposer } = await import('../features/composer/composerReturn')
 const withdrawn = (steer_id: string | null, reason: string, text: string) => parseChatEvent('steer_withdrawn', JSON.stringify({ steer_id, reason, text }))!
 const { getStreamState, resetStreamStoreForTests, getTurnIntent } = await import('./store')
+const { beginFirstSend, bindFirstSend, getFirstSend } = await import('../features/chat/firstSend')
 const { liveText } = await import('./reducer')
 
 const api = await import('../api/endpoints')
@@ -363,17 +364,33 @@ describe('pending admission and cancellation intent (TAL-1079)', () => {
     expect(getTurnIntent(SID).send).toBeUndefined()
   })
 
-  it('keeps a no-stream pending row until the authoritative detail arrives', async () => {
+  it.each([false, true])('settles no-stream ownership with embedded session=%s without an eager detail refresh', async (embedded) => {
+    const session = sessionFixture({ session_id: SID, messages: [{ role: 'user', id: 1, content: 'First occurrence' }] })
     const detail = deferred<Awaited<ReturnType<typeof api.fetchSession>>>()
-    vi.mocked(api.startChat).mockResolvedValue({ status: 'suppressed' })
+    const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    configureStream({ queryClient: qc })
+    const observer = new QueryObserver(qc, { queryKey: keys.sessions.detail(SID), queryFn: () => api.fetchSession(SID, { messages: true, msg_limit: 120 }), initialData: { session: sessionFixture({ session_id: SID, messages: [] }) }, staleTime: Infinity })
+    const off = observer.subscribe(() => undefined)
+    beginFirstSend('First occurrence')
+    bindFirstSend(SID)
+    vi.mocked(api.startChat).mockResolvedValue({ status: 'suppressed', ...(embedded ? { session } : {}) })
     vi.mocked(api.fetchSession).mockReturnValue(detail.promise)
-    const sending = startTurn({ sessionId: SID, message: '/control', request: {} })
+    const sending = startTurn({ sessionId: SID, message: 'First occurrence', request: {} })
     await Promise.resolve()
-    expect(getTurnIntent(SID).send?.text).toBe('/control')
-    detail.resolve({ session: sessionFixture({ session_id: SID, messages: [] }) })
+    expect(api.fetchSession).toHaveBeenCalledTimes(embedded ? 0 : 1)
+    if (!embedded) {
+      expect(getTurnIntent(SID).send?.text).toBe('First occurrence')
+      expect(getFirstSend()?.text).toBe('First occurrence')
+      expect(qc.getQueryData<{ session: typeof session }>(keys.sessions.detail(SID))?.session.messages).toEqual([])
+      detail.resolve({ session })
+    }
     await sending
     expect(getTurnIntent(SID).send).toBeUndefined()
+    expect(getFirstSend()).toBeNull()
+    expect(qc.getQueryData<{ session: typeof session }>(keys.sessions.detail(SID))?.session.messages).toEqual(session.messages)
     expect(opened).toHaveLength(0)
+    off()
+    qc.clear()
   })
 
   it('does not restart a turn whose terminal event arrived before its start response', async () => {

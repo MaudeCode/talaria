@@ -81,9 +81,10 @@ export function ChatView({ sessionId }: { sessionId: string | null }) {
     // One drain in flight at a time; the item leaves the queue only once its turn has started, so a
     // failed start keeps it and a re-render mid-request cannot start the next item concurrently.
     draining.current = true
+    const scope = getStreamContext()
     void startTurn({ sessionId, message: next.text, queueId: next.id, request: { ...next.request, ...(next.attachments.length ? { attachments: next.attachments } : {}) } })
-      .then(() => setQueued((q) => q.filter((t) => t.id !== next.id)))
-      .catch((e: unknown) => { setFailedQueued(next.id); showToast(e instanceof Error ? e.message : String(e), 4000, 'error') })
+      .then(() => { if (scope === getStreamContext()) setQueued((q) => q.filter((t) => t.id !== next.id)) })
+      .catch((e: unknown) => { if (scope !== getStreamContext()) return; setFailedQueued(next.id); showToast(e instanceof Error ? e.message : String(e), 4000, 'error') })
       .finally(() => { draining.current = false })
   }, [sessionId, session, queued, live, setQueued, intent, operation, failedQueued])
 
@@ -145,11 +146,11 @@ export function ChatView({ sessionId }: { sessionId: string | null }) {
   // Regenerate, `/retry`, and the error notice's Retry: the server drops the last exchange, then its prompt and files are resent.
   // One at a time: a second retry while the first is pending would drop the exchange before it too.
   const onRegenerate = useCallback(async () => {
-    if (!sessionId || !session) return
-    await runHistory(m.history_retrying(), async (current) => {
+    if (!sessionId || !session) return false
+    return runHistory(m.history_retrying(), async (current) => {
       const r = await api.retrySession(sessionId)
       if (!current()) return
-      if ('error' in r) { showToast(r.error, 4000, 'error'); return }
+      if ('error' in r) { showToast(r.error, 4000, 'error'); return false }
       await refresh(undefined, true)
       if (!current()) return
       // Old-server payloads return to the composer for review rather than resending normalized text.
@@ -207,15 +208,15 @@ export function ChatView({ sessionId }: { sessionId: string | null }) {
     void followCompression(sessionId, () => Promise.resolve(runningJob))
   }, [sessionId, runningJob, compressingSince, followCompression])
 
-  const onLocalCommand = useCallback(async (name: string, args: string): Promise<boolean> => {
+  const onLocalCommand = useCallback(async (name: string, args: string): Promise<boolean | 'refused'> => {
     switch (name) {
       case 'stop': if (sessionId) await cancelTurn(sessionId); return true
       case 'new': removePersisted('hermes-webui-session'); await navigate({ to: '/', search: { action: 'new-chat' } }); return true
-      case 'clear': if (sessionId) await runHistory(m.history_clearing(), async (current) => { const r = await api.clearSession(sessionId); if (current()) await refresh(r.session) }); return true
+      case 'clear': if (sessionId) return await runHistory(m.history_clearing(), async (current) => { const r = await api.clearSession(sessionId); if (current()) await refresh(r.session) }) ? true : 'refused'; return true
       case 'terminal': setTerminalOpen((t) => !t); return true
       case 'title': if (sessionId && args) { await api.renameSession(sessionId, args); await refresh(); void qc.invalidateQueries({ queryKey: keys.sessions.all }) } return true
-      case 'retry': if (sessionId) { await onRegenerate() } return true
-      case 'undo': if (sessionId) await runHistory(m.history_undoing(), async (current) => { const r = await api.undoSession(sessionId); if (!current()) return; if ('error' in r) { showToast(r.error, 4000, 'error'); return } await refresh(undefined, true) }); return true
+      case 'retry': if (sessionId) return await onRegenerate() ? true : 'refused'; return true
+      case 'undo': if (sessionId) return await runHistory(m.history_undoing(), async (current) => { const r = await api.undoSession(sessionId); if (!current()) return; if ('error' in r) { showToast(r.error, 4000, 'error'); return false } await refresh(undefined, true) }) ? true : 'refused'; return true
       case 'compress': if (sessionId) { void runCompression(sessionId) } return true
       case 'usage': if (sessionId) { const u = await api.fetchSessionUsage(sessionId); showToast(`${(u.input_tokens ?? 0).toLocaleString()} in · ${(u.output_tokens ?? 0).toLocaleString()} out${u.estimated_cost ? ` · $${u.estimated_cost.toFixed(4)}` : ''}`, 4000) } return true
       case 'yolo': onToggleYolo(); return true

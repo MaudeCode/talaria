@@ -29,15 +29,15 @@ export function useEditMessage(sessionId: string | null, refresh: (accepted?: un
     setOperation(null)
     return () => { lifecycle.current = null; active.current = null }
   }, [sessionId])
-  const runHistory = useCallback(async (label: string, run: (current: () => boolean) => Promise<void>) => {
-    if (!sessionId || active.current || getTurnIntent(sessionId).send || getTurnIntent(sessionId).stop) return
+  const runHistory = useCallback(async (label: string, run: (current: () => boolean) => Promise<unknown>) => {
+    if (!sessionId || active.current || getTurnIntent(sessionId).send || getTurnIntent(sessionId).stop) return false
     const owner = {}; active.current = owner
     const scope = getStreamContext()
     const life = lifecycle.current
     const current = () => active.current === owner && life !== null && lifecycle.current === life && scope === getStreamContext()
     setOperation(label)
-    try { await run(current) }
-    catch (e) { if (current()) showToast(e instanceof Error ? e.message : String(e), 4000, 'error') }
+    try { const accepted = await run(current); return current() && accepted !== false }
+    catch (e) { if (current()) showToast(e instanceof Error ? e.message : String(e), 4000, 'error'); return false }
     finally { if (active.current === owner) { active.current = null; if (lifecycle.current === life) setOperation(null) } }
   }, [sessionId])
   const edit = useCallback(async (sid: string, row: VisibleMessage, text: string, token?: string) => {

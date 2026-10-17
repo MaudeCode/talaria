@@ -49,7 +49,7 @@ export interface ComposerProps {
   settings: Settings | undefined
   /** Creates the unsaved chat's session; `onCreated` hears its id before the route changes to it. */
   onEnsureSession: (onCreated?: (sessionId: string) => void) => Promise<Session>
-  onLocalCommand: (name: string, args: string) => Promise<boolean>
+  onLocalCommand: (name: string, args: string) => Promise<boolean | 'refused'>
   terminalOpen: boolean
   onToggleTerminal: () => void
   onModelChange: (model: string, provider: string | null) => void
@@ -429,10 +429,14 @@ export function Composer(props: ComposerProps) {
       if (cmd) {
         if (cmd.name === 'theme') { const v = ThemeSchema.safeParse(cmd.args); if (v.success) setTheme(v.data); setText(''); return }
         // A refused command (e.g. `/goal gate add` without a goal) shows the server's reason and keeps the text.
+        const commandScope = getStreamContext()
         const consumed = cmd.name === 'retry' || cmd.name === 'undo' || cmd.name === 'clear'
         if (consumed) setText('')
-        let handled: boolean
-        try { handled = await onLocalCommand(cmd.name, cmd.args) } catch (e) { showToast(e instanceof Error ? e.message : String(e), 5000, 'error'); return }
+        const restore = () => { if (consumed && commandScope === getStreamContext()) setText((current) => current.trim() ? `${current}\n\n${text}` : text) }
+        let handled: boolean | 'refused'
+        try { handled = await onLocalCommand(cmd.name, cmd.args) } catch (e) { if (commandScope !== getStreamContext()) return; restore(); showToast(e instanceof Error ? e.message : String(e), 5000, 'error'); return }
+        if (commandScope !== getStreamContext()) return
+        if (handled === 'refused') { restore(); return }
         if (handled) { if (!consumed) setText((current) => current === text ? '' : current); return }
         // TAL-372: `/background` runs the prompt in a hidden session; its record and result show in the background card.
         if (cmd.name === 'background') {

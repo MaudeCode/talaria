@@ -209,3 +209,45 @@ test('a refused queued send waits for an explicit retry instead of draining repe
   await expect(page.locator('.queue-card')).toHaveCount(0)
   expect(requests).toBe(2)
 })
+
+test('queue admission completing after navigation is acknowledged before the session is reopened', async ({ page }) => {
+  test.skip(before, 'Regression validation only')
+  await page.addInitScript(({ id }) => localStorage.setItem(`hermes-queue:${id}`, JSON.stringify([{ id: 'leave-during-start', text: 'Send once while leaving', attachments: [], request: { profile: 'default' } }])), { id: sid })
+  let admitted = false
+  await page.route('**/api/session?**', (route) => {
+    const id = new URL(route.request().url()).searchParams.get('session_id')!
+    return route.fulfill({ json: { session: sessionFixture({ session_id: id, title: id, messages: id !== sid ? [{ role: 'assistant', id: 11, content: 'Other session ready' }] : admitted ? [...initial, { role: 'user', id: 3, content: 'Send once while leaving' }] : initial }) } })
+  })
+  const admission = hold()
+  let starts = 0
+  await page.route('**/api/chat/start', async (route) => { starts++; await admission.promise; admitted = true; await route.fulfill({ json: { status: 'suppressed' } }) })
+  await page.goto(`/session/${sid}`)
+  await expect.poll(() => starts).toBe(1)
+  await page.evaluate(() => { history.pushState({}, '', '/session/other-intent-session'); dispatchEvent(new PopStateEvent('popstate')) })
+  await expect(page.getByText('Other session ready', { exact: true })).toBeVisible()
+  admission.resolve()
+  await expect.poll(() => page.evaluate((id) => localStorage.getItem(`hermes-queue:${id}`), sid)).toBeNull()
+  await page.evaluate((id) => { history.pushState({}, '', `/session/${id}`); dispatchEvent(new PopStateEvent('popstate')) }, sid)
+  await expect(page.locator('#messages').getByText('Send once while leaving', { exact: true })).toHaveCount(1)
+  await expect(page.locator('.queue-card')).toHaveCount(0)
+  expect(starts).toBe(1)
+})
+
+for (const action of ['retry', 'undo', 'clear'] as const) {
+  test(`a refused /${action} returns after newer composer text`, async ({ page, errors }) => {
+    test.skip(before, 'Regression validation only')
+    await page.route('**/api/session?**', (route) => route.fulfill({ json: { session: snapshot() } }))
+    const refusal = hold()
+    await page.route(`**/api/session/${action}`, async (route) => { await refusal.promise; await route.fulfill({ status: action === 'clear' ? 503 : 200, json: { error: 'Synthetic history refusal' } }) })
+    await page.goto(`/session/${sid}`)
+    await expect(page.getByText('Earlier answer', { exact: true })).toBeVisible()
+    await page.locator('#msg').fill(`/${action}`)
+    await page.locator('#btnSend').click()
+    await expect(page.locator('[data-notice="history"]')).toBeVisible()
+    await page.locator('#msg').fill('Newer draft')
+    refusal.resolve()
+    await expect(page.locator('#msg')).toHaveValue(`Newer draft\n\n/${action}`)
+    await expect(page.getByText('Earlier answer', { exact: true })).toBeVisible()
+    if (action === 'clear') errors.splice(0, errors.length, ...errors.filter((error) => !/^503 POST .*\/api\/session\/clear$/.test(error)))
+  })
+}

@@ -21,11 +21,11 @@ vi.mock(import('../../api/endpoints'), async (importOriginal) => ({ ...(await im
 vi.mock(import('../toast/toast'), async (importOriginal) => ({ ...(await importOriginal()), showToast: vi.fn() }))
 vi.mock(import('../../api/sse'), async (importOriginal) => ({ ...(await importOriginal()), openChatStream: vi.fn(() => ({ close: () => undefined, readyState: () => 0 })) }))
 vi.mock(import('../voice/liveDictation'), async (importOriginal) => ({ ...(await importOriginal()), dictateLive: vi.fn(), liveDictationSupported: vi.fn(() => true) }))
-import { Composer } from './Composer'
+import { Composer, type ComposerProps } from './Composer'
 import { dictateLive } from '../voice/liveDictation'
 
 const noop = (): void => undefined
-function renderComposer(session: Session | null, live: LiveTurn | null = null, onQueue: (entry: QueuedTurn) => void = noop, settings?: Settings, onEnsureSession: () => Promise<Session> = () => Promise.resolve(session!), onLocalCommand: (name: string, args: string) => Promise<boolean> = () => Promise.resolve(false)) {
+function renderComposer(session: Session | null, live: LiveTurn | null = null, onQueue: (entry: QueuedTurn) => void = noop, settings?: Settings, onEnsureSession: () => Promise<Session> = () => Promise.resolve(session!), onLocalCommand: ComposerProps['onLocalCommand'] = () => Promise.resolve(false)) {
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } })
   const tree = (turn: LiveTurn | null) => (
     <QueryClientProvider client={qc}>
@@ -263,6 +263,28 @@ describe('Composer', () => {
     await waitFor(() => expect(showToast).toHaveBeenCalledWith('/goal gate add: no active goal', 5000, 'error'))
     expect(onLocalCommand).toHaveBeenCalledWith('goal', 'gate add true')
     expect(box).toHaveValue('/goal gate add true')
+  })
+
+  it.each(['retry', 'undo', 'clear'])('restores a refused /%s after newer text', async (command) => {
+    const decision = deferred<boolean | 'refused'>()
+    renderComposer({ ...writable, is_streaming: false }, null, noop, undefined, undefined, () => decision.promise)
+    const box = screen.getByRole('textbox')
+    await userEvent.type(box, `/${command}{Enter}`)
+    expect(box).toHaveValue('')
+    await userEvent.type(box, 'Newer draft')
+    await act(async () => { decision.resolve('refused'); await decision.promise })
+    expect(box).toHaveValue(`Newer draft\n\n/${command}`)
+  })
+
+  it('restores a history command after a thrown failure but fences an auth change', async () => {
+    const decision = deferred<boolean>()
+    renderComposer({ ...writable, is_streaming: false }, null, noop, undefined, undefined, () => decision.promise.then(() => { throw new Error('Refused') }))
+    const box = screen.getByRole('textbox')
+    await userEvent.type(box, '/retry{Enter}')
+    await userEvent.type(box, 'Newer identity')
+    act(() => resetConnectionsForTests())
+    await act(async () => { decision.resolve(false); await decision.promise })
+    expect(box).toHaveValue('Newer identity')
   })
 
   // TAL-561: an entry the server marks `exec` runs through the exec route; its output shows above the composer.

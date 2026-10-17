@@ -238,7 +238,9 @@ composer; newer typing and files survive. Refused submissions restore their exac
 transport outcomes keep the payload and block automatic replay until the conversation is reconciled.
 Interrupt stages its replacement in the existing queue immediately. Stop shows Stopping until the server
 confirms worker release, including after a terminal event; a failed Stop keeps the queue held and can be
-retried. Edit, Retry, Undo and Clear show their intent in the existing composer notice tab. Edit returns
+retried. Accepted queue mutations persist before their view renders, so an admission that finishes after
+navigation cannot be resent on return. Refused history commands return after any newer composer text.
+Edit, Retry, Undo and Clear show their intent in the existing composer notice tab. Edit returns
 text only after the server accepts the cut, retaining deep-discard confirmation, and uses a returned full
 snapshot without waiting for another detail request. Every send, steer,
 or queue returns the transcript to its end.

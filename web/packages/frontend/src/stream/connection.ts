@@ -17,7 +17,7 @@ import { setTodoState } from '../features/todos/todoStore'
 import { showToast } from '../features/toast/toast'
 import { m } from '../paraglide/messages.js'
 import type { PendingFile } from '../features/composer/Attachments'
-import { endFirstSend } from '../features/chat/firstSend'
+import { endFirstSend, getFirstSend } from '../features/chat/firstSend'
 import { isApiError } from '../contracts/common'
 
 interface Replay { afterSeq: number; afterEventId: string }
@@ -226,6 +226,7 @@ export function startTurn(input: StartTurnInput): Promise<ChatStartResponse> {
   const owner = owners.get(input.sessionId) ?? {}
   const scope = context
   const client = queryClient
+  const first = getFirstSend()
   owners.set(input.sessionId, owner)
   const send = { queueId: input.queueId, previousStreamId: getStreamState().turns[input.sessionId]?.streamId, text: input.message, attachments: input.request.attachments ?? [], request: input.request, ...(input.files ? { files: input.files } : {}), recover: input.recover ?? !!input.files }
   setTurnIntent(input.sessionId, { ...getTurnIntent(input.sessionId), send })
@@ -237,15 +238,19 @@ export function startTurn(input: StartTurnInput): Promise<ChatStartResponse> {
       if (res.ok === false) throw new Error(res.reason ?? m.composer_send_refused())
       admitted = true
       if (!current()) return res
-      if (owners.get(input.sessionId) === owner) {
+      if (res.stream_id && owners.get(input.sessionId) === owner) {
         const turn = getStreamState().turns[input.sessionId]
         // A session relay may already have delivered this turn's terminal snapshot before the POST returned.
-        if (!(turn && turn.streamId === res.stream_id && isTerminal(turn.status))) adoptTurn(input.sessionId, input.message, res, input.request.attachments)
+        if (!(turn?.streamId === res.stream_id && isTerminal(turn.status))) adoptTurn(input.sessionId, input.message, res, input.request.attachments)
       }
       // Suppressed/no-stream admissions have no live row to take over the pending slot.
       if (!res.stream_id) {
         const result = res.session ? { session: res.session } : await api.fetchSession(input.sessionId, { messages: true })
-        if (current()) client?.setQueryData(keys.sessions.detail(input.sessionId), result)
+        if (current()) {
+          // FirstSend must retire while TurnIntent still owns the row; otherwise its fallback revives it after settlement.
+          if (first?.sessionId === input.sessionId && getFirstSend() === first) endFirstSend()
+          client?.setQueryData(keys.sessions.detail(input.sessionId), result)
+        }
       }
       return res
     } catch (error) {
