@@ -975,16 +975,18 @@ public final class SessionListViewModel {
                 guard scope == resourceGeneration else { return [] }
                 let chunkResults = (response.results ?? []).filter { chunk.contains($0.sessionId ?? "") }
                 results += chunkResults
+                var removedIDs: [String] = []
                 for result in chunkResults {
                     guard let id = result.sessionId else { continue }
                     if result.ok == true, let session = selectedSessionsByID.removeValue(forKey: id) {
                         metadataVersions[id, default: 0] += 1
-                        if action != .unarchive { removeConfirmedRow(id, clearTranscript: action == .delete, modelContext: modelContext) }
+                        if action != .unarchive { removedIDs.append(id) }
                         changed.append(session)
                     }
                     // Stop marking an answered item pending while later chunks run.
                     pendingChanges.removeValue(forKey: "session:\(id)")
                 }
+                removeConfirmedRows(removedIDs, clearTranscript: action == .delete, modelContext: modelContext)
             }
         } catch {
             guard scope == resourceGeneration else { return [] }
@@ -1559,17 +1561,21 @@ public final class SessionListViewModel {
         activeProfileProvider = Self.nonEmpty(profile?.provider)
     }
 
-    private func removeConfirmedRow(_ id: String, clearTranscript: Bool = false, modelContext: ModelContext?) {
-        claimCount += 1
-        removedRows[id] = claimCount
-        claimedRows.removeValue(forKey: id)
-        sessions.removeAll { $0.sessionId == id }
-        selectedSessionsByID.removeValue(forKey: id)
-        if clearTranscript { resourceCacheVersions[id] = UUID() }
+    private func removeConfirmedRows(_ ids: [String], clearTranscript: Bool = false, modelContext: ModelContext?) {
+        guard !ids.isEmpty else { return }
+        let removedIDs = Set(ids)
+        for id in removedIDs {
+            claimCount += 1
+            removedRows[id] = claimCount
+            claimedRows.removeValue(forKey: id)
+            selectedSessionsByID.removeValue(forKey: id)
+            if clearTranscript { resourceCacheVersions[id] = UUID() }
+        }
+        sessions.removeAll { $0.sessionId.map(removedIDs.contains) == true }
         if let modelContext {
             do {
                 try writeCacheIfCurrent {
-                    if clearTranscript { try CacheStore.clearCache(for: server, sessionID: id, in: modelContext) }
+                    if clearTranscript { try CacheStore.clearCache(for: server, sessionIDs: ids, in: modelContext) }
                     else { try CacheStore.cacheSessions(sessions, serverURL: server, in: modelContext) }
                 }
             }
@@ -1603,7 +1609,7 @@ public final class SessionListViewModel {
             try await operation(id)
         } confirmed: { _ in
             self.metadataVersions[id, default: 0] += 1
-            if removing { self.removeConfirmedRow(id, clearTranscript: clearTranscript, modelContext: modelContext) }
+            if removing { self.removeConfirmedRows([id], clearTranscript: clearTranscript, modelContext: modelContext) }
             confirmed()
             if offerUndo {
                 self.endSessionMutation(id)

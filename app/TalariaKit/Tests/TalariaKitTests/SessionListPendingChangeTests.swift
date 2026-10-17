@@ -237,4 +237,70 @@ final class SessionListPendingChangeTests: XCTestCase {
         XCTAssertFalse(viewModel.isPerformingBulkAction)
         XCTAssertTrue(viewModel.actionErrorMessage?.contains("2 of 201") == true)
     }
+
+    func testBulkArchivePersistsOneCacheTransactionPerChunk() async throws {
+        try await assertBulkCacheTransactions(.archive)
+    }
+
+    func testBulkDeletePersistsOneCacheTransactionPerChunk() async throws {
+        try await assertBulkCacheTransactions(.delete)
+    }
+
+    private func assertBulkCacheTransactions(_ action: SessionBulkAction) async throws {
+        let requests = DeferredRequests()
+        let first = expectation(description: "first cache chunk held")
+        let second = expectation(description: "second cache chunk held")
+        let ids = (0...200).map { String(format: "%03d", $0) }
+        let rows = (ids + ["keeper"]).map { ["session_id": $0, "title": "Chat \($0)", "can_archive": true, "can_delete": true] as [String: Any] }
+        let initial = String(data: try JSONSerialization.data(withJSONObject: ["sessions": rows]), encoding: .utf8)!
+        let viewModel = model { request in
+            if request.request.url?.path == "/api/sessions/bulk" {
+                (requests.append(request) == 1 ? first : second).fulfill()
+            } else {
+                request.complete(withJSON: requests.count == 0 ? initial : #"{"sessions":[{"session_id":"keeper","title":"Chat keeper"}]}"#)
+            }
+        }
+        let container = try ModelContainer(for: CachedSession.self, CachedMessage.self, configurations: ModelConfiguration(isStoredInMemoryOnly: true, cloudKitDatabase: .none))
+        let context = container.mainContext
+        context.autosaveEnabled = false
+        let server = try XCTUnwrap(lastServer)
+        let otherServer = URL(string: "https://other-bulk-cache.test")!
+        _ = await viewModel.load(modelContext: context)
+        let message = try JSONDecoder().decode(ChatMessage.self, from: Data(#"{"role":"user","content":"Keep cached"}"#.utf8))
+        for id in ["000", "199", "200", "keeper"] {
+            try CacheStore.cacheMessages([message], serverURL: server, sessionID: id, in: context)
+        }
+        try CacheStore.cacheMessages([message], serverURL: otherServer, sessionID: "000", in: context)
+        let saves = BulkCacheSaveCount()
+        let contextID = ObjectIdentifier(context)
+        let observer = NotificationCenter.default.addObserver(forName: ModelContext.didSave, object: nil, queue: nil) { notification in
+            if let object = notification.object as AnyObject?, ObjectIdentifier(object) == contextID { saves.increment() }
+        }
+        defer { NotificationCenter.default.removeObserver(observer) }
+        viewModel.beginSelectingSessions()
+        viewModel.toggleSelectAll(viewModel.sessions.filter { $0.sessionId != "keeper" })
+        let bulk = Task { await viewModel.performBulkAction(action, modelContext: context) }
+        await fulfillment(of: [first], timeout: 5)
+        let results = ids.prefix(200).map { ["session_id": $0, "ok": true] as [String: Any] }
+        requests.request(at: 0).complete(withJSON: String(data: try JSONSerialization.data(withJSONObject: ["results": results]), encoding: .utf8)!)
+        await fulfillment(of: [second], timeout: 5)
+        XCTAssertEqual(saves.count, 1, "A confirmed chunk must persist its cache once, not once per chat")
+        XCTAssertEqual(Set(try CacheStore.cachedSessions(serverURL: server, in: context).compactMap(\.sessionId)), ["200", "keeper"])
+        XCTAssertEqual(try CacheStore.cachedMessages(serverURL: server, sessionID: "000", in: context).count, action == .delete ? 0 : 1)
+        XCTAssertEqual(try CacheStore.cachedMessages(serverURL: server, sessionID: "keeper", in: context).count, 1)
+        XCTAssertEqual(try CacheStore.cachedMessages(serverURL: otherServer, sessionID: "000", in: context).count, 1)
+        requests.request(at: 1).complete(withJSON: #"{"results":[{"session_id":"200","ok":true}]}"#)
+        let changed = await bulk.value
+        XCTAssertEqual(changed.count, 201)
+        XCTAssertEqual(saves.count, 3, "Two chunks and one final canonical reload need three cache transactions")
+    }
+
+}
+
+
+private final class BulkCacheSaveCount: @unchecked Sendable {
+    private let lock = NSLock()
+    private var value = 0
+    func increment() { lock.lock(); defer { lock.unlock() }; value += 1 }
+    var count: Int { lock.lock(); defer { lock.unlock() }; return value }
 }
