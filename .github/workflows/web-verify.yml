@@ -116,6 +116,9 @@ jobs:
       - name: Install uv (the Agent's locked dependency resolver)
         run: python3 -m pip install --disable-pip-version-check "uv==0.11.3"
 
+      - name: Check runner isolation and failure paths before the Agent suite
+        run: HERMES_WEBUI_AGENT_DIR="$RUNNER_TEMP/synthetic-agent" sidecar/scripts/test.sh tests/test_suite_runner.py
+
       - name: Provision the Agent release and run the sidecar suite
         working-directory: .
         env:

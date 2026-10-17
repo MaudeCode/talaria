@@ -81,18 +81,30 @@ def reap_orphans(processes, *, terminate=False):
     managed = {proc.pid for proc in processes if proc.returncode is None}
     children = Path(f"/proc/self/task/{os.getpid()}/children")
     while True:
-        adopted = set(map(int, children.read_text().split())) - managed
+        try:
+            direct = None if terminate else set(map(int, children.read_text().split()))
+        except FileNotFoundError:  # CONFIG_PROC_CHILDREN is optional.
+            direct = None
+        # During final cleanup, children are exiting and the proc list can omit
+        # entries. Use the same fallback snapshot for that discovery too.
+        if direct is None:
+            direct = {pid for pid, ppid, _, _ in process_snapshot() if ppid == os.getpid()}
+        adopted, reaped = direct - managed, False
         for pid in adopted:
-            if terminate:
-                try:
-                    os.kill(pid, signal.SIGKILL)
-                except ProcessLookupError:
-                    pass
             try:
-                os.waitpid(pid, 0 if terminate else os.WNOHANG)
+                # The fallback snapshot includes its already-reaped ps child.
+                # Confirm wait ownership before signaling any remaining child.
+                waited, _ = os.waitpid(pid, os.WNOHANG)
+                if terminate and not waited:
+                    try:
+                        os.kill(pid, signal.SIGKILL)
+                    except ProcessLookupError:
+                        pass
+                    waited, _ = os.waitpid(pid, 0)
+                reaped |= bool(waited)
             except ChildProcessError:
                 pass
-        if not terminate or not adopted:
+        if not terminate or not reaped:
             return
 
 
