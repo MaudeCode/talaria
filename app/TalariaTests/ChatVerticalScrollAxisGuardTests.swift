@@ -137,6 +137,47 @@ final class ChatVerticalScrollAxisGuardTests: XCTestCase {
 
 @MainActor
 final class ChatScrollPositionControllerTests: XCTestCase {
+    func testRowRealizationYieldsToNativeMomentumBetweenMeasurements() async throws {
+        for hasScene in [false, true] {
+            let window: UIWindow?
+            if hasScene { window = try hostWindow(Color.clear) }
+            else { window = nil }
+            let scroll = try XCTUnwrap(makeScrollView() as? HistoryInteractionScrollView)
+            window?.addSubview(scroll)
+            scroll.userIsDragging = true
+            scroll.userIsDecelerating = true
+            scroll.contentOffset.y = 240
+            let controller = ChatScrollPositionController()
+            controller.attach(to: scroll)
+            defer { controller.detach(); scroll.removeFromSuperview(); window?.isHidden = true }
+            controller.recordRowMinY(180, for: "reader")
+            XCTAssertTrue(controller.capture(anchorRowID: "reader"))
+            XCTAssertTrue(controller.restoreAfterPrepend(whileInteracting: true))
+            var realized = 0
+            for id in ["first", "second"] {
+                controller.enqueueRowRealization(id: id, priority: 0) {
+                    realized += 1
+                    controller.recordRowMinY(180 + CGFloat(realized * 100), for: "reader")
+                    scroll.contentSize.height += 100
+                }
+            }
+            try await Task.sleep(for: .milliseconds(40))
+            XCTAssertEqual(realized, 0, "Offscreen rendering must let the native momentum tick run first")
+            scroll.contentOffset.y -= 20
+            let first = await awaitCondition { realized >= 1 }
+            XCTAssertTrue(first)
+            try await Task.sleep(for: .milliseconds(40))
+            XCTAssertEqual(realized, 1, "Own measurement compensation must not admit another row ahead of native movement")
+            scroll.contentOffset.y -= 20
+            let second = await awaitCondition { realized == 2 }
+            XCTAssertTrue(second)
+            controller.enqueueRowRealization(id: "after-coast", priority: 0) { realized += 1 }
+            scroll.userIsDecelerating = false
+            let finished = await awaitCondition { realized == 3 }
+            XCTAssertTrue(finished, "Ending momentum must release queued rendering without another offset event")
+        }
+    }
+
     func testNativeMomentumContinuesDuringTheSameTurnAsRowMeasurement() throws {
         let scroll = try XCTUnwrap(makeScrollView(isDragging: true) as? HistoryInteractionScrollView)
         scroll.userIsDecelerating = true

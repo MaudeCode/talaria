@@ -86,6 +86,9 @@ final class ChatScrollPositionController {
     var isUserInteracting: Bool {
         scrollView.map { $0.isDragging || $0.isTracking || $0.isDecelerating } ?? false
     }
+    private var isCoasting: Bool {
+        scrollView.map { $0.isDecelerating && !$0.isTracking } ?? false
+    }
 
     var preservationAnchorRowID: String? { isPreservingPosition ? anchor?.rowID : nil }
     var viewportTop: CGFloat? {
@@ -212,7 +215,10 @@ final class ChatScrollPositionController {
     var isRealizingRows: Bool { !pendingRowRealizations.isEmpty || rowRealizationTask != nil }
     private var pendingRowRealizations: [String: (priority: Int, action: () -> Void)] = [:]
     private var rowRealizationTask: Task<Void, Never>?
+    private var rowRealizationUpdateLink: UIUpdateLink?
     private var rowRealizationEpoch = 0
+    private var nativeMotionRevision = 0
+    private var rowRealizationMotionRevision = 0
 
     /// Spread offscreen rich-content construction across updates instead of
     /// admitting a whole viewport's Markdown in the page-commit frame.
@@ -220,21 +226,60 @@ final class ChatScrollPositionController {
         pendingRowRealizations[id] = (priority, action)
         guard rowRealizationTask == nil else { return }
         let epoch = rowRealizationEpoch
+        rowRealizationMotionRevision = nativeMotionRevision
         rowRealizationTask = Task { @MainActor [weak self] in
             while !Task.isCancelled {
                 guard let self, self.rowRealizationEpoch == epoch,
                       !self.pendingRowRealizations.isEmpty else { break }
-                if self.pendingLayoutRevision == nil, self.pendingNativeScrollRevision == nil,
-                   let next = self.pendingRowRealizations.min(by: {
-                       $0.value.priority == $1.value.priority ? $0.key < $1.key : $0.value.priority < $1.value.priority
-                   }) {
-                    self.pendingRowRealizations[next.key] = nil
-                    next.value.action()
-                }
+                if !self.startCoastingRowUpdates() { self.realizeNextRowIfAllowed() }
                 try? await Task.sleep(for: .milliseconds(17))
             }
-            if let self, self.rowRealizationEpoch == epoch { self.rowRealizationTask = nil }
+            if let self, self.rowRealizationEpoch == epoch {
+                self.stopCoastingRowUpdates()
+                self.rowRealizationTask = nil
+            }
         }
+    }
+
+    /// New row state is admitted after the scrolling frame commits, so its
+    /// layout cannot crowd out the native step that just advanced the reader.
+    private func startCoastingRowUpdates() -> Bool {
+        guard isCoasting, isPreservingPosition, let scene = scrollView?.window?.windowScene else {
+            stopCoastingRowUpdates()
+            return false
+        }
+        guard rowRealizationUpdateLink == nil else { return true }
+        let link = UIUpdateLink(windowScene: scene)
+        link.addAction(to: .afterUpdateComplete) { [weak self] link, _ in
+            guard let self else { link.isEnabled = false; return }
+            guard self.rowRealizationUpdateLink === link else { link.isEnabled = false; return }
+            guard self.isCoasting, self.isPreservingPosition, !self.pendingRowRealizations.isEmpty else {
+                self.stopCoastingRowUpdates()
+                return
+            }
+            self.realizeNextRowIfAllowed()
+        }
+        rowRealizationUpdateLink = link
+        link.requiresContinuousUpdates = true
+        link.isEnabled = true
+        return true
+    }
+
+    private func stopCoastingRowUpdates() {
+        rowRealizationUpdateLink?.isEnabled = false
+        rowRealizationUpdateLink = nil
+    }
+
+    private func realizeNextRowIfAllowed() {
+        let yieldsToMomentum = isCoasting && isPreservingPosition
+            && nativeMotionRevision == rowRealizationMotionRevision
+        guard !yieldsToMomentum, pendingLayoutRevision == nil, pendingNativeScrollRevision == nil,
+              let next = pendingRowRealizations.min(by: {
+                  $0.value.priority == $1.value.priority ? $0.key < $1.key : $0.value.priority < $1.value.priority
+              }) else { return }
+        pendingRowRealizations[next.key] = nil
+        next.value.action()
+        rowRealizationMotionRevision = nativeMotionRevision
     }
 
     func cancelRowRealization(id: String) { pendingRowRealizations[id] = nil }
@@ -243,6 +288,7 @@ final class ChatScrollPositionController {
         rowRealizationEpoch += 1
         rowRealizationTask?.cancel()
         rowRealizationTask = nil
+        stopCoastingRowUpdates()
         pendingRowRealizations.removeAll()
     }
 
@@ -731,10 +777,11 @@ final class ChatScrollPositionController {
                 let translation = scrollView.panGestureRecognizer.translation(in: scrollView).y
                 let fingerMovement = baselinePanTranslationY.map { $0 - translation } ?? 0
                 baselinePanTranslationY = translation
-                if scrollView.isDecelerating, !scrollView.isTracking {
+                if isCoasting {
                     // Native momentum continues even when the same turn measures rows
                     // and UIKit still reports its drag flag after touch-up.
                     self.baselineOffsetY = baselineOffsetY + deltaY
+                    if abs(deltaY) > 0.001 { nativeMotionRevision &+= 1 }
                 } else if scrollView.isDragging, abs(fingerMovement) > 0.001 {
                     // Finger movement remains distinct from a structural offset during measurement.
                     self.baselineOffsetY = baselineOffsetY + fingerMovement

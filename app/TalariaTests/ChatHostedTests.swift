@@ -327,6 +327,7 @@ final class ChatHostedTests: XCTestCase {
             }, "Track the actual rendered reader even after momentum carries it away from the probe point")
         } else { momentumReader = nil }
         let oldHeight = scroll.contentSize.height
+        let maximumFrameGapMilliseconds: Double = 100
         var samples: [[String: Double]] = []
         var largestMovement: CGFloat = 0
         var missingReader = false
@@ -343,7 +344,7 @@ final class ChatHostedTests: XCTestCase {
             try Data("ready".utf8).write(to: nativeRunDirectory.appendingPathComponent("ready"))
         }
         let updateLink = UIUpdateLink(windowScene: try XCTUnwrap(window.windowScene))
-        updateLink.addAction(to: .afterUpdateComplete) { _, _ in
+        updateLink.addAction(to: .afterUpdateComplete) { _, info in
             guard samples.count < (nativeFling ? 240 : 120) else { return }
             let now = ProcessInfo.processInfo.systemUptime
             let translation = scroll.panGestureRecognizer.translation(in: scroll).y
@@ -382,6 +383,8 @@ final class ChatHostedTests: XCTestCase {
             }
             samples.append(["gapMilliseconds": (now - previousTick) * 1_000,
                             "time": now,
+                            "modelTime": info.modelTime,
+                            "completionDeadline": info.completionDeadlineTime,
                             "readerY": Double(momentumReader?.convert(.zero, to: window).y ?? 0),
                             "readerDelta": Double(delta), "offset": Double(scroll.contentOffset.y),
                             "height": Double(scroll.contentSize.height), "translation": Double(translation),
@@ -423,7 +426,7 @@ final class ChatHostedTests: XCTestCase {
         XCTAssertLessThanOrEqual(largestMovement, 2, "Insertion must not visibly jump before settling")
         if nativeDrag {
             let largestGap = samples.dropFirst().map { $0["gapMilliseconds"] ?? 0 }.max() ?? 0
-            XCTAssertLessThanOrEqual(largestGap, 100, "History insertion must not stall the moving display")
+            XCTAssertLessThanOrEqual(largestGap, maximumFrameGapMilliseconds, "History insertion must not stall the moving display")
             if nativeFling {
                 XCTAssertTrue(sawNativeFling, "The native driver must produce a fling")
                 XCTAssertFalse(lostMomentumReader, "Observe the rendered reader throughout momentum")
@@ -432,6 +435,19 @@ final class ChatHostedTests: XCTestCase {
                 let coasting = samples.filter { $0["decelerating"] == 1 && $0["touchDragging"] == 0 }
                 let travel = (coasting.last?["readerY"] ?? 0) - (coasting.first?["readerY"] ?? 0)
                 XCTAssertGreaterThan(travel, 60, "The rendered content must keep coasting, not merely report deceleration")
+                if var progress = coasting.first, let endingY = coasting.last?["readerY"] {
+                    var longestPause: TimeInterval = 0
+                    for sample in coasting.dropFirst() {
+                        guard let y = sample["readerY"], let time = sample["time"],
+                              y - (progress["readerY"] ?? y) > 0.5 else { continue }
+                        if endingY - y > 60 {
+                            longestPause = max(longestPause, time - (progress["time"] ?? time))
+                        }
+                        progress = sample
+                    }
+                    XCTAssertLessThanOrEqual(longestPause * 1_000, maximumFrameGapMilliseconds,
+                                             "History realization must not freeze native momentum before a forward jump")
+                }
                 let released = samples.filter { $0["touchDragging"] == 0 }
                 let reversals = zip(released, released.dropFirst()).map {
                     ($0["readerY"] ?? 0) - ($1["readerY"] ?? 0)

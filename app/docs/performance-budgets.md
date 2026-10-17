@@ -123,5 +123,8 @@ height estimates. The pan's actual touch count identifies finger release:
 UIKit can report `isDragging` throughout deceleration. The check requires
 continued rendered motion, no backward movement over 2 points, and a slow
 native ending, while retaining the same 100 ms display-update budget.
+It also rejects a pause over that budget before a forward jump while substantial
+coasting remains. Row admission yields to actual native movement between
+measurements, so rendering cannot run ahead of the scrolling update.
 The controller's focused tests also check momentum during a size-changing turn
 and measurement arriving after the original prepend deadline.
