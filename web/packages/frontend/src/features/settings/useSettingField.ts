@@ -1,14 +1,20 @@
 import { useSaveSettings, useSettingsQuery } from '../../app/queries'
 import { showToast } from '../toast/toast'
 import { m } from '../../paraglide/messages.js'
+import { getStreamContext } from '../../stream/connection'
 
-/** Read a server setting and save a patch; optimistic UI comes from Query's cache update on success. */
+/** Read confirmed settings with the shared, presentation-only pending field overlay. */
 export function useSettingField() {
   const settings = useSettingsQuery()
   const save = useSaveSettings()
-  const set = (patch: Record<string, unknown>) => {
-    save.mutate(patch, { onError: (e) => showToast(e instanceof Error ? e.message : String(e), 4000, 'error') })
+  const setAsync = (patch: Record<string, unknown>, onSuccess?: () => void) => {
+    const context = getStreamContext()
+    return save.mutateAsync(patch).then(
+      () => { if (context === getStreamContext()) onSuccess?.() },
+      (e: unknown) => { if (context === getStreamContext()) showToast(e instanceof Error ? e.message : String(e), 4000, 'error') },
+    )
   }
+  const set = (patch: Record<string, unknown>, onSuccess?: () => void) => { void setAsync(patch, onSuccess) }
   const bool = (key: string, fallback = false): boolean => {
     const v = (settings.data as Record<string, unknown> | undefined)?.[key]
     return typeof v === 'boolean' ? v : fallback
@@ -21,5 +27,5 @@ export function useSettingField() {
     const v = (settings.data as Record<string, unknown> | undefined)?.[key]
     return typeof v === 'number' ? v : fallback
   }
-  return { settings, save, set, bool, str, num, savedLabel: m.saved() }
+  return { settings, save, set, setAsync, bool, str, num, savedLabel: m.saved() }
 }

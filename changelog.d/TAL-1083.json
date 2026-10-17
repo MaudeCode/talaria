@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "components": ["web"],
+      "summary": "Preferences respond immediately while saving, and overlapping edits keep your latest choice.",
+      "highlight": false
+    }
+  ]
+}

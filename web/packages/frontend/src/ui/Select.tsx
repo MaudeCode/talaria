@@ -44,14 +44,15 @@ export function Select({ value, onValueChange, children, id, disabled, className
       <BaseSelect.ItemText className="col-start-2 truncate">{o.label}</BaseSelect.ItemText>
     </BaseSelect.Item>
   )
+  // Option registration can repeat the controlled value without a user selection.
   return (
-    <BaseSelect.Root value={current?.value ?? null} onValueChange={(v) => onValueChange(v ?? '')} disabled={disabled ?? false}>
+    <BaseSelect.Root value={current?.value ?? null} onValueChange={(v) => { if (v !== null && v !== current?.value) onValueChange(v) }} disabled={disabled ?? false}>
       <BaseSelect.Trigger id={id} aria-label={ariaLabel} className={cn('inline-flex h-8 min-w-0 max-w-full items-center justify-between gap-2 rounded-md border border-border bg-input pl-2.5 pr-2 text-sm text-text outline-none transition-[border-color,box-shadow] duration-(--dur) hover:border-border2 focus-visible:border-accent focus-visible:shadow-(--input-focus-shadow) data-popup-open:border-accent disabled:cursor-not-allowed disabled:opacity-60', className)}>
         <BaseSelect.Value className={cn('truncate', !current && 'text-muted')}>{current ? current.label : placeholder ?? '—'}</BaseSelect.Value>
         <BaseSelect.Icon className="flex shrink-0 text-muted"><ChevronDown size={14} aria-hidden="true" /></BaseSelect.Icon>
       </BaseSelect.Trigger>
       <BaseSelect.Portal>
-        <BaseSelect.Positioner sideOffset={4} alignItemWithTrigger={false} className="z-[1200] outline-none">
+        <BaseSelect.Positioner sideOffset={4} alignItemWithTrigger={false} className="z-[1400] outline-none">
           <BaseSelect.Popup className="max-h-[min(60vh,360px)] min-w-(--anchor-width) overflow-y-auto rounded-lg border border-border bg-surface p-1 text-sm text-text shadow-md outline-none">
             {entries.map((e, i) => ('options' in e
               ? <BaseSelect.Group key={i}><BaseSelect.GroupLabel className="px-2.5 py-1 text-[11px] font-semibold uppercase tracking-wider text-muted">{e.label}</BaseSelect.GroupLabel>{e.options.map(item)}</BaseSelect.Group>

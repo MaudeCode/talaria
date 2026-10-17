@@ -160,6 +160,24 @@ pending labels and colors never become authoritative metadata or enter boot pers
 deletions purge their cached list entries and per-session queries. A failed reconciliation offers a
 read-only retry, and project creation reconciles even after its query's last observer unmounts.
 
+Ordinary settings use a separate `settings-intents` query for immediate local presentation.
+`app/settings.ts` owns the allowlist and per-field write ordering across all settings readers;
+security, effective policy, model/integration choices, and update controls remain confirmed.
+Disjoint writes run concurrently, repeated edits to a field persist in submission order, and
+late full responses cannot replace another field's confirmed write. Completion is fenced by
+the connection context and query-cache identity. Pending values never enter boot snapshots.
+Numeric TextInput drafts clear when their owning save settles; a newer incomplete edit stays local.
+
+Kanban uses the same resource-intent owner for card actions, both ends of a dependency,
+bulk card changes, board selection and lane preferences. Its reconciliation queue is separate
+from session/project reads. Owners on one board coalesce the union of their required board, stats
+and task snapshots; unrelated failed task/board reads never gate a completed write. Board
+selection reconciles the authoritative board list independently of destination reads. Requested statuses and dependencies are pending labels;
+server
+columns, actions, links, readiness and lanes remain authoritative. A board switch reads the
+explicit destination immediately, uses no previous-board placeholder, and locks writes until
+reconciliation finishes. Failed reconciliation retains the intent and offers a read-only retry.
+
 ## 6. Contracts
 
 - `packages/frontend/src/contracts/` holds browser-independent Zod 4 schemas: request

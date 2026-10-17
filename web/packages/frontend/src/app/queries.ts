@@ -4,21 +4,7 @@ import { teardownAll } from '../stream/connection'
 import { keys } from '../api/queryKeys'
 import * as api from '../api/endpoints'
 
-export function useSettingsQuery() {
-  return useQuery({ queryKey: keys.settings, queryFn: api.fetchSettings, staleTime: 30_000 })
-}
-
-export function useSaveSettings() {
-  const qc = useQueryClient()
-  return useMutation({
-    mutationKey: keys.settings,
-    mutationFn: (patch: Record<string, unknown>) => api.saveSettings(patch),
-    onSuccess: (data) => {
-      if (data && typeof data === 'object' && 'bot_name' in data) qc.setQueryData(keys.settings, data)
-      void qc.invalidateQueries({ queryKey: keys.settings })
-    },
-  })
-}
+export { useSettingsQuery, useSaveSettings } from './settings'
 
 /** Default model lives in config.yaml; on success the settings and models queries are refetched so every reader agrees. */
 export function useSetDefaultModel() {

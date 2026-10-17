@@ -135,4 +135,31 @@ describe('resource intent ownership', () => {
     await waitFor(() => expect(result.current.intents).toEqual({}))
     expect(result.current.projects.data).toBe('reconciled')
   })
+  it('coalesces required read sets while excluding an unrelated failed descendant', async () => {
+    const { qc, wrapper } = harness()
+    const family = ['kanban', 'board', 'default']
+    const a = deferred<{ ok: boolean }>(), b = deferred<{ ok: boolean }>(), held = deferred<string>()
+    const readA = vi.fn().mockResolvedValueOnce('old A').mockImplementationOnce(() => held.promise).mockResolvedValue('fresh A')
+    const readB = vi.fn().mockResolvedValueOnce('old B').mockResolvedValue('fresh B')
+    const irrelevant = vi.fn(() => Promise.reject(new Error('deleted task')))
+    await qc.query({ queryKey: [...family, 'deleted'], queryFn: irrelevant }).catch(() => undefined)
+    const { result } = renderHook(() => ({
+      a: useQuery({ queryKey: [...family, 'a'], queryFn: readA }),
+      b: useQuery({ queryKey: [...family, 'b'], queryFn: readB }),
+      intents: useResourceIntents(),
+      change: useResourceMutation({ resource: (id: string) => id, queryKey: family, readKeys: (id) => [[...family, id]], intent: () => ({ label: 'Save' }), mutationFn: (id) => id === 'a' ? a.promise : b.promise }),
+    }), { wrapper })
+    await waitFor(() => expect(result.current.b.data).toBe('old B'))
+    let first!: Promise<unknown>, second!: Promise<unknown>
+    act(() => { first = result.current.change.mutateAsync('a'); second = result.current.change.mutateAsync('b') })
+    await act(async () => { a.resolve({ ok: true }); await Promise.resolve() })
+    await waitFor(() => expect(readA).toHaveBeenCalledTimes(2))
+    await act(async () => { b.resolve({ ok: true }); await Promise.resolve() })
+    await act(async () => { held.resolve('from A'); await Promise.all([first, second]) })
+    await waitFor(() => expect(result.current.intents).toEqual({}))
+    expect(result.current.a.data).toBe('fresh A')
+    expect(result.current.b.data).toBe('fresh B')
+    expect(irrelevant).toHaveBeenCalledTimes(1)
+  })
+
 })
