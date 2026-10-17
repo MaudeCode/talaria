@@ -82,7 +82,8 @@ export async function currentChatReadiness(sidecar: SidecarLike | null): Promise
 }
 
 function staleRuntimeFailure(error: SidecarError): HttpFailure {
-  return new HttpFailure(409, error.message, runtimeFailureDetails(error.condition, error.data))
+  const { message, ...details } = runtimeFailureDetails(error.condition, error.data)
+  return new HttpFailure(409, message ?? error.message, details)
 }
 
 export interface SessionServiceDeps {

@@ -86,13 +86,19 @@ interface Pending {
 }
 
 /** Normalize typed sidecar evidence once for health, preflight, and journalled turn errors. */
-export function runtimeFailureDetails(condition: string, data: Record<string, unknown> = {}): AgentRuntimeMetadata & { condition: string; type: string } {
-  const details: AgentRuntimeMetadata & { condition: string; type: string } = { condition, type: condition }
+export function runtimeFailureDetails(condition: string, data: Record<string, unknown> = {}): AgentRuntimeMetadata & { condition: string; type: string; message?: string } {
+  const details: AgentRuntimeMetadata & { condition: string; type: string; message?: string } = { condition, type: condition }
   if (condition !== 'agent_runtime_stale') return details
   const state = typeof data.agent_update_state === 'string' ? data.agent_update_state : undefined
   details.agent_runtime_reason = state === 'active' ? 'update_active'
     : state === 'incomplete' ? 'recovery_incomplete'
       : state === 'unverified' && data.agent_source_changed === true ? 'source_changed' : 'unknown'
+  details.message = {
+    update_active: 'Agent update is in progress',
+    recovery_incomplete: 'Agent update recovery is incomplete',
+    source_changed: 'Agent source changed; check the update outcome before restarting Talaria Web',
+    unknown: 'Agent runtime is unavailable; check the Agent update outcome',
+  }[details.agent_runtime_reason]
   if (state !== undefined) details.agent_update_state = state
   details.retryable = typeof data.retryable === 'boolean' ? data.retryable : true
   details.restart_scheduled = typeof data.restart_scheduled === 'boolean' ? data.restart_scheduled : false

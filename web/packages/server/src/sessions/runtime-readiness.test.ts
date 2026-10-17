@@ -7,14 +7,14 @@ const post = (s: TestServer, path: string, body: unknown) => s.get(path, { metho
 
 describe('Agent recovery readiness across HTTP and replay', () => {
   it.each([
-    ['incomplete', false, 'recovery_incomplete'],
-    ['active', true, 'update_active'],
-    ['unknown', true, 'unknown'],
-    ['stale', true, 'unknown'],
-    ['unverified', true, 'source_changed'],
-    ['unverified', false, 'unknown'],
-    [undefined, undefined, 'unknown'],
-  ])('preserves %s recovery without inferring success from the message', async (state, changed, reason) => {
+    ['incomplete', false, 'recovery_incomplete', 'Agent update recovery is incomplete'],
+    ['active', true, 'update_active', 'Agent update is in progress'],
+    ['unknown', true, 'unknown', 'Agent runtime is unavailable; check the Agent update outcome'],
+    ['stale', true, 'unknown', 'Agent runtime is unavailable; check the Agent update outcome'],
+    ['unverified', true, 'source_changed', 'Agent source changed; check the update outcome before restarting Talaria Web'],
+    ['unverified', false, 'unknown', 'Agent runtime is unavailable; check the Agent update outcome'],
+    [undefined, undefined, 'unknown', 'Agent runtime is unavailable; check the Agent update outcome'],
+  ])('preserves %s recovery without inferring success from the message', async (state, changed, reason, message) => {
     const sidecar = new FakeSidecar()
     const s = await bootTestServer({ sidecar })
     const fail = () => { throw new SidecarError('Agent updated successfully', { condition: 'agent_runtime_stale', data: { agent_update_state: state, agent_source_changed: changed, retryable: true, restart_scheduled: false } }) }
@@ -36,6 +36,11 @@ describe('Agent recovery readiness across HTTP and replay', () => {
       for (let replay = 0; replay < 2; replay++) {
         const frames = await s.sse(path, (frame) => frame.event === 'stream_end')
         expect(frames.find((frame) => frame.event === 'apperror')?.data).toMatchObject({ type: 'agent_runtime_stale', condition: 'agent_runtime_stale', ...expected })
+        const reloaded = await (await s.get(`/api/session?session_id=${sid}`)).json() as { session: { messages: { _error?: boolean; content: string; provider_details?: string }[] } }
+        const errorRow = reloaded.session.messages.find((row) => row._error)
+        expect(errorRow?.content).toContain(message)
+        expect(errorRow?.content).not.toContain('Agent updated successfully')
+        expect(errorRow?.provider_details).not.toContain('Agent updated successfully')
       }
     } finally { await s.close() }
   })

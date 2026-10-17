@@ -253,7 +253,7 @@ describe('manual session compression', () => {
     for (const path of ['/api/session/compress', '/api/session/compress/start']) {
       const res = await post(s, path, { session_id: sid })
       expect(res.status).toBe(409)
-      expect(await json(res)).toMatchObject({ error: 'restart required', type: 'agent_runtime_stale', retryable: true, restart_scheduled: false })
+      expect(await json(res)).toMatchObject({ error: 'Agent runtime is unavailable; check the Agent update outcome', type: 'agent_runtime_stale', retryable: true, restart_scheduled: false })
     }
     expect(JSON.stringify((await s.deps.sessionStore.get(sid)).toDocument())).toBe(before)
     expect((await json(await s.get(`/api/session/compress/status?session_id=${sid}`))).status).toBe('idle')
@@ -263,7 +263,7 @@ describe('manual session compression', () => {
     const sid = await seeded()
     sidecar.respond('chat.compress', () => { throw new SidecarError('restart required', { condition: 'agent_runtime_stale' }) })
     expect((await post(s, '/api/session/compress/start', { session_id: sid })).status).toBe(200)
-    expect(await waitForTerminal(s, sid)).toMatchObject({ ok: false, status: 'error', session_id: sid, error: 'restart required', error_status: 409, type: 'agent_runtime_stale', retryable: true })
+    expect(await waitForTerminal(s, sid)).toMatchObject({ ok: false, status: 'error', session_id: sid, error: 'Agent runtime is unavailable; check the Agent update outcome', error_status: 409, type: 'agent_runtime_stale', retryable: true })
   })
 
   it('runs one job per session: start returns it running, repeats join it, status reports it through done', async () => {

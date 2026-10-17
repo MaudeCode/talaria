@@ -1116,11 +1116,11 @@ export class TurnRunner {
       }
       const message = error instanceof Error ? error.message : String(error)
       const condition = error instanceof SidecarError ? error.condition : undefined
-      const classification = classifyProviderError(message, { condition })
-      const payload = providerErrorPayload(message, classification.type, classification.hint, deps.redactEnabled())
-      if (error instanceof SidecarError && ['sidecar_unavailable', 'agent_runtime_stale', 'agent_incompatible'].includes(error.condition)) {
-        Object.assign(payload, runtimeFailureDetails(error.condition, error.data))
-      }
+      const runtime = error instanceof SidecarError && ['sidecar_unavailable', 'agent_runtime_stale', 'agent_incompatible'].includes(error.condition)
+        ? runtimeFailureDetails(error.condition, error.data) : null
+      const classification = runtime ? { label: 'Error', type: runtime.type, hint: '' } : classifyProviderError(message, { condition })
+      const payload = providerErrorPayload(runtime?.message ?? message, classification.type, classification.hint, deps.redactEnabled())
+      if (runtime) Object.assign(payload, runtime)
       try {
         let current: Session = s
         try { current = (await deps.store.get(sessionId)) } catch { current = s }
