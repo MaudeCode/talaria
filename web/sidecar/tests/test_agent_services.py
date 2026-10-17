@@ -2135,7 +2135,6 @@ def gateway_successor(supervised_inventory, monkeypatch):
     status._try_acquire_file_lock = lambda file: False
     status._release_file_lock = lambda file: None
     pause._drain_budget = lambda: .1
-    pause._gateway_on_home = lambda *args: 42002
     calls = []
     pause._ask_to_drain = lambda e: calls.append(('drain', e['pid'])) or True
     pause._disarm = lambda e: calls.append(('disarm', e['pid']))
