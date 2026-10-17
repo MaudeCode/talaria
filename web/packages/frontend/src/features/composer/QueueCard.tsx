@@ -18,7 +18,7 @@ const keepFocus = (e: PointerEvent) => { e.preventDefault() }
  * TAL-562: the queued messages in the composer tab, sent top to bottom when the turn ends. A row is edited in place,
  * removed, or moved by dragging its handle (Arrow Up/Down on the focused handle moves it too).
  */
-export function QueueCard({ sessionId, queued, onChange }: { sessionId: string; queued: QueuedTurn[]; onChange: (queued: QueuedTurn[]) => void }) {
+export function QueueCard({ sessionId, queued, onChange, pendingId }: { sessionId: string; queued: QueuedTurn[]; onChange: (queued: QueuedTurn[]) => void; pendingId?: string | undefined }) {
   const [editing, setEditing] = useState<string | null>(null)
   const discard = useRef(false)
   const dragging = useRef<string | null>(null)
@@ -67,7 +67,7 @@ export function QueueCard({ sessionId, queued, onChange }: { sessionId: string; 
         {queued.map((q, i) => (
           <li key={q.id} className="queue-card-row" data-queue-index={i}>
             <button
-              type="button" className="steer-action queue-card-handle" aria-label={m.queued_reorder()} title={m.queued_reorder()}
+              type="button" disabled={q.id === pendingId} className="steer-action queue-card-handle" aria-label={m.queued_reorder()} title={m.queued_reorder()}
               onPointerDown={(e) => { keepFocus(e); e.currentTarget.setPointerCapture(e.pointerId); dragging.current = q.id }}
               onPointerMove={(e) => { onHandleMove(q.id, e) }}
               onPointerUp={() => { dragging.current = null }}
@@ -75,11 +75,11 @@ export function QueueCard({ sessionId, queued, onChange }: { sessionId: string; 
               onKeyDown={(e) => { onHandleKey(q.id, i, e) }}
             ><GripVertical size={14} aria-hidden="true" /></button>
             {editing === q.id
-              ? <input className="queue-card-input" aria-label={m.queued_edit()} defaultValue={q.text} autoFocus onBlur={(e) => { finishEdit(q.id, e) }} onKeyDown={onEditKey} />
+              ? <input className="queue-card-input" disabled={q.id === pendingId} aria-label={m.queued_edit()} defaultValue={q.text} autoFocus onBlur={(e) => { finishEdit(q.id, e) }} onKeyDown={onEditKey} />
               : <span className="queue-card-text truncate">{q.text}{q.attachments.length ? ` (+${String(q.attachments.length)})` : ''}</span>}
             {/* Edit takes focus, so an edit open on another row blurs and saves first. */}
-            {editing !== q.id && <button type="button" className="steer-action" aria-label={m.queued_edit()} title={m.queued_edit()} onClick={() => { setEditing(q.id) }}><Pencil size={14} aria-hidden="true" /></button>}
-            <button type="button" className="steer-action" aria-label={m.queued_cancel()} title={m.queued_cancel()} onPointerDown={keepFocus} onClick={() => { remove(q) }}><X size={14} aria-hidden="true" /></button>
+            {editing !== q.id && <button type="button" disabled={q.id === pendingId} className="steer-action" aria-label={m.queued_edit()} title={m.queued_edit()} onClick={() => { setEditing(q.id) }}><Pencil size={14} aria-hidden="true" /></button>}
+            <button type="button" disabled={q.id === pendingId} className="steer-action" aria-label={m.queued_cancel()} title={m.queued_cancel()} onPointerDown={keepFocus} onClick={() => { remove(q) }}><X size={14} aria-hidden="true" /></button>
           </li>
         ))}
       </ol>

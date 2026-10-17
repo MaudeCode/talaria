@@ -1,3 +1,4 @@
+import { sessionPath } from '../test/storage.js'
 import { spawn } from 'node:child_process'
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, realpathSync, renameSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
@@ -60,7 +61,7 @@ describe('absorbed durable identity (TAL-1019)', () => {
       expect(s.deps.sessions.modelContext(session).map((m) => m.content)).toEqual(expected)
       expect(carrier._absorbed_message_uids).toEqual(['absorbed'])
       if (edited) expect(carrier._state_db_authored_change).toBe(true)
-      s.deps.sessionStore.save(session)
+      await s.deps.sessionStore.save(session)
       for (let reopen = 0; reopen < 2; reopen += 1) {
         s.deps.sessionStore.sessions.delete(sid)
         const detail = (await json(await s.get(`/api/session?session_id=${sid}`))).session as Json
@@ -98,7 +99,7 @@ describe('absorbed durable identity (TAL-1019)', () => {
       expect(session.context_messages.map((m) => m.content)).toEqual(expected)
       expect(s.deps.sessions.mergedTranscript(session).map((m) => m.content)).toEqual(expected)
       expect(s.deps.sessions.modelContext(session).map((m) => m.content)).toEqual(expected)
-      s.deps.sessionStore.save(session)
+      await s.deps.sessionStore.save(session)
       s.deps.sessionStore.sessions.delete(sid)
       for (let reopen = 0; reopen < 2; reopen += 1) {
         const detail = (await json(await s.get(`/api/session?session_id=${sid}`))).session as Json
@@ -138,7 +139,7 @@ describe('absorbed durable identity (TAL-1019)', () => {
       const session = new Session({ session_id: sid, messages: [prompt, reply], context_messages: [prompt, reply] }, { workspace: s.state, model: null })
       s.deps.sessions.markStateDbSeen(session)
       s.deps.sessions.markStateDbSeen(session)
-      s.deps.sessionStore.save(session)
+      await s.deps.sessionStore.save(session)
       if (failedBoundary) s.deps.sessions.markStateDbSeen(session, { rows: [], ok: false, idCapable: false, reason: 'synthetic failed read', generation: null }, { boundary: true })
       create(null, 0, `${path}.new`)
       renameSync(`${path}.new`, path)
@@ -155,7 +156,7 @@ describe('absorbed durable identity (TAL-1019)', () => {
       s.deps.sessions.settleStateDb(session, { turnId: 'later', previousContext, agentRows: rawHistory, startId: 0, startGeneration: startRead.generation })
       expect(session.messages.map((m) => m.content)).toEqual(expected)
       expect(s.deps.sessions.modelContext(session).map((m) => m.content)).toEqual(expected)
-      s.deps.sessionStore.save(session)
+      await s.deps.sessionStore.save(session)
       s.deps.sessionStore.sessions.delete(sid)
       for (let reopen = 0; reopen < 2; reopen += 1) {
         const detail = (await json(await s.get(`/api/session?session_id=${sid}`))).session as Json
@@ -491,10 +492,10 @@ describe('state.db projection', () => {
     // Archiving materializes a WebUI sidecar for the claimable CLI session (Python `_get_or_materialize_session`).
     res = await post('/api/session/archive', { session_id: 'tui-tip', archived: true })
     expect(res.status).toBe(200)
-    expect(s.deps.sessionStore.loadMetadataOnly('tui-tip')?.archived).toBe(true)
-    expect(s.deps.sessionStore.get('tui-tip').messages).toHaveLength(4)
+    expect((await s.deps.sessionStore.loadMetadataOnly('tui-tip'))?.archived).toBe(true)
+    expect((await s.deps.sessionStore.get('tui-tip')).messages).toHaveLength(4)
     // The tip's transcript already stitches its compression parent in, so the claim must not record that parent as lineage.
-    expect(s.deps.sessionStore.get('tui-tip').parent_session_id).toBeNull()
+    expect((await s.deps.sessionStore.get('tui-tip')).parent_session_id).toBeNull()
     // A messaging-owned session renders read-only and refuses mutation with 403 rather than 404.
     insertSession(db, { id: 'tg-owned', source: 'telegram', started_at: 2000, title: 'From TG', chat_id: '77', messages: [['user', 2001], ['assistant', 2002]] })
     res = await s.get('/api/session?session_id=tg-owned')
@@ -507,7 +508,7 @@ describe('state.db projection', () => {
     expect((await post('/api/session/duplicate', { session_id: 'tg-owned' })).status).toBe(404)
     res = await post('/api/session/rename', { session_id: 'tg-owned', title: 'nope' })
     expect(res.status).toBe(403)
-    expect(s.deps.sessionStore.loadMetadataOnly('tg-owned')).toBeNull()
+    expect((await s.deps.sessionStore.loadMetadataOnly('tg-owned'))).toBeNull()
     // Deleting a foreign owner's transcript is refused as well (a Claude Code import is the same case): the state.db
     // rows must survive a direct delete request.
     insertSession(db, { id: 'cc-owned', source: 'claude_code', started_at: 2100, title: 'From Claude Code', messages: [['user', 2101], ['assistant', 2102]] })
@@ -522,9 +523,9 @@ describe('state.db projection', () => {
     // A WebUI session continued from the CLI: state.db rows past the sidecar tail are appended to the transcript.
     const created = (await (await post('/api/session/new', {})).json()) as { session: { session_id: string } }
     const webSid = created.session.session_id
-    const web = s.deps.sessionStore.get(webSid)
+    const web = (await s.deps.sessionStore.get(webSid))
     web.messages = [{ role: 'user', content: 'from web', timestamp: 5000 }, { role: 'assistant', content: 'web reply', timestamp: 5001 }]
-    s.deps.sessionStore.save(web)
+    await s.deps.sessionStore.save(web)
     insertSession(db, { id: webSid, source: 'webui', started_at: 5000, messages: [['user', 5000], ['assistant', 5001], ['user', 5100], ['assistant', 5101]] })
     body = (await (await s.get(`/api/session?session_id=${webSid}`)).json()) as { session: Record<string, unknown> }
     expect((body.session.messages as { content: string; timestamp: number }[]).map((m) => m.content)).toEqual(['from web', 'web reply', 'user says', 'assistant says'])
@@ -532,9 +533,9 @@ describe('state.db projection', () => {
     // Branching indexes that same merged transcript (Python `_merged_session_messages_for_display`): a keep_count past
     // the sidecar tail keeps the CLI turns instead of silently dropping them.
     const branched = (await (await post('/api/session/branch', { session_id: webSid, keep_count: 3 })).json()) as { session_id: string }
-    expect(s.deps.sessionStore.get(branched.session_id).messages.map((m) => m.content)).toEqual(['from web', 'web reply', 'user says'])
+    expect((await s.deps.sessionStore.get(branched.session_id)).messages.map((m) => m.content)).toEqual(['from web', 'web reply', 'user says'])
     // ...and the branch's model context carries the retained CLI row as well (the branch id has no state.db rows).
-    expect(s.deps.sessionStore.get(branched.session_id).context_messages.map((m) => m.content)).toEqual(['from web', 'web reply', 'user says'])
+    expect((await s.deps.sessionStore.get(branched.session_id)).context_messages.map((m) => m.content)).toEqual(['from web', 'web reply', 'user says'])
   })
 
   it('applies the state.db owner to an existing sidecar: messaging and Claude Code owners lock it, WebUI-born and claimable CLI sidecars stay writable (TAL-358)', async () => {
@@ -542,11 +543,11 @@ describe('state.db projection', () => {
     // A WebUI sidecar with no persisted `read_only`, whose id also has a state.db row owned by `source`.
     const sidecar = async (source: string, persisted: Json = {}): Promise<string> => {
       const sid = String(((await json(await post('/api/session/new', {}))).session as Json).session_id)
-      const stored = s.deps.sessionStore.get(sid)
+      const stored = (await s.deps.sessionStore.get(sid))
       stored.title = `Ownerprobe ${source}`
       stored.messages = [{ role: 'user', content: 'ownerprobe', timestamp: 7000 }, { role: 'assistant', content: 'ok', timestamp: 7001 }]
       Object.assign(stored, persisted)
-      s.deps.sessionStore.save(stored)
+      await s.deps.sessionStore.save(stored)
       insertSession(db, { id: sid, source, started_at: 7000, chat_id: `owner-${sid}`, messages: [['user', 7000], ['assistant', 7001]] })
       return sid
     }
@@ -578,40 +579,40 @@ describe('state.db projection', () => {
       for (const [path, extra] of [['/api/session/toolsets', { toolsets: ['web'] }], ['/api/session/truncate', { keep_count: 0 }], ['/api/session/clear', {}], ['/api/session/retry', {}], ['/api/session/undo', {}]] as const) {
         expect((await post(path, { session_id: sid, ...extra })).status, `${sid} ${path}`).toBe(403)
       }
-      expect(s.deps.sessionStore.get(sid).messages, sid).toHaveLength(2)
+      expect((await s.deps.sessionStore.get(sid)).messages, sid).toHaveLength(2)
       expect((await post('/api/session/delete', { session_id: sid })).status, sid).toBe(400)
-      expect(s.deps.sessionStore.loadMetadataOnly(sid)?.title, sid).toMatch(/^Ownerprobe /)
+      expect((await s.deps.sessionStore.loadMetadataOnly(sid))?.title, sid).toMatch(/^Ownerprobe /)
     }
     for (const sid of writable) expect((await post('/api/session/rename', { session_id: sid, title: 'Ownerprobe renamed' })).status, sid).toBe(200)
   })
 
   it('prunes a read-only CLI or API-server import whose state.db row is gone, and deletes one a stale list still shows (TAL-590)', async () => {
     const post = (path: string, body: unknown): Promise<Response> => s.get(path, { method: 'POST', body: JSON.stringify(body), headers: { 'content-type': 'application/json' } })
-    const imported = (sid: string, source: string, extra: Json = {}): string => {
-      s.deps.sessionStore.save(new Session({
+    const imported = async (sid: string, source: string, extra: Json = {}): Promise<string> => {
+      ;(await s.deps.sessionStore.save(new Session({
         session_id: sid, title: `Orphanprobe ${source}`, source_tag: source, raw_source: source, is_cli_session: source === 'cli', read_only: true,
         messages: [{ role: 'user', content: 'orphanprobe', timestamp: 8000 }, { role: 'assistant', content: 'ok', timestamp: 8001 }], ...extra,
-      }, { workspace: s.state, model: null }))
+      }, { workspace: s.state, model: null })))
       return sid
     }
     // A stream id a crash left behind is no run.
-    const gone = [imported('tal590-cli-gone', 'cli'), imported('tal590-api-gone', 'api_server'), imported('tal590-dead-stream', 'cli', { active_stream_id: 'tal590-dead-run' })]
+    const gone = [(await imported('tal590-cli-gone', 'cli')), (await imported('tal590-api-gone', 'api_server')), (await imported('tal590-dead-stream', 'cli', { active_stream_id: 'tal590-dead-run' }))]
     // Its source still exists, it is not a CLI or API-server import, it belongs to another profile's state.db, or a run holds it.
-    const live = imported('tal590-cli-live', 'cli')
+    const live = (await imported('tal590-cli-live', 'cli'))
     insertSession(db, { id: live, source: 'cli', started_at: 8000, title: 'Orphanprobe cli', messages: [['user', 8000], ['assistant', 8001]] })
     s.deps.registry.liveIds.add('tal590-live-run')
-    const kept = [live, imported('tal590-tg-gone', 'telegram'), imported('tal590-other-profile', 'cli', { profile: 'work' }), imported('tal590-running', 'cli', { active_stream_id: 'tal590-live-run' })]
+    const kept = [live, (await imported('tal590-tg-gone', 'telegram')), (await imported('tal590-other-profile', 'cli', { profile: 'work' })), (await imported('tal590-running', 'cli', { active_stream_id: 'tal590-live-run' }))]
     await s.deps.settings.save({ show_cli_sessions: true })
     s.deps.cliSessions.invalidate()
     const listed = ((await json(await s.get('/api/sessions'))).sessions as Json[]).map((r) => str(r.session_id))
     for (const sid of gone) expect(listed, sid).not.toContain(sid)
-    for (const sid of gone) expect(existsSync(s.deps.sessionStore.pathFor(sid)), sid).toBe(false)
-    for (const sid of kept) expect(existsSync(s.deps.sessionStore.pathFor(sid)), sid).toBe(true)
+    for (const sid of gone) expect(existsSync(sessionPath(s.deps.sessionStore, sid)), sid).toBe(false)
+    for (const sid of kept) expect(existsSync(sessionPath(s.deps.sessionStore, sid)), sid).toBe(true)
     // A client that still shows an orphan may delete it; there is no state.db row left to clean up.
-    const stale = imported('tal590-cli-stale', 'cli')
+    const stale = (await imported('tal590-cli-stale', 'cli'))
     const res = await post('/api/session/delete', { session_id: stale })
     expect(await json(res)).toEqual({ ok: true, state_db_cleanup_failed: false })
-    expect(existsSync(s.deps.sessionStore.pathFor(stale))).toBe(false)
+    expect(existsSync(sessionPath(s.deps.sessionStore, stale))).toBe(false)
     expect((await post('/api/session/delete', { session_id: live })).status).toBe(400)
     s.deps.registry.liveIds.delete('tal590-live-run')
     await s.deps.settings.save({ show_cli_sessions: false })
@@ -660,7 +661,7 @@ describe('claiming a CLI session for WebUI (TAL-256)', () => {
     expect((await json(await s.get('/api/session?session_id=cli-child&messages=0'))).session).toMatchObject({ read_only: false, is_cli_session: true })
     await send('cli-child')
 
-    const claimed = s.deps.sessionStore.get('cli-child')
+    const claimed = (await s.deps.sessionStore.get('cli-child'))
     expect(claimed.parent_session_id).toBe('cli-parent')
     expect(claimed.extra.chat_id).toBe('42')
     // A real CLI title is not a placeholder, so title generation leaves it alone.
@@ -674,16 +675,17 @@ describe('claiming a CLI session for WebUI (TAL-256)', () => {
 
     await send('cli-untitled')
 
-    expect(s.deps.sessionStore.get('cli-untitled').title).toBe('Resumed CLI work')
+    expect((await s.deps.sessionStore.get('cli-untitled')).title).toBe('Resumed CLI work')
   })
 
   it('titles an untitled CLI session when a mutation other than a send claims it (TAL-591)', async () => {
     insertSession(db, { id: 'cli-pinned', source: 'cli', started_at: 1160, messages: [['user', 1161], ['assistant', 1162]] })
     sidecar.respond('aux.complete', () => ({ model: 'aux', text: 'Title: "Imported CLI work"', usage: null }))
 
-    expect((await post('/api/session/pin', { session_id: 'cli-pinned', pinned: true })).status).toBe(200)
+    const pinResponse = await post('/api/session/pin', { session_id: 'cli-pinned', pinned: true })
+    expect(pinResponse.status, await pinResponse.clone().text() + s.logs.join('\n')).toBe(200)
 
-    await vi.waitFor(() => { expect(s.deps.sessionStore.get('cli-pinned').title).toBe('Imported CLI work') })
+    await vi.waitFor(async () => { expect((await s.deps.sessionStore.get('cli-pinned')).title).toBe('Imported CLI work') })
   })
 
   it('does not recreate a claimed CLI session deleted while its title prompt ran (TAL-591)', async () => {
@@ -699,7 +701,7 @@ describe('claiming a CLI session for WebUI (TAL-256)', () => {
     await vi.waitFor(() => { expect(titled).toBe(true) })
     await new Promise((resolve) => setTimeout(resolve, 50))
 
-    expect(existsSync(s.deps.sessionStore.pathFor('cli-gone'))).toBe(false)
+    expect(existsSync(sessionPath(s.deps.sessionStore, 'cli-gone'))).toBe(false)
   })
 
   it('counts a claimed CLI session\'s title job as profile activity until it settles (TAL-591)', async () => {
@@ -713,7 +715,7 @@ describe('claiming a CLI session for WebUI (TAL-256)', () => {
     expect(runsActive()).toBe(true)
 
     finish()
-    await vi.waitFor(() => { expect(s.deps.sessionStore.get('cli-busy').title).toBe('Busy CLI work') })
+    await vi.waitFor(async () => { expect((await s.deps.sessionStore.get('cli-busy')).title).toBe('Busy CLI work') })
     await vi.waitFor(() => { expect(runsActive()).toBe(false) })
   })
 
@@ -722,9 +724,9 @@ describe('claiming a CLI session for WebUI (TAL-256)', () => {
 
     expect((await post('/api/session/pin', { session_id: 'hook-run', pinned: true })).status).toBe(200)
 
-    const webhooks = s.deps.projects.ensureSystemProject('webhook', 'default', { create: false })
+    const webhooks = (await s.deps.projects.ensureSystemProject('webhook', 'default', { create: false }))
     expect(webhooks).toBeTruthy()
-    expect(s.deps.sessionStore.get('hook-run').project_id).toBe(webhooks)
+    expect((await s.deps.sessionStore.get('hook-run')).project_id).toBe(webhooks)
   })
 })
 
@@ -773,12 +775,12 @@ describe('Kanban worker sessions (TAL-793)', () => {
       expect(rows.find((r) => r.session_id === sid)?.read_only, `${sid} list`).toBe(true)
       expect((await post('/api/chat/start', { session_id: sid, message: 'carry on' })).status, `${sid} chat`).toBe(403)
       expect((await post('/api/session/rename', { session_id: sid, title: 'claimed' })).status, `${sid} claim`).toBe(403)
-      expect(s.deps.sessionStore.loadMetadataOnly(sid), sid).toBeNull()
+      expect((await s.deps.sessionStore.loadMetadataOnly(sid)), sid).toBeNull()
     }
   })
 
   it('locks a sidecar an earlier claim left on a Kanban-owned transcript', async () => {
-    s.deps.sessionStore.save(new Session({ session_id: 'kanban-retagged', title: 'Retagged worker run', source_tag: 'cli', raw_source: 'cli', is_cli_session: true, messages: [{ role: 'user', content: 'hi', timestamp: 1101 }] }, { workspace: s.state, model: null }))
+    await s.deps.sessionStore.save(new Session({ session_id: 'kanban-retagged', title: 'Retagged worker run', source_tag: 'cli', raw_source: 'cli', is_cli_session: true, messages: [{ role: 'user', content: 'hi', timestamp: 1101 }] }, { workspace: s.state, model: null }))
     expect(((await json(await s.get('/api/session?session_id=kanban-retagged'))).session as Json).read_only).toBe(true)
     expect((await post('/api/chat/start', { session_id: 'kanban-retagged', message: 'carry on' })).status).toBe(403)
   })
@@ -797,14 +799,14 @@ describe('Kanban worker sessions (TAL-793)', () => {
     onTestFinished(() => { sessions.stateDbSources = read })
     expect(((await json(await s.get('/api/session?session_id=cli-unknown-owner'))).session as Json).read_only).toBe(true)
     expect((await post('/api/session/rename', { session_id: 'cli-unknown-owner', title: 'claimed' })).status).toBe(403)
-    expect(s.deps.sessionStore.loadMetadataOnly('cli-unknown-owner')).toBeNull()
+    expect((await s.deps.sessionStore.loadMetadataOnly('cli-unknown-owner'))).toBeNull()
   })
 
   it('keeps an ordinary CLI transcript claimable', async () => {
     expect(((await json(await s.get('/api/session?session_id=cli-plain'))).session as Json).read_only).toBe(false)
     expect(((await json(await s.get('/api/sessions'))).sessions as Json[]).find((r) => r.session_id === 'cli-plain')?.read_only).toBe(false)
     expect((await post('/api/session/pin', { session_id: 'cli-plain', pinned: true })).status).toBe(200)
-    expect(s.deps.sessionStore.loadMetadataOnly('cli-plain')?.read_only).toBeFalsy()
+    expect((await s.deps.sessionStore.loadMetadataOnly('cli-plain'))?.read_only).toBeFalsy()
   })
 
   it('reads the owner from `source` alone on a state.db without created_source', () => {

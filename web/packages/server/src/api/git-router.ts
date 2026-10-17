@@ -32,12 +32,12 @@ async function guard<T>(fn: () => Promise<T> | T): Promise<T> {
 }
 
 /** Python `_git_session`: a visible session whose workspace supports local IO. */
-export function gitSession(ctx: RequestContext, sid: unknown): { session: Session; workspace: string } {
+export async function gitSession(ctx: RequestContext, sid: unknown): Promise<{ session: Session; workspace: string }> {
   const id = str(sid)
   if (!id) throw new HttpError(400, 'session_id required')
   let session: Session
   try {
-    session = ctx.deps.sessionStore.get(id, { metadataOnly: true })
+    session = (await ctx.deps.sessionStore.get(id, { metadataOnly: true }))
   } catch {
     throw new HttpError(404, 'Session not found')
   }
@@ -82,9 +82,9 @@ async function generateCommitMessage(ctx: RequestContext, session: Session, prom
 const asStatus = (s: GitStatus): GitStatus => s
 
 /** A rollback request names a configured workspace, or a session that vouches for its own workspace (a worktree chat's is not a configured one). */
-function rollbackTarget(ctx: RequestContext, input: { workspace?: string | undefined; session_id?: string | undefined }): { workspace: string | undefined; allowed: string[] } {
+async function rollbackTarget(ctx: RequestContext, input: { workspace?: string | undefined; session_id?: string | undefined }): Promise<{ workspace: string | undefined; allowed: string[] }> {
   if (!input.session_id) return { workspace: input.workspace, allowed: [] }
-  const { workspace } = gitSession(ctx, input.session_id)
+  const { workspace } = (await gitSession(ctx, input.session_id))
   return { workspace, allowed: [workspace] }
 }
 
@@ -100,71 +100,71 @@ function rollbackError(error: unknown): HttpError {
 
 export const gitRouter = os.router({
   gitInfo: os.gitInfo.handler(({ input, context: { ctx } }) => guard(async () => {
-    const { workspace } = gitSession(ctx, input.session_id)
+    const { workspace } = (await gitSession(ctx, input.session_id))
     return { git: gitBadge(await ctx.deps.git.status(workspace, { useCache: true })) }
   })),
   git: {
-    status: os.git.status.handler(({ input, context: { ctx } }) => guard(async () => ({ git: asStatus(await ctx.deps.git.status(gitSession(ctx, input.session_id).workspace, { useCache: true })) }))),
-    branches: os.git.branches.handler(({ input, context: { ctx } }) => guard(async () => ({ branches: await ctx.deps.git.branches(gitSession(ctx, input.session_id).workspace) }))),
+    status: os.git.status.handler(({ input, context: { ctx } }) => guard(async () => ({ git: asStatus(await ctx.deps.git.status((await gitSession(ctx, input.session_id)).workspace, { useCache: true })) }))),
+    branches: os.git.branches.handler(({ input, context: { ctx } }) => guard(async () => ({ branches: await ctx.deps.git.branches((await gitSession(ctx, input.session_id)).workspace) }))),
     diff: os.git.diff.handler(({ input, context: { ctx } }) => guard(async () => {
-      const { workspace } = gitSession(ctx, input.session_id)
+      const { workspace } = (await gitSession(ctx, input.session_id))
       if (!input.path) throw new HttpError(400, 'path required')
       const kind = input.kind ?? (input.staged === '1' ? 'staged' : 'unstaged')
       return { diff: await ctx.deps.git.diff(workspace, input.path, kind) }
     })),
     stage: os.git.stage.handler(({ input, context: { ctx } }) => guard(async () => {
       const paths = pathsFromBody(input)
-      const { session, workspace } = gitSession(ctx, input.session_id)
+      const { session, workspace } = (await gitSession(ctx, input.session_id))
       return { ok: true as const, git: await workingTreeMutation(ctx, session, workspace, () => ctx.deps.git.stage(workspace, paths)) }
     })),
     unstage: os.git.unstage.handler(({ input, context: { ctx } }) => guard(async () => {
       const paths = pathsFromBody(input)
-      const { session, workspace } = gitSession(ctx, input.session_id)
+      const { session, workspace } = (await gitSession(ctx, input.session_id))
       return { ok: true as const, git: await workingTreeMutation(ctx, session, workspace, () => ctx.deps.git.unstage(workspace, paths)) }
     })),
     discard: os.git.discard.handler(({ input, context: { ctx } }) => guard(async () => {
       const paths = pathsFromBody(input)
-      const { session, workspace } = gitSession(ctx, input.session_id)
+      const { session, workspace } = (await gitSession(ctx, input.session_id))
       return { ok: true as const, git: await workingTreeMutation(ctx, session, workspace, () => ctx.deps.git.discard(workspace, paths, { deleteUntracked: Boolean(input.delete_untracked) })) }
     })),
     commit: os.git.commit.handler(({ input, context: { ctx } }) => guard(async () => {
-      const { session, workspace } = gitSession(ctx, input.session_id)
+      const { session, workspace } = (await gitSession(ctx, input.session_id))
       return workingTreeMutation(ctx, session, workspace, () => ctx.deps.git.commit(workspace, input.message)) as Promise<{ ok: true; commit: string; status: GitStatus }>
     })),
     commitSelected: os.git.commitSelected.handler(({ input, context: { ctx } }) => guard(async () => {
       const paths = pathsFromBody(input)
-      const { session, workspace } = gitSession(ctx, input.session_id)
+      const { session, workspace } = (await gitSession(ctx, input.session_id))
       return workingTreeMutation(ctx, session, workspace, () => ctx.deps.git.commitSelected(workspace, input.message, paths)) as Promise<{ ok: true; commit: string; paths: string[]; status: GitStatus }>
     })),
     commitMessage: os.git.commitMessage.handler(({ input, context: { ctx } }) => guard(async () => {
-      const { session, workspace } = gitSession(ctx, input.session_id)
+      const { session, workspace } = (await gitSession(ctx, input.session_id))
       return generateCommitMessage(ctx, session, await ctx.deps.git.stagedCommitMessagePrompt(workspace))
     })),
     commitMessageSelected: os.git.commitMessageSelected.handler(({ input, context: { ctx } }) => guard(async () => {
       const paths = pathsFromBody(input)
-      const { session, workspace } = gitSession(ctx, input.session_id)
+      const { session, workspace } = (await gitSession(ctx, input.session_id))
       return generateCommitMessage(ctx, session, await ctx.deps.git.selectedCommitMessagePrompt(workspace, paths))
     })),
-    fetch: os.git.fetch.handler(({ input, context: { ctx } }) => guard(() => ctx.deps.git.fetch(gitSession(ctx, input.session_id).workspace) as Promise<{ ok: true; message: string; status: GitStatus }>)),
-    pull: os.git.pull.handler(({ input, context: { ctx } }) => guard(() => {
-      const { session, workspace } = gitSession(ctx, input.session_id)
+    fetch: os.git.fetch.handler(({ input, context: { ctx } }) => guard(async () => ctx.deps.git.fetch((await gitSession(ctx, input.session_id)).workspace) as Promise<{ ok: true; message: string; status: GitStatus }>)),
+    pull: os.git.pull.handler(({ input, context: { ctx } }) => guard(async () => {
+      const { session, workspace } = (await gitSession(ctx, input.session_id))
       return workingTreeMutation(ctx, session, workspace, () => ctx.deps.git.pull(workspace)) as Promise<{ ok: true; message: string; status: GitStatus }>
     })),
-    push: os.git.push.handler(({ input, context: { ctx } }) => guard(() => {
-      const { session, workspace } = gitSession(ctx, input.session_id)
+    push: os.git.push.handler(({ input, context: { ctx } }) => guard(async () => {
+      const { session, workspace } = (await gitSession(ctx, input.session_id))
       rejectDestructiveIfUnsafe(ctx, session)
       return ctx.deps.git.push(workspace) as Promise<{ ok: true; message: string; status: GitStatus }>
     })),
     checkout: os.git.checkout.handler(({ input, context: { ctx } }) => guard(async () => {
       requireFields(input, 'session_id', 'ref', 'mode')
-      const { session, workspace } = gitSession(ctx, input.session_id)
+      const { session, workspace } = (await gitSession(ctx, input.session_id))
       // Python: `str(body.get("mode"))` / `str(body.get("dirty_mode", "block"))` verbatim (no trimming) and `bool(track)`.
       const result = await workingTreeMutation(ctx, session, workspace, () => ctx.deps.git.checkout(workspace, input.ref, input.mode, { newBranch: input.new_branch ?? null, track: Boolean(input.track), dirtyMode: input.dirty_mode ?? 'block' }))
       return { ok: true as const, git: result.status, branches: result.branches, current_branch: result.current_branch, message: result.message } as never
     })),
     stashCheckout: os.git.stashCheckout.handler(({ input, context: { ctx } }) => guard(async () => {
       requireFields(input, 'session_id', 'ref', 'mode')
-      const { session, workspace } = gitSession(ctx, input.session_id)
+      const { session, workspace } = (await gitSession(ctx, input.session_id))
       const r = await workingTreeMutation(ctx, session, workspace, () => ctx.deps.git.stashAndCheckout(workspace, input.ref, input.mode, { newBranch: input.new_branch ?? null, track: Boolean(input.track) }))
       return {
         ok: true as const, git: r.status, branches: r.branches, current_branch: r.current_branch, message: r.message, stash_name: r.stash_name, stashed: r.stashed,
@@ -174,7 +174,7 @@ export const gitRouter = os.router({
   },
   rollback: {
     list: os.rollback.list.handler(async ({ input, context: { ctx } }) => {
-      const { workspace, allowed } = rollbackTarget(ctx, input)
+      const { workspace, allowed } = (await rollbackTarget(ctx, input))
       if (!workspace) throw new HttpError(400, 'workspace query parameter is required')
       try {
         return await ctx.deps.rollback.list(workspace, allowed) as never
@@ -184,7 +184,7 @@ export const gitRouter = os.router({
     }),
     diff: os.rollback.diff.handler(async ({ input, context: { ctx } }) => {
       const checkpoint = input.checkpoint ?? input.id
-      const { workspace, allowed } = rollbackTarget(ctx, input)
+      const { workspace, allowed } = (await rollbackTarget(ctx, input))
       if (!workspace || !checkpoint) throw new HttpError(400, 'workspace and checkpoint query parameters are required')
       try {
         return await ctx.deps.git.holdCheckpoint(workspace, () => ctx.deps.rollback.diff(workspace, checkpoint, allowed)) as never
@@ -195,7 +195,7 @@ export const gitRouter = os.router({
     restore: os.rollback.restore.handler(async ({ input, context: { ctx } }) => {
       if (!Object.keys(input).length) throw new HttpError(400, 'request body is required')
       const checkpoint = input.checkpoint ?? input.id
-      const { workspace, allowed } = rollbackTarget(ctx, input)
+      const { workspace, allowed } = (await rollbackTarget(ctx, input))
       if (!workspace || !checkpoint) throw new HttpError(400, 'workspace and checkpoint are required')
       // Held for the whole restore so no run, terminal, file write, or Git mutation starts there while the Agent rewrites its files.
       try {
@@ -210,7 +210,7 @@ export const gitRouter = os.router({
       if (!input.session_id) throw new HttpError(400, 'session_id is required')
       let session: Session
       try {
-        session = ctx.deps.sessionStore.get(input.session_id, { metadataOnly: true })
+        session = (await ctx.deps.sessionStore.get(input.session_id, { metadataOnly: true }))
       } catch {
         throw new HttpError(404, 'Session not found')
       }
@@ -229,7 +229,7 @@ export const gitRouter = os.router({
       if (!isSafeSessionId(sid)) throw new HttpError(400, 'Invalid session_id')
       let session: Session
       try {
-        session = ctx.deps.sessionStore.get(sid, { metadataOnly: true })
+        session = (await ctx.deps.sessionStore.get(sid, { metadataOnly: true }))
       } catch {
         throw new HttpError(404, 'Session not found')
       }
@@ -246,7 +246,7 @@ export const gitRouter = os.router({
     }),
   },
   upload: {
-    rollback: os.upload.rollback.handler(({ input, context: { ctx } }) => {
+    rollback: os.upload.rollback.handler(async ({ input, context: { ctx } }) => {
       const sessionId = str(input.session_id)
       const rawTokens = input.rollback_tokens
       if (!sessionId || !Array.isArray(rawTokens) || !rawTokens.length || rawTokens.length > 20) throw new HttpError(400, 'Invalid upload rollback request')
@@ -254,7 +254,7 @@ export const gitRouter = os.router({
       if (tokens.some((t) => !t || t.length > 200)) throw new HttpError(400, 'Invalid upload rollback receipt')
       let session: Session
       try {
-        session = ctx.deps.sessionStore.get(sessionId, { metadataOnly: true })
+        session = (await ctx.deps.sessionStore.get(sessionId, { metadataOnly: true }))
       } catch {
         throw new HttpError(404, 'Session not found')
       }

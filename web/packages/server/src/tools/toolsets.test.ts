@@ -30,7 +30,7 @@ it('scopes a non-owner catalog request to the bound profile and refuses foreign 
   })
   const s = await bootTestServer({ sidecar, env: { HERMES_WEBUI_TRUSTED_AUTH_HEADER: 'X-Remote-User', HERMES_WEBUI_TRUSTED_GROUPS_HEADER: 'X-Remote-Groups', HERMES_WEBUI_GROUP_PROFILE_MAP: '{"team":"work"}' } })
   try {
-    const foreign = s.deps.sessionStore.newSession({ profile: 'default' })
+    const foreign = (await s.deps.sessionStore.newSession({ profile: 'default' }))
     const headers = { 'content-type': 'application/json', 'X-Remote-User': 'catalog-user', 'X-Remote-Groups': 'team' }
     const response = await s.get('/api/toolsets', { method: 'POST', headers, body: JSON.stringify({ toolsets: null }) })
     expect(response.status).toBe(200)

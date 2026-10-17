@@ -2,22 +2,6 @@ import SwiftUI
 import TalariaKit
 import UIKit
 
-/// TAL-831: the Agent's notices for the session (a memory provider that failed to load, a credit warning) as status
-/// chips above the composer, toned by the server's level. Dismissing one hides it on this device only.
-struct SessionNoticeChips: View {
-    let notices: [SessionNotice]
-    let dismiss: (SessionNotice) -> Void
-
-    var body: some View {
-        VStack(spacing: 8) {
-            ForEach(notices, id: \.self) { notice in
-                NoticeChip(text: notice.text, level: notice.level) { dismiss(notice) }
-            }
-        }
-        .fixedSize(horizontal: false, vertical: true)
-    }
-}
-
 /// A notice above the composer in the status chip's look: its level's icon, up to two lines, and a dismiss button.
 /// The Agent's session notices and the chat's own short notices (TAL-1001) share it.
 struct NoticeChip: View {

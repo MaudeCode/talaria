@@ -21,18 +21,18 @@ describe('stale-stream cleanup with a run journal', () => {
   const deadRun = async (streamId: string, frames: [string, Json][], seed?: (session: Json) => void): Promise<string> => {
     const res = await s.get('/api/session/new', { method: 'POST', body: '{}', headers: { 'content-type': 'application/json' } })
     const sid = String(((await res.json()) as { session: Json }).session.session_id)
-    const session = s.deps.sessionStore.get(sid)
+    const session = (await s.deps.sessionStore.get(sid))
     Object.assign(session, { active_stream_id: streamId, pending_user_message: 'summarize the repo', pending_attachments: [], pending_started_at: Date.now() / 1000 - 120 })
     seed?.(session as unknown as Json)
-    s.deps.sessionStore.save(session)
+    await s.deps.sessionStore.save(session)
     const writer = s.deps.journal.writer(sid, streamId)
     for (const [event, payload] of frames) writer.appendSseEvent(event, payload)
     writer.close()
     return sid
   }
-  const recovered = (sid: string) => {
-    expect(s.deps.sessions.clearStaleStreamState(s.deps.sessionStore.get(sid))).toBe(true)
-    return s.deps.sessionStore.get(sid)
+  const recovered = async (sid: string) => {
+    expect((await s.deps.sessions.clearStaleStreamState((await s.deps.sessionStore.get(sid))))).toBe(true)
+    return (await s.deps.sessionStore.get(sid))
   }
   const work: [string, Json][] = [
     ['reasoning', { text: 'Look at the files first.' }],
@@ -44,7 +44,7 @@ describe('stale-stream cleanup with a run journal', () => {
 
   it('a journal ending in done yields the full reply and no interruption marker', async () => {
     const sid = await deadRun('deadrun536done', [...work, ['token', { text: 'It is a monorepo.' }], ['done', { terminal_state: 'completed' }]])
-    const { messages } = recovered(sid)
+    const { messages } = (await recovered(sid))
     expect(messages.map((m) => [m.role, m.content])).toEqual([['user', 'summarize the repo'], ['assistant', 'Checking the tree.'], ['assistant', 'It is a monorepo.']])
     expect(messages[1]).toMatchObject({ reasoning: 'Look at the files first.', _partial_tool_calls: [{ name: 'terminal', tid: 'call-1', done: true, snippet: 'README.md', is_error: false }] })
     expect(messages[2]).not.toHaveProperty('_partial')
@@ -57,7 +57,7 @@ describe('stale-stream cleanup with a run journal', () => {
 
   it('a journal ending mid-stream yields the partial output plus one marker', async () => {
     const sid = await deadRun('deadrun536mid', [...work, ['token', { text: 'It is a mono' }]])
-    const { messages } = recovered(sid)
+    const { messages } = (await recovered(sid))
     expect(messages.map((m) => [m.role, m.content])).toEqual([['user', 'summarize the repo'], ['assistant', 'Checking the tree.'], ['assistant', 'It is a mono'], ['assistant', MARKER]])
     expect(messages[2]).toMatchObject({ _partial: true })
     expect(messages.filter((m) => m.content === MARKER)).toHaveLength(1)
@@ -71,7 +71,7 @@ describe('stale-stream cleanup with a run journal', () => {
       session.messages = [...history, pendingUserRow('summarize the repo', [], startedAt, 'webui', streamId)]
       session.context_messages = [...history]
     })
-    const after = recovered(sid)
+    const after = (await recovered(sid))
     expect(after.messages.filter((m) => m.role === 'user' && m.content === 'summarize the repo')).toHaveLength(1)
     expect(after.messages.map((m) => m.content)).toEqual(['hi', 'hello', 'summarize the repo', 'Part', MARKER])
     // As a Stop settles it: the prompt the Agent was sent, then the prose that streamed.
@@ -82,14 +82,14 @@ describe('stale-stream cleanup with a run journal', () => {
     const streamId = 'deadrun536limit'
     const summary = { role: 'assistant', content: 'I ran out of tool calls; the tree has a README.', _turn_id: streamId }
     const sid = await deadRun(streamId, [...work, ['done', { terminal_state: 'tool_limit_reached', session: { messages: [summary] } }]])
-    const { messages } = recovered(sid)
+    const { messages } = (await recovered(sid))
     expect(messages.map((m) => m.content)).toEqual(['summarize the repo', 'Checking the tree.', summary.content])
     expect(messages[2]).not.toHaveProperty('_partial')
   })
 
   it('a done frame without a final answer still gets the marker', async () => {
     const sid = await deadRun('deadrun536noanswer', [...work, ['done', { terminal_state: 'completed', session: { messages: [] } }]])
-    expect(recovered(sid).messages.map((m) => m.content)).toEqual(['summarize the repo', 'Checking the tree.', MARKER])
+    expect((await recovered(sid)).messages.map((m) => m.content)).toEqual(['summarize the repo', 'Checking the tree.', MARKER])
   })
 
   it('the run\'s own state.db rows are covered by the recovered turn, and earlier CLI rows stay', async () => {
@@ -107,12 +107,12 @@ describe('stale-stream cleanup with a run journal', () => {
     const rows: [string, string, number][] = [['user', 'hi', 1], ['assistant', 'hello', 2], ['user', 'from the CLI', startedAt - 60], ['assistant', 'CLI answer', startedAt - 59], ['user', 'summarize the repo', startedAt + 1], ['assistant', 'Checking the tree.', startedAt + 2], ['tool', 'README.md', startedAt + 3]]
     for (const [role, content, ts] of rows) db.prepare('INSERT INTO messages (session_id, role, content, timestamp) VALUES (?, ?, ?, ?)').run(sid, role, content, ts)
     db.close()
-    recovered(sid)
+    await recovered(sid)
     const detail = (await (await s.get(`/api/session?session_id=${sid}`)).json()) as { session: { messages: Json[] } }
     const turn = ['summarize the repo', 'Checking the tree.', 'It is a mono', MARKER]
     expect(detail.session.messages.map((m) => m.content)).toEqual(['hi', 'hello', 'from the CLI', 'CLI answer', ...turn])
     // The Agent's own rows, then the prose that streamed past them.
-    expect(said(s.deps.sessions.modelContext(s.deps.sessionStore.get(sid)))).toEqual([['user', 'hi'], ['assistant', 'hello'], ['user', 'from the CLI'], ['assistant', 'CLI answer'], ['user', 'summarize the repo'], ['assistant', 'Checking the tree.'], ['tool', 'README.md'], ['assistant', 'It is a mono']])
+    expect(said(s.deps.sessions.modelContext((await s.deps.sessionStore.get(sid))))).toEqual([['user', 'hi'], ['assistant', 'hello'], ['user', 'from the CLI'], ['assistant', 'CLI answer'], ['user', 'summarize the repo'], ['assistant', 'Checking the tree.'], ['tool', 'README.md'], ['assistant', 'It is a mono']])
   })
 
   /** A state.db holding `rows` for `sid`, as the Agent and other clients committed them. */
@@ -133,10 +133,10 @@ describe('stale-stream cleanup with a run journal', () => {
       session.context_messages = [...history]
     })
     stateDb(sid, [['user', 'hi', 1], ['assistant', 'hello', 2], ['user', 'summarize the repo', startedAt + 1], ['assistant', 'Checking the tree.', startedAt + 2], ['user', 'asked in the CLI meanwhile', startedAt + 5], ['assistant', 'CLI answer', startedAt + 6]])
-    recovered(sid)
+    await recovered(sid)
     const detail = (await (await s.get(`/api/session?session_id=${sid}`)).json()) as { session: { messages: Json[] } }
     expect(detail.session.messages.map((m) => m.content)).toEqual(['hi', 'hello', 'summarize the repo', 'Checking the tree.', 'It is a mono', MARKER, 'asked in the CLI meanwhile', 'CLI answer'])
-    expect(said(s.deps.sessions.modelContext(s.deps.sessionStore.get(sid))).slice(-2)).toEqual([['user', 'asked in the CLI meanwhile'], ['assistant', 'CLI answer']])
+    expect(said(s.deps.sessions.modelContext((await s.deps.sessionStore.get(sid)))).slice(-2)).toEqual([['user', 'asked in the CLI meanwhile'], ['assistant', 'CLI answer']])
   })
 
   it('an attachment-only prompt the Agent never committed keeps its files in the model context', async () => {
@@ -145,7 +145,7 @@ describe('stale-stream cleanup with a run journal', () => {
     const sid = await deadRun('deadrun536files', [['token', { text: 'Reading it' }]], (session) => {
       Object.assign(session, { pending_user_message: '', pending_attachments: [doc], messages: [...history], context_messages: [...history] })
     })
-    const after = recovered(sid)
+    const after = (await recovered(sid))
     expect(said(after.context_messages)).toEqual([['user', 'hi'], ['assistant', 'hello'], ['user', '[Attached files: /tmp/report.pdf]'], ['assistant', 'Reading it']])
   })
 
@@ -159,26 +159,26 @@ describe('stale-stream cleanup with a run journal', () => {
     })
     // The Agent persists the prompt's text without the files it was sent with.
     stateDb(sid, [['user', 'hi', 1], ['assistant', 'hello', 2], ['user', 'summarize the repo', startedAt + 1], ['assistant', 'Checking the tree.', startedAt + 2]])
-    const after = recovered(sid)
+    const after = (await recovered(sid))
     expect(said(after.context_messages)).toEqual([['user', 'hi'], ['assistant', 'hello'], ['user', 'summarize the repo\n\n[Attached files: /tmp/report.pdf]'], ['assistant', 'Checking the tree.'], ['assistant', 'Reading it']])
   })
 
   it('a done run whose last segment is reasoning only is no answer', async () => {
     const sid = await deadRun('deadrun536thinking', [...work, ['reasoning', { text: 'That should do.' }], ['done', { terminal_state: 'completed', session: { messages: [] } }]])
-    const { messages } = recovered(sid)
+    const { messages } = (await recovered(sid))
     expect(messages.map((m) => m.content)).toEqual(['summarize the repo', 'Checking the tree.', '', MARKER])
     expect(messages[2]).toMatchObject({ reasoning: 'That should do.', _partial: true })
   })
 
   it('a first turn with no model context yet gets one with the recovered output', async () => {
     const sid = await deadRun('deadrun536first', [...work, ['token', { text: 'It is a mono' }]])
-    expect(said(recovered(sid).context_messages)).toEqual([['user', 'summarize the repo'], ['assistant', 'Checking the tree.\n\nIt is a mono']])
+    expect(said((await recovered(sid)).context_messages)).toEqual([['user', 'summarize the repo'], ['assistant', 'Checking the tree.\n\nIt is a mono']])
   })
 
   it('a done frame answer in structured content is the answer', async () => {
     const streamId = 'deadrun536blocks'
     const summary = { role: 'assistant', content: [{ type: 'thinking', thinking: 'Wrap up.' }, { type: 'text', text: 'The tree has a README.' }], _turn_id: streamId }
     const sid = await deadRun(streamId, [...work, ['done', { terminal_state: 'tool_limit_reached', session: { messages: [summary] } }]])
-    expect(recovered(sid).messages.map((m) => m.content)).toEqual(['summarize the repo', 'Checking the tree.', 'The tree has a README.'])
+    expect((await recovered(sid)).messages.map((m) => m.content)).toEqual(['summarize the repo', 'Checking the tree.', 'The tree has a README.'])
   })
 })

@@ -13,14 +13,14 @@ import { isSafeSessionId } from '../sessions/session.js'
 const EXEMPT_PROCEDURES = new Set(['session.get', 'session.import', 'chat.start'])
 
 /** Python `_session_id_visible_to_request_profile`: unknown or unsafe ids fall through to the handler's own error. */
-export function sessionIdVisibleToRequest(ctx: RequestContext, sid: unknown): boolean {
-  return ctx.deps.sessions.sessionIdVisible(sid)
+export async function sessionIdVisibleToRequest(ctx: RequestContext, sid: unknown): Promise<boolean> {
+  return (await ctx.deps.sessions.sessionIdVisible(sid))
 }
 
 /** Pre-dispatch query guard for every `/api/` request (raw, SSE, and contract routes). */
-export function guardQuerySessionId(ctx: RequestContext): boolean {
+export async function guardQuerySessionId(ctx: RequestContext): Promise<boolean> {
   const sid = ctx.query.get('session_id')
-  if (sessionIdVisibleToRequest(ctx, sid)) {
+  if ((await sessionIdVisibleToRequest(ctx, sid))) {
     if (sid) ctx.query.set('session_id', ctx.deps.sessions.resolveSessionId(sid))
     return true
   }
@@ -30,10 +30,10 @@ export function guardQuerySessionId(ctx: RequestContext): boolean {
 }
 
 /** Contract-route guard for the parsed input (query or JSON body) of every procedure. */
-export const requestSessionIdGuard = orpcBase.$context<ApiContext>().middleware(({ context: { ctx }, path, next }, input: unknown) => {
+export const requestSessionIdGuard = orpcBase.$context<ApiContext>().middleware(async ({ context: { ctx }, path, next }, input: unknown) => {
   const body = input && typeof input === 'object' && !Array.isArray(input) ? input as Record<string, unknown> : null
   const sid = body?.session_id
-  const visible = sessionIdVisibleToRequest(ctx, sid)
+  const visible = (await sessionIdVisibleToRequest(ctx, sid))
   if (!EXEMPT_PROCEDURES.has(path.join('.')) && !visible) throw new HttpError(404, 'Session not found')
   // Normalize once before handlers choose locks, runtime keys or files; an imported document keeps its own IDs.
   if (body && typeof sid === 'string' && visible && path.join('.') !== 'session.import') {
@@ -53,7 +53,7 @@ export function streamOwnerSessionId(ctx: RequestContext, streamId: string): str
 }
 
 /** Python `_stream_id_visible_to_request_profile`: a stream is visible when its owner session is (or it has no known owner). */
-export function streamVisibleToRequest(ctx: RequestContext, streamId: string): boolean {
+export async function streamVisibleToRequest(ctx: RequestContext, streamId: string): Promise<boolean> {
   const owner = streamOwnerSessionId(ctx, streamId)
-  return !owner || sessionIdVisibleToRequest(ctx, owner)
+  return !owner || (await sessionIdVisibleToRequest(ctx, owner))
 }

@@ -46,15 +46,15 @@ describe('request-profile session visibility', () => {
     expect(s.deps.activeProfile()).toBe('default')
     // Detail load is exempt from the generic guard and reports the mismatch itself (frontend switches profile).
     // A legacy session saved without a profile counts as root and answers a plain 404 elsewhere.
-    const legacy = s.deps.sessionStore.get(sid)
+    const legacy = (await s.deps.sessionStore.get(sid))
     legacy.profile = null
-    s.deps.sessionStore.save(legacy)
+    await s.deps.sessionStore.save(legacy)
     expect((await s.get(`/api/session?session_id=${sid}`, { headers: root.headers })).status).toBe(200)
     expect((await s.get(`/api/session?session_id=${sid}`, { headers: work.headers })).status).toBe(404)
     // A session that names its profile answers 409 so the frontend can offer to switch (Python detail-load behaviour).
-    const tagged = s.deps.sessionStore.get(sid)
+    const tagged = (await s.deps.sessionStore.get(sid))
     tagged.profile = 'default'
-    s.deps.sessionStore.save(tagged)
+    await s.deps.sessionStore.save(tagged)
     const mismatch = await s.get(`/api/session?session_id=${sid}`, { headers: work.headers })
     expect(mismatch.status).toBe(409)
     expect(await mismatch.json()).toMatchObject({ code: 'session_profile_mismatch', profile: 'default' })

@@ -100,6 +100,7 @@ export async function startServer(app: App, config: ServerConfig, opts: { log?: 
     // Auth state is persisted write-behind: land pending session and login-attempt writes before the process exits.
     await app.deps.auth.flushPersistence()
     await stopStateDbWorker()
+    await app.deps.sessionStore.close()
   }
   if (opts.signals ?? true) {
     let requested = false

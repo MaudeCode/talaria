@@ -99,7 +99,7 @@ describe('installed model-provider plugins in the provider catalog', () => {
     expect(res.status).toBe(200)
     await s.sse(`/api/chat/stream?stream_id=${String((await json(res)).stream_id)}`, (f) => f.event === 'stream_end')
     expect(started).toMatchObject({ model: 'claude-sonnet-4-6', model_provider: 'fake-sub' })
-    expect(s.deps.sessionStore.get(sid)).toMatchObject({ model: 'claude-sonnet-4-6', model_provider: 'fake-sub' })
+    expect((await s.deps.sessionStore.get(sid))).toMatchObject({ model: 'claude-sonnet-4-6', model_provider: 'fake-sub' })
   })
 
   it('another profile never sees the plugin, and a refresh drops a removed plugin', async () => {

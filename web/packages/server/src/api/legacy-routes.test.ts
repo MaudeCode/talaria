@@ -52,8 +52,8 @@ describe('legacy chat and test-hook endpoints', () => {
     expect(body).toMatchObject({ answer: 'second answer', status: 'done' })
     expect(history[0]?.api_content).toBe('first\n\n<memory-context>recall</memory-context>')
     // Write-back replaces the replayed context instead of appending a second copy of it.
-    expect(s.deps.sessionStore.get(sid).messages.map((m) => m.content)).toEqual(['first', 'first answer', 'second', 'second answer'])
-    expect(s.deps.sessionStore.get(sid).active_stream_id).toBeNull()
+    expect((await s.deps.sessionStore.get(sid)).messages.map((m) => m.content)).toEqual(['first', 'first answer', 'second', 'second answer'])
+    expect((await s.deps.sessionStore.get(sid)).active_stream_id).toBeNull()
   })
 
   it('answers partial with the streamed text when the turn is cancelled or fails after producing text', async () => {
@@ -66,7 +66,7 @@ describe('legacy chat and test-hook endpoints', () => {
     const pending = post(s, '/api/chat', { session_id: sid, message: 'long task' })
     let streamId: string | null = null
     for (let i = 0; i < 100 && !streamId; i += 1) {
-      streamId = s.deps.sessionStore.get(sid).active_stream_id
+      streamId = (await s.deps.sessionStore.get(sid)).active_stream_id
       if (!streamId) await new Promise((r) => setTimeout(r, 10))
     }
     await s.sse(`/api/chat/stream?stream_id=${String(streamId)}`, (f) => f.event === 'token')
@@ -94,7 +94,7 @@ describe('legacy chat and test-hook endpoints', () => {
     res = await post(s, '/api/chat', { session_id: sid, message: 'doomed' })
     expect(res.status).toBe(409)
     expect(await json(res)).toMatchObject({ type: 'agent_runtime_stale' })
-    expect(s.deps.sessionStore.get(sid).active_stream_id).toBeNull()
+    expect((await s.deps.sessionStore.get(sid)).active_stream_id).toBeNull()
   })
 
   it('refuses before admission: stale runtime, subagent child, empty message, untrusted workspace, busy session', async () => {
@@ -112,16 +112,16 @@ describe('legacy chat and test-hook endpoints', () => {
     res = await post(s, '/api/chat', { session_id: sid, message: 'hi', workspace: '/etc' })
     expect(res.status).toBe(400)
     expect(String((await json(res)).error)).toContain('system directory')
-    const child = s.deps.sessionStore.get(sid)
+    const child = (await s.deps.sessionStore.get(sid))
     child.source_tag = 'subagent'
-    s.deps.sessionStore.save(child)
+    await s.deps.sessionStore.save(child)
     res = await post(s, '/api/chat', { session_id: sid, message: 'hi' })
     expect(res.status).toBe(400)
     expect(await json(res)).toEqual({ error: 'Subagent sessions are view-only and cannot be written from WebUI' })
     const busy = await newSession()
-    const held = s.deps.sessionStore.get(busy)
+    const held = (await s.deps.sessionStore.get(busy))
     held.active_stream_id = 'other-stream'
-    s.deps.sessionStore.save(held)
+    await s.deps.sessionStore.save(held)
     s.deps.registry.liveIds.add('other-stream')
     try {
       res = await post(s, '/api/chat', { session_id: busy, message: 'hi' })

@@ -54,11 +54,11 @@ async function kb<T>(fn: () => Promise<T>): Promise<T> {
 }
 
 /** Python `_terminal_local_io_allowed` + `_terminal_session_lookup`. */
-function terminalSession(ctx: RequestContext, sid: string, missing = 'session_id required'): { workspace: string; profile: string | null } {
+async function terminalSession(ctx: RequestContext, sid: string, missing = 'session_id required'): Promise<{ workspace: string; profile: string | null }> {
   if (!sid) throw new HttpError(400, missing)
   let session
   // Python surfaced the lookup's `KeyError` through `str(e)`, which keeps the repr quotes.
-  try { session = ctx.deps.sessionStore.get(sid, { metadataOnly: true }) } catch { throw new HttpError(404, "'Session not found'") }
+  try { session = (await ctx.deps.sessionStore.get(sid, { metadataOnly: true })) } catch { throw new HttpError(404, "'Session not found'") }
   if (!ctx.deps.workspaces.profileSupportsLocalIo(session.profile)) throw new HttpError(400, REMOTE_TERMINAL_ERROR.error, { message: REMOTE_TERMINAL_ERROR.message })
   return { workspace: str(session.workspace), profile: session.profile }
 }
@@ -147,7 +147,7 @@ export const automationRouter = os.router({
     start: os.terminal.start.handler(({ input, context: { ctx } }) => run(async () => {
       await terminalGate(ctx)
       const sid = str(input.session_id).trim()
-      const { workspace, profile } = terminalSession(ctx, sid)
+      const { workspace, profile } = (await terminalSession(ctx, sid))
       let cwd: string
       // Python answered `resolve_trusted_workspace`'s ValueError text unsanitised.
       try { cwd = ctx.deps.workspaces.resolveTrusted(workspace, profile) } catch (error) { throw new HttpError(400, (error as Error).message) }
@@ -164,7 +164,7 @@ export const automationRouter = os.router({
     input: os.terminal.input.handler(({ input, context: { ctx } }) => run(async () => {
       await terminalGate(ctx)
       const sid = str(input.session_id).trim()
-      terminalSession(ctx, sid, 'Missing required field(s): session_id')
+      await terminalSession(ctx, sid, 'Missing required field(s): session_id')
       const data = str(input.data)
       if (data.length > 8192) throw new HttpError(413, 'input too large')
       try { ctx.deps.terminals.write(sid, data) } catch (error) { if (error instanceof TerminalNotRunning) throw new HttpError(404, `'${error.message}'`); throw error }
@@ -173,7 +173,7 @@ export const automationRouter = os.router({
     resize: os.terminal.resize.handler(({ input, context: { ctx } }) => run(async () => {
       await terminalGate(ctx)
       const sid = str(input.session_id).trim()
-      terminalSession(ctx, sid, 'Missing required field(s): session_id')
+      await terminalSession(ctx, sid, 'Missing required field(s): session_id')
       try { ctx.deps.terminals.resize(sid, input.rows ?? 24, input.cols ?? 80) } catch (error) {
         if (error instanceof TerminalNotRunning) throw new HttpError(404, `'${error.message}'`)
         const message = str((error as Error).message)

@@ -1,6 +1,7 @@
+import { sessionDirectory, sessionIndexPath, sessionPath } from '../test/storage.js'
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, renameSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { readMetadataJsonPrefixWithSignature, statSignature } from './store.js'
+import { readMetadataJsonPrefixWithSignature, statSignature } from './storage/json-files.js'
 import { Session } from './session.js'
 import { stampCompressionExhaustedRecovery } from './turn.js'
 import { join } from 'node:path'
@@ -32,10 +33,10 @@ async function newSession(s: TestServer, body: Json = {}): Promise<Json> {
 }
 
 /** New sessions stay in memory until their first message (Python `new_session`), so persist through the store. */
-function writeMessages(s: TestServer, sid: string, messages: Json[]): void {
-  const session = s.deps.sessionStore.get(sid)
+async function writeMessages(s: TestServer, sid: string, messages: Json[]): Promise<void> {
+  const session = (await s.deps.sessionStore.get(sid))
   session.messages = messages
-  s.deps.sessionStore.save(session)
+  await s.deps.sessionStore.save(session)
 }
 
 describe('malformed session rows (TAL-37)', () => {
@@ -59,7 +60,7 @@ describe('malformed session rows (TAL-37)', () => {
   it('lists and searches usable rows with corrected types, consistent counts and no file writes', async () => {
     const s = await bootTestServer()
     try {
-      const dir = s.deps.sessionStore.sessionDir
+      const dir = sessionDirectory(s.deps.sessionStore)
       mkdirSync(dir, { recursive: true })
       const valid = { session_id: 'good-row', title: 'needle good', message_count: 2, last_message_at: 100, updated_at: 100, profile: 'default', archived: false }
       const drifted = { ...valid, session_id: 'drifted-row', title: undefined, message_count: '12', created_at: '90', pinned: 'false', archived: false }
@@ -71,7 +72,7 @@ describe('malformed session rows (TAL-37)', () => {
         writeFileSync(path, bytes)
         files.set(path, bytes)
       }
-      writeFileSync(s.deps.sessionStore.indexFile, JSON.stringify([valid, drifted, missing]))
+      writeFileSync(sessionIndexPath(s.deps.sessionStore), JSON.stringify([valid, drifted, missing]))
       for (const path of ['/api/sessions', '/api/sessions/search?q=', '/api/sessions/search?q=needle']) {
         const res = await s.get(path)
         expect(res.status, await res.clone().text()).toBe(200)
@@ -106,7 +107,7 @@ describe('server-computed context ring (TAL-299)', () => {
   it('fills the ring on index rows written before the fields existed, in the list and in search', async () => {
     const s = await bootTestServer()
     try {
-      const dir = s.deps.sessionStore.sessionDir
+      const dir = sessionDirectory(s.deps.sessionStore)
       mkdirSync(dir, { recursive: true })
       const base = { title: 'ring row', message_count: 2, last_message_at: 100, updated_at: 100, profile: 'default', archived: false }
       const rows = [
@@ -114,7 +115,7 @@ describe('server-computed context ring (TAL-299)', () => {
         { ...base, session_id: 'ring-compressed', post_compression_context_tokens_estimate: 30_000, last_prompt_tokens: 150_000, context_length: 200_000, threshold_tokens: 160_000 },
       ]
       for (const row of rows) writeFileSync(join(dir, `${row.session_id}.json`), JSON.stringify({ ...row, messages: [{ role: 'user', content: 'ring' }] }))
-      writeFileSync(s.deps.sessionStore.indexFile, JSON.stringify(rows))
+      writeFileSync(sessionIndexPath(s.deps.sessionStore), JSON.stringify(rows))
       for (const path of ['/api/sessions', '/api/sessions/search?q=ring']) {
         const listed = (await json(await s.get(path))).sessions as Json[]
         expect(listed.find((r) => r.session_id === 'ring-cumulative'), path).toMatchObject({ context_used_tokens: null, context_window_tokens: 200_000, context_usage_percent: null })
@@ -129,11 +130,11 @@ describe('server-computed context ring (TAL-299)', () => {
     const s = await bootTestServer()
     try {
       const sid = String((await newSession(s)).session_id)
-      const session = s.deps.sessionStore.get(sid)
+      const session = (await s.deps.sessionStore.get(sid))
       session.messages = [{ role: 'user', content: 'hi' }]
       session.last_prompt_tokens = 64_000
       session.context_length = null
-      s.deps.sessionStore.save(session)
+      await s.deps.sessionStore.save(session)
       const lookup = vi.spyOn(s.deps.sessions.deps, 'contextLengthFor').mockReturnValue(null)
       const detail = async () => (await json(await s.get(`/api/session?session_id=${sid}`))).session as Json
       expect(await detail()).toMatchObject({ context_used_tokens: 64_000, context_window_tokens: null, context_usage_percent: null })
@@ -157,7 +158,7 @@ describe('session lifecycle over HTTP', () => {
     expect(session.workspace).toBe(realpathSync(join(s.state, 'workspace')))
     // Python keeps a brand-new session in memory until its first message.
     expect(existsSync(join(s.state, 'sessions', `${String(session.session_id)}.json`))).toBe(false)
-    writeMessages(s, String(session.session_id), [{ role: 'user', content: 'hi' }])
+    await writeMessages(s, String(session.session_id), [{ role: 'user', content: 'hi' }])
 
     const res = await s.get('/api/sessions')
     expect(res.status).toBe(200)
@@ -184,7 +185,7 @@ describe('session lifecycle over HTTP', () => {
   it('renames, archives, pins with the configured cap, and moves between projects', async () => {
     const a = await newSession(s)
     const sid = String(a.session_id)
-    writeMessages(s, sid, [{ role: 'user', content: 'hi' }])
+    await writeMessages(s, sid, [{ role: 'user', content: 'hi' }])
     let res = await post(s, '/api/session/rename', { session_id: sid, title: '  New title  ' })
     expect(res.status).toBe(200)
     expect(((await json(res)).session as Json).title).toBe('New title')
@@ -241,7 +242,7 @@ describe('session lifecycle over HTTP', () => {
     const sid = String(a.session_id)
     const messages: Json[] = []
     for (let i = 0; i < 12; i += 1) messages.push({ role: i % 2 ? 'assistant' : 'user', content: `m${i}`, timestamp: 1000 + i })
-    writeMessages(s, sid, messages)
+    await writeMessages(s, sid, messages)
     const res = await s.get(`/api/session?session_id=${sid}&msg_limit=4`)
     expect(res.status).toBe(200)
     const session = (await json(res)).session as Json
@@ -259,7 +260,7 @@ describe('session lifecycle over HTTP', () => {
     const long = Array.from({ length: 30 }, (_, i) => `log ${i}`).join('\n')
     const messages: Json[] = []
     for (let i = 0; i < 8; i += 1) messages.push({ role: i % 2 ? 'assistant' : 'user', content: i % 2 ? long : i === 4 ? long : `m${i}`, timestamp: 1000 + i })
-    writeMessages(s, sid, messages)
+    await writeMessages(s, sid, messages)
     for (const query of ['', '&msg_limit=4', '&msg_limit=2&msg_before=6']) {
       const got = ((await json(await s.get(`/api/session?session_id=${sid}${query}`))).session as Json).messages as Json[]
       expect(got.map((m) => m._collapsible ?? null), query).toEqual(got.map((m) => (m.timestamp === 1004 ? true : null)))
@@ -270,10 +271,10 @@ describe('session lifecycle over HTTP', () => {
   it('truncates, undoes, retries, clears, and keeps a .bak when the file shrinks', async () => {
     const a = await newSession(s)
     const sid = String(a.session_id)
-    writeMessages(s, sid, [
+    ;(await writeMessages(s, sid, [
       { role: 'user', content: 'first' }, { role: 'assistant', content: 'one' },
       { role: 'user', content: 'second' }, { role: 'assistant', content: 'two' },
-    ])
+    ]))
     let res = await post(s, '/api/session/undo', { session_id: sid })
     expect(res.status).toBe(200)
     expect(await json(res)).toMatchObject({ ok: true, removed_count: 2, removed_preview: 'second' })
@@ -288,23 +289,23 @@ describe('session lifecycle over HTTP', () => {
     // model (only those with a path); `last_user_text` stays the stored text.
     const stored = '[Workspace::v1: /tmp/ws]\nSummarize the logs\n\n[Attached files: /tmp/notes.txt]'
     const file = { filename: 'notes.txt', path: '/tmp/notes.txt', mime: 'text/plain' }
-    writeMessages(s, sid, [{ role: 'user', content: stored, attachments: [file, 'legacy.txt'] }, { role: 'assistant', content: 'fine' }])
+    await writeMessages(s, sid, [{ role: 'user', content: stored, attachments: [file, 'legacy.txt'] }, { role: 'assistant', content: 'fine' }])
     res = await post(s, '/api/session/retry', { session_id: sid })
     expect(await json(res)).toEqual({ ok: true, last_user_text: stored, last_user_prompt: 'Summarize the logs', last_user_attachments: [file], removed_count: 2 })
     // Without files to resend, a trailing attached-files line is the user's own text.
-    writeMessages(s, sid, [{ role: 'user', content: 'See\n\n[Attached files: example.txt]', attachments: ['legacy.txt'] }, { role: 'assistant', content: 'fine' }])
+    await writeMessages(s, sid, [{ role: 'user', content: 'See\n\n[Attached files: example.txt]', attachments: ['legacy.txt'] }, { role: 'assistant', content: 'fine' }])
     res = await post(s, '/api/session/retry', { session_id: sid })
     expect(await json(res)).toMatchObject({ ok: true, last_user_prompt: 'See\n\n[Attached files: example.txt]', last_user_attachments: [] })
     // Nothing resendable: the exchange stays.
-    writeMessages(s, sid, [{ role: 'user', content: '', attachments: ['legacy.txt'] }, { role: 'assistant', content: 'fine' }])
+    await writeMessages(s, sid, [{ role: 'user', content: '', attachments: ['legacy.txt'] }, { role: 'assistant', content: 'fine' }])
     res = await post(s, '/api/session/retry', { session_id: sid })
     expect(await json(res)).toEqual({ error: 'The last message has nothing to resend.' })
     expect(((await json(await s.get(`/api/session?session_id=${sid}`))).session as Json).messages).toHaveLength(2)
 
-    writeMessages(s, sid, [
+    ;(await writeMessages(s, sid, [
       { role: 'user', content: 'a' }, { role: 'assistant', content: '', reasoning: 'think', tool_calls: [{ id: 't', name: 'read_file' }] },
       { role: 'tool', tool_call_id: 't', content: 'x' }, { role: 'assistant', content: 'b' }, { role: 'user', content: 'c' },
-    ])
+    ]))
     res = await post(s, '/api/session/truncate', { session_id: sid, keep_count: 4 })
     expect(res.status).toBe(200)
     // The kept turns come back with the server's scenes, like the detail, so a client replacing its transcript keeps them.
@@ -323,7 +324,7 @@ describe('session lifecycle over HTTP', () => {
   it('duplicates and branches sessions with parent lineage', async () => {
     const a = await newSession(s)
     const sid = String(a.session_id)
-    writeMessages(s, sid, [{ role: 'user', content: 'x' }, { role: 'assistant', content: 'y' }, { role: 'user', content: 'z' }])
+    await writeMessages(s, sid, [{ role: 'user', content: 'x' }, { role: 'assistant', content: 'y' }, { role: 'user', content: 'z' }])
     let res = await post(s, '/api/session/duplicate', { session_id: sid })
     expect(res.status).toBe(200)
     const dup = (await json(res)).session as Json
@@ -344,10 +345,10 @@ describe('session lifecycle over HTTP', () => {
     const secret = 'sk-proj-AbCdEfGhIjKlMnOpQrStUvWxYz0123456789'
     const detail = async (id: unknown): Promise<Json> => (await json(await s.get(`/api/session?session_id=${String(id)}`))).session as Json
     const sid = String((await newSession(s)).session_id)
-    const parent = s.deps.sessionStore.get(sid)
+    const parent = (await s.deps.sessionStore.get(sid))
     Object.assign(parent, { title: `Deploy with ${secret}`, messages: [{ role: 'user', content: 'x' }, { role: 'assistant', content: 'y' }] })
     stampCompressionExhaustedRecovery(parent, 'Context length exceeded.', '')
-    s.deps.sessionStore.save(parent)
+    await s.deps.sessionStore.save(parent)
     const branch = await json(await post(s, '/api/session/branch', { session_id: sid }))
     const linked = (await detail(branch.session_id)).branched_from as Json
     expect(linked).toEqual({ session_id: sid, title: expect.stringContaining('Deploy with') as unknown })
@@ -385,7 +386,7 @@ describe('session lifecycle over HTTP', () => {
   it('serves the shared branched example as the contract fixture records it (TAL-454)', async () => {
     const fixture = (JSON.parse(readFileSync(join(import.meta.dirname, '../../../../../contracts/fixtures/web-session.json'), 'utf8')) as Json).branched_session as Json
     const stored = fixture.stored_parent as Json
-    s.deps.sessionStore.save(new Session({ ...stored, messages: [{ role: 'user', content: 'x' }] }, { workspace: s.state, model: null }))
+    await s.deps.sessionStore.save(new Session({ ...stored, messages: [{ role: 'user', content: 'x' }] }, { workspace: s.state, model: null }))
     const branch = await json(await post(s, '/api/session/branch', { session_id: stored.session_id }))
     const served = (await json(await s.get(`/api/session?session_id=${String(branch.session_id)}`))).session as Json
     const expected = fixture.session as Json
@@ -395,7 +396,7 @@ describe('session lifecycle over HTTP', () => {
   it('deletes a session, tombstones it, and prunes it from the index', async () => {
     const a = await newSession(s)
     const sid = String(a.session_id)
-    writeMessages(s, sid, [{ role: 'user', content: 'bye' }])
+    await writeMessages(s, sid, [{ role: 'user', content: 'bye' }])
     const res = await post(s, '/api/session/delete', { session_id: sid })
     expect(res.status).toBe(200)
     // No sidecar in this harness: the state.db cleanup cannot run, and the response says so (Python reported the
@@ -414,16 +415,16 @@ describe('session lifecycle over HTTP', () => {
   it('archives, unarchives and deletes many sessions in one bulk call, one ordered result per id (TAL-627)', async () => {
     const persisted = async (): Promise<string> => {
       const sid = String((await newSession(s)).session_id)
-      writeMessages(s, sid, [{ role: 'user', content: 'bulkprobe' }])
+      await writeMessages(s, sid, [{ role: 'user', content: 'bulkprobe' }])
       return sid
     }
     const [first, readOnly, subagent, running, last] = [await persisted(), await persisted(), await persisted(), await persisted(), await persisted()]
-    const tweak = (sid: string, apply: (x: Session) => void): void => { const stored = s.deps.sessionStore.get(sid); apply(stored); s.deps.sessionStore.save(stored) }
-    tweak(readOnly, (x) => { x.read_only = true })
-    tweak(subagent, (x) => { x.source_tag = 'subagent' })
-    tweak(running, (x) => { x.active_stream_id = 'bulkprobe-run' })
+    const tweak = async (sid: string, apply: (x: Session) => void): Promise<void> => { const stored = (await s.deps.sessionStore.get(sid)); apply(stored); (await s.deps.sessionStore.save(stored)) }
+    await tweak(readOnly, (x) => { x.read_only = true })
+    await tweak(subagent, (x) => { x.source_tag = 'subagent' })
+    await tweak(running, (x) => { x.active_stream_id = 'bulkprobe-run' })
     const bulk = (action: string, session_ids: string[]): Promise<Response> => post(s, '/api/sessions/bulk', { action, session_ids })
-    const archived = (sid: string): unknown => s.deps.sessionStore.get(sid).archived
+    const archived = async (sid: string): Promise<unknown> => (await s.deps.sessionStore.get(sid)).archived
     const rows = (await json(await s.get('/api/sessions'))).sessions as Json[]
     expect([first, readOnly, subagent].map((sid) => rows.find((r) => r.session_id === sid)?.can_delete)).toEqual([true, false, false])
 
@@ -435,11 +436,11 @@ describe('session lifecycle over HTTP', () => {
       { session_id: 'bulkprobe-unknown', ok: false, status: 404, error: 'Session not found' },
       { session_id: last, ok: true },
     ])
-    expect([archived(first), archived(subagent), archived(last)]).toEqual([true, false, true])
+    expect([(await archived(first)), (await archived(subagent)), (await archived(last))]).toEqual([true, false, true])
 
     const unarchive = await json(await bulk('unarchive', [first, last]))
     expect(unarchive.results).toEqual([{ session_id: first, ok: true }, { session_id: last, ok: true }])
-    expect([archived(first), archived(last)]).toEqual([false, false])
+    expect([(await archived(first)), (await archived(last))]).toEqual([false, false])
 
     s.deps.registry.liveIds.add('bulkprobe-run')
     try {
@@ -494,14 +495,14 @@ describe('session lifecycle over HTTP', () => {
 
   it('reports streaming only for a live runtime stream on detail, list, search, status and mutation replies (TAL-312)', async () => {
     const sid = String((await newSession(s)).session_id)
-    writeMessages(s, sid, [{ role: 'user', content: 'streamprobe question' }, { role: 'assistant', content: 'ok' }])
+    await writeMessages(s, sid, [{ role: 'user', content: 'streamprobe question' }, { role: 'assistant', content: 'ok' }])
     // A dead run: the persisted id is not a live stream, and a fresh pending prompt keeps the stale sweep from clearing it.
-    const stored = s.deps.sessionStore.get(sid)
+    const stored = (await s.deps.sessionStore.get(sid))
     stored.title = 'Streamprobe'
     stored.active_stream_id = 'streamprobe1'
     stored.pending_user_message = 'still pending'
     stored.pending_started_at = Date.now() / 1000
-    s.deps.sessionStore.save(stored)
+    await s.deps.sessionStore.save(stored)
     const payloads = async (): Promise<Json[]> => {
       const detail = (await json(await s.get(`/api/session?session_id=${sid}`))).session as Json
       const row = ((await json(await s.get('/api/sessions'))).sessions as Json[]).find((r) => r.session_id === sid)!
@@ -523,12 +524,12 @@ describe('session lifecycle over HTTP', () => {
 
   it('ships sort_ts on detail, list and search rows, and lists a pinned row above a streaming one (TAL-306)', async () => {
     const [pinned, streaming] = [String((await newSession(s)).session_id), String((await newSession(s)).session_id)]
-    writeMessages(s, pinned, [{ role: 'user', content: 'sortprobe pinned', timestamp: 1000 }, { role: 'assistant', content: 'ok', timestamp: 1001 }])
-    writeMessages(s, streaming, [{ role: 'user', content: 'sortprobe streaming', timestamp: 2000 }, { role: 'assistant', content: 'ok', timestamp: 2001 }])
+    await writeMessages(s, pinned, [{ role: 'user', content: 'sortprobe pinned', timestamp: 1000 }, { role: 'assistant', content: 'ok', timestamp: 1001 }])
+    await writeMessages(s, streaming, [{ role: 'user', content: 'sortprobe streaming', timestamp: 2000 }, { role: 'assistant', content: 'ok', timestamp: 2001 }])
     expect((await post(s, '/api/session/pin', { session_id: pinned, pinned: true })).status).toBe(200)
-    const stored = s.deps.sessionStore.get(streaming)
+    const stored = (await s.deps.sessionStore.get(streaming))
     stored.active_stream_id = 'sortprobe-run'
-    s.deps.sessionStore.save(stored)
+    await s.deps.sessionStore.save(stored)
     s.deps.registry.liveIds.add('sortprobe-run')
     try {
       const list = ((await json(await s.get('/api/sessions'))).sessions as Json[]).map((r) => r.session_id)
@@ -547,11 +548,11 @@ describe('session lifecycle over HTTP', () => {
     const readOnly = String((await newSession(s)).session_id)
     const subagent = String((await newSession(s)).session_id)
     for (const [sid, apply] of [[readOnly, (x: Session) => { x.read_only = true }], [subagent, (x: Session) => { x.source_tag = 'subagent' }]] as const) {
-      const stored = s.deps.sessionStore.get(sid)
+      const stored = (await s.deps.sessionStore.get(sid))
       apply(stored)
       stored.title = 'Roprobe'
       stored.messages = [{ role: 'user', content: 'roprobe' }, { role: 'assistant', content: 'ok' }]
-      s.deps.sessionStore.save(stored)
+      await s.deps.sessionStore.save(stored)
       const detail = (await json(await s.get(`/api/session?session_id=${sid}`))).session as Json
       const hit = ((await json(await s.get('/api/sessions/search?q=roprobe'))).sessions as Json[]).find((r) => r.session_id === sid)!
       const status = await json(await s.get(`/api/session/status?session_id=${sid}`))
@@ -572,12 +573,12 @@ describe('session lifecycle over HTTP', () => {
   it('offers branching exactly where the branch gate allows it, including a read-only cron run (TAL-312)', async () => {
     const writable = String((await newSession(s)).session_id)
     const cron = String((await newSession(s)).session_id)
-    const stored = s.deps.sessionStore.get(cron)
+    const stored = (await s.deps.sessionStore.get(cron))
     stored.read_only = true
     stored.source_tag = 'cron'
-    s.deps.sessionStore.save(stored)
+    await s.deps.sessionStore.save(stored)
     for (const sid of [writable, cron]) {
-      writeMessages(s, sid, [{ role: 'user', content: 'branchprobe' }, { role: 'assistant', content: 'ok' }])
+      await writeMessages(s, sid, [{ role: 'user', content: 'branchprobe' }, { role: 'assistant', content: 'ok' }])
       const detail = (await json(await s.get(`/api/session?session_id=${sid}`))).session as Json
       expect(detail.can_branch, sid).toBe(true)
       expect((await post(s, '/api/session/branch', { session_id: sid })).status, sid).toBe(200)
@@ -614,7 +615,7 @@ describe('session lifecycle over HTTP', () => {
   it('creates, reads, and revokes shares with the noindex header', async () => {
     const a = await newSession(s)
     const sid = String(a.session_id)
-    writeMessages(s, sid, [{ role: 'user', content: 'share me' }, { role: 'assistant', content: 'ok' }])
+    await writeMessages(s, sid, [{ role: 'user', content: 'share me' }, { role: 'assistant', content: 'ok' }])
     let res = await post(s, '/api/share/create', { session_id: sid })
     expect(res.status).toBe(200)
     const share = (await json(res)).share as Json
@@ -634,7 +635,7 @@ describe('session lifecycle over HTTP', () => {
   it('ships each shared row its public share URL, sidebar list included (TAL-563)', async () => {
     const a = await newSession(s)
     const sid = String(a.session_id)
-    writeMessages(s, sid, [{ role: 'user', content: 'share me' }, { role: 'assistant', content: 'ok' }])
+    await writeMessages(s, sid, [{ role: 'user', content: 'share me' }, { role: 'assistant', content: 'ok' }])
     const created = await json(await post(s, '/api/share/create', { session_id: sid }))
     const url = String((created.share as Json).url)
     expect(url).toBe(`/share/${String((created.share as Json).token)}`)
@@ -649,7 +650,7 @@ describe('session lifecycle over HTTP', () => {
   it('revokes a session share when the session is deleted', async () => {
     const a = await newSession(s)
     const sid = String(a.session_id)
-    writeMessages(s, sid, [{ role: 'user', content: 'share me' }, { role: 'assistant', content: 'ok' }])
+    await writeMessages(s, sid, [{ role: 'user', content: 'share me' }, { role: 'assistant', content: 'ok' }])
     const token = String(((await json(await post(s, '/api/share/create', { session_id: sid }))).share as Json).token)
     expect((await s.get(`/api/share/${token}`)).status).toBe(200)
     expect((await post(s, '/api/session/delete', { session_id: sid })).status).toBe(200)
@@ -659,7 +660,7 @@ describe('session lifecycle over HTTP', () => {
   it('revokes a cleared session share when zero-message cleanup removes it', async () => {
     const a = await newSession(s)
     const sid = String(a.session_id)
-    writeMessages(s, sid, [{ role: 'user', content: 'share me' }, { role: 'assistant', content: 'ok' }])
+    await writeMessages(s, sid, [{ role: 'user', content: 'share me' }, { role: 'assistant', content: 'ok' }])
     const token = String(((await json(await post(s, '/api/share/create', { session_id: sid }))).share as Json).token)
     expect((await post(s, '/api/session/clear', { session_id: sid })).status).toBe(200)
     expect((await s.get(`/api/share/${token}`)).status).toBe(200)
@@ -670,7 +671,7 @@ describe('session lifecycle over HTTP', () => {
 
   it('cleans up zero-message sessions and toggles yolo', async () => {
     const a = await newSession(s)
-    writeMessages(s, String(a.session_id), [])
+    await writeMessages(s, String(a.session_id), [])
     const res = await post(s, '/api/sessions/cleanup_zero_message', {})
     expect(res.status).toBe(200)
     expect(((await json(res)).cleaned as number)).toBeGreaterThanOrEqual(1)
@@ -691,10 +692,10 @@ describe('sidebar search filters (TAL-308)', () => {
     const project = String(((await json(await post(s, '/api/projects/create', { name: 'Filtered' }))).project as Json).project_id)
     const seed = async (title: string, fields: Partial<Session>, text: string, ts: number): Promise<string> => {
       const sid = String((await newSession(s)).session_id)
-      const stored = s.deps.sessionStore.get(sid)
+      const stored = (await s.deps.sessionStore.get(sid))
       Object.assign(stored, { title, ...fields })
       stored.messages = [{ role: 'user', content: text, timestamp: ts }, { role: 'assistant', content: 'ok', timestamp: ts + 1 }]
-      s.deps.sessionStore.save(stored)
+      await s.deps.sessionStore.save(stored)
       return sid
     }
     const inProject = await seed('Alpha plan', { project_id: project, model: 'gpt-5-mini' }, 'the zebra crossing', 5000)
@@ -736,10 +737,10 @@ describe('multi-word session search (TAL-453)', () => {
   it('matches every term in any order within the title, one message or one metadata field', async () => {
     const seed = async (title: string, texts: string[], fields: Partial<Session> = {}): Promise<string> => {
       const sid = String((await newSession(s)).session_id)
-      const stored = s.deps.sessionStore.get(sid)
+      const stored = (await s.deps.sessionStore.get(sid))
       Object.assign(stored, { title, ...fields })
       stored.messages = texts.map((content, i) => ({ role: i % 2 ? 'assistant' : 'user', content, timestamp: 9000 + i }))
-      s.deps.sessionStore.save(stored)
+      await s.deps.sessionStore.save(stored)
       return sid
     }
     const titled = await seed('Relay deploy checklist', ['nothing here'])
@@ -777,22 +778,22 @@ describe('session store disk freshness', () => {
 
   it('a cached session whose file was deleted underneath it is evicted and never recreated by a later mutation', async () => {
     const sid = String((await newSession(s)).session_id)
-    const cached = s.deps.sessionStore.get(sid)
+    const cached = (await s.deps.sessionStore.get(sid))
     cached.title = 'persisted'
-    s.deps.sessionStore.save(cached)
-    rmSync(cached.path ?? '')
-    expect(() => s.deps.sessionStore.get(sid)).toThrow()
-    expect(() => s.deps.sessionStore.get(sid, { metadataOnly: true })).toThrow()
+    await s.deps.sessionStore.save(cached)
+    rmSync(sessionPath(s.deps.sessionStore, sid))
+    await expect(async () => (await s.deps.sessionStore.get(sid))).rejects.toThrow()
+    await expect(async () => (await s.deps.sessionStore.get(sid, { metadataOnly: true }))).rejects.toThrow()
     expect((await post(s, '/api/session/rename', { session_id: sid, title: 'ghost' })).status).toBe(404)
-    expect(existsSync(cached.path ?? '')).toBe(false)
+    expect(existsSync(sessionPath(s.deps.sessionStore, sid))).toBe(false)
   })
 
   it('a metadata-only read is signed by the inode it read, so a file replaced meanwhile is reloaded', async () => {
     const sid = String((await newSession(s)).session_id)
-    const full = s.deps.sessionStore.get(sid)
+    const full = (await s.deps.sessionStore.get(sid))
     full.title = 'old owner'
-    s.deps.sessionStore.save(full)
-    const path = full.path ?? ''
+    await s.deps.sessionStore.save(full)
+    const path = sessionPath(s.deps.sessionStore, sid)
     const before = readMetadataJsonPrefixWithSignature(path)
     // Atomic replacement after the descriptor was opened: the signature must describe the old inode, not the new file.
     const replacement = { ...(JSON.parse(readFileSync(path, 'utf8')) as Record<string, unknown>), title: 'new owner' }
@@ -801,23 +802,23 @@ describe('session store disk freshness', () => {
     expect(before.prefix).toContain('old owner')
     expect(before.signature).not.toBe(statSignature(path))
     s.deps.sessionStore.sessions.delete(sid)
-    const stub = s.deps.sessionStore.loadMetadataOnly(sid)
+    const stub = (await s.deps.sessionStore.loadMetadataOnly(sid))
     expect(stub?.title).toBe('new owner')
     expect(stub?.sidecarLoadedSignature).toBe(statSignature(path))
   })
 
   it('reloads a cached session whose read identity is unknown instead of trusting the stale snapshot', async () => {
     const sid = String((await newSession(s)).session_id)
-    const cached = s.deps.sessionStore.get(sid)
+    const cached = (await s.deps.sessionStore.get(sid))
     cached.title = 'cached title'
-    s.deps.sessionStore.save(cached)
+    await s.deps.sessionStore.save(cached)
     // Another process replaces the transcript; the cached read happened while the file was changing.
-    const doc = JSON.parse(readFileSync(cached.path ?? '', 'utf8')) as Record<string, unknown>
+    const doc = JSON.parse(readFileSync(sessionPath(s.deps.sessionStore, sid), 'utf8')) as Record<string, unknown>
     doc.title = 'written by the Agent'
-    writeFileSync(cached.path ?? '', JSON.stringify(doc))
+    writeFileSync(sessionPath(s.deps.sessionStore, sid), JSON.stringify(doc))
     cached.sidecarLoadedSignature = null
-    expect(s.deps.sessionStore.get(sid).title).toBe('written by the Agent')
-    expect(s.deps.sessionStore.get(sid).sidecarLoadedSignature).not.toBeNull()
+    expect((await s.deps.sessionStore.get(sid)).title).toBe('written by the Agent')
+    expect((await s.deps.sessionStore.get(sid)).sidecarLoadedSignature).not.toBeNull()
   })
 })
 
@@ -991,15 +992,15 @@ describe('projects, workspaces, and files over HTTP', () => {
     expect((await post(s, '/api/file/create', { session_id: sid, path: 'a\u0000b' })).status).toBe(400)
     // A workspace the trust policy rejects makes the listing a 404 with the policy text (Python `_handle_list`).
     const stray = mkdtempSync(join(tmpdir(), 'talaria-stray-'))
-    const strayed = s.deps.sessionStore.get(sid)
+    const strayed = (await s.deps.sessionStore.get(sid))
     strayed.workspace = stray
-    s.deps.sessionStore.save(strayed)
+    await s.deps.sessionStore.save(strayed)
     res = await s.get(`/api/list?session_id=${sid}`)
     expect(res.status).toBe(404)
     expect(String((await json(res)).error)).toContain(stray)
     rmSync(stray, { recursive: true, force: true })
     strayed.workspace = ws
-    s.deps.sessionStore.save(strayed)
+    await s.deps.sessionStore.save(strayed)
   })
 })
 
@@ -1022,10 +1023,10 @@ describe('a truncate that discards more than one user turn waits for confirmatio
   ]
   const seed = async (): Promise<string> => {
     const sid = String((await newSession(s)).session_id)
-    const session = s.deps.sessionStore.get(sid)
+    const session = (await s.deps.sessionStore.get(sid))
     session.messages = threeTurns()
     session.context_messages = threeTurns()
-    s.deps.sessionStore.save(session)
+    await s.deps.sessionStore.save(session)
     return sid
   }
 
@@ -1033,13 +1034,13 @@ describe('a truncate that discards more than one user turn waits for confirmatio
     const sid = await seed()
     const file = join(s.state, 'sessions', `${sid}.json`)
     const before = readFileSync(file, 'utf8')
-    const stored = s.deps.sessionStore.get(sid)
+    const stored = (await s.deps.sessionStore.get(sid))
     const boundaries = { watermark: stored.truncation_watermark, boundary: stored.truncation_boundary }
     const res = await post(s, '/api/session/truncate', { session_id: sid, keep_count: 0, confirm_deep_truncate: false })
     expect(res.status).toBe(200)
     expect(await json(res)).toEqual({ ok: false, confirm_required: true, discard_user_turns: 3, discard_messages: 6, confirm_token: expect.stringMatching(/^[0-9a-f]{32}$/) as unknown })
     expect(readFileSync(file, 'utf8')).toBe(before)
-    const after = s.deps.sessionStore.get(sid)
+    const after = (await s.deps.sessionStore.get(sid))
     expect(after.messages).toHaveLength(8)
     expect(after.context_messages).toHaveLength(8)
     expect({ watermark: after.truncation_watermark, boundary: after.truncation_boundary }).toEqual(boundaries)
@@ -1065,19 +1066,19 @@ describe('a truncate that discards more than one user turn waits for confirmatio
   it('asks again when a turn arrives between the question and the confirmation', async () => {
     const sid = await seed()
     const held = await json(await post(s, '/api/session/truncate', { session_id: sid, keep_count: 2, confirm_deep_truncate: false }))
-    const session = s.deps.sessionStore.get(sid)
+    const session = (await s.deps.sessionStore.get(sid))
     session.messages = [...threeTurns(), { role: 'user', content: 'u4', timestamp: 108 }, { role: 'assistant', content: 'a4', timestamp: 109 }]
-    s.deps.sessionStore.save(session)
+    await s.deps.sessionStore.save(session)
     const again = await json(await post(s, '/api/session/truncate', { session_id: sid, keep_count: 2, confirm_deep_truncate: true, confirm_token: held.confirm_token }))
     expect(again).toMatchObject({ ok: false, confirm_required: true, discard_user_turns: 3, discard_messages: 6 })
     expect(again.confirm_token).not.toBe(held.confirm_token)
-    expect(s.deps.sessionStore.get(sid).messages).toHaveLength(10)
+    expect((await s.deps.sessionStore.get(sid)).messages).toHaveLength(10)
   })
 
   it('counts the turns a CLI continuation added in state.db, which the detail shows', async () => {
     const sid = String((await newSession(s)).session_id)
     const rows: [string, string, number][] = [['user', 'u1', 100], ['assistant', 'a1', 101], ['user', 'u2', 102], ['assistant', 'a2', 103], ['user', 'u3', 104], ['assistant', 'a3', 105]]
-    writeMessages(s, sid, rows.slice(0, 2).map(([role, content, timestamp]) => ({ role, content, timestamp })))
+    await writeMessages(s, sid, rows.slice(0, 2).map(([role, content, timestamp]) => ({ role, content, timestamp })))
     const db = new DatabaseSync(join(s.state, 'state.db'))
     db.exec('CREATE TABLE IF NOT EXISTS sessions (id TEXT PRIMARY KEY, source TEXT, started_at REAL); CREATE TABLE IF NOT EXISTS messages (id INTEGER PRIMARY KEY AUTOINCREMENT, session_id TEXT, role TEXT, content TEXT, timestamp REAL)')
     db.prepare('INSERT INTO sessions (id, source, started_at) VALUES (?, ?, ?)').run(sid, 'cli', 100)
@@ -1093,7 +1094,7 @@ describe('a truncate that discards more than one user turn waits for confirmatio
   it('keeps a CLI row committed during the confirmed cut, which its count never saw', async () => {
     const sid = String((await newSession(s)).session_id)
     const rows: [string, string, number][] = [['user', 'u1', 100], ['assistant', 'a1', 101], ['user', 'u2', 102], ['assistant', 'a2', 103], ['user', 'u3', 104], ['assistant', 'a3', 105]]
-    writeMessages(s, sid, rows.slice(0, 2).map(([role, content, timestamp]) => ({ role, content, timestamp })))
+    await writeMessages(s, sid, rows.slice(0, 2).map(([role, content, timestamp]) => ({ role, content, timestamp })))
     const dbPath = join(s.state, 'state.db')
     const insert = (role: string, content: string, ts: number): void => {
       const db = new DatabaseSync(dbPath)
@@ -1121,11 +1122,11 @@ describe('a truncate that discards more than one user turn waits for confirmatio
     const sid = String((await newSession(s)).session_id)
     const rows: [string, string, number][] = [['user', 'u1', 100], ['assistant', 'a1', 101], ['user', 'u2', 102], ['assistant', 'a2', 103], ['user', 'u3', 104], ['assistant', 'a3', 105]]
     const local = rows.slice(0, 2).map(([role, content, timestamp]) => ({ role, content, timestamp }))
-    writeMessages(s, sid, local)
+    await writeMessages(s, sid, local)
     if (withContext) {
-      const stored = s.deps.sessionStore.get(sid)
+      const stored = (await s.deps.sessionStore.get(sid))
       stored.context_messages = local.map((m) => ({ ...m }))
-      s.deps.sessionStore.save(stored)
+      await s.deps.sessionStore.save(stored)
     }
     const db = new DatabaseSync(join(s.state, 'state.db'))
     db.exec('CREATE TABLE IF NOT EXISTS sessions (id TEXT PRIMARY KEY, source TEXT, started_at REAL); CREATE TABLE IF NOT EXISTS messages (id INTEGER PRIMARY KEY AUTOINCREMENT, session_id TEXT, role TEXT, content TEXT, timestamp REAL)')
@@ -1135,7 +1136,7 @@ describe('a truncate that discards more than one user turn waits for confirmatio
     expect((await post(s, '/api/session/truncate', { session_id: sid, keep_count: 4, confirm_deep_truncate: false })).status).toBe(200)
     const served = ((await json(await s.get(`/api/session?session_id=${sid}&messages=1`))).session as Json).messages as Json[]
     expect(served.map((m) => m.content)).toEqual(['u1', 'a1', 'u2', 'a2'])
-    expect(s.deps.sessions.modelContext(s.deps.sessionStore.get(sid)).map((m) => m.content)).toEqual(['u1', 'a1', 'u2', 'a2'])
+    expect(s.deps.sessions.modelContext((await s.deps.sessionStore.get(sid))).map((m) => m.content)).toEqual(['u1', 'a1', 'u2', 'a2'])
   })
 
   it('cuts at once for a released App, which asks on the device and sends no confirm_deep_truncate', async () => {
@@ -1147,15 +1148,15 @@ describe('a truncate that discards more than one user turn waits for confirmatio
 
   it('refuses a held cut when state.db cannot be read, whether or not the session recorded rows from it', async () => {
     const sid = String((await newSession(s)).session_id)
-    writeMessages(s, sid, [{ role: 'user', content: 'u1', timestamp: 100 }, { role: 'assistant', content: 'a1', timestamp: 101 }])
+    await writeMessages(s, sid, [{ role: 'user', content: 'u1', timestamp: 100 }, { role: 'assistant', content: 'a1', timestamp: 101 }])
     // No turn recorded state.db rows for it (state_db_seen_id stays null), and state.db is briefly away.
-    expect(s.deps.sessionStore.get(sid).state_db_seen_id ?? null).toBeNull()
+    expect((await s.deps.sessionStore.get(sid)).state_db_seen_id ?? null).toBeNull()
     const dbPath = join(s.state, 'state.db')
     renameSync(dbPath, `${dbPath}.away`)
     try {
       const res = await post(s, '/api/session/truncate', { session_id: sid, keep_count: 0, confirm_deep_truncate: false })
       expect(res.status).toBe(503)
-      expect(s.deps.sessionStore.get(sid).messages).toHaveLength(2)
+      expect((await s.deps.sessionStore.get(sid)).messages).toHaveLength(2)
     } finally { renameSync(`${dbPath}.away`, dbPath) }
   })
 
@@ -1173,7 +1174,7 @@ describe('truncation keeps deleted state.db turns deleted (TAL-504)', () => {
   it('serves and sends only the kept turns after a truncate of a CLI-continued session', async () => {
     const sid = String((await newSession(s)).session_id)
     const rows: [string, string, number][] = [['user', 'u1', 100], ['assistant', 'a1', 101], ['user', 'u2', 102], ['assistant', 'a2', 103], ['user', 'u3', 104], ['assistant', 'a3', 105]]
-    writeMessages(s, sid, rows.map(([role, content, timestamp]) => ({ role, content, timestamp })))
+    await writeMessages(s, sid, rows.map(([role, content, timestamp]) => ({ role, content, timestamp })))
     const db = new DatabaseSync(join(s.state, 'state.db'))
     db.exec('CREATE TABLE IF NOT EXISTS sessions (id TEXT PRIMARY KEY, source TEXT, started_at REAL); CREATE TABLE IF NOT EXISTS messages (id INTEGER PRIMARY KEY AUTOINCREMENT, session_id TEXT, role TEXT, content TEXT, timestamp REAL)')
     db.prepare('INSERT INTO sessions (id, source, started_at) VALUES (?, ?, ?)').run(sid, 'cli', 100)
@@ -1182,12 +1183,12 @@ describe('truncation keeps deleted state.db turns deleted (TAL-504)', () => {
     expect((await post(s, '/api/session/truncate', { session_id: sid, keep_count: 2 })).status).toBe(200)
     const served = ((await json(await s.get(`/api/session?session_id=${sid}&messages=1`))).session as Json).messages as Json[]
     expect(served.map((m) => m.content)).toEqual(['u1', 'a1'])
-    expect(s.deps.sessions.modelContext(s.deps.sessionStore.get(sid)).map((m) => m.content)).toEqual(['u1', 'a1'])
+    expect(s.deps.sessions.modelContext((await s.deps.sessionStore.get(sid))).map((m) => m.content)).toEqual(['u1', 'a1'])
   })
 
   it('does not carry the cut to a duplicate, whose state.db has no deleted suffix', async () => {
     const sid = String((await newSession(s)).session_id)
-    writeMessages(s, sid, [{ role: 'user', content: 'u1', timestamp: 100 }, { role: 'assistant', content: 'a1', timestamp: 101 }, { role: 'user', content: 'u2', timestamp: 102 }])
+    await writeMessages(s, sid, [{ role: 'user', content: 'u1', timestamp: 100 }, { role: 'assistant', content: 'a1', timestamp: 101 }, { role: 'user', content: 'u2', timestamp: 102 }])
     expect((await post(s, '/api/session/truncate', { session_id: sid, keep_count: 2 })).status).toBe(200)
     const copy = String(((await json(await post(s, '/api/session/duplicate', { session_id: sid }))).session as Json).session_id)
     const db = new DatabaseSync(join(s.state, 'state.db'))
@@ -1226,10 +1227,10 @@ describe('state.db rows past the last read merge by row id (TAL-493)', () => {
   async function served(sid: string): Promise<unknown[]> {
     return (((await json(await s.get(`/api/session?session_id=${sid}&messages=1`))).session as Json).messages as Json[]).map((m) => m.content)
   }
-  const sent = (sid: string): unknown[] => s.deps.sessions.modelContext(s.deps.sessionStore.get(sid)).map((m) => m.content)
+  const sent = async (sid: string): Promise<unknown[]> => s.deps.sessions.modelContext((await s.deps.sessionStore.get(sid))).map((m) => m.content)
   async function seeded(list: Row[]): Promise<string> {
     const sid = String((await newSession(s)).session_id)
-    writeMessages(s, sid, rows(list))
+    await writeMessages(s, sid, rows(list))
     commit(sid, list)
     return sid
   }
@@ -1271,7 +1272,7 @@ describe('state.db rows past the last read merge by row id (TAL-493)', () => {
         fresh.deps.sessionStore.sessions.delete(sid)
         const detail = (await json(await fresh.get(`/api/session?session_id=${sid}`))).session as Json
         const shown = detail.messages as Json[]
-        const context = fresh.deps.sessions.modelContext(fresh.deps.sessionStore.get(sid))
+        const context = fresh.deps.sessions.modelContext((await fresh.deps.sessionStore.get(sid)))
         if (mode === 'failed-replaced') {
           expect(shown).toHaveLength(3)
           expect(shown[0]?.content).toBe('continue')
@@ -1292,19 +1293,19 @@ describe('state.db rows past the last read merge by row id (TAL-493)', () => {
     const covered = maxId(sid)
     commit(sid, [['user', 'late CLI', 100.5], ['assistant', 'late reply', 100.6]])
     expect(await served(sid)).toEqual(['u1', 'a1', 'late CLI', 'late reply'])
-    expect(sent(sid)).toEqual(['u1', 'a1', 'late CLI', 'late reply'])
-    expect(s.deps.sessionStore.get(sid).state_db_seen_id).toBe(covered)
+    expect((await sent(sid))).toEqual(['u1', 'a1', 'late CLI', 'late reply'])
+    expect((await s.deps.sessionStore.get(sid)).state_db_seen_id).toBe(covered)
   })
 
   it('a truncate before the session has any state.db row still lets its first late row through', async () => {
     const sid = String((await newSession(s)).session_id)
-    writeMessages(s, sid, rows(FOUR))
+    await writeMessages(s, sid, rows(FOUR))
     commit(sid, [])
     expect((await post(s, '/api/session/truncate', { session_id: sid, keep_count: 2 })).status).toBe(200)
     commit(sid, [['user', 'first CLI row', 100.5]])
     expect(await served(sid)).toEqual(['u1', 'a1', 'first CLI row'])
-    expect(sent(sid)).toEqual(['u1', 'a1', 'first CLI row'])
-    expect(s.deps.sessionStore.get(sid).state_db_seen_id).toBe(0)
+    expect((await sent(sid))).toEqual(['u1', 'a1', 'first CLI row'])
+    expect((await s.deps.sessionStore.get(sid)).state_db_seen_id).toBe(0)
   })
 
   it('undo and retry cover the rows they read; a later row stamped before the cut still appears', async () => {
@@ -1315,8 +1316,8 @@ describe('state.db rows past the last read merge by row id (TAL-493)', () => {
       expect(await served(sid), path).toEqual(['u1', 'a1'])
       commit(sid, [['user', 'late CLI', 101.5]])
       expect(await served(sid), path).toEqual(['u1', 'a1', 'late CLI'])
-      expect(sent(sid), path).toEqual(['u1', 'a1', 'late CLI'])
-      expect(s.deps.sessionStore.get(sid).state_db_seen_id, path).toBe(covered)
+      expect((await sent(sid)), path).toEqual(['u1', 'a1', 'late CLI'])
+      expect((await s.deps.sessionStore.get(sid)).state_db_seen_id, path).toBe(covered)
     }
   })
 
@@ -1327,8 +1328,8 @@ describe('state.db rows past the last read merge by row id (TAL-493)', () => {
     expect(await served(sid)).toEqual([])
     commit(sid, [['user', 'after clear', 50]])
     expect(await served(sid)).toEqual(['after clear'])
-    expect(sent(sid)).toEqual(['after clear'])
-    expect(s.deps.sessionStore.get(sid).state_db_seen_id).toBe(covered)
+    expect((await sent(sid))).toEqual(['after clear'])
+    expect((await s.deps.sessionStore.get(sid)).state_db_seen_id).toBe(covered)
   })
 
   it('manual compression covers the rows it read; a later row stamped before the boundary still appears', async () => {
@@ -1343,8 +1344,8 @@ describe('state.db rows past the last read merge by row id (TAL-493)', () => {
     expect(await served(sid)).toEqual(['u1', 'a1', 'u2', 'a2'])
     commit(sid, [['user', 'late CLI', 102.5]])
     expect(await served(sid)).toEqual(['u1', 'a1', 'u2', 'a2', 'late CLI'])
-    expect(sent(sid)).toEqual(['u1', 'a2', 'late CLI'])
-    expect(s.deps.sessionStore.get(sid).state_db_seen_id).toBe(covered)
+    expect((await sent(sid))).toEqual(['u1', 'a2', 'late CLI'])
+    expect((await s.deps.sessionStore.get(sid)).state_db_seen_id).toBe(covered)
   })
 
   /** A Web turn whose Agent writes its own rows to state.db, stamped by the Agent rather than the server. */
@@ -1369,7 +1370,7 @@ describe('state.db rows past the last read merge by row id (TAL-493)', () => {
     commit(sid, [['user', 'late CLI', 150], ['assistant', 'late reply', 151]])
     expect(await served(sid)).toEqual([...settled, 'late CLI', 'late reply'])
     expect((await turn(sid, 'again')).slice(-2)).toEqual(['late CLI', 'late reply'])
-    expect(s.deps.sessionStore.get(sid).state_db_seen_id).toBe(maxId(sid))
+    expect((await s.deps.sessionStore.get(sid)).state_db_seen_id).toBe(maxId(sid))
   })
 
   it('a CLI row committed while a Web turn runs stays in the transcript and reaches the next turn', async () => {
@@ -1395,14 +1396,14 @@ describe('state.db rows past the last read merge by row id (TAL-493)', () => {
       })
     }))
     await s.deps.completions.processOne({ process_id: 'proc_bg493', session_id: 'proc_bg493', type: 'completion', command: 'backup', exit_code: 0, output: 'ok', origin_ui_session_id: sid, consumed: false })
-    const streamId = str(s.deps.sessionStore.get(sid).active_stream_id)
+    const streamId = str((await s.deps.sessionStore.get(sid)).active_stream_id)
     await s.sse(`/api/chat/stream?stream_id=${streamId}`, (f) => f.event === 'token')
     await s.get(`/api/chat/cancel?stream_id=${streamId}`)
     // The worker unwinds after the quiet Stop settled; its settlement is the one under test.
     const deadline = Date.now() + 3000
-    while (s.deps.sessionStore.get(sid).state_db_seen_id !== maxId(sid) && Date.now() < deadline) await new Promise((r) => setTimeout(r, 20))
+    while ((await s.deps.sessionStore.get(sid)).state_db_seen_id !== maxId(sid) && Date.now() < deadline) await new Promise((r) => setTimeout(r, 20))
     expect((await served(sid)).filter((c) => c === 'background work after stop')).toEqual([])
-    expect(sent(sid).filter((c) => c === 'background work after stop')).toEqual([])
+    expect((await sent(sid)).filter((c) => c === 'background work after stop')).toEqual([])
   })
 
   it('falls back to the timestamp rules after an older release saves the session without moving a boundary', async () => {
@@ -1417,11 +1418,11 @@ describe('state.db rows past the last read merge by row id (TAL-493)', () => {
     writeFileSync(path, JSON.stringify(doc))
     s.deps.sessionStore.sessions.delete(sid)
     expect(await served(sid)).toEqual(['u1', 'a1', 'u2', 'a2'])
-    expect(sent(sid)).toEqual(['u1', 'a1', 'u2', 'a2'])
+    expect((await sent(sid))).toEqual(['u1', 'a1', 'u2', 'a2'])
     // A later save by this version that reads no state.db (a rename) does not make the stale marker valid again.
     expect((await post(s, '/api/session/rename', { session_id: sid, title: 'renamed' })).status).toBe(200)
     expect(await served(sid)).toEqual(['u1', 'a1', 'u2', 'a2'])
-    expect(sent(sid)).toEqual(['u1', 'a1', 'u2', 'a2'])
+    expect((await sent(sid))).toEqual(['u1', 'a1', 'u2', 'a2'])
   })
 
   it('a truncate that changes nothing locally while state.db is unavailable still hides the suffix it cut', async () => {
@@ -1435,7 +1436,7 @@ describe('state.db rows past the last read merge by row id (TAL-493)', () => {
       expect((await post(s, '/api/session/truncate', { session_id: sid, keep_count: 4 })).status).toBe(200)
     } finally { renameSync(`${path}.away`, path) }
     expect(await served(sid)).toEqual(['u1', 'a1', 'u2', 'a2'])
-    expect(sent(sid)).toEqual(['u1', 'a1', 'u2', 'a2'])
+    expect((await sent(sid))).toEqual(['u1', 'a1', 'u2', 'a2'])
   })
 
   function ensureAgentColumns(db: DatabaseSync): void {
@@ -1507,7 +1508,7 @@ describe('state.db rows past the last read merge by row id (TAL-493)', () => {
 
   it('drops rows a compaction copy appended to a saved transcript, keeping other state.db rows (TAL-709)', async () => {
     const sid = String((await newSession(s)).session_id)
-    writeMessages(s, sid, [
+    ;(await writeMessages(s, sid, [
       { role: 'user', content: 'u1', timestamp: 100, _turn_id: 't1' },
       { role: 'tool', content: 'full output', timestamp: 101, tool_call_id: 'call_1', _turn_id: 't1' },
       { role: 'assistant', content: 'a1', timestamp: 102, _turn_id: 't1' },
@@ -1516,10 +1517,10 @@ describe('state.db rows past the last read merge by row id (TAL-493)', () => {
       { role: 'user', content: '[Workspace::v1: /w]\nu1', timestamp: 100, _state_db_row_id: 10 },
       // An edit that kept the CLI row's timestamp is a different message.
       { role: 'user', content: 'from CLI, edited', timestamp: 103, _state_db_row_id: 11 },
-    ])
+    ]))
     s.deps.sessionStore.sessions.delete(sid)
     expect(await served(sid)).toEqual(['u1', 'full output', 'a1', 'from CLI', 'from CLI, edited'])
-    s.deps.sessionStore.save(s.deps.sessionStore.get(sid))
+    await s.deps.sessionStore.save((await s.deps.sessionStore.get(sid)))
     s.deps.sessionStore.sessions.delete(sid)
     expect(await served(sid)).toEqual(['u1', 'full output', 'a1', 'from CLI', 'from CLI, edited'])
   })
@@ -1536,7 +1537,7 @@ describe('state.db rows past the last read merge by row id (TAL-493)', () => {
     } finally { if (existsSync(`${path}.away`)) renameSync(`${path}.away`, path) }
     commit(sid, [['user', 'late CLI', 101.5]])
     expect((await served(sid)).at(-1)).toBe('late CLI')
-    expect(sent(sid).at(-1)).toBe('late CLI')
+    expect((await sent(sid)).at(-1)).toBe('late CLI')
   })
 
   it('a turn that fails without a result covers the rows its Agent wrote instead of showing them', async () => {
@@ -1547,15 +1548,15 @@ describe('state.db rows past the last read merge by row id (TAL-493)', () => {
     await s.sse(`/api/chat/stream?stream_id=${String(start.stream_id)}`, (f) => f.event === 'stream_end')
     expect((await served(sid)).filter((c) => c === 'crashed work')).toEqual([])
     // TAL-921: the next prompt remembers the work, once.
-    expect(sent(sid).filter((c) => c === 'crashed work')).toEqual(['crashed work'])
+    expect((await sent(sid)).filter((c) => c === 'crashed work')).toEqual(['crashed work'])
   })
 
   it('the first settlement of a session without a marker keeps a CLI row committed during the turn', async () => {
     const sid = await seeded([['user', 'u1', 100], ['assistant', 'a1', 101]])
-    expect(s.deps.sessionStore.get(sid).state_db_seen_id).toBeNull()
+    expect((await s.deps.sessionStore.get(sid)).state_db_seen_id).toBeNull()
     await turn(sid, 'first', 'completed', [['user', 'CLI during first turn', 150]])
     expect((await served(sid)).filter((c) => c === 'CLI during first turn')).toHaveLength(1)
-    expect(sent(sid).filter((c) => c === 'CLI during first turn')).toHaveLength(1)
+    expect((await sent(sid)).filter((c) => c === 'CLI during first turn')).toHaveLength(1)
   })
 
   it('CLI rows that arrived before a Web turn stay in the transcript, in order, after it settles', async () => {
@@ -1581,7 +1582,7 @@ describe('state.db rows past the last read merge by row id (TAL-493)', () => {
     const start = await json(await post(s, '/api/chat/start', { session_id: sid, message: 'loop' }))
     await s.sse(`/api/chat/stream?stream_id=${String(start.stream_id)}`, (f) => f.event === 'stream_end')
     expect((await served(sid)).slice(-2)).toEqual([expect.stringContaining('loop'), 'summary'])
-    expect(sent(sid)).not.toContain(request)
+    expect((await sent(sid))).not.toContain(request)
     expect(await turn(sid, 'next')).not.toContain(request)
   })
 
@@ -1596,7 +1597,7 @@ describe('state.db rows past the last read merge by row id (TAL-493)', () => {
     const start = await json(await post(s, '/api/chat/start', { session_id: sid, message: 'same' }))
     await s.sse(`/api/chat/stream?stream_id=${String(start.stream_id)}`, (f) => f.event === 'stream_end')
     expect((await served(sid)).filter((c) => c === 'done')).toHaveLength(2)
-    expect(sent(sid).filter((c) => c === 'done')).toHaveLength(2)
+    expect((await sent(sid)).filter((c) => c === 'done')).toHaveLength(2)
   })
 
   it('a concurrent row that repeats an earlier message exactly stays in the transcript', async () => {
@@ -1604,7 +1605,7 @@ describe('state.db rows past the last read merge by row id (TAL-493)', () => {
     await turn(sid, 'first')
     await turn(sid, 'second', 'completed', [['user', 'continue', 150]])
     expect((await served(sid)).filter((c) => c === 'continue')).toHaveLength(2)
-    expect(sent(sid).filter((c) => c === 'continue')).toHaveLength(2)
+    expect((await sent(sid)).filter((c) => c === 'continue')).toHaveLength(2)
   })
 
   it('a turn whose starting state.db read failed does not cover earlier CLI rows when it fails without a result', async () => {
@@ -1620,7 +1621,7 @@ describe('state.db rows past the last read merge by row id (TAL-493)', () => {
       await s.sse(`/api/chat/stream?stream_id=${String(start.stream_id)}`, (f) => f.event === 'stream_end')
     } finally { if (existsSync(`${path}.away`)) renameSync(`${path}.away`, path) }
     expect((await served(sid)).filter((c) => c === 'CLI before')).toEqual(['CLI before'])
-    expect(sent(sid).filter((c) => c === 'CLI before')).toEqual(['CLI before'])
+    expect((await sent(sid)).filter((c) => c === 'CLI before')).toEqual(['CLI before'])
   })
 
   it('a row with no text identity committed while a Web turn runs stays in the transcript', async () => {
@@ -1648,8 +1649,8 @@ describe('state.db rows past the last read merge by row id (TAL-493)', () => {
     await s.get(`/api/chat/cancel?stream_id=${streamId}`)
     // The worker's late settlement installs the checkpoint as the model context.
     const deadline = Date.now() + 5000
-    while (!s.deps.sessionStore.get(sid).context_messages.some((m) => m.content === 'after stop') && Date.now() < deadline) await new Promise((r) => setTimeout(r, 20))
-    expect(s.deps.sessionStore.get(sid).context_messages.some((m) => m.content === 'after stop')).toBe(true)
+    while (!(await s.deps.sessionStore.get(sid)).context_messages.some((m) => m.content === 'after stop') && Date.now() < deadline) await new Promise((r) => setTimeout(r, 20))
+    expect((await s.deps.sessionStore.get(sid)).context_messages.some((m) => m.content === 'after stop')).toBe(true)
     const shown = await served(sid)
     expect(shown.filter((c) => c === 'after stop' || c === 'CLI during stop')).toEqual(['CLI during stop'])
   })
@@ -1660,14 +1661,14 @@ describe('state.db rows past the last read merge by row id (TAL-493)', () => {
     commit(sid, [['user', 'u3', 104], ['assistant', 'a3', 105]])
     expect(await served(sid)).toEqual(['u1', 'a1', 'u2', 'a2', 'u3', 'a3'])
     // A Stable truncate keeps the unknown marker but moves the watermark and the shrink generation.
-    const stable = s.deps.sessionStore.get(sid)
+    const stable = (await s.deps.sessionStore.get(sid))
     stable.messages = stable.messages.slice(0, 2)
     stable.truncation_watermark = 101
     stable.truncation_boundary = 101
     stable.intentional_shrink_generation = 'stable-truncate'
-    s.deps.sessionStore.save(stable)
+    await s.deps.sessionStore.save(stable)
     expect(await served(sid)).toEqual(['u1', 'a1'])
-    expect(sent(sid)).toEqual(['u1', 'a1'])
+    expect((await sent(sid))).toEqual(['u1', 'a1'])
   })
 
   it('a failed turn covers the rows its Agent wrote, so they do not replay', async () => {
@@ -1675,7 +1676,7 @@ describe('state.db rows past the last read merge by row id (TAL-493)', () => {
     await turn(sid, 'first')
     await turn(sid, 'doomed', 'failed')
     expect((await served(sid)).filter((c) => c === 'doomed answered')).toEqual([])
-    expect(s.deps.sessionStore.get(sid).state_db_seen_id).toBe(maxId(sid))
+    expect((await s.deps.sessionStore.get(sid)).state_db_seen_id).toBe(maxId(sid))
   })
 
   it('a stopped turn covers the rows its Agent wrote, so they do not replay', async () => {
@@ -1692,7 +1693,7 @@ describe('state.db rows past the last read merge by row id (TAL-493)', () => {
     await s.get(`/api/chat/cancel?stream_id=${streamId}`)
     await s.sse(`/api/chat/stream?stream_id=${streamId}&after_event_id=${streamId}:0`, (f) => f.event === 'cancel')
     expect((await served(sid)).filter((c) => c === 'stopped' || c === 'partial')).toEqual(['stopped', 'partial'])
-    expect(s.deps.sessionStore.get(sid).state_db_seen_id).toBe(maxId(sid))
+    expect((await s.deps.sessionStore.get(sid)).state_db_seen_id).toBe(maxId(sid))
   })
 
   /** TAL-921: commits Agent rows that carry tool calls, tool results, or a steer's display kind to state.db for `sid`. */
@@ -1806,7 +1807,7 @@ describe('state.db rows past the last read merge by row id (TAL-493)', () => {
     const start = await json(await post(s, '/api/chat/start', { session_id: sid, message: 'overflow' }))
     await s.sse(`/api/chat/stream?stream_id=${String(start.stream_id)}`, (f) => f.event === 'stream_end')
     // The recovered prompt stays display-only: the next request never replays it.
-    expect(sent(sid)).toEqual(['u1', 'a1', 'first', 'first answered', 'overflow'])
+    expect((await sent(sid))).toEqual(['u1', 'a1', 'first', 'first answered', 'overflow'])
   })
 
   it('a steer the Agent applied before the sidecar died reaches the next turn once, as the Agent\'s row (TAL-921)', async () => {
@@ -1849,7 +1850,7 @@ describe('state.db rows past the last read merge by row id (TAL-493)', () => {
     const fresh = await bootTestServer()
     try {
       const sid = String(((await json(await post(fresh, '/api/session/new', {}))).session as Json).session_id)
-      writeMessages(fresh, sid, rows(FOUR))
+      await writeMessages(fresh, sid, rows(FOUR))
       const path = join(fresh.state, 'state.db')
       const insert = (session: string, list: Row[]): void => {
         const db = new DatabaseSync(path)
@@ -1860,9 +1861,9 @@ describe('state.db rows past the last read merge by row id (TAL-493)', () => {
       // Other sessions' rows push this session's ids well above what a new database reaches.
       insert('other', Array.from({ length: 10 }, (_, i): Row => ['user', `other ${String(i)}`, i]))
       insert(sid, FOUR)
-      const session = fresh.deps.sessionStore.get(sid)
+      const session = (await fresh.deps.sessionStore.get(sid))
       fresh.deps.sessions.markStateDbSeen(session)
-      fresh.deps.sessionStore.save(session)
+      await fresh.deps.sessionStore.save(session)
       expect(session.state_db_seen_id).toBe(14)
       // The profile is deleted and recreated: a new state.db, ids from 1, and the CLI continues the chat.
       rmSync(path)
@@ -1876,7 +1877,7 @@ describe('state.db rows past the last read merge by row id (TAL-493)', () => {
     const fresh = await bootTestServer()
     try {
       const sid = String(((await json(await post(fresh, '/api/session/new', {}))).session as Json).session_id)
-      writeMessages(fresh, sid, rows(FOUR))
+      await writeMessages(fresh, sid, rows(FOUR))
       const path = join(fresh.state, 'state.db')
       const build = (target: string, list: Row[]): void => {
         const db = new DatabaseSync(target)
@@ -1885,9 +1886,9 @@ describe('state.db rows past the last read merge by row id (TAL-493)', () => {
         db.close()
       }
       build(path, FOUR)
-      const session = fresh.deps.sessionStore.get(sid)
+      const session = (await fresh.deps.sessionStore.get(sid))
       fresh.deps.sessions.markStateDbSeen(session)
-      fresh.deps.sessionStore.save(session)
+      await fresh.deps.sessionStore.save(session)
       expect(session.state_db_seen_id).toBe(4)
       // A rebuilt database whose id 4 is again an assistant row at 103, after three new CLI rows.
       build(`${path}.new`, [['user', 'r1', 110], ['user', 'r2', 111], ['user', 'r3', 112], ['assistant', 'a2', 103]])
@@ -1901,7 +1902,7 @@ describe('state.db rows past the last read merge by row id (TAL-493)', () => {
     const legacy = await bootTestServer()
     try {
       const sid = String(((await json(await post(legacy, '/api/session/new', {}))).session as Json).session_id)
-      writeMessages(legacy, sid, rows(FOUR))
+      await writeMessages(legacy, sid, rows(FOUR))
       const insert = (list: Row[]): void => {
         const db = new DatabaseSync(join(legacy.state, 'state.db'))
         db.exec('CREATE TABLE IF NOT EXISTS sessions (id TEXT PRIMARY KEY, source TEXT, started_at REAL); CREATE TABLE IF NOT EXISTS messages (session_id TEXT, role TEXT, content TEXT, timestamp REAL)')
@@ -1912,7 +1913,7 @@ describe('state.db rows past the last read merge by row id (TAL-493)', () => {
       expect((await post(legacy, '/api/session/truncate', { session_id: sid, keep_count: 2 })).status).toBe(200)
       insert([['user', 'late CLI', 100.5]])
       expect((((await json(await legacy.get(`/api/session?session_id=${sid}&messages=1`))).session as Json).messages as Json[]).map((m) => m.content)).toEqual(['u1', 'a1'])
-      expect(legacy.deps.sessionStore.get(sid).state_db_seen_id).toBeNull()
+      expect((await legacy.deps.sessionStore.get(sid)).state_db_seen_id).toBeNull()
     } finally { legacy.close() }
   })
 })
@@ -1944,7 +1945,7 @@ describe('a compressed Web session follows its state.db lineage (TAL-529)', () =
   /** A Web session whose next turn the Agent compresses: it ends the Web id and continues on `<sid>-tip`. */
   async function compressedSession(): Promise<string> {
     const sid = String((await newSession(s)).session_id)
-    writeMessages(s, sid, [{ role: 'user', content: 'u1', timestamp: 100 }, { role: 'assistant', content: 'a1', timestamp: 101 }])
+    await writeMessages(s, sid, [{ role: 'user', content: 'u1', timestamp: 100 }, { role: 'assistant', content: 'a1', timestamp: 101 }])
     db((conn) => {
       conn.prepare('INSERT INTO sessions (id, source, started_at) VALUES (?, ?, ?)').run(sid, 'webui', 100)
       insert(conn, sid, [['user', 'u1', 100], ['assistant', 'a1', 101]])
@@ -1993,14 +1994,14 @@ describe('session detail marks background wakeups as updates (TAL-371)', () => {
 
   it('labels a stored wakeup, keeps a typed marker a user message, and agrees in every window', async () => {
     const sid = String((await newSession(s)).session_id)
-    const session = s.deps.sessionStore.get(sid)
+    const session = (await s.deps.sessionStore.get(sid))
     session.messages = [
       { role: 'user', content: '[ASYNC DELEGATION BATCH COMPLETE — deleg_typed]\nI typed this myself', timestamp: 1000 },
       { role: 'assistant', content: 'Noted.', timestamp: 1001 },
       { role: 'user', content: '[IMPORTANT: Background process proc_1 completed (exit_code=0).]\nCommand: make', timestamp: 1002, _source: 'process_wakeup', _turn_id: 'wake-legacy' },
       { role: 'assistant', content: 'The build passed.', timestamp: 1003, _turn_id: 'wake-legacy' },
     ]
-    s.deps.sessionStore.save(session)
+    await s.deps.sessionStore.save(session)
     for (const query of ['', '&msg_limit=120', '&msg_limit=2', '&msg_limit=1', '&msg_limit=1&msg_before=3']) {
       for (const m of await detail(sid, query)) {
         if (m.timestamp === 1000) expect(m, query).not.toHaveProperty('_background_update')
@@ -2016,9 +2017,9 @@ describe('session detail marks background wakeups as updates (TAL-371)', () => {
 
   it('labels the Agent\'s own delivery row from its state.db display kind', async () => {
     const sid = String((await newSession(s)).session_id)
-    const session = s.deps.sessionStore.get(sid)
+    const session = (await s.deps.sessionStore.get(sid))
     session.messages = [{ role: 'user', content: 'dispatch', timestamp: 1000 }, { role: 'assistant', content: 'Dispatched.', timestamp: 1001 }]
-    s.deps.sessionStore.save(session)
+    await s.deps.sessionStore.save(session)
     const db = new DatabaseSync(join(s.state, 'state.db'))
     db.exec('CREATE TABLE IF NOT EXISTS sessions (id TEXT PRIMARY KEY, source TEXT, started_at REAL); CREATE TABLE IF NOT EXISTS messages (id INTEGER PRIMARY KEY AUTOINCREMENT, session_id TEXT, role TEXT, content TEXT, timestamp REAL, display_kind TEXT, display_metadata TEXT)')
     db.prepare('INSERT INTO sessions (id, source, started_at) VALUES (?, ?, ?)').run(sid, 'webui', 1000)
@@ -2032,11 +2033,11 @@ describe('session detail marks background wakeups as updates (TAL-371)', () => {
   it('serves the shared background-update example exactly as the contract fixture records it', async () => {
     const fixture = (JSON.parse(readFileSync(join(import.meta.dirname, '../../../../../contracts/fixtures/web-session.json'), 'utf8')) as Json).background_update_session as Json
     const sid = String((await newSession(s)).session_id)
-    const session = s.deps.sessionStore.get(sid)
+    const session = (await s.deps.sessionStore.get(sid))
     // The stored rows are what the server reads; `_background_update` is what it adds on the way out.
     session.messages = (fixture.messages as Json[]).map((m) => { const stored = { ...m }; delete stored._background_update; return stored })
     session.extra.background_updates = fixture.background_updates
-    s.deps.sessionStore.save(session)
+    await s.deps.sessionStore.save(session)
     const served = ((await json(await s.get(`/api/session?session_id=${sid}&messages=1&msg_limit=50`))).session as Json).messages
     expect(served).toEqual(fixture.messages)
   })
@@ -2050,7 +2051,7 @@ describe('session detail classifies the rows the Agent types for display (TAL-81
   /** The served rows of a session whose rows the released Agent wrote to state.db, in order. */
   const servedRows = async (query = ''): Promise<Json[]> => {
     const sid = String((await newSession(s)).session_id)
-    writeMessages(s, sid, [])
+    await writeMessages(s, sid, [])
     const db = new DatabaseSync(join(s.state, 'state.db'))
     db.exec(['DROP TABLE IF EXISTS messages; DROP TABLE IF EXISTS system_prompts; DROP TABLE IF EXISTS sessions;', ...typedRows.schema, ...typedRows.inserts].join('\n').replaceAll(`'${typedRows.sessionId}'`, `'${sid}'`))
     db.close()
@@ -2088,7 +2089,7 @@ describe('session detail classifies the rows the Agent types for display (TAL-81
     const fixture = (JSON.parse(readFileSync(join(import.meta.dirname, '../../../../../contracts/fixtures/web-session.json'), 'utf8')) as Json).notice_session as Json
     const sid = String((await newSession(s)).session_id)
     // The stored rows carry only the Agent's own kinds; everything else is what the server adds on the way out.
-    writeMessages(s, sid, (fixture.stored as Json[]))
+    await writeMessages(s, sid, (fixture.stored as Json[]))
     const served = ((await json(await s.get(`/api/session?session_id=${sid}&messages=1&msg_limit=50`))).session as Json).messages
     expect(served).toEqual(fixture.messages)
   })
@@ -2126,7 +2127,7 @@ describe('session detail shows mirrored deliveries in a messaging session as del
 
   it('leaves the same prefix a user typed in a webui session, stored or in state.db, as their message', async () => {
     const sid = String((await newSession(s)).session_id)
-    writeMessages(s, sid, [{ role: 'user', content: webhook, timestamp: 900 }, { role: 'assistant', content: 'Noted.', timestamp: 901 }])
+    await writeMessages(s, sid, [{ role: 'user', content: webhook, timestamp: 900 }, { role: 'assistant', content: 'Noted.', timestamp: 901 }])
     seed(sid, 'webui', [['user', cron]])
     const rows = await served(sid)
     expect(rows.filter((m) => m.role === 'user').map((m) => [m.content, m._delivery ?? null])).toEqual([[webhook, null], [cron, null]])
@@ -2139,9 +2140,9 @@ describe('session detail shows mirrored deliveries in a messaging session as del
 
   it('keeps a messaging session\'s deliveries as notices in its duplicate and branch, which are WebUI sessions', async () => {
     const sid = String((await newSession(s)).session_id)
-    const session = s.deps.sessionStore.get(sid)
+    const session = (await s.deps.sessionStore.get(sid))
     Object.assign(session, { source_tag: 'telegram', raw_source: 'telegram', session_source: 'messaging', messages: [{ role: 'user', content: 'Any news?', timestamp: 900 }, { role: 'assistant', content: 'Not yet.', timestamp: 901 }, { role: 'user', content: webhook, timestamp: 902 }, { role: 'user', content: cron, timestamp: 903 }] })
-    s.deps.sessionStore.save(session)
+    await s.deps.sessionStore.save(session)
     const duplicate = String(((await json(await post(s, '/api/session/duplicate', { session_id: sid }))).session as Json).session_id)
     const branch = String((await json(await post(s, '/api/session/branch', { session_id: sid }))).session_id)
     for (const copy of [duplicate, branch]) {
@@ -2153,10 +2154,10 @@ describe('session detail shows mirrored deliveries in a messaging session as del
   it('serves the shared delivery example exactly as the contract fixture records it', async () => {
     const fixture = (JSON.parse(readFileSync(join(import.meta.dirname, '../../../../../contracts/fixtures/web-session.json'), 'utf8')) as Json).delivery_session as Json
     const sid = String((await newSession(s)).session_id)
-    const session = s.deps.sessionStore.get(sid)
+    const session = (await s.deps.sessionStore.get(sid))
     // A Telegram chat Web has stored; `_delivery` is what the server adds on the way out.
     Object.assign(session, fixture.session as Json, { messages: fixture.stored })
-    s.deps.sessionStore.save(session)
+    await s.deps.sessionStore.save(session)
     expect(await served(sid)).toEqual(fixture.messages)
   })
 })
@@ -2181,7 +2182,7 @@ describe('assistant display normalization on every read (TAL-302)', () => {
 
   it('ships clean content and one reasoning string in full detail, every window and a state.db row, without rewriting the file', async () => {
     const sid = String((await newSession(s)).session_id)
-    writeMessages(s, sid, stored)
+    await writeMessages(s, sid, stored)
     s.deps.sessionStore.sessions.delete(sid)
     const db = new DatabaseSync(join(s.state, 'state.db'))
     db.exec('CREATE TABLE IF NOT EXISTS sessions (id TEXT PRIMARY KEY, source TEXT, started_at REAL); CREATE TABLE IF NOT EXISTS messages (id INTEGER PRIMARY KEY AUTOINCREMENT, session_id TEXT, role TEXT, content TEXT, timestamp REAL)')
@@ -2212,7 +2213,7 @@ describe('assistant display normalization on every read (TAL-302)', () => {
     const fixturePath = join(import.meta.dirname, '../../../../../contracts/fixtures/web-session.json')
     const fixture = (JSON.parse(readFileSync(fixturePath, 'utf8')) as Json).inline_thinking_session as Json
     const sid = String((await newSession(s)).session_id)
-    writeMessages(s, sid, fixture.stored as Json[])
+    await writeMessages(s, sid, fixture.stored as Json[])
     const served = ((await json(await s.get(`/api/session?session_id=${sid}&messages=1&msg_limit=50`))).session as Json).messages as Json[]
     expect(served).toEqual(fixture.messages)
     // The rows say what every client shows: the row's prose and reasoning, and the scene's answer, as the example expects.
@@ -2230,9 +2231,9 @@ describe('session detail stamps compaction markers (TAL-305)', () => {
 
   it('marks state.db compaction and task-list rows in full detail and every window, without rewriting the file', async () => {
     const sid = String((await newSession(s)).session_id)
-    const session = s.deps.sessionStore.get(sid)
+    const session = (await s.deps.sessionStore.get(sid))
     session.messages = [{ role: 'user', content: 'start', timestamp: 1000 }, { role: 'assistant', content: 'Started.', timestamp: 1001 }]
-    s.deps.sessionStore.save(session)
+    await s.deps.sessionStore.save(session)
     s.deps.sessionStore.sessions.delete(sid)
     const db = new DatabaseSync(join(s.state, 'state.db'))
     db.exec('CREATE TABLE IF NOT EXISTS sessions (id TEXT PRIMARY KEY, source TEXT, started_at REAL); CREATE TABLE IF NOT EXISTS messages (id INTEGER PRIMARY KEY AUTOINCREMENT, session_id TEXT, role TEXT, content TEXT, timestamp REAL)')
@@ -2261,13 +2262,13 @@ describe('session detail stamps compaction markers (TAL-305)', () => {
 
   it('keeps a legacy turn scene on its reply when an assistant marker follows it', async () => {
     const sid = String((await newSession(s)).session_id)
-    const session = s.deps.sessionStore.get(sid)
+    const session = (await s.deps.sessionStore.get(sid))
     session.messages = [
       { role: 'user', content: 'Check the build', timestamp: 1000 },
       { role: 'assistant', content: 'Build passes.', reasoning: 'Ran the build.', timestamp: 1001 },
       { role: 'assistant', content: '[CONTEXT COMPACTION] Earlier turns were summarised.', timestamp: 1002 },
     ]
-    s.deps.sessionStore.save(session)
+    await s.deps.sessionStore.save(session)
     const messages = ((await json(await s.get(`/api/session?session_id=${sid}&messages=1`))).session as Json).messages as Json[]
     const [reply, marker] = [messages.find((m) => m.timestamp === 1001), messages.find((m) => m.timestamp === 1002)]
     expect(marker?._marker_kind).toBe('context_compaction')
@@ -2278,9 +2279,9 @@ describe('session detail stamps compaction markers (TAL-305)', () => {
   it('serves the shared marker example exactly as the contract fixture records it', async () => {
     const fixture = (JSON.parse(readFileSync(join(import.meta.dirname, '../../../../../contracts/fixtures/web-session.json'), 'utf8')) as Json).marker_session as Json
     const sid = String((await newSession(s)).session_id)
-    const session = s.deps.sessionStore.get(sid)
+    const session = (await s.deps.sessionStore.get(sid))
     session.messages = (fixture.messages as Json[]).map(({ role, content, timestamp, message_id }) => ({ role, content, timestamp, message_id }))
-    s.deps.sessionStore.save(session)
+    await s.deps.sessionStore.save(session)
     const served = ((await json(await s.get(`/api/session?session_id=${sid}&messages=1&msg_limit=50`))).session as Json).messages
     expect(served).toEqual(fixture.messages)
   })
@@ -2288,9 +2289,9 @@ describe('session detail stamps compaction markers (TAL-305)', () => {
   it('serves the shared compression reference example exactly as the contract fixture records it (TAL-560)', async () => {
     const fixture = (JSON.parse(readFileSync(join(import.meta.dirname, '../../../../../contracts/fixtures/web-session.json'), 'utf8')) as Json).compression_reference_session as Json
     const sid = String((await newSession(s)).session_id)
-    const session = s.deps.sessionStore.get(sid)
+    const session = (await s.deps.sessionStore.get(sid))
     Object.assign(session, structuredClone(fixture.stored))
-    s.deps.sessionStore.save(session)
+    await s.deps.sessionStore.save(session)
     const served = (await json(await s.get(`/api/session?session_id=${sid}&${String(fixture.query)}`))).session as Json
     const expected = fixture.session as Json
     for (const key of ['_messages_offset', 'messages', 'compression_reference']) expect(served[key]).toEqual(expected[key])
@@ -2304,14 +2305,14 @@ describe('session detail collapses very long message bodies (TAL-456)', () => {
 
   it('stamps an excerpt on long settled rows in every window, leaves short rows alone, and never rewrites the file', async () => {
     const sid = String((await newSession(s)).session_id)
-    const session = s.deps.sessionStore.get(sid)
+    const session = (await s.deps.sessionStore.get(sid))
     session.messages = [
       { role: 'user', content: `${'w'.repeat(2500)}\n${'r'.repeat(20000)}`, timestamp: 1000 },
       { role: 'assistant', content: 'short reply', timestamp: 1001 },
       { role: 'user', content: 'tiny', timestamp: 1002 },
       { role: 'assistant', content: [{ type: 'text', text: 'p'.repeat(5000) }], timestamp: 1003 },
     ]
-    s.deps.sessionStore.save(session)
+    await s.deps.sessionStore.save(session)
     s.deps.sessionStore.sessions.delete(sid)
     const path = join(s.state, 'sessions', `${sid}.json`)
     const before = readFileSync(path)
@@ -2336,9 +2337,9 @@ describe('session detail collapses very long message bodies (TAL-456)', () => {
   it('serves the shared long-body example exactly as the contract fixture records it', async () => {
     const fixture = (JSON.parse(readFileSync(join(import.meta.dirname, '../../../../../contracts/fixtures/web-session.json'), 'utf8')) as Json).long_body_session as Json
     const sid = String((await newSession(s)).session_id)
-    const session = s.deps.sessionStore.get(sid)
+    const session = (await s.deps.sessionStore.get(sid))
     session.messages = (fixture.messages as Json[]).map(({ role, content, timestamp, message_id }) => ({ role, content, timestamp, message_id }))
-    s.deps.sessionStore.save(session)
+    await s.deps.sessionStore.save(session)
     const served = ((await json(await s.get(`/api/session?session_id=${sid}&messages=1&msg_limit=50`))).session as Json).messages
     expect(served).toEqual(fixture.messages)
     if (process.env.RECORD_TAL460) { const path = join(import.meta.dirname, '../../../../../contracts/fixtures/web-session.json'); const all = JSON.parse(readFileSync(path, 'utf8')) as Json; (all.background_update_session as Json).messages = served; writeFileSync(path, `${JSON.stringify(all, null, 2)}\n`) }
@@ -2347,9 +2348,9 @@ describe('session detail collapses very long message bodies (TAL-456)', () => {
   it('serves the shared collapsible-prompt example exactly as the contract fixture records it (TAL-452)', async () => {
     const fixture = (JSON.parse(readFileSync(join(import.meta.dirname, '../../../../../contracts/fixtures/web-session.json'), 'utf8')) as Json).collapsible_user_session as Json
     const sid = String((await newSession(s)).session_id)
-    const session = s.deps.sessionStore.get(sid)
+    const session = (await s.deps.sessionStore.get(sid))
     session.messages = (fixture.messages as Json[]).map(({ role, content, timestamp, message_id }) => ({ role, content, timestamp, message_id }))
-    s.deps.sessionStore.save(session)
+    await s.deps.sessionStore.save(session)
     const served = ((await json(await s.get(`/api/session?session_id=${sid}&messages=1&msg_limit=50`))).session as Json).messages as Json[]
     expect(served.map((m) => m._collapsible ?? null)).toEqual([true, null, null, null])
     expect(served).toEqual(fixture.messages)
@@ -2365,11 +2366,11 @@ describe('session detail rewrites media references for display (TAL-186)', () =>
     const fixturePath = join(import.meta.dirname, '../../../../../contracts/fixtures/web-session.json')
     const fixture = (JSON.parse(readFileSync(fixturePath, 'utf8')) as Json).media_session as Json
     const sid = String((await newSession(s)).session_id)
-    const session = s.deps.sessionStore.get(sid)
+    const session = (await s.deps.sessionStore.get(sid))
     // Synthetic paths that exist nowhere: the reply's own MEDIA: token grants the chart, so the URLs are the same on every host.
     session.workspace = String(fixture.workspace)
     session.messages = fixture.stored as Json[]
-    s.deps.sessionStore.save(session)
+    await s.deps.sessionStore.save(session)
     for (const query of ['', '&msg_limit=50']) {
       const served = ((await json(await s.get(`/api/session?session_id=${sid}&messages=1${query}`))).session as Json).messages
       const shared = JSON.parse(JSON.stringify(served).replaceAll(sid, String(fixture.session_id))) as Json[]
@@ -2386,13 +2387,13 @@ describe('session detail with legacy string attachments (TAL-277)', () => {
   /** A session file as the Python server wrote it: attachments as bare filenames, read back from disk. */
   async function legacySession(attachments: unknown[], pending: unknown[] = []): Promise<{ sid: string; path: string }> {
     const sid = String((await newSession(s)).session_id)
-    const session = s.deps.sessionStore.get(sid)
+    const session = (await s.deps.sessionStore.get(sid))
     session.messages = [
       { role: 'user', content: 'look at this', timestamp: 1000, attachments },
       { role: 'assistant', content: 'seen', timestamp: 1001 },
     ]
     session.pending_attachments = pending
-    s.deps.sessionStore.save(session)
+    await s.deps.sessionStore.save(session)
     s.deps.sessionStore.sessions.delete(sid)
     return { sid, path: join(s.state, 'sessions', `${sid}.json`) }
   }
@@ -2433,7 +2434,7 @@ describe('session detail transcript cursor (TAL-316)', () => {
   /** A session with one settled turn whose next run is held mid-turn (prose, tool, prose) with its rows partly in state.db. */
   async function runningTurn(): Promise<{ sid: string; streamId: string; release: () => void }> {
     const sid = String((await newSession(s)).session_id)
-    writeMessages(s, sid, [{ role: 'user', content: 'earlier', timestamp: 1000 }, { role: 'assistant', content: 'earlier reply', timestamp: 1001 }])
+    await writeMessages(s, sid, [{ role: 'user', content: 'earlier', timestamp: 1000 }, { role: 'assistant', content: 'earlier reply', timestamp: 1001 }])
     let release: () => void = () => undefined
     sidecar.respond('chat.start', (params, emit) => new Promise((resolve) => {
       emit({ event: 'token', data: { text: 'Reading.' } })
@@ -2543,7 +2544,7 @@ describe('session detail transcript cursor (TAL-316)', () => {
 
   it('an idle session states no cursor', async () => {
     const sid = String((await newSession(s)).session_id)
-    writeMessages(s, sid, [{ role: 'user', content: 'hi', timestamp: 10 }, { role: 'assistant', content: 'hello', timestamp: 11 }])
+    await writeMessages(s, sid, [{ role: 'user', content: 'hi', timestamp: 10 }, { role: 'assistant', content: 'hello', timestamp: 11 }])
     const session = await detail(sid)
     expect(session.transcript_seq).toBeNull()
     expect(contents(session)).toEqual(['hi', 'hello'])
@@ -2581,7 +2582,7 @@ describe('session detail keeps the running turn\'s prompt (TAL-368)', () => {
   /** A deferred-save turn held after its first token; the Agent has written nothing to state.db. */
   async function heldTurn(message: string, history: Json[], attachments?: Json[]): Promise<{ sid: string; streamId: string; startedAt: number; release: () => void }> {
     const sid = String((await newSession(s)).session_id)
-    writeMessages(s, sid, history)
+    await writeMessages(s, sid, history)
     let release: () => void = () => undefined
     sidecar.respond('chat.interrupt', () => ({ ok: true }))
     sidecar.respond('chat.start', (params, emit, opts) => new Promise((resolve) => {
@@ -2600,7 +2601,7 @@ describe('session detail keeps the running turn\'s prompt (TAL-368)', () => {
 
   it('shows the pending prompt exactly once, last, in full and windowed reads, and settles to one canonical row', async () => {
     const { sid, streamId, release } = await heldTurn('Unique pending follow-up', history, [{ name: 'notes.txt', path: '/tmp/notes.txt', mime: 'text/plain' }])
-    expect(s.deps.sessionStore.get(sid).messages).toHaveLength(2)
+    expect((await s.deps.sessionStore.get(sid)).messages).toHaveLength(2)
     for (const session of [await detail(sid), await detail(sid, '&msg_limit=1')]) {
       const last = (session.messages as Json[]).at(-1)
       expect(last).toMatchObject({ role: 'user', content: 'Unique pending follow-up', _turn_id: streamId, _active_turn_user: true })
@@ -2610,7 +2611,7 @@ describe('session detail keeps the running turn\'s prompt (TAL-368)', () => {
       expect(session.transcript_seq).toEqual({ stream_id: streamId, seq: 0 })
     }
     // The projection is a read: deferred save still holds the prompt back from the sidecar.
-    expect(s.deps.sessionStore.get(sid).messages).toHaveLength(2)
+    expect((await s.deps.sessionStore.get(sid)).messages).toHaveLength(2)
     release()
     await s.sse(`/api/chat/stream?stream_id=${streamId}&replay=1`, (f) => f.event === 'stream_end')
     const res = await s.get(`/api/session?session_id=${sid}&messages=1`)
@@ -2739,12 +2740,12 @@ describe('session detail resolves each tool call\'s outcome (TAL-313)', () => {
 
   async function seeded(): Promise<string> {
     const sid = String((await newSession(s)).session_id)
-    const session = s.deps.sessionStore.get(sid)
+    const session = (await s.deps.sessionStore.get(sid))
     session.messages = structuredClone(transcript)
     session.tool_calls = structuredClone(sessionToolCalls)
     session.title = 'Tool outcomes'
     session.active_stream_id = RUN
-    s.deps.sessionStore.save(session)
+    await s.deps.sessionStore.save(session)
     s.deps.registry.liveIds.add(RUN)
     return sid
   }
@@ -2782,7 +2783,7 @@ describe('session detail resolves each tool call\'s outcome (TAL-313)', () => {
         for (const [id, windowCalls] of window) expect(windowCalls, `${query} ${id}`).toEqual(calls.get(id))
       }
       // The projection writes nothing back: stored rows keep their persisted shape.
-      const stored = JSON.parse(readFileSync(s.deps.sessionStore.pathFor(sid), 'utf8')) as Json
+      const stored = JSON.parse(readFileSync(sessionPath(s.deps.sessionStore, sid), 'utf8')) as Json
       expect(stored.messages).toEqual(transcript)
       expect(stored.tool_calls).toEqual(sessionToolCalls)
     } finally {
@@ -2819,7 +2820,7 @@ describe('server-resolved workspace display names (TAL-303)', () => {
       // Its config.yaml exists but has never been read, so its terminal backend is still unknown: a label grants no access, so
       // the name holds on the first read too.
       writeFileSync(join(s.state, 'profiles', 'work', 'config.yaml'), 'model: work-model\n')
-      const dir = s.deps.sessionStore.sessionDir
+      const dir = sessionDirectory(s.deps.sessionStore)
       mkdirSync(dir, { recursive: true })
       const base = { title: 'needle', message_count: 1, last_message_at: 100, updated_at: 100, archived: false }
       const rows = [
@@ -2831,7 +2832,7 @@ describe('server-resolved workspace display names (TAL-303)', () => {
         { ...base, session_id: 'ws-ghost', workspace: registered, profile: 'ghost' },
       ]
       for (const row of rows) writeFileSync(join(dir, `${row.session_id}.json`), JSON.stringify({ ...row, messages: [{ role: 'user', content: 'needle' }] }))
-      writeFileSync(s.deps.sessionStore.indexFile, JSON.stringify(rows))
+      writeFileSync(sessionIndexPath(s.deps.sessionStore), JSON.stringify(rows))
       const want = { 'ws-registered': 'Talaria', 'ws-unregistered': 'scratch', 'ws-home': 'Home', 'ws-unnamed': 'unnamed', 'ws-work': 'Work Talaria', 'ws-ghost': 'talaria-main' }
       for (const path of ['/api/sessions?all_profiles=1', '/api/sessions/search?q=needle&all_profiles=1', '/api/sessions/search?q=&all_profiles=1']) {
         const listed = (await json(await s.get(path))).sessions as Json[]
@@ -2877,10 +2878,10 @@ describe('session detail ships each tool result view (TAL-315)', () => {
 
   it('matches the shared contract fixture in full detail and every window, on the calls and the scene alike', async () => {
     const sid = String((await newSession(s)).session_id)
-    const session = s.deps.sessionStore.get(sid)
+    const session = (await s.deps.sessionStore.get(sid))
     session.messages = structuredClone(transcript)
     session.title = 'Tool result views'
-    s.deps.sessionStore.save(session)
+    await s.deps.sessionStore.save(session)
     const fixture = (JSON.parse(readFileSync(fixturePath, 'utf8')) as Json).tool_result_views as Json
     const expected = fixture.expected as Json
     for (const query of ['', '&msg_limit=50']) {
@@ -2914,10 +2915,10 @@ describe('session detail ships each file edit\'s diff (TAL-448)', () => {
 
   it('matches the shared contract fixture in full detail and every window, on the calls and the scene alike', async () => {
     const sid = String((await newSession(s)).session_id)
-    const session = s.deps.sessionStore.get(sid)
+    const session = (await s.deps.sessionStore.get(sid))
     session.messages = structuredClone(transcript)
     session.title = 'Tool edit diffs'
-    s.deps.sessionStore.save(session)
+    await s.deps.sessionStore.save(session)
     const fixture = (JSON.parse(readFileSync(fixturePath, 'utf8')) as Json).tool_edit_diffs as Json
     const expected = fixture.expected as Json
     expect(expected).toEqual({ 'call-patch': { added: 2, removed: 1, diff: diff.trimEnd(), truncated: false, hunks: diffHunks(diff) } })
@@ -2936,7 +2937,7 @@ describe('session detail ships each file edit\'s diff (TAL-448)', () => {
     const write = '--- a/notes.txt\n+++ b/notes.txt\n@@ -1,2 +1,2 @@\n one\n-two\n+three\n'
     const skill = '--- a/skills/demo/SKILL.md\n+++ b/skills/demo/SKILL.md\n@@ -1 +1,2 @@\n # Demo\n+Use it for demos.\n'
     const sid = String((await newSession(s)).session_id)
-    const session = s.deps.sessionStore.get(sid)
+    const session = (await s.deps.sessionStore.get(sid))
     session.messages = [
       { role: 'user', content: 'Write notes and update the skill', message_id: 'meta-user', timestamp: 5000, _turn_id: 'meta-run' },
       { role: 'assistant', content: '', message_id: 'meta-calls', timestamp: 5001, _turn_id: 'meta-run', tool_calls: [call('call-write', 'write_file', { path: 'notes.txt' }), call('call-skill', 'skill_manage', { action: 'edit', name: 'demo' })] },
@@ -2945,7 +2946,7 @@ describe('session detail ships each file edit\'s diff (TAL-448)', () => {
       { role: 'assistant', content: 'Done.', message_id: 'meta-answer', timestamp: 5004, _turn_id: 'meta-run' },
     ]
     session.title = 'Tool edit diffs from metadata'
-    s.deps.sessionStore.save(session)
+    await s.deps.sessionStore.save(session)
     const fixture = (JSON.parse(readFileSync(fixturePath, 'utf8')) as Json).tool_edit_metadata_diffs as Json
     const expected = fixture.expected as Json
     expect(expected).toEqual({
@@ -2990,19 +2991,19 @@ describe('compression recovery start (TAL-257)', () => {
   /** A persisted session whose last turn exhausted compression (`stampCompressionExhaustedRecovery`). */
   async function exhausted(fields: Partial<Session> = {}): Promise<string> {
     const sid = String((await newSession(s)).session_id)
-    const stored = s.deps.sessionStore.get(sid)
+    const stored = (await s.deps.sessionStore.get(sid))
     Object.assign(stored, { title: 'Long task', messages: [{ role: 'user', content: 'long task' }, { role: 'assistant', content: 'compression exhausted' }], ...fields })
     stampCompressionExhaustedRecovery(stored, 'Context length exceeded.', '')
-    s.deps.sessionStore.save(stored)
+    await s.deps.sessionStore.save(stored)
     return sid
   }
   const start = (sid: unknown): Promise<Response> => post(s, '/api/session/compression-recovery/start', { session_id: sid })
-  const childFiles = (sid: string): Json[] => readdirSync(s.deps.sessionStore.sessionDir).filter((n) => n.endsWith('.json') && !n.startsWith('_'))
-    .map((n) => JSON.parse(readFileSync(join(s.deps.sessionStore.sessionDir, n), 'utf8')) as Json).filter((d) => d.compression_recovery_source_session_id === sid)
+  const childFiles = (sid: string): Json[] => readdirSync(sessionDirectory(s.deps.sessionStore)).filter((n) => n.endsWith('.json') && !n.startsWith('_'))
+    .map((n) => JSON.parse(readFileSync(join(sessionDirectory(s.deps.sessionStore), n), 'utf8')) as Json).filter((d) => d.compression_recovery_source_session_id === sid)
 
   it('creates a focused continuation linked to the source with an empty transcript', async () => {
     const sid = await exhausted({ model: 'gpt-4o', model_provider: 'openai', project_id: 'proj_1', enabled_toolsets: ['web'], context_messages: [{ role: 'user', content: 'large context' }] })
-    const source = s.deps.sessionStore.get(sid)
+    const source = (await s.deps.sessionStore.get(sid))
     const res = await start(sid)
     expect(res.status).toBe(200)
     const body = await json(res)
@@ -3010,10 +3011,10 @@ describe('compression recovery start (TAL-257)', () => {
     const child = body.session as Json
     expect(child.session_id).not.toBe(sid)
     expect(child).toMatchObject({ title: 'Long task (focused continuation)', parent_session_id: sid, workspace: source.workspace, model: 'gpt-4o', model_provider: 'openai', project_id: 'proj_1', profile: source.profile, session_source: 'fork', enabled_toolsets: ['web'], messages: [] })
-    const saved = JSON.parse(readFileSync(join(s.deps.sessionStore.sessionDir, `${String(child.session_id)}.json`), 'utf8')) as Json
+    const saved = JSON.parse(readFileSync(join(sessionDirectory(s.deps.sessionStore), `${String(child.session_id)}.json`), 'utf8')) as Json
     expect(saved).toMatchObject({ parent_session_id: sid, session_source: 'fork', context_messages: [], compression_recovery_source_session_id: sid, compression_recovery_action: 'start_focused_continuation' })
     // The source keeps its recovery action.
-    expect(s.deps.sessionStore.get(sid).compression_recovery.recommended_action).toBe('start_focused_continuation')
+    expect((await s.deps.sessionStore.get(sid)).compression_recovery.recommended_action).toBe('start_focused_continuation')
   })
 
   it('does not merge the parent transcript into the child', async () => {
@@ -3021,7 +3022,7 @@ describe('compression recovery start (TAL-257)', () => {
     const child = (await json(await start(sid))).session as Json
     const detail = (await json(await s.get(`/api/session?session_id=${String(child.session_id)}`))).session as Json
     expect(detail.messages).toEqual([])
-    expect(s.deps.sessionStore.get(String(child.session_id)).messages).toEqual([])
+    expect((await s.deps.sessionStore.get(String(child.session_id))).messages).toEqual([])
   })
 
   it('reuses the existing continuation, from the cache or from disk', async () => {
@@ -3051,7 +3052,7 @@ describe('compression recovery start (TAL-257)', () => {
     const held = s.deps.sessionStore.withLock(sid, () => new Promise<void>((resolve) => { release = resolve }))
     const pending = start(sid)
     await new Promise((resolve) => setTimeout(resolve, 50))
-    s.deps.sessionStore.deleteFiles(sid)
+    await s.deps.sessionStore.delete(sid)
     release()
     await held
     const res = await pending
@@ -3062,21 +3063,21 @@ describe('compression recovery start (TAL-257)', () => {
   it('ignores an existing continuation from another profile', async () => {
     const sid = await exhausted()
     const foreign = new Session({ session_id: 'foreignchild1', title: 'Foreign focused continuation', profile: 'other-profile', parent_session_id: sid, compression_recovery_source_session_id: sid, compression_recovery_action: 'start_focused_continuation' }, { workspace: s.state, model: null })
-    s.deps.sessionStore.save(foreign)
+    await s.deps.sessionStore.save(foreign)
     s.deps.sessionStore.sessions.clear()
     const body = await json(await start(sid))
     expect((body.session as Json).session_id).not.toBe('foreignchild1')
-    expect((body.session as Json).profile).toBe(s.deps.sessionStore.get(sid).profile)
-    expect(new Set(childFiles(sid).map((c) => c.profile))).toEqual(new Set([s.deps.sessionStore.get(sid).profile, 'other-profile']))
+    expect((body.session as Json).profile).toBe((await s.deps.sessionStore.get(sid)).profile)
+    expect(new Set(childFiles(sid).map((c) => c.profile))).toEqual(new Set([(await s.deps.sessionStore.get(sid)).profile, 'other-profile']))
   })
 
   it('answers 400, 404 and 409 like the Python route', async () => {
     const plain = String((await newSession(s)).session_id)
-    writeMessages(s, plain, [{ role: 'user', content: 'hi' }])
+    await writeMessages(s, plain, [{ role: 'user', content: 'hi' }])
     const subagent = await exhausted({ source_tag: 'subagent' })
     const foreign = new Session({ session_id: 'recoveryforeign', title: 'x', profile: 'other-profile', messages: [{ role: 'user', content: 'hi' }] }, { workspace: s.state, model: null })
     stampCompressionExhaustedRecovery(foreign, '', '')
-    s.deps.sessionStore.save(foreign)
+    await s.deps.sessionStore.save(foreign)
     const cases: [unknown, number, string][] = [
       [undefined, 400, 'Missing required field(s): session_id'],
       ['   ', 400, 'session_id is required'],
@@ -3098,13 +3099,13 @@ describe('POST /api/sessions/cleanup (TAL-257)', () => {
   beforeEach(async () => { s = await bootTestServer() })
   afterEach(() => s.close())
 
-  const dir = (): string => s.deps.sessionStore.sessionDir
+  const dir = (): string => sessionDirectory(s.deps.sessionStore)
   const file = (sid: string, title: string, messages: Json[] = [{ role: 'user', content: 'hi' }]): void => {
     mkdirSync(dir(), { recursive: true })
     writeFileSync(join(dir(), `${sid}.json`), JSON.stringify({ session_id: sid, title, messages, created_at: 1, updated_at: 1 }))
   }
-  const index = (rows: Json[]): void => { mkdirSync(dir(), { recursive: true }); writeFileSync(s.deps.sessionStore.indexFile, JSON.stringify(rows)) }
-  const indexIds = (): string[] => (JSON.parse(readFileSync(s.deps.sessionStore.indexFile, 'utf8')) as Json[]).map((e) => String(e.session_id))
+  const index = (rows: Json[]): void => { mkdirSync(dir(), { recursive: true }); writeFileSync(sessionIndexPath(s.deps.sessionStore), JSON.stringify(rows)) }
+  const indexIds = (): string[] => (JSON.parse(readFileSync(sessionIndexPath(s.deps.sessionStore), 'utf8')) as Json[]).map((e) => String(e.session_id))
   const cleanup = async (): Promise<Json> => { const res = await post(s, '/api/sessions/cleanup', {}); expect(res.status).toBe(200); return json(res) }
 
   it('deletes empty Untitled sessions and index-only ghosts, keeping file-backed and in-memory rows', async () => {
@@ -3127,16 +3128,16 @@ describe('POST /api/sessions/cleanup (TAL-257)', () => {
     file('sess-real', 'Real')
     index([{ session_id: 'sess-real' }, { title: 'NoId' }])
     expect(await cleanup()).toEqual({ ok: true, cleaned: 0 })
-    expect(JSON.parse(readFileSync(s.deps.sessionStore.indexFile, 'utf8'))).toHaveLength(2)
-    writeFileSync(s.deps.sessionStore.indexFile, 'not valid json')
+    expect(JSON.parse(readFileSync(sessionIndexPath(s.deps.sessionStore), 'utf8'))).toHaveLength(2)
+    writeFileSync(sessionIndexPath(s.deps.sessionStore), 'not valid json')
     expect(await cleanup()).toEqual({ ok: true, cleaned: 0 })
-    expect(readFileSync(s.deps.sessionStore.indexFile, 'utf8')).toBe('not valid json')
+    expect(readFileSync(sessionIndexPath(s.deps.sessionStore), 'utf8')).toBe('not valid json')
   })
 
   it('rebuilds a corrupt index when it removed session files', async () => {
     file('sess-orphan', 'Untitled', [])
     file('sess-keep', 'Keep')
-    writeFileSync(s.deps.sessionStore.indexFile, 'corrupt json')
+    writeFileSync(sessionIndexPath(s.deps.sessionStore), 'corrupt json')
     expect(await cleanup()).toEqual({ ok: true, cleaned: 1 })
     expect(indexIds()).toEqual(['sess-keep'])
   })

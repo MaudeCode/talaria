@@ -9,8 +9,9 @@ export const SYSTEM_PROJECTS: Record<'cron' | 'webhook', { name: string; color: 
 
 export class ProjectStore {
   private migrated = false
+  private operations: Promise<void> = Promise.resolve()
 
-  constructor(readonly file: string, private readonly readIndexRows: () => Record<string, unknown>[], private readonly isRootProfile: (name: string) => boolean = (name) => name === 'default') {}
+  constructor(readonly file: string, private readonly readIndexRows: () => Record<string, unknown>[] | Promise<Record<string, unknown>[]>, private readonly isRootProfile: (name: string) => boolean = (name) => name === 'default') {}
 
   private sameProfile(row: string | null | undefined, active: string): boolean {
     const r = row || 'default'
@@ -18,30 +19,49 @@ export class ProjectStore {
   }
 
   /** Python `_profile_has_user_projects`: at least one non-system project belongs to the profile (or its root alias). */
-  hasUserProjects(profile: string): boolean {
+  async hasUserProjects(profile: string): Promise<boolean> {
     const reserved = new Set(Object.values(SYSTEM_PROJECTS).map((p) => p.name))
-    return this.load().some((p) => !reserved.has(p.name) && this.sameProfile(p.profile, profile))
+    return (await this.load()).some((p) => !reserved.has(p.name) && this.sameProfile(p.profile, profile))
   }
 
   /**
    * Python `ensure_cron_project` / `ensure_webhook_project`: the profile's system project by (name, profile),
    * a renamed-root alias match, or a legacy untagged row back-tagged to the caller; minted only when `create`.
    */
-  ensureSystemProject(kind: keyof typeof SYSTEM_PROJECTS, profile: string, opts: { create?: boolean } = {}): string | null {
+  async ensureSystemProject(kind: keyof typeof SYSTEM_PROJECTS, profile: string, opts: { create?: boolean } = {}): Promise<string | null> {
     const spec = SYSTEM_PROJECTS[kind]
     const active = profile || 'default'
     // Raw rows: a legacy untagged system project is back-tagged to the caller here, not by the generic backfill.
-    const projects = this.load({ migrate: false })
-    for (const p of projects) if (p.name === spec.name && this.sameProfile(p.profile, active) && (p.profile === active || this.isRootProfile(active))) return p.project_id
-    for (const p of projects) if (p.name === spec.name && !p.profile) { p.profile = active; this.save(projects); return p.project_id }
-    if (opts.create === false) return null
-    const project = { project_id: randomUUID().replace(/-/g, '').slice(0, 12), name: spec.name, color: spec.color, profile: active, created_at: Date.now() / 1000 }
-    projects.push(project)
-    this.save(projects)
-    return project.project_id
+    return this.mutate((projects) => {
+      for (const p of projects) if (p.name === spec.name && this.sameProfile(p.profile, active) && (p.profile === active || this.isRootProfile(active))) return p.project_id
+      for (const p of projects) if (p.name === spec.name && !p.profile) { p.profile = active; return p.project_id }
+      if (opts.create === false) return null
+      const project = { project_id: randomUUID().replace(/-/g, '').slice(0, 12), name: spec.name, color: spec.color, profile: active, created_at: Date.now() / 1000 }
+      projects.push(project)
+      return project.project_id
+    }, { migrate: false })
   }
 
-  load(opts: { migrate?: boolean } = {}): Project[] {
+  private serialize<T>(operation: () => Promise<T>): Promise<T> {
+    const result = this.operations.then(operation)
+    this.operations = result.then(() => { /* retain ordering */ }, () => { /* retry on the next call */ })
+    return result
+  }
+
+  load(opts: { migrate?: boolean } = {}): Promise<Project[]> { return this.serialize(() => this.loadNow(opts)) }
+
+  /** The session-index backfill can yield; keep the whole project edit under the same lock. */
+  mutate<T>(edit: (projects: Project[]) => T, opts: { migrate?: boolean } = {}): Promise<T> {
+    return this.serialize(async () => {
+      const projects = await this.loadNow(opts)
+      const previous = JSON.stringify(projects)
+      const result = edit(projects)
+      if (JSON.stringify(projects) !== previous) this.save(projects)
+      return result
+    })
+  }
+
+  private async loadNow(opts: { migrate?: boolean }): Promise<Project[]> {
     if (!existsSync(this.file)) return []
     let projects: Project[]
     try {
@@ -51,7 +71,7 @@ export class ProjectStore {
       return []
     }
     if ((opts.migrate ?? true) && !this.migrated) {
-      if (this.backfillProfiles(projects)) {
+      if ((await this.backfillProfiles(projects))) {
         try {
           this.save(projects)
           this.migrated = true
@@ -70,13 +90,13 @@ export class ProjectStore {
   }
 
   /** Tag legacy untagged projects with the profile of an assigned session, else `default`. */
-  private backfillProfiles(projects: Project[]): boolean {
+  private async backfillProfiles(projects: Project[]): Promise<boolean> {
     const untagged = projects.filter((p) => !p.profile)
     if (!untagged.length) return false
     const byProject = new Map<string, string>()
     try {
       const ids = new Set(untagged.map((p) => p.project_id).filter(Boolean))
-      for (const row of this.readIndexRows()) {
+      for (const row of await this.readIndexRows()) {
         const pid = row.project_id
         if (typeof pid === 'string' && ids.has(pid) && typeof row.profile === 'string' && row.profile && !byProject.has(pid)) byProject.set(pid, row.profile)
       }

@@ -59,9 +59,9 @@ describe('handoff dock routes', () => {
   }
   async function webSession(extra: Json = {}): Promise<string> {
     const sid = String(((await json(await post(s, '/api/session/new', {}))).session as Json).session_id)
-    const session = s.deps.sessionStore.get(sid)
+    const session = (await s.deps.sessionStore.get(sid))
     Object.assign(session, { model: 'openai/gpt-5', model_provider: 'openrouter', ...extra })
-    s.deps.sessionStore.save(session)
+    await s.deps.sessionStore.save(session)
     return sid
   }
   const markers = (rows: Json[]): Json[] => rows.flatMap((m) => {
@@ -162,14 +162,14 @@ describe('handoff dock routes', () => {
       expect(String(prompt[0]!.content)).toContain('English: speak using “you”.')
       // The last 50 rows: rounds 14..29 plus round 13's merged follow-up and answer.
       expect(String(prompt[1]!.content)).toBe(`Conversation transcript:\n${roundRows(30).slice(-50).map(([, content]) => content).join('\n')}`)
-      const after = s.deps.sessionStore.get(sid).messages
+      const after = (await s.deps.sessionStore.get(sid)).messages
       expect(after.at(-1)).toMatchObject({ role: 'tool', name: 'handoff_summary', tool_call_id: '' })
       expect(markers(after)).toEqual([expect.objectContaining({ session_id: sid, summary: COMPLETE, rounds: 30, fallback: false, channel: null })])
       // A WebUI session keeps the card out of state.db.
       expect(appended).toEqual([])
       // The same summary again is deduplicated against the transcript's tail.
       expect((await post(s, '/api/session/handoff-summary', { session_id: sid })).status).toBe(200)
-      expect(markers(s.deps.sessionStore.get(sid).messages)).toHaveLength(1)
+      expect(markers((await s.deps.sessionStore.get(sid)).messages)).toHaveLength(1)
     })
 
     it('retries a cut-off answer at 1400 tokens', async () => {
@@ -196,7 +196,7 @@ describe('handoff dock routes', () => {
       const payload = await json(await post(s, '/api/session/handoff-summary', { session_id: sid }))
       expect(payload).toEqual({ ok: true, summary: '- You asked: more on 9.\n- The assistant responded: answer 9.\n- There is pending context to continue next.', message_count: 30, rounds: 10, fallback: true })
       expect(completions).toHaveLength(2)
-      expect(markers(s.deps.sessionStore.get(sid).messages)).toEqual([expect.objectContaining({ fallback: true })])
+      expect(markers((await s.deps.sessionStore.get(sid)).messages)).toEqual([expect.objectContaining({ fallback: true })])
     })
 
     it('falls back without a warning when the model has no credential, and with one when the call fails', async () => {
@@ -226,7 +226,7 @@ describe('handoff dock routes', () => {
       expect(res.status).toBe(409)
       expect(await json(res)).toMatchObject({ type: 'agent_runtime_stale', retryable: true })
       expect(completions).toEqual([])
-      expect(markers(s.deps.sessionStore.get(sid).messages)).toEqual([])
+      expect(markers((await s.deps.sessionStore.get(sid)).messages)).toEqual([])
     })
 
     it('answers 409 while the session streams, before and after the summary is generated', async () => {
@@ -237,18 +237,18 @@ describe('handoff dock routes', () => {
       expect((await json(busy)).error).toBe('Session is still streaming; wait for the current turn to finish.')
       expect(completions).toEqual([])
       // A turn that starts while the model writes the summary.
-      const idle = s.deps.sessionStore.get(sid)
+      const idle = (await s.deps.sessionStore.get(sid))
       idle.active_stream_id = null
-      s.deps.sessionStore.save(idle)
-      sidecar.respond('aux.complete', (params) => {
+      await s.deps.sessionStore.save(idle)
+      sidecar.respond('aux.complete', async (params) => {
         completions.push(params)
-        const live = s.deps.sessionStore.get(sid)
+        const live = (await s.deps.sessionStore.get(sid))
         live.active_stream_id = 'st-2'
-        s.deps.sessionStore.save(live)
+        await s.deps.sessionStore.save(live)
         return { model: 'm', text: COMPLETE, usage: null, finish_reason: 'stop' }
       })
       expect((await post(s, '/api/session/handoff-summary', { session_id: sid })).status).toBe(409)
-      expect(markers(s.deps.sessionStore.get(sid).messages)).toEqual([])
+      expect(markers((await s.deps.sessionStore.get(sid)).messages)).toEqual([])
       expect(appended).toEqual([])
     })
 
@@ -257,7 +257,7 @@ describe('handoff dock routes', () => {
       seedStateDb(sid, roundRows(10), { source: 'telegram' })
       expect((await post(s, '/api/session/handoff-summary', { session_id: sid })).status).toBe(200)
       expect((await post(s, '/api/session/handoff-summary', { session_id: sid })).status).toBe(200)
-      expect(markers(s.deps.sessionStore.get(sid).messages)).toEqual([expect.objectContaining({ session_id: sid, summary: COMPLETE, channel: 'Telegram', rounds: 10 })])
+      expect(markers((await s.deps.sessionStore.get(sid)).messages)).toEqual([expect.objectContaining({ session_id: sid, summary: COMPLETE, channel: 'Telegram', rounds: 10 })])
       expect(markers(stateRows(sid))).toEqual([expect.objectContaining({ session_id: sid, summary: COMPLETE, channel: 'Telegram' })])
       expect(appended).toHaveLength(1)
       expect(appended[0]).toMatchObject({ session_id: sid, role: 'tool', tool_name: 'handoff_summary' })
@@ -313,10 +313,10 @@ describe('handoff dock routes', () => {
     const server = await bootTestServer({ sidecar: work, env: { HERMES_BASE_HOME: base } })
     try {
       const sid = String(((await json(await post(server, '/api/session/new', {}))).session as Json).session_id)
-      const session = server.deps.sessionStore.get(sid)
+      const session = (await server.deps.sessionStore.get(sid))
       expect(session.profile).toBe('work')
       Object.assign(session, { source_tag: 'telegram', session_source: 'messaging' })
-      server.deps.sessionStore.save(session)
+      await server.deps.sessionStore.save(session)
       const workHome = join(base, 'profiles', 'work')
       mkdirSync(workHome, { recursive: true })
       const seed = (path: string, rows: [string, string, number | null][]): void => {

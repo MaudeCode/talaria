@@ -114,6 +114,8 @@ export interface ActiveRun {
   model: string | null
   provider: string | null
   ephemeral: boolean
+  /** Admission owns the session while its pending snapshot is being committed; no channel exists yet. */
+  admitting?: boolean
   /** TAL-460: `background` for a wakeup turn, which a user's message replaces instead of joining. */
   origin?: TurnOrigin
   cancelled_at?: number
@@ -178,7 +180,7 @@ export class StreamRegistry {
 
   /** Attachable run only (a cancelling worker no longer counts). */
   attachableRunForSession(sessionId: string): string | null {
-    for (const run of this.activeRuns.values()) if (run.session_id === sessionId && run.phase !== 'cancelling' && !run.cancelled_at) return run.stream_id
+    for (const run of this.activeRuns.values()) if (run.session_id === sessionId && !run.admitting && run.phase !== 'cancelling' && !run.cancelled_at) return run.stream_id
     return null
   }
 

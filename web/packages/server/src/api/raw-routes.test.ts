@@ -171,9 +171,9 @@ describe('raw byte routes', () => {
   })
 
   it('exports the transcript as JSON and self-contained HTML', async () => {
-    const session = s.deps.sessionStore.get(sid)
+    const session = (await s.deps.sessionStore.get(sid))
     session.messages = [{ role: 'user', content: 'Hello **world**' }, { role: 'assistant', content: 'Look ![x](https://evil.example/leak.png)\n\n```py\nprint(1)\n```' }]
-    s.deps.sessionStore.save(session)
+    await s.deps.sessionStore.save(session)
     let res = await s.get(`/api/session/export?session_id=${sid}`)
     expect(res.status).toBe(200)
     expect(res.headers.get('content-disposition')).toBe(`attachment; filename="hermes-${sid}.json"`)
@@ -196,9 +196,9 @@ describe('raw byte routes', () => {
   })
 
   it('exports the shown transcript rows as Markdown (TAL-607)', async () => {
-    const session = s.deps.sessionStore.get(sid)
+    const session = (await s.deps.sessionStore.get(sid))
     session.messages = [{ role: 'system', content: 'secret system prompt' }, { role: 'user', content: [{ type: 'text', text: 'Hello **world**' }] }, { role: 'tool', content: 'tool output' }, { role: 'assistant', content: 'silent background reply', _background_silent: true }, { role: 'assistant', content: '<think>private plan</think>Done.' }]
-    s.deps.sessionStore.save(session)
+    await s.deps.sessionStore.save(session)
     const res = await s.get(`/api/session/export?session_id=${sid}&format=markdown`)
     expect(res.status).toBe(200)
     expect(res.headers.get('content-type')).toBe('text/markdown; charset=utf-8')
@@ -329,12 +329,12 @@ describe('raw byte routes', () => {
     const outside = mkdtempSync(join(homedir(), '.cache', 'talaria-media-test-'))
     outsideDirs.push(outside)
     writeFileSync(join(outside, 'shot.png'), 'png')
-    const session = s.deps.sessionStore.get(sid)
+    const session = (await s.deps.sessionStore.get(sid))
     session.messages = [{ role: 'user', content: `MEDIA:${join(outside, 'shot.png')}` }]
-    s.deps.sessionStore.save(session)
+    await s.deps.sessionStore.save(session)
     expect((await s.get(`/api/media?session_id=${sid}&path=${encodeURIComponent(join(outside, 'shot.png'))}`)).status).toBe(403)
     session.messages = [{ role: 'assistant', content: `Here: MEDIA:${join(outside, 'shot.png')}` }]
-    s.deps.sessionStore.save(session)
+    await s.deps.sessionStore.save(session)
     expect((await s.get(`/api/media?session_id=${sid}&path=${encodeURIComponent(join(outside, 'shot.png'))}`)).status).toBe(200)
     // There is no snapshot store: a `snap=` digest is ignored and the live file is served.
     res = await s.get(`/api/media?path=${encodeURIComponent(join(ws, 'photo.png'))}&snap=${'a'.repeat(64)}`)
@@ -350,9 +350,9 @@ describe('raw byte routes', () => {
     const res = await s.get(`/api/session/worktree/status?session_id=${sid}`)
     expect(res.status).toBe(400)
     expect((await json(res)).error).toBe('Session is not worktree-backed')
-    const session = s.deps.sessionStore.get(sid)
+    const session = (await s.deps.sessionStore.get(sid))
     session.worktree_path = join(s.state, 'missing-worktree')
-    s.deps.sessionStore.save(session)
+    await s.deps.sessionStore.save(session)
     const status = (await json(await s.get(`/api/session/worktree/status?session_id=${sid}`))).status as Json
     expect(status).toMatchObject({ exists: false, dirty: false, listed: false, locked_by_stream: false })
     const remove = await post(s, '/api/session/worktree/remove', { session_id: sid })

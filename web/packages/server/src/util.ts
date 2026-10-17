@@ -37,3 +37,8 @@ export function pyOsError(error: unknown, path?: string): string {
   const text = `[Errno ${String(num)}] ${PY_STRERROR[code] ?? code}`
   return target ? `${text}: ${pyRepr(target)}` : text
 }
+/** Keep input order while predicates perform independent asynchronous reads. */
+export async function filterAsync<T>(values: readonly T[], predicate: (value: T) => Promise<unknown>): Promise<T[]> {
+  const keep = await Promise.all(values.map(predicate))
+  return values.filter((_, index) => Boolean(keep[index]))
+}

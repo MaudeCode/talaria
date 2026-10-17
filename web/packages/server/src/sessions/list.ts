@@ -13,49 +13,13 @@ import type { SessionStore } from './store.js'
 import { existsSync, readFileSync, statSync } from 'node:fs'
 import { AGENT_STORAGE_OK, CANONICAL_READ_ONLY_REASON, OWNERSHIP_UNAVAILABLE_REASON, isCliSessionRow as isStateDbCliRow, isCliSessionRowVisible, normalizeAgentSessionSource, type StateDbSessionSource } from './state-db.js'
 import { MESSAGING_SOURCES, sourceKind } from './source-kind.js'
-import { SessionRowSchema, type AgentStorage } from '@maudecode/talaria-web-contracts'
+import { type AgentStorage } from '@maudecode/talaria-web-contracts'
 
 export type Row = Record<string, unknown>
 const num = (v: unknown): number => { const n = Number(v ?? 0); return Number.isFinite(n) && n > 0 ? n : 0 }
-const malformedFiles = new WeakMap<SessionStore, Set<string>>()
+import { sanitizeSessionRow } from './storage/row.js'
+export { sanitizeSessionRow } from './storage/row.js'
 
-/** Read-only projection; never let a corrupt identity acquire a generated ID. */
-export function sanitizeSessionRow(value: unknown, store: SessionStore, file?: string): Row | null {
-  const row = value && typeof value === 'object' && !Array.isArray(value) ? value as Row : {}
-  file ??= `${str(row.session_id)}.json`
-  const mismatchedFile = file.endsWith('.json') && file !== '_index.json' && row.session_id !== file.slice(0, -5)
-  if (!SessionRowSchema.shape.session_id.safeParse(row.session_id).success || mismatchedFile) {
-    const logged = malformedFiles.get(store) ?? new Set<string>()
-    if (!logged.has(file)) {
-      store.deps.log(`[webui] WARNING: skipping session row with invalid session_id in ${JSON.stringify(file)}`)
-      logged.add(file)
-      malformedFiles.set(store, logged)
-    }
-    return null
-  }
-  const result: Row = { ...row, title: row.title ?? '' }
-  for (const [key, schema] of Object.entries(SessionRowSchema.shape)) {
-    const value = result[key]
-    if (value === undefined || schema.safeParse(value).success) continue
-    const coerced = typeof value === 'string' && value.trim() !== ''
-      ? value.trim() === 'true' ? true : value.trim() === 'false' ? false : Number(value)
-      : typeof value === 'number' || typeof value === 'boolean' ? String(value) : undefined
-    const boolean = value === 0 || value === 1 ? value === 1 : coerced === 0 || coerced === 1 ? coerced === 1 : undefined
-    if (coerced !== undefined && schema.safeParse(coerced).success) result[key] = coerced
-    else if (boolean !== undefined && schema.safeParse(boolean).success) result[key] = boolean
-    else if (key === 'title') result[key] = ''
-    // Invalid persisted permissions must not turn a locked session into an editable one.
-    else if (key === 'read_only') result[key] = true
-    else Reflect.deleteProperty(result, key)
-  }
-  // These persisted flags affect list filtering before the wire flags are computed.
-  for (const key of ['pre_compression_snapshot', 'default_hidden', 'has_pending_user_message']) {
-    if (result[key] === 'true' || result[key] === 'false') result[key] = result[key] === 'true'
-  }
-  return result
-}
-
-/** TAL-306: the row's `sort_ts`, the time it sorts and date-buckets by on every client. */
 export function sessionSortTimestamp(row: Row): number {
   return num(row.last_message_at) || num(row.updated_at) || num(row.created_at)
 }
@@ -76,6 +40,7 @@ export function sidebarMessageCount(row: Row): number {
   }
   return 0
 }
+
 
 function sourceOf(row: Row): string {
   return str(row.source_tag || row.source || row.raw_source || row.session_source)
@@ -196,7 +161,7 @@ function isEmptyUntitledDraft(row: Row): boolean {
 export interface AllSessionsOptions { sidebarMetadataOnly?: boolean }
 
 /** Python `all_sessions` without the state.db lineage overlay. */
-export function allSessions(store: SessionStore, opts: AllSessionsOptions = {}): Row[] {
+export async function allSessions(store: SessionStore, opts: AllSessionsOptions = {}): Promise<Row[]> {
   const activeStreamIds = store.deps.activeStreamIds()
   const finish = (result: Row[]): Row[] => {
     result = result.flatMap((row) => { const clean = sanitizeSessionRow(row, store); return clean ? [clean] : [] })
@@ -217,50 +182,50 @@ export function allSessions(store: SessionStore, opts: AllSessionsOptions = {}):
     }
     return rows.sort(compareSessionRows)
   }
-  const indexExists = (() => { try { return Boolean(store.readIndexEntries()) } catch { return false } })()
+  const indexExists = (await (async () => { try { return Boolean((await store.readIndexEntries())) } catch { return false } })())
   if (!indexExists) {
-    try { store.writeIndex() } catch { /* fall through to the scan */ }
+    try { (await store.writeIndex()) } catch { /* fall through to the scan */ }
   }
   try {
-    let index = store.readIndexEntries().flatMap((row) => {
-      const clean = sanitizeSessionRow(row, store, '_index.json')
+    let index = (await store.readIndexEntries()).flatMap((row) => {
+      const clean = sanitizeSessionRow(row, store, 'index')
       return clean ? [clean] : []
     })
     const inMemory = new Set(store.sessions.keys())
-    const persisted = store.persistedIds()
-    if (!index.length && store.hasPersistedSessionFiles()) throw new Error('empty session index while session files exist')
+    const persisted = (await store.persistedIds())
+    if (!index.length && (await store.hasPersistedSessionFiles())) throw new Error('empty session index while session files exist')
     index = index.filter((r) => inMemory.has(str(r.session_id)) || persisted.has(str(r.session_id)))
-    if (!index.length && store.hasPersistedSessionFiles()) throw new Error('session index has no live rows while session files exist')
+    if (!index.length && (await store.hasPersistedSessionFiles())) throw new Error('session index has no live rows while session files exist')
     const backfilled: Session[] = []
-    index = index.map((r) => {
+    index = await Promise.all(index.map(async (r) => {
       if ('last_message_at' in r) return r
-      const full = store.load(str(r.session_id))
+      const full = (await store.load(str(r.session_id)))
       if (!full) return r
       backfilled.push(full)
       return full.compact({ sidebarMetadataOnly: opts.sidebarMetadataOnly ?? false })
-    })
-    if (backfilled.length) { try { store.writeIndex(backfilled) } catch { /* ignore */ } }
+    }))
+    if (backfilled.length) { try { (await store.writeIndex(backfilled)) } catch { /* ignore */ } }
     for (const r of index) r.is_streaming = Boolean(r.active_stream_id && activeStreamIds.has(str(r.active_stream_id)))
     const indexMap = new Map(index.map((r) => [str(r.session_id), r]))
     for (const s of store.sessions.values()) indexMap.set(s.session_id, s.compact({ includeRuntime: true, activeStreamIds, sidebarMetadataOnly: opts.sidebarMetadataOnly ?? false }))
     const missing = [...persisted].filter((sid) => !indexMap.has(sid)).sort()
     const recovered: Session[] = []
     for (const sid of missing) {
-      const sidecar = store.loadMetadataOnly(sid)
+      const sidecar = (await store.loadMetadataOnly(sid))
       if (!sidecar) continue
       indexMap.set(sidecar.session_id, sidecar.compact({ includeRuntime: true, activeStreamIds, sidebarMetadataOnly: opts.sidebarMetadataOnly ?? false }))
       recovered.push(sidecar)
     }
-    if (recovered.length) { try { store.writeIndex(recovered) } catch { /* ignore */ } }
-    const indexCounts = store.indexMessageCounts(index)
-    const refreshed = refreshIndexRowsFromSidecarMetadata(store, [...indexMap.values()], indexCounts, activeStreamIds)
+    if (recovered.length) { try { (await store.writeIndex(recovered)) } catch { /* ignore */ } }
+    const indexCounts = (await store.indexMessageCounts(index))
+    const refreshed = (await refreshIndexRowsFromSidecarMetadata(store, [...indexMap.values()], indexCounts, activeStreamIds))
     let result = refreshed.filter((r) => r.session_id)
     result = result.filter((r) => !isEmptyUntitledDraft(r))
     return finish(result)
   } catch {
     /* fall back to the full scan */
   }
-  const out = store.scanAll()
+  const out = (await store.scanAll())
   for (const s of store.sessions.values()) if (!out.some((x) => x.session_id === s.session_id)) out.push(s)
   const rows = out
     .filter((s) => !(s.title === 'Untitled' && s.messages.length === 0 && !s.active_stream_id && !s.hasPendingPrompt && !s.worktree_path))
@@ -268,22 +233,14 @@ export function allSessions(store: SessionStore, opts: AllSessionsOptions = {}):
   return finish(rows)
 }
 
-function sidecarMtimeAfterIndexTimestamp(store: SessionStore, row: Row): boolean {
+async function sidecarMtimeAfterIndexTimestamp(store: SessionStore, row: Row): Promise<boolean> {
   const sid = str(row.session_id)
   if (!sid) return false
-  try {
-    const mtime = statSyncMtime(store.pathFor(sid))
-    return mtime > sessionSortTimestamp(row) + 0.001
-  } catch {
-    return false
-  }
+  // A backend revision is opaque; refresh legacy rows whenever persisted data exists.
+  return await store.revision(sid) !== null
 }
 
-function statSyncMtime(path: string): number {
-  return statSync(path).mtimeMs / 1000
-}
-
-function rowMayNeedSidecarRefresh(store: SessionStore, row: Row, staleSnapshotIds: Set<string>): boolean {
+async function rowMayNeedSidecarRefresh(store: SessionStore, row: Row, staleSnapshotIds: Set<string>): Promise<boolean> {
   if (hasLiveState(row)) return true
   const sid = str(row.session_id)
   if (!row.pre_compression_snapshot) {
@@ -291,14 +248,14 @@ function rowMayNeedSidecarRefresh(store: SessionStore, row: Row, staleSnapshotId
     if (row.message_count === null || row.message_count === undefined || row.last_message_at === null || row.last_message_at === undefined) return true
     const lineageShaped = Boolean(row.parent_session_id || row._lineage_root_id || row._compression_segment_count)
     const needsMtime = Boolean(sid) && (looksLikeStaleZeroMessageRow(row) || (lineageShaped && (row.user_message_count === null || row.user_message_count === undefined)))
-    return needsMtime && sidecarMtimeAfterIndexTimestamp(store, row)
+    return needsMtime && await sidecarMtimeAfterIndexTimestamp(store, row)
   }
-  if (sid && looksLikeStaleZeroMessageRow(row) && str(row.session_source).trim().toLowerCase() !== 'fork' && sidecarMtimeAfterIndexTimestamp(store, row)) return true
+  if (sid && looksLikeStaleZeroMessageRow(row) && str(row.session_source).trim().toLowerCase() !== 'fork' && await sidecarMtimeAfterIndexTimestamp(store, row)) return true
   if (row.message_count === null || row.message_count === undefined || row.last_message_at === null || row.last_message_at === undefined) return true
   return Boolean(sid) && staleSnapshotIds.has(sid)
 }
 
-function staleSnapshotRefreshIds(store: SessionStore, rows: Row[]): Set<string> {
+async function staleSnapshotRefreshIds(store: SessionStore, rows: Row[]): Promise<Set<string>> {
   const byId = new Map(rows.filter((r) => r.session_id).map((r) => [str(r.session_id), r]))
   const groups = new Map<string, Row[]>()
   for (const row of rows) {
@@ -318,7 +275,7 @@ function staleSnapshotRefreshIds(store: SessionStore, rows: Row[]): Set<string> 
       const sid = str(snapshot.session_id)
       if (!sid || sidebarMessageCount(snapshot) > bestVisible) continue
       if (snapshot.user_message_count !== null && snapshot.user_message_count !== undefined && Math.trunc(Number(snapshot.message_count ?? 0)) > 0 && snapshot.last_message_at !== null && snapshot.last_message_at !== undefined) continue
-      if (sidecarMtimeAfterIndexTimestamp(store, snapshot)) ids.add(sid)
+      if (await sidecarMtimeAfterIndexTimestamp(store, snapshot)) ids.add(sid)
     }
   }
   return ids
@@ -326,13 +283,13 @@ function staleSnapshotRefreshIds(store: SessionStore, rows: Row[]): Set<string> 
 
 const REFRESH_KEYS = ['message_count', 'updated_at', 'last_message_at', 'title', 'workspace', 'model', 'model_provider', 'created_at', 'pinned', 'archived', 'project_id', 'profile', 'pre_compression_snapshot', 'parent_session_id', 'source_tag', 'raw_source', 'session_source', 'source_label', 'active_stream_id', 'has_pending_user_message', 'pending_user_message', 'pending_started_at']
 
-function refreshIndexRowsFromSidecarMetadata(store: SessionStore, rows: Row[], indexCounts: Map<string, number>, activeStreamIds: Set<string>): Row[] {
-  const stale = staleSnapshotRefreshIds(store, rows)
+async function refreshIndexRowsFromSidecarMetadata(store: SessionStore, rows: Row[], indexCounts: Map<string, number>, activeStreamIds: Set<string>): Promise<Row[]> {
+  const stale = await staleSnapshotRefreshIds(store, rows)
   const out: Row[] = []
   for (const row of rows) {
     const sid = str(row.session_id)
-    if (!rowMayNeedSidecarRefresh(store, row, stale) || !sid) { out.push(row); continue }
-    const sidecar = store.loadMetadataOnly(sid, { indexMessageCounts: indexCounts })
+    if (!await rowMayNeedSidecarRefresh(store, row, stale) || !sid) { out.push(row); continue }
+    const sidecar = (await store.loadMetadataOnly(sid, { indexMessageCounts: indexCounts }))
     if (!sidecar) { out.push(row); continue }
     const compact = sidecar.compact({ includeRuntime: true, activeStreamIds })
     const refreshed = { ...row }
@@ -418,7 +375,7 @@ export interface ListParams {
   /** TAL-785: the state.db storage health `cliRows` came from; omitted when no Agent source is shown. */
   agentStorage?: AgentStorage
   /** TAL-590: removes the sidebar rows' orphaned imports (Python #3238) and answers their ids, which the list drops. */
-  pruneOrphanedImports?: (rows: Row[]) => Set<string>
+  pruneOrphanedImports?: (rows: Row[]) => Promise<Set<string>>
   /** The sidebar's `allSessions` rows when the caller already read them for its state.db lookups (TAL-920). */
   webuiRows?: Row[]
 }
@@ -750,9 +707,9 @@ export interface ListPayload {
 }
 
 /** Python `_build_session_list_cache_payload`; of its orphaned-sidecar prunes only the imported one (#3238) applies. */
-export function buildSessionListPayload(store: SessionStore, params: ListParams): ListPayload {
-  let webuiSessions: Row[] = (params.webuiRows ?? allSessions(store, { sidebarMetadataOnly: true })).map((r) => ({ ...r, is_cli_session: isCliSessionRow(r) }))
-  const orphans = params.pruneOrphanedImports?.(webuiSessions)
+export async function buildSessionListPayload(store: SessionStore, params: ListParams): Promise<ListPayload> {
+  let webuiSessions: Row[] = (params.webuiRows ?? (await allSessions(store, { sidebarMetadataOnly: true }))).map((r) => ({ ...r, is_cli_session: isCliSessionRow(r) }))
+  const orphans = await params.pruneOrphanedImports?.(webuiSessions)
   if (orphans?.size) webuiSessions = webuiSessions.filter((r) => !orphans.has(str(r.session_id)))
   // Before the state.db overlay below replaces the sidecar's own source fields, which the WebUI-born exception reads.
   if (params.stateDbSources) webuiSessions = withOwnerLocks(webuiSessions, params.stateDbSources)
@@ -795,7 +752,11 @@ export function buildSessionListPayload(store: SessionStore, params: ListParams)
     otherProfileCount = params.isolatedProfileMode ? 0 : merged.length - scoped.length
   }
   const identity = params.gatewayIdentity ?? new Map<string, GatewayIdentity>()
-  const isPreCompressionSnapshotId = (sid: string): boolean => { if (!/^[a-z0-9_]+$/.test(sid)) return false; return Boolean(store.loadMetadataOnly(sid)?.pre_compression_snapshot) }
+  const snapshots = new Set<string>()
+  for (const parent of new Set(scoped.map((row) => str(row.parent_session_id)))) {
+    if (/^[a-z0-9_]+$/.test(parent) && (await store.loadMetadataOnly(parent))?.pre_compression_snapshot) snapshots.add(parent)
+  }
+  const isPreCompressionSnapshotId = (sid: string): boolean => snapshots.has(sid)
   const dedupeOpts = { showPrevious: params.showPreviousMessagingSessions, identity, isPreCompressionSnapshotId }
   let archivedScoped = keepLatestMessagingSessionPerSource([...scoped], dedupeOpts)
   let visibleScoped = keepLatestMessagingSessionPerSource(scoped.filter((r) => !r.archived), dedupeOpts)
@@ -982,21 +943,7 @@ export function sessionListResponse(payload: ListPayload, overlay: RuntimeOverla
 
 // ── search ────────────────────────────────────────────────────────────────
 
-export function sessionSearchMessageText(message: unknown): string {
-  const content = message && typeof message === 'object' ? (message as Row).content : ''
-  if (Array.isArray(content)) return content.filter((p): p is Row => Boolean(p) && typeof p === 'object' && (p as Row).type === 'text').map((p) => str(p.text)).join(' ')
-  return str(content)
-}
-
-/** TAL-453: a query's distinct whitespace-separated terms, lowercased; a row matches when one field holds them all. */
-export function sessionSearchTerms(query: string): string[] {
-  return [...new Set(query.toLowerCase().split(/\s+/).filter(Boolean))]
-}
-
-export function sessionSearchMatches(text: string, terms: readonly string[]): boolean {
-  const lower = text.toLowerCase()
-  return terms.length > 0 && terms.every((term) => lower.includes(term))
-}
+export { sessionSearchMessageText, sessionSearchTerms, sessionSearchMatches } from './storage/search-text.js'
 
 /** An excerpt of `text` centred on the earliest occurrence of any of `terms`. */
 export function sessionSearchPreview(text: string, terms: readonly string[], maxLen = 124): string {

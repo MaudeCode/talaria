@@ -183,17 +183,17 @@ describe('pin cap and hidden snapshots', () => {
   afterAll(() => s.close())
   const newSession = async (): Promise<string> => {
     const sid = String(((await json(await post(s, '/api/session/new', {}))).session as Json).session_id)
-    const session = s.deps.sessionStore.get(sid)
+    const session = (await s.deps.sessionStore.get(sid))
     session.messages = [{ role: 'user', content: 'hi' }, { role: 'assistant', content: 'hello' }]
-    s.deps.sessionStore.save(session)
+    await s.deps.sessionStore.save(session)
     return sid
   }
 
   it('a pinned hidden pre-compression snapshot does not consume pin quota', async () => {
-    const hidden = s.deps.sessionStore.get(await newSession())
+    const hidden = (await s.deps.sessionStore.get(await newSession()))
     hidden.pre_compression_snapshot = true
     hidden.pinned = true
-    s.deps.sessionStore.save(hidden)
+    await s.deps.sessionStore.save(hidden)
     for (let i = 0; i < 3; i += 1) {
       const res = await post(s, '/api/session/pin', { session_id: await newSession(), pinned: true })
       expect(res.status, String(i)).toBe(200)
@@ -283,11 +283,11 @@ describe('state.db windows and probes', () => {
     insertSession(db, { id: 'stale-json', source: 'webui', started_at: 500, messages: [['user', 501]] })
     db.close()
     const sid = String(((await json(await post(s, '/api/session/new', {}))).session as Json).session_id)
-    const session = s.deps.sessionStore.get(sid)
+    const session = (await s.deps.sessionStore.get(sid))
     session.session_id = 'stale-json'
     session.messages = [{ role: 'user', content: 'hi' }]
     Object.assign(session, { is_cli_session: true, session_source: 'cli', raw_source: 'cli' })
-    s.deps.sessionStore.save(session)
+    await s.deps.sessionStore.save(session)
     s.deps.cliSessions.invalidate()
     const rows = (await json(await s.get('/api/sessions'))).sessions as Json[]
     const row = rows.find((r) => r.session_id === 'stale-json')
@@ -338,11 +338,11 @@ describe('server-classified session sources (TAL-310)', () => {
   const rowsOf = async (path: string): Promise<Json[]> => (await json(await s.get(path))).sessions as Json[]
   const sidecar = async (title: string, fields: Json): Promise<string> => {
     const sid = String(((await json(await post(s, '/api/session/new', {}))).session as Json).session_id)
-    const stored = s.deps.sessionStore.get(sid)
+    const stored = (await s.deps.sessionStore.get(sid))
     stored.title = title
     stored.messages = [{ role: 'user', content: 'kindprobe', timestamp: 3000 }, { role: 'assistant', content: 'ok', timestamp: 3001 }]
     Object.assign(stored, fields)
-    s.deps.sessionStore.save(stored)
+    await s.deps.sessionStore.save(stored)
     return sid
   }
   beforeAll(async () => {

@@ -29,6 +29,8 @@ import { displayBotName, pyBool, SettingsStore } from './settings.js'
 import { AssetCache, SpaShell } from './spa.js'
 import { StartupGate } from './startup.js'
 import { SessionStore } from './sessions/store.js'
+import { JsonStorage } from './sessions/storage/json.js'
+import type { StorageBackend } from './sessions/storage/backend.js'
 import { DraftStore } from './sessions/drafts.js'
 import { SessionEventBus } from './sessions/events.js'
 import { ShareStore } from './sessions/shares.js'
@@ -211,7 +213,7 @@ export function createDeps(opts: CreateDepsOptions): AppDeps {
     return Number.isFinite(raw) && raw >= 1 ? raw : 100
   }
   const store = new SessionStore({
-    sessionDir: config.sessionDir,
+    storage: createStorage(config, now),
     drafts,
     events,
     // Python `_profile_default_model_state`: the profile's own config.yaml model, else the global default. The provider
@@ -230,13 +232,13 @@ export function createDeps(opts: CreateDepsOptions): AppDeps {
     now,
     log,
     cacheMax,
-    onDeleted: (sid) => { backgroundStore.evict(sid) },
+    onDeleted: (sid) => { backgroundStore.delete(sid) },
   })
-  const projects = new ProjectStore(resolve(config.stateDir, 'projects.json'), () => store.readIndexEntries(), isRootProfile)
+  const projects = new ProjectStore(resolve(config.stateDir, 'projects.json'), async () => (await store.readIndexEntries()), isRootProfile)
   const shares = new ShareStore(resolve(config.stateDir, 'shares'), now)
   const yoloSessions = new Set<string>()
   const attachmentDir = (sid: string): string => join(attachmentRoot(), (sid || 'session').replace(/[^\w.-]/g, '_').slice(0, 120))
-  const cliSessions = new CliSessionSource({ store, profileHome, profilesMatch, lastWorkspace: (p) => workspaces.lastWorkspace(p), backgroundProjectId: (kind, p) => projects.ensureSystemProject(kind, p, { create: kind === 'webhook' || projects.hasUserProjects(p) }), now, log })
+  const cliSessions = new CliSessionSource({ store, profileHome, profilesMatch, lastWorkspace: (p) => workspaces.lastWorkspace(p), backgroundProjectId: async (kind, p) => (await projects.ensureSystemProject(kind, p, { create: kind === 'webhook' || (await projects.hasUserProjects(p)) })), now, log })
   const gatewayWatchers = new GatewayWatcherRegistry({ profileHome, now, log, ...(opts.gatewayPollMs !== undefined ? { pollIntervalMs: opts.gatewayPollMs } : {}) })
   const journal = new RunJournal(config.sessionDir, env)
   const contextLengths = new Map<string, number | null>()
@@ -286,30 +288,36 @@ export function createDeps(opts: CreateDepsOptions): AppDeps {
   // TAL-259: record when this server started stamping deliberate shrinks; older backups go to manual review.
   try { recoveryStampingSince(config.stateDir) } catch (error) { log(`[webui] WARNING: could not record recovery_stamping_since: ${(error as Error).message}`) }
   const sessions: SessionService = new SessionService({
+    recoveryJournalDirectory: config.sessionDir,
     recoveryStampingSince: () => recoveryStampingSince(config.stateDir),
     sidecar: () => sidecar,
     media: { access: mediaAccess, localIo: (profile) => workspaces.profileSupportsLocalIo(profile) },
     profileActivity,
     profileDeleting: (profile) => profiles.isDeleting(profile),
     backgroundReceipts: (sid) => background.receipts(sid),
-    backgroundPending: (sid) => completions.pendingDelegations(sid),
+    backgroundPending: async (sid) => (await completions.pendingDelegations(sid)),
     journal,
-    clearRelayCompletions: (sid, profile) => { relay.clearDeleted(sid, profile) },
+    clearRelayCompletions: async (sid, profile) => { (await relay.clearDeleted(sid, profile)) },
     store,
-    cliSessions: (profile, o) => cliSessions.read(profile, o),
-    cliSessionsSync: (profile, o) => cliSessions.readSync(profile, o),
+    cliSessions: async (profile, o) => (await cliSessions.read(profile, o)),
+    cliSessionsSync: async (profile, o) => (await cliSessions.readSync(profile, o)),
     claudeCode: new ClaudeCodeSessionSource(() => claudeCodeProjectsDir(env, home)),
     profileHome,
     // The commit runs detached from the request, so it is registered as profile activity until it settles: profile
     // deletion must not remove the memory files the cached Agent is still writing.
-    commitSessionMemory: (sid) => {
+    commitSessionMemory: async (sid) => {
       if (!sidecar) return
+      const callerProfile = activeProfile()
+      // Reserve deletion protection before the asynchronous lookup knows which profile owns the session.
+      let release = profileActivity('*')
       let profile: string | null = null
-      try { profile = store.get(sid, { metadataOnly: true }).profile ?? null } catch { profile = null }
-      const targetProfile = profile ?? activeProfile()
-      const release = profileActivity(targetProfile)
-      void Promise.resolve().then(() => {
-        sessions.assertWritable(sid, targetProfile)
+      try { profile = (await store.get(sid, { metadataOnly: true })).profile ?? null } catch { profile = null }
+      const targetProfile = profile ?? callerProfile
+      const releaseOwner = profileActivity(targetProfile)
+      release()
+      release = releaseOwner
+      void Promise.resolve().then(async () => {
+        await sessions.assertWritable(sid, targetProfile)
         return sidecar.call('chat.commit_memory', { profile_home: profileHome(targetProfile), session_id: sid })
       })
         .catch((error: unknown) => { log(`[webui] memory commit for ${sid} failed: ${(error as Error).message}`) })
@@ -351,15 +359,15 @@ export function createDeps(opts: CreateDepsOptions): AppDeps {
       journalDegraded: (streamId) => registry.degradedJournals.has(streamId),
       pendingSteers: (streamId: string): PendingSteer[] => turns.pendingSteers(streamId),
       compressionStartedAt: (streamId: string): number | null => turns.compressionStartedAt(streamId),
-      automaticTurnsHeld: (sid: string): boolean => turns.automaticTurnsHeld(sid),
+      automaticTurnsHeld: async (sid: string): Promise<boolean> => (await turns.automaticTurnsHeld(sid)),
       sessionNotices: (sid: string): SessionNotice[] => turns.sessionNotices(sid),
       sessionGoal: (sid: string): SessionGoal | null => turns.sessionGoal(sid),
-      evictAgent: (sid, endSession) => { if (sidecar && (!endSession || !sessions.readOnlyReason(sid))) sidecar.call('chat.evict_agent', endSession ? { session_id: sid, clear_session: true } : { session_id: sid }).catch(() => undefined) },
+      evictAgent: async (sid, endSession) => { if (sidecar && (!endSession || !(await sessions.readOnlyReason(sid)))) sidecar.call('chat.evict_agent', endSession ? { session_id: sid, clear_session: true } : { session_id: sid }).catch(() => undefined) },
       closeTerminal: (sid) => { deps.terminals.close(sid) },
       deleteCliSession: async (profile, sid) => {
         if (!sidecar) return { ok: false }
         const targetProfile = profile ?? activeProfile()
-        sessions.assertWritable(sid, targetProfile)
+        await sessions.assertWritable(sid, targetProfile)
         return await sidecar.call('state_db.delete_cli_session', { profile_home: profileHome(targetProfile), session_id: sid, include_compression_lineage: true })
       },
     },
@@ -412,16 +420,17 @@ export function createDeps(opts: CreateDepsOptions): AppDeps {
     sidecar: () => sidecar, profileHome: () => profileHome(activeProfile()), knownWorkspaces: () => workspaces.load(activeProfile()).map((w) => w.path),
     // A run whose session cannot be read counts as one in the profile: refusing is the safe answer.
     activeRunInProfile: (home) => [...registry.activeRuns.values()].some((run) => {
-      try { return profileHome(store.get(run.session_id, { metadataOnly: true }).profile ?? activeProfile()) === home } catch { return true }
+      const session = store.sessions.get(run.session_id)
+      return !session || profileHome(session.profile ?? activeProfile()) === home
     }),
   })
   const uploads = new UploadInbox(attachmentRoot)
   const channels = new SessionChannels()
   const pending = new PendingPrompts(events, now)
   // TAL-372: one durable record per piece of background work; a change refreshes every client showing the session.
-  const backgroundStore = new BackgroundTaskStore(config.sessionDir, now, (sid) => {
+  const backgroundStore = new BackgroundTaskStore(config.sessionDir, now, async (sid) => {
     let profile: string | null = null
-    try { profile = store.get(sid, { metadataOnly: true, promote: false, cacheOnMiss: false }).profile } catch { profile = null }
+    try { profile = (await store.get(sid, { metadataOnly: true, promote: false, cacheOnMiss: false })).profile } catch { profile = null }
     events.publish('background_task', { profile, sessionId: sid })
   })
   const background = new BackgroundActivity({ store: backgroundStore, sidecar: () => sidecar, profileHome: (p) => profileHome(p ?? activeProfile()), liveStream: (id) => registry.liveIds.has(id), now, log })
@@ -511,10 +520,12 @@ export function createDeps(opts: CreateDepsOptions): AppDeps {
       for (const streamId of registry.liveIds) { const owner = registry.ownerSessionId(streamId); if (owner) sessionIds.add(owner) }
       for (const sessionId of sessionIds) {
         let profile: string | null = null
-        try { profile = store.get(sessionId, { metadataOnly: true }).profile ?? null } catch { continue }
+        const session = store.sessions.get(sessionId)
+        if (!session) return true
+        profile = session.profile ?? null
         if (profiles.isRootProfile(profile ?? 'default') ? profiles.isRootProfile(name) : profile === name) return true
       }
-      for (const [profile, count] of profileOps) if (count > 0 && (profiles.isRootProfile(profile) ? profiles.isRootProfile(name) : profile === name)) return true
+      for (const [profile, count] of profileOps) if (count > 0 && (profile === '*' || (profiles.isRootProfile(profile) ? profiles.isRootProfile(name) : profile === name))) return true
       return false
     },
     tombstoneFile: join(config.stateDir, 'deleted-profiles.json'),
@@ -568,12 +579,12 @@ export function createDeps(opts: CreateDepsOptions): AppDeps {
       },
     }
   }
-  completions = new CompletionDrain({ sidecar: () => sidecar, configPath: (home) => agentConfig.path(home), readConfig: (home) => agentConfig.read(home), env, baseHome, profileHome: (p) => profileHome(p ?? activeProfile()), activeProfile, store, channels, registry, isReadOnly: (session) => sessions.isReadOnly(session), startTurn: async (session, prompt, completionKeys, backgroundUpdate) => {
+  completions = new CompletionDrain({ heldWakeupsPath: join(config.sessionDir, '_wakeup_held.json'), sidecar: () => sidecar, configPath: (home) => agentConfig.path(home), readConfig: (home) => agentConfig.read(home), env, baseHome, profileHome: (p) => profileHome(p ?? activeProfile()), activeProfile, store, channels, registry, isReadOnly: async (session) => (await sessions.isReadOnly(session)), startTurn: async (session, prompt, completionKeys, backgroundUpdate) => {
     // TAL-577: a wakeup passes the user-turn admission; a stale runtime answers a retryable 409, which defers it on a retry timer.
     // TAL-542: its model repair reads the cached catalog only (Python `prefer_cached_catalog`), never waiting on a build.
     try {
       await ensureAgentRuntimeCurrent(sidecar)
-      return turns.startServerTurn(session, { msg: prompt, source: 'process_wakeup', completionKeys, backgroundUpdate })
+      return (await turns.startServerTurn(session, { msg: prompt, source: 'process_wakeup', completionKeys, backgroundUpdate }))
     } catch (error) {
       if (error instanceof HttpFailure) return { _status: error.status, error: error.message, retryable: error.extra.retryable === true }
       throw error
@@ -657,7 +668,7 @@ export function createDeps(opts: CreateDepsOptions): AppDeps {
     skills: new SkillsService({ sidecar: () => sidecar, config: agentConfig, log }),
     mcp: new McpService({ sidecar: () => sidecar, config: agentConfig, health: mcpHealth }),
     completions,
-    hygiene: new HygieneTicker({ env, stateDir: config.stateDir, port: () => config.port, journal, activeJournalPaths: () => turns.activeJournalPaths(), now, log, sweeps: [() => { completions.sweep() }, () => { turns.sweep() }] }),
+    hygiene: new HygieneTicker({ env, stateDir: config.stateDir, port: () => config.port, journal, activeJournalPaths: () => turns.activeJournalPaths(), now, log, sweeps: [() => { completions.sweep() }, async () => { (await turns.sweep()) }] }),
     mcpHealth,
     nowSeconds: now,
     // Python `_webui_runtime_payload`: the four owner sections with their `available` flags.
@@ -676,7 +687,7 @@ export function createDeps(opts: CreateDepsOptions): AppDeps {
     requestShutdown: () => { setTimeout(() => { process.kill(process.pid, 'SIGINT') }, 300).unref() },
     // Embedded shells are separate process groups that would outlive the worker: terminate and reap them on both exits.
     // A running retention sweep stops before the exit, like on shutdown.
-    requestRestart: () => { void waitUntilRestartSafe(restartBlockers, { log }).then(() => deps.gatewayRestarts.quiesce()).then(() => deps.hygiene.stop()).then(() => auth.flushPersistence()).then(() => { deps.terminals.closeAll({ immediate: true }); purgeAgentPycache(); process.exit(RESTART_EXIT_CODE) }) },
+    requestRestart: () => { void waitUntilRestartSafe(restartBlockers, { log }).then(() => deps.gatewayRestarts.quiesce()).then(() => deps.hygiene.stop()).then(() => auth.flushPersistence()).then(() => store.close()).then(() => { deps.terminals.closeAll({ immediate: true }); purgeAgentPycache(); process.exit(RESTART_EXIT_CODE) }) },
     updates: null as unknown as UpdateService,
     updateNotifications,
     gatewayRestarts: null as unknown as GatewayRestartQueue,
@@ -806,4 +817,9 @@ function readActiveProfileFile(hermesHome: string, pattern: RegExp): string {
   } catch {
     return 'default'
   }
+}
+
+export function createStorage(config: import('./config.js').ServerConfig, now = () => Date.now() / 1000): StorageBackend {
+  if (config.storage !== 'json') throw new Error(`Unknown TALARIA_STORAGE=${JSON.stringify(config.storage)}; supported backends: json`)
+  return new JsonStorage({ directory: config.sessionDir, now, stampingSince: () => recoveryStampingSince(config.stateDir) })
 }

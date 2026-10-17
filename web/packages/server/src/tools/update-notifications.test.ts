@@ -11,6 +11,44 @@ const alice: UpdateNotificationScope = { owner: 'oidc:alice', profile: 'work', s
 afterEach(() => { for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true }) })
 
 describe('UpdateNotificationStore', () => {
+  it.each(['agent', 'webui'] as const)('projects truthful %s failures with or without detail across every public path', (target) => {
+    const store = new UpdateNotificationStore(temp())
+    const scope = { ...alice, tab: 'tab-aaaaaaaa' }
+    const created = store.begin(scope, target)
+    expect(created.destination?.key).toBe('settings.system')
+    const expected = { id: created.id, target, phase: 'failed', message: 'The update could not be completed.', destination: null, detail: 'Build failed.\nTry again.' }
+    expect(store.transition(created.id, 'failed', null, undefined, 'Build failed.\r\nTry again.')).toMatchObject(expected)
+    expect(store.list(scope)).toMatchObject({ notifications: [expected], tab_update: expected })
+    expect(store.read(scope, created.id)).toMatchObject({ ...expected, unread: false })
+    expect(store.transition(created.id, 'failed')).toMatchObject({ ...expected, detail: null })
+    expect(store.transition(created.id, 'blocked')?.destination?.key).toBe('settings.system')
+  })
+
+  it.each(['agent', 'webui'] as const)('normalizes old saved %s failures without changing detail, identity, read or dismissal state', (target) => {
+    const root = temp()
+    const scope = { ...alice, tab: 'tab-aaaaaaaa' }
+    const store = new UpdateNotificationStore(root)
+    const created = store.begin(scope, target)
+    store.transition(created.id, 'failed', null, { revision: 'a'.repeat(40), version: '1.2.3' }, 'Build failed.\nTry again.')
+    store.read(scope, created.id)
+    const dismissed = store.begin(alice, target)
+    store.transition(dismissed.id, 'failed')
+    store.dismiss(alice, dismissed.id)
+    const system = store.create(alice, { kind: 'system', target, phase: 'failed', title: 'System failure', message: 'System detail.', destination: { key: 'settings.system', label: 'Open System settings' } })
+    const file = join(root, 'update-notifications.json')
+    const saved = JSON.parse(readFileSync(file, 'utf8')) as { id: string; message: string }[]
+    for (const row of saved) if (row.id !== system.id) row.message = 'The update could not be completed. Open System settings for details.'
+    writeFileSync(file, JSON.stringify(saved))
+    const before = readFileSync(file, 'utf8')
+    const reloaded = new UpdateNotificationStore(root)
+    const expected = { id: created.id, target, phase: 'failed', message: 'The update could not be completed.', destination: null, detail: 'Build failed.\nTry again.', unread: false, verified_revision: 'a'.repeat(40), verified_version: '1.2.3' }
+    expect(reloaded.list(scope)).toMatchObject({ tab_update: expected })
+    expect(reloaded.list(scope).notifications.find((row) => row.id === created.id)).toMatchObject(expected)
+    expect(reloaded.list(scope).notifications.some((row) => row.id === dismissed.id)).toBe(false)
+    expect(reloaded.list(scope).notifications.find((row) => row.id === system.id)).toEqual(system)
+    expect(readFileSync(file, 'utf8')).toBe(before)
+  })
+
   it('keeps acknowledgement distinct from read and clear, idempotently', () => {
     const root = temp()
     let now = new Date('2026-09-26T12:00:00Z')

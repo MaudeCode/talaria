@@ -18,9 +18,9 @@ describe('cached agent eviction', () => {
   async function seeded(): Promise<string> {
     const res = await s.get('/api/session/new', { method: 'POST', body: '{}', headers: { 'content-type': 'application/json' } })
     const sid = String(((await res.json()) as { session: Json }).session.session_id)
-    const session = s.deps.sessionStore.get(sid)
+    const session = (await s.deps.sessionStore.get(sid))
     session.messages = [{ role: 'user', content: 'one', timestamp: 1 }, { role: 'assistant', content: 'two', timestamp: 2 }]
-    s.deps.sessionStore.save(session)
+    await s.deps.sessionStore.save(session)
     return sid
   }
   async function evictions(sid: string, mutate: () => Promise<unknown>): Promise<unknown[]> {
@@ -32,14 +32,14 @@ describe('cached agent eviction', () => {
 
   it('keeps approval state on model switch and truncate', async () => {
     const sid = await seeded()
-    const model = s.deps.sessionStore.get(sid).model ?? ''
-    expect(await evictions(sid, () => s.deps.sessions.update(sid, { model: `${model}-switched` }))).toEqual([{ session_id: sid }])
-    expect(await evictions(sid, () => s.deps.sessions.truncate(sid, 1))).toEqual([{ session_id: sid }])
+    const model = (await s.deps.sessionStore.get(sid)).model ?? ''
+    expect(await evictions(sid, async () => (await s.deps.sessions.update(sid, { model: `${model}-switched` })))).toEqual([{ session_id: sid }])
+    expect(await evictions(sid, async () => (await s.deps.sessions.truncate(sid, 1)))).toEqual([{ session_id: sid }])
   })
 
   it('ends approval state on clear and delete', async () => {
     const sid = await seeded()
-    expect(await evictions(sid, () => s.deps.sessions.clear(sid))).toEqual([{ session_id: sid, clear_session: true }])
-    expect(await evictions(sid, () => s.deps.sessions.delete(sid))).toEqual([{ session_id: sid, clear_session: true }])
+    expect(await evictions(sid, async () => (await s.deps.sessions.clear(sid)))).toEqual([{ session_id: sid, clear_session: true }])
+    expect(await evictions(sid, async () => (await s.deps.sessions.delete(sid)))).toEqual([{ session_id: sid, clear_session: true }])
   })
 })

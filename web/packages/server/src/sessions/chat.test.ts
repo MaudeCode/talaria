@@ -1,3 +1,5 @@
+import { filterAsync } from '../util.js'
+import { sessionPath, sessionDirectory } from '../test/storage.js'
 import { existsSync, mkdirSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
 import { CANCEL_UNWIND_CEILING_S } from './streams.js'
 import { join } from 'node:path'
@@ -51,7 +53,7 @@ describe('chat turns through the sidecar', () => {
     try {
       const res = await post(s, '/api/chat/start', { session_id: sid, message: 'wait for update' })
       expect(res.status).toBe(503)
-      const session = s.deps.sessionStore.get(sid)
+      const session = (await s.deps.sessionStore.get(sid))
       expect(session.pending_user_message).toBeNull()
       expect(session.active_stream_id).toBeNull()
     } finally { guard.mockRestore() }
@@ -182,7 +184,7 @@ describe('chat turns through the sidecar', () => {
     expect((await s.get(`/api/chat/cancel?stream_id=${streamId}`)).status).toBe(200)
     const frames = await s.sse(`/api/chat/stream?stream_id=${streamId}&after_event_id=${streamId}:0`, (f) => f.event === 'cancel')
     expect(frames.find((f) => f.event === 'cancel')?.data).toMatchObject({ terminal_state: 'cancelled' })
-    await vi.waitFor(() => { expect(s.deps.sessionStore.get(sid).active_stream_id).toBeNull() })
+    await vi.waitFor(async () => { expect((await s.deps.sessionStore.get(sid)).active_stream_id).toBeNull() })
   })
 
   it('marks only a voice turn for the Agent\'s voice route (TAL-801)', async () => {
@@ -333,7 +335,7 @@ describe('chat turns through the sidecar', () => {
     sidecar.respond('aux.complete', () => ({ model: 'aux', text: 'Title: "Shot"', usage: null }))
     const streamId = String((await json(await post(s, '/api/chat/start', { session_id: sid, message: 'look' }))).stream_id)
     await s.sse(`/api/chat/stream?stream_id=${streamId}`, (f) => f.event === 'stream_end')
-    const saved = JSON.parse(readFileSync(s.deps.sessionStore.pathFor(sid), 'utf8')) as Json
+    const saved = JSON.parse(readFileSync(sessionPath(s.deps.sessionStore, sid), 'utf8')) as Json
     for (const rows of [saved.messages, saved.context_messages] as Json[][]) {
       const tool = rows.find((m) => m.role === 'tool')!
       expect(tool.content).toEqual([{ type: 'text', text: 'Image loaded.' }, { type: 'text', text: '[screenshot]' }, { type: 'text', text: '[screenshot]' }])
@@ -691,9 +693,9 @@ describe('chat turns through the sidecar', () => {
 
   it('settles inline thinking and leaked tool-call XML into one display shape on the done frame and every reload (TAL-302)', async () => {
     const sid = await newSession(s)
-    const session = s.deps.sessionStore.get(sid)
+    const session = (await s.deps.sessionStore.get(sid))
     session.messages = [{ role: 'user', content: 'earlier', timestamp: 1000 }, { role: 'assistant', content: '<thinking>old plan</thinking>Old answer', timestamp: 1001 }]
-    s.deps.sessionStore.save(session)
+    await s.deps.sessionStore.save(session)
     const raw = '<|channel|>thought\nplan<channel|>Answer <｜DSML｜function_calls><｜DSML｜invoke name="x">'
     sidecar.respond('chat.start', (params) => completed([
       { role: 'user', content: 'earlier' }, { role: 'assistant', content: '<thinking>old plan</thinking>Old answer' },
@@ -711,7 +713,7 @@ describe('chat turns through the sidecar', () => {
       expect(shape(detail)).toEqual(expected.slice(-shape(detail).length))
     }
     // Only the settling turn's prose is rewritten in the file; its own fields and the model history stay as the Agent wrote them.
-    const stored = s.deps.sessionStore.get(sid)
+    const stored = (await s.deps.sessionStore.get(sid))
     expect(stored.messages.filter((m) => m.role === 'assistant').map((m) => [m.content, m.reasoning, m.reasoning_content])).toEqual([['<thinking>old plan</thinking>Old answer', undefined, undefined], ['Answer', 'rc\n\nplan', 'rc']])
     expect(stored.context_messages.at(-1)).toMatchObject({ content: raw, reasoning_content: 'rc' })
   })
@@ -747,9 +749,9 @@ describe('chat turns through the sidecar', () => {
 
   it('ships an earlier bare-filename attachment as a filename-only object on the done frame (TAL-277)', async () => {
     const sid = await newSession(s)
-    const session = s.deps.sessionStore.get(sid)
+    const session = (await s.deps.sessionStore.get(sid))
     session.messages = [{ role: 'user', content: 'look', timestamp: 1000, attachments: ['example.png'] }, { role: 'assistant', content: 'seen', timestamp: 1001 }]
-    s.deps.sessionStore.save(session)
+    await s.deps.sessionStore.save(session)
     sidecar.respond('chat.start', (params) => completed([{ role: 'user', content: str(params.user_message) }, { role: 'assistant', content: 'Again' }]))
     sidecar.respond('aux.complete', () => ({ model: 'aux', text: 'Title: "Legacy"', usage: null }))
     const start = await json(await post(s, '/api/chat/start', { session_id: sid, message: 'again' }))
@@ -827,12 +829,12 @@ describe('chat turns through the sidecar', () => {
       const frames = await s.sse(`/api/chat/stream?stream_id=${streamId}&replay=1`, (f) => f.event === 'stream_end' || f.event === 'apperror')
       expect((frames.find((f) => f.event === event)?.data as Json).terminal_state, label).toBe(state)
       // The scene rides on the turn's last assistant row, in the full transcript and in each window that holds it.
-      const total = s.deps.sessionStore.get(sid).messages.length
+      const total = (await s.deps.sessionStore.get(sid)).messages.length
       for (const query of ['', '&msg_limit=2', `&msg_limit=2&msg_before=${String(total)}`]) {
         const messages = ((await json(await s.get(`/api/session?session_id=${sid}${query}`))).session as Json).messages as Json[]
         expect(messages.findLast((m) => m.role === 'assistant')?._anchor_activity_scene, `${label}${query}`).toMatchObject({ terminal_state: state })
       }
-      if (event === 'apperror') expect(s.deps.sessionStore.get(sid).messages.at(-1)?._terminal_state, label).toBe(state)
+      if (event === 'apperror') expect((await s.deps.sessionStore.get(sid)).messages.at(-1)?._terminal_state, label).toBe(state)
       const status = await json(await s.get(`/api/chat/stream/status?stream_id=${streamId}`))
       expect((status.journal as Json).terminal_state, label).toBe(journalState)
       // Relay publishes the same outcome the app shows: only a completed turn is `completed`.
@@ -949,7 +951,7 @@ describe('chat turns through the sidecar', () => {
     expect(await json(await s.get(`/api/clarify/pending?session_id=${sid}`))).toEqual({ pending: null, pending_count: 0 })
     // No answer survives anywhere the server keeps or serves the session.
     const exports = await Promise.all(['json', 'md', 'html'].map(async (format) => (await s.get(`/api/session/export?session_id=${sid}&format=${format}`)).text()))
-    const kept = [JSON.stringify(replay), JSON.stringify(s.deps.sessionStore.get(sid)), JSON.stringify(await json(await s.get(`/api/session?session_id=${sid}`))), ...exports, s.logs.join('\n')].join('\n')
+    const kept = [JSON.stringify(replay), JSON.stringify((await s.deps.sessionStore.get(sid))), JSON.stringify(await json(await s.get(`/api/session?session_id=${sid}`))), ...exports, s.logs.join('\n')].join('\n')
     expect(exports.every((text) => text.includes('Signed in.'))).toBe(true)
     for (const secret of [...Object.values(secrets), 'me@example.com']) expect(kept).not.toContain(secret)
   })
@@ -958,10 +960,10 @@ describe('chat turns through the sidecar', () => {
     const turns = s.deps.turns as unknown as { deps: { titleRefreshEvery: (() => number) | undefined } }
     const original = turns.deps.titleRefreshEvery
     const sid = await newSession(s)
-    const session = s.deps.sessionStore.get(sid)
+    const session = (await s.deps.sessionStore.get(sid))
     session.model = 'session-model'
     session.model_provider = 'session-provider'
-    s.deps.sessionStore.save(session)
+    await s.deps.sessionStore.save(session)
     sidecar.respond('chat.start', (params) => completed([
       ...(params.conversation_history as Json[]),
       { role: 'user', content: str(params.user_message) },
@@ -987,7 +989,7 @@ describe('chat turns through the sidecar', () => {
       for (const call of calls) expect(call.params).toMatchObject({
         task: 'title_generation', main_runtime: { model: 'session-model', provider: 'session-provider' }, main_fallback: true,
       })
-      expect(s.deps.sessionStore.get(sid).title).toBe('Session model title routing')
+      expect((await s.deps.sessionStore.get(sid)).title).toBe('Session model title routing')
     } finally {
       turns.deps.titleRefreshEvery = original
     }
@@ -1212,7 +1214,7 @@ describe('chat turns through the sidecar', () => {
     expect(err.type).toBe('compression_exhausted')
     expect(err.compression_recovery).toMatchObject({ terminal_state: 'compression_exhausted', recommended_action: 'start_focused_continuation', source_session_id: sid, action_label: 'Start focused continuation' })
     expect(err.recommended_recovery_action).toBe('start_focused_continuation')
-    const persisted = s.deps.sessionStore.get(sid)
+    const persisted = (await s.deps.sessionStore.get(sid))
     expect(persisted.compression_recovery).toMatchObject({ terminal_state: 'compression_exhausted' })
     expect(persisted.messages.at(-1)?._compressionRecovery).toMatchObject({ terminal_state: 'compression_exhausted' })
     for (const prompt of ['continue', 'Carry on!', '继续', 'continue please']) {
@@ -1299,8 +1301,8 @@ describe('chat turns through the sidecar', () => {
       // The transcript, its title and the Agent's stored row keep what the user typed.
       expect(persisted).toEqual(['/initiate_setup'])
       expect(titles).toEqual(['/initiate_setup'])
-      expect(s.deps.sessionStore.get(sid).messages.filter((m) => m.role === 'user').map((m) => m.content)).toEqual(['/initiate_setup'])
-      expect(asked[0]).toMatchObject({ command: '/initiate_setup', workspace: s.deps.sessionStore.get(sid).workspace, enabled_toolsets: null })
+      expect((await s.deps.sessionStore.get(sid)).messages.filter((m) => m.role === 'user').map((m) => m.content)).toEqual(['/initiate_setup'])
+      expect(asked[0]).toMatchObject({ command: '/initiate_setup', workspace: (await s.deps.sessionStore.get(sid)).workspace, enabled_toolsets: null })
       // Other slash text is still the user's own message.
       await turn('/etc/hosts looks wrong')
       expect(prompts[1]).toBe('/etc/hosts looks wrong')
@@ -1364,18 +1366,18 @@ describe('chat turns through the sidecar', () => {
     expect(frames.find((f) => f.event === 'steer_withdrawn')?.data).toEqual({ steer_id: 'steer-2', reason: 'followup', text: 'second' })
     await vi.waitFor(() => { expect(prompts).toHaveLength(2) })
     expect(prompts[1]).toBe('second')
-    await vi.waitFor(() => { expect(s.deps.sessionStore.get(sid).active_stream_id).toBeNull() })
+    await vi.waitFor(async () => { expect((await s.deps.sessionStore.get(sid)).active_stream_id).toBeNull() })
     expect(prompts).toHaveLength(2)
   })
 
   it.each([true, false])('admits a leftover steer after workspace deletion (TAL-729, fallback available: %s)', async (recoverable) => {
     const sid = await newSession(s)
-    const session = s.deps.sessionStore.get(sid)
+    const session = (await s.deps.sessionStore.get(sid))
     const fallback = session.workspace
     const worktree = join(fallback, 'steer-worktree')
     mkdirSync(worktree, { recursive: true })
     session.workspace = worktree
-    s.deps.sessionStore.save(session)
+    await s.deps.sessionStore.save(session)
     const starts: Json[] = []
     let release = (): void => undefined
     sidecar.respond('chat.steer', () => ({ accepted: true, fallback: null }))
@@ -1401,11 +1403,11 @@ describe('chat turns through the sidecar', () => {
         await vi.waitFor(() => { expect(starts).toHaveLength(2) })
         await s.deps.turns.finished(str(starts[1]?.stream_id))
         expect(starts[1]).toMatchObject({ user_message: 'follow up', workspace: fallback })
-        expect(s.deps.sessionStore.get(sid).workspace).toBe(fallback)
+        expect((await s.deps.sessionStore.get(sid)).workspace).toBe(fallback)
       } else {
         expect(starts).toHaveLength(1)
         expect(s.logs.some((line) => line.includes(`steer follow-up for ${sid} not started (400)`))).toBe(true)
-        expect(s.deps.sessionStore.get(sid).active_stream_id).toBeNull()
+        expect((await s.deps.sessionStore.get(sid)).active_stream_id).toBeNull()
       }
       expect(s.logs.some((line) => line.includes(`ERROR turn ${stream} crashed`))).toBe(false)
     } finally {
@@ -1430,7 +1432,7 @@ describe('chat turns through the sidecar', () => {
       })
     })
     await s.deps.completions.processOne({ process_id: 'proc_bg', session_id: 'proc_bg', type: 'completion', command: 'backup', exit_code: 0, output: 'ok', origin_ui_session_id: sid, consumed: false })
-    const background = str(s.deps.sessionStore.get(sid).active_stream_id)
+    const background = str((await s.deps.sessionStore.get(sid)).active_stream_id)
     expect(background).not.toBe('')
     await s.sse(`/api/chat/stream?stream_id=${background}`, (f) => f.event === 'token')
     const res = await json(await post(s, '/api/chat/steer', { session_id: sid, text: 'what about my question?', steer_id: 'steer-bg' }))
@@ -1467,8 +1469,8 @@ describe('chat turns through the sidecar', () => {
     release()
     await s.sse(`/api/chat/stream?stream_id=${String(start.stream_id)}&replay=1`, (f) => f.event === 'stream_end')
     await s.deps.completions.processOne({ process_id: 'proc_bg2', session_id: 'proc_bg2', type: 'completion', command: 'backup', exit_code: 0, output: 'ok', origin_ui_session_id: sid, consumed: false })
-    for (let i = 0; i < 60 && !s.deps.sessionStore.get(sid).active_stream_id; i += 1) await new Promise((r) => setTimeout(r, 20))
-    const background = str(s.deps.sessionStore.get(sid).active_stream_id)
+    for (let i = 0; i < 60 && !(await s.deps.sessionStore.get(sid)).active_stream_id; i += 1) await new Promise((r) => setTimeout(r, 20))
+    const background = str((await s.deps.sessionStore.get(sid)).active_stream_id)
     await s.sse(`/api/chat/stream?stream_id=${background}`, (f) => f.event === 'token')
     expect(((await json(await s.get(`/api/session?session_id=${sid}`))).session as Json).active_turn_origin).toBe('background')
     expect(await json(await s.get(`/api/session/status?session_id=${sid}`))).toMatchObject({ active_turn_origin: 'background' })
@@ -1530,7 +1532,7 @@ describe('chat turns through the sidecar', () => {
       expect(((scene.activity_rows as Json[])[2]?.steering as Json)).toMatchObject({ steer_id: 'steer-a', consumed: true, phase_duration: expect.any(Number) as unknown })
       expect(scene).toMatchObject({ final_answer: 'All read.', final_phase_duration: expect.any(Number) as unknown })
     }
-    const stored = s.deps.sessionStore.get(sid)
+    const stored = (await s.deps.sessionStore.get(sid))
     expect(sanitizeMessagesForApi(stored.messages).some((m) => m.content === 'Check b too' || m.content === 'then stop')).toBe(false)
     expect(stored.title).not.toContain('Check b too')
   })
@@ -1668,7 +1670,7 @@ describe('chat turns through the sidecar', () => {
     expect(frames.some((f) => f.event === 'steer_consumed')).toBe(false)
     await vi.waitFor(() => { expect(prompts).toHaveLength(2) })
     expect(prompts[1]).toBe('not applied')
-    await vi.waitFor(() => { expect(s.deps.sessionStore.get(sid).active_stream_id).toBeNull() })
+    await vi.waitFor(async () => { expect((await s.deps.sessionStore.get(sid)).active_stream_id).toBeNull() })
     const messages = ((await json(await s.get(`/api/session?session_id=${sid}`))).session as Json).messages as Json[]
     expect(messages.some((m) => m._steer)).toBe(false)
     expect(messages.filter((m) => m.role === 'user').map((m) => m.content)).toEqual(['job', 'not applied'])
@@ -1912,14 +1914,14 @@ describe('chat turns through the sidecar', () => {
     expect(await backgroundTask(s, sid, bg.task_id)).toMatchObject({ record: { kind: 'background_command', status: 'completed', title: 'summarize repo' }, result: 'answer to summarize repo' })
     expect(String(bg.task_id)).toMatch(/^[0-9a-f]{8}$/)
     // The hidden bg session file is removed once the task completes; a failed run still completes the task.
-    expect(existsSync(s.deps.sessionStore.pathFor(String(bg.session_id)))).toBe(false)
+    expect(existsSync(sessionPath(s.deps.sessionStore, String(bg.session_id)))).toBe(false)
     sidecar.respond('chat.start', () => { throw new SidecarError('provider exploded', { condition: 'sidecar_error' }) })
     const failed = await json(await post(s, '/api/background', { session_id: sid, prompt: 'doomed' }))
     await s.sse(`/api/chat/stream?stream_id=${String(failed.stream_id)}&replay=1`, (f) => f.event === 'stream_end' || f.event === 'apperror')
     await new Promise((r) => setTimeout(r, 50))
     expect(await backgroundTask(s, sid, failed.task_id)).toMatchObject({ record: { status: 'failed', title: 'doomed' }, result: '(background task failed)' })
     // The failure cleanup runs after the error writeback, so the hidden session does not get re-saved into the sidebar.
-    expect(existsSync(s.deps.sessionStore.pathFor(String(failed.session_id)))).toBe(false)
+    expect(existsSync(sessionPath(s.deps.sessionStore, String(failed.session_id)))).toBe(false)
     expect((await json(await s.get('/api/sessions'))).sessions as Json[]).not.toContainEqual(expect.objectContaining({ session_id: failed.session_id }))
     // An Agent-reported error (no throw) completes and cleans up the same way.
     sidecar.respond('chat.start', (params) => completed([{ role: 'user', content: str(params.user_message) }], { status: 'error', error: 'model refused', final_response: '', token_sent: false }))
@@ -1927,7 +1929,7 @@ describe('chat turns through the sidecar', () => {
     await s.sse(`/api/chat/stream?stream_id=${String(inBand.stream_id)}&replay=1`, (f) => f.event === 'apperror')
     await new Promise((r) => setTimeout(r, 50))
     expect(await backgroundTask(s, sid, inBand.task_id)).toMatchObject({ record: { status: 'failed', title: 'doomed too' }, result: '(background task failed)' })
-    expect(existsSync(s.deps.sessionStore.pathFor(String(inBand.session_id)))).toBe(false)
+    expect(existsSync(sessionPath(s.deps.sessionStore, String(inBand.session_id)))).toBe(false)
     sidecar.respond('chat.start', (params) => completed([{ role: 'user', content: str(params.user_message) }, { role: 'assistant', content: `answer to ${str(params.user_message).split('\n').pop() ?? ''}` }]))
 
     res = await post(s, '/api/btw', { session_id: sid, question: 'what time is it' })
@@ -2005,7 +2007,7 @@ describe('chat turns through the sidecar', () => {
     expect((offline.tasks as Json[]).find((t) => t.task_id === 'd-b')).toMatchObject({ active: true, dismissible: true })
     expect((await s.get('/api/background/tasks?session_id=nope')).status).toBe(404)
     // Deleting the session removes its background records with it.
-    const records = join(s.deps.sessionStore.sessionDir, '_background', `${sid}.json`)
+    const records = join(sessionDirectory(s.deps.sessionStore), '_background', `${sid}.json`)
     expect(existsSync(records)).toBe(true)
     expect((await post(s, '/api/session/delete', { session_id: sid })).status).toBe(200)
     expect(existsSync(records)).toBe(false)
@@ -2014,14 +2016,14 @@ describe('chat turns through the sidecar', () => {
 
   it('shows the work a delegation row started on that row, updated in place (TAL-372)', async () => {
     const sid = await newSession(s)
-    const session = s.deps.sessionStore.get(sid)
+    const session = (await s.deps.sessionStore.get(sid))
     session.messages = [
       { role: 'user', content: 'split it up', timestamp: 100 },
       { role: 'assistant', content: '', timestamp: 101, tool_calls: [{ id: 'call_x', type: 'function', function: { name: 'delegate_task', arguments: '{"tasks":[]}' } }] },
       { role: 'tool', tool_call_id: 'call_x', timestamp: 102, content: JSON.stringify({ status: 'dispatched', mode: 'background', count: 3, delegation_id: 'call-1', goals: ['Write docs', 'Write tests', 'Run tests'] }) },
       { role: 'assistant', content: 'Started three subagents.', timestamp: 103 },
     ]
-    s.deps.sessionStore.save(session)
+    await s.deps.sessionStore.save(session)
     const unit = (id: string, goals: string[], extra: Json = {}): Json => ({ delegation_id: id, origin_ui_session_id: sid, state: 'running', dispatched_at: 101, completed_at: null, updated_at: 101, goals, child_statuses: [], has_result: false, live_status: 'running', ...extra })
     let delegations = [unit('call-1-1', ['Write docs']), unit('call-1-2', ['Write tests', 'Run tests'])]
     sidecar.respond('process.background_list', () => ({ delegations, processes: [] }) as never)
@@ -2501,9 +2503,9 @@ describe('chat turns through the sidecar', () => {
     expect(await json(await post(s, '/api/session/delete', { session_id: sid2 }))).toEqual({ ok: true, state_db_cleanup_failed: true })
     // A messaging channel's memory is never erased from the WebUI: no sidecar call, nothing reported as failed.
     const sid3 = await newSession(s)
-    const tg = s.deps.sessionStore.get(sid3)
+    const tg = (await s.deps.sessionStore.get(sid3))
     tg.source_tag = 'telegram'
-    s.deps.sessionStore.save(tg)
+    await s.deps.sessionStore.save(tg)
     sidecar.respond('state_db.delete_cli_session', (params) => { deletes.push(params.session_id); return { ok: true } })
     expect(await json(await post(s, '/api/session/delete', { session_id: sid3 }))).toEqual({ ok: true, state_db_cleanup_failed: false })
     expect(deletes).toEqual([sid])
@@ -2513,9 +2515,9 @@ describe('chat turns through the sidecar', () => {
     const error = refused === 'active_turn' ? 'In use by another Agent process. Try again later.' : 'This Agent cannot retire the session\'s retained runtime history. Use an Agent that supports retiring this history, or explicitly restore a pre-upgrade backup before deleting it.'
     const persisted = async (): Promise<string> => {
       const sid = await newSession(s)
-      const stored = s.deps.sessionStore.get(sid)
+      const stored = (await s.deps.sessionStore.get(sid))
       stored.messages = [{ role: 'user', content: 'guarded' }]
-      s.deps.sessionStore.save(stored)
+      await s.deps.sessionStore.save(stored)
       return sid
     }
     const [guarded, free] = [await persisted(), await persisted()]
@@ -2556,10 +2558,10 @@ describe('chat turns through the sidecar', () => {
 
   it('a delegated subagent child is view-only: no goal, side question, or turn can run on it', async () => {
     const sid = await newSession(s)
-    const child = s.deps.sessionStore.get(sid)
+    const child = (await s.deps.sessionStore.get(sid))
     child.source_tag = 'subagent'
     child.messages = [{ role: 'user', content: 'delegated work' }, { role: 'assistant', content: 'done by the child' }]
-    s.deps.sessionStore.save(child)
+    await s.deps.sessionStore.save(child)
     let starts = 0
     sidecar.respond('chat.start', (params) => { starts += 1; return completed([{ role: 'user', content: str(params.user_message) }, { role: 'assistant', content: 'nope' }]) })
     let res = await post(s, '/api/goal', { session_id: sid, args: 'set finish the migration' })
@@ -2575,7 +2577,7 @@ describe('chat turns through the sidecar', () => {
     res = await post(s, '/api/background', { session_id: sid, prompt: 'summarize' })
     expect(res.status).toBe(400)
     expect((await json(res)).error).toBe('Subagent sessions are view-only and cannot run background tasks from WebUI')
-    expect(s.deps.sessionStore.get(sid).messages).toHaveLength(2)
+    expect((await s.deps.sessionStore.get(sid)).messages).toHaveLength(2)
     let auxCalls = 0
     sidecar.respond('aux.complete', () => { auxCalls += 1; return { model: 'aux', text: 'Nope', usage: null } })
     res = await post(s, '/api/session/title/regenerate', { session_id: sid })
@@ -2598,7 +2600,7 @@ describe('chat turns through the sidecar', () => {
       turns.deps.profileDeleting = original
     }
     expect((await json(await s.get(`/api/background/tasks?session_id=${sid}&kind=background_command`))).tasks).toEqual([])
-    const leftover = [...s.deps.sessionStore.persistedIds()].filter((id) => { try { return str(s.deps.sessionStore.get(id, { metadataOnly: true }).title).startsWith('bg: doomed') } catch { return false } })
+    const leftover = (await filterAsync([...(await s.deps.sessionStore.persistedIds())], async (id) => { try { return str((await s.deps.sessionStore.get(id, { metadataOnly: true })).title).startsWith('bg: doomed') } catch { return false } }))
     expect(leftover).toEqual([])
   })
 
@@ -2614,15 +2616,15 @@ describe('chat turns through the sidecar', () => {
     expect(await json(await s.get(`/api/chat/cancel?stream_id=${String(bg.stream_id)}`))).toMatchObject({ cancelled: true })
     await s.deps.turns.finished(String(bg.stream_id))
     expect(await backgroundTask(s, sid, bg.task_id)).toMatchObject({ record: { status: 'failed', title: 'stop me' }, result: '(background task failed)' })
-    expect(existsSync(s.deps.sessionStore.pathFor(String(bg.session_id)))).toBe(false)
+    expect(existsSync(sessionPath(s.deps.sessionStore, String(bg.session_id)))).toBe(false)
   })
 
   it('the next model history includes the Agent state.db turns appended after the WebUI transcript', async () => {
     const sid = await newSession(s)
-    const session = s.deps.sessionStore.get(sid)
+    const session = (await s.deps.sessionStore.get(sid))
     session.messages = [{ role: 'user', content: 'from web', timestamp: 5000 }, { role: 'assistant', content: 'web reply', timestamp: 5001 }]
     session.context_messages = [{ role: 'user', content: 'from web', timestamp: 5000 }, { role: 'assistant', content: 'web reply', timestamp: 5001 }]
-    s.deps.sessionStore.save(session)
+    await s.deps.sessionStore.save(session)
     // A CLI continuation of the same session landed in the profile's state.db.
     const { DatabaseSync } = await import('node:sqlite')
     const db = new DatabaseSync(join(s.state, 'state.db'))
@@ -2659,10 +2661,10 @@ describe('chat turns through the sidecar', () => {
 
   it('sends each history row its stored timestamp so an Agent prune re-inserts it under the same identity (TAL-681)', async () => {
     const sid = await newSession(s)
-    const session = s.deps.sessionStore.get(sid)
+    const session = (await s.deps.sessionStore.get(sid))
     session.messages = [{ role: 'user', content: 'checking in', timestamp: 6000.25 }, { role: 'assistant', content: 'all good', timestamp: 6001.5 }]
     session.context_messages = structuredClone(session.messages)
-    s.deps.sessionStore.save(session)
+    await s.deps.sessionStore.save(session)
     let history: Json[] = []
     sidecar.respond('chat.start', (params) => { history = params.conversation_history; return completed([...history, { role: 'user', content: str(params.user_message) }, { role: 'assistant', content: 'ok' }]) })
     const start = await json(await post(s, '/api/chat/start', { session_id: sid, message: 'and the cron?' }))
@@ -2672,17 +2674,17 @@ describe('chat turns through the sidecar', () => {
 
   it('a persisted read-only session (an inherited messaging/Claude Code import) is never continued', async () => {
     const sid = await newSession(s)
-    const imported = s.deps.sessionStore.get(sid)
+    const imported = (await s.deps.sessionStore.get(sid))
     imported.read_only = true
     imported.messages = [{ role: 'user', content: 'imported' }, { role: 'assistant', content: 'from elsewhere' }]
-    s.deps.sessionStore.save(imported)
+    await s.deps.sessionStore.save(imported)
     let starts = 0
     sidecar.respond('chat.start', (params) => { starts += 1; return completed([{ role: 'user', content: str(params.user_message) }, { role: 'assistant', content: 'nope' }]) })
     const res = await post(s, '/api/chat/start', { session_id: sid, message: 'continue' })
     expect(res.status).toBe(403)
     expect((await json(res)).error).toBe('Read-only imported sessions cannot be continued from WebUI')
     expect(starts).toBe(0)
-    expect(s.deps.sessionStore.get(sid).messages).toHaveLength(2)
+    expect((await s.deps.sessionStore.get(sid)).messages).toHaveLength(2)
     // ...nor run through the auxiliary entry points.
     for (const [path, body] of [['/api/goal', { session_id: sid, args: 'set finish it' }], ['/api/background', { session_id: sid, prompt: 'summarize' }], ['/api/btw', { session_id: sid, question: 'what?' }]] as [string, Json][]) {
       const refused = await post(s, path, body)
@@ -2694,15 +2696,15 @@ describe('chat turns through the sidecar', () => {
     const deleted = await post(s, '/api/session/delete', { session_id: sid })
     expect(deleted.status).toBe(400)
     expect((await json(deleted)).error).toBe('Read-only imported sessions cannot be deleted from WebUI')
-    expect(s.deps.sessionStore.get(sid).messages).toHaveLength(2)
+    expect((await s.deps.sessionStore.get(sid)).messages).toHaveLength(2)
   })
 
   it('a failed follow-up that replays history is an error turn, not a silent success', async () => {
     const sid = await newSession(s)
-    const seeded = s.deps.sessionStore.get(sid)
+    const seeded = (await s.deps.sessionStore.get(sid))
     seeded.messages = [{ role: 'user', content: 'first question', timestamp: 100 }, { role: 'assistant', content: 'first answer', timestamp: 101 }]
     seeded.context_messages = [{ role: 'user', content: 'first question', timestamp: 100 }, { role: 'assistant', content: 'first answer', timestamp: 101 }]
-    s.deps.sessionStore.save(seeded)
+    await s.deps.sessionStore.save(seeded)
     // The Agent's failed result still carries messages: history plus the unanswered prompt.
     sidecar.respond('chat.start', (params) => ({
       ...completed([{ role: 'user', content: 'first question', timestamp: 100 }, { role: 'assistant', content: 'first answer', timestamp: 101 }, { role: 'user', content: str(params.user_message), timestamp: 200 }]),
@@ -2713,7 +2715,7 @@ describe('chat turns through the sidecar', () => {
     const apperror = frames.find((f) => f.event === 'apperror')?.data as Json | undefined
     expect(apperror, JSON.stringify(frames.map((f) => f.event))).toBeDefined()
     expect(str(apperror?.message)).toContain('401 invalid api key')
-    const messages = s.deps.sessionStore.get(sid).messages
+    const messages = (await s.deps.sessionStore.get(sid)).messages
     expect(messages.some((m) => m._error)).toBe(true)
   })
 
@@ -2731,7 +2733,7 @@ describe('chat turns through the sidecar', () => {
     const side = await json(res)
     const frames = await s.sse(`/api/chat/stream?stream_id=${String(side.stream_id)}&replay=1`, (f) => f.event === 'done' || f.event === 'apperror')
     expect(frames.find((f) => f.event === 'done')?.data).toMatchObject({ ephemeral: true, answer: 'side answer' })
-    expect(s.deps.sessionStore.get(sid).active_stream_id).toBe(run)
+    expect((await s.deps.sessionStore.get(sid)).active_stream_id).toBe(run)
     // The side question sees the running turn's prompt, which deferred save keeps out of the stored history until settlement.
     const asked = sidecar.calls.find((c) => c.method === 'chat.start' && str((c.params as Json).user_message).endsWith('side question'))
     expect(((asked?.params as Json).conversation_history as Json[]).map((m) => [m.role, m.content])).toEqual([['user', 'long task']])
@@ -2741,16 +2743,16 @@ describe('chat turns through the sidecar', () => {
     release()
     await s.sse(`/api/chat/stream?stream_id=${run}&replay=1`, (f) => f.event === 'done')
     await new Promise((r) => setTimeout(r, 50))
-    expect(s.deps.sessionStore.get(sid).messages.map((m) => [m.role, m.content])).toEqual([['user', 'long task'], ['assistant', 'Done.']])
+    expect((await s.deps.sessionStore.get(sid)).messages.map((m) => [m.role, m.content])).toEqual([['user', 'long task'], ['assistant', 'Done.']])
   })
 
   it('a failed /btw is an error, never the parent\'s previous answer, and leaves no clone behind (TAL-512)', async () => {
     const sid = await newSession(s)
-    const seeded = s.deps.sessionStore.get(sid)
+    const seeded = (await s.deps.sessionStore.get(sid))
     seeded.messages = [{ role: 'user', content: 'first question', timestamp: 100 }, { role: 'assistant', content: 'first answer', timestamp: 101 }]
     seeded.context_messages = [{ role: 'user', content: 'first question', timestamp: 100 }, { role: 'assistant', content: 'first answer', timestamp: 101 }]
-    s.deps.sessionStore.save(seeded)
-    const leftovers = (): string[] => [...s.deps.sessionStore.persistedIds()].filter((id) => { try { return str(s.deps.sessionStore.get(id, { metadataOnly: true }).title).startsWith('btw: ') } catch { return false } })
+    await s.deps.sessionStore.save(seeded)
+    const leftovers = async (): Promise<string[]> => (await filterAsync([...(await s.deps.sessionStore.persistedIds())], async (id) => { try { return str((await s.deps.sessionStore.get(id, { metadataOnly: true })).title).startsWith('btw: ') } catch { return false } }))
     // A provider error: the Agent's failed result replays history plus the unanswered question, and the sidecar says `completed`.
     sidecar.respond('chat.start', (params) => ({
       ...completed([{ role: 'user', content: 'first question', timestamp: 100 }, { role: 'assistant', content: 'first answer', timestamp: 101 }, { role: 'user', content: str(params.user_message), timestamp: 200 }]),
@@ -2761,7 +2763,7 @@ describe('chat turns through the sidecar', () => {
     expect(frames.find((f) => f.event === 'done')?.data).toBeUndefined()
     expect(str((frames.find((f) => f.event === 'apperror')?.data as Json | undefined)?.message)).toContain('401 invalid api key')
     await new Promise((r) => setTimeout(r, 50))
-    expect(leftovers()).toEqual([])
+    expect((await leftovers())).toEqual([])
     // The run journal keeps the error for a late subscriber, but no copy of the parent conversation.
     const journaled = JSON.stringify(s.deps.journal.readRunEvents(String(failed.session_id), String(failed.stream_id)))
     expect(journaled).toContain('apperror')
@@ -2776,13 +2778,13 @@ describe('chat turns through the sidecar', () => {
     expect(streamedFrames.find((f) => f.event === 'done')?.data).toBeUndefined()
     expect(streamedFrames.some((f) => f.event === 'apperror')).toBe(true)
     await new Promise((r) => setTimeout(r, 50))
-    expect(leftovers()).toEqual([])
+    expect((await leftovers())).toEqual([])
     // A sidecar that throws mid-turn.
     sidecar.respond('chat.start', () => { throw new SidecarError('provider exploded', { condition: 'sidecar_error' }) })
     const thrown = await json(await post(s, '/api/btw', { session_id: sid, question: 'side question' }))
     await s.sse(`/api/chat/stream?stream_id=${String(thrown.stream_id)}&replay=1`, (f) => f.event === 'apperror')
     await new Promise((r) => setTimeout(r, 50))
-    expect(leftovers()).toEqual([])
+    expect((await leftovers())).toEqual([])
     // Admission refused.
     const turns = s.deps.turns as unknown as { deps: { profileDeleting: ((profile: string | null) => boolean) | undefined } }
     const original = turns.deps.profileDeleting
@@ -2792,9 +2794,9 @@ describe('chat turns through the sidecar', () => {
     } finally {
       turns.deps.profileDeleting = original
     }
-    expect(leftovers()).toEqual([])
+    expect((await leftovers())).toEqual([])
     // The parent is untouched.
-    expect(s.deps.sessionStore.get(sid).messages).toHaveLength(2)
+    expect((await s.deps.sessionStore.get(sid)).messages).toHaveLength(2)
   })
 
   it('keeps the closing explanation when the Agent exhausts its tool budget', async () => {
@@ -2812,7 +2814,7 @@ describe('chat turns through the sidecar', () => {
     const frames = await s.sse(`/api/chat/stream?stream_id=${String(start.stream_id)}&replay=1`, (f) => f.event === 'stream_end')
     const done = frames.find((f) => f.event === 'done')?.data as Json | undefined
     expect(done?.terminal_state).toBe('tool_limit_reached')
-    const persisted = s.deps.sessionStore.get(sid).messages
+    const persisted = (await s.deps.sessionStore.get(sid)).messages
     expect(str(persisted[persisted.length - 1]?.content)).toBe('I reached the iteration limit and could not finish.')
     const shown = ((await json(await s.get(`/api/session?session_id=${sid}`))).session as Json).messages as Json[]
     expect(str(shown[shown.length - 1]?.content)).toBe('I reached the iteration limit and could not finish.')
@@ -2835,7 +2837,7 @@ describe('chat turns through the sidecar', () => {
     const done = frames.find((f) => f.event === 'done')?.data as Json
     expect(done.terminal_reason).toBe('max_iterations')
     expect(done.terminal_state).toBe('tool_limit_reached')
-    const stored = s.deps.sessionStore.get(sid)
+    const stored = (await s.deps.sessionStore.get(sid))
     const detail = ((await json(await s.get(`/api/session?session_id=${sid}`))).session as Json).messages as Json[]
     for (const messages of [(done.session as Json).messages as Json[], detail, stored.messages, stored.context_messages]) {
       expect(messages.filter((m) => m.role === 'user').map((m) => str(m.content).endsWith('loop forever'))).toEqual([true])
@@ -2862,7 +2864,7 @@ describe('chat turns through the sidecar', () => {
     // The next turn runs out its budget: only the Agent's own trailing request row goes.
     sidecar.respond('chat.start', (params) => completed([...params.conversation_history, { role: 'user', content: str(params.user_message) }, { role: 'user', content: request }, { role: 'assistant', content: 'Summary.' }], { tool_limit_reached: true, max_iterations_summary_request: request }))
     await send('dig deeper')
-    const stored = s.deps.sessionStore.get(sid)
+    const stored = (await s.deps.sessionStore.get(sid))
     for (const messages of [stored.messages, stored.context_messages]) {
       expect(messages.filter((m) => m.role === 'user').map((m) => str(m.content).split('\n').pop())).toEqual([request, 'dig deeper'])
     }
@@ -2889,7 +2891,7 @@ describe('chat turns through the sidecar', () => {
     const start = await json(await post(s, '/api/chat/start', { session_id: sid, message: 'read the log' }))
     const frames = await s.sse(`/api/chat/stream?stream_id=${String(start.stream_id)}`, (f) => f.event === 'stream_end')
     expect(eventNames(frames)).toContain('compressed')
-    const stored = s.deps.sessionStore.get(sid)
+    const stored = (await s.deps.sessionStore.get(sid))
     // The model context holds the pruned tool output, with the same tool-limit settlement as the transcript.
     expect(stored.context_messages.find((m) => m.role === 'tool')?.content).toBe(pruned)
     expect(stored.context_messages.map((m) => m.content)).not.toContain(request)
@@ -2922,7 +2924,7 @@ describe('chat turns through the sidecar', () => {
     sidecar.respond('models.estimate_tokens', (params) => ({ tokens: JSON.stringify(params.messages).length }))
     const start = await json(await post(s, '/api/chat/start', { session_id: sid, message: 'look' }))
     await s.sse(`/api/chat/stream?stream_id=${String(start.stream_id)}`, (f) => f.event === 'stream_end')
-    const stored = s.deps.sessionStore.get(sid)
+    const stored = (await s.deps.sessionStore.get(sid))
     const stripped = JSON.stringify({ type: 'image_url', image_url: { url: screenshot } }).length - JSON.stringify({ type: 'text', text: '[screenshot]' }).length
     expect(stored.post_compression_context_tokens_estimate).toBe(5000 - stripped)
   })
@@ -2948,7 +2950,7 @@ describe('chat turns through the sidecar', () => {
       })
       const start = await json(await post(s, '/api/chat/start', { session_id: sid, message: 'continue' }))
       const frames = await s.sse(`/api/chat/stream?stream_id=${String(start.stream_id)}`, (f) => f.event === 'stream_end')
-      const stored = s.deps.sessionStore.get(sid)
+      const stored = (await s.deps.sessionStore.get(sid))
       // The anchor is the last visible row before this turn: the earlier answer.
       expect(stored.compression_anchor_visible_idx).toBe(1)
       expect(stored.compression_anchor_message_key).toMatchObject({ role: 'assistant', text: 'Here is the plan.' })
@@ -2992,10 +2994,10 @@ describe('stale cross-provider session models at chat start (TAL-542)', () => {
   }
   const sessionWith = async (model: string, provider: string | null): Promise<string> => {
     const sid = await newSession(s)
-    const session = s.deps.sessionStore.get(sid)
+    const session = (await s.deps.sessionStore.get(sid))
     session.model = model
     session.model_provider = provider
-    s.deps.sessionStore.save(session)
+    await s.deps.sessionStore.save(session)
     return sid
   }
   const start = async (body: Json): Promise<Json> => {
@@ -3028,10 +3030,10 @@ describe('stale cross-provider session models at chat start (TAL-542)', () => {
   it.each(['explicit regenerate', 'claimed session'])('repairs the title runtime on a cold catalog for %s (TAL-1013)', async (route) => {
     useConfig('kilocode', 'kilo/auto', { ollama: ['llama3.2'], kilocode: ['kilo/auto', 'kilo/minimax/minimax-m3'] })
     const sid = await sessionWith('kilo/minimax/minimax-m3', 'ollama')
-    const session = s.deps.sessionStore.get(sid)
+    const session = (await s.deps.sessionStore.get(sid))
     session.title = 'CLI Session'
     session.messages = [{ role: 'user', content: 'repair session title routing' }, { role: 'assistant', content: 'Use the session model.' }]
-    s.deps.sessionStore.save(session)
+    await s.deps.sessionStore.save(session)
     s.deps.catalog.invalidate()
     sidecar.respond('aux.complete', () => ({ model: 'kilo/minimax/minimax-m3', text: 'Repaired session title routing', usage: null }))
     const before = sidecar.calls.length
@@ -3041,7 +3043,7 @@ describe('stale cross-provider session models at chat start (TAL-542)', () => {
       expect((await json(res)).title).toBe('Repaired session title routing')
     } else {
       await s.deps.turns.titleClaimed(session)
-      expect(s.deps.sessionStore.get(sid).title).toBe('Repaired session title routing')
+      expect((await s.deps.sessionStore.get(sid)).title).toBe('Repaired session title routing')
     }
     const calls = sidecar.calls.slice(before)
     expect(calls.filter((c) => c.method === 'chat.start')).toHaveLength(0)
@@ -3056,7 +3058,7 @@ describe('stale cross-provider session models at chat start (TAL-542)', () => {
     const started = await start({ session_id: sid })
     expect(started).toMatchObject({ effective_model: 'kilo/minimax/minimax-m3', effective_model_provider: 'kilocode' })
     expect(seen).toMatchObject({ model: 'kilo/minimax/minimax-m3', model_provider: 'kilocode' })
-    expect(s.deps.sessionStore.get(sid)).toMatchObject({ model: 'kilo/minimax/minimax-m3', model_provider: 'kilocode' })
+    expect((await s.deps.sessionStore.get(sid))).toMatchObject({ model: 'kilo/minimax/minimax-m3', model_provider: 'kilocode' })
   })
 
   it('switches a providerless model from another vendor to the profile default, and persists it (#1734)', async () => {
@@ -3067,7 +3069,7 @@ describe('stale cross-provider session models at chat start (TAL-542)', () => {
       const started = await start({ session_id: sid })
       expect(started).toMatchObject({ effective_model: effective, effective_model_provider: 'openai-codex' })
       expect(seen).toMatchObject({ model: effective, model_provider: 'openai-codex' })
-      expect(s.deps.sessionStore.get(sid)).toMatchObject({ model: effective, model_provider: 'openai-codex' })
+      expect((await s.deps.sessionStore.get(sid))).toMatchObject({ model: effective, model_provider: 'openai-codex' })
     }
   })
 
@@ -3094,7 +3096,7 @@ describe('stale cross-provider session models at chat start (TAL-542)', () => {
     const started = await json(res)
     expect(started).toMatchObject({ effective_model: 'gpt-5.5', effective_model_provider: 'openai-codex' })
     await s.sse(`/api/chat/stream?stream_id=${String(started.stream_id)}&replay=1`, (f) => f.event === 'done' || f.event === 'apperror')
-    expect(s.deps.sessionStore.get(sid)).toMatchObject({ model: 'gpt-5.5', model_provider: 'openai-codex' })
+    expect((await s.deps.sessionStore.get(sid))).toMatchObject({ model: 'gpt-5.5', model_provider: 'openai-codex' })
   })
 
   it('repairs against config.yaml as it is now, after an edit outside Web', async () => {
@@ -3248,7 +3250,7 @@ describe('stale cross-provider session models at chat start (TAL-542)', () => {
     await vi.waitFor(() => { expect(seen.session_id).toBe(sid) })
     expect(seen).toMatchObject({ model: 'gpt-5.5', model_provider: 'openai-codex' })
     await vi.waitFor(() => { expect(s.deps.registry.activeRunStreamForSession(sid)).toBeFalsy() })
-    expect(s.deps.sessionStore.get(sid)).toMatchObject({ model: 'gpt-5.5', model_provider: 'openai-codex' })
+    expect((await s.deps.sessionStore.get(sid))).toMatchObject({ model: 'gpt-5.5', model_provider: 'openai-codex' })
   })
 
   it('keeps a pair the catalog lists, an unknown vendor, and a `@provider:` pick', async () => {
@@ -3346,10 +3348,10 @@ describe('stale session models after an Agent sign-in change (TAL-542)', () => {
       writeFileSync(join(s.state, 'config.yaml'), '# seed\n')
       const startWith = async (model: string, provider: string | null): Promise<Json> => {
         const sid = await newSession(s)
-        const session = s.deps.sessionStore.get(sid)
+        const session = (await s.deps.sessionStore.get(sid))
         session.model = model
         session.model_provider = provider
-        s.deps.sessionStore.save(session)
+        await s.deps.sessionStore.save(session)
         const started = await json(await post(s, '/api/chat/start', { session_id: sid, message: 'continue' }))
         await s.sse(`/api/chat/stream?stream_id=${String(started.stream_id)}&replay=1`, (f) => f.event === 'done' || f.event === 'apperror')
         return started
@@ -3389,9 +3391,9 @@ describe('turn context from config.yaml (Python streaming worker)', () => {
     const s = await bootTestServer({ sidecar })
     try {
       const sid = await newSession(s)
-      const session = s.deps.sessionStore.get(sid)
+      const session = (await s.deps.sessionStore.get(sid))
       session.personality = 'reviewer'
-      s.deps.sessionStore.save(session)
+      await s.deps.sessionStore.save(session)
       sidecar.respond('personalities.list', () => { throw new SidecarError('Agent busy', { condition: 'sidecar_error' }) })
       let started = false
       sidecar.respond('chat.start', () => { started = true; return completed([{ role: 'user', content: 'hi' }, { role: 'assistant', content: 'ok' }]) })
@@ -3413,10 +3415,10 @@ describe('turn context from config.yaml (Python streaming worker)', () => {
       writeFileSync(join(s.state, 'config.yaml'), '# cfg\n')
       s.deps.agentConfig.invalidate()
       const sid = await newSession(s)
-      const session = s.deps.sessionStore.get(sid)
+      const session = (await s.deps.sessionStore.get(sid))
       // TAL-901: a top-level block entry, resolved by the Agent (the recorded `personalities.list` fixture).
       session.personality = 'reviewer'
-      s.deps.sessionStore.save(session)
+      await s.deps.sessionStore.save(session)
       let seen: Record<string, unknown> = {}
       sidecar.respond('chat.start', (params, emit) => { seen = params; emit({ event: 'token', data: { text: 'arr' } }); return completed([{ role: 'user', content: 'hi' }, { role: 'assistant', content: 'arr' }]) })
       const start = await json(await post(s, '/api/chat/start', { session_id: sid, message: 'hi' }))
@@ -3531,9 +3533,9 @@ describe('reasoning replay across turns (TAL-927)', () => {
     expect(histories[1]?.[1]).toMatchObject({ role: 'assistant', reasoning: 'thought', reasoning_details: details, codex_reasoning_items: items })
     expect(histories[1]?.[3]).toMatchObject({ role: 'assistant', reasoning_details: cliDetails, codex_message_items: [{ type: 'message', id: 'msg_cli' }] })
     // The earlier turns ran on another provider: what it issued never reaches this one (hermes-agent#122831).
-    const session = s.deps.sessionStore.get(sid)
+    const session = (await s.deps.sessionStore.get(sid))
     session.reasoning_replay_provider = 'openrouter'
-    s.deps.sessionStore.save(session)
+    await s.deps.sessionStore.save(session)
     await turn('third')
     const switched = histories[2]?.filter((m) => m.role === 'assistant') ?? []
     expect(switched.map((m) => m.content)).toEqual(['answer 1', 'CLI answer', 'answer 2'])
@@ -3590,7 +3592,7 @@ describe('live tool outcomes (TAL-313)', () => {
     expect(replayed.map((d) => [d.id, d.is_error, d.duration])).toEqual(expected)
 
     // A later turn keeps the durations the first one recorded.
-    sidecar.respond('chat.start', (params) => completed([...s.deps.sessionStore.get(sid).context_messages, { role: 'user', content: str(params.user_message) }, { role: 'assistant', content: 'Again.' }]))
+    sidecar.respond('chat.start', async (params) => completed([...(await s.deps.sessionStore.get(sid)).context_messages, { role: 'user', content: str(params.user_message) }, { role: 'assistant', content: 'Again.' }]))
     const next = String((await json(await post(s, '/api/chat/start', { session_id: sid, message: 'again' }))).stream_id)
     await s.sse(`/api/chat/stream?stream_id=${next}`, (f) => f.event === 'stream_end')
 

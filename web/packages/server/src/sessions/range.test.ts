@@ -20,7 +20,7 @@ it('derives only the requested turns on first open and older pages of 5,000 rows
     db.exec('COMMIT')
     const session = new Session({ session_id: sid, messages }, { workspace: server.state, model: null })
     server.deps.sessions.markStateDbSeen(session)
-    server.deps.sessionStore.save(session, { touchUpdatedAt: false })
+    await server.deps.sessionStore.save(session, { touchUpdatedAt: false })
     const derive = vi.spyOn(server.deps.sessions, 'backgroundLinked')
     const merge = vi.spyOn(server.deps.sessions, 'mergedTranscript')
     const context = vi.spyOn(server.deps.sessions, 'modelContext')
@@ -28,10 +28,10 @@ it('derives only the requested turns on first open and older pages of 5,000 rows
     const prefixes = new Set<SessionPrefixIndex>()
     for (const [i, query] of [{ msg_limit: '50' }, { msg_limit: '50' }, { msg_limit: '50', msg_before: '2500' }].entries()) {
       sql.mockClear()
-      const page = server.deps.sessions.detail(sid, query)
+      const page = (await server.deps.sessions.detail(sid, query))
       expect(page.message_count).toBe(5000)
       expect(page.messages).toHaveLength(50)
-      prefixes.add(server.deps.sessionStore.get(sid).prefixIndex!)
+      prefixes.add((await server.deps.sessionStore.get(sid)).prefixIndex!)
       if (i > 0) expect(sql).not.toHaveBeenCalled()
       else expect(sql.mock.calls.some(([query]) => query.includes('AND id > ?'))).toBe(true)
     }
@@ -93,10 +93,10 @@ const fixtures: Message[][] = [
   [{ role: 'user', content: 'a', _turn_id: 'repeat' }, { role: 'assistant', content: 'b', _turn_id: 'other' }, { role: 'assistant', content: 'c', _turn_id: 'repeat' }, { role: 'user', content: 'd' }],
 ]
 
-function assertWindows(server: Awaited<ReturnType<typeof bootTestServer>>, session: Session) {
-  const service = server.deps.sessions, full = service.detail(session.session_id, {}), rows = full.messages as Message[]
+async function assertWindows(server: Awaited<ReturnType<typeof bootTestServer>>, session: Session) {
+  const service = server.deps.sessions, full = (await service.detail(session.session_id, {})), rows = full.messages as Message[]
   for (const limit of [1, 2, 3, 50]) for (const before of [null, ...Array.from({ length: rows.length + 1 }, (_, i) => i)]) {
-    const actual = service.detail(session.session_id, { msg_limit: String(limit), ...(before === null ? {} : { msg_before: String(before) }) })
+    const actual = (await service.detail(session.session_id, { msg_limit: String(limit), ...(before === null ? {} : { msg_before: String(before) }) }))
     const [messages, offset] = messageWindowForDisplay(rows, limit, before)
     const expected = { ...full, messages: messagesForLimitedPayload(messages), _messages_offset: offset, _messages_truncated: offset > 0,
       tool_calls: before !== null || messages.length < rows.length ? toolCallsForMessageWindow(full.tool_calls, offset, messages.length) : full.tool_calls }
@@ -110,11 +110,11 @@ it.each(fixtures.map((rows, i) => [i, rows] as const))('keeps every window and s
   try {
     const session = new Session({ session_id: 'range-equal', messages: rows, compression_anchor_summary: 'reference', compression_anchor_visible_idx: 1,
       tool_calls: [{ assistant_msg_idx: 1, tid: 'recorded', name: 'terminal', args: { command: 'pwd' }, snippet: 'recorded result' }] }, { workspace: server.state, model: null })
-    server.deps.sessionStore.save(session)
-    assertWindows(server, session)
+    await server.deps.sessionStore.save(session)
+    await assertWindows(server, session)
     session.compression_anchor_message_key = anchorMessageKey(rows[1])
-    server.deps.sessionStore.save(session)
-    assertWindows(server, session)
+    await server.deps.sessionStore.save(session)
+    await assertWindows(server, session)
   } finally { await server.close() }
 })
 
@@ -122,8 +122,8 @@ it.each([0, 3, 4])('counts sanitized model messages exactly at the compression b
   const server = await bootTestServer()
   try {
     const session = new Session({ session_id: 'range-small', messages: fixtures[2]!.slice(0, count) }, { workspace: server.state, model: null })
-    server.deps.sessionStore.save(session)
-    assertWindows(server, session)
+    await server.deps.sessionStore.save(session)
+    await assertWindows(server, session)
   } finally { await server.close() }
 })
 
@@ -148,16 +148,16 @@ it.each([false, true])('uses a keyset tail and falls back for an unidentified du
     const read = stateDb.stateDbSessionRead(path, sid)
     const session = new Session({ session_id: sid, messages: duplicate ? [{ role: 'user', content: 'same', timestamp: 1 }] : read.rows }, { workspace: server.state, model: null })
     server.deps.sessions.markStateDbSeen(session, read)
-    server.deps.sessionStore.save(session, { touchUpdatedAt: false })
+    await server.deps.sessionStore.save(session, { touchUpdatedAt: false })
     db.prepare('INSERT INTO messages VALUES (2, ?, ?, ?, ?)').run(sid, 'user', 'same', 1)
     db.prepare('INSERT INTO messages VALUES (3, ?, ?, ?, ?)').run(sid, 'assistant', 'CLI reply', 2)
     const fullRead = vi.spyOn(server.deps.sessions, 'stateDbRows')
-    server.deps.sessions.detail(sid, { msg_limit: '50' })
+    await server.deps.sessions.detail(sid, { msg_limit: '50' })
     expect(fullRead).toHaveBeenCalledTimes(duplicate ? 1 : 0)
     fullRead.mockClear()
-    server.deps.sessions.detail(sid, { msg_limit: '1', msg_before: '1' })
+    await server.deps.sessions.detail(sid, { msg_limit: '1', msg_before: '1' })
     expect(fullRead).not.toHaveBeenCalled()
-    assertWindows(server, session)
+    await assertWindows(server, session)
   } finally { db.close(); await server.close(); vi.restoreAllMocks() }
 })
 
@@ -165,20 +165,20 @@ it('reuses a verified saved append and invalidates an edit with unchanged length
   const server = await bootTestServer()
   try {
     let session = new Session({ session_id: 'range-save', messages: [...fixtures[2]!] }, { workspace: server.state, model: null })
-    const store = server.deps.sessionStore, detail = () => server.deps.sessions.detail(session.session_id, { msg_limit: '1' })
-    store.save(session); session = store.get(session.session_id); detail()
+    const store = server.deps.sessionStore, detail = async () => (await server.deps.sessions.detail(session.session_id, { msg_limit: '1' }))
+    await store.save(session); session = await store.get(session.session_id); await detail()
     const first = session.prefixIndex!
     session.messages.push({ role: 'user', content: 'appended', timestamp: 500 })
-    store.save(session)
+    await store.save(session)
     expect(session.prefixIndex).toBe(first)
-    expect(detail().message_count).toBe(9)
+    expect((await detail()).message_count).toBe(9)
     expect(first.length).toBe(9)
     session.messages[0]!.content = 'edited'
-    store.save(session)
+    await store.save(session)
     expect(session.prefixIndex).toBeUndefined()
-    detail()
+    await detail()
     expect(session.prefixIndex).not.toBe(first)
-    assertWindows(server, session)
+    await assertWindows(server, session)
   } finally { await server.close() }
 })
 
@@ -204,10 +204,10 @@ it.each([false, true])('keeps the full-build pending turn boundary with a journa
     ] : [])]
     const session = new Session({ session_id: sid, messages: rows, active_stream_id: turn, pending_user_message: 'pending', pending_started_at: started }, { workspace: server.state, model: null })
     server.deps.sessions.deps.runtime.activeStreamIds.add(turn)
-    server.deps.sessionStore.save(session)
+    await server.deps.sessionStore.save(session)
     if (journaled) { const writer = server.deps.journal.writer(sid, turn); writer.appendSseEvent('token', { text: 'persisted output' }); writer.close() }
-    assertWindows(server, session)
-    const page = server.deps.sessions.detail(sid, { msg_limit: '1' })
+    await assertWindows(server, session)
+    const page = (await server.deps.sessions.detail(sid, { msg_limit: '1' }))
     expect((page.messages as Message[]).some((m) => m.content === 'pending')).toBe(true)
     expect(page.transcript_seq).toEqual(journaled ? { stream_id: turn, seq: 0 } : null)
   } finally { await server.close() }
@@ -220,9 +220,9 @@ it('widens sparse visible pages without repeatedly deriving the same prefix', as
       ...Array.from({ length: 400 }, (_, i) => ({ role: 'user', content: 'scaffold', display_kind: 'hidden', _turn_id: `hidden-${i}` })),
       { role: 'user', content: 'latest' }, { role: 'assistant', content: 'reply' }]
     const session = new Session({ session_id: 'range-sparse', messages: rows }, { workspace: server.state, model: null })
-    server.deps.sessionStore.save(session)
+    await server.deps.sessionStore.save(session)
     const derive = vi.spyOn(server.deps.sessions, 'backgroundLinked')
-    const page = server.deps.sessions.detail(session.session_id, { msg_limit: '4' })
+    const page = (await server.deps.sessions.detail(session.session_id, { msg_limit: '4' }))
     expect((page.messages as Message[]).filter((m) => m.display_kind !== 'hidden')).toHaveLength(4)
     expect(derive.mock.calls.reduce((total, call) => total + call[1].length, 0)).toBeLessThan(rows.length * 3)
   } finally { vi.restoreAllMocks(); await server.close() }
@@ -245,11 +245,11 @@ it('keeps a running turn record-only tool row in the compression anchor coordina
       compression_anchor_summary: 'reference', compression_anchor_visible_idx: 99,
     }, { workspace: server.state, model: null })
     server.deps.sessions.deps.runtime.activeStreamIds.add(turn)
-    server.deps.sessionStore.save(session)
-    const full = server.deps.sessions.detail(session.session_id, {})
+    await server.deps.sessionStore.save(session)
+    const full = (await server.deps.sessions.detail(session.session_id, {}))
     expect(full.compression_reference).toEqual({ text: 'reference', after_message_index: 3 })
     for (const query of [{ msg_limit: '50' }, { msg_limit: '1', msg_before: '2' }]) {
-      expect(server.deps.sessions.detail(session.session_id, query).compression_reference).toEqual(full.compression_reference)
+      expect((await server.deps.sessions.detail(session.session_id, query)).compression_reference).toEqual(full.compression_reference)
     }
   } finally { await server.close() }
 })
@@ -268,15 +268,15 @@ it.each(['compacted', 'twiceCompacted', 'editedThenCompacted', 'editedTwiceCompa
     const initial = stateDb.stateDbSessionRead(path, sid)
     const session = new Session({ session_id: sid, messages: initial.rows, context_messages: initial.rows }, { workspace: server.state, model: null })
     server.deps.sessions.markStateDbSeen(session, initial)
-    server.deps.sessionStore.save(session, { touchUpdatedAt: false })
+    await server.deps.sessionStore.save(session, { touchUpdatedAt: false })
     load(stage)
     const tail = stateDb.stateDbSessionTailRead(path, sid, session.state_db_seen_id!)
     expect(tail.ok).toBe(true)
     expect(tail.rows).toEqual(stateDb.stateDbSessionRead(path, sid).rows)
     const fullRead = vi.spyOn(server.deps.sessions, 'stateDbRows')
-    server.deps.sessions.detail(sid, { msg_limit: '50' })
+    await server.deps.sessions.detail(sid, { msg_limit: '50' })
     expect(fullRead).not.toHaveBeenCalled()
-    assertWindows(server, session)
+    await assertWindows(server, session)
   } finally { vi.restoreAllMocks(); db.close(); await server.close() }
 })
 
@@ -291,22 +291,22 @@ it('invalidates cached tail summaries on a WAL append without rebuilding the sid
     const read = stateDb.stateDbSessionRead(path, sid)
     const session = new Session({ session_id: sid, messages: read.rows }, { workspace: server.state, model: null })
     server.deps.sessions.markStateDbSeen(session, read)
-    server.deps.sessionStore.save(session, { touchUpdatedAt: false })
-    expect(server.deps.sessions.detail(sid, { msg_limit: '1' })).toMatchObject({ message_count: 1, can_compress: false })
-    const prefix = server.deps.sessionStore.get(sid).prefixIndex
+    await server.deps.sessionStore.save(session, { touchUpdatedAt: false })
+    expect((await server.deps.sessions.detail(sid, { msg_limit: '1' }))).toMatchObject({ message_count: 1, can_compress: false })
+    const prefix = (await server.deps.sessionStore.get(sid)).prefixIndex
     for (let i = 2; i <= 4; i += 1) insert.run(i, sid, i % 2 ? 'user' : 'assistant', `new ${i}`, i)
     const fullRead = vi.spyOn(server.deps.sessions, 'stateDbRows')
-    const older = server.deps.sessions.detail(sid, { msg_limit: '1', msg_before: '1' })
+    const older = (await server.deps.sessions.detail(sid, { msg_limit: '1', msg_before: '1' }))
     expect(older).toMatchObject({ message_count: 4, can_compress: true })
     expect((older.messages as Message[]).map((m) => m.content)).toEqual(['first'])
-    expect(server.deps.sessionStore.get(sid).prefixIndex).toBe(prefix)
+    expect((await server.deps.sessionStore.get(sid)).prefixIndex).toBe(prefix)
     expect(fullRead).not.toHaveBeenCalled()
-    assertWindows(server, session)
+    await assertWindows(server, session)
     insert.run(5, sid, 'tool', '{"todos":[{"id":"tail","content":"tail task","status":"pending"}]}', null)
     insert.run(6, sid, 'assistant', 'tail settled', 6)
-    const withTodo = server.deps.sessions.detail(sid, { msg_limit: '1', msg_before: '1' })
+    const withTodo = (await server.deps.sessions.detail(sid, { msg_limit: '1', msg_before: '1' }))
     expect(withTodo.todo_state).toMatchObject({ todos: [{ id: 'tail', content: 'tail task', status: 'pending' }], ts: 4 })
-    assertWindows(server, session)
+    await assertWindows(server, session)
   } finally { vi.restoreAllMocks(); db.close(); await server.close() }
 })
 
@@ -327,12 +327,12 @@ it('preserves stored scenes with duplicate content refs and unsettled todo prece
       [UNSETTLED_TODO_KEY]: { todos: [{ id: 'new', content: 'unsettled task', status: 'pending' }], ts: 20 },
     }, { workspace: server.state, model: null })
     expect(storeAnchorScene(session, { message_index: 3, scene: { version: 'activity_scene_v1', final_answer: 'same reply', terminal_state: 'completed', activity_rows: [{ row_id: 'stored', role: 'prose', order_index: 0, text: 'stored detail' }] } }, 100)).not.toBeNull()
-    server.deps.sessionStore.save(session)
-    const full = server.deps.sessions.detail(session.session_id, {})
+    await server.deps.sessionStore.save(session)
+    const full = (await server.deps.sessions.detail(session.session_id, {}))
     expect(full.todo_state).toMatchObject({ todos: [{ id: 'new', content: 'unsettled task', status: 'pending' }], ts: 20 })
     const scenes = (full.messages as Message[]).map((m) => m._anchor_activity_scene as Message | undefined)
     expect(scenes[1]?.activity_rows).not.toEqual(scenes[3]?.activity_rows)
-    assertWindows(server, session)
+    await assertWindows(server, session)
   } finally { await server.close() }
 })
 
@@ -345,15 +345,15 @@ it.each([false, true])('keeps the legacy timestamp merge with a row-id column=%s
     const insert = db.prepare('INSERT INTO messages (session_id, role, content, timestamp) VALUES (?, ?, ?, ?)')
     for (const row of rows) insert.run(sid, row.role, row.content, row.timestamp)
     const session = new Session({ session_id: sid, messages: rows.slice(0, 2) }, { workspace: server.state, model: null })
-    server.deps.sessionStore.save(session)
+    await server.deps.sessionStore.save(session)
     const fullRead = vi.spyOn(server.deps.sessions, 'stateDbRows')
-    expect(server.deps.sessions.detail(sid, { msg_limit: '1' }).message_count).toBe(4)
+    expect((await server.deps.sessions.detail(sid, { msg_limit: '1' })).message_count).toBe(4)
     expect(fullRead).toHaveBeenCalledTimes(1)
-    assertWindows(server, session)
+    await assertWindows(server, session)
     session.truncation_watermark = 2
-    server.deps.sessionStore.save(session)
-    expect(server.deps.sessions.detail(sid, { msg_limit: '1' }).message_count).toBe(2)
-    assertWindows(server, session)
+    await server.deps.sessionStore.save(session)
+    expect((await server.deps.sessions.detail(sid, { msg_limit: '1' })).message_count).toBe(2)
+    await assertWindows(server, session)
   } finally { vi.restoreAllMocks(); db.close(); await server.close() }
 })
 
@@ -366,9 +366,9 @@ it.each([3, 4])('counts the separate compressed model context instead of the dis
       ...fixtures[2]!.slice(0, count - 1),
     ]
     const session = new Session({ session_id: 'range-model-context', messages: fixtures[2]!, context_messages: context }, { workspace: server.state, model: null })
-    server.deps.sessionStore.save(session)
-    expect(server.deps.sessions.detail(session.session_id, { msg_limit: '1' }).can_compress).toBe(count === 4)
-    assertWindows(server, session)
+    await server.deps.sessionStore.save(session)
+    expect((await server.deps.sessions.detail(session.session_id, { msg_limit: '1' })).can_compress).toBe(count === 4)
+    await assertWindows(server, session)
   } finally { await server.close() }
 })
 
@@ -389,17 +389,17 @@ it('keeps parent review proof outside a page without enumerating the cached pref
     recordBackgroundUpdate(session, turn, update)
     recordBackgroundUpdate(session, `delegation:${delegation}`, update)
     session.extra.completion_acceptances = { [JSON.stringify([server.state, delegation])]: turn }
-    server.deps.sessionStore.save(session, { touchUpdatedAt: false })
+    await server.deps.sessionStore.save(session, { touchUpdatedAt: false })
     const service = server.deps.sessions
-    const full = service.detail(session.session_id, {}).messages as Message[]
+    const full = (await service.detail(session.session_id, {})).messages as Message[]
     expect(full.at(-1)?._background_update).toMatchObject({ review_state: 'reviewed' })
-    service.detail(session.session_id, { msg_limit: '1' })
-    const resident = server.deps.sessionStore.get(session.session_id)
+    await service.detail(session.session_id, { msg_limit: '1' })
+    const resident = (await server.deps.sessionStore.get(session.session_id))
     const iterate = resident.messages[Symbol.iterator].bind(resident.messages)
     let prefixEnumerations = 0
     Object.defineProperty(resident.messages, Symbol.iterator, { configurable: true, value: () => { prefixEnumerations += 1; return iterate() } })
-    const latest = service.detail(session.session_id, { msg_limit: '1' }).messages as Message[]
-    const older = service.detail(session.session_id, { msg_limit: '1', msg_before: '2' }).messages as Message[]
+    const latest = (await service.detail(session.session_id, { msg_limit: '1' })).messages as Message[]
+    const older = (await service.detail(session.session_id, { msg_limit: '1', msg_before: '2' })).messages as Message[]
     expect(latest.at(-1)?._background_update).toMatchObject({ review_state: 'reviewed', lines: [{ review_state: 'reviewed' }] })
     expect(older[0]?._background_update).toMatchObject({ review_state: 'reviewed' })
     expect(prefixEnumerations, 'cached pages must not scan the complete session for review proof').toBe(0)

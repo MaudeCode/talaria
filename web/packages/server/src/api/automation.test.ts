@@ -811,9 +811,9 @@ describe('crons, kanban, extensions, terminal', () => {
     const sid = String(((await json(await post(s, '/api/session/new', {}))).session as Json).session_id)
     const worktree = join(s.state, 'workspace', 'wt-locked')
     mkdirSync(worktree, { recursive: true })
-    const session = s.deps.sessionStore.get(sid)
+    const session = (await s.deps.sessionStore.get(sid))
     session.worktree_path = worktree
-    s.deps.sessionStore.save(session)
+    await s.deps.sessionStore.save(session)
     let res = await post(s, '/api/terminal/start', { session_id: sid })
     expect(res.status).toBe(200)
     expect((await json(res)).workspace).toBe(session.workspace)
@@ -959,9 +959,9 @@ describe('query parameters on non-GET routes (parity)', () => {
 
   it('JSON responses over 1 KiB are gzipped for clients that accept gzip', async () => {
     const sid = String(((await json(await post(s, '/api/session/new', {}))).session as Json).session_id)
-    const session = s.deps.sessionStore.get(sid)
+    const session = (await s.deps.sessionStore.get(sid))
     session.messages = [{ role: 'user', content: 'x'.repeat(4096) }]
-    s.deps.sessionStore.save(session)
+    await s.deps.sessionStore.save(session)
     const res = await s.get(`/api/session?session_id=${sid}`, { headers: { 'accept-encoding': 'gzip' } })
     expect(res.status).toBe(200)
     expect(res.headers.get('content-encoding')).toBe('gzip')

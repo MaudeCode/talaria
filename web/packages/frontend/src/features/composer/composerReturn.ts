@@ -53,3 +53,10 @@ export function forgetOwnSteer(steerId: string): boolean {
 export function returnStoppedSteer(sessionId: string, steerId: string | null, text: string): void {
   if (steerId && forgetOwnSteer(steerId)) returnToComposer(sessionId, text)
 }
+
+/** Auth/profile changes cannot hand another identity a buffered draft or a stopped steer. */
+export function resetComposerReturns(): void {
+  waiting.clear()
+  ownSteers.clear()
+  saveOwnSteers()
+}

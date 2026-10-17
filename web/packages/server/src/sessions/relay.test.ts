@@ -1,3 +1,4 @@
+import { sessionDirectory, sessionPath } from '../test/storage.js'
 import { createHash, createPublicKey, verify as cryptoVerify } from 'node:crypto'
 import { chmodSync, existsSync, mkdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
@@ -178,7 +179,7 @@ describe('Talaria relay pairing and publishing', () => {
 
     // A deletion from before this fix left its run on the relay; the first lookup of the tombstoned id clears it.
     const orphan = await finishedSession('Orphaned run', 'stream-o')
-    expect(s.deps.sessionStore.deleteFiles(orphan)).toBe(true)
+    expect((await s.deps.sessionStore.delete(orphan))).toBe(true)
     expect((await s.get(`/api/session?session_id=${orphan}&messages=0`)).status).toBe(404)
     await vi.waitFor(() => { expect(viewsOf(orphan)).toHaveLength(1) })
 
@@ -286,19 +287,19 @@ describe('relay publisher failure handling', () => {
     try {
       await s.deps.relay.pair({ relay_url: RELAY, publisher_id: 'https://pub.example', publisher_invitation: 'x' }, 'default', true)
       s.deps.relay.stop()
-      mkdirSync(s.deps.sessionStore.sessionDir, { recursive: true })
-      s.deps.relay.clearDeleted(sid, 'default')
-      chmodSync(s.deps.sessionStore.sessionDir, 0o000)
+      mkdirSync(sessionDirectory(s.deps.sessionStore), { recursive: true })
+      await s.deps.relay.clearDeleted(sid, 'default')
+      chmodSync(sessionDirectory(s.deps.sessionStore), 0o000)
       expect(s.deps.relay.start()).toBe(true)
       await vi.waitFor(() => { expect(s.logs.some((line) => line.includes('EACCES')) || relay.views().some((call) => call.url.includes(sid))).toBe(true) })
       expect(relay.views().filter((call) => call.url.includes(sid))).toEqual([])
       expect(deletedViews(s)).toHaveLength(1)
-      chmodSync(s.deps.sessionStore.sessionDir, 0o700)
+      chmodSync(sessionDirectory(s.deps.sessionStore), 0o700)
       s.deps.relay.current()!.changed()
       await vi.waitFor(() => { expect(deletedViews(s)).toEqual([]) })
       expect(relay.views().filter((call) => call.url.includes(sid))).toHaveLength(1)
     } finally {
-      chmodSync(s.deps.sessionStore.sessionDir, 0o700)
+      chmodSync(sessionDirectory(s.deps.sessionStore), 0o700)
       s.deps.relay.stop()
       await s.close()
     }
@@ -312,7 +313,7 @@ describe('relay publisher failure handling', () => {
     try {
       await s.deps.relay.pair({ relay_url: RELAY, publisher_id: 'https://pub.example', publisher_invitation: 'x' }, 'default', true)
       const sid = String(((await json(await post(s, '/api/session/new', { title: 'Retryable delete' }))).session as Json).session_id)
-      s.deps.sessionStore.save(s.deps.sessionStore.get(sid))
+      await s.deps.sessionStore.save((await s.deps.sessionStore.get(sid)))
       const outbox = join(s.state, 'talaria-relay-deleted.json')
       if (failure === 'corrupt outbox') writeFileSync(outbox, '{"version":1,"views":[{"sessionId":"pending"}]}')
       else {
@@ -324,8 +325,8 @@ describe('relay publisher failure handling', () => {
         restore = () => { spy.mockRestore() }
       }
       expect((await post(s, '/api/session/delete', { session_id: sid })).status).toBe(500)
-      expect(existsSync(s.deps.sessionStore.pathFor(sid))).toBe(true)
-      expect(s.deps.sessionStore.get(sid).profile).toBe('default')
+      expect(existsSync(sessionPath(s.deps.sessionStore, sid))).toBe(true)
+      expect((await s.deps.sessionStore.get(sid)).profile).toBe('default')
       expect(relay.views().some((call) => call.url.includes(sid))).toBe(false)
       restore()
       if (failure === 'corrupt outbox') rmSync(outbox)
@@ -348,8 +349,8 @@ describe('relay publisher failure handling', () => {
     try {
       await s.deps.relay.pair({ relay_url: RELAY, publisher_id: 'https://pub.example', publisher_invitation: 'x' }, 'default', true)
       const sid = String(((await json(await post(s, '/api/session/new', { title: 'Failed removal' }))).session as Json).session_id)
-      s.deps.sessionStore.save(s.deps.sessionStore.get(sid))
-      const remove = vi.spyOn(s.deps.sessionStore, 'deleteFiles').mockReturnValueOnce(false)
+      await s.deps.sessionStore.save((await s.deps.sessionStore.get(sid)))
+      const remove = vi.spyOn(s.deps.sessionStore, 'delete').mockResolvedValueOnce(false)
       try { expect((await post(s, '/api/session/delete', { session_id: sid })).status).toBe(500) } finally { remove.mockRestore() }
       expect(deletedViews(s)).toHaveLength(1)
       expect(deletedViews(s)[0]!.through).toBe(clock * 1000)
@@ -363,7 +364,7 @@ describe('relay publisher failure handling', () => {
       await post(restarted, '/api/talaria/viewed', { session_id: marker })
       await vi.waitFor(() => { expect(relay.views().some((call) => call.url.includes(marker))).toBe(true) })
       expect(relay.views().some((call) => call.url.includes(sid))).toBe(false)
-      expect(existsSync(s.deps.sessionStore.pathFor(sid))).toBe(true)
+      expect(existsSync(sessionPath(s.deps.sessionStore, sid))).toBe(true)
       clock += 600
       expect((await post(restarted, '/api/session/delete', { session_id: sid })).status).toBe(200)
       await vi.waitFor(() => { expect(deletedViews(s)).toEqual([]) })
@@ -458,9 +459,9 @@ describe('relay publisher failure handling', () => {
       const ids: string[] = []
       for (const profile of ['default', 'default', 'work']) {
         const sid = String(((await json(await post(s, '/api/session/new', { title: profile }))).session as Json).session_id)
-        const session = s.deps.sessionStore.get(sid)
+        const session = (await s.deps.sessionStore.get(sid))
         session.profile = profile
-        s.deps.sessionStore.save(session)
+        await s.deps.sessionStore.save(session)
         ids.push(sid)
       }
       const result = await json(await post(s, '/api/sessions/bulk', { action: 'delete', session_ids: ids.slice(0, 2) }))
@@ -526,7 +527,7 @@ describe('relay publisher failure handling', () => {
       const path = join(s.state, 'talaria-relay-deleted.json')
       const corrupt = '{"version":1,"views":[{"sessionId":"pending"}]}'
       writeFileSync(path, corrupt)
-      expect(() => { s.deps.relay.clearDeleted('another-deletion', 'default') }).toThrow()
+      await expect(async () => { (await s.deps.relay.clearDeleted('another-deletion', 'default')) }).rejects.toThrow()
       expect(readFileSync(path, 'utf8')).toBe(corrupt)
       rmSync(path)
     } finally { await s.close() }
@@ -540,7 +541,7 @@ describe('relay publisher failure handling', () => {
     try {
       await s.deps.relay.pair({ relay_url: RELAY, publisher_id: 'https://pub.example', publisher_invitation: 'x' }, 'default', true)
       s.deps.relay.stop()
-      s.deps.relay.clearDeleted('inflight-deletion', 'default')
+      await s.deps.relay.clearDeleted('inflight-deletion', 'default')
       const cutoff = deletedViews(s)[0]!.through
       const stalled = new Promise<void>((resolve) => { release = resolve })
       s.deps.fetch = async (input, init) => {
@@ -585,7 +586,7 @@ describe('relay publisher failure handling', () => {
     try {
       await s.deps.relay.pair({ relay_url: RELAY, publisher_id: 'https://pub.example', publisher_invitation: 'x' }, 'default', true)
       s.deps.relay.stop()
-      s.deps.relay.clearDeleted('first-deletion', 'default')
+      await s.deps.relay.clearDeleted('first-deletion', 'default')
       const first = deletedViews(s)[0]!
       const stalled = new Promise<void>((resolve) => { release = resolve })
       s.deps.fetch = async (input, init) => {
@@ -596,7 +597,7 @@ describe('relay publisher failure handling', () => {
       }
       expect(s.deps.relay.start()).toBe(true)
       await vi.waitFor(() => { expect(relay.views()).toHaveLength(1) })
-      s.deps.relay.clearDeleted('second-deletion', 'default')
+      await s.deps.relay.clearDeleted('second-deletion', 'default')
       expect(deletedViews(s)).toHaveLength(2)
       release()
       await vi.waitFor(() => { expect(failed).toBe(true) })

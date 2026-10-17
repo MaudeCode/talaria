@@ -1,3 +1,4 @@
+import { filterAsync } from '../util.js'
 /**
  * Talaria Relay: publisher pairing, profile enrollment, browser presence
  * leases, and the best-effort snapshot publisher (Python
@@ -8,7 +9,7 @@
  */
 import { readCapped } from '../http/capped.js'
 import { createHash, createPrivateKey, generateKeyPairSync, randomUUID, sign as cryptoSign, type KeyObject } from 'node:crypto'
-import { existsSync, lstatSync, mkdirSync, readFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { z } from 'zod'
 import { atomicWriteText } from '../fs/atomic.js'
@@ -99,12 +100,9 @@ const DeletedViewsSchema = z.object({ version: z.literal(1), views: z.array(Dele
 const deletedViewsPath = (stateDir: string): string => join(stateDir, 'talaria-relay-deleted.json')
 
 // A staged deletion cannot clear a session that survived a failed removal or a restart before removal.
-function hasSessionData(store: SessionStore, sid: string): boolean {
+async function hasSessionData(store: SessionStore, sid: string): Promise<boolean> {
   if (store.sessions.has(sid)) return true
-  try { lstatSync(store.pathFor(sid)); return true } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return false
-    throw error
-  }
+  return (await store.exists(sid))
 }
 
 function loadDeletedViews(stateDir: string): DeletedView[] {
@@ -287,7 +285,7 @@ export class RelayPublisher {
   }
 
   /** Bind an unconfigured deletion once, before sending, so retries cannot cross relay or profile identities. */
-  private pendingDeleted(): DeletedView[] {
+  private async pendingDeleted(): Promise<DeletedView[]> {
     const views = loadDeletedViews(this.deps.stateDir)
     let changed = false
     for (const view of views) {
@@ -299,13 +297,13 @@ export class RelayPublisher {
       changed = true
     }
     if (changed) saveDeletedViews(this.deps.stateDir, views)
-    return views.filter((view) => !hasSessionData(this.deps.store, view.sessionId))
+    return (await filterAsync(views, async (view) => !(await hasSessionData(this.deps.store, view.sessionId))))
   }
 
   /** Send the views queued before the snapshot just published, so the relay already holds every outcome they saw. */
   private async flushViews(ready: readonly (readonly [string, QueuedView])[]): Promise<void> {
     for (const [sid, view] of ready) {
-      if (view.deleted && hasSessionData(this.deps.store, sid)) continue
+      if (view.deleted && (await hasSessionData(this.deps.store, sid))) continue
       let accepted = false
       for (const [profile, cfg] of Object.entries(this.config.profiles)) {
         if (!this.deps.profilesMatch(view.profile, profile) || !this.publishes(profile, cfg)) continue
@@ -347,7 +345,7 @@ export class RelayPublisher {
       if (this.stopped) return
       this.dirty = false
       try {
-        const ready: (readonly [string, QueuedView])[] = [...this.views, ...this.pendingDeleted().map((view) => [view.sessionId, { profile: view.profile, through: view.through, deleted: view }] as const)]
+        const ready: (readonly [string, QueuedView])[] = [...this.views, ...(await this.pendingDeleted()).map((view) => [view.sessionId, { profile: view.profile, through: view.through, deleted: view }] as const)]
         await this.publishSnapshot(true)
         await this.flushViews(ready)
         await this.publishStarted()
@@ -368,7 +366,7 @@ export class RelayPublisher {
   }
 
   /** Python `build_states`: one row per session with a live or recently terminal run in this profile. */
-  buildStates(profile: string): RelayState[] {
+  async buildStates(profile: string): Promise<RelayState[]> {
     const cutoff = this.deps.now() - TERMINAL_RETENTION_S
     for (const [sid, run] of this.terminal) if (run.terminal_at < cutoff) this.terminal.delete(sid)
     const bySession = new Map<string, ActiveRun & { relay_phase?: string; terminal_at?: number }>()
@@ -384,7 +382,7 @@ export class RelayPublisher {
     const states: RelayState[] = []
     for (const [sid, run] of bySession) {
       let session
-      try { session = this.deps.store.get(sid, { metadataOnly: true }) } catch { continue }
+      try { session = (await this.deps.store.get(sid, { metadataOnly: true })) } catch { continue }
       if (!this.deps.profilesMatch(session.profile, profile)) continue
       const revision = this.nextRevision()
       let phase = run.relay_phase ?? 'running'
@@ -482,7 +480,7 @@ export class RelayPublisher {
     const nowMs = Math.floor(this.deps.now() * 1000)
     let changed = this.trackProfiles(ledger)
     let index: Record<string, unknown>[] = []
-    try { index = this.deps.store.readIndexEntries() } catch { index = [] }
+    try { index = (await this.deps.store.readIndexEntries()) } catch { index = [] }
     for (const [profile, cfg] of Object.entries(this.config.profiles)) {
       if (!this.publishes(profile, cfg)) continue
       const entry = ledger.get(cfg.profile_id)!
@@ -533,7 +531,7 @@ export class RelayPublisher {
   }
 
   private async publishProfileSnapshot(profile: string, profileId: string): Promise<void> {
-    const states = this.buildStates(profile)
+    const states = (await this.buildStates(profile))
     try {
       await this.putSnapshot(profileId, states)
     } catch (error) {
@@ -622,17 +620,17 @@ export class RelayService {
   }
 
   /** A viewed session clears its finished runs on the relay; without a publisher there is nothing to clear. */
-  markViewed(sid: string): void {
+  async markViewed(sid: string): Promise<void> {
     const publisher = this.publisher ?? this.candidate
-    publisher?.markViewed(sid, this.deps.store.get(sid, { metadataOnly: true }).profile)
+    publisher?.markViewed(sid, (await this.deps.store.get(sid, { metadataOnly: true })).profile)
   }
 
   /** Persist before reporting successful deletion, even when publication is unavailable. */
-  clearDeleted(sid: string, profile: string | null): void {
+  async clearDeleted(sid: string, profile: string | null): Promise<void> {
     const publisher = this.publisher ?? this.candidate
     const name = this.deps.canonicalProfile(profile ?? 'default')
     const key = JSON.stringify([name, sid])
-    const live = hasSessionData(this.deps.store, sid)
+    const live = (await hasSessionData(this.deps.store, sid))
     if (!live && this.clearedDeleted.has(key)) return
     const views = loadDeletedViews(this.deps.stateDir)
     const queued = views.find((view) => view.sessionId === sid && view.profile === name)

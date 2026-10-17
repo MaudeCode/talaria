@@ -123,3 +123,49 @@ it('paints retained output before delayed detail/status and reconnects once on A
   })
   expect(result.current.live && liveText(result.current.live)).toBe('Already visible. Unseen.')
 })
+
+
+it('an accepted history cut fences an older page that was already loading', async () => {
+  const prior = sessionFixture({ session_id: 'cut', messages: [{ role: 'user', id: 5, content: 'Current' }], _messages_offset: 4, _messages_truncated: true })
+  const page = deferred<Awaited<ReturnType<typeof api.fetchSession>>>()
+  vi.mocked(api.fetchSession).mockReturnValue(page.promise)
+  const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+  qc.setQueryData(keys.sessions.detail('cut'), { session: prior })
+  const wrapper = ({ children }: { children: ReactNode }) => <QueryClientProvider client={qc}>{children}</QueryClientProvider>
+  const { result } = renderHook(() => useTranscript('cut'), { wrapper })
+  let loading!: Promise<void>
+  act(() => { loading = result.current.loadOlder() })
+  await act(async () => { await result.current.refresh(sessionFixture({ session_id: 'cut', messages: [] })) })
+  expect(result.current.rows).toEqual([])
+  await act(async () => { page.resolve({ session: sessionFixture({ session_id: 'cut', messages: [{ role: 'user', id: 1, content: 'Removed' }] }) }); await loading })
+  expect(result.current.rows).toEqual([])
+})
+
+for (const outcome of ['resolve', 'reject'] as const) {
+  it(`retiring a history page admits its replacement and ignores a late ${outcome}`, async () => {
+    const oldPage = deferred<Awaited<ReturnType<typeof api.fetchSession>>>()
+    const newPage = deferred<Awaited<ReturnType<typeof api.fetchSession>>>()
+    vi.mocked(api.fetchSession).mockReturnValueOnce(oldPage.promise).mockReturnValueOnce(newPage.promise)
+    const { result } = historyHook()
+    const captureOld = vi.fn()
+    let oldLoad!: Promise<void>
+    act(() => { oldLoad = result.current.loadOlder(false, captureOld) })
+    await act(async () => { await result.current.refresh(sessionFixture({ session_id: 'history', messages: [{ id: 241, role: 'user', content: 'replacement latest' }], _messages_offset: 240, _messages_truncated: true })) })
+    expect(result.current).toMatchObject({ loadingOlder: false, olderError: false })
+    let newLoad!: Promise<void>
+    act(() => { newLoad = result.current.loadOlder() })
+    expect(api.fetchSession).toHaveBeenCalledTimes(2)
+    expect(result.current.loadingOlder).toBe(true)
+    await act(async () => {
+      if (outcome === 'resolve') oldPage.resolve({ session: sessionFixture({ session_id: 'history', messages: [{ id: 121, role: 'user', content: 'obsolete' }] }) })
+      else oldPage.reject(new Error('obsolete page failed'))
+      await oldLoad
+    })
+    expect(captureOld).not.toHaveBeenCalled()
+    expect(result.current).toMatchObject({ loadingOlder: true, olderError: false })
+    expect(result.current.rows.map((row) => row.message.content)).toEqual(['replacement latest'])
+    await act(async () => { newPage.resolve({ session: sessionFixture({ session_id: 'history', messages: [{ id: 121, role: 'user', content: 'replacement older' }] }) }); await newLoad })
+    expect(result.current).toMatchObject({ loadingOlder: false, olderError: false })
+    expect(result.current.rows.map((row) => row.message.content)).toEqual(['replacement older', 'replacement latest'])
+  })
+}

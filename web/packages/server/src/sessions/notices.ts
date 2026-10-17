@@ -61,7 +61,7 @@ export class SessionNotices {
   }
 
   /** Hygiene sweep: a deleted session's notices go with it. */
-  sweep(exists: (sessionId: string) => boolean): void {
-    for (const sid of this.bySession.keys()) if (!exists(sid)) this.bySession.delete(sid)
+  async sweep(exists: (sessionId: string) => boolean | Promise<boolean>): Promise<void> {
+    for (const sid of this.bySession.keys()) if (!await exists(sid)) this.bySession.delete(sid)
   }
 }

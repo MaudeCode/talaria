@@ -7,8 +7,8 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import * as api from '../../api/endpoints'
 import { keys } from '../../api/queryKeys'
-import type { Message, Session } from '../../contracts'
-import { attachToStream, hasLiveConnection, reconcileSession, discardSession, teardown } from '../../stream/connection'
+import { SessionSchema, type Message, type Session } from '../../contracts'
+import { attachToStream, hasLiveConnection, reconcileSession, discardSession, getStreamContext, teardown } from '../../stream/connection'
 import { getStreamState, useLiveTurn } from '../../stream/store'
 import { writePersisted } from '../../lib/persisted'
 
@@ -129,22 +129,44 @@ export function useTranscript(sessionId: string | null) {
     request.loading = true
     request.error = false
     setPageState({ sid: sessionId, loading: true, error: false })
+    const scope = getStreamContext()
+    const current = () => !retiredPages.current.has(pageScope) && paging.current === request && scope === getStreamContext()
     try {
       const res = await api.fetchSession(sessionId, { messages: true, msg_limit: TRANSCRIPT_WINDOW, msg_before: before, resolve_model: false })
+      if (!current()) return
       const chunk = res.session.messages ?? []
-      if (retiredPages.current.has(pageScope) || paging.current !== request) return
       if (!chunk.length) throw new Error('Empty history page')
       beforePrepend?.()
       setOlder((prev) => [...chunk, ...prev])
     } catch {
-      if (!retiredPages.current.has(pageScope) && paging.current === request) request.error = true
+      if (current()) request.error = true
     } finally {
       request.loading = false
-      if (!retiredPages.current.has(pageScope) && paging.current === request) setPageState({ sid: sessionId, loading: false, error: request.error })
+      if (current()) setPageState({ sid: sessionId, loading: false, error: request.error })
     }
   }, [sessionId, session, truncated, older.length, setOlder, pageScope])
 
-  const refresh = useCallback(() => qc.invalidateQueries({ queryKey: keys.sessions.detail(sessionId ?? '') }), [qc, sessionId])
+  const refresh = useCallback(async (accepted?: unknown, historyCut = false) => {
+    if (accepted !== undefined || historyCut) {
+      // Retire both the response and its admission/error state when history is replaced.
+      paging.current = { scope: pageScope, loading: false, error: false }
+      setPageState({ sid: sessionId, loading: false, error: false })
+    }
+    const scope = getStreamContext()
+    const parsed = SessionSchema.safeParse(accepted)
+    if (sessionId && parsed.success && parsed.data.session_id === sessionId && parsed.data.messages) {
+      await qc.cancelQueries({ queryKey: keys.sessions.detail(sessionId) })
+      if (scope !== getStreamContext()) return
+      setOlder(() => [])
+      discardSession(sessionId)
+      qc.setQueryData(keys.sessions.detail(sessionId), { session: parsed.data })
+      void qc.invalidateQueries({ queryKey: keys.sessions.all, predicate: (query) => query.queryKey[1] !== 'detail' })
+      return
+    }
+    // Older/mutation row-only responses need a fresh authoritative transcript.
+    if (accepted !== undefined || historyCut) setOlder(() => [])
+    await qc.invalidateQueries({ queryKey: keys.sessions.detail(sessionId ?? '') })
+  }, [qc, sessionId, setOlder, pageScope])
 
   return { query, session, rows, base, live, truncated, loadOlder, loadingOlder, olderError, refresh }
 }

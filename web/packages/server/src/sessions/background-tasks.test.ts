@@ -12,7 +12,7 @@ describe('background task records (TAL-372)', () => {
   it('survive a restart: a new store over the same directory reads the same records and results', () => {
     const dir = tempDir()
     const changes: string[] = []
-    const first = new BackgroundTaskStore(dir, () => 100, (sid) => changes.push(sid))
+    const first = new BackgroundTaskStore(dir, () => 100, (sid) => { changes.push(sid) })
     first.update('sess-1', [{ task_id: 'bg1', kind: 'background_command', status: 'running', title: 'summarize', started_at: 90 }])
     first.update('sess-1', [{ task_id: 'bg1', kind: 'background_command', status: 'completed', result: 'the answer' }])
     expect(changes).toEqual(['sess-1', 'sess-1'])
@@ -35,7 +35,7 @@ describe('background task records (TAL-372)', () => {
 
   it('settle once: a later report never reopens or changes a finished record, and an unchanged report writes nothing', () => {
     const changes: string[] = []
-    const store = new BackgroundTaskStore(tempDir(), () => 100, (sid) => changes.push(sid))
+    const store = new BackgroundTaskStore(tempDir(), () => 100, (sid) => { changes.push(sid) })
     store.update('s', [{ task_id: 'd1', kind: 'delegation', status: 'running', title: 'Check logs' }])
     store.update('s', [{ task_id: 'd1', kind: 'delegation', status: 'failed' }])
     store.update('s', [{ task_id: 'd1', kind: 'delegation', status: 'running' }, { task_id: 'd1', kind: 'delegation', status: 'completed', result: 'late detail' }])

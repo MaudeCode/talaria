@@ -90,7 +90,7 @@ describe('the Agent\'s local llama.cpp models in the picker', () => {
     expect(res.status).toBe(200)
     await s.sse(`/api/chat/stream?stream_id=${String((await json(res)).stream_id)}`, (f) => f.event === 'stream_end')
     expect(started).toMatchObject({ model: STAGED, model_provider: 'llamacpp' })
-    expect(s.deps.sessionStore.get(sid)).toMatchObject({ model: STAGED, model_provider: 'llamacpp' })
+    expect((await s.deps.sessionStore.get(sid))).toMatchObject({ model: STAGED, model_provider: 'llamacpp' })
   })
 
   it('a turn while the local server is off says so instead of asking for a key', async () => {

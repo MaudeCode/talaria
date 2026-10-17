@@ -66,9 +66,9 @@ describe('compaction before the next turn', () => {
   /** A session whose last turn left `fields` (its context figures) on it. */
   async function seeded(fields: Json): Promise<string> {
     const sid = String(((await json(await post(s, '/api/session/new', {}))).session as Json).session_id)
-    const session = s.deps.sessionStore.get(sid)
+    const session = (await s.deps.sessionStore.get(sid))
     Object.assign(session, { messages: structuredClone(ORIGINAL), ...fields })
-    s.deps.sessionStore.save(session)
+    await s.deps.sessionStore.save(session)
     return sid
   }
   async function turn(sid: string, message: string, body: Json = {}): Promise<{ streamId: string; frames: SseFrame[] }> {
@@ -97,7 +97,7 @@ describe('compaction before the next turn', () => {
         expect(events(stopped)).toEqual(expect.arrayContaining(['compressing', 'cancel']))
         // The Stop ended the turn, not the job.
         expect((await json(await s.get(`/api/session/compress/status?session_id=${sid}`))).status).toBe('running')
-        await vi.waitFor(() => { expect(s.deps.sessionStore.get(sid).active_stream_id).toBeNull() })
+        await vi.waitFor(async () => { expect((await s.deps.sessionStore.get(sid)).active_stream_id).toBeNull() })
         // The resend is admitted at once and waits on the same job.
         const res = await post(s, '/api/chat/start', { session_id: sid, message: 'second' })
         expect(res.status).toBe(200)
@@ -112,7 +112,7 @@ describe('compaction before the next turn', () => {
         expect(turns).toHaveLength(1)
         expect(contents(turns[0]!).slice(0, 2)).toEqual(['one', 'four'])
         expect(contents(turns[0]!)).not.toContain('two')
-        const stored = s.deps.sessionStore.get(sid)
+        const stored = (await s.deps.sessionStore.get(sid))
         expect(stored.active_stream_id).toBeNull()
         expect(contents(stored.messages)).toEqual(expect.arrayContaining(['one', 'two', 'three', 'four', 'first', 'second', 'answer to second']))
         // The compression anchors to the last row it covered, never a waiting turn's prompt.
@@ -137,7 +137,7 @@ describe('compaction before the next turn', () => {
     await vi.waitFor(async () => { expect((await json(await s.get(`/api/session/compress/status?session_id=${sid}`))).status).toBe('done') })
     expect(compressCalls).toBe(1)
     expect(turns).toEqual([])
-    expect(contents(s.deps.sessionStore.get(sid).context_messages).slice(0, 2)).toEqual(['one', 'four'])
+    expect(contents((await s.deps.sessionStore.get(sid)).context_messages).slice(0, 2)).toEqual(['one', 'four'])
   })
 
   it('starts the job when a turn settles over the threshold, so the next turn gets the compacted history', async () => {
@@ -161,7 +161,7 @@ describe('compaction before the next turn', () => {
     await turn(sid, 'on fallback')
     await vi.waitFor(async () => { expect((await json(await s.get(`/api/session/compress/status?session_id=${sid}`))).status).toBe('done') })
     expect(compressCalls).toBe(1)
-    expect(s.deps.sessionStore.get(sid).next_turn_threshold_tokens).toBe(400)
+    expect((await s.deps.sessionStore.get(sid)).next_turn_threshold_tokens).toBe(400)
   })
 
   it('starts no job and adds no wait under the threshold', async () => {
@@ -182,10 +182,10 @@ describe('compaction before the next turn', () => {
 
   it("keeps the session's place in the list when an automatic job installs its result", async () => {
     const sid = await seeded(OVER)
-    const before = s.deps.sessionStore.get(sid).updated_at
+    const before = (await s.deps.sessionStore.get(sid)).updated_at
     await new Promise((r) => setTimeout(r, 20))
     expect(await s.deps.sessions.ensureCompacted(sid)).toBe(true)
-    const stored = s.deps.sessionStore.get(sid)
+    const stored = (await s.deps.sessionStore.get(sid))
     expect(contents(stored.context_messages)).toEqual(['one', 'four'])
     expect(stored.updated_at).toBe(before)
   })
@@ -193,15 +193,15 @@ describe('compaction before the next turn', () => {
   it("forgets the old model's figures on a switch, so the first turn on the new model never waits", async () => {
     const sid = await seeded({ ...OVER, post_compression_context_tokens_estimate: 450, model: 'old-model' })
     expect((await post(s, '/api/session/update', { session_id: sid, model: 'new-model' })).status).toBe(200)
-    expect(s.deps.sessionStore.get(sid)).toMatchObject({ next_turn_threshold_tokens: null, post_compression_context_tokens_estimate: null, threshold_tokens: 0, last_prompt_tokens: 0 })
+    expect((await s.deps.sessionStore.get(sid))).toMatchObject({ next_turn_threshold_tokens: null, post_compression_context_tokens_estimate: null, threshold_tokens: 0, last_prompt_tokens: 0 })
     await turn(sid, 'on the new model', { model: 'new-model' })
     expect(compressCalls).toBe(0)
     // A switch through the turn itself forgets them too, even when that turn fails before reporting its own.
     const switched = await seeded({ ...OVER, post_compression_context_tokens_estimate: 450, model: 'old-model' })
     sidecar.respond('chat.start', () => { throw new SidecarError('provider down', { condition: 'sidecar_error' }) })
     await turn(switched, 'fails', { model: 'new-model' })
-    expect(s.deps.sessionStore.get(switched)).toMatchObject({ next_turn_threshold_tokens: null, post_compression_context_tokens_estimate: null })
-    expect(s.deps.sessions.compactionDue(s.deps.sessionStore.get(switched))).toBe(false)
+    expect((await s.deps.sessionStore.get(switched))).toMatchObject({ next_turn_threshold_tokens: null, post_compression_context_tokens_estimate: null })
+    expect(s.deps.sessions.compactionDue((await s.deps.sessionStore.get(switched)))).toBe(false)
   })
 
   it('tells open clients when a background job installs its result', async () => {
@@ -230,7 +230,7 @@ describe('compaction before the next turn', () => {
       await job
       await s.sse(`/api/chat/stream?stream_id=${streamId}&after_event_id=${streamId}:0`, (f) => f.event === 'stream_end')
       // The job's 120-token estimate predates the turn's 380-token prompt, which now decides the next compaction.
-      expect(s.deps.sessionStore.get(sid)).toMatchObject({ post_compression_context_tokens_estimate: null, last_prompt_tokens: 380 })
+      expect((await s.deps.sessionStore.get(sid))).toMatchObject({ post_compression_context_tokens_estimate: null, last_prompt_tokens: 380 })
     }
   })
 
@@ -257,10 +257,10 @@ describe('compaction before the next turn', () => {
       const streamId = String((await json(await post(s, '/api/chat/start', { session_id: sid, message: 'stopped' }))).stream_id)
       await s.sse(`/api/chat/stream?stream_id=${streamId}`, (f) => f.event === 'compressing')
       expect((await s.get(`/api/chat/cancel?stream_id=${streamId}`)).status).toBe(200)
-      await vi.waitFor(() => { expect(s.deps.sessionStore.get(sid).active_stream_id).toBeNull() })
+      await vi.waitFor(async () => { expect((await s.deps.sessionStore.get(sid)).active_stream_id).toBeNull() })
       release()
       await vi.waitFor(async () => { expect((await json(await s.get(`/api/session/compress/status?session_id=${sid}`))).status).toBe('done') })
-      const stored = s.deps.sessionStore.get(sid)
+      const stored = (await s.deps.sessionStore.get(sid))
       // Not the 120 tokens of the compressed rows alone: the kept prompt is counted too.
       expect(contents(stored.context_messages)).toEqual(['one', 'four', 'stopped'])
       expect(stored.post_compression_context_tokens_estimate).toBe(300)

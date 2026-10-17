@@ -204,9 +204,9 @@ describe('escape grants', () => {
     const other = await newSession()
     expect(await read(other)).toEqual({ status: 403, body: { error: 'Escape authorization expired' } })
     const foreign = await newSession()
-    const stored = s.deps.sessionStore.get(foreign)
+    const stored = (await s.deps.sessionStore.get(foreign))
     stored.profile = 'other'
-    s.deps.sessionStore.save(stored)
+    await s.deps.sessionStore.save(stored)
     expect((await read(foreign)).status).toBe(404)
     expect((await post('/api/escape/authorize', { session_id: foreign, path: 'escape-scoped' })).status).toBe(404)
 

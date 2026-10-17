@@ -5,7 +5,7 @@
  * `sessions/_background/<sid>.json`, so reloads, restarts and every client read the same history, and reading never
  * consumes anything. The Agent stays authoritative for its own work: a receipt only fills in what it no longer reports.
  */
-import { mkdirSync, readFileSync } from 'node:fs'
+import { rmSync, mkdirSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import type { BackgroundLink, BackgroundTask } from '@maudecode/talaria-web-contracts'
 import { atomicWriteText } from '../fs/atomic.js'
@@ -176,7 +176,7 @@ export function taskView(r: Receipt, opts: { unconfirmed?: boolean } = {}): Back
 export class BackgroundTaskStore {
   private readonly cache = new Map<string, Receipt[]>()
 
-  constructor(private readonly sessionDir: string, private readonly now: () => number, private readonly onChange?: (sid: string) => void) {}
+  constructor(private readonly sessionDir: string, private readonly now: () => number, private readonly onChange?: (sid: string) => void | Promise<void>) {}
 
   private path(sid: string): string { return join(this.sessionDir, DIR_NAME, `${sid}.json`) }
 
@@ -212,7 +212,7 @@ export class BackgroundTaskStore {
     }
     if (!changed) return false
     this.write(sid, receipts)
-    if (opts.notify !== false) this.onChange?.(sid)
+    if (opts.notify !== false) void this.onChange?.(sid)
     return true
   }
 
@@ -223,12 +223,17 @@ export class BackgroundTaskStore {
     if (index < 0) return null
     receipts[index] = { ...receipts[index]!, ...fields }
     this.write(sid, receipts)
-    if (fields.dismissed_at !== undefined) this.onChange?.(sid)
+    if (fields.dismissed_at !== undefined) void this.onChange?.(sid)
     return receipts[index]
   }
 
   /** The session was deleted: its records go from memory too (the file goes with the session's other files). */
   evict(sid: string): void { this.cache.delete(sid) }
+
+  delete(sid: string): void {
+    this.cache.delete(sid)
+    try { rmSync(this.path(sid), { force: true }) } catch { /* best effort */ }
+  }
 
   /** Drop a `/background` task that never started. */
   forget(sid: string, taskId: string): void {

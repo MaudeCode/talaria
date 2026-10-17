@@ -51,10 +51,6 @@ struct ChatView: View {
     private let transcriptMessageSpacing: CGFloat = 10
     private let transcriptBlockSpacing: CGFloat = 6
     private let composerAccessoryVerticalSpacing: CGFloat = 8
-    private let activeRunStatusSpacerHeight: CGFloat = 36
-    private let approvalBypassStatusSpacerHeight: CGFloat = 44
-    private let sheetChipRowSpacerHeight: CGFloat = 44
-    private let goalChipSpacerHeight: CGFloat = 36
 
     @State private var completionAcknowledgementTask: Task<Void, Never>?
     @State private var completionAcknowledgementGeneration = 0
@@ -137,8 +133,8 @@ struct ChatView: View {
     @State private var showApprovalBypassOffConfirmation = false
     /// The Agent's notices dismissed on this device (TAL-831); a notice whose text changes shows again.
     @State private var dismissedSessionNotices: Set<SessionNotice> = []
-    /// The notice chips' measured height, which the transcript makes room for: a notice can wrap to two lines.
-    @State private var sessionNoticeChipsHeight: CGFloat = 0
+    /// The measured height of compact entries that reserve transcript space.
+    @State private var compactStatusHeight: CGFloat = 0
     @State private var noticeChipHeight: CGFloat = 0
     @State private var showsQueuedMessagesSheet = false
     @State private var showsBackgroundWorkSheet = false
@@ -1108,19 +1104,6 @@ struct ChatView: View {
                         .transition(ChatMotion.bottomOverlayTransition(reduceMotion: reduceMotion))
                 }
 
-                // A floating status (the syncing pill) tops the stack, so nothing above it moves
-                // when it comes and goes.
-                if let activeRunStatusPresentation, !activeRunStatusPresentation.reservesTranscriptSpace {
-                    runStatusRow(activeRunStatusPresentation)
-                        .transition(ChatMotion.bottomOverlayTransition(reduceMotion: reduceMotion))
-                }
-
-                if !visibleSessionNotices.isEmpty {
-                    SessionNoticeChips(notices: visibleSessionNotices) { dismissedSessionNotices.insert($0) }
-                        .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { sessionNoticeChipsHeight = $0 }
-                        .transition(ChatMotion.bottomOverlayTransition(reduceMotion: reduceMotion))
-                }
-
                 if let notice = viewModel.currentNotice {
                     NoticeChip(text: notice.text, level: notice.level, dismiss: viewModel.dismissNotice)
                         // A two-line notice is taller than one status row.
@@ -1132,51 +1115,9 @@ struct ChatView: View {
                         .transition(ChatMotion.bottomOverlayTransition(reduceMotion: reduceMotion))
                 }
 
-                if showsSheetChipRow {
-                    // Background work and the queue each show as one count chip that opens its sheet.
-                    HStack(spacing: composerAccessoryVerticalSpacing) {
-                        if !viewModel.pinnedBackgroundTasks.isEmpty {
-                            backgroundTasksChip(viewModel.pinnedBackgroundTasks)
-                        }
-                        if !viewModel.queuedMessagePreviews.isEmpty {
-                            queuedMessagesChip(viewModel.queuedMessagePreviews)
-                        }
-                    }
-                    .transition(ChatMotion.bottomOverlayTransition(reduceMotion: reduceMotion))
-                }
-
-                if let activeRunStatusPresentation, activeRunStatusPresentation.reservesTranscriptSpace {
-                    runStatusRow(activeRunStatusPresentation)
+                if hasCompactStatusItems {
+                    compactStatusRow
                         .transition(ChatMotion.bottomOverlayTransition(reduceMotion: reduceMotion))
-                }
-
-                if let goalChipPresentation {
-                    StatusChip(label: goalChipPresentation.label, icon: .symbol(goalChipPresentation.symbol))
-                        .transition(ChatMotion.bottomOverlayTransition(reduceMotion: reduceMotion))
-                }
-
-                if showsApprovalBypassStatus {
-                    Button {
-                        showApprovalBypassOffConfirmation = true
-                    } label: {
-                        StatusChip(
-                            label: String(localized: "Approval bypass active"),
-                            icon: .symbol("bolt.slash.fill"),
-                            emphasis: .warning
-                        )
-                        .frame(minHeight: 44)
-                        .contentShape(.rect)
-                    }
-                    .buttonStyle(.plain)
-                    .disabled(viewModel.isRespondingToApproval)
-                    .accessibilityHint(String(localized: "Turn off approval bypass"))
-                    .alert(String(localized: "Turn off approval bypass"), isPresented: $showApprovalBypassOffConfirmation) {
-                        Button(String(localized: "Turn off approval bypass"), role: .destructive) {
-                            Task { await viewModel.disableApprovalBypassForCurrentSession() }
-                        }
-                        Button(String(localized: "Cancel"), role: .cancel) {}
-                    }
-                    .transition(ChatMotion.bottomOverlayTransition(reduceMotion: reduceMotion))
                 }
             }
             .padding(.horizontal)
@@ -1192,6 +1133,62 @@ struct ChatView: View {
             .animation(ChatMotion.quickState(reduceMotion: reduceMotion), value: goalChipPresentation)
             .animation(ChatMotion.quickState(reduceMotion: reduceMotion), value: viewModel.pinnedBackgroundTasks)
             .animation(ChatMotion.quickState(reduceMotion: reduceMotion), value: viewModel.queuedMessagePreviews)
+        }
+    }
+
+    private var hasCompactStatusItems: Bool {
+        activeRunStatusPresentation != nil || hasReservedCompactStatusItems
+    }
+
+    private var hasReservedCompactStatusItems: Bool {
+        activeRunStatusPresentation?.reservesTranscriptSpace == true || !visibleSessionNotices.isEmpty
+            || showsSheetChipRow || goalChipPresentation != nil || showsApprovalBypassStatus
+    }
+
+    private var compactStatusItems: some View {
+        StatusChipGroup(
+            reservesFirstSegment: activeRunStatusPresentation?.reservesTranscriptSpace ?? true,
+            onReservedHeightChange: { compactStatusHeight = $0 }
+        ) {
+            if let activeRunStatusPresentation {
+                RunStatusChip(activeRunStatusPresentation, agentName: viewModel.assistantName)
+                    .layoutPriority(-1)
+            }
+            ForEach(visibleSessionNotices, id: \.self) { notice in
+                NoticeChip(text: notice.text, level: notice.level) { dismissedSessionNotices.insert(notice) }
+            }
+            if !viewModel.pinnedBackgroundTasks.isEmpty {
+                backgroundTasksChip(viewModel.pinnedBackgroundTasks)
+            }
+            if let goalChipPresentation {
+                StatusChip(label: goalChipPresentation.label, icon: .symbol(goalChipPresentation.symbol))
+            }
+            if showsApprovalBypassStatus {
+                Button {
+                    showApprovalBypassOffConfirmation = true
+                } label: {
+                    StatusChip(
+                        label: String(localized: "Approval bypass active"),
+                        icon: .symbol("bolt.slash.fill"),
+                        emphasis: .warning
+                    )
+                    .frame(minHeight: 44)
+                    .contentShape(.rect)
+                }
+                .buttonStyle(.plain)
+                .disabled(viewModel.isRespondingToApproval)
+                .accessibilityHint(String(localized: "Turn off approval bypass"))
+                .alert(String(localized: "Turn off approval bypass"), isPresented: $showApprovalBypassOffConfirmation) {
+                    Button(String(localized: "Turn off approval bypass"), role: .destructive) {
+                        Task { await viewModel.disableApprovalBypassForCurrentSession() }
+                    }
+                    Button(String(localized: "Cancel"), role: .cancel) {}
+                }
+                .transition(ChatMotion.bottomOverlayTransition(reduceMotion: reduceMotion))
+            }
+            if !viewModel.queuedMessagePreviews.isEmpty {
+                queuedMessagesChip(viewModel.queuedMessagePreviews)
+            }
         }
     }
 
@@ -1224,23 +1221,22 @@ struct ChatView: View {
         .accessibilityHint(String(localized: "Shows the queued messages"))
     }
 
-    /// The run status chip, joined by the scroll chip on the chosen side while it shows. A
-    /// hidden twin on the far side keeps the status chip centred.
-    private func runStatusRow(_ presentation: ChatActiveRunStatusPresentation) -> some View {
+    /// Compact statuses share one surface; the separate scroll chip keeps its configured side.
+    /// A hidden twin keeps the status group centred.
+    private var compactStatusRow: some View {
         let scrollChipLeads = ChatScrollToBottomButtonSide
             .storedValue(scrollToBottomButtonSideRawValue)
             .leads(in: layoutDirection)
         return HStack(spacing: composerAccessoryVerticalSpacing) {
-            if showsScrollToBottomButton {
+            if showsScrollToBottomButton, activeRunStatusPresentation != nil {
                 scrollToBottomChip(isVisible: scrollChipLeads)
             }
-            RunStatusChip(presentation, agentName: viewModel.assistantName)
-                .allowsHitTesting(false)
-            if showsScrollToBottomButton {
+            compactStatusItems
+            if showsScrollToBottomButton, activeRunStatusPresentation != nil {
                 scrollToBottomChip(isVisible: !scrollChipLeads)
             }
         }
-        // Every chip in the row takes the tallest one's height.
+        // Let the fallback stack set the height without stretching the separate scroll chip.
         .fixedSize(horizontal: false, vertical: true)
     }
 
@@ -1252,6 +1248,7 @@ struct ChatView: View {
         ) {
             scrollToBottomRequest += 1
         }
+        .fixedSize()
         .opacity(isVisible ? 1 : 0)
         .disabled(!isVisible)
         .accessibilityHidden(!isVisible)
@@ -1533,30 +1530,12 @@ struct ChatView: View {
         SessionGoalChipPresentation(goal: viewModel.sessionGoal)
     }
 
-    /// Height of the chips stacked above the composer that the transcript makes room for. It
-    /// leaves out a floating status (the syncing pill) and the lone scroll chip so they never
-    /// shift the chat.
+    /// Reserve measured compact entries and the transient notice, excluding syncing and the scroll chip.
     private func composerAccessorySpacerHeight() -> CGFloat {
         var height: CGFloat = viewModel.currentNotice == nil ? 0 : noticeChipHeight
         var itemCount = viewModel.currentNotice == nil ? 0 : 1
-        if !visibleSessionNotices.isEmpty {
-            height += sessionNoticeChipsHeight
-            itemCount += 1
-        }
-        if let activeRunStatusPresentation, activeRunStatusPresentation.reservesTranscriptSpace {
-            height += activeRunStatusSpacerHeight
-            itemCount += 1
-        }
-        if goalChipPresentation != nil {
-            height += goalChipSpacerHeight
-            itemCount += 1
-        }
-        if showsApprovalBypassStatus {
-            height += approvalBypassStatusSpacerHeight
-            itemCount += 1
-        }
-        if showsSheetChipRow {
-            height += sheetChipRowSpacerHeight
+        if hasReservedCompactStatusItems {
+            height += compactStatusHeight
             itemCount += 1
         }
 

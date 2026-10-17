@@ -27,7 +27,7 @@ Three rules apply everywhere:
 |---|---|---|
 | Agent configuration (`config.yaml`, `.env`) | `AgentConfig` read cache keyed on mtime/size; writes are synchronous atomic replaces that preserve mode/uid/gid | A stale snapshot is never published as a write baseline. |
 | Settings (`settings.json`) | `SettingsStore` synchronous load/save with the allowlist and migrations | Defaults, migration, and the atomic write happen in one call. |
-| Sessions (`sessions/<sid>.json`) | Per-session promise lock in `SessionStore`; the LRU evicts only clean persisted sessions | Mutation and `save()` run under the session lock; the coalesced index writer receives an immutable row snapshot. |
+| Sessions (`sessions/<sid>.json`) | Per-session promise lock in `SessionStore`; the LRU evicts only clean persisted sessions | Mutation runs under the session lock; `save()` serializes writes per session and checks the loaded revision. The index writer receives a row snapshot and serializes index updates. |
 | Session index (`_index.json`) | Coalescing writer: concurrent saves publish rows into one pending batch, one rewrite per batch | A rewrite that throws rejects every saver in its batch; the next batch still runs. |
 | Tombstones (orphans, deleted sessions) | Synchronous read-modify-atomic-write per mutation | Bounded files; no await inside. |
 | Drafts (`sessions/_drafts`) | Monotonic `_draft_version` compare-and-write per session | Stale versions are rejected, not merged. |

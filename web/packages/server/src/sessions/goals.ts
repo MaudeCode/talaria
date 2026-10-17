@@ -65,9 +65,9 @@ export class SessionGoals {
     this.parkTimers.set(sessionId, timer)
   }
 
-  sweep(exists: (sessionId: string) => boolean): void {
+  async sweep(exists: (sessionId: string) => boolean | Promise<boolean>): Promise<void> {
     for (const sid of this.bySession.keys()) {
-      if (exists(sid)) continue
+      if (await exists(sid)) continue
       this.bySession.delete(sid)
       this.reported.delete(sid)
       clearTimeout(this.parkTimers.get(sid))

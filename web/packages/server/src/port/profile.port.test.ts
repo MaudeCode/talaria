@@ -233,48 +233,48 @@ describe('per-profile system projects', () => {
   afterAll(() => { rmSync(dir, { recursive: true, force: true }); })
   const reset = (projects: Json[] = []): void => { writeFileSync(join(dir, 'projects.json'), JSON.stringify(projects)); indexRows = [] }
 
-  it('each profile gets its own Cron Jobs project', () => {
+  it('each profile gets its own Cron Jobs project', async () => {
     reset()
     const p = store()
-    const haku = p.ensureSystemProject('cron', 'haku')
-    const kinni = p.ensureSystemProject('cron', 'kinni')
+    const haku = (await p.ensureSystemProject('cron', 'haku'))
+    const kinni = (await p.ensureSystemProject('cron', 'kinni'))
     expect(haku).not.toBe(kinni)
-    const rows = p.load().filter((r) => r.name === 'Cron Jobs')
+    const rows = (await p.load()).filter((r) => r.name === 'Cron Jobs')
     expect(rows.map((r) => r.profile).sort()).toEqual(['haku', 'kinni'])
   })
 
-  it('repeat calls within one profile answer the same id', () => {
+  it('repeat calls within one profile answer the same id', async () => {
     reset()
     const p = store()
-    expect(p.ensureSystemProject('cron', 'haku')).toBe(p.ensureSystemProject('cron', 'haku'))
-    expect(p.load()).toHaveLength(1)
+    expect((await p.ensureSystemProject('cron', 'haku'))).toBe((await p.ensureSystemProject('cron', 'haku')))
+    expect((await p.load())).toHaveLength(1)
   })
 
-  it('a legacy untagged Cron Jobs row is reused and tagged with the caller', () => {
+  it('a legacy untagged Cron Jobs row is reused and tagged with the caller', async () => {
     reset([{ project_id: 'legacy123456', name: 'Cron Jobs', color: '#6366f1' }])
     const p = store()
-    expect(p.ensureSystemProject('cron', 'haku')).toBe('legacy123456')
-    expect(p.load({ migrate: false })[0]).toMatchObject({ project_id: 'legacy123456', profile: 'haku' })
+    expect((await p.ensureSystemProject('cron', 'haku'))).toBe('legacy123456')
+    expect((await p.load({ migrate: false }))[0]).toMatchObject({ project_id: 'legacy123456', profile: 'haku' })
   })
 
-  it('under a renamed root the default-tagged cron project is reused', () => {
+  it('under a renamed root the default-tagged cron project is reused', async () => {
     reset([{ project_id: 'rootcron1234', name: 'Cron Jobs', color: '#6366f1', profile: 'default' }])
     const p = store((n) => n === 'default' || n === 'kinni')
-    expect(p.ensureSystemProject('cron', 'kinni')).toBe('rootcron1234')
-    expect(p.load()).toHaveLength(1)
+    expect((await p.ensureSystemProject('cron', 'kinni'))).toBe('rootcron1234')
+    expect((await p.load())).toHaveLength(1)
   })
 
-  it('untagged projects inherit the profile of an assigned session and the backfill persists', () => {
+  it('untagged projects inherit the profile of an assigned session and the backfill persists', async () => {
     reset([{ project_id: 'proj00000001', name: 'Work', color: '#fff' }])
     indexRows = [{ session_id: 's1', project_id: 'proj00000001', profile: 'haku' }]
     const p = store()
-    expect(p.load()[0]).toMatchObject({ profile: 'haku' })
+    expect((await p.load())[0]).toMatchObject({ profile: 'haku' })
     expect((JSON.parse(readFileSync(join(dir, 'projects.json'), 'utf8')) as Json[])[0]).toMatchObject({ profile: 'haku' })
   })
 
-  it('an orphan untagged project falls back to default', () => {
+  it('an orphan untagged project falls back to default', async () => {
     reset([{ project_id: 'proj00000002', name: 'Orphan', color: '#fff' }])
-    expect(store().load()[0]).toMatchObject({ profile: 'default' })
+    expect((await store().load())[0]).toMatchObject({ profile: 'default' })
   })
 
   it('a fully tagged projects.json is not rewritten', async () => {
@@ -282,8 +282,8 @@ describe('per-profile system projects', () => {
     const before = statSync(join(dir, 'projects.json')).mtimeMs
     await new Promise((r) => setTimeout(r, 20))
     const p = store()
-    p.load()
-    p.load()
+    await p.load()
+    await p.load()
     expect(statSync(join(dir, 'projects.json')).mtimeMs).toBe(before)
   })
 })
@@ -1019,7 +1019,7 @@ describe('profiles, crons, workspaces, skills, and sessions across profiles', ()
       const res = await post(s, '/api/session/new', { profile: 'research' }, asWork())
       expect(res.status, await res.clone().text()).toBe(200)
       const sid = String(((await json(res)).session as Json).session_id)
-      expect(s.deps.sessionStore.get(sid)).toMatchObject({ profile: 'research', model: 'research-model', model_provider: 'anthropic' })
+      expect((await s.deps.sessionStore.get(sid))).toMatchObject({ profile: 'research', model: 'research-model', model_provider: 'anthropic' })
     } finally {
       configs.delete(researchHome)
       writeFileSync(join(researchHome, 'config.yaml'), '# seed\n')
@@ -1036,7 +1036,7 @@ describe('profiles, crons, workspaces, skills, and sessions across profiles', ()
       const res = await post(s, '/api/session/new', { profile: 'research' }, asWork())
       expect(res.status, await res.clone().text()).toBe(200)
       const sid = String(((await json(res)).session as Json).session_id)
-      expect(s.deps.sessionStore.get(sid)).toMatchObject({ profile: 'research', model: 'work-default-model', model_provider: 'anthropic' })
+      expect((await s.deps.sessionStore.get(sid))).toMatchObject({ profile: 'research', model: 'work-default-model', model_provider: 'anthropic' })
     } finally {
       configs.delete(researchHome)
       configs.delete(workHome)
