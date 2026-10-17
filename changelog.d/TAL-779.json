@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Security",
+      "summary": "Worktree status and removal block repository-configured Git programs.",
+      "highlight": false,
+      "components": ["web"]
+    }
+  ]
+}

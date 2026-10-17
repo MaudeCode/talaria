@@ -1,8 +1,8 @@
 import { spawnSync } from 'node:child_process'
-import { existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync, unlinkSync, writeFileSync } from 'node:fs'
+import { existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync, unlinkSync, utimesSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { afterAll, describe, expect, it } from 'vitest'
+import { afterAll, describe, expect, it, vi } from 'vitest'
 import type { Session } from '../sessions/session.js'
 import { removeWorktreeForSession, worktreeStatusForSession } from './worktrees.js'
 
@@ -32,6 +32,78 @@ describe('removeWorktreeForSession', () => {
     // Unlocked throughout: removal proceeds.
     expect(await removeWorktreeForSession(session, { lockedByStream: () => false, lockedByTerminal: () => false })).toMatchObject({ ok: true, removed_path: worktree })
     expect(existsSync(worktree)).toBe(false)
+  })
+})
+
+describe('hardened worktree Git calls', () => {
+  const unlocked = { lockedByStream: () => false, lockedByTerminal: () => false }
+  let n = 0
+  function setup(): { repo: string; worktree: string; session: Session } {
+    const repo = join(root, `secure-repo-${String(++n)}`)
+    git(root, 'init', '-q', '-b', 'main', repo)
+    writeFileSync(join(repo, '.gitattributes'), '*.txt filter=evil\n')
+    writeFileSync(join(repo, 'tracked.txt'), 'hello\n')
+    git(repo, 'add', '.')
+    git(repo, 'commit', '-q', '-m', 'init')
+    const worktree = join(root, `secure-wt-${String(n)}`)
+    git(repo, 'worktree', 'add', '-q', '-b', `secure-wt-${String(n)}`, worktree)
+    git(worktree, 'branch', '--set-upstream-to=main')
+    return { repo, worktree, session: { session_id: `secure-${String(n)}`, worktree_path: worktree, worktree_repo_root: repo } as unknown as Session }
+  }
+
+  for (const scope of ['local', 'worktree'] as const) {
+    for (const operation of ['status', 'remove', 'remove --force'] as const) {
+      it(`does not execute ${scope} fsmonitor or filter programs during ${operation}`, async () => {
+        const { repo, worktree, session } = setup()
+        const marker = join(root, `executed-${String(n)}`)
+        if (scope === 'worktree') git(repo, 'config', 'extensions.worktreeConfig', 'true')
+        git(worktree, 'config', `--${scope}`, 'core.fsmonitor', `printf fsmonitor >> "${marker}"`)
+        git(worktree, 'config', `--${scope}`, 'filter.evil.clean', `printf clean >> "${marker}"; cat`)
+        git(worktree, 'config', `--${scope}`, 'filter.evil.smudge', `printf smudge >> "${marker}"; cat`)
+        let stamp = 1
+        const statDirty = (): void => { utimesSync(join(worktree, 'tracked.txt'), stamp, stamp++) }
+        statDirty()
+        expect(existsSync(marker)).toBe(false)
+        if (operation === 'status') {
+          expect(await worktreeStatusForSession(session, unlocked)).toMatchObject({ listed: true, dirty: false, untracked_count: 0, force_required: false })
+        } else {
+          let terminalChecks = 0
+          const locks = { ...unlocked, lockedByTerminal: () => {
+            // Git's internal removal check must rescan the target after our status probe refreshed its index.
+            if (++terminalChecks === 2) statDirty()
+            return false
+          } }
+          expect(await removeWorktreeForSession(session, locks, { force: operation === 'remove --force' })).toMatchObject({ ok: true, warnings: null })
+          expect(existsSync(worktree)).toBe(false)
+        }
+        expect(existsSync(marker), existsSync(marker) ? readFileSync(marker, 'utf8') : 'no repository program executed').toBe(false)
+      })
+    }
+  }
+
+  it('preserves clean, dirty, untracked, ahead and forced-removal behavior', async () => {
+    const { worktree, session } = setup()
+    expect(await worktreeStatusForSession(session, unlocked)).toMatchObject({ exists: true, listed: true, dirty: false, untracked_count: 0, force_required: false, ahead_behind: { ahead: 0, behind: 0, available: true, upstream: 'main' } })
+    writeFileSync(join(worktree, 'tracked.txt'), 'changed\n')
+    expect(await worktreeStatusForSession(session, unlocked)).toMatchObject({ dirty: true, untracked_count: 0, force_required: true })
+    await expect(removeWorktreeForSession(session, unlocked)).rejects.toThrow('Worktree has uncommitted changes')
+    git(worktree, 'add', '.')
+    git(worktree, 'commit', '-q', '-m', 'ahead')
+    expect(await worktreeStatusForSession(session, unlocked)).toMatchObject({ dirty: false, force_required: true, ahead_behind: { ahead: 1, behind: 0, available: true } })
+    await expect(removeWorktreeForSession(session, unlocked)).rejects.toThrow('Worktree has 1 unpushed commit(s)')
+    writeFileSync(join(worktree, 'notes.txt'), 'untracked\n')
+    expect(await worktreeStatusForSession(session, unlocked)).toMatchObject({ dirty: true, untracked_count: 1, force_required: true })
+    expect(await removeWorktreeForSession(session, unlocked, { force: true })).toMatchObject({ ok: true, warnings: ['1 untracked file(s) will be removed.', '1 unpushed commit(s) will be removed.'] })
+    expect(existsSync(worktree)).toBe(false)
+  })
+
+  it('preserves unavailable-Git status defaults and removal error wording', async () => {
+    const { session } = setup()
+    vi.stubEnv('PATH', join(root, 'missing-bin'))
+    try {
+      expect(await worktreeStatusForSession(session, unlocked)).toMatchObject({ exists: true, listed: false, dirty: false, untracked_count: 0, ahead_behind: { available: false } })
+      await expect(removeWorktreeForSession(session, unlocked)).rejects.toThrow("Failed to remove worktree: [Errno 2] No such file or directory: 'git'")
+    } finally { vi.unstubAllEnvs() }
   })
 })
 

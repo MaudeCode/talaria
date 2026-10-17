@@ -2,7 +2,7 @@
 import { randomUUID } from 'node:crypto'
 import { lstatSync, readdirSync, readFileSync, readlinkSync, realpathSync, renameSync, statSync, symlinkSync, unlinkSync } from 'node:fs'
 import { basename, dirname, join, posix } from 'node:path'
-import { spawnGit } from './git.js'
+import { GitRunner, GitWorkspaceError, type GitResult } from './git.js'
 import { resolvePathLikePython } from './paths.js'
 import { pyOsError } from '../util.js'
 import type { Session } from '../sessions/session.js'
@@ -11,19 +11,21 @@ import type { WorktreeStatus } from '@maudecode/talaria-web-contracts'
 /** The `OSError`/`TimeoutExpired` text Python interpolated into `Failed to remove worktree: {exc}`. */
 export class GitSpawnFailure extends Error {}
 
-async function git(args: string[], cwd: string, timeoutMs = 2_000): Promise<{ status: number; stdout: string; stderr: string } | null> {
-  const r = await spawnGit(cwd, args, timeoutMs)
-  if (r.error) return null
-  return { status: r.status ?? 1, stdout: r.stdout, stderr: r.stderr }
+async function git(args: string[], cwd: string, timeoutMs = 2_000): Promise<GitResult | null> {
+  try { return await gitOrThrow(args, cwd, timeoutMs) } catch (error) {
+    if (error instanceof GitSpawnFailure || (error instanceof GitWorkspaceError && error.code === 'not_a_repo')) return null
+    throw error
+  }
 }
 
-async function gitOrThrow(args: string[], cwd: string, timeoutMs: number): Promise<{ status: number; stdout: string; stderr: string }> {
-  const r = await spawnGit(cwd, args, timeoutMs)
-  if (r.error) {
-    const code = r.error.code
-    throw new GitSpawnFailure(code === 'ETIMEDOUT' ? `Command '${JSON.stringify(['git', ...args]).replaceAll('"', "'").replaceAll(',', ', ')}' timed out after ${String(timeoutMs / 1000)} seconds` : pyOsError(r.error, 'git'))
+async function gitOrThrow(args: string[], cwd: string, timeoutMs: number, filterConfigCwds: string[] = []): Promise<GitResult> {
+  try {
+    return await new GitRunner({ env: process.env }).run(cwd, args, { timeoutMs, neutralizeFilterPrograms: true, filterConfigCwds })
+  } catch (error) {
+    if (!(error instanceof GitWorkspaceError) || !(error.cause instanceof Error)) throw error
+    const cause = error.cause as NodeJS.ErrnoException
+    throw new GitSpawnFailure(cause.code === 'ETIMEDOUT' ? `Command '${JSON.stringify(['git', ...args]).replaceAll('"', "'").replaceAll(',', ', ')}' timed out after ${String(timeoutMs / 1000)} seconds` : pyOsError(cause, 'git'))
   }
-  return { status: r.status ?? 1, stdout: r.stdout, stderr: r.stderr }
 }
 
 function resolvePath(path: unknown): string | null {
@@ -229,9 +231,9 @@ export async function removeWorktreeForSession(session: Session, locks: Worktree
     const args = ['worktree', 'remove']
     if (force) args.push('--force')
     args.push(worktreePath)
-    let result: { status: number; stdout: string; stderr: string }
+    let result: GitResult
     try {
-      result = await gitOrThrow(args, repoRoot, 10_000)
+      result = await gitOrThrow(args, repoRoot, 10_000, [worktreePath])
     } catch (error) {
       throw new Error(`Failed to remove worktree: ${error instanceof Error ? error.message : String(error)}`)
     }

@@ -51,8 +51,8 @@ const GIT_DESTRUCTIVE_HARDENED_CONFIG: [string, string][] = [
 const CONFLICT_CODES = new Set(['DD', 'AU', 'UD', 'UA', 'DU', 'AA', 'UU'])
 
 export class GitWorkspaceError extends Error {
-  constructor(message: string, readonly code = 'git_failed') {
-    super(message)
+  constructor(message: string, readonly code = 'git_failed', options?: ErrorOptions) {
+    super(message, options)
     this.name = 'GitWorkspaceError'
   }
 }
@@ -95,6 +95,8 @@ interface RunOptions {
   forceDestructiveHardening?: boolean
   disableFilterAttributes?: boolean
   neutralizeFilterPrograms?: boolean
+  /** Additional worktrees whose config a subprocess (such as `worktree remove`) will read. */
+  filterConfigCwds?: string[]
   neutralizeRemoteHelpers?: boolean
 }
 
@@ -164,7 +166,7 @@ export function classifyGitError(message: string, args: string[] = []): string {
   const joined = args.join(' ').toLowerCase()
   if (text.includes('timed out')) return 'timeout'
   if (text.includes('not installed') || text.includes("no such file or directory: 'git'")) return 'missing_git'
-  if (text.includes('not a git repository')) return 'not_a_repo'
+  if (text.includes('not a git repository') || text.includes('can only be used inside a git repository')) return 'not_a_repo'
   if (text.includes('outside the workspace') || text.includes('outside the git repository')) return 'path_outside_workspace'
   if (text.includes('authentication failed') || text.includes('permission denied') || text.includes('could not read username')) return 'auth_failed'
   if (text.includes('no upstream') || text.includes('no configured push destination') || text.includes('has no upstream branch')) return 'no_upstream'
@@ -275,7 +277,7 @@ export class GitRunner {
     if (result.status !== 0 && result.status !== 1) {
       if (ignoreUnsupported) return names
       const message = (result.stderr || result.stdout || 'Git command failed').trim()
-      throw new GitWorkspaceError(message, classifyGitError(message, ['config']))
+      throw new GitWorkspaceError(message, classifyGitError(message, ['config']), { cause: result.error })
     }
     for (const line of (result.stdout || '').split('\n')) {
       const m = nameRe.exec(line.trim())
@@ -325,7 +327,11 @@ export class GitRunner {
         writeFileSync(attributesFile, '')
       }
       if (opts.disableFilterAttributes || opts.neutralizeFilterPrograms) {
-        for (const name of [...await this.filterNames(cwd, runEnv)].sort()) {
+        const names = new Set<string>()
+        for (const path of new Set([cwd, ...(opts.filterConfigCwds ?? [])])) {
+          for (const name of await this.filterNames(path, runEnv)) names.add(name)
+        }
+        for (const name of [...names].sort()) {
           if (!GitRunner.legal(name)) continue
           extraConfigs.push([`filter.${name}.clean`, 'cat'], [`filter.${name}.smudge`, 'cat'], [`filter.${name}.process`, ''], [`filter.${name}.required`, 'false'])
         }
@@ -367,9 +373,9 @@ export class GitRunner {
       const result = await spawnGit(cwd, full, opts.timeoutMs ?? GIT_TIMEOUT_MS, runEnv)
       if (result.error) {
         const err = result.error
-        if (err.code === 'ETIMEDOUT') throw new GitWorkspaceError('Git command timed out', 'timeout')
-        if (err.code === 'ENOENT') throw new GitWorkspaceError('Git is not installed or not available on PATH', 'missing_git')
-        throw new GitWorkspaceError(err.message, classifyGitError(err.message, args))
+        if (err.code === 'ETIMEDOUT') throw new GitWorkspaceError('Git command timed out', 'timeout', { cause: err })
+        if (err.code === 'ENOENT') throw new GitWorkspaceError('Git is not installed or not available on PATH', 'missing_git', { cause: err })
+        throw new GitWorkspaceError(err.message, classifyGitError(err.message, args), { cause: err })
       }
       const out: GitResult = { status: result.status ?? 1, stdout: result.stdout, stderr: result.stderr }
       if (opts.check && out.status !== 0) {
