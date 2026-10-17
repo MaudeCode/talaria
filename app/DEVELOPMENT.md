@@ -139,7 +139,9 @@ Agent/MCP flow:
   simulator and the driver arguments supplied by T3's Device panel. The harness
   uses `test-ios` for the lease/build and records frame/reader assertions and
   screenshots under `.codex-tmp/xctest/history-drag/`. Add `--large-history` to
-  start with 1,000 loaded messages. Both external-driver cases explicitly skip
+  start with 1,000 loaded messages, or `--fling` to check native momentum after
+  touch-up. The fling uses `swipe`; the driver's `scroll` deliberately brakes
+  before release. All three external-driver cases explicitly skip
   in ordinary hosted runs; phone validation remains required.
 - Use `scripts/run-ios` for manual worktree testing. It leases one pool simulator,
   builds the isolated `.xctest` app, launches the deterministic fixture, and opens

@@ -93,7 +93,7 @@ xcrun xcresulttool get test-results metrics --path <result-bundle> --compact
 `testLargeLoadedHistoryInsertionPreservesReaderDuringNativeDrag` variant require
 an external native gesture driver. Run `scripts/test-history-drag` as described
 in `DEVELOPMENT.md`; add `--large-history` for 1,000 already-loaded messages.
-Ordinary CI skips these two cases rather than substituting a stationary scroll.
+Ordinary CI skips these external-driver cases rather than substituting a stationary scroll.
 
 The fixture holds an older page until a real UIKit drag begins. A continuous
 `UIUpdateLink` samples the rendered message and its local point under the finger,
@@ -115,3 +115,13 @@ The final navigation/admission correction passed both native cases again: 79
 samples at the normal page and 76 with 1,000 loaded messages, with maximum
 update gaps of 72 ms and 65 ms respectively. Both retained one rendered reader
 within 0.67 points and passed expanded-work recycling and a second prepend.
+
+`scripts/test-history-drag --fling` runs
+`testHistoryInsertionPreservesNativeDeceleration` with a real fast swipe. It
+tracks the rendered message marker after touch-up, independently of transcript
+height estimates. The pan's actual touch count identifies finger release:
+UIKit can report `isDragging` throughout deceleration. The check requires
+continued rendered motion, no backward movement over 2 points, and a slow
+native ending, while retaining the same 100 ms display-update budget.
+The controller's focused tests also check momentum during a size-changing turn
+and measurement arriving after the original prepend deadline.

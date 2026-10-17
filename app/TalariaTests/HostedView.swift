@@ -166,10 +166,10 @@ extension UIView {
     }
 
     /// The first view of `type` under this one, depth first.
-    func firstView<View: UIView>(ofType type: View.Type) -> View? {
-        if let match = self as? View { return match }
+    func firstView<View: UIView>(ofType type: View.Type, where predicate: (View) -> Bool = { _ in true }) -> View? {
+        if let match = self as? View, predicate(match) { return match }
         for child in subviews {
-            if let match = child.firstView(ofType: type) { return match }
+            if let match = child.firstView(ofType: type, where: predicate) { return match }
         }
         return nil
     }

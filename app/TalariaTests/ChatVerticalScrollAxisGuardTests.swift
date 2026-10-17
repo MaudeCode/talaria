@@ -137,6 +137,51 @@ final class ChatVerticalScrollAxisGuardTests: XCTestCase {
 
 @MainActor
 final class ChatScrollPositionControllerTests: XCTestCase {
+    func testNativeMomentumContinuesDuringTheSameTurnAsRowMeasurement() throws {
+        let scroll = try XCTUnwrap(makeScrollView(isDragging: true) as? HistoryInteractionScrollView)
+        scroll.userIsDecelerating = true
+        scroll.contentOffset.y = 240
+        let controller = ChatScrollPositionController()
+        controller.attach(to: scroll)
+        defer { controller.detach() }
+        controller.recordRowMinY(180, for: "reader")
+        XCTAssertTrue(controller.capture(anchorRowID: "reader"))
+        XCTAssertTrue(controller.restoreAfterPrepend(whileInteracting: true))
+        scroll.contentSize.height += 640
+        controller.recordRowMinY(820, for: "reader")
+        XCTAssertEqual(scroll.contentOffset.y, 880, accuracy: 0.001)
+        // UIKit's drag flag can remain true after touch-up. A native momentum
+        // tick in this size-changing turn must still advance the reader.
+        scroll.contentOffset.y = 860
+        XCTAssertEqual(scroll.contentOffset.y, 860, accuracy: 0.001,
+                       "Row measurement must not put native momentum back at its previous offset")
+        controller.recordRowMinY(840, for: "reader")
+        XCTAssertEqual(scroll.contentOffset.y, 880, accuracy: 0.001,
+                       "The next measurement must retain the reader's continued 20pt scroll")
+    }
+
+    func testLateRealizationKeepsPreservationThroughItsMeasurement() async throws {
+        let scroll = makeScrollView()
+        scroll.contentOffset.y = 200
+        let controller = ChatScrollPositionController()
+        controller.attach(to: scroll)
+        defer { controller.detach() }
+        controller.recordRowGeometry(.init(revision: 0, contentMinY: 200,
+            frame: CGRect(x: 0, y: 0, width: 320, height: 200)), for: "reader")
+        XCTAssertTrue(controller.capture(anchorRowID: "reader"))
+        XCTAssertTrue(controller.restoreAfterPrepend())
+        try await Task.sleep(for: .milliseconds(850))
+        XCTAssertTrue(controller.isPreservingPosition, "Admit the neighbor before the original prepend deadline")
+        // A queued neighbor starts realizing before the prepend window ends,
+        // but its measured height arrives after that original deadline.
+        _ = controller.preserveReaderForRealization(isFollowingLatest: false)
+        try await Task.sleep(for: .milliseconds(300))
+        controller.recordRowMinY(62.333333333, for: "reader")
+        scroll.contentSize.height -= 137.666666667
+        XCTAssertEqual(scroll.contentOffset.y, 62.333333333, accuracy: 0.001,
+                       "Late row measurement must preserve the reader after the original prepend deadline")
+    }
+
     func testUserInteractionReleasesUnfinishedNavigationBeforeRealizingRows() async throws {
         for disclosure in [false, true] {
             let scroll = makeScrollView()
@@ -1063,7 +1108,9 @@ final class ChatScrollPositionControllerTests: XCTestCase {
 /// UIScrollView's interaction flags are read-only; the existing fixture needs a controllable gesture for this case.
 private final class HistoryInteractionScrollView: UIScrollView {
     var userIsDragging = false
+    var userIsDecelerating = false
     override var isDragging: Bool { userIsDragging }
+    override var isDecelerating: Bool { userIsDecelerating }
     private let historyPan = HistoryPanGestureRecognizer()
     override var panGestureRecognizer: UIPanGestureRecognizer { historyPan }
 

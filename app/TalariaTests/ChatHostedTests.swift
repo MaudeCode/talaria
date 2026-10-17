@@ -249,7 +249,11 @@ final class ChatHostedTests: XCTestCase {
         try await assertFullChatHistoryInsertion(expandDisclosure: true, boundaryTurn: true, nativeDrag: true, largeHistory: true)
     }
 
-    private func assertFullChatHistoryInsertion(expandDisclosure: Bool, boundaryTurn: Bool = false, nativeDrag: Bool = false, largeHistory: Bool = false) async throws {
+    func testHistoryInsertionPreservesNativeDeceleration() async throws {
+        try await assertFullChatHistoryInsertion(expandDisclosure: true, boundaryTurn: true, nativeDrag: true, nativeFling: true)
+    }
+
+    private func assertFullChatHistoryInsertion(expandDisclosure: Bool, boundaryTurn: Bool = false, nativeDrag: Bool = false, largeHistory: Bool = false, nativeFling: Bool = false) async throws {
         let nativeRunDirectory = nativeDrag ? try nativeHistoryDragDirectory() : nil
         var scenario = [UITestFixtureEnvironment.historyPagingArgument,
                         UITestFixtureEnvironment.holdTranscriptReloadsArgument]
@@ -313,8 +317,15 @@ final class ChatHostedTests: XCTestCase {
         XCTAssertFalse(frame.isEmpty, "The reader must be visibly on screen before releasing the page")
         let point = CGPoint(x: frame.midX, y: frame.midY)
         let registry = try messageMenuRegistry(in: window)
-        var before = try XCTUnwrap(registry.hit(at: scroll.convert(point, from: window), in: scroll))
+        let before = try XCTUnwrap(registry.hit(at: scroll.convert(point, from: window), in: scroll))
         XCTAssertEqual(before.content.messageID, readerID)
+        let momentumReader: ChatMessageInteractionMarkerView?
+        if nativeFling {
+            momentumReader = try XCTUnwrap(window.firstView(ofType: ChatMessageInteractionMarkerView.self) {
+                $0.bounds.size == before.rowSize
+                    && abs($0.convert(point, from: window).y - before.localPoint.y) < 0.5
+            }, "Track the actual rendered reader even after momentum carries it away from the probe point")
+        } else { momentumReader = nil }
         let oldHeight = scroll.contentSize.height
         var samples: [[String: Double]] = []
         var largestMovement: CGFloat = 0
@@ -323,38 +334,64 @@ final class ChatHostedTests: XCTestCase {
         var initialTranslation: CGFloat?
         var dragSamples = 0
         var pageReleased = false
+        var decelerationStarted: TimeInterval?
+        var decelerationDuration: TimeInterval = 0
+        var sawNativeFling = false
+        var lostMomentumReader = false
         if let nativeRunDirectory {
             try FileManager.default.createDirectory(at: nativeRunDirectory, withIntermediateDirectories: true)
             try Data("ready".utf8).write(to: nativeRunDirectory.appendingPathComponent("ready"))
         }
         let updateLink = UIUpdateLink(windowScene: try XCTUnwrap(window.windowScene))
         updateLink.addAction(to: .afterUpdateComplete) { _, _ in
-            guard samples.count < 120 else { return }
+            guard samples.count < (nativeFling ? 240 : 120) else { return }
             let now = ProcessInfo.processInfo.systemUptime
             let translation = scroll.panGestureRecognizer.translation(in: scroll).y
+            // UIKit can keep isDragging true throughout deceleration. The pan's
+            // actual touches distinguish a held finger from native momentum.
+            let touchDragging = scroll.isDragging && scroll.panGestureRecognizer.numberOfTouches > 0
             var samplePoint = point
             if nativeDrag {
-                guard scroll.isDragging else { return }
+                if scroll.isDecelerating { sawNativeFling = true }
+                if nativeFling, scroll.isDecelerating, !touchDragging {
+                    if decelerationStarted == nil {
+                        decelerationStarted = now
+                    }
+                    decelerationDuration = now - (decelerationStarted ?? now)
+                }
+                guard touchDragging || (nativeFling && sawNativeFling) else { return }
                 if initialTranslation == nil {
-                    initialTranslation = translation
-                    before = registry.hit(at: scroll.convert(point, from: window), in: scroll) ?? before
-                    XCTAssertEqual(before.content.messageID, readerID, "The drag must start on the chosen reader")
+                    // UIKit's translation already includes movement before the
+                    // first display sample of a quick fling.
+                    initialTranslation = 0
                     fixture.releaseHeldLoads()
                     pageReleased = true
                 }
                 samplePoint.y += translation - (initialTranslation ?? translation)
-                guard viewport.contains(samplePoint) else { return }
-                dragSamples += 1
+                if !nativeFling || touchDragging {
+                    guard viewport.contains(samplePoint) else { return }
+                    dragSamples += 1
+                }
             }
+            if nativeFling, momentumReader?.window !== window { lostMomentumReader = true }
             let hit = registry.hit(at: scroll.convert(samplePoint, from: window), in: scroll)
             let delta = (hit?.localPoint.y ?? 0) - before.localPoint.y
-            if hit?.content.messageID != before.content.messageID { missingReader = true }
-            else { largestMovement = max(largestMovement, abs(delta)) }
+            if !nativeFling || touchDragging {
+                if hit?.content.messageID != before.content.messageID { missingReader = true }
+                else { largestMovement = max(largestMovement, abs(delta)) }
+            }
             samples.append(["gapMilliseconds": (now - previousTick) * 1_000,
+                            "time": now,
+                            "readerY": Double(momentumReader?.convert(.zero, to: window).y ?? 0),
                             "readerDelta": Double(delta), "offset": Double(scroll.contentOffset.y),
                             "height": Double(scroll.contentSize.height), "translation": Double(translation),
                             "pointY": Double(samplePoint.y),
                             "dragging": scroll.isDragging ? 1 : 0,
+                            "touchDragging": touchDragging ? 1 : 0,
+                            "touchCount": Double(scroll.panGestureRecognizer.numberOfTouches),
+                            "panState": Double(scroll.panGestureRecognizer.state.rawValue),
+                            "tracking": scroll.isTracking ? 1 : 0,
+                            "decelerating": scroll.isDecelerating ? 1 : 0,
                             "messageIndex": Double(Int(hit?.content.messageID.replacingOccurrences(of: "history-", with: "") ?? "") ?? -1)])
             previousTick = now
         }
@@ -387,6 +424,28 @@ final class ChatHostedTests: XCTestCase {
         if nativeDrag {
             let largestGap = samples.dropFirst().map { $0["gapMilliseconds"] ?? 0 }.max() ?? 0
             XCTAssertLessThanOrEqual(largestGap, 100, "History insertion must not stall the moving display")
+            if nativeFling {
+                XCTAssertTrue(sawNativeFling, "The native driver must produce a fling")
+                XCTAssertFalse(lostMomentumReader, "Observe the rendered reader throughout momentum")
+                XCTAssertGreaterThan(decelerationDuration, 0.3,
+                                     "History arrival must preserve native momentum after the finger lifts")
+                let coasting = samples.filter { $0["decelerating"] == 1 && $0["touchDragging"] == 0 }
+                let travel = (coasting.last?["readerY"] ?? 0) - (coasting.first?["readerY"] ?? 0)
+                XCTAssertGreaterThan(travel, 60, "The rendered content must keep coasting, not merely report deceleration")
+                let released = samples.filter { $0["touchDragging"] == 0 }
+                let reversals = zip(released, released.dropFirst()).map {
+                    ($0["readerY"] ?? 0) - ($1["readerY"] ?? 0)
+                }
+                XCTAssertLessThanOrEqual(reversals.max() ?? 0, 2, "History measurement must not pull a coasting reader backward")
+                if let last = coasting.last, let time = last["time"],
+                   let tail = coasting.last(where: { ($0["time"] ?? time) < time - 0.05 }),
+                   let tailTime = tail["time"] {
+                    let speed = abs((last["readerY"] ?? 0) - (tail["readerY"] ?? 0)) / (time - tailTime)
+                    XCTAssertLessThan(speed, 40, "Momentum must slow naturally before stopping")
+                }
+                XCTAssertEqual(samples.last?["decelerating"], 0, "Observe the fling through its natural end")
+                return
+            }
         }
         if expandDisclosure {
             if boundaryTurn {

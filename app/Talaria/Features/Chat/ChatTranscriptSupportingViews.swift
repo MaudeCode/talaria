@@ -76,6 +76,8 @@ final class ChatScrollPositionController {
         case hold
     }
 
+    private static let prependMeasurementWindow: TimeInterval = 1
+
     /// Restores an anchored row through the transcript's shared navigation owner.
     var onHoldAnchor: ((String, UnitPoint) -> Void)?
     var onPreservationEnded: (() -> Void)?
@@ -119,6 +121,9 @@ final class ChatScrollPositionController {
                 baselineOffsetY = scrollView.contentOffset.y
                 baselineContentHeight = scrollView.contentSize.height
                 baselinePanTranslationY = scrollView.panGestureRecognizer.translation(in: scrollView).y
+            }
+            if mode == .prepend {
+                schedulePreservationEnd(mode: .prepend, window: Self.prependMeasurementWindow)
             }
             return false
         }
@@ -492,9 +497,8 @@ final class ChatScrollPositionController {
         // Text and attachment layout can settle over several run-loop passes.
         // Keep following the anchor for a short bounded window, then release
         // ownership back to normal scrolling.
-        let window: TimeInterval = 1
+        let window = Self.prependMeasurementWindow
         beginPreservation(mode: .prepend, scrollView: scrollView, window: window)
-        prependWindowEnd = .now + .seconds(window)
         return true
     }
 
@@ -606,6 +610,13 @@ final class ChatScrollPositionController {
             link.isEnabled = true
         }
 
+        schedulePreservationEnd(mode: mode, window: window)
+    }
+
+    private func schedulePreservationEnd(mode: Mode, window: TimeInterval) {
+        completionTask?.cancel()
+        // Every admitted neighbor must retain compensation through its later measurement.
+        if mode == .prepend { prependWindowEnd = .now + .seconds(window) }
         completionTask = Task { @MainActor [weak self] in
             try? await Task.sleep(for: .seconds(window))
             guard !Task.isCancelled, let self else { return }
@@ -720,7 +731,11 @@ final class ChatScrollPositionController {
                 let translation = scrollView.panGestureRecognizer.translation(in: scrollView).y
                 let fingerMovement = baselinePanTranslationY.map { $0 - translation } ?? 0
                 baselinePanTranslationY = translation
-                if scrollView.isDragging, abs(fingerMovement) > 0.001 {
+                if scrollView.isDecelerating, !scrollView.isTracking {
+                    // Native momentum continues even when the same turn measures rows
+                    // and UIKit still reports its drag flag after touch-up.
+                    self.baselineOffsetY = baselineOffsetY + deltaY
+                } else if scrollView.isDragging, abs(fingerMovement) > 0.001 {
                     // Finger movement remains distinct from a structural offset during measurement.
                     self.baselineOffsetY = baselineOffsetY + fingerMovement
                 } else if sizeIsChanging { requestCompensation() }
@@ -830,7 +845,8 @@ final class ChatScrollPositionController {
         isApplyingCompensation = true
         var offset = scrollView.contentOffset
         offset.y = targetY
-        scrollView.setContentOffset(offset, animated: false)
+        // The animated API stops native deceleration even with animated: false.
+        scrollView.contentOffset = offset
         isApplyingCompensation = false
         if prependUpdateLink == nil { acknowledgeRestoredReader() }
     }
@@ -990,7 +1006,7 @@ final class ChatVerticalScrollAxisGuardView: UIView {
 
         var offset = scrollView.contentOffset
         offset.x = pinnedX
-        scrollView.setContentOffset(offset, animated: false)
+        scrollView.contentOffset = offset
     }
 
     /// The horizontal content offset the transcript should rest at, pinned to the

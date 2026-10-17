@@ -24,7 +24,9 @@ def main():
     parser.add_argument("--agent-device", required=True)
     parser.add_argument("--config", required=True)
     parser.add_argument("--session", required=True)
-    parser.add_argument("--large-history", action="store_true", help="Start with 1,000 loaded messages")
+    variant = parser.add_mutually_exclusive_group()
+    variant.add_argument("--large-history", action="store_true", help="Start with 1,000 loaded messages")
+    variant.add_argument("--fling", action="store_true", help="Check native momentum while history arrives")
     args = parser.parse_args()
     app = Path(__file__).resolve().parents[1]
     run_id = str(uuid.uuid4())
@@ -38,6 +40,8 @@ def main():
     environment = dict(os.environ, TALARIA_SIMULATOR_ID=args.simulator_id,
                        TALARIA_NATIVE_HISTORY_DRAG=run_id)
     method = "testLargeLoadedHistoryInsertionPreservesReaderDuringNativeDrag" if args.large_history else "testHistoryInsertionPreservesReaderDuringNativeDrag"
+    if args.fling:
+        method = "testHistoryInsertionPreservesNativeDeceleration"
     case = f"TalariaTests/ChatHostedTests/{method}"
     command = ["scripts/test-ios", case]
     print(f"Native history evidence: {evidence}", flush=True)
@@ -67,7 +71,10 @@ def main():
             drive("open", "dev.kil.talaria.xctest")
             driver_open = True
             try:
-                drive("scroll", "up", "--pixels", "150", "--duration-ms", "1200")
+                if args.fling:
+                    drive("swipe", "200", "300", "200", "450")
+                else:
+                    drive("scroll", "up", "--pixels", "150", "--duration-ms", "1200")
             finally:
                 drive("close")
                 driver_open = False
@@ -104,17 +111,19 @@ def main():
             for name in ["Talaria/Features/Chat/ChatTranscriptView.swift",
                          "Talaria/Features/Chat/ChatTranscriptRow.swift",
                          "Talaria/Features/Chat/ChatTranscriptSupportingViews.swift",
-                         "TalariaTests/ChatHostedTests.swift"]
+                         "TalariaTests/ChatHostedTests.swift", "TalariaTests/HostedView.swift"]
         },
         "exitStatus": status,
     }, indent=2) + "\n")
     for attachment in (evidence / "attachments").glob("*.json"):
         samples = json.loads(attachment.read_text())
         if isinstance(samples, list) and samples and "readerDelta" in samples[0]:
+            finger_samples = [sample for sample in samples
+                              if sample.get("touchDragging", sample.get("dragging", 0)) == 1]
             print(json.dumps({
                 "samples": len(samples),
-                "messages": sorted({sample["messageIndex"] for sample in samples}),
-                "largestReaderDelta": max(abs(sample["readerDelta"]) for sample in samples),
+                "messagesUnderFinger": sorted({sample["messageIndex"] for sample in finger_samples}),
+                "largestReaderDeltaUnderFinger": max((abs(sample["readerDelta"]) for sample in finger_samples), default=0),
                 "largestFrameGapMilliseconds": max((sample["gapMilliseconds"] for sample in samples[1:]), default=0),
             }), flush=True)
     return status
