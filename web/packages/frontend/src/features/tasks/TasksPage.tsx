@@ -61,6 +61,9 @@ export function TasksRoute() {
 /** Both panes over one query set; `selectedId` is owned by the caller (the URL in the app, state in tests). */
 export function useTasksWorkbench(selectedId: string | null, onSelect: (id: string | null) => void): { sidebar: ReactNode; main: ReactNode } {
   const qc = useQueryClient()
+  const context = getStreamContext()
+  const selection = useRef(selectedId)
+  useEffect(() => { selection.current = selectedId }, [selectedId])
   const [allProfiles, setAllProfiles] = useState(false)
   const [editor, setEditor] = useState<Editor | null>(null)
   const [deletion, setDeletion] = useState<{ context: object; job: CronJob } | null>(null)
@@ -72,7 +75,11 @@ export function useTasksWorkbench(selectedId: string | null, onSelect: (id: stri
   const status = useQuery({ queryKey: keys.crons.status, queryFn: api.fetchCronStatus, refetchInterval: 10_000, staleTime: 5_000 })
   const invalidate = () => qc.invalidateQueries({ queryKey: keys.crons.all })
   const action = useResourceMutation({
-    resource: ({ job }: { action: CronAction; job: CronJob }) => cronResource(job),
+    resource: ({ job, context: owner }: { action: CronAction; job: CronJob; context: object }) => {
+      // Fence stale handlers before ownership or transport starts in a replacement profile.
+      if (owner !== getStreamContext()) throw new Error(m.error_generic())
+      return cronResource(job)
+    },
     queryKey: keys.crons.all,
     // History/output are independent reads and must not block action reconciliation.
     readKeys: () => [keys.crons.list(false), keys.crons.list(true), keys.crons.status],
@@ -80,6 +87,7 @@ export function useTasksWorkbench(selectedId: string | null, onSelect: (id: stri
     mutationFn: ({ action, job }) => api.cronAction(action, { job_id: jobId(job) }),
     onSuccess: (_res, vars) => {
       showToast(vars.action === 'run' ? m.cron_job_triggered() : vars.action === 'pause' ? m.cron_job_paused() : vars.action === 'resume' ? m.cron_job_resumed() : vars.action === 'delete' ? m.cron_job_deleted() : m.saved())
+      if (vars.action === 'delete' && selection.current === jobId(vars.job)) onSelect(null)
     },
     onError: (e) => showToast(e instanceof Error ? e.message : String(e), 4000, 'error'),
   })
@@ -103,8 +111,8 @@ export function useTasksWorkbench(selectedId: string | null, onSelect: (id: stri
     seenRun.current = { id: selectedId, lastRun }
     if (changed && selectedId) void qc.invalidateQueries({ queryKey: keys.crons.history(selectedId) })
   }, [selectedId, lastRun, qc])
-  const run = (act: CronAction, job: CronJob) => { if (!intents[cronResource(job)] && !job.read_only) action.mutate({ action: act, job }) }
-  const select = (id: string | null) => { setEditor(null); onSelect(id); closeMobileSidebar() }
+  const run = (act: CronAction, job: CronJob) => { if (!intents[cronResource(job)] && !job.read_only) action.mutate({ action: act, job, context }) }
+  const select = (id: string | null) => { selection.current = id; setEditor(null); onSelect(id); closeMobileSidebar() }
   const startEditor = (mode: EditorMode, job: CronJob | null) => { setEditor({ mode, job }); closeMobileSidebar() }
 
   const sidebar = (
@@ -152,7 +160,7 @@ export function useTasksWorkbench(selectedId: string | null, onSelect: (id: stri
         onAction={(act) => run(act, selected)}
         onEdit={() => startEditor('edit', selected)}
         onDuplicate={() => startEditor('duplicate', selected)}
-        onDelete={() => setDeletion({ context: getStreamContext(), job: selected })}
+        onDelete={() => setDeletion({ context, job: selected })}
       />
     )
   }

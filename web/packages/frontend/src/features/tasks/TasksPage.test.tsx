@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { useState } from 'react'
-import { act, cleanup, render, screen, waitFor, within } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import type { CronJob, CronStoreHealth } from '../../contracts'
@@ -227,6 +227,39 @@ describe('TasksPage', () => {
     mounted.rerender(<QueryClientProvider client={qc}><Workbench /></QueryClientProvider>)
     await waitFor(() => expect(screen.queryByRole('alertdialog')).toBeNull())
     expect(api.cronAction).not.toHaveBeenCalled()
+  })
+
+  it.each(['pause', 'delete'] as const)('rejects a stale %s event before the replacement profile renders', async (action) => {
+    const detail = await openJob('Digest')
+    let button = detail.getByRole('button', { name: new RegExp(`^${action}$`, 'i') })
+    if (action === 'delete') {
+      await userEvent.click(button)
+      button = within(screen.getByRole('alertdialog')).getByRole('button', { name: /^delete$/i })
+    }
+    vi.mocked(showToast).mockClear()
+    await act(async () => {
+      teardownAll()
+      qc.clear()
+      fireEvent.click(button)
+      await Promise.resolve()
+    })
+    expect(api.cronAction).not.toHaveBeenCalled()
+    expect(showToast).not.toHaveBeenCalled()
+  })
+
+  it.each([false, true])('clears confirmed deletion without replacing a newer selection: %s', async (pickAnother) => {
+    const held = deferred<Awaited<ReturnType<typeof api.cronAction>>>()
+    vi.mocked(api.cronAction).mockImplementation(() => held.promise)
+    const detail = await openJob('Digest')
+    await userEvent.click(detail.getByRole('button', { name: /^delete$/i }))
+    await userEvent.click(within(screen.getByRole('alertdialog')).getByRole('button', { name: /^delete$/i }))
+    if (pickAnother) await selectJob('Feed')
+    vi.mocked(api.fetchCrons).mockResolvedValue(cronList([feed]))
+    await act(async () => { held.resolve({ ok: true }); await held.promise })
+    await waitFor(() => expect(within(screen.getByTestId('sidebar')).queryByRole('button', { name: /Digest/ })).toBeNull())
+    if (pickAnother) expect(detail.getByRole('heading', { level: 1 })).toHaveTextContent('Feed')
+    else expect(detail.getByText(/select a task/i)).toBeVisible()
+    expect(detail.queryByText(/this task no longer exists/i)).toBeNull()
   })
 
   it('keeps the script path explanation behind the section help button', async () => {

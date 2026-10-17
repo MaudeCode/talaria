@@ -42,6 +42,8 @@ test('held task actions show intent, recover refusal and retain confirmed runnin
   finish({ ok: true })
   await expect(detail).toHaveCount(0)
   await expect(page.locator('[data-job-id="digest"]')).toHaveCount(0)
+  await expect(page).toHaveURL(/\/tasks$/)
+  await expect(page.getByText('Select a task to see its schedule, runs and status.')).toBeVisible()
   expect(writes).toBe(2)
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)
 })
