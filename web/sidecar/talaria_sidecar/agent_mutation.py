@@ -1,13 +1,14 @@
 """A lifetime-leased Agent update supervisor, extending dependency_sync's child custody.
 
-Agent code is loaded only in the separate worker, before source changes. Its native
-checkout lock and pause journal remain authoritative; Web never invents a pause format.
+Agent code is loaded only in the separate worker, before source changes. The native
+checkout lock and gateway journal also fence the backend recovery companion.
 """
 from __future__ import annotations
 
 import contextlib
 import importlib
 import json
+import logging
 import os
 from pathlib import Path
 import queue
@@ -21,9 +22,11 @@ import uuid
 
 from .dependency_sync import _stop_tree
 from .errors import InvalidParams, RpcError
+from . import agent_services as services
 
 _SESSIONS = {}
 _SESSIONS_LOCK = threading.Lock()
+_RECOVERING = set()
 
 
 def _close(session):
@@ -50,6 +53,43 @@ def close_all():
         _SESSIONS.clear()
     for session in sessions:
         _close(session)
+
+
+def recover_retained(runtime):
+    """Recover retained services without blocking the handshake; their record closes admission."""
+    root = runtime.agent_dir
+    if root is None or not services.recovery_path(root, runtime.hermes_home).exists():
+        return
+    key = (root.resolve(), runtime.hermes_home.resolve())
+    with _SESSIONS_LOCK:
+        if key in _RECOVERING:
+            return
+        _RECOVERING.add(key)
+    from .home import _frozen_launch_env
+    env = _frozen_launch_env()
+    env.update(HERMES_HOME=str(runtime.hermes_home), HERMES_DISABLE_LAZY_INSTALLS='1',
+               PYTHONPATH=str(Path(__file__).parents[1]) + os.pathsep + str(root))
+    def recover():
+        detail = None
+        try:
+            result = subprocess.run([sys.executable, '-m', 'talaria_sidecar.agent_mutation', '--resume', str(root)],
+                                    cwd=root, env=env, stdin=subprocess.DEVNULL, capture_output=True, text=True, timeout=320, check=False)
+            reply = json.loads(result.stdout) if result.returncode == 0 else {}
+            if not isinstance(reply, dict) or reply.get('ok') is not True:
+                detail = str(reply.get('detail') or 'recovery was not verified') if isinstance(reply, dict) else 'invalid recovery response'
+        except (OSError, ValueError, subprocess.TimeoutExpired):
+            detail = 'recovery could not finish; its durable obligation is retained'
+        finally:
+            with _SESSIONS_LOCK:
+                _RECOVERING.discard(key)
+        if detail:
+            logging.getLogger(__name__).warning('Agent service recovery remains owed: %s', detail)
+    try:
+        threading.Thread(target=recover, daemon=True).start()
+    except BaseException:
+        with _SESSIONS_LOCK:
+            _RECOVERING.discard(key)
+        raise
 
 
 def _exchange(session, request, ctx):
@@ -170,17 +210,19 @@ def call(runtime, ctx, params):
 
 
 def _owners(root, homes, pause, identity, windows=None):
+    homes = {Path(home).resolve() for home in homes}
     if windows is None:
         units, jobs = pause._discover_systemd(), pause._discover_launchd()
         units, jobs, notices = pause._left_running(units, jobs)
-        bare, more = pause._discover_bare({entry["pid"] for entry in units + jobs})
+        supervised = services.gateway_entries(units + jobs, homes, pause)
+        bare, more = pause._discover_bare({pid for e in supervised for pid in (e["pid"], e["service_pid"])})
         if notices or more:
             raise RuntimeError("A gateway cannot be safely quiesced: " + "; ".join(notices + more))
-        entries = units + jobs + bare
+        entries = supervised + bare
     else:
         from hermes_cli.gateway import _capture_gateway_argv
-        _, services, _, running = windows._discover_windows_gateways()
-        by_pid = {int(service.gateway_pid): service for service in services}
+        _, native_services, _, running = windows._discover_windows_gateways()
+        by_pid = {int(service.gateway_pid): service for service in native_services}
         entries = [{"pid": int(pid), "home": pause._home_of(int(pid)), "argv": _capture_gateway_argv(int(pid))} for pid in running]
         for entry in entries:
             service = by_pid.get(entry["pid"])
@@ -196,8 +238,20 @@ def _owners(root, homes, pause, identity, windows=None):
             raise RuntimeError("An Agent environment writer cannot be cooperatively quiesced.")
     pids = {entry["pid"] for entry in entries}
     for entry, live in _writer_ledger(root, identity):
-        if live is not True or entry.get("pid") not in pids:
-            raise RuntimeError("An Agent writer has no proven cooperative gateway pause; stop it before updating.")
+        if live is not True:
+            raise RuntimeError(f"Agent writer PID {entry.get('pid')} has no proven live identity; source was not changed.")
+        if entry.get('purpose') in {'serve', 'dashboard'} and windows is None:
+            backend = services.backend_entry(entry, homes, pause, identity)
+            existing = next((e for e in entries if e['pid'] == backend['pid']), None)
+            if existing is not None and (existing.get('purpose') != backend['purpose'] or existing.get('home') != backend['home']):
+                raise RuntimeError(f"Agent writer PID {backend['pid']} has conflicting native ownership identities.")
+            if backend['pid'] not in pids:
+                if any(e.get('purpose') in {'serve', 'dashboard'} and services._service_key(e) == services._service_key(backend) for e in entries):
+                    raise RuntimeError('More than one backend claims the same supervised service.')
+                entries.append(backend)
+                pids.add(backend['pid'])
+        elif entry.get("pid") not in pids:
+            raise RuntimeError(f"Agent writer PID {entry.get('pid')} has no proven cooperative pause; stop it through its owner before updating.")
     if any(not entry.get("home") or Path(entry["home"]).resolve() not in homes for entry in entries):
         raise RuntimeError("A gateway's owning profile is unknown or outside this Web instance's scope.")
     return entries
@@ -250,7 +304,9 @@ def _worker(root, revision, homes, requests, stopped, send):
     handed_off = False
     sync_failed = False
     error = None
+    recovery = None
     try:
+        recovery = services.ServiceRecovery(root, Path(os.environ['HERMES_HOME']), records, identity, pause)
         found = _command(modules["update_custody"].git_argv(["git"], ["rev-parse", "HEAD"]), root, 10, stopped, modules["update_custody"])
         if not found["ok"]:
             raise RuntimeError("The installed Agent revision could not be verified before quiescence.")
@@ -277,17 +333,19 @@ def _worker(root, revision, homes, requests, stopped, send):
             if not Path(main_module.__file__).resolve().is_relative_to(root):
                 raise RuntimeError("The Agent update loaded another checkout's runtime.")
         except Exception:
-            if (not adopted or (initial != revision and needs_sync) or _writer_ledger(root, identity)
+            if (not (adopted or recovery.state['entries']) or (initial != revision and needs_sync) or _writer_ledger(root, identity)
                     or any(records.identity_is_live({"pid": int(pid), "ct": ct}) for pid, ct in adopted.get("identities", {}).items())):
                 raise RuntimeError("The Agent environment cannot import and its writers cannot be proved quiesced; use native recovery first.")
             bootstrap_repair = True
         entries = [] if bootstrap_repair else _owners(root, homes, pause, identity, windows)
-        recovery_only = (bootstrap_repair and needs_sync) or bool(adopted and not records.tree_is_whole(adopted, root)[0])
+        recovery_only = ((bootstrap_repair and needs_sync) or bool(adopted and not records.tree_is_whole(adopted, root)[0])
+                         or bool(recovery.state['entries'] and (recovery.state.get('sync_failed') or not records.tree_is_whole(recovery.state['tree'], root)[0])))
         # Native gateway birth stamps and journal identities use different units.
         # Bracket and repeat both probes, binding them to the same incarnation before recording it.
         from gateway.status import get_process_start_time
         owner_identities = {}
         for entry in entries:
+            services.bind_processes(entry, records)
             canonical = records.identity(entry["pid"])["ct"]
             birth = get_process_start_time(entry["pid"])
             if canonical is None or birth is None:
@@ -297,26 +355,42 @@ def _worker(root, revision, homes, requests, stopped, send):
                     or (entry.get("ct") is not None and entry["ct"] != birth)):
                 raise RuntimeError("Gateway process identity changed during quiescence; source was not changed.")
             entry["ct"] = birth
-            owner_identities[str(entry["pid"])] = canonical
+            if entry.get('purpose') in {'dashboard', 'serve'}:
+                services.backend_request(entry)
+                services.verify_processes(entry, records)
+            if not entry.get('purpose'):
+                owner_identities[str(entry["pid"])] = canonical
+                owner_identities.update({pid: p['ct'] for pid, p in entry.get('processes', {}).items()})
+        gateway_entries = [e for e in entries if not e.get('purpose')]
+        backend_entries = [e for e in entries if e.get('purpose') in {'serve', 'dashboard'}]
         token = pause._empty_token()
+        if recovery.state['entries']:
+            token['baselines'] = recovery.state['tree'].get('baselines', [])
         if windows is not None:
             token.pop("platform", None)
-            services = [e for e in entries if e.get("kind") == "windows-service"]
-            token.update(services=[e["service"] for e in services], expected_services=[e["service"] for e in services], restarted_services=[],
-                         service_profiles={e["service"]: e["profile"] for e in services})
-        token.update(posix_units=[e for e in entries if e.get("kind") and windows is None], unmapped=[e for e in entries if not e.get("kind")],
-                     unmapped_pids=[e["pid"] for e in entries if not e.get("kind")],
-                     identities=owner_identities, resume_needed=bool(entries))
+            native_services = [e for e in entries if e.get("kind") == "windows-service"]
+            token.update(services=[e["service"] for e in native_services], expected_services=[e["service"] for e in native_services], restarted_services=[],
+                         service_profiles={e["service"]: e["profile"] for e in native_services})
+        token.update(posix_units=[], unmapped=[e for e in gateway_entries if not e.get("kind")],
+                     unmapped_pids=[e["pid"] for e in gateway_entries if not e.get("kind")],
+                     identities=owner_identities, resume_needed=bool(gateway_entries))
         records.record_pause(token, adopted, claims)
-        records.mark_stop_requested(token, [e["pid"] for e in entries])
-        for entry in entries:
-            records.mark_stop_sent(token, entry["pid"])
+        recovery.prepare(backend_entries + [{**e, 'purpose': 'gateway'} for e in gateway_entries if e.get('processes')], token)
+        records.mark_stop_requested(token, sorted({pid for e in gateway_entries for pid in (e['pid'], e.get('service_pid', e['pid']))}))
+        for entry in backend_entries:
+            recovery.stop(entry, stopped)
+        for entry in gateway_entries:
+            if entry.get('processes'):
+                services.verify_processes(entry, records)
+            recovery.gateway_requested(entry)
+            for pid in {entry['pid'], entry.get('service_pid', entry['pid'])}:
+                records.mark_stop_sent(token, pid)
             # mark_stop_sent is best effort upstream; this producer requires a durable request before sending it.
             records.write(token)
             if not pause._ask_to_drain(entry):
                 raise RuntimeError("A gateway did not acknowledge cooperative quiescence; source was not changed.")
         deadline = time.monotonic() + min(pause._drain_budget(), 300)
-        waiting = list(entries)
+        waiting = list(gateway_entries)
         while waiting:
             for entry in list(waiting):
                 if not pause._alive(entry["pid"], entry["ct"]):
@@ -326,7 +400,11 @@ def _worker(root, revision, homes, requests, stopped, send):
                             windows._stop_windows_gateway_service(entry["service"], expected_processes=tuple(map(tuple, entry["descendants"])),
                                                                  expected_service_identity=(entry["service_pid"], entry["service_ct"]))
                     else:
-                        pause._disarm(entry)
+                        if entry.get('processes'):
+                            services.verify_processes(entry, records, stopping=True)
+                        pause._disarm(services.service_entry(entry))
+                        if entry.get('processes'):
+                            services.wait_stopped(entry, records, stopped)
                     waiting.remove(entry)
             if waiting and (stopped.wait(.05) or time.monotonic() >= deadline):
                 raise RuntimeError("Gateway drain has not completed; its durable resume obligation is retained.")
@@ -344,13 +422,19 @@ def _worker(root, revision, homes, requests, stopped, send):
             last_request = time.monotonic()
             if request["action"] == "finish":
                 break
+            if (_writer_ledger(root, identity) if bootstrap_repair else _owners(root, homes, pause, identity, windows)):
+                raise RuntimeError('An Agent writer appeared during the held lease; source/dependency mutation was refused.')
             if request["action"] == "sync":
                 argv = [sys.executable, "-m", "hermes_cli.venv_sync", "--project-root", str(root), "--json"]
                 if not (root / "hermes_cli/venv_sync.py").is_file():
                     sync_failed = needs_sync
+                    recovery.state['sync_failed'] = needs_sync
+                    recovery.save(token)
                     send({"ok": not needs_sync, "skipped": True, "detail": "The target's dependency repair module is missing." if needs_sync else ""})
                     continue
                 sync_failed = True
+                recovery.state['sync_failed'] = True
+                recovery.save(token)
                 result = _command(argv, root, 300, stopped, modules["update_custody"])
                 try:
                     response = json.loads(result["detail"]) if result["ok"] else {}
@@ -359,6 +443,8 @@ def _worker(root, revision, homes, requests, stopped, send):
                 except ValueError:
                     result = {"ok": False, "detail": "Agent dependency sync returned an invalid result."}
                 sync_failed = not result["ok"]
+                recovery.state['sync_failed'] = sync_failed
+                recovery.save(token)
                 if not bootstrap_repair and not sync_failed and records.tree_is_whole(token, root)[0]:
                     recovery_only = False
             else:
@@ -376,6 +462,7 @@ def _worker(root, revision, homes, requests, stopped, send):
                 mutating = args[0] in {"merge", "reset", "checkout", "apply", "clean", "stash"} and "--check" not in args
                 gate = modules["update_cmd_pause_gate"]._checkout_move(token, revision, paths=paths, revert=True) if mutating else contextlib.nullcontext({})
                 with gate as step:
+                    recovery.save(token)
                     argv = modules["update_custody"].git_argv(["git"], args)
                     result = _command(argv, root, seconds, stopped, modules["update_custody"])
                     if result["ok"] and applying:
@@ -389,6 +476,7 @@ def _worker(root, revision, homes, requests, stopped, send):
                         if baseline.get("pause_id") == token.get("pause_id") and baseline.get("pre_sha") == after["pre_sha"]:
                             baseline.update(after)
                     records.write(token)
+                recovery.save(token)
             send(result)
     except BaseException as exc:
         error = str(exc)
@@ -403,6 +491,10 @@ def _worker(root, revision, homes, requests, stopped, send):
                 if final_tree is None or final_tree.get("dirty_at_pause") is None:
                     raise RuntimeError("Gateway resume remains owed because the source tree is unverified.")
                 changed = found["detail"] != initial or final_tree != initial_tree
+                if live and not changed and not sync_failed and records.tree_is_whole(token, root)[0]:
+                    # An untouched gateway must not strand a backend stopped earlier in a partial pause.
+                    recovery.save(token)
+                    recovery.resume(_writer_ledger)
                 if live or sync_failed or (changed and needs_sync and not locals().get("response", {}).get("ok")):
                     raise RuntimeError("Gateway resume remains owed until writer drain and dependency repair complete.")
                 whole, why = records.tree_is_whole(token, root)
@@ -420,6 +512,8 @@ def _worker(root, revision, homes, requests, stopped, send):
                         modules["update_cmd_windows"]._resume_windows_gateways_after_update(token)
                 if token.get("resume_needed") or token.get("resume_deferred"):
                     raise RuntimeError("Gateway resume could not be verified; its obligation is retained.")
+                recovery.save(token)
+                recovery.resume(_writer_ledger)
             if token and not handed_off:
                 records.discharge(token)
         except BaseException as exc:
@@ -451,17 +545,23 @@ def _resume_current(root, custody):
 
 def _resume_worker(root):
     sys.path.insert(0, str(root))
-    from hermes_cli import update_lock, update_pause_record as records
-    if any(not Path(module.__file__).resolve().is_relative_to(root) for module in (update_lock, records)):
+    from hermes_cli import update_lock, update_pause_record as records, process_identity, update_cmd_posix_pause
+    if any(not Path(module.__file__).resolve().is_relative_to(root) for module in (update_lock, records, process_identity, update_cmd_posix_pause)):
         raise RuntimeError("Gateway recovery loaded another Agent checkout.")
     lock = update_lock.UpdateLock(install_root=root)
     if not lock.acquire():
         raise RuntimeError("The gateway recovery child could not join the native checkout lease.")
     try:
+        recovery = services.ServiceRecovery(root, Path(os.environ['HERMES_HOME']), records, process_identity, update_cmd_posix_pause)
+        if recovery.state['entries']:
+            whole, why = records.tree_is_whole(recovery.state['tree'], root)
+            if not whole or recovery.state.get('sync_failed'):
+                return {'ok': False, 'detail': 'Service recovery remains owed until source/dependency repair completes: ' + why}
         main_module = importlib.import_module("hermes_cli.main")
         if not Path(main_module.__file__).resolve().is_relative_to(root):
             raise RuntimeError("Gateway recovery loaded another Agent runtime.")
         records.recover(argv=[])
+        recovery.resume(_writer_ledger)
         owed = records.record_path().exists() or bool(records._claims(records.record_path()))
         return {"ok": not owed, "detail": "Gateway recovery remains durably recorded." if owed else ""}
     finally:

@@ -343,6 +343,10 @@ class AgentRuntime:
     def web_repair_state(self) -> str:
         if self.agent_dir is None:
             return "absent"
+        from .agent_services import recovery_path
+        backend = _marker_presence(recovery_path(self.agent_dir, self.hermes_home))
+        if backend != 'absent':
+            return backend
         state = os.environ.get("TALARIA_SIDECAR_WEB_STATE_DIR") or os.environ.get("HERMES_WEBUI_STATE_DIR", "").strip()
         root = Path(state).expanduser() if state else self.hermes_home / "webui"
         key = hashlib.sha256(str(self.agent_dir.resolve()).encode()).hexdigest()
