@@ -22,7 +22,13 @@ test('guarded model switch preserves the selection until confirmation', async ({
   await expect(composer).toBeVisible()
   await composer.click()
   await page.screenshot({ path: info.outputPath('before.png') })
-  const pick = async () => { await composer.fill('/model muse-spark-1.2-contributor'); await page.getByRole('button', { name: 'Send message', exact: true }).click() }
+  const pick = async () => {
+    const response = page.waitForResponse((r) => new URL(r.url()).pathname === '/api/session/update' && r.request().method() === 'POST')
+    await composer.fill('/model muse-spark-1.2-contributor')
+    await page.getByRole('button', { name: 'Send message', exact: true }).click()
+    const refused = await response
+    expect(refused.status(), await refused.text()).toBe(409)
+  }
   await pick()
   const dialog = page.getByRole('alertdialog')
   await expect(dialog).toContainText('LARGE CONTEXT MODEL SWITCH')
