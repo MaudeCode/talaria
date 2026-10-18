@@ -148,16 +148,18 @@ function updateSteps(row: StoredUpdateNotification, webPending: boolean): Update
   if (row.kind !== 'update' || !row.target) return []
   const current = currentStep(row, webPending)
   const undecided = ['applying', 'awaiting_confirmation'].includes(row.phase)
-  const restarts = undecided || row.web_restart_boot !== null || (current !== null && current !== 'install')
+  // Each restart step needs its own evidence: a scheduled Web restart, or a gateway restart under way or recorded.
+  const webRestarts = undecided || row.web_restart_boot !== null || current === 'web_restart'
+  const gatewayRestarts = undecided || ['waiting_for_idle', 'restarting'].includes(row.phase) || row.gateway_baseline !== null || current === 'gateway_wait' || current === 'gateway_restart'
   const succeeded = row.phase === 'succeeded'
   const tasks = row.gateway_tasks ?? 0
   const plan: [UpdateStepId, string][] = row.target === 'webui'
-    ? [['install', 'Installing'], ...(restarts ? [['web_restart', 'Restarting Talaria Web'] as [UpdateStepId, string]] : []), ['ready', succeeded ? `Talaria Web${shownVersion(row.verified_version)} is ready` : 'Ready']]
+    ? [['install', 'Installing'], ...(webRestarts ? [['web_restart', 'Restarting Talaria Web'] as [UpdateStepId, string]] : []), ['ready', succeeded ? `Talaria Web${shownVersion(row.verified_version)} is ready` : 'Ready']]
     : [
       ['install', 'Installing'],
-      ...(restarts ? [['web_restart', 'Restarting Talaria Web'] as [UpdateStepId, string]] : []),
+      ...(webRestarts ? [['web_restart', 'Restarting Talaria Web'] as [UpdateStepId, string]] : []),
       ...(row.gateway_tasks !== null || current === 'gateway_wait' ? [['gateway_wait', tasks > 0 ? `Waiting for ${String(tasks)} gateway task${tasks === 1 ? '' : 's'}` : 'Waiting for gateway tasks'] as [UpdateStepId, string]] : []),
-      ...(restarts ? [['gateway_restart', 'Restarting gateway'] as [UpdateStepId, string]] : []),
+      ...(gatewayRestarts ? [['gateway_restart', 'Restarting gateway'] as [UpdateStepId, string]] : []),
       ['agent_ready', succeeded ? `Hermes Agent${shownVersion(row.verified_version)} is running` : 'Agent responding'],
     ]
   const at = current === null ? plan.length : plan.findIndex(([id]) => id === current)

@@ -427,6 +427,7 @@ describe('UpdateNotificationStore', () => {
       const root = temp()
       const store = (await initializeStore(new UpdateNotificationStore(new JsonDocuments(root))))
       const row = (await store.begin(tabA, 'agent'))
+      await store.recordGatewayBaseline(row.id, [])
       await store.transition(row.id, 'verifying', null, { revision: null, version: 'v0.22.1' })
       await store.markWebRestart(row.id)
       expect((await store.list(tabA)).tab_update).toMatchObject({ phase: 'verifying', active: true, presents_dialog: true, dialog_close: 'none' })
@@ -438,6 +439,16 @@ describe('UpdateNotificationStore', () => {
       await restarted.transition(row.id, 'succeeded')
       expect((await restarted.list(tabA)).tab_update).toMatchObject({ presents_dialog: false, dialog_close: 'auto', can_dismiss: true })
       expect(states((await restarted.list(tabA)).tab_update)).toEqual(['Installing:done', 'Restarting Talaria Web:done', 'Restarting gateway:done', 'Hermes Agent v0.22.1 is running:done'])
+    })
+
+    it('lists the gateway restart but no Web restart for a native Agent update that did not restart Web', async () => {
+      const store = (await initializeStore(new UpdateNotificationStore(new JsonDocuments(temp()))))
+      const row = (await store.begin(tabA, 'agent'))
+      await store.recordGatewayBaseline(row.id, [{ dir: '/home', pid: 41, start_time: 7 }])
+      await store.transition(row.id, 'verifying', null, { revision: null, version: 'v0.22.1' })
+      expect(states((await store.list(tabA)).tab_update)).toEqual(['Installing:done', 'Restarting gateway:done', 'Agent responding:active'])
+      await store.transition(row.id, 'succeeded')
+      expect(states((await store.list(tabA)).tab_update)).toEqual(['Installing:done', 'Restarting gateway:done', 'Hermes Agent v0.22.1 is running:done'])
     })
 
     it('waits for gateway tasks with Restart now and Restart later, reopens for the deferred restart, and marks its failed step', async () => {
@@ -457,6 +468,7 @@ describe('UpdateNotificationStore', () => {
       await restarted.gatewayWaiting(row.id, 1)
       expect(states((await restarted.list(tabA)).tab_update)?.[2]).toBe('Waiting for 1 gateway task:active')
       await restarted.transition(row.id, 'restarting')
+      await restarted.recordGatewayBaseline(row.id, [])
       expect((await restarted.list(tabB)).notifications.find((entry) => entry.id === row.id)).toMatchObject({ presents_dialog: true, dialog_close: 'none' })
       expect(states((await restarted.list(tabA)).tab_update)).toEqual(['Installing:done', 'Restarting Talaria Web:done', 'Waiting for 1 gateway task:done', 'Restarting gateway:active', 'Agent responding:pending'])
       await restarted.transition(row.id, 'verifying')
@@ -480,7 +492,7 @@ describe('UpdateNotificationStore', () => {
       await (await initializeStore(new UpdateNotificationStore(new JsonDocuments(root)))).reconcileInterruptedUpdates(revision)
       const interrupted = (await (await initializeStore(new UpdateNotificationStore(new JsonDocuments(root)))).list(tabB)).tab_update
       expect(interrupted).toMatchObject({ phase: 'unknown', dialog_close: 'close', presents_dialog: false })
-      expect(states(interrupted)).toEqual(['Installing:done', 'Restarting Talaria Web:done', 'Restarting gateway:failed', 'Agent responding:pending'])
+      expect(states(interrupted)).toEqual(['Installing:done', 'Restarting gateway:failed', 'Agent responding:pending'])
       // Records without steps (system notices, recovery) close normally and never present a dialog.
       const notice = (await (await initializeStore(new UpdateNotificationStore(new JsonDocuments(temp())))).create(alice, { kind: 'system', phase: 'notice', title: 'Notice', message: 'Hello.' }))
       expect(notice).toMatchObject({ steps: [], presents_dialog: false, dialog_close: 'close' })
