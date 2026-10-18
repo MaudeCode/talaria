@@ -87,6 +87,7 @@ test('attaching while a session transcript loads uploads to that session, never 
   await expect.poll(() => uploads).toEqual(['loading'])
   await expect(chips(page)).toBeVisible()
   release()
+  await expect(page.locator('#topbarTitle')).toHaveText('Attach')
   await expect(chips(page).and(page.locator('[data-status="done"]'))).toHaveCount(1)
   await expect(page).toHaveURL(/\/session\/loading$/)
   expect(created).toHaveLength(0)
