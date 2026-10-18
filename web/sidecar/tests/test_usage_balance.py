@@ -240,3 +240,143 @@ def test_pool_lists_each_account_with_its_local_state(hermes_home: pathlib.Path)
     assert "sk-synthetic" not in json.dumps(rows)
     # A seeded `gh` CLI token is ambient, not an account the user added.
     assert providers == ["zai"]
+
+
+@pytest.mark.parametrize("agent_resolver", [True, False])
+@pytest.mark.parametrize("resolved", ["sk-synthetic-scoped", "op://v/i/f", ""])
+def test_balance_and_pool_resolve_keys_inside_profile_scope(tmp_path, monkeypatch, agent_resolver, resolved):
+    from contextlib import contextmanager
+    from talaria_sidecar.methods import Registry
+
+    active = False
+    looked_up = []
+    monkeypatch.setenv("OPENROUTER_API_KEY", "sk-launch-must-not-leak")
+
+    @contextmanager
+    def scope(home):
+        nonlocal active
+        assert home == tmp_path
+        active = True
+        try:
+            yield
+        finally:
+            active = False
+
+    config = types.ModuleType("hermes_cli.config")
+
+    def get_env(name):
+        assert active, "credential lookup escaped the profile's scope"
+        looked_up.append(name)
+        return resolved if name == "OPENROUTER_API_KEY" else "op://v/missing/f"
+
+    if agent_resolver:
+        config.get_env_value_prefer_dotenv = get_env
+    secrets = types.ModuleType("agent.secret_scope")
+    secrets.get_secret = get_env
+    monkeypatch.setitem(sys.modules, "agent", types.ModuleType("agent"))
+    monkeypatch.setitem(sys.modules, "agent.secret_scope", secrets)
+    monkeypatch.setitem(sys.modules, "hermes_cli", types.ModuleType("hermes_cli"))
+    monkeypatch.setitem(sys.modules, "hermes_cli.config", config)
+    monkeypatch.setattr(usage, "scoped_home", scope)
+    monkeypatch.setattr(usage, "_pool", lambda provider: (None, [types.SimpleNamespace(id="work", runtime_api_key="sk-synthetic-scoped")]))
+    requests = _stub_http(monkeypatch, {"data": {"usage": 3, "limit": 100}})
+    registry = Registry(runtime=types.SimpleNamespace(load=lambda: None, ensure_current=lambda: None))
+    usage.register(registry)
+    params = {"profile_home": str(tmp_path), "provider": "openrouter", "env_vars": ["MISSING_KEY", "OPENROUTER_API_KEY"]}
+    result = registry.methods["usage.balance"](None, params)
+    snapshot = registry.methods["usage.pool"](None, params)
+    rows = snapshot["entries"]
+    usable = resolved.startswith("sk-")
+    assert [r.get_header("Authorization") for r in requests] == (["Bearer sk-synthetic-scoped"] if usable else [])
+    assert snapshot.get("has_api_key") is usable
+    assert result["status"] == ("ok" if usable else "no_key")
+    assert rows[0]["matches_api_key"] is usable
+    assert looked_up == ["MISSING_KEY", "OPENROUTER_API_KEY"] * 2
+    assert not active
+    monkeypatch.setattr(usage, "pool_providers", lambda: [])
+    metadata_params = {"profile_home": str(tmp_path), "key_envs": {"openrouter": params["env_vars"]}}
+    first = registry.methods["usage.pool_providers"](None, metadata_params)
+    second = registry.methods["usage.pool_providers"](None, metadata_params)
+    assert first.get("keys", {}).get("openrouter", {}).get("present") is usable
+    assert first == second
+    before = first["keys"]["openrouter"]["revision"]
+    assert (isinstance(before, str) and len(before) == 64) if usable else before is None
+    assert "sk-" not in json.dumps(first) and "op://" not in json.dumps(first)
+    resolved = "sk-rotated-scoped"
+    rotated = registry.methods["usage.pool_providers"](None, metadata_params)
+    assert rotated["keys"]["openrouter"]["revision"] != before
+
+
+def test_unresolved_explicit_keys_are_never_sent_to_provider(monkeypatch):
+    requests = _stub_http(monkeypatch, {})
+    assert _read("openrouter", api_key="op://v/i/f")["status"] == "no_key"
+    monkeypatch.setattr(usage, "_pool", lambda provider: (None, [types.SimpleNamespace(id="work", runtime_api_key="op://v/i/f")]))
+    assert _read("openrouter", credential_id="work")["status"] == "no_key"
+    assert requests == []
+
+
+@requires_agent
+def test_usage_credentials_follow_real_agent_profile_secret_sources(tmp_path):
+    from test_home import _VAULT_PLUGIN
+
+    root = tmp_path / '.hermes'
+    for profile, key in [('work', 'sk-work-vault'), ('home', 'sk-home-vault')]:
+        named = root / 'profiles' / profile
+        plugin = named / 'plugins' / 'test-vault'
+        plugin.mkdir(parents=True)
+        (plugin / 'plugin.yaml').write_text('name: test-vault\ndescription: synthetic vault\n')
+        (plugin / '__init__.py').write_text(_VAULT_PLUGIN.replace('TESTVAULT_API_KEY', 'OPENROUTER_API_KEY').replace('stub-vault-key', key))
+        (named / 'config.yaml').write_text('secrets:\n  sources: [testvault]\n  testvault:\n    enabled: true\n    override_existing: true\nplugins:\n  enabled: [test-vault]\n')
+        (named / '.env').write_text('OPENROUTER_API_KEY=op://v/i/f\n' if profile == 'work' else '')
+    missing = root / 'profiles' / 'missing'
+    missing.mkdir()
+    (missing / '.env').write_text('OPENROUTER_API_KEY=op://v/missing/f\n')
+    code = '''
+import io, json, os, sys, types
+from pathlib import Path
+sys.path.append(sys.argv[1])
+from talaria_sidecar.methods import Registry, usage
+requests = []
+class Response(io.BytesIO):
+    def __enter__(self): return self
+    def __exit__(self, *exc): return False
+def urlopen(request, **kwargs):
+    requests.append(request.get_header('Authorization'))
+    return Response(b'{"data":{"usage":3,"limit":100}}')
+usage.urllib.request.urlopen = urlopen
+usage._pool = lambda provider: (None, [types.SimpleNamespace(id='work', runtime_api_key='sk-work-vault'), types.SimpleNamespace(id='home', runtime_api_key='sk-home-vault')])
+registry = Registry(runtime=types.SimpleNamespace(load=lambda: None, ensure_current=lambda: None))
+usage.register(registry)
+seen, revisions = [], []
+for profile in ['work', 'home', 'missing', 'work']:
+    params = {'profile_home': str(Path(os.environ['HERMES_HOME']) / 'profiles' / profile), 'provider': 'openrouter', 'env_vars': ['OPENROUTER_API_KEY']}
+    state = registry.methods['usage.pool_providers'](None, {'profile_home': params['profile_home'], 'key_envs': {'openrouter': ['OPENROUTER_API_KEY']}})['keys']['openrouter']
+    assert state['present'] == (profile != 'missing')
+    revisions.append(state['revision'])
+    balance = registry.methods['usage.balance'](None, params)
+    snapshot = registry.methods['usage.pool'](None, params)
+    rows = snapshot['entries']
+    assert snapshot['has_api_key'] == (profile != 'missing')
+    absent = registry.methods['usage.balance'](None, {**params, 'credential_id': 'removed'})
+    seen.append([balance['status'], [r['credential_id'] for r in rows if r['matches_api_key']], absent['status']])
+print(json.dumps({'seen': seen, 'requests': requests, 'revisions': revisions}))
+'''
+    run = subprocess.run([AGENT_PYTHON, '-c', code, str(AGENT_DIR)], env=isolated_env(root, OPENROUTER_API_KEY='sk-root-must-not-leak'), capture_output=True, text=True, timeout=120)
+    assert run.returncode == 0, run.stderr[-4000:]
+    result = json.loads(run.stdout.strip().splitlines()[-1])
+    assert result['seen'] == [['ok', ['work'], 'no_key'], ['ok', ['home'], 'no_key'], ['no_key', [], 'no_key'], ['ok', ['work'], 'no_key']], (result, run.stderr[-6000:])
+    assert result['requests'] == ['Bearer sk-work-vault', 'Bearer sk-home-vault', 'Bearer sk-work-vault']
+    work, home, missing, repeated = result['revisions']
+    assert work == repeated and work != home and missing is None
+    assert len(work) == len(home) == 64
+
+
+def test_missing_scoped_resolvers_never_read_ambient_key(monkeypatch):
+    monkeypatch.setitem(sys.modules, "hermes_cli", types.ModuleType("hermes_cli"))
+    monkeypatch.setitem(sys.modules, "hermes_cli.config", types.ModuleType("hermes_cli.config"))
+    monkeypatch.setitem(sys.modules, "agent.secret_scope", None)
+    monkeypatch.setenv("OPENROUTER_API_KEY", "sk-launch-must-not-leak")
+    requests = _stub_http(monkeypatch, {})
+    result = usage.balance("openrouter", credential_id=None, api_key=None, env_vars=["OPENROUTER_API_KEY"])
+    assert result["status"] == "no_key"
+    assert requests == []

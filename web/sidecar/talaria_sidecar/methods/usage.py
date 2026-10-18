@@ -5,10 +5,13 @@ from __future__ import annotations
 
 import dataclasses
 import functools
+import hashlib
+import hmac
 import inspect
 import json
 import logging
 import math
+import secrets
 import time
 import urllib.error
 import urllib.request
@@ -20,6 +23,7 @@ from ..home import profile_home_param, scoped_home
 from ..rpc import CallContext
 
 log = logging.getLogger("talaria_sidecar.usage")
+_KEY_REVISION_SALT = secrets.token_bytes(32)
 
 
 def _plain(value: Any) -> Any:
@@ -104,11 +108,36 @@ def _label(entry, index: int) -> str:
     return label[:61].rstrip() + "..." if len(label) > 64 else label
 
 
+def _usable_key(value: Any) -> str:
+    key = str(value or "").strip()
+    return "" if key.startswith("op://") else key
+
+
+def _configured_key(api_key: str | None, env_vars: list[str] | None) -> str:
+    """Called only inside scoped_home: prefer an explicit key, else let the Agent resolve its secret sources."""
+    if api_key:
+        return _usable_key(api_key)
+    if not env_vars:
+        return ""
+    try:
+        from hermes_cli.config import get_env_value_prefer_dotenv as get_env
+    except ImportError:  # older Agents still resolve through the installed profile secret scope
+        try:
+            from agent.secret_scope import get_secret as get_env
+        except ImportError:
+            return ""
+    for name in env_vars or []:
+        key = _usable_key(get_env(name))
+        if key:
+            return key
+    return ""
+
+
 def pool(provider: str, *, api_key: str | None = None) -> list[dict]:
     """Python `_local_pool_snapshot` rows: one per pool entry with an id, its local status, whether it holds the
-    server-resolved ``api_key``, and no secrets."""
+    profile-resolved configured key, and no secrets."""
     agent_pool, entries = _pool(provider)
-    configured = str(api_key or "").strip()
+    configured = _usable_key(api_key)
     try:
         from agent.credential_pool import _exhausted_until
     except Exception:  # noqa: BLE001 - an Agent without it cannot date an exhausted mark, so the entry reads as available
@@ -240,13 +269,15 @@ def _opencode_go(payload: Any) -> dict | None:
 _BALANCE_PARSERS = {"openrouter": _openrouter, "deepseek": _deepseek, "opencode-go": _opencode_go}
 
 
-def balance(provider: str, *, credential_id: str | None, api_key: str | None) -> dict:
-    """One key-based balance read. A pool credential's key resolves here; otherwise the server passes the configured key."""
+def balance(provider: str, *, credential_id: str | None, api_key: str | None, env_vars: list[str] | None = None) -> dict:
+    """One key-based balance read. A pool credential's key resolves here; otherwise resolve the configured key inside the profile scope."""
     result = {"status": "unavailable", "http_status": None, "quota": None, "label": None, "is_available": None, "balances": [], "windows": []}
-    key = str(api_key or "").strip()
+    key = ""
     if credential_id:
         entry = _entry(provider, credential_id)
-        key = _entry_key(entry) if entry is not None else ""
+        key = _usable_key(_entry_key(entry)) if entry is not None else ""
+    else:
+        key = _configured_key(api_key, env_vars)
     if not key:
         return {**result, "status": "no_key"}
     request = urllib.request.Request(_BALANCE_URLS[provider], headers={"Authorization": f"Bearer {key}", "Accept": "application/json", "User-Agent": "Talaria-Web/1.0"})
@@ -353,12 +384,20 @@ def register(registry) -> None:
         if not provider:
             raise InvalidParams("provider is required")
         with scoped_home(profile_home_param(params)):
-            return {"entries": pool(provider, api_key=params.get("api_key"))}
+            key = _configured_key(params.get("api_key"), params.get("env_vars"))
+            return {"entries": pool(provider, api_key=key), "has_api_key": bool(key)}
 
     @registry.method("usage.pool_providers")
     def pool_providers_(ctx: CallContext, params: dict) -> dict:
+        key_envs = params.get("key_envs") or {}
+        if not isinstance(key_envs, dict) or not all(isinstance(pid, str) and isinstance(names, list) and all(isinstance(name, str) for name in names) for pid, names in key_envs.items()):
+            raise InvalidParams("key_envs must map providers to environment variable names")
         with scoped_home(profile_home_param(params)):
-            return {"providers": pool_providers()}
+            keys = {}
+            for provider, names in key_envs.items():
+                key = _configured_key(None, names)
+                keys[provider] = {"present": bool(key), "revision": hmac.new(_KEY_REVISION_SALT, key.encode(), hashlib.sha256).hexdigest() if key else None}
+            return {"providers": pool_providers(), "keys": keys}
 
     @registry.method("usage.limits")
     def limits_(ctx: CallContext, params: dict) -> dict:
@@ -375,4 +414,4 @@ def register(registry) -> None:
             raise InvalidParams(f"provider must be one of {sorted(_BALANCE_URLS)}")
         credential_id = str(params.get("credential_id") or "").strip() or None
         with scoped_home(profile_home_param(params)):
-            return balance(provider, credential_id=credential_id, api_key=params.get("api_key"))
+            return balance(provider, credential_id=credential_id, api_key=params.get("api_key"), env_vars=params.get("env_vars"))

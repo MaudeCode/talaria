@@ -12,6 +12,76 @@ type Json = Record<string, unknown>
 interface Entry { id: string; provider_id?: string; bare_id?: string }
 interface Group { provider_id: string; models: Entry[]; extra_models?: Entry[] }
 
+describe.each([
+  ['openrouter', 'OPENROUTER_API_KEY', []],
+  ['deepseek', 'DEEPSEEK_API_KEY', []],
+  ['opencode-go', 'OPENCODE_GO_API_KEY', ['OPENCODE_API_KEY']],
+] as const)('profile-scoped usage credentials (TAL-932): %s', (provider, envVar, aliases) => {
+  it.each(['op://v/i/f', '', 'sk-synthetic-plain'])('routes quota, pool and cost reads with configured key %s', async (key) => {
+    const home = mkdtempSync(join(tmpdir(), 'talaria-usage-'))
+    try {
+      writeFileSync(join(home, 'config.yaml'), '# synthetic configuration\n')
+      writeEnvFile(join(home, '.env'), { [envVar]: key, ...Object.fromEntries(aliases.map((name) => [name, key.startsWith('op://') ? 'sk-lower-priority-alias' : null])) })
+      const sidecar = new FakeSidecar()
+      sidecar.respond('config.get', (p) => ({ path: join(p.profile_home, 'config.yaml'), exists: true, config: { model: { provider: 'anthropic' }, providers: { ollama: { base_url: 'http://ollama.test/v1', models: ['legacy-model'] }, ...(key.startsWith('op://') ? { [provider]: { api_key: 'sk-lower-priority-config' } } : {}) } } }))
+      let revision = 'account-a'
+      let liveIds = ['account-a-model']
+      sidecar.respond('usage.pool_providers', (p) => ({ providers: [], keys: p.key_envs?.[provider] ? { [provider]: { present: true, revision } } : {} }))
+      sidecar.respond('usage.pool', (p) => ({ entries: [], has_api_key: p.provider === provider }))
+      sidecar.respond('usage.balance', () => ({
+        status: 'ok', http_status: null, label: 'Synthetic',
+        quota: provider === 'openrouter' ? { usage: 3, limit: 100, limit_remaining: 97 } : null,
+        is_available: provider === 'deepseek' ? true : null,
+        balances: provider === 'deepseek' ? [{ currency: 'USD', total: 97, granted: null, topped_up: 97 }] : [],
+        windows: provider === 'opencode-go' ? [{ key: 'rolling', used_percent: 3, reset_at: '2030-01-01T00:00:00Z', rate_limited: false }] : [],
+      }))
+      sidecar.respond('providers.model_ids', (p) => ({ provider: p.provider, model_ids: p.provider === provider ? liveIds : [] }))
+      const config = new AgentConfig({ sidecar: () => sidecar, env: {} })
+      const catalog = new ProviderCatalog({ sidecar: () => sidecar, config, env: {}, now: () => 1_800_000_000, log: () => undefined, costBudget: () => null, isRootProfileHome: () => true })
+      expect(await catalog.quota(home, provider)).toMatchObject({ status: 'available' })
+      if (provider === 'openrouter') expect(await catalog.costHistory(home, 'openrouter', 30)).toMatchObject({ status: 'available' })
+      expect((await catalog.providers(home)).providers.find((p) => p.id === provider)).toMatchObject({ has_key: true, configured: true, is_oauth: false })
+      expect((await catalog.models(home)).groups.some((g) => g.provider_id === provider)).toBe(true)
+      const quotas = await catalog.quotas(home, 'synthetic')
+      expect((quotas.sources as Json[]).find((s) => s.provider_id === provider)).toMatchObject({ status: 'available' })
+      const calls = sidecar.calls.filter((c) => (c.method === 'usage.balance' || c.method === 'usage.pool') && (c.params as Json).provider === provider)
+      expect(calls.some((c) => c.method === 'usage.pool')).toBe(true)
+      const expected = key.startsWith('sk-') ? { api_key: key } : { env_vars: [envVar, ...aliases] }
+      for (const call of calls) {
+        expect(call.params).toMatchObject(expected)
+        expect(JSON.stringify(call.params)).not.toContain('op://')
+        if (!key.startsWith('sk-')) expect(call.params).not.toHaveProperty('api_key')
+      }
+      for (const matches of [true, false]) {
+        sidecar.respond('usage.pool', (p) => ({ has_api_key: p.provider === provider, entries: p.provider === provider ? [{ credential_id: 'work', label: 'Work', status: 'available', unavailable_reason: null, retry_after: null, matches_api_key: matches }] : [] }))
+        const sources = (await catalog.quotas(home, 'synthetic')).sources as Json[]
+        const providerSources = sources.filter((s) => s.provider_id === provider)
+        expect(providerSources).toHaveLength(matches ? 1 : 2)
+        expect(providerSources.every((s) => s.status === 'available')).toBe(true)
+      }
+      if (!key.startsWith('sk-')) {
+        revision = 'account-b'
+        liveIds = ['account-b-model']
+        await catalog.warmSessionModelRepair(home)
+        expect(catalog.sessionModelRepair(home, 'account-b-model', 'ollama')).toEqual(['account-b-model', provider])
+        expect(catalog.sessionModelRepair(home, 'account-a-model', 'ollama')).toBeNull()
+        revision = 'account-c'
+        liveIds = ['account-c-model']
+        await catalog.warmModelOptions(home)
+        expect(catalog.modelOptionFor(home, 'account-c-model', provider)).toBe(`@${provider}:account-c-model`)
+        revision = 'account-d'
+        liveIds = ['account-d-model']
+        expect(await catalog.liveModelIds(home, provider)).toEqual(['account-d-model'])
+        sidecar.respond('usage.pool_providers', () => { throw new Error('synthetic secret source unavailable') })
+        await catalog.warmSessionModelRepair(home)
+        expect(catalog.sessionModelRepair(home, 'account-d-model', 'ollama')).toBeNull()
+      }
+    } finally {
+      rmSync(home, { recursive: true, force: true })
+    }
+  })
+})
+
 describe('parseProviderQualifiedModel, the one `@provider:model` splitter', () => {
   it('splits a known provider at its first colon so the model keeps its own colons', () => {
     expect(parseProviderQualifiedModel('@ollama:llama3:8b')).toEqual(['llama3:8b', 'ollama'])

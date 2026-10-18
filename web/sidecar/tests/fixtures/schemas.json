@@ -5718,6 +5718,9 @@
           ],
           "additionalProperties": false
         }
+      },
+      "has_api_key": {
+        "type": "boolean"
       }
     },
     "required": [
@@ -5734,10 +5737,37 @@
         "items": {
           "type": "string"
         }
+      },
+      "keys": {
+        "default": {},
+        "type": "object",
+        "propertyNames": {
+          "type": "string"
+        },
+        "additionalProperties": {
+          "type": "object",
+          "properties": {
+            "present": {
+              "type": "boolean"
+            },
+            "revision": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          "required": [
+            "present",
+            "revision"
+          ],
+          "additionalProperties": false
+        }
       }
     },
     "required": [
-      "providers"
+      "providers",
+      "keys"
     ],
     "additionalProperties": false
   },

@@ -524,3 +524,31 @@ model/provider identities and measured context, falling back to the profile's
 cached Agent and then its read-only persisted usage anchor. A provider change
 cannot count as a same-model cache-preserving selection. RPC version 42 adds this
 method; version 41 peers fail the handshake before attempting it.
+
+## Provider balance credentials
+
+RPC v43 adds scoped environment names, key presence, and opaque credential
+revisions to usage reads;
+v42 and earlier peers fail the handshake before reading incompatible results.
+
+`usage.balance` and `usage.pool` accept a raw `api_key` or an ordered `env_vars`
+list. With no explicit key (and no `credential_id` for a balance read), the
+sidecar resolves those names with the Agent's `get_env_value_prefer_dotenv`
+inside `scoped_home`, including the profile's secret sources. Older Agents
+without that resolver use `agent.secret_scope.get_secret`; if neither scoped
+resolver exists, the sidecar returns no key. The sidecar never reads the process
+environment directly as a fallback. Unresolved `op://` references
+are never sent to a balance endpoint. Pool-account reads keep their own runtime
+key and never fall back to another configured account. Resolved secrets stay in
+the sidecar; pool matching returns `matches_api_key` and a `has_api_key` boolean.
+Quota source membership uses that scoped presence even when the server has no
+raw key, and suppresses the provider source only when a pool account matches it.
+
+`usage.pool_providers` accepts `key_envs`, mapping providers to their ordered
+environment names. It returns presence and a process-salted HMAC revision for
+each resolved key. Resolved keys and the salt never leave the sidecar. The
+server checks this metadata before reusing provider/model catalogs or session
+repair data and includes revisions in its existing source fingerprint. Concurrent
+metadata reads for the same profile and source identity share one request. A failed metadata read keeps
+last-confirmed display identity but cannot authorize session-model repair. A
+sidecar restart changes the opaque revisions and invalidates those caches.

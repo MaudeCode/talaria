@@ -17,7 +17,8 @@
         "provider": "deepseek"
       },
       "result": {
-        "entries": []
+        "entries": [],
+        "has_api_key": false
       }
     }
   ],
@@ -27,7 +28,8 @@
         "profile_home": "<home>"
       },
       "result": {
-        "providers": []
+        "providers": [],
+        "keys": {}
       }
     }
   ],
