@@ -272,15 +272,30 @@ def test_cancel_selected_recovery_stops_dependency_writer_and_retains_debt(tmp_p
         sidecar.close()
 
 
-def test_recovery_bootstrap_survives_retired_parent_venv_entry(tmp_path):
+@pytest.mark.parametrize('entry', ['symlink', 'anchored'])
+def test_recovery_bootstrap_survives_retired_parent_venv_entry(tmp_path, entry):
     layout = recovery_layout(tmp_path)
-    root, _, old, _, _, _, _, _ = layout
+    root, home, old, _, _, _, _, base = layout
+    if entry == 'anchored':
+        for executable in (old / 'bin').glob('python*'):
+            executable.unlink()
+            shutil.copy2(base, executable)
+        # macOS anchors carry libpython beside the real-file interpreter.
+        for library in (Path(base).parent.parent / 'lib').glob('libpython*'):
+            if library.is_file():
+                os.link(library, old / 'lib' / library.name)
+        assert not (old / 'bin/python').is_symlink()
     lock = root / 'hermes_cli/update_lock.py'
     with lock.open('a') as code:
         code.write(f'''\n_acquire = UpdateLock.acquire
 def acquire(self):
  result = _acquire(self)
- Path({str(old / 'bin/python')!r}).unlink(missing_ok=True)
+ # Model the reviewed anchored-base identity; CPython need not expose the durable store here.
+ if {entry == 'anchored'!r}:
+  import sys
+  sys._base_executable = sys.executable
+ import shutil
+ shutil.rmtree({str(old)!r}, ignore_errors=True)
  return result
 UpdateLock.acquire = acquire
 ''')

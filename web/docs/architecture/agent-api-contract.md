@@ -334,7 +334,9 @@ restore gets a verified native baseline checkpoint. A paused broken environment
 can repair without importing its main runtime first; verified resume then uses
 the current Agent dependency environment and its canonical recovery reader.
 The shared resume launcher first starts a fresh stdlib bootstrap under native
-checkout custody. It imports the target checkout's `pm.environments` selector,
+checkout custody. The native durable Python tool is preferred for this stdlib
+bootstrap, since a macOS venv's copied interpreter can be retired during sync.
+The bootstrap imports the target checkout's `pm.environments` selector,
 uses its committed environment and `venv_command` launch prefix, and preserves
 the venv executable path. Packaged installs therefore retain their native
 environment-entry and package identity policy; a bare Python tool is never an

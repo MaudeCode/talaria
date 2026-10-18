@@ -764,8 +764,18 @@ def _worker(root, revision, homes, requests, stopped, send, refresh_binding=None
 
 def _resume_current(root, custody, stopped=None, complete_revision=None):
     # Resolve target PM code in a fresh stdlib process, after any source/dependency change.
-    bootstrap = getattr(sys, '_base_executable', None) or sys.executable
-    result = _command([bootstrap, "-m", "talaria_sidecar.agent_mutation", "--select-resume", str(root), complete_revision or "", sys.executable], root, 660, stopped or threading.Event(), custody, cooperative=True)
+    try:
+        launchers = importlib.import_module('hermes_cli._launchers')
+        if not Path(launchers.__file__).resolve().is_relative_to(root):
+            raise RuntimeError('Recovery loaded another Agent bootstrap selector.')
+        bootstrap = launchers.resolve_store_python(root)
+    except ModuleNotFoundError as exc:
+        if exc.name != 'hermes_cli._launchers':
+            raise
+        bootstrap = None
+    # A copied macOS venv interpreter can be its own _base_executable and later be retired.
+    bootstrap = bootstrap or getattr(sys, '_base_executable', None) or sys.executable
+    result = _command([str(bootstrap), "-m", "talaria_sidecar.agent_mutation", "--select-resume", str(root), complete_revision or "", sys.executable], root, 660, stopped or threading.Event(), custody, cooperative=True)
     try:
         reply = json.loads(result["detail"]) if result["ok"] else {}
         return {**reply, "ok": result["ok"] and reply.get("ok") is True, "detail": str(reply.get("detail") or result["detail"])}
