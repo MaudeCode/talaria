@@ -255,10 +255,12 @@ export function Composer(props: ComposerProps) {
       }
     }
     if (!attachmentsSupported || (changedIdentity && !loadedIdentity && !adoptedIdentity)) {
-      setFiles([])
+      const receipts = [...new Set(files.flatMap((file) => file.upload?.rollback_token ? [file.upload.rollback_token] : []))]
+      if (previous.sessionId && receipts.length) void api.rollbackUpload(previous.sessionId, receipts).catch(() => undefined)
+      if (files.length) setFiles([])
       inflight.current.clear()
     }
-  }, [sessionId, localStateId, attachmentsSupported])
+  }, [sessionId, localStateId, attachmentsSupported, files])
 
   // Autosize.
   useEffect(() => {
