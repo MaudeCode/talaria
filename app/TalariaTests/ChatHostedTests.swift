@@ -348,6 +348,15 @@ final class ChatHostedTests: XCTestCase {
         var baselineGeometry = readerGeometry()
         baselineGeometry["hitHeight"] = Double(before.rowSize.height)
         baselineGeometry["hitLocalY"] = Double(before.localPoint.y)
+        let baselineImage: UIImage?
+        if nativeDrag { baselineImage = nil }
+        else {
+            baselineImage = UIGraphicsImageRenderer(bounds: window.bounds).image { _ in
+                window.drawHierarchy(in: window.bounds, afterScreenUpdates: false)
+            }
+            baselineGeometry["afterCaptureMarkerY"] = Double(renderedReader.convert(renderedReader.bounds.origin, to: window).y)
+            baselineGeometry["afterCaptureTextY"] = Double(window.convert(reader.accessibilityFrame, from: nil).minY)
+        }
         let oldHeight = scroll.contentSize.height
         let maximumFrameGapMilliseconds: Double = 100
         var samples: [[String: Double]] = []
@@ -454,6 +463,12 @@ final class ChatHostedTests: XCTestCase {
         baselineAttachment.name = "History reader baseline geometry"
         baselineAttachment.lifetime = .keepAlways
         add(baselineAttachment)
+        if let baselineImage {
+            let image = XCTAttachment(image: baselineImage)
+            image.name = "History reader before page response"
+            image.lifetime = .keepAlways
+            add(image)
+        }
         let data = try JSONSerialization.data(withJSONObject: samples, options: [.prettyPrinted, .sortedKeys])
         let attachment = XCTAttachment(data: data, uniformTypeIdentifier: "public.json")
         attachment.name = "Full chat history insertion frames"; attachment.lifetime = .keepAlways; add(attachment)
