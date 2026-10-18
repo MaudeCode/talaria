@@ -1,13 +1,11 @@
 #!/usr/bin/env bash
-# Run the sidecar pytest suite. pytest runs on any Python >= 3.11 (a private
-# venv under sidecar/.venv); the sidecar itself is spawned on the Agent venv in
-# HERMES_WEBUI_AGENT_DIR, else on the active pinned release: the script re-runs
-# itself under scripts/check-agent-compatibility.py, which provisions that
-# release once into a shared cache and holds it for the whole run.
+# Run the shared fast/process/compatibility suite. Fast and synthetic process
+# layers need only pytest; compatibility uses the selected Agent interpreter.
+# Without an Agent checkout, the existing checker provisions the active pin.
 set -euo pipefail
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 runner="${HERMES_WEBUI_TEST_PYTHON:-python3}"
-if [[ -z "${HERMES_WEBUI_AGENT_DIR:-}" ]]; then
+if [[ -z "${HERMES_WEBUI_AGENT_DIR:-}" && "$("$runner" "$here/scripts/suite_runner.py" --requires-agent "$@")" == true ]]; then
   exec "$runner" "$here/../../scripts/check-agent-compatibility.py" --skip-docker --skip-sidecar-tests \
     --command "$here/scripts/test.sh" "$@"
 fi
@@ -22,7 +20,7 @@ trap 'rm -rf -- "$state"' EXIT
 cd "$here"
 # GitHub's relocated Linux Python needs LD_LIBRARY_PATH; nothing else from the caller's environment leaks in.
 env -i PATH="$PATH" HOME="$state" TMPDIR="$state" ${LD_LIBRARY_PATH:+LD_LIBRARY_PATH="$LD_LIBRARY_PATH"} \
-  HERMES_WEBUI_AGENT_DIR="$HERMES_WEBUI_AGENT_DIR" \
+  HERMES_WEBUI_AGENT_DIR="${HERMES_WEBUI_AGENT_DIR:-}" \
   HERMES_WEBUI_PYTHON="${HERMES_WEBUI_PYTHON:-}" \
   ${TALARIA_SIDECAR_WORKERS+TALARIA_SIDECAR_WORKERS="$TALARIA_SIDECAR_WORKERS"} \
   ${TALARIA_SIDECAR_TOTAL_WORKERS:+TALARIA_SIDECAR_TOTAL_WORKERS="$TALARIA_SIDECAR_TOTAL_WORKERS"} \

@@ -39,6 +39,127 @@ def run(project, workers, *args):
     )
 
 
+def review_process_cases(project, reason, *nodeids):
+    path = project / 'tests/process_inventory.json'
+    inventory = json.loads(path.read_text()) if path.exists() else {'schemaVersion': 1, 'families': {}}
+    for nodeid in nodeids:
+        family, bracket, case = nodeid.partition('[')
+        entry = inventory['families'].setdefault(family, {'layer': 'process', 'reason': reason, 'cases': []})
+        entry['cases'].append('[' + case if bracket else '')
+    path.write_text(json.dumps(inventory))
+
+
+def test_policy_rejects_an_unclassified_process_launch(project):
+    (project / 'tests/test_launch.py').write_text(
+        "import subprocess, sys\ndef test_launch(): subprocess.run([sys.executable, '-c', 'pass'], check=True)\n")
+    result = run(project, 1)
+    assert result.returncode != 0, result.stdout + result.stderr
+    assert 'unclassified process launch' in result.stdout
+
+
+def test_policy_allows_boundary_fakes_without_an_agent(project):
+    (project / 'tests/test_fake.py').write_text(
+        "import subprocess\nfrom unittest.mock import patch\ndef test_fake():\n"
+        " with patch('subprocess.run', return_value=subprocess.CompletedProcess(['synthetic'], 0, 'ok')):\n"
+        "  assert subprocess.run(['synthetic']).stdout == 'ok'\n")
+    result = run(project, 1)
+    assert result.returncode == 0, result.stdout + result.stderr
+
+
+def test_policy_rejects_expanding_a_reviewed_process_family(project):
+    (project / 'tests/test_launch.py').write_text(
+        "import pytest, subprocess, sys\n@pytest.mark.parametrize('mode', ['reviewed', 'extra'])\n"
+        "def test_launch(mode): subprocess.run([sys.executable, '-c', 'pass'], check=True)\n")
+    (project / 'tests/process_inventory.json').write_text(json.dumps({
+        'schemaVersion': 1,
+        'families': {'tests/test_launch.py::test_launch': {
+            'layer': 'process', 'reason': 'Proves the harness permits an explicitly classified child process.',
+            'cases': ['[reviewed]'],
+        }},
+    }))
+    result = run(project, 1)
+    assert result.returncode != 0, result.stdout + result.stderr
+    assert 'unreviewed process case' in result.stdout
+
+
+@pytest.mark.parametrize('release', [None, 'active', 'older'])
+def test_layers_execute_each_case_once_and_fast_has_no_agent(project, release):
+    (project / 'agent_dependency.json').write_text(json.dumps({'x-talaria': {'releaseTag': 'active'}}))
+    (project / 'tests/test_layers.py').write_text(
+        "import os, subprocess, sys\n"
+        "def test_fast(): assert 'HERMES_WEBUI_AGENT_DIR' not in os.environ\n"
+        "def test_process(): subprocess.run([sys.executable, '-c', 'pass'], check=True)\n"
+        "def test_compatibility(): assert os.environ['HERMES_WEBUI_AGENT_DIR']\n")
+    (project / 'tests/process_inventory.json').write_text(json.dumps({'schemaVersion': 1, 'families': {
+        'tests/test_layers.py::test_process': {'layer': 'process', 'reason': 'Proves a reviewed disposable child launch.', 'cases': ['']},
+        'tests/test_layers.py::test_compatibility': {'layer': 'compatibility', 'reason': 'Proves compatibility workers receive the selected Agent environment.', 'cases': ['']},
+    }}))
+    report = project / 'result.xml'
+    result = run(project, 4, f'--junitxml={report}', *([f'--agent-release={release}'] if release else []))
+    assert result.returncode == 0, result.stdout + result.stderr
+    cases = ET.parse(report).findall('.//testcase')
+    assert sorted(case.get('name') for case in cases) == (['test_compatibility'] if release == 'older'
+        else ['test_compatibility', 'test_fast', 'test_process'])
+
+
+def test_policy_rejects_losing_a_reviewed_compatibility_case(project):
+    (project / 'tests/test_kept.py').write_text('def test_kept(): pass\n')
+    (project / 'tests/process_inventory.json').write_text(json.dumps({'schemaVersion': 1, 'families': {
+        'tests/test_removed.py::test_removed': {'layer': 'compatibility', 'reason': 'Proves required coverage cannot disappear.', 'cases': ['']},
+    }}))
+    result = run(project, 1)
+    assert result.returncode != 0, result.stdout + result.stderr
+    assert 'missing reviewed coverage' in result.stdout
+
+
+def test_serial_selection_rejects_a_missing_execution_journal(project):
+    (project / 'tests/test_serial.py').write_text(
+        "import atexit, os\nfrom pathlib import Path\ndef test_ok():\n"
+        " atexit.register(lambda: Path(os.environ['TALARIA_PYTEST_MANIFEST']).unlink(missing_ok=True))\n")
+    result = run(project, 4, 'tests/test_serial.py')
+    assert result.returncode != 0, result.stdout + result.stderr
+
+
+def test_collection_only_validates_inventory_without_executing_cases(project):
+    marker = project / 'executed'
+    (project / 'tests/test_collect.py').write_text(
+        f'from pathlib import Path\ndef test_collect(): Path({str(marker)!r}).touch()\n')
+    result = run(project, 4, '--collect-only')
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert 'tests/test_collect.py::test_collect' in result.stdout
+    assert not marker.exists()
+
+
+@pytest.mark.parametrize('phase', ['call', 'exit'])
+def test_policy_fails_even_when_a_boundary_catches_the_launch_error(project, phase):
+    (project / 'tests/test_caught.py').write_text(
+        "import atexit, subprocess, sys\ndef attempt():\n"
+        " try: subprocess.run([sys.executable, '-c', 'pass'])\n"
+        " except RuntimeError: pass\n"
+        + ("def test_caught(): atexit.register(attempt)\n" if phase == 'exit' else 'def test_caught(): attempt()\n'))
+    result = run(project, 1)
+    assert result.returncode != 0, result.stdout + result.stderr
+    assert 'unclassified process launch' in result.stdout
+
+
+def test_policy_rejects_an_unclassified_agent_skip(project):
+    (project / 'tests/test_agent.py').write_text(
+        "import pytest\n@pytest.mark.skipif(True, reason='pinned Hermes Agent checkout with venv not found')\n"
+        "def test_agent(): pass\n")
+    result = run(project, 1)
+    assert result.returncode != 0, result.stdout + result.stderr
+    assert 'unclassified Agent case' in result.stdout
+
+
+def test_policy_rejects_real_network_access_in_fast_cases(project):
+    (project / 'tests/test_network.py').write_text(
+        "import socket\ndef test_network():\n"
+        " with socket.socket() as server: server.bind(('127.0.0.1', 0))\n")
+    result = run(project, 1)
+    assert result.returncode != 0, result.stdout + result.stderr
+    assert 'unclassified network access' in result.stdout
+
+
 @pytest.mark.parametrize("workers,modules", [(1, 2), (2, 3), (4, 5), (8, 9), (8, 2)])
 def test_independent_modules_overlap(project, workers, modules):
     barrier = project / "barrier"
@@ -69,9 +190,14 @@ def test_independent_modules_overlap(project, workers, modules):
 @pytest.mark.parametrize("value", ["", "0", "-1", "1.5", "abc"])
 def test_invalid_worker_count_fails(project, value):
     (project / "tests/test_ok.py").write_text("def test_ok(): pass\n")
-    result = run(project, value)
+    report = project / 'result.xml'
+    coverage = Path(str(report) + '.coverage.json')
+    report.write_text('<testsuites/>')
+    coverage.write_text('{"stale":true}')
+    result = run(project, value, f'--junitxml={report}')
     assert result.returncode != 0
     assert "positive integer" in result.stderr
+    assert not report.exists() and not coverage.exists()
 
 
 @pytest.mark.parametrize("selector", [("tests/test_cases.py::test_one",), ("-k", "one"), ("-m", "focus")])
@@ -143,9 +269,12 @@ def test_partial_evidence_never_succeeds(project, damage):
     (project / "tests/test_cases.py").write_text(source)
     report = project / "result.xml"
     report.write_text('<testsuites/>')
+    coverage = Path(str(report) + '.coverage.json')
+    coverage.write_text('{"stale":true}')
     result = run(project, 2, f"--junitxml={report}")
     assert result.returncode != 0, result.stdout + result.stderr
     assert not report.exists(), "partial or stale evidence was published"
+    assert not coverage.exists(), 'stale coverage survived the failed invocation'
     assert list(Path(str(report) + '.workers').glob('run-*/worker-*/output.log'))
 
 
@@ -184,6 +313,8 @@ def hide_proc_children(project):
 @pytest.mark.parametrize('failure', ['cancel', 'startup'])
 @pytest.mark.parametrize('proc_entry', ['present', pytest.param('missing', marks=pytest.mark.skipif(sys.platform != 'linux', reason='Linux proc fallback'))])
 def test_workers_and_detached_children_cleaned_on_abort(project, failure, proc_entry):
+    review_process_cases(project, 'Proves runner cancellation/startup failure reaps actual detached children while another worker starts.',
+                         'tests/test_a.py::test_child', 'tests/test_b.py::test_other')
     if proc_entry == 'missing':
         hide_proc_children(project)
     pidfile = project / 'child.pid'
@@ -252,6 +383,8 @@ def test_workers_and_detached_children_cleaned_on_abort(project, failure, proc_e
 
 @pytest.mark.parametrize('mocked_api', ['Popen', 'check_output'])
 def test_cleanup_fixture_runs_after_subprocess_mocks_are_restored(project, mocked_api):
+    review_process_cases(project, 'Proves the real process scan runs after subprocess mocks unwind and cache state stays test-local.',
+                         'tests/test_mocks.py::test_mock', 'tests/test_mocks.py::test_next_cache')
     shutil.copy(SCRIPTS.parent / 'tests/conftest.py', project / 'tests/conftest.py')
     (project / 'tests/test_mocks.py').write_text(textwrap.dedent(f"""
         import subprocess, sys, types
@@ -272,6 +405,9 @@ def test_cleanup_fixture_runs_after_subprocess_mocks_are_restored(project, mocke
 
 
 def test_cleanup_fixture_leaves_sibling_child_alive_and_detects_own_leak(project):
+    review_process_cases(project, 'Proves real leak detection kills owned children and preserves children belonging to a concurrent worker.',
+        'tests/test_a.py::test_own_child', 'tests/test_a.py::test_leak',
+        'tests/test_b.py::test_sibling', 'tests/test_b.py::test_after_sibling_cleanup')
     # Exercise the real basetemp-scanning fixture, without another harness.
     shutil.copy(SCRIPTS.parent / 'tests/conftest.py', project / 'tests/conftest.py')
     ready, finished, pidfile = (project / name for name in ('ready', 'finished', 'child.pid'))
@@ -321,6 +457,8 @@ def test_cleanup_fixture_leaves_sibling_child_alive_and_detects_own_leak(project
 @pytest.mark.skipif(sys.platform != 'linux', reason='Linux subreaper ownership')
 @pytest.mark.parametrize('proc_entry', ['present', 'missing'])
 def test_exited_orphans_are_reaped_while_worker_runs(project, proc_entry):
+    review_process_cases(project, 'Proves actual Linux orphan adoption and child reaping with and without the proc children entry.',
+                         'tests/test_orphan.py::test_orphan')
     if proc_entry == 'missing':
         hide_proc_children(project)
     child = "import pathlib, sys, time\nrelease = pathlib.Path(sys.argv[1])\nwhile not release.exists(): time.sleep(.01)\n"

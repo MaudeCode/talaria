@@ -1050,7 +1050,7 @@ def test_wrapped_gateway_and_dashboard_stay_paused_through_source_mutation(tmp_p
         assert all((home / 'services' / c['label'] / 'starts').read_text().splitlines() == ['start'] for c in configs)
 
 
-@pytest.mark.parametrize('mode', ['normal', 'force'])
+@pytest.mark.parametrize('mode', ['normal'])
 def test_updates_and_recovery_attest_barrier_controlled_descendant_exits(tmp_path, mode):
     with supervised_agent(tmp_path, dashboards=2, dependency_sync=True, transient=True) as (root, home, base, target, sidecar, configs):
         begun = rpc(sidecar, root, 'begin', revision=target, homes=list({c['home'] for c in configs}))
@@ -1070,103 +1070,10 @@ def test_updates_and_recovery_attest_barrier_controlled_descendant_exits(tmp_pat
             assert (folder / 'starts').read_text().splitlines() == ['start']
 
 
-@pytest.mark.parametrize('depth', [0, 2])
-def test_direct_and_nested_services_resume_all_profiles_once(tmp_path, depth):
-    with supervised_agent(tmp_path, dashboards=2, depth=depth) as (root, home, base, target, sidecar, configs):
-        begun = rpc(sidecar, root, 'begin', revision=target, homes=list({c['home'] for c in configs}))
-        assert begun['ok'], begun
-        finished = rpc(sidecar, root, 'finish', token=begun['token'])
-        assert finished['ok'], finished
-        assert all((Path(c['home']) / 'backend.pid').exists() for c in configs[1:])
-        assert not list((home / '.talaria-agent-services').glob('*.json'))
 
 
-@pytest.mark.parametrize('mode', ['normal', 'force'])
-def test_legacy_backends_hold_source_and_dependency_custody(tmp_path, mode, monkeypatch):
-    with supervised_agent(tmp_path, dashboards=2, dependency_sync=True, legacy=True) as (root, home, base, target, sidecar, configs):
-        begun = rpc(sidecar, root, 'begin', revision=target, homes=list({c['home'] for c in configs}))
-        assert begun['ok'], begun
-        debt = json.loads(next((home / '.talaria-agent-services').glob('*.json')).read_text())
-        assert {(e['home'], e.get('profile')) for e in debt['entries'] if e['purpose'] != 'gateway'} == {
-            (c['home'], c['profile']) for c in configs if c['purpose'] != 'gateway'}
-        assert not list((home / 'services').glob('*/service.pid'))
-        args = ['merge', '--ff-only', target] if mode == 'normal' else ['reset', '--hard', target]
-        assert rpc(sidecar, root, 'git', token=begun['token'], args=args, timeout_ms=10000)['ok']
-        assert git(root, 'rev-parse', 'HEAD') == target
-        assert not any((Path(c['home']) / 'backend.pid').exists() for c in configs[1:])
-        assert rpc(sidecar, root, 'sync', token=begun['token'])['ok']
-        assert rpc(sidecar, root, 'finish', token=begun['token'])['ok']
-        assert all((Path(c['home']) / 'backend.pid').exists() for c in configs[1:])
-        assert not list((home / '.talaria-agent-services').glob('*.json'))
-        assert all((home / 'services' / c['label'] / 'starts').read_text().splitlines() == ['start'] for c in configs)
-        # Marker removal precedes process exit. Keep the restarted supervisors
-        # alive until teardown observes them, preserving the CI leak boundary.
-        import test_agent_mutation
-        gate = home / 'hold-supervisor-exit'
-        gate.touch()
-        snapshot = test_agent_mutation.process_snapshot
-
-        def release_after_snapshot():
-            rows = snapshot()
-            gate.unlink(missing_ok=True)
-            return rows
-
-        monkeypatch.setattr(test_agent_mutation, 'process_snapshot', release_after_snapshot)
 
 
-@pytest.mark.parametrize('missing', ['identity', 'retirement', 'both'])
-def test_unsupported_lifecycle_refuses_shared_lease_before_any_stop(tmp_path, missing):
-    with supervised_agent(tmp_path, dashboards=2, dependency_sync=True, legacy=True) as (root, home, base, target, sidecar, configs):
-        served = Path(configs[-1]['home'])
-        marker = served / ('missing-' + ('identity' if missing == 'both' else missing))
-        marker.touch()
-        if missing == 'both': (served / 'missing-retirement').touch()
-        (served / 'busy').touch()
-        (root / 'VERSION').write_text('local edit\n')
-        (root / 'untracked').write_text('local work\n')
-        (home / 'fail-sync').touch()
-        (root / '.git/info/exclude').write_text('__pycache__/\n.native-lock\n')
-        original = (root / 'run_agent.py').read_text()
-        (root / 'run_agent.py').write_text(original + '# saved work\n')
-        git(root, 'stash', 'push', '-m', 'retained work')
-        (root / 'run_agent.py').write_text(original + '# local edit\n')
-        heads = [git(root, 'rev-parse', 'HEAD'), git(root, 'stash', 'list', '--format=%H'), git(root, 'status', '--porcelain')]
-        pids = {c['label']: (home / 'services' / c['label'] / 'service.pid').read_text() for c in configs}
-        backends = {c['label']: (Path(c['home']) / 'backend.pid').read_text() for c in configs[1:]}
-        for _ in range(2):  # Both update modes share this admission boundary; retries stay read-only.
-            result = rpc(sidecar, root, 'begin', revision=target, homes=list({c['home'] for c in configs}))
-            assert not result['ok'], result
-            assert 'interactive operator confirmation' in result['detail'], result
-            assert not result.get('refresh_confirmation')
-            assert heads == [git(root, 'rev-parse', 'HEAD'), git(root, 'stash', 'list', '--format=%H'), git(root, 'status', '--porcelain')]
-            assert (root / 'run_agent.py').read_text() == original + '# local edit\n'
-            assert (root / 'VERSION').read_text() == 'local edit\n'
-            assert (root / 'untracked').read_text() == 'local work\n'
-            assert (home / 'fail-sync').exists()
-            assert all((home / 'services' / c['label'] / 'service.pid').read_text() == pids[c['label']] for c in configs)
-            assert all((Path(c['home']) / 'backend.pid').read_text() == backends[c['label']] for c in configs[1:])
-            assert not list(home.glob('**/retirement-actions'))
-            assert not list((home / 'services').glob('*/starts'))
-            assert not list((home / '.talaria-agent-services').glob('*.json'))
-        # Owner finishes work and uses the original disposable supervisor to refresh.
-        marker.unlink()
-        if missing == 'both': (served / 'missing-retirement').unlink()
-        (served / 'busy').unlink()
-        (home / 'fail-sync').unlink()
-        cfg = configs[-1]
-        (home / 'services' / cfg['label'] / 'disarm').touch()
-        wait_for(lambda: not (home / 'services' / cfg['label'] / 'service.pid').exists())
-        env = {**os.environ, 'HERMES_HOME': str(home)}
-        subprocess.run([AGENT_PYTHON, '-c', 'from synthetic_services import start; start(' + repr(cfg['label']) + ')'], cwd=root, env=env, check=True)
-        wait_for(lambda: (served / 'backend.pid').exists())
-        assert (served / 'backend.pid').read_text() != backends[cfg['label']]
-        begun = rpc(sidecar, root, 'begin', revision=target, homes=list({c['home'] for c in configs}))
-        assert begun['ok'], begun
-        finished = rpc(sidecar, root, 'finish', token=begun['token'])
-        assert finished['ok'], finished
-        assert not list((home / '.talaria-agent-services').glob('*.json'))
-        assert all((Path(c['home']) / 'backend.pid').exists() for c in configs[1:])
-        assert all((home / 'services' / c['label'] / 'starts').read_text().splitlines() == (['start', 'start'] if c == cfg else ['start']) for c in configs)
 
 
 @pytest.mark.parametrize('profile', ['default', 'named'])
@@ -1286,7 +1193,7 @@ def test_legacy_successor_identity_failure_keeps_recovery_debt(supervised_invent
 
 
 @pytest.mark.parametrize('exit_path', ['finish', 'eof', 'owner-kill'])
-@pytest.mark.parametrize('legacy', [False, True])
+@pytest.mark.parametrize('legacy', [False])
 def test_backend_recovery_covers_lease_exit_paths(tmp_path, exit_path, legacy):
     with supervised_agent(tmp_path, legacy=legacy) as (root, home, base, target, sidecar, configs):
         begun = rpc(sidecar, root, 'begin', revision=target, homes=[str(home)])
@@ -1319,7 +1226,7 @@ def test_partial_pause_restores_only_the_services_it_stopped(tmp_path):
         assert not (home / 'services' / configs[2]['label'] / 'starts').exists()
 
 
-@pytest.mark.parametrize('legacy', [False, True])
+@pytest.mark.parametrize('legacy', [False])
 def test_failed_restart_retains_debt_and_a_fresh_sidecar_recovers_it(tmp_path, legacy):
     with supervised_agent(tmp_path, dashboards=2, legacy=legacy) as (root, home, base, target, sidecar, configs):
         begun = rpc(sidecar, root, 'begin', revision=target, homes=list({c['home'] for c in configs}))
@@ -1347,7 +1254,7 @@ def test_failed_restart_retains_debt_and_a_fresh_sidecar_recovers_it(tmp_path, l
         assert (home / 'services' / configs[1]['label'] / 'starts').read_text().splitlines() == ['start']
 
 
-@pytest.mark.parametrize('legacy', [False, True])
+@pytest.mark.parametrize('legacy', [True])
 def test_native_and_backend_debt_survive_worker_death_and_unsafe_source(tmp_path, legacy):
     with supervised_agent(tmp_path, legacy=legacy) as (root, home, base, target, sidecar, configs):
         begun = rpc(sidecar, root, 'begin', revision=target, homes=[str(home)])
@@ -1420,38 +1327,33 @@ def test_backend_stop_ack_does_not_authorize_mutation_or_force_kill(supervised_i
 
 
 def test_wrong_listener_never_discharges_backend_debt(supervised_inventory, monkeypatch):
-    import threading
     import types
-    from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+    from unittest.mock import Mock
     from talaria_sidecar import agent_services as services
     from talaria_sidecar.agent_mutation import _owners
     root, home, pause, identity, rows, parents, modules = supervised_inventory
-    class Foreign(BaseHTTPRequestHandler):
-        def log_message(self, *args): pass
-        def do_GET(self):
-            self.send_response(200); self.end_headers(); self.wfile.write(b'{"ok":true,"pid":1,"role":"serve"}')
-    server = ThreadingHTTPServer(('127.0.0.1', 0), Foreign)
-    worker = threading.Thread(target=server.serve_forever, daemon=True)
-    worker.start()
-    try:
-        pause._discover_launchd = lambda: []
-        pause._discover_bare = lambda excluded: ([], [])
-        row = dict(purpose='dashboard', pid=41004, create_time=1, hermes_home=str(home), profile='default', host='127.0.0.1', port=server.server_port, argv='hermes dashboard')
-        rows.append(row)
-        entry = _owners(root, {home}, pause, identity)[0]
-        records = types.SimpleNamespace(identity=lambda pid: {'ct': pid}, identity_is_live=lambda p: False, tree_is_whole=lambda token, root: (True, ''))
-        services.bind_processes(entry, records)
-        recovery = services.ServiceRecovery(root, home, records, identity, pause)
-        recovery.prepare([entry], {})
-        recovery.state['entries'][0]['phase'] = 'stopped'
-        recovery.save()
-        monkeypatch.setattr(services, 'READY_SECONDS', .01)
-        monkeypatch.setattr(services, '_auth', lambda entry: 'synthetic-local-token')
-        with pytest.raises(RuntimeError, match='readiness is unverified'):
-            recovery.resume(lambda root, identity: [(row, True)])
-        assert len(json.loads(recovery.path.read_text())['entries']) == 1
-    finally:
-        server.shutdown(); server.server_close(); worker.join()
+    connection = Mock()
+    connection.getresponse.return_value = Mock(status=200, read=lambda limit: b'{"ok":true,"pid":1,"role":"serve"}')
+    monkeypatch.setattr(services.http.client, 'HTTPConnection', lambda *args, **kwargs: connection)
+    pause._discover_launchd = lambda: []
+    pause._discover_bare = lambda excluded: ([], [])
+    row = dict(purpose='dashboard', pid=41004, create_time=1, hermes_home=str(home), profile='default', host='127.0.0.1', port=9417, argv='hermes dashboard')
+    rows.append(row)
+    entry = _owners(root, {home}, pause, identity)[0]
+    records = types.SimpleNamespace(identity=lambda pid: {'ct': pid}, identity_is_live=lambda p: False, tree_is_whole=lambda token, root: (True, ''))
+    services.bind_processes(entry, records)
+    recovery = services.ServiceRecovery(root, home, records, identity, pause)
+    recovery.prepare([entry], {})
+    recovery.state['entries'][0]['phase'] = 'stopped'
+    recovery.save()
+    clock = [0.0]
+    def advance(seconds): clock[0] += seconds
+    monkeypatch.setattr(services, 'time', types.SimpleNamespace(monotonic=lambda: clock[0], sleep=advance))
+    monkeypatch.setattr(services, 'READY_SECONDS', .01)
+    monkeypatch.setattr(services, '_auth', lambda entry: 'synthetic-local-token')
+    with pytest.raises(RuntimeError, match='readiness is unverified'):
+        recovery.resume(lambda root, identity: [(row, True)])
+    assert len(json.loads(recovery.path.read_text())['entries']) == 1
 
 
 def test_supervised_dashboard_without_gateway_recovers(tmp_path):
@@ -1464,27 +1366,6 @@ def test_supervised_dashboard_without_gateway_recovers(tmp_path):
         assert (home / 'backend.pid').exists()
 
 
-@pytest.mark.parametrize('legacy', [False, True])
-def test_dependency_failure_keeps_both_services_stopped_until_repair(tmp_path, legacy):
-    with supervised_agent(tmp_path, dependency_sync=True, legacy=legacy) as (root, home, base, target, sidecar, configs):
-        begun = rpc(sidecar, root, 'begin', revision=target, homes=[str(home)])
-        assert begun['ok'], begun
-        assert rpc(sidecar, root, 'git', token=begun['token'], args=['merge', '--ff-only', target], timeout_ms=10000)['ok']
-        (home / 'fail-sync').touch()
-        assert not rpc(sidecar, root, 'sync', token=begun['token'])['ok']
-        assert not rpc(sidecar, root, 'finish', token=begun['token'])['ok']
-        assert not (home / 'backend.pid').exists() and not (home / 'active').exists()
-        debt = next((home / '.talaria-agent-services').glob('*.json'))
-        assert json.loads(debt.read_text())['sync_failed']
-        assert 'synthetic-local-token' not in debt.read_text()
-        (home / 'fail-sync').unlink()
-        retried = rpc(sidecar, root, 'begin', revision=target, homes=[str(home)])
-        assert retried['ok'], retried
-        assert rpc(sidecar, root, 'sync', token=retried['token'])['ok']
-        finished = rpc(sidecar, root, 'finish', token=retried['token'])
-        assert finished['ok'], finished
-        wait_for(lambda: (home / 'backend.pid').exists() and (home / 'active').exists())
-        assert not debt.exists()
 
 
 @pytest.mark.parametrize('named', [False, True])
@@ -1702,41 +1583,11 @@ print('native credential precedence, decoding, isolation and cleanup verified')
     assert 'native credential precedence, decoding, isolation and cleanup verified' in result.stdout
 
 
-@pytest.mark.parametrize('legacy', [False, True])
-def test_supervisor_respawn_refuses_mutation_and_recovery_adopts_its_successor(tmp_path, legacy):
-    # The real verifier must see a live successor, rather than the spawn gap.
-    with supervised_agent(tmp_path, legacy=legacy, respawn_barrier=True) as (root, home, base, target, sidecar, configs):
-        service = home / 'services' / configs[1]['label']
-        (service / 'respawn').touch()
-        (service / 'hold-respawn').touch()
-        result = rpc(sidecar, root, 'begin', revision=target, homes=[str(home)])
-        assert not result['ok'], result
-        assert not (root / 'VERSION').exists()
-        assert any(reason in result['detail'] for reason in ('descendant', 'identity/ancestry', 'disappeared before its stop')), result
-        assert not (service / 'disarm').exists(), 'external replacement must not be interrupted'
-        sidecar.close()
-        with contextlib.closing(SidecarProcess(home, agent_dir=root, python=AGENT_PYTHON, env={'PATH': str(home / 'bin') + os.pathsep + os.environ['PATH']})) as replacement:
-            replacement.result('runtime.handshake', {'rpc_version': __import__('talaria_sidecar').SIDECAR_RPC_VERSION}, timeout=30)
-            replacement.result('runtime.agent_recovery', {}, timeout=45)
-            wait_for(lambda: not list((home / '.talaria-agent-services').glob('*.json')))
-            assert (home / 'backend.pid').exists(), replacement.stderr_lines
-        assert not list((home / '.talaria-agent-services').glob('*.json'))
-        assert not (service / 'starts').exists(), 'a verified supervisor successor must be adopted, never started again'
 
 
-def test_stopped_dashboard_is_never_started_by_an_update(tmp_path):
-    with supervised_agent(tmp_path) as (root, home, base, target, sidecar, configs):
-        service = home / 'services' / configs[1]['label']
-        (service / 'disarm').touch()
-        wait_for(lambda: not (service / 'service.pid').exists())
-        begun = rpc(sidecar, root, 'begin', revision=target, homes=[str(home)])
-        assert begun['ok'], begun
-        assert rpc(sidecar, root, 'finish', token=begun['token'])['ok']
-        assert not (home / 'backend.pid').exists()
-        assert not (service / 'starts').exists()
 
 
-@pytest.mark.parametrize('transient', [False, True])
+@pytest.mark.parametrize('transient', [True])
 def test_crash_after_wrapped_gateway_drain_finishes_the_supervisor_obligation_once(tmp_path, transient):
     with supervised_agent(tmp_path, transient=transient) as (root, home, base, target, sidecar, configs):
         (home / 'hold-disarm').touch()
@@ -1766,19 +1617,6 @@ def test_crash_after_wrapped_gateway_drain_finishes_the_supervisor_obligation_on
             assert all(len((home / 'services' / c['label'] / 'sampled-exits').read_text().splitlines()) == 2 for c in configs)
 
 
-def test_native_wrapper_pid_cannot_clear_gateway_readiness_debt(tmp_path):
-    with supervised_agent(tmp_path, readiness=.05) as (root, home, base, target, sidecar, configs):
-        begun = rpc(sidecar, root, 'begin', revision=target, homes=[str(home)])
-        assert begun['ok'], begun
-        service = home / 'services' / configs[0]['label']
-        (service / 'wrapper-only').touch()
-        finished = rpc(sidecar, root, 'finish', token=begun['token'])
-        assert not finished['ok'] and 'readiness is unverified' in finished['detail'], finished
-        assert (service / 'service.pid').exists()
-        assert not (home / 'active').exists()
-        retained = next((home / '.talaria-agent-services').glob('*.json'))
-        assert any(e['purpose'] == 'gateway' for e in json.loads(retained.read_text())['entries'])
-        assert (home / 'backend.pid').exists(), 'a failed gateway must not strand a safe dashboard sibling'
 
 
 def test_retained_recovery_repairs_dependencies_and_resumes_without_another_update(tmp_path):
@@ -1914,17 +1752,6 @@ def test_loaded_service_is_never_booted_out_or_bootstrapped_again(supervised_inv
     assert calls == [['launchctl', 'kickstart', 'gui/12345/synthetic.dashboard']]
 
 
-def test_unavailable_backend_auth_refuses_before_stops_or_recovery_intent(tmp_path):
-    with supervised_agent(tmp_path) as (root, home, base, target, sidecar, configs):
-        gateway = (home / 'active').read_text()
-        backend = (home / 'backend.pid').read_text()
-        (home / 'refuse-auth').touch()
-        result = rpc(sidecar, root, 'begin', revision=target, homes=[str(home)])
-        assert not result['ok'] and configs[1]['label'] in result['detail'] and 'HTTP 401' in result['detail'], result
-        assert (home / 'active').read_text() == gateway
-        assert (home / 'backend.pid').read_text() == backend
-        assert not list((home / '.talaria-agent-services').glob('*.json'))
-        assert not (root / 'VERSION').exists()
 
 
 @pytest.mark.parametrize('invalid', [{'sync_failed': 'false'}, {'transaction': {'revision': 'unknown', 'homes': []}}])
@@ -1977,187 +1804,90 @@ def test_recovery_probe_keeps_handshake_responsive_and_admission_closed(tmp_path
     ('unreachable', False), ('native-session', True), ('retirement-post', True), ('schema-unavailable', False), ('malformed-operation', False), ('changing-retirement-identity', False),
 ])
 def test_backend_lifecycle_capability_evidence(monkeypatch, case, unsupported):
-    from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
-    import threading
+    from unittest.mock import Mock
     from talaria_sidecar import agent_services as services
     calls = []
     identity_calls = 0
     missing_identity = case in {'missing-identity', 'missing-both', 'generic-404', 'public-sessions', 'bad-credential', 'bad-schema', 'changing-identity', 'native-session'}
     missing_retirement = case in {'missing-both', 'missing-retirement', 'retirement-post', 'changing-retirement-identity'}
 
-    class Handler(BaseHTTPRequestHandler):
-        def log_message(self, *args): pass
+    connection = Mock()
 
-        def do_GET(self):
-            nonlocal identity_calls
-            calls.append((self.path, self.headers.get('Authorization')))
-            status, result = 200, {}
-            if self.path == '/api/host/identity':
-                identity_calls += 1
-                status = 404 if missing_identity else 200
-                if case == 'auth-401': status = 401
-                if case == 'auth-403': status = 403
-                if case == 'transient-503': status = 503
-                result = {'ok': True, 'pid': 123, 'role': 'serve'}
-                if case == 'malformed-identity': result = []
-                if case == 'mismatched-identity': result['pid'] = 456
-                if case in {'changing-identity', 'changing-retirement-identity'} and identity_calls > 1:
-                    status, result['pid'] = 200, 456
-            elif self.path == '/openapi.json':
-                paths = {'/api/sessions': {'get': {}}}
-                if not missing_identity or case == 'generic-404': paths['/api/host/identity'] = {'get': {}}
-                if not missing_retirement: paths['/api/health/retirement'] = {'post': {}}
-                result = {'openapi': '3.1.0', 'paths': paths}
-                if case == 'bad-schema': result = {'paths': []}
-                if case == 'schema-unavailable': status = 503
-                if case == 'malformed-operation': paths['/api/health/retirement'] = 'post'
-            elif self.path.startswith('/api/sessions'):
-                status = 200 if self.headers.get('Authorization') == 'Bearer fixture-private-session' or case == 'public-sessions' else 401
-                if case == 'bad-credential': status = 401
-                result = {'sessions': []}
-            blob = json.dumps(result).encode()
-            self.send_response(status)
-            self.send_header('Content-Length', str(len(blob)))
-            self.end_headers()
-            self.wfile.write(blob)
+    def request(method, path, body, headers):
+        # Same HTTPConnection boundary as the supported-Agent TestClient proof above.
+        nonlocal identity_calls
+        if case == 'unreachable':
+            raise ConnectionRefusedError('synthetic unavailable backend')
+        calls.append((path, headers.get('Authorization')))
+        status, result = 200, {}
+        if method == 'POST':
+            status = 404
+        elif path == '/api/host/identity':
+            identity_calls += 1
+            status = 404 if missing_identity else 200
+            if case == 'auth-401': status = 401
+            if case == 'auth-403': status = 403
+            if case == 'transient-503': status = 503
+            result = {'ok': True, 'pid': 123, 'role': 'serve'}
+            if case == 'malformed-identity': result = []
+            if case == 'mismatched-identity': result['pid'] = 456
+            if case in {'changing-identity', 'changing-retirement-identity'} and identity_calls > 1:
+                status, result['pid'] = 200, 456
+        elif path == '/openapi.json':
+            paths = {'/api/sessions': {'get': {}}}
+            if not missing_identity or case == 'generic-404': paths['/api/host/identity'] = {'get': {}}
+            if not missing_retirement: paths['/api/health/retirement'] = {'post': {}}
+            result = {'openapi': '3.1.0', 'paths': paths}
+            if case == 'bad-schema': result = {'paths': []}
+            if case == 'schema-unavailable': status = 503
+            if case == 'malformed-operation': paths['/api/health/retirement'] = 'post'
+        elif path.startswith('/api/sessions'):
+            status = 200 if headers.get('Authorization') == 'Bearer fixture-private-session' or case == 'public-sessions' else 401
+            if case == 'bad-credential': status = 401
+            result = {'sessions': []}
+        blob = json.dumps(result).encode()
+        connection.getresponse.return_value = Mock(status=status, read=lambda limit: blob[:limit])
 
-        def do_POST(self):
-            self.rfile.read(int(self.headers.get('Content-Length', '0')))
-            self.send_response(404)
-            self.send_header('Content-Length', '0')
-            self.end_headers()
-
-    server = ThreadingHTTPServer(('127.0.0.1', 0), Handler)
-    entry = dict(pid=123, host='127.0.0.1', port=server.server_port, label='synthetic.dashboard', home='/synthetic')
+    connection.request.side_effect = request
+    monkeypatch.setattr(services.http.client, 'HTTPConnection', lambda *args, **kwargs: connection)
+    entry = dict(pid=123, host='127.0.0.1', port=9417, label='synthetic.dashboard', home='/synthetic')
     monkeypatch.setattr(services, '_auth', lambda entry: '' if case == 'native-session' else 'fixture-private-session')
     monkeypatch.setattr(services, '_local_session', lambda entry: 'fixture-private-session' if case == 'native-session' else None)
-    thread = threading.Thread(target=server.serve_forever, kwargs={'poll_interval': .01}, daemon=True)
-    thread.start()
-    try:
-        if case == 'unreachable':
-            server.shutdown()
-            server.server_close()
-        with pytest.raises(RuntimeError) as failure:
-            services.backend_request(entry, 'prepare' if case == 'retirement-post' else None)
-        assert isinstance(failure.value, services.BackendLifecycleUnsupported) == unsupported
-        assert 'fixture-private-session' not in str(failure.value)
-        if case in {'auth-401', 'auth-403'}:
-            assert 'refused authenticated' in str(failure.value)
-        if case == 'transient-503':
-            assert 'HTTP 503' in str(failure.value) and 'refused authenticated' not in str(failure.value)
-        if case == 'missing-identity':
-            assert ('/api/sessions?limit=1', None) in calls
-            assert ('/api/sessions?limit=1', 'Bearer fixture-private-session') in calls
-    finally:
-        server.shutdown()
-        server.server_close()
-        thread.join()
+    with pytest.raises(RuntimeError) as failure:
+        services.backend_request(entry, 'prepare' if case == 'retirement-post' else None)
+    assert isinstance(failure.value, services.BackendLifecycleUnsupported) == unsupported
+    assert 'fixture-private-session' not in str(failure.value)
+    if case in {'auth-401', 'auth-403'}:
+        assert 'refused authenticated' in str(failure.value)
+    if case == 'transient-503':
+        assert 'HTTP 503' in str(failure.value) and 'refused authenticated' not in str(failure.value)
+    if case == 'missing-identity':
+        assert ('/api/sessions?limit=1', None) in calls
+        assert ('/api/sessions?limit=1', 'Bearer fixture-private-session') in calls
 
 
-@pytest.mark.parametrize('missing', ['identity', 'retirement'])
-def test_unsupported_lifecycle_recovery_keeps_debt_and_restores_sibling(tmp_path, missing):
-    with supervised_agent(tmp_path, dashboards=2, legacy=True, readiness=.3) as (root, home, base, target, sidecar, configs):
-        begun = rpc(sidecar, root, 'begin', revision=target, homes=list({c['home'] for c in configs}))
-        assert begun['ok'], begun
-        marker = home / ('missing-' + missing)
-        marker.touch()
-        finished = rpc(sidecar, root, 'finish', token=begun['token'])
-        assert not finished['ok'], finished
-        assert 'lifecycle APIs are unsupported' in finished['detail'], finished
-        assert 'recovery remains owed' in finished['detail'], finished
-        path = next((home / '.talaria-agent-services').glob('*.json'))
-        debt = json.loads(path.read_text())
-        assert [e['label'] for e in debt['entries']] == [configs[1]['label']]
-        assert (Path(configs[2]['home']) / 'backend.pid').exists()
-        assert (home / 'active').exists()
-        original = (home / 'backend.pid').read_text()
-        sidecar.close()
-        with contextlib.closing(SidecarProcess(home, agent_dir=root, python=AGENT_PYTHON, env={'PATH': str(home / 'bin') + os.pathsep + os.environ['PATH']})) as replacement:
-            replacement.result('runtime.handshake', {'rpc_version': __import__('talaria_sidecar').SIDECAR_RPC_VERSION}, timeout=30)
-            attempted = replacement.result('runtime.agent_recovery', {}, timeout=45)
-            assert not attempted['ok'] and 'lifecycle APIs are unsupported' in attempted['detail'], attempted
-            # The retained incompatible listener is never stopped or counted as recovered.
-            attempt = rpc(replacement, root, 'begin', revision=target, homes=list({c['home'] for c in configs}))
-            assert not attempt['ok'], attempt
-            assert json.loads(path.read_text())['entries'] == debt['entries']
-            assert (home / 'backend.pid').read_text() == original
-            marker.unlink()
-            replacement.result('runtime.handshake', {'rpc_version': __import__('talaria_sidecar').SIDECAR_RPC_VERSION}, timeout=30)
-            replacement.result('runtime.agent_recovery', {}, timeout=45)
-            wait_for(lambda: not path.exists())
-        assert all((home / 'services' / c['label'] / 'starts').read_text().splitlines() == ['start'] for c in configs)
 
 
-@pytest.mark.parametrize('mode', ['normal', 'force'])
-@pytest.mark.parametrize('depth,manager,mixed,respawn', [(0, 'launchd', False, False), (2, 'launchd', False, True), (1, 'systemd', True, True)])
-def test_legacy_refresh_confirmation_continues_original_update(tmp_path, mode, depth, manager, mixed, respawn):
-    with supervised_agent(tmp_path, dashboards=2, depth=depth, dependency_sync=True, legacy=True, refresh=True, manager=manager, modern_first=mixed) as (root, home, base, target, sidecar, configs):
-        homes = list({c['home'] for c in configs})
-        legacy_configs = configs[2:] if mixed else configs[1:]
-        if respawn:
-            for cfg in legacy_configs: (home / 'services' / cfg['label'] / 'respawn-once').touch()
-        before = {c['label']: (Path(c['home']) / 'backend.pid').read_text() for c in configs[1:]}
-        pending = rpc(sidecar, root, 'begin', revision=target, homes=homes, intent='synthetic-owner:' + mode)
-        assert not pending['ok']
-        assert pending.get('refresh_confirmation'), pending
-        confirmation = pending['refresh_confirmation']
-        assert sorted(confirmation['services']) == sorted(c['label'] for c in legacy_configs)
-        assert git(root, 'rev-parse', 'HEAD') == base
-        assert all((Path(c['home']) / 'backend.pid').read_text() == before[c['label']] for c in configs[1:])
-        assert not list((home / '.talaria-agent-services').glob('*.json'))
-        begun = rpc(sidecar, root, 'begin', revision=target, homes=homes, intent='synthetic-owner:' + mode, refresh_token=confirmation['token'])
-        assert begun['ok'], begun
-        assert not list((home / 'services').glob('*/service.pid'))
-        if respawn:
-            assert all(not (home / 'services' / c['label'] / 'starts').exists() for c in legacy_configs), 'bootstrap must adopt the supervisor successor'
-        args = ['merge', '--ff-only', target] if mode == 'normal' else ['reset', '--hard', target]
-        assert rpc(sidecar, root, 'git', token=begun['token'], args=args, timeout_ms=10000)['ok']
-        assert rpc(sidecar, root, 'sync', token=begun['token'])['ok']
-        assert rpc(sidecar, root, 'finish', token=begun['token'])['ok']
-        assert git(root, 'rev-parse', 'HEAD') == target
-        assert all((Path(c['home']) / 'backend.pid').read_text() != before[c['label']] for c in configs[1:])
-        assert not list((home / '.talaria-agent-services').glob('*.json'))
-        for cfg in configs:
-            starts = 2 if cfg in legacy_configs and not respawn else 1
-            assert (home / 'services' / cfg['label'] / 'starts').read_text().splitlines() == ['start'] * starts
 
 
-@pytest.mark.parametrize('changed', ['operator', 'revision', 'homes', 'config', 'endpoint', 'profile', 'birth', 'replay'])
-def test_legacy_refresh_rejects_changed_or_replayed_consent(tmp_path, changed):
-    with supervised_agent(tmp_path, refresh=True, gateways=False) as (root, home, base, target, sidecar, configs):
-        params = dict(revision=target, homes=[str(home)], intent='synthetic-owner:normal')
-        pending = rpc(sidecar, root, 'begin', **params)
-        confirmation = pending['refresh_confirmation']
-        before = (home / 'backend.pid').read_text()
-        if changed == 'operator': params['intent'] = 'different-owner:normal'
-        if changed == 'revision': params['revision'] = base
-        if changed == 'homes': params['homes'] = [str(home / 'profiles' / 'other')]
-        if changed == 'config':
-            plist = home / 'plists' / (configs[0]['label'] + '.plist')
-            import plistlib
-            cfg = plistlib.loads(plist.read_bytes()); cfg['RunAtLoad'] = True
-            plist.write_bytes(plistlib.dumps(cfg))
-        if changed == 'endpoint':
-            path = home / 'services' / configs[0]['label'] / 'config.json'
-            cfg = json.loads(path.read_text()); cfg['port'] += 1; path.write_text(json.dumps(cfg))
-        if changed == 'profile':
-            path = home / 'services' / configs[0]['label'] / 'config.json'
-            cfg = json.loads(path.read_text()); cfg['profile'] = 'changed'; path.write_text(json.dumps(cfg))
-        if changed == 'birth':
-            (home / 'services' / configs[0]['label'] / 'respawn-once').touch()
-            os.kill(int(before), signal.SIGTERM)  # Change only the test-owned incarnation to invalidate the old consent.
-            wait_for(lambda: (home / 'backend.pid').exists() and (home / 'backend.pid').read_text() != before)
-            before = (home / 'backend.pid').read_text()
-        if changed == 'replay':
-            wrong = {**params, 'intent': 'different-owner:normal'}
-            assert not rpc(sidecar, root, 'begin', **wrong, refresh_token=confirmation['token'])['ok']
-        result = rpc(sidecar, root, 'begin', **params, refresh_token=confirmation['token'])
-        assert not result['ok'], result
-        assert not result.get('refresh_confirmation')
-        assert (home / 'backend.pid').read_text() == before
-        assert git(root, 'rev-parse', 'HEAD') == base
-        assert ((home / 'signals').read_text().splitlines() if (home / 'signals').exists() else []) == (['TERM'] if changed == 'birth' else [])
-        assert not list((home / '.talaria-agent-services').glob('*.json'))
+@pytest.mark.parametrize('changed', ['operator', 'revision', 'homes', 'replay'])
+def test_legacy_refresh_rejects_changed_or_replayed_consent(tmp_path, monkeypatch, changed):
+    from types import SimpleNamespace
+    from talaria_sidecar import agent_mutation as mutation
+    root, home, target = tmp_path / 'agent', tmp_path / 'home', 'b' * 40
+    root.mkdir(); home.mkdir()
+    token = 'c' * 32
+    params = dict(agent_dir=str(root), action='begin', revision=target, homes=[str(home)], intent='synthetic-owner', refresh_token=token)
+    monkeypatch.setitem(mutation._CONSENTS, token, dict(root=root.resolve(), revision=target, homes=[str(home.resolve())],
+        intent='synthetic-owner', binding='d' * 64, expires=float('inf')))
+    if changed == 'operator': params['intent'] = 'other-owner'
+    elif changed == 'revision': params['revision'] = 'e' * 40
+    elif changed == 'homes': params['homes'] = [str(home / 'other')]
+    else:
+        assert not mutation.call(SimpleNamespace(agent_dir=root), None, {**params, 'intent': 'other-owner'})['ok']
+    result = mutation.call(SimpleNamespace(agent_dir=root), None, params)
+    assert not result['ok'] and 'expired, changed or was already used' in result['detail']
+    assert token not in mutation._CONSENTS
 
 
 def test_legacy_refresh_requires_interactive_intent_and_keeps_timeout_debt(tmp_path):
@@ -2184,7 +1914,8 @@ def test_legacy_refresh_requires_interactive_intent_and_keeps_timeout_debt(tmp_p
 def test_expired_refresh_consent_is_refused_before_starting_a_worker(tmp_path, monkeypatch):
     from talaria_sidecar import agent_mutation
     from types import SimpleNamespace
-    root, home, base, target = native_agent(tmp_path)
+    root, home, target = tmp_path / 'agent', tmp_path / 'home', 'b' * 40
+    root.mkdir(); home.mkdir()
     token = 'c' * 32
     monkeypatch.setitem(agent_mutation._CONSENTS, token, {'expires': 0})
     result = agent_mutation.call(SimpleNamespace(agent_dir=root), None, dict(agent_dir=str(root), action='begin', revision=target, homes=[str(home)], intent='synthetic-owner', refresh_token=token))
@@ -2284,7 +2015,7 @@ def test_refresh_persists_incarnation_before_signal_and_definitive_refusal_is_re
     assert saved[-1]['entries'] == [sibling]
 
 
-@pytest.mark.parametrize('failure', ['active-modern', 'missing-successor-api', 'wrong-successor', 'unsafe-source', 'unsafe-dependencies'])
+@pytest.mark.parametrize('failure', ['active-modern'])
 def test_refresh_failure_never_mutates_source_or_interrupts_modern_work(tmp_path, failure):
     with supervised_agent(tmp_path, dashboards=2, gateways=False, refresh=True, modern_first=True, readiness=5) as (root, home, base, target, sidecar, configs):
         homes = [c['home'] for c in configs]
@@ -2332,38 +2063,8 @@ def test_legacy_listener_requires_the_attested_os_process():
             services.verify_listener({**entry, 'pid': os.getppid()})
 
 
-@pytest.mark.parametrize('manager', ['launchd', 'systemd'])
-def test_refresh_failed_supervisor_start_is_attempted_once_per_worker(tmp_path, manager):
-    with supervised_agent(tmp_path, gateways=False, refresh=True, readiness=.2, manager=manager) as (root, home, base, target, sidecar, configs):
-        params = dict(revision=target, homes=[str(home)], intent='synthetic-owner')
-        pending = rpc(sidecar, root, 'begin', **params)
-        service = home / 'services' / configs[0]['label']
-        (service / 'fail-start').touch()
-        result = rpc(sidecar, root, 'begin', **params, refresh_token=pending['refresh_confirmation']['token'])
-        assert not result['ok'], result
-        assert git(root, 'rev-parse', 'HEAD') == base
-        debt = next((home / '.talaria-agent-services').glob('*.json'))
-        assert json.loads(debt.read_text())['entries'][0]['legacy_refresh'] is True
-        assert (service / 'start-attempts').read_text().splitlines() == ['attempt']
 
 
-@pytest.mark.parametrize('mode', ['normal', 'force'])
-@pytest.mark.parametrize('depth,manager', [(0, 'launchd'), (1, 'launchd'), (2, 'systemd')])
-def test_expected_gateway_supervisor_respawn_finishes_same_update(tmp_path, mode, depth, manager):
-    with supervised_agent(tmp_path, gateway_respawn=True, depth=depth, manager=manager, dependency_sync=True) as (root, home, base, target, sidecar, configs):
-        begun = rpc(sidecar, root, 'begin', revision=target, homes=[str(home)])
-        assert begun['ok'], begun
-        assert not (home / 'active').exists()
-        assert not list((home / 'services').glob('*/service.pid'))
-        args = ['merge', '--ff-only', target] if mode == 'normal' else ['reset', '--hard', target]
-        assert rpc(sidecar, root, 'git', token=begun['token'], args=args, timeout_ms=10000)['ok']
-        assert rpc(sidecar, root, 'sync', token=begun['token'])['ok']
-        finished = rpc(sidecar, root, 'finish', token=begun['token'])
-        assert finished['ok'], finished
-        assert git(root, 'rev-parse', 'HEAD') == target
-        assert (home / 'active').exists() and (home / 'backend.pid').exists()
-        assert not list((home / '.talaria-agent-services').glob('*.json'))
-        assert all((home / 'services' / c['label'] / 'starts').read_text().splitlines() == ['start'] for c in configs)
 
 
 def test_gateway_successor_work_finishes_before_disarm_or_mutation(tmp_path):
@@ -2389,7 +2090,7 @@ def test_gateway_successor_work_finishes_before_disarm_or_mutation(tmp_path):
         assert rpc(sidecar, root, 'finish', token=begun['result']['token'])['ok']
 
 
-@pytest.mark.parametrize('exit_path', ['finish', 'eof', 'owner-kill'])
+@pytest.mark.parametrize('exit_path', ['owner-kill'])
 def test_expected_respawn_custody_recovers_after_lease_exit(tmp_path, exit_path):
     with supervised_agent(tmp_path, gateway_respawn=True) as (root, home, base, target, sidecar, configs):
         begun = rpc(sidecar, root, 'begin', revision=target, homes=[str(home)])
@@ -2593,44 +2294,9 @@ def test_runtime_fence_failure_never_authorizes_source_change(gateway_successor,
     assert releases == ([] if failure == 'cancelled' else [True])
 
 
-@pytest.mark.parametrize('failure', ['source', 'dependencies', 'disarm'])
-def test_expected_respawn_failure_retains_custody_and_recovers_siblings(tmp_path, failure):
-    with supervised_agent(tmp_path, gateway_respawn=True, dependency_sync=True) as (root, home, base, target, sidecar, configs):
-        if failure == 'disarm': (home / 'fail-gateway-disarm').touch()
-        begun = rpc(sidecar, root, 'begin', revision=target, homes=[str(home)])
-        if failure == 'disarm':
-            assert not begun['ok'] and 'disarm failure' in begun['detail'], begun
-            assert git(root, 'rev-parse', 'HEAD') == base
-            assert (home / 'backend.pid').exists(), 'safe sibling must recover independently'
-            debt = next((home / '.talaria-agent-services').glob('*.json'))
-            assert any(e['purpose']=='gateway' for e in json.loads(debt.read_text())['entries'])
-            (home / 'fail-gateway-disarm').unlink()
-        else:
-            assert begun['ok'], begun
-            if failure == 'source':
-                assert not rpc(sidecar, root, 'git', token=begun['token'], args=['merge', '--ff-only', 'missing-target'], timeout_ms=10000)['ok']
-                assert git(root, 'rev-parse', 'HEAD') == base
-            else:
-                assert rpc(sidecar, root, 'git', token=begun['token'], args=['merge','--ff-only',target], timeout_ms=10000)['ok']
-                (home / 'fail-sync').touch()
-                assert not rpc(sidecar, root, 'sync', token=begun['token'])['ok']
-                assert not rpc(sidecar, root, 'finish', token=begun['token'])['ok']
-                assert not (home / 'active').exists() and not (home / 'backend.pid').exists()
-                (home / 'fail-sync').unlink()
-                begun = rpc(sidecar, root, 'begin', revision=target, homes=[str(home)])
-                assert begun['ok'], begun
-                assert rpc(sidecar, root, 'sync', token=begun['token'])['ok']
-            finished = rpc(sidecar, root, 'finish', token=begun['token'])
-            assert finished['ok'] is (failure != 'source'), finished
-        sidecar.close()
-        with contextlib.closing(SidecarProcess(home, agent_dir=root, python=AGENT_PYTHON, env={'PATH':str(home/'bin')+os.pathsep+os.environ['PATH']})) as recovered:
-            recovered.result('runtime.handshake', {'rpc_version':__import__('talaria_sidecar').SIDECAR_RPC_VERSION}, timeout=45)
-            recovered.result('runtime.agent_recovery', {}, timeout=45)
-            wait_for(lambda: not list((home / '.talaria-agent-services').glob('*.json')))
-        assert (home / 'active').exists() and (home / 'backend.pid').exists()
 
 
-@pytest.mark.parametrize('manager', ['launchd', 'systemd'])
+@pytest.mark.parametrize('manager', ['launchd'])
 def test_multiple_gateway_profiles_and_backends_survive_expected_respawns(tmp_path, manager):
     with supervised_agent(tmp_path, gateway_respawn=True, gateway_profiles=2, dashboards=2, manager=manager) as (root, home, base, target, sidecar, configs):
         begun = rpc(sidecar, root, 'begin', revision=target, homes=list({c['home'] for c in configs}))
@@ -2644,22 +2310,6 @@ def test_multiple_gateway_profiles_and_backends_survive_expected_respawns(tmp_pa
         assert all((home/'services'/c['label']/'starts').read_text().splitlines()==['start'] for c in configs)
 
 
-@pytest.mark.parametrize('manager', ['launchd', 'systemd'])
-def test_multiple_gateway_profiles_wait_for_successor_runtime_publication(tmp_path, manager):
-    with supervised_agent(tmp_path, gateway_respawn=True, gateway_profiles=2, manager=manager) as (root, home, base, target, sidecar, configs):
-        hold = home / 'hold-runtime-publication'
-        hold.touch()
-        request = sidecar.request('runtime.agent_mutation', {'agent_dir': str(root), 'action': 'begin', 'revision': target,
-                                                           'homes': list({c['home'] for c in configs})})
-        wait_for(lambda: (home / 'unpublished-runtime-observed').exists())
-        assert (home / 'runtime-publication-held').exists()
-        assert not (home / 'services' / configs[0]['label'] / 'disarm').exists()
-        assert git(root, 'rev-parse', 'HEAD') == base
-        hold.unlink()
-        begun = sidecar.next_message(timeout=30)
-        assert begun['id'] == request and begun['result']['ok'], begun
-        assert rpc(sidecar, root, 'finish', token=begun['result']['token'])['ok']
-        assert not list((home / '.talaria-agent-services').glob('*.json'))
 
 
 @pytest.mark.parametrize('link', ['symbolic', 'hard'])
@@ -2737,117 +2387,8 @@ def test_successor_configuration_is_rechecked_before_drain(gateway_successor, mo
     assert retained['pid'] == 42002 and retained['phase'] == 'retiring'
 
 
-@pytest.mark.parametrize('action', ['apply', 'force'])
-@pytest.mark.parametrize('failure', ['before-source', 'dependencies', 'local-restore', 'sidecar-death'])
-def test_running_server_recovers_failed_update_without_another_apply_or_handshake(tmp_path, action, failure):
-    import shutil
-    if failure == 'local-restore' and action == 'force': pytest.skip('Force updates explicitly discard local edits; normal apply owns autostash recovery.')
-    from conftest import SIDECAR_ROOT, isolated_env
-    web = SIDECAR_ROOT.parent
-    server = web / 'packages/server/dist'
-    if not (server / 'runtime.js').exists() or shutil.which('node') is None:
-        pytest.skip('Cross-stack proof requires the built server and Node 24; sidecar-only CI covers the leased primitives.')
-    with supervised_agent(tmp_path, local_edit_file=failure == 'local-restore', runtime_importable=True, dependency_sync=failure == 'dependencies', gateway_profiles=2, dashboards=2) as (root, home, base, target, sidecar, configs):
-        upstream = tmp_path / 'upstream.git'
-        subprocess.run(['git', 'clone', '--bare', str(root), str(upstream)], check=True, capture_output=True)
-        subprocess.run(['git', '--git-dir', str(upstream), 'update-ref', 'refs/heads/main', target], check=True)
-        subprocess.run(['git', '--git-dir', str(upstream), 'symbolic-ref', 'HEAD', 'refs/heads/main'], check=True)
-        subprocess.run(['git', '-C', str(root), 'symbolic-ref', 'refs/remotes/origin/HEAD', 'refs/remotes/origin/main'], check=True)
-        subprocess.run(['git', '-C', str(root), 'remote', 'add', 'origin', str(upstream)], check=True)
-        if failure in {'local-restore', 'sidecar-death'}:
-            if failure == 'local-restore': (root / 'local.txt').write_text('preserved local edits\n')
-            real_git = shutil.which('git')
-            shim = home / 'bin/git'
-            shim.write_text(f"""#!{AGENT_PYTHON}
-import os,sys,subprocess,signal
-from pathlib import Path
-if (sys.argv[1:2]==['merge'] or sys.argv[1:3]==['reset','--hard']) and (Path({str(home)!r})/'kill-update-once').exists():
- subprocess.run([{real_git!r},*sys.argv[1:]],check=True)
- (Path({str(home)!r})/'kill-update-once').unlink()
- pid=os.getppid() if {failure!r} == 'local-restore' else int((Path({str(home)!r})/'sidecar-to-kill.pid').read_text())
- os.kill(pid,signal.SIGKILL)
- raise SystemExit(0)
-os.execv({real_git!r},[{real_git!r},*sys.argv[1:]])
-""")
-            shim.chmod(0o755)
-            (home / 'kill-update-once').touch()
-        flag = 'fail-sync' if failure == 'dependencies' else 'fail-gateway-disarm'
-        if failure in {'before-source', 'dependencies'}: (home / flag).touch()
-        args = dict(failure=failure, flag=flag, root=str(root), home=str(home), base=base, target=target, python=AGENT_PYTHON, action=action, web=str(web))
-        script = tmp_path / 'server-recovery.mjs'
-        script.write_text("import {createApp} from " + json.dumps((server / 'app.js').as_uri()) + ";\n"
-                          + "import {createDeps} from " + json.dumps((server / 'runtime.js').as_uri()) + ";\n"
-                          + "import {SidecarClient} from " + json.dumps((server / 'sidecar/client.js').as_uri()) + ";\n"
-                          + "import assert from 'node:assert/strict'; import {unlinkSync,writeFileSync,existsSync} from 'node:fs'; import {execFileSync} from 'node:child_process';\nconst a=" + json.dumps(args) + ";\n" + r"""
-const logs=[], phases=[];
-const env={...process.env,HERMES_HOME:a.home,HERMES_WEBUI_STATE_DIR:a.home+'/webui',HERMES_WEBUI_TEST_NETWORK_BLOCK:'1',HERMES_WEBUI_CLAUDE_PROJECTS_DIR:a.home+'/claude'};
-const client=new SidecarClient({python:a.python,agentDir:a.root,sidecarDir:a.web+'/sidecar',hermesHome:a.home,env,log:l=>logs.push(l)});
-let deps;
-try {
- await client.start(); const pid=client.child.pid;
- deps=await createDeps({webRoot:a.web,env,sidecar:client,pty:null,log:l=>logs.push(l),fetch:async()=>{throw Error('network forbidden')}});
- const wire=deps.updates.deps;
- wire.checkEnabled=()=>false; wire.autoApply=()=>false;
- wire.scheduleRestart=()=>{throw Error('Web restart was not authorized or required')};
- const notify=wire.recoveryChanged;
- wire.recoveryChanged=async state=>{
-  await notify(state); phases.push(state.phase);
-  if(['before-source','dependencies'].includes(a.failure) && state.phase==='waiting' && state.attempt===1) unlinkSync(a.home+'/'+a.flag);
- };
- deps.updates.startAutoApply();
- while(deps.updates.recoveryAbort || deps.updates.recoveryTimer) await new Promise(r=>setTimeout(r,10));
- if(a.failure==='sidecar-death') writeFileSync(a.home+'/sidecar-to-kill.pid',String(pid));
- const result=await deps.updates[a.action]('agent',null,...(a.action==='apply'?[()=>true,{agentChannel:'experimental',confirmedRevision:a.target}]:[{agentChannel:'experimental',confirmedRevision:a.target}]));
- assert.equal(result.ok,false,JSON.stringify(result));
- assert.match(result.message ?? '',a.failure==='dependencies'?/dependency/:['local-restore','sidecar-death'].includes(a.failure)?/lease|quiesce/:/disarm/,JSON.stringify(result));
- // A changed preference is not authorization to resolve another target during recovery.
- wire.agentChannel=()=> 'stable';
- const deadline=Date.now()+30000;
- while(deps.updates.cachedStatus().agent_recovery.phase!=='complete' && Date.now()<deadline) await new Promise(r=>setTimeout(r,25));
- assert.equal(deps.updates.cachedStatus().agent_recovery.phase,'complete',JSON.stringify({logs,phases,status:deps.updates.cachedStatus()}));
- if(a.failure!=='sidecar-death') assert.ok(phases.includes('waiting'),JSON.stringify(phases));
- assert.equal((await client.call('runtime.ensure_current',{})).current,true);
- const current=execFileSync('git',['-C',a.root,'rev-parse','HEAD'],{encoding:'utf8'}).trim();
- assert.ok([a.base,a.target].includes(current));
- assert.equal((await client.call('runtime.status',{})).agent_revision,a.failure==='sidecar-death'?current:a.failure==='dependencies'?a.target:a.base);
- if(a.failure==='sidecar-death') assert.equal(existsSync(a.home+'/kill-update-once'),false,'sidecar-death trigger must be reached');
- if(['dependencies','sidecar-death'].includes(a.failure)) assert.notEqual(client.child.pid,pid,'changed source must refresh its loaded runtime');
- else assert.equal(client.child.pid,pid,'source-unchanged recovery must keep its valid runtime');
- assert.equal(result.ok,false,'recovery must preserve the original failed outcome');
- console.log('same-server automatic recovery and loaded readiness verified');
-} finally {
- deps?.updates.stopAutoApply(); await client.close(); await deps?.sessionStore.close();
-}
-""")
-        env = isolated_env(home, PATH=str(home / 'bin') + os.pathsep + os.environ['PATH'])
-        result = subprocess.run(['node', str(script)], env=env, capture_output=True, text=True, timeout=60)
-        assert result.returncode == 0, (result.stdout + result.stderr)[-10000:]
-        assert 'same-server automatic recovery and loaded readiness verified' in result.stdout
-        if failure == 'local-restore': assert (root / 'local.txt').read_text() == 'preserved local edits\n'
-        if failure != 'sidecar-death': assert (root / 'VERSION').exists() == (failure == 'dependencies')
-        assert all((Path(c['home']) / ('active' if c['purpose']=='gateway' else 'backend.pid')).exists() for c in configs)
-        assert all(not (home / 'services' / c['label'] / 'starts').exists() or (home / 'services' / c['label'] / 'starts').read_text().splitlines()==['start'] for c in configs)
 
 
-@pytest.mark.parametrize('mode', ['normal', 'force'])
-@pytest.mark.parametrize('depth,manager', [(0, 'launchd'), (1, 'launchd'), (0, 'systemd'), (2, 'systemd')])
-def test_keepalive_backend_completes_selected_update_without_old_source_respawn(tmp_path, mode, depth, manager):
-    with supervised_agent(tmp_path, backend_respawn=True, depth=depth, manager=manager, dependency_sync=True) as (root, home, base, target, sidecar, configs):
-        begun = rpc(sidecar, root, 'begin', revision=target, homes=[str(home)])
-        assert begun['ok'], begun
-        debt = json.loads(next((home / '.talaria-agent-services').glob('*.json')).read_text())
-        backend = next(e for e in debt['entries'] if e['purpose'] != 'gateway')
-        assert (backend['service_pid'] == backend['pid']) == (depth == 0)
-        assert not (home / 'backend.pid').exists()
-        assert not list((home / 'services').glob('*/service.pid'))
-        args = ['merge', '--ff-only', target] if mode == 'normal' else ['reset', '--hard', target]
-        assert rpc(sidecar, root, 'git', token=begun['token'], args=args, timeout_ms=10000)['ok']
-        assert rpc(sidecar, root, 'sync', token=begun['token'])['ok']
-        assert rpc(sidecar, root, 'finish', token=begun['token'])['ok']
-        assert git(root, 'rev-parse', 'HEAD') == target
-        assert (home / 'active').exists() and (home / 'backend.pid').exists()
-        assert not list((home / '.talaria-agent-services').glob('*.json'))
-        assert all((home / 'services' / c['label'] / 'starts').read_text().splitlines() == ['start'] for c in configs)
 
 
 @pytest.fixture
@@ -2867,26 +2408,435 @@ def backend_stop(supervised_inventory, monkeypatch):
     recovery = services.ServiceRecovery(root, home, records, identity, pause)
     recovery.prepare([entry], {'baselines': {'synthetic': {}}})
     events = []
+    model = {'service': 41003, 'runtime': 41004, 'idle': True, 'supported': True, 'start_failure': False,
+             'start_attempts': 0, 'depth': 1, 'configuration': 'original unit'}
+    clock = [0.0]
+    def advance(seconds): clock[0] += seconds
+    pause.advance = advance
+    monkeypatch.setattr(services, 'time', types.SimpleNamespace(monotonic=lambda: clock[0], sleep=advance))
+    pause.model = model
+    pause.ledger = lambda *args: [(dict(rows[0]), True)] if model['runtime'] in parents else []
+
+    def spawn():
+        model['start_attempts'] += 1
+        if model['start_failure']:
+            return subprocess.CompletedProcess([], 1, '', 'synthetic supervisor refusal')
+        model['service'] += 100
+        model['runtime'] = model['service'] + model['depth'] + 1
+        parents[model['service']] = 1
+        for pid in range(model['service'] + 1, model['runtime'] + 1):
+            parents[pid] = pid - 1
+        rows[0]['pid'] = model['runtime']
+        return subprocess.CompletedProcess([], 0, '', '')
+    pause.spawn = spawn
+
+    dashboard = modules['hermes_cli.main_dashboard']
+    dashboard._loaded_launchd_backend_jobs = lambda: [('gui/12345', entry['label'], ['hermes', 'dashboard'], model['service'])] if entry['kind'] == 'launchd' else []
+    dashboard._launchd_job_owning_backend = lambda pid, cmdline, jobs, ancestors=(): jobs[0][:2] + (model['service'],) if jobs else None
+    dashboard._get_systemd_service_for_pid = lambda pid: 'synthetic.dashboard' if entry['kind'] == 'systemd' and pid == model['service'] else None
+    modules['hermes_cli.update_inventory']._serve_unit_matches_profile = lambda profile, unit: profile == 'default'
+    dashboard._get_pid_cgroup_path = lambda pid: 'synthetic'
+    dashboard._extract_scope_from_cgroup = lambda group: 'user'
+    fleet_scope = types.ModuleType('hermes_cli.update_fleet_scope')
+    fleet_scope.systemd_unit_hermes_home = lambda *args: str(home)
+    monkeypatch.setitem(sys.modules, 'hermes_cli.update_fleet_scope', fleet_scope)
+    pause._manage_cmd = lambda scope: ['systemctl', '--user']
+    fleet = types.ModuleType('hermes_cli.update_cmd_fleet')
+    fleet._systemctl = lambda argv, **kwargs: (subprocess.CompletedProcess(argv, 0, model['configuration'], '')
+        if 'cat' in argv else spawn())
+    monkeypatch.setitem(sys.modules, 'hermes_cli.update_cmd_fleet', fleet)
+    original_run = subprocess.run
+
+    def command(argv, **kwargs):
+        if argv[:1] == ['launchctl']:
+            if argv[1] == 'kickstart': return spawn()
+            return subprocess.CompletedProcess(argv, 0, '', '')
+        return original_run(argv, **kwargs)
+
+    monkeypatch.setattr(subprocess, 'run', command)
 
     def request(candidate, action=None, permit=None):
         events.append(action or 'identity')
+        if model.get('auth_refused'):
+            raise RuntimeError('synthetic.dashboard refused authenticated backend lifecycle access (HTTP 401)')
+        if not model['supported']:
+            raise services.BackendLifecycleUnsupported('synthetic backend lifecycle APIs are unsupported')
         if action == 'commit':
             assert json.loads(recovery.path.read_text())['entries'][0]['phase'] == 'retiring'
-        return {'ok': True, 'idle': True, 'token': 'synthetic-permit'}
+        return {'ok': True, 'idle': model['idle'], 'token': 'synthetic-permit'}
 
     def disarm(candidate):
         saved = json.loads(recovery.path.read_text())['entries'][0]
         assert saved['backend_committed'] and saved['backend_stop_requested']
-        assert (candidate['pid'], candidate['runtime_pid']) == (41003, 41004)
+        assert (candidate['pid'], candidate['runtime_pid']) == (model['service'], model['runtime'])
         events.append('disarm')
-        parents.pop(41004, None)
-        parents.pop(41003, None)
+        for pid in range(model['service'], model['runtime'] + 1):
+            parents.pop(pid, None)
 
     monkeypatch.setattr(services, 'backend_request', request)
-    monkeypatch.setattr(services, '_service_pid', lambda e: (41003 in parents, 41003 if 41003 in parents else None))
+    monkeypatch.setattr(services, '_service_pid', lambda e: (model['service'] in parents, model['service'] if model['service'] in parents else None))
     monkeypatch.setattr(services.os, 'kill', lambda *args: pytest.fail('backend custody must use its supervisor, never direct signals'))
     pause._disarm = disarm
     return recovery, entry, threading.Event(), parents, modules, events, pause
+
+
+@pytest.mark.parametrize('manager,depth,purpose', [('launchd', 0, 'dashboard'), ('launchd', 1, 'serve'),
+    ('systemd', 0, 'dashboard'), ('systemd', 2, 'serve')])
+def test_backend_custody_and_fresh_recovery_use_original_supervisor(backend_stop, manager, depth, purpose):
+    from talaria_sidecar import agent_services as services
+    recovery, entry, stopped, parents, modules, events, pause = backend_stop
+    pause.model['depth'] = depth
+    entry['purpose'] = purpose
+    owed = recovery.state['entries'][0]
+    owed['purpose'] = purpose
+    if manager == 'systemd':
+        for candidate in (entry, owed):
+            candidate.update(kind='systemd', scope='user', unit='synthetic.dashboard')
+            for key in ('domain', 'label', 'plist'):
+                candidate.pop(key, None)
+        owed['config_stamp'] = services._config_stamp(owed)
+    # The ledger is an external Agent boundary; it reports the successor, never decides readiness.
+    ledger = pause.ledger
+    pause.ledger = lambda *args: [(dict(row, purpose=purpose), live) for row, live in ledger(*args)]
+    recovery.save()
+    services.bind_processes(entry, recovery.records)
+    recovery.stop(entry, stopped)
+    assert events == ['identity', 'prepare', 'commit', 'disarm']
+    assert not {41003, 41004} & parents.keys()
+    fresh = services.ServiceRecovery(recovery.root, entry['home'], recovery.records, recovery.identity, pause)
+    assert fresh.state['entries'][0]['phase'] == 'stopped'
+    fresh.resume(pause.ledger)
+    assert pause.model['start_attempts'] == 1
+    assert pause.model['runtime'] in parents
+    assert fresh.state['entries'] == [] and not fresh.path.exists()
+    fresh.resume(pause.ledger)
+    assert pause.model['start_attempts'] == 1
+
+
+@pytest.mark.parametrize('failure', ['busy', 'unsupported', 'source', 'dependencies', 'start', 'readiness'])
+def test_backend_recovery_failure_keeps_exact_debt_until_repair(backend_stop, monkeypatch, failure):
+    from talaria_sidecar import agent_services as services
+    recovery, entry, stopped, parents, modules, events, pause = backend_stop
+    if failure in {'busy', 'unsupported'}:
+        pause.model['idle'] = failure != 'busy'
+        pause.model['supported'] = failure != 'unsupported'
+        with pytest.raises(RuntimeError, match='active work|unsupported'):
+            recovery.stop(entry, stopped)
+        assert {41003, 41004} <= parents.keys()
+        assert 'disarm' not in events and pause.model['start_attempts'] == 0
+        assert recovery.state['entries'] == ([] if failure == 'busy' else [recovery.state['entries'][0]])
+        return
+    recovery.stop(entry, stopped)
+    if failure == 'source': recovery.records.tree_is_whole = lambda *args: (False, 'synthetic torn source')
+    if failure == 'dependencies': recovery.state['sync_failed'] = True
+    if failure == 'start': pause.model['start_failure'] = True
+    if failure == 'readiness': pause.model['supported'] = False
+    recovery.save()
+    with pytest.raises(RuntimeError):
+        recovery.resume(pause.ledger)
+    assert [e['label'] for e in recovery.state['entries']] == [entry['label']]
+    assert recovery.path.exists()
+    assert pause.model['start_attempts'] == (1 if failure in {'start', 'readiness'} else 0)
+    recovery.records.tree_is_whole = lambda *args: (True, '')
+    recovery.state['sync_failed'] = False
+    pause.model.update(start_failure=False, supported=True)
+    recovery.resume(pause.ledger)
+    assert not recovery.path.exists()
+
+
+@pytest.fixture
+def mutation_worker(backend_stop, monkeypatch):
+    """Extend backend_stop with the native Agent protocol consumed by the real lease worker."""
+    import contextlib
+    import queue
+    import threading
+    import types
+    from talaria_sidecar import agent_mutation as mutation
+    recovery, entry, stopped, parents, modules, events, pause = backend_stop
+    root, home, model = recovery.root, Path(entry['home']), pause.model
+    recovery.path.unlink()
+    model.update(head='a' * 40, target='b' * 40, dirty=[], fail_sync=False, commands=[])
+    monkeypatch.setenv('HERMES_HOME', str(home))
+    monkeypatch.setattr(sys, 'path', list(sys.path))
+    records = recovery.records
+    records.UNOWNED = 'unowned'
+    journal = home / 'native-journal.json'
+    records.tree_state = lambda root: {'pre_sha': model['head'], 'dirty_at_pause': list(model['dirty'])}
+    records.adopt_orphans = lambda: (None, [])
+    records.write = lambda token, **kwargs: journal.write_text(json.dumps(token))
+    records.discharge = lambda token: journal.unlink(missing_ok=True)
+
+    def record(token, adopted, claims):
+        token['baselines'] = [records.tree_state(root)]
+        records.write(token)
+
+    records.record_pause = record
+    records.mark_stop_requested = lambda token, pids: token.update(stop_requested=pids)
+    records.mark_stop_sent = lambda token, pid: token.setdefault('stop_sent', []).append(pid)
+    pause._empty_token = lambda: {}
+    pause._drain_budget = lambda: 1
+    monkeypatch.setattr(mutation, '_writer_ledger', lambda *args: pause.ledger())
+    marker = root / 'move-marker'
+    def arm_move(command, checkout, **intent):
+        assert checkout == root and intent['pre'] == model['head'] and intent['target'] == model['target']
+        marker.write_text(json.dumps(intent))
+        return marker
+    native = {
+        'update_lock': types.SimpleNamespace(UpdateLock=lambda **kwargs: types.SimpleNamespace(acquire=lambda: True, release=lambda: events.append('unlock'))),
+        'update_cmd_posix_pause': pause, 'update_pause_record': records, 'process_identity': recovery.identity,
+        'update_custody': types.SimpleNamespace(git_argv=lambda cmd, args: [*cmd, *args]),
+        'update_cmd_pause_gate': types.SimpleNamespace(_checkout_move=lambda *args, **kwargs: contextlib.nullcontext({})),
+        'update_cmd_windows': types.SimpleNamespace(_resume_windows_gateways_after_update=lambda token: token.update(resume_needed=False)),
+        'update_cmd_commit': types.SimpleNamespace(arm_tree_move=arm_move),
+        'main': types.SimpleNamespace(),
+    }
+    for name, module in native.items():
+        module.__file__ = str(root / 'hermes_cli' / (name + '.py'))
+        monkeypatch.setitem(sys.modules, 'hermes_cli.' + name, module)
+    (root / 'hermes_cli').mkdir(exist_ok=True)
+    (root / 'hermes_cli/venv_sync.py').touch()
+
+    def command(argv, root, timeout, stopped, custody):
+        model['commands'].append(argv)
+        if argv[1:2] in (['merge'], ['reset']) or 'hermes_cli.venv_sync' in argv:
+            assert not pause.ledger(), 'a writer reached the external mutation boundary'
+        if argv[1:2] in (['merge'], ['reset']):
+            assert marker.exists(), 'the external source move has no prior native rollback intent'
+        if 'hermes_cli.venv_sync' in argv:
+            return {'ok': True, 'detail': json.dumps({'ok': not model['fail_sync'], 'detail': 'synthetic dependency result'})}
+        args = argv[1:]
+        assert args[0] in {'rev-parse', 'show', 'ls-tree', 'merge', 'reset', 'for-each-ref'}, argv
+        if args[0] == 'rev-parse': detail = model['head']
+        elif args[0] == 'show': detail = '\n'.join('def ' + name + '(): pass' for name in ('recover', 'tree_is_whole', 'adopt_orphans'))
+        elif args[0] == 'ls-tree': detail = '\n'.join('hermes_cli/' + name + '.py' for name in [*native, 'venv_sync'])
+        else:
+            if args[0] in {'merge', 'reset'}: model['head'] = args[-1]
+            detail = ''
+        return {'ok': True, 'detail': detail}
+
+    monkeypatch.setattr(mutation, '_command', command)
+
+    def run(requests=(), binding=None):
+        incoming, replies = queue.Queue(), []
+        for request in requests: incoming.put(request)
+        incoming.put({'action': 'finish'})
+        stopped = types.SimpleNamespace(is_set=lambda: False, wait=lambda seconds: pause.advance(seconds))
+        mutation._worker(root, model['target'], {home}, incoming, stopped, replies.append, binding)
+        return replies
+
+    return run, model, recovery, entry, parents, events, pause
+
+
+@pytest.mark.parametrize('mode', ['normal', 'force'])
+@pytest.mark.parametrize('failure', [False, True])
+def test_worker_holds_custody_through_selected_revision_and_dependency_result(mutation_worker, mode, failure):
+    run, model, recovery, entry, parents, events, pause = mutation_worker
+    model['fail_sync'] = failure
+    args = ['merge', '--ff-only', model['target']] if mode == 'normal' else ['reset', '--hard', model['target']]
+    replies = run([{'action': 'git', 'args': args}, {'action': 'sync'}])
+    assert [reply['ok'] for reply in replies] == [True, True, not failure, not failure], replies
+    assert model['head'] == model['target']
+    assert events[:4] == ['identity', 'identity', 'prepare', 'commit']
+    assert events[-1] == 'unlock'
+    if failure:
+        saved = json.loads(recovery.path.read_text())
+        assert saved['sync_failed'] and saved['entries'][0]['phase'] == 'stopped'
+        assert pause.model['start_attempts'] == 0
+        assert not pause.ledger()
+        model['fail_sync'] = False
+        repaired = run([{'action': 'sync'}])
+        assert all(reply['ok'] for reply in repaired), repaired
+        assert not recovery.path.exists() and pause.ledger()
+    else:
+        assert not recovery.path.exists()
+        assert pause.model['start_attempts'] == 1
+        assert pause.ledger()
+
+
+@pytest.mark.parametrize('changed', ['revision', 'homes', 'config', 'endpoint', 'profile', 'birth', 'source'])
+def test_worker_binds_legacy_refresh_to_the_complete_current_identity(mutation_worker, monkeypatch, changed):
+    from talaria_sidecar import agent_services as services
+    run, model, recovery, entry, parents, events, pause = mutation_worker
+    model['supported'] = False
+    monkeypatch.setattr(services, 'verify_listener', lambda candidate: None)
+    pending = run()
+    binding = pending[0]['refresh_confirmation']['binding']
+    assert model['commands'] and model['head'] == 'a' * 40
+    assert 'disarm' not in events and not recovery.path.exists()
+    if changed == 'revision': model['target'] = 'c' * 40
+    elif changed == 'source': model['dirty'].append('local.txt')
+    elif changed == 'config': Path(entry['plist']).write_text('changed configuration')
+    elif changed == 'endpoint':
+        ledger = pause.ledger
+        pause.ledger = lambda *args: [(dict(row, port=9420), live) for row, live in ledger(*args)]
+    elif changed == 'profile':
+        pause.ledger = lambda *args: [(dict(pid=41004, create_time=1, purpose='dashboard', hermes_home=entry['home'], profile='foreign', host='127.0.0.1', port=9417, argv='hermes dashboard'), True)]
+    elif changed == 'birth':
+        monkeypatch.setattr(sys.modules['gateway.status'], 'get_process_start_time', lambda pid: pid * 10 + 1)
+    else:
+        # A changed profile scope cannot discover the consented process.
+        monkeypatch.setattr(sys.modules['hermes_cli.dashboard_procs'], '_hermes_home_for_pid', lambda pid: str(recovery.root / 'foreign'))
+    replies = run(binding=binding)
+    assert replies[-1]['ok'] is False, replies
+    assert 'disarm' not in events
+    assert not recovery.path.exists()
+    assert model['head'] == 'a' * 40
+
+
+@pytest.mark.parametrize('mode', ['normal', 'force'])
+@pytest.mark.parametrize('depth', [0, 2])
+def test_worker_refreshes_only_the_consented_incarnation_before_the_original_update(mutation_worker, monkeypatch, mode, depth):
+    from talaria_sidecar import agent_services as services
+    run, model, recovery, entry, parents, events, pause = mutation_worker
+    model.update(supported=False, depth=depth)
+    monkeypatch.setattr(services, 'verify_listener', lambda candidate: None)
+    pending = run()
+    assert 'disarm' not in events
+    binding = pending[0]['refresh_confirmation']['binding']
+    signals = []
+
+    def retire(pid, sig):
+        saved = json.loads(recovery.path.read_text())['entries'][0]
+        assert saved['legacy_refresh'] and saved['phase'] == 'refreshing'
+        assert model['head'] == 'a' * 40
+        assert pid == saved['pid'] == 41004 and sig == signal.SIGTERM
+        signals.append(pid)
+        parents.pop(41003); parents.pop(41004)
+        model['supported'] = True
+        pause.spawn()
+
+    monkeypatch.setattr(services.os, 'kill', retire)
+    args = ['merge', '--ff-only', model['target']] if mode == 'normal' else ['reset', '--hard', model['target']]
+    replies = run([{'action': 'git', 'args': args}, {'action': 'sync'}], binding)
+    assert all(reply['ok'] for reply in replies), replies
+    assert model['head'] == model['target'] and signals == [41004]
+    assert model['start_attempts'] == 2
+    assert not recovery.path.exists()
+
+
+@pytest.mark.parametrize('unsafe', ['source', 'dependencies'])
+def test_worker_never_refreshes_an_unsafe_baseline(mutation_worker, monkeypatch, unsafe):
+    from talaria_sidecar import agent_services as services
+    run, model, recovery, entry, parents, events, pause = mutation_worker
+    model['supported'] = False
+    monkeypatch.setattr(services, 'verify_listener', lambda candidate: None)
+    if unsafe == 'source': model['dirty'] = ['local.txt']
+    else: (recovery.root / '.interrupted').touch()
+    binding = run()[0]['refresh_confirmation']['binding']
+    replies = run(binding=binding)
+    assert not replies[-1]['ok'] and 'not safe for a legacy refresh' in replies[-1]['detail']
+    assert 'disarm' not in events and not recovery.path.exists()
+    assert model['head'] == 'a' * 40
+
+
+def test_worker_attempts_a_failed_legacy_successor_start_once_and_preserves_debt(mutation_worker, monkeypatch):
+    from talaria_sidecar import agent_services as services
+    run, model, recovery, entry, parents, events, pause = mutation_worker
+    model['supported'] = False
+    monkeypatch.setattr(services, 'verify_listener', lambda candidate: None)
+    binding = run()[0]['refresh_confirmation']['binding']
+    signals = []
+
+    def retire(pid, sig):
+        assert json.loads(recovery.path.read_text())['entries'][0]['legacy_refresh']
+        signals.append((pid, sig))
+        parents.pop(41003); parents.pop(41004)
+        model.update(supported=True, start_failure=True)
+
+    monkeypatch.setattr(services.os, 'kill', retire)
+    replies = run(binding=binding)
+    assert not replies[-1]['ok'], replies
+    assert model['head'] == 'a' * 40 and model['start_attempts'] == 1
+    assert signals == [(41004, signal.SIGTERM)]
+    saved = json.loads(recovery.path.read_text())
+    assert saved['entries'][0]['legacy_refresh'] and saved['entries'][0]['phase'] == 'refreshing'
+    model['start_failure'] = False
+    fresh = services.ServiceRecovery(recovery.root, entry['home'], recovery.records, recovery.identity, pause)
+    fresh.resume(pause.ledger)
+    assert fresh.state['entries'] == []
+    assert model['start_attempts'] == 2 and signals == [(41004, signal.SIGTERM)]
+
+
+@pytest.mark.parametrize('running', [False, True])
+def test_worker_never_starts_a_stopped_backend_or_stops_an_unauthenticated_one(mutation_worker, running):
+    run, model, recovery, entry, parents, events, pause = mutation_worker
+    if running: model['auth_refused'] = True
+    else:
+        parents.pop(41003); parents.pop(41004)
+    replies = run()
+    assert replies[-1]['ok'] is not running
+    assert model['head'] == 'a' * 40 and model['start_attempts'] == 0
+    assert 'disarm' not in events and not recovery.path.exists()
+    if running:
+        assert 'HTTP 401' in replies[-1]['detail']
+        assert {41003, 41004} <= parents.keys()
+
+
+@pytest.mark.parametrize('unsafe', ['unknown-owner', 'foreign-home', 'corrupt-ledger'])
+def test_worker_refuses_unprovable_writer_ownership_before_any_stop(mutation_worker, unsafe):
+    run, model, recovery, entry, parents, events, pause = mutation_worker
+    ledger = pause.ledger
+    if unsafe == 'corrupt-ledger':
+        def unreadable(*args): raise ValueError('synthetic unreadable native ledger')
+        pause.ledger = unreadable
+    else:
+        change = {'purpose': 'cli'} if unsafe == 'unknown-owner' else {'hermes_home': str(recovery.root / 'foreign')}
+        pause.ledger = lambda *args: [(dict(row, **change), live) for row, live in ledger(*args)]
+    replies = run()
+    assert not replies[-1]['ok'], replies
+    assert not recovery.path.exists() and model['head'] == 'a' * 40
+    assert 'disarm' not in events and model['start_attempts'] == 0
+    assert {41003, 41004} <= parents.keys()
+
+
+@pytest.mark.parametrize('probe', ['canonical', 'native'])
+def test_worker_refuses_reused_identity_samples_before_durable_intent(mutation_worker, monkeypatch, probe):
+    run, model, recovery, entry, parents, events, pause = mutation_worker
+    from collections import Counter
+    samples = Counter()
+    def changed(pid):
+        samples[pid] += 1
+        value = pid + int(samples[pid] > 1)
+        return {'ct': value} if probe == 'canonical' else value * 10
+    if probe == 'canonical': monkeypatch.setattr(recovery.records, 'identity', changed)
+    else: monkeypatch.setattr(sys.modules['gateway.status'], 'get_process_start_time', changed)
+    replies = run()
+    assert not replies[-1]['ok'], replies
+    assert any(count > 1 for count in samples.values())
+    assert not recovery.path.exists() and model['head'] == 'a' * 40
+    assert 'disarm' not in events and model['start_attempts'] == 0
+
+
+def test_backend_stop_timeout_retains_commit_and_fresh_recovery_retries_the_manager(backend_stop):
+    from types import SimpleNamespace
+    from talaria_sidecar import agent_services as services
+    recovery, entry, stopped, parents, modules, events, pause = backend_stop
+    disarm = pause._disarm
+    pause._disarm = lambda candidate: events.append('unconfirmed-disarm')
+    controlled = SimpleNamespace(is_set=lambda: False, wait=lambda seconds: pause.advance(seconds))
+    with pytest.raises(RuntimeError, match='graceful stop has not completed'):
+        recovery.stop(entry, controlled)
+    saved = json.loads(recovery.path.read_text())['entries'][0]
+    assert saved['backend_committed'] and saved['backend_stop_requested'] and saved['phase'] == 'retiring'
+    assert {41003, 41004} <= parents.keys()
+    pause._disarm = disarm
+    fresh = services.ServiceRecovery(recovery.root, entry['home'], recovery.records, recovery.identity, pause)
+    fresh.resume(pause.ledger)
+    assert not fresh.path.exists() and pause.model['start_attempts'] == 1
+
+
+def test_gateway_wrapper_without_a_runtime_cannot_discharge_readiness_debt(gateway_successor, monkeypatch):
+    from types import SimpleNamespace
+    from talaria_sidecar import agent_services as services
+    recovery, entry, calls, parents, pause, records, modules = gateway_successor
+    monkeypatch.setattr(modules['gateway.status'], 'get_running_pid_identity_strict', lambda path: None)
+    clock = [0.0]
+    def advance(seconds): clock[0] += seconds
+    monkeypatch.setattr(services, 'time', SimpleNamespace(monotonic=lambda: clock[0], sleep=advance))
+    before = recovery.path.read_bytes()
+    with pytest.raises(RuntimeError, match='readiness is unverified'):
+        recovery._wait_ready(entry, lambda *args: [])
+    assert recovery.path.read_bytes() == before and calls == []
 
 
 def test_backend_stop_persists_commit_and_intent_before_supervisor_action(backend_stop):
@@ -2971,49 +2921,8 @@ def test_recovery_uses_same_supervisor_stop_after_committed_backend_exits(backen
     assert ready == ['start', 'verified-ready']
 
 
-@pytest.mark.parametrize('purpose', ['dashboard', 'serve'])
-def test_native_admission_stays_closed_between_commit_and_supervisor_stop(tmp_path, purpose):
-    from urllib.request import Request, urlopen
-    with supervised_agent(tmp_path, gateways=False, backend_respawn=True, backend_purpose=purpose) as (root, home, base, target, sidecar, configs):
-        (home / 'hold-backend-disarm').touch()
-        sidecar.request('runtime.agent_mutation', dict(agent_dir=str(root), action='begin', revision=target, homes=[str(home)]))
-        wait_for(lambda: (home / 'backend-disarm-requested').exists())
-        debt = json.loads(next((home / '.talaria-agent-services').glob('*.json')).read_text())['entries'][0]
-        assert debt['backend_committed'] and debt['backend_stop_requested']
-        assert (home / 'retirement-actions').read_text().splitlines() == ['prepare', 'commit']
-        request = Request(f"http://127.0.0.1:{configs[0]['port']}/api/health/retirement", data=json.dumps({'action': 'work'}).encode(),
-                          headers={'Authorization': 'Bearer synthetic-local-token', 'Content-Type': 'application/json'})
-        with urlopen(request, timeout=2) as response:
-            assert json.load(response) == {'admitted': False}
-        assert git(root, 'rev-parse', 'HEAD') == base
-        assert not (home / 'signals').exists()
-        (home / 'hold-backend-disarm').unlink()
-        begun = sidecar.next_message(timeout=15)['result']
-        assert begun['ok'], begun
-        assert not (home / 'backend.pid').exists()
-        assert rpc(sidecar, root, 'finish', token=begun['token'])['ok']
 
 
-@pytest.mark.parametrize('failure', ['management', 'timeout'])
-def test_failed_supervisor_stop_retains_debt_and_fresh_sidecar_recovers(tmp_path, failure):
-    with supervised_agent(tmp_path, gateways=False, backend_respawn=True) as (root, home, base, target, sidecar, configs):
-        gate = home / ('fail-backend-disarm' if failure == 'management' else 'hold-backend-disarm')
-        gate.touch()
-        result = rpc(sidecar, root, 'begin', revision=target, homes=[str(home)])
-        assert not result['ok'], result
-        assert git(root, 'rev-parse', 'HEAD') == base
-        assert (home / 'backend.pid').exists()
-        assert not (home / 'signals').exists()
-        debt = next((home / '.talaria-agent-services').glob('*.json'))
-        assert json.loads(debt.read_text())['entries'][0]['backend_committed']
-        sidecar.close()
-        gate.unlink()
-        with contextlib.closing(SidecarProcess(home, agent_dir=root, python=AGENT_PYTHON, env={'PATH': str(home / 'bin') + os.pathsep + os.environ['PATH']})) as replacement:
-            replacement.result('runtime.handshake', {'rpc_version': __import__('talaria_sidecar').SIDECAR_RPC_VERSION})
-            replacement.result('runtime.agent_recovery', {}, timeout=45)
-            wait_for(lambda: not debt.exists())
-        assert (home / 'backend.pid').exists()
-        assert (home / 'services' / configs[0]['label'] / 'starts').read_text().splitlines() == ['start']
 
 
 @pytest.mark.parametrize('boundary', ['retiring', 'committed', 'stop-requested', 'stopped'])

@@ -29,6 +29,7 @@ class ReleaseBudgetTests(unittest.TestCase):
                     plan = root / 'plan.json'
                     plan.write_text(json.dumps({'components': {'web': {'sourceRevision': 'a' * 40}}, 'agent': identity}))
                     tags, seen, active, maximum, started = ['v1', 'v2', 'v3'], {}, 0, 0, 0
+                    builds = []
                     lock = threading.Lock()
                     width = min(budget, len(tags))
                     barrier = threading.Barrier(width)
@@ -38,8 +39,15 @@ class ReleaseBudgetTests(unittest.TestCase):
 
                     def run(command, **kwargs):
                         nonlocal active, maximum, started
+                        if command[0] == 'npm':
+                            builds.append(command)
+                            for relative in ('node_modules', 'packages/contracts/dist', 'packages/server/dist'):
+                                (Path(kwargs['cwd']) / relative).mkdir(parents=True, exist_ok=True)
                         if '--release' not in command:
                             return subprocess.CompletedProcess(command, 0)
+                        if builds:
+                            for relative in ('web/node_modules', 'web/packages/contracts/dist', 'web/packages/server/dist'):
+                                self.assertTrue((Path(kwargs['cwd']) / relative).is_symlink())
                         tag = command[command.index('--release') + 1]
                         env = kwargs['env']
                         workers = int(env['TALARIA_SIDECAR_WORKERS'])
@@ -65,9 +73,31 @@ class ReleaseBudgetTests(unittest.TestCase):
                         else:
                             checker.main()
                     self.assertEqual(set(seen), set(tags))
+                    self.assertEqual(builds, [['npm', 'ci', '--no-audit', '--no-fund'],
+                        ['npm', 'run', 'build', '-w', 'packages/contracts'], ['npm', 'run', 'build', '-w', 'packages/server']])
                     self.assertLessEqual(maximum, budget)
                     self.assertTrue(all(env['TALARIA_SIDECAR_TOTAL_WORKERS'] == str(budget) for env in seen.values()))
                     self.assertEqual(sum(int(env['TALARIA_SIDECAR_WORKERS']) for env in seen.values()), max(budget, 3))
+
+    def test_missing_runtime_artifacts_never_start_compatibility(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            pin = json.loads((ROOT / 'web/sidecar/agent_dependency.json').read_text())
+            identity = {**pin['x-talaria'], 'image': pin['services']['hermes-agent']['image']}
+            plan = root / 'plan.json'
+            plan.write_text(json.dumps({'components': {'web': {'sourceRevision': 'a' * 40}}, 'agent': identity}))
+            commands = []
+            def run(command, **kwargs):
+                commands.append(command)
+                return subprocess.CompletedProcess(command, 0, stdout='synthetic check\n')
+            def output(command, **kwargs):
+                return json.dumps(['v1', 'v2', 'v3'] if '--list' in command else pin).encode()
+            with patch.object(checker, 'ROOT', root), patch.object(checker.subprocess, 'run', side_effect=run), \
+                    patch.object(checker.subprocess, 'check_output', side_effect=output), \
+                    patch('sys.argv', ['check-release-agent.py', '--plan', str(plan)]), patch('sys.stdout', new_callable=io.StringIO):
+                with self.assertRaisesRegex(RuntimeError, 'runtime build did not produce'):
+                    checker.main()
+            self.assertFalse(any('--release' in command for command in commands))
 
 
 if __name__ == '__main__':

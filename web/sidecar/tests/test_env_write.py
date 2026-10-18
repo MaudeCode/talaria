@@ -99,17 +99,29 @@ def test_env_write_refuses_an_administrator_managed_key_before_writing(hermes_ho
     assert env_lines(hermes_home) == ["EXISTING=1"]
 
 
-@requires_agent
-def test_env_write_reports_a_held_lock(handshaken: SidecarProcess, hermes_home: pathlib.Path) -> None:
+def test_env_write_reports_a_held_lock(hermes_home: pathlib.Path, monkeypatch) -> None:
+    import contextlib
+    import sys
+    import types
+    from talaria_sidecar.errors import RpcError
+    from talaria_sidecar.methods import config
+
     (hermes_home / ".env").write_text("EXISTING=1\n")
-    agent, go = paused_agent_write(hermes_home)
-    try:
-        message, _ = handshaken.call("config.env_write", {"profile_home": str(hermes_home), "updates": {"LATE_KEY": "value"}}, timeout=60)
-    finally:
-        go.touch()
-        agent.wait(timeout=30)
-    assert message["error"]["data"]["condition"] == "env_locked", message
-    assert "LATE_KEY=value" not in env_lines(hermes_home)
+
+    @contextlib.contextmanager
+    def held(path):
+        assert path == hermes_home / '.env'
+        raise TimeoutError('synthetic held Agent lock')
+        yield
+
+    agent = types.SimpleNamespace(env_write_refusal=lambda *args: None, ensure_hermes_home=lambda: None,
+        get_env_path=lambda: hermes_home / '.env', _env_write_lock=held)
+    monkeypatch.setitem(sys.modules, 'hermes_cli', types.SimpleNamespace(config=agent))
+    monkeypatch.setattr(config, 'scoped_home', lambda home: contextlib.nullcontext(home))
+    with pytest.raises(RpcError) as raised:
+        config.env_write(hermes_home, {'LATE_KEY': 'value'})
+    assert raised.value.data['condition'] == 'env_locked'
+    assert env_lines(hermes_home) == ['EXISTING=1']
 
 
 @requires_agent

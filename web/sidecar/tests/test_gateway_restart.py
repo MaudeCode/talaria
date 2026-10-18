@@ -86,12 +86,10 @@ def test_restart_terminates_a_hung_child_after_the_background_wait(tmp_path, mon
 
 @pytest.mark.parametrize("action", ["start", "stop"])
 def test_start_and_stop_run_their_cli_subcommand_in_the_profile_home(tmp_path, monkeypatch, action) -> None:
-    script = _script(tmp_path, f"""
-        import os, sys
-        assert sys.argv[1:] == ["gateway", "{action}"], sys.argv
-        assert os.environ["HERMES_HOME"] == {str(tmp_path)!r}
-        print("pid 4242 service details")
-    """)
+    def script(cmd, kwargs):
+        assert cmd[1:] == ['gateway', action]
+        assert kwargs['env']['HERMES_HOME'] == str(tmp_path)
+        return 'pid 4242 service details\n', '', 0, 0
     monkeypatch.setattr(gateway, "_hermes_command", lambda: sys.executable)
     monkeypatch.setattr(gateway.subprocess, "Popen", _popen_with_script(script))
     result = gateway.control(action, tmp_path, None, _Ctx(), quick_timeout=2.0, background_wait=5.0)
@@ -100,12 +98,7 @@ def test_start_and_stop_run_their_cli_subcommand_in_the_profile_home(tmp_path, m
 
 
 def test_failed_stop_reports_the_exit_code(tmp_path, monkeypatch) -> None:
-    script = _script(tmp_path, """
-        import sys
-        sys.stdout.write("partial output\\n")
-        sys.stderr.write("stop failed\\n")
-        sys.exit(7)
-    """)
+    script = lambda *args: ('partial output\n', 'stop failed\n', 7, 0)
     monkeypatch.setattr(gateway, "_hermes_command", lambda: sys.executable)
     monkeypatch.setattr(gateway.subprocess, "Popen", _popen_with_script(script))
     result = gateway.control("stop", tmp_path, None, _Ctx(), quick_timeout=2.0, background_wait=5.0)
@@ -125,7 +118,9 @@ def test_an_action_in_flight_makes_every_other_action_busy_without_spawning(tmp_
 
 
 def test_a_missing_cli_fails_without_raising(tmp_path, monkeypatch) -> None:
+    from unittest.mock import Mock
     monkeypatch.setattr(gateway, "_hermes_command", lambda: str(tmp_path / "no-such-hermes"))
+    monkeypatch.setattr(gateway.subprocess, 'Popen', Mock(side_effect=FileNotFoundError('synthetic missing CLI')))
     result = gateway.control("start", tmp_path, None, _Ctx(), quick_timeout=0.1, background_wait=0.1)
     assert result == {"status": "failed", "message": "Hermes CLI not found"}
     assert gateway._ACTION_LOCK.acquire(blocking=False)
@@ -141,6 +136,20 @@ def _popen_with_script(script):
     real = gateway.subprocess.Popen
 
     def popen(cmd, **kwargs):
+        if callable(script):
+            import io
+            stdout, stderr, code, delay = script(cmd, kwargs)
+            deadline = gateway.time.monotonic() + delay
+            proc = types.SimpleNamespace(stdout=io.StringIO(stdout), stderr=io.StringIO(stderr), returncode=None)
+            def poll():
+                if proc.returncode is None and gateway.time.monotonic() >= deadline:
+                    proc.returncode = code
+                return proc.returncode
+            proc.poll = poll
+            proc.terminate = lambda: setattr(proc, 'returncode', -15)
+            proc.kill = lambda: setattr(proc, 'returncode', -9)
+            proc.wait = lambda **kw: proc.returncode
+            return proc
         # The stand-in runs the script where the CLI would run: `<python> gateway restart` → `<python> script.py gateway restart`.
         return real([cmd[0], str(script), *cmd[1:]], **kwargs)
 
@@ -150,35 +159,28 @@ def _popen_with_script(script):
 _REFUSAL = "\033[31m✗ Profile 'work' does not get a gateway of its own.\033[0m\n  Exactly one gateway per host is the inbound process for every\n  profile.\n"
 
 
-def _host_cli(tmp_path, *, serves_after_host: bool = True, root_exit: int = 0) -> tuple[str, object, Path]:
-    """A stand-in v0.21.6 CLI: a named home's start/restart exits 78 until the host gateway runs; ``--profile default`` starts the host."""
+def _host_cli(tmp_path, *, serves_after_host: bool = True, root_exit: int = 0):
+    """Boundary responses from a v0.21.6 CLI; the real control function owns fallback decisions."""
     root = tmp_path / ".hermes"
     named = root / "profiles" / "work"
     named.mkdir(parents=True)
     calls = tmp_path / "calls.log"
-    host = tmp_path / "host.running"
-    script = _script(tmp_path, f"""
-        import os, sys
-        args = sys.argv[1:]
-        with open({str(calls)!r}, "a") as f:
-            f.write(os.environ["HERMES_HOME"] + " " + " ".join(args) + "\\n")
-        if args[:2] == ["--profile", "default"]:
-            if {root_exit}:
-                sys.stderr.write("launchctl bootstrap failed\\n")
-                sys.exit({root_exit})
-            open({str(host)!r}, "w").close()
-            print("Gateway started")
-            sys.exit(0)
-        if os.environ["HERMES_HOME"].endswith("/profiles/work") and args[-1] in ("start", "restart"):
-            if {serves_after_host} and os.path.exists({str(host)!r}) and not os.path.exists({str(host)!r} + ".served"):
-                open({str(host)!r} + ".served", "w").close()
-                print("Profile 'work' served by the host gateway.")
-                sys.exit(0)
-            sys.stdout.write({_REFUSAL!r})
-            sys.exit(78)
-        print("ok")
-    """)
-    return script, calls, named
+    host_started = False
+
+    def response(cmd, kwargs):
+        nonlocal host_started
+        args = cmd[1:]
+        with calls.open('a') as output:
+            output.write(kwargs['env']['HERMES_HOME'] + ' ' + ' '.join(args) + '\n')
+        if args[:2] == ['--profile', 'default']:
+            if root_exit: return '', 'launchctl bootstrap failed\n', root_exit, 0
+            host_started = True
+            return 'Gateway started\n', '', 0, 0
+        if host_started and serves_after_host:
+            return "Profile 'work' served by the host gateway.\n", '', 0, 0
+        return _REFUSAL, '', 78, 0
+
+    return response, calls, named
 
 
 def _agent_profiles(monkeypatch, root: Path) -> None:
@@ -241,7 +243,7 @@ def test_an_older_agent_that_starts_the_named_profile_runs_one_call(tmp_path, mo
     named = tmp_path / ".hermes" / "profiles" / "work"
     named.mkdir(parents=True)
     spawned: list[list[str]] = []
-    real = _popen_with_script(_script(tmp_path, "print('started')\n"))
+    real = _popen_with_script(lambda *args: ('started\n', '', 0, 0))
     monkeypatch.setattr(gateway, "_hermes_command", lambda: sys.executable)
     monkeypatch.setattr(gateway.subprocess, "Popen", lambda cmd, **kw: spawned.append(cmd) or real(cmd, **kw))
     assert gateway.control("start", named, None, _Ctx(), quick_timeout=2.0, background_wait=5.0)["status"] == "completed"
@@ -252,7 +254,7 @@ def test_an_older_agent_that_starts_the_named_profile_runs_one_call(tmp_path, mo
 def test_a_refused_stop_or_root_profile_action_is_not_retried(tmp_path, monkeypatch, action, home) -> None:
     (tmp_path / home).mkdir(parents=True)
     spawned: list[list[str]] = []
-    real = _popen_with_script(_script(tmp_path, "import sys\nprint('✗ refused')\nsys.exit(78)\n"))
+    real = _popen_with_script(lambda *args: ('✗ refused\n', '', 78, 0))
     monkeypatch.setattr(gateway, "_hermes_command", lambda: sys.executable)
     monkeypatch.setattr(gateway.subprocess, "Popen", lambda cmd, **kw: spawned.append(cmd) or real(cmd, **kw))
     result = gateway.control(action, tmp_path / home, None, _Ctx(), quick_timeout=2.0, background_wait=5.0)
@@ -262,24 +264,16 @@ def test_a_refused_stop_or_root_profile_action_is_not_retried(tmp_path, monkeypa
 def test_the_host_fallback_shares_one_deadline_across_every_step(tmp_path, monkeypatch) -> None:
     named = tmp_path / ".hermes" / "profiles" / "work"
     named.mkdir(parents=True)
-    marker = tmp_path / "refused"
-    script = _script(tmp_path, f"""
-        import os, sys, time
-        if sys.argv[1:3] == ["--profile", "default"]:
-            time.sleep(1.5)
-            sys.exit(0)
-        if not os.path.exists({str(marker)!r}):
-            open({str(marker)!r}, "w").close()
-            print("✗ Profile 'work' does not get a gateway of its own.")
-            sys.exit(78)
-        time.sleep(30)
-    """)
+    responses = iter([(_REFUSAL, '', 78, 0), ('', '', 0, 1.5), ('', '', 0, 30)])
+    script = lambda *args: next(responses)
+    clock = [0.0]
+    def advance(seconds): clock[0] += seconds
+    monkeypatch.setattr(gateway, 'time', types.SimpleNamespace(monotonic=lambda: clock[0], sleep=advance))
     monkeypatch.setattr(gateway, "_hermes_command", lambda: sys.executable)
     monkeypatch.setattr(gateway.subprocess, "Popen", _popen_with_script(script))
-    started = time.monotonic()
     result = gateway.control("start", named, None, _Ctx(), quick_timeout=0.1, background_wait=2.0)
     assert result.get("timed_out") is True, result
-    assert time.monotonic() - started < 3.0
+    assert clock[0] < 3.0
 
 
 class _Registry:
@@ -313,21 +307,17 @@ def _agent_budget(monkeypatch, budget: float | None) -> list:
     return envs
 
 
-def _fast_clock(monkeypatch, scale: float = 100.0) -> None:
-    """The gateway module's clock runs ``scale`` times real time, so a few real seconds read as minutes."""
-    start = time.monotonic()
-    monkeypatch.setattr(gateway, "time", types.SimpleNamespace(monotonic=lambda: start + (time.monotonic() - start) * scale, sleep=time.sleep))
-
-
 @pytest.mark.parametrize(("budget", "status"), [(400.0, "completed"), (float("inf"), "completed"), (None, "failed")])
 def test_a_restart_waits_out_the_agents_own_restart_budget(tmp_path, monkeypatch, budget, status) -> None:
     # TAL-894: the CLI drains for up to its own budget (default 1885 s). At 100x, the stand-in's 2.8 s is 280 s: past the old
     # 240 s wait (the fallback when the helper is missing), inside a 400 s budget's 430 s.
-    script = _script(tmp_path, "import time\ntime.sleep(2.8)\nprint('restarted')\n")
+    script = lambda *args: ('restarted\n', '', 0, 280)
     monkeypatch.setattr(gateway, "_hermes_command", lambda: sys.executable)
     monkeypatch.setattr(gateway.subprocess, "Popen", _popen_with_script(script))
     envs = _agent_budget(monkeypatch, budget)
-    _fast_clock(monkeypatch)
+    clock = [0.0]
+    def advance(seconds): clock[0] += seconds
+    monkeypatch.setattr(gateway, 'time', types.SimpleNamespace(monotonic=lambda: clock[0], sleep=advance))
     result = _restart_method()(_Ctx(), {"profile_home": str(tmp_path)})
     assert result["status"] == status, result
     if budget is None:
