@@ -79,11 +79,14 @@ sidecar/scripts/test.sh --layer=fast
 sidecar/scripts/test.sh --layer=process
 # Narrow selectors remain serial and retain complete execution/report accounting.
 sidecar/scripts/test.sh --layer=fast tests/test_agent_services.py -k worker
-sidecar/scripts/test.sh tests/test_suite_runner.py
+sidecar/scripts/test.sh --layer=process tests/test_suite_runner.py
 ```
 
 Explicit layer selection is a focused check, not a replacement for the default
-verification gate. `scripts/check-agent-compatibility.py --skip-docker --release TAG`
+verification gate. Specify `--layer=fast` or `--layer=process` for offline focused
+checks. Omitting the layer keeps the default compatibility request and provisions
+the active Agent even when a narrow selector happens to contain no native cases.
+`scripts/check-agent-compatibility.py --skip-docker --release TAG`
 passes the release identity to this same entry point. The active pin runs fast,
 process and compatibility work; the other supported releases run compatibility
 work. The Agent promotion probes still run for every release. CI and
