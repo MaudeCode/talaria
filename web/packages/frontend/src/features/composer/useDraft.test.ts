@@ -8,6 +8,15 @@ import { ApiError } from '../../contracts/common'
 import { readLocalDraft, useDraftPersistence, useServerDraft } from './useDraft'
 
 describe('useDraftPersistence', () => {
+  it('keeps native owner drafts local and scoped without writing an opaque key to the API', () => {
+    vi.mocked(api.saveDraft).mockClear()
+    const root = renderHook(() => { useDraftPersistence('owner-root', 'root draft', false) })
+    act(() => { vi.advanceTimersByTime(1500) })
+    expect(readLocalDraft('owner-root')).toBe('root draft')
+    expect(readLocalDraft('owner-work')).toBe('')
+    expect(api.saveDraft).not.toHaveBeenCalled()
+    root.unmount()
+  })
   beforeEach(() => { vi.useFakeTimers(); localStorage.clear(); vi.mocked(api.saveDraft).mockResolvedValue({ ok: true, draft: { text: '', files: [] }, draft_version: null }) })
   afterEach(() => { vi.useRealTimers(); vi.restoreAllMocks() })
 

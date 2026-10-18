@@ -13,7 +13,7 @@ import type { Session } from '../sessions/session.js'
 import { withSessionWireFlags } from '../sessions/list.js'
 import type { GatewayWatcher } from '../sessions/gateway-watcher.js'
 import { str } from '../util.js'
-import { streamOwnerSessionId } from './session-visibility.js'
+import { streamOwnerSessionId, streamVisibleToRequest } from './session-visibility.js'
 import { completedToolIndex, publicToolFrame, withToolId } from '../redact.js'
 
 export const SSE_HEARTBEAT_INTERVAL_MS = 5_000
@@ -289,7 +289,7 @@ async function drainStream(ctx: RequestContext, sse: SseWriter, sub: StreamSubsc
 export async function handleChatStream(ctx: RequestContext): Promise<void> {
   const streamId = ctx.query.get('stream_id') ?? ''
   const owner = (await streamOwnerSessionId(ctx, streamId))
-  if (owner && !(await ctx.deps.sessions.sessionIdVisible(owner))) { (await ctx.json({ error: 'Session not found' }, { status: 404 })); return }
+  if (!(await streamVisibleToRequest(ctx, streamId))) { (await ctx.json({ error: 'Session not found' }, { status: 404 })); return }
   const cursor = resumeCursor(ctx, streamId)
   const channel = ctx.deps.registry.peek(streamId)
   if (!channel) {

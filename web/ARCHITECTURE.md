@@ -160,6 +160,16 @@ After automatic compression, `chat.start` returns capped model context separatel
 transcript. The cap preserves paired skill loads' reload markers and failure verdicts even after the raw-output
 budget is exhausted. Skill bodies still spend that budget; inline slash-skill user messages remain intact.
 
+Canonical Agent sessions have one additional observation path: `gateway.session` in the existing
+sidecar gateway namespace discovers an already running owner, obtains a profile-bound one-use ticket,
+negotiates capabilities, and exposes typed session operations. `sessions/gateway-sessions.ts` projects
+its snapshots and events through the existing foreign-history, pending-prompt, chat-stream, and queue
+components. It never materializes a writable Talaria session or settles the owner's transcript locally.
+The Agent owns admission, execution, recovery, and revision/generation-fenced mutations. Talaria's
+observational journals and stream scope include the complete profile home and session identity.
+Unknown admissions require an explicit recovery decision. Unsupported native CLI batch controls remain
+locked without answering or cancelling them; ordinary native secure-input requests are declined.
+
 ## 5. Frontend
 
 `packages/frontend` keeps the TanStack Start structure documented in

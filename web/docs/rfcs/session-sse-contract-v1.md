@@ -180,6 +180,15 @@ from the snapshot.
 
 ## Heartbeat
 
+Canonical owner observations use the same chat stream, with an initial `session_snapshot` followed by
+normalized events from the authenticated owner. The snapshot replaces local live text and prompt state;
+its server-owned session fields remain authoritative. `replay_gap: true` means the native ring could not
+replay the missing prefix. Web clears that prefix, reports the gap, and converges on the owner's final
+snapshot. It never appends an uncertain prefix as if it were complete. Native epoch and generation
+checks precede event forwarding. Observation journals are scoped by profile home and logical session;
+they are not another execution ledger or transcript writer. Detaching a viewer only releases its
+subscription. Stop is a separate generation-fenced owner operation.
+
 Every stream sends an SSE comment every `SSE_HEARTBEAT_INTERVAL_MS` (5 s) when
 it has nothing else to send.
 

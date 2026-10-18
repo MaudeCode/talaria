@@ -43,6 +43,21 @@ function renderComposer(session: Session | null, live: LiveTurn | null = null, o
 }
 
 describe('Composer', () => {
+  it('continues an attached owner without offering unsupported local controls or file uploads', async () => {
+    const owner = { state: 'attached' as const, reason: null, can_submit: true, can_interrupt: false, can_attach: false, revision: 2, execution_generation: 1, admissions: [] }
+    const native = { ...writable, read_only: true, owner_attachment: owner }
+    vi.mocked(api.startChat).mockResolvedValue({ session: native, owner_attachment: owner })
+    renderComposer(native)
+    expect(screen.queryByRole('button', { name: /attach files/i })).not.toBeInTheDocument()
+    await userEvent.type(screen.getByRole('textbox'), 'Continue with the same Agent{Enter}')
+    await waitFor(() => expect(api.startChat).toHaveBeenCalledWith(expect.objectContaining({ session_id: native.session_id, message: 'Continue with the same Agent', submission_id: expect.stringMatching(/^[a-f0-9]{32}$/) })))
+  })
+
+  it('explains an unsupported native CLI batch without offering a send', () => {
+    renderComposer({ ...writable, read_only: true, owner_attachment: { state: 'incompatible', reason: 'native_clarify_batch_unavailable', can_submit: false, can_interrupt: false, can_attach: false, revision: null, execution_generation: null, admissions: [] } })
+    expect(screen.getByText(/Continue in its native client/)).toBeInTheDocument()
+    expect(screen.queryByRole('textbox')).not.toBeInTheDocument()
+  })
   beforeEach(() => {
     resetConnectionsForTests()
     resetStreamStoreForTests()

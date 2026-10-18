@@ -126,6 +126,10 @@ async function startChat(ctx: RequestContext, body: Record<string, unknown>, set
   // Python `_agent_runtime_barrier_response`: a stale local Agent checkout is refused with a typed 409 before any
   // session state is materialised, claimed, or mutated.
   await ensureAgentRuntimeCurrent(ctx.deps.sidecar())
+  if (ctx.deps.sessions.owner?.isOwned(sid)) {
+    if (!(await ctx.deps.sessions.sessionIdVisible(sid))) throw new HttpError(404, 'Session not found')
+    return (await ctx.deps.sessions.owner.submit(sid, body))!
+  }
   // TAL-542: the stale-model check reads this catalog; it is built before the session is read so no await follows that read.
   await ctx.deps.sessions.deps.warmSessionModelRepair?.()
   let s: Session
@@ -175,6 +179,7 @@ async function startChat(ctx: RequestContext, body: Record<string, unknown>, set
  * failed after streaming text, answers `partial` with that text; any other failure answers with its error frame.
  */
 async function syncChat(ctx: RequestContext, body: Record<string, unknown>): Promise<Record<string, unknown>> {
+  if (ctx.deps.sessions.owner?.isOwned(str(body.session_id))) throw new HttpError(409, 'This owner requires the asynchronous chat stream', { code: 'owner_requires_streaming' })
   if ((await ctx.deps.sessions.isSubagentViewOnly(str(body.session_id)))) throw new HttpError(400, 'Subagent sessions are view-only and cannot be written from WebUI')
   if (!str(body.message).trim()) throw new HttpError(400, 'empty message')
   let outcome: { answer: string } | TurnFailure | null = null
@@ -206,6 +211,16 @@ async function syncChat(ctx: RequestContext, body: Record<string, unknown>): Pro
 
 export const chatRouter = os.router({
   chat: {
+    ownerAction: os.chat.ownerAction.handler(({ input, context: { ctx } }) => run(async () => {
+      if (!(await ctx.deps.sessions.sessionIdVisible(input.session_id))) throw new HttpError(404, 'Session not found')
+      const owner = ctx.deps.sessions.owner
+      if (!owner) throw new HttpError(503, 'Native session controls are unavailable')
+      let draft: string | undefined
+      if (input.action === 'retry') {
+        draft = await owner.retry(input.session_id, input.admission_id, input.execution_generation)
+      } else await owner.action(input.session_id, input)
+      return { ok: true as const, session: await ctx.deps.sessions.detail(input.session_id, {}) as never, ...(draft === undefined ? {} : { draft }) }
+    })),
     sync: os.chat.sync.handler(({ input, context: { ctx } }) => run(async () => (await syncChat(ctx, input as Record<string, unknown>)))),
     start: os.chat.start.handler(({ input, context: { ctx } }) => run(async () => (await startChat(ctx, input as Record<string, unknown>)))),
     steer: os.chat.steer.handler(({ input, context: { ctx } }) => run(async () => {
@@ -261,7 +276,7 @@ export const chatRouter = os.router({
     })),
   },
   approval: {
-    pending: os.approval.pending.handler(({ input, context: { ctx } }) => run(() => ctx.deps.pending.approvalPending(str(input.session_id)))),
+    pending: os.approval.pending.handler(({ input, context: { ctx } }) => run(() => ctx.deps.sessions.owner?.isOwned(str(input.session_id)) ? ctx.deps.sessions.owner.pending(str(input.session_id), 'approval') : ctx.deps.pending.approvalPending(str(input.session_id)))),
     respond: os.approval.respond.handler(({ input, context: { ctx } }) => run(async () => {
       const sid = str(input.session_id)
       if (!sid) throw new HttpError(400, 'session_id is required')
@@ -276,7 +291,7 @@ export const chatRouter = os.router({
     })),
   },
   clarify: {
-    pending: os.clarify.pending.handler(({ input, context: { ctx } }) => run(() => ctx.deps.pending.clarifyPending(str(input.session_id)))),
+    pending: os.clarify.pending.handler(({ input, context: { ctx } }) => run(() => ctx.deps.sessions.owner?.isOwned(str(input.session_id)) ? ctx.deps.sessions.owner.pending(str(input.session_id), 'clarify') : ctx.deps.pending.clarifyPending(str(input.session_id)))),
     respond: os.clarify.respond.handler(({ input, context: { ctx } }) => run(async () => {
       const sid = str(input.session_id)
       if (!sid) throw new HttpError(400, 'session_id is required')

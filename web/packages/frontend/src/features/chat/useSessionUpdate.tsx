@@ -1,5 +1,6 @@
+import { randomHex } from '../../lib/randomHex'
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { ModelConfirmationRequiredSchema, type ModelConfirmationRequired } from '@maudecode/talaria-web-contracts'
+import { ModelConfirmationRequiredSchema, type ModelConfirmationRequired, type OwnerAttachment } from '@maudecode/talaria-web-contracts'
 import * as api from '../../api/endpoints'
 import { ApiError } from '../../contracts/common'
 import { m } from '../../paraglide/messages.js'
@@ -11,7 +12,7 @@ type Update = Parameters<typeof api.updateSession>[1]
 interface Pending { sessionId: string; body: Update; decision: ModelConfirmationRequired; scope: object }
 
 /** Session metadata updates share one confirmation flow; transcript Edit owns its separate cut-and-return operation. */
-export function useSessionUpdate(sessionId: string | null, refresh: () => Promise<unknown>) {
+export function useSessionUpdate(sessionId: string | null, refresh: () => Promise<unknown>, nativeOwner?: OwnerAttachment) {
   const lifecycle = useRef<object | null>(null)
   const active = useRef<object | null>(null)
   const [pending, setPending] = useState<Pending | null>(null)
@@ -28,7 +29,13 @@ export function useSessionUpdate(sessionId: string | null, refresh: () => Promis
     const scope = getStreamContext()
     const current = () => life !== null && lifecycle.current === life && scope === getStreamContext()
     try {
-      await api.updateSession(sessionId, body)
+      if (nativeOwner) {
+        if (nativeOwner.revision === null || nativeOwner.execution_generation === null) return
+        await api.ownerAction({ session_id: sessionId, action: 'mutate', request_id: randomHex(),
+          expected_revision: nativeOwner.revision, execution_generation: nativeOwner.execution_generation,
+          operation: body.workspace === undefined ? 'model' : 'workspace',
+          payload: body.workspace === undefined ? { model: body.model, ...(body.model_provider ? { provider: body.model_provider } : {}) } : { cwd: body.workspace } })
+      } else await api.updateSession(sessionId, body)
       if (current()) { setPending(null); await refresh() }
     } catch (error) {
       if (!current()) return
@@ -36,7 +43,7 @@ export function useSessionUpdate(sessionId: string | null, refresh: () => Promis
       if (refusal.success) setPending({ sessionId, body, decision: refusal.data, scope })
       else { setPending(null); showToast(error instanceof Error ? error.message : String(error), 4000, 'error') }
     } finally { if (active.current === owner) active.current = null }
-  }, [sessionId, refresh])
+  }, [sessionId, refresh, nativeOwner])
   const shown = pending?.sessionId === sessionId && pending?.scope === getStreamContext() ? pending : null
   const dialog = <ConfirmDialog open={shown !== null} onOpenChange={(open) => { if (!open) setPending((p) => p === shown ? null : p) }}
     title={m.dialog_confirm_title()} description={shown?.decision.error} confirmLabel={m.dialog_confirm_btn()} cancelLabel={m.cancel()}

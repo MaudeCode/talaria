@@ -1710,6 +1710,8 @@ export class TurnRunner {
    * `steer_withdrawn` (stopped) this Stop emitted, for the cancel response (TAL-426).
    */
   async cancel(streamId: string): Promise<{ cancelled: boolean; withdrawn: SteerWithdrawn[] }> {
+    const ownerCancelled = await this.deps.service().owner?.cancel(streamId)
+    if (ownerCancelled !== null && ownerCancelled !== undefined) return { cancelled: ownerCancelled, withdrawn: [] }
     // TAL-899: the user's Stop holds automatic turns, even one that lands after `done`, unless a newer turn already
     // took the session: a late or retried Stop for a turn the user followed holds nothing.
     const owner = this.registry.ownerSessionId(streamId) ?? this.registry.activeRuns.get(streamId)?.session_id
@@ -2143,6 +2145,11 @@ export class TurnRunner {
   // ── approvals / clarify ──────────────────────────────────────────────────
 
   async respondApproval(sessionId: string, choice: string, approvalId: string, enableYolo: boolean): Promise<Record<string, unknown>> {
+    if (this.deps.service().owner?.isOwned(sessionId)) {
+      if (enableYolo) throw new HttpFailure(403, 'Change approval policy through the owning Agent')
+      await this.deps.service().owner!.respond(sessionId, 'approval', approvalId, choice)
+      return { ok: true, choice }
+    }
     sessionId = (await this.deps.service().idForMutation(sessionId))
     // Python `_enable_session_yolo_and_release_pending`: a stale card id while another approval is parked
     // must not commit YOLO for the whole session — fail closed with the relay envelope instead.
@@ -2246,6 +2253,10 @@ export class TurnRunner {
    * did not acknowledge (prompt retained).
    */
   async respondClarify(sessionId: string, clarifyId: string, reply: string | ClarifyAnswers | null): Promise<{ ok: boolean; response?: string; stale?: boolean; invalid?: boolean; error?: string }> {
+    if (this.deps.service().owner?.isOwned(sessionId)) {
+      await this.deps.service().owner!.respond(sessionId, 'clarify', clarifyId, reply)
+      return { ok: true }
+    }
     sessionId = (await this.deps.service().idForMutation(sessionId))
     const entry = this.deps.pending.peekClarify(sessionId, clarifyId)
     if (!entry) return { ok: false, stale: true }

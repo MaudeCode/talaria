@@ -232,6 +232,12 @@ def _run(action: str, home: Path, cli_profile: str | None, ctx: CallContext, *, 
 
 
 def register(registry) -> None:
+    @registry.method("gateway.session")
+    def session_(ctx: CallContext, params: dict) -> dict:
+        from .gateway_sessions import session
+
+        return session(ctx, params)
+
     def run(ctx: CallContext, params: dict, action: str) -> dict:
         home = profile_home_param(params)
         cli_profile = params.get("cli_profile")

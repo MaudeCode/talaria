@@ -148,10 +148,23 @@ client-IP selection as rate limiting and is limited to 256 characters.
 
 ### How chat runs
 
-The sidecar runs `run_agent.AIAgent` in-process on the Agent venv, reading your `HERMES_HOME` config
-directly, exactly as the Agent CLI does. Chat never routes through the gateway API (the gateway chat
-backend was dropped with TAL-245). To use an external OpenAI-compatible endpoint as a model, add it in
-**Settings → Providers**.
+Talaria-created chats run `run_agent.AIAgent` in-process on the Agent venv, reading the profile's
+`HERMES_HOME` config. Existing canonical Agent conversations use their original gateway owner when it
+offers the authenticated `hermes-gateway-v1` session protocol. Opening or leaving a conversation never
+starts, restarts, or stops that owner. An unavailable or incompatible owner keeps the conversation
+read-only; Talaria never starts a second Agent for it.
+
+Owner conversations support text follow-ups, canonical approvals and clarifications, Stop, queued-input
+cancellation, and explicit recovery of an unknown execution. Retry returns unknown work to the composer
+for review; it does not execute it. Model and workspace changes use the owner's revision and generation
+fences. File uploads and direct-worker-only controls are unavailable on this connection. A native CLI
+turn using a whole clarification batch remains read-only because the owner cannot replay that pending
+request to a new viewer; continue it in its native client. Secure setup and sudo passwords are not
+tunneled through Web. Dedicated profile owners use native private-control tickets rather than the
+retired HTTP gateway URL/key settings. A v1 profile served by a shared multiplexer remains read-only
+because that runtime does not preserve the verified native launch policy through execution.
+
+To use an external OpenAI-compatible endpoint as a model, add it in **Settings → Providers**.
 
 Settings → Preferences → **Speed** lists the tiers the installed Agent supports
 for the default model and its endpoint. Fast and Ultrafast may cost more. The

@@ -5,6 +5,7 @@
  * Dead endpoints were deleted in TAL-245; do not add untyped routes here.
  */
 import { orpc, timeout } from './orpc'
+import type { OwnerActionRequest } from '@maudecode/talaria-web-contracts'
 import { postForm } from './client'
 import { loadedBuild, tabId } from '../app/tabBuild'
 import { UploadResponseSchema, type ChatStartRequest, type SessionId, type SessionNewRequestSchema, type SteerRequestSchema, type ApprovalRespondRequestSchema, type ClarifyRespondRequestSchema, type DraftRequestSchema } from '../contracts'
@@ -19,6 +20,8 @@ const qs = (params: Record<string, string | number | boolean | undefined | null>
 }
 const flag = (v: boolean | undefined) => (v ? '1' : undefined)
 const num = (v: number | undefined) => (v === undefined ? undefined : String(v))
+
+export const ownerAction = (input: OwnerActionRequest) => orpc().chat.ownerAction(input)
 
 // Bootstrap and auth
 export const fetchBootstrap = () => orpc().bootstrap()

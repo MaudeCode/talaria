@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Added",
+      "summary": "Continue supported Agent conversations through their original owner, including shared approvals and recovery controls.",
+      "highlight": true,
+      "components": ["web"]
+    }
+  ]
+}

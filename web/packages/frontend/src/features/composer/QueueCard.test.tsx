@@ -19,6 +19,19 @@ function Harness({ initial }: { initial: QueuedTurn[] }) {
 const row = (text: string) => screen.getAllByRole('listitem').find((li) => li.textContent.includes(text))!
 
 describe('QueueCard (TAL-562)', () => {
+  it('renders native unknown admissions with only the server recovery actions', async () => {
+    const action = vi.fn()
+    render(<QueueCard sessionId="native" queued={[]} onChange={() => undefined} admissions={[{
+      admission_id: 'lost', sequence: 1, status: 'unknown', outcome: null, authority_epoch: 2,
+      execution_generation: 4, text: 'Inspect this result before retrying', actions: ['retry', 'discard'],
+    }]} onAdmissionAction={action} />)
+    expect(screen.getByText('Outcome unknown')).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Edit queued message' })).not.toBeInTheDocument()
+    await userEvent.click(screen.getByRole('button', { name: 'Retry' }))
+    expect(action).toHaveBeenCalledWith('lost', 'retry', 4)
+    await userEvent.click(screen.getByRole('button', { name: 'Discard' }))
+    expect(action).toHaveBeenCalledWith('lost', 'discard', 4)
+  })
   it('does not let an in-flight admission remove or roll back its queued receipt', async () => {
     vi.mocked(api.rollbackUpload).mockClear()
     const onChange = vi.fn()

@@ -3,6 +3,8 @@ import { GripVertical, Pencil, X } from 'lucide-react'
 import { m } from '../../paraglide/messages.js'
 import * as api from '../../api/endpoints'
 import type { QueuedTurn } from './queue'
+import type { OwnerAttachment } from '@maudecode/talaria-web-contracts'
+import { Button } from '../../ui/Button'
 
 /** `list` with the item at `from` moved to `to`. */
 function moveItem<T>(list: readonly T[], from: number, to: number): T[] {
@@ -18,11 +20,11 @@ const keepFocus = (e: PointerEvent) => { e.preventDefault() }
  * TAL-562: the queued messages in the composer tab, sent top to bottom when the turn ends. A row is edited in place,
  * removed, or moved by dragging its handle (Arrow Up/Down on the focused handle moves it too).
  */
-export function QueueCard({ sessionId, queued, onChange, pendingId }: { sessionId: string; queued: QueuedTurn[]; onChange: (queued: QueuedTurn[]) => void; pendingId?: string | undefined }) {
+export function QueueCard({ sessionId, queued, onChange, pendingId, admissions = [], onAdmissionAction }: { sessionId: string; queued: QueuedTurn[]; onChange: (queued: QueuedTurn[]) => void; pendingId?: string | undefined; admissions?: OwnerAttachment['admissions'] | undefined; onAdmissionAction?: ((id: string, action: 'cancel' | 'retry' | 'discard', generation: number | null) => void) | undefined }) {
   const [editing, setEditing] = useState<string | null>(null)
   const discard = useRef(false)
   const dragging = useRef<string | null>(null)
-  const label = m.queued_count({ n: queued.length })
+  const label = admissions.length ? m.owner_inputs() : m.queued_count({ n: queued.length })
 
   const move = (id: string, to: number) => {
     const from = queued.findIndex((q) => q.id === id)
@@ -64,6 +66,13 @@ export function QueueCard({ sessionId, queued, onChange, pendingId }: { sessionI
     <div className="queue-card flex min-w-0 flex-1 flex-col gap-0.5" role="region" aria-label={label}>
       <span className="queue-card-title" aria-live="polite">{label}</span>
       <ol className="queue-card-list flex flex-col">
+        {admissions.map((q) => (
+          <li key={q.admission_id} className="queue-card-row">
+            <span className="queue-card-text truncate" title={q.text}>{q.text}</span>
+            <span className="text-muted text-xs">{q.status === 'unknown' ? m.owner_outcome_unknown() : q.status === 'started' ? m.gateway_running() : m.composer_queue()}</span>
+            {q.actions.map((action) => <Button key={action} variant="ghost" className="min-h-11 min-w-11 shrink-0" title={action === 'retry' ? m.owner_retry_help() : undefined} onClick={() => onAdmissionAction?.(q.admission_id, action, q.execution_generation)}>{action === 'retry' ? m.retry() : action === 'discard' ? m.discard() : m.cancel()}</Button>)}
+          </li>
+        ))}
         {queued.map((q, i) => (
           <li key={q.id} className="queue-card-row" data-queue-index={i}>
             <button

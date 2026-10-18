@@ -35,7 +35,7 @@ import { REST_MS, onComposerRestRequest, requestScroll } from '../chat/sendMotio
 import { MOTION_EASE, prefersReducedMotion } from '../../lib/motion'
 import { randomHex } from '../../lib/randomHex'
 import { QueueCard } from './QueueCard'
-import type { QueuedTurn } from './queue'
+import { composerStateId, type QueuedTurn } from './queue'
 import { stopSpeaking } from '../voice/tts'
 
 export type BusyMode = 'steer' | 'queue' | 'interrupt'
@@ -68,6 +68,7 @@ export interface ComposerProps {
   onQueue: (entry: QueuedTurn) => void
   /** The queue after an edit, removal or move. */
   onQueueChange: (queued: QueuedTurn[]) => void
+  onOwnerAction?: (id: string, action: 'cancel' | 'retry' | 'discard', generation: number | null) => void
   /** Sending is disabled (e.g. while a manual compression job runs). */
   locked?: boolean | undefined
   /** A pending clarification: the box becomes its answer input and the chat draft and attachments wait untouched. */
@@ -92,6 +93,7 @@ function usePhone(): boolean {
 
 /** What a turn posts besides its text: the session's model and workspace, and the active profile. */
 export function turnRequest(target: Session, profile: string): QueuedTurn['request'] {
+  if (target.owner_attachment) return { profile, submission_id: randomHex() }
   return { model: target.model ?? undefined, model_provider: target.model_provider ?? undefined, workspace: target.workspace, profile }
 }
 
@@ -128,7 +130,8 @@ export function Composer(props: ComposerProps) {
   const { sessionId, session, live, settings, onEnsureSession, onLocalCommand, terminalOpen, onToggleTerminal, onModelChange, onWorkspaceChange, onNewWorktreeChat, onRemoveWorktree, onToolsetsChange, onReasoningChange, reasoning, reasoningLevels, reasoningSupported = true, pendingChoices, locked = false, yolo, onToggleYolo, queued, onQueue, onQueueChange, clarify, notices = [] } = props
   const bootstrap = useBootstrap()
   const qc = useQueryClient()
-  const [text, setText] = useState(() => (sessionId ? readLocalDraft(sessionId) : ''))
+  const localStateId = composerStateId(session)
+  const [text, setText] = useState(() => (localStateId ? readLocalDraft(localStateId) : ''))
   const [files, setFiles] = useState<PendingFile[]>([])
   const intent = useTurnIntent(sessionId)
   const sending = !!intent.send
@@ -163,7 +166,9 @@ export function Composer(props: ComposerProps) {
   // Refit only when the footer's geometry or content changes (viewport, chips, buttons, labels). Typing and stream
   // renders change neither, so they never force the measuring layout pass (TAL-278). Class changes are not observed:
   // the fit pass sets them itself.
-  const readOnly = !!session?.read_only
+  const nativeOwner = session?.owner_attachment?.state === 'attached'
+  const attachmentsSupported = session?.owner_attachment?.can_attach !== false
+  const readOnly = !!session?.read_only && !nativeOwner
   useLayoutEffect(() => {
     const f = footer.current
     const left = f?.querySelector('.composer-left')
@@ -216,8 +221,8 @@ export function Composer(props: ComposerProps) {
   const setValue = clarify ? clarify.setText : setText
   const palette = useCommandPalette(clarify ? '' : text)
   const catalog = palette.catalog
-  useDraftPersistence(sessionId, text)
-  useServerDraft(sessionId, setText)
+  useDraftPersistence(localStateId, text, !session?.owner_attachment)
+  useServerDraft(session && !session.owner_attachment ? sessionId : null, setText)
 
   // T3 Code's resting composer: a hand scroll of an overflowing transcript flattens the card to one row until the next
   // composer interaction. Losing focus never rests it. A request is decided when it arrives and never left pending, so
@@ -232,13 +237,17 @@ export function Composer(props: ComposerProps) {
   const adopted = useRef<string | null>(null)
   // Each chip's upload in flight; a receipt whose attempt is gone (chip removed, tray reset) is rolled back.
   const inflight = useRef(new Map<string, object>())
+  const previousIdentity = useRef({ sessionId, localStateId })
   useEffect(() => {
-    if (adopted.current === sessionId) return
-    setText(sessionId ? readLocalDraft(sessionId) : '')
+    const previous = previousIdentity.current
+    previousIdentity.current = { sessionId, localStateId }
+    if (localStateId && adopted.current === localStateId) return
+    const loadedIdentity = previous.sessionId === sessionId && previous.localStateId === null && localStateId !== null
+    setText((current) => loadedIdentity && current.trim() ? current : localStateId ? readLocalDraft(localStateId) : '')
     setFiles([])
     inflight.current.clear()
     setRestRequested(false)
-  }, [sessionId])
+  }, [sessionId, localStateId])
 
   // Autosize.
   useEffect(() => {
@@ -280,6 +289,7 @@ export function Composer(props: ComposerProps) {
     )
   }, [sessionId])
   const addFiles = useCallback((incoming: FileList | File[]) => {
+    if (!attachmentsSupported) { if (incoming.length) showToast(m.owner_no_attachments(), 4000, 'error'); return }
     // One chip and one upload per file, however often it is picked, pasted or handed off.
     const list = Array.from(incoming).filter((file, i, all) => all.findIndex((f) => fileKey(f) === fileKey(file)) === i)
     if (list.length === 0) return
@@ -311,7 +321,7 @@ export function Composer(props: ComposerProps) {
     })
     add(fresh)
     for (const p of fresh) upload(p.key, p.file)
-  }, [maxBytes, sessionId, onEnsureSession, files, upload])
+  }, [attachmentsSupported, maxBytes, sessionId, onEnsureSession, files, upload])
 
   // Adopt a hand-off from the empty chat's composer (see addFiles). Runs after the session-change reset above.
   useEffect(() => {
@@ -468,7 +478,7 @@ export function Composer(props: ComposerProps) {
         setFiles([])
         return
       }
-      if (busy && sessionId) {
+      if (busy && sessionId && !nativeOwner) {
         if (busyMode === 'queue') { onQueue(queueEntry(value)); setText(''); setFiles([]); return }
         if (busyMode === 'steer') { await trySteer(value); return }
         interrupt(value)
@@ -500,7 +510,7 @@ export function Composer(props: ComposerProps) {
       const scope = getStreamContext()
       setText('')
       setFiles([])
-      clearDraft(session.session_id)
+      if (localStateId) clearDraft(localStateId, !session.owner_attachment)
       try {
         const target = session
         const attachments = files.flatMap((f) => (f.status === 'done' && f.upload ? [f.upload] : []))
@@ -513,7 +523,7 @@ export function Composer(props: ComposerProps) {
         textarea.current?.focus()
       }
     } finally { submitting.current = false }
-  }, [text, files, sending, session, onEnsureSession, busy, busyMode, sessionId, trySteer, locked, queueEntry, onQueue, onLocalCommand, bootstrap.profile, qc, askBtw, runCommand, catalog])
+  }, [nativeOwner, localStateId, text, files, sending, session, onEnsureSession, busy, busyMode, sessionId, trySteer, locked, queueEntry, onQueue, onLocalCommand, bootstrap.profile, qc, askBtw, runCommand, catalog])
 
   const applySuggestion = (s: CommandSuggestion) => { setText(`/${s.name} `); textarea.current?.focus() }
   const onKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>) => {
@@ -536,7 +546,7 @@ export function Composer(props: ComposerProps) {
     // Real files attach; string items (rich-text HTML and the like) never do. Accompanying plain text pastes natively.
     const pastedFiles = Array.from(e.clipboardData.items).filter((i) => i.kind === 'file').map((i) => i.getAsFile()).filter((f): f is File => !!f)
     const pasted = e.clipboardData.getData('text/plain')
-    if (settings?.large_text_paste_as_attachment !== false && pasted.length > 8000) {
+    if (attachmentsSupported && settings?.large_text_paste_as_attachment !== false && pasted.length > 8000) {
       e.preventDefault()
       const name = `pasted-${Date.now()}.txt`
       pastedFiles.push(new File([pasted], name, { type: 'text/plain' }))
@@ -578,7 +588,7 @@ export function Composer(props: ComposerProps) {
   // While a clarification owns the box, the message-only controls leave the footer (docs/ui-ux clarify-card).
   const hide = (k: string) => (!!clarify && MESSAGE_ONLY_CONTROLS.has(k)) || !!(settings as Record<string, unknown> | undefined)?.[k]
   const modelChoice = session?.model ? { model: session.model, optionId: session.model_option_id ?? null } : { model: pendingChoices?.model ?? null, optionId: pendingChoices?.model ?? null }
-  const placeholder = clarify ? (clarify.step.choices.length ? m.clarify_composer_placeholder_choices() : m.clarify_composer_placeholder()) : busy ? (busyMode === 'queue' ? m.composer_placeholder_busy_queue() : busyMode === 'interrupt' ? m.composer_placeholder_busy_interrupt() : m.composer_placeholder_busy_steer()) : m.composer_placeholder()
+  const placeholder = clarify ? (clarify.step.choices.length ? m.clarify_composer_placeholder_choices() : m.clarify_composer_placeholder()) : busy && !nativeOwner ? (busyMode === 'queue' ? m.composer_placeholder_busy_queue() : busyMode === 'interrupt' ? m.composer_placeholder_busy_interrupt() : m.composer_placeholder_busy_steer()) : m.composer_placeholder()
   const context: ContextFigures = {
     percent: session?.context_usage_percent, used: session?.context_used_tokens, window: session?.context_window_tokens, thresholdPercent: session?.context_threshold_percent,
     input: session?.input_tokens, output: session?.output_tokens, cacheRead: session?.cache_read_tokens, cacheWrite: session?.cache_write_tokens, cacheHitPercent: session?.cache_hit_percent, cost: session?.estimated_cost,
@@ -625,7 +635,7 @@ export function Composer(props: ComposerProps) {
     animation.onfinish = () => { if (restAnimation.current === animation) restAnimation.current = null }
   }, [resting])
   const showYolo = yolo && !hide('hide_composer_yolo')
-  const backgroundTasks = useBackgroundTasks(sessionId).data?.tasks ?? []
+  const backgroundTasks = useBackgroundTasks(session && !session.owner_attachment ? sessionId : null).data?.tasks ?? []
   // The top tab (T3 Code's attached banner): the running turn first, then runtime notices and this message's state.
   const tabNotices: ComposerNotice[] = [
     ...(busy && live ? [{ id: 'live', content: <LiveStatusPill turn={live} background={session?.active_turn_origin === 'background' && session.active_stream_id === live.streamId} /> }] : []),
@@ -637,13 +647,13 @@ export function Composer(props: ComposerProps) {
     ...(dictating ? [{ id: 'dictation', content: <span className="inline-flex items-center gap-1.5" role="status"><span className="mic-dot" aria-hidden="true" />{m.voice_listening()}</span> }] : []),
     ...(showYolo ? [{ id: 'yolo', tone: 'warning' as const, content: <><span aria-hidden="true">⚡</span><span className="truncate">{m.yolo_tab_active()}</span></>, action: { label: m.yolo_turn_off(), run: onToggleYolo } }] : []),
     ...(sessionId && backgroundTasks.some((t) => t.pinned) ? [{ id: 'background', content: <BackgroundWorkCard sessionId={sessionId} tasks={backgroundTasks} /> }] : []),
-    ...(sessionId && queued.length > 0 ? [{ id: 'queue', content: <QueueCard sessionId={sessionId} queued={queued} onChange={onQueueChange} pendingId={intent.send?.queueId} /> }] : []),
+    ...(sessionId && (queued.length > 0 || session?.owner_attachment?.admissions.length) ? [{ id: 'queue', content: <QueueCard sessionId={sessionId} queued={queued} onChange={onQueueChange} pendingId={intent.send?.queueId} admissions={session?.owner_attachment?.admissions} onAdmissionAction={props.onOwnerAction} /> }] : []),
   ]
   // A `/btw` draft asks beside the turn instead of steering, queueing or interrupting it (TAL-518).
-  const busyLabel = intent.stop ? m.composer_queue() : parseCommand(text)?.name === 'btw' ? m.composer_send() : busyMode === 'queue' ? m.composer_queue() : busyMode === 'interrupt' ? m.composer_interrupt() : m.composer_steer()
+  const busyLabel = nativeOwner ? m.composer_send() : intent.stop ? m.composer_queue() : parseCommand(text)?.name === 'btw' ? m.composer_send() : busyMode === 'queue' ? m.composer_queue() : busyMode === 'interrupt' ? m.composer_interrupt() : m.composer_steer()
 
   // The server marks sessions Web may not continue (TAL-312); it would refuse every send, so none is offered.
-  if (session?.read_only) return <div className="composer-wrap" id="composerWrap"><div className="mx-auto max-w-(--msg-max) px-3 py-2 text-center text-xs text-muted" role="note">{m.session_read_only_notice()}</div></div>
+  if (readOnly) return <div className="composer-wrap" id="composerWrap"><div className="mx-auto max-w-(--msg-max) px-3 py-2 text-center text-xs text-muted" role="note">{session?.owner_attachment?.reason === 'native_clarify_batch_unavailable' ? m.owner_batch_unavailable() : session?.owner_attachment?.reason === 'served_profile_sessions_unavailable' ? m.owner_profile_unverified() : m.session_read_only_notice()}</div></div>
 
   return (
     <div className="composer-wrap" id="composerWrap">
@@ -682,14 +692,14 @@ export function Composer(props: ComposerProps) {
         <div ref={footer} className={cn('composer-footer', stage !== 'full' && 'cf-icons', stage === 'burger' && 'cf-burger', collapsed && 'cf-collapsed')}>
           <div className="composer-left flex items-center gap-1 min-w-0 flex-1 overflow-x-auto overflow-y-hidden [scrollbar-width:none] max-[641px]:flex-[1_1_auto] max-[641px]:w-auto max-[641px]:flex-nowrap max-[641px]:items-center max-[641px]:gap-x-2.5 max-[641px]:gap-y-0 max-[641px]:max-h-none max-[641px]:[-webkit-overflow-scrolling:touch] max-[341px]:gap-x-0.5">
             {!hide('hide_composer_model') && <div className="composer-model-wrap"><ModelChip {...modelChoice} onChange={onModelChange} /></div>}
-            {!hide('hide_composer_reasoning') && reasoningSupported && <div className="composer-reasoning-wrap"><ReasoningChip value={reasoning} levels={reasoningLevels} onChange={onReasoningChange} /></div>}
+            {!session?.read_only && !hide('hide_composer_reasoning') && reasoningSupported && <div className="composer-reasoning-wrap"><ReasoningChip value={reasoning} levels={reasoningLevels} onChange={onReasoningChange} /></div>}
             <button className="icon-btn composer-mobile-config-btn has-tooltip" id="composerMobileConfigBtn" type="button" data-tooltip={m.composer_config_title()} aria-label={m.composer_config_title()} aria-expanded={configOpen} aria-controls="composerMobileConfigPanel" onClick={() => setConfigOpen((o) => !o)}>
               <SlidersHorizontal size={16} aria-hidden="true" />
             </button>
           </div>
           <div className="composer-right flex gap-1.5 items-center shrink-0 max-[641px]:flex-none max-[641px]:w-auto max-[641px]:justify-end max-[641px]:min-w-0">
             <div className="composer-tools flex items-center gap-0.5">
-              {!hide('hide_composer_attach') && (
+              {attachmentsSupported && !hide('hide_composer_attach') && (
                 <>
                   <input type="file" id="fileInput" multiple className="file-input-visually-hidden" onChange={(e) => { if (e.target.files) addFiles(e.target.files); e.target.value = '' }} accept="image/*,text/*,application/pdf,application/json,.csv,.md" />
                   <button type="button" className="icon-btn has-tooltip" id="btnAttach" data-tooltip={m.composer_control_attach()} aria-label={m.composer_control_attach()} onClick={() => document.getElementById('fileInput')?.click()}><Paperclip size={16} aria-hidden="true" /></button>
@@ -705,7 +715,7 @@ export function Composer(props: ComposerProps) {
             )}
             {busy || intent.stop ? (
               <>
-                <button type="button" onClick={() => { if (sessionId) void cancelTurn(sessionId) }} disabled={!!intent.stop && !intent.stop.failed} className="send-btn stop has-tooltip has-tooltip--left" id="btnStop" data-tooltip={intent.stop && !intent.stop.failed ? m.composer_stopping() : m.composer_stop()} aria-label={intent.stop && !intent.stop.failed ? m.composer_stopping() : m.composer_stop()} title={intent.stop && !intent.stop.failed ? m.composer_stopping() : m.composer_stop()}>
+                <button type="button" onClick={() => { if (sessionId) void cancelTurn(sessionId) }} disabled={session?.owner_attachment?.can_interrupt === false || !!intent.stop && !intent.stop.failed} className="send-btn stop has-tooltip has-tooltip--left" id="btnStop" data-tooltip={intent.stop && !intent.stop.failed ? m.composer_stopping() : m.composer_stop()} aria-label={intent.stop && !intent.stop.failed ? m.composer_stopping() : m.composer_stop()} title={intent.stop && !intent.stop.failed ? m.composer_stopping() : m.composer_stop()}>
                   <Square size={12} fill="currentColor" strokeWidth={0} aria-hidden="true" />
                 </button>
                 {/* A typed draft steers, queues or interrupts mid-turn like Enter does, so it gets a send arrow beside Stop. */}
@@ -723,7 +733,7 @@ export function Composer(props: ComposerProps) {
           </div>
           <div className={cn('composer-mobile-config-panel', configOpen && 'open')} id="composerMobileConfigPanel" role="group" aria-label={m.composer_config_title()}>
             {stage === 'burger' && !hide('hide_composer_model') && <ModelChip row {...modelChoice} onChange={onModelChange} />}
-            {stage === 'burger' && !hide('hide_composer_reasoning') && reasoningSupported && <ReasoningChip row value={reasoning} levels={reasoningLevels} onChange={onReasoningChange} />}
+            {stage === 'burger' && !session?.read_only && !hide('hide_composer_reasoning') && reasoningSupported && <ReasoningChip row value={reasoning} levels={reasoningLevels} onChange={onReasoningChange} />}
             {/* The chat header carries the terminal toggle above phone width. */}
             {stage === 'burger' && phone && <button type="button" className={cn('icon-btn', terminalOpen && 'active')} id="btnTerminal" title={m.composer_terminal_toggle()} aria-label={m.composer_terminal_toggle()} aria-pressed={terminalOpen} onClick={() => { setConfigOpen(false); onToggleTerminal() }}><TerminalSquare size={16} aria-hidden="true" /><span className="composer-mobile-config-value">{m.composer_terminal_toggle()}</span></button>}
             {stage === 'burger' && !hide('hide_composer_context') && <ContextRow {...context} />}
@@ -734,7 +744,7 @@ export function Composer(props: ComposerProps) {
       {!collapsed && (!hide('hide_composer_workspace') || !hide('hide_composer_toolsets') || !hide('hide_composer_profile')) && (
         <div className="composer-strip" role="group" aria-label={m.composer_config_title()}>
           {!hide('hide_composer_workspace') && <WorkspaceChip value={session?.workspace ?? pendingChoices?.workspace ?? settings?.default_workspace} name={session ? session.workspace_name ?? null : undefined} onChange={onWorkspaceChange} onNewWorktree={onNewWorktreeChat} onRemoveWorktree={onRemoveWorktree} />}
-          {!hide('hide_composer_toolsets') && <ToolsetsChip sessionId={sessionId ?? undefined} value={session?.enabled_toolsets ?? pendingChoices?.enabled_toolsets ?? null} onChange={onToolsetsChange} />}
+          {!session?.read_only && !hide('hide_composer_toolsets') && <ToolsetsChip sessionId={sessionId ?? undefined} value={session?.enabled_toolsets ?? pendingChoices?.enabled_toolsets ?? null} onChange={onToolsetsChange} />}
           {!hide('hide_composer_profile') && <ProfileMenu />}
         </div>
       )}

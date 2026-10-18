@@ -112,7 +112,7 @@ function flush(unsaved: RefObject<Unsaved | null>): void {
  * write serializes the whole draft, so it never runs per keystroke (TAL-278); a session change, unmount or hidden page
  * writes the pending text at once, so a reload or switch right after typing keeps it.
  */
-export function useDraftPersistence(sessionId: string | null, text: string) {
+export function useDraftPersistence(sessionId: string | null, text: string, syncServer = true) {
   const unsaved = useRef<Unsaved | null>(null)
   useEffect(() => {
     const onPageHide = () => flush(unsaved)
@@ -138,17 +138,18 @@ export function useDraftPersistence(sessionId: string | null, text: string) {
     if (text.trim() === '') {
       unsaved.current = null
       // Emptied by a send, queue, steer, command or by hand: the server copy goes too, or a later load restores it.
-      if (prev.text?.trim()) publish(sessionId, '')
+      if (prev.text?.trim() && syncServer) publish(sessionId, '')
       else removePersisted(key(sessionId))
       return
     }
     unsaved.current = { sessionId, text }
     const local = window.setTimeout(() => flush(unsaved), 300)
-    const server = window.setTimeout(() => { publish(sessionId, text) }, 1200)
-    return () => { window.clearTimeout(local); window.clearTimeout(server) }
-  }, [sessionId, text])
+    const server = syncServer ? window.setTimeout(() => { publish(sessionId, text) }, 1200) : null
+    return () => { window.clearTimeout(local); if (server !== null) window.clearTimeout(server) }
+  }, [sessionId, text, syncServer])
 }
 
-export function clearDraft(sessionId: string): void {
-  publish(sessionId, '')
+export function clearDraft(sessionId: string, syncServer = true): void {
+  if (syncServer) publish(sessionId, '')
+  else removePersisted(key(sessionId))
 }

@@ -61,6 +61,9 @@ function invalidateSession(sessionId: string): void {
 
 function applySideEffects(sessionId: string, event: ChatEvent): void {
   switch (event.event) {
+    case 'session_snapshot':
+      queryClient?.setQueryData(keys.sessions.detail(sessionId), { session: event.data.session })
+      break
     case 'todo_state':
       setTodoState(sessionId, event.data)
       break
@@ -238,6 +241,11 @@ export function startTurn(input: StartTurnInput): Promise<ChatStartResponse> {
       if (res.ok === false) throw new Error(res.reason ?? m.composer_send_refused())
       admitted = true
       if (!current()) return res
+      if (res.owner_attachment && res.session) {
+        client?.setQueryData(keys.sessions.detail(input.sessionId), { session: res.session })
+        if (res.stream_id) await attachToStream(input.sessionId, res.stream_id, res.session)
+        return res
+      }
       if (res.stream_id && owners.get(input.sessionId) === owner) {
         const turn = getStreamState().turns[input.sessionId]
         // A session relay may already have delivered this turn's terminal snapshot before the POST returned.
@@ -255,7 +263,7 @@ export function startTurn(input: StartTurnInput): Promise<ChatStartResponse> {
       return res
     } catch (error) {
       if (current()) {
-        let uncertain = admitted || isApiError(error) && error.kind !== 'http'
+        let uncertain = admitted || isApiError(error) && (error.kind !== 'http' || Boolean(error.body && typeof error.body === 'object' && 'outcome_unknown' in error.body && error.body.outcome_unknown === true))
         if (uncertain) {
           try {
             const result = await api.fetchSession(input.sessionId, { messages: true })

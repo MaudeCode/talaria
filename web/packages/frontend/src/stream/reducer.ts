@@ -309,6 +309,9 @@ function reduceTurn(turn: LiveTurn, action: Extract<StreamAction, { type: 'event
       if (terminal) return { ...stamped, streamEnded: true }
       return { ...stamped, status: 'cancelled', terminalState: event.data.terminal_state, doneAt: now, cancelledMessage: '', doneSession: sessionOf(event.data), ...NO_PROMPTS, streamEnded: true }
     }
+    case 'session_snapshot':
+      if (terminal) return stamped
+      return { ...newTurn(turn.sessionId, turn.streamId, now), status: 'streaming', lastSeq: stamped.lastSeq, lastEventId: stamped.lastEventId, claimsPersistedRows: event.data.replay_gap !== true, warning: event.data.replay_gap ? 'owner_replay_gap' : null }
     case 'stream_end':
       return { ...stamped, streamEnded: true }
     case 'todo_state':

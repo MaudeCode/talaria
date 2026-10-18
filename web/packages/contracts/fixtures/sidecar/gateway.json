@@ -20,5 +20,20 @@
         "gateway_mode": "stopped"
       }
     }
+  ],
+  "gateway.session": [
+    {
+      "params": {
+        "profile_home": "<home>",
+        "session_id": "not-running",
+        "action": "snapshot"
+      },
+      "result": {
+        "state": "incompatible",
+        "reason": "native_sessions_unavailable",
+        "snapshot": null,
+        "receipt": null
+      }
+    }
   ]
 }

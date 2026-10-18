@@ -14,6 +14,7 @@ import { PresenceLeases, RelayService } from './sessions/relay.js'
 import { CliSessionSource } from './sessions/cli-sessions.js'
 import { ClaudeCodeSessionSource, claudeCodeProjectsDir } from './sessions/claude-code.js'
 import { GatewayWatcherRegistry } from './sessions/gateway-watcher.js'
+import { GatewaySessions, gatewayStreamVisible } from './sessions/gateway-sessions.js'
 import { readImportableAgentSessionRowsAsync } from './sessions/state-db.js'
 import { CompletionDrain } from './sessions/completions.js'
 import { BackgroundActivity, BackgroundTaskStore } from './sessions/background-tasks.js'
@@ -196,7 +197,7 @@ export async function createDeps(opts: CreateDepsOptions): Promise<AppDeps> {
   }
   const events = new SessionEventBus(isRootProfile)
   const drafts = new DraftStore(storage.documents)
-  const registry = new StreamRegistry()
+  const registry = new StreamRegistry((id) => gatewayStreamVisible(id, profileHome(activeProfile())))
   const activeStreamIds = registry.liveIds
   const runningCronJobs = new Map<string, number>()
   const workspaces = new WorkspaceRegistry({
@@ -607,6 +608,8 @@ export async function createDeps(opts: CreateDepsOptions): Promise<AppDeps> {
     Promise.resolve().then(() => agentConfig.read(profileHome(activeProfile()))).then((cfg) => dashboardStatus(cfg, env, lazyFetch)).then((status) => { dashboardRunning = status.running === true }).catch(() => { dashboardRunning = false })
   }
   const extensionsEnabled = (): boolean => { try { return deps.extensions.enabledSync() } catch { return false } }
+  sessions.owner = new GatewaySessions({ service: sessions, sidecar: () => sidecar, registry, journal, events,
+    profileHome, activeProfile, redactEnabled: sessions.deps.redactEnabled, now, log })
   const deps: AppDeps = {
     config,
     settings,
