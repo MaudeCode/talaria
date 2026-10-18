@@ -91,6 +91,9 @@ for (( index = 1; index <= ${#args}; index++ )); do
 done
 
 [[ ! -e TalariaTests/VisualReferences/.record ]] || print -r -- "${selectors[1]:-}" >> "$state/recorded"
+if [[ -e .codex-tmp/xctest/native-history-drag ]]; then
+    print -r -- "$(<.codex-tmp/xctest/native-history-drag)|${selectors[1]:-}" >> "$state/native-drag"
+fi
 lock="$state/counter.lock"
 while ! mkdir "$lock" 2>/dev/null; do sleep 0.01; done
 read -r active < "$state/active"
@@ -313,5 +316,19 @@ kill -0 "$owner"  # The owner is still recording.
 wait "$owner"
 unset TALARIA_FAKE_XCODEBUILD_SECONDS
 [[ ! -e "$marker" ]]
+
+# Native gesture mode is scoped to its owning run, including failed runs;
+# a stale marker must never make unattended hosted tests wait for a driver.
+native_marker="$repo/.codex-tmp/xctest/native-history-drag"
+print stale > "$native_marker"
+: > "$state/native-drag"
+"$repo/scripts/test-ios" TalariaTests/NativeOrdinary > "$state/native-ordinary.log" 2>&1
+TALARIA_NATIVE_HISTORY_DRAG=first "$repo/scripts/test-ios" TalariaTests/NativeDriver > "$state/native-driver.log" 2>&1
+TALARIA_NATIVE_HISTORY_DRAG=second "$repo/scripts/test-ios" TalariaTests/NativeFailure > "$state/native-failure.log" 2>&1 || true
+[[ "$(<"$state/native-drag")" == $'first|-only-testing:TalariaTests/NativeDriver\nsecond|-only-testing:TalariaTests/NativeFailure' ]] || {
+    print -u2 "Native gesture mode leaked into an ordinary run or was missing from its owning run."
+    exit 1
+}
+[[ ! -e "$native_marker" ]]
 
 print "test-ios worktree admission, selection, runner-hang retry and cleanup checks passed ($rounds concurrent rounds)."

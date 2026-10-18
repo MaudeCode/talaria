@@ -22,6 +22,12 @@ import SwiftUI
 /// reading-older chrome, and how far a gesture-free scroll must carry the
 /// reader before it counts as leaving.
 public enum ChatScrollPolicy {
+    /// Buffer four viewports while reading history; keep one viewport at the latest edge.
+    public static func shouldPrefetchHistory(geometry: ScrollGeometry) -> Bool {
+        let screens: CGFloat = isAtBottom(distanceFromBottom: geometry.distanceFromBottom) ? 1 : 4
+        return geometry.offsetY <= geometry.visibleHeight * screens
+    }
+
     /// Existing transcripts should enter at their latest content as part of the
     /// scroll view's first layout, before the destination becomes visible.
     public static let initialTranscriptAnchor = UnitPoint.bottom
@@ -173,13 +179,13 @@ public enum ChatScrollPolicy {
 
     /// True when a report without a gesture shows the reader farther from the
     /// bottom than the last one, past the streaming threshold, in the same
-    /// viewport. While follow is on the bottom anchor snaps every size change
-    /// back to zero distance, so only an actual scroll (status-bar tap,
-    /// VoiceOver, hardware keyboard) can move the reader out that far. Keyboard
-    /// insets change the viewport and are excluded; the scroll observer
-    /// suppresses the check while a disclosure pin holds the offset.
+    /// viewport. The offset must actually move upward: lazy measurement can
+    /// increase the distance while the reader is stationary or following down.
+    /// Actual status-bar, VoiceOver and keyboard scrolls may also remeasure rows.
+    /// Keyboard viewport changes and disclosure pins are excluded.
     public static func isScrollingAwayFromBottom(previous: ScrollGeometry?, current: ScrollGeometry) -> Bool {
-        guard let previous, previous.visibleHeight == current.visibleHeight else { return false }
+        guard let previous, previous.visibleHeight == current.visibleHeight,
+              current.offsetY < previous.offsetY - 0.5 else { return false }
         let distance = current.distanceFromBottom
         return distance > previous.distanceFromBottom + 0.5
             && distance > streamingBottomDetectionThreshold

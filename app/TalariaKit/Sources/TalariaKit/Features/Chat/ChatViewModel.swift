@@ -17,11 +17,7 @@ public final class ChatViewModel {
     }
 
     public private(set) var messages: [ChatMessage] = [] {
-        didSet {
-            if !isUpdatingStreamingAssistantContent {
-                recomputeDisplayedTranscriptMessages()
-            }
-        }
+        didSet { recomputeDisplayedTranscriptMessages() }
     }
     /// Memoized transcript mapping. Structural changes rebuild it; paced content
     /// flushes replace only the active transcript row.
@@ -133,7 +129,7 @@ public final class ChatViewModel {
     @ObservationIgnored private var pendingReasoningText = ""
     @ObservationIgnored private var pendingReasoningTitles: [String] = []
     @ObservationIgnored private var pendingStreamingContentFlushTask: Task<Void, Never>?
-    @ObservationIgnored private var isUpdatingStreamingAssistantContent = false
+    @ObservationIgnored private var isDeferringTranscriptMapping = false
     private(set) var completedToolCallGroups: [ToolCallGroup] = []
     private var completedToolCallGroupLookup = ToolCallGroupAnchorLookup()
     private(set) var completedReasoningGroups: [ReasoningGroup] = []
@@ -162,7 +158,7 @@ public final class ChatViewModel {
     /// Paged rows belong to one server turn: a regenerated reply at the same position is a new turn id, so it never
     /// picks up the previous answer's rows. Only an unstamped (older-server) row falls back to its anchor.
     private static func earlierSceneRowsKey(_ transcriptMessage: TranscriptMessage) -> String {
-        transcriptMessage.message.turnId.map { "turn:\($0)" } ?? transcriptMessage.anchorID
+        TranscriptTurnClassifier.assistantTurnKey(for: transcriptMessage.message) ?? transcriptMessage.anchorID
     }
 
     /// Pages a completed turn's omitted scene rows (the server sends only the tail) until the scene is complete.
@@ -202,7 +198,20 @@ public final class ChatViewModel {
         return response.resultView ?? ToolResultView(text: response.result)
     }
 
+    /// The message array and its absolute offset describe one layout window.
+    /// Keep observers on the previous mapping until both have their final values.
+    private func withDeferredTranscriptMapping(_ update: () -> Void) {
+        let wasDeferring = isDeferringTranscriptMapping
+        isDeferringTranscriptMapping = true
+        defer {
+            isDeferringTranscriptMapping = wasDeferring
+            if !wasDeferring { recomputeDisplayedTranscriptMessages() }
+        }
+        update()
+    }
+
     private func recomputeDisplayedTranscriptMessages() {
+        guard !isDeferringTranscriptMapping else { return }
 #if DEBUG
         displayedTranscriptRecomputeCount += 1
 #endif
@@ -257,6 +266,7 @@ public final class ChatViewModel {
         compressionReferenceCard = nil
     }
     private func recomputeCompressionReferenceCard() {
+        guard !isDeferringTranscriptMapping else { return }
         // Not folded into the messages/messagesOffset observers alone:
         // applyCompletedStreamSession can update the reference without
         // reassigning messages, so reference changes recompute here too. The
@@ -1773,7 +1783,7 @@ public final class ChatViewModel {
     }
 
     @discardableResult
-    public func loadOlderMessages(modelContext: ModelContext? = nil) async -> Bool {
+    public func loadOlderMessages(modelContext: ModelContext? = nil, beforePrepend: @MainActor () -> Void = {}) async -> Bool {
         guard let sessionID else {
             errorMessage = String(localized: "The server did not provide a session ID.")
             return false
@@ -1817,13 +1827,16 @@ public final class ChatViewModel {
             let olderMessages = session.messages ?? []
             let mergedMessages = Self.prependingOlderMessages(olderMessages, to: messages)
             let didAddMessages = mergedMessages.count > messages.count
-            applyCompressionReference(from: session)
-            messages = mergedMessages
-            latestServerLoadHadAssistantResponseAfterLatestUser = Self.hasAssistantResponseAfterLatestUser(
-                in: messages
-            )
-            responseCompletionNeedsTranscriptRefresh = false
-            updateOlderMessagePagination(from: session, loadedMessageCount: messages.count, preservingRecentWindow: true)
+            if didAddMessages { beforePrepend() }
+            withDeferredTranscriptMapping {
+                applyCompressionReference(from: session)
+                messages = mergedMessages
+                latestServerLoadHadAssistantResponseAfterLatestUser = Self.hasAssistantResponseAfterLatestUser(
+                    in: messages
+                )
+                responseCompletionNeedsTranscriptRefresh = false
+                updateOlderMessagePagination(from: session, loadedMessageCount: messages.count, preservingRecentWindow: true)
+            }
             isViewingCachedData = false
             contextWindowSnapshot = ContextWindowSnapshot(session: session)
             if let title = session.title, titleVersionAtFetch == sessionListOwner?.resourceMetadataVersion(for: sessionID), ownsCurrentCache {
@@ -2031,61 +2044,63 @@ public final class ChatViewModel {
         previousMessages: [ChatMessage],
         previousMessagesOffset: Int
     ) {
-        defer {
-            let recentOffset = max(messagesOffset, Self.resolvedMessagesOffset(from: session, loadedMessageCount: reloadedMessages.count))
-            recentMessagesOffset = recentOffset
-            recentHasOlderMessages = recentOffset > 0 || session?.messagesTruncated == true
-            if let note = pendingVoiceDraft,
-               let local = previousMessages.first(where: { $0.id == note.id }) {
-                // A repeated transcript and display filename are not a receipt. Require the unique
-                // uploaded path as well before releasing bytes after an uncertain start.
-                let uploadedKey = MessageAttachment(path: note.uploadedAttachment?.path).identityKey
-                let serverMessages = (session?.messages ?? []).filter { message in
-                    guard let uploadedKey else { return false }
-                    return (message.attachments ?? []).contains { MessageAttachment(path: $0.path).identityKey == uploadedKey }
-                }
-                if note.uncertainStart, Self.equivalentUserMessageIndex(
-                    in: serverMessages, excluding: [], localMessage: local, turnID: nil, comparesClocks: true
-                ) != nil {
-                    pendingVoiceDraft = nil
-                    messages.removeAll { $0.id == note.id }
-                    Task { await attachmentCoordinator.deleteDraftCopy(named: note.file) }
-                } else if !messages.contains(where: { $0.id == note.id }) {
-                    Self.insertLocalOptimisticMessage(local, into: &messages)
+        withDeferredTranscriptMapping {
+            defer {
+                let recentOffset = max(messagesOffset, Self.resolvedMessagesOffset(from: session, loadedMessageCount: reloadedMessages.count))
+                recentMessagesOffset = recentOffset
+                recentHasOlderMessages = recentOffset > 0 || session?.messagesTruncated == true
+                if let note = pendingVoiceDraft,
+                   let local = previousMessages.first(where: { $0.id == note.id }) {
+                    // A repeated transcript and display filename are not a receipt. Require the unique
+                    // uploaded path as well before releasing bytes after an uncertain start.
+                    let uploadedKey = MessageAttachment(path: note.uploadedAttachment?.path).identityKey
+                    let serverMessages = (session?.messages ?? []).filter { message in
+                        guard let uploadedKey else { return false }
+                        return (message.attachments ?? []).contains { MessageAttachment(path: $0.path).identityKey == uploadedKey }
+                    }
+                    if note.uncertainStart, Self.equivalentUserMessageIndex(
+                        in: serverMessages, excluding: [], localMessage: local, turnID: nil, comparesClocks: true
+                    ) != nil {
+                        pendingVoiceDraft = nil
+                        messages.removeAll { $0.id == note.id }
+                        Task { await attachmentCoordinator.deleteDraftCopy(named: note.file) }
+                    } else if !messages.contains(where: { $0.id == note.id }) {
+                        Self.insertLocalOptimisticMessage(local, into: &messages)
+                    }
                 }
             }
-        }
-        let reloadedMessagesOffset = Self.resolvedMessagesOffset(
-            from: session,
-            loadedMessageCount: reloadedMessages.count
-        )
+            let reloadedMessagesOffset = Self.resolvedMessagesOffset(
+                from: session,
+                loadedMessageCount: reloadedMessages.count
+            )
 
-        if let expandedMessages = Self.mergingReloadedMessages(
-            reloadedMessages,
-            intoCurrentMessages: previousMessages,
-            currentMessagesOffset: previousMessagesOffset,
-            reloadedMessagesOffset: reloadedMessagesOffset
-        ) {
-            messages = expandedMessages
-            messagesOffset = previousMessagesOffset
-            hasOlderMessages = previousMessagesOffset > 0
-            return
-        }
+            if let expandedMessages = Self.mergingReloadedMessages(
+                reloadedMessages,
+                intoCurrentMessages: previousMessages,
+                currentMessagesOffset: previousMessagesOffset,
+                reloadedMessagesOffset: reloadedMessagesOffset
+            ) {
+                messages = expandedMessages
+                messagesOffset = previousMessagesOffset
+                hasOlderMessages = previousMessagesOffset > 0
+                return
+            }
 
-        if let trimmedMessages = Self.trimmingReloadedMessages(
-            reloadedMessages,
-            toPreserveCurrentMessages: previousMessages,
-            currentMessagesOffset: previousMessagesOffset,
-            reloadedMessagesOffset: reloadedMessagesOffset
-        ) {
-            messages = trimmedMessages
-            messagesOffset = previousMessagesOffset
-            hasOlderMessages = previousMessagesOffset > 0 || session?.messagesTruncated == true
-            return
-        }
+            if let trimmedMessages = Self.trimmingReloadedMessages(
+                reloadedMessages,
+                toPreserveCurrentMessages: previousMessages,
+                currentMessagesOffset: previousMessagesOffset,
+                reloadedMessagesOffset: reloadedMessagesOffset
+            ) {
+                messages = trimmedMessages
+                messagesOffset = previousMessagesOffset
+                hasOlderMessages = previousMessagesOffset > 0 || session?.messagesTruncated == true
+                return
+            }
 
-        messages = reloadedMessages
-        updateOlderMessagePagination(from: session, loadedMessageCount: messages.count)
+            messages = reloadedMessages
+            updateOlderMessagePagination(from: session, loadedMessageCount: messages.count)
+        }
     }
 
     nonisolated private static func mergingReloadedMessages(
@@ -3145,9 +3160,42 @@ public final class ChatViewModel {
             && resourceCacheVersionAtOpen == sessionID.flatMap { sessionListOwner?.resourceCacheVersion(for: $0) }
     }
 
+    @ObservationIgnored private var isTranscriptScrolling = false
+    @ObservationIgnored private var deferredTranscriptCache: (sessionID: String, context: ModelContext)?
+
+    /// Keep synchronous offline-cache work out of a drag and its momentum.
+    public func handleTranscriptScroll(_ event: ChatScrollPolicy.FollowEvent) {
+        switch event {
+        case .userScrollBegin:
+            isTranscriptScrolling = true
+        case .reset:
+            // Let the next cache request persist the current snapshot without blocking the intent event.
+            isTranscriptScrolling = false
+        case .userScrollEnd(_):
+            isTranscriptScrolling = false
+            guard let pending = deferredTranscriptCache else { return }
+            deferredTranscriptCache = nil
+            guard pending.sessionID == sessionID else { return }
+            do {
+                try cacheMessagesIfCurrent(messages, sessionID: pending.sessionID, in: pending.context)
+            } catch {
+                cacheErrorMessage = error.localizedDescription
+            }
+        default:
+            break
+        }
+    }
+
     private func cacheMessagesIfCurrent(_ messages: [ChatMessage], sessionID: String, in modelContext: ModelContext) throws {
-        guard self.sessionID == sessionID, ownsCurrentCache else { return }
-        // Older pages are for the current reader; reopening paints only the recent server window.
+        guard self.sessionID == sessionID, ownsCurrentCache else { deferredTranscriptCache = nil; return }
+        if messages.isEmpty { isTranscriptScrolling = false }
+        if isTranscriptScrolling {
+            // Keep the context, not an array snapshot that would force streaming copy-on-write.
+            deferredTranscriptCache = (sessionID, modelContext)
+            return
+        }
+        deferredTranscriptCache = nil
+        // Older pages belong to this reader; reopening retains the recent server window.
         let start = recentMessagesOffset.map { max(0, $0 - messagesOffset) } ?? 0
         try CacheStore.cacheMessages(
             Array(messages.dropFirst(start)), serverURL: server, sessionID: sessionID, in: modelContext,
@@ -3159,6 +3207,8 @@ public final class ChatViewModel {
     /// screen or the app goes to the background (TAL-437), so reopening it or relaunching the app
     /// paints it at once while the server load and replay catch up.
     public func persistTranscript(modelContext: ModelContext) {
+        isTranscriptScrolling = false
+        deferredTranscriptCache = nil
         // An empty or offline transcript has nothing newer than the cache, and writing an empty
         // one would delete the saved rows.
         guard let sessionID, !messages.isEmpty, !isViewingCachedData else { return }
@@ -5716,9 +5766,9 @@ public final class ChatViewModel {
     }
 
     private func updateStreamingAssistantMessage(at messageIndex: Int, with message: ChatMessage) {
-        isUpdatingStreamingAssistantContent = true
+        isDeferringTranscriptMapping = true
         messages[messageIndex] = message
-        isUpdatingStreamingAssistantContent = false
+        isDeferringTranscriptMapping = false
 
         guard let transcriptIndex = displayedTranscriptMessages.lastIndex(where: { transcriptMessage in
             transcriptMessage.assistantSegments.contains { $0.message.messageId == message.messageId }

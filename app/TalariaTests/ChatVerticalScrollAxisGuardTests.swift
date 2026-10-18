@@ -1,4 +1,5 @@
 import UIKit
+import SwiftUI
 import XCTest
 @testable import Talaria
 import TalariaKit
@@ -136,6 +137,554 @@ final class ChatVerticalScrollAxisGuardTests: XCTestCase {
 
 @MainActor
 final class ChatScrollPositionControllerTests: XCTestCase {
+    func testRowRealizationYieldsToNativeMomentumBetweenMeasurements() async throws {
+        for hasScene in [false, true] {
+            let window: UIWindow?
+            if hasScene { window = try hostWindow(Color.clear) }
+            else { window = nil }
+            let scroll = try XCTUnwrap(makeScrollView() as? HistoryInteractionScrollView)
+            window?.addSubview(scroll)
+            scroll.userIsDragging = true
+            scroll.userIsDecelerating = true
+            scroll.contentOffset.y = 240
+            let controller = ChatScrollPositionController()
+            controller.attach(to: scroll)
+            defer { controller.detach(); scroll.removeFromSuperview(); window?.isHidden = true }
+            controller.recordRowMinY(180, for: "reader")
+            XCTAssertTrue(controller.capture(anchorRowID: "reader"))
+            XCTAssertTrue(controller.restoreAfterPrepend(whileInteracting: true))
+            var realized = 0
+            for id in ["first", "second"] {
+                controller.enqueueRowRealization(id: id, priority: 0) {
+                    realized += 1
+                    controller.recordRowMinY(180 + CGFloat(realized * 100), for: "reader")
+                    scroll.contentSize.height += 100
+                }
+            }
+            try await Task.sleep(for: .milliseconds(40))
+            XCTAssertEqual(realized, 0, "Offscreen rendering must let the native momentum tick run first")
+            scroll.contentOffset.y -= 20
+            let first = await awaitCondition { realized >= 1 }
+            XCTAssertTrue(first)
+            try await Task.sleep(for: .milliseconds(40))
+            XCTAssertEqual(realized, 1, "Own measurement compensation must not admit another row ahead of native movement")
+            scroll.contentOffset.y -= 20
+            let second = await awaitCondition { realized == 2 }
+            XCTAssertTrue(second)
+            controller.enqueueRowRealization(id: "after-coast", priority: 0) { realized += 1 }
+            scroll.userIsDecelerating = false
+            let finished = await awaitCondition { realized == 3 }
+            XCTAssertTrue(finished, "Ending momentum must release queued rendering without another offset event")
+        }
+    }
+
+    func testExcerptHoldKeepsActiveHistoryPreservation() throws {
+        for coasting in [false, true] {
+            let scroll = try XCTUnwrap(makeScrollView() as? HistoryInteractionScrollView)
+            scroll.userIsDecelerating = coasting
+            scroll.contentOffset.y = 240
+            let controller = ChatScrollPositionController()
+            controller.attach(to: scroll)
+            defer { controller.detach() }
+            controller.recordRowMinY(180, for: "reader")
+            XCTAssertTrue(controller.capture(anchorRowID: "reader"))
+            XCTAssertTrue(controller.restoreAfterPrepend(whileInteracting: true))
+            controller.holdVisiblePosition(resync: {})
+            XCTAssertTrue(controller.isPreservingPosition,
+                          "Excerpt updates must retain active history preservation during momentum")
+            XCTAssertFalse(controller.isHoldingPosition,
+                           "Excerpt updates must not replace the existing history owner")
+            scroll.contentSize.height += 640
+            controller.recordRowMinY(820, for: "reader")
+            XCTAssertEqual(scroll.contentOffset.y, 880, accuracy: 0.001,
+                           "History must keep compensating measurement after an excerpt update")
+        }
+    }
+
+    func testNativeMomentumContinuesDuringTheSameTurnAsRowMeasurement() throws {
+        let scroll = try XCTUnwrap(makeScrollView(isDragging: true) as? HistoryInteractionScrollView)
+        scroll.userIsDecelerating = true
+        scroll.contentOffset.y = 240
+        let controller = ChatScrollPositionController()
+        controller.attach(to: scroll)
+        defer { controller.detach() }
+        controller.recordRowMinY(180, for: "reader")
+        XCTAssertTrue(controller.capture(anchorRowID: "reader"))
+        XCTAssertTrue(controller.restoreAfterPrepend(whileInteracting: true))
+        scroll.contentSize.height += 640
+        controller.recordRowMinY(820, for: "reader")
+        XCTAssertEqual(scroll.contentOffset.y, 880, accuracy: 0.001)
+        // UIKit's drag flag can remain true after touch-up. A native momentum
+        // tick in this size-changing turn must still advance the reader.
+        scroll.contentOffset.y = 860
+        XCTAssertEqual(scroll.contentOffset.y, 860, accuracy: 0.001,
+                       "Row measurement must not put native momentum back at its previous offset")
+        controller.recordRowMinY(840, for: "reader")
+        XCTAssertEqual(scroll.contentOffset.y, 880, accuracy: 0.001,
+                       "The next measurement must retain the reader's continued 20pt scroll")
+    }
+
+    func testLateRealizationKeepsPreservationThroughItsMeasurement() async throws {
+        let scroll = makeScrollView()
+        scroll.contentOffset.y = 200
+        let controller = ChatScrollPositionController()
+        controller.attach(to: scroll)
+        defer { controller.detach() }
+        controller.recordRowGeometry(.init(revision: 0, contentMinY: 200,
+            frame: CGRect(x: 0, y: 0, width: 320, height: 200)), for: "reader")
+        XCTAssertTrue(controller.capture(anchorRowID: "reader"))
+        XCTAssertTrue(controller.restoreAfterPrepend())
+        try await Task.sleep(for: .milliseconds(850))
+        XCTAssertTrue(controller.isPreservingPosition, "Admit the neighbor before the original prepend deadline")
+        // A queued neighbor starts realizing before the prepend window ends,
+        // but its measured height arrives after that original deadline.
+        _ = controller.preserveReaderForRealization(isFollowingLatest: false)
+        try await Task.sleep(for: .milliseconds(300))
+        controller.recordRowMinY(62.333333333, for: "reader")
+        scroll.contentSize.height -= 137.666666667
+        XCTAssertEqual(scroll.contentOffset.y, 62.333333333, accuracy: 0.001,
+                       "Late row measurement must preserve the reader after the original prepend deadline")
+    }
+
+    func testUserInteractionReleasesUnfinishedNavigationBeforeRealizingRows() async throws {
+        for disclosure in [false, true] {
+            let scroll = makeScrollView()
+            scroll.contentOffset.y = 200
+            let controller = ChatScrollPositionController()
+            controller.attach(to: scroll)
+            defer { controller.detach() }
+            controller.recordRowGeometry(.init(revision: 0, contentMinY: 200,
+                frame: scroll.convert(CGRect(x: 0, y: 200, width: 320, height: 100), to: nil)), for: "reader")
+            controller.recordRowGeometry(.init(revision: 0, contentMinY: 700,
+                frame: scroll.convert(CGRect(x: 0, y: 700, width: 320, height: 100), to: nil)), for: "destination")
+            controller.prepareNativeScroll(revision: 1, targetID: "destination", anchor: .top)
+            var realized = 0
+            controller.enqueueRowRealization(id: "neighbor", priority: 0) { realized += 1 }
+            if disclosure { controller.holdPosition(anchorRowID: "reader", resync: {}) }
+            else { controller.userDidBeginDragging() }
+            try await Task.sleep(for: .milliseconds(40))
+            XCTAssertEqual(realized, 1, "A user's disclosure or drag must not wait for an abandoned navigation")
+        }
+    }
+
+    func testNativeScrollAcknowledgementWaitsForTheMeasuredDestination() async throws {
+        let destinations: [(CGFloat, UnitPoint, CGFloat)] = [
+            (100, .top, 100), (100, .bottom, 0), (1_100, .top, 720),
+            (100, UnitPoint(x: 0.5, y: -3.5), 720)
+        ]
+        for (rowY, anchor, destination) in destinations {
+            let scroll = makeScrollView()
+            scroll.contentOffset.y = 700
+            let controller = ChatScrollPositionController()
+            controller.attach(to: scroll)
+            defer { controller.detach() }
+            controller.recordRowGeometry(.init(revision: 0, contentMinY: rowY,
+                frame: scroll.convert(CGRect(x: 0, y: rowY, width: 320, height: 100), to: nil)), for: "destination")
+            controller.prepareNativeScroll(revision: 1, targetID: "destination", anchor: anchor)
+            var realized = 0
+            controller.enqueueRowRealization(id: "neighbor", priority: 0) { realized += 1 }
+            controller.contentDidLayout(revision: 0, nativeScrollRevision: 1)
+            try await Task.sleep(for: .milliseconds(40))
+            XCTAssertEqual(realized, 0, "Layout alone cannot admit neighbors while the old viewport is still visible")
+            scroll.contentOffset.y = destination
+            controller.recordRowGeometry(.init(revision: 0, contentMinY: rowY,
+                frame: scroll.convert(CGRect(x: 0, y: rowY, width: 320, height: 100), to: nil)), for: "destination")
+            controller.contentDidLayout(revision: 0, nativeScrollRevision: 1)
+            let resumed = await awaitCondition { realized == 1 }
+            XCTAssertTrue(resumed, "Reaching the measured destination must release queued neighbors")
+        }
+    }
+
+    func testNativeScrollLayoutBlocksRealizationUntilItsMatchingAcknowledgement() async throws {
+        let scrollView = makeScrollView()
+        let controller = ChatScrollPositionController()
+        controller.attach(to: scrollView)
+        defer { controller.detach() }
+        var realized = 0
+        controller.prepareNativeScroll(revision: 1)
+        controller.enqueueRowRealization(id: "pending-row", priority: 0) { realized += 1 }
+        try await Task.sleep(for: .milliseconds(40))
+        XCTAssertEqual(realized, 0, "A new command must establish its viewport before neighbors change height")
+        controller.contentDidLayout(revision: 0, nativeScrollRevision: 0)
+        try await Task.sleep(for: .milliseconds(40))
+        XCTAssertEqual(realized, 0)
+        controller.prepareNativeScroll(revision: 2)
+        controller.contentDidLayout(revision: 0, nativeScrollRevision: 1)
+        try await Task.sleep(for: .milliseconds(40))
+        XCTAssertEqual(realized, 0, "An obsolete command's acknowledgement cannot admit the next command's rows")
+        controller.contentDidLayout(revision: 0, nativeScrollRevision: 2)
+        let resumed = await awaitCondition { realized == 1 }
+        XCTAssertTrue(resumed, "Matching layout must resume the queued row")
+    }
+
+    func testRealizationPreservesTheVisibleRowWhenViewportStartsInSpacing() {
+        let scrollView = makeScrollView(isDragging: true)
+        scrollView.contentOffset.y = 110
+        let controller = ChatScrollPositionController()
+        controller.attach(to: scrollView)
+        controller.recordRowGeometry(.init(revision: 0, contentMinY: 0,
+            frame: CGRect(x: 0, y: -110, width: 320, height: 100)), for: "above-gap")
+        controller.recordRowGeometry(.init(revision: 0, contentMinY: 120,
+            frame: CGRect(x: 0, y: 10, width: 320, height: 200)), for: "reader")
+        XCTAssertEqual(controller.readingAnchorRowID, "reader")
+        XCTAssertTrue(controller.preserveReaderForRealization(isFollowingLatest: false))
+        controller.recordRowMinY(270, for: "reader")
+        scrollView.contentSize.height += 150
+        XCTAssertEqual(scrollView.contentOffset.y, 260, accuracy: 0.001,
+                       "Realizing content above a visible row must preserve it even when the viewport begins in spacing")
+    }
+
+    func testLazyPrependRealizesItsDiscardedReaderBeforeUsingHeightEstimates() {
+        for sample: (height: CGFloat, anchorY: CGFloat) in [(1_000, 60.0 / 520), (480, 0)] {
+            let scrollView = makeScrollView()
+            scrollView.contentOffset.y = 240
+            let window = UIWindow(frame: scrollView.frame)
+            window.addSubview(scrollView)
+            window.isHidden = false
+            defer { window.isHidden = true }
+            let controller = ChatScrollPositionController(usesLazyLayout: true)
+            controller.attach(to: scrollView)
+            controller.recordRowGeometry(.init(revision: 0, contentMinY: 180,
+                frame: CGRect(x: 0, y: -60, width: 300, height: sample.height)), for: "reader")
+            var nativeRequests: [(String, UnitPoint)] = []
+            controller.onHoldAnchor = { nativeRequests.append(($0, $1)) }
+            XCTAssertTrue(controller.capture(anchorRowID: "reader", contentRevision: 1))
+            XCTAssertTrue(controller.restoreAfterPrepend())
+            controller.forgetRow("reader")
+            XCTAssertEqual(nativeRequests.count, 1, "SwiftUI must realize the lazy reader it discarded")
+            XCTAssertEqual(nativeRequests.first?.0, "reader")
+            XCTAssertEqual(nativeRequests.first?.1.y ?? -1, sample.anchorY, accuracy: 0.001)
+            scrollView.contentSize.height += 640
+            XCTAssertEqual(scrollView.contentOffset.y, 240, accuracy: 0.001,
+                           "A missing reader must not be replaced by an uncertain document-height estimate")
+            controller.recordRowGeometry(.init(revision: 1, contentMinY: 820,
+                frame: CGRect(x: 0, y: -60, width: 300, height: sample.height)), for: "reader")
+            controller.rowDidAppear("reader")
+            XCTAssertEqual(scrollView.contentOffset.y, 880, accuracy: 0.001)
+        }
+    }
+
+    func testLazyPrependDoesNotAdoptTheTransientViewportBeforeRestoringItsReader() {
+        let scrollView = makeScrollView(isDragging: true)
+        let window = UIWindow(frame: scrollView.frame)
+        window.addSubview(scrollView)
+        window.isHidden = false
+        defer { window.isHidden = true }
+        scrollView.contentOffset.y = 240
+        let controller = ChatScrollPositionController(usesLazyLayout: true)
+        controller.attach(to: scrollView)
+        controller.recordRowGeometry(.init(revision: 0, contentMinY: 180,
+            frame: CGRect(x: 0, y: -60, width: 300, height: 100)), for: "reader")
+        XCTAssertTrue(controller.capture(anchorRowID: "reader", contentRevision: 1))
+        XCTAssertTrue(controller.restoreAfterPrepend(whileInteracting: true))
+        controller.recordRowGeometry(.init(revision: 1, contentMinY: 200,
+            frame: CGRect(x: 0, y: -40, width: 300, height: 100)), for: "transient-older-row")
+        controller.forgetRow("reader")
+        scrollView.contentSize.height += 640
+        controller.recordRowGeometry(.init(revision: 1, contentMinY: 820,
+            frame: CGRect(x: 0, y: -60, width: 300, height: 100)), for: "reader")
+        controller.rowDidAppear("reader")
+        XCTAssertEqual(scrollView.contentOffset.y, 880, accuracy: 0.001,
+                       "Insertion must restore its captured reader before a fling can hand it off")
+    }
+
+    func testReappearingLazyRowRestoresItsCurrentGeometryWithoutANewMeasurement() {
+        let scrollView = makeScrollView()
+        scrollView.contentOffset.y = 240
+        let controller = ChatScrollPositionController()
+        controller.attach(to: scrollView)
+        XCTAssertTrue(controller.capture(anchorRowID: nil, contentRevision: 1))
+        controller.recordRowGeometry(.init(revision: 1, contentMinY: 180,
+            frame: CGRect(x: 0, y: -60, width: 300, height: 100)), for: "reader")
+        controller.forgetRow("reader")
+        XCTAssertNil(controller.readingAnchorRowID)
+        // Lazy cells can remount with an identical geometry value, so SwiftUI
+        // sends appearance without another geometry-change action.
+        controller.rowDidAppear("reader")
+        XCTAssertEqual(controller.readingAnchorRowID, "reader")
+    }
+
+    func testReappearingLazyRowCannotRestoreGeometryFromAnOlderPage() {
+        let scrollView = makeScrollView()
+        scrollView.contentOffset.y = 240
+        let controller = ChatScrollPositionController()
+        controller.attach(to: scrollView)
+        XCTAssertTrue(controller.capture(anchorRowID: nil, contentRevision: 1))
+        controller.recordRowGeometry(.init(revision: 1, contentMinY: 180,
+            frame: CGRect(x: 0, y: -60, width: 300, height: 100)), for: "reader")
+        controller.forgetRow("reader")
+        XCTAssertTrue(controller.capture(anchorRowID: nil, contentRevision: 2))
+        controller.rowDidAppear("reader")
+        XCTAssertNil(controller.readingAnchorRowID, "A previous page's coordinate cannot become the current anchor")
+        controller.recordRowGeometry(.init(revision: 2, contentMinY: 220,
+            frame: CGRect(x: 0, y: -20, width: 300, height: 100)), for: "reader")
+        XCTAssertEqual(controller.readingAnchorRowID, "reader")
+    }
+
+    func testPrependRetiresUnmeasuredFramesFromThePreviousLayout() {
+        let scrollView = makeScrollView()
+        scrollView.contentOffset.y = 240
+        let controller = ChatScrollPositionController()
+        controller.attach(to: scrollView)
+        controller.recordRowMinY(220, for: "old-layout-row")
+        controller.recordRowMinY(180, for: "reader")
+        XCTAssertTrue(controller.capture(anchorRowID: "reader", contentRevision: 1))
+        controller.recordRowMinY(180, for: "reader")
+        XCTAssertEqual(controller.readingAnchorRowID, "reader",
+                       "An unmeasured previous-layout frame must not win the next page's anchor selection")
+    }
+
+    func testLateGeometryFromADisappearedRowCannotBecomeTheReadingAnchor() {
+        let scrollView = makeScrollView()
+        scrollView.contentOffset.y = 240
+        let controller = ChatScrollPositionController()
+        controller.attach(to: scrollView)
+        controller.recordRowMinY(220, for: "old-offscreen-row")
+        controller.forgetRow("old-offscreen-row")
+        // Lazy geometry can arrive after the row's disappearance notification.
+        controller.recordRowMinY(220, for: "old-offscreen-row")
+        controller.recordRowMinY(180, for: "reader")
+        XCTAssertEqual(controller.readingAnchorRowID, "reader",
+                       "A delayed offscreen frame must not replace the actual reader's anchor")
+    }
+
+    func testPrependReappliesAfterUIKitReanchorsTheSameInsertion() {
+        let scrollView = makeScrollView()
+        scrollView.contentOffset.y = 240
+        let controller = ChatScrollPositionController()
+        controller.attach(to: scrollView)
+        controller.recordRowMinY(180, for: "reader")
+        XCTAssertTrue(controller.capture(anchorRowID: "reader", contentRevision: 1))
+        XCTAssertTrue(controller.restoreAfterPrepend())
+        scrollView.contentSize.height += 640
+        controller.recordRowMinY(820, for: "reader")
+        XCTAssertEqual(scrollView.contentOffset.y, 880, accuracy: 0.001)
+        // Lazy layout may set its size-change anchor after the row and size callbacks.
+        scrollView.contentOffset.y = 240
+        XCTAssertEqual(scrollView.contentOffset.y, 880, accuracy: 0.001,
+                       "A later structural offset must not undo the current prepend correction")
+    }
+
+    func testPrependPreservesTheReaderWhenTheDragContinuesBeforeLayout() {
+        let scrollView = makeScrollView(isDragging: true)
+        scrollView.contentOffset.y = 240
+        let controller = ChatScrollPositionController()
+        controller.attach(to: scrollView)
+        controller.recordRowMinY(180, for: "reader")
+        XCTAssertTrue(controller.capture(anchorRowID: "reader", contentRevision: 1))
+        XCTAssertTrue(controller.restoreAfterPrepend(whileInteracting: true))
+
+        // The next momentum tick can precede SwiftUI's insertion layout.
+        scrollView.contentOffset.y = 220
+        XCTAssertEqual(scrollView.contentOffset.y, 220, accuracy: 0.001)
+        scrollView.contentSize.height += 640
+        controller.recordRowMinY(820, for: "reader")
+        controller.contentDidLayout(revision: 1)
+        XCTAssertEqual(scrollView.contentOffset.y, 860, accuracy: 0.001,
+                       "An arriving page must preserve the reader's continued 20pt scroll, not jump its rows by 640pt")
+    }
+
+    func testPrependDoesNotTreatGrowthBelowTheReaderAsOlderHistory() {
+        let scrollView = makeScrollView()
+        scrollView.contentSize.height = 5_000
+        scrollView.contentOffset.y = 300
+        let controller = ChatScrollPositionController()
+        controller.attach(to: scrollView)
+        controller.recordRowGeometry(.init(revision: 0, contentMinY: 180,
+            frame: CGRect(x: 0, y: -120, width: 300, height: 1_000)), for: "reader")
+        XCTAssertTrue(controller.capture(anchorRowID: "reader", contentRevision: 1))
+        XCTAssertTrue(controller.restoreAfterPrepend())
+        scrollView.contentSize.height += 940
+        // The page adds 640pt above; live content or media adds 300pt below.
+        controller.recordRowGeometry(.init(revision: 1, contentMinY: 820,
+            frame: CGRect(x: 0, y: -120, width: 300, height: 1_300)), for: "reader")
+        XCTAssertEqual(scrollView.contentOffset.y, 940, accuracy: 0.001,
+                       "Live content below the reader must not count as older history")
+    }
+
+    func testLazyPrependBridgesInsertionUntilItsReaderIsRestored() {
+        let scrollView = makeScrollView()
+        let window = UIWindow(frame: scrollView.frame)
+        window.addSubview(scrollView)
+        window.isHidden = false
+        defer { window.isHidden = true }
+        scrollView.contentOffset.y = 240
+        let controller = ChatScrollPositionController(usesLazyLayout: true)
+        controller.attach(to: scrollView)
+        controller.recordRowMinY(180, for: "reader")
+        XCTAssertTrue(controller.capture(anchorRowID: "reader", contentRevision: 1))
+        XCTAssertTrue(controller.restoreAfterPrepend())
+        scrollView.contentSize.height += 640
+        XCTAssertEqual(scrollView.contentOffset.y, 880, accuracy: 0.001,
+                       "The initial insertion must bridge to the reader before its frame arrives")
+        // The background can acknowledge layout before the lazy reader measures.
+        controller.contentDidLayout(revision: 1)
+        scrollView.contentSize.height += 100
+        XCTAssertEqual(scrollView.contentOffset.y, 980, accuracy: 0.001,
+                       "An early background layout must not retire the initial bridge")
+        controller.recordRowMinY(920, for: "reader", contentRevision: 1)
+        controller.forgetRow("reader")
+        scrollView.contentSize.height += 300
+        XCTAssertEqual(scrollView.contentOffset.y, 980, accuracy: 0.001,
+                       "After measured restoration, document estimates must not move a missing reader")
+    }
+
+    func testPrependKeepsTheCurrentReaderWhenAFlingUnmountsTheCapturedRow() async throws {
+        let scrollView = makeScrollView(isDragging: true)
+        scrollView.contentSize.height = 5_000
+        scrollView.contentOffset.y = 1_240
+        let controller = ChatScrollPositionController()
+        controller.attach(to: scrollView)
+        controller.recordRowMinY(1_200, for: "original-reader")
+        XCTAssertTrue(controller.capture(anchorRowID: "original-reader", contentRevision: 1))
+        XCTAssertTrue(controller.restoreAfterPrepend(whileInteracting: true))
+        scrollView.contentSize.height += 640
+        controller.recordRowMinY(1_840, for: "original-reader")
+        controller.recordRowMinY(1_500, for: "current-reader")
+        XCTAssertEqual(scrollView.contentOffset.y, 1_880, accuracy: 0.001)
+        try await Task.sleep(for: .milliseconds(10))
+        scrollView.contentOffset.y = 1_680
+        controller.forgetRow("original-reader")
+
+        // The old reader left the lazy viewport. A table below the new reader
+        // now replaces its estimated height; none of this growth is above them.
+        scrollView.contentSize.height += 200
+        controller.recordRowMinY(1_500, for: "current-reader")
+        XCTAssertEqual(scrollView.contentOffset.y, 1_680, accuracy: 0.001,
+                       "A fling must not switch from a measured reader to whole-document height")
+    }
+
+    func testPrependDoesNotUndoFingerMovementInTheSameTurnAsLazyMeasurement() {
+        let scrollView = makeScrollView(isDragging: true)
+        scrollView.contentOffset.y = 240
+        let controller = ChatScrollPositionController()
+        controller.attach(to: scrollView)
+        controller.recordRowMinY(180, for: "reader")
+        XCTAssertTrue(controller.capture(anchorRowID: "reader", contentRevision: 1))
+        XCTAssertTrue(controller.restoreAfterPrepend(whileInteracting: true))
+        scrollView.contentSize.height += 640
+        controller.recordRowMinY(820, for: "reader")
+        XCTAssertEqual(scrollView.contentOffset.y, 880, accuracy: 0.001)
+
+        // UIKit can deliver the next finger tick before the run-loop flag clears.
+        scrollView.panGestureRecognizer.setTranslation(CGPoint(x: 0, y: 20), in: scrollView)
+        XCTAssertEqual(scrollView.panGestureRecognizer.translation(in: scrollView).y, 20)
+        scrollView.contentOffset.y = 860
+        XCTAssertEqual(scrollView.contentOffset.y, 860, accuracy: 0.001,
+                       "Lazy measurement must not rewind the reader's continued upward drag")
+        controller.recordRowMinY(820, for: "reader")
+        XCTAssertEqual(scrollView.contentOffset.y, 860, accuracy: 0.001,
+                       "An unchanged anchor report must not replay the old scroll position")
+    }
+
+    func testPrependKeepsFollowingLateRowMeasurementDuringAContinuedDrag() async throws {
+        let scrollView = makeScrollView(isDragging: true)
+        scrollView.contentOffset.y = 240
+        let controller = ChatScrollPositionController()
+        controller.attach(to: scrollView)
+        controller.recordRowMinY(180, for: "reader")
+        XCTAssertTrue(controller.capture(anchorRowID: "reader", contentRevision: 1))
+        XCTAssertTrue(controller.restoreAfterPrepend(whileInteracting: true))
+        scrollView.contentSize.height += 400
+        controller.recordRowMinY(580, for: "reader")
+        controller.contentDidLayout(revision: 1)
+        XCTAssertEqual(scrollView.contentOffset.y, 640, accuracy: 0.001)
+
+        try await Task.sleep(for: .milliseconds(10))
+        scrollView.contentOffset.y = 620
+        scrollView.contentSize.height += 240
+        controller.recordRowMinY(820, for: "reader")
+        XCTAssertEqual(scrollView.contentOffset.y, 860, accuracy: 0.001,
+                       "Late row measurement must preserve the ongoing gesture after the first layout acknowledgement")
+    }
+
+    func testPrependIgnoresUIKitReanchoringDuringTheDrag() async throws {
+        let scrollView = makeScrollView(isDragging: true)
+        scrollView.contentOffset.y = 240
+        let controller = ChatScrollPositionController()
+        controller.attach(to: scrollView)
+        controller.recordRowMinY(180, for: "reader")
+        XCTAssertTrue(controller.capture(anchorRowID: "reader", contentRevision: 1))
+        XCTAssertTrue(controller.restoreAfterPrepend(whileInteracting: true))
+        scrollView.contentSize.height += 640
+        scrollView.contentOffset.y = 880 // UIKit re-anchors before the row's geometry callback.
+        controller.recordRowMinY(820, for: "reader")
+        controller.contentDidLayout(revision: 1)
+        XCTAssertEqual(scrollView.contentOffset.y, 880, accuracy: 0.001, "Count the insertion once, not as additional finger movement")
+        try await Task.sleep(for: .milliseconds(10))
+        scrollView.contentOffset.y = 860
+        scrollView.contentSize.height += 100
+        controller.recordRowMinY(920, for: "reader")
+        XCTAssertEqual(scrollView.contentOffset.y, 960, accuracy: 0.001)
+    }
+
+    func testPrefetchAnchorsTheCurrentReaderInsteadOfAnOlderPageBelowThem() {
+        let scrollView = makeScrollView()
+        scrollView.contentOffset.y = 240
+        let controller = ChatScrollPositionController()
+        controller.attach(to: scrollView)
+        controller.recordRowMinY(180, for: "reader")
+        controller.recordRowMinY(600, for: "previous-page-first")
+        XCTAssertEqual(controller.readingAnchorRowID, "reader")
+        XCTAssertTrue(controller.capture(anchorRowID: controller.readingAnchorRowID))
+        XCTAssertTrue(controller.restoreAfterPrepend())
+        controller.recordRowMinY(580, for: "reader")
+        // The prepend adds 400pt; a disclosure below the reader adds another 100pt.
+        controller.recordRowMinY(1_100, for: "previous-page-first")
+        scrollView.contentSize.height += 500
+        XCTAssertEqual(scrollView.contentOffset.y, 640, accuracy: 0.001)
+    }
+
+    func testPrependWaitsForItsLayoutRevisionAndDetachReleasesTheWait() async {
+        let scrollView = makeScrollView()
+        let controller = ChatScrollPositionController()
+        controller.attach(to: scrollView)
+        XCTAssertTrue(controller.capture(anchorRowID: nil, contentRevision: 2))
+        var settled = false
+        let wait = Task { await controller.waitForPrependLayout(); settled = true }
+        await Task.yield()
+        controller.contentDidLayout(revision: 1)
+        await Task.yield()
+        XCTAssertFalse(settled, "An old page's layout cannot admit the next fetch")
+        controller.contentDidLayout(revision: 2)
+        await wait.value
+        XCTAssertTrue(settled)
+
+        XCTAssertTrue(controller.capture(anchorRowID: nil, contentRevision: 3))
+        settled = false
+        let detachWait = Task { await controller.waitForPrependLayout(); settled = true }
+        await Task.yield()
+        controller.detach()
+        await detachWait.value
+        XCTAssertTrue(settled, "Closing the transcript must not strand its loading task")
+
+        controller.attach(to: scrollView)
+        XCTAssertTrue(controller.capture(anchorRowID: nil, contentRevision: 4))
+        settled = false
+        let reattachWait = Task { await controller.waitForPrependLayout(); settled = true }
+        await Task.yield()
+        controller.attach(to: makeScrollView())
+        await reattachWait.value
+        XCTAssertTrue(settled, "Replacing the scroll view releases its old layout wait")
+    }
+
+    func testResponseTimePrependPreservesAnActiveDragThroughLateMeasurement() async throws {
+        let scrollView = makeScrollView(isDragging: true)
+        scrollView.contentOffset.y = 240
+        let controller = ChatScrollPositionController()
+        controller.attach(to: scrollView)
+        XCTAssertTrue(controller.capture(anchorRowID: nil))
+        XCTAssertFalse(controller.restoreAfterPrepend(), "A capture made before a request must still defer to the gesture")
+        XCTAssertTrue(controller.capture(anchorRowID: nil))
+        XCTAssertTrue(controller.restoreAfterPrepend(whileInteracting: true))
+        scrollView.contentSize.height += 640
+        XCTAssertEqual(scrollView.contentOffset.y, 880, accuracy: 0.001)
+        try await Task.sleep(for: .milliseconds(10))
+        scrollView.contentOffset.y = 860
+        scrollView.contentSize.height += 400
+        XCTAssertEqual(scrollView.contentOffset.y, 1260, accuracy: 0.001, "Late growth keeps the reader's continued movement intact")
+    }
+
     func testPrependCompensatesByExactContentHeightGrowth() {
         let scrollView = makeScrollView()
         scrollView.contentOffset = CGPoint(x: 0, y: 240)
@@ -207,6 +756,142 @@ final class ChatScrollPositionControllerTests: XCTestCase {
             scrollView.contentOffset.y = scrollView.contentSize.height - scrollView.bounds.height
             XCTAssertEqual(scrollView.contentOffset.y, 0, accuracy: 0.001)
         }
+    }
+
+    func testHoldKeepsItsPositionWhileTheCapturedRowIsTemporarilyUnmeasured() {
+        let scrollView = makeScrollView()
+        scrollView.contentOffset.y = 240
+        let controller = ChatScrollPositionController()
+        controller.attach(to: scrollView)
+        controller.recordRowMinY(180, for: "reader")
+        controller.holdPosition(anchorRowID: "reader") {}
+        scrollView.contentSize.height += 640
+        controller.recordRowMinY(580, for: "reader")
+        XCTAssertEqual(scrollView.contentOffset.y, 640, accuracy: 0.001)
+        controller.forgetRow("reader")
+        XCTAssertEqual(scrollView.contentOffset.y, 640, accuracy: 0.001,
+                       "An unmeasured row must not snap back to an obsolete absolute offset")
+        controller.recordRowMinY(580, for: "reader")
+        controller.rowDidAppear("reader")
+        XCTAssertEqual(scrollView.contentOffset.y, 640, accuracy: 0.001)
+    }
+
+    func testVisiblePrependDoesNotJumpToTheOldEndBeforeItsBoundsGrow() throws {
+        let window = try hostWindow(Color.clear)
+        let scrollView = makeScrollView()
+        window.addSubview(scrollView)
+        let controller = ChatScrollPositionController(usesLazyLayout: true)
+        defer { controller.cancelPreservation(); scrollView.removeFromSuperview() }
+        controller.attach(to: scrollView)
+        scrollView.contentOffset.y = 240
+        controller.recordRowMinY(180, for: "reader")
+        XCTAssertTrue(controller.capture(anchorRowID: "reader", contentRevision: 1))
+        XCTAssertTrue(controller.restoreAfterPrepend())
+        // SwiftUI reports the inserted rows before UIKit extends its scroll bounds.
+        controller.recordRowMinY(2_580, for: "reader")
+        XCTAssertEqual(scrollView.contentOffset.y, 240, accuracy: 0.001,
+                       "Clamping to the old end would lay out a different viewport for no reason")
+        scrollView.contentSize.height += 2_400
+        XCTAssertEqual(scrollView.contentOffset.y, 2_640, accuracy: 0.001)
+    }
+
+    func testVisiblePrependRepairsItsOffsetBeforeTheFrameCanBeCommitted() throws {
+        let window = try hostWindow(Color.clear)
+        let scrollView = makeScrollView()
+        window.addSubview(scrollView)
+        let controller = ChatScrollPositionController(usesLazyLayout: true)
+        defer { controller.cancelPreservation(); scrollView.removeFromSuperview() }
+        controller.attach(to: scrollView)
+        scrollView.contentOffset.y = 240
+        controller.recordRowMinY(180, for: "reader")
+        XCTAssertTrue(controller.capture(anchorRowID: "reader", contentRevision: 1))
+        XCTAssertTrue(controller.restoreAfterPrepend())
+        scrollView.contentSize.height += 640
+        // Preserve the measured reader before paint, rather than trusting a lazy height estimate.
+        controller.recordRowMinY(820, for: "reader")
+        XCTAssertEqual(scrollView.contentOffset.y, 880, accuracy: 0.001,
+                       "A visible prepend must not submit its new rows at the old content offset")
+    }
+
+    func testLazyLayoutCompensationWaitsForTheFinalFrameInThePass() async throws {
+        let scrollView = makeScrollView()
+        scrollView.contentOffset.y = 240
+        let controller = ChatScrollPositionController(usesLazyLayout: true)
+        controller.attach(to: scrollView)
+        controller.recordRowMinY(180, for: "reader")
+        XCTAssertTrue(controller.capture(anchorRowID: "reader", contentRevision: 1))
+        XCTAssertTrue(controller.restoreAfterPrepend())
+        scrollView.contentSize.height += 640
+        controller.recordRowMinY(1_000, for: "reader")
+        XCTAssertEqual(scrollView.contentOffset.y, 240, accuracy: 0.001,
+                       "A provisional lazy frame must not drive a reentrant offset correction")
+        controller.recordRowMinY(820, for: "reader")
+        try await Task.sleep(for: .milliseconds(10))
+        XCTAssertEqual(scrollView.contentOffset.y, 880, accuracy: 0.001)
+    }
+
+    func testNativeHoldWaitsForChangedRowHeightBeforeAnchoring() {
+        let scrollView = makeScrollView()
+        let host = UIView(frame: scrollView.frame)
+        host.addSubview(scrollView)
+        defer { scrollView.removeFromSuperview(); _ = host }
+        scrollView.contentOffset.y = 240
+        let controller = ChatScrollPositionController()
+        controller.attach(to: scrollView)
+        controller.recordRowMinY(180, for: "reader")
+        let collapsed = scrollView.convert(CGRect(x: 0, y: 180, width: 320, height: 200), to: nil)
+        controller.recordRowFrame(collapsed, for: "reader")
+        var requests = 0
+        controller.onHoldAnchor = { _, _ in requests += 1 }
+        controller.holdPosition(anchorRowID: "reader", resync: {})
+        controller.recordRowFrame(collapsed, for: "reader")
+        XCTAssertEqual(requests, 0, "The collapsed frame cannot anchor the expanded row")
+        controller.recordRowFrame(scrollView.convert(CGRect(x: 0, y: 180, width: 320, height: 300), to: nil), for: "reader")
+        XCTAssertEqual(requests, 1)
+    }
+
+    func testNativeHoldPreservesOffsetInARowShorterThanTheViewport() throws {
+        let scrollView = makeScrollView()
+        let host = UIView(frame: scrollView.frame)
+        host.addSubview(scrollView)
+        defer { scrollView.removeFromSuperview(); _ = host }
+        scrollView.contentOffset.y = 240
+        let controller = ChatScrollPositionController()
+        controller.attach(to: scrollView)
+        controller.recordRowMinY(180, for: "reader")
+        controller.recordRowFrame(scrollView.convert(CGRect(x: 0, y: 180, width: 320, height: 200), to: nil), for: "reader")
+        var requestedAnchor: UnitPoint?
+        controller.onHoldAnchor = { _, point in requestedAnchor = point }
+        controller.holdPosition(anchorRowID: "reader", resync: {})
+        controller.recordRowFrame(scrollView.convert(CGRect(x: 0, y: 180, width: 320, height: 300), to: nil), for: "reader")
+        let anchor = try XCTUnwrap(requestedAnchor)
+        XCTAssertEqual(anchor.y * (300 - 480), 60, accuracy: 0.001,
+                       "A short row needs an anchor outside 0...1 to retain the reader's 60pt inset")
+    }
+
+    func testDisclosureCompletionRunsAfterThePositionHoldFinishes() async throws {
+        let scrollView = makeScrollView()
+        let controller = ChatScrollPositionController()
+        controller.attach(to: scrollView)
+        var completed = 0
+        controller.holdPosition(anchorRowID: nil, resync: {}, completion: {
+            XCTAssertFalse(controller.isHoldingPosition)
+            completed += 1
+        })
+        XCTAssertEqual(completed, 0)
+        try await Task.sleep(for: .milliseconds(450))
+        XCTAssertEqual(completed, 1, "The disclosure suspension must end with its actual position hold")
+    }
+
+    func testCancellingThePositionHoldFinishesItsDisclosureSuspensionOnce() {
+        let scrollView = makeScrollView()
+        let controller = ChatScrollPositionController()
+        controller.attach(to: scrollView)
+        var completed = 0
+        controller.holdPosition(anchorRowID: nil, resync: {}, completion: { completed += 1 })
+        controller.releaseHold()
+        controller.releaseHold()
+        XCTAssertEqual(completed, 1)
     }
 
     func testHoldResyncsSwiftUIOnlyAfterItHadToRevert() {
@@ -461,8 +1146,9 @@ final class ChatScrollPositionControllerTests: XCTestCase {
         )
     }
 
-    private func makeScrollView() -> UIScrollView {
-        let scrollView = UIScrollView(frame: CGRect(x: 0, y: 0, width: 320, height: 480))
+    private func makeScrollView(isDragging: Bool = false) -> UIScrollView {
+        let scrollView = HistoryInteractionScrollView(frame: CGRect(x: 0, y: 0, width: 320, height: 480))
+        scrollView.userIsDragging = isDragging
         scrollView.contentSize = CGSize(width: 320, height: 1_200)
         return scrollView
     }
@@ -480,5 +1166,66 @@ final class ChatScrollPositionControllerTests: XCTestCase {
         scrollView.contentSize.height += 640
         XCTAssertEqual(scrollView.contentOffset.y, 880, accuracy: 0.001)
         return controller
+    }
+}
+
+/// UIScrollView's interaction flags are read-only; the existing fixture needs a controllable gesture for this case.
+private final class HistoryInteractionScrollView: UIScrollView {
+    var userIsDragging = false
+    var userIsDecelerating = false
+    override var isDragging: Bool { userIsDragging }
+    override var isDecelerating: Bool { userIsDecelerating }
+    private let historyPan = HistoryPanGestureRecognizer()
+    override var panGestureRecognizer: UIPanGestureRecognizer { historyPan }
+
+    private final class HistoryPanGestureRecognizer: UIPanGestureRecognizer {
+        private var movement = CGPoint.zero
+        override func translation(in view: UIView?) -> CGPoint { movement }
+        override func setTranslation(_ translation: CGPoint, in view: UIView?) { movement = translation }
+    }
+}
+
+@MainActor
+final class ChatTranscriptRowCacheTests: XCTestCase {
+    func testWindowBoundsLayoutNodesWithoutChangingDocumentExtent() {
+        let cache = ChatTranscriptRowCache()
+        let ids = (0..<1_000).map { "row-\($0)" }
+        for top: CGFloat in [0, 50_000, 199_000] {
+            let elements = cache.elements(ids: ids, top: top, viewportHeight: 600,
+                                          spacing: 12, pinned: ["row-400"], freezesWindow: false)
+            XCTAssertLessThan(elements.count, 24, "Layout nodes must depend on the viewport, not loaded history")
+            XCTAssertEqual(extent(elements, cache: cache), 200_000 + 999 * 12, accuracy: 0.001)
+        }
+    }
+
+    func testFrozenPrependUsesOnePrefixSpacerAndRetainsReaderIdentityAndState() {
+        let cache = ChatTranscriptRowCache()
+        let ids = (50..<100).map { "row-\($0)" }
+        let state = cache.state(for: "row-59")
+        cache.record(height: 2_400, for: "row-59")
+        let before = cache.elements(ids: ids, top: 0, viewportHeight: 600,
+                                    spacing: 12, pinned: ["row-59"], freezesWindow: true)
+        let after = cache.elements(ids: (0..<100).map { "row-\($0)" }, top: 0, viewportHeight: 600,
+                                   spacing: 12, pinned: ["row-59"], freezesWindow: true)
+        XCTAssertEqual(after.count, before.count)
+        XCTAssertEqual(extent(after, cache: cache) - extent(before, cache: cache), 50 * 212, accuracy: 0.001)
+        XCTAssertEqual(before.filter { if case .row = $0 { return true }; return false }.map(\.id),
+                       after.filter { if case .row = $0 { return true }; return false }.map(\.id))
+        XCTAssertTrue(state === cache.state(for: "row-59"))
+        let previousExtent = extent(before, cache: cache)
+        cache.record(height: 3_000, for: "row-59")
+        let remeasured = cache.elements(ids: ids, top: 0, viewportHeight: 600,
+                                       spacing: 12, pinned: [], freezesWindow: true)
+        XCTAssertEqual(extent(remeasured, cache: cache), previousExtent + 600, accuracy: 0.001)
+        XCTAssertTrue(state === cache.state(for: "row-59"), "Removing a row wrapper must retain its device-local state")
+    }
+
+    private func extent(_ elements: [ChatTranscriptRowCache.Element], cache: ChatTranscriptRowCache) -> CGFloat {
+        elements.reduce(CGFloat(max(0, elements.count - 1)) * 12) { sum, element in
+            switch element {
+            case let .row(_, id): sum + cache.height(for: id)
+            case let .gap(_, _, height): sum + height
+            }
+        }
     }
 }

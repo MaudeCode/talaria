@@ -5,12 +5,13 @@ struct MessageBubbleView: View {
     @Environment(\.colorScheme) private var colorScheme
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.chatDisclosureToggled) private var chatDisclosureToggled
     @Environment(\.voiceNoteControls) private var voiceNoteControls
     @Environment(\.pendingSteerControls) private var pendingSteerControls
     @AppStorage(ChatTranscriptDisplaySettings.showsAssistantTurnTimestampsKey) private var showsAssistantTurnTimestamps = false
     @AppStorage(ChatTranscriptDisplaySettings.showsResponseSpeedKey) private var showsResponseSpeed = false
     /// Device-local disclosure for a body the server collapsed (TAL-456) or a prompt it folds (TAL-452).
-    @State private var isExpanded = false
+    @ChatRetainedState("message-body") private var isExpanded = false
 
     let message: ChatMessage
     let loadAttachmentImage: ((String) async -> Data?)?
@@ -38,6 +39,7 @@ struct MessageBubbleView: View {
         liveTokensPerSecond: Double? = nil
     ) {
         self.message = message
+        _isExpanded = ChatRetainedState(wrappedValue: false, "message-body:\(message.id)")
         self.loadAttachmentImage = loadAttachmentImage
         self.loadAttachmentData = loadAttachmentData
         self.loadTranscriptMediaImage = loadTranscriptMediaImage
@@ -534,6 +536,7 @@ struct MessageBubbleView: View {
     private var collapseToggle: some View {
         if message.displayExcerpt != nil || (isUserMessage && message.collapsible), !isStreaming {
             Button(isExpanded ? String(localized: "Show less") : String(localized: "Show more")) {
+                chatDisclosureToggled()
                 isExpanded.toggle()
             }
             .font(AppFont.body())

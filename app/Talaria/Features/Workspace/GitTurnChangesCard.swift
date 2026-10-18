@@ -10,7 +10,7 @@ struct GitTurnChangesCard: View {
     @Environment(\.colorScheme) private var colorScheme
     @Environment(\.chatDisclosureToggled) private var chatDisclosureToggled
     @AppStorage(AppHaptics.isEnabledKey) private var isHapticsEnabled = true
-    @State private var isExpanded = true
+    @ChatRetainedState("turn-file-changes") private var isExpanded = true
 
     let summary: TurnFileChangeSummary
     /// Open the diff sheet for every changed file in the turn (header "Open diff").

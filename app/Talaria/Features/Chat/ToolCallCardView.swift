@@ -8,11 +8,19 @@ struct ToolCallCardView: View {
     @Environment(\.chatDisclosureToggled) private var chatDisclosureToggled
     @Environment(\.chatFullToolResultLoader) private var loadFullToolResult
     @AppStorage(ChatTranscriptDisplaySettings.toolCardsStartExpandedKey) private var startsExpanded = false
-    @State private var userToggledExpansion: Bool?
+    @ChatRetainedState("tool-expansion") private var userToggledExpansion: Bool? = nil
     /// TAL-331: the whole result of a call the server clipped or capped, once the reader asked for it.
-    @State private var fullResult: ToolResultView?
-    @State private var isLoadingFullResult = false
-    @State private var fullResultFailed = false
+    @ChatRetainedState("tool-result") private var fullResult: ToolResultView? = nil
+    @ChatRetainedState("tool-result-loading") private var isLoadingFullResult = false
+    @ChatRetainedState("tool-result-failure") private var fullResultFailed = false
+
+    init(toolCall: ToolCall) {
+        self.toolCall = toolCall
+        _userToggledExpansion = ChatRetainedState(wrappedValue: nil, "tool:\(toolCall.id):expanded")
+        _fullResult = ChatRetainedState(wrappedValue: nil, "tool:\(toolCall.id):result")
+        _isLoadingFullResult = ChatRetainedState(wrappedValue: false, "tool:\(toolCall.id):loading")
+        _fullResultFailed = ChatRetainedState(wrappedValue: false, "tool:\(toolCall.id):failure")
+    }
 
     private var isExpanded: Bool {
         ChatTranscriptDisplaySettings.isCardExpanded(

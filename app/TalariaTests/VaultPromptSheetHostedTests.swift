@@ -20,11 +20,11 @@ final class VaultPromptSheetHostedTests: XCTestCase {
         XCTAssertTrue(submit.accessibilityTraits.contains(.notEnabled), "Nothing typed, nothing to send")
 
         type("correct horse", into: try XCTUnwrap(fields.first))
-        let enabled = await awaitElement(in: window) {
-            $0.accessibilityLabel == "Unlock" && !$0.accessibilityTraits.contains(.notEnabled)
+        let current = await awaitElement(in: window) {
+            HostedAccessibility.identifier(of: $0) == "vault-prompt-submit"
+                && !$0.accessibilityTraits.contains(.notEnabled)
         }
-        let ready = try XCTUnwrap(enabled, "Typing the password must enable the current Unlock control")
-        HostedAccessibility.activate(ready)
+        HostedAccessibility.activate(try XCTUnwrap(current, "Unlock never enabled after typing"))
         XCTAssertEqual(responses, [["master_password": "correct horse"]])
     }
 

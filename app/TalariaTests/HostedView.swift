@@ -40,7 +40,11 @@ extension XCTestCase {
         let window = UIWindow(windowScene: scene)
         window.frame = CGRect(origin: .zero, size: size)
         traits(&window.traitOverrides)
-        window.rootViewController = UIHostingController(rootView: view.transaction { $0.disablesAnimations = !animationsEnabled })
+        window.rootViewController = UIHostingController(rootView: view.transaction {
+            $0.disablesAnimations = !animationsEnabled
+            // Explicit withAnimation transactions survive disablesAnimations alone.
+            if !animationsEnabled { $0.animation = nil }
+        })
         let animated = UIView.areAnimationsEnabled
         UIView.setAnimationsEnabled(animationsEnabled)
         // Key and visible, so appearance callbacks reach the screen's view controllers as they do in the app.
@@ -166,7 +170,11 @@ extension UIView {
     }
 
     /// The first view of `type` under this one, depth first.
-    func firstView<View: UIView>(ofType type: View.Type) -> View? {
-        self as? View ?? subviews.lazy.compactMap { $0.firstView(ofType: type) }.first
+    func firstView<View: UIView>(ofType type: View.Type, where predicate: (View) -> Bool = { _ in true }) -> View? {
+        if let match = self as? View, predicate(match) { return match }
+        for child in subviews {
+            if let match = child.firstView(ofType: type, where: predicate) { return match }
+        }
+        return nil
     }
 }

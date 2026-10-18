@@ -9,9 +9,10 @@ struct ReasoningBlockView: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.chatDisclosureToggled) private var chatDisclosureToggled
     @AppStorage(ChatTranscriptDisplaySettings.thinkingCardsStartExpandedKey) private var startsExpanded = false
-    @State private var userToggledExpansion: Bool?
+    @ChatRetainedState("reasoning-expansion") private var userToggledExpansion: Bool? = nil
 
-    init(text: String, titles: [String] = [], isActive: Bool = false) {
+    init(text: String, titles: [String] = [], isActive: Bool = false, stateID: String = "reasoning") {
+        _userToggledExpansion = ChatRetainedState(wrappedValue: nil, "reasoning-expansion:\(stateID)")
         self.text = text
         self.titles = titles
         self.isActive = isActive

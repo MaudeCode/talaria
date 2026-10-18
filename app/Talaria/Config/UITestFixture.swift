@@ -11,6 +11,11 @@ struct UITestFixtureEnvironment {
     /// Serves a transcript of very long bodies in the server's collapsed shape (TAL-456), the
     /// shape that ran the App out of memory before it rendered excerpts.
     nonisolated static let longBodiesArgument = "--ui-test-long-bodies"
+    /// Range-paged rich history through the real chat and view model (TAL-1062).
+    nonisolated static let historyPagingArgument = "--ui-test-history-paging"
+    nonisolated static let historyTurnBoundaryArgument = "--ui-test-history-turn-boundary"
+    nonisolated static let historyLatencyArgument = "--ui-test-history-latency"
+    nonisolated static let largeHistoryWindowArgument = "--ui-test-large-history-window"
     /// Serves a long pasted prompt the server marked `_collapsible` (TAL-452).
     nonisolated static let longPromptArgument = "--ui-test-long-prompt"
     /// Serves a reply with `diff`, `patch`, `log` and `text` code blocks (TAL-447).
@@ -494,6 +499,15 @@ final class UITestFixtureURLProtocol: URLProtocol, @unchecked Sendable {
             return
         }
 
+        if url.path == "/api/session",
+           ProcessInfo.processInfo.arguments.contains(UITestFixtureEnvironment.historyLatencyArgument),
+           URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems?.contains(where: { $0.name == "msg_before" }) == true {
+            DispatchQueue.main.asyncAfter(deadline: .now() + .milliseconds(150)) { [weak self] in
+                guard let self, !self.isStopped else { return }
+                self.sendResponse(for: url)
+            }
+            return
+        }
         sendResponse(for: url)
     }
 
@@ -610,7 +624,7 @@ final class UITestFixtureURLProtocol: URLProtocol, @unchecked Sendable {
         case "/api/session" where UITestFixtureEnvironment.hasBranchedFrom:
             return branchedSessionResponse(url)
         case "/api/session":
-            return UITestChatScenario.current == nil ? sessionResponse() : chatSessionResponse()
+            return UITestChatScenario.current == nil ? sessionResponse(url) : chatSessionResponse()
         case "/api/media" where UITestFixtureEnvironment.hasTranscriptMedia:
             return url.query?.contains(".mp3") == true ? transcriptMediaAudio : transcriptMediaImage
         case "/api/background/tasks" where UITestFixtureEnvironment.hasBackgroundUpdates:
@@ -810,7 +824,57 @@ final class UITestFixtureURLProtocol: URLProtocol, @unchecked Sendable {
         return json(["sessions": [archived], "archived_count": 1])
     }
 
-    private static func sessionResponse() -> Data {
+    static func historyMessages(from start: Int, to end: Int) -> [[String: Any]] {
+        (start..<end).map { index -> [String: Any] in
+            if UITestFixtureEnvironment.hasLongPrompt, index == 1_954 {
+                var prompt = longPromptMessages[2]
+                prompt["message_id"] = "history-\(index)"
+                prompt["_ts"] = 2_000_000_000 + index
+                return prompt
+            }
+            let initialStart = ProcessInfo.processInfo.arguments.contains(UITestFixtureEnvironment.largeHistoryWindowArgument) ? 1_000 : 1_950
+            let boundaryTurn = ProcessInfo.processInfo.arguments.contains(UITestFixtureEnvironment.historyTurnBoundaryArgument)
+                && ((initialStart - 10)..<(initialStart + 10)).contains(index)
+            let isUser = index.isMultiple(of: 2) && !boundaryTurn
+            let content = isUser ? "History prompt \(index)."
+                : "History answer \(index).\n\n## Details\n\n" + String(repeating: "A paragraph with **emphasis** and `code`.\n\n", count: 1 + index % 5)
+                + "```swift\nlet value = \(index)\nprint(value)\n```\n\n- First item\n- Second item"
+            var message: [String: Any] = ["role": isUser ? "user" : "assistant", "content": content,
+                    "message_id": "history-\(index)", "_ts": 2_000_000_000 + index]
+            if boundaryTurn { message["_turn_id"] = "history-boundary-turn" }
+            if boundaryTurn, index == initialStart + 9 {
+                let table = "| Channel | Count |\n| --- | ---: |\n" + (0..<24).map { "| Fixture \($0) | \($0 + 20) |" }.joined(separator: "\n")
+                var rows: [[String: Any]] = []
+                for phase in 0..<4 {
+                    rows += [
+                        ["row_id": "boundary-reasoning-\(phase)", "order_index": phase * 3, "role": "reasoning", "text": "Inspect phase \(phase)."],
+                        ["row_id": "boundary-prose-\(phase)", "order_index": phase * 3 + 1, "role": "prose", "text": "Boundary work \(phase).\n\n" + table],
+                        ["row_id": "boundary-steer-\(phase)", "order_index": phase * 3 + 2, "role": "steering", "text": "Continue fixture phase \(phase).", "steering": ["steer_id": "boundary-steer-\(phase)", "consumed": true]]
+                    ]
+                }
+                message["_anchor_activity_scene"] = ["version": "activity_scene_v1", "final_answer": content,
+                    "terminal_state": "completed", "has_consumed_steering": true,
+                    "expanded_by_default": false, "activity_rows": rows]
+            }
+            return message
+        }
+    }
+
+    private static func sessionResponse(_ url: URL) -> Data {
+        if ProcessInfo.processInfo.arguments.contains(UITestFixtureEnvironment.historyPagingArgument) {
+            let items = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems ?? []
+            let end = min(2_000, Int(items.first { $0.name == "msg_before" }?.value ?? "") ?? 2_000)
+            let isInitial = items.first { $0.name == "msg_before" } == nil
+            let pageSize = isInitial && ProcessInfo.processInfo.arguments.contains(UITestFixtureEnvironment.largeHistoryWindowArgument) ? 1_000 : 50
+            let start = max(0, end - pageSize)
+            var detail = session(id: sessionID, title: sessionTitle)
+            detail["messages"] = historyMessages(from: start, to: end)
+            detail["_messages_offset"] = start
+            detail["_messages_truncated"] = start > 0
+            detail["message_count"] = 2_000
+            return json(["session": detail])
+        }
+
         if UITestFixtureEnvironment.hasCompressionReference {
             var detail = session(id: sessionID, title: sessionTitle)
             detail["messages"] = [

@@ -757,13 +757,15 @@ final class SharedContractTests: XCTestCase {
         let detail = try decoder.decode(SessionDetail.self, from: JSONSerialization.data(withJSONObject: example["session"] ?? [:]))
         let messages = try XCTUnwrap(detail.messages)
         let offset = try XCTUnwrap(detail.messagesOffset)
+        let transcript = ChatViewModel.transcriptMessages(from: messages, messageOffset: offset)
         let card = ChatViewModel.compressionReferenceCard(
             reference: detail.compressionReference,
             messagesOffset: offset,
-            transcriptMessages: ChatViewModel.transcriptMessages(from: messages, messageOffset: offset)
+            transcriptMessages: transcript
         )
         // The tail window starts at row 2; the card follows the anchor row 3, "Step one done.".
-        XCTAssertEqual(card, CompressionReferenceCard(referenceText: "Earlier turns were summarised.", afterRenderID: "transcript:3"))
+        let anchor = try XCTUnwrap(transcript.first { $0.message.messageId == "reference-anchor" })
+        XCTAssertEqual(card, CompressionReferenceCard(referenceText: "Earlier turns were summarised.", afterRenderID: anchor.renderID))
         XCTAssertEqual(messages[3 - offset].messageId, "reference-anchor")
     }
 

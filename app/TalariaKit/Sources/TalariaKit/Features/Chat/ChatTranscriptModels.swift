@@ -1008,7 +1008,8 @@ extension ChatViewModel {
 
             transcriptMessages.append(TranscriptMessage(
                 loadedIndex: last.loadedIndex,
-                renderID: "transcript:\(offset + first.loadedIndex)",
+                renderID: TranscriptTurnClassifier.assistantTurnKey(for: last.segment.message)
+                    ?? "transcript:\(offset + first.loadedIndex)",
                 anchorID: last.segment.anchorID,
                 message: last.segment.message,
                 assistantSegments: assistantSegments.map(\.segment)
@@ -1068,6 +1069,20 @@ extension ChatViewModel {
 
         appendAssistantTurn()
 
+        // A compaction marker can split one turn. Keep the tail's canonical key
+        // and distinguish earlier pieces by their stable last segment.
+        var seenRenderIDs = Set<String>()
+        for index in transcriptMessages.indices.reversed() {
+            let row = transcriptMessages[index]
+            guard !seenRenderIDs.insert(row.renderID).inserted else { continue }
+            transcriptMessages[index] = TranscriptMessage(
+                loadedIndex: row.loadedIndex,
+                renderID: "transcript-segment:\(row.anchorID)",
+                anchorID: row.anchorID,
+                message: row.message,
+                assistantSegments: row.assistantSegments
+            )
+        }
         return transcriptMessages
     }
 

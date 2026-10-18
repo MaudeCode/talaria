@@ -551,12 +551,16 @@ public enum TranscriptTurnClassifier {
         message.role == "user" && !hasVisibleUserContent(message)
     }
 
+    public static func assistantTurnKey(for message: ChatMessage) -> String? {
+        message.turnId.map { "turn:\($0)" }
+    }
+
     /// Turn keys come from the server's `_turn_id` stamp; a row without one has no shared turn key.
     public static func assistantTurnKeysByAnchorID(_ messages: [ChatMessage], messageOffset: Int? = nil) -> [String: String] {
         var keysByMessageID: [String: String] = [:]
         for (messageIndex, message) in messages.enumerated() where message.role == "assistant" {
-            guard let turnID = message.turnId else { continue }
-            keysByMessageID[anchorID(for: message, at: messageIndex, messageOffset: messageOffset)] = "turn:\(turnID)"
+            guard let turnKey = assistantTurnKey(for: message) else { continue }
+            keysByMessageID[anchorID(for: message, at: messageIndex, messageOffset: messageOffset)] = turnKey
         }
         return keysByMessageID
     }
