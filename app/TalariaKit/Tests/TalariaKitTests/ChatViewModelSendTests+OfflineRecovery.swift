@@ -6,6 +6,60 @@ import SwiftData
 // server answers again, without overlapping equivalent session loads.
 @MainActor
 extension ChatViewModelSendTests {
+    func testLoadedRunStatusAndStreamUpdatesPersistForOfflineDisplay() async throws {
+        final class State: @unchecked Sendable { var offline = false; var finished = false }
+        let state = State()
+        let context = try makeContext()
+        let stream = SpySSEStreamingClient()
+        let model = try makeViewModel(streamClient: stream) { request in
+            if request.url?.path == "/api/session" {
+                if state.offline { throw URLError(.notConnectedToInternet) }
+                let active = state.finished ? #""run_status":null"# : #""active_stream_id":"local","run_status":{"phase":"prompt_reading","progress_percent":42}"#
+                return apiTestJSONResponse(#"{"session":{"session_id":"session-abc","messages":[{"role":"user","content":"Read this","message_id":"prompt"}],"_messages_offset":0,\#(active)}}"#, for: request)
+            }
+            return apiTestJSONResponse(#"{"active":true}"#, for: request)
+        }
+        await model.loadMessages(modelContext: context)
+        XCTAssertEqual(model.runStatus?.progressPercent, 42)
+        await model.reconnectStreamIfNeeded(modelContext: context)
+        stream.emit(SSEEventDecoder.decode(eventType: "run_status", data: #"{"session_id":"session-abc","status":{"phase":"prompt_reading","progress_percent":80}}"#))
+        XCTAssertEqual(model.runStatus?.progressPercent, 80)
+        model.persistTranscript(modelContext: context)
+        stream.emit(.runStatus(sessionID: "session-abc", status: nil))
+        XCTAssertNil(try CacheStore.cachedRunStatus(serverURL: URL(string: "https://example.test")!, sessionID: "session-abc", in: context), "An explicit server clear must reach the offline cache immediately")
+        stream.emit(SSEEventDecoder.decode(eventType: "run_status", data: #"{"session_id":"session-abc","status":{"phase":"prompt_reading","progress_percent":80}}"#))
+        state.offline = true
+        await model.loadMessages(modelContext: context)
+        XCTAssertTrue(model.isViewingCachedData)
+        XCTAssertEqual(model.runStatus?.progressPercent, 80)
+        state.offline = false
+        state.finished = true
+        await model.loadMessages(modelContext: context)
+        XCTAssertFalse(model.isViewingCachedData)
+        XCTAssertNil(model.runStatus)
+    }
+
+    func testOfflineRunStatusUsesCachedServerFieldsAndClearsOnRecovery() async throws {
+        let context = try makeOfflineRecoveryContext()
+        let serverURL = try XCTUnwrap(URL(string: "https://example.test"))
+        try CacheStore.cacheSessions([SessionSummary(sessionId: "session-abc")], serverURL: serverURL, in: context)
+        let decoder = JSONDecoder()
+        decoder.keyDecodingStrategy = .convertFromSnakeCase
+        let status = try decoder.decode(RunStatus.self, from: Data(#"{"phase":"prompt_reading","progress_percent":42}"#.utf8))
+        try CacheStore.cacheRunStatus(status, serverURL: serverURL, sessionID: "session-abc", in: context)
+        let server = ScriptedSessionServer(reachableFromRead: 2)
+        let model = try makeViewModel(handler: server.handle)
+        await model.loadMessages(modelContext: context)
+        XCTAssertTrue(model.isViewingCachedData)
+        XCTAssertEqual(model.runStatus, status)
+        XCTAssertTrue(model.hasServerRunStatus)
+        XCTAssertNil(model.activeStreamID, "Cached progress must not start a live run")
+        await model.loadMessages(modelContext: context)
+        XCTAssertFalse(model.isViewingCachedData)
+        XCTAssertNil(model.runStatus)
+        XCTAssertNil(try CacheStore.cachedRunStatus(serverURL: serverURL, sessionID: "session-abc", in: context))
+    }
+
     func testOfflineChatRecoversOnARetryTickAndThenStopsRetrying() async throws {
         let context = try makeOfflineRecoveryContext()
         let server = ScriptedSessionServer(reachableFromRead: 3)

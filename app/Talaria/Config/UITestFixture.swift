@@ -1533,10 +1533,14 @@ final class UITestFixtureURLProtocol: URLProtocol, @unchecked Sendable {
             send(events: [("cancel", [:])])
             finish()
         case .controls:
+            let showsPromptReading = ProcessInfo.processInfo.arguments.contains("--ui-test-chat-prompt-reading")
             if ProcessInfo.processInfo.arguments.contains("--ui-test-chat-warnings") {
                 send(events: [("warning", ["type": "fallback", "message": "⚠️ custom stream drop — attempt 1/3 dropped, reconnecting"])])
             }
             send(events: [("token", ["text": "Waiting for control input."])])
+            if showsPromptReading {
+                send(events: [("run_status", ["session_id": Self.sessionID, "status": ["phase": "prompt_reading", "progress_percent": 42]])])
+            }
             wait { $0.acceptedSteerID != nil || $0.wasCancelled }
             guard !isStopped else { return }
             if let steerID = Self.chatState.snapshot().steerID {
@@ -1550,8 +1554,14 @@ final class UITestFixtureURLProtocol: URLProtocol, @unchecked Sendable {
                     "text": "Keep the fixture concise"
                 ])])
             }
+            if showsPromptReading {
+                send(events: [("run_status", ["session_id": Self.sessionID, "status": ["phase": "prompt_reading", "progress_percent": NSNull()]])])
+            }
             wait { $0.wasCancelled }
             guard !isStopped else { return }
+            if showsPromptReading {
+                send(events: [("run_status", ["session_id": Self.sessionID, "status": NSNull()])])
+            }
             send(events: [("cancel", [:])])
             finish()
         }

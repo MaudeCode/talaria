@@ -4,6 +4,27 @@ import XCTest
 
 @MainActor
 final class CacheStoreTests: XCTestCase {
+    func testRunStatusCachePreservesServerFieldsAndClearsWithoutCrossingServers() throws {
+        let context = try makeContext()
+        let server = URL(string: "https://local.test")!
+        let other = URL(string: "https://other.test")!
+        let session = SessionSummary(sessionId: "local")
+        let decoder = JSONDecoder()
+        decoder.keyDecodingStrategy = .convertFromSnakeCase
+        let status = try decoder.decode(RunStatus.self, from: Data(#"{"phase":"prompt_reading","progress_percent":42}"#.utf8))
+        for url in [server, other] {
+            try CacheStore.cacheSessions([session], serverURL: url, in: context)
+            try CacheStore.cacheRunStatus(status, serverURL: url, sessionID: "local", in: context)
+        }
+        XCTAssertEqual(try CacheStore.cachedRunStatus(serverURL: server, sessionID: "local", in: context), status)
+        try CacheStore.cacheSessions([session], serverURL: server, in: context)
+        XCTAssertEqual(try CacheStore.cachedRunStatus(serverURL: server, sessionID: "local", in: context), status)
+        try CacheStore.cacheRunStatus(nil, serverURL: server, sessionID: "local", in: context)
+        XCTAssertNil(try CacheStore.cachedRunStatus(serverURL: server, sessionID: "local", in: context))
+        XCTAssertEqual(try CacheStore.cachedRunStatus(serverURL: other, sessionID: "local", in: context), status)
+        XCTAssertNil(try CacheStore.cachedRunStatus(serverURL: other, sessionID: "local", in: context, now: Date().addingTimeInterval(CachePolicy.ttl + 1)))
+    }
+
     func testRecentTranscriptMetadataSurvivesListRefreshWithoutInventingAListRow() throws {
         let context = try makeContext()
         let server = URL(string: "https://recent.test")!

@@ -761,6 +761,16 @@ final class SSEClientTests: XCTestCase {
         XCTAssertEqual(SSEEventDecoder.decode(eventType: "notices", data: #"{"session_id":"s"}"#), .ignored)
     }
 
+    func testPromptReadingRunStatusIsNotDiscarded() throws {
+        let fixture = try XCTUnwrap(JSONSerialization.jsonObject(with: sharedContractFixture("prompt-reading")) as? [String: [String: Any]])
+        for key in ["progress", "unknown", "cleared"] {
+            let frame = try XCTUnwrap(fixture[key])
+            let data = try JSONSerialization.data(withJSONObject: XCTUnwrap(frame["data"]))
+            let event = SSEEventDecoder.decode(eventType: "run_status", data: String(decoding: data, as: UTF8.self))
+            XCTAssertNotEqual(event, .ignored, "The App discarded the server's \(key) run status")
+        }
+    }
+
     func testDecodesTheSharedCompressionSpan() throws {
         // TAL-1006: every heartbeat of a span carries the span's start; `compressed` closes it.
         let root = URL(fileURLWithPath: #filePath)

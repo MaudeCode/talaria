@@ -55,6 +55,10 @@ public final class ChatViewModel {
     public private(set) var isCancellingStream = false
     public private(set) var isViewingCachedData = false
     public var activeStreamID: String? { streamCoordinator.activeStreamID }
+    private var cachedRunStatus: RunStatus?
+    @ObservationIgnored private weak var runStatusCacheContext: ModelContext?
+    public var runStatus: RunStatus? { isViewingCachedData ? cachedRunStatus : streamCoordinator.runStatus }
+    public var hasServerRunStatus: Bool { isViewingCachedData ? cachedRunStatus != nil : streamCoordinator.hasServerRunStatus }
     /// TAL-426: the actions the server allows for each pending steer, by steer id (its hint row's message id).
     public private(set) var pendingSteerActions: [String: PendingSteer.Actions] = [:]
     /// Pending steers with an Edit, Cancel or Send now request in flight: their actions wait for it.
@@ -1420,6 +1424,7 @@ public final class ChatViewModel {
         waitsForPendingMessageSend: Bool = true,
         isUserRefresh: Bool = false
     ) async {
+        if let modelContext { runStatusCacheContext = modelContext }
         guard let sessionID else {
             errorMessage = String(localized: "The server did not provide a session ID.")
             return
@@ -1584,13 +1589,6 @@ public final class ChatViewModel {
             lastError = nil
             errorMessage = nil
             contextWindowSnapshot = session.map(ContextWindowSnapshot.init(session:))
-            if let modelContext {
-                do {
-                    try cacheMessagesIfCurrent(messages, sessionID: sessionID, in: modelContext)
-                } catch {
-                    cacheErrorMessage = error.localizedDescription
-                }
-            }
             if let title = session?.title, titleVersionAtFetch == sessionListOwner?.resourceMetadataVersion(for: sessionID), ownsCurrentCache {
                 displayTitle = Self.displayTitle(from: title)
             }
@@ -1610,8 +1608,17 @@ public final class ChatViewModel {
                 usedCacheFallback: false,
                 runStartedAt: Self.activeRunStartDate(pendingStartedAt: session?.pendingStartedAt, messages: messages),
                 compressionStartedAt: loadedActiveStreamID == nil ? nil : ChatStreamCoordinator.runStart(fromEpochSeconds: session?.compressionStartedAt),
-                transcriptSeq: session?.transcriptSeq
+                transcriptSeq: session?.transcriptSeq,
+                runStatus: session?.runStatus,
+                hasRunStatus: session?.hasRunStatus == true
             )
+            if let modelContext {
+                do {
+                    try cacheMessagesIfCurrent(messages, sessionID: sessionID, in: modelContext)
+                } catch {
+                    cacheErrorMessage = error.localizedDescription
+                }
+            }
             followReportedCompressionJob(loadedActiveStreamID == nil ? session?.compressionStartedAt : nil)
             applyServerPendingSteers(session?.pendingSteers, changedAfter: steerChangesAtFetch, newerRows: newerSteerRows)
             latestSettledSessionLoadRequestGeneration = loadRequestGeneration
@@ -1633,6 +1640,7 @@ public final class ChatViewModel {
                         clearCompressionReference()
                         restoreCachedBranchedFrom(sessionID: sessionID, modelContext: modelContext)
                         restoreCachedTranscriptWindow(cachedMessages)
+                        cachedRunStatus = try CacheStore.cachedRunStatus(serverURL: server, sessionID: sessionID, in: modelContext)
                         latestServerLoadHadAssistantResponseAfterLatestUser = Self.hasAssistantResponseAfterLatestUser(
                             in: messages
                         )
@@ -3188,6 +3196,7 @@ public final class ChatViewModel {
 
     private func cacheMessagesIfCurrent(_ messages: [ChatMessage], sessionID: String, in modelContext: ModelContext) throws {
         guard self.sessionID == sessionID, ownsCurrentCache else { deferredTranscriptCache = nil; return }
+        runStatusCacheContext = modelContext
         if messages.isEmpty { isTranscriptScrolling = false }
         if isTranscriptScrolling {
             // Keep the context, not an array snapshot that would force streaming copy-on-write.
@@ -3201,6 +3210,7 @@ public final class ChatViewModel {
             Array(messages.dropFirst(start)), serverURL: server, sessionID: sessionID, in: modelContext,
             messagesOffset: recentMessagesOffset, hasOlderMessages: recentHasOlderMessages
         )
+        try CacheStore.cacheRunStatus(streamCoordinator.runStatus, serverURL: server, sessionID: sessionID, in: modelContext)
     }
 
     /// Saves the transcript as it stands, a partial answer included, when the chat leaves the
@@ -3958,6 +3968,7 @@ public final class ChatViewModel {
         defer {
             isCompressingSession = false
             manualCompressionStartedAt = nil
+            streamCoordinator.prepareForNewResponse()
         }
 
         do {
@@ -4006,7 +4017,6 @@ public final class ChatViewModel {
             streamingAssistantMessageID = nil
             toolCallAnchorMessageID = nil
             reasoningAnchorMessageID = nil
-            streamCoordinator.prepareForNewResponse()
             responseCompletionNeedsTranscriptRefresh = false
             attachmentCoordinator.removeAllLocalPreviews()
 
@@ -5279,7 +5289,7 @@ public final class ChatViewModel {
             updateActiveBtwMessage(isLoading: false)
             finishBtwStream()
         case .heartbeat, .ignored, .reasoning, .toolStarted, .toolCompleted, .title, .metering, .steerConsumed, .steerPending, .steerWithdrawn, .notices,
-             .compressing, .compressed:
+             .runStatus, .compressing, .compressed:
             break
         }
     }
@@ -6481,6 +6491,15 @@ extension ChatViewModel: ChatStreamCoordinatorDelegate {
 
     public func streamCoordinatorWithdrawSteer(_ event: SteerWithdrawnEvent) {
         applyWithdrawnSteer(event)
+    }
+
+    public func streamCoordinatorCacheRunStatus(_ status: RunStatus?) {
+        guard ownsCurrentCache, let sessionID, let context = runStatusCacheContext else { return }
+        do {
+            try CacheStore.cacheRunStatus(status, serverURL: server, sessionID: sessionID, in: context)
+        } catch {
+            cacheErrorMessage = error.localizedDescription
+        }
     }
 
     public func streamCoordinatorApplyNotices(_ event: SessionNoticesEvent) {

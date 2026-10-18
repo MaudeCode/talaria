@@ -82,6 +82,24 @@ public enum CacheStore {
     }
 
     @MainActor
+    public static func cacheRunStatus(_ status: RunStatus?, serverURL: URL, sessionID: String, in context: ModelContext) throws {
+        let key = CachedSession.cacheKey(serverURLString: serverURL.absoluteString, sessionID: sessionID)
+        guard let row = try cachedSession(cacheKey: key, in: context) else { return }
+        let data = try status.map { try JSONEncoder().encode($0) }
+        guard row.runStatusData != data else { return }
+        row.runStatusData = data
+        try context.save()
+    }
+
+    @MainActor
+    public static func cachedRunStatus(serverURL: URL, sessionID: String, in context: ModelContext, now: Date = Date()) throws -> RunStatus? {
+        let key = CachedSession.cacheKey(serverURLString: serverURL.absoluteString, sessionID: sessionID)
+        guard let row = try cachedSession(cacheKey: key, in: context), row.expiresAt > now,
+              let data = row.runStatusData else { return nil }
+        return try? JSONDecoder().decode(RunStatus.self, from: data)
+    }
+
+    @MainActor
     public static func cacheSessions(
         _ sessions: [SessionSummary],
         serverURL: URL,

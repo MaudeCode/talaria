@@ -64,6 +64,8 @@ public final class CachedSession {
     var canBranch: Bool?
     /// Metadata-only rows never add a session to the server-owned list.
     var transcriptOnly: Bool?
+    /// Last server-selected run presentation, retained for offline display.
+    var runStatusData: Data?
     /// The complete recent server page, stored atomically with its message rows. Nil marks a legacy/incomplete cache.
     var recentMessagesOffset: Int?
     var recentMessagesTruncated: Bool?

@@ -7,6 +7,8 @@ public enum ChatActiveRunStatusKind: Equatable {
     case background
     /// TAL-1006: the Agent is compressing the context; the elapsed time counts from the server's span start.
     case compressing
+    case promptReading(progressPercent: Double?)
+    case rateLimitWait(providerLabel: String?)
     case checking
     case reconnecting
     case waitingForNetwork
@@ -24,6 +26,13 @@ public enum ChatActiveRunStatusKind: Equatable {
             return String(localized: "Working on background results")
         case .compressing:
             return String(localized: "Compressing context")
+        case .promptReading(let percent):
+            guard let percent else { return String(localized: "Reading prompt") }
+            let progress = (percent / 100).formatted(.percent.precision(.fractionLength(0)))
+            return String(localized: "Reading prompt \(progress)")
+        case .rateLimitWait(let provider):
+            guard let provider else { return String(localized: "Waiting for provider") }
+            return String(localized: "Waiting for \(provider)")
         case .checking:
             return String(localized: "Checking stream")
         case .reconnecting:
@@ -47,6 +56,13 @@ public enum ChatActiveRunStatusKind: Equatable {
             return String(localized: "\(agentName) is working on background results")
         case .compressing:
             return String(localized: "\(agentName) is compressing the context")
+        case .promptReading(let percent):
+            guard let percent else { return String(localized: "\(agentName) is reading the prompt") }
+            let progress = (percent / 100).formatted(.percent.precision(.fractionLength(0)))
+            return String(localized: "\(agentName) is reading the prompt, \(progress)")
+        case .rateLimitWait(let provider):
+            guard let provider else { return String(localized: "\(agentName) is waiting for the provider") }
+            return String(localized: "\(agentName) is waiting for \(provider)")
         case .checking:
             return String(localized: "\(agentName) is checking the response stream")
         case .reconnecting:
@@ -72,7 +88,7 @@ public struct ChatActiveRunStatusPresentation: Equatable {
     public init(kind: ChatActiveRunStatusKind, runStartedAt: Date? = nil) {
         self.kind = kind
         switch kind {
-        case .active, .compressing, .checking, .reconnecting:
+        case .active, .compressing, .promptReading, .rateLimitWait, .checking, .reconnecting:
             self.runStartedAt = runStartedAt
         case .starting, .background, .waitingForNetwork, .stopping, .syncing:
             self.runStartedAt = nil
@@ -149,7 +165,9 @@ public enum ChatActiveRunStatusPolicy {
         isBackgroundTurn: Bool = false,
         activeRunStartedAt: Date? = nil,
         isCompressing: Bool = false,
-        compressionStartedAt: Date? = nil
+        compressionStartedAt: Date? = nil,
+        serverRunStatus: RunStatus? = nil,
+        hasServerRunStatus: Bool = false
     ) -> ChatActiveRunStatusPresentation? {
         if isCancellingStream {
             return ChatActiveRunStatusPresentation(kind: .stopping)
@@ -170,9 +188,25 @@ public enum ChatActiveRunStatusPolicy {
             return recovery
         }
 
-        // TAL-1006: an open compression span, automatic or a manual /compress, stands in for Working. A manual one
-        // (`isCompressing`) shows as it is sent; its elapsed time follows once the server's job start arrives.
-        if isCompressing || compressionStartedAt != nil {
+        // A manual command has its own server job, outside the active turn.
+        if isCompressing {
+            return ChatActiveRunStatusPresentation(kind: .compressing, runStartedAt: compressionStartedAt)
+        }
+
+        if hasServerRunStatus {
+            guard let status = serverRunStatus else { return nil }
+            let kind: ChatActiveRunStatusKind
+            switch status.phase {
+            case "prompt_reading": kind = .promptReading(progressPercent: status.progressPercent)
+            case "compressing": kind = .compressing
+            case "rate_limit_wait": kind = .rateLimitWait(providerLabel: status.wait?.providerLabel)
+            default: kind = .active
+            }
+            return ChatActiveRunStatusPresentation(kind: kind, runStartedAt: status.phase == "compressing" ? compressionStartedAt : activeRunStartedAt)
+        }
+
+        // Older servers omit run_status; retain their open compression span presentation.
+        if compressionStartedAt != nil {
             return ChatActiveRunStatusPresentation(kind: .compressing, runStartedAt: compressionStartedAt)
         }
 

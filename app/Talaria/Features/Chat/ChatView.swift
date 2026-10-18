@@ -1537,7 +1537,9 @@ struct ChatView: View {
             isBackgroundTurn: viewModel.isBackgroundTurnActive,
             activeRunStartedAt: viewModel.activeRunStartedAt,
             isCompressing: viewModel.isCompressingSession,
-            compressionStartedAt: viewModel.compressionStartedAt
+            compressionStartedAt: viewModel.compressionStartedAt,
+            serverRunStatus: viewModel.runStatus,
+            hasServerRunStatus: viewModel.hasServerRunStatus
         )
     }
 

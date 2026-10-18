@@ -1061,6 +1061,71 @@ final class ChatStreamCoordinatorTests: APIClientTestCase {
     }
 
     @MainActor
+    func testRunStatusUpdatesSurviveReattachAndIgnoreWrongSessionLateLoadAndTerminalFrames() throws {
+        let streamClient = CoordinatorSpySSEStreamingClient()
+        let delegate = CoordinatorDelegateSpy()
+        let coordinator = makeCoordinator(streamClient: streamClient, delegate: delegate)
+        func status(_ percent: Int) -> SSEEvent {
+            SSEEventDecoder.decode(eventType: "run_status", data: "{\"session_id\":\"session-abc\",\"status\":{\"phase\":\"prompt_reading\",\"progress_percent\":\(percent)}}")
+        }
+        coordinator.start(streamID: "local")
+        streamClient.emit(status(42))
+        XCTAssertEqual(coordinator.runStatus?.progressPercent, 42)
+        coordinator.start(streamID: "local", replayAfterSeq: 3)
+        streamClient.emit(status(10), lastEventID: "local:2")
+        XCTAssertEqual(coordinator.runStatus?.progressPercent, 42, "Consumed journal progress was replayed")
+        let preparation = coordinator.prepareForSessionLoad()
+        streamClient.emit(status(80))
+        coordinator.reconcileSessionLoad(loadedActiveStreamID: "local", preparation: preparation, usedCacheFallback: false, hasRunStatus: true)
+        XCTAssertEqual(coordinator.runStatus?.progressPercent, 80, "A stale load cleared newer progress")
+        streamClient.emit(SSEEventDecoder.decode(eventType: "run_status", data: #"{"session_id":"other-session","status":null}"#))
+        XCTAssertEqual(coordinator.runStatus?.progressPercent, 80)
+        streamClient.emit(.runStatus(sessionID: "session-abc", status: nil))
+        XCTAssertNil(coordinator.runStatus)
+        XCTAssertTrue(coordinator.hasServerRunStatus)
+        streamClient.emit(status(100))
+        streamClient.emit(.done(DoneStreamEvent()))
+        XCTAssertNil(coordinator.runStatus)
+        XCTAssertNil(coordinator.activeStreamID)
+        streamClient.emit(status(42))
+        XCTAssertNil(coordinator.runStatus, "Late status escaped the terminal fence")
+        streamClient.emit(.streamEnd)
+        coordinator.start(streamID: "replacement")
+        XCTAssertNil(coordinator.runStatus)
+        XCTAssertFalse(coordinator.hasServerRunStatus)
+        delegate.streamCoordinatorSessionID = "other-session"
+        streamClient.emit(status(42))
+        XCTAssertNil(coordinator.runStatus, "A prior session changed the replacement session's status")
+        streamClient.emit(.runStatus(sessionID: "other-session", status: try JSONDecoder().decode(RunStatus.self, from: Data(#"{"phase":"working"}"#.utf8))))
+        XCTAssertEqual(coordinator.runStatus?.phase, "working")
+    }
+
+    @MainActor
+    func testSessionRunStatusLoadsAndClearsOnStopErrorAndReplacement() async throws {
+        let streamClient = CoordinatorSpySSEStreamingClient()
+        let delegate = CoordinatorDelegateSpy()
+        let coordinator = makeCoordinator(streamClient: streamClient, delegate: delegate) { request in
+            apiTestJSONResponse(#"{"ok":true}"#, for: request)
+        }
+        let decoder = JSONDecoder()
+        decoder.keyDecodingStrategy = .convertFromSnakeCase
+        let status = try decoder.decode(RunStatus.self, from: Data(#"{"phase":"prompt_reading","progress_percent":42}"#.utf8))
+        coordinator.reconcileSessionLoad(loadedActiveStreamID: "local", preparation: coordinator.prepareForSessionLoad(), usedCacheFallback: false, runStatus: status, hasRunStatus: true)
+        XCTAssertEqual(coordinator.runStatus, status)
+        XCTAssertTrue(coordinator.hasServerRunStatus)
+        _ = try await coordinator.cancelActiveStream()
+        XCTAssertNil(coordinator.runStatus)
+        coordinator.start(streamID: "next")
+        streamClient.emit(.runStatus(sessionID: "session-abc", status: status))
+        streamClient.emit(.error("Failed"))
+        XCTAssertNil(coordinator.runStatus)
+        coordinator.start(streamID: "another")
+        streamClient.emit(.runStatus(sessionID: "session-abc", status: status))
+        coordinator.start(streamID: "replacement")
+        XCTAssertNil(coordinator.runStatus)
+    }
+
+    @MainActor
     func testASessionLoadSeedsTheRunsOpenCompressionSpan() {
         // TAL-1006: a load that resumes past the span's frames takes its start from the session.
         let coordinator = makeCoordinator()
