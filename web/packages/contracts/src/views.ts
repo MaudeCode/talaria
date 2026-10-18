@@ -423,6 +423,8 @@ export const ChatStartRequestSchema = z.looseObject({
   voice_turn: z.boolean().optional(),
   /** TAL-818: this client renders `connect_card`, so a `manage_connections` call waits on the card; without it the Agent answers with plain links. */
   connect_card: z.boolean().optional(),
+  /** The starting client renders the masked `skill_secret` prompt; omitted by older and native clients. */
+  skill_secret: z.boolean().optional(),
 })
 export type ChatStartRequest = z.infer<typeof ChatStartRequestSchema>
 /** Accepted turn. `stream_id` is the owner identity for the SSE connection. */

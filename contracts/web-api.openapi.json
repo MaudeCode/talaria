@@ -39648,6 +39648,9 @@
                   },
                   "connect_card": {
                     "type": "boolean"
+                  },
+                  "skill_secret": {
+                    "type": "boolean"
                   }
                 },
                 "required": [

@@ -1764,7 +1764,7 @@ def start(ctx: CallContext, params: dict) -> dict:  # noqa: PLR0915 - one turn, 
             except ImportError:  # Older Agents and v0.22.2 have only an unsafe process-global callback slot.
                 bind_turn_secret_capture = None
                 log.debug("Agent lacks turn-local skill secret capture; secure setup is unavailable")
-            with bind_turn_secret_capture(skill_secret_prompt) if bind_turn_secret_capture else contextlib.nullcontext():
+            with bind_turn_secret_capture(skill_secret_prompt) if bind_turn_secret_capture and params.get("skill_secret") is True else contextlib.nullcontext():
                 raw = agent.run_conversation(**run_kwargs)
             result = raw if isinstance(raw, dict) else {}
         except Exception as exc:  # noqa: BLE001

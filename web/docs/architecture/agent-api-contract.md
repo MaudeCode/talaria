@@ -504,9 +504,12 @@ on the next turn. The Agent's filter also scopes deferred tool search and calls.
 
 ## Skill secret setup
 
-On Agents exposing `tools.skills_tool.bind_turn_secret_capture`, each direct chat
-turn binds the existing secure prompt bridge for skill environment setup. Tool
-workers inherit the callback and profile scope. Nonempty single-line ASCII
+A client must explicitly advertise `skill_secret: true` on `chat.start`. The Web
+client does this at its shared start boundary; older/native clients and automatic
+turns omit it and keep the ordinary setup-needed result without a prompt. The
+server forwards this per-turn capability to the sidecar. On Agents exposing
+`tools.skills_tool.bind_turn_secret_capture`, only an opted-in direct chat turn
+binds the existing secure prompt bridge for skill environment setup. Tool workers inherit the callback and profile scope. Nonempty single-line ASCII
 answers go through `hermes_cli.config.save_env_value_secure` to the owning
 profile, with a lifetime check against cancellation, replacement and session
 eviction. Unsupported encodings are refused rather than silently changed or

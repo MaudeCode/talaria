@@ -100,7 +100,7 @@ def turn(name):
     ctx = Ctx(name)
     with scoped_home(home):
         chat.start(ctx, {"profile_home": str(home), "session_id": name, "stream_id": "stream-" + name,
-                         "user_message": "Set up synthetic", "model": "m", "model_provider": "p"})
+                         "user_message": "Set up synthetic", "model": "m", "model_provider": "p", **({"skill_secret": True} if outcome != "client_unsupported" else {})})
         if supported: assert skills_tool._turn_secret_capture.get() is None
     for event, data in frames:
         if event == "clarify" and data.get("session_id") == name:
@@ -117,7 +117,7 @@ print(json.dumps({"supported": supported, "frames": frames, "results": results, 
 
 
 @requires_agent
-@pytest.mark.parametrize("outcome", ["submitted", "concurrent", "declined", "expired", "cancelled", "disconnected", "cleared", "storage_error", "late", "turn_error", "non_ascii", "multiline"])
+@pytest.mark.parametrize("outcome", ["submitted", "concurrent", "declined", "expired", "cancelled", "disconnected", "cleared", "storage_error", "late", "turn_error", "client_unsupported", "non_ascii", "multiline"])
 def test_skill_secret_through_real_skill_and_worker(tmp_path, outcome):
     run = subprocess.run([AGENT_PYTHON, "-c", PROBE, str(AGENT_DIR), outcome],
                          env=isolated_env(tmp_path), capture_output=True, text=True, timeout=60)
@@ -125,9 +125,10 @@ def test_skill_secret_through_real_skill_and_worker(tmp_path, outcome):
     assert "Traceback" not in run.stderr, run.stderr[-4000:]
     observed = json.loads(run.stdout.strip().splitlines()[-1])
     assert len(observed["results"]) == len(observed["files"]), run.stderr[-4000:]
-    if not observed["supported"]:
+    if not observed["supported"] or outcome == "client_unsupported":
         assert not observed["frames"] or all(event != "clarify" for event, _ in observed["frames"])
         assert not any(observed["files"].values())
+        assert observed["callbacks_after"] == ([False] if observed["supported"] else [])
         assert all(r["readiness_status"] == "setup_needed" for r in observed["results"])
         return
     prompts = [data for event, data in observed["frames"] if event == "clarify"]

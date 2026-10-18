@@ -1049,7 +1049,7 @@ describe('chat turns through the sidecar', () => {
       await ask(emit, 'v-code', { kind: 'vault_code', site: 'login.example.com', hint: '', timeout_seconds: 180 })
       return completed([{ role: 'user', content: str(params.user_message) }, { role: 'assistant', content: 'Signed in.' }])
     })
-    const start = await json(await post(s, '/api/chat/start', { session_id: sid, message: 'log in to example' }))
+    const start = await json(await post(s, '/api/chat/start', { session_id: sid, message: 'log in to example', skill_secret: true }))
     const streamId = String(start.stream_id)
     const respond = async (seen: number, body: Json): Promise<[Json, Response, number]> => {
       const frames = await s.sse(`/api/chat/stream?stream_id=${streamId}&after_event_id=${streamId}:${String(seen)}`, (f) => f.event === 'clarify')
@@ -1096,6 +1096,18 @@ describe('chat turns through the sidecar', () => {
     const kept = [disk, JSON.stringify(replay), JSON.stringify((await s.deps.sessionStore.get(sid))), JSON.stringify(await json(await s.get(`/api/session?session_id=${sid}`))), ...exports, s.logs.join('\n')].join('\n')
     expect(exports.every((text) => text.includes('Signed in.'))).toBe(true)
     for (const value of [...Object.values(secrets), secret, 'me@example.com']) expect(kept).not.toContain(value)
+  })
+
+  it.each([undefined, false, true])('gates skill setup on the requesting client capability %s', async (capability) => {
+    const sid = await newSession(s)
+    let advertised: boolean | undefined
+    sidecar.respond('chat.start', (params) => {
+      advertised = params.skill_secret
+      return completed([{ role: 'assistant', content: 'Setup checked.' }])
+    })
+    const start = await json(await post(s, '/api/chat/start', { session_id: sid, message: 'Set up the skill', ...(capability === undefined ? {} : { skill_secret: capability }) }))
+    await s.sse(`/api/chat/stream?stream_id=${str(start.stream_id)}`, (frame) => frame.event === 'stream_end')
+    expect(advertised).toBe(capability === true ? true : undefined)
   })
 
   it('does not echo a secure answer from a sidecar failure and retains the prompt for retry', async () => {
