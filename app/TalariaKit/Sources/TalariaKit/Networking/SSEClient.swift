@@ -140,6 +140,7 @@ public enum SSEEvent: Equatable {
     case compressing(startedAt: Date)
     /// TAL-1006: the compression span closed; the run goes on.
     case compressed
+    case runStatus(sessionID: String, status: RunStatus?)
     case streamEnd
     /// The settled session an error or cancel frame carries, delivered just before that terminal event.
     case settledSession(SessionDetail)
@@ -461,6 +462,9 @@ struct SSEEventDecoder {
         case "notices":
             guard let payload = decodePayload(SessionNoticesEvent.self, eventType: eventType, from: eventData, decoder: snakeCaseDecoder) else { return .ignored }
             return .notices(payload)
+        case "run_status":
+            guard let payload = decodePayload(RunStatusPayload.self, eventType: eventType, from: eventData, decoder: snakeCaseDecoder) else { return .ignored }
+            return .runStatus(sessionID: payload.sessionId, status: payload.status)
         case "compressing":
             guard let payload = decodePayload(CompressingPayload.self, eventType: eventType, from: eventData, decoder: snakeCaseDecoder) else { return .ignored }
             return .compressing(startedAt: Date(timeIntervalSince1970: payload.startedAt))
@@ -618,6 +622,20 @@ private struct ErrorPayload: Decodable {
         case error
         case message
         case terminalState = "terminal_state"
+    }
+}
+
+private struct RunStatusPayload: Decodable {
+    let sessionId: String
+    let status: RunStatus?
+
+    enum CodingKeys: String, CodingKey { case sessionId, status }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        sessionId = try container.decode(String.self, forKey: .sessionId)
+        // Missing or malformed status is not an explicit clear.
+        status = try container.decode(RunStatus?.self, forKey: .status)
     }
 }
 

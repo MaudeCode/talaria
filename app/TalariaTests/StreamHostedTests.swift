@@ -8,6 +8,46 @@ import TalariaKit
 /// check's (`app/docs/phone-checks.md`); here the composer's focus says whether it asked for the keyboard.
 @MainActor
 final class StreamHostedTests: XCTestCase {
+    func testLegacyWorkingStatusBeforePromptReading() async throws {
+        for (size, name) in [(CGSize(width: 320, height: 844), "phone"), (HostedSize.padLandscape, "pad")] {
+            let window = try await hostFixtureChat(["--ui-test-chat-controls"], size: size)
+            _ = try await startControlsRun(in: window)
+            _ = try await requireElement(in: window, label: "Hermes is working on the response")
+            settle(0.5)
+            attachHostedScreenshot(window, name: "legacy-working-\(name)")
+            HostedAccessibility.activate(try await requireElement(in: window, label: "Stop response"))
+            _ = try await requireElement(in: window, label: "Stopped")
+            window.isHidden = true
+        }
+    }
+
+    func testPromptReadingProgressOnNarrowPhone() async throws {
+        try await checkPromptReading(size: CGSize(width: 320, height: 844), name: "phone")
+    }
+
+    func testPromptReadingProgressOnPad() async throws {
+        try await checkPromptReading(size: HostedSize.padLandscape, name: "pad")
+    }
+
+    private func checkPromptReading(size: CGSize, name: String) async throws {
+        let window = try await hostFixtureChat(["--ui-test-chat-controls", "--ui-test-chat-prompt-reading"], size: size)
+        try await sendFromComposer("Read the local model prompt", in: window)
+        let reading = try await requireElement(in: window) { $0.accessibilityLabel == "Hermes is reading the prompt, 42%" }
+        XCTAssertTrue(window.bounds.contains(window.convert(reading.accessibilityFrame, from: nil)), "Progress is clipped")
+        settle(0.5)
+        attachHostedScreenshot(window, name: "prompt-reading-42-\(name)")
+        try await sendFromComposer("Keep the fixture concise", in: window)
+        _ = try await requireElement(in: window, label: "Hermes is reading the prompt")
+        settle(0.5)
+        attachHostedScreenshot(window, name: "prompt-reading-unknown-\(name)")
+        HostedAccessibility.activate(try await requireElement(in: window, label: "Stop response"))
+        let cleared = await awaitNoElement(in: window) { $0.accessibilityLabel?.contains("is reading the prompt") == true }
+        XCTAssertTrue(cleared, "Stop left prompt-reading progress visible")
+        _ = try await requireElement(in: window, label: "Stopped")
+        settle(0.5)
+        attachHostedScreenshot(window, name: "prompt-reading-stopped-\(name)")
+    }
+
     func testProviderWarningsRemainVisibleWhileTheTurnContinues() async throws {
         let window = try await hostFixtureChat(["--ui-test-chat-controls", "--ui-test-chat-warnings"])
         _ = try await startControlsRun(in: window)

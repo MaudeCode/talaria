@@ -30,6 +30,7 @@ public struct ChatStreamLoadPreparation: Equatable {
     public let activeStreamIDBeforeLoad: String?
     let shouldPrepareSuspendedStreamResume: Bool
     let responseGeneration: Int
+    var runStatusRevision: Int = 0
 }
 
 @MainActor
@@ -82,6 +83,11 @@ public protocol ChatStreamCoordinatorDelegate: AnyObject {
     func streamCoordinatorApplyPendingSteer(_ steer: PendingSteer)
     func streamCoordinatorWithdrawSteer(_ event: SteerWithdrawnEvent)
     func streamCoordinatorApplyNotices(_ event: SessionNoticesEvent)
+    func streamCoordinatorCacheRunStatus(_ status: RunStatus?)
+}
+
+public extension ChatStreamCoordinatorDelegate {
+    func streamCoordinatorCacheRunStatus(_ status: RunStatus?) {}
 }
 
 @MainActor
@@ -110,6 +116,7 @@ public final class ChatStreamCoordinator {
             if activeStreamID != nil { delegate?.streamCoordinatorSetWarningMessage(nil) }
             activeRunStartedAt = activeStreamID == nil ? nil : now()
             compressionStartedAt = nil
+            applyRunStatus(nil, hasServerField: false)
         }
     }
     /// When the run behind the current stream started. Seeded by the caller from
@@ -127,6 +134,9 @@ public final class ChatStreamCoordinator {
     public private(set) var liveTokensPerSecond: Double?
     /// TAL-1006: the start of the run's open compression span, from the server; nil when none is open.
     public private(set) var compressionStartedAt: Date?
+    public private(set) var runStatus: RunStatus?
+    public private(set) var hasServerRunStatus = false
+    private var runStatusRevision = 0
     private var lastRecoveryStatusCheckDate: Date?
     private(set) var isReplayConnection = false
     // The `after_seq` the current connection resumed from: its journal events at
@@ -200,7 +210,16 @@ public final class ChatStreamCoordinator {
         }
     }
 
+    private func applyRunStatus(_ status: RunStatus?, hasServerField: Bool) {
+        runStatus = status
+        hasServerRunStatus = hasServerField
+        runStatusRevision &+= 1
+        if hasServerField { delegate?.streamCoordinatorCacheRunStatus(status) }
+    }
+
     public func prepareForNewResponse() {
+        applyRunStatus(nil, hasServerField: false)
+        delegate?.streamCoordinatorCacheRunStatus(nil)
         delegate?.streamCoordinatorSetWarningMessage(nil)
         hasCompletedCurrentResponse = false
         hasFinishedCurrentRun = false
@@ -227,6 +246,7 @@ public final class ChatStreamCoordinator {
         runGeneration &+= 1
         responseGeneration &+= 1
         cancelSharedReconnect()
+        if activeStreamID != streamID { delegate?.streamCoordinatorCacheRunStatus(nil) }
         activeStreamID = streamID
         seedActiveRunStart(runStartedAt)
         isConnectionSuspended = false
@@ -294,7 +314,8 @@ public final class ChatStreamCoordinator {
         return ChatStreamLoadPreparation(
             activeStreamIDBeforeLoad: activeStreamIDBeforeLoad,
             shouldPrepareSuspendedStreamResume: activeStreamID == nil || isConnectionSuspended,
-            responseGeneration: responseGeneration
+            responseGeneration: responseGeneration,
+            runStatusRevision: runStatusRevision
         )
     }
 
@@ -318,8 +339,11 @@ public final class ChatStreamCoordinator {
         runStartedAt: Date? = nil,
         // TAL-1006: the session's open span, whose frames the resumed stream may begin past.
         compressionStartedAt loadedCompressionStartedAt: Date? = nil,
-        transcriptSeq: TranscriptSeq? = nil
+        transcriptSeq: TranscriptSeq? = nil,
+        runStatus loadedRunStatus: RunStatus? = nil,
+        hasRunStatus: Bool = false
     ) {
+        let canApplyRunStatus = runStatusRevision == preparation.runStatusRevision
         hasCompletedCurrentResponse = false
         hasFinishedCurrentRun = false
         liveTokensPerSecond = nil
@@ -363,6 +387,10 @@ public final class ChatStreamCoordinator {
                 }
             }
             isConnectionSuspended = false
+        }
+        // A status frame received during the read is newer than its session snapshot.
+        if canApplyRunStatus || activeStreamID != preparation.activeStreamIDBeforeLoad {
+            applyRunStatus(loadedRunStatus, hasServerField: hasRunStatus)
         }
     }
 
@@ -660,7 +688,7 @@ public final class ChatStreamCoordinator {
 
     private func isCoveredByReplayCursor(_ event: SSEEvent) -> Bool {
         switch event {
-        case .token, .interimAssistant, .reasoning, .toolStarted, .toolCompleted, .steerConsumed:
+        case .token, .interimAssistant, .reasoning, .toolStarted, .toolCompleted, .steerConsumed, .runStatus:
             guard let replayCursor, let activeStreamID,
                   streamClient.lastEventID != previousFrameEventID,
                   let seq = Self.runJournalReplayAfterSeq(from: streamClient.lastEventID, streamID: activeStreamID)
@@ -761,6 +789,7 @@ public final class ChatStreamCoordinator {
             }
             liveTokensPerSecond = payload.displayableTokensPerSecond
         case .done(let payload):
+            applyRunStatus(nil, hasServerField: true)
             compressionStartedAt = nil
             let hasCompletedTranscript = delegate?.streamCoordinatorApplyDone(payload) == true
             completeCurrentResponse(needsTranscriptRefresh: !hasCompletedTranscript, terminalState: payload.terminalState)
@@ -784,6 +813,10 @@ public final class ChatStreamCoordinator {
             markProgress()
         case .notices(let event):
             delegate?.streamCoordinatorApplyNotices(event)
+        case .runStatus(let sessionID, let status):
+            guard sessionID == delegate?.streamCoordinatorSessionID else { break }
+            applyRunStatus(status, hasServerField: true)
+            markProgress()
         case .compressing(let startedAt):
             compressionStartedAt = startedAt
             markProgress()
@@ -1016,6 +1049,7 @@ public final class ChatStreamCoordinator {
             responseGeneration &+= 1
         }
         let finishedStreamID = activeStreamID
+        applyRunStatus(nil, hasServerField: true)
         streamClient.stop()
         delegate?.streamCoordinatorStopAuxiliaryMonitoring(clearPrompt: true)
         delegate?.streamCoordinatorRemoveSnapshot(streamID: finishedStreamID)
