@@ -1,0 +1,61 @@
+{
+  "normal": {
+    "state": "attached",
+    "reason": null,
+    "can_submit": true,
+    "can_interrupt": false,
+    "can_attach": false,
+    "revision": 2,
+    "execution_generation": 1,
+    "active_admission": null,
+    "admissions": []
+  },
+  "unknown": {
+    "state": "attached",
+    "reason": null,
+    "can_submit": false,
+    "can_interrupt": false,
+    "can_attach": false,
+    "revision": 2,
+    "execution_generation": 1,
+    "active_admission": null,
+    "admissions": [
+      {
+        "admission_id": "unknown-input",
+        "sequence": 3,
+        "status": "unknown",
+        "outcome": null,
+        "authority_epoch": 1,
+        "execution_generation": 1,
+        "text": "Inspect uncertain work",
+        "input_id": "unknown-request",
+        "actions": [
+          "retry",
+          "discard"
+        ]
+      }
+    ]
+  },
+  "batch": {
+    "state": "incompatible",
+    "reason": "native_clarify_batch_unavailable",
+    "can_submit": false,
+    "can_interrupt": false,
+    "can_attach": false,
+    "revision": null,
+    "execution_generation": null,
+    "active_admission": null,
+    "admissions": []
+  },
+  "served": {
+    "state": "incompatible",
+    "reason": "served_profile_sessions_unavailable",
+    "can_submit": false,
+    "can_interrupt": false,
+    "can_attach": false,
+    "revision": null,
+    "execution_generation": null,
+    "active_admission": null,
+    "admissions": []
+  }
+}

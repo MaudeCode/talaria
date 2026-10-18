@@ -1,18 +1,19 @@
 import { beforeEach, expect, it, vi } from 'vitest'
 import { act, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-vi.mock(import('../../api/endpoints'), async (original) => ({ ...(await original()), updateSession: vi.fn() }))
+vi.mock(import('../../api/endpoints'), async (original) => ({ ...(await original()), updateSession: vi.fn(), ownerAction: vi.fn() }))
 import * as api from '../../api/endpoints'
 import { sessionFixture } from '../../test/fixtures'
 import { ApiError } from '../../contracts/common'
 import { teardownAll } from '../../stream/connection'
+import type { OwnerAttachment } from '@maudecode/talaria-web-contracts'
 import { useSessionUpdate } from './useSessionUpdate'
 const refresh = vi.fn(() => Promise.resolve())
 const body = { model: 'contributor', model_provider: 'custom' }
 const refusal = (token: string, message = 'This model may train on your conversation.') => new ApiError({ kind: 'http', status: 409, path: '/api/session/update', message, body: { error: message, type: 'model_confirmation_required', confirm_token: token, warnings: [{ kind: 'data_policy', title: 'Warning', model: 'contributor', provider: 'custom', message }] } })
-function Chat({ sid = 's1' }: { sid?: string }) {
-  const { updateSession, dialog } = useSessionUpdate(sid, refresh)
-  return <><button onClick={() => { void updateSession(body) }}>Pick model</button>{dialog}</>
+function Chat({ sid = 's1', owner, change = body }: { sid?: string; owner?: OwnerAttachment; change?: Parameters<typeof api.updateSession>[1] }) {
+  const { updateSession, dialog } = useSessionUpdate(sid, refresh, owner)
+  return <><button onClick={() => { void updateSession(change) }}>Pick model</button>{dialog}</>
 }
 beforeEach(() => { vi.mocked(api.updateSession).mockReset(); refresh.mockClear() })
 it('Cancel leaves the selection unchanged, Confirm sends the exact server token', async () => {
@@ -62,4 +63,24 @@ it('does not restore an old prompt when navigating away and back', async () => {
   view.rerender(<Chat />)
   await waitFor(() => expect(screen.queryByRole('alertdialog')).toBeNull())
   expect(api.updateSession).toHaveBeenCalledOnce()
+})
+
+it('routes native model changes through the existing update flow with the owner fences', async () => {
+  vi.mocked(api.ownerAction).mockResolvedValue({ ok: true, session: sessionFixture({ session_id: 's1' }) })
+  render(<Chat owner={{ state: 'attached', reason: null, can_submit: true, can_interrupt: false, can_attach: false,
+    revision: 8, execution_generation: 3, admissions: [] }} />)
+  await userEvent.click(screen.getByText('Pick model'))
+  await waitFor(() => expect(refresh).toHaveBeenCalledOnce())
+  expect(api.ownerAction).toHaveBeenCalledWith({ session_id: 's1', action: 'mutate', request_id: expect.any(String),
+    expected_revision: 8, execution_generation: 3, operation: 'model', payload: { model: 'contributor', provider: 'custom' } })
+  expect(api.updateSession).not.toHaveBeenCalled()
+})
+
+it('preserves an explicit null provider in a native model selection', async () => {
+  vi.mocked(api.ownerAction).mockResolvedValue({ ok: true, session: sessionFixture({ session_id: 's1' }) })
+  render(<Chat change={{ model: 'automatic', model_provider: null }} owner={{ state: 'attached', reason: null,
+    can_submit: true, can_interrupt: false, can_attach: false, revision: 8, execution_generation: 3, admissions: [] }} />)
+  await userEvent.click(screen.getByText('Pick model'))
+  await waitFor(() => expect(refresh).toHaveBeenCalledOnce())
+  expect(api.ownerAction).toHaveBeenLastCalledWith(expect.objectContaining({ operation: 'model', payload: { model: 'automatic', provider: null } }))
 })

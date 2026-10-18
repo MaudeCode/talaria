@@ -8,6 +8,7 @@ import { z } from 'zod'
 import { RunStatusSchema } from './run-status.js'
 import { AgentRefreshConfirmationSchema } from './sidecar/runtime.js'
 import { SpeedTierSchema } from './speed.js'
+import { OwnerAttachmentSchema } from './gateway-session.js'
 import { CanonicalBotChatSchema, GatewayModeSchema, PluginSettingFieldSchema, SkillCatalogIdentitySchema } from './sidecar/namespaces.js'
 
 export { SpeedTierSchema } from './speed.js'
@@ -336,6 +337,7 @@ export type BranchedFrom = z.infer<typeof BranchedFromSchema>
 
 /** Full session record from `GET /api/session` and mutations returning `session`. */
 export const SessionSchema = z.looseObject({
+  composer_state_key: z.string().optional().describe('Opaque profile-home and owner identity for device-local composer state; never an API session id.'),
   session_id: SessionIdSchema, title: z.string(), workspace: z.string().optional(), created_workspace: z.string().nullable().optional(), model: NullableString.optional(), model_provider: NullableString.optional(),
   model_option_id: NullableString.optional().describe('TAL-301: the catalog entry id the stored model/provider selects; null when none.'),
   messages: z.array(MessageSchema).optional(), tool_calls: z.array(ToolCallSchema).optional(), created_at: UnixSeconds.optional(), updated_at: UnixSeconds.optional(), last_message_at: NullableNumber.optional(),
@@ -349,7 +351,7 @@ export const SessionSchema = z.looseObject({
   automatic_turns_held: z.boolean().optional().describe('TAL-899: the user pressed Stop, so no automatic turn (background wakeup or goal continuation) starts until their next message.'), has_pending_user_message: z.boolean().optional(),
   pending_user_message: NullableString.optional(), pending_attachments: z.array(AttachmentSchema).optional(), pending_started_at: NullableNumber.optional(), pending_user_source: NullableString.optional(),
   context_length: NullableNumber.optional(), threshold_tokens: NullableNumber.optional(), last_prompt_tokens: NullableNumber.optional(), post_compression_context_tokens_estimate: NullableNumber.optional(), ...ContextUsageFields,
-  enabled_toolsets: z.array(z.string()).nullable().optional(), composer_draft: ComposerDraftSchema.optional(), is_cli_session: z.boolean().optional(), source_kind: SourceKindSchema, is_messaging_session: IsMessagingSessionSchema, sort_ts: SortTsSchema, read_only: ReadOnlySchema, read_only_reason: ReadOnlyReasonSchema, can_branch: CanBranchSchema, can_pin: CanPinSchema, can_archive: CanArchiveSchema, can_delete: CanDeleteSchema, can_duplicate: CanDuplicateSchema, source_tag: NullableString.optional(),
+  enabled_toolsets: z.array(z.string()).nullable().optional(), composer_draft: ComposerDraftSchema.optional(), is_cli_session: z.boolean().optional(), source_kind: SourceKindSchema, is_messaging_session: IsMessagingSessionSchema, sort_ts: SortTsSchema, read_only: ReadOnlySchema, read_only_reason: ReadOnlyReasonSchema, owner_attachment: OwnerAttachmentSchema.optional(), can_branch: CanBranchSchema, can_pin: CanPinSchema, can_archive: CanArchiveSchema, can_delete: CanDeleteSchema, can_duplicate: CanDuplicateSchema, source_tag: NullableString.optional(),
   can_compress: z.boolean().optional().describe('TAL-614: a manual compression would start now: writable, no running turn, and at least four model-history messages. Only the full session detail carries it; absent means no.'),
   confirms_deep_truncate: z.boolean().optional().describe('TAL-929: this server holds a `session.truncate` that discards more than one user turn until it is confirmed; absent on older servers, which cut at once.'),
   source_label: NullableString.optional(), session_source: NullableString.optional(), raw_source: NullableString.optional(), parent_session_id: NullableString.optional(), worktree_path: NullableString.optional(),
@@ -375,7 +377,7 @@ export const SessionEnvelopeSchema = z.looseObject({ session: SessionSchema })
 export const SessionRowSchema = z.looseObject({
   session_id: SessionIdSchema, title: z.string(), workspace: z.string().optional(), model: NullableString.optional(), created_at: UnixSeconds.optional(), updated_at: UnixSeconds.optional(), last_message_at: NullableNumber.optional(),
   message_count: z.number().optional(), pinned: z.boolean().optional(), archived: z.boolean().optional(), project_id: NullableString.optional(), profile: NullableString.optional(), is_streaming: IsStreamingSchema,
-  is_cli_session: z.boolean().optional(), source_kind: SourceKindSchema, is_messaging_session: IsMessagingSessionSchema, sort_ts: SortTsSchema, cron_running: z.boolean().optional(), read_only: ReadOnlySchema, read_only_reason: ReadOnlyReasonSchema, can_branch: CanBranchSchema, can_pin: CanPinSchema, can_archive: CanArchiveSchema, can_delete: CanDeleteSchema, can_duplicate: CanDuplicateSchema, attention: z.looseObject({ kind: z.string().optional(), count: z.number().optional() }).nullable().optional(),
+  is_cli_session: z.boolean().optional(), source_kind: SourceKindSchema, is_messaging_session: IsMessagingSessionSchema, sort_ts: SortTsSchema, cron_running: z.boolean().optional(), read_only: ReadOnlySchema, read_only_reason: ReadOnlyReasonSchema, owner_attachment: OwnerAttachmentSchema.optional(), can_branch: CanBranchSchema, can_pin: CanPinSchema, can_archive: CanArchiveSchema, can_delete: CanDeleteSchema, can_duplicate: CanDuplicateSchema, attention: z.looseObject({ kind: z.string().optional(), count: z.number().optional() }).nullable().optional(),
   source_tag: NullableString.optional(), source_label: NullableString.optional(), session_source: NullableString.optional(), raw_source: NullableString.optional(), parent_session_id: NullableString.optional(),
   active_stream_id: ActiveStreamIdSchema, share_token: NullableString.optional(), share_url: NullableString.optional(), worktree_branch: NullableString.optional(), match_type: z.enum(['title', 'metadata', 'content']).optional(), match_preview: NullableString.optional(),
   workspace_name: WorkspaceNameSchema,
@@ -404,7 +406,7 @@ export const SessionsListSchema = z.looseObject({
 export type SessionsList = z.infer<typeof SessionsListSchema>
 
 export const SessionStatusSchema = z.looseObject({
-  session_id: SessionIdSchema, title: z.string().optional(), active_stream_id: ActiveStreamIdSchema, active_turn_origin: ActiveTurnOriginSchema, agent_running: IsStreamingSchema, is_streaming: IsStreamingSchema, read_only: ReadOnlySchema, read_only_reason: ReadOnlyReasonSchema, message_count: z.number().optional(), model: NullableString.optional(),
+  session_id: SessionIdSchema, title: z.string().optional(), active_stream_id: ActiveStreamIdSchema, active_turn_origin: ActiveTurnOriginSchema, agent_running: IsStreamingSchema, is_streaming: IsStreamingSchema, read_only: ReadOnlySchema, read_only_reason: ReadOnlyReasonSchema, owner_attachment: OwnerAttachmentSchema.optional(), message_count: z.number().optional(), model: NullableString.optional(),
   profile: NullableString.optional(), workspace: z.string().optional(), input_tokens: z.number().optional(), output_tokens: z.number().optional(), total_tokens: z.number().optional(), estimated_cost: NullableNumber.optional(), updated_at: UnixSeconds.optional(),
 })
 export type SessionStatus = z.infer<typeof SessionStatusSchema>
@@ -418,6 +420,7 @@ export const SessionDeleteResultSchema = z.looseObject({ ok: z.literal(true), st
 
 /** `voice_turn` (TAL-801): the turn was spoken (an App voice note), so the Agent runs it on `auxiliary.voice_chat`. */
 export const ChatStartRequestSchema = z.looseObject({
+  submission_id: z.string().min(1).max(128).optional().describe('Stable native-owner admission identity. Reuse only for an exact retry of the same submission.'),
   session_id: SessionIdSchema, message: z.string().optional(), model: z.string().nullable().optional(), model_provider: z.string().nullable().optional(), workspace: z.string().nullable().optional(), profile: z.string().nullable().optional(),
   explicit_model_pick: z.boolean().optional(), attachments: z.array(z.union([AttachmentSchema, z.string()])).optional(), moa_config: z.boolean().optional(), regenerate: z.boolean().optional(), regeneration_revision: z.string().optional(),
   voice_turn: z.boolean().optional(),
@@ -429,6 +432,7 @@ export const ChatStartRequestSchema = z.looseObject({
 export type ChatStartRequest = z.infer<typeof ChatStartRequestSchema>
 /** Accepted turn. `stream_id` is the owner identity for the SSE connection. */
 export const ChatStartResponseSchema = z.looseObject({
+  owner_attachment: OwnerAttachmentSchema.optional(), admission_id: z.string().optional(),
   stream_id: z.string().optional(), session_id: SessionIdSchema.optional(), turn_id: z.string().optional(), user_message_id: z.union([z.string(), z.number()]).nullable().optional(), pending_started_at: z.number().nullable().optional(),
   title: z.string().optional(), effective_model: z.string().optional(), effective_model_provider: z.string().optional(), queued: z.boolean().optional(), ok: z.boolean().optional(), status: z.string().optional(), reason: z.string().optional(), session: SessionSchema.optional(),
 })
@@ -468,6 +472,7 @@ export const SteerRequestSchema = z.looseObject({ session_id: SessionIdSchema, t
 export const SteerResponseSchema = z.looseObject({ accepted: z.boolean(), fallback: NullableString.optional(), stream_id: NullableString.optional(), steer_id: z.string().optional(), started_turn: ChatStartResponseSchema.optional() })
 
 export const ApprovalPendingSchema = z.looseObject({
+  allowed_choices: z.array(z.enum(['once', 'session', 'always', 'deny'])).optional(), can_enable_yolo: z.boolean().optional(),
   approval_id: z.string().optional(), session_id: z.string().optional(), command: z.string().optional(), description: z.string().optional(), title: z.string().optional(), name: z.string().optional(), kind: z.string().optional(),
   reason: z.string().optional(), action: z.string().optional(), question: z.string().optional(), status: z.string().optional(), pending_count: z.number().optional(), run_id: z.string().optional(), mirror_token: z.string().optional(),
 })

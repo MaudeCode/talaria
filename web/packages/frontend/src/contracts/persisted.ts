@@ -34,7 +34,7 @@ export const QueuedTurnSchema = z.object({
   id: z.string().min(1).max(64),
   text: z.string(),
   attachments: z.array(UploadResponseSchema),
-  request: z.object({ model: z.string().optional(), model_provider: z.string().nullable().optional(), workspace: z.string().optional(), profile: z.string() }),
+  request: z.object({ model: z.string().optional(), model_provider: z.string().nullable().optional(), workspace: z.string().optional(), profile: z.string(), submission_id: z.string().min(1).max(128).optional() }),
 })
 // No size caps: the composer queues without one, and a cap here would drop a whole queue the user built on reload.
 export const QueuedTurnsSchema = z.array(QueuedTurnSchema)

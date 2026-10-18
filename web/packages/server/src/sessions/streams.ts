@@ -126,6 +126,7 @@ export interface ActiveRun {
 export const CANCEL_UNWIND_CEILING_S = 180
 
 export class StreamRegistry {
+  constructor(readonly visible: (streamId: string) => boolean = () => true) {}
   readonly streams = new Map<string, StreamChannel>()
   readonly owners = new Map<string, string>()
   readonly activeRuns = new Map<string, ActiveRun>()
@@ -157,6 +158,7 @@ export class StreamRegistry {
   }
 
   ownerSessionId(streamId: string): string | null {
+    if (!this.visible(streamId)) return null
     return this.owners.get(streamId) ?? null
   }
 
@@ -171,6 +173,7 @@ export class StreamRegistry {
    */
   activeRunStreamForSession(sessionId: string, now = Date.now() / 1000): string | null {
     for (const run of this.activeRuns.values()) {
+      if (!this.visible(run.stream_id)) continue
       if (run.session_id !== sessionId) continue
       if (run.cancelled_at && !this.liveIds.has(run.stream_id) && now - run.cancelled_at >= CANCEL_UNWIND_CEILING_S) continue
       return run.stream_id
@@ -180,7 +183,7 @@ export class StreamRegistry {
 
   /** Attachable run only (a cancelling worker no longer counts). */
   attachableRunForSession(sessionId: string): string | null {
-    for (const run of this.activeRuns.values()) if (run.session_id === sessionId && !run.admitting && run.phase !== 'cancelling' && !run.cancelled_at) return run.stream_id
+    for (const run of this.activeRuns.values()) if (this.visible(run.stream_id) && run.session_id === sessionId && !run.admitting && run.phase !== 'cancelling' && !run.cancelled_at) return run.stream_id
     return null
   }
 

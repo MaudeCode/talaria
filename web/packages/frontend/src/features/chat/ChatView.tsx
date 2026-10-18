@@ -22,7 +22,7 @@ import { useEditMessage } from './useEditMessage'
 import { Transcript } from './Transcript'
 import { TranscriptSkeleton } from './TranscriptSkeleton'
 import { Composer, turnRequest } from '../composer/Composer'
-import { useQueuedTurns } from '../composer/queue'
+import { composerStateId, useQueuedTurns } from '../composer/queue'
 import { returnToComposer } from '../composer/composerReturn'
 import { ApprovalCard } from './ApprovalCard'
 import { ClarifyCard } from './ClarifyCard'
@@ -56,10 +56,10 @@ export function ChatView({ sessionId }: { sessionId: string | null }) {
   const { onEdit, dialog: editDialog, operation, runHistory } = useEditMessage(sessionId, refresh)
   const clarify = useClarify(sessionId, live)
   const vaultPrompt = useVaultPrompt(sessionId, live)
-  useMarkViewed(sessionId, query.isFetchedAfterMount || (query.isSuccess && !query.isStale), live && isTerminal(live.status) ? live.streamId : null)
+  useMarkViewed(sessionId, !session?.owner_attachment && (query.isFetchedAfterMount || (query.isSuccess && !query.isStale)), live && isTerminal(live.status) ? live.streamId : null)
   const [terminalOpen, setTerminalOpen] = useState(false)
   const { sidePanelOpen } = useShellState()
-  const [queued, setQueued] = useQueuedTurns(sessionId)
+  const [queued, setQueued] = useQueuedTurns(composerStateId(session))
   const draining = useRef(false)
   const [failedQueued, setFailedQueued] = useState<string | null>(null)
   const [yolo, setYolo] = useState(false)
@@ -71,16 +71,19 @@ export function ChatView({ sessionId }: { sessionId: string | null }) {
     configureStream({ queryClient: qc, onCompressed: (sid, next) => { if (sid === sessionId) void navigate({ to: '/session/$sessionId', params: { sessionId: next } }) } })
   }, [qc, navigate, sessionId])
 
+  const yoloSessionId = session && !session.owner_attachment ? sessionId : null
   useEffect(() => {
-    if (!sessionId) return
-    api.fetchSessionYolo(sessionId).then((r) => setYolo(r.yolo_enabled)).catch(() => setYolo(false))
-  }, [sessionId])
-  const yoloOn = sessionId ? yolo : false
+    if (!yoloSessionId) return
+    let current = true
+    api.fetchSessionYolo(yoloSessionId).then((r) => { if (current) setYolo(r.yolo_enabled) }).catch(() => { if (current) setYolo(false) })
+    return () => { current = false }
+  }, [yoloSessionId])
+  const yoloOn = yoloSessionId ? yolo : false
 
   // Queue drain: when the live turn settles, send the next queued message. A queue a reload restored onto a session
   // whose run ended meanwhile has no turn to settle; the server reporting no active stream starts it instead.
   useEffect(() => {
-    if (!sessionId || !session || intent.send || intent.stop || operation || (live ? !isTerminal(live.status) : session.active_stream_id)) return
+    if (!sessionId || !session || session.owner_attachment?.can_submit === false || intent.send || intent.stop || operation || (live ? !isTerminal(live.status) : session.active_stream_id)) return
     const next = queued[0]
     if (!next || draining.current || failedQueued === next.id) return
     // One drain in flight at a time; the item leaves the queue only once its turn has started, so a
@@ -88,9 +91,10 @@ export function ChatView({ sessionId }: { sessionId: string | null }) {
     draining.current = true
     const scope = getStreamContext()
     void startTurn({ sessionId, message: next.text, queueId: next.id, request: { ...next.request, ...(next.attachments.length ? { attachments: next.attachments } : {}) } })
+      // External-store queue updates notify synchronously; release before publishing the next queue.
+      .finally(() => { draining.current = false })
       .then(() => { if (scope === getStreamContext()) setQueued((q) => q.filter((t) => t.id !== next.id)) })
       .catch((e: unknown) => { if (scope !== getStreamContext()) return; setFailedQueued(next.id); showToast(e instanceof Error ? e.message : String(e), 4000, 'error') })
-      .finally(() => { draining.current = false })
   }, [sessionId, session, queued, live, setQueued, intent, operation, failedQueued])
 
   const ensureSession = useCallback(async (onCreated?: (sessionId: string) => void): Promise<Session> => {
@@ -132,7 +136,17 @@ export function ChatView({ sessionId }: { sessionId: string | null }) {
   // eslint-disable-next-line react-hooks/exhaustive-deps -- reasoningKey is derived from session model/provider
   }, [qc, session?.model, session?.model_provider])
 
-  const { updateSession, dialog: modelDialog } = useSessionUpdate(sessionId, refresh)
+  const { updateSession, dialog: modelDialog } = useSessionUpdate(sessionId, refresh, session?.owner_attachment)
+
+  const onOwnerAction = useCallback((id: string, action: 'cancel' | 'retry' | 'discard', generation: number | null) => {
+    if (!sessionId) return
+    const request = action === 'cancel' ? { session_id: sessionId, action, admission_id: id } : generation !== null ? { session_id: sessionId, action, admission_id: id, execution_generation: generation } : null
+    if (!request) return
+    const scope = getStreamContext()
+    void api.ownerAction(request)
+      .then(async (result) => { if (scope !== getStreamContext()) return; await refresh(result.session); if (scope === getStreamContext() && result.draft !== undefined) returnToComposer(sessionId, result.draft) })
+      .catch((error: unknown) => { if (scope === getStreamContext()) showToast(error instanceof Error ? error.message : String(error), 4000, 'error') })
+  }, [sessionId, refresh])
 
   const onModelChange = useCallback((model: string, provider: string | null) => { if (!sessionId) { setPending((p) => ({ ...p, model, model_provider: provider })); return } void updateSession({ model, model_provider: provider }) }, [sessionId, updateSession])
   const onWorkspaceChange = useCallback((path: string) => { if (!sessionId) { setPending((p) => ({ ...p, workspace: path })); return } void updateSession({ workspace: path }) }, [sessionId, updateSession])
@@ -403,9 +417,10 @@ export function ChatView({ sessionId }: { sessionId: string | null }) {
           yolo={yoloOn}
           onToggleYolo={onToggleYolo}
           queued={queued}
-          locked={compressingSince !== null || operation !== null}
+          locked={compressingSince !== null || operation !== null || session?.owner_attachment?.can_submit === false}
           onQueue={(entry) => setQueued((q) => [...q, entry])}
           onQueueChange={setQueued}
+          onOwnerAction={onOwnerAction}
           clarify={clarify}
           notices={[...runtime.notices, ...(operation ? [{ id: 'history', content: <span role="status">{operation}</span> }] : []), ...(failedQueued && queued.some((q) => q.id === failedQueued) ? [{ id: 'queue-failed', tone: 'error' as const, content: m.composer_queue_failed(), action: { label: m.retry(), run: () => setFailedQueued(null) } }] : [])]}
         />

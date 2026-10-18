@@ -25,24 +25,59 @@ import { Composer, type ComposerProps } from './Composer'
 import { dictateLive } from '../voice/liveDictation'
 
 const noop = (): void => undefined
-function renderComposer(session: Session | null, live: LiveTurn | null = null, onQueue: (entry: QueuedTurn) => void = noop, settings?: Settings, onEnsureSession: () => Promise<Session> = () => Promise.resolve(session!), onLocalCommand: ComposerProps['onLocalCommand'] = () => Promise.resolve(false)) {
+function renderComposer(session: Session | null, live: LiveTurn | null = null, onQueue: (entry: QueuedTurn) => void = noop, settings?: Settings, onEnsureSession: () => Promise<Session> = () => Promise.resolve(session!), onLocalCommand: ComposerProps['onLocalCommand'] = () => Promise.resolve(false), overrides: Partial<ComposerProps> = {}) {
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } })
-  const tree = (turn: LiveTurn | null) => (
+  const tree = (turn: LiveTurn | null, record = session) => (
     <QueryClientProvider client={qc}>
       <BootstrapContext.Provider value={DEFAULT_BOOTSTRAP}>
         <Composer
-          sessionId={session?.session_id ?? null} session={session} live={turn} settings={settings} onEnsureSession={onEnsureSession} onLocalCommand={onLocalCommand}
+          sessionId={record?.session_id ?? null} session={record} live={turn} settings={settings} onEnsureSession={onEnsureSession} onLocalCommand={onLocalCommand}
           terminalOpen={false} onToggleTerminal={noop} onModelChange={noop} onWorkspaceChange={noop} onToolsetsChange={noop} onReasoningChange={noop} reasoning={null}
-          yolo={false} onToggleYolo={noop} queued={[]} onQueue={onQueue} onQueueChange={noop}
+          yolo={false} onToggleYolo={noop} queued={[]} onQueue={onQueue} onQueueChange={noop} {...overrides}
         />
       </BootstrapContext.Provider>
     </QueryClientProvider>
   )
   const view = render(tree(live))
-  return { ...view, rerenderWith: (turn: LiveTurn | null) => view.rerender(tree(turn)) }
+  return { ...view, rerenderWith: (turn: LiveTurn | null) => view.rerender(tree(turn)), rerenderSession: (record: Session) => view.rerender(tree(live, record)) }
 }
 
 describe('Composer', () => {
+  it('loads the saved draft before persisting a newly resolved identity', async () => {
+    const session_id = 'loading-draft'
+    localStorage.setItem(`hermes-draft:${session_id}`, JSON.stringify({ text: 'Draft 日本', updatedAt: Date.now() }))
+    const view = renderComposer(null, null, noop, undefined, undefined, undefined, { sessionId: session_id })
+    view.rerenderSession({ ...writable, session_id })
+    await waitFor(() => expect(screen.getByRole('textbox')).toHaveValue('Draft 日本'))
+  })
+
+  it('persists text typed before the owner identity arrives on the resolved scope', async () => {
+    const session_id = 'loading-owner'
+    const view = renderComposer(null, null, noop, undefined, undefined, undefined, { sessionId: session_id })
+    await userEvent.type(screen.getByRole('textbox'), 'Early typing')
+    view.rerenderSession({ ...writable, session_id, composer_state_key: 'owner-complete-identity', owner_attachment: {
+      state: 'attached', reason: null, can_submit: true, can_interrupt: false, can_attach: false, revision: 1, execution_generation: 1, admissions: [] } })
+    expect(screen.getByRole('textbox')).toHaveValue('Early typing')
+    fireEvent(window, new Event('pagehide'))
+    expect(JSON.parse(localStorage.getItem('hermes-draft:owner-complete-identity')!).text).toBe('Early typing')
+    expect(localStorage.getItem(`hermes-draft:${session_id}`)).toBeNull()
+  })
+
+  it('continues an attached owner without offering unsupported local controls or file uploads', async () => {
+    const owner = { state: 'attached' as const, reason: null, can_submit: true, can_interrupt: false, can_attach: false, revision: 2, execution_generation: 1, admissions: [] }
+    const native = { ...writable, read_only: true, owner_attachment: owner }
+    vi.mocked(api.startChat).mockResolvedValue({ session: native, owner_attachment: owner })
+    renderComposer(native)
+    expect(screen.queryByRole('button', { name: /attach files/i })).not.toBeInTheDocument()
+    await userEvent.type(screen.getByRole('textbox'), 'Continue with the same Agent{Enter}')
+    await waitFor(() => expect(api.startChat).toHaveBeenCalledWith(expect.objectContaining({ session_id: native.session_id, message: 'Continue with the same Agent', submission_id: expect.stringMatching(/^[a-f0-9]{32}$/) })))
+  })
+
+  it('explains an unsupported native CLI batch without offering a send', () => {
+    renderComposer({ ...writable, read_only: true, owner_attachment: { state: 'incompatible', reason: 'native_clarify_batch_unavailable', can_submit: false, can_interrupt: false, can_attach: false, revision: null, execution_generation: null, admissions: [] } })
+    expect(screen.getByText(/Continue in its native client/)).toBeInTheDocument()
+    expect(screen.queryByRole('textbox')).not.toBeInTheDocument()
+  })
   beforeEach(() => {
     resetConnectionsForTests()
     resetStreamStoreForTests()

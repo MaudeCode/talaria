@@ -334,6 +334,13 @@ describe('navigation ownership and retention (TAL-1050)', () => {
 
 
 describe('pending admission and cancellation intent (TAL-1079)', () => {
+  it('holds an HTTP admission with an explicitly unknown owner outcome', async () => {
+    vi.mocked(api.startChat).mockRejectedValue(new ApiError({ kind: 'http', status: 409, path: '/api/chat/start', message: 'Owner outcome unknown', body: { outcome_unknown: true } }))
+    await expect(startTurn({ sessionId: SID, message: 'Retain this work', request: { submission_id: 'retained-owner-request' } })).rejects.toThrow('Owner outcome unknown')
+    expect(getTurnIntent(SID).send).toMatchObject({ uncertain: true, request: { submission_id: 'retained-owner-request' } })
+    expect(retryPendingTurn(SID)).toBeUndefined()
+    expect(api.startChat).toHaveBeenCalledOnce()
+  })
   beforeEach(() => {
     opened.length = 0
     readyState = 1

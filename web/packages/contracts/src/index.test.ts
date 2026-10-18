@@ -1,5 +1,6 @@
 import { ModelConfirmationRequiredSchema, sessionsContract } from './routes/sessions.js'
 import { MessageSchema, SessionSchema } from './views.js'
+import { OwnerAttachmentSchema, OwnerActionRequestSchema } from './gateway-session.js'
 import { describe, expect, it } from 'vitest'
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
@@ -13,6 +14,19 @@ describe('contracts package', () => {
     const fixture = shared('fixtures/model-confirmation.json') as { request: unknown; refusal: unknown }
     expect(sessionsContract.session.update['~orpc'].inputSchema!.parse(fixture.request)).toEqual(fixture.request)
     expect(ModelConfirmationRequiredSchema.parse(fixture.refusal).warnings.map((warning) => warning.kind)).toEqual(['data_policy', 'context_cache'])
+  })
+  it('preserves recorded owner capabilities and explicit unknown recovery actions', () => {
+    const fixture = shared('fixtures/gateway-owner.json') as Record<string, unknown>
+    const normal = OwnerAttachmentSchema.parse(fixture.normal)
+    const unknown = OwnerAttachmentSchema.parse(fixture.unknown)
+    const batch = OwnerAttachmentSchema.parse(fixture.batch)
+    const served = OwnerAttachmentSchema.parse(fixture.served)
+    expect(normal).toMatchObject({ state: 'attached', can_submit: true, can_attach: false })
+    expect(unknown).toMatchObject({ can_submit: false, admissions: [{ status: 'unknown', actions: ['retry', 'discard'] }] })
+    expect(batch.reason).toBe('native_clarify_batch_unavailable')
+    expect(served.reason).toBe('served_profile_sessions_unavailable')
+    expect(OwnerActionRequestSchema.safeParse({ session_id: 'fixture', action: 'discard', admission_id: 'input' }).success).toBe(false)
+    expect(OwnerActionRequestSchema.safeParse({ session_id: 'fixture', action: 'mutate', operation: 'delete', request_id: 'request', expected_revision: 1, execution_generation: 2, payload: {} }).success).toBe(false)
   })
   it('preserves the shared readiness projection across health, refusal, and replay', () => {
     const fixture = shared('fixtures/chat-readiness.json') as { recovery: { health: unknown; http: unknown; event: unknown }[]; completed_update: unknown; legacy: unknown }

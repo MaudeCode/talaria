@@ -40,6 +40,7 @@ import { projectMediaRefs, type MediaProjection } from '../workspace/media-refs.
 import type { ProjectStore } from '../projects.js'
 import { loadGatewaySessionIdentityMap } from './list.js'
 import { join } from 'node:path'
+import type { GatewaySessions } from './gateway-sessions.js'
 
 export class HttpFailure extends Error {
   constructor(readonly status: number, message: string, readonly extra: Record<string, unknown> = {}) {
@@ -184,6 +185,7 @@ const RECOVERY_JOURNAL_MAX_ROWS = 65536
 const isDict = (v: unknown): v is Record<string, unknown> => Boolean(v) && typeof v === 'object' && !Array.isArray(v)
 
 export class SessionService {
+  owner: GatewaySessions | null = null
   /** TAL-255: one manual compression worker per session, shared by every compress route. */
   private readonly compressionJobs: CompressionJobs
   /** TAL-1005: the turns now waiting on their session's compression job before they read its history. */
@@ -945,7 +947,7 @@ export class SessionService {
     try {
       s = (await this.store.get(sid, { metadataOnly: !loadMessages }))
     } catch {
-      return (await this.foreignSessionDetail(sid))
+      return (await this.foreignSessionDetail(sid, loadMessages, msgLimit, msgBefore))
     }
     const revisionBefore = (await this.loadRevision(s))
     if (!this.visibleToActiveProfile(s.profile)) {
@@ -1036,7 +1038,8 @@ export class SessionService {
     raw.automatic_turns_held = (await this.deps.runtime.automaticTurnsHeld?.(s.session_id)) ?? false
     raw.notices = this.deps.runtime.sessionNotices?.(s.session_id) ?? []
     raw.goal = this.deps.runtime.sessionGoal?.(s.session_id) ?? null
-    return redactSessionData(raw, this.deps.redactEnabled())
+    const publicRow = redactSessionData(raw, this.deps.redactEnabled())
+    return this.owner ? await this.owner.project(publicRow, msgLimit, msgBefore, loadMessages) : publicRow
   }
 
   /**
@@ -1102,10 +1105,14 @@ export class SessionService {
   }
 
   /** Python `_handle_session_get` without a sidecar: the state.db transcript as a (read-only or claimable) foreign stub. */
-  private async foreignSessionDetail(sid: string): Promise<Record<string, unknown>> {
+  foreignMessages(messages: Message[], session: object): Message[] {
+    return hydrateAnchorActivityScenes(withToolCallOutcomes(withMarkerKinds(withTurnIds(messages), session), [], null), {}) as Message[]
+  }
+
+  private async foreignSessionDetail(sid: string, loadMessages: boolean, msgLimit: number | null, msgBefore: number | null): Promise<Record<string, unknown>> {
     const { synth, meta } = (await this.foreignSession(sid))
     // The same turn projection as a WebUI session: turn ids, tool outcomes, then each completed turn's scene.
-    const msgs = hydrateAnchorActivityScenes(withToolCallOutcomes(withMarkerKinds(withTurnIds(synth.messages), synth), [], null), {}) as Message[]
+    const msgs = this.foreignMessages(synth.messages, synth)
     const lastTs = Number(msgs[msgs.length - 1]?.timestamp ?? 0) || 0
     const sess: Record<string, unknown> = {
       session_id: synth.session_id, title: synth.title, workspace: synth.workspace, model: synth.model, message_count: msgs.length,
@@ -1117,7 +1124,8 @@ export class SessionService {
     }
     attachTodoState(sess, msgs)
     const merged = withSessionWireFlags(withOwnerLocks([meta ? mergeCliSidebarMetadata(sess, meta) : sess], this.stateDbSources)[0]!, this.deps.runtime.activeStreamIds)
-    return redactSessionData(merged, this.deps.redactEnabled())
+    const publicRow = redactSessionData(merged, this.deps.redactEnabled())
+    return this.owner ? await this.owner.project(publicRow, msgLimit, msgBefore, loadMessages) : publicRow
   }
 
   /** Clear persisted streaming flags when no live stream backs them (Python `_clear_stale_stream_state`). */

@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { initialStreamState, isTerminal, liveText, parseSeq, streamReducer, type StreamState } from './reducer'
 import { parseChatEvent } from '../contracts/sse'
+import { sessionFixture } from '../test/fixtures'
 
 const SID = 'sess-1'
 const STREAM = 'stream-a'
@@ -16,6 +17,17 @@ function started(): StreamState {
 }
 
 describe('stream reducer: ordering and projection', () => {
+  it('replaces a native replay gap without duplicating old tokens or reviving a terminal turn', () => {
+    let s = ev(started(), 'token', { text: 'old output' }, { id: `${STREAM}:1` })
+    const snapshot = { session: sessionFixture({ session_id: SID }), replay_gap: true }
+    s = ev(s, 'session_snapshot', snapshot, { id: `${STREAM}:2` })
+    expect(liveText(s.turns[SID]!)).toBe('')
+    expect(s.turns[SID]!.warning).toBe('owner_replay_gap')
+    s = ev(s, 'token', { text: 'new output' }, { id: `${STREAM}:3` })
+    expect(liveText(s.turns[SID]!)).toBe('new output')
+    s = ev(s, 'done', { session: snapshot.session }, { id: `${STREAM}:4` })
+    expect(ev(s, 'session_snapshot', snapshot, { id: `${STREAM}:5` }).turns[SID]!.status).toBe('done')
+  })
   it('appends tokens in order and merges consecutive text', () => {
     let s = started()
     s = ev(s, 'token', { text: 'Hel' })

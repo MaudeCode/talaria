@@ -54,6 +54,7 @@ export async function streamOwnerSessionId(ctx: RequestContext, streamId: string
 
 /** Python `_stream_id_visible_to_request_profile`: a stream is visible when its owner session is (or it has no known owner). */
 export async function streamVisibleToRequest(ctx: RequestContext, streamId: string): Promise<boolean> {
+  if (!ctx.deps.registry.visible(streamId.trim())) return false
   const owner = (await streamOwnerSessionId(ctx, streamId))
   return !owner || (await sessionIdVisibleToRequest(ctx, owner))
 }

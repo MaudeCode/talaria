@@ -62,11 +62,11 @@ export function ApprovalCard({ sessionId, pending, onResolved }: { sessionId: st
           <div className="approval-btns mt-3 flex flex-wrap items-center gap-2">
             <button type="button" disabled={busy} onClick={() => { void respond('once') }} className="approval-btn once inline-flex items-center gap-1.5 rounded-md bg-accent px-3 py-1.5 text-sm font-medium text-accent-fg" title={m.approval_btn_once_title()}>{m.approval_btn_once()} <kbd className="rounded border border-current/30 px-1 text-[10px]">↵</kbd></button>
             <button type="button" disabled={busy} onClick={() => { void respond('deny') }} className="approval-btn deny inline-flex items-center rounded-md border border-border bg-surface px-3 py-1.5 text-sm font-medium text-text hover:bg-hover">{m.approval_btn_deny()}</button>
-            <Menu label={m.approval_more()} side="top" trigger={<button type="button" disabled={busy} className="approval-btn more inline-flex items-center rounded-md border border-border bg-surface px-3 py-1.5 text-sm text-text hover:bg-hover">{m.approval_more()}</button>}>
-              <MenuItem onClick={() => { void respond('session') }}>{m.approval_btn_session()}</MenuItem>
-              <MenuItem onClick={() => { void respond('always') }}>{m.approval_btn_always()}</MenuItem>
-              <MenuItem onClick={() => { void respond('once', true) }}>{m.approval_skip_all()}</MenuItem>
-            </Menu>
+            {(pending.can_enable_yolo !== false || (pending.allowed_choices?.includes('session') ?? true) || (pending.allowed_choices?.includes('always') ?? true)) && <Menu label={m.approval_more()} side="top" trigger={<button type="button" disabled={busy} className="approval-btn more inline-flex items-center rounded-md border border-border bg-surface px-3 py-1.5 text-sm text-text hover:bg-hover">{m.approval_more()}</button>}>
+              {(pending.allowed_choices?.includes('session') ?? true) && <MenuItem onClick={() => { void respond('session') }}>{m.approval_btn_session()}</MenuItem>}
+              {(pending.allowed_choices?.includes('always') ?? true) && <MenuItem onClick={() => { void respond('always') }}>{m.approval_btn_always()}</MenuItem>}
+              {pending.can_enable_yolo !== false && <MenuItem onClick={() => { void respond('once', true) }}>{m.approval_skip_all()}</MenuItem>}
+            </Menu>}
           </div>
         </div>
       </div>

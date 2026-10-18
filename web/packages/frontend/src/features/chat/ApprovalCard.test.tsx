@@ -7,6 +7,12 @@ import * as api from '../../api/endpoints'
 import { ApprovalCard } from './ApprovalCard'
 
 describe('ApprovalCard', () => {
+  it('offers only owner-approved choices and never offers native YOLO', () => {
+    render(<ApprovalCard sessionId="native" pending={{ approval_id: 'native-control', command: 'echo fixture', allowed_choices: ['once', 'deny'], can_enable_yolo: false }} onResolved={() => undefined} />)
+    expect(screen.getByRole('button', { name: /allow once/i })).toBeEnabled()
+    expect(screen.getByRole('button', { name: /deny/i })).toBeEnabled()
+    expect(screen.queryByRole('button', { name: /more/i })).not.toBeInTheDocument()
+  })
   it('renders the command with alertdialog semantics and answers "allow once"', async () => {
     const onResolved = vi.fn()
     render(<ApprovalCard sessionId="s1" pending={{ approval_id: 'a1', command: 'rm -rf build', pending_count: 2 }} onResolved={onResolved} />)
