@@ -199,7 +199,7 @@ async function settleFromServer(sessionId: string, streamId: string, owner: obje
       if (owners.get(sessionId) !== owner) return
       if (st?.active) {
         const replay = resumeFrom(sessionId, streamId, session.transcript_seq)
-        dispatch({ type: 'attach', sessionId, streamId, now: Date.now(), replay: replay !== null, serverStartedAt: session.pending_started_at, serverCompressionStartedAt: session.compression_started_at })
+        dispatch({ type: 'attach', sessionId, streamId, now: Date.now(), replay: replay !== null, serverStartedAt: session.pending_started_at, serverCompressionStartedAt: session.compression_started_at, serverRunStatus: session.run_status })
         open(sessionId, streamId, replay, owner)
         return
       }
@@ -309,7 +309,7 @@ export function adoptTurn(sessionId: string, message: string, res: ChatStartResp
 }
 
 /** Re-attach to a run the server reports as active (hard refresh, tab restore, sidebar switch). */
-export function attachToStream(sessionId: string, streamId: string, run: Pick<Session, 'transcript_seq' | 'pending_steers' | 'pending_started_at' | 'compression_started_at'> = {}): Promise<void> {
+export function attachToStream(sessionId: string, streamId: string, run: Pick<Session, 'transcript_seq' | 'pending_steers' | 'pending_started_at' | 'compression_started_at' | 'run_status'> = {}): Promise<void> {
   const existing = live.get(sessionId)
   if (existing?.streamId === streamId && existing.handle.readyState() !== SSE_CLOSED) return Promise.resolve()
   const pending = attaching.get(sessionId)
@@ -327,7 +327,7 @@ export function attachToStream(sessionId: string, streamId: string, run: Pick<Se
       return
     }
     const replay = resumeFrom(sessionId, streamId, run.transcript_seq ?? null)
-    dispatch({ type: 'attach', sessionId, streamId, now: Date.now(), replay: replay !== null, serverStartedAt: run.pending_started_at, serverCompressionStartedAt: run.compression_started_at })
+    dispatch({ type: 'attach', sessionId, streamId, now: Date.now(), replay: replay !== null, serverStartedAt: run.pending_started_at, serverCompressionStartedAt: run.compression_started_at, serverRunStatus: run.run_status })
     dispatch({ type: 'pending_steers', sessionId, streamId, steers: run.pending_steers ?? [] })
     open(sessionId, streamId, replay, owner)
   })().finally(() => {

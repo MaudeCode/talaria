@@ -1,4 +1,4 @@
-import { MessageSchema } from './views.js'
+import { MessageSchema, SessionSchema } from './views.js'
 import { describe, expect, it } from 'vitest'
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
@@ -90,6 +90,17 @@ describe('contracts package', () => {
     expect(Object.values(fixture).map((body) => TranscribeResponseSchema.parse(body))).toEqual([
       { ok: true, transcript: 'Ship the release notes.', filtered: false }, { ok: true, transcript: '', filtered: true },
     ])
+  })
+  it('parses prompt-reading progress, unknown progress, explicit clears, and current-session state (TAL-1058)', () => {
+    const fixture = shared('fixtures/prompt-reading.json') as { progress: unknown; unknown: unknown; cleared: unknown; session: unknown }
+    expect(ChatEventSchema.parse(fixture.progress)).toMatchObject({ event: 'run_status', data: { status: { phase: 'prompt_reading', progress_percent: 42 } } })
+    expect(ChatEventSchema.parse(fixture.unknown)).toMatchObject({ data: { status: { phase: 'prompt_reading', progress_percent: null } } })
+    expect(ChatEventSchema.parse(fixture.cleared)).toMatchObject({ data: { status: null } })
+    expect(SessionSchema.parse(fixture.session).run_status).toEqual({ phase: 'prompt_reading', progress_percent: 42 })
+    expect(SessionSchema.parse({ ...(fixture.session as object), run_status: undefined }).run_status).toBeUndefined()
+    for (const progress_percent of [-1, 101, '42', Number.NaN, Number.POSITIVE_INFINITY]) {
+      expect(ChatEventSchema.safeParse({ event: 'run_status', data: { session_id: 's', status: { phase: 'prompt_reading', progress_percent } } }).success).toBe(false)
+    }
   })
   it('parses the shared rate-limit wait run-status frames (TAL-821)', () => {
     const fixture = shared('fixtures/rate-limit-wait.json') as { wait: unknown; cleared: unknown }

@@ -4583,6 +4583,117 @@
                           },
                           "description": "TAL-424: the active stream's pending steers, oldest first."
                         },
+                        "run_status": {
+                          "anyOf": [
+                            {
+                              "anyOf": [
+                                {
+                                  "type": "object",
+                                  "properties": {
+                                    "phase": {
+                                      "const": "compressing"
+                                    }
+                                  },
+                                  "required": [
+                                    "phase"
+                                  ]
+                                },
+                                {
+                                  "type": "object",
+                                  "properties": {
+                                    "phase": {
+                                      "const": "rate_limit_wait"
+                                    },
+                                    "wait": {
+                                      "type": "object",
+                                      "properties": {
+                                        "provider": {
+                                          "anyOf": [
+                                            {
+                                              "type": "string"
+                                            },
+                                            {
+                                              "type": "null"
+                                            }
+                                          ]
+                                        },
+                                        "provider_label": {
+                                          "anyOf": [
+                                            {
+                                              "type": "string"
+                                            },
+                                            {
+                                              "type": "null"
+                                            }
+                                          ]
+                                        },
+                                        "until": {
+                                          "type": "number"
+                                        },
+                                        "until_kind": {
+                                          "enum": [
+                                            "reset",
+                                            "retry"
+                                          ],
+                                          "type": "string"
+                                        }
+                                      },
+                                      "required": [
+                                        "provider",
+                                        "provider_label",
+                                        "until",
+                                        "until_kind"
+                                      ]
+                                    }
+                                  },
+                                  "required": [
+                                    "phase",
+                                    "wait"
+                                  ]
+                                },
+                                {
+                                  "type": "object",
+                                  "properties": {
+                                    "phase": {
+                                      "const": "prompt_reading"
+                                    },
+                                    "progress_percent": {
+                                      "anyOf": [
+                                        {
+                                          "type": "number",
+                                          "minimum": 0,
+                                          "maximum": 100
+                                        },
+                                        {
+                                          "type": "null"
+                                        }
+                                      ]
+                                    }
+                                  },
+                                  "required": [
+                                    "phase",
+                                    "progress_percent"
+                                  ]
+                                },
+                                {
+                                  "type": "object",
+                                  "properties": {
+                                    "phase": {
+                                      "const": "working"
+                                    }
+                                  },
+                                  "required": [
+                                    "phase"
+                                  ]
+                                }
+                              ]
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "description": "Current server-selected run presentation; null when no turn runs. Older servers omit it."
+                        },
                         "compression_started_at": {
                           "anyOf": [
                             {
@@ -7141,6 +7252,117 @@
                           },
                           "description": "TAL-424: the active stream's pending steers, oldest first."
                         },
+                        "run_status": {
+                          "anyOf": [
+                            {
+                              "anyOf": [
+                                {
+                                  "type": "object",
+                                  "properties": {
+                                    "phase": {
+                                      "const": "compressing"
+                                    }
+                                  },
+                                  "required": [
+                                    "phase"
+                                  ]
+                                },
+                                {
+                                  "type": "object",
+                                  "properties": {
+                                    "phase": {
+                                      "const": "rate_limit_wait"
+                                    },
+                                    "wait": {
+                                      "type": "object",
+                                      "properties": {
+                                        "provider": {
+                                          "anyOf": [
+                                            {
+                                              "type": "string"
+                                            },
+                                            {
+                                              "type": "null"
+                                            }
+                                          ]
+                                        },
+                                        "provider_label": {
+                                          "anyOf": [
+                                            {
+                                              "type": "string"
+                                            },
+                                            {
+                                              "type": "null"
+                                            }
+                                          ]
+                                        },
+                                        "until": {
+                                          "type": "number"
+                                        },
+                                        "until_kind": {
+                                          "enum": [
+                                            "reset",
+                                            "retry"
+                                          ],
+                                          "type": "string"
+                                        }
+                                      },
+                                      "required": [
+                                        "provider",
+                                        "provider_label",
+                                        "until",
+                                        "until_kind"
+                                      ]
+                                    }
+                                  },
+                                  "required": [
+                                    "phase",
+                                    "wait"
+                                  ]
+                                },
+                                {
+                                  "type": "object",
+                                  "properties": {
+                                    "phase": {
+                                      "const": "prompt_reading"
+                                    },
+                                    "progress_percent": {
+                                      "anyOf": [
+                                        {
+                                          "type": "number",
+                                          "minimum": 0,
+                                          "maximum": 100
+                                        },
+                                        {
+                                          "type": "null"
+                                        }
+                                      ]
+                                    }
+                                  },
+                                  "required": [
+                                    "phase",
+                                    "progress_percent"
+                                  ]
+                                },
+                                {
+                                  "type": "object",
+                                  "properties": {
+                                    "phase": {
+                                      "const": "working"
+                                    }
+                                  },
+                                  "required": [
+                                    "phase"
+                                  ]
+                                }
+                              ]
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "description": "Current server-selected run presentation; null when no turn runs. Older servers omit it."
+                        },
                         "compression_started_at": {
                           "anyOf": [
                             {
@@ -9433,6 +9655,117 @@
                             ]
                           },
                           "description": "TAL-424: the active stream's pending steers, oldest first."
+                        },
+                        "run_status": {
+                          "anyOf": [
+                            {
+                              "anyOf": [
+                                {
+                                  "type": "object",
+                                  "properties": {
+                                    "phase": {
+                                      "const": "compressing"
+                                    }
+                                  },
+                                  "required": [
+                                    "phase"
+                                  ]
+                                },
+                                {
+                                  "type": "object",
+                                  "properties": {
+                                    "phase": {
+                                      "const": "rate_limit_wait"
+                                    },
+                                    "wait": {
+                                      "type": "object",
+                                      "properties": {
+                                        "provider": {
+                                          "anyOf": [
+                                            {
+                                              "type": "string"
+                                            },
+                                            {
+                                              "type": "null"
+                                            }
+                                          ]
+                                        },
+                                        "provider_label": {
+                                          "anyOf": [
+                                            {
+                                              "type": "string"
+                                            },
+                                            {
+                                              "type": "null"
+                                            }
+                                          ]
+                                        },
+                                        "until": {
+                                          "type": "number"
+                                        },
+                                        "until_kind": {
+                                          "enum": [
+                                            "reset",
+                                            "retry"
+                                          ],
+                                          "type": "string"
+                                        }
+                                      },
+                                      "required": [
+                                        "provider",
+                                        "provider_label",
+                                        "until",
+                                        "until_kind"
+                                      ]
+                                    }
+                                  },
+                                  "required": [
+                                    "phase",
+                                    "wait"
+                                  ]
+                                },
+                                {
+                                  "type": "object",
+                                  "properties": {
+                                    "phase": {
+                                      "const": "prompt_reading"
+                                    },
+                                    "progress_percent": {
+                                      "anyOf": [
+                                        {
+                                          "type": "number",
+                                          "minimum": 0,
+                                          "maximum": 100
+                                        },
+                                        {
+                                          "type": "null"
+                                        }
+                                      ]
+                                    }
+                                  },
+                                  "required": [
+                                    "phase",
+                                    "progress_percent"
+                                  ]
+                                },
+                                {
+                                  "type": "object",
+                                  "properties": {
+                                    "phase": {
+                                      "const": "working"
+                                    }
+                                  },
+                                  "required": [
+                                    "phase"
+                                  ]
+                                }
+                              ]
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "description": "Current server-selected run presentation; null when no turn runs. Older servers omit it."
                         },
                         "compression_started_at": {
                           "anyOf": [
@@ -12959,6 +13292,117 @@
                           },
                           "description": "TAL-424: the active stream's pending steers, oldest first."
                         },
+                        "run_status": {
+                          "anyOf": [
+                            {
+                              "anyOf": [
+                                {
+                                  "type": "object",
+                                  "properties": {
+                                    "phase": {
+                                      "const": "compressing"
+                                    }
+                                  },
+                                  "required": [
+                                    "phase"
+                                  ]
+                                },
+                                {
+                                  "type": "object",
+                                  "properties": {
+                                    "phase": {
+                                      "const": "rate_limit_wait"
+                                    },
+                                    "wait": {
+                                      "type": "object",
+                                      "properties": {
+                                        "provider": {
+                                          "anyOf": [
+                                            {
+                                              "type": "string"
+                                            },
+                                            {
+                                              "type": "null"
+                                            }
+                                          ]
+                                        },
+                                        "provider_label": {
+                                          "anyOf": [
+                                            {
+                                              "type": "string"
+                                            },
+                                            {
+                                              "type": "null"
+                                            }
+                                          ]
+                                        },
+                                        "until": {
+                                          "type": "number"
+                                        },
+                                        "until_kind": {
+                                          "enum": [
+                                            "reset",
+                                            "retry"
+                                          ],
+                                          "type": "string"
+                                        }
+                                      },
+                                      "required": [
+                                        "provider",
+                                        "provider_label",
+                                        "until",
+                                        "until_kind"
+                                      ]
+                                    }
+                                  },
+                                  "required": [
+                                    "phase",
+                                    "wait"
+                                  ]
+                                },
+                                {
+                                  "type": "object",
+                                  "properties": {
+                                    "phase": {
+                                      "const": "prompt_reading"
+                                    },
+                                    "progress_percent": {
+                                      "anyOf": [
+                                        {
+                                          "type": "number",
+                                          "minimum": 0,
+                                          "maximum": 100
+                                        },
+                                        {
+                                          "type": "null"
+                                        }
+                                      ]
+                                    }
+                                  },
+                                  "required": [
+                                    "phase",
+                                    "progress_percent"
+                                  ]
+                                },
+                                {
+                                  "type": "object",
+                                  "properties": {
+                                    "phase": {
+                                      "const": "working"
+                                    }
+                                  },
+                                  "required": [
+                                    "phase"
+                                  ]
+                                }
+                              ]
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "description": "Current server-selected run presentation; null when no turn runs. Older servers omit it."
+                        },
                         "compression_started_at": {
                           "anyOf": [
                             {
@@ -16347,6 +16791,117 @@
                             ]
                           },
                           "description": "TAL-424: the active stream's pending steers, oldest first."
+                        },
+                        "run_status": {
+                          "anyOf": [
+                            {
+                              "anyOf": [
+                                {
+                                  "type": "object",
+                                  "properties": {
+                                    "phase": {
+                                      "const": "compressing"
+                                    }
+                                  },
+                                  "required": [
+                                    "phase"
+                                  ]
+                                },
+                                {
+                                  "type": "object",
+                                  "properties": {
+                                    "phase": {
+                                      "const": "rate_limit_wait"
+                                    },
+                                    "wait": {
+                                      "type": "object",
+                                      "properties": {
+                                        "provider": {
+                                          "anyOf": [
+                                            {
+                                              "type": "string"
+                                            },
+                                            {
+                                              "type": "null"
+                                            }
+                                          ]
+                                        },
+                                        "provider_label": {
+                                          "anyOf": [
+                                            {
+                                              "type": "string"
+                                            },
+                                            {
+                                              "type": "null"
+                                            }
+                                          ]
+                                        },
+                                        "until": {
+                                          "type": "number"
+                                        },
+                                        "until_kind": {
+                                          "enum": [
+                                            "reset",
+                                            "retry"
+                                          ],
+                                          "type": "string"
+                                        }
+                                      },
+                                      "required": [
+                                        "provider",
+                                        "provider_label",
+                                        "until",
+                                        "until_kind"
+                                      ]
+                                    }
+                                  },
+                                  "required": [
+                                    "phase",
+                                    "wait"
+                                  ]
+                                },
+                                {
+                                  "type": "object",
+                                  "properties": {
+                                    "phase": {
+                                      "const": "prompt_reading"
+                                    },
+                                    "progress_percent": {
+                                      "anyOf": [
+                                        {
+                                          "type": "number",
+                                          "minimum": 0,
+                                          "maximum": 100
+                                        },
+                                        {
+                                          "type": "null"
+                                        }
+                                      ]
+                                    }
+                                  },
+                                  "required": [
+                                    "phase",
+                                    "progress_percent"
+                                  ]
+                                },
+                                {
+                                  "type": "object",
+                                  "properties": {
+                                    "phase": {
+                                      "const": "working"
+                                    }
+                                  },
+                                  "required": [
+                                    "phase"
+                                  ]
+                                }
+                              ]
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "description": "Current server-selected run presentation; null when no turn runs. Older servers omit it."
                         },
                         "compression_started_at": {
                           "anyOf": [
@@ -20400,6 +20955,117 @@
                           },
                           "description": "TAL-424: the active stream's pending steers, oldest first."
                         },
+                        "run_status": {
+                          "anyOf": [
+                            {
+                              "anyOf": [
+                                {
+                                  "type": "object",
+                                  "properties": {
+                                    "phase": {
+                                      "const": "compressing"
+                                    }
+                                  },
+                                  "required": [
+                                    "phase"
+                                  ]
+                                },
+                                {
+                                  "type": "object",
+                                  "properties": {
+                                    "phase": {
+                                      "const": "rate_limit_wait"
+                                    },
+                                    "wait": {
+                                      "type": "object",
+                                      "properties": {
+                                        "provider": {
+                                          "anyOf": [
+                                            {
+                                              "type": "string"
+                                            },
+                                            {
+                                              "type": "null"
+                                            }
+                                          ]
+                                        },
+                                        "provider_label": {
+                                          "anyOf": [
+                                            {
+                                              "type": "string"
+                                            },
+                                            {
+                                              "type": "null"
+                                            }
+                                          ]
+                                        },
+                                        "until": {
+                                          "type": "number"
+                                        },
+                                        "until_kind": {
+                                          "enum": [
+                                            "reset",
+                                            "retry"
+                                          ],
+                                          "type": "string"
+                                        }
+                                      },
+                                      "required": [
+                                        "provider",
+                                        "provider_label",
+                                        "until",
+                                        "until_kind"
+                                      ]
+                                    }
+                                  },
+                                  "required": [
+                                    "phase",
+                                    "wait"
+                                  ]
+                                },
+                                {
+                                  "type": "object",
+                                  "properties": {
+                                    "phase": {
+                                      "const": "prompt_reading"
+                                    },
+                                    "progress_percent": {
+                                      "anyOf": [
+                                        {
+                                          "type": "number",
+                                          "minimum": 0,
+                                          "maximum": 100
+                                        },
+                                        {
+                                          "type": "null"
+                                        }
+                                      ]
+                                    }
+                                  },
+                                  "required": [
+                                    "phase",
+                                    "progress_percent"
+                                  ]
+                                },
+                                {
+                                  "type": "object",
+                                  "properties": {
+                                    "phase": {
+                                      "const": "working"
+                                    }
+                                  },
+                                  "required": [
+                                    "phase"
+                                  ]
+                                }
+                              ]
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "description": "Current server-selected run presentation; null when no turn runs. Older servers omit it."
+                        },
                         "compression_started_at": {
                           "anyOf": [
                             {
@@ -22717,6 +23383,117 @@
                             ]
                           },
                           "description": "TAL-424: the active stream's pending steers, oldest first."
+                        },
+                        "run_status": {
+                          "anyOf": [
+                            {
+                              "anyOf": [
+                                {
+                                  "type": "object",
+                                  "properties": {
+                                    "phase": {
+                                      "const": "compressing"
+                                    }
+                                  },
+                                  "required": [
+                                    "phase"
+                                  ]
+                                },
+                                {
+                                  "type": "object",
+                                  "properties": {
+                                    "phase": {
+                                      "const": "rate_limit_wait"
+                                    },
+                                    "wait": {
+                                      "type": "object",
+                                      "properties": {
+                                        "provider": {
+                                          "anyOf": [
+                                            {
+                                              "type": "string"
+                                            },
+                                            {
+                                              "type": "null"
+                                            }
+                                          ]
+                                        },
+                                        "provider_label": {
+                                          "anyOf": [
+                                            {
+                                              "type": "string"
+                                            },
+                                            {
+                                              "type": "null"
+                                            }
+                                          ]
+                                        },
+                                        "until": {
+                                          "type": "number"
+                                        },
+                                        "until_kind": {
+                                          "enum": [
+                                            "reset",
+                                            "retry"
+                                          ],
+                                          "type": "string"
+                                        }
+                                      },
+                                      "required": [
+                                        "provider",
+                                        "provider_label",
+                                        "until",
+                                        "until_kind"
+                                      ]
+                                    }
+                                  },
+                                  "required": [
+                                    "phase",
+                                    "wait"
+                                  ]
+                                },
+                                {
+                                  "type": "object",
+                                  "properties": {
+                                    "phase": {
+                                      "const": "prompt_reading"
+                                    },
+                                    "progress_percent": {
+                                      "anyOf": [
+                                        {
+                                          "type": "number",
+                                          "minimum": 0,
+                                          "maximum": 100
+                                        },
+                                        {
+                                          "type": "null"
+                                        }
+                                      ]
+                                    }
+                                  },
+                                  "required": [
+                                    "phase",
+                                    "progress_percent"
+                                  ]
+                                },
+                                {
+                                  "type": "object",
+                                  "properties": {
+                                    "phase": {
+                                      "const": "working"
+                                    }
+                                  },
+                                  "required": [
+                                    "phase"
+                                  ]
+                                }
+                              ]
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "description": "Current server-selected run presentation; null when no turn runs. Older servers omit it."
                         },
                         "compression_started_at": {
                           "anyOf": [
@@ -25098,6 +25875,117 @@
                           },
                           "description": "TAL-424: the active stream's pending steers, oldest first."
                         },
+                        "run_status": {
+                          "anyOf": [
+                            {
+                              "anyOf": [
+                                {
+                                  "type": "object",
+                                  "properties": {
+                                    "phase": {
+                                      "const": "compressing"
+                                    }
+                                  },
+                                  "required": [
+                                    "phase"
+                                  ]
+                                },
+                                {
+                                  "type": "object",
+                                  "properties": {
+                                    "phase": {
+                                      "const": "rate_limit_wait"
+                                    },
+                                    "wait": {
+                                      "type": "object",
+                                      "properties": {
+                                        "provider": {
+                                          "anyOf": [
+                                            {
+                                              "type": "string"
+                                            },
+                                            {
+                                              "type": "null"
+                                            }
+                                          ]
+                                        },
+                                        "provider_label": {
+                                          "anyOf": [
+                                            {
+                                              "type": "string"
+                                            },
+                                            {
+                                              "type": "null"
+                                            }
+                                          ]
+                                        },
+                                        "until": {
+                                          "type": "number"
+                                        },
+                                        "until_kind": {
+                                          "enum": [
+                                            "reset",
+                                            "retry"
+                                          ],
+                                          "type": "string"
+                                        }
+                                      },
+                                      "required": [
+                                        "provider",
+                                        "provider_label",
+                                        "until",
+                                        "until_kind"
+                                      ]
+                                    }
+                                  },
+                                  "required": [
+                                    "phase",
+                                    "wait"
+                                  ]
+                                },
+                                {
+                                  "type": "object",
+                                  "properties": {
+                                    "phase": {
+                                      "const": "prompt_reading"
+                                    },
+                                    "progress_percent": {
+                                      "anyOf": [
+                                        {
+                                          "type": "number",
+                                          "minimum": 0,
+                                          "maximum": 100
+                                        },
+                                        {
+                                          "type": "null"
+                                        }
+                                      ]
+                                    }
+                                  },
+                                  "required": [
+                                    "phase",
+                                    "progress_percent"
+                                  ]
+                                },
+                                {
+                                  "type": "object",
+                                  "properties": {
+                                    "phase": {
+                                      "const": "working"
+                                    }
+                                  },
+                                  "required": [
+                                    "phase"
+                                  ]
+                                }
+                              ]
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "description": "Current server-selected run presentation; null when no turn runs. Older servers omit it."
+                        },
                         "compression_started_at": {
                           "anyOf": [
                             {
@@ -27475,6 +28363,117 @@
                             ]
                           },
                           "description": "TAL-424: the active stream's pending steers, oldest first."
+                        },
+                        "run_status": {
+                          "anyOf": [
+                            {
+                              "anyOf": [
+                                {
+                                  "type": "object",
+                                  "properties": {
+                                    "phase": {
+                                      "const": "compressing"
+                                    }
+                                  },
+                                  "required": [
+                                    "phase"
+                                  ]
+                                },
+                                {
+                                  "type": "object",
+                                  "properties": {
+                                    "phase": {
+                                      "const": "rate_limit_wait"
+                                    },
+                                    "wait": {
+                                      "type": "object",
+                                      "properties": {
+                                        "provider": {
+                                          "anyOf": [
+                                            {
+                                              "type": "string"
+                                            },
+                                            {
+                                              "type": "null"
+                                            }
+                                          ]
+                                        },
+                                        "provider_label": {
+                                          "anyOf": [
+                                            {
+                                              "type": "string"
+                                            },
+                                            {
+                                              "type": "null"
+                                            }
+                                          ]
+                                        },
+                                        "until": {
+                                          "type": "number"
+                                        },
+                                        "until_kind": {
+                                          "enum": [
+                                            "reset",
+                                            "retry"
+                                          ],
+                                          "type": "string"
+                                        }
+                                      },
+                                      "required": [
+                                        "provider",
+                                        "provider_label",
+                                        "until",
+                                        "until_kind"
+                                      ]
+                                    }
+                                  },
+                                  "required": [
+                                    "phase",
+                                    "wait"
+                                  ]
+                                },
+                                {
+                                  "type": "object",
+                                  "properties": {
+                                    "phase": {
+                                      "const": "prompt_reading"
+                                    },
+                                    "progress_percent": {
+                                      "anyOf": [
+                                        {
+                                          "type": "number",
+                                          "minimum": 0,
+                                          "maximum": 100
+                                        },
+                                        {
+                                          "type": "null"
+                                        }
+                                      ]
+                                    }
+                                  },
+                                  "required": [
+                                    "phase",
+                                    "progress_percent"
+                                  ]
+                                },
+                                {
+                                  "type": "object",
+                                  "properties": {
+                                    "phase": {
+                                      "const": "working"
+                                    }
+                                  },
+                                  "required": [
+                                    "phase"
+                                  ]
+                                }
+                              ]
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "description": "Current server-selected run presentation; null when no turn runs. Older servers omit it."
                         },
                         "compression_started_at": {
                           "anyOf": [
@@ -37656,6 +38655,117 @@
                           },
                           "description": "TAL-424: the active stream's pending steers, oldest first."
                         },
+                        "run_status": {
+                          "anyOf": [
+                            {
+                              "anyOf": [
+                                {
+                                  "type": "object",
+                                  "properties": {
+                                    "phase": {
+                                      "const": "compressing"
+                                    }
+                                  },
+                                  "required": [
+                                    "phase"
+                                  ]
+                                },
+                                {
+                                  "type": "object",
+                                  "properties": {
+                                    "phase": {
+                                      "const": "rate_limit_wait"
+                                    },
+                                    "wait": {
+                                      "type": "object",
+                                      "properties": {
+                                        "provider": {
+                                          "anyOf": [
+                                            {
+                                              "type": "string"
+                                            },
+                                            {
+                                              "type": "null"
+                                            }
+                                          ]
+                                        },
+                                        "provider_label": {
+                                          "anyOf": [
+                                            {
+                                              "type": "string"
+                                            },
+                                            {
+                                              "type": "null"
+                                            }
+                                          ]
+                                        },
+                                        "until": {
+                                          "type": "number"
+                                        },
+                                        "until_kind": {
+                                          "enum": [
+                                            "reset",
+                                            "retry"
+                                          ],
+                                          "type": "string"
+                                        }
+                                      },
+                                      "required": [
+                                        "provider",
+                                        "provider_label",
+                                        "until",
+                                        "until_kind"
+                                      ]
+                                    }
+                                  },
+                                  "required": [
+                                    "phase",
+                                    "wait"
+                                  ]
+                                },
+                                {
+                                  "type": "object",
+                                  "properties": {
+                                    "phase": {
+                                      "const": "prompt_reading"
+                                    },
+                                    "progress_percent": {
+                                      "anyOf": [
+                                        {
+                                          "type": "number",
+                                          "minimum": 0,
+                                          "maximum": 100
+                                        },
+                                        {
+                                          "type": "null"
+                                        }
+                                      ]
+                                    }
+                                  },
+                                  "required": [
+                                    "phase",
+                                    "progress_percent"
+                                  ]
+                                },
+                                {
+                                  "type": "object",
+                                  "properties": {
+                                    "phase": {
+                                      "const": "working"
+                                    }
+                                  },
+                                  "required": [
+                                    "phase"
+                                  ]
+                                }
+                              ]
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "description": "Current server-selected run presentation; null when no turn runs. Older servers omit it."
+                        },
                         "compression_started_at": {
                           "anyOf": [
                             {
@@ -40121,6 +41231,117 @@
                           },
                           "description": "TAL-424: the active stream's pending steers, oldest first."
                         },
+                        "run_status": {
+                          "anyOf": [
+                            {
+                              "anyOf": [
+                                {
+                                  "type": "object",
+                                  "properties": {
+                                    "phase": {
+                                      "const": "compressing"
+                                    }
+                                  },
+                                  "required": [
+                                    "phase"
+                                  ]
+                                },
+                                {
+                                  "type": "object",
+                                  "properties": {
+                                    "phase": {
+                                      "const": "rate_limit_wait"
+                                    },
+                                    "wait": {
+                                      "type": "object",
+                                      "properties": {
+                                        "provider": {
+                                          "anyOf": [
+                                            {
+                                              "type": "string"
+                                            },
+                                            {
+                                              "type": "null"
+                                            }
+                                          ]
+                                        },
+                                        "provider_label": {
+                                          "anyOf": [
+                                            {
+                                              "type": "string"
+                                            },
+                                            {
+                                              "type": "null"
+                                            }
+                                          ]
+                                        },
+                                        "until": {
+                                          "type": "number"
+                                        },
+                                        "until_kind": {
+                                          "enum": [
+                                            "reset",
+                                            "retry"
+                                          ],
+                                          "type": "string"
+                                        }
+                                      },
+                                      "required": [
+                                        "provider",
+                                        "provider_label",
+                                        "until",
+                                        "until_kind"
+                                      ]
+                                    }
+                                  },
+                                  "required": [
+                                    "phase",
+                                    "wait"
+                                  ]
+                                },
+                                {
+                                  "type": "object",
+                                  "properties": {
+                                    "phase": {
+                                      "const": "prompt_reading"
+                                    },
+                                    "progress_percent": {
+                                      "anyOf": [
+                                        {
+                                          "type": "number",
+                                          "minimum": 0,
+                                          "maximum": 100
+                                        },
+                                        {
+                                          "type": "null"
+                                        }
+                                      ]
+                                    }
+                                  },
+                                  "required": [
+                                    "phase",
+                                    "progress_percent"
+                                  ]
+                                },
+                                {
+                                  "type": "object",
+                                  "properties": {
+                                    "phase": {
+                                      "const": "working"
+                                    }
+                                  },
+                                  "required": [
+                                    "phase"
+                                  ]
+                                }
+                              ]
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "description": "Current server-selected run presentation; null when no turn runs. Older servers omit it."
+                        },
                         "compression_started_at": {
                           "anyOf": [
                             {
@@ -42474,6 +43695,117 @@
                                 ]
                               },
                               "description": "TAL-424: the active stream's pending steers, oldest first."
+                            },
+                            "run_status": {
+                              "anyOf": [
+                                {
+                                  "anyOf": [
+                                    {
+                                      "type": "object",
+                                      "properties": {
+                                        "phase": {
+                                          "const": "compressing"
+                                        }
+                                      },
+                                      "required": [
+                                        "phase"
+                                      ]
+                                    },
+                                    {
+                                      "type": "object",
+                                      "properties": {
+                                        "phase": {
+                                          "const": "rate_limit_wait"
+                                        },
+                                        "wait": {
+                                          "type": "object",
+                                          "properties": {
+                                            "provider": {
+                                              "anyOf": [
+                                                {
+                                                  "type": "string"
+                                                },
+                                                {
+                                                  "type": "null"
+                                                }
+                                              ]
+                                            },
+                                            "provider_label": {
+                                              "anyOf": [
+                                                {
+                                                  "type": "string"
+                                                },
+                                                {
+                                                  "type": "null"
+                                                }
+                                              ]
+                                            },
+                                            "until": {
+                                              "type": "number"
+                                            },
+                                            "until_kind": {
+                                              "enum": [
+                                                "reset",
+                                                "retry"
+                                              ],
+                                              "type": "string"
+                                            }
+                                          },
+                                          "required": [
+                                            "provider",
+                                            "provider_label",
+                                            "until",
+                                            "until_kind"
+                                          ]
+                                        }
+                                      },
+                                      "required": [
+                                        "phase",
+                                        "wait"
+                                      ]
+                                    },
+                                    {
+                                      "type": "object",
+                                      "properties": {
+                                        "phase": {
+                                          "const": "prompt_reading"
+                                        },
+                                        "progress_percent": {
+                                          "anyOf": [
+                                            {
+                                              "type": "number",
+                                              "minimum": 0,
+                                              "maximum": 100
+                                            },
+                                            {
+                                              "type": "null"
+                                            }
+                                          ]
+                                        }
+                                      },
+                                      "required": [
+                                        "phase",
+                                        "progress_percent"
+                                      ]
+                                    },
+                                    {
+                                      "type": "object",
+                                      "properties": {
+                                        "phase": {
+                                          "const": "working"
+                                        }
+                                      },
+                                      "required": [
+                                        "phase"
+                                      ]
+                                    }
+                                  ]
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ],
+                              "description": "Current server-selected run presentation; null when no turn runs. Older servers omit it."
                             },
                             "compression_started_at": {
                               "anyOf": [

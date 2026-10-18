@@ -96,13 +96,19 @@ function PendingSteerMessage({ sessionId, steer }: { sessionId: string; steer: P
 export function LiveStatusPill({ turn, background = false }: { turn: LiveTurn; background?: boolean }) {
   const locale = useLocale()
   const reconnecting = turn.status === 'reconnecting'
-  const wait = reconnecting ? null : turn.rateLimitWait
-  const label = reconnecting ? m.live_reconnecting() : wait ? rateLimitLabel(wait, locale) : background ? m.live_background() : m.live_working()
+  const status = reconnecting ? null : turn.runStatus
+  // Old servers omit run_status; retain their rate-limit presentation until that contract is retired.
+  const wait = status?.phase === 'rate_limit_wait' ? status.wait : !status && !reconnecting ? turn.rateLimitWait : null
+  let label = reconnecting ? m.live_reconnecting() : wait ? rateLimitLabel(wait, locale) : background ? m.live_background() : m.live_working()
+  if (status?.phase === 'compressing') label = m.live_compressing()
+  if (status?.phase === 'prompt_reading') {
+    label = status.progress_percent === null ? m.live_prompt_reading() : m.live_prompt_reading_percent({ percent: new Intl.NumberFormat(locale, { style: 'percent', maximumFractionDigits: 0 }).format(status.progress_percent / 100) })
+  }
   return (
     <div className="live-run-status flex items-center gap-2 text-muted" role="status" aria-live="polite">
       <LaurelSpinner />
       <span className="live-run-label">{label}</span>
-      {!reconnecting && !background && !wait && <>{' '}<RunElapsed since={turn.startedAt} /></>}
+      {!reconnecting && !background && !wait && (!status || status.phase === 'working') && <>{' '}<RunElapsed since={turn.startedAt} /></>}
       {turn.tps != null && <span className="font-mono text-[11px] tabular-nums opacity-75" title="Tokens per second">{turn.tps.toFixed(1)} tok/s</span>}
     </div>
   )

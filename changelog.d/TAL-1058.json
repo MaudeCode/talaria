@@ -1,0 +1,12 @@
+{
+  "entries": [
+    {
+      "category": "Added",
+      "summary": "See local model prompt-reading progress in the chat status.",
+      "highlight": false,
+      "components": [
+        "web"
+      ]
+    }
+  ]
+}

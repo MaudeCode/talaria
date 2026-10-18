@@ -142,6 +142,77 @@ describe('chat turns through the sidecar', () => {
     }
   })
 
+  it('normalizes prompt-reading progress and journals its clear before content or completion (TAL-1058)', async () => {
+    const sid = await newSession(s)
+    for (const end of ['token', 'reasoning', 'done', 'clear']) {
+      sidecar.respond('chat.start', (_params, emit) => {
+        for (const progress_percent of [0, 42, 100, -2, 140, 'bad']) emit({ event: 'provider_phase', data: { phase: { phase: 'prompt_reading', progress_percent } } })
+        if (end === 'clear') emit({ event: 'provider_phase', data: { phase: null } })
+        if (end === 'token' || end === 'reasoning') emit({ event: end, data: { text: 'ok' } })
+        return completed([{ role: 'assistant', content: 'ok' }])
+      })
+      const start = await json(await post(s, '/api/chat/start', { session_id: sid, message: end }))
+      const frames = await s.sse(`/api/chat/stream?stream_id=${String(start.stream_id)}`, (f) => f.event === 'stream_end')
+      const statuses = frames.filter((f) => f.event === 'run_status').map((f) => (f.data as Json).status as Json | null)
+      expect(statuses.filter((v) => v?.phase === 'prompt_reading').map((v) => v?.progress_percent)).toEqual([0, 42, 100, 0, 100, null])
+      expect(statuses.at(-1)).toBeNull()
+      const lastProgress = statuses.findLastIndex((v) => v?.phase === 'prompt_reading')
+      expect(statuses[lastProgress + 1]).toEqual(end === 'done' ? null : { phase: 'working' })
+      const terminal = frames.findIndex((f) => f.event === 'done')
+      expect(frames.findLastIndex((f) => f.event === 'run_status')).toBeLessThan(terminal)
+      expect(((await json(await s.get(`/api/session?session_id=${sid}`))).session as Json).run_status).toBeNull()
+    }
+  })
+
+  it('keeps prompt progress isolated and current across replay, precedence, Stop, error, and replacement (TAL-1058)', async () => {
+    const sid = await newSession(s)
+    const other = await newSession(s)
+    let send!: (event: string, data: Json) => void
+    let finish!: (result: ChatResult) => void
+    sidecar.respond('chat.start', (_params, emit) => new Promise((resolve) => {
+      send = (event, data) => { emit({ event, data }) }
+      finish = resolve
+      send('provider_phase', { phase: { phase: 'prompt_reading', progress_percent: 42 } })
+    }))
+    sidecar.respond('chat.interrupt', () => ({ ok: true, pending_steer: '' }))
+    const status = async (session = sid) => ((await json(await s.get(`/api/session?session_id=${session}`))).session as Json).run_status
+    const progress = { phase: 'prompt_reading', progress_percent: 42 }
+    const streamId = String((await json(await post(s, '/api/chat/start', { session_id: sid, message: 'go' }))).stream_id)
+    try {
+      await vi.waitFor(async () => { expect(await status()).toEqual(progress) })
+      expect(await status(other)).toBeNull()
+      const replay = await s.sse(`/api/chat/stream?stream_id=${streamId}&after_event_id=${streamId}:0`, (f) => f.event === 'run_status' && ((f.data as Json).status as Json)?.phase === 'prompt_reading')
+      expect(replay.at(-1)?.data).toEqual({ session_id: sid, status: progress })
+      send('rate_limit_wait', { provider: 'test', until: 1_800_000_600 })
+      await vi.waitFor(async () => { expect(await status()).toMatchObject({ phase: 'rate_limit_wait' }) })
+      send('compressing', {})
+      await vi.waitFor(async () => { expect(await status()).toEqual({ phase: 'compressing' }) })
+      send('compression_finished', {})
+      await vi.waitFor(async () => { expect(await status()).toMatchObject({ phase: 'rate_limit_wait' }) })
+      send('rate_limit_wait', { provider: null, until: null })
+      await vi.waitFor(async () => { expect(await status()).toEqual(progress) })
+      await s.get(`/api/chat/cancel?stream_id=${streamId}`)
+      expect(await status()).toBeNull()
+      send('provider_phase', { phase: progress })
+      finish(completed([], { status: 'cancelled' }))
+      await vi.waitFor(async () => { expect((await s.deps.sessionStore.get(sid)).active_stream_id).toBeNull() })
+      expect(await status()).toBeNull()
+      for (const fail of [true, false]) {
+        sidecar.respond('chat.start', (_params, emit) => {
+          if (fail) {
+            emit({ event: 'provider_phase', data: { phase: progress } })
+            throw new Error('synthetic failure')
+          }
+          return completed([{ role: 'assistant', content: 'replacement' }])
+        })
+        const next = String((await json(await post(s, '/api/chat/start', { session_id: sid, message: 'next' }))).stream_id)
+        const frames = await s.sse(`/api/chat/stream?stream_id=${next}`, (f) => f.event === 'stream_end')
+        if (!fail) expect(frames.some((f) => f.event === 'run_status' && ((f.data as Json).status as Json)?.phase === 'prompt_reading')).toBe(false)
+        expect(await status()).toBeNull()
+      }
+    } finally { finish(completed([], { status: 'cancelled' })) }
+  })
+
   it('ships a rate-limit wait as a run-status frame, cleared by the next token, ended with the turn (TAL-821)', async () => {
     const sid = await newSession(s)
     const until = 1_800_000_600
@@ -263,7 +334,7 @@ describe('chat turns through the sidecar', () => {
     // Python closed the reasoning segment with a stable `{text:'', titles:[...]}` snapshot before the first visible token.
     // Python emits the prefill `context_status` frame before the agent runs; the recall hook is dropped, so it is always not_configured.
     // The live meter (TAL-397) interleaves its own frames; the content order is pinned without them.
-    const content = frames.filter((f) => f.event !== 'metering')
+    const content = frames.filter((f) => !['metering', 'run_status'].includes(f.event))
     expect(eventNames(content).slice(0, 7)).toEqual(['context_status', 'reasoning', 'tool', 'tool_complete', 'reasoning', 'token', 'token'])
     expect(content[0]?.data).toEqual({ session_id: sid, prefill: { status: 'not_configured', source: 'none', label: '', message_count: 0 } })
     expect(content[4]?.data).toEqual({ text: '', titles: ['thinking'] })
