@@ -1941,12 +1941,29 @@ export class SessionService {
     }
   }
 
+  /** Clear and delete share the profile-scoped, best-effort Agent session boundary. */
+  private async finalizeSession(sid: string, profile: string | null, reason: 'clear' | 'delete'): Promise<string[]> {
+    const sidecar = this.deps.sidecar?.()
+    if (!sidecar || this.deps.profileDeleting?.(profile)) return []
+    const release = this.deps.profileActivity?.(profile)
+    try {
+      return (await sidecar.call('chat.finalize_session', {
+        session_id: sid, profile_home: this.deps.profileHome(profile ?? this.deps.activeProfile()), reason,
+      }, { timeoutMs: 12_000 })).messages
+    } catch (error) {
+      this.deps.log(`[webui] session finalize (${reason}) failed: ${(error as Error).message}`)
+      return []
+    } finally { release?.() }
+  }
+
   async clear(sid: string): Promise<Record<string, unknown>> {
     await this.rejectViewOnly(sid, 'modified')
     const s = (await this.mutationTarget(sid, 'modified'))
     await this.withMutationLock(sid, async () => {
+      const messages = await this.finalizeSession(sid, s.profile, 'clear')
       const hadMessages = s.messages.length > 0
       truncateSessionAtKeep(s, 0)
+      s.messages = messages.map((content) => ({ role: 'local_notice', content, _notice_kind: 'session_finalize', timestamp: this.deps.now() }))
       s.tool_calls = []
       if (s.parent_session_id) {
         let parentIsSnapshot = false
@@ -2204,6 +2221,7 @@ export class SessionService {
         removedIds = (await filterAsync(removedIds, async (id) => {
           try { return this.deps.profilesMatch((await this.store.get(id, { metadataOnly: true })).profile, eventProfile ?? this.deps.activeProfile()) } catch { return true }
         }))
+        if (!(await this.store.wasDeleted(sid))) await this.finalizeSession(sid, eventProfile, 'delete')
         for (const id of removedIds) {
           // Revoke before removing each persisted alias; UI cleanup follows the Agent's committed target set.
           try {

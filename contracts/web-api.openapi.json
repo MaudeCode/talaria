@@ -4091,7 +4091,8 @@
                               },
                               "_notice_kind": {
                                 "enum": [
-                                  "failed_turn"
+                                  "failed_turn",
+                                  "session_finalize"
                                 ],
                                 "type": "string"
                               },
@@ -6649,7 +6650,8 @@
                               },
                               "_notice_kind": {
                                 "enum": [
-                                  "failed_turn"
+                                  "failed_turn",
+                                  "session_finalize"
                                 ],
                                 "type": "string"
                               },
@@ -8942,7 +8944,8 @@
                               },
                               "_notice_kind": {
                                 "enum": [
-                                  "failed_turn"
+                                  "failed_turn",
+                                  "session_finalize"
                                 ],
                                 "type": "string"
                               },
@@ -12467,7 +12470,8 @@
                               },
                               "_notice_kind": {
                                 "enum": [
-                                  "failed_turn"
+                                  "failed_turn",
+                                  "session_finalize"
                                 ],
                                 "type": "string"
                               },
@@ -15859,7 +15863,8 @@
                               },
                               "_notice_kind": {
                                 "enum": [
-                                  "failed_turn"
+                                  "failed_turn",
+                                  "session_finalize"
                                 ],
                                 "type": "string"
                               },
@@ -19974,7 +19979,8 @@
                               },
                               "_notice_kind": {
                                 "enum": [
-                                  "failed_turn"
+                                  "failed_turn",
+                                  "session_finalize"
                                 ],
                                 "type": "string"
                               },
@@ -22292,7 +22298,8 @@
                               },
                               "_notice_kind": {
                                 "enum": [
-                                  "failed_turn"
+                                  "failed_turn",
+                                  "session_finalize"
                                 ],
                                 "type": "string"
                               },
@@ -24672,7 +24679,8 @@
                               },
                               "_notice_kind": {
                                 "enum": [
-                                  "failed_turn"
+                                  "failed_turn",
+                                  "session_finalize"
                                 ],
                                 "type": "string"
                               },
@@ -27050,7 +27058,8 @@
                               },
                               "_notice_kind": {
                                 "enum": [
-                                  "failed_turn"
+                                  "failed_turn",
+                                  "session_finalize"
                                 ],
                                 "type": "string"
                               },
@@ -37230,7 +37239,8 @@
                               },
                               "_notice_kind": {
                                 "enum": [
-                                  "failed_turn"
+                                  "failed_turn",
+                                  "session_finalize"
                                 ],
                                 "type": "string"
                               },
@@ -39695,7 +39705,8 @@
                               },
                               "_notice_kind": {
                                 "enum": [
-                                  "failed_turn"
+                                  "failed_turn",
+                                  "session_finalize"
                                 ],
                                 "type": "string"
                               },
@@ -42049,7 +42060,8 @@
                                   },
                                   "_notice_kind": {
                                     "enum": [
-                                      "failed_turn"
+                                      "failed_turn",
+                                      "session_finalize"
                                     ],
                                     "type": "string"
                                   },

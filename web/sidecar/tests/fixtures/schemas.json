@@ -6865,6 +6865,22 @@
     ],
     "additionalProperties": false
   },
+  "chat.finalize_session": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "properties": {
+      "messages": {
+        "type": "array",
+        "items": {
+          "type": "string"
+        }
+      }
+    },
+    "required": [
+      "messages"
+    ],
+    "additionalProperties": false
+  },
   "chat.evict_agent": {
     "$schema": "https://json-schema.org/draft/2020-12/schema",
     "type": "object",

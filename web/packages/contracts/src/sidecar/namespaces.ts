@@ -639,6 +639,7 @@ export const CHAT_METHODS = {
   },
   /** TAL-255: second phase of `chat.compress`; `finalized: false` when the token is unknown or already expired. */
   'chat.compress_finalize': { params: z.object({ commit_token: z.string().min(1), committed: z.boolean() }), result: z.object({ finalized: z.boolean() }) },
+  'chat.finalize_session': { params: ProfileHomeParams.extend({ session_id: z.string().min(1), reason: z.enum(['clear', 'delete']) }), result: z.object({ messages: z.array(z.string()) }) },
   'chat.evict_agent': { params: z.object({ session_id: z.string().min(1), clear_session: z.boolean().optional() }), result: z.object({ evicted: z.boolean() }) },
   'chat.commit_memory': { params: ProfileHomeParams.extend({ session_id: z.string().min(1) }), result: z.object({ committed: z.boolean() }) },
   /**

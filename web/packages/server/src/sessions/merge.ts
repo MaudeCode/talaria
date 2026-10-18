@@ -1328,7 +1328,7 @@ export function sanitizeMessagesForApi(messages: Message[], { preserveApiContent
     const replay = preserveApiContent ? apiContent(msg) : undefined
     if (isReasoningOnlyAssistant(msg) && !replay) continue
     // The Agent already received a steer mid-turn; its persisted row is display-only.
-    if (msg._error || isDict(msg._steer)) continue
+    if (msg._error || isDict(msg._steer) || msg._notice_kind === 'session_finalize') continue
     if (msg._partial && !messageText(msg.content).trim()) continue
     const recovered = Boolean(msg._recovered) && msg.role === 'user'
     if (msg.role === 'tool') { const tid = str(msg.tool_call_id) || str(msg.tool_use_id); if (!tid || !validToolCallIds.has(tid)) continue }
