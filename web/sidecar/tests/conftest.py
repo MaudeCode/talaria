@@ -26,7 +26,10 @@ import pytest
 SIDECAR_ROOT = pathlib.Path(__file__).resolve().parent.parent
 FIXTURES = pathlib.Path(__file__).resolve().parent / "fixtures"
 sys.path.insert(0, str(SIDECAR_ROOT / "scripts"))
-from suite_runner import process_snapshot
+pytest.register_assert_rewrite('suite_runner')
+from suite_runner import case_layer, process_snapshot
+
+pytest_plugins = ['suite_runner']
 
 
 def configured_agent_dir() -> pathlib.Path | None:
@@ -37,6 +40,8 @@ def configured_agent_dir() -> pathlib.Path | None:
 
 
 def discover_python(agent_dir: pathlib.Path | None) -> str | None:
+    if os.environ.get('TALARIA_TEST_LAYER') == 'process':
+        return sys.executable
     if os.environ.get("HERMES_WEBUI_PYTHON"):
         return os.environ["HERMES_WEBUI_PYTHON"]
     if agent_dir:
@@ -217,9 +222,12 @@ def isolated_chat_agent_cache():
 
 
 @pytest.fixture(autouse=True)
-def no_surviving_processes(tmp_path_factory: pytest.TempPathFactory):
+def no_surviving_processes(tmp_path_factory: pytest.TempPathFactory, request):
     """Fail a test that leaves a process naming the session's temp tree running, so cleanup never races a writer."""
     yield
+    # Fast cases cannot launch children; the audit guard fails even swallowed attempts.
+    if case_layer(request.node.nodeid) == 'fast':
+        return
     base = str(tmp_path_factory.getbasetemp())
     rows = process_snapshot()
     # The runner and its parents may name the temp tree themselves (--basetemp).

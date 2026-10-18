@@ -178,8 +178,7 @@ def test_recovery_retries_corrected_selection_without_discarding_debt(tmp_path):
 
 def test_server_retry_refreshes_runtime_and_restores_agent_rpcs(tmp_path):
     server = SIDECAR_ROOT.parent / 'packages/server/dist'
-    if not (server / 'runtime.js').exists() or shutil.which('node') is None:
-        pytest.skip('requires built server and Node 24, supplied in compatibility CI')
+    assert (server / 'runtime.js').exists() and shutil.which('node') is not None, 'required environment recovery proof needs built server and Node 24'
     layout = recovery_layout(tmp_path)
     root, home, old, _, facts, receipt, revision, _ = layout
     (root / 'pm/__init__.py').write_text('')  # Synthetic checkout has only PM's stdlib selection module.

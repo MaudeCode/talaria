@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 import pathlib
 import subprocess
 import threading
@@ -37,7 +38,7 @@ def paused_agent_write(home: pathlib.Path) -> tuple[subprocess.Popen, pathlib.Pa
     deadline = time.monotonic() + 30
     while not ready.exists():
         if proc.poll() == 3:
-            pytest.skip("Agent predates the locked .env writer")
+            pytest.fail("supported Agent is missing the required locked .env writer")
         assert proc.poll() is None and time.monotonic() < deadline, proc.stderr.read() if proc.stderr else ""
         time.sleep(0.02)
     return proc, go
@@ -99,17 +100,64 @@ def test_env_write_refuses_an_administrator_managed_key_before_writing(hermes_ho
     assert env_lines(hermes_home) == ["EXISTING=1"]
 
 
-@requires_agent
-def test_env_write_reports_a_held_lock(handshaken: SidecarProcess, hermes_home: pathlib.Path) -> None:
+def test_env_write_reports_a_held_lock(hermes_home: pathlib.Path, monkeypatch) -> None:
+    import contextlib
+    import sys
+    import types
+    from talaria_sidecar.errors import RpcError
+    from talaria_sidecar.methods import config
+
     (hermes_home / ".env").write_text("EXISTING=1\n")
-    agent, go = paused_agent_write(hermes_home)
+
+    @contextlib.contextmanager
+    def held(path):
+        assert path == hermes_home / '.env'
+        raise TimeoutError('synthetic held Agent lock')
+        yield
+
+    agent = types.SimpleNamespace(env_write_refusal=lambda *args: None, ensure_hermes_home=lambda: None,
+        get_env_path=lambda: hermes_home / '.env', _env_write_lock=held)
+    monkeypatch.setitem(sys.modules, 'hermes_cli', types.SimpleNamespace(config=agent))
+    monkeypatch.setattr(config, 'scoped_home', lambda home: contextlib.nullcontext(home))
+    with pytest.raises(RpcError) as raised:
+        config.env_write(hermes_home, {'LATE_KEY': 'value'})
+    assert raised.value.data['condition'] == 'env_locked'
+    assert env_lines(hermes_home) == ['EXISTING=1']
+
+
+@requires_agent
+def test_native_lock_timeout_maps_to_env_locked(hermes_home: pathlib.Path) -> None:
+    from conftest import SIDECAR_ROOT
+    (hermes_home / '.env').write_text('EXISTING=1\n')
+    holder, go = paused_agent_write(hermes_home)
+    script = '''import os
+from pathlib import Path
+from hermes_cli import auth
+from talaria_sidecar.errors import RpcError
+from talaria_sidecar.methods.config import env_write
+home=Path(os.environ['HERMES_HOME'])
+original=auth._file_lock
+budgets=[]
+def short_budget(path, holder, timeout, message, *args, **kwargs):
+ if Path(path).resolve()==(home/'.env.lock').resolve():
+  budgets.append(timeout)
+  timeout=.02
+ return original(path, holder, timeout, message, *args, **kwargs)
+auth._file_lock=short_budget
+try: env_write(home, {'LATE_KEY':'value'})
+except RpcError as error: assert error.data['condition']=='env_locked', error.data
+else: raise AssertionError('native held lock did not time out')
+assert budgets and all(timeout>.02 for timeout in budgets), budgets
+assert (home/'.env').read_text()=='EXISTING=1\\n'
+'''
     try:
-        message, _ = handshaken.call("config.env_write", {"profile_home": str(hermes_home), "updates": {"LATE_KEY": "value"}}, timeout=60)
+        result = subprocess.run([AGENT_PYTHON, '-c', script], env=isolated_env(hermes_home,
+            PYTHONPATH=str(SIDECAR_ROOT) + os.pathsep + str(AGENT_DIR)), capture_output=True, text=True, timeout=30)
+        assert result.returncode == 0, result.stdout + result.stderr
     finally:
         go.touch()
-        agent.wait(timeout=30)
-    assert message["error"]["data"]["condition"] == "env_locked", message
-    assert "LATE_KEY=value" not in env_lines(hermes_home)
+        assert holder.wait(timeout=30) == 0
+    assert 'LATE_KEY=value' not in env_lines(hermes_home)
 
 
 @requires_agent

@@ -382,6 +382,7 @@ class AgentRunnerTests(unittest.TestCase):
                 plan.write_text(json.dumps({"components": {"web": {"sourceRevision": "a" * 40}},
                                             "agent": {"version": "1.0.0", "image": "synthetic"}}))
                 checks = []
+                builds = []
                 # Every release must be running before any finishes; a sequential loop breaks the barrier.
                 running = threading.Barrier(len(checked), timeout=10)
 
@@ -396,16 +397,25 @@ class AgentRunnerTests(unittest.TestCase):
                 def run(command, **kwargs):
                     if command[:2] == ["git", "clone"] and Path(command[-1]).name == unclonable:
                         raise subprocess.CalledProcessError(128, command)
+                    if command[0] == 'npm':
+                        builds.append(command)
+                        for relative in agent.SERVER_RUNTIME_ARTIFACTS:
+                            (Path(kwargs['cwd']).parent / relative).mkdir(parents=True, exist_ok=True)
+                        return subprocess.CompletedProcess(command, 0)
                     if command[0] == "python3":
                         checkout = kwargs["cwd"]
                         self.assertTrue(checkout.is_relative_to(root / ".codex-tmp"))
                         self.assertEqual(command[1], str(checkout / "scripts/check-agent-compatibility.py"))
+                        self.assertEqual(len(builds), 3)
+                        for relative in agent.SERVER_RUNTIME_ARTIFACTS:
+                            self.assertTrue((checkout / relative).is_symlink())
                         checks.append((checkout, command[2:]))
                         running.wait()
                         return subprocess.CompletedProcess(command, int(failing in command), stdout="")
 
                 argv = ["check", "--plan", str(plan), *(["--receipts", str(root / "receipts")] if receipts else [])]
                 with patch.object(agent, "ROOT", root), patch.object(sys, "argv", argv), \
+                        patch.dict(agent.os.environ, {'TALARIA_SIDECAR_WORKERS': '4'}), \
                         patch.object(agent.subprocess, "check_output", side_effect=check_output), \
                         patch.object(agent.subprocess, "run", side_effect=run):
                     if failing or unclonable:
@@ -419,6 +429,8 @@ class AgentRunnerTests(unittest.TestCase):
                                   for tag in sorted(checked)])
                 # Each release runs in its own checkout, so their sidecar test venvs never collide.
                 self.assertEqual(len({checkout for checkout, _ in checks}), len(checked))
+                self.assertEqual(builds, [['npm', 'ci', '--no-audit', '--no-fund'],
+                    ['npm', 'run', 'build', '-w', 'packages/contracts'], ['npm', 'run', 'build', '-w', 'packages/server']])
                 self.assertFalse(checks[0][0].parent.exists())
 
     def test_selected_web_pin_must_match_the_planned_agent(self):

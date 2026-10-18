@@ -5,7 +5,9 @@ the existing pytest dependency is used; orchestration itself is Python stdlib.
 """
 
 from collections import Counter, defaultdict
+import atexit
 import json
+import contextlib
 import os
 from pathlib import Path
 import signal
@@ -42,21 +44,143 @@ def partition(nodeids, count):
 
 # Pytest plugin hooks. The collection and execution journal is independent of
 # JUnit, which can contain an extra testcase for a teardown error.
-_collected, _started = [], []
+_collected, _started, _layers = [], [], {}
+_inventory, _active_case, _harness_launch = {}, None, False
+_launches, _violations = [], []
+_active_phase = 'collection'
 
 
-def pytest_collection_modifyitems(items):
-    _collected.extend(item.nodeid for item in items)
+def pytest_addoption(parser):
+    parser.addoption('--talaria-layer', choices=('all', 'fast', 'process', 'compatibility'), default='all')
+
+
+def pytest_configure(config):
+    global _inventory
+    path = Path(config.rootpath) / 'tests/process_inventory.json'
+    if path.exists():
+        data = json.loads(path.read_text())
+        if data.get('schemaVersion') != 1 or not isinstance(data.get('families'), dict):
+            raise ValueError('invalid process inventory')
+        _inventory = data['families']
+        for family, entry in _inventory.items():
+            if (not isinstance(entry, dict) or entry.get('layer') not in ('process', 'compatibility')
+                    or not isinstance(entry.get('reason'), str) or not entry['reason'].strip()
+                    or not isinstance(entry.get('cases'), list) or not entry['cases']
+                    or any(not isinstance(case, str) or (case and not (case.startswith('[') and case.endswith(']'))) for case in entry['cases'])
+                    or len(entry['cases']) != len(set(entry['cases']))):
+                raise ValueError(f'invalid process inventory family: {family}')
+    sys.addaudithook(_audit_launch)
+    def final_policy_check():
+        if _violations:
+            try:
+                pytest_sessionfinish(None)
+            finally:
+                os._exit(1)
+    atexit.register(final_policy_check)
+
+
+def _audit_launch(event, args):
+    if event not in ('subprocess.Popen', 'os.fork', 'os.forkpty', 'os.posix_spawn', 'os.exec',
+                     'os.system', 'os.startfile', 'os.startfile/2', 'socket.connect', 'socket.bind',
+                     'socket.getaddrinfo', 'socket.gethostbyname', 'socket.gethostbyname_ex',
+                     'socket.gethostbyaddr', 'socket.getnameinfo', 'socket.sendto', 'socket.sendmsg'):
+        return
+    family = (_active_case or '').split('[', 1)[0]
+    if family not in _inventory:
+        boundary = 'network access' if event.startswith('socket.') else 'process launch'
+        violation = f'unclassified {boundary} in {_active_case or "collection"}: {event} {args[:2]!r}'
+        _violations.append(violation)
+        raise RuntimeError(violation)
+    _launches.append({'nodeid': _active_case, 'phase': _active_phase, 'harness': _harness_launch, 'event': event, 'args': repr(args[:2])})
+
+
+@contextlib.contextmanager
+def harness_process_scan():
+    global _harness_launch
+    previous, _harness_launch = _harness_launch, True
+    try:
+        yield
+    finally:
+        _harness_launch = previous
+
+
+def pytest_runtest_logreport(report):
+    global _active_case, _active_phase
+    _active_phase = {'setup': 'call', 'call': 'teardown', 'teardown': 'collection'}[report.when]
+    if report.when == 'teardown':
+        _active_case = None
+
+
+def case_layer(nodeid):
+    return _inventory.get(nodeid.split('[', 1)[0], {}).get('layer', 'fast')
+
+
+def pytest_collection_modifyitems(items, config):
+    selected, deselected = [], []
+    layer = config.getoption('--talaria-layer')
+    for item in items:
+        family, bracket, case = item.nodeid.partition('[')
+        entry = _inventory.get(family)
+        agent = ({'sidecar', 'handshaken'} & set(item.fixturenames) or any(
+            mark.kwargs.get('reason') == 'pinned Hermes Agent checkout with venv not found'
+            for mark in item.iter_markers('skipif')))
+        if agent and case_layer(item.nodeid) != 'compatibility':
+            raise ValueError(f'unclassified Agent case: {item.nodeid}')
+        if entry and ('[' + case if bracket else '') not in entry['cases']:
+            raise ValueError(f'unreviewed process case: {item.nodeid}')
+        target = selected if layer == 'all' or layer == case_layer(item.nodeid) else deselected
+        target.append(item)
+    config.hook.pytest_deselected(items=deselected)
+    items[:] = selected
     for item in items:
         item.user_properties.append(("talaria_nodeid", item.nodeid))
 
 
+def pytest_collection_finish(session):
+    _collected.extend(item.nodeid for item in session.items)
+    for item in session.items:
+        _layers[item.nodeid] = case_layer(item.nodeid)
+    if os.environ.get('TALARIA_POLICY_CHECK_ALL') == '1':
+        reviewed = {family + case
+                    for family, entry in _inventory.items() for case in entry['cases']}
+        missing = reviewed - set(_collected)
+        if missing:
+            raise ValueError(f'missing reviewed coverage: {sorted(missing)}')
+
+
 def pytest_runtest_logstart(nodeid):
+    global _active_case, _active_phase
+    _active_case, _active_phase = nodeid, 'setup'
     _started.append(nodeid)
 
 
-def pytest_sessionfinish():
-    Path(os.environ["TALARIA_PYTEST_MANIFEST"]).write_text(json.dumps({"collected": _collected, "started": _started}))
+def pytest_sessionfinish(session):
+    if _violations:
+        print('\n'.join(_violations), file=sys.stderr, flush=True)
+        if session is not None:
+            session.exitstatus = 1
+    if path := os.environ.get('TALARIA_PYTEST_MANIFEST'):
+        Path(path).write_text(json.dumps({'collected': _collected, 'started': _started, 'layers': _layers, 'launches': _launches, 'violations': _violations}))
+
+
+def layer_arguments(args):
+    remaining, layer, release = [], 'all', None
+    for arg in args:
+        if arg.startswith('--layer='):
+            layer = arg.split('=', 1)[1]
+        elif arg.startswith('--agent-release='):
+            release = arg.split('=', 1)[1]
+        else:
+            remaining.append(arg)
+    if layer not in ('all', 'fast', 'process', 'compatibility'):
+        raise ValueError('layer must be all, fast, process or compatibility')
+    layers = ['fast', 'process', 'compatibility'] if layer == 'all' else [layer]
+    if release and layer == 'all':
+        pin = Path(__file__).resolve().parents[1] / 'agent_dependency.json'
+        active = json.loads(pin.read_text())['x-talaria']['releaseTag']
+        if release != active:
+            layers = ['compatibility']
+    return remaining, layers
 
 
 def report_argument(args):
@@ -119,7 +243,8 @@ def wait_for(proc, processes):
 def process_snapshot():
     # Readline can set native COLUMNS behind os.environ's back. Ownership paths
     # must survive that terminal width in both pytest fixtures and final cleanup.
-    listing = subprocess.check_output(["ps", "-ww", "-eo", "pid=,ppid=,pgid=,args="], text=True)
+    with harness_process_scan():
+        listing = subprocess.check_output(["ps", "-ww", "-eo", "pid=,ppid=,pgid=,args="], text=True)
     return [(int(row[0]), int(row[1]), int(row[2]), row[3])
             for row in (line.split(None, 3) for line in listing.splitlines()) if len(row) == 4]
 
@@ -162,9 +287,12 @@ def cleanup(processes, state):
 
 def merge_reports(jobs, destination):
     merged = ET.Element("testsuites")
-    durations, modules = [], defaultdict(float)
+    durations, modules, manifests = [], defaultdict(float), []
     for job, expected in jobs:
         manifest = json.loads((job / "manifest.json").read_text())
+        if manifest.get('violations'):
+            raise ValueError('; '.join(manifest['violations']))
+        manifests.append(manifest)
         if Counter(manifest["collected"]) != Counter(expected) or Counter(manifest["started"]) != Counter(expected):
             raise ValueError(f"incomplete or duplicate test coverage in {job}")
         report = ET.parse(job / "junit.xml").getroot()
@@ -199,6 +327,14 @@ def merge_reports(jobs, destination):
                 modules[nodeid.split("::", 1)[0]] += duration
     destination.parent.mkdir(parents=True, exist_ok=True)
     temporary = destination.with_suffix(".tmp")
+    coverage = {'collected': [node for manifest in manifests for node in manifest['collected']],
+                'started': [node for manifest in manifests for node in manifest['started']],
+                'layers': {node: layer for manifest in manifests for node, layer in manifest.get('layers', {}).items()},
+                'launches': [launch for manifest in manifests for launch in manifest.get('launches', [])]}
+    coverage_path = Path(str(destination) + '.coverage.json')
+    coverage_temporary = coverage_path.with_suffix('.tmp')
+    coverage_temporary.write_text(json.dumps(coverage))
+    coverage_temporary.replace(coverage_path)
     ET.ElementTree(merged).write(temporary, encoding="utf-8", xml_declaration=True)
     temporary.replace(destination)
     for label, entries in (("Slow tests", durations), ("Slow modules", [(seconds, name) for name, seconds in modules.items()])):
@@ -209,12 +345,14 @@ def merge_reports(jobs, destination):
 
 
 def run(args):
-    count = worker_count(os.environ.get(WORKERS))
     remaining, report = report_argument(args)
-    selected = 1 if remaining else count
-    print(f"Sidecar pytest: workers={selected}, host budget={os.environ.get('TALARIA_SIDECAR_TOTAL_WORKERS', count)}", flush=True)
     if report:
         report.unlink(missing_ok=True)  # A stale report must never prove this run passed.
+        Path(str(report) + '.coverage.json').unlink(missing_ok=True)
+    remaining, layers = layer_arguments(remaining)
+    count = worker_count(os.environ.get(WORKERS))
+    selected = 1 if remaining else count
+    print(f"Sidecar pytest: workers={selected}, host budget={os.environ.get('TALARIA_SIDECAR_TOTAL_WORKERS', count)}", flush=True)
     diagnostics = Path(str(report) + ".workers") if report else Path(__file__).resolve().parents[2] / ".codex-tmp/sidecar-pytest"
     diagnostics.mkdir(parents=True, exist_ok=True)
     # A unique invocation directory also prevents reusing evidence on retries.
@@ -223,7 +361,7 @@ def run(args):
     with tempfile.TemporaryDirectory(prefix="talaria-pytest-state-") as directory:
         state = Path(directory)
 
-        def launch(name, arguments):
+        def launch(name, arguments, layer=None, complete=False):
             job, home = output / name, state / name
             job.mkdir()
             for child in ("home", "tmp"):
@@ -231,6 +369,11 @@ def run(args):
             env = {**os.environ, "HOME": str(home / "home"), "TMPDIR": str(home / "tmp"),
                    "PYTHONPATH": str(Path(__file__).parent) + os.pathsep + os.environ.get("PYTHONPATH", ""),
                    "TALARIA_PYTEST_MANIFEST": str(job / "manifest.json")}
+            if layer in ('fast', 'process'):
+                env.pop('HERMES_WEBUI_AGENT_DIR', None)
+                env.pop('HERMES_WEBUI_PYTHON', None)
+            env['TALARIA_TEST_LAYER'] = layer or 'collection'
+            env['TALARIA_POLICY_CHECK_ALL'] = '1' if complete else '0'
             log = (job / "output.log").open("w")
             streams.append(log)
             proc = subprocess.Popen([sys.executable, "-m", "pytest", "-p", "suite_runner", "-q",
@@ -240,28 +383,38 @@ def run(args):
             return job, proc
 
         try:
-            if remaining:
-                job, proc = launch("serial", args)
-                return wait_for(proc, processes)
-            job, collection = launch("collection", ["--collect-only"])
+            job, collection = launch("collection", [*remaining, "--collect-only"], complete=not remaining)
             if wait_for(collection, processes):
                 raise ValueError("pytest collection failed")
-            nodeids = json.loads((job / "manifest.json").read_text())["collected"]
+            collected = json.loads((job / "manifest.json").read_text())
+            nodeids = collected['collected']
             if not nodeids or len(nodeids) != len(set(nodeids)):
                 raise ValueError("empty or duplicate pytest collection")
-            groups = partition(nodeids, count)
-            print(f"Collected {len(nodeids)} cases in {len(groups)} module groups; diagnostics: {output}", flush=True)
+            expected = [node for node in nodeids if collected['layers'][node] in layers]
+            if not expected:
+                raise ValueError('empty selected layer coverage')
+            if any(arg in ('--collect-only', '--collectonly', '--co') for arg in remaining):
+                print('\n'.join(expected), flush=True)
+                return 0
+            print(f"Collected {len(nodeids)} cases; selected {len(expected)} in {layers}; diagnostics: {output}", flush=True)
             jobs = []
-            for index, group in enumerate(groups):
-                name = f"worker-{index + 1}"
-                job, proc = launch(name, [f"--junitxml={output / name / 'junit.xml'}",
-                                         *dict.fromkeys(nodeid.split("::", 1)[0] for nodeid in group)])
-                jobs.append((job, group, proc))
             failed = False
-            for job, _, proc in jobs:
-                code = wait_for(proc, processes)
-                print(f"{job.name}: exit={code}", flush=True)
-                failed |= code != 0
+            for layer in layers:
+                groups = partition([node for node in expected if collected['layers'][node] == layer], selected)
+                current = []
+                for group in groups:
+                    name = f'worker-{len(jobs) + 1}'
+                    selection = remaining if remaining else list(dict.fromkeys(node.split('::', 1)[0] for node in group))
+                    job, proc = launch(name, [f"--junitxml={output / name / 'junit.xml'}",
+                                              f'--talaria-layer={layer}', *selection], layer)
+                    jobs.append((job, group, proc))
+                    current.append((job, proc))
+                for job, proc in current:
+                    code = wait_for(proc, processes)
+                    print(f'{job.name} ({layer}): exit={code}', flush=True)
+                    failed |= code != 0
+            if Counter(node for _, group, _ in jobs for node in group) != Counter(expected):
+                raise ValueError('missing or duplicate selected layer coverage')
             report_failed = merge_reports([(job, group) for job, group, _ in jobs], report or output / "junit.xml")
             return int(failed or report_failed)
         finally:
@@ -280,6 +433,9 @@ def run(args):
 
 
 def main():
+    if sys.argv[1:2] == ['--requires-agent']:
+        print(str('compatibility' in layer_arguments(sys.argv[2:])[1]).lower())
+        return 0
     if sys.platform == "linux":
         import ctypes
         if ctypes.CDLL(None, use_errno=True).prctl(36, 1, 0, 0, 0):  # PR_SET_CHILD_SUBREAPER

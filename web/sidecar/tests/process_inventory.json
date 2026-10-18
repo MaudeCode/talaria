@@ -1,0 +1,2385 @@
+{
+  "schemaVersion": 1,
+  "families": {
+    "tests/test_agent_gateway_identity.py::test_native_inline_successor_readiness": {
+      "layer": "compatibility",
+      "reason": "Supported-Agent API compatibility: native inline successor readiness. Uses the real installed release, not a fabricated API response.",
+      "cases": [
+        ""
+      ]
+    },
+    "tests/test_agent_gateway_identity.py::test_native_retained_inline_recovery_and_rpc_admission": {
+      "layer": "compatibility",
+      "reason": "Supported-Agent API compatibility: native retained inline recovery and rpc admission. Uses the real installed release, not a fabricated API response.",
+      "cases": [
+        ""
+      ]
+    },
+    "tests/test_agent_gateway_identity.py::test_native_inline_default_profile_readiness": {
+      "layer": "compatibility",
+      "reason": "Supported-Agent API compatibility: native inline default profile readiness. Uses the real installed release, not a fabricated API response.",
+      "cases": [
+        ""
+      ]
+    },
+    "tests/test_agent_gateway_identity.py::test_native_inline_recovery_preserves_unverified_sibling_debt": {
+      "layer": "compatibility",
+      "reason": "Supported-Agent API compatibility: native inline recovery preserves unverified sibling debt. Uses the real installed release, not a fabricated API response.",
+      "cases": [
+        ""
+      ]
+    },
+    "tests/test_agent_mutation.py::test_external_writer_is_quiesced_before_mutation_and_resumed_after_finish": {
+      "layer": "process",
+      "reason": "Actual stdio lease lifetime, cross-process checkout fencing, signal termination and durable native journal readback during source/dependency failure.",
+      "cases": [
+        ""
+      ]
+    },
+    "tests/test_agent_mutation.py::test_pre_mutation_refusal_or_owner_exit_resumes_the_same_owned_set": {
+      "layer": "process",
+      "reason": "Actual stdio lease lifetime, cross-process checkout fencing, signal termination and durable native journal readback during source/dependency failure.",
+      "cases": [
+        "[finish]",
+        "[eof]",
+        "[kill]"
+      ]
+    },
+    "tests/test_agent_mutation.py::test_unacknowledged_drain_never_mutates_source_and_retains_resume_debt": {
+      "layer": "process",
+      "reason": "Actual stdio lease lifetime, cross-process checkout fencing, signal termination and durable native journal readback during source/dependency failure.",
+      "cases": [
+        ""
+      ]
+    },
+    "tests/test_agent_mutation.py::test_a_failed_best_effort_checkpoint_cannot_authorize_a_stop_request": {
+      "layer": "process",
+      "reason": "Actual stdio lease lifetime, cross-process checkout fencing, signal termination and durable native journal readback during source/dependency failure.",
+      "cases": [
+        ""
+      ]
+    },
+    "tests/test_agent_mutation.py::test_unverified_tree_or_resume_keeps_the_native_recovery_record": {
+      "layer": "process",
+      "reason": "Actual stdio lease lifetime, cross-process checkout fencing, signal termination and durable native journal readback during source/dependency failure.",
+      "cases": [
+        "[torn]",
+        "[refuse-resume]"
+      ]
+    },
+    "tests/test_agent_mutation.py::test_failed_git_step_resumes_old_source_without_dropping_work": {
+      "layer": "process",
+      "reason": "Actual stdio lease lifetime, cross-process checkout fencing, signal termination and durable native journal readback during source/dependency failure.",
+      "cases": [
+        ""
+      ]
+    },
+    "tests/test_agent_mutation.py::test_dependency_failure_retains_the_pause_and_a_retry_resumes_it": {
+      "layer": "process",
+      "reason": "Actual stdio lease lifetime, cross-process checkout fencing, signal termination and durable native journal readback during source/dependency failure.",
+      "cases": [
+        "[False]",
+        "[True]"
+      ]
+    },
+    "tests/test_agent_mutation.py::test_a_killed_supervisor_leaves_an_adoptable_native_resume_record": {
+      "layer": "process",
+      "reason": "Actual stdio lease lifetime, cross-process checkout fencing, signal termination and durable native journal readback during source/dependency failure.",
+      "cases": [
+        ""
+      ]
+    },
+    "tests/test_agent_mutation.py::test_a_confirmed_legacy_target_can_recover_a_paused_broken_environment": {
+      "layer": "process",
+      "reason": "Actual stdio lease lifetime, cross-process checkout fencing, signal termination and durable native journal readback during source/dependency failure.",
+      "cases": [
+        ""
+      ]
+    },
+    "tests/test_agent_mutation.py::test_owner_death_stops_and_reaps_a_mutator_before_preserving_torn_tree_debt": {
+      "layer": "process",
+      "reason": "Actual stdio lease lifetime, cross-process checkout fencing, signal termination and durable native journal readback during source/dependency failure.",
+      "cases": [
+        "[kill]",
+        "[cancel]",
+        "[shutdown]"
+      ]
+    },
+    "tests/test_agent_mutation.py::test_native_journal_accepts_a_complete_atomic_restore_at_an_unmoved_head": {
+      "layer": "compatibility",
+      "reason": "Supported-Agent API compatibility: native journal accepts a complete atomic restore at an unmoved head. Uses the real installed release, not a fabricated API response.",
+      "cases": [
+        ""
+      ]
+    },
+    "tests/test_agent_mutation.py::test_native_journal_retains_a_killed_atomic_restore_at_an_unmoved_head": {
+      "layer": "compatibility",
+      "reason": "Supported-Agent API compatibility: native journal retains a killed atomic restore at an unmoved head. Uses the real installed release, not a fabricated API response.",
+      "cases": [
+        ""
+      ]
+    },
+    "tests/test_agent_services.py::test_native_snapshot_attests_a_barrier_controlled_child_exit": {
+      "layer": "compatibility",
+      "reason": "Supported-Agent API compatibility: native snapshot attests a barrier controlled child exit. Uses the real installed release, not a fabricated API response.",
+      "cases": [
+        ""
+      ]
+    },
+    "tests/test_agent_services.py::test_native_legacy_backend_identity_resolves_scoped_profile": {
+      "layer": "compatibility",
+      "reason": "Supported-Agent API compatibility: native legacy backend identity resolves scoped profile. Uses the real installed release, not a fabricated API response.",
+      "cases": [
+        "[False]",
+        "[True]"
+      ]
+    },
+    "tests/test_agent_services.py::test_native_process_exit_between_liveness_and_identity_probes": {
+      "layer": "compatibility",
+      "reason": "Supported-Agent API compatibility: native process exit between liveness and identity probes. Uses the real installed release, not a fabricated API response.",
+      "cases": [
+        "[False]",
+        "[True]"
+      ]
+    },
+    "tests/test_agent_services.py::test_wrapped_gateway_and_dashboard_stay_paused_through_source_mutation": {
+      "layer": "compatibility",
+      "reason": "Actual independent gateway/backend writers must stop before Git changes source and resume only after the stdio lease finishes; PID files and surviving processes are observed. Uses the selected supported release's unmodified backend_retirement API in independently running services.",
+      "cases": [
+        ""
+      ]
+    },
+    "tests/test_agent_services.py::test_updates_and_recovery_attest_barrier_controlled_descendant_exits": {
+      "layer": "compatibility",
+      "reason": "Actual transient descendants exit at OS sampling barriers during stop and restart; the complete owned process tree must be reaped before mutation. Uses the selected supported release's unmodified backend_retirement API in independently running services.",
+      "cases": [
+        "[normal]"
+      ]
+    },
+    "tests/test_agent_services.py::test_backend_recovery_covers_lease_exit_paths": {
+      "layer": "compatibility",
+      "reason": "Actual finish, EOF and SIGKILL of the lease owner must wake the recovery child and restore services from durable receipts, without changing source. Uses the selected supported release's unmodified backend_retirement API in independently running services.",
+      "cases": [
+        "[False-finish]",
+        "[False-eof]",
+        "[False-owner-kill]"
+      ]
+    },
+    "tests/test_agent_services.py::test_partial_pause_restores_only_the_services_it_stopped": {
+      "layer": "compatibility",
+      "reason": "With independent real services, partial refusal must preserve the untouched busy service PID and gateway PID while restoring the service already stopped. Uses the selected supported release's unmodified backend_retirement API in independently running services.",
+      "cases": [
+        ""
+      ]
+    },
+    "tests/test_agent_services.py::test_failed_restart_retains_debt_and_a_fresh_sidecar_recovers_it": {
+      "layer": "compatibility",
+      "reason": "A failed native supervisor restart must leave only its durable debt; a fresh sidecar interpreter reads it and restores the failed service without restarting its live sibling. Uses the selected supported release's unmodified backend_retirement API in independently running services.",
+      "cases": [
+        "[False]"
+      ]
+    },
+    "tests/test_agent_services.py::test_native_and_backend_debt_survive_worker_death_and_unsafe_source": {
+      "layer": "compatibility",
+      "reason": "SIGKILL of the actual writer-lease child must preserve both native and companion receipts; a fresh interpreter cannot restart writers until the unsafe source marker is repaired. Uses the selected supported release's unmodified backend_retirement API in independently running services.",
+      "cases": [
+        "[True]"
+      ]
+    },
+    "tests/test_agent_services.py::test_supervised_dashboard_without_gateway_recovers": {
+      "layer": "compatibility",
+      "reason": "An actual backend-only lease owns no gateway process; independent backend stop/restart and debt discharge must still complete over stdio. Uses the selected supported release's unmodified backend_retirement API in independently running services.",
+      "cases": [
+        ""
+      ]
+    },
+    "tests/test_agent_services.py::test_native_gated_dashboard_accepts_owner_local_retirement_session": {
+      "layer": "compatibility",
+      "reason": "Supported-Agent API compatibility: native gated dashboard accepts owner local retirement session. Uses the real installed release, not a fabricated API response.",
+      "cases": [
+        "[dotenv-False]",
+        "[dotenv-True]",
+        "[config-False]",
+        "[config-True]",
+        "[exec-False]",
+        "[exec-True]"
+      ]
+    },
+    "tests/test_agent_services.py::test_native_lifecycle_credentials_are_scoped_and_preserve_decoding": {
+      "layer": "compatibility",
+      "reason": "Supported-Agent API compatibility: native lifecycle credentials are scoped and preserve decoding. Uses the real installed release, not a fabricated API response.",
+      "cases": [
+        ""
+      ]
+    },
+    "tests/test_agent_services.py::test_crash_after_wrapped_gateway_drain_finishes_the_supervisor_obligation_once": {
+      "layer": "compatibility",
+      "reason": "An actual worker dies after its gateway exits but before its wrapper supervisor is disarmed; fresh-process recovery must terminate the surviving wrapper and reap transient descendants exactly once. Uses the selected supported release's unmodified backend_retirement API in independently running services.",
+      "cases": [
+        "[True]"
+      ]
+    },
+    "tests/test_agent_services.py::test_retained_recovery_repairs_dependencies_and_resumes_without_another_update": {
+      "layer": "compatibility",
+      "reason": "A fresh recovery process repairs the on-disk dependency module and restarts real services without another source update; in-memory fakes cannot establish interpreter/module replacement. Uses the selected supported release's unmodified backend_retirement API in independently running services.",
+      "cases": [
+        ""
+      ]
+    },
+    "tests/test_agent_services.py::test_retained_recovery_holds_services_until_the_leased_local_restore": {
+      "layer": "compatibility",
+      "reason": "Actual Git stash/patch restoration must retain cross-process checkout custody, including handoff to a newly launched recovery child, while writers remain stopped. Uses the selected supported release's unmodified backend_retirement API in independently running services.",
+      "cases": [
+        "[False]",
+        "[True]"
+      ]
+    },
+    "tests/test_agent_services.py::test_native_recorded_source_repair_restores_the_baseline_without_upgrading": {
+      "layer": "compatibility",
+      "reason": "Real Git/native rollback receipts repair source before HEAD movement, after HEAD movement and after replacement of the recovery module; fresh interpreter readback must restore the original baseline. Uses the selected supported release's unmodified backend_retirement API in independently running services.",
+      "cases": [
+        "[before-head]",
+        "[after-head]",
+        "[recovery-module]"
+      ]
+    },
+    "tests/test_agent_services.py::test_loaded_runtime_acknowledgement_is_required_before_repair_intent_is_cleared": {
+      "layer": "compatibility",
+      "reason": "An actual sidecar already loaded from the old source must acknowledge its new runtime before the on-disk recovery receipt can disappear. Uses the selected supported release's unmodified backend_retirement API in independently running services.",
+      "cases": [
+        ""
+      ]
+    },
+    "tests/test_agent_services.py::test_legacy_refresh_requires_interactive_intent_and_keeps_timeout_debt": {
+      "layer": "compatibility",
+      "reason": "Actual SIGTERM delivered to a slow legacy child must leave debt after timeout and must not be replayed by a retry; without consent no OS signal is delivered. Uses the selected supported release's unmodified backend_retirement API in independently running services.",
+      "cases": [
+        ""
+      ]
+    },
+    "tests/test_agent_services.py::test_legacy_refresh_failure_restores_siblings_and_fresh_sidecar_recovers": {
+      "layer": "compatibility",
+      "reason": "After an actual consented signal and failed supervisor bootstrap, a fresh sidecar interpreter must recover the retained legacy receipt while already recovered siblings keep running. Uses the selected supported release's unmodified backend_retirement API in independently running services.",
+      "cases": [
+        ""
+      ]
+    },
+    "tests/test_agent_services.py::test_legacy_refresh_interruption_retains_debt_without_replaying_signal": {
+      "layer": "compatibility",
+      "reason": "EOF, cancellation and worker SIGKILL during actual legacy-child shutdown must retain readable debt and prevent a fresh sidecar from delivering SIGTERM twice. Uses the selected supported release's unmodified backend_retirement API in independently running services.",
+      "cases": [
+        "[eof]",
+        "[cancel]",
+        "[worker-death]"
+      ]
+    },
+    "tests/test_agent_services.py::test_refresh_failure_never_mutates_source_or_interrupts_modern_work": {
+      "layer": "compatibility",
+      "reason": "A real busy modern backend keeps its PID and receives no signal while a consented legacy refresh is refused; this checks actual OS signal isolation between live services. Uses the selected supported release's unmodified backend_retirement API in independently running services.",
+      "cases": [
+        "[active-modern]"
+      ]
+    },
+    "tests/test_agent_services.py::test_legacy_listener_requires_the_attested_os_process": {
+      "layer": "process",
+      "reason": "Actual listener ownership inspection must reject an endpoint whose OS process differs from the attested backend PID.",
+      "cases": [
+        ""
+      ]
+    },
+    "tests/test_agent_services.py::test_gateway_successor_work_finishes_before_disarm_or_mutation": {
+      "layer": "compatibility",
+      "reason": "An actual successor tool child blocks gateway drain; no supervisor disarm or source mutation is allowed until that independent child exits. Uses the selected supported release's unmodified backend_retirement API in independently running services.",
+      "cases": [
+        ""
+      ]
+    },
+    "tests/test_agent_services.py::test_expected_respawn_custody_recovers_after_lease_exit": {
+      "layer": "compatibility",
+      "reason": "A killed lease worker leaves a real respawned gateway incarnation; fresh-process receipt adoption must restore it without an extra supervisor start. Uses the selected supported release's unmodified backend_retirement API in independently running services.",
+      "cases": [
+        "[owner-kill]"
+      ]
+    },
+    "tests/test_agent_services.py::test_native_gateway_startup_preserves_live_talaria_fence": {
+      "layer": "compatibility",
+      "reason": "Supported-Agent API compatibility: native gateway startup preserves live talaria fence. Uses the real installed release, not a fabricated API response.",
+      "cases": [
+        "[False]",
+        "[True]"
+      ]
+    },
+    "tests/test_agent_services.py::test_multiple_gateway_profiles_and_backends_survive_expected_respawns": {
+      "layer": "compatibility",
+      "reason": "Independent gateway/backend processes across multiple disposable profile homes must all stop and restart once without crossing profile ownership; the final leak scan verifies their child trees are reaped. Uses the selected supported release's unmodified backend_retirement API in independently running services.",
+      "cases": [
+        "[launchd]"
+      ]
+    },
+    "tests/test_approval_timeout.py::test_an_approval_the_agent_times_out_is_withdrawn": {
+      "layer": "compatibility",
+      "reason": "Supported-Agent API compatibility: an approval the agent times out is withdrawn. Uses the real installed release, not a fabricated API response.",
+      "cases": [
+        ""
+      ]
+    },
+    "tests/test_aux_funnel.py::test_a_title_call_reaches_the_auxiliary_plugin_hooks": {
+      "layer": "compatibility",
+      "reason": "Supported-Agent API compatibility: a title call reaches the auxiliary plugin hooks. Uses the real installed release, not a fabricated API response.",
+      "cases": [
+        ""
+      ]
+    },
+    "tests/test_aux_funnel.py::test_a_title_call_carries_the_custom_provider_extra_body": {
+      "layer": "compatibility",
+      "reason": "Supported-Agent API compatibility: a title call carries the custom provider extra body. Uses the real installed release, not a fabricated API response.",
+      "cases": [
+        ""
+      ]
+    },
+    "tests/test_aux_funnel.py::test_a_title_cancelled_while_queued_for_the_task_permit_never_reaches_the_provider": {
+      "layer": "compatibility",
+      "reason": "Supported-Agent API compatibility: a title cancelled while queued for the task permit never reaches the provider. Uses the real installed release, not a fabricated API response.",
+      "cases": [
+        ""
+      ]
+    },
+    "tests/test_aux_tasks.py::test_slots_follow_the_agent_with_plugin_tasks_per_profile": {
+      "layer": "compatibility",
+      "reason": "Supported-Agent API compatibility: slots follow the agent with plugin tasks per profile. Uses the real installed release, not a fabricated API response.",
+      "cases": [
+        ""
+      ]
+    },
+    "tests/test_background_list.py::test_lists_only_the_sessions_own_units_with_their_goals_and_outcomes": {
+      "layer": "compatibility",
+      "reason": "Supported-Agent API compatibility: lists only the sessions own units with their goals and outcomes. Uses the real installed release, not a fabricated API response.",
+      "cases": [
+        ""
+      ]
+    },
+    "tests/test_background_list.py::test_a_units_full_result_is_read_only_by_its_own_session": {
+      "layer": "compatibility",
+      "reason": "Supported-Agent API compatibility: a units full result is read only by its own session. Uses the real installed release, not a fabricated API response.",
+      "cases": [
+        ""
+      ]
+    },
+    "tests/test_background_list.py::test_an_agent_that_never_delegated_lists_nothing": {
+      "layer": "compatibility",
+      "reason": "Supported-Agent API compatibility: an agent that never delegated lists nothing. Uses the real installed release, not a fabricated API response.",
+      "cases": [
+        ""
+      ]
+    },
+    "tests/test_background_list.py::test_a_finished_units_children_are_linked_by_their_parent_and_goal": {
+      "layer": "compatibility",
+      "reason": "Supported-Agent API compatibility: a finished units children are linked by their parent and goal. Uses the real installed release, not a fabricated API response.",
+      "cases": [
+        ""
+      ]
+    },
+    "tests/test_background_list.py::test_an_image_tasks_child_is_linked_by_the_goal_inside_its_stored_message": {
+      "layer": "compatibility",
+      "reason": "Supported-Agent API compatibility: an image tasks child is linked by the goal inside its stored message. Uses the real installed release, not a fabricated API response.",
+      "cases": [
+        ""
+      ]
+    },
+    "tests/test_chat_clarify.py::test_real_agent_clarify_through_chat_start": {
+      "layer": "compatibility",
+      "reason": "Supported-Agent API compatibility: real agent clarify through chat start. Uses the real installed release, not a fabricated API response.",
+      "cases": [
+        "[submitted-single]",
+        "[submitted-multi]",
+        "[submitted-open]",
+        "[submitted-batch]",
+        "[timed_out-single]",
+        "[timed_out-multi]",
+        "[timed_out-open]",
+        "[timed_out-batch]",
+        "[cancelled-single]",
+        "[cancelled-multi]",
+        "[cancelled-open]",
+        "[cancelled-batch]"
+      ]
+    },
+    "tests/test_chat_compress.py::test_compress_runs_the_shared_core_on_a_throwaway_agent_and_commits": {
+      "layer": "compatibility",
+      "reason": "Supported-Agent API compatibility: compress runs the shared core on a throwaway agent and commits. Uses the real installed release, not a fabricated API response.",
+      "cases": [
+        ""
+      ]
+    },
+    "tests/test_chat_compress.py::test_a_server_that_never_finalizes_has_its_compression_discarded": {
+      "layer": "compatibility",
+      "reason": "Supported-Agent API compatibility: a server that never finalizes has its compression discarded. Uses the real installed release, not a fabricated API response.",
+      "cases": [
+        ""
+      ]
+    },
+    "tests/test_chat_compress.py::test_a_held_lock_is_reported_and_not_committed": {
+      "layer": "compatibility",
+      "reason": "Supported-Agent API compatibility: a held lock is reported and not committed. Uses the real installed release, not a fabricated API response.",
+      "cases": [
+        ""
+      ]
+    },
+    "tests/test_chat_compress.py::test_compress_without_an_override_uses_the_profile_toolsets": {
+      "layer": "compatibility",
+      "reason": "Supported-Agent API compatibility: compress without an override uses the profile toolsets. Uses the real installed release, not a fabricated API response.",
+      "cases": [
+        ""
+      ]
+    },
+    "tests/test_chat_compress.py::test_no_api_key_is_refused_before_an_agent_exists": {
+      "layer": "compatibility",
+      "reason": "Supported-Agent API compatibility: no api key is refused before an agent exists. Uses the real installed release, not a fabricated API response.",
+      "cases": [
+        ""
+      ]
+    },
+    "tests/test_chat_compress.py::test_registered_method_scopes_the_profile_home": {
+      "layer": "compatibility",
+      "reason": "Supported-Agent API compatibility: registered method scopes the profile home. Uses the real installed release, not a fabricated API response.",
+      "cases": [
+        ""
+      ]
+    },
+    "tests/test_chat_edit_diff.py::test_a_write_file_edit_carries_its_diff_live_and_on_the_persisted_row": {
+      "layer": "compatibility",
+      "reason": "Supported-Agent API compatibility: a write file edit carries its diff live and on the persisted row. Uses the real installed release, not a fabricated API response.",
+      "cases": [
+        ""
+      ]
+    },
+    "tests/test_chat_edit_diff.py::test_an_agent_without_the_metadata_callback_keeps_the_live_diff": {
+      "layer": "compatibility",
+      "reason": "Supported-Agent API compatibility: an agent without the metadata callback keeps the live diff. Uses the real installed release, not a fabricated API response.",
+      "cases": [
+        ""
+      ]
+    },
+    "tests/test_chat_edit_diff.py::test_a_remote_terminal_backend_yields_no_diff": {
+      "layer": "compatibility",
+      "reason": "Supported-Agent API compatibility: a remote terminal backend yields no diff. Uses the real installed release, not a fabricated API response.",
+      "cases": [
+        ""
+      ]
+    },
+    "tests/test_chat_fallback.py::test_turns_carry_the_profile_fallback_chain_and_rebuild_when_it_changes": {
+      "layer": "compatibility",
+      "reason": "Supported-Agent API compatibility: turns carry the profile fallback chain and rebuild when it changes. Uses the real installed release, not a fabricated API response.",
+      "cases": [
+        ""
+      ]
+    },
+    "tests/test_chat_finalize.py::test_finalize_runs_profile_plugin_without_starting_a_turn": {
+      "layer": "compatibility",
+      "reason": "Actual supported-Agent lifecycle plugin dispatch, profile scoping and native hook-failure result extraction must remain compatible.",
+      "cases": [
+        "[message]",
+        "[raises]"
+      ]
+    },
+    "tests/test_chat_next_turn_threshold.py::test_next_turn_threshold_is_the_primary_runtimes_after_a_fallback_turn": {
+      "layer": "compatibility",
+      "reason": "Supported-Agent API compatibility: next turn threshold is the primary runtimes after a fallback turn. Uses the real installed release, not a fabricated API response.",
+      "cases": [
+        ""
+      ]
+    },
+    "tests/test_chat_prefill.py::test_turns_send_the_profile_prefill_and_follow_its_edits": {
+      "layer": "compatibility",
+      "reason": "Supported-Agent API compatibility: turns send the profile prefill and follow its edits. Uses the real installed release, not a fabricated API response.",
+      "cases": [
+        ""
+      ]
+    },
+    "tests/test_chat_refine.py::test_refine_reviews_the_conversation_on_the_session_agent_in_its_profile": {
+      "layer": "compatibility",
+      "reason": "Supported-Agent API compatibility: refine reviews the conversation on the session agent in its profile. Uses the real installed release, not a fabricated API response.",
+      "cases": [
+        ""
+      ]
+    },
+    "tests/test_chat_request_overrides.py::test_main_model_turns_carry_service_tier_and_extra_body": {
+      "layer": "compatibility",
+      "reason": "Supported-Agent API compatibility: main model turns carry service tier and extra body. Uses the real installed release, not a fabricated API response.",
+      "cases": [
+        ""
+      ]
+    },
+    "tests/test_chat_request_overrides.py::test_turn_speed_uses_agent_route_resolver": {
+      "layer": "compatibility",
+      "reason": "Supported-Agent API compatibility: turn speed uses agent route resolver. Uses the real installed release, not a fabricated API response.",
+      "cases": [
+        "[gpt-6-astra-openai-codex-ultrafast-https://chatgpt.com/backend-api/codex-expected0]",
+        "[gpt-6-sol-openai-codex-priority-https://chatgpt.com/backend-api/codex-expected1]",
+        "[claude-opus-4-8-anthropic-priority-https://api.anthropic.com-expected2]",
+        "[gpt-6-sol-openai-priority-https://proxy.example/v1-None]",
+        "[gpt-6-sol-openai-codex-ultrafast-https://chatgpt.com/backend-api/codex-None]"
+      ]
+    },
+    "tests/test_chat_request_overrides.py::test_custom_provider_extra_body_reaches_chat_and_compress": {
+      "layer": "compatibility",
+      "reason": "Supported-Agent API compatibility: custom provider extra body reaches chat and compress. Uses the real installed release, not a fabricated API response.",
+      "cases": [
+        ""
+      ]
+    },
+    "tests/test_chat_skill_secret.py::test_skill_secret_through_real_skill_and_worker": {
+      "layer": "compatibility",
+      "reason": "Supported-Agent API compatibility: skill secret through real skill and worker. Uses the real installed release, not a fabricated API response.",
+      "cases": [
+        "[submitted]",
+        "[concurrent]",
+        "[declined]",
+        "[expired]",
+        "[cancelled]",
+        "[disconnected]",
+        "[cleared]",
+        "[storage_error]",
+        "[late]",
+        "[turn_error]",
+        "[client_unsupported]",
+        "[non_ascii]",
+        "[multiline]"
+      ]
+    },
+    "tests/test_chat_state_db.py::test_a_web_turn_writes_its_session_and_messages_to_state_db": {
+      "layer": "compatibility",
+      "reason": "Supported-Agent API compatibility: a web turn writes its session and messages to state db. Uses the real installed release, not a fabricated API response.",
+      "cases": [
+        ""
+      ]
+    },
+    "tests/test_chat_state_db.py::test_a_btw_side_question_stays_out_of_state_db": {
+      "layer": "compatibility",
+      "reason": "Supported-Agent API compatibility: a btw side question stays out of state db. Uses the real installed release, not a fabricated API response.",
+      "cases": [
+        ""
+      ]
+    },
+    "tests/test_chat_state_db.py::test_server_generated_title_survives_a_cached_agent_turn": {
+      "layer": "compatibility",
+      "reason": "Supported-Agent API compatibility: server generated title survives a cached agent turn. Uses the real installed release, not a fabricated API response.",
+      "cases": [
+        ""
+      ]
+    },
+    "tests/test_chat_state_db.py::test_an_agent_rebuilt_after_restart_runs_on_the_compression_tip": {
+      "layer": "compatibility",
+      "reason": "Supported-Agent API compatibility: an agent rebuilt after restart runs on the compression tip. Uses the real installed release, not a fabricated API response.",
+      "cases": [
+        ""
+      ]
+    },
+    "tests/test_chat_todo.py::test_a_todo_tool_call_carries_its_whole_result": {
+      "layer": "compatibility",
+      "reason": "Supported-Agent API compatibility: a todo tool call carries its whole result. Uses the real installed release, not a fabricated API response.",
+      "cases": [
+        "[bridged]",
+        "[direct]"
+      ]
+    },
+    "tests/test_chat_tool_limit.py::test_an_exhausted_tool_budget_reports_the_limit_and_the_agents_summary_request": {
+      "layer": "compatibility",
+      "reason": "Supported-Agent API compatibility: an exhausted tool budget reports the limit and the agents summary request. Uses the real installed release, not a fabricated API response.",
+      "cases": [
+        ""
+      ]
+    },
+    "tests/test_chat_toolsets.py::test_turn_toolsets_follow_the_profile_config_unless_overridden": {
+      "layer": "compatibility",
+      "reason": "Supported-Agent API compatibility: turn toolsets follow the profile config unless overridden. Uses the real installed release, not a fabricated API response.",
+      "cases": [
+        ""
+      ]
+    },
+    "tests/test_chat_toolsets.py::test_disabled_toolsets_win_over_overrides_and_cached_agents": {
+      "layer": "compatibility",
+      "reason": "Supported-Agent API compatibility: disabled toolsets win over overrides and cached agents. Uses the real installed release, not a fabricated API response.",
+      "cases": [
+        ""
+      ]
+    },
+    "tests/test_chat_toolsets.py::test_catalog_reports_profile_policy_and_preserves_unknown_selection": {
+      "layer": "compatibility",
+      "reason": "Supported-Agent API compatibility: catalog reports profile policy and preserves unknown selection. Uses the real installed release, not a fabricated API response.",
+      "cases": [
+        ""
+      ]
+    },
+    "tests/test_chat_toolsets.py::test_catalog_discovers_named_profile_plugin_before_any_turn": {
+      "layer": "compatibility",
+      "reason": "Supported-Agent API compatibility: catalog discovers named profile plugin before any turn. Uses the real installed release, not a fabricated API response.",
+      "cases": [
+        ""
+      ]
+    },
+    "tests/test_chat_vault.py::test_vault_prompts_through_chat_start": {
+      "layer": "compatibility",
+      "reason": "Supported-Agent API compatibility: vault prompts through chat start. Uses the real installed release, not a fabricated API response.",
+      "cases": [
+        "[submitted-unlock]",
+        "[submitted-save_login]",
+        "[submitted-code]",
+        "[declined-unlock]",
+        "[declined-save_login]",
+        "[declined-code]",
+        "[cancelled-unlock]",
+        "[cancelled-save_login]",
+        "[cancelled-code]",
+        "[expired-unlock]",
+        "[expired-save_login]",
+        "[expired-code]"
+      ]
+    },
+    "tests/test_chat_vault.py::test_unlock_answered_after_the_session_ended_is_released": {
+      "layer": "compatibility",
+      "reason": "Supported-Agent API compatibility: unlock answered after the session ended is released. Uses the real installed release, not a fabricated API response.",
+      "cases": [
+        ""
+      ]
+    },
+    "tests/test_chat_workspace_hints.py::test_a_turn_loads_the_local_workspace_subdirectory_hint_and_a_workspace_change_rebuilds_the_agent": {
+      "layer": "compatibility",
+      "reason": "Supported-Agent API compatibility: a turn loads the local workspace subdirectory hint and a workspace change rebuilds the agent. Uses the real installed release, not a fabricated API response.",
+      "cases": [
+        ""
+      ]
+    },
+    "tests/test_chat_workspace_hints.py::test_an_agent_without_the_cwd_kwarg_is_built_as_before": {
+      "layer": "compatibility",
+      "reason": "Supported-Agent API compatibility: an agent without the cwd kwarg is built as before. Uses the real installed release, not a fabricated API response.",
+      "cases": [
+        ""
+      ]
+    },
+    "tests/test_checkpoints.py::test_a_checkpoint_the_agent_took_is_listed_diffed_and_restored": {
+      "layer": "compatibility",
+      "reason": "Supported-Agent API compatibility: a checkpoint the agent took is listed diffed and restored. Uses the real installed release, not a fabricated API response.",
+      "cases": [
+        ""
+      ]
+    },
+    "tests/test_checkpoints.py::test_an_unknown_checkpoint_is_the_agents_refusal": {
+      "layer": "compatibility",
+      "reason": "Supported-Agent API compatibility: an unknown checkpoint is the agents refusal. Uses the real installed release, not a fabricated API response.",
+      "cases": [
+        ""
+      ]
+    },
+    "tests/test_checkpoints.py::test_a_checkpoint_of_another_workspace_is_refused": {
+      "layer": "compatibility",
+      "reason": "Supported-Agent API compatibility: a checkpoint of another workspace is refused. Uses the real installed release, not a fabricated API response.",
+      "cases": [
+        ""
+      ]
+    },
+    "tests/test_checkpoints.py::test_a_restore_over_an_uncaptured_nested_repository_is_refused": {
+      "layer": "compatibility",
+      "reason": "Supported-Agent API compatibility: a restore over an uncaptured nested repository is refused. Uses the real installed release, not a fabricated API response.",
+      "cases": [
+        ""
+      ]
+    },
+    "tests/test_checkpoints.py::test_a_web_turn_takes_a_checkpoint_only_when_the_profile_enables_them": {
+      "layer": "compatibility",
+      "reason": "Supported-Agent API compatibility: a web turn takes a checkpoint only when the profile enables them. Uses the real installed release, not a fabricated API response.",
+      "cases": [
+        "[enabled]",
+        "[legacy-bool]",
+        "[default-off]",
+        "[quoted-false]"
+      ]
+    },
+    "tests/test_command_bundles.py::test_bundles_are_scoped_to_each_profile": {
+      "layer": "compatibility",
+      "reason": "Supported-Agent API compatibility: bundles are scoped to each profile. Uses the real installed release, not a fabricated API response.",
+      "cases": [
+        ""
+      ]
+    },
+    "tests/test_commands_registry.py::test_registry_lists_every_runtime_command_once_as_exec": {
+      "layer": "compatibility",
+      "reason": "Supported-Agent API compatibility: registry lists every runtime command once as exec. Uses the real installed release, not a fabricated API response.",
+      "cases": [
+        ""
+      ]
+    },
+    "tests/test_commands_registry.py::test_prompt_builtins_expand_through_the_agents_own_builders": {
+      "layer": "compatibility",
+      "reason": "Supported-Agent API compatibility: prompt builtins expand through the agents own builders. Uses the real installed release, not a fabricated API response.",
+      "cases": [
+        ""
+      ]
+    },
+    "tests/test_commit_memory.py::test_commit_memory_hands_the_transcript_to_providers_in_the_session_profile": {
+      "layer": "compatibility",
+      "reason": "Supported-Agent API compatibility: commit memory hands the transcript to providers in the session profile. Uses the real installed release, not a fabricated API response.",
+      "cases": [
+        ""
+      ]
+    },
+    "tests/test_config_write.py::test_config_set_preserves_comments_quotes_order_and_removals": {
+      "layer": "compatibility",
+      "reason": "Supported-Agent API compatibility: config set preserves comments quotes order and removals. Uses the real installed release, not a fabricated API response.",
+      "cases": [
+        ""
+      ]
+    },
+    "tests/test_config_write.py::test_config_set_round_trips_backslash_corpus": {
+      "layer": "compatibility",
+      "reason": "Supported-Agent API compatibility: config set round trips backslash corpus. Uses the real installed release, not a fabricated API response.",
+      "cases": [
+        ""
+      ]
+    },
+    "tests/test_config_write.py::test_config_fallback_round_trips_backslash_corpus": {
+      "layer": "compatibility",
+      "reason": "Supported-Agent API compatibility: config fallback round trips backslash corpus. Uses the real installed release, not a fabricated API response.",
+      "cases": [
+        ""
+      ]
+    },
+    "tests/test_connectors.py::test_catalog_accounts_and_remove_round_trip": {
+      "layer": "compatibility",
+      "reason": "Supported-Agent API compatibility: catalog accounts and remove round trip. Uses the real installed release, not a fabricated API response.",
+      "cases": [
+        ""
+      ]
+    },
+    "tests/test_connectors.py::test_tools_list_and_unknown_connector": {
+      "layer": "compatibility",
+      "reason": "Supported-Agent API compatibility: tools list and unknown connector. Uses the real installed release, not a fabricated API response.",
+      "cases": [
+        ""
+      ]
+    },
+    "tests/test_connectors.py::test_policy_writes_and_a_stale_revision_conflicts": {
+      "layer": "compatibility",
+      "reason": "Supported-Agent API compatibility: policy writes and a stale revision conflicts. Uses the real installed release, not a fabricated API response.",
+      "cases": [
+        ""
+      ]
+    },
+    "tests/test_connectors.py::test_a_page_connect_turns_connected_without_a_chat_session": {
+      "layer": "compatibility",
+      "reason": "Supported-Agent API compatibility: a page connect turns connected without a chat session. Uses the real installed release, not a fabricated API response.",
+      "cases": [
+        ""
+      ]
+    },
+    "tests/test_connectors.py::test_skip_ends_a_page_connect": {
+      "layer": "compatibility",
+      "reason": "Supported-Agent API compatibility: skip ends a page connect. Uses the real installed release, not a fabricated API response.",
+      "cases": [
+        ""
+      ]
+    },
+    "tests/test_connectors.py::test_connectors_turned_off_close_every_page_action": {
+      "layer": "compatibility",
+      "reason": "Supported-Agent API compatibility: connectors turned off close every page action. Uses the real installed release, not a fabricated API response.",
+      "cases": [
+        ""
+      ]
+    },
+    "tests/test_connectors.py::test_a_chat_connect_opens_the_card_frame_and_continue_returns_the_tool": {
+      "layer": "compatibility",
+      "reason": "Supported-Agent API compatibility: a chat connect opens the card frame and continue returns the tool. Uses the real installed release, not a fabricated API response.",
+      "cases": [
+        ""
+      ]
+    },
+    "tests/test_connectors.py::test_a_client_without_the_card_keeps_the_agents_plain_connect_link": {
+      "layer": "compatibility",
+      "reason": "Supported-Agent API compatibility: a client without the card keeps the agents plain connect link. Uses the real installed release, not a fabricated API response.",
+      "cases": [
+        ""
+      ]
+    },
+    "tests/test_connectors.py::test_the_operation_cache_never_drops_an_operation_still_open": {
+      "layer": "compatibility",
+      "reason": "Supported-Agent API compatibility: the operation cache never drops an operation still open. Uses the real installed release, not a fabricated API response.",
+      "cases": [
+        ""
+      ]
+    },
+    "tests/test_cron_blueprints.py::test_profile_blueprints_fill_and_validate": {
+      "layer": "compatibility",
+      "reason": "Supported-Agent API compatibility: profile blueprints fill and validate. Uses the real installed release, not a fabricated API response.",
+      "cases": [
+        "[in_process]",
+        "[host]"
+      ]
+    },
+    "tests/test_cron_health.py::test_list_reports_an_unwritable_store_only_when_probed": {
+      "layer": "compatibility",
+      "reason": "Supported-Agent API compatibility: list reports an unwritable store only when probed. Uses the real installed release, not a fabricated API response.",
+      "cases": [
+        ""
+      ]
+    },
+    "tests/test_cron_health.py::test_a_live_owner_reads_running_and_refuses_run_now": {
+      "layer": "compatibility",
+      "reason": "Supported-Agent API compatibility: a live owner reads running and refuses run now. Uses the real installed release, not a fabricated API response.",
+      "cases": [
+        ""
+      ]
+    },
+    "tests/test_cron_health.py::test_run_now_refuses_when_the_ledger_is_unreadable": {
+      "layer": "compatibility",
+      "reason": "Supported-Agent API compatibility: run now refuses when the ledger is unreadable. Uses the real installed release, not a fabricated API response.",
+      "cases": [
+        ""
+      ]
+    },
+    "tests/test_cron_health.py::test_run_now_holds_the_agent_fire_claim": {
+      "layer": "compatibility",
+      "reason": "Supported-Agent API compatibility: run now holds the agent fire claim. Uses the real installed release, not a fabricated API response.",
+      "cases": [
+        ""
+      ]
+    },
+    "tests/test_cron_owner.py::test_started_cancel_waits_for_exact_owner_terminal_before_releasing_run": {
+      "layer": "compatibility",
+      "reason": "Supported-Agent API compatibility: started cancel waits for exact owner terminal before releasing run. Uses the real installed release, not a fabricated API response.",
+      "cases": [
+        ""
+      ]
+    },
+    "tests/test_cron_owner.py::test_workers_finds_long_interpreter_commands_at_narrow_terminal_width": {
+      "layer": "process",
+      "reason": "Actual ps command width must preserve the full command of an independently running worker.",
+      "cases": [
+        ""
+      ]
+    },
+    "tests/test_cron_owner.py::test_lost_submitter_recovers_same_admission_without_another_run": {
+      "layer": "compatibility",
+      "reason": "Supported-Agent API compatibility: lost submitter recovers same admission without another run. Uses the real installed release, not a fabricated API response.",
+      "cases": [
+        "[False-False]",
+        "[True-False]",
+        "[True-True]"
+      ]
+    },
+    "tests/test_cron_owner.py::test_owner_disconnect_and_restart_leave_unknown_guarded_without_resubmission": {
+      "layer": "compatibility",
+      "reason": "Supported-Agent API compatibility: owner disconnect and restart leave unknown guarded without resubmission. Uses the real installed release, not a fabricated API response.",
+      "cases": [
+        ""
+      ]
+    },
+    "tests/test_cron_owner.py::test_successful_manual_run_books_once_and_preserves_operator_schedule_state": {
+      "layer": "compatibility",
+      "reason": "Supported-Agent API compatibility: successful manual run books once and preserves operator schedule state. Uses the real installed release, not a fabricated API response.",
+      "cases": [
+        "[scheduled]",
+        "[paused]",
+        "[disabled]"
+      ]
+    },
+    "tests/test_cron_owner.py::test_schedule_mutations_cannot_remove_a_manual_execution_recovery_barrier": {
+      "layer": "compatibility",
+      "reason": "Supported-Agent API compatibility: schedule mutations cannot remove a manual execution recovery barrier. Uses the real installed release, not a fabricated API response.",
+      "cases": [
+        "[cron.resume-extra0]",
+        "[cron.update-extra1]",
+        "[cron.delete-extra2]"
+      ]
+    },
+    "tests/test_cron_parity.py::test_create_keeps_monitor_fields_and_update_clears_profile": {
+      "layer": "compatibility",
+      "reason": "Supported-Agent API compatibility: create keeps monitor fields and update clears profile. Uses the real installed release, not a fabricated API response.",
+      "cases": [
+        ""
+      ]
+    },
+    "tests/test_cron_parity.py::test_create_pins_execution_profile_model": {
+      "layer": "compatibility",
+      "reason": "Supported-Agent API compatibility: create pins execution profile model. Uses the real installed release, not a fabricated API response.",
+      "cases": [
+        "[overrides0-openrouter-profile-model]",
+        "[overrides1-openrouter-caller-model]",
+        "[overrides2-caller-provider-profile-model]",
+        "[overrides3-openrouter-profile-model]",
+        "[overrides4-openrouter-profile-model]"
+      ]
+    },
+    "tests/test_cron_parity.py::test_explicit_model_and_provider_skip_profile_resolution": {
+      "layer": "compatibility",
+      "reason": "Supported-Agent API compatibility: explicit model and provider skip profile resolution. Uses the real installed release, not a fabricated API response.",
+      "cases": [
+        ""
+      ]
+    },
+    "tests/test_cron_parity.py::test_scheduled_script_uses_execution_profile_scope": {
+      "layer": "compatibility",
+      "reason": "Supported-Agent API compatibility: scheduled script uses execution profile scope. Uses the real installed release, not a fabricated API response.",
+      "cases": [
+        ""
+      ]
+    },
+    "tests/test_cron_parity.py::test_a_failed_profile_snapshot_leaves_no_orphan_job": {
+      "layer": "compatibility",
+      "reason": "Supported-Agent API compatibility: a failed profile snapshot leaves no orphan job. Uses the real installed release, not a fabricated API response.",
+      "cases": [
+        ""
+      ]
+    },
+    "tests/test_dependency_sync.py::test_dependency_sync_rpc_owns_the_agent_subprocess": {
+      "layer": "process",
+      "reason": "Actual child/grandchild execution, cancellation and process-group cleanup cannot be proved by fake Popen responses.",
+      "cases": [
+        "[success]",
+        "[exit]",
+        "[failed]",
+        "[invalid]",
+        "[legacy]"
+      ]
+    },
+    "tests/test_dependency_sync.py::test_dependency_sync_writer_stops_with_its_rpc_owner": {
+      "layer": "process",
+      "reason": "Actual child/grandchild execution, cancellation and process-group cleanup cannot be proved by fake Popen responses.",
+      "cases": [
+        "[cancel]",
+        "[shutdown]",
+        "[eof]",
+        "[kill]"
+      ]
+    },
+    "tests/test_dependency_sync.py::test_dependency_sync_refuses_overlapping_writers": {
+      "layer": "process",
+      "reason": "Actual child/grandchild execution, cancellation and process-group cleanup cannot be proved by fake Popen responses.",
+      "cases": [
+        ""
+      ]
+    },
+    "tests/test_display_config.py::test_web_reasoning_toggle_section_leaves_gateway_platforms_alone": {
+      "layer": "compatibility",
+      "reason": "Supported-Agent API compatibility: web reasoning toggle section leaves gateway platforms alone. Uses the real installed release, not a fabricated API response.",
+      "cases": [
+        ""
+      ]
+    },
+    "tests/test_env_write.py::test_env_write_waits_for_a_concurrent_agent_write": {
+      "layer": "compatibility",
+      "reason": "Supported-Agent API compatibility: env write waits for a concurrent agent write. Uses the real installed release, not a fabricated API response.",
+      "cases": [
+        ""
+      ]
+    },
+    "tests/test_env_write.py::test_env_write_keeps_comments_and_order_and_ends_owner_only": {
+      "layer": "compatibility",
+      "reason": "Supported-Agent API compatibility: env write keeps comments and order and ends owner only. Uses the real installed release, not a fabricated API response.",
+      "cases": [
+        ""
+      ]
+    },
+    "tests/test_env_write.py::test_env_write_refuses_an_administrator_managed_key_before_writing": {
+      "layer": "compatibility",
+      "reason": "Supported-Agent API compatibility: env write refuses an administrator managed key before writing. Uses the real installed release, not a fabricated API response.",
+      "cases": [
+        ""
+      ]
+    },
+    "tests/test_env_write.py::test_env_write_never_publishes_into_the_process_environment": {
+      "layer": "compatibility",
+      "reason": "Supported-Agent API compatibility: env write never publishes into the process environment. Uses the real installed release, not a fabricated API response.",
+      "cases": [
+        ""
+      ]
+    },
+    "tests/test_evict_agent.py::test_cache_only_eviction_keeps_approval_state_and_a_live_runs_agent": {
+      "layer": "compatibility",
+      "reason": "Supported-Agent API compatibility: cache only eviction keeps approval state and a live runs agent. Uses the real installed release, not a fabricated API response.",
+      "cases": [
+        ""
+      ]
+    },
+    "tests/test_gateway_mode.py::test_markers_report_parked_and_standalone_in_profiles_and_gateway_mode": {
+      "layer": "compatibility",
+      "reason": "Supported-Agent API compatibility: markers report parked and standalone in profiles and gateway mode. Uses the real installed release, not a fabricated API response.",
+      "cases": [
+        ""
+      ]
+    },
+    "tests/test_gateway_restart.py::test_restart_survives_a_restart_that_floods_both_pipes": {
+      "layer": "process",
+      "reason": "Actual pipe saturation, independent child exit and signal cancellation exercise the process transport itself.",
+      "cases": [
+        ""
+      ]
+    },
+    "tests/test_gateway_restart.py::test_restart_reports_a_failed_exit_with_stderr": {
+      "layer": "process",
+      "reason": "Actual pipe saturation, independent child exit and signal cancellation exercise the process transport itself.",
+      "cases": [
+        ""
+      ]
+    },
+    "tests/test_gateway_restart.py::test_restart_terminates_a_hung_child_after_the_background_wait": {
+      "layer": "process",
+      "reason": "Actual pipe saturation, independent child exit and signal cancellation exercise the process transport itself.",
+      "cases": [
+        ""
+      ]
+    },
+    "tests/test_gateway_restart.py::test_cancel_still_terminates_a_restart_with_no_deadline": {
+      "layer": "process",
+      "reason": "Actual pipe saturation, independent child exit and signal cancellation exercise the process transport itself.",
+      "cases": [
+        ""
+      ]
+    },
+    "tests/test_gateway_restart.py::test_every_action_names_the_requested_profile_not_the_sticky_active_one": {
+      "layer": "compatibility",
+      "reason": "Supported-Agent API compatibility: every action names the requested profile not the sticky active one. Uses the real installed release, not a fabricated API response.",
+      "cases": [
+        ""
+      ]
+    },
+    "tests/test_gateway_restart.py::test_a_named_profiles_gateway_loads_its_own_env_never_the_default_profiles": {
+      "layer": "compatibility",
+      "reason": "Supported-Agent API compatibility: a named profiles gateway loads its own env never the default profiles. Uses the real installed release, not a fabricated API response.",
+      "cases": [
+        ""
+      ]
+    },
+    "tests/test_gateway_restart.py::test_the_restart_wait_is_the_installed_agents_own_budget_plus_headroom": {
+      "layer": "compatibility",
+      "reason": "Supported-Agent API compatibility: the restart wait is the installed agents own budget plus headroom. Uses the real installed release, not a fabricated API response.",
+      "cases": [
+        ""
+      ]
+    },
+    "tests/test_gateway_restart.py::test_a_named_launch_profile_never_donates_its_env_to_the_default_profiles_gateway": {
+      "layer": "compatibility",
+      "reason": "Supported-Agent API compatibility: a named launch profile never donates its env to the default profiles gateway. Uses the real installed release, not a fabricated API response.",
+      "cases": [
+        ""
+      ]
+    },
+    "tests/test_gateway_restart.py::test_the_restart_wait_follows_the_restarted_profiles_own_env": {
+      "layer": "compatibility",
+      "reason": "Supported-Agent API compatibility: the restart wait follows the restarted profiles own env. Uses the real installed release, not a fabricated API response.",
+      "cases": [
+        ""
+      ]
+    },
+    "tests/test_gateway_sessions.py::test_stopped_owner_is_an_explicit_refusal_without_starting": {
+      "layer": "compatibility",
+      "reason": "Supported-Agent API compatibility: stopped owner is an explicit refusal without starting. Uses the real installed release, not a fabricated API response.",
+      "cases": [
+        ""
+      ]
+    },
+    "tests/test_gateway_sessions.py::test_real_native_owner_shared_admission_and_detach": {
+      "layer": "compatibility",
+      "reason": "Supported-Agent API compatibility: real native owner shared admission and detach. Uses the real installed release, not a fabricated API response.",
+      "cases": [
+        "[shared]",
+        "[batch]",
+        "[approval]",
+        "[clarify]",
+        "[recovery]",
+        "[secure]",
+        "[profiles]",
+        "[dedicated]",
+        "[replay]"
+      ]
+    },
+    "tests/test_goals_dispatch.py::test_gate_runs_in_the_session_workspace": {
+      "layer": "compatibility",
+      "reason": "Supported-Agent API compatibility: gate runs in the session workspace. Uses the real installed release, not a fabricated API response.",
+      "cases": [
+        ""
+      ]
+    },
+    "tests/test_goals_dispatch.py::test_missing_workspace_pauses_with_the_agents_message": {
+      "layer": "compatibility",
+      "reason": "Supported-Agent API compatibility: missing workspace pauses with the agents message. Uses the real installed release, not a fabricated API response.",
+      "cases": [
+        ""
+      ]
+    },
+    "tests/test_goals_dispatch.py::test_gate_add_is_refused_where_gates_would_leave_the_workspace": {
+      "layer": "compatibility",
+      "reason": "Supported-Agent API compatibility: gate add is refused where gates would leave the workspace. Uses the real installed release, not a fabricated API response.",
+      "cases": [
+        ""
+      ]
+    },
+    "tests/test_goals_dispatch.py::test_gates_from_a_newer_agent_pause_instead_of_running": {
+      "layer": "compatibility",
+      "reason": "Supported-Agent API compatibility: gates from a newer agent pause instead of running. Uses the real installed release, not a fabricated API response.",
+      "cases": [
+        ""
+      ]
+    },
+    "tests/test_goals_dispatch.py::test_gate_list_and_clear": {
+      "layer": "compatibility",
+      "reason": "Supported-Agent API compatibility: gate list and clear. Uses the real installed release, not a fabricated API response.",
+      "cases": [
+        ""
+      ]
+    },
+    "tests/test_goals_dispatch.py::test_wait_parks_the_goal_without_replacing_it": {
+      "layer": "compatibility",
+      "reason": "Supported-Agent API compatibility: wait parks the goal without replacing it. Uses the real installed release, not a fabricated API response.",
+      "cases": [
+        ""
+      ]
+    },
+    "tests/test_goals_dispatch.py::test_get_reports_the_parked_barrier": {
+      "layer": "compatibility",
+      "reason": "Supported-Agent API compatibility: get reports the parked barrier. Uses the real installed release, not a fabricated API response.",
+      "cases": [
+        ""
+      ]
+    },
+    "tests/test_goals_dispatch.py::test_control_verbs_with_trailing_words_keep_the_goal": {
+      "layer": "compatibility",
+      "reason": "Supported-Agent API compatibility: control verbs with trailing words keep the goal. Uses the real installed release, not a fabricated API response.",
+      "cases": [
+        ""
+      ]
+    },
+    "tests/test_goals_dispatch.py::test_running_turn_refuses_only_goal_setting_text": {
+      "layer": "compatibility",
+      "reason": "Supported-Agent API compatibility: running turn refuses only goal setting text. Uses the real installed release, not a fabricated API response.",
+      "cases": [
+        ""
+      ]
+    },
+    "tests/test_handoff_methods.py::test_an_explicit_model_answers_with_its_finish_reason_reasoning_off_and_no_tools": {
+      "layer": "compatibility",
+      "reason": "Supported-Agent API compatibility: an explicit model answers with its finish reason reasoning off and no tools. Uses the real installed release, not a fabricated API response.",
+      "cases": [
+        ""
+      ]
+    },
+    "tests/test_handoff_methods.py::test_an_explicit_model_without_a_credential_is_credential_missing": {
+      "layer": "compatibility",
+      "reason": "Supported-Agent API compatibility: an explicit model without a credential is credential missing. Uses the real installed release, not a fabricated API response.",
+      "cases": [
+        ""
+      ]
+    },
+    "tests/test_handoff_methods.py::test_append_message_writes_one_row_and_bumps_message_count": {
+      "layer": "compatibility",
+      "reason": "Supported-Agent API compatibility: append message writes one row and bumps message count. Uses the real installed release, not a fabricated API response.",
+      "cases": [
+        ""
+      ]
+    },
+    "tests/test_handoff_methods.py::test_append_message_without_a_state_db_is_not_ok": {
+      "layer": "compatibility",
+      "reason": "Supported-Agent API compatibility: append message without a state db is not ok. Uses the real installed release, not a fabricated API response.",
+      "cases": [
+        ""
+      ]
+    },
+    "tests/test_home.py::test_concurrent_profiles_resolve_only_their_own_credentials_on_the_installed_agent": {
+      "layer": "compatibility",
+      "reason": "Supported-Agent API compatibility: concurrent profiles resolve only their own credentials on the installed agent. Uses the real installed release, not a fabricated API response.",
+      "cases": [
+        ""
+      ]
+    },
+    "tests/test_home.py::test_concurrent_turns_run_under_their_own_profiles_terminal_backend_on_the_installed_agent": {
+      "layer": "compatibility",
+      "reason": "Supported-Agent API compatibility: concurrent turns run under their own profiles terminal backend on the installed agent. Uses the real installed release, not a fabricated API response.",
+      "cases": [
+        ""
+      ]
+    },
+    "tests/test_home.py::test_the_launch_profiles_terminal_scope_keeps_its_launch_env_once_a_named_profile_runs_on_the_installed_agent": {
+      "layer": "compatibility",
+      "reason": "Supported-Agent API compatibility: the launch profiles terminal scope keeps its launch env once a named profile runs on the installed agent. Uses the real installed release, not a fabricated API response.",
+      "cases": [
+        ""
+      ]
+    },
+    "tests/test_home.py::test_a_named_profiles_plugin_secret_source_reaches_its_scope_after_the_root_loaded_the_agent_on_the_installed_agent": {
+      "layer": "compatibility",
+      "reason": "Supported-Agent API compatibility: a named profiles plugin secret source reaches its scope after the root loaded the agent on the installed agent. Uses the real installed release, not a fabricated API response.",
+      "cases": [
+        ""
+      ]
+    },
+    "tests/test_home_defaults.py::test_standalone_runtime_reads_update_marker_from_resolved_home": {
+      "layer": "process",
+      "reason": "A fresh sidecar must capture its launch home and observe its update marker before any Agent import.",
+      "cases": [
+        "[False]",
+        "[True]"
+      ]
+    },
+    "tests/test_import_bootstrap.py::test_agent_helpers_preserve_native_lazy_install_policy": {
+      "layer": "compatibility",
+      "reason": "Supported-Agent API compatibility: agent helpers preserve native lazy install policy. Uses the real installed release, not a fabricated API response.",
+      "cases": [
+        "[None-False]",
+        "[0-True]"
+      ]
+    },
+    "tests/test_import_bootstrap.py::test_chat_import_does_not_adopt_sync_or_exec_a_blessed_checkout": {
+      "layer": "compatibility",
+      "reason": "Supported-Agent API compatibility: chat import does not adopt sync or exec a blessed checkout. Uses the real installed release, not a fabricated API response.",
+      "cases": [
+        "[False]",
+        "[True]"
+      ]
+    },
+    "tests/test_kanban_archived_board.py::test_an_archived_board_answers_not_found_and_its_slug_can_be_reused": {
+      "layer": "compatibility",
+      "reason": "Supported-Agent API compatibility: an archived board answers not found and its slug can be reused. Uses the real installed release, not a fabricated API response.",
+      "cases": [
+        ""
+      ]
+    },
+    "tests/test_kanban_task_detail.py::test_task_detail_names_each_linked_task": {
+      "layer": "compatibility",
+      "reason": "Supported-Agent API compatibility: task detail names each linked task. Uses the real installed release, not a fabricated API response.",
+      "cases": [
+        ""
+      ]
+    },
+    "tests/test_kanban_task_detail.py::test_a_retried_tasks_run_clock_counts_from_its_newest_run": {
+      "layer": "compatibility",
+      "reason": "Supported-Agent API compatibility: a retried tasks run clock counts from its newest run. Uses the real installed release, not a fabricated API response.",
+      "cases": [
+        ""
+      ]
+    },
+    "tests/test_kanban_workflow.py::test_scheduled_and_review_tasks_have_columns_and_leave_through_the_agent_verbs": {
+      "layer": "compatibility",
+      "reason": "Supported-Agent API compatibility: scheduled and review tasks have columns and leave through the agent verbs. Uses the real installed release, not a fabricated API response.",
+      "cases": [
+        ""
+      ]
+    },
+    "tests/test_local_runtime.py::test_staged_ggufs_are_the_local_models": {
+      "layer": "compatibility",
+      "reason": "Supported-Agent API compatibility: staged ggufs are the local models. Uses the real installed release, not a fabricated API response.",
+      "cases": [
+        ""
+      ]
+    },
+    "tests/test_local_runtime.py::test_a_turn_on_the_local_provider_with_its_server_off_is_local_runtime_unavailable": {
+      "layer": "compatibility",
+      "reason": "Supported-Agent API compatibility: a turn on the local provider with its server off is local runtime unavailable. Uses the real installed release, not a fabricated API response.",
+      "cases": [
+        ""
+      ]
+    },
+    "tests/test_mcp_discovery.py::test_first_turn_after_a_restart_exposes_the_profiles_mcp_tools": {
+      "layer": "compatibility",
+      "reason": "Supported-Agent API compatibility: first turn after a restart exposes the profiles mcp tools. Uses the real installed release, not a fabricated API response.",
+      "cases": [
+        ""
+      ]
+    },
+    "tests/test_mcp_discovery.py::test_stop_during_turn_start_discovery_ends_the_turn_without_waiting_for_it": {
+      "layer": "compatibility",
+      "reason": "Supported-Agent API compatibility: stop during turn start discovery ends the turn without waiting for it. Uses the real installed release, not a fabricated API response.",
+      "cases": [
+        ""
+      ]
+    },
+    "tests/test_mcp_discovery.py::test_reload_mcp_in_one_profile_leaves_another_profiles_servers_connected": {
+      "layer": "compatibility",
+      "reason": "Supported-Agent API compatibility: reload mcp in one profile leaves another profiles servers connected. Uses the real installed release, not a fabricated API response.",
+      "cases": [
+        ""
+      ]
+    },
+    "tests/test_mcp_discovery.py::test_launch_reload_after_multiplexing_starts_replaces_its_earlier_unscoped_connections": {
+      "layer": "compatibility",
+      "reason": "Supported-Agent API compatibility: launch reload after multiplexing starts replaces its earlier unscoped connections. Uses the real installed release, not a fabricated API response.",
+      "cases": [
+        ""
+      ]
+    },
+    "tests/test_mcp_discovery.py::test_reload_refreshes_only_the_reloaded_profiles_cached_agents": {
+      "layer": "compatibility",
+      "reason": "Supported-Agent API compatibility: reload refreshes only the reloaded profiles cached agents. Uses the real installed release, not a fabricated API response.",
+      "cases": [
+        ""
+      ]
+    },
+    "tests/test_mcp_discovery.py::test_catalog_discovers_mcp_before_any_turn_without_crossing_profiles": {
+      "layer": "compatibility",
+      "reason": "Supported-Agent API compatibility: catalog discovers mcp before any turn without crossing profiles. Uses the real installed release, not a fabricated API response.",
+      "cases": [
+        ""
+      ]
+    },
+    "tests/test_memory_check.py::test_memory_check_counts_parsed_entries_against_the_profile_limits": {
+      "layer": "compatibility",
+      "reason": "Supported-Agent API compatibility: memory check counts parsed entries against the profile limits. Uses the real installed release, not a fabricated API response.",
+      "cases": [
+        ""
+      ]
+    },
+    "tests/test_memory_write.py::test_memory_write_refuses_a_save_over_an_entry_the_agent_stored_after_the_read": {
+      "layer": "compatibility",
+      "reason": "Supported-Agent API compatibility: memory write refuses a save over an entry the agent stored after the read. Uses the real installed release, not a fabricated API response.",
+      "cases": [
+        ""
+      ]
+    },
+    "tests/test_memory_write.py::test_memory_write_waits_for_the_agents_lock_file_and_rechecks_under_it": {
+      "layer": "compatibility",
+      "reason": "Supported-Agent API compatibility: memory write waits for the agents lock file and rechecks under it. Uses the real installed release, not a fabricated API response.",
+      "cases": [
+        ""
+      ]
+    },
+    "tests/test_memory_write.py::test_memory_write_lets_one_of_two_soul_saves_from_the_same_read_win": {
+      "layer": "compatibility",
+      "reason": "Supported-Agent API compatibility: memory write lets one of two soul saves from the same read win. Uses the real installed release, not a fabricated API response.",
+      "cases": [
+        ""
+      ]
+    },
+    "tests/test_model_selection.py::test_real_selection_guards_and_read_only_context": {
+      "layer": "compatibility",
+      "reason": "Supported-Agent API compatibility: real selection guards and read only context. Uses the real installed release, not a fabricated API response.",
+      "cases": [
+        ""
+      ]
+    },
+    "tests/test_namespaces.py::test_every_namespace_answers_with_contract_shapes": {
+      "layer": "compatibility",
+      "reason": "Supported-Agent API compatibility: every namespace answers with contract shapes. Uses the real installed release, not a fabricated API response.",
+      "cases": [
+        ""
+      ]
+    },
+    "tests/test_namespaces.py::test_error_conditions_are_typed": {
+      "layer": "compatibility",
+      "reason": "Supported-Agent API compatibility: error conditions are typed. Uses the real installed release, not a fabricated API response.",
+      "cases": [
+        ""
+      ]
+    },
+    "tests/test_namespaces.py::test_config_round_trip_keeps_mode_and_key_order": {
+      "layer": "compatibility",
+      "reason": "Supported-Agent API compatibility: config round trip keeps mode and key order. Uses the real installed release, not a fabricated API response.",
+      "cases": [
+        ""
+      ]
+    },
+    "tests/test_namespaces.py::test_config_rpcs_use_the_server_resolved_path": {
+      "layer": "compatibility",
+      "reason": "Supported-Agent API compatibility: config rpcs use the server resolved path. Uses the real installed release, not a fabricated API response.",
+      "cases": [
+        ""
+      ]
+    },
+    "tests/test_namespaces.py::test_config_set_writes_through_a_symlinked_config": {
+      "layer": "compatibility",
+      "reason": "Supported-Agent API compatibility: config set writes through a symlinked config. Uses the real installed release, not a fabricated API response.",
+      "cases": [
+        "[384]",
+        "[416]"
+      ]
+    },
+    "tests/test_namespaces.py::test_stdout_is_reserved_for_rpc_frames": {
+      "layer": "compatibility",
+      "reason": "Supported-Agent API compatibility: stdout is reserved for rpc frames. Uses the real installed release, not a fabricated API response.",
+      "cases": [
+        ""
+      ]
+    },
+    "tests/test_namespaces.py::test_image_mode_reads_the_profile_config": {
+      "layer": "compatibility",
+      "reason": "Supported-Agent API compatibility: image mode reads the profile config. Uses the real installed release, not a fabricated API response.",
+      "cases": [
+        ""
+      ]
+    },
+    "tests/test_namespaces.py::test_kanban_tasks_report_claim_liveness_and_completion_evidence": {
+      "layer": "compatibility",
+      "reason": "Supported-Agent API compatibility: kanban tasks report claim liveness and completion evidence. Uses the real installed release, not a fabricated API response.",
+      "cases": [
+        ""
+      ]
+    },
+    "tests/test_personalities.py::test_lists_built_ins_then_both_config_blocks_case_folded": {
+      "layer": "compatibility",
+      "reason": "Supported-Agent API compatibility: lists built ins then both config blocks case folded. Uses the real installed release, not a fabricated API response.",
+      "cases": [
+        ""
+      ]
+    },
+    "tests/test_plugin_host_isolation.py::test_each_profiles_plugin_lists_and_runs_its_command_in_its_own_scope": {
+      "layer": "compatibility",
+      "reason": "Supported-Agent API compatibility: each profiles plugin lists and runs its command in its own scope. Uses the real installed release, not a fabricated API response.",
+      "cases": [
+        "[in_process]",
+        "[host]"
+      ]
+    },
+    "tests/test_plugin_host_isolation.py::test_isolation_survey_reports_each_profiles_mode_and_installed_plugins_without_loading_them": {
+      "layer": "compatibility",
+      "reason": "Supported-Agent API compatibility: isolation survey reports each profiles mode and installed plugins without loading them. Uses the real installed release, not a fabricated API response.",
+      "cases": [
+        ""
+      ]
+    },
+    "tests/test_plugin_host_isolation.py::test_plugin_command_runs_under_the_invoking_chats_session_binding": {
+      "layer": "compatibility",
+      "reason": "Supported-Agent API compatibility: plugin command runs under the invoking chats session binding. Uses the real installed release, not a fabricated API response.",
+      "cases": [
+        ""
+      ]
+    },
+    "tests/test_plugin_providers.py::test_installed_plugin_providers_report_identity_setup_and_models": {
+      "layer": "compatibility",
+      "reason": "Supported-Agent API compatibility: installed plugin providers report identity setup and models. Uses the real installed release, not a fabricated API response.",
+      "cases": [
+        "[in_process]",
+        "[host]"
+      ]
+    },
+    "tests/test_plugin_providers.py::test_a_named_profiles_plugin_reads_the_same_whichever_profile_lists_first": {
+      "layer": "compatibility",
+      "reason": "Supported-Agent API compatibility: a named profiles plugin reads the same whichever profile lists first. Uses the real installed release, not a fabricated API response.",
+      "cases": [
+        "[flat-in_process]",
+        "[flat-host]",
+        "[model-providers-in_process]",
+        "[model-providers-host]"
+      ]
+    },
+    "tests/test_plugin_providers.py::test_hosted_plugins_with_a_shared_provider_id_are_not_attributed_by_name": {
+      "layer": "compatibility",
+      "reason": "Supported-Agent API compatibility: hosted plugins with a shared provider id are not attributed by name. Uses the real installed release, not a fabricated API response.",
+      "cases": [
+        "[both-enabled]",
+        "[disabled-winner]",
+        "[manifestless]"
+      ]
+    },
+    "tests/test_plugin_providers.py::test_an_oauth_plugin_is_ready_only_once_the_agent_holds_a_sign_in": {
+      "layer": "compatibility",
+      "reason": "Supported-Agent API compatibility: an oauth plugin is ready only once the agent holds a sign in. Uses the real installed release, not a fabricated API response.",
+      "cases": [
+        "[oauth_external]",
+        "[oauth_device_code]"
+      ]
+    },
+    "tests/test_plugin_settings.py::test_plugin_settings_round_trip_and_keep_secrets_out_of_config": {
+      "layer": "compatibility",
+      "reason": "Supported-Agent API compatibility: plugin settings round trip and keep secrets out of config. Uses the real installed release, not a fabricated API response.",
+      "cases": [
+        ""
+      ]
+    },
+    "tests/test_plugin_settings.py::test_managed_install_refuses_plugin_settings": {
+      "layer": "compatibility",
+      "reason": "Supported-Agent API compatibility: managed install refuses plugin settings. Uses the real installed release, not a fabricated API response.",
+      "cases": [
+        ""
+      ]
+    },
+    "tests/test_plugin_settings.py::test_unknown_plugin_is_not_found": {
+      "layer": "compatibility",
+      "reason": "Supported-Agent API compatibility: unknown plugin is not found. Uses the real installed release, not a fabricated API response.",
+      "cases": [
+        ""
+      ]
+    },
+    "tests/test_plugin_settings.py::test_secret_mapping_is_checked_before_anything_is_written": {
+      "layer": "compatibility",
+      "reason": "Supported-Agent API compatibility: secret mapping is checked before anything is written. Uses the real installed release, not a fabricated API response.",
+      "cases": [
+        ""
+      ]
+    },
+    "tests/test_post_compression_context.py::test_an_auto_compressed_turn_returns_pruned_context_and_its_estimate": {
+      "layer": "compatibility",
+      "reason": "Supported-Agent API compatibility: an auto compressed turn returns pruned context and its estimate. Uses the real installed release, not a fabricated API response.",
+      "cases": [
+        ""
+      ]
+    },
+    "tests/test_post_compression_context.py::test_a_capped_tool_result_keeps_its_failure_outcome": {
+      "layer": "compatibility",
+      "reason": "Supported-Agent API compatibility: a capped tool result keeps its failure outcome. Uses the real installed release, not a fabricated API response.",
+      "cases": [
+        "[agent]",
+        "[legacy]"
+      ]
+    },
+    "tests/test_post_compression_context.py::test_a_capped_tool_result_uses_the_agents_elision_marker": {
+      "layer": "compatibility",
+      "reason": "Supported-Agent API compatibility: a capped tool result uses the agents elision marker. Uses the real installed release, not a fabricated API response.",
+      "cases": [
+        ""
+      ]
+    },
+    "tests/test_post_compression_context.py::test_post_compression_context_keeps_skill_reload_pointers": {
+      "layer": "compatibility",
+      "reason": "Supported-Agent API compatibility: post compression context keeps skill reload pointers. Uses the real installed release, not a fabricated API response.",
+      "cases": [
+        "[agent]",
+        "[legacy]",
+        "[no_prune]"
+      ]
+    },
+    "tests/test_process_child_notifications.py::test_the_installed_agent_classifies_drained_events": {
+      "layer": "compatibility",
+      "reason": "Supported-Agent API compatibility: the installed agent classifies drained events. Uses the real installed release, not a fabricated API response.",
+      "cases": [
+        ""
+      ]
+    },
+    "tests/test_process_completions.py::test_launch_ledger_replays_once_and_a_claimed_completion_is_not_offered_again": {
+      "layer": "compatibility",
+      "reason": "Supported-Agent API compatibility: launch ledger replays once and a claimed completion is not offered again. Uses the real installed release, not a fabricated API response.",
+      "cases": [
+        ""
+      ]
+    },
+    "tests/test_process_completions.py::test_named_ledger_replays_once_even_when_the_launch_profile_is_the_only_drained_home": {
+      "layer": "compatibility",
+      "reason": "Supported-Agent API compatibility: named ledger replays once even when the launch profile is the only drained home. Uses the real installed release, not a fabricated API response.",
+      "cases": [
+        "[False]",
+        "[True]"
+      ]
+    },
+    "tests/test_process_completions.py::test_drain_sweeps_dead_owners_in_every_served_home_but_not_live_or_claimed_rows": {
+      "layer": "compatibility",
+      "reason": "Supported-Agent API compatibility: drain sweeps dead owners in every served home but not live or claimed rows. Uses the real installed release, not a fabricated API response.",
+      "cases": [
+        ""
+      ]
+    },
+    "tests/test_process_completions.py::test_failed_named_replay_retries_without_blocking_launch_or_live_events": {
+      "layer": "compatibility",
+      "reason": "Supported-Agent API compatibility: failed named replay retries without blocking launch or live events. Uses the real installed release, not a fabricated API response.",
+      "cases": [
+        ""
+      ]
+    },
+    "tests/test_process_completions.py::test_delivered_unknown_notification_is_reconciled_without_reopening_the_agent_ledger": {
+      "layer": "compatibility",
+      "reason": "Supported-Agent API compatibility: delivered unknown notification is reconciled without reopening the agent ledger. Uses the real installed release, not a fabricated API response.",
+      "cases": [
+        ""
+      ]
+    },
+    "tests/test_process_completions.py::test_reconciliation_requires_current_typed_final_delivery_in_the_exact_parent": {
+      "layer": "compatibility",
+      "reason": "Supported-Agent API compatibility: reconciliation requires current typed final delivery in the exact parent. Uses the real installed release, not a fabricated API response.",
+      "cases": [
+        "[DELETE FROM messages]",
+        "[UPDATE messages SET session_id='other-parent']",
+        "[UPDATE messages SET display_kind='hidden']",
+        "[UPDATE messages SET display_metadata=json_set(display_metadata, '$.delivery_notice', 'task_failure:0')]",
+        "[UPDATE async_delegations SET delivery_state='pending', delivery_claim='another-consumer', delivery_claimed_at=strftime('%s','now')]",
+        "[UPDATE async_delegations SET delivered_at=1]"
+      ]
+    },
+    "tests/test_process_completions.py::test_pending_cross_consumer_claim_is_retryable_not_a_delivered_receipt": {
+      "layer": "compatibility",
+      "reason": "Supported-Agent API compatibility: pending cross consumer claim is retryable not a delivered receipt. Uses the real installed release, not a fabricated API response.",
+      "cases": [
+        ""
+      ]
+    },
+    "tests/test_process_completions.py::test_typed_deliveries_reconcile_in_each_owning_profile_after_sidecar_restart": {
+      "layer": "compatibility",
+      "reason": "Supported-Agent API compatibility: typed deliveries reconcile in each owning profile after sidecar restart. Uses the real installed release, not a fabricated API response.",
+      "cases": [
+        ""
+      ]
+    },
+    "tests/test_process_completions.py::test_reconciliation_advances_past_the_first_page_of_accepted_deliveries": {
+      "layer": "compatibility",
+      "reason": "Supported-Agent API compatibility: reconciliation advances past the first page of accepted deliveries. Uses the real installed release, not a fabricated API response.",
+      "cases": [
+        ""
+      ]
+    },
+    "tests/test_process_delivery.py::test_a_completed_delivery_is_never_claimed_again": {
+      "layer": "compatibility",
+      "reason": "Supported-Agent API compatibility: a completed delivery is never claimed again. Uses the real installed release, not a fabricated API response.",
+      "cases": [
+        ""
+      ]
+    },
+    "tests/test_process_delivery.py::test_a_released_delivery_stays_pending_and_can_be_claimed_again": {
+      "layer": "compatibility",
+      "reason": "Supported-Agent API compatibility: a released delivery stays pending and can be claimed again. Uses the real installed release, not a fabricated API response.",
+      "cases": [
+        ""
+      ]
+    },
+    "tests/test_process_delivery.py::test_a_deferred_delivery_returns_without_spending_an_attempt": {
+      "layer": "compatibility",
+      "reason": "Supported-Agent API compatibility: a deferred delivery returns without spending an attempt. Uses the real installed release, not a fabricated API response.",
+      "cases": [
+        ""
+      ]
+    },
+    "tests/test_process_delivery.py::test_an_interim_notice_needs_no_acknowledgement": {
+      "layer": "compatibility",
+      "reason": "Supported-Agent API compatibility: an interim notice needs no acknowledgement. Uses the real installed release, not a fabricated API response.",
+      "cases": [
+        ""
+      ]
+    },
+    "tests/test_process_heartbeat.py::test_heartbeat_matches_the_installed_agent_formatter": {
+      "layer": "compatibility",
+      "reason": "Supported-Agent API compatibility: heartbeat matches the installed agent formatter. Uses the real installed release, not a fabricated API response.",
+      "cases": [
+        ""
+      ]
+    },
+    "tests/test_process_recovery.py::test_a_checkpointed_process_is_listed_after_restart_and_its_exit_completes_its_session": {
+      "layer": "compatibility",
+      "reason": "Supported-Agent API compatibility: a checkpointed process is listed after restart and its exit completes its session. Uses the real installed release, not a fabricated API response.",
+      "cases": [
+        ""
+      ]
+    },
+    "tests/test_process_recovery.py::test_startup_recovery_reports_an_inactive_profiles_exit_before_that_profile_is_used": {
+      "layer": "compatibility",
+      "reason": "Supported-Agent API compatibility: startup recovery reports an inactive profiles exit before that profile is used. Uses the real installed release, not a fabricated API response.",
+      "cases": [
+        ""
+      ]
+    },
+    "tests/test_process_recovery.py::test_a_failed_recovery_blocks_the_home_until_a_retry_succeeds": {
+      "layer": "compatibility",
+      "reason": "Supported-Agent API compatibility: a failed recovery blocks the home until a retry succeeds. Uses the real installed release, not a fabricated API response.",
+      "cases": [
+        "[entry]",
+        "[json]"
+      ]
+    },
+    "tests/test_profile_containment.py::test_profile_scans_skip_entries_that_escape_the_profiles_root": {
+      "layer": "compatibility",
+      "reason": "Supported-Agent API compatibility: profile scans skip entries that escape the profiles root. Uses the real installed release, not a fabricated API response.",
+      "cases": [
+        ""
+      ]
+    },
+    "tests/test_profile_identity.py::test_profiles_list_reports_identity_and_canonical_bot_chat_per_profile": {
+      "layer": "compatibility",
+      "reason": "Supported-Agent API compatibility: profiles list reports identity and canonical bot chat per profile. Uses the real installed release, not a fabricated API response.",
+      "cases": [
+        ""
+      ]
+    },
+    "tests/test_recovery_environment.py::test_recovery_enters_new_committed_generation_and_acknowledges_runtime": {
+      "layer": "compatibility",
+      "reason": "Supported-Agent API compatibility: recovery enters new committed generation and acknowledges runtime. Uses the real installed release, not a fabricated API response.",
+      "cases": [
+        ""
+      ]
+    },
+    "tests/test_recovery_environment.py::test_invalid_committed_environment_retains_recovery_debt": {
+      "layer": "compatibility",
+      "reason": "Supported-Agent API compatibility: invalid committed environment retains recovery debt. Uses the real installed release, not a fabricated API response.",
+      "cases": [
+        "[missing]",
+        "[malformed]",
+        "[foreign]",
+        "[absent-selection]",
+        "[abi]"
+      ]
+    },
+    "tests/test_recovery_environment.py::test_packaged_recovery_uses_native_environment_entry": {
+      "layer": "compatibility",
+      "reason": "Supported-Agent API compatibility: packaged recovery uses native environment entry. Uses the real installed release, not a fabricated API response.",
+      "cases": [
+        ""
+      ]
+    },
+    "tests/test_recovery_environment.py::test_dependency_repair_reselects_before_agent_import": {
+      "layer": "compatibility",
+      "reason": "Supported-Agent API compatibility: dependency repair reselects before agent import. Uses the real installed release, not a fabricated API response.",
+      "cases": [
+        ""
+      ]
+    },
+    "tests/test_recovery_environment.py::test_legacy_recovery_keeps_its_venv": {
+      "layer": "compatibility",
+      "reason": "Supported-Agent API compatibility: legacy recovery keeps its venv. Uses the real installed release, not a fabricated API response.",
+      "cases": [
+        "[True]",
+        "[False]"
+      ]
+    },
+    "tests/test_recovery_environment.py::test_recovery_retries_corrected_selection_without_discarding_debt": {
+      "layer": "compatibility",
+      "reason": "Supported-Agent API compatibility: recovery retries corrected selection without discarding debt. Uses the real installed release, not a fabricated API response.",
+      "cases": [
+        ""
+      ]
+    },
+    "tests/test_recovery_environment.py::test_server_retry_refreshes_runtime_and_restores_agent_rpcs": {
+      "layer": "compatibility",
+      "reason": "Supported-Agent API compatibility: server retry refreshes runtime and restores agent rpcs. Uses the real installed release, not a fabricated API response.",
+      "cases": [
+        ""
+      ]
+    },
+    "tests/test_recovery_environment.py::test_competing_update_lock_keeps_selected_recovery_debt": {
+      "layer": "compatibility",
+      "reason": "Supported-Agent API compatibility: competing update lock keeps selected recovery debt. Uses the real installed release, not a fabricated API response.",
+      "cases": [
+        ""
+      ]
+    },
+    "tests/test_recovery_environment.py::test_cancel_selected_recovery_stops_dependency_writer_and_retains_debt": {
+      "layer": "compatibility",
+      "reason": "Supported-Agent API compatibility: cancel selected recovery stops dependency writer and retains debt. Uses the real installed release, not a fabricated API response.",
+      "cases": [
+        ""
+      ]
+    },
+    "tests/test_recovery_environment.py::test_recovery_bootstrap_survives_retired_parent_venv_entry": {
+      "layer": "compatibility",
+      "reason": "Supported-Agent API compatibility: recovery bootstrap survives retired parent venv entry. Uses the real installed release, not a fabricated API response.",
+      "cases": [
+        "[symlink]",
+        "[anchored]"
+      ]
+    },
+    "tests/test_review_cancel.py::test_delete_clear_and_shutdown_cancel_the_admitted_background_review": {
+      "layer": "compatibility",
+      "reason": "Supported-Agent API compatibility: delete clear and shutdown cancel the admitted background review. Uses the real installed release, not a fabricated API response.",
+      "cases": [
+        ""
+      ]
+    },
+    "tests/test_runtime.py::test_handshake_reports_the_pinned_agent": {
+      "layer": "compatibility",
+      "reason": "Supported-Agent API compatibility: handshake reports the pinned agent. Uses the real installed release, not a fabricated API response.",
+      "cases": [
+        ""
+      ]
+    },
+    "tests/test_runtime.py::test_handshake_rejects_another_rpc_version": {
+      "layer": "compatibility",
+      "reason": "Supported-Agent API compatibility: handshake rejects another rpc version. Uses the real installed release, not a fabricated API response.",
+      "cases": [
+        ""
+      ]
+    },
+    "tests/test_runtime.py::test_handshake_rejects_pre_receipt_delivery_protocol": {
+      "layer": "compatibility",
+      "reason": "Supported-Agent API compatibility: handshake rejects pre receipt delivery protocol. Uses the real installed release, not a fabricated API response.",
+      "cases": [
+        ""
+      ]
+    },
+    "tests/test_runtime.py::test_handshake_rejects_pre_selection_guard_protocol": {
+      "layer": "compatibility",
+      "reason": "Supported-Agent API compatibility: handshake rejects pre selection guard protocol. Uses the real installed release, not a fabricated API response.",
+      "cases": [
+        ""
+      ]
+    },
+    "tests/test_runtime.py::test_status_before_handshake_reports_nothing_loaded": {
+      "layer": "compatibility",
+      "reason": "Supported-Agent API compatibility: status before handshake reports nothing loaded. Uses the real installed release, not a fabricated API response.",
+      "cases": [
+        ""
+      ]
+    },
+    "tests/test_runtime.py::test_unknown_method_and_cancel_of_inactive_request": {
+      "layer": "compatibility",
+      "reason": "Supported-Agent API compatibility: unknown method and cancel of inactive request. Uses the real installed release, not a fabricated API response.",
+      "cases": [
+        ""
+      ]
+    },
+    "tests/test_runtime.py::test_drift_guard_refuses_a_changed_checkout": {
+      "layer": "compatibility",
+      "reason": "Supported-Agent API compatibility: drift guard refuses a changed checkout. Uses the real installed release, not a fabricated API response.",
+      "cases": [
+        ""
+      ]
+    },
+    "tests/test_runtime.py::test_runtime_env_edits_the_sidecar_process_environment": {
+      "layer": "compatibility",
+      "reason": "Supported-Agent API compatibility: runtime env edits the sidecar process environment. Uses the real installed release, not a fabricated API response.",
+      "cases": [
+        ""
+      ]
+    },
+    "tests/test_runtime.py::test_config_reads_survive_agent_import_failure": {
+      "layer": "compatibility",
+      "reason": "Supported-Agent API compatibility: config reads survive agent import failure. Uses the real installed release, not a fabricated API response.",
+      "cases": [
+        ""
+      ]
+    },
+    "tests/test_runtime.py::test_handshake_rejects_pre_scoped_usage_credentials": {
+      "layer": "compatibility",
+      "reason": "Supported-Agent API compatibility: handshake rejects pre scoped usage credentials. Uses the real installed release, not a fabricated API response.",
+      "cases": [
+        "[41]",
+        "[42]"
+      ]
+    },
+    "tests/test_runtime_pm_path.py::test_runtime_resolves_managed_tools_before_agent_import": {
+      "layer": "process",
+      "reason": "Actual executable discovery and execution under the imported runtime PATH establish managed-tool activation at the process boundary.",
+      "cases": [
+        "[True]",
+        "[False]"
+      ]
+    },
+    "tests/test_skills_catalog.py::test_resolved_skill_catalog": {
+      "layer": "compatibility",
+      "reason": "Supported-Agent API compatibility: resolved skill catalog. Uses the real installed release, not a fabricated API response.",
+      "cases": [
+        ""
+      ]
+    },
+    "tests/test_skills_catalog.py::test_skill_catalog_rpc_identity_and_profile_isolation": {
+      "layer": "compatibility",
+      "reason": "Supported-Agent API compatibility: skill catalog rpc identity and profile isolation. Uses the real installed release, not a fabricated API response.",
+      "cases": [
+        ""
+      ]
+    },
+    "tests/test_state_db_delete_guard.py::test_legacy_agent_refuses_retained_runtime_history": {
+      "layer": "compatibility",
+      "reason": "Supported-Agent API compatibility: legacy agent refuses retained runtime history. Uses the real installed release, not a fabricated API response.",
+      "cases": [
+        "[cli-root]",
+        "[cli-tip]",
+        "[worker-child]",
+        "[worker-only-parent]",
+        "[reset]",
+        "[compressed]",
+        "[empty]",
+        "[multiple]",
+        "[malformed]"
+      ]
+    },
+    "tests/test_state_db_delete_guard.py::test_legacy_deletion_keeps_mismatched_marker_history_separate": {
+      "layer": "compatibility",
+      "reason": "Supported-Agent API compatibility: legacy deletion keeps mismatched marker history separate. Uses the real installed release, not a fabricated API response.",
+      "cases": [
+        "[cli-_branched_from]",
+        "[cli-_delegate_from]",
+        "[cli-_reset_from]",
+        "[subagent-_branched_from]",
+        "[subagent-_delegate_from]",
+        "[subagent-_reset_from]"
+      ]
+    },
+    "tests/test_state_db_delete_guard.py::test_a_live_turn_lease_or_compression_lock_refuses_the_delete": {
+      "layer": "compatibility",
+      "reason": "Supported-Agent API compatibility: a live turn lease or compression lock refuses the delete. Uses the real installed release, not a fabricated API response.",
+      "cases": [
+        ""
+      ]
+    },
+    "tests/test_state_db_delete_guard.py::test_an_expired_guard_is_reclaimed_and_the_delete_proceeds": {
+      "layer": "compatibility",
+      "reason": "Supported-Agent API compatibility: an expired guard is reclaimed and the delete proceeds. Uses the real installed release, not a fabricated API response.",
+      "cases": [
+        ""
+      ]
+    },
+    "tests/test_state_db_delete_guard.py::test_the_lineage_is_resolved_and_guarded_inside_the_delete_transaction": {
+      "layer": "compatibility",
+      "reason": "Supported-Agent API compatibility: the lineage is resolved and guarded inside the delete transaction. Uses the real installed release, not a fabricated API response.",
+      "cases": [
+        ""
+      ]
+    },
+    "tests/test_state_db_delete_guard.py::test_the_delete_removes_every_segment_of_a_long_compression_lineage": {
+      "layer": "compatibility",
+      "reason": "Supported-Agent API compatibility: the delete removes every segment of a long compression lineage. Uses the real installed release, not a fabricated API response.",
+      "cases": [
+        ""
+      ]
+    },
+    "tests/test_state_db_delete_guard.py::test_the_delete_removes_the_legacy_session_transcript": {
+      "layer": "compatibility",
+      "reason": "Supported-Agent API compatibility: the delete removes the legacy session transcript. Uses the real installed release, not a fabricated API response.",
+      "cases": [
+        ""
+      ]
+    },
+    "tests/test_state_db_delete_guard.py::test_the_legacy_name_of_a_live_prefixed_session_is_its_own_transcript": {
+      "layer": "compatibility",
+      "reason": "Supported-Agent API compatibility: the legacy name of a live prefixed session is its own transcript. Uses the real installed release, not a fabricated API response.",
+      "cases": [
+        ""
+      ]
+    },
+    "tests/test_state_db_delete_guard.py::test_terminal_ledger_retirement_cleans_files_and_fences_retries": {
+      "layer": "compatibility",
+      "reason": "Supported-Agent API compatibility: terminal ledger retirement cleans files and fences retries. Uses the real installed release, not a fabricated API response.",
+      "cases": [
+        ""
+      ]
+    },
+    "tests/test_state_db_delete_guard.py::test_live_ledger_obligations_refuse_the_entire_delete": {
+      "layer": "compatibility",
+      "reason": "Supported-Agent API compatibility: live ledger obligations refuse the entire delete. Uses the real installed release, not a fabricated API response.",
+      "cases": [
+        "[queued]",
+        "[started]",
+        "[unknown]",
+        "[registered_worker]",
+        "[running_worker]",
+        "[unknown_worker]"
+      ]
+    },
+    "tests/test_state_db_delete_guard.py::test_canonical_compression_targets_include_delegates_and_preserve_forks": {
+      "layer": "compatibility",
+      "reason": "Supported-Agent API compatibility: canonical compression targets include delegates and preserve forks. Uses the real installed release, not a fabricated API response.",
+      "cases": [
+        "[root]",
+        "[tip]"
+      ]
+    },
+    "tests/test_state_db_delete_guard.py::test_receipt_backed_reset_conversation_deletes_from_either_end": {
+      "layer": "compatibility",
+      "reason": "Supported-Agent API compatibility: receipt backed reset conversation deletes from either end. Uses the real installed release, not a fabricated API response.",
+      "cases": [
+        "[False]",
+        "[True]"
+      ]
+    },
+    "tests/test_state_db_delete_guard.py::test_runtime_delete_cleanup_failure_recovers_after_restart": {
+      "layer": "compatibility",
+      "reason": "Supported-Agent API compatibility: runtime delete cleanup failure recovers after restart. Uses the real installed release, not a fabricated API response.",
+      "cases": [
+        "[manifest]",
+        "[artifact]",
+        "[media]"
+      ]
+    },
+    "tests/test_state_db_delete_guard.py::test_terminal_worker_receipts_keep_only_the_closing_result": {
+      "layer": "compatibility",
+      "reason": "Supported-Agent API compatibility: terminal worker receipts keep only the closing result. Uses the real installed release, not a fabricated API response.",
+      "cases": [
+        ""
+      ]
+    },
+    "tests/test_state_db_local_lineage.py::test_reset_target_plan_matches_server_fixture": {
+      "layer": "compatibility",
+      "reason": "Supported-Agent API compatibility: reset target plan matches server fixture. Uses the real installed release, not a fabricated API response.",
+      "cases": [
+        "[reset]",
+        "[compressed]",
+        "[empty]",
+        "[multiple]"
+      ]
+    },
+    "tests/test_state_db_title.py::test_a_manual_rename_replaces_a_generated_title": {
+      "layer": "compatibility",
+      "reason": "Supported-Agent API compatibility: a manual rename replaces a generated title. Uses the real installed release, not a fabricated API response.",
+      "cases": [
+        ""
+      ]
+    },
+    "tests/test_status_events.py::test_pinned_stream_diagnostics_reach_warning_frames": {
+      "layer": "compatibility",
+      "reason": "Supported-Agent API compatibility: pinned stream diagnostics reach warning frames. Uses the real installed release, not a fabricated API response.",
+      "cases": [
+        "[response]",
+        "[tool-call]"
+      ]
+    },
+    "tests/test_steer_withdraw.py::test_withdraw_and_send_now_against_the_pinned_agent": {
+      "layer": "compatibility",
+      "reason": "Supported-Agent API compatibility: withdraw and send now against the pinned agent. Uses the real installed release, not a fabricated API response.",
+      "cases": [
+        ""
+      ]
+    },
+    "tests/test_stt_capability.py::test_capability_matches_agent_provider": {
+      "layer": "compatibility",
+      "reason": "Supported-Agent API compatibility: capability matches agent provider. Uses the real installed release, not a fabricated API response.",
+      "cases": [
+        "[stt:\\n  provider: local_command\\n-expected0]",
+        "[stt:\\n  provider: deepinfra\\n-expected1]",
+        "[stt:\\n  provider: mycmd\\n  providers:\\n    mycmd:\\n      type: command\\n      command: echo hi > {output_dir}/out.txt\\n-expected2]",
+        "[stt:\\n  provider: not-registered\\n-expected3]",
+        "[-None]"
+      ]
+    },
+    "tests/test_stt_stream.py::test_capability_reports_streaming_only_when_enabled": {
+      "layer": "compatibility",
+      "reason": "Supported-Agent API compatibility: capability reports streaming only when enabled. Uses the real installed release, not a fabricated API response.",
+      "cases": [
+        ""
+      ]
+    },
+    "tests/test_stt_stream.py::test_stream_relays_partials_then_returns_the_sessions_final": {
+      "layer": "compatibility",
+      "reason": "Supported-Agent API compatibility: stream relays partials then returns the sessions final. Uses the real installed release, not a fabricated API response.",
+      "cases": [
+        ""
+      ]
+    },
+    "tests/test_stt_stream.py::test_stream_final_drops_a_silence_hallucination": {
+      "layer": "compatibility",
+      "reason": "Supported-Agent API compatibility: stream final drops a silence hallucination. Uses the real installed release, not a fabricated API response.",
+      "cases": [
+        ""
+      ]
+    },
+    "tests/test_stt_stream.py::test_cancel_closes_the_session_without_finalizing": {
+      "layer": "compatibility",
+      "reason": "Supported-Agent API compatibility: cancel closes the session without finalizing. Uses the real installed release, not a fabricated API response.",
+      "cases": [
+        ""
+      ]
+    },
+    "tests/test_stt_stream.py::test_cancel_during_a_slow_finalize_cancels_the_session": {
+      "layer": "compatibility",
+      "reason": "Supported-Agent API compatibility: cancel during a slow finalize cancels the session. Uses the real installed release, not a fabricated API response.",
+      "cases": [
+        ""
+      ]
+    },
+    "tests/test_stt_stream.py::test_stream_refuses_when_streaming_is_off_or_the_rate_is_invalid": {
+      "layer": "compatibility",
+      "reason": "Supported-Agent API compatibility: stream refuses when streaming is off or the rate is invalid. Uses the real installed release, not a fabricated API response.",
+      "cases": [
+        "[16000]",
+        "[7999]"
+      ]
+    },
+    "tests/test_stt_transcribe.py::test_transcribe_drops_silence_hallucinations_and_keeps_speech": {
+      "layer": "compatibility",
+      "reason": "Supported-Agent API compatibility: transcribe drops silence hallucinations and keeps speech. Uses the real installed release, not a fabricated API response.",
+      "cases": [
+        ""
+      ]
+    },
+    "tests/test_suite_runner.py::test_policy_rejects_an_unclassified_process_launch": {
+      "layer": "process",
+      "reason": "Actual pytest subprocess startup, scheduling, isolation, journal/report validation and cleanup are the harness boundary under test.",
+      "cases": [
+        "[subprocess]",
+        "[os-system]"
+      ]
+    },
+    "tests/test_suite_runner.py::test_policy_allows_boundary_fakes_without_an_agent": {
+      "layer": "process",
+      "reason": "Actual pytest subprocess startup, scheduling, isolation, journal/report validation and cleanup are the harness boundary under test.",
+      "cases": [
+        ""
+      ]
+    },
+    "tests/test_suite_runner.py::test_policy_rejects_expanding_a_reviewed_process_family": {
+      "layer": "process",
+      "reason": "Actual pytest subprocess startup, scheduling, isolation, journal/report validation and cleanup are the harness boundary under test.",
+      "cases": [
+        ""
+      ]
+    },
+    "tests/test_suite_runner.py::test_layers_execute_each_case_once_and_fast_has_no_agent": {
+      "layer": "process",
+      "reason": "Actual pytest subprocess startup, scheduling, isolation, journal/report validation and cleanup are the harness boundary under test.",
+      "cases": [
+        "[None]",
+        "[active]",
+        "[older]"
+      ]
+    },
+    "tests/test_suite_runner.py::test_policy_rejects_losing_a_reviewed_compatibility_case": {
+      "layer": "process",
+      "reason": "Actual pytest subprocess startup, scheduling, isolation, journal/report validation and cleanup are the harness boundary under test.",
+      "cases": [
+        ""
+      ]
+    },
+    "tests/test_suite_runner.py::test_serial_selection_rejects_a_missing_execution_journal": {
+      "layer": "process",
+      "reason": "Actual pytest subprocess startup, scheduling, isolation, journal/report validation and cleanup are the harness boundary under test.",
+      "cases": [
+        ""
+      ]
+    },
+    "tests/test_suite_runner.py::test_independent_modules_overlap": {
+      "layer": "process",
+      "reason": "Actual pytest subprocess startup, scheduling, isolation, journal/report validation and cleanup are the harness boundary under test.",
+      "cases": [
+        "[1-2]",
+        "[2-3]",
+        "[4-5]",
+        "[8-9]",
+        "[8-2]"
+      ]
+    },
+    "tests/test_suite_runner.py::test_invalid_worker_count_fails": {
+      "layer": "process",
+      "reason": "Actual pytest subprocess startup, scheduling, isolation, journal/report validation and cleanup are the harness boundary under test.",
+      "cases": [
+        "[]",
+        "[0]",
+        "[-1]",
+        "[1.5]",
+        "[abc]"
+      ]
+    },
+    "tests/test_suite_runner.py::test_selectors_stay_serial": {
+      "layer": "process",
+      "reason": "Actual pytest subprocess startup, scheduling, isolation, journal/report validation and cleanup are the harness boundary under test.",
+      "cases": [
+        "[selector0]",
+        "[selector1]",
+        "[selector2]"
+      ]
+    },
+    "tests/test_suite_runner.py::test_merged_outcomes_and_durations": {
+      "layer": "process",
+      "reason": "Actual pytest subprocess startup, scheduling, isolation, journal/report validation and cleanup are the harness boundary under test.",
+      "cases": [
+        ""
+      ]
+    },
+    "tests/test_suite_runner.py::test_partial_evidence_never_succeeds": {
+      "layer": "process",
+      "reason": "Actual pytest subprocess startup, scheduling, isolation, journal/report validation and cleanup are the harness boundary under test.",
+      "cases": [
+        "[crash]",
+        "[missing]",
+        "[malformed]",
+        "[omitted]",
+        "[duplicate]",
+        "[junit-count]",
+        "[junit-coverage]",
+        "[junit-duplicate]"
+      ]
+    },
+    "tests/test_suite_runner.py::test_collection_failure_starts_no_workers": {
+      "layer": "process",
+      "reason": "Actual pytest subprocess startup, scheduling, isolation, journal/report validation and cleanup are the harness boundary under test.",
+      "cases": [
+        ""
+      ]
+    },
+    "tests/test_suite_runner.py::test_workers_and_detached_children_cleaned_on_abort": {
+      "layer": "process",
+      "reason": "Actual pytest subprocess startup, scheduling, isolation, journal/report validation and cleanup are the harness boundary under test.",
+      "cases": [
+        "[present-cancel]",
+        "[present-startup]",
+        "[missing-cancel]",
+        "[missing-startup]"
+      ]
+    },
+    "tests/test_suite_runner.py::test_cleanup_fixture_runs_after_subprocess_mocks_are_restored": {
+      "layer": "process",
+      "reason": "Actual pytest subprocess startup, scheduling, isolation, journal/report validation and cleanup are the harness boundary under test.",
+      "cases": [
+        "[Popen]",
+        "[check_output]"
+      ]
+    },
+    "tests/test_suite_runner.py::test_cleanup_fixture_leaves_sibling_child_alive_and_detects_own_leak": {
+      "layer": "process",
+      "reason": "Actual pytest subprocess startup, scheduling, isolation, journal/report validation and cleanup are the harness boundary under test.",
+      "cases": [
+        ""
+      ]
+    },
+    "tests/test_suite_runner.py::test_exited_orphans_are_reaped_while_worker_runs": {
+      "layer": "process",
+      "reason": "Actual pytest subprocess startup, scheduling, isolation, journal/report validation and cleanup are the harness boundary under test.",
+      "cases": [
+        "[present]",
+        "[missing]"
+      ]
+    },
+    "tests/test_turn_lease_busy.py::test_a_turn_right_after_stopping_a_stuck_turn_waits_only_until_the_agent_abandons_it": {
+      "layer": "compatibility",
+      "reason": "Supported-Agent API compatibility: a turn right after stopping a stuck turn waits only until the agent abandons it. Uses the real installed release, not a fabricated API response.",
+      "cases": [
+        ""
+      ]
+    },
+    "tests/test_turn_lease_busy.py::test_a_turn_while_the_previous_turn_is_still_running_is_refused_as_busy": {
+      "layer": "compatibility",
+      "reason": "Supported-Agent API compatibility: a turn while the previous turn is still running is refused as busy. Uses the real installed release, not a fabricated API response.",
+      "cases": [
+        ""
+      ]
+    },
+    "tests/test_usage_balance.py::test_a_pool_account_usage_read_never_refreshes_its_credential": {
+      "layer": "compatibility",
+      "reason": "Supported-Agent API compatibility: a pool account usage read never refreshes its credential. Uses the real installed release, not a fabricated API response.",
+      "cases": [
+        ""
+      ]
+    },
+    "tests/test_usage_balance.py::test_pool_lists_each_account_with_its_local_state": {
+      "layer": "compatibility",
+      "reason": "Supported-Agent API compatibility: pool lists each account with its local state. Uses the real installed release, not a fabricated API response.",
+      "cases": [
+        ""
+      ]
+    },
+    "tests/test_usage_balance.py::test_usage_credentials_follow_real_agent_profile_secret_sources": {
+      "layer": "compatibility",
+      "reason": "Supported-Agent API compatibility: usage credentials follow real agent profile secret sources. Uses the real installed release, not a fabricated API response.",
+      "cases": [
+        ""
+      ]
+    },
+    "tests/test_usage_limits.py::test_an_exhausted_sole_entry_limits_the_account_until_its_reset": {
+      "layer": "compatibility",
+      "reason": "Supported-Agent API compatibility: an exhausted sole entry limits the account until its reset. Uses the real installed release, not a fabricated API response.",
+      "cases": [
+        ""
+      ]
+    },
+    "tests/test_usage_limits.py::test_a_model_cooldown_limits_only_that_model_and_an_expired_one_disappears": {
+      "layer": "compatibility",
+      "reason": "Supported-Agent API compatibility: a model cooldown limits only that model and an expired one disappears. Uses the real installed release, not a fabricated API response.",
+      "cases": [
+        ""
+      ]
+    },
+    "tests/test_worktree.py::test_a_repository_filter_program_never_runs": {
+      "layer": "compatibility",
+      "reason": "Supported-Agent API compatibility: a repository filter program never runs. Uses the real installed release, not a fabricated API response.",
+      "cases": [
+        "[repo config]",
+        "[include on the new branch]"
+      ]
+    },
+    "tests/test_worktree.py::test_a_clean_repository_gets_a_worktree": {
+      "layer": "compatibility",
+      "reason": "Supported-Agent API compatibility: a clean repository gets a worktree. Uses the real installed release, not a fabricated API response.",
+      "cases": [
+        ""
+      ]
+    },
+    "tests/test_write_approval.py::test_staged_writes_list_with_diffs_and_approve_applies_them": {
+      "layer": "compatibility",
+      "reason": "Supported-Agent API compatibility: staged writes list with diffs and approve applies them. Uses the real installed release, not a fabricated API response.",
+      "cases": [
+        ""
+      ]
+    },
+    "tests/test_write_approval.py::test_reject_discards_a_staged_write": {
+      "layer": "compatibility",
+      "reason": "Supported-Agent API compatibility: reject discards a staged write. Uses the real installed release, not a fabricated API response.",
+      "cases": [
+        ""
+      ]
+    },
+    "tests/test_write_approval.py::test_gates_off_stage_nothing": {
+      "layer": "compatibility",
+      "reason": "Supported-Agent API compatibility: gates off stage nothing. Uses the real installed release, not a fabricated API response.",
+      "cases": [
+        ""
+      ]
+    },
+    "tests/test_write_approval.py::test_ids_outside_the_pending_store_are_refused": {
+      "layer": "compatibility",
+      "reason": "Supported-Agent API compatibility: ids outside the pending store are refused. Uses the real installed release, not a fabricated API response.",
+      "cases": [
+        "[../../config]",
+        "[a/b]",
+        "[]"
+      ]
+    },
+    "tests/test_write_approval.py::test_a_staged_memory_remove_diffs_against_the_file_and_leaves_it_until_approved": {
+      "layer": "compatibility",
+      "reason": "Supported-Agent API compatibility: a staged memory remove diffs against the file and leaves it until approved. Uses the real installed release, not a fabricated API response.",
+      "cases": [
+        ""
+      ]
+    },
+    "tests/test_write_approval.py::test_an_approval_is_refused_once_the_file_changed_after_the_review": {
+      "layer": "compatibility",
+      "reason": "Supported-Agent API compatibility: an approval is refused once the file changed after the review. Uses the real installed release, not a fabricated API response.",
+      "cases": [
+        ""
+      ]
+    },
+    "tests/test_write_approval.py::test_a_write_without_a_reviewable_diff_cannot_be_approved": {
+      "layer": "compatibility",
+      "reason": "Supported-Agent API compatibility: a write without a reviewable diff cannot be approved. Uses the real installed release, not a fabricated API response.",
+      "cases": [
+        ""
+      ]
+    },
+    "tests/test_write_approval.py::test_a_skill_write_landing_during_an_approval_is_never_overwritten": {
+      "layer": "compatibility",
+      "reason": "Supported-Agent API compatibility: a skill write landing during an approval is never overwritten. Uses the real installed release, not a fabricated API response.",
+      "cases": [
+        ""
+      ]
+    },
+    "tests/test_yolo_release.py::test_enabling_yolo_releases_parked_approvals_once_and_they_prompt_after_it_turns_off": {
+      "layer": "compatibility",
+      "reason": "Supported-Agent API compatibility: enabling yolo releases parked approvals once and they prompt after it turns off. Uses the real installed release, not a fabricated API response.",
+      "cases": [
+        ""
+      ]
+    },
+    "tests/test_suite_runner.py::test_policy_fails_even_when_a_boundary_catches_the_launch_error": {
+      "layer": "process",
+      "reason": "Proves actual pytest rejects swallowed launch violations and missing Agent classification instead of accepting false success.",
+      "cases": [
+        "[call]",
+        "[exit]"
+      ]
+    },
+    "tests/test_suite_runner.py::test_policy_rejects_an_unclassified_agent_skip": {
+      "layer": "process",
+      "reason": "Proves actual pytest rejects swallowed launch violations and missing Agent classification instead of accepting false success.",
+      "cases": [
+        ""
+      ]
+    },
+    "tests/test_suite_runner.py::test_policy_rejects_real_network_access_in_fast_cases": {
+      "layer": "process",
+      "reason": "Proves the harness rejects actual socket bind and UDP send operations in an unclassified fast case.",
+      "cases": [
+        "[bind]",
+        "[udp]"
+      ]
+    },
+    "tests/test_suite_runner.py::test_collection_only_validates_inventory_without_executing_cases": {
+      "layer": "process",
+      "reason": "Proves actual pytest collection-only routing validates classification without executing a case or accepting an execution receipt.",
+      "cases": [
+        ""
+      ]
+    },
+    "tests/test_suite_runner.py::test_policy_owns_setup_hooks_before_the_fixture_protocol": {
+      "layer": "process",
+      "reason": "Proves actual early pytest setup-hook launches are attributed to the declared owning case while fast hooks stay blocked.",
+      "cases": [
+        "[process]",
+        "[fast]"
+      ]
+    },
+    "tests/test_env_write.py::test_native_lock_timeout_maps_to_env_locked": {
+      "layer": "compatibility",
+      "reason": "Actual cross-process native environment lock contention must produce the exception Talaria maps to env_locked. The original lock runs with a short test-only budget; production defaults are unchanged.",
+      "cases": [
+        ""
+      ]
+    }
+  }
+}

@@ -80,7 +80,7 @@ jobs:
         working-directory: .
         run: echo "tags=$(python3 scripts/check-agent-compatibility.py --list)" >> "$GITHUB_OUTPUT"
 
-  # Each supported Agent release runs the full sidecar suite. Unpromoted upstream releases are not in the record.
+  # Every supported release runs native compatibility. The shared runner selects once-only work on the active pin.
   sidecar:
     needs: agent-releases
     name: Sidecar pytest against Agent ${{ matrix.release }}
@@ -100,14 +100,14 @@ jobs:
           cache: pip
           cache-dependency-path: web/sidecar/agent_support.json
 
-      - name: Set up Node for the combined HTTP updater proof
+      - name: Set up Node for server process-boundary proofs
         uses: actions/setup-node@v7
         with:
           node-version-file: web/.nvmrc
           cache: npm
           cache-dependency-path: web/package-lock.json
 
-      - name: Build the HTTP updater proof runtime
+      - name: Build the server process-boundary proof runtime
         run: |
           npm ci --no-audit --no-fund
           npm run build -w packages/contracts
@@ -115,9 +115,6 @@ jobs:
 
       - name: Install uv (the Agent's locked dependency resolver)
         run: python3 -m pip install --disable-pip-version-check "uv==0.11.3"
-
-      - name: Check runner isolation and failure paths before the Agent suite
-        run: HERMES_WEBUI_AGENT_DIR="$RUNNER_TEMP/synthetic-agent" sidecar/scripts/test.sh tests/test_suite_runner.py
 
       - name: Provision the Agent release and run the sidecar suite
         working-directory: .

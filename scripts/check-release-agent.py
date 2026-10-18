@@ -11,6 +11,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
+SERVER_RUNTIME_ARTIFACTS = ('web/node_modules', 'web/packages/contracts/dist', 'web/packages/server/dist')
 sys.path.insert(0, str(ROOT / "web/sidecar/scripts"))
 from suite_runner import worker_count
 
@@ -36,10 +37,17 @@ def main():
     scratch = ROOT / ".codex-tmp"
     scratch.mkdir(exist_ok=True)
     with tempfile.TemporaryDirectory(prefix="talaria-selected-web-", dir=scratch) as temporary:
+        runtime = None
+
         def checkout(name):
             path = Path(temporary) / name
             subprocess.run(["git", "clone", "--quiet", "--shared", "--no-checkout", str(ROOT), str(path)], check=True)
             subprocess.run(["git", "-C", str(path), "checkout", "--quiet", "--detach", source], check=True)
+            if runtime is not None:
+                for relative in SERVER_RUNTIME_ARTIFACTS:
+                    link = path / relative
+                    link.parent.mkdir(parents=True, exist_ok=True)
+                    link.symlink_to(runtime / relative, target_is_directory=True)
             return path
 
         def check(tag):
@@ -59,6 +67,16 @@ def main():
         # The selected source's own record names its supported releases and requires its active pin among them.
         releases = json.loads(subprocess.check_output(["python3", str(listing / "scripts/check-agent-compatibility.py"), "--list"],
                                                       cwd=listing))
+        # Native environment recovery includes a real server/sidecar boundary.
+        # Build this exact selected source once; all release checkouts share only read-only artifacts.
+        for command in (["npm", "ci", "--no-audit", "--no-fund"],
+                        ["npm", "run", "build", "-w", "packages/contracts"],
+                        ["npm", "run", "build", "-w", "packages/server"]):
+            subprocess.run(command, cwd=listing / 'web', check=True)
+        for relative in SERVER_RUNTIME_ARTIFACTS:
+            if not (listing / relative).is_dir():
+                raise RuntimeError(f'selected Web runtime build did not produce {relative}')
+        runtime = listing
         failed = []
         budget = worker_count(os.environ.get("TALARIA_SIDECAR_WORKERS"))
         allocations = worker_allocations(releases, budget)

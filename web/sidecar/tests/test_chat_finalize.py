@@ -10,17 +10,13 @@ from conftest import requires_agent
 
 
 @requires_agent
-@pytest.mark.parametrize('mode', ['message', 'raises', 'slow'])
+@pytest.mark.parametrize('mode', ['message', 'raises'])
 def test_finalize_runs_profile_plugin_without_starting_a_turn(handshaken, hermes_home, mode):
     profile = hermes_home / 'profiles' / 'closing'
     plugin = profile / 'plugins' / 'closing-test'
     plugin.mkdir(parents=True)
     (plugin / 'plugin.yaml').write_text('name: closing-test\nversion: 0.0.1\n')
-    action = {
-        'message': "return {'message': 'bye'}",
-        'raises': "raise RuntimeError('synthetic plugin failure')",
-        'slow': "time.sleep(12); return {'message': 'too late'}",
-    }[mode]
+    action = "return {'message': 'bye'}" if mode == 'message' else "raise RuntimeError('synthetic plugin failure')"
     (plugin / '__init__.py').write_text(f'''import json, time
 from hermes_constants import get_hermes_home
 
@@ -42,8 +38,58 @@ def register(ctx):
         'session_id': 'closing-chat', 'platform': 'webui', 'reason': 'clear',
     }
     assert not (hermes_home / 'finalized.json').exists()
-    if mode == 'slow':
-        time.sleep(2.5)  # Let the abandoned hook finish before its disposable home is removed.
+
+
+def test_finalize_timeout_keeps_profile_custody_until_the_hook_exits(monkeypatch, tmp_path):
+    import contextlib
+    import sys
+    import threading
+    import types
+    from talaria_sidecar.methods import Registry, chat
+
+    entered, release = threading.Event(), threading.Event()
+    scopes = []
+
+    @contextlib.contextmanager
+    def scope(home):
+        scopes.append(('enter', home))
+        try:
+            yield home
+        finally:
+            scopes.append(('exit', home))
+
+    def finalize(**kwargs):
+        assert kwargs == dict(session_id='closing-chat', platform='webui', reason='clear')
+        entered.set()
+        assert release.wait(5), 'test did not release its hook'
+        return ['late message']
+
+    monkeypatch.setitem(sys.modules, 'hermes_cli', types.SimpleNamespace(lifecycle=types.SimpleNamespace(
+        finalize_session=finalize, session_end_messages=lambda results: results)))
+    monkeypatch.setattr(chat, 'scoped_home', scope)
+    monkeypatch.setattr(chat, '_SESSION_FINALIZE_TIMEOUT', .01)
+    registry = Registry(runtime=None)
+    chat.register(registry)
+    worker = None
+    try:
+        result = registry.methods['chat.finalize_session'](None, {
+            'session_id': 'closing-chat', 'profile_home': str(tmp_path), 'reason': 'clear',
+        })
+        assert entered.wait(1)
+        assert result == {'messages': []}
+        worker = next(worker for worker, home in chat._RELEASES.items() if home == tmp_path)
+        assert worker.is_alive()
+        assert scopes == [('enter', tmp_path)]
+    finally:
+        release.set()
+        for pending, home in list(chat._RELEASES.items()):
+            if home == tmp_path:
+                pending.join(5)
+        if worker is not None: worker.join(5)
+    assert worker is not None
+    assert not worker.is_alive()
+    assert worker not in chat._RELEASES
+    assert scopes == [('enter', tmp_path), ('exit', tmp_path)]
 
 
 @pytest.mark.parametrize('surface', ['missing_finalize', 'missing_messages', 'failure'])

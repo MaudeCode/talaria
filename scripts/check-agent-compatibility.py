@@ -313,7 +313,7 @@ def check(args, kind, identity, receipt, junit):
             if not args.skip_sidecar_tests:
                 # The sidecar suite spawns `python -m talaria_sidecar` on this venv with disposable homes.
                 try:
-                    subprocess.run([str(ROOT / "web/sidecar/scripts/test.sh"), f"--junitxml={junit}", *args.tests],
+                    subprocess.run([str(ROOT / "web/sidecar/scripts/test.sh"), f"--agent-release={identity.get('releaseTag', '')}", f"--junitxml={junit}", *args.tests],
                                    cwd=ROOT / "web", env=env, check=True)
                 finally:
                     if junit.exists():

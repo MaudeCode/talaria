@@ -13,7 +13,7 @@ vi.mock('node:fs', async (original) => {
   const fs = await original<typeof import('node:fs')>()
   return { ...fs, existsSync: (path: import('node:fs').PathLike) => ['/run/.containerenv', '/.dockerenv', '/.within_container'].includes(String(path)) ? false : fs.existsSync(path) }
 })
-import type { RuntimeDescribe } from '@maudecode/talaria-web-contracts'
+import type { AgentRecoveryState, RuntimeDescribe } from '@maudecode/talaria-web-contracts'
 import type { Dict } from '../config/agent-config.js'
 import { detectWebuiVersion, developmentInfo } from '../release.js'
 import { bootTestServer, WEB_ROOT } from '../test/harness.js'
@@ -993,6 +993,9 @@ describe('Agent checkout updates', () => {
 
   it.each(['apply', 'force'] as const)('continues the selected %s update after a scoped legacy refresh confirmation', async (action) => {
     const a = agentInstall(true)
+    writeFileSync(join(a.agent, 'README'), 'retained local work\n')
+    git(a.agent, 'stash', 'push', '-m', 'synthetic retained changes')
+    const stashes = git(a.agent, 'stash', 'list', '--format=%H')
     const sidecar = new FakeSidecar()
     sidecar.describe = { ...sidecar.describe!, agent_dir: a.agent }
     const refreshToken = 'c'.repeat(32)
@@ -1022,7 +1025,11 @@ describe('Agent checkout updates', () => {
     try {
       const wired = (server.deps.updates as unknown as { deps: UpdateServiceDeps }).deps
       wired.scheduleRestart = () => { events.push('restart') }
-      const request = async (extra: Dict = {}) => (await server.get(`/api/updates/${action}`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ target: 'agent', confirmed_agent_revision: a.v2, ...extra }) })).json() as Promise<Dict>
+      const request = async (extra: Dict = {}) => {
+        const response = await server.get(`/api/updates/${action}`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ target: 'agent', version: 'v2.0.0', confirmed_agent_revision: a.v2, ...extra }) })
+        expect(response.status).toBe(200)
+        return response.json() as Promise<Dict>
+      }
       const pending = await request()
       expect(pending).toMatchObject({ ok: false, confirmation_required: true, candidate_revision: a.v2, agent_channel: 'stable', refresh_confirmation: { token: refreshToken, services: ['synthetic.dashboard'] } })
       expect(intent).toBeTruthy()
@@ -1030,9 +1037,16 @@ describe('Agent checkout updates', () => {
       expect(existsSync(join(server.state, 'agent-dependency-sync', createHash('sha256').update(a.agent).digest('hex')))).toBe(false)
       const history = await (await server.get('/api/update-notifications')).json() as { notifications: Dict[] }
       expect(history.notifications.find((row) => row.id === pending.notification_id)).toMatchObject({ phase: 'awaiting_confirmation', message: 'Active dashboard work may be interrupted.' })
-      expect(await request({ agent_refresh_token: refreshToken })).toMatchObject({ ok: true, verified_revision: a.v2, gateway_restart: 'resumed' })
+      const result = await request({ agent_refresh_token: refreshToken })
+      expect(result).toMatchObject({ ok: true, verified_revision: a.v2, gateway_restart: 'resumed' })
       expect(git(a.agent, 'rev-parse', 'HEAD')).toBe(a.v2)
+      expect(git(a.agent, 'stash', 'list', '--format=%H')).toBe(stashes)
       expect(events).toEqual(['confirm', 'refresh', 'sync', 'finish', 'restart'])
+      const completed = await (await server.get('/api/update-notifications')).json() as { notifications: Dict[] }
+      const notice = completed.notifications.find((row) => row.id === result.notification_id)
+      expect(notice).toMatchObject({ phase: 'verifying' })
+      expect(((notice?.steps ?? []) as Dict[]).find((step) => step.id === 'web_restart')).toMatchObject({ state: 'active' })
+      expect(server.deps.updateNotifications.pendingGatewayRestarts().filter((row) => row.id === result.notification_id).map((row) => [row.phase, Array.isArray(row.baseline)])).toEqual([['verifying', true]])
     } finally { await server.close() }
   })
 
@@ -1059,6 +1073,139 @@ describe('Agent checkout updates', () => {
       expect(git(a.agent, 'stash', 'list')).toBe('')
       expect(sidecar.calls.filter((call) => call.method === 'runtime.agent_mutation').map((call) => (call.params as Dict).action)).toEqual(['begin'])
     } finally { await server.close() }
+  })
+
+  const recoveryFailures = (['apply', 'force'] as const).flatMap((action) =>
+    (['before-source', 'dependencies', 'local-restore', 'sidecar-death'] as const)
+      .filter((failure) => action !== 'force' || failure !== 'local-restore').map((failure) => ({ action, failure })))
+  it.each(recoveryFailures)('the same server recovers $action after $failure without another update or handshake', async ({ action, failure }) => {
+    const a = agentInstall(true)
+    if (failure === 'local-restore') writeFileSync(join(a.agent, 'README'), 'preserved local edits\n')
+    const sidecar = new FakeSidecar()
+    sidecar.describe = { ...sidecar.describe!, agent_dir: a.agent, agent_revision: a.v1 }
+    let owed = false
+    let injected = false
+    let lease = false
+    let restores = 0
+    let recoveries = 0
+    let loaded = a.v1
+    const begins: string[] = []
+    sidecar.respond('runtime.agent_mutation', async (params) => {
+      if (params.action === 'begin') {
+        begins.push(params.revision)
+        if (failure === 'before-source' && !injected) {
+          injected = owed = true
+          return { ok: false, skipped: false, detail: 'synthetic supervisor disarm failure' }
+        }
+        lease = true
+        return { ok: true, skipped: false, detail: '', token: 'd'.repeat(32) }
+      }
+      if (!lease) throw new Error('synthetic writer lease disconnected')
+      if (params.action === 'git') {
+        const result = await runGit(params.args, a.agent, params.timeout_ms)
+        if (result.ok && ['merge', 'reset'].includes(params.args[0]!) && !injected && ['local-restore', 'sidecar-death'].includes(failure)) {
+          injected = owed = true
+          lease = false
+          throw new Error('synthetic writer lease disconnected after source move')
+        }
+        return { ok: result.ok, skipped: false, detail: result.out }
+      }
+      if (params.action === 'sync' && failure === 'dependencies' && !injected) {
+        injected = owed = true
+        return { ok: false, skipped: false, detail: 'synthetic dependency failure' }
+      }
+      return { ok: recoveries > 0 || !owed, skipped: false, detail: owed ? 'synthetic dependency/lease recovery remains owed' : '' }
+    })
+    const recovered = failure === 'before-source' || failure === 'local-restore' ? a.v1 : a.v2
+    sidecar.respond('runtime.agent_recovery', (params) => {
+      if (params.probe) return { ok: !owed, owed, fingerprint: owed ? 'retained' : '', detail: '' }
+      if (params.complete_revision) {
+        expect(params.complete_revision).toBe(recovered)
+        owed = false
+        return { ok: true, owed: false, fingerprint: '', detail: '', revision: recovered }
+      }
+      recoveries += 1
+      if (recoveries === 1) return { ok: false, owed: true, fingerprint: 'retained', detail: 'synthetic repair is not ready' }
+      if (failure === 'local-restore' && restores++ === 0) {
+        // This is the native source-repair response; the real server restores its pending autostash next.
+        git(a.agent, 'reset', '--hard', a.v1)
+        return { ok: true, owed: true, fingerprint: 'retained', detail: '', local_restore: true, revision: a.v1 }
+      }
+      if (recovered === loaded) owed = false
+      return { ok: true, owed, fingerprint: owed ? 'retained' : '', detail: '', revision: recovered, runtime_pending: owed }
+    })
+    sidecar.respond('runtime.status', () => ({ ...sidecar.describe!, agent_revision: loaded }))
+    sidecar.respond('runtime.ensure_current', () => {
+      expect(loaded).toBe(recovered)
+      return { current: true, agent_revision: loaded }
+    })
+    vi.spyOn(sidecar, 'recycle').mockImplementation((reason) => {
+      sidecar.recycled.push(reason)
+      loaded = git(a.agent, 'rev-parse', 'HEAD')
+      sidecar.describe = { ...sidecar.describe!, agent_revision: loaded }
+      sidecar.status = 'ready'
+    })
+    const server = await bootTestServer({ sidecar })
+    const svc = server.deps.updates
+    const wire = (svc as unknown as { deps: UpdateServiceDeps }).deps
+    const phases: string[] = []
+    const notify = wire.recoveryChanged!
+    const transitions: AgentRecoveryState[] = []
+    let wake: ((state: AgentRecoveryState) => void) | undefined
+    const nextTransition = (): Promise<AgentRecoveryState> => new Promise((resolve) => {
+      const ready = transitions.shift()
+      if (ready) resolve(ready)
+      else wake = resolve
+    })
+    wire.recoveryChanged = async (state) => {
+      phases.push(state.phase)
+      await notify(state)
+      if (['waiting', 'complete', 'blocked'].includes(state.phase)) {
+        if (wake) { const resolve = wake; wake = undefined; resolve(state) }
+        else transitions.push(state)
+      }
+    }
+    let channel: 'stable' | 'experimental' = 'experimental'
+    wire.agentChannel = () => channel
+    wire.checkEnabled = () => false
+    wire.autoApply = () => false
+    wire.scheduleRestart = () => { throw new Error('recovery must not schedule a Web restart') }
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date'] })
+    try {
+      svc.startAutoApply()
+      await vi.advanceTimersByTimeAsync(1)
+      const options = { agentChannel: channel, confirmedRevision: a.v2 }
+      const failed = action === 'apply' ? await svc.apply('agent', null, () => true, options) : await svc.force('agent', null, options)
+      expect(failed.ok).toBe(false)
+      expect(injected).toBe(true)
+      channel = 'stable'
+      git(a.origin, 'commit', '--allow-empty', '-m', 'newer release during retained recovery')
+      git(a.origin, 'tag', 'v3.0.0')
+      let delay = 0
+      for (let attempt = 0; attempt < 8; attempt += 1) {
+        const changed = nextTransition()
+        const probes = sidecar.calls.filter((call) => call.method === 'runtime.agent_recovery').length
+        await vi.advanceTimersByTimeAsync(delay)
+        expect(sidecar.calls.filter((call) => call.method === 'runtime.agent_recovery').length).toBeGreaterThan(probes)
+        const state = await changed
+        if (state.phase === 'complete') break
+        expect(state.phase).toBe('waiting')
+        // Keep the virtual clock still while the real Git/filesystem work completes.
+        await new Promise<void>((resolve) => { setImmediate(resolve) })
+        delay = Math.max(0, new Date(state.retry_at!).getTime() - Date.now()) + 1
+      }
+      expect(svc.cachedStatus().agent_recovery).toMatchObject({ phase: 'complete' })
+      expect(phases).toContain('waiting')
+      expect(git(a.agent, 'rev-parse', 'HEAD')).toBe(recovered)
+      expect(failed.ok).toBe(false)
+      expect(begins).toEqual(failure === 'local-restore' ? [a.v2, a.v1] : [a.v2])
+      expect(sidecar.recycled).toHaveLength(recovered === a.v1 ? 0 : 1)
+      if (failure === 'local-restore') expect(readFileSync(join(a.agent, 'README'), 'utf8')).toBe('preserved local edits\n')
+      svc.stopAutoApply()
+      vi.useRealTimers()
+      const history = await (await server.get('/api/update-notifications')).json() as { notifications: Dict[] }
+      expect(history.notifications.find((row) => row.kind === 'agent_recovery')).toMatchObject({ phase: 'succeeded' })
+    } finally { svc.stopAutoApply(); vi.useRealTimers(); await server.close() }
   })
 
   it.each(['apply', 'force'] as const)('refuses a source revision changed while acquiring the %s writer lease', async (action) => {

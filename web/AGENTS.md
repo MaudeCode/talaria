@@ -82,6 +82,27 @@ Follow that checklist's safety rules:
   in both the `rsync` and `cp -a` paths — `/opt/hermes` may contain subdirectories
   with restricted permissions (e.g. `.playwright/`).
 
+## Test boundaries
+
+Run behavior matrices in-process against the real Talaria decision/state-machine
+code, with fakes for Agent APIs, process inventory, supervisor commands and clocks.
+Reuse `supervised_inventory`, `backend_stop`, `gateway_successor`, `FakeSidecar`
+and `bootTestServer`. Use events or controlled clocks for deadlines. Keep each
+matrix at its owning layer; higher layers assert their own routing and contracts.
+
+Retain a real process only for a named property that fakes plus contract checks
+cannot establish, such as actual lock exclusion, signal delivery, child reaping,
+crash readback or supported-Agent API behavior. Review its exact cases and reason
+in `sidecar/tests/process_inventory.json`; expanding a parameter set requires the
+same justification. A different parameter combination alone is insufficient.
+Pure Talaria behavior runs once, without Agent imports, process launches or network
+access. Only actual supported-Agent compatibility work runs per supported release.
+
+Use `sidecar/scripts/test.sh` for local sidecar validation and the shared
+compatibility/release entry points for their full gates. Collection, layer routing,
+launch policy and exact execution accounting belong in `suite_runner.py`, not
+workflow-specific selectors. See `TESTING.md`; attach the before/after coverage map and measured evidence to the PR.
+
 ## Before you open a PR — the change guidelines
 
 These habits get a change merged in one review round instead of several:
