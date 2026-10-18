@@ -1,5 +1,5 @@
 import { join } from 'node:path'
-import { describe, expect, it, onTestFinished } from 'vitest'
+import { describe, expect, it, onTestFinished, vi } from 'vitest'
 import { FakeSidecar } from '../sidecar/fake.js'
 import { bootTestServer } from '../test/harness.js'
 import { sanitizeMessagesForApi } from './merge.js'
@@ -57,6 +57,30 @@ describe('session finalize (TAL-937)', () => {
     ])
     expect(await server.deps.sessionStore.load(session.session_id)).toBeNull()
     await server.deps.sessions.delete(session.session_id)
+    expect(sidecar.calls.filter((c) => c.method === task)).toHaveLength(1)
+  })
+
+  it.each(['share', 'relay', 'store'] as const)('finalizes only after local deletion commits when %s cleanup fails', async (phase) => {
+    const { sidecar, server, session } = await setup()
+    let finalizedAfterCommit = false
+    sidecar.respond(task, async () => {
+      finalizedAfterCommit = await server.deps.sessionStore.wasDeleted(session.session_id)
+        && await server.deps.sessionStore.load(session.session_id) === null
+      return { messages: [] }
+    })
+    const failure = new Error('synthetic cleanup failure')
+    const cleanup = phase === 'share'
+      ? vi.spyOn(server.deps.sessions.deps.shares, 'revoke').mockRejectedValueOnce(failure)
+      : phase === 'relay'
+        ? vi.spyOn(server.deps.sessions.deps, 'clearRelayCompletions').mockRejectedValueOnce(failure)
+        : vi.spyOn(server.deps.sessionStore, 'delete').mockResolvedValueOnce(false)
+    onTestFinished(() => { cleanup.mockRestore() })
+    await expect(server.deps.sessions.delete(session.session_id)).rejects.toThrow()
+    expect(await server.deps.sessionStore.load(session.session_id)).not.toBeNull()
+    expect(sidecar.calls.filter((c) => c.method === task)).toHaveLength(0)
+    cleanup.mockRestore()
+    await server.deps.sessions.delete(session.session_id)
+    expect(finalizedAfterCommit).toBe(true)
     expect(sidecar.calls.filter((c) => c.method === task)).toHaveLength(1)
   })
 

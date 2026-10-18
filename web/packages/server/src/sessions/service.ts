@@ -2221,7 +2221,6 @@ export class SessionService {
         removedIds = (await filterAsync(removedIds, async (id) => {
           try { return this.deps.profilesMatch((await this.store.get(id, { metadataOnly: true })).profile, eventProfile ?? this.deps.activeProfile()) } catch { return true }
         }))
-        if (!(await this.store.wasDeleted(sid))) await this.finalizeSession(sid, eventProfile, 'delete')
         for (const id of removedIds) {
           // Revoke before removing each persisted alias; UI cleanup follows the Agent's committed target set.
           try {
@@ -2230,7 +2229,9 @@ export class SessionService {
             await this.deps.shares.revoke(session)
             await this.deps.clearRelayCompletions?.(id, session.profile)
           } catch (error) { if (!(error instanceof SessionNotFound)) throw error }
+          const finalize = id === sid && !(await this.store.wasDeleted(id))
           if (!(await this.store.delete(id))) throw new HttpFailure(500, 'Failed to delete session data')
+          if (finalize) await this.finalizeSession(sid, eventProfile, 'delete')
         }
       }, { timeoutMs: 5000, allowReadOnly: orphaned })
     } catch (error) {

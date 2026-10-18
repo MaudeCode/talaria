@@ -324,8 +324,9 @@ and waits up to 4 s for those releases.
 
 Clear and delete call `chat.finalize_session` with the owning `profile_home`,
 `session_id`, and `reason` (`clear` or `delete`). Clear finalizes before removing
-the transcript. Delete finalizes after the Agent accepts deletion, so a refused
-delete never closes a live conversation. Repeated deletes skip finalization.
+the transcript. Delete finalizes only after the local session deletion commits,
+so Agent refusals and failed share, relay, or storage cleanup do not close a
+conversation that remains present. Repeated deletes skip finalization.
 It runs the Agent's `finalize_session` with platform `webui` under that profile,
 waiting at most 10 seconds. Missing lifecycle helpers, failed hooks, and timeouts
 return no messages and never prevent the requested boundary. A timed-out worker
