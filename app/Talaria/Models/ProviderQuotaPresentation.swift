@@ -46,9 +46,9 @@ enum ProviderQuotaPresentation {
             ?? usedFromQuota.map { 100 - $0 }
         // A cached pace past its window's reset describes the previous window.
         let pace = window?.pace.flatMap { $0.isValid(at: referenceDate) ? $0 : nil }
-        let isStale = referenceDate.timeIntervalSince(source.freshnessDate) > ProviderQuotaWidgetSnapshot.staleAfter
+        let isStale = source.status == "stale" || referenceDate.timeIntervalSince(source.freshnessDate) > ProviderQuotaWidgetSnapshot.staleAfter
         // The server classifies (TAL-411); an old cache shows stale, and a server without `urgency` stays neutral.
-        let serverUrgency = window == nil ? source.urgency : window?.urgency
+        let serverUrgency = source.status == "available" ? (window?.urgency ?? source.urgency) : (source.urgency ?? window?.urgency)
         let urgency: ProviderQuotaUrgency = isStale ? .stale : serverUrgency?.level(for: settings.colorBasis) ?? .healthy
         return ProviderQuotaPresentationState(
             window: window,

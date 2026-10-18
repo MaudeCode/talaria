@@ -299,14 +299,18 @@ public enum ProviderQuotaWidgetRefreshClient {
                 saveCredentials: saveCredentials
             )
             let profileID = quotaResponse.profileID ?? "default"
-            let sources = quotaResponse.sources.map {
+            let previous = snapshotStore.load()
+            let sources = quotaResponse.retainingUnconfirmedSources(
+                previous?.serverID == ResponseCache.serverIdentity(for: baseURL) ? previous?.sources.map(\.quotaSource) ?? [] : [],
+                scopeID: previous?.sources.first?.scopeID, generation: previous?.sourceGeneration
+            ).map {
                 ProviderQuotaWidgetSource(
                     $0,
                     scopeID: scopeID,
                     scopeLabel: "\(credentials.serverLabel) · \(profileID)"
                 )
             }
-            guard snapshotStore.save(scopeID: scopeID, sources: sources) else {
+            guard snapshotStore.save(scopeID: scopeID, sources: sources, serverID: ResponseCache.serverIdentity(for: baseURL), profileID: profileID, sourceGeneration: quotaResponse.availability?.generation) else {
                 return false
             }
             reloadTimelines()

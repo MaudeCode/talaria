@@ -792,7 +792,7 @@ describe('chat turns through the sidecar', () => {
     expect(served.headers.get('content-type')).toBe('image/png')
   })
 
-  it('ships a long reply\'s excerpt on the done frame (TAL-456)', async () => {
+  it('keeps a long newest reply full on the done frame (TAL-1114)', async () => {
     const sid = await newSession(s)
     const reply = `${'r'.repeat(2800)} ${'s'.repeat(4000)}`
     sidecar.respond('chat.start', (params) => completed([{ role: 'user', content: str(params.user_message) }, { role: 'assistant', content: reply }]))
@@ -801,10 +801,65 @@ describe('chat turns through the sidecar', () => {
     const frames = await s.sse(`/api/chat/stream?stream_id=${String(start.stream_id)}`, (f) => f.event === 'stream_end')
     const messages = (((frames.find((f) => f.event === 'done')?.data as Json).session as Json).messages as Json[])
     const settled = messages.find((m) => m.role === 'assistant')
-    expect(settled?._display_truncated).toBe(true)
-    expect(settled?._display_excerpt).toBe('r'.repeat(2800))
-    expect((settled?._anchor_activity_scene as Json | undefined)?.final_answer_excerpt).toBe('r'.repeat(2800))
+    expect(settled).not.toHaveProperty('_display_truncated')
+    expect(settled).not.toHaveProperty('_display_excerpt')
+    expect(settled?._anchor_activity_scene).not.toHaveProperty('final_answer_excerpt')
     expect(messages.find((m) => m.role === 'user')).not.toHaveProperty('_display_excerpt')
+  })
+
+  it.each([{ name: 'short', answer: 'short answer B' }, { name: 'long', answer: 'b'.repeat(6000) }, { name: 'no response', answer: '' }, { name: 'cancelled', answer: '', error: 'Task cancelled by user' }, { name: 'failed', answer: '', error: 'boom' }])('transfers the expanded reply only at terminal settlement (TAL-1114, $name)', async ({ answer: nextReply, error }) => {
+    const sid = await newSession(s), replyA = 'a'.repeat(6500)
+    sidecar.respond('aux.complete', () => ({ model: 'aux', text: 'Title: "Lifecycle"', usage: null }))
+    sidecar.respond('chat.start', () => completed([{ role: 'user', content: 'A' }, { role: 'assistant', content: replyA }]))
+    const first = await json(await post(s, '/api/chat/start', { session_id: sid, message: 'A' }))
+    await s.sse(`/api/chat/stream?stream_id=${String(first.stream_id)}`, (f) => f.event === 'stream_end')
+    const session = await s.deps.sessionStore.get(sid), prior = structuredClone(session.messages)
+    const check = (messages: Json[], settled = false) => {
+      const a = messages.find((m) => m.content === replyA)
+      if (!a) return // An old page may exclude A; it must not exempt an older reply instead.
+      expect(a._display_truncated).toBe(settled && nextReply ? true : undefined)
+      expect((a._anchor_activity_scene as Json).final_answer_excerpt).toBe(settled && nextReply ? 'a'.repeat(3000) : undefined)
+      expect(a.content).toBe(replyA)
+      const b = messages.find((m) => m.content === nextReply && m.role === 'assistant')
+      if (b) { expect(b).not.toHaveProperty('_display_excerpt'); expect(b._anchor_activity_scene).not.toHaveProperty('final_answer_excerpt') }
+    }
+    const refresh = async (settled = false) => {
+      for (const query of ['', '&msg_limit=1', '&msg_limit=2', '&msg_limit=2&msg_before=2']) {
+        const response = await json(await s.get(`/api/session?session_id=${sid}${query}`))
+        check((response.session as Json).messages as Json[], settled)
+      }
+    }
+    await refresh()
+    let emitStage: (frame: { event: string; data: Json }) => void = () => undefined
+    let release: () => void = () => undefined, started = false
+    sidecar.respond('chat.start', (_params, emit) => new Promise((resolve, reject) => {
+      emitStage = emit
+      release = () => { if (error) reject(new Error(error)); else resolve(completed([...prior, { role: 'user', content: 'B' }, ...(nextReply ? [{ role: 'assistant', content: nextReply }] : [])])) }
+      started = true
+    }))
+    const start = await json(await post(s, '/api/chat/start', { session_id: sid, message: 'B' }))
+    try {
+      await vi.waitFor(() => { expect(started).toBe(true) })
+      await refresh()
+      for (const frame of [
+        { event: 'token', data: { text: 'working' } },
+        { event: 'reasoning', data: { text: 'thinking' } },
+        { event: 'interim_assistant', data: { text: 'checking', already_streamed: false } },
+        { event: 'tool_start', data: { tool: 'terminal', args: { command: 'true' }, tool_call_id: 'test-call' } },
+      ]) { emitStage(frame); await refresh() }
+      // The same durable checkpoint boundary used by eager saves, while B is still active.
+      session.messages.push({ role: 'user', content: 'B', _turn_id: String(start.stream_id) }, { role: 'assistant', content: 'checkpoint prose', _turn_id: String(start.stream_id) })
+      await s.deps.sessionStore.save(session)
+      await refresh()
+      const reconnect = await s.sse(`/api/chat/stream?stream_id=${String(start.stream_id)}`, (f) => f.event === 'token')
+      expect(reconnect.some((f) => f.event === 'token')).toBe(true)
+    } finally { release() }
+    const frames = await s.sse(`/api/chat/stream?stream_id=${String(start.stream_id)}`, (f) => f.event === 'stream_end')
+    const terminal = frames.find((f) => f.event === 'done' || f.event === 'apperror')
+    check(((terminal?.data as Json).session as Json).messages as Json[], true)
+    await refresh(true)
+    s.deps.sessionStore.sessions.delete(sid)
+    await refresh(true)
   })
 
   it('stamps one terminal_state on every terminal frame and the persisted turn, and keeps the journal vocabulary', async () => {
@@ -3062,7 +3117,7 @@ describe('stale cross-provider session models at chat start (TAL-542)', () => {
   })
 
   it('switches a providerless model from another vendor to the profile default, and persists it (#1734)', async () => {
-    useConfig('openai-codex', 'gpt-5.5')
+    useConfig('openai-codex', 'gpt-5.5', { 'openai-codex': ['gpt-5.5', 'gpt-5.4-mini'] })
     // Codex lists `gpt-5.4-mini` under its own bare id, so the stale `openai/` id starts on that one rather than the default.
     for (const [stale, effective] of [['gemini-3.1-pro-preview', 'gpt-5.5'], ['google/gemini-3.1-pro-preview', 'gpt-5.5'], ['openai/gpt-5.4-mini', 'gpt-5.4-mini']]) {
       const sid = await sessionWith(stale!, null)
@@ -3174,10 +3229,11 @@ describe('stale cross-provider session models at chat start (TAL-542)', () => {
       writeFileSync(join(s.state, '.env'), 'TALARIA_TEST_EDIT=2\n')
       const second = s.deps.catalog.liveModelIds(s.state, 'deepseek')
       await vi.waitFor(() => { expect(pending).toHaveLength(2) })
-      pending[0]?.(['ds-old'])
       pending[1]?.(['ds-new'])
-      expect(await first).toEqual(['ds-old'])
       expect(await second).toEqual(['ds-new'])
+      pending[0]?.(['ds-old'])
+      expect(await first).toEqual([])
+      expect(await s.deps.catalog.liveModelIds(s.state, 'deepseek')).toEqual(['ds-new'])
     } finally {
       sidecar.respond('providers.model_ids', (p) => ({ provider: p.provider, model_ids: [] }))
     }

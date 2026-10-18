@@ -52,6 +52,7 @@ SCRIPTS = {
     "check": {"tooling"},
     "generate-brand-icons.py": {"web_frontend", "tooling"},
     "check-release-agent.py": {"tooling"},
+    "test-check-release-agent.py": {"tooling"},
     "check-releases": {"tooling"},
     "check-hosted-runners.py": {"tooling"},
     "test-check-hosted-runners.py": {"tooling"},

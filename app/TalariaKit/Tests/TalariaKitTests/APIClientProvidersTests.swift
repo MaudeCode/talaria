@@ -6,6 +6,23 @@ import XCTest
 /// `api/providers.py::get_providers()` @ `312d3fab`, including a
 /// `custom_providers`-derived entry that omits most fields.
 final class APIClientProvidersTests: APIClientTestCase {
+    func testUnknownQuotaMembershipRetainsOnlyTheMatchingSourceGeneration() throws {
+        let decoder = JSONDecoder()
+        decoder.keyDecodingStrategy = .convertFromSnakeCase
+        let initial = try decoder.decode(ProviderQuotasResponse.self, from: Data(#"{"scope_id":"qscope_test","profile_id":"default","availability":{"status":"available","authoritative":true,"generation":"generation-one"},"sources":[{"source_id":"qsrc_test","status":"available","windows":[{"label":"5h","remaining_percent":75}]}]}"#.utf8))
+        let unavailable = try decoder.decode(ProviderQuotasResponse.self, from: Data(#"{"scope_id":"qscope_test","profile_id":"default","availability":{"status":"unavailable","authoritative":false,"generation":"generation-one","unavailable_reason":"Agent recovery is incomplete."},"sources":[]}"#.utf8))
+        let retained = unavailable.retainingUnconfirmedSources(initial.sources, scopeID: initial.scopeID, generation: initial.availability?.generation)
+        XCTAssertEqual(retained.map(\.id), ["qsrc_test"])
+        XCTAssertEqual(retained.first?.status, "unavailable")
+        XCTAssertEqual(retained.first?.windows.first?.remainingPercent, 75)
+        XCTAssertEqual(retained.first?.urgency?.remaining, .unavailable)
+        XCTAssertTrue(unavailable.retainingUnconfirmedSources(initial.sources, scopeID: "another-server-profile", generation: "generation-one").isEmpty)
+        XCTAssertTrue(unavailable.retainingUnconfirmedSources(initial.sources, scopeID: initial.scopeID, generation: "replacement-credential").isEmpty)
+        XCTAssertTrue(unavailable.retainingUnconfirmedSources([], scopeID: initial.scopeID, generation: initial.availability?.generation).isEmpty)
+        let empty = try decoder.decode(ProviderQuotasResponse.self, from: Data(#"{"scope_id":"qscope_test","availability":{"authoritative":true,"status":"available","generation":"generation-one"},"sources":[]}"#.utf8))
+        XCTAssertTrue(empty.retainingUnconfirmedSources(initial.sources, scopeID: initial.scopeID, generation: "generation-one").isEmpty)
+    }
+
     func testProviderQuotasRequestTargetsOneStableSourceAndDecodesWidgetReadyShape() async throws {
         let client = makeClient { request in
             XCTAssertEqual(request.httpMethod, "GET")

@@ -178,6 +178,29 @@ final class ChatScrollPositionControllerTests: XCTestCase {
         }
     }
 
+    func testExcerptHoldKeepsActiveHistoryPreservation() throws {
+        for coasting in [false, true] {
+            let scroll = try XCTUnwrap(makeScrollView() as? HistoryInteractionScrollView)
+            scroll.userIsDecelerating = coasting
+            scroll.contentOffset.y = 240
+            let controller = ChatScrollPositionController()
+            controller.attach(to: scroll)
+            defer { controller.detach() }
+            controller.recordRowMinY(180, for: "reader")
+            XCTAssertTrue(controller.capture(anchorRowID: "reader"))
+            XCTAssertTrue(controller.restoreAfterPrepend(whileInteracting: true))
+            controller.holdVisiblePosition(resync: {})
+            XCTAssertTrue(controller.isPreservingPosition,
+                          "Excerpt updates must retain active history preservation during momentum")
+            XCTAssertFalse(controller.isHoldingPosition,
+                           "Excerpt updates must not replace the existing history owner")
+            scroll.contentSize.height += 640
+            controller.recordRowMinY(820, for: "reader")
+            XCTAssertEqual(scroll.contentOffset.y, 880, accuracy: 0.001,
+                           "History must keep compensating measurement after an excerpt update")
+        }
+    }
+
     func testNativeMomentumContinuesDuringTheSameTurnAsRowMeasurement() throws {
         let scroll = try XCTUnwrap(makeScrollView(isDragging: true) as? HistoryInteractionScrollView)
         scroll.userIsDecelerating = true

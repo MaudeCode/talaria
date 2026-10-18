@@ -3768,7 +3768,8 @@
                                     "type": "string"
                                   },
                                   "final_answer_excerpt": {
-                                    "type": "string"
+                                    "type": "string",
+                                    "description": "Collapsed preview of an older settled final answer. Absent on the session-global newest visible reply; its exemption transfers only when a newer visible reply settles."
                                   },
                                   "turn_duration": {
                                     "anyOf": [
@@ -3935,10 +3936,12 @@
                                 "type": "number"
                               },
                               "_display_truncated": {
-                                "type": "boolean"
+                                "type": "boolean",
+                                "description": "Whether this settled body has a collapsed preview. The newest settled visible assistant reply and active-turn output remain full."
                               },
                               "_display_excerpt": {
-                                "type": "string"
+                                "type": "string",
+                                "description": "Collapsed preview with full content retained. The newest settled visible assistant reply remains exempt throughout the next running turn, until a newer visible reply settles."
                               },
                               "_collapsible": {
                                 "type": "boolean"
@@ -6323,7 +6326,8 @@
                                     "type": "string"
                                   },
                                   "final_answer_excerpt": {
-                                    "type": "string"
+                                    "type": "string",
+                                    "description": "Collapsed preview of an older settled final answer. Absent on the session-global newest visible reply; its exemption transfers only when a newer visible reply settles."
                                   },
                                   "turn_duration": {
                                     "anyOf": [
@@ -6490,10 +6494,12 @@
                                 "type": "number"
                               },
                               "_display_truncated": {
-                                "type": "boolean"
+                                "type": "boolean",
+                                "description": "Whether this settled body has a collapsed preview. The newest settled visible assistant reply and active-turn output remain full."
                               },
                               "_display_excerpt": {
-                                "type": "string"
+                                "type": "string",
+                                "description": "Collapsed preview with full content retained. The newest settled visible assistant reply remains exempt throughout the next running turn, until a newer visible reply settles."
                               },
                               "_collapsible": {
                                 "type": "boolean"
@@ -8613,7 +8619,8 @@
                                     "type": "string"
                                   },
                                   "final_answer_excerpt": {
-                                    "type": "string"
+                                    "type": "string",
+                                    "description": "Collapsed preview of an older settled final answer. Absent on the session-global newest visible reply; its exemption transfers only when a newer visible reply settles."
                                   },
                                   "turn_duration": {
                                     "anyOf": [
@@ -8780,10 +8787,12 @@
                                 "type": "number"
                               },
                               "_display_truncated": {
-                                "type": "boolean"
+                                "type": "boolean",
+                                "description": "Whether this settled body has a collapsed preview. The newest settled visible assistant reply and active-turn output remain full."
                               },
                               "_display_excerpt": {
-                                "type": "string"
+                                "type": "string",
+                                "description": "Collapsed preview with full content retained. The newest settled visible assistant reply remains exempt throughout the next running turn, until a newer visible reply settles."
                               },
                               "_collapsible": {
                                 "type": "boolean"
@@ -12135,7 +12144,8 @@
                                     "type": "string"
                                   },
                                   "final_answer_excerpt": {
-                                    "type": "string"
+                                    "type": "string",
+                                    "description": "Collapsed preview of an older settled final answer. Absent on the session-global newest visible reply; its exemption transfers only when a newer visible reply settles."
                                   },
                                   "turn_duration": {
                                     "anyOf": [
@@ -12302,10 +12312,12 @@
                                 "type": "number"
                               },
                               "_display_truncated": {
-                                "type": "boolean"
+                                "type": "boolean",
+                                "description": "Whether this settled body has a collapsed preview. The newest settled visible assistant reply and active-turn output remain full."
                               },
                               "_display_excerpt": {
-                                "type": "string"
+                                "type": "string",
+                                "description": "Collapsed preview with full content retained. The newest settled visible assistant reply remains exempt throughout the next running turn, until a newer visible reply settles."
                               },
                               "_collapsible": {
                                 "type": "boolean"
@@ -15521,7 +15533,8 @@
                                     "type": "string"
                                   },
                                   "final_answer_excerpt": {
-                                    "type": "string"
+                                    "type": "string",
+                                    "description": "Collapsed preview of an older settled final answer. Absent on the session-global newest visible reply; its exemption transfers only when a newer visible reply settles."
                                   },
                                   "turn_duration": {
                                     "anyOf": [
@@ -15688,10 +15701,12 @@
                                 "type": "number"
                               },
                               "_display_truncated": {
-                                "type": "boolean"
+                                "type": "boolean",
+                                "description": "Whether this settled body has a collapsed preview. The newest settled visible assistant reply and active-turn output remain full."
                               },
                               "_display_excerpt": {
-                                "type": "string"
+                                "type": "string",
+                                "description": "Collapsed preview with full content retained. The newest settled visible assistant reply remains exempt throughout the next running turn, until a newer visible reply settles."
                               },
                               "_collapsible": {
                                 "type": "boolean"
@@ -19570,7 +19585,8 @@
                                     "type": "string"
                                   },
                                   "final_answer_excerpt": {
-                                    "type": "string"
+                                    "type": "string",
+                                    "description": "Collapsed preview of an older settled final answer. Absent on the session-global newest visible reply; its exemption transfers only when a newer visible reply settles."
                                   },
                                   "turn_duration": {
                                     "anyOf": [
@@ -19737,10 +19753,12 @@
                                 "type": "number"
                               },
                               "_display_truncated": {
-                                "type": "boolean"
+                                "type": "boolean",
+                                "description": "Whether this settled body has a collapsed preview. The newest settled visible assistant reply and active-turn output remain full."
                               },
                               "_display_excerpt": {
-                                "type": "string"
+                                "type": "string",
+                                "description": "Collapsed preview with full content retained. The newest settled visible assistant reply remains exempt throughout the next running turn, until a newer visible reply settles."
                               },
                               "_collapsible": {
                                 "type": "boolean"
@@ -21885,7 +21903,8 @@
                                     "type": "string"
                                   },
                                   "final_answer_excerpt": {
-                                    "type": "string"
+                                    "type": "string",
+                                    "description": "Collapsed preview of an older settled final answer. Absent on the session-global newest visible reply; its exemption transfers only when a newer visible reply settles."
                                   },
                                   "turn_duration": {
                                     "anyOf": [
@@ -22052,10 +22071,12 @@
                                 "type": "number"
                               },
                               "_display_truncated": {
-                                "type": "boolean"
+                                "type": "boolean",
+                                "description": "Whether this settled body has a collapsed preview. The newest settled visible assistant reply and active-turn output remain full."
                               },
                               "_display_excerpt": {
-                                "type": "string"
+                                "type": "string",
+                                "description": "Collapsed preview with full content retained. The newest settled visible assistant reply remains exempt throughout the next running turn, until a newer visible reply settles."
                               },
                               "_collapsible": {
                                 "type": "boolean"
@@ -24262,7 +24283,8 @@
                                     "type": "string"
                                   },
                                   "final_answer_excerpt": {
-                                    "type": "string"
+                                    "type": "string",
+                                    "description": "Collapsed preview of an older settled final answer. Absent on the session-global newest visible reply; its exemption transfers only when a newer visible reply settles."
                                   },
                                   "turn_duration": {
                                     "anyOf": [
@@ -24429,10 +24451,12 @@
                                 "type": "number"
                               },
                               "_display_truncated": {
-                                "type": "boolean"
+                                "type": "boolean",
+                                "description": "Whether this settled body has a collapsed preview. The newest settled visible assistant reply and active-turn output remain full."
                               },
                               "_display_excerpt": {
-                                "type": "string"
+                                "type": "string",
+                                "description": "Collapsed preview with full content retained. The newest settled visible assistant reply remains exempt throughout the next running turn, until a newer visible reply settles."
                               },
                               "_collapsible": {
                                 "type": "boolean"
@@ -26637,7 +26661,8 @@
                                     "type": "string"
                                   },
                                   "final_answer_excerpt": {
-                                    "type": "string"
+                                    "type": "string",
+                                    "description": "Collapsed preview of an older settled final answer. Absent on the session-global newest visible reply; its exemption transfers only when a newer visible reply settles."
                                   },
                                   "turn_duration": {
                                     "anyOf": [
@@ -26804,10 +26829,12 @@
                                 "type": "number"
                               },
                               "_display_truncated": {
-                                "type": "boolean"
+                                "type": "boolean",
+                                "description": "Whether this settled body has a collapsed preview. The newest settled visible assistant reply and active-turn output remain full."
                               },
                               "_display_excerpt": {
-                                "type": "string"
+                                "type": "string",
+                                "description": "Collapsed preview with full content retained. The newest settled visible assistant reply remains exempt throughout the next running turn, until a newer visible reply settles."
                               },
                               "_collapsible": {
                                 "type": "boolean"
@@ -36814,7 +36841,8 @@
                                     "type": "string"
                                   },
                                   "final_answer_excerpt": {
-                                    "type": "string"
+                                    "type": "string",
+                                    "description": "Collapsed preview of an older settled final answer. Absent on the session-global newest visible reply; its exemption transfers only when a newer visible reply settles."
                                   },
                                   "turn_duration": {
                                     "anyOf": [
@@ -36981,10 +37009,12 @@
                                 "type": "number"
                               },
                               "_display_truncated": {
-                                "type": "boolean"
+                                "type": "boolean",
+                                "description": "Whether this settled body has a collapsed preview. The newest settled visible assistant reply and active-turn output remain full."
                               },
                               "_display_excerpt": {
-                                "type": "string"
+                                "type": "string",
+                                "description": "Collapsed preview with full content retained. The newest settled visible assistant reply remains exempt throughout the next running turn, until a newer visible reply settles."
                               },
                               "_collapsible": {
                                 "type": "boolean"
@@ -39276,7 +39306,8 @@
                                     "type": "string"
                                   },
                                   "final_answer_excerpt": {
-                                    "type": "string"
+                                    "type": "string",
+                                    "description": "Collapsed preview of an older settled final answer. Absent on the session-global newest visible reply; its exemption transfers only when a newer visible reply settles."
                                   },
                                   "turn_duration": {
                                     "anyOf": [
@@ -39443,10 +39474,12 @@
                                 "type": "number"
                               },
                               "_display_truncated": {
-                                "type": "boolean"
+                                "type": "boolean",
+                                "description": "Whether this settled body has a collapsed preview. The newest settled visible assistant reply and active-turn output remain full."
                               },
                               "_display_excerpt": {
-                                "type": "string"
+                                "type": "string",
+                                "description": "Collapsed preview with full content retained. The newest settled visible assistant reply remains exempt throughout the next running turn, until a newer visible reply settles."
                               },
                               "_collapsible": {
                                 "type": "boolean"
@@ -41627,7 +41660,8 @@
                                         "type": "string"
                                       },
                                       "final_answer_excerpt": {
-                                        "type": "string"
+                                        "type": "string",
+                                        "description": "Collapsed preview of an older settled final answer. Absent on the session-global newest visible reply; its exemption transfers only when a newer visible reply settles."
                                       },
                                       "turn_duration": {
                                         "anyOf": [
@@ -41794,10 +41828,12 @@
                                     "type": "number"
                                   },
                                   "_display_truncated": {
-                                    "type": "boolean"
+                                    "type": "boolean",
+                                    "description": "Whether this settled body has a collapsed preview. The newest settled visible assistant reply and active-turn output remain full."
                                   },
                                   "_display_excerpt": {
-                                    "type": "string"
+                                    "type": "string",
+                                    "description": "Collapsed preview with full content retained. The newest settled visible assistant reply remains exempt throughout the next running turn, until a newer visible reply settles."
                                   },
                                   "_collapsible": {
                                     "type": "boolean"
@@ -45886,6 +45922,43 @@
                 "schema": {
                   "type": "object",
                   "properties": {
+                    "availability": {
+                      "type": "object",
+                      "properties": {
+                        "status": {
+                          "enum": [
+                            "available",
+                            "stale",
+                            "unavailable"
+                          ],
+                          "type": "string"
+                        },
+                        "authoritative": {
+                          "type": "boolean"
+                        },
+                        "unavailable_reason": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "generation": {
+                          "type": "string",
+                          "minLength": 1,
+                          "description": "Opaque source generation; cached data from another generation must never be merged."
+                        }
+                      },
+                      "required": [
+                        "status",
+                        "authoritative",
+                        "unavailable_reason",
+                        "generation"
+                      ]
+                    },
                     "active_provider": {
                       "anyOf": [
                         {
@@ -45927,6 +46000,43 @@
                       "items": {
                         "type": "object",
                         "properties": {
+                          "availability": {
+                            "type": "object",
+                            "properties": {
+                              "status": {
+                                "enum": [
+                                  "available",
+                                  "stale",
+                                  "unavailable"
+                                ],
+                                "type": "string"
+                              },
+                              "authoritative": {
+                                "type": "boolean"
+                              },
+                              "unavailable_reason": {
+                                "anyOf": [
+                                  {
+                                    "type": "string"
+                                  },
+                                  {
+                                    "type": "null"
+                                  }
+                                ]
+                              },
+                              "generation": {
+                                "type": "string",
+                                "minLength": 1,
+                                "description": "Opaque source generation; cached data from another generation must never be merged."
+                              }
+                            },
+                            "required": [
+                              "status",
+                              "authoritative",
+                              "unavailable_reason",
+                              "generation"
+                            ]
+                          },
                           "provider": {
                             "type": "string"
                           },
@@ -46191,9 +46301,135 @@
               "application/json": {
                 "schema": {
                   "type": "object",
-                  "propertyNames": {
-                    "type": "string"
+                  "properties": {
+                    "availability": {
+                      "type": "object",
+                      "properties": {
+                        "status": {
+                          "enum": [
+                            "available",
+                            "stale",
+                            "unavailable"
+                          ],
+                          "type": "string"
+                        },
+                        "authoritative": {
+                          "type": "boolean"
+                        },
+                        "unavailable_reason": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "generation": {
+                          "type": "string",
+                          "minLength": 1,
+                          "description": "Opaque source generation; cached data from another generation must never be merged."
+                        }
+                      },
+                      "required": [
+                        "status",
+                        "authoritative",
+                        "unavailable_reason",
+                        "generation"
+                      ]
+                    },
+                    "provider": {
+                      "type": "string"
+                    },
+                    "source": {
+                      "type": "string"
+                    },
+                    "models": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "id": {
+                            "type": "string"
+                          },
+                          "label": {
+                            "type": "string"
+                          },
+                          "provider": {
+                            "type": "string"
+                          },
+                          "provider_id": {
+                            "type": "string"
+                          },
+                          "bare_id": {
+                            "type": "string"
+                          },
+                          "supports_fast_tier": {
+                            "type": "boolean"
+                          },
+                          "supported_speed_tiers": {
+                            "type": "array",
+                            "items": {
+                              "type": "object",
+                              "properties": {
+                                "id": {
+                                  "enum": [
+                                    "standard",
+                                    "priority",
+                                    "ultrafast",
+                                    "fast"
+                                  ],
+                                  "type": "string"
+                                },
+                                "service_tier": {
+                                  "enum": [
+                                    "default",
+                                    "priority",
+                                    "ultrafast"
+                                  ],
+                                  "type": "string",
+                                  "description": "Value to save; Anthropic Fast is persisted as priority and sent as speed: fast."
+                                }
+                              },
+                              "required": [
+                                "id",
+                                "service_tier"
+                              ]
+                            }
+                          },
+                          "limit": {
+                            "type": "object",
+                            "properties": {
+                              "scope": {
+                                "const": "model"
+                              },
+                              "resets_at": {
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "scope",
+                              "resets_at"
+                            ]
+                          }
+                        },
+                        "required": [
+                          "id"
+                        ],
+                        "additionalProperties": {}
+                      }
+                    },
+                    "count": {
+                      "type": "number"
+                    },
+                    "error": {
+                      "type": "string"
+                    }
                   },
+                  "required": [
+                    "models"
+                  ],
                   "additionalProperties": {}
                 }
               }
@@ -46248,6 +46484,43 @@
                     "models": {
                       "type": "object",
                       "properties": {
+                        "availability": {
+                          "type": "object",
+                          "properties": {
+                            "status": {
+                              "enum": [
+                                "available",
+                                "stale",
+                                "unavailable"
+                              ],
+                              "type": "string"
+                            },
+                            "authoritative": {
+                              "type": "boolean"
+                            },
+                            "unavailable_reason": {
+                              "anyOf": [
+                                {
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "generation": {
+                              "type": "string",
+                              "minLength": 1,
+                              "description": "Opaque source generation; cached data from another generation must never be merged."
+                            }
+                          },
+                          "required": [
+                            "status",
+                            "authoritative",
+                            "unavailable_reason",
+                            "generation"
+                          ]
+                        },
                         "active_provider": {
                           "anyOf": [
                             {
@@ -46289,6 +46562,43 @@
                           "items": {
                             "type": "object",
                             "properties": {
+                              "availability": {
+                                "type": "object",
+                                "properties": {
+                                  "status": {
+                                    "enum": [
+                                      "available",
+                                      "stale",
+                                      "unavailable"
+                                    ],
+                                    "type": "string"
+                                  },
+                                  "authoritative": {
+                                    "type": "boolean"
+                                  },
+                                  "unavailable_reason": {
+                                    "anyOf": [
+                                      {
+                                        "type": "string"
+                                      },
+                                      {
+                                        "type": "null"
+                                      }
+                                    ]
+                                  },
+                                  "generation": {
+                                    "type": "string",
+                                    "minLength": 1,
+                                    "description": "Opaque source generation; cached data from another generation must never be merged."
+                                  }
+                                },
+                                "required": [
+                                  "status",
+                                  "authoritative",
+                                  "unavailable_reason",
+                                  "generation"
+                                ]
+                              },
                               "provider": {
                                 "type": "string"
                               },
@@ -47070,6 +47380,43 @@
                 "schema": {
                   "type": "object",
                   "properties": {
+                    "availability": {
+                      "type": "object",
+                      "properties": {
+                        "status": {
+                          "enum": [
+                            "available",
+                            "stale",
+                            "unavailable"
+                          ],
+                          "type": "string"
+                        },
+                        "authoritative": {
+                          "type": "boolean"
+                        },
+                        "unavailable_reason": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "generation": {
+                          "type": "string",
+                          "minLength": 1,
+                          "description": "Opaque source generation; cached data from another generation must never be merged."
+                        }
+                      },
+                      "required": [
+                        "status",
+                        "authoritative",
+                        "unavailable_reason",
+                        "generation"
+                      ]
+                    },
                     "providers": {
                       "type": "array",
                       "items": {
@@ -47863,12 +48210,49 @@
                 "schema": {
                   "type": "object",
                   "properties": {
+                    "availability": {
+                      "type": "object",
+                      "properties": {
+                        "status": {
+                          "enum": [
+                            "available",
+                            "stale",
+                            "unavailable"
+                          ],
+                          "type": "string"
+                        },
+                        "authoritative": {
+                          "type": "boolean"
+                        },
+                        "unavailable_reason": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "generation": {
+                          "type": "string",
+                          "minLength": 1,
+                          "description": "Opaque source generation; cached data from another generation must never be merged."
+                        }
+                      },
+                      "required": [
+                        "status",
+                        "authoritative",
+                        "unavailable_reason",
+                        "generation"
+                      ]
+                    },
                     "version": {
                       "type": "number"
                     },
                     "computed_at": {
                       "type": "string",
-                      "description": "ISO-8601 UTC reference time of every window `pace`."
+                      "description": "ISO-8601 UTC request reference time; coalesced or stale sources retain their own computed_at."
                     },
                     "scope_id": {
                       "type": "string"
@@ -47905,6 +48289,10 @@
                       "items": {
                         "type": "object",
                         "properties": {
+                          "computed_at": {
+                            "type": "string",
+                            "description": "Original reference time of this source, retained with stale windows."
+                          },
                           "source_id": {
                             "type": "string"
                           },
@@ -48981,6 +49369,43 @@
                     "models": {
                       "type": "object",
                       "properties": {
+                        "availability": {
+                          "type": "object",
+                          "properties": {
+                            "status": {
+                              "enum": [
+                                "available",
+                                "stale",
+                                "unavailable"
+                              ],
+                              "type": "string"
+                            },
+                            "authoritative": {
+                              "type": "boolean"
+                            },
+                            "unavailable_reason": {
+                              "anyOf": [
+                                {
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "generation": {
+                              "type": "string",
+                              "minLength": 1,
+                              "description": "Opaque source generation; cached data from another generation must never be merged."
+                            }
+                          },
+                          "required": [
+                            "status",
+                            "authoritative",
+                            "unavailable_reason",
+                            "generation"
+                          ]
+                        },
                         "active_provider": {
                           "anyOf": [
                             {
@@ -49022,6 +49447,43 @@
                           "items": {
                             "type": "object",
                             "properties": {
+                              "availability": {
+                                "type": "object",
+                                "properties": {
+                                  "status": {
+                                    "enum": [
+                                      "available",
+                                      "stale",
+                                      "unavailable"
+                                    ],
+                                    "type": "string"
+                                  },
+                                  "authoritative": {
+                                    "type": "boolean"
+                                  },
+                                  "unavailable_reason": {
+                                    "anyOf": [
+                                      {
+                                        "type": "string"
+                                      },
+                                      {
+                                        "type": "null"
+                                      }
+                                    ]
+                                  },
+                                  "generation": {
+                                    "type": "string",
+                                    "minLength": 1,
+                                    "description": "Opaque source generation; cached data from another generation must never be merged."
+                                  }
+                                },
+                                "required": [
+                                  "status",
+                                  "authoritative",
+                                  "unavailable_reason",
+                                  "generation"
+                                ]
+                              },
                               "provider": {
                                 "type": "string"
                               },
@@ -49569,6 +50031,43 @@
                     "models": {
                       "type": "object",
                       "properties": {
+                        "availability": {
+                          "type": "object",
+                          "properties": {
+                            "status": {
+                              "enum": [
+                                "available",
+                                "stale",
+                                "unavailable"
+                              ],
+                              "type": "string"
+                            },
+                            "authoritative": {
+                              "type": "boolean"
+                            },
+                            "unavailable_reason": {
+                              "anyOf": [
+                                {
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "generation": {
+                              "type": "string",
+                              "minLength": 1,
+                              "description": "Opaque source generation; cached data from another generation must never be merged."
+                            }
+                          },
+                          "required": [
+                            "status",
+                            "authoritative",
+                            "unavailable_reason",
+                            "generation"
+                          ]
+                        },
                         "active_provider": {
                           "anyOf": [
                             {
@@ -49610,6 +50109,43 @@
                           "items": {
                             "type": "object",
                             "properties": {
+                              "availability": {
+                                "type": "object",
+                                "properties": {
+                                  "status": {
+                                    "enum": [
+                                      "available",
+                                      "stale",
+                                      "unavailable"
+                                    ],
+                                    "type": "string"
+                                  },
+                                  "authoritative": {
+                                    "type": "boolean"
+                                  },
+                                  "unavailable_reason": {
+                                    "anyOf": [
+                                      {
+                                        "type": "string"
+                                      },
+                                      {
+                                        "type": "null"
+                                      }
+                                    ]
+                                  },
+                                  "generation": {
+                                    "type": "string",
+                                    "minLength": 1,
+                                    "description": "Opaque source generation; cached data from another generation must never be merged."
+                                  }
+                                },
+                                "required": [
+                                  "status",
+                                  "authoritative",
+                                  "unavailable_reason",
+                                  "generation"
+                                ]
+                              },
                               "provider": {
                                 "type": "string"
                               },

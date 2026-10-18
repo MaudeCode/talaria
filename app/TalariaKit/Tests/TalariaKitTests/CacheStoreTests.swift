@@ -650,6 +650,21 @@ final class CacheStoreTests: XCTestCase {
         XCTAssertTrue(restored.collapsible)
     }
 
+    func testCachedNewestReplyKeepsTheSharedServerExcerptPolicy() throws {
+        let object = try XCTUnwrap(JSONSerialization.jsonObject(with: sharedContractFixture("web-session")) as? [String: Any])
+        let fixture = try XCTUnwrap(object["long_body_session"] as? [String: Any])
+        let decoder = JSONDecoder(); decoder.keyDecodingStrategy = .convertFromSnakeCase
+        let messages = try decoder.decode([ChatMessage].self, from: JSONSerialization.data(withJSONObject: fixture["messages"]!))
+        let context = try makeContext(), server = URL(string: "https://excerpt-cache.test")!, now = Date()
+        try CacheStore.cacheMessages(messages, serverURL: server, sessionID: "excerpt", in: context, cachedAt: now)
+        let restored = try CacheStore.cachedMessages(serverURL: server, sessionID: "excerpt", in: context, now: now)
+        XCTAssertEqual(restored.first { $0.messageId == "long-body-reply" }?.displayExcerpt, messages[1].displayExcerpt)
+        let newest = try XCTUnwrap(restored.first { $0.messageId == "newest-body-reply" })
+        XCTAssertNil(newest.displayExcerpt)
+        XCTAssertNil(newest.activityScene?.finalAnswerExcerpt)
+        XCTAssertEqual(newest.content, messages.last?.content)
+    }
+
     func testCachedMessagesKeepReasoningTitles() throws {
         let context = try makeContext()
         let serverURL = URL(string: "https://example.test")!

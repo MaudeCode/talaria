@@ -53,7 +53,7 @@ describe('settings, profiles, models, providers, reasoning, onboarding', () => {
     writeFileSync(join(s.state, 'config.yaml'), '# seed\n')
     configs.set(s.state, { model: { default: 'claude-sonnet-4-6', provider: 'anthropic' }, agent: { reasoning_effort: 'high', personalities: { pirate: 'Talk like a pirate', calm: { description: 'Calm helper', system_prompt: 'Be calm', tone: 'gentle' } } }, display: { show_reasoning: false } })
     sidecar.respond('models.reasoning_efforts', (params) => ({ efforts: params.model.startsWith('claude') ? ['low', 'medium', 'high'] : [], supports_reasoning: params.model.startsWith('claude') }))
-    sidecar.respond('providers.model_ids', (params) => ({ provider: params.provider, model_ids: params.provider === 'anthropic' ? ['claude-opus-4-7', 'claude-sonnet-4-6'] : [] }))
+    sidecar.respond('providers.model_ids', (params) => ({ provider: params.provider, model_ids: params.provider === 'anthropic' ? ['claude-opus-4-7', 'claude-sonnet-4-6'] : [], fallback: params.provider !== 'anthropic' }))
     sidecar.respond('providers.auth_status', (params) => ({ status: { logged_in: false, provider: params.provider ?? '', error: 'not logged in' } }))
   })
   afterAll(() => s.close())
@@ -1278,9 +1278,12 @@ describe('provider quota windows carry server-computed pace (TAL-409)', () => {
       expect(ProviderQuotaSchema.safeParse(await res.json()).success).toBe(true)
     }
 
-    // The shared fixture the App and Web decode is this exact response (`RECORD_TAL409=1` rewrites it).
-    if (process.env.RECORD_TAL409) writeFileSync(FIXTURE, `${JSON.stringify(quotas, null, 2)}\n`)
-    expect(quotas).toEqual(JSON.parse(readFileSync(FIXTURE, 'utf8')))
+    // Only the opaque source generation varies with the disposable profile's file metadata.
+    expect(quotas.availability).toMatchObject({ status: 'available', authoritative: true, unavailable_reason: null })
+    expect((quotas.availability as Json).generation).toMatch(/^[0-9a-f]{64}$/)
+    const fixture = { ...quotas, availability: { ...(quotas.availability as Json), generation: 'synthetic-generation' } }
+    if (process.env.RECORD_TAL409) writeFileSync(FIXTURE, `${JSON.stringify(fixture, null, 2)}\n`)
+    expect(fixture).toEqual(JSON.parse(readFileSync(FIXTURE, 'utf8')))
   })
 
   it('urgency, projection eligibility and pace status follow the profile thresholds saved through /api/settings (TAL-411)', async () => {
@@ -1328,7 +1331,7 @@ describe('the model picker shows pool rate limits and the account quota level (T
     const configs = fakeConfigStore(sidecar)
     writeFileSync(join(s.state, 'config.yaml'), '# seed\n')
     configs.set(s.state, { model: { default: 'claude-sonnet-4-6', provider: 'anthropic' }, providers: { anthropic: { api_key: 'sk-ant-api03-synthetic-limit-test-key' } } })
-    sidecar.respond('providers.model_ids', (params) => ({ provider: params.provider, model_ids: params.provider === 'anthropic' ? ['claude-opus-4-7', 'claude-sonnet-4-6'] : [] }))
+    sidecar.respond('providers.model_ids', (params) => ({ provider: params.provider, model_ids: params.provider === 'anthropic' ? ['claude-opus-4-7', 'claude-sonnet-4-6'] : [], fallback: params.provider !== 'anthropic' }))
     sidecar.respond('providers.auth_status', (params) => ({ status: { logged_in: false, provider: params.provider ?? '', error: 'not logged in' } }))
     sidecar.respond('usage.limits', () => ({ limits }))
     sidecar.respond('usage.account', (params) => ({ snapshot: { provider: params.provider, available: true, title: 'Claude limits', fetched_at: '2026-09-28T07:59:30Z', details: [], windows } }))
@@ -1443,6 +1446,7 @@ describe('OpenRouter cost history accrues on quota reads and ships server-comput
   })
 
   it('a pooled OpenRouter account records the cost snapshot only when it is the configured key (TAL-548)', async () => {
+    s.deps.catalog.invalidate(s.state)
     const account = { credential_id: 'or-1', label: 'work@example.test', status: 'available' as const, unavailable_reason: null, retry_after: null }
     try {
       // Another account's read records nothing; the configured key's own source is the one that would.

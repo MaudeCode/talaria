@@ -207,6 +207,7 @@ test('a manual compression still running when the session opens shows and clears
 test('an automatic compression shows in the top tab until the server closes it', async ({ page }, testInfo) => {
   const sid = 'auto-compress'
   const streamId = `${sid}-run`
+  const attaching = hold()
   let stream = null as ServerResponse | null
   let seq = 0
   const send = (event: string, data: unknown) => { stream!.write(`id: ${streamId}:${String(++seq)}\nevent: ${event}\ndata: ${JSON.stringify(data)}\n\n`) }
@@ -220,14 +221,21 @@ test('an automatic compression shows in the top tab until the server closes it',
   if (!address || typeof address === 'string') throw new Error('Missing fixture port')
   await page.route('**/api/session?**', (route) => route.fulfill({ json: { session: { session_id: sid, title: 'Long session', messages: transcript(sid, 2).concat({ role: 'user', id: 5, content: 'Keep going' }), active_stream_id: streamId, is_streaming: true } } }))
   await page.route('**/api/chat/stream/status?**', (route) => route.fulfill({ json: { active: true, stream_id: streamId, replay_available: false } }))
-  await page.route('**/api/chat/stream?**', (route) => route.continue({ url: `http://127.0.0.1:${String(address.port)}${new URL(route.request().url()).search}` }))
+  await page.route('**/api/chat/stream?**', async (route) => {
+    await attaching.gate
+    await route.continue({ url: `http://127.0.0.1:${String(address.port)}${new URL(route.request().url()).search}` })
+  })
   await page.route('**/api/session/draft', (route) => route.fulfill({ json: { ok: true } }))
   try {
     await page.goto(`/session/${sid}`)
     await expect(page.locator('.composer-tab .live-run-status')).toContainText('Working')
+    expect(stream).toBeNull()
+    attaching.release()
+    // Working can render while EventSource is still connecting.
+    await expect.poll(() => stream).not.toBeNull()
     const chip = page.locator('.composer-tab [data-notice="runtime:compressing"]')
     const startedAt = Date.now() / 1000 - 75
-    send('compressing', { session_id: sid, message: 'Compressing context', started_at: startedAt })
+    expect(() => send('compressing', { session_id: sid, message: 'Compressing context', started_at: startedAt })).not.toThrow()
     await expect(chip).toHaveText('Compressing context1m')
     // A heartbeat repeats the span's start.
     send('compressing', { session_id: sid, message: 'Compressing context', started_at: startedAt })
@@ -241,7 +249,9 @@ test('an automatic compression shows in the top tab until the server closes it',
     await expect(page.locator('.composer-tab .live-run-status')).toContainText('Working')
     await expect(page.locator('#messages .compression-card')).toHaveCount(0)
   } finally {
+    attaching.release()
     stream?.end()
+    server.closeAllConnections()
     await new Promise<void>((resolve) => server.close(() => { resolve() }))
   }
 })

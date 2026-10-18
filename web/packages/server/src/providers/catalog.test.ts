@@ -215,7 +215,7 @@ describe('model_catalog.excluded_providers (TAL-911)', () => {
     sidecar.respond('config.get', (p) => ({ path: join(p.profile_home, 'config.yaml'), exists: true, config }))
     sidecar.respond('providers.auth_status', (p) => ({ status: { logged_in: false, provider: p.provider ?? '' } }))
     sidecar.respond('plugins.providers', () => ({ providers: [] }))
-    sidecar.respond('providers.model_ids', (p) => ({ provider: p.provider, model_ids: [] }))
+    sidecar.respond('providers.model_ids', (p) => ({ provider: p.provider, model_ids: [], fallback: true }))
     writeFileSync(join(home, 'config.yaml'), '# cfg\n')
     const catalog = new ProviderCatalog({ sidecar: () => sidecar, config: new AgentConfig({ sidecar: () => sidecar, env: {} }), env: {}, now: () => 1_800_000_000, log: () => undefined, costBudget: () => null, isRootProfileHome: () => true })
     try {
@@ -320,7 +320,7 @@ describe('catalog entries carry their routing provider and bare id', () => {
     sidecar.respond('config.get', (p) => ({ path: join(p.profile_home, 'config.yaml'), exists: existsSync(join(p.profile_home, 'config.yaml')), config }))
     sidecar.respond('providers.auth_status', (p) => ({ status: { logged_in: false, provider: p.provider ?? '' } }))
     sidecar.respond('plugins.providers', () => ({ providers: [] }))
-    sidecar.respond('providers.model_ids', (p) => ({ provider: p.provider, model_ids: [] }))
+    sidecar.respond('providers.model_ids', (p) => ({ provider: p.provider, model_ids: [], fallback: true }))
   })
   afterAll(() => s.close())
 

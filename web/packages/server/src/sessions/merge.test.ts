@@ -94,7 +94,7 @@ describe('withToolCallOutcomes (TAL-313)', () => {
 })
 
 describe('withBodyExcerpts (TAL-456)', () => {
-  const excerptOf = (content: unknown, role = 'user'): Record<string, unknown> => withBodyExcerpts([{ role, content }], null)[0] as Record<string, unknown>
+  const excerptOf = (content: unknown, role = 'user'): Record<string, unknown> => withBodyExcerpts([{ role, content }], null, null)[0] as Record<string, unknown>
 
   it('leaves a body at the limit alone and collapses one character more', () => {
     expect(BODY_EXCERPT_LIMIT).toBe(3000)
@@ -104,6 +104,49 @@ describe('withBodyExcerpts (TAL-456)', () => {
     expect(over._display_truncated).toBe(true)
     expect(over._display_excerpt).toBe('a'.repeat(3000))
     expect(over.content).toBe('a'.repeat(3001))
+  })
+
+  it('keeps the newest settled reply full until a newer visible reply settles (TAL-1114)', () => {
+    const answer = (id: string, content: string) => ({ role: 'assistant', content, _turn_id: id,
+      _anchor_activity_scene: { version: 'activity_scene_v1', activity_rows: [], final_answer: content } })
+    const a = answer('A', 'a'.repeat(6000)), older = answer('old', 'o'.repeat(5000))
+    const trailing = [
+      { role: 'user', content: 'next', _turn_id: 'B' },
+      { role: 'assistant', content: 'interim', _interim: true, _turn_id: 'B' },
+      { role: 'assistant', content: '', tool_calls: [{ id: 'call' }], _turn_id: 'B' },
+      { role: 'tool', content: 'result', _turn_id: 'B' },
+    ]
+    for (const active of ['B', null]) {
+      const result = withBodyExcerpts([older, a, ...trailing], active) as Record<string, unknown>[]
+      expect(result[0]?._display_truncated).toBe(true)
+      expect(result[1]).not.toHaveProperty('_display_excerpt')
+      expect(result[1]?._anchor_activity_scene).not.toHaveProperty('final_answer_excerpt')
+      expect(result[1]?.content).toBe(a.content)
+    }
+    const b = answer('B', 'new answer')
+    const result = withBodyExcerpts([older, a, ...trailing, b], null) as Record<string, unknown>[]
+    expect(result[1]?._display_excerpt).toBe('a'.repeat(3000))
+    expect(result[1]?._anchor_activity_scene).toMatchObject({ final_answer_excerpt: 'a'.repeat(3000) })
+    expect(result.at(-1)).not.toHaveProperty('_display_excerpt')
+    expect(a).not.toHaveProperty('_display_excerpt')
+  })
+
+  it('clears stale excerpts without changing stored rows and ignores non-replies (TAL-1114)', () => {
+    const answer = { role: 'assistant', content: 'a'.repeat(5000), _turn_id: 'A', _display_truncated: true, _display_excerpt: 'stale',
+      _anchor_activity_scene: { final_answer: 'a'.repeat(5000), final_answer_excerpt: 'stale' } }
+    const nonReplies = [
+      { role: 'assistant', content: '<think>only reasoning</think>' },
+      { role: 'assistant', content: 'hidden', display_kind: 'hidden' },
+      { role: 'assistant', content: 'silent', _background_silent: true },
+      { role: 'assistant', content: 'notice', display_kind: 'failed_turn' },
+      { role: 'assistant', content: 'marker', _marker_kind: 'context_compaction' },
+      { role: 'assistant', content: 'partial', _partial: true },
+    ].map((row, i) => ({ ...row, _turn_id: `other-${i}` }))
+    const result = withBodyExcerpts([answer, ...nonReplies], null) as Record<string, unknown>[]
+    expect(result[0]).not.toHaveProperty('_display_excerpt')
+    expect(result[0]).not.toHaveProperty('_display_truncated')
+    expect(result[0]?._anchor_activity_scene).not.toHaveProperty('final_answer_excerpt')
+    expect(answer._display_excerpt).toBe('stale')
   })
 
   it('cuts at the last line break, else the last space, in the second half of the limit', () => {
@@ -136,8 +179,8 @@ describe('withBodyExcerpts (TAL-456)', () => {
   it('leaves the running turn alone and returns copies', () => {
     const rows = [{ role: 'user', content: 'u'.repeat(4000), _turn_id: 'run' }, { role: 'assistant', content: 'a'.repeat(4000), _turn_id: 'done' }]
     const out = withBodyExcerpts(rows, 'run') as Record<string, unknown>[]
-    expect(out[0]).toBe(rows[0])
-    expect(out[1]?._display_truncated).toBe(true)
+    expect(out[0]).toEqual(rows[0])
+    expect(out[1]).not.toHaveProperty('_display_truncated')
     expect(rows[1]).not.toHaveProperty('_display_truncated')
   })
 })
@@ -167,7 +210,7 @@ describe('withDisplayMedia (TAL-186)', () => {
     const long = `${'w'.repeat(2900)} MEDIA:/tmp/a.png`
     const scene = { version: 'activity_scene_v1', activity_rows: [], final_answer: long }
     const longProject = (text: string) => ({ text: text.replace('MEDIA:/tmp/a.png', `![a.png](${url})`), media: [] })
-    const [reply] = withBodyExcerpts(withDisplayMedia([{ role: 'assistant', content: long, _anchor_activity_scene: scene }], longProject), null) as Record<string, unknown>[]
+    const [reply] = withBodyExcerpts(withDisplayMedia([{ role: 'assistant', content: long, _anchor_activity_scene: scene }], longProject), null, null) as Record<string, unknown>[]
     expect(reply?._display_truncated).toBe(true)
     expect(reply?._display_excerpt).toBe('w'.repeat(2900))
     expect((reply?._anchor_activity_scene as Record<string, unknown>).final_answer_excerpt).toBe('w'.repeat(2900))

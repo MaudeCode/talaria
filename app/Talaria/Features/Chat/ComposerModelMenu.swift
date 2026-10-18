@@ -44,6 +44,12 @@ struct ComposerModelMenu: View {
         }
 
         var children: [UIMenuElement] = []
+        for group in modelGroups {
+            if let reason = group.availability?.unavailableReason {
+                children.append(disabledMenuAction(title: reason))
+                break
+            }
+        }
         if modelGroups.isEmpty && favoriteOptions.isEmpty && recentOptions.isEmpty && compactOptions.isEmpty {
             children.append(disabledMenuAction(title: String(localized: "No catalog models")))
         }

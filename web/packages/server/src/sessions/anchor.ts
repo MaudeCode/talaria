@@ -6,7 +6,7 @@
  */
 import { str } from '../util.js'
 import { createHash } from 'node:crypto'
-import { agentRowKind, agentSteerText, isReasoningBlock, markerKind, messageText, normalizeAssistantDisplay, normalizeUserDisplay, reasoningBlockText, reasoningFieldsText, splitDisplayText, stripToolCallXml, decidedResultView, toolResultView, type ToolResultView } from './merge.js'
+import { hasToolUseBlocks, finalAnswerOf, agentRowKind, agentSteerText, isReasoningBlock, markerKind, messageText, normalizeAssistantDisplay, normalizeUserDisplay, reasoningBlockText, reasoningFieldsText, splitDisplayText, stripToolCallXml, decidedResultView, toolResultView, type ToolResultView } from './merge.js'
 import type { Session } from './session.js'
 import { toolMessageForLimitedPayload } from './window.js'
 import { decidedEditDiff, toolArgs, toolEditDiff } from './tool-display.js'
@@ -293,21 +293,6 @@ function codexCommentary(message: Record<string, unknown>): string[] {
   return message.codex_message_items.flatMap((item) => isDict(item) && item.type === 'message' && str(item.phase).trim().toLowerCase() === 'commentary' && Array.isArray(item.content)
     ? [item.content.map((part) => (isDict(part) && part.type === 'output_text' ? str(part.text) : '')).join('').trim()]
     : []).filter(Boolean)
-}
-
-/** Anthropic-style tool calls: `tool_use` blocks in the content array, interleaved with the text around them. */
-function hasToolUseBlocks(message: Record<string, unknown>): boolean {
-  return Array.isArray(message.content) && message.content.some((part) => isDict(part) && part.type === 'tool_use')
-}
-
-/**
- * The final answer rule: the turn's last assistant row, with visible content, no tool calls, not interim or partial.
- * A Stop row is no answer: its outcome is the status (TAL-364; older rows still carry English copy).
- */
-function finalAnswerOf(last: Record<string, unknown>): string {
-  if ((Array.isArray(last.tool_calls) && last.tool_calls.length > 0) || hasToolUseBlocks(last) || last._interim === true || last._partial === true) return ''
-  if (last._error === true && (last._terminal_state === 'cancelled' || last.provider_details_label === 'Cancellation details')) return ''
-  return splitDisplayText(messageText(last.content))[0]
 }
 
 /** The turn's outcome: an explicit terminal state, else its error row's kind, else whether it answered. */

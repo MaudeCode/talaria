@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest'
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { z } from 'zod'
-import { AgentHealthSchema, ErrorBodySchema, ChatEventSchema, ClarifyPendingEnvelopeSchema, MemoryWriteRefusalSchema, ModelsSchema, SIDECAR_RPC_VERSION, SkillsSchema, SpeechPrepareSchema, TranscribeResponseSchema, TranscribeStreamEndSchema, TranscribeStreamEventSchema, TranscribeStreamStartSchema, UpdatesCheckSchema, UpdateNotificationsSchema, UpdateApplySchema, SteerSendNowResponseSchema } from './index.js'
+import { AgentHealthSchema, ErrorBodySchema, ChatEventSchema, ClarifyPendingEnvelopeSchema, MemoryWriteRefusalSchema, ModelsSchema, ProviderQuotasSchema, SIDECAR_RPC_VERSION, SkillsSchema, SpeechPrepareSchema, TranscribeResponseSchema, TranscribeStreamEndSchema, TranscribeStreamEventSchema, TranscribeStreamStartSchema, UpdatesCheckSchema, UpdateNotificationsSchema, UpdateApplySchema, SteerSendNowResponseSchema } from './index.js'
 
 const shared = (path: string): unknown => JSON.parse(readFileSync(resolve(import.meta.dirname, '../../../../contracts', path), 'utf8'))
 
@@ -23,6 +23,18 @@ describe('contracts package', () => {
     }
     expect(AgentHealthSchema.parse(fixture.completed_update).chat).toEqual({ available: true, condition: null })
     expect(AgentHealthSchema.parse(fixture.legacy).chat).toEqual({ available: false, condition: 'agent_runtime_stale' })
+  })
+
+  it('preserves shared catalog recovery authority without turning it into an empty deletion', () => {
+    const fixture = shared('fixtures/catalog-recovery.json') as { models: unknown; quotas: unknown }
+    const models = ModelsSchema.parse(fixture.models)
+    const quotas = ProviderQuotasSchema.parse(fixture.quotas)
+    expect(models.availability).toMatchObject({ status: 'stale', authoritative: false })
+    expect(models.groups[0]?.availability).toEqual(models.availability)
+    expect(models.default_model).toBe('gpt-6.1-sol')
+    expect(quotas.availability).toEqual(models.availability)
+    expect(quotas.missing_source).toBe(false)
+    expect(quotas.sources.every((s) => s.status === 'stale')).toBe(true)
   })
 
   it('accepts all five explicit background review states and additive older rows (TAL-1022)', () => {

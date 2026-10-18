@@ -240,6 +240,12 @@ struct ChatTranscriptView: View {
                     )
                 }
                 .background(Color(.systemBackground))
+                .onChange(of: messages.map { [$0.displayExcerpt, $0.activityScene?.finalAnswerExcerpt] }) {
+                    guard !shouldFollowLatestMessage else { return }
+                    scrollPositionController.holdVisiblePosition {
+                        proxy.scrollTo(transcriptContentID, anchor: .top)
+                    }
+                }
                 .onChange(of: messages.count) {
                     if latestTranscriptMessageRole == "user" {
                         following { onScrollToLatestTranscriptMessage(scrollCommands) }

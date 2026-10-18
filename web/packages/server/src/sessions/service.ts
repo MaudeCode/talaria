@@ -26,7 +26,7 @@ import { agentSessionRowsExisting, agentSessionRowsExistingAsync, CANONICAL_READ
 import { completionIncomplete, fallbackHandoffSummary, HANDOFF_SYSTEM_PROMPT, handoffMarker, handoffPayload, handoffTranscript, messageHandoffPayload, sameHandoff } from './handoff.js'
 import { anchorMessageKey, anchorSummary, CompressionJobs, compressionReference, visibleMessagesForAnchor, type CompressionJob } from './compress.js'
 import { chatReadiness, runtimeFailureDetails, SidecarError, type SidecarLike } from '../sidecar/client.js'
-import { agentSteerText, ApiMessageSummary, appendStateDbIdentityRows, attachedFilesPrompt, attachmentObjects, checkpointTurnStart, dedupeContext, isContextCompressionMarker, journalOutputRows, looksLikeCurrentUserTurn, stoppedTurnContext, mergeSessionMessagesAppendOnly, messageIdentity, pendingUserRow, reasoningFieldsText, sanitizeMessagesForApi, stateDbSeenId, stripWorkspacePrefix, withAttachmentObjects, withBodyExcerpts, withDisplayMedia, withMarkerKinds, withMirrorSources, withSceneRowMedia, withPendingUserTurn, withToolCallOutcomes, withoutRunningTurnOutput, type ToolResultView } from './merge.js'
+import { agentSteerText, ApiMessageSummary, appendStateDbIdentityRows, attachedFilesPrompt, attachmentObjects, checkpointTurnStart, dedupeContext, isContextCompressionMarker, journalOutputRows, looksLikeCurrentUserTurn, stoppedTurnContext, mergeSessionMessagesAppendOnly, messageIdentity, pendingUserRow, reasoningFieldsText, sanitizeMessagesForApi, stateDbSeenId, stripWorkspacePrefix, withAttachmentObjects, newestSettledReply, withBodyExcerpts, withDisplayMedia, withMarkerKinds, withMirrorSources, withSceneRowMedia, withPendingUserTurn, withToolCallOutcomes, withoutRunningTurnOutput, type ToolResultView } from './merge.js'
 import { withBackgroundUpdates } from './background-updates.js'
 import { markedStateDbGeneration, stateDbIdentityKeys, stampStateDbGeneration, stateDbMessageRepresented } from './state-db-identity.js'
 import { sourceKind } from './source-kind.js'
@@ -789,7 +789,7 @@ export class SessionService {
     return (await this.store.revision(s.session_id))
   }
 
-  private readonly pageTails = new WeakMap<SessionPrefixIndex, { key: string; tail: Message[]; index: SessionPrefixIndex; enoughContext: boolean; sources: SessionService['stateDbSources']; contextRows: Message[]; contextLength: number; summary: { total: number; last: number; todo: Record<string, unknown> | null; compression: ReturnType<SessionPrefixIndex['compressionReference']> } }>()
+  private readonly pageTails = new WeakMap<SessionPrefixIndex, { key: string; tail: Message[]; index: SessionPrefixIndex; newestReply?: number | null; enoughContext: boolean; sources: SessionService['stateDbSources']; contextRows: Message[]; contextLength: number; summary: { total: number; last: number; todo: Record<string, unknown> | null; compression: ReturnType<SessionPrefixIndex['compressionReference']> } }>()
   private readonly pageContexts = new WeakMap<SessionPrefixIndex, { key: string; local: Message[]; enough: boolean; contextRows: Message[]; contextLength: number; marker: boolean; unidentified: readonly ReadonlyMap<string, number>[] }>()
 
   private prefixIndex(s: Session, revision: string | null): SessionPrefixIndex {
@@ -895,11 +895,22 @@ export class SessionService {
       }
       return rows
     }
+    const refs = { get: (ref: string) => index.refCountBefore(ref, prefixEnd) + (tailIndex.refCounts.get(ref) ?? 0) }
+    if (cached.newestReply === undefined) {
+      let newestReply: number | null = null
+      const excluded = new Set(s.active_stream_id ? [s.active_stream_id] : [])
+      selection: for (const owner of [tailIndex, index]) for (const candidate of owner.replyTurns(owner === index ? prefixEnd : total, excluded)) {
+        const span = turnSpan(idAt(candidate)), rows = readRange(span.first, span.last)
+        const derived = await this.deriveRange(s, rows, span.first, span.first ? idAt(span.first - 1) : 'legacy:start', Boolean(journaled), refs, index.toolCalls(span.first, rows.length), reviewRows)
+        const newest = newestSettledReply(derived, s.active_stream_id, span.first)
+        if (newest !== null) { newestReply = newest; break selection }
+      }
+      cached.newestReply = newestReply
+    }
     let start = end ? spanAt(Math.max(0, end - limit)).first : 0
     if (pending && before === null) start = Math.min(start, prefixEnd)
     let stop = end ? spanAt(end - 1).last : 0
     // Stamped ids can recur non-contiguously. Include every row of a selected turn, as the full derivation does.
-    const refs = { get: (ref: string) => index.refCountBefore(ref, prefixEnd) + (tailIndex.refCounts.get(ref) ?? 0) }
     let derived: Message[] = []
     for (;;) {
       for (let at = start; at < stop; at += 1) { const span = spanAt(at); if (span.first < start) { start = span.first; at = start - 1 } stop = Math.max(stop, span.last) }
@@ -914,7 +925,7 @@ export class SessionService {
           const at = derived.findIndex((m) => m.role === 'user' && m._active_turn_token === pending.activeTurnToken)
           if (at >= 0 && start + at < offset) { messages = derived.slice(at, relative + messages.length); offset = start + at }
         }
-        return { messages, offset, ...cached.summary, enoughContext: cached.enoughContext, sources: cached.sources }
+        return { messages, offset, newestReply: cached.newestReply, ...cached.summary, enoughContext: cached.enoughContext, sources: cached.sources }
       }
       start = spanAt(Math.max(0, start - Math.max(limit, stop - start))).first
     }
@@ -965,7 +976,7 @@ export class SessionService {
         offset = prompt
       }
       // Per-row display fields (TAL-186 media, TAL-456 excerpts cut from that display text) only for the rows sent.
-      truncated = withBodyExcerpts(withDisplayMedia(truncated, (await this.mediaProjector(s))), s.active_stream_id)
+      truncated = withBodyExcerpts(withDisplayMedia(truncated, (await this.mediaProjector(s))), s.active_stream_id, limited ? limited.newestReply : newestSettledReply(all, s.active_stream_id), offset)
       if (msgLimit !== null) truncated = messagesForLimitedPayload(truncated)
     } else {
       summaryCount = s.metadataMessageCount ?? s.messages.length

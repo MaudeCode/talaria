@@ -10,7 +10,7 @@ import { useState } from 'react'
 import { Button } from '../../ui/Button'
 import { AuxiliaryModelsSetting } from './AuxiliaryModels'
 import { useBootstrap } from '../../app/bootstrap'
-import { catalogEntryById } from '../../lib/modelEntry'
+import { catalogEntryById, catalogGroupLabel } from '../../lib/modelEntry'
 
 function Toggle({ label, hint, settingKey, fallback = false, disabled }: { label: string; hint?: string; settingKey: string; fallback?: boolean; disabled?: boolean }) {
   const { bool, set } = useSettingField()
@@ -42,7 +42,7 @@ export function PreferencesSection() {
       <FieldRow label={m.settings_label_model()} hint={m.settings_default_model_hint()} htmlFor="settingsModel" inline>
         <Select id="settingsModel" disabled={setDefault.isPending} value={defaultEntry?.id ?? str('default_model')} onValueChange={(v) => { setDefault.mutate({ model: v, provider: catalogEntryById(models.data, v)?.provider_id ?? null }, { onError: (e) => showToast(e instanceof Error ? e.message : String(e), 4000, 'error') }) }}>
           {(models.data?.groups ?? []).map((g) => (
-            <optgroup key={g.provider} label={g.provider}>
+            <optgroup key={g.provider} label={catalogGroupLabel(g)}>
               {g.models.map((mm) => <option key={mm.id} value={mm.id}>{mm.label ?? mm.id}</option>)}
             </optgroup>
           ))}

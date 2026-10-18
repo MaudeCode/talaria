@@ -2320,12 +2320,12 @@ describe('session detail collapses very long message bodies (TAL-456)', () => {
       const res = await s.get(`/api/session?session_id=${sid}&messages=1${query}`)
       expect(res.status, query).toBe(200)
       for (const m of ((await json(res)).session as Json).messages as Json[]) {
-        const long = m.timestamp === 1000 || m.timestamp === 1003
+        const long = m.timestamp === 1000
         expect(m._display_truncated, `${query} ${String(m.timestamp)}`).toBe(long ? true : undefined)
         if (m.timestamp === 1000) expect(m._display_excerpt).toBe('w'.repeat(2500))
         if (m.timestamp === 1003) {
-          expect(m._display_excerpt).toBe('p'.repeat(3000))
-          expect((m._anchor_activity_scene as Json).final_answer_excerpt).toBe('p'.repeat(3000))
+          expect(m).not.toHaveProperty('_display_excerpt')
+          expect(m._anchor_activity_scene).not.toHaveProperty('final_answer_excerpt')
         }
         if (m.timestamp === 1001) expect(m._anchor_activity_scene).not.toHaveProperty('final_answer_excerpt')
         if (!long) expect(m).not.toHaveProperty('_display_excerpt')

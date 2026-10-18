@@ -130,8 +130,8 @@ export type TurnTerminalState = z.infer<typeof TurnTerminalStateSchema>
 
 export const ActivitySceneSchema = z.looseObject({
   version: z.literal('activity_scene_v1'), activity_rows: z.array(ActivitySceneRowSchema), final_answer: z.string().optional(),
-  /** TAL-456: a settled final answer too long to lay out whole; clients render it collapsed, with a local "Show more". */
-  final_answer_excerpt: z.string().optional(), turn_duration: z.number().nullable().optional(),
+  /** TAL-456: an older settled final answer too long to lay out whole. Absent on the session-global newest settled visible reply and throughout the next running turn. Clients render the excerpt with a local "Show more". */
+  final_answer_excerpt: z.string().optional().describe("Collapsed preview of an older settled final answer. Absent on the session-global newest visible reply; its exemption transfers only when a newer visible reply settles."), turn_duration: z.number().nullable().optional(),
   /** TAL-186: `final_answer` with its media references rewritten for display (see `_display_content`), and its media. */
   final_answer_display: z.string().optional(), final_answer_media: z.array(DisplayMediaSchema).optional(),
   terminal_state: z.string().optional().describe('The turn\'s outcome: a `TurnTerminalState` (`completed`, `no_response`, `error`, `cancelled`, `interrupted`, `tool_limit_reached`, ...), or `running` for the running turn of a run with no journal to replay (TAL-374). A running scene holds every persisted row (no final answer) and renders open, with no "Worked" fold or outcome; the live rows streamed after attach continue it, and the settled scene replaces both.'),
@@ -185,9 +185,9 @@ export const MessageSchema = z.looseObject({
   _steer: z.looseObject({ steer_id: z.string(), submitted_at: z.number().nullable().optional(), consumed_at: z.number().optional(), phase_duration: z.number().optional() }).optional(),
   /** On a steered turn's last reply: seconds from the last consumed steer to the turn's end. */
   _final_phase_duration: z.number().optional(),
-  /** A settled body too long to lay out whole: clients render `_display_excerpt` collapsed, with a local "Show more" for `content`. */
-  _display_truncated: z.boolean().optional(),
-  _display_excerpt: z.string().optional(),
+  /** A settled body too long to lay out whole. The session-global newest settled visible assistant reply and running output carry no excerpt. Only a newer visible terminal answer transfers that exemption. Clients render `_display_excerpt` with a local "Show more" for full `content`. */
+  _display_truncated: z.boolean().optional().describe("Whether this settled body has a collapsed preview. The newest settled visible assistant reply and active-turn output remain full."),
+  _display_excerpt: z.string().optional().describe("Collapsed preview with full content retained. The newest settled visible assistant reply remains exempt throughout the next running turn, until a newer visible reply settles."),
   /**
    * TAL-452: a typed user message (never a steer, background update or marker) longer than 20 lines or 2,000
    * characters. Clients show it folded to a few lines with a local "Show more"; copy and edit use the whole `content`.
@@ -637,11 +637,15 @@ export const ModelGroupLimitSchema = z.discriminatedUnion('scope', [
  * account-scope window in the provider's last account-usage read (a model-family window never counts), absent without one
  * and while the group is account-limited.
  */
+export const CatalogAvailabilitySchema = z.object({ status: z.enum(['available', 'stale', 'unavailable']), authoritative: z.boolean(), unavailable_reason: NullableString, generation: z.string().min(1).describe('Opaque source generation; cached data from another generation must never be merged.') })
+export type CatalogAvailability = z.infer<typeof CatalogAvailabilitySchema>
 export const ModelGroupSchema = z.looseObject({
+  availability: CatalogAvailabilitySchema.optional(),
   provider: z.string(), provider_id: z.string().optional(), models: z.array(ModelEntrySchema), extra_models: z.array(ModelEntrySchema).optional(),
   limit: ModelGroupLimitSchema.optional(), quota_level: QuotaLevelSchema.optional(),
 })
-export const ModelsSchema = z.looseObject({ active_provider: NullableString.optional(), default_model: z.string().optional(), default_provider_id: NullableString.optional(), default_bare_id: z.string().optional(), default_option_id: NullableString.optional(), groups: z.array(ModelGroupSchema), aliases: z.record(z.string(), Json).optional(), configured_model_badges: z.record(z.string(), Json).optional() })
+export const ModelsSchema = z.looseObject({ availability: CatalogAvailabilitySchema.optional(), active_provider: NullableString.optional(), default_model: z.string().optional(), default_provider_id: NullableString.optional(), default_bare_id: z.string().optional(), default_option_id: NullableString.optional(), groups: z.array(ModelGroupSchema), aliases: z.record(z.string(), Json).optional(), configured_model_badges: z.record(z.string(), Json).optional() })
+export const ModelsLiveSchema = z.looseObject({ availability: CatalogAvailabilitySchema.optional(), provider: z.string().optional(), source: z.string().optional(), models: z.array(ModelEntrySchema), count: z.number().optional(), error: z.string().optional() })
 export type Models = z.infer<typeof ModelsSchema>
 /** TAL-603: where a card's credential comes from; `other` is a source the server cannot name, shown as its raw `key_source`. */
 export const KeySourceKindSchema = z.enum(['env', 'oauth', 'config', 'pool', 'plugin', 'other'])
@@ -657,7 +661,7 @@ export const ProviderSchema = z.looseObject({
   is_custom: z.boolean().optional(), key_source: z.string().optional(), base_url: NullableString.optional(), auth_error: NullableString.optional(), env_var: NullableString.optional(), models: z.array(ModelEntrySchema).optional(), models_total: z.number().optional(),
   is_active: z.boolean().optional(), key_source_kind: KeySourceKindSchema.nullable().optional(), removable: z.boolean().optional(),
 })
-export const ProvidersSchema = z.looseObject({ providers: z.array(ProviderSchema), active_provider: NullableString.optional() })
+export const ProvidersSchema = z.looseObject({ availability: CatalogAvailabilitySchema.optional(), providers: z.array(ProviderSchema), active_provider: NullableString.optional() })
 /** TAL-411: the server's classification per colour basis; `/api/provider/quotas` only, at the profile's thresholds. */
 export const QuotaUrgencySchema = z.looseObject({ remaining: QuotaLevelSchema, pace: QuotaLevelSchema.describe('Burn rate and pace tolerance; the remaining classification when the window has no pace.') })
 /** TAL-409: a window's pace as of the envelope's `computed_at`. Stale once `valid_until` (the window's reset) passes. */
@@ -682,6 +686,7 @@ export const QuotaWindowSchema = z.looseObject({
 })
 const QuotaWindowIndex = z.number().int().nullable().optional()
 export const QuotaSourceSchema = z.looseObject({
+  computed_at: z.string().optional().describe('Original reference time of this source, retained with stale windows.'),
   source_id: z.string(), provider_id: z.string().optional(), provider_label: z.string().optional(), account_label: z.string().optional(), status: z.string().optional(), supported: z.boolean().optional(), message: z.string().nullable().optional(),
   is_active_provider: z.boolean().optional(), quota: Json.optional(), windows: z.array(QuotaWindowSchema).optional(), balances: Json.optional(), plan: Json.optional(), details: Json.optional(), unavailable_reason: Json.optional(), retry_after: Json.optional(), fetched_at: Json.optional(),
   pace_window_index: QuotaWindowIndex.describe('The window a pace-coloured widget shows: the weekly one, else the first 5h/session window.'),
@@ -702,8 +707,8 @@ export const ProviderQuotaSchema = z.looseObject({
   account_limits: QuotaAccountLimitsSchema.nullable().optional(),
 })
 /** Python `get_provider_quotas`: the stable identity envelope the iOS quota widget persists (`scope_id`/`profile_id`). */
-export const ProviderQuotasSchema = z.looseObject({
-  version: z.number(), computed_at: z.string().describe('ISO-8601 UTC reference time of every window `pace`.'), scope_id: z.string(), profile_id: z.string(), active_provider: NullableString, requested_source_id: NullableString,
+export const ProviderQuotasSchema = z.looseObject({ availability: CatalogAvailabilitySchema.optional(),
+  version: z.number(), computed_at: z.string().describe('ISO-8601 UTC request reference time; coalesced or stale sources retain their own computed_at.'), scope_id: z.string(), profile_id: z.string(), active_provider: NullableString, requested_source_id: NullableString,
   missing_source: z.boolean().describe('True when `?source=` names a source id this scope no longer has; `sources` is then empty.'),
   sources: z.array(QuotaSourceSchema).describe('Each live source id exactly once, ordered by `provider_id`, then `account_label`, then `source_id`. Clients render this list as-is; a `?source=` read returns that one row.'),
 })

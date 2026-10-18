@@ -2,6 +2,24 @@ import XCTest
 @testable import TalariaKit
 
 final class ModelCatalogTests: XCTestCase {
+    func testRecoveryFixturePreservesConfiguredModelAndMarksGroupsStale() throws {
+        let root = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+        let data = try Data(contentsOf: root.appendingPathComponent("contracts/fixtures/catalog-recovery.json"))
+        let object = try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
+        let decoder = JSONDecoder()
+        decoder.keyDecodingStrategy = .convertFromSnakeCase
+        let response = try decoder.decode(ModelsResponse.self, from: JSONSerialization.data(withJSONObject: try XCTUnwrap(object["models"])))
+        XCTAssertEqual(response.defaultModel, "gpt-6.1-sol")
+        XCTAssertEqual(response.availability?.authoritative, false)
+        XCTAssertEqual(response.catalogGroups.first?.availability?.displayLabel, "Last-confirmed data")
+        let live = try decoder.decode(ModelsLiveResponse.self, from: Data(#"{"provider":"openai-codex","models":[{"id":"gpt-5.5"}],"availability":{"authoritative":false,"status":"unavailable"}}"#.utf8))
+        XCTAssertEqual(response.catalogGroups.mergingLiveModels(from: live), response.catalogGroups)
+        let legacyFallback = try decoder.decode(ModelsLiveResponse.self, from: Data(#"{"provider":"openai-codex","source":"static","models":[{"id":"gpt-5.5"}]}"#.utf8))
+        XCTAssertEqual(response.catalogGroups.mergingLiveModels(from: legacyFallback), response.catalogGroups)
+        let malformed = try decoder.decode(ModelsResponse.self, from: Data(#"{"groups":[],"availability":{"authoritative":"unknown","status":42}}"#.utf8))
+        XCTAssertNil(malformed.availability?.authoritative)
+    }
+
     func testModelsResponseBuildsCatalogGroupsFromUpstreamShape() throws {
         let decoder = JSONDecoder()
         decoder.keyDecodingStrategy = .convertFromSnakeCase

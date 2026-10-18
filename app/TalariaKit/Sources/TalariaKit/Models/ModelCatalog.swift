@@ -2,6 +2,7 @@ import Foundation
 
 public struct ModelCatalogGroup: Identifiable, Equatable, Sendable {
     public let id: String
+    public let availability: CatalogAvailability?
     public let name: String
     public let providerID: String?
     public let models: [ModelCatalogOption]
@@ -20,9 +21,11 @@ public struct ModelCatalogGroup: Identifiable, Equatable, Sendable {
         models: [ModelCatalogOption],
         extraModels: [ModelCatalogOption] = [],
         accountLimitResetsAt: Date? = nil,
-        quotaLevel: ProviderQuotaUrgency? = nil
+        quotaLevel: ProviderQuotaUrgency? = nil,
+        availability: CatalogAvailability? = nil
     ) {
         self.id = id
+        self.availability = availability
         self.name = name
         self.providerID = providerID
         self.models = models
@@ -40,7 +43,8 @@ public struct ModelCatalogGroup: Identifiable, Equatable, Sendable {
             models: models,
             extraModels: extraModels,
             accountLimitResetsAt: accountLimitResetsAt,
-            quotaLevel: quotaLevel
+            quotaLevel: quotaLevel,
+            availability: availability
         )
     }
 }
@@ -112,9 +116,29 @@ extension ModelsResponse {
 /// Shape: `{"provider": "<id>", "models": [{"id", "label"}], "count": <int>}`;
 /// the server echoes back the provider it resolved when none was requested.
 public struct ModelsLiveResponse: Decodable, Equatable {
+    let source: String?
+    public let availability: CatalogAvailability?
     let provider: String?
     let models: [JSONValue]?
     let count: Int?
+
+    init(provider: String?, models: [JSONValue]?, count: Int?, availability: CatalogAvailability? = nil, source: String? = nil) {
+        self.source = source
+        self.provider = provider
+        self.models = models
+        self.count = count
+        self.availability = availability
+    }
+
+    enum CodingKeys: String, CodingKey { case availability, provider, models, count, source }
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        availability = try? c.decodeIfPresent(CatalogAvailability.self, forKey: .availability)
+        source = try? c.decodeIfPresent(String.self, forKey: .source)
+        provider = try? c.decodeIfPresent(String.self, forKey: .provider)
+        models = try? c.decodeIfPresent([JSONValue].self, forKey: .models)
+        count = try? c.decodeIfPresent(Int.self, forKey: .count)
+    }
 }
 
 extension ModelsLiveResponse {
@@ -140,7 +164,7 @@ extension Array where Element == ModelCatalogGroup {
     /// Returns `self` unchanged when the provider matches no group or the live
     /// list is empty, so an odd live response can never blank out the cached picker.
     public func mergingLiveModels(from response: ModelsLiveResponse) -> [ModelCatalogGroup] {
-        guard let provider = response.normalizedProvider else { return self }
+        guard response.availability.map({ $0.authoritative == true }) ?? !["fallback", "static"].contains(response.source ?? ""), let provider = response.normalizedProvider else { return self }
 
         let liveModels = response.liveOptions
         guard !liveModels.isEmpty else { return self }
@@ -191,7 +215,8 @@ private enum ModelCatalogParser {
                 accountLimitResetsAt: stringValue(from: limit?["scope"]) == "account"
                     ? ProviderQuotaDateParser.date(from: stringValue(from: limit?["resets_at"]))
                     : nil,
-                quotaLevel: stringValue(from: groupDict["quota_level"]).flatMap(ProviderQuotaUrgency.init(rawValue:))
+                quotaLevel: stringValue(from: groupDict["quota_level"]).flatMap(ProviderQuotaUrgency.init(rawValue:)),
+                availability: response.availabilityForGroup(groupDict)
             )
         }
     }
@@ -231,5 +256,14 @@ private enum ModelCatalogParser {
         guard case .string(let text) = value else { return nil }
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         return trimmed.isEmpty ? nil : trimmed
+    }
+}
+
+private extension ModelsResponse {
+    func availabilityForGroup(_ group: [String: JSONValue]) -> CatalogAvailability? {
+        guard let value = group["availability"], let data = try? JSONEncoder().encode(value) else { return availability }
+        let decoder = JSONDecoder()
+        decoder.keyDecodingStrategy = .convertFromSnakeCase
+        return (try? decoder.decode(CatalogAvailability.self, from: data)) ?? availability
     }
 }
