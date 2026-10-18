@@ -124,6 +124,35 @@ extension ChatViewModelSendTests {
         XCTAssertNil(first.modelSwitchConfirmation)
     }
 
+    func testModelConfirmationIsConsumedWhenARemoteTurnBlocksConfirmation() async throws {
+        let updates = LockedCounter()
+        let stream = SpySSEStreamingClient()
+        let model = try makeViewModel(streamClient: stream, sessionSummary: makeSession(model: "old-model", modelProvider: "custom")) { request in
+            switch request.url?.path {
+            case "/api/session/update":
+                _ = updates.increment()
+                return Self.modelHoldResponse(request, token: "held-token", kind: "context_cache")
+            case "/api/session":
+                return apiTestJSONResponse(#"{"session":{"session_id":"session-abc","model":"old-model","model_provider":"custom","active_stream_id":"remote-turn","transcript_seq":{"stream_id":"remote-turn","seq":0},"messages":[]}}"#, for: request)
+            case "/api/chat/stream/status":
+                return apiTestJSONResponse(#"{"active":true,"stream_id":"remote-turn","replay_available":true}"#, for: request)
+            default:
+                XCTFail("Unexpected request: \(request.url?.path ?? "nil")")
+                throw URLError(.badURL)
+            }
+        }
+        _ = await model.selectComposerModel(ModelCatalogOption(id: "target", displayName: "Target", providerID: "custom"))
+        let held = try XCTUnwrap(model.modelSwitchConfirmation)
+        await model.loadMessages()
+        XCTAssertEqual(model.activeStreamID, "remote-turn")
+        let applied = await model.confirmModelSwitch(held)
+        XCTAssertFalse(applied)
+        XCTAssertEqual(updates.count, 1, "A running remote turn must not submit the held token")
+        XCTAssertEqual(model.selectedModelID, "old-model")
+        XCTAssertNotNil(model.composerConfigurationErrorMessage)
+        XCTAssertNil(model.modelSwitchConfirmation, "A dismissed, rejected confirmation must not remain as a hidden stale prompt")
+    }
+
     func testModelConfirmationTransportFailurePreservesCurrentChoice() async throws {
         var updates = 0
         let model = try makeViewModel(sessionSummary: makeSession(model: "old-model", modelProvider: "custom")) { request in

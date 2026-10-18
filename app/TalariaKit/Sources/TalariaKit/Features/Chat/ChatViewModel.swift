@@ -988,6 +988,7 @@ public final class ChatViewModel {
     @discardableResult
     public func confirmModelSwitch(_ confirmation: ModelSwitchConfirmation) async -> Bool {
         guard modelSwitchConfirmation == confirmation, sessionID == confirmation.sessionID else { return false }
+        modelSwitchConfirmation = nil
         return await switchSessionModel(id: confirmation.sessionID, workspace: confirmation.workspace,
                                         model: confirmation.model, provider: confirmation.provider, confirmToken: confirmation.confirmToken)
     }
