@@ -6494,7 +6494,8 @@ extension ChatViewModel: ChatStreamCoordinatorDelegate {
     }
 
     public func streamCoordinatorCacheRunStatus(_ status: RunStatus?) {
-        guard ownsCurrentCache, let sessionID, let context = runStatusCacheContext else { return }
+        // Progress uses the transcript-cache cadence; server clears must reach offline storage immediately.
+        guard status == nil, ownsCurrentCache, let sessionID, let context = runStatusCacheContext else { return }
         do {
             try CacheStore.cacheRunStatus(status, serverURL: server, sessionID: sessionID, in: context)
         } catch {

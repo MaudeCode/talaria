@@ -22,12 +22,16 @@ extension ChatViewModelSendTests {
         await model.loadMessages(modelContext: context)
         XCTAssertEqual(model.runStatus?.progressPercent, 42)
         await model.reconnectStreamIfNeeded(modelContext: context)
-        stream.emit(SSEEventDecoder.decode(eventType: "run_status", data: #"{"session_id":"session-abc","status":{"phase":"prompt_reading","progress_percent":80}}"#))
+        for percent in 43...80 {
+            stream.emit(SSEEventDecoder.decode(eventType: "run_status", data: "{\"session_id\":\"session-abc\",\"status\":{\"phase\":\"prompt_reading\",\"progress_percent\":\(percent)}}"))
+        }
         XCTAssertEqual(model.runStatus?.progressPercent, 80)
+        XCTAssertEqual(try CacheStore.cachedRunStatus(serverURL: URL(string: "https://example.test")!, sessionID: "session-abc", in: context)?.progressPercent, 42, "Progress frames must wait for the transcript-cache cadence")
         model.persistTranscript(modelContext: context)
         stream.emit(.runStatus(sessionID: "session-abc", status: nil))
         XCTAssertNil(try CacheStore.cachedRunStatus(serverURL: URL(string: "https://example.test")!, sessionID: "session-abc", in: context), "An explicit server clear must reach the offline cache immediately")
         stream.emit(SSEEventDecoder.decode(eventType: "run_status", data: #"{"session_id":"session-abc","status":{"phase":"prompt_reading","progress_percent":80}}"#))
+        model.persistTranscript(modelContext: context)
         state.offline = true
         await model.loadMessages(modelContext: context)
         XCTAssertTrue(model.isViewingCachedData)
