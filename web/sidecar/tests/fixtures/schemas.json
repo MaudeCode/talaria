@@ -4719,6 +4719,68 @@
     ],
     "additionalProperties": false
   },
+  "models.selection_warnings": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "properties": {
+      "warnings": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string"
+            },
+            "title": {
+              "type": "string"
+            },
+            "model": {
+              "type": "string"
+            },
+            "provider": {
+              "type": "string"
+            },
+            "message": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind",
+            "title",
+            "model",
+            "provider",
+            "message"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "context_tokens": {
+        "anyOf": [
+          {
+            "type": "integer",
+            "exclusiveMinimum": 0,
+            "maximum": 9007199254740991
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
+      "provider": {
+        "type": "string"
+      },
+      "base_url": {
+        "type": "string"
+      }
+    },
+    "required": [
+      "warnings",
+      "context_tokens",
+      "provider",
+      "base_url"
+    ],
+    "additionalProperties": false
+  },
   "models.speed_tiers": {
     "$schema": "https://json-schema.org/draft/2020-12/schema",
     "type": "object",

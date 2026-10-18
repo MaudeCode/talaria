@@ -1,6 +1,8 @@
 import { OpenAPIGenerator } from '@orpc/openapi'
 import { ZodToJsonSchemaConverter } from '@orpc/zod/zod4'
 import { routeContract } from './router.js'
+import { z } from 'zod'
+import { ModelConfirmationRequiredSchema } from './routes/sessions.js'
 import { RAW_ROUTES } from './routes/raw.js'
 
 export const OPENAPI_INFO = {
@@ -28,6 +30,8 @@ export async function generateOpenApiDocument(): Promise<Record<string, unknown>
     if (route.requestBody) operation.requestBody = { required: true, description: route.requestBody.description, content: { [route.requestBody.contentType]: {} } }
     paths[route.path] = { ...(paths[route.path] ?? {}), [route.method.toLowerCase()]: operation }
   }
+  const update = paths['/api/session/update']?.post as { responses: Record<string, unknown> }
+  update.responses['409'] = { description: 'Model selection requires confirmation. No session state changed.', content: { 'application/json': { schema: z.toJSONSchema(ModelConfirmationRequiredSchema) } } }
   document.paths = paths
   return document
 }

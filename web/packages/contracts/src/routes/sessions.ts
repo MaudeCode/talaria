@@ -1,6 +1,6 @@
 import { oc } from '@orpc/contract'
 import { z } from 'zod'
-import { SessionDeleteRefusedSchema } from '../sidecar/namespaces.js'
+import { ModelSelectionWarningSchema, SessionDeleteRefusedSchema } from '../sidecar/namespaces.js'
 import { AgentRuntimeMetadataSchema, SessionIdSchema, SessionRowSchema, SessionEnvelopeSchema, SessionsListSchema, SessionNewRequestSchema, DraftSchema, DraftResponseSchema, ProjectSchema, ProjectsSchema, SessionStatusSchema, SessionUsageSchema, SessionDeleteResultSchema, ShareReadSchema, ShareCreateResponseSchema, ActivitySceneRowSchema, ToolResultViewSchema, SessionSchema, AttachmentSchema } from '../views.js'
 
 /** Session, project, share, and draft routes. Response rows are loose: the sidecar carries operator-defined extras. */
@@ -8,6 +8,9 @@ import { AgentRuntimeMetadataSchema, SessionIdSchema, SessionRowSchema, SessionE
 const Json = z.unknown()
 
 export const OkSchema = z.object({ ok: z.literal(true) }).catchall(Json)
+/** HTTP 409: nothing has changed; resend the same selection with this token only after confirmation. */
+export const ModelConfirmationRequiredSchema = z.object({ error: z.string(), type: z.literal('model_confirmation_required'), warnings: z.array(ModelSelectionWarningSchema).min(1), confirm_token: z.string().min(1) })
+export type ModelConfirmationRequired = z.infer<typeof ModelConfirmationRequiredSchema>
 const SessionBody = z.object({ session_id: SessionIdSchema })
 const SessionQuery = z.object({ session_id: z.string() })
 /**
@@ -150,7 +153,7 @@ export const sessionsContract = {
     clear: oc.route({ method: 'POST', path: '/api/session/clear', tags }).input(SessionBody).output(OkSchema.extend({ session: SessionRowSchema })),
     retry: oc.route({ method: 'POST', path: '/api/session/retry', tags, description: '`last_user_text` is the stored row\'s text; `last_user_prompt` and `last_user_attachments` are what to resend as the new turn.' }).input(SessionBody).output(z.object({ ok: z.literal(true), last_user_text: z.string(), last_user_prompt: z.string().optional(), last_user_attachments: z.array(AttachmentSchema).optional(), removed_count: z.number().int() }).or(z.object({ error: z.string() }))),
     undo: oc.route({ method: 'POST', path: '/api/session/undo', tags }).input(SessionBody).output(z.object({ ok: z.literal(true), removed_count: z.number().int(), removed_preview: z.string() }).or(z.object({ error: z.string() }))),
-    update: oc.route({ method: 'POST', path: '/api/session/update', tags }).input(SessionBody.extend({ workspace: z.string().optional(), model: z.string().nullable().optional(), model_provider: z.string().nullable().optional() })).output(SessionEnvelopeSchema),
+    update: oc.route({ method: 'POST', path: '/api/session/update', tags }).input(SessionBody.extend({ workspace: z.string().optional(), model: z.string().nullable().optional(), model_provider: z.string().nullable().optional(), confirm_token: z.string().optional() })).output(SessionEnvelopeSchema),
     toolsets: oc.route({ method: 'POST', path: '/api/session/toolsets', tags }).input(SessionBody.extend({ toolsets: z.array(z.string()).nullable().optional() })).output(z.object({ ok: z.literal(true), enabled_toolsets: z.array(z.string()).nullable() })),
     yoloGet: oc.route({ method: 'GET', path: '/api/session/yolo', tags }).input(SessionQuery).output(z.object({ yolo_enabled: z.boolean() })),
     // Python: `enabled` is truthy-checked; enabling reports `stale_cleared` when a parked approval was released.

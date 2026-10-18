@@ -17,6 +17,7 @@ import { configureStream, cancelTurn, getStreamContext, startTurn } from '../../
 import { dispatch, useTurnIntent } from '../../stream/store'
 import { isTerminal, runStart } from '../../stream/reducer'
 import { useTranscript, type VisibleMessage } from './useTranscript'
+import { useSessionUpdate } from './useSessionUpdate'
 import { useEditMessage } from './useEditMessage'
 import { Transcript } from './Transcript'
 import { TranscriptSkeleton } from './TranscriptSkeleton'
@@ -131,16 +132,7 @@ export function ChatView({ sessionId }: { sessionId: string | null }) {
   // eslint-disable-next-line react-hooks/exhaustive-deps -- reasoningKey is derived from session model/provider
   }, [qc, session?.model, session?.model_provider])
 
-  const patchSession = useMutation({ mutationFn: (body: { model?: string; model_provider?: string | null; workspace?: string }) => api.updateSession(sessionId ?? '', body) })
-  const updateSession = useCallback(async (body: { model?: string; model_provider?: string | null; workspace?: string }) => {
-    if (!sessionId) return
-    try {
-      await patchSession.mutateAsync(body)
-      await refresh()
-    } catch (e) {
-      showToast(e instanceof Error ? e.message : String(e), 4000, 'error')
-    }
-  }, [sessionId, patchSession, refresh])
+  const { updateSession, dialog: modelDialog } = useSessionUpdate(sessionId, refresh)
 
   const onModelChange = useCallback((model: string, provider: string | null) => { if (!sessionId) { setPending((p) => ({ ...p, model, model_provider: provider })); return } void updateSession({ model, model_provider: provider }) }, [sessionId, updateSession])
   const onWorkspaceChange = useCallback((path: string) => { if (!sessionId) { setPending((p) => ({ ...p, workspace: path })); return } void updateSession({ workspace: path }) }, [sessionId, updateSession])
@@ -422,7 +414,7 @@ export function ChatView({ sessionId }: { sessionId: string | null }) {
         <span className="sr-only" aria-live="polite" id="a11yAnnouncer">{live?.status === 'done' ? m.done() : ''}</span>
       </div>
       {/* Always mounted beside main (its queries run only while open) so opening and closing animate and the edge tab is always there. */}
-      {editDialog}
+      {editDialog}{modelDialog}
       {sessionId && removingWorktree && <WorktreeRemoveDialog sessionId={sessionId} onClose={() => setRemovingWorktree(false)} />}
       {sessionId && <ChatSidePanel key={sessionId} sessionId={sessionId} workspace={workspace} open={sidePanelOpen} onToggle={toggleSidePanel} onClose={() => setSidePanelOpen(false)} />}
     </>

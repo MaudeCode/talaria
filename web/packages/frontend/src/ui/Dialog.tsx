@@ -45,9 +45,9 @@ export function ConfirmDialog({ open, onOpenChange, title, description, confirmL
     <BaseAlertDialog.Root open={open} onOpenChange={onOpenChange}>
       <BaseAlertDialog.Portal>
         <BaseAlertDialog.Backdrop className="fixed inset-0 z-[1300] bg-black/50" />
-        <BaseAlertDialog.Popup className="fixed left-1/2 top-1/2 z-[1301] w-[min(92vw,440px)] -translate-x-1/2 -translate-y-1/2 rounded-xl border border-border bg-surface p-5 text-text shadow-md outline-none">
+        <BaseAlertDialog.Popup className="fixed left-1/2 top-1/2 z-[1301] max-h-[90dvh] overflow-y-auto w-[min(92vw,440px)] -translate-x-1/2 -translate-y-1/2 rounded-xl border border-border bg-surface p-5 text-text shadow-md outline-none">
           <BaseAlertDialog.Title className="text-base font-semibold text-strong">{title}</BaseAlertDialog.Title>
-          {description && <BaseAlertDialog.Description className="mt-1 text-sm text-muted">{description}</BaseAlertDialog.Description>}
+          {description && <BaseAlertDialog.Description className="mt-1 whitespace-pre-line text-sm text-muted [overflow-wrap:anywhere]">{description}</BaseAlertDialog.Description>}
           <div className="mt-4 flex justify-end gap-2">
             <BaseAlertDialog.Close className="rounded-md border border-border bg-surface px-3 py-1.5 text-sm hover:bg-hover">{cancelLabel}</BaseAlertDialog.Close>
             <button

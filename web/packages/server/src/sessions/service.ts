@@ -9,7 +9,7 @@ import { SessionPrefixIndex } from './prefix-index.js'
 import type { AgentStorage, ChatReadiness, PendingSteer, RecoveryAudit, SessionGoal, SessionNotice, RecoveryRepair, SidecarResult } from '@maudecode/talaria-web-contracts'
 import type { RunJournal } from './journal.js'
 import { str } from '../util.js'
-import { randomUUID } from 'node:crypto'
+import { createHmac, randomUUID } from 'node:crypto'
 import { rmSync } from 'node:fs'
 import { buildActiveTurnToken, copyJson, redactSessionData, redactValue, stripPublicInternalFields, withSceneToolDisplay } from '../redact.js'
 import type { DraftStore } from './drafts.js'
@@ -17,7 +17,7 @@ import { DraftVersionConflict, normalizeDraftVersion } from './drafts.js'
 import type { SessionEventBus } from './events.js'
 import { allSessions, buildSessionListPayload, reconcileLocalSessionRows, sessionLineageIds, CLI_IDENTITY_FIELDS, isClaimableCliSource, isMessagingSessionRecord, ownerLockCandidates, withOwnerLocks, withSessionWireFlags, lineageRootId, mergeCliSidebarMetadata, sessionListResponse, sessionSearchMatches, sessionSearchPreview, sessionSearchTerms, type ListParams, type ListResponse, type Row, type RuntimeOverlay } from './list.js'
 import { anchorSceneIntOrNull, fullToolResult, hydrateAnchorActivityScenes, normalizeAnchorSceneMessageRef, readAnchorSceneRows, storeAnchorScene, withTurnIds } from './anchor.js'
-import { COMPRESSION_RECOVERY_ACTION_START_FOCUSED, compressionRecoveryPayload, forgetContextFigures, isSafeSessionId, lastMessageTimestamp, Session, sharePath, stripAttachedFilesMarker, titleFrom, type Message } from './session.js'
+import { contextUsage, COMPRESSION_RECOVERY_ACTION_START_FOCUSED, compressionRecoveryPayload, forgetContextFigures, isSafeSessionId, lastMessageTimestamp, Session, sharePath, stripAttachedFilesMarker, titleFrom, type Message } from './session.js'
 import { SessionBusy, SessionNotFound, type SessionStore } from './store.js'
 import { UNSETTLED_TODO_KEY, attachTodoSnapshot, attachTodoState } from './todo.js'
 import { isClaudeCodeSessionId, type ClaudeCodeSessionSource } from './claude-code.js'
@@ -1453,23 +1453,52 @@ export class SessionService {
     return { ok: true, session: (await this.wireRow(s)) }
   }
 
-  async update(sid: string, body: Record<string, unknown>): Promise<Record<string, unknown>> {
-    const s = (await this.mutationTarget(sid, 'updated'))
-    const oldWs = s.workspace
-    const oldModel = s.model
-    const oldProvider = s.model_provider
-    let newWs: string
+  private readonly modelConfirmationKey = randomUUID()
+
+  private async confirmModelSwitch(s: Session, model: string, provider: string | null, token: unknown, retry = false): Promise<void> {
+    const profile = s.profile ?? this.deps.activeProfile()
+    const home = this.deps.profileHome(profile)
+    const context = contextUsage(s).context_used_tokens
+    const messages = this.modelContext(s)
+    const before = JSON.stringify([s.model, s.model_provider, context, s.context_length, messages])
+    let decision: SidecarResult<'models.selection_warnings'>
     try {
-      newWs = (await this.deps.workspaces.resolveTrusted(typeof body.workspace === 'string' ? body.workspace : s.workspace, s.profile))
+      const sidecar = this.deps.sidecar?.()
+      if (!sidecar) throw new Error('Agent sidecar is unavailable')
+      decision = await sidecar.call('models.selection_warnings', { profile_home: home, session_id: s.session_id, model, provider, current_model: s.model, context_tokens: context, messages })
     } catch (error) {
-      throw new HttpFailure(400, (error as Error).message)
+      throw new HttpFailure(503, `Cannot check model selection warnings: ${(error as Error).message}`)
     }
+    if (before !== JSON.stringify([s.model, s.model_provider, contextUsage(s).context_used_tokens, s.context_length, this.modelContext(s)])) {
+      if (retry) throw new HttpFailure(503, 'The session changed while checking model warnings. Try the selection again.')
+      return this.confirmModelSwitch(s, model, provider, null, true)
+    }
+    if (!decision.warnings.length) return
+    const signature = JSON.stringify([profile, home, s.session_id, s.model, s.model_provider, model, provider, context, s.context_length, messages, decision])
+    const confirmToken = createHmac('sha256', this.modelConfirmationKey).update(signature).digest('hex')
+    if (token !== confirmToken) throw new HttpFailure(409, decision.warnings.map((w) => w.message).join('\n\n'), { type: 'model_confirmation_required', warnings: decision.warnings, confirm_token: confirmToken })
+  }
+
+  async update(sid: string, body: Record<string, unknown>): Promise<Record<string, unknown>> {
+    let s = (await this.mutationTarget(sid, 'updated'))
+    let oldWs = s.workspace
+    let newWs = oldWs
     await this.withMutationLock(sid, async () => {
+      s = await this.mutationTarget(sid, 'updated')
+      oldWs = s.workspace
+      try {
+        newWs = await this.deps.workspaces.resolveTrusted(typeof body.workspace === 'string' ? body.workspace : s.workspace, s.profile)
+      } catch (error) {
+        throw new HttpFailure(400, (error as Error).message)
+      }
+      const oldModel = s.model
+      const oldProvider = s.model_provider
       const hasModel = 'model' in body || 'model_provider' in body
       const [model, provider] = hasModel ? this.deps.modelStateFromRequest('model' in body ? body.model : s.model, 'model_provider' in body ? body.model_provider : undefined, s.model_provider) : [s.model, s.model_provider]
       const nextModel = model ?? s.model
       const changed = hasModel && (str(oldModel) !== str(nextModel) || str(oldProvider) !== str(provider))
       const contextLength = changed ? (this.deps.resolveContextLength ? await this.deps.resolveContextLength(nextModel, provider, s.profile) : this.deps.contextLengthFor(nextModel, provider)) : s.context_length
+      if (changed) await this.confirmModelSwitch(s, nextModel ?? '', provider, body.confirm_token)
       this.assertWritable(s)
       s.workspace = newWs
       if (hasModel) {

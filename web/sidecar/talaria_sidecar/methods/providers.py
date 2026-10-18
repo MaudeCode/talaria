@@ -10,10 +10,14 @@ composes: ``hermes_cli.auth``, ``hermes_cli.models``, ``hermes_cli.runtime_provi
 from __future__ import annotations
 
 import dataclasses
+import json
 import logging
+import sqlite3
 import sys
 import threading
+from contextlib import closing
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any
 
 from ..errors import InvalidParams, RpcError
@@ -472,7 +476,48 @@ def capabilities(provider: str, model: str) -> dict | None:
     return row if isinstance(row, dict) else None
 
 
+def selection_warnings(home: Path, params: dict) -> dict:
+    """Read-only guard decision using the same route resolver as a turn; never builds or evicts an Agent."""
+    from . import chat
+    try:
+        from hermes_cli.model_selection_guards import SelectionContext, selection_context_for_agent, selection_warnings as warnings
+    except ImportError as exc:
+        raise RpcError("Model selection warnings are unavailable in this Agent", condition="unsupported") from exc
+
+    model = str(params["model"])
+    runtime = chat._resolve_runtime(params.get("provider"), model)
+    provider = str(runtime.get("provider") or params.get("provider") or "")
+    base_url = str(runtime.get("base_url") or "")
+    tokens = params.get("context_tokens")
+    if not tokens:
+        with chat._AGENT_CACHE_LOCK:
+            entry = chat._AGENT_CACHE.get(params["session_id"])
+            if entry and Path(entry[2]).resolve() == home.resolve():
+                context = selection_context_for_agent(entry[0])
+                tokens = context.context_tokens if context else None
+    if not tokens and (home / "state.db").exists():
+        from agent.usage_anchor import persisted_anchor_tokens
+
+        # SessionDB opens and migrates its database. The guard needs only this read-only accessor.
+        with closing(sqlite3.connect(f"{(home / 'state.db').resolve().as_uri()}?mode=ro", uri=True)) as db:
+            row = db.execute("SELECT model_config FROM sessions WHERE id=?", (params["session_id"],)).fetchone()
+            config = json.loads(row[0] or "{}") if row else {}
+            reader = SimpleNamespace(get_session_model_config_value=lambda sid, key, default=None: config.get(key, default))
+            tokens = persisted_anchor_tokens(reader, params["session_id"], params.get("messages", []))
+    context = SelectionContext(context_tokens=tokens, current_model=params.get("current_model"))
+    result = warnings(model, provider=provider, base_url=base_url, api_key=runtime.get("api_key"), selection_context=context)
+    return {"warnings": [_plain(w) for w in result], "context_tokens": tokens or None, "provider": provider, "base_url": base_url}
+
+
 def register(reg) -> None:
+    @reg.method("models.selection_warnings")
+    def selection(ctx: CallContext, params: dict) -> dict:
+        if not params.get("model") or not params.get("session_id"):
+            raise InvalidParams("model and session_id are required")
+        home = profile_home_param(params)
+        with scoped_home(home):
+            return selection_warnings(home, params)
+
     @reg.method("models.speed_tiers")
     def speed_tiers(ctx: CallContext, params: dict) -> dict:
         from ..speed import supported_speed_tiers

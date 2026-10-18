@@ -161,3 +161,12 @@ same projection as `/api/health/agent`. Source changes require a verified revisi
 mismatch and do not prove that an update completed. Older responses without a
 reason use neutral runtime-unavailable wording. These fields do not change
 update notification history or authorize service recovery or a Web restart.
+
+Session model switches use the profile's Agent selection guards before changing
+model, context figures, workspace, or cached Agent. `POST /api/session/update`
+returns HTTP 409 with `type: model_confirmation_required`, Agent `warnings`,
+a display-ready `error`, and `confirm_token`. Cancel sends nothing. A confirmed
+retry includes that token and the original selection; a changed session, route,
+context measurement, or warning requires fresh confirmation. Successful updates
+retain the ordinary session envelope. Clients without this flow retain their old
+model and receive the actionable error. Global/default model setters are separate.
