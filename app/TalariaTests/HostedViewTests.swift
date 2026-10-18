@@ -8,6 +8,39 @@ import TalariaKit
 /// tree, activating one runs its action, and the in-process fixture answers the App's requests.
 @MainActor
 final class HostedViewTests: XCTestCase {
+    func testHostedWindowDisablesExplicitSwiftUIAnimations() async throws {
+        // Reuse the real message marker to observe committed SwiftUI geometry.
+        struct AnimatedMarker: View {
+            @State private var expanded = false
+            var body: some View {
+                VStack {
+                    Button("Expand test marker") {
+                        withAnimation(.linear(duration: 2)) { expanded = true }
+                    }
+                    Text(expanded ? "Expanded marker" : "Collapsed marker")
+                    ChatMessageInteractionMarker(registry: nil, content: { nil })
+                        .frame(width: 100, height: expanded ? 200 : 20)
+                }
+            }
+        }
+        let window = try hostWindow(AnimatedMarker())
+        let marker = try XCTUnwrap(window.firstView(ofType: ChatMessageInteractionMarkerView.self))
+        XCTAssertEqual(marker.bounds.height, 20, accuracy: 0.5)
+        HostedAccessibility.activate(try await requireElement(in: window, label: "Expand test marker"))
+        _ = try await requireElement(in: window, label: "Expanded marker")
+        window.layoutIfNeeded()
+        XCTAssertEqual(marker.bounds.height, 200, accuracy: 0.5,
+                       "A non-animated hosted window must clear explicit SwiftUI animations before measuring")
+
+        let animatedWindow = try hostWindow(AnimatedMarker(), animationsEnabled: true)
+        let animatedMarker = try XCTUnwrap(animatedWindow.firstView(ofType: ChatMessageInteractionMarkerView.self))
+        HostedAccessibility.activate(try await requireElement(in: animatedWindow, label: "Expand test marker"))
+        _ = try await requireElement(in: animatedWindow, label: "Expanded marker")
+        animatedWindow.layoutIfNeeded()
+        XCTAssertLessThan(animatedMarker.bounds.height, 200,
+                          "Opting into animations must keep the explicit transition")
+    }
+
     func testViewLookupVisitsEachBranchOnce() {
         final class Probe: UIView {
             var reads = 0

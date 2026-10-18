@@ -40,7 +40,11 @@ extension XCTestCase {
         let window = UIWindow(windowScene: scene)
         window.frame = CGRect(origin: .zero, size: size)
         traits(&window.traitOverrides)
-        window.rootViewController = UIHostingController(rootView: view.transaction { $0.disablesAnimations = !animationsEnabled })
+        window.rootViewController = UIHostingController(rootView: view.transaction {
+            $0.disablesAnimations = !animationsEnabled
+            // Explicit withAnimation transactions survive disablesAnimations alone.
+            if !animationsEnabled { $0.animation = nil }
+        })
         let animated = UIView.areAnimationsEnabled
         UIView.setAnimationsEnabled(animationsEnabled)
         // Key and visible, so appearance callbacks reach the screen's view controllers as they do in the app.
