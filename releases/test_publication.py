@@ -398,6 +398,11 @@ class PublicationTests(unittest.TestCase):
             "ruby", "-ryaml", "-rjson", "-e", "puts JSON.generate(YAML.safe_load_file(ARGV[0], aliases: true))",
             str(root / ".github/workflows/release-set.yml")], text=True))["jobs"]
         gates = ("contracts", "component-contracts", "agent", "app-hosted-tests")
+        agent_steps = jobs['agent']['steps']
+        node = [(index, step) for index, step in enumerate(agent_steps) if step.get('uses', '').startswith('actions/setup-node@')]
+        self.assertEqual(len(node), 1, 'the Agent gate must provision Node for its selected server build')
+        self.assertEqual(node[0][1]['with']['node-version-file'], 'web/.nvmrc')
+        self.assertLess(node[0][0], next(index for index, step in enumerate(agent_steps) if 'check-release-agent.py' in step.get('run', '')))
         builds = ("relay-build", "web-build", "app-dry-build", "app-signed-build")
         # Every gate and build starts once prepare has the plan; both App contract gates share the contracts runner
         # (TAL-414).
