@@ -650,11 +650,43 @@ final class ChatHostedTests: XCTestCase {
 
     private func checkAssistantHistory(collapseNewest: Bool) async throws {
         let scenario = ["--ui-test-long-bodies", "--ui-test-assistant-long-bodies"] + (collapseNewest ? ["--ui-test-collapse-newest-body"] : [])
-        let window = try await hostFixtureChat(scenario)
+        let fixture = try FixtureApp(scenario, for: self)
+        let response = try await fixture.client.session(id: UITestFixtureURLProtocol.sessionID)
+        let messages = try XCTUnwrap(response.session?.messages)
+        let assistants = messages.filter { $0.role == "assistant" }
+        XCTAssertEqual(assistants.count, 25)
+        XCTAssertEqual(assistants.filter { $0.displayExcerpt != nil }.count, collapseNewest ? 25 : 24)
+        let window = try hostWindow(fixture.chat(try await fixture.session()))
         _ = try await requireElement(in: window, where: { $0.accessibilityLabel?.contains("Long fixture body 25") == true })
-        XCTAssertEqual(elements(named: "Show more", in: window).count, collapseNewest ? 25 : 24)
         attachHostedScreenshot(window, name: collapseNewest ? "assistant-history-collapsed" : "assistant-history-newest-full")
         recordPeakResidentMemory(collapseNewest ? "assistant-history-collapsed" : "assistant-history-newest-full")
+
+        // Offscreen rich bodies are recycled. Reach each reader through the
+        // transcript's navigation owner before checking its disclosure.
+        let coordinator = try XCTUnwrap(window.firstView(ofType: ChatScrollObserver.ObserverView.self)?.coordinator)
+        let controller = try XCTUnwrap(coordinator.scrollPositionController)
+        controller.userDidBeginDragging()
+        coordinator.onFollowEvent(.userScrollBegin)
+        let rows = ChatViewModel.transcriptMessages(from: messages)
+        var heights: [CGFloat] = []
+        for number in [25, 24] {
+            let id = "long-body-assistant-\(number * 2 - 1)"
+            let row = try XCTUnwrap(rows.first { $0.message.messageId == id })
+            try await navigateTranscript(to: ChatTranscriptView.containerID(for: row.renderID), anchor: .top, using: controller)
+            let heading = try await requireElement(in: window) { $0.accessibilityLabel?.contains("Long fixture body \(number)") == true }
+            let hit = try XCTUnwrap(messageMenuHit(at: heading, in: window))
+            XCTAssertEqual(hit.content.messageID, id)
+            heights.append(hit.rowSize.height)
+            let disclosures = elements(named: "Show more", in: window).filter {
+                (try? self.messageMenuHit(at: $0, in: window)?.content.messageID) == id
+            }
+            XCTAssertEqual(disclosures.count, number == 25 && !collapseNewest ? 0 : 1)
+        }
+        if collapseNewest {
+            XCTAssertEqual(heights[0], heights[1], accuracy: 3, "Both replies must render their equally sized excerpts")
+        } else {
+            XCTAssertGreaterThan(heights[0], heights[1] * 2, "The newest reply must render its full Markdown body")
+        }
     }
 
     private func recordPeakResidentMemory(_ scenario: String) {
