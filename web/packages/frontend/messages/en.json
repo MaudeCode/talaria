@@ -2305,6 +2305,8 @@
 	"worklog_interrupted": "Task interrupted",
 	"worklog_tool_limit": "Tool limit reached",
 	"worklog_context_limit": "Context limit reached",
+	"live_prompt_reading": "Reading prompt",
+	"live_prompt_reading_percent": "Reading prompt · {percent}",
 	"live_working": "Working",
 	"live_rate_limited_by": "{provider} rate limit until {time}",
 	"live_rate_limited": "Rate limited until {time}",

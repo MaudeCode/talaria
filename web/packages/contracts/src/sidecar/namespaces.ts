@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import { ProviderPhaseSchema } from '../run-status.js'
 import { SpeedTierSchema } from '../speed.js'
 
 /** Warnings and wording come from the Agent's selection guard registry, including future guard kinds. */
@@ -573,6 +574,7 @@ export const ChatStreamSchema = z.discriminatedUnion('event', [
   z.object({ event: z.literal('notice'), data: z.looseObject({ id: z.string().nullable().optional(), key: z.string().nullable().optional(), level: z.string(), kind: z.string(), ttl_ms: z.number().int().nullable().optional(), text: z.string(), lapses_with_agent: z.boolean().optional() }) }),
   z.object({ event: z.literal('notice_clear'), data: z.looseObject({ key: z.string() }) }),
   z.object({ event: z.literal('notices_reset'), data: Loose }),
+  z.object({ event: z.literal('provider_phase'), data: z.object({ phase: ProviderPhaseSchema.nullable() }) }),
   /** TAL-821: the Agent's live rate-limit wait (`until`, epoch seconds: the limit's reset or the Agent's retry, as `until_kind` says); a null `until` ends it. */
   z.object({ event: z.literal('rate_limit_wait'), data: z.looseObject({ provider: z.string().nullable(), until: z.number().nullable(), until_kind: z.enum(['reset', 'retry']).optional() }) }),
 ])

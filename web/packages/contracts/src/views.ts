@@ -5,6 +5,7 @@
  * that must survive a round trip (documented passthrough).
  */
 import { z } from 'zod'
+import { RunStatusSchema } from './run-status.js'
 import { AgentRefreshConfirmationSchema } from './sidecar/runtime.js'
 import { SpeedTierSchema } from './speed.js'
 import { CanonicalBotChatSchema, GatewayModeSchema, PluginSettingFieldSchema, SkillCatalogIdentitySchema } from './sidecar/namespaces.js'
@@ -340,6 +341,7 @@ export const SessionSchema = z.looseObject({
   message_count: z.number().optional(), user_message_count: z.number().optional(), pinned: z.boolean().optional(), archived: z.boolean().optional(), project_id: NullableString.optional(), profile: NullableString.optional(),
   personality: NullableString.optional(), input_tokens: z.number().optional(), output_tokens: z.number().optional(), cache_read_tokens: z.number().optional(), cache_write_tokens: z.number().optional(),
   cache_hit_percent: NullableNumber.optional(), estimated_cost: NullableNumber.optional(), active_stream_id: ActiveStreamIdSchema, is_streaming: IsStreamingSchema, active_turn_origin: ActiveTurnOriginSchema, pending_steers: z.array(PendingSteerSchema).optional().describe('TAL-424: the active stream\'s pending steers, oldest first.'),
+  run_status: RunStatusSchema.nullable().optional().describe('Current server-selected run presentation; null when no turn runs. Older servers omit it.'),
   compression_started_at: NullableNumber.optional().describe('TAL-1006: when the compression clients show started (epoch seconds): the running manual job\'s, else the live run\'s open span; null when none runs.'),
   notices: z.array(SessionNoticeSchema).optional().describe('TAL-803: the Agent\'s active notices for the session, oldest first.'),
   goal: SessionGoalSchema.nullable().optional().describe('TAL-808: the standing /goal; null when none runs.'),

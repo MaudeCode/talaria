@@ -17,7 +17,7 @@ import type { AgentRuntimeMetadata } from '@maudecode/talaria-web-contracts'
 import type { ChatEvent } from '../contracts/sse'
 import type { ApprovalPending, Attachment, ClarifyPending, Session } from '../contracts'
 import type { ConnectorOperationView } from '@maudecode/talaria-web-contracts'
-import type { PendingSteer, RateLimitWait, ToolKind, ToolResultView } from '@maudecode/talaria-web-contracts'
+import type { PendingSteer, RunStatus, RateLimitWait, ToolKind, ToolResultView } from '@maudecode/talaria-web-contracts'
 
 export type TurnStatus = 'starting' | 'connecting' | 'streaming' | 'reconnecting' | 'done' | 'error' | 'cancelled'
 
@@ -85,6 +85,7 @@ export interface LiveTurn {
   compressionStartedAt: number | null
   /** TAL-821: the server's rate-limit wait while the Agent sits one out. */
   rateLimitWait: RateLimitWait | null
+  runStatus: RunStatus | null
   title: string | null
   doneSession: Session | null
   terminalState?: string | undefined
@@ -100,7 +101,7 @@ export type StreamAction =
   /** `serverStartedAt`: the server's `pending_started_at` (epoch seconds), which starts the turn clock. */
   | { type: 'start'; sessionId: string; streamId: string; turnId: string | null; userMessageId: string | null; userText: string; userAttachments?: Attachment[]; now: number; serverStartedAt?: number | null | undefined }
   /** `serverCompressionStartedAt`: the session's `compression_started_at`, an open span whose frames the attach may resume past. */
-  | { type: 'attach'; sessionId: string; streamId: string; now: number; replay: boolean; serverStartedAt?: number | null | undefined; serverCompressionStartedAt?: number | null | undefined }
+  | { type: 'attach'; sessionId: string; streamId: string; now: number; replay: boolean; serverStartedAt?: number | null | undefined; serverCompressionStartedAt?: number | null | undefined; serverRunStatus?: RunStatus | null | undefined }
   | { type: 'connection'; sessionId: string; streamId: string; status: 'open' | 'error' | 'reconnecting' }
   | { type: 'event'; sessionId: string; streamId: string; event: ChatEvent; lastEventId: string; now: number }
   | { type: 'settle'; sessionId: string; streamId: string; session: Session | null }
@@ -121,7 +122,7 @@ export const initialStreamState: StreamState = { turns: {} }
 
 const TERMINAL: ReadonlySet<TurnStatus> = new Set(['done', 'error', 'cancelled'])
 /** A settled turn waits on nothing: its approval, clarification, connect card and compression go with it. */
-const NO_PROMPTS = { approval: null, clarify: null, connectCard: null, compressionStartedAt: null } as const
+const NO_PROMPTS = { approval: null, clarify: null, connectCard: null, compressionStartedAt: null, runStatus: null } as const
 
 /** The settled session a terminal frame carries, which replaces the live view with the server's scenes. */
 function sessionOf(data: unknown): Session | null {
@@ -144,7 +145,7 @@ function newTurn(sessionId: string, streamId: string, now: number, serverStarted
     sessionId, streamId, turnId: null, userMessageId: null, userText: '', userAttachments: [], startedAt: runStart(serverStartedAt, now, now), status: 'starting',
     segments: [], tools: {}, toolOrder: [], reasoningText: '', reasoningTitles: [], lastEventId: '', lastSeq: 0,
     usage: null, tps: null, contextStatus: null, warning: null, error: null, cancelledMessage: null, approval: null, clarify: null, connectCard: null,
-    pendingSteers: [], closedSteerIds: [], compressionStartedAt: null, rateLimitWait: null, title: null, doneSession: null, doneAt: null, streamEnded: false, goal: null, replayed: false, claimsPersistedRows: true,
+    pendingSteers: [], closedSteerIds: [], compressionStartedAt: null, rateLimitWait: null, runStatus: null, title: null, doneSession: null, doneAt: null, streamEnded: false, goal: null, replayed: false, claimsPersistedRows: true,
   }
 }
 
@@ -262,6 +263,8 @@ function reduceTurn(turn: LiveTurn, action: Extract<StreamAction, { type: 'event
       return terminal ? stamped : { ...stamped, compressionStartedAt: stamped.compressionStartedAt ?? runStart(event.data.started_at, now, now) }
     case 'compressed':
       return { ...stamped, compressionStartedAt: null }
+    case 'run_status':
+      return terminal ? stamped : { ...stamped, runStatus: event.data.status }
     case 'rate_limit_wait':
       return { ...stamped, rateLimitWait: event.data.wait }
     case 'title':
@@ -332,9 +335,11 @@ export function streamReducer(state: StreamState, action: StreamAction): StreamS
       const existing = state.turns[action.sessionId]
       const span = (known: number | null): number | null => known ?? (action.serverCompressionStartedAt ? runStart(action.serverCompressionStartedAt, action.now, action.now) : null)
       if (existing?.streamId === action.streamId && existing && !isTerminal(existing.status)) {
-        return { turns: { ...state.turns, [action.sessionId]: { ...existing, status: 'reconnecting', replayed: action.replay, startedAt: runStart(action.serverStartedAt, existing.startedAt, action.now), compressionStartedAt: span(existing.compressionStartedAt) } } }
+        // The retained cursor replays missed status frames; a cached session must not replace consumed frames.
+        const runStatus = (action.replay && existing.lastSeq > 0) || action.serverRunStatus === undefined ? existing.runStatus : action.serverRunStatus
+        return { turns: { ...state.turns, [action.sessionId]: { ...existing, status: 'reconnecting', replayed: action.replay, startedAt: runStart(action.serverStartedAt, existing.startedAt, action.now), compressionStartedAt: span(existing.compressionStartedAt), runStatus } } }
       }
-      return { turns: { ...state.turns, [action.sessionId]: { ...newTurn(action.sessionId, action.streamId, action.now, action.serverStartedAt), status: 'connecting', replayed: action.replay, claimsPersistedRows: action.replay, compressionStartedAt: span(null) } } }
+      return { turns: { ...state.turns, [action.sessionId]: { ...newTurn(action.sessionId, action.streamId, action.now, action.serverStartedAt), status: 'connecting', replayed: action.replay, claimsPersistedRows: action.replay, compressionStartedAt: span(null), runStatus: action.serverRunStatus ?? null } } }
     }
     case 'connection': {
       const turn = state.turns[action.sessionId]

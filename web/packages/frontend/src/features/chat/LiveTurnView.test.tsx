@@ -62,6 +62,54 @@ describe('live status', () => {
   })
 })
 
+describe('server-selected prompt reading (TAL-1058)', () => {
+  it('renders known and unknown progress in the existing accessible status, and clears terminal state', () => {
+    const run = liveRun()
+    const view = render(<LiveStatusPill turn={run.turn} />)
+    for (const progress_percent of [0, 42, 100, null]) {
+      run.emit({ event: 'run_status', data: { session_id: 's', status: { phase: 'prompt_reading', progress_percent } } })
+      view.rerender(<LiveStatusPill turn={run.turn} />)
+      expect(view.getByRole('status')).toHaveTextContent(progress_percent === null ? /^Reading prompt$/ : `Reading prompt · ${progress_percent}%`)
+      expect(view.container.querySelectorAll('.live-laurel')).toHaveLength(1)
+    }
+    run.emit({ event: 'run_status', data: { session_id: 's', status: { phase: 'compressing' } } })
+    view.rerender(<LiveStatusPill turn={run.turn} />)
+    expect(view.getByRole('status')).toHaveTextContent(/^Compressing context$/)
+    run.emit({ event: 'run_status', data: { session_id: 's', status: { phase: 'working' } } })
+    view.rerender(<LiveStatusPill turn={run.turn} />)
+    expect(view.getByRole('status')).toHaveTextContent('Working')
+    run.emit({ event: 'done', data: {} })
+    expect(run.turn.runStatus).toBeNull()
+    run.emit({ event: 'run_status', data: { session_id: 's', status: { phase: 'prompt_reading', progress_percent: 42 } } })
+    expect(run.turn.runStatus).toBeNull()
+  })
+
+  it('keeps newer server progress when a retained stream resumes from a cached session snapshot', () => {
+    const run = liveRun()
+    run.emit({ event: 'run_status', data: { session_id: 's', status: { phase: 'prompt_reading', progress_percent: 42 } } })
+    const cursor = run.turn.lastEventId
+    run.dispatch({ type: 'attach', sessionId: 's', streamId: 'run', now: 2, replay: true, serverRunStatus: { phase: 'prompt_reading', progress_percent: 0 } })
+    run.dispatch({ type: 'connection', sessionId: 's', streamId: 'run', status: 'open' })
+    const view = render(<LiveStatusPill turn={run.turn} />)
+    expect(view.getByRole('status')).toHaveTextContent('Reading prompt · 42%')
+    expect(run.turn.lastEventId).toBe(cursor)
+    run.emit({ event: 'run_status', data: { session_id: 's', status: { phase: 'working' } } })
+    view.rerender(<LiveStatusPill turn={run.turn} />)
+    expect(view.getByRole('status')).toHaveTextContent('Working')
+  })
+
+  it('attaches current server status without replay and replaces stale status, including explicit null', () => {
+    const run = liveRun()
+    run.dispatch({ type: 'attach', sessionId: 's', streamId: 'run', now: 1, replay: false, serverRunStatus: { phase: 'prompt_reading', progress_percent: 42 } })
+    expect(run.turn.runStatus).toEqual({ phase: 'prompt_reading', progress_percent: 42 })
+    run.dispatch({ type: 'attach', sessionId: 's', streamId: 'run', now: 2, replay: false, serverRunStatus: null })
+    expect(run.turn.runStatus).toBeNull()
+    run.emit({ event: 'run_status', data: { session_id: 's', status: { phase: 'prompt_reading', progress_percent: 42 } } })
+    run.dispatch({ type: 'attach', sessionId: 's', streamId: 'replacement', now: 3, replay: false })
+    expect(run.turn.runStatus).toBeNull()
+  })
+})
+
 describe('rate-limit wait (TAL-821)', () => {
   afterEach(() => { vi.useRealTimers() })
 

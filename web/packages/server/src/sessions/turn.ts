@@ -17,7 +17,7 @@ import type { StateDbRead } from './state-db.js'
 import { HttpFailure, markSessionTitleGenerated } from './service.js'
 import type { SessionEventBus } from './events.js'
 import { StreamRegistry, SessionChannels, type StreamChannel } from './streams.js'
-import { ChatUsageSchema, ConnectorOperationSnapshotSchema, type ClarifyAnswers, type PendingSteer, type SessionGoal, type SessionNotice, type SidecarResult, type SteerWithdrawn, type SteerWithdrawRequest, type SteerSendNowResponse } from '@maudecode/talaria-web-contracts'
+import { ChatUsageSchema, ConnectorOperationSnapshotSchema, type ProviderPhase, type RateLimitWait, type RunStatus, type ClarifyAnswers, type PendingSteer, type SessionGoal, type SessionNotice, type SidecarResult, type SteerWithdrawn, type SteerWithdrawRequest, type SteerSendNowResponse } from '@maudecode/talaria-web-contracts'
 import { catalogNames, connectorOperation } from '../tools/connectors.js'
 import { PendingPrompts, clarifyReply, isVaultPrompt, vaultReply } from './pending.js'
 import type { JournalEventMeta } from './storage/backend.js'
@@ -313,6 +313,8 @@ export class TurnRunner {
   private readonly liveUsage = new Map<string, UsageCounters>()
   /** TAL-397: each running turn's latest todo list, which an error or cancel keeps on the session. */
   private readonly liveTodos = new Map<string, Record<string, unknown>>()
+  /** The current presentation, scoped to its owning stream and released on every terminal path. */
+  private readonly runStatuses = new Map<string, RunStatus>()
   /** TAL-1006: each live stream's open compression span, by its start (epoch seconds). */
   private readonly compressionSpans = new Map<string, number>()
   /** Streams whose run completed (`done` emitted) and only await title work; a late cancel is a no-op for these. */
@@ -534,25 +536,45 @@ export class TurnRunner {
       deps.log(`[webui] WARNING: run journal degraded for stream ${streamId}: ${(error as Error).message}`)
     }
     const failure: TurnFailure = { apperror: null, cancelled: false }
-    // TAL-821: whether the run's rate-limit wait is showing; the next content frame clears it.
-    let rateLimitWait = false
+    let waitDetail: RateLimitWait | null = null
+    let providerPhase: ProviderPhase | null = null
+    let statusEnded = false
     // TAL-1006: the open compression span closes on the Agent's end of it, else on the next content frame.
     const closeCompression = async (createdAt?: number): Promise<void> => {
-      if (!this.compressionSpans.delete(streamId)) return
+      if (!this.compressionSpans.has(streamId)) return
       await put('compressed', { session_id: sessionId, message: 'Compression finished' }, createdAt === undefined ? {} : { createdAt })
     }
     const put = async (event: string, data: Record<string, unknown>, meta: JournalEventMeta = {}): Promise<void> => {
+      if (this.registry.cancelled.has(streamId) && !['cancel', 'apperror', 'steer_consumed', 'steer_withdrawn', 'run_status'].includes(event)) return
+      const terminal = ['done', 'cancel', 'apperror', 'error', 'stream_end'].includes(event)
+      if (terminal) statusEnded = true
+      if (CONTENT_EVENTS.has(event) || terminal) providerPhase = null
+      if (event === 'rate_limit_wait') waitDetail = data.wait as RateLimitWait | null
+      // Both pre-turn compaction and Agent callbacks publish through this boundary.
+      if (event === 'compressing' && !statusEnded) {
+        const startedAt = this.compressionSpans.get(streamId) ?? meta.createdAt ?? deps.now()
+        this.compressionSpans.set(streamId, startedAt)
+        data = { ...data, started_at: startedAt }
+      } else if (event === 'compressed') this.compressionSpans.delete(streamId)
       if (CONTENT_EVENTS.has(event)) {
-        if (rateLimitWait) {
-          rateLimitWait = false
+        if (waitDetail) {
           await put('rate_limit_wait', { session_id: sessionId, wait: null }, meta.createdAt === undefined ? {} : { createdAt: meta.createdAt })
         }
         await closeCompression(meta.createdAt)
       }
+      const status: RunStatus | null = event === 'run_status' ? data.status as RunStatus | null : statusEnded ? null : this.compressionSpans.has(streamId) ? { phase: 'compressing' }
+        : waitDetail ? { phase: 'rate_limit_wait', wait: waitDetail } : providerPhase ?? { phase: 'working' }
+      if (JSON.stringify(this.runStatuses.get(streamId) ?? null) !== JSON.stringify(status)) {
+        if (status) this.runStatuses.set(streamId, status)
+        else this.runStatuses.delete(streamId)
+        await put('run_status', { session_id: sessionId, status }, meta)
+      }
+      // The sidecar phase is private; only the selected status crosses the client boundary.
+      if (event === 'provider_phase') return
       if (event === 'apperror') failure.apperror = data
       else if (event === 'cancel') failure.cancelled = true
       for (const steerEvent of this.takeSteerEventsBefore(streamId, event)) (await put(steerEvent[0], steerEvent[1]))
-      if (this.registry.cancelled.has(streamId) && !['cancel', 'apperror', 'steer_consumed', 'steer_withdrawn'].includes(event)) return
+      if (this.registry.cancelled.has(streamId) && !['cancel', 'apperror', 'steer_consumed', 'steer_withdrawn', 'run_status'].includes(event)) return
       // `cancel()` already wrote the terminal row and closed the stream: the worker's unwind adds no second one.
       if (event === 'cancel' && !this.registry.streams.has(streamId)) {
         try { deps.onTerminal?.(streamId, 'cancelled') } catch { /* best effort */ }
@@ -813,11 +835,18 @@ export class TurnRunner {
                 if (head) (await emitFrame('clarify', head))
                 return
               }
+              case 'provider_phase': {
+                const phase = data.phase as Record<string, unknown> | null
+                if (phase !== null && phase?.phase !== 'prompt_reading') return
+                const percent = phase?.progress_percent
+                providerPhase = phase === null ? null : { phase: 'prompt_reading', progress_percent: typeof percent === 'number' && Number.isFinite(percent) ? Math.max(0, Math.min(100, percent)) : null }
+                await put('provider_phase', {}, { createdAt: receivedAt })
+                return
+              }
               // TAL-821: the Agent sits out a provider's rate limit (`until`, epoch seconds: its reset, else the Agent's retry).
               case 'rate_limit_wait': {
                 const until = typeof data.until === 'number' ? data.until : null
-                if (until === null && !rateLimitWait) return
-                rateLimitWait = until !== null
+                if (until === null && !waitDetail) return
                 const provider = str(data.provider) || null
                 await emitFrame('rate_limit_wait', { session_id: sessionId, wait: until === null ? null : { provider, provider_label: provider && (deps.providerLabel?.(s.profile ?? null, provider) ?? displayName(provider)), until, until_kind: data.until_kind === 'reset' ? 'reset' : 'retry' } })
                 return
@@ -828,12 +857,9 @@ export class TurnRunner {
                 if (snapshot.success) (await emitFrame('connect_card', connectorOperation(snapshot.data, catalogNames(deps.profileHome(s.profile)))))
                 return
               }
-              case 'compressing': {
-                const startedAt = this.compressionSpans.get(streamId) ?? receivedAt
-                this.compressionSpans.set(streamId, startedAt)
-                await emitFrame('compressing', { ...data, started_at: startedAt })
+              case 'compressing':
+                await emitFrame('compressing', data)
                 return
-              }
               case 'compression_finished':
                 await closeCompression(receivedAt)
                 return
@@ -1448,6 +1474,7 @@ export class TurnRunner {
   }
 
   private async teardown(sessionId: string, streamId: string): Promise<void> {
+    this.runStatuses.delete(streamId)
     this.liveUsage.delete(streamId)
     this.compressionSpans.delete(streamId)
     this.liveTodos.delete(streamId)
@@ -1740,6 +1767,8 @@ export class TurnRunner {
         channel.put([event, data, eventId])
       }
       for (const [event, data] of steerEvents) (await emit(event, data))
+      this.runStatuses.delete(streamId)
+      await emit('run_status', { session_id: sessionId, status: null })
       await emit('cancel', (await this.cancelFrame(sessionId)))
       this.registry.streams.delete(streamId)
       this.registry.liveIds.delete(streamId)
@@ -2002,6 +2031,10 @@ export class TurnRunner {
   private pendingSteerView(r: SteerRecord): PendingSteer {
     const open = r.state === 'pending'
     return { steer_id: r.steer_id, text: r.display_text, submitted_at: r.created_at, state: r.state, actions: { edit: open, cancel: open, send_now: open && r.can_redirect } }
+  }
+
+  runStatus(streamId: string): RunStatus | null {
+    return this.runStatuses.get(streamId) ?? null
   }
 
   /** TAL-1006: the start (epoch seconds) of the stream's open compression span, else null. */

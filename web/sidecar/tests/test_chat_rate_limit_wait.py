@@ -80,3 +80,24 @@ def test_stop_during_the_wait_ends_the_turn(monkeypatch) -> None:
     assert FakeAgent.instances[0].interrupts == [("Cancelled by user", True)]
     assert result["status"] == "cancelled", result
     assert [event for event, _data in ctx.frames if event == "rate_limit_wait"] == ["rate_limit_wait"]
+
+
+@pytest.mark.parametrize("lines, expected", [
+    (["⚙ processing prompt — 0%", "⚙ processing prompt — 42%", "⚙ processing prompt — 100%", ""], [0, 42, 100, None]),
+    (["⚙ processing prompt", "(｡◕‿◕｡) pondering..."], ["unknown", None]),
+    (["I am processing prompt — 42%", "42%", "thinking", "⚙ processing prompt — nope%"], []),
+])
+def test_prompt_reading_callback_progress_and_clear(monkeypatch, lines, expected):
+    _patch(monkeypatch)
+
+    def run_conversation(self, **kwargs):
+        for line in lines:
+            self.kwargs["thinking_callback"](line)
+        self.kwargs["stream_delta_callback"]("ok")
+        return {"final_response": "ok", "messages": [{"role": "assistant", "content": "ok"}]}
+
+    monkeypatch.setattr(FakeAgent, "run_conversation", run_conversation)
+    ctx = Ctx()
+    assert chat.start(ctx, _params("prompt-progress"))["status"] == "completed"
+    phases = [data["phase"] for event, data in ctx.frames if event == "provider_phase"]
+    assert phases == [None if value is None else {"phase": "prompt_reading", "progress_percent": None if value == "unknown" else value} for value in expected]

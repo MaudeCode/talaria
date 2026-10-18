@@ -1465,11 +1465,19 @@ def start(ctx: CallContext, params: dict) -> dict:  # noqa: PLR0915 - one turn, 
                 else:
                     emit("status", {"kind": "terminal_error", "message": text})
 
-        wait_state = {"active": False}
+        wait_state = {"active": False, "prompt": False}
 
         def on_thinking(text):
-            """TAL-821: a rate-limit wait on the Agent's live status line, cleared by the next line (its retry spinner)."""
-            wait = _rate_limit_wait(str(text or "").strip())
+            """Normalize provider waits and prompt-reading progress from the Agent's live status callback."""
+            line = str(text or "").strip()
+            progress = re.fullmatch(r"⚙ processing prompt(?: — (\d+(?:\.\d+)?)%)?", line)
+            if progress:
+                wait_state["prompt"] = True
+                emit("provider_phase", {"phase": {"phase": "prompt_reading", "progress_percent": min(100, float(progress[1])) if progress[1] else None}})
+            elif wait_state["prompt"]:
+                wait_state["prompt"] = False
+                emit("provider_phase", {"phase": None})
+            wait = _rate_limit_wait(line)
             if wait is not None:
                 wait_state["active"] = True
                 emit("rate_limit_wait", {"provider": str(getattr(run.agent, "provider", None) or resolved_provider or "") or None,

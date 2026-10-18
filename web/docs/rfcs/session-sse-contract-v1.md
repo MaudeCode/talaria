@@ -212,3 +212,20 @@ Indexed pages resolve off-page parent proof through the existing turn index;
 they never enumerate the cached transcript prefix for review state. The same
 projection precedes terminal payloads and every session window. Its
 persisted metadata is additive, and clients keep the explicit values in cache.
+
+### Provider prompt-reading status
+
+`run_status` carries `{session_id, status}`. The server selects `status.phase` in this order:
+`compressing`, `rate_limit_wait` (with the existing `wait` object), `prompt_reading`
+(with `progress_percent` from 0 through 100, or null when unknown), then `working`.
+Session detail and the journal stream's `session_snapshot` fallback include the same current
+`run_status` so an attach beyond earlier progress frames still shows the current phase.
+Older servers omit this additive field. A retained stream keeps its status with its consumed cursor;
+reattachment replays newer status frames instead of replacing them with an unversioned cached session.
+
+The sidecar recognizes the Agent's exact local prompt-progress status line and forwards
+`provider_phase`, including explicit null clears. Ordinary reasoning text is never progress.
+The ordered turn publisher normalizes percentages, journals status before publishing it,
+and clears provider progress on content, explicit clear, Stop, error, completion, or replacement.
+Terminal `run_status: null` cannot be reopened by post-turn title or metering events.
+Clients localize the selected phase and format the percentage without deciding precedence.

@@ -362,6 +362,7 @@ export async function createDeps(opts: CreateDepsOptions): Promise<AppDeps> {
       activeRunStream: (sid) => registry.activeRunStreamForSession(sid),
       journalDegraded: (streamId) => registry.degradedJournals.has(streamId),
       pendingSteers: (streamId: string): PendingSteer[] => turns.pendingSteers(streamId),
+      runStatus: (streamId: string) => turns.runStatus(streamId),
       compressionStartedAt: (streamId: string): number | null => turns.compressionStartedAt(streamId),
       automaticTurnsHeld: async (sid: string): Promise<boolean> => (await turns.automaticTurnsHeld(sid)),
       sessionNotices: (sid: string): SessionNotice[] => turns.sessionNotices(sid),

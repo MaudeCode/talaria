@@ -1,0 +1,50 @@
+{
+  "progress": {
+    "event": "run_status",
+    "data": {
+      "session_id": "synthetic-prompt-reading",
+      "status": {
+        "phase": "prompt_reading",
+        "progress_percent": 42
+      }
+    }
+  },
+  "unknown": {
+    "event": "run_status",
+    "data": {
+      "session_id": "synthetic-prompt-reading",
+      "status": {
+        "phase": "prompt_reading",
+        "progress_percent": null
+      }
+    }
+  },
+  "cleared": {
+    "event": "run_status",
+    "data": {
+      "session_id": "synthetic-prompt-reading",
+      "status": null
+    }
+  },
+  "session": {
+    "session_id": "synthetic-prompt-reading",
+    "active_stream_id": "synthetic-run",
+    "run_status": {
+      "phase": "prompt_reading",
+      "progress_percent": 42
+    },
+    "messages": [],
+    "title": "Local model",
+    "is_streaming": true,
+    "source_kind": "webui",
+    "is_messaging_session": false,
+    "sort_ts": 1800000000,
+    "read_only": false,
+    "read_only_reason": null,
+    "can_branch": true,
+    "can_pin": true,
+    "can_archive": true,
+    "can_delete": true,
+    "can_duplicate": true
+  }
+}
