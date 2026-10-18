@@ -9,6 +9,7 @@ test('prompt-reading progress uses the existing status and survives a cold attac
   const streamId = `${sid}-run`
   let stream = null as ServerResponse | null
   let status: unknown = { phase: 'working' }
+  let snapshotStatus: unknown
   let seq = 0
   const send = (value: unknown) => {
     status = value
@@ -22,7 +23,10 @@ test('prompt-reading progress uses the existing status and survives a cold attac
   await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve))
   const address = server.address()
   if (!address || typeof address === 'string') throw new Error('Missing fixture port')
-  await page.route('**/api/session?**', (route) => route.fulfill({ json: { session: { session_id: sid, title: 'Local model', messages: [{ role: 'user', id: 1, content: 'Summarize the release notes' }], active_stream_id: stopped ? null : streamId, is_streaming: !stopped, run_status: status } } }))
+  await page.route('**/api/session?**', (route) => {
+    const requestedSid = new URL(route.request().url()).searchParams.get('session_id') ?? sid
+    return route.fulfill({ json: { session: { session_id: requestedSid, title: 'Local model', messages: [{ role: 'user', id: 1, content: 'Summarize the release notes' }], active_stream_id: stopped || requestedSid !== sid ? null : streamId, is_streaming: !stopped && requestedSid === sid, run_status: snapshotStatus ?? status } } })
+  })
   await page.route('**/api/chat/stream/status?**', (route) => route.fulfill({ json: { active: !stopped, blocking_stream_id: null, stream_id: streamId, replay_available: false } }))
   await page.route('**/api/chat/stream?**', (route) => route.continue({ url: `http://127.0.0.1:${String(address.port)}${new URL(route.request().url()).search}` }))
   let stopped = false
@@ -52,6 +56,20 @@ test('prompt-reading progress uses the existing status and survives a cold attac
       await expect(page.locator('#btnStop')).toBeVisible()
       if (progress_percent === 42) await shot('after')
     }
+    send({ phase: 'prompt_reading', progress_percent: 42 })
+    await expect(pill).toHaveText('Reading prompt · 42%')
+    // Returning with a retained SSE cursor must preserve progress newer than the cached HTTP snapshot.
+    snapshotStatus = { phase: 'prompt_reading', progress_percent: 0 }
+    const previousStream = stream
+    for (const next of ['prompt-idle', sid]) {
+      await page.evaluate((path) => { history.pushState({}, '', path); dispatchEvent(new PopStateEvent('popstate')) }, `/session/${next}`)
+      await expect(page).toHaveURL(new RegExp(`/session/${next}$`))
+      if (next !== sid) await expect(pill).toHaveCount(0)
+    }
+    await expect(pill).toHaveText('Reading prompt · 42%')
+    await expect.poll(() => stream !== previousStream).toBe(true)
+    await shot('retained')
+    snapshotStatus = undefined
     send({ phase: 'compressing' })
     await expect(pill).toHaveText('Compressing context')
     send({ phase: 'prompt_reading', progress_percent: 42 })

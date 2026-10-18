@@ -335,7 +335,9 @@ export function streamReducer(state: StreamState, action: StreamAction): StreamS
       const existing = state.turns[action.sessionId]
       const span = (known: number | null): number | null => known ?? (action.serverCompressionStartedAt ? runStart(action.serverCompressionStartedAt, action.now, action.now) : null)
       if (existing?.streamId === action.streamId && existing && !isTerminal(existing.status)) {
-        return { turns: { ...state.turns, [action.sessionId]: { ...existing, status: 'reconnecting', replayed: action.replay, startedAt: runStart(action.serverStartedAt, existing.startedAt, action.now), compressionStartedAt: span(existing.compressionStartedAt), runStatus: action.serverRunStatus === undefined ? existing.runStatus : action.serverRunStatus } } }
+        // The retained cursor replays missed status frames; a cached session must not replace consumed frames.
+        const runStatus = (action.replay && existing.lastSeq > 0) || action.serverRunStatus === undefined ? existing.runStatus : action.serverRunStatus
+        return { turns: { ...state.turns, [action.sessionId]: { ...existing, status: 'reconnecting', replayed: action.replay, startedAt: runStart(action.serverStartedAt, existing.startedAt, action.now), compressionStartedAt: span(existing.compressionStartedAt), runStatus } } }
       }
       return { turns: { ...state.turns, [action.sessionId]: { ...newTurn(action.sessionId, action.streamId, action.now, action.serverStartedAt), status: 'connecting', replayed: action.replay, claimsPersistedRows: action.replay, compressionStartedAt: span(null), runStatus: action.serverRunStatus ?? null } } }
     }

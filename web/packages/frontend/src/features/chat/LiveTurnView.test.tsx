@@ -84,6 +84,20 @@ describe('server-selected prompt reading (TAL-1058)', () => {
     expect(run.turn.runStatus).toBeNull()
   })
 
+  it('keeps newer server progress when a retained stream resumes from a cached session snapshot', () => {
+    const run = liveRun()
+    run.emit({ event: 'run_status', data: { session_id: 's', status: { phase: 'prompt_reading', progress_percent: 42 } } })
+    const cursor = run.turn.lastEventId
+    run.dispatch({ type: 'attach', sessionId: 's', streamId: 'run', now: 2, replay: true, serverRunStatus: { phase: 'prompt_reading', progress_percent: 0 } })
+    run.dispatch({ type: 'connection', sessionId: 's', streamId: 'run', status: 'open' })
+    const view = render(<LiveStatusPill turn={run.turn} />)
+    expect(view.getByRole('status')).toHaveTextContent('Reading prompt · 42%')
+    expect(run.turn.lastEventId).toBe(cursor)
+    run.emit({ event: 'run_status', data: { session_id: 's', status: { phase: 'working' } } })
+    view.rerender(<LiveStatusPill turn={run.turn} />)
+    expect(view.getByRole('status')).toHaveTextContent('Working')
+  })
+
   it('attaches current server status without replay and replaces stale status, including explicit null', () => {
     const run = liveRun()
     run.dispatch({ type: 'attach', sessionId: 's', streamId: 'run', now: 1, replay: false, serverRunStatus: { phase: 'prompt_reading', progress_percent: 42 } })
