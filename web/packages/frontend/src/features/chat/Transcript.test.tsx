@@ -1,5 +1,5 @@
 import { beforeEach, expect, it, vi } from 'vitest'
-import { render, screen } from '@testing-library/react'
+import { act, fireEvent, render, screen } from '@testing-library/react'
 import { Transcript, type TranscriptProps } from './Transcript'
 import { dispatch, getStreamState, resetStreamStoreForTests } from '../../stream/store'
 import { sessionFixture } from '../../test/fixtures'
@@ -31,4 +31,41 @@ it('a terminal snapshot that beats admission replaces the pending row by server 
   dispatch({ type: 'start', sessionId: 's1', streamId: 'files', turnId: 'files-turn', userMessageId: '4', userText: '', userAttachments: [{ filename: 'accepted.txt', path: '/synthetic/accepted.txt' }], now: 3 })
   view.rerender(<Transcript {...props} live={getStreamState().turns.s1!} pendingUserText={undefined} />)
   expect(document.querySelector('[data-live-user]')).toHaveTextContent('accepted.txt')
+})
+
+it('preserves the visible row offset when terminal excerpts shrink an earlier reply (TAL-1114)', () => {
+  let resized: ResizeObserverCallback = () => undefined
+  globalThis.ResizeObserver = class {
+    constructor(private callback: ResizeObserverCallback) {}
+    observe = (element: Element) => { if (element.id === 'msgInner') resized = this.callback }
+    disconnect = vi.fn(); unobserve = vi.fn()
+  }
+  const props: TranscriptProps = {
+    rows: [{ index: 0, key: 'a', message: { role: 'assistant', message_id: 'a', content: 'A'.repeat(6000), _turn_id: 'A' } },
+      { index: 1, key: 'anchor', message: { role: 'user', message_id: 'anchor', content: 'Visible anchor', _turn_id: 'B' } }],
+    live: null, assistantName: 'Hermes', mode: 'compact_worklog', renderUserMarkdown: false, autoFollow: true, sessionId: 's1', actions: {}, tts: false,
+    truncated: false, loadedFrom: 0, onLoadOlder: vi.fn(), loadingOlder: false, emptyState: null, showJumpButtons: false, virtualizeLongTranscripts: false,
+  }
+  const view = render(<Transcript {...props} />), pane = view.container.querySelector<HTMLElement>('#messages')!
+  Object.defineProperties(pane, { scrollHeight: { configurable: true, value: 8000 }, clientHeight: { value: 600 } })
+  pane.getBoundingClientRect = () => ({ top: 0, bottom: 600 } as DOMRect)
+  let rowY = 80
+  const anchor = view.container.querySelector<HTMLElement>('[data-message-key="anchor"]')!
+  anchor.getBoundingClientRect = () => ({ top: rowY, bottom: rowY + 100 } as DOMRect)
+  const a = view.container.querySelector<HTMLElement>('[data-message-key="a"]')!
+  a.getBoundingClientRect = () => ({ top: -2000, bottom: 50 } as DOMRect)
+  pane.scrollTop = 7400
+  fireEvent.scroll(pane)
+  pane.scrollTop = 4000
+  fireEvent.scroll(pane)
+  const collapsed = { ...props.rows[0]!, message: { ...props.rows[0]!.message, _display_truncated: true, _display_excerpt: 'A'.repeat(3000) } }
+  view.rerender(<Transcript {...props} rows={[collapsed, props.rows[1]!]} />)
+  rowY -= 1200
+  act(() => resized([], {} as ResizeObserver))
+  expect(pane.scrollTop).toBe(2800)
+  // A late authoritative reconciliation with identical metadata is stationary too.
+  rowY = 80
+  view.rerender(<Transcript {...props} rows={[{ ...collapsed }, { ...props.rows[1]! }]} />)
+  act(() => resized([], {} as ResizeObserver))
+  expect(pane.scrollTop).toBe(2800)
 })

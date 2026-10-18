@@ -3,7 +3,7 @@ import { createHash } from 'node:crypto'
 import { str } from '../util.js'
 import { assistantAnchorSceneMessageRef, messageTurnId } from './anchor.js'
 import { anchorMessageKey, isAnchorCandidate, keyMatches, type CompressionReference } from './compress.js'
-import { agentSteerText, ApiMessageSummary, isContextCompressionMarker, messageText, normalizeAssistantDisplay, normalizeUserDisplay, withAttachmentObjects } from './merge.js'
+import { isConversationalAssistant, agentSteerText, ApiMessageSummary, isContextCompressionMarker, messageText, normalizeAssistantDisplay, normalizeUserDisplay, withAttachmentObjects } from './merge.js'
 import { isEmptyPartialActivityMessage, messageTimestamp, type Message, type Session } from './session.js'
 import { messageTodoSnapshot, tsFloat } from './todo.js'
 import { stateDbIdentityKeys, stateDbMessageKey } from './state-db-identity.js'
@@ -19,6 +19,7 @@ const upperBound = (rows: number[], value: number): number => {
 // ponytail: one in-memory pass per file revision; persist this index only if cold JSON loads become a bottleneck.
 export class SessionPrefixIndex {
   readonly turnStarts: number[] = []
+  private readonly replyRows: number[] = []
   readonly dependencies = new Map<string, { first: number; last: number }>()
   private readonly declarations = new Map<string, number[]>()
   readonly turns = new Map<string, { first: number; last: number }>()
@@ -108,6 +109,7 @@ export class SessionPrefixIndex {
       const steer = agentSteerText(raw)
       const projected = steer === null ? raw : { ...raw, content: steer }
       const display = normalizeUserDisplay(normalizeAssistantDisplay(withAttachmentObjects([projected])[0]!))
+      if (isConversationalAssistant(display)) this.replyRows.push(index)
       const normalized = display.role === 'assistant' && this.calls.has(index) && (!Array.isArray(display.tool_calls) || !display.tool_calls.length) ? { ...display, tool_calls: this.calls.get(index) } : display
       if (isContextCompressionMarker(normalized)) this.markerSummaries.push({ index, text: messageText(normalized.content).split(/\s+/).join(' ').trim() })
       if (isAnchorCandidate(normalized)) {
@@ -146,6 +148,16 @@ export class SessionPrefixIndex {
   turnEnd(index: number): number { return (this.turns.get(this.turnId(index))?.last ?? index) + 1 }
   previousTurn(index: number): number { return this.turnStarts[Math.max(0, upperBound(this.turnStarts, index - 1) - 1)] ?? this.baseIndex }
   summary(end = this.baseIndex + this.length): Snapshot { return this.snapshots[Math.max(0, Math.min(this.length, end - this.baseIndex))]! }
+
+  /** One candidate per turn, newest first, without reading or deriving the cached prefix. */
+  *replyTurns(end: number, excluded: Set<string>): Generator<number> {
+    for (let i = upperBound(this.replyRows, end - 1) - 1; i >= 0; i -= 1) {
+      const at = this.replyRows[i]!, turn = this.turnId(at)
+      if (excluded.has(turn)) continue
+      excluded.add(turn)
+      yield at
+    }
+  }
 
   compressionReference(s: Session, end: number, tail: SessionPrefixIndex): CompressionReference | null {
     const text = str(s.compression_anchor_summary).split(/\s+/).join(' ').trim()

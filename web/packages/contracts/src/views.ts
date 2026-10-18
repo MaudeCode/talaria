@@ -130,8 +130,8 @@ export type TurnTerminalState = z.infer<typeof TurnTerminalStateSchema>
 
 export const ActivitySceneSchema = z.looseObject({
   version: z.literal('activity_scene_v1'), activity_rows: z.array(ActivitySceneRowSchema), final_answer: z.string().optional(),
-  /** TAL-456: a settled final answer too long to lay out whole; clients render it collapsed, with a local "Show more". */
-  final_answer_excerpt: z.string().optional(), turn_duration: z.number().nullable().optional(),
+  /** TAL-456: an older settled final answer too long to lay out whole. Absent on the session-global newest settled visible reply and throughout the next running turn. Clients render the excerpt with a local "Show more". */
+  final_answer_excerpt: z.string().optional().describe("Collapsed preview of an older settled final answer. Absent on the session-global newest visible reply; its exemption transfers only when a newer visible reply settles."), turn_duration: z.number().nullable().optional(),
   /** TAL-186: `final_answer` with its media references rewritten for display (see `_display_content`), and its media. */
   final_answer_display: z.string().optional(), final_answer_media: z.array(DisplayMediaSchema).optional(),
   terminal_state: z.string().optional().describe('The turn\'s outcome: a `TurnTerminalState` (`completed`, `no_response`, `error`, `cancelled`, `interrupted`, `tool_limit_reached`, ...), or `running` for the running turn of a run with no journal to replay (TAL-374). A running scene holds every persisted row (no final answer) and renders open, with no "Worked" fold or outcome; the live rows streamed after attach continue it, and the settled scene replaces both.'),
@@ -185,9 +185,9 @@ export const MessageSchema = z.looseObject({
   _steer: z.looseObject({ steer_id: z.string(), submitted_at: z.number().nullable().optional(), consumed_at: z.number().optional(), phase_duration: z.number().optional() }).optional(),
   /** On a steered turn's last reply: seconds from the last consumed steer to the turn's end. */
   _final_phase_duration: z.number().optional(),
-  /** A settled body too long to lay out whole: clients render `_display_excerpt` collapsed, with a local "Show more" for `content`. */
-  _display_truncated: z.boolean().optional(),
-  _display_excerpt: z.string().optional(),
+  /** A settled body too long to lay out whole. The session-global newest settled visible assistant reply and running output carry no excerpt. Only a newer visible terminal answer transfers that exemption. Clients render `_display_excerpt` with a local "Show more" for full `content`. */
+  _display_truncated: z.boolean().optional().describe("Whether this settled body has a collapsed preview. The newest settled visible assistant reply and active-turn output remain full."),
+  _display_excerpt: z.string().optional().describe("Collapsed preview with full content retained. The newest settled visible assistant reply remains exempt throughout the next running turn, until a newer visible reply settles."),
   /**
    * TAL-452: a typed user message (never a steer, background update or marker) longer than 20 lines or 2,000
    * characters. Clients show it folded to a few lines with a local "Show more"; copy and edit use the whole `content`.

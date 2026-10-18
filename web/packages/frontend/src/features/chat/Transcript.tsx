@@ -94,6 +94,20 @@ export function Transcript(props: TranscriptProps) {
   useEffect(() => { if (streaming) settlingRef.current = false }, [streaming])
   const lastTopRef = useRef(0)
 
+  const readerAnchor = useRef<{ key: string; top: number } | null>(null)
+  const rememberReaderAnchor = useCallback(() => {
+    const pane = scrollRef.current
+    if (!pane) return
+    const bounds = pane.getBoundingClientRect()
+    const visible = [...pane.querySelectorAll<HTMLElement>('[data-message-key]')].filter((row) => {
+      const rect = row.getBoundingClientRect()
+      return rect.bottom > bounds.top && rect.top < bounds.bottom
+    })
+    const row = visible.find((row) => row.getBoundingClientRect().top >= bounds.top) ?? visible[0]
+    const key = row?.dataset.messageKey
+    readerAnchor.current = row && key ? { key, top: row.getBoundingClientRect().top - bounds.top } : null
+  }, [])
+
   // A hand scroll (wheel or touch) of a transcript taller than its pane asks the composer to rest; programmatic
   // follow and entry jumps never do. Overflow comes from the resize observer below, so a wheel tick reads no layout.
   const overflowsRef = useRef(false)
@@ -107,9 +121,10 @@ export function Transcript(props: TranscriptProps) {
     if (distance < 80) pin(true)
     else if (!followsRef.current() || el.scrollTop < lastTopRef.current) { pin(false); settlingRef.current = false }
     lastTopRef.current = el.scrollTop
+    rememberReaderAnchor()
     setAtTop(el.scrollTop < 40)
     if (el.scrollTop < 40 && truncated && !loadingOlder) onLoadOlder()
-  }, [pin, truncated, loadingOlder, onLoadOlder])
+  }, [pin, truncated, loadingOlder, onLoadOlder, rememberReaderAnchor])
 
   const scrollToBottom = useCallback((smooth = false) => {
     const el = scrollRef.current
@@ -130,7 +145,18 @@ export function Transcript(props: TranscriptProps) {
     const inner = innerRef.current
     const pane = scrollRef.current
     if (!inner || !pane) return
-    const follow = () => { if (followsRef.current()) scrollToBottom(false) }
+    const follow = () => {
+      if (followsRef.current()) scrollToBottom(false)
+      else if (!virtualize && readerAnchor.current) {
+        const anchor = readerAnchor.current
+        const row = pane.querySelector<HTMLElement>(`[data-message-key="${CSS.escape(anchor.key)}"]`)
+        if (row) {
+          pane.scrollTop += row.getBoundingClientRect().top - pane.getBoundingClientRect().top - anchor.top
+          lastTopRef.current = pane.scrollTop
+        }
+      }
+      rememberReaderAnchor()
+    }
     follow()
     if (typeof ResizeObserver === 'undefined') return
     // Layout is settled inside the observer callback, so reading the pane's overflow here costs nothing extra.
@@ -138,7 +164,7 @@ export function Transcript(props: TranscriptProps) {
     observer.observe(inner)
     observer.observe(pane)
     return () => { observer.disconnect(); overflowsRef.current = false }
-  }, [empty, scope, scrollToBottom])
+  }, [empty, scope, scrollToBottom, virtualize, rememberReaderAnchor])
 
   // A submit returns to the end wherever the reader was, and the next layout follows it there (T3 Code's scrollToEnd).
   useEffect(() => onScrollRequest('end', () => { settlingRef.current = true; scrollToBottom(false) }), [scrollToBottom])
@@ -162,7 +188,7 @@ export function Transcript(props: TranscriptProps) {
 
   // Entry is keyed by the session scope (and a `?msg=` link), never by row keys: sessions can share them, and older rows change the first.
   const entryRef = useRef<{ focus: string | undefined; pagedAt?: number } | null>(null)
-  useLayoutEffect(() => { entryRef.current = { focus: focusKey }; settlingRef.current = true; lastTopRef.current = 0; pin(true) }, [scope, focusKey, pin])
+  useLayoutEffect(() => { readerAnchor.current = null; entryRef.current = { focus: focusKey }; settlingRef.current = true; lastTopRef.current = 0; pin(true) }, [scope, focusKey, pin])
   useLayoutEffect(() => {
     const entry = entryRef.current
     if (!entry || rows.length === 0) return

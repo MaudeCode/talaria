@@ -405,3 +405,63 @@ it('keeps parent review proof outside a page without enumerating the cached pref
     expect(prefixEnumerations, 'cached pages must not scan the complete session for review proof').toBe(0)
   } finally { await server.close() }
 })
+
+it('keeps one global newest answer across indexed pages, appended state.db tails and saved prefix extension (TAL-1114)', async () => {
+  const server = await bootTestServer(), db = new DatabaseSync(join(server.state, 'state.db'))
+  try {
+    const sid = 'range-newest-reply'
+    db.exec('CREATE TABLE sessions (id TEXT PRIMARY KEY, source TEXT); CREATE TABLE messages (id INTEGER PRIMARY KEY, session_id TEXT, role TEXT, content TEXT, timestamp REAL); CREATE INDEX idx_messages_session ON messages(session_id)')
+    db.prepare('INSERT INTO sessions VALUES (?, ?)').run(sid, 'webui')
+    const rows = [
+      { role: 'user', content: 'first', timestamp: 1 }, { role: 'assistant', content: 'a'.repeat(6000), timestamp: 2 },
+      { role: 'user', content: 'second', timestamp: 3 }, { role: 'assistant', content: 'b'.repeat(7000), timestamp: 4 },
+      { role: 'user', content: 'trailing prompt', timestamp: 5 },
+    ]
+    const insert = db.prepare('INSERT INTO messages VALUES (?, ?, ?, ?, ?)')
+    rows.forEach((row, i) => insert.run(i + 1, sid, row.role, row.content, row.timestamp))
+    const session = new Session({ session_id: sid, messages: rows }, { workspace: server.state, model: null })
+    server.deps.sessions.markStateDbSeen(session)
+    await server.deps.sessionStore.save(session)
+    const check = async (latest: string) => {
+      for (const query of [{}, { msg_limit: '1' }, { msg_limit: '2' }, { msg_limit: '2', msg_before: '2' }, { msg_limit: '2', msg_before: '4' }]) {
+        const detail = await server.deps.sessions.detail(sid, query)
+        for (const row of detail.messages as Record<string, unknown>[]) {
+          if (row.role !== 'assistant') continue
+          expect(row._display_truncated).toBe(row.content === latest ? undefined : true)
+          expect((row._anchor_activity_scene as Record<string, unknown>).final_answer_excerpt).toBe(row.content === latest ? undefined : String(row.content).slice(0, 3000))
+        }
+      }
+    }
+    await check(rows[3]!.content)
+    const prefix = session.prefixIndex
+    insert.run(6, sid, 'assistant', 'c'.repeat(8000), 6)
+    await check('c'.repeat(8000))
+    expect(session.prefixIndex).toBe(prefix)
+    session.messages.push({ role: 'assistant', content: 'c'.repeat(8000), timestamp: 6 })
+    server.deps.sessions.markStateDbSeen(session)
+    session.messages.push({ role: 'user', content: 'third', timestamp: 7 }, { role: 'assistant', content: 'd'.repeat(9000), timestamp: 8 })
+    await server.deps.sessionStore.save(session)
+    await check('d'.repeat(9000))
+    expect(session.prefixIndex).toBe(prefix)
+  } finally { db.close(); await server.close() }
+})
+
+it('does not publish an unfinished newest-reply cache entry to concurrent page reads (TAL-1114)', async () => {
+  const server = await bootTestServer()
+  let release: () => void = () => undefined
+  try {
+    const session = new Session({ session_id: 'range-concurrent-reply', messages: [{ role: 'user', content: 'question' }, { role: 'assistant', content: 'a'.repeat(6000) }] }, { workspace: server.state, model: null })
+    await server.deps.sessionStore.save(session)
+    const original = server.deps.sessions.backgroundLinked.bind(server.deps.sessions)
+    let entered: () => void = () => undefined
+    const ready = new Promise<void>((resolve) => { entered = resolve })
+    const held = new Promise<void>((resolve) => { release = resolve })
+    vi.spyOn(server.deps.sessions, 'backgroundLinked').mockImplementationOnce(async (...args) => { entered(); await held; return original(...args) })
+    const first = server.deps.sessions.detail(session.session_id, { msg_limit: '2' })
+    await ready
+    try {
+      const second = await server.deps.sessions.detail(session.session_id, { msg_limit: '2' })
+      expect((second.messages as Record<string, unknown>[]).at(-1)).not.toHaveProperty('_display_excerpt')
+    } finally { release(); await first }
+  } finally { release(); vi.restoreAllMocks(); await server.close() }
+})

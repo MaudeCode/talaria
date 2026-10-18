@@ -611,7 +611,8 @@ final class SharedContractTests: XCTestCase {
         let decoder = JSONDecoder()
         decoder.keyDecodingStrategy = .convertFromSnakeCase
         let messages = try decoder.decode([ChatMessage].self, from: JSONSerialization.data(withJSONObject: example["messages"] ?? []))
-        XCTAssertEqual(messages.map { $0.displayExcerpt != nil }, [true, true, false, false])
+        XCTAssertEqual(messages.prefix(4).map { $0.displayExcerpt != nil }, [true, true, false, false])
+        XCTAssertTrue(messages.dropFirst(4).allSatisfy { $0.displayExcerpt == nil })
         for message in messages {
             if let excerpt = message.displayExcerpt {
                 XCTAssertLessThan(excerpt.count, message.content?.count ?? 0)
@@ -620,6 +621,13 @@ final class SharedContractTests: XCTestCase {
         }
         let reply = try XCTUnwrap(messages.first { $0.messageId == "long-body-reply" })
         XCTAssertEqual(reply.activityScene?.finalAnswerExcerpt, reply.displayExcerpt)
+        // Retained Web releases have the original four-row fixture.
+        if let newest = messages.first(where: { $0.messageId == "newest-body-reply" }) {
+            XCTAssertGreaterThan(newest.content?.count ?? 0, 3000)
+            XCTAssertNil(newest.displayExcerpt)
+            XCTAssertNil(newest.activityScene?.finalAnswerExcerpt)
+            XCTAssertEqual(MessageActionContext(message: newest, visibleIndex: 5, messagesOffset: nil)?.copyText, newest.content)
+        }
         XCTAssertNil(messages.first { $0.messageId == "short-body-reply" }?.activityScene?.finalAnswerExcerpt)
     }
 

@@ -119,6 +119,8 @@ contract suite, and `relay/tests/sharedContracts.test.ts` consume the same root
 fixtures. They exercise Web publication, signed Relay HTTP ingestion, native
 registration, aggregate responses, and Activity Scene decoding.
 
+Long reply excerpts use the same optional message and scene fields in both clients. The server keeps the session-global newest settled visible answer full throughout the next running turn. A newer visible terminal answer transfers that exemption; older long replies regain their excerpts. `merge.test.ts`, `chat.test.ts`, and `range.test.ts` cover lifecycle, terminal/detail parity, state.db tails, concurrent reads and indexed pages. The shared `long_body_session` fixture covers an older collapsed reply and a newer full Markdown reply in native decoding/cache and Web presentation. Hosted App and browser transcript tests check reader anchoring and bottom-follow through settlement and late reconciliation.
+
 ## Clarification batches
 
 Current Web servers provide ordered `steps` containing `qid`, `question`, `choices`,

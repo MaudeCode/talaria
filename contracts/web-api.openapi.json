@@ -3768,7 +3768,8 @@
                                     "type": "string"
                                   },
                                   "final_answer_excerpt": {
-                                    "type": "string"
+                                    "type": "string",
+                                    "description": "Collapsed preview of an older settled final answer. Absent on the session-global newest visible reply; its exemption transfers only when a newer visible reply settles."
                                   },
                                   "turn_duration": {
                                     "anyOf": [
@@ -3935,10 +3936,12 @@
                                 "type": "number"
                               },
                               "_display_truncated": {
-                                "type": "boolean"
+                                "type": "boolean",
+                                "description": "Whether this settled body has a collapsed preview. The newest settled visible assistant reply and active-turn output remain full."
                               },
                               "_display_excerpt": {
-                                "type": "string"
+                                "type": "string",
+                                "description": "Collapsed preview with full content retained. The newest settled visible assistant reply remains exempt throughout the next running turn, until a newer visible reply settles."
                               },
                               "_collapsible": {
                                 "type": "boolean"
@@ -6323,7 +6326,8 @@
                                     "type": "string"
                                   },
                                   "final_answer_excerpt": {
-                                    "type": "string"
+                                    "type": "string",
+                                    "description": "Collapsed preview of an older settled final answer. Absent on the session-global newest visible reply; its exemption transfers only when a newer visible reply settles."
                                   },
                                   "turn_duration": {
                                     "anyOf": [
@@ -6490,10 +6494,12 @@
                                 "type": "number"
                               },
                               "_display_truncated": {
-                                "type": "boolean"
+                                "type": "boolean",
+                                "description": "Whether this settled body has a collapsed preview. The newest settled visible assistant reply and active-turn output remain full."
                               },
                               "_display_excerpt": {
-                                "type": "string"
+                                "type": "string",
+                                "description": "Collapsed preview with full content retained. The newest settled visible assistant reply remains exempt throughout the next running turn, until a newer visible reply settles."
                               },
                               "_collapsible": {
                                 "type": "boolean"
@@ -8613,7 +8619,8 @@
                                     "type": "string"
                                   },
                                   "final_answer_excerpt": {
-                                    "type": "string"
+                                    "type": "string",
+                                    "description": "Collapsed preview of an older settled final answer. Absent on the session-global newest visible reply; its exemption transfers only when a newer visible reply settles."
                                   },
                                   "turn_duration": {
                                     "anyOf": [
@@ -8780,10 +8787,12 @@
                                 "type": "number"
                               },
                               "_display_truncated": {
-                                "type": "boolean"
+                                "type": "boolean",
+                                "description": "Whether this settled body has a collapsed preview. The newest settled visible assistant reply and active-turn output remain full."
                               },
                               "_display_excerpt": {
-                                "type": "string"
+                                "type": "string",
+                                "description": "Collapsed preview with full content retained. The newest settled visible assistant reply remains exempt throughout the next running turn, until a newer visible reply settles."
                               },
                               "_collapsible": {
                                 "type": "boolean"
@@ -12135,7 +12144,8 @@
                                     "type": "string"
                                   },
                                   "final_answer_excerpt": {
-                                    "type": "string"
+                                    "type": "string",
+                                    "description": "Collapsed preview of an older settled final answer. Absent on the session-global newest visible reply; its exemption transfers only when a newer visible reply settles."
                                   },
                                   "turn_duration": {
                                     "anyOf": [
@@ -12302,10 +12312,12 @@
                                 "type": "number"
                               },
                               "_display_truncated": {
-                                "type": "boolean"
+                                "type": "boolean",
+                                "description": "Whether this settled body has a collapsed preview. The newest settled visible assistant reply and active-turn output remain full."
                               },
                               "_display_excerpt": {
-                                "type": "string"
+                                "type": "string",
+                                "description": "Collapsed preview with full content retained. The newest settled visible assistant reply remains exempt throughout the next running turn, until a newer visible reply settles."
                               },
                               "_collapsible": {
                                 "type": "boolean"
@@ -15521,7 +15533,8 @@
                                     "type": "string"
                                   },
                                   "final_answer_excerpt": {
-                                    "type": "string"
+                                    "type": "string",
+                                    "description": "Collapsed preview of an older settled final answer. Absent on the session-global newest visible reply; its exemption transfers only when a newer visible reply settles."
                                   },
                                   "turn_duration": {
                                     "anyOf": [
@@ -15688,10 +15701,12 @@
                                 "type": "number"
                               },
                               "_display_truncated": {
-                                "type": "boolean"
+                                "type": "boolean",
+                                "description": "Whether this settled body has a collapsed preview. The newest settled visible assistant reply and active-turn output remain full."
                               },
                               "_display_excerpt": {
-                                "type": "string"
+                                "type": "string",
+                                "description": "Collapsed preview with full content retained. The newest settled visible assistant reply remains exempt throughout the next running turn, until a newer visible reply settles."
                               },
                               "_collapsible": {
                                 "type": "boolean"
@@ -19570,7 +19585,8 @@
                                     "type": "string"
                                   },
                                   "final_answer_excerpt": {
-                                    "type": "string"
+                                    "type": "string",
+                                    "description": "Collapsed preview of an older settled final answer. Absent on the session-global newest visible reply; its exemption transfers only when a newer visible reply settles."
                                   },
                                   "turn_duration": {
                                     "anyOf": [
@@ -19737,10 +19753,12 @@
                                 "type": "number"
                               },
                               "_display_truncated": {
-                                "type": "boolean"
+                                "type": "boolean",
+                                "description": "Whether this settled body has a collapsed preview. The newest settled visible assistant reply and active-turn output remain full."
                               },
                               "_display_excerpt": {
-                                "type": "string"
+                                "type": "string",
+                                "description": "Collapsed preview with full content retained. The newest settled visible assistant reply remains exempt throughout the next running turn, until a newer visible reply settles."
                               },
                               "_collapsible": {
                                 "type": "boolean"
@@ -21885,7 +21903,8 @@
                                     "type": "string"
                                   },
                                   "final_answer_excerpt": {
-                                    "type": "string"
+                                    "type": "string",
+                                    "description": "Collapsed preview of an older settled final answer. Absent on the session-global newest visible reply; its exemption transfers only when a newer visible reply settles."
                                   },
                                   "turn_duration": {
                                     "anyOf": [
@@ -22052,10 +22071,12 @@
                                 "type": "number"
                               },
                               "_display_truncated": {
-                                "type": "boolean"
+                                "type": "boolean",
+                                "description": "Whether this settled body has a collapsed preview. The newest settled visible assistant reply and active-turn output remain full."
                               },
                               "_display_excerpt": {
-                                "type": "string"
+                                "type": "string",
+                                "description": "Collapsed preview with full content retained. The newest settled visible assistant reply remains exempt throughout the next running turn, until a newer visible reply settles."
                               },
                               "_collapsible": {
                                 "type": "boolean"
@@ -24262,7 +24283,8 @@
                                     "type": "string"
                                   },
                                   "final_answer_excerpt": {
-                                    "type": "string"
+                                    "type": "string",
+                                    "description": "Collapsed preview of an older settled final answer. Absent on the session-global newest visible reply; its exemption transfers only when a newer visible reply settles."
                                   },
                                   "turn_duration": {
                                     "anyOf": [
@@ -24429,10 +24451,12 @@
                                 "type": "number"
                               },
                               "_display_truncated": {
-                                "type": "boolean"
+                                "type": "boolean",
+                                "description": "Whether this settled body has a collapsed preview. The newest settled visible assistant reply and active-turn output remain full."
                               },
                               "_display_excerpt": {
-                                "type": "string"
+                                "type": "string",
+                                "description": "Collapsed preview with full content retained. The newest settled visible assistant reply remains exempt throughout the next running turn, until a newer visible reply settles."
                               },
                               "_collapsible": {
                                 "type": "boolean"
@@ -26637,7 +26661,8 @@
                                     "type": "string"
                                   },
                                   "final_answer_excerpt": {
-                                    "type": "string"
+                                    "type": "string",
+                                    "description": "Collapsed preview of an older settled final answer. Absent on the session-global newest visible reply; its exemption transfers only when a newer visible reply settles."
                                   },
                                   "turn_duration": {
                                     "anyOf": [
@@ -26804,10 +26829,12 @@
                                 "type": "number"
                               },
                               "_display_truncated": {
-                                "type": "boolean"
+                                "type": "boolean",
+                                "description": "Whether this settled body has a collapsed preview. The newest settled visible assistant reply and active-turn output remain full."
                               },
                               "_display_excerpt": {
-                                "type": "string"
+                                "type": "string",
+                                "description": "Collapsed preview with full content retained. The newest settled visible assistant reply remains exempt throughout the next running turn, until a newer visible reply settles."
                               },
                               "_collapsible": {
                                 "type": "boolean"
@@ -36814,7 +36841,8 @@
                                     "type": "string"
                                   },
                                   "final_answer_excerpt": {
-                                    "type": "string"
+                                    "type": "string",
+                                    "description": "Collapsed preview of an older settled final answer. Absent on the session-global newest visible reply; its exemption transfers only when a newer visible reply settles."
                                   },
                                   "turn_duration": {
                                     "anyOf": [
@@ -36981,10 +37009,12 @@
                                 "type": "number"
                               },
                               "_display_truncated": {
-                                "type": "boolean"
+                                "type": "boolean",
+                                "description": "Whether this settled body has a collapsed preview. The newest settled visible assistant reply and active-turn output remain full."
                               },
                               "_display_excerpt": {
-                                "type": "string"
+                                "type": "string",
+                                "description": "Collapsed preview with full content retained. The newest settled visible assistant reply remains exempt throughout the next running turn, until a newer visible reply settles."
                               },
                               "_collapsible": {
                                 "type": "boolean"
@@ -39276,7 +39306,8 @@
                                     "type": "string"
                                   },
                                   "final_answer_excerpt": {
-                                    "type": "string"
+                                    "type": "string",
+                                    "description": "Collapsed preview of an older settled final answer. Absent on the session-global newest visible reply; its exemption transfers only when a newer visible reply settles."
                                   },
                                   "turn_duration": {
                                     "anyOf": [
@@ -39443,10 +39474,12 @@
                                 "type": "number"
                               },
                               "_display_truncated": {
-                                "type": "boolean"
+                                "type": "boolean",
+                                "description": "Whether this settled body has a collapsed preview. The newest settled visible assistant reply and active-turn output remain full."
                               },
                               "_display_excerpt": {
-                                "type": "string"
+                                "type": "string",
+                                "description": "Collapsed preview with full content retained. The newest settled visible assistant reply remains exempt throughout the next running turn, until a newer visible reply settles."
                               },
                               "_collapsible": {
                                 "type": "boolean"
@@ -41627,7 +41660,8 @@
                                         "type": "string"
                                       },
                                       "final_answer_excerpt": {
-                                        "type": "string"
+                                        "type": "string",
+                                        "description": "Collapsed preview of an older settled final answer. Absent on the session-global newest visible reply; its exemption transfers only when a newer visible reply settles."
                                       },
                                       "turn_duration": {
                                         "anyOf": [
@@ -41794,10 +41828,12 @@
                                     "type": "number"
                                   },
                                   "_display_truncated": {
-                                    "type": "boolean"
+                                    "type": "boolean",
+                                    "description": "Whether this settled body has a collapsed preview. The newest settled visible assistant reply and active-turn output remain full."
                                   },
                                   "_display_excerpt": {
-                                    "type": "string"
+                                    "type": "string",
+                                    "description": "Collapsed preview with full content retained. The newest settled visible assistant reply remains exempt throughout the next running turn, until a newer visible reply settles."
                                   },
                                   "_collapsible": {
                                     "type": "boolean"
