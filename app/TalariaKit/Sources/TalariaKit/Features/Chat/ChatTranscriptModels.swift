@@ -921,6 +921,17 @@ public struct DeepTruncateConfirmation: Equatable, Identifiable {
     let confirmToken: String
 }
 
+/// Uses the same held-action/token pattern as DeepTruncateConfirmation, without a transcript cut's message context.
+public struct ModelSwitchConfirmation: Equatable, Identifiable {
+    public let id = UUID()
+    public let warnings: [ModelConfirmationRequired.Warning]
+    let sessionID: String
+    let workspace: String?
+    let model: String
+    let provider: String?
+    let confirmToken: String
+}
+
 extension ChatViewModel {
     nonisolated static func reasoningDisplayGroups(
         messages: [ChatMessage],

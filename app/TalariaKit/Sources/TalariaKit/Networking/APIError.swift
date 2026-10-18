@@ -87,6 +87,13 @@ public enum APIError: LocalizedError {
         return Self.serverErrorMessage(from: body)
     }
 
+    public var modelConfirmationRequired: ModelConfirmationRequired? {
+        guard case .http(409, let body) = self, let body,
+              let refusal = try? APIClient.responseDecoder().decode(ModelConfirmationRequired.self, from: Data(body.utf8)),
+              refusal.type == "model_confirmation_required", !refusal.confirmToken.isEmpty, !refusal.warnings.isEmpty else { return nil }
+        return refusal
+    }
+
     public var activeStreamID: String? {
         guard case .http(let statusCode, let body) = self, statusCode == 409 else { return nil }
         return Self.serverErrorPayload(from: body)?.activeStreamId?.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty
@@ -227,4 +234,19 @@ private extension String {
     var nilIfEmpty: String? {
         isEmpty ? nil : self
     }
+}
+
+/// The server's typed model-switch refusal. Unknown warning kinds keep their server wording.
+public struct ModelConfirmationRequired: Decodable, Equatable, Sendable {
+    public struct Warning: Decodable, Equatable, Sendable {
+        public let kind: String
+        public let title: String
+        public let model: String
+        public let provider: String
+        public let message: String
+    }
+    public let error: String
+    public let type: String
+    public let warnings: [Warning]
+    let confirmToken: String
 }

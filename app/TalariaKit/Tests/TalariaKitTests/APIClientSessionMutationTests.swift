@@ -2,6 +2,25 @@ import XCTest
 @testable import TalariaKit
 
 final class APIClientSessionMutationTests: APIClientTestCase {
+    func testModelConfirmationResubmitsTheSharedRequestAndDecodesTheTypedRefusal() async throws {
+        let fixture = try XCTUnwrap(JSONSerialization.jsonObject(with: sharedContractFixture("model-confirmation")) as? [String: Any])
+        let requestBody = try XCTUnwrap(fixture["request"] as? [String: String])
+        let refusal = try JSONSerialization.data(withJSONObject: XCTUnwrap(fixture["refusal"]))
+        let client = makeClient { request in
+            XCTAssertEqual(request.httpMethod, "POST")
+            XCTAssertEqual(request.url?.path, "/api/session/update")
+            XCTAssertEqual(try apiTestJSONBody(from: request) as NSDictionary, requestBody as NSDictionary)
+            return (HTTPURLResponse(url: request.url!, statusCode: 409, httpVersion: nil, headerFields: nil)!, refusal)
+        }
+        do {
+            _ = try await client.updateSession(id: try XCTUnwrap(requestBody["session_id"]), workspace: nil,
+                                               model: requestBody["model"], modelProvider: requestBody["model_provider"], confirmToken: requestBody["confirm_token"])
+            XCTFail("The 409 hold must throw rather than decode as a successful session")
+        } catch let error as APIError {
+            XCTAssertEqual(error.modelConfirmationRequired?.warnings.map(\.kind), ["data_policy", "context_cache"])
+        }
+    }
+
     func testPostRequestsEncodeSnakeCaseBody() async throws {
         let client = makeClient { request in
             XCTAssertEqual(request.url?.path, "/api/session/pin")

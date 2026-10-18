@@ -1,0 +1,12 @@
+{
+  "entries": [
+    {
+      "category": "Added",
+      "summary": "Review server warnings before changing a chat model, with Cancel preserving your current model and context.",
+      "highlight": false,
+      "components": [
+        "app"
+      ]
+    }
+  ]
+}

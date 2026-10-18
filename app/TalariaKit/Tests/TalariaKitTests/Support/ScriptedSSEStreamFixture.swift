@@ -106,6 +106,7 @@ extension XCTestCase {
     func makeScriptedChatViewModel(
         streamClient: ScriptedSSEStreamingClient,
         flushesEachEvent: Bool = true,
+        sessionSummary: SessionSummary? = nil,
         handler: @escaping (URLRequest) throws -> (HTTPURLResponse, Data)
     ) throws -> ChatViewModel {
         MockURLProtocol.requestHandler = handler
@@ -118,7 +119,7 @@ extension XCTestCase {
 
         let decoder = JSONDecoder()
         decoder.keyDecodingStrategy = .convertFromSnakeCase
-        let session = try decoder.decode(
+        let session = try sessionSummary ?? decoder.decode(
             SessionSummary.self,
             from: Data("""
             {

@@ -94,6 +94,7 @@ public final class ChatViewModel {
     public private(set) var messageActionErrorMessage: String?
     /// An edit or regenerate the server held for confirmation (TAL-929); `confirmDeepTruncate` resends it.
     public private(set) var deepTruncateConfirmation: DeepTruncateConfirmation?
+    public private(set) var modelSwitchConfirmation: ModelSwitchConfirmation?
     /// The last loaded detail's `confirms_deep_truncate`: a detail without it is an older server's, which cuts at once.
     private var serverConfirmsDeepTruncate = false
     private(set) var cacheErrorMessage: String?
@@ -977,32 +978,56 @@ public final class ChatViewModel {
             return false
         }
 
+        return await switchSessionModel(id: sessionID, workspace: currentWorkspace, model: option.id, provider: option.providerID)
+    }
+
+    public func cancelModelSwitch() {
+        modelSwitchConfirmation = nil
+    }
+
+    @discardableResult
+    public func confirmModelSwitch(_ confirmation: ModelSwitchConfirmation) async -> Bool {
+        guard modelSwitchConfirmation == confirmation, sessionID == confirmation.sessionID else { return false }
+        modelSwitchConfirmation = nil
+        return await switchSessionModel(id: confirmation.sessionID, workspace: confirmation.workspace,
+                                        model: confirmation.model, provider: confirmation.provider, confirmToken: confirmation.confirmToken)
+    }
+
+    /// Both the picker and /model retain their old choice until the server returns the final session.
+    private func switchSessionModel(id: String, workspace: String?, model: String, provider: String?, confirmToken: String? = nil) async -> Bool {
+        guard !isUpdatingComposerConfiguration,
+              canRunConfigurationSlashCommand(String(localized: "change models")) else { return false }
+        let ownership = sendOwnershipGeneration
         isUpdatingComposerConfiguration = true
+        modelSwitchConfirmation = nil
         composerConfigurationErrorMessage = nil
+        sendErrorMessage = nil
         lastError = nil
         defer { isUpdatingComposerConfiguration = false }
 
         do {
-            let response = try await client.updateSession(
-                id: sessionID,
-                workspace: currentWorkspace,
-                model: option.id,
-                modelProvider: option.providerID
-            )
-
-            currentModelOptionID = response.session?.model != nil ? response.session?.modelOptionID : option.id
-            currentModel = response.session?.model ?? option.id
-            currentModelProvider = response.session?.modelProvider ?? option.providerID
-            applyServerWorkspace(response.session?.workspace, name: response.session?.workspaceName)
+            let response = try await client.updateSession(id: id, workspace: workspace, model: model, modelProvider: provider, confirmToken: confirmToken)
+            guard ownership == sendOwnershipGeneration, sessionID == id, !Task.isCancelled else { return false }
+            guard let session = response.session, session.sessionId == id, let appliedModel = Self.nonEmpty(session.model) else {
+                throw APIError.decoding(underlying: DecodingError.dataCorrupted(.init(codingPath: [], debugDescription: "Model update omitted its authoritative session")))
+            }
+            currentModelOptionID = session.modelOptionID
+            currentModel = appliedModel
+            // Old servers omit model_provider. Preserve the submitted provider only for the exact model they applied.
+            currentModelProvider = session.modelProvider ?? (session.modelOptionID == nil && appliedModel == model ? provider : nil)
+            applyServerWorkspace(session.workspace, name: session.workspaceName)
             pendingExplicitModelPick = true
-            // Still inside the isUpdatingComposerConfiguration window, so the
-            // effort menu stays disabled until the new model's gating lands —
-            // no interactable flash of the previous model's options (issue #18).
             await refreshReasoningEffortGating()
             return true
         } catch {
-            lastError = error
-            composerConfigurationErrorMessage = error.localizedDescription
+            guard ownership == sendOwnershipGeneration, sessionID == id, !Task.isCancelled else { return false }
+            if let refusal = (error as? APIError)?.modelConfirmationRequired {
+                modelSwitchConfirmation = ModelSwitchConfirmation(warnings: refusal.warnings, sessionID: id, workspace: workspace,
+                                                                  model: model, provider: provider, confirmToken: refusal.confirmToken)
+            } else {
+                lastError = error
+                composerConfigurationErrorMessage = error.localizedDescription
+            }
             return false
         }
     }
@@ -3575,32 +3600,11 @@ public final class ChatViewModel {
 
         let match = modelOption(matching: requestedModel)
 
-        isUpdatingComposerConfiguration = true
-        composerConfigurationErrorMessage = nil
-        sendErrorMessage = nil
-        lastError = nil
-        defer { isUpdatingComposerConfiguration = false }
-
-        do {
-            let response = try await client.updateSession(
-                id: sessionID,
-                workspace: currentWorkspace,
-                model: match?.id ?? requestedModel,
-                modelProvider: match?.providerID
-            )
-
-            currentModelOptionID = response.session?.model != nil ? response.session?.modelOptionID : match?.id
-            currentModel = response.session?.model ?? match?.id ?? requestedModel
-            currentModelProvider = response.session?.modelProvider ?? match?.providerID ?? currentModelProvider
-            applyServerWorkspace(response.session?.workspace, name: response.session?.workspaceName)
-            pendingExplicitModelPick = true
-            await refreshReasoningEffortGating()
-            return .executed(message: nil)
-        } catch {
-            lastError = error
-            composerConfigurationErrorMessage = error.localizedDescription
-            return .unsupported(friendlyMessage: error.localizedDescription)
-        }
+        let applied = await switchSessionModel(id: sessionID, workspace: currentWorkspace,
+                                               model: match?.id ?? requestedModel, provider: match?.providerID)
+        return applied || modelSwitchConfirmation != nil
+            ? .executed(message: nil)
+            : .unsupported(friendlyMessage: composerConfigurationErrorMessage ?? String(localized: "Model switching is unavailable."))
     }
 
     private func switchWorkspaceFromSlashCommand(_ args: String) async -> SlashCommandExecutionResult {
@@ -4992,6 +4996,7 @@ public final class ChatViewModel {
 
     public func suspendStreamForNavigation() {
         sendOwnershipGeneration &+= 1
+        cancelModelSwitch()
         suspendMediaPreparation()
         suspendActiveStreamConnection()
     }

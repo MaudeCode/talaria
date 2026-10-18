@@ -209,7 +209,8 @@ extension APIClient {
         id: String,
         workspace: String?,
         model: String?,
-        modelProvider: String?
+        modelProvider: String?,
+        confirmToken: String? = nil
     ) async throws -> SessionResponse {
         try await send(
             endpoint: .updateSession,
@@ -218,7 +219,8 @@ extension APIClient {
                 sessionId: id,
                 workspace: workspace,
                 model: model,
-                modelProvider: modelProvider
+                modelProvider: modelProvider,
+                confirmToken: confirmToken
             )
         )
     }
@@ -339,6 +341,7 @@ private struct UpdateSessionRequest: Encodable {
     let workspace: String?
     let model: String?
     let modelProvider: String?
+    let confirmToken: String?
 }
 
 private struct MoveSessionRequest: Encodable {

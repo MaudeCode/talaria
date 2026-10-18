@@ -48,6 +48,7 @@ struct ChatView: View {
     private let transcriptBlockSpacing: CGFloat = 6
     private let composerAccessoryVerticalSpacing: CGFloat = 8
 
+    @State private var showsModelSwitchConfirmation = false
     @State private var completionAcknowledgementTask: Task<Void, Never>?
     @State private var completionAcknowledgementGeneration = 0
     @State private var viewedCompletionsThrough: Date?
@@ -793,6 +794,21 @@ struct ChatView: View {
                         }
                     }
                 )
+            }
+            .onChange(of: viewModel.modelSwitchConfirmation?.id) { _, id in
+                showsModelSwitchConfirmation = id != nil
+            }
+            .alert(
+                "Change Model?",
+                isPresented: $showsModelSwitchConfirmation,
+                presenting: viewModel.modelSwitchConfirmation
+            ) { confirmation in
+                Button("Cancel", role: .cancel) { viewModel.cancelModelSwitch() }
+                Button("Change Model") {
+                    Task { await viewModel.confirmModelSwitch(confirmation) }
+                }
+            } message: { confirmation in
+                Text(confirmation.warnings.map { "\($0.title)\n\n\($0.message)" }.joined(separator: "\n\n"))
             }
             .alert(
                 "Discard Later Messages?",
