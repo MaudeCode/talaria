@@ -144,6 +144,7 @@ export class SidecarClient implements SidecarLike {
   describe: RuntimeDescribe | null = null
   private child: ChildProcess | null = null
   private nextId = 1
+  private runtimeStatusSequence = 0
   private readonly pending = new Map<number, Pending>()
   private restartAttempt = 0
   private restartTimer: ReturnType<typeof setTimeout> | null = null
@@ -279,7 +280,16 @@ export class SidecarClient implements SidecarLike {
     if (condition !== null && !configAccess && !method.startsWith('runtime.') && method !== 'rpc.methods') {
       return Promise.reject(new SidecarError(`sidecar not ready (${this.status})`, { condition }))
     }
-    return this.rawCall(method, params, opts)
+    const child = this.child
+    const refreshStatus = method === 'runtime.status' && (this.status === 'ready' || this.status === 'incompatible')
+    const statusSequence = method === 'runtime.status' ? ++this.runtimeStatusSequence : 0
+    return this.rawCall(method, params, opts).then((result) => {
+      if (refreshStatus && statusSequence === this.runtimeStatusSequence && this.child === child && !this.closed && !opts.signal?.aborted && (this.status === 'ready' || this.status === 'incompatible')) {
+        this.describe = result as RuntimeDescribe
+        this.status = this.describe.compatible && !this.describe.stale ? 'ready' : 'incompatible'
+      }
+      return result
+    })
   }
 
   private async rawCall<M extends SidecarMethodName>(method: M, params: SidecarParams<M>, opts: CallOptions = {}): Promise<SidecarResult<M>> {

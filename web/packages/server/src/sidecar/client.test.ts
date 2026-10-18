@@ -93,6 +93,20 @@ describe('SidecarClient version mismatch', () => {
     expect(logs.filter((l) => l.includes('seen runtime.ensure_current'))).toEqual([])
   })
 
+  it('a delayed runtime status cannot replace a newer readiness verdict', async () => {
+    const dir = mkdtempSync(resolve(tmpdir(), 'talaria-sidecar-status-'))
+    const fixture = resolve(import.meta.dirname, '../../../contracts/fixtures/sidecar/runtime.json')
+    const script = `const fs=require('fs');const value=JSON.parse(fs.readFileSync(process.argv[1],'utf8'))['runtime.handshake'][0].result;let count=0;require('readline').createInterface({input:process.stdin}).on('line',line=>{const req=JSON.parse(line);const send=result=>process.stdout.write(JSON.stringify({jsonrpc:'2.0',id:req.id,result})+'\\n');if(req.method==='runtime.handshake')send(value);if(req.method==='runtime.status'){if(++count===1)setTimeout(()=>send(value),80);else send({...value,stale:true,agent_source_changed:true})}})`
+    client = new SidecarClient({ python: process.execPath, command: [process.execPath, '-e', script, fixture], agentDir: '', sidecarDir: dir, hermesHome: dir, log: () => undefined })
+    await client.start()
+    const earlier = client.call('runtime.status', {})
+    await client.call('runtime.status', {})
+    expect(client.status).toBe('incompatible')
+    await earlier
+    expect(client.status).toBe('incompatible')
+    expect(client.describe?.stale).toBe(true)
+  })
+
   it('a spawn failure schedules the same backoff restart as a crash instead of parking the client', async () => {
     const dir = mkdtempSync(resolve(tmpdir(), 'talaria-sidecar-spawn-'))
     const logs: string[] = []

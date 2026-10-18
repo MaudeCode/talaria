@@ -181,6 +181,61 @@ describe('Web source updates (test_tal203_source_update.py)', () => {
     } finally { vi.useRealTimers() }
   })
 
+  it('recovers retained Agent debt without another apply or enabled update checks', async () => {
+    vi.useFakeTimers()
+    const { svc } = service(sourceInstall(), { checkEnabled: () => false, agentDir: '/synthetic' })
+    let attempts = 0
+    const recover = vi.fn((probe: boolean) => Promise.resolve(probe ? { ok: false, owed: attempts < 2, fingerprint: attempts < 2 ? 'receipt' : '', detail: '' }
+      : ++attempts === 1 ? { ok: false, owed: true, fingerprint: 'receipt', detail: 'identity temporarily unreadable' } : { ok: true, owed: false, fingerprint: '', detail: '' }))
+    Object.assign((svc as unknown as { deps: object }).deps, { recoverAgent: recover })
+    try {
+      svc.startAutoApply(1000)
+      await vi.advanceTimersByTimeAsync(0)
+      expect(recover.mock.calls.filter(([probe]) => !probe)).toHaveLength(1)
+      await vi.advanceTimersByTimeAsync(1000)
+      expect(recover.mock.calls.filter(([probe]) => !probe)).toHaveLength(2)
+      await vi.advanceTimersByTimeAsync(60000)
+      expect(recover.mock.calls.filter(([probe]) => !probe)).toHaveLength(2)
+    } finally { svc.stopAutoApply(); vi.useRealTimers() }
+  })
+
+  it('bounds automatic recovery, rearms changed receipts, and cancels stale completions', async () => {
+    vi.useFakeTimers()
+    const { svc } = service(sourceInstall(), { checkEnabled: () => false, agentDir: '/synthetic' })
+    let fingerprint = 'first'
+    let finish: (() => void) | undefined
+    let attempts = 0
+    let signal: AbortSignal | undefined
+    Object.assign((svc as unknown as { deps: object }).deps, {
+      recoverAgent: async (probe: boolean, abort: AbortSignal) => {
+        if (!probe) {
+          attempts += 1
+          signal = abort
+          if (fingerprint === 'second') await new Promise<void>((resolve) => { finish = resolve })
+        }
+        return { ok: false, owed: true, fingerprint, detail: 'synthetic supervisor identity is unverified' }
+      },
+    })
+    try {
+      svc.startAutoApply(1000)
+      await vi.advanceTimersByTimeAsync(300000)
+      expect(attempts).toBe(6)
+      expect(svc.cachedStatus().agent_recovery).toMatchObject({ phase: 'blocked', detail: 'synthetic supervisor identity is unverified' })
+      await vi.advanceTimersByTimeAsync(10000)
+      expect(attempts).toBe(6)
+      fingerprint = 'second'
+      await vi.advanceTimersByTimeAsync(1000)
+      expect(attempts).toBe(7)
+      svc.stopAutoApply()
+      expect(signal?.aborted).toBe(true)
+      finish?.()
+      await vi.advanceTimersByTimeAsync(300000)
+      expect(attempts).toBe(7)
+      expect(svc.cachedStatus().agent_recovery).not.toMatchObject({ phase: 'complete' })
+      expect(vi.getTimerCount()).toBe(0)
+    } finally { svc.stopAutoApply(); vi.useRealTimers() }
+  })
+
   it.each(['disabled', 'channel', 'shutdown'])('cancels an automatic apply after %s changes during its check', async (change) => {
     let enabled = true
     let channel: 'stable' | 'experimental' = 'stable'

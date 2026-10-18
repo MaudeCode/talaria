@@ -904,7 +904,9 @@ export const UpdateTargetSchema = z.looseObject({
   versions: z.array(UpdateVersionSchema).describe('TAL-946: every installable Stable release newer than the installed one, newest first; empty unless `release_ready` can apply.'),
   folded_count: z.number().int().nonnegative().describe('How many `versions` are `folded`.'),
 })
-export const UpdatesCheckSchema = z.looseObject({ disabled: z.boolean().optional(), cached: z.boolean().optional(), channel: z.string().optional(), agent_channel: z.enum(['stable', 'experimental']).optional(), checked_at: z.number().optional(), include_agent: z.boolean().optional(), webui: UpdateTargetSchema.nullable().optional(), agent: UpdateTargetSchema.nullable().optional() })
+export const AgentRecoveryStateSchema = z.object({ phase: z.enum(['idle', 'running', 'waiting', 'complete', 'blocked']), attempt: z.number().int().nonnegative(), detail: z.string(), retry_at: z.string().nullable() })
+export type AgentRecoveryState = z.infer<typeof AgentRecoveryStateSchema>
+export const UpdatesCheckSchema = z.looseObject({ agent_recovery: AgentRecoveryStateSchema.optional(), disabled: z.boolean().optional(), cached: z.boolean().optional(), channel: z.string().optional(), agent_channel: z.enum(['stable', 'experimental']).optional(), checked_at: z.number().optional(), include_agent: z.boolean().optional(), webui: UpdateTargetSchema.nullable().optional(), agent: UpdateTargetSchema.nullable().optional() })
 export const UpdatesSummarySchema = z.object({
   ok: z.boolean(), target: z.enum(['webui', 'agent']), summary: z.string(),
   current_version: z.string().nullable().describe('The installed version this summary starts from.'),

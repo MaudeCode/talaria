@@ -85,6 +85,7 @@ export async function startServer(app: App, config: ServerConfig, opts: { log?: 
   log(`  Talaria Web listening on ${scheme}://${config.host}:${port}`)
   await warnUnauthenticatedBind(config.host, typeof address === 'object' && address ? address.address : config.host, app.deps.auth, log)
   const close = async () => {
+    app.deps.updates.stopAutoApply()
     // TAL-953: start no post-update gateway restart, and let one in flight finish before the sidecar goes away.
     const gatewayRestarts = app.deps.gatewayRestarts.quiesce()
     const hygiene = app.deps.hygiene.stop()

@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Recover chat and provider access automatically after an interrupted Agent update when its recorded recovery can finish safely.",
+      "highlight": false,
+      "components": ["web"]
+    }
+  ]
+}

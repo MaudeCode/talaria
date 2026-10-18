@@ -14,6 +14,7 @@ import json
 import os
 from pathlib import Path
 import plistlib
+import re
 import shlex
 import signal
 import stat
@@ -652,7 +653,8 @@ class ServiceRecovery:
         except (OSError, ValueError) as exc:
             raise RuntimeError('Backend recovery evidence is unreadable; source was not changed.') from exc
         if (not isinstance(self.state, dict) or self.state.get('schema') != 1 or self.state.get('root') != str(root)
-                or not isinstance(self.state.get('entries'), list) or not isinstance(self.state.get('tree'), dict)):
+                or not isinstance(self.state.get('entries'), list) or not isinstance(self.state.get('tree'), dict)
+                or ('sync_failed' in self.state and not isinstance(self.state['sync_failed'], bool))):
             raise RuntimeError('Backend recovery evidence has an unknown identity or format; source was not changed.')
         if self.state['entries'] and (not self.state['tree'].get('baselines') or any(
                 not isinstance(e, dict) or e.get('purpose') not in {'gateway', 'dashboard', 'serve'}
@@ -661,8 +663,17 @@ class ServiceRecovery:
                 for e in self.state['entries'])):
             raise RuntimeError('Service recovery lacks complete source/process custody evidence; source was not changed.')
 
+        transaction = self.state.get('transaction')
+        if transaction is not None and (
+                not isinstance(transaction, dict) or not re.fullmatch(r'[a-f0-9]{40}', str(transaction.get('revision', '')))
+                or not isinstance(transaction.get('homes'), list) or not transaction['homes']
+                or any(not isinstance(home, str) or not Path(home).is_absolute() for home in transaction['homes'])
+                or any(key in transaction and not isinstance(transaction[key], bool) for key in ('dependencies_verified',))
+                or ('runtime_revision' in transaction and not re.fullmatch(r'[a-f0-9]{40}', str(transaction['runtime_revision'])))):
+            raise RuntimeError('Service recovery transaction has an unknown identity or format; its evidence is retained.')
+
     def save(self, token=None):
-        if not self.state['entries']:
+        if not self.state['entries'] and not self.state.get('sync_failed') and not self.state.get('transaction'):
             if self.path.exists():
                 self.path.unlink()
                 self._sync_directory()

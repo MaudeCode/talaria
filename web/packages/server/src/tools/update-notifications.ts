@@ -1,3 +1,4 @@
+import type { AgentRecoveryState } from '@maudecode/talaria-web-contracts'
 import { createHash, randomUUID } from 'node:crypto'
 import { readDocument } from '../sessions/storage/document.js'
 import type { DocumentBackend } from '../sessions/storage/backend.js'
@@ -93,7 +94,7 @@ const copy = (row: StoredUpdateNotification): PublicUpdateNotification => ({
   acknowledged_at: row.acknowledged_at, acknowledged_action_id: row.acknowledged_action_id,
   verified_revision: row.verified_revision, verified_version: row.verified_version, detail: row.detail,
   unread: row.read_at === null,
-  active: row.kind === 'update' && ['applying', 'restarting'].includes(row.phase),
+  active: ['update', 'agent_recovery'].includes(row.kind) && ['applying', 'restarting'].includes(row.phase),
   requires_interaction: row.requires_acknowledgement && row.acknowledged_at === null,
   can_dismiss: isDismissible(row),
 })
@@ -192,6 +193,34 @@ export class UpdateNotificationStore {
     }))
     await this.watch(scope, created.id)
     return created
+  }
+
+  /** Recovery has its own row, so it can never rewrite the initiating update's failed outcome. */
+  async agentRecovery(state: AgentRecoveryState): Promise<void> {
+    if (state.phase === 'idle') return
+    const phase = state.phase === 'complete' ? 'succeeded' : state.phase === 'running' ? 'applying' : 'blocked'
+    const title = 'Hermes Agent recovery'
+    const message = state.phase === 'complete' ? 'Hermes Agent is usable again. The original update result is unchanged.'
+      : state.phase === 'running' ? 'Recovering Hermes Agent after an interrupted update.'
+        : state.phase === 'waiting' ? 'Hermes Agent recovery will retry automatically.' : 'Hermes Agent recovery needs attention.'
+    const row = this.rows.findLast((entry) => entry.kind === 'agent_recovery')
+    if (!row) {
+      await this.create({ owner: '*', profile: 'default', serverOwner: true }, {
+        kind: 'agent_recovery', target: 'agent', phase, title, message, visibility: 'server',
+        severity: state.phase === 'blocked' ? 'warning' : 'info',
+      })
+      return this.agentRecovery(state)
+    }
+    if (row.phase === phase && row.message === message && row.detail === safeDetail(state.detail)) return
+    row.phase = phase
+    row.title = title
+    row.message = message
+    row.detail = safeDetail(state.detail)
+    row.severity = state.phase === 'blocked' ? 'warning' : 'info'
+    row.updated_at = this.now().toISOString()
+    row.dismissed_at = null
+    row.read_at = null
+    await this.save()
   }
 
   /** Let the requesting tab follow an update operation it started or rejoined. Watchers live as long as the record; only a server owner's Update click adds one. */

@@ -102,5 +102,11 @@
     "manual_link": false,
     "target_version": "v0.21.7",
     "summary_available": true
+  },
+  "agent_recovery": {
+    "phase": "waiting",
+    "attempt": 2,
+    "detail": "The recorded gateway identity is temporarily unavailable.",
+    "retry_at": "2026-10-17T20:00:00.000Z"
   }
 }

@@ -7,6 +7,7 @@ import {
   OkResultSchema, RpcCancelParamsSchema, RpcCancelResultSchema, RpcMethodsResultSchema, RuntimeDescribeSchema,
   RuntimeEnsureCurrentResultSchema, RuntimeEnvParamsSchema, RuntimeHandshakeParamsSchema, RuntimeShutdownParamsSchema, RuntimeSyncDependenciesParamsSchema, RuntimeSyncDependenciesResultSchema,
   RuntimeAgentMutationParamsSchema, RuntimeAgentMutationResultSchema,
+  RuntimeAgentRecoveryParamsSchema, RuntimeAgentRecoveryResultSchema,
 } from './runtime.js'
 
 const Empty = z.object({})
@@ -26,6 +27,7 @@ export const SIDECAR_METHODS = {
   'runtime.env': { params: RuntimeEnvParamsSchema, result: OkResultSchema },
   'runtime.sync_dependencies': { params: RuntimeSyncDependenciesParamsSchema, result: RuntimeSyncDependenciesResultSchema },
   'runtime.agent_mutation': { params: RuntimeAgentMutationParamsSchema, result: RuntimeAgentMutationResultSchema },
+  'runtime.agent_recovery': { params: RuntimeAgentRecoveryParamsSchema, result: RuntimeAgentRecoveryResultSchema },
   ...GOALS_METHODS,
   ...COMMANDS_METHODS,
   ...KANBAN_METHODS,

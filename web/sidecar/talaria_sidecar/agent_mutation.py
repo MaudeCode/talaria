@@ -5,11 +5,11 @@ checkout lock and gateway journal also fence the backend recovery companion.
 """
 from __future__ import annotations
 
+import ast
 import contextlib
 import hashlib
 import importlib
 import json
-import logging
 import os
 from pathlib import Path
 import queue
@@ -27,7 +27,6 @@ from . import agent_services as services
 
 _SESSIONS = {}
 _SESSIONS_LOCK = threading.Lock()
-_RECOVERING = set()
 _CONSENTS = {}
 CONSENT_SECONDS = 300
 
@@ -58,41 +57,184 @@ def close_all():
         _close(session)
 
 
-def recover_retained(runtime):
-    """Recover retained services without blocking the handshake; their record closes admission."""
-    root = runtime.agent_dir
-    if root is None or not services.recovery_path(root, runtime.hermes_home).exists():
-        return
-    key = (root.resolve(), runtime.hermes_home.resolve())
+def _reap_sessions():
     with _SESSIONS_LOCK:
-        if key in _RECOVERING:
-            return
-        _RECOVERING.add(key)
+        dead = [token for token, session in _SESSIONS.items() if session['proc'].poll() is not None]
+        sessions = [_SESSIONS.pop(token) for token in dead]
+    for session in sessions:
+        _close(session)
+
+
+def _git_directory(root):
+    """Locate receipts before importing possibly torn Agent modules."""
+    gitdir = root / '.git'
+    if gitdir.is_file():
+        value = gitdir.read_text().strip()
+        if not value.startswith('gitdir: '):
+            raise OSError('The Agent checkout git directory is unreadable.')
+        gitdir = (root / value[8:]).resolve()
+    return gitdir
+
+
+def _native_source_repair(root):
+    marker = _git_directory(root) / 'hermes-update-pull'
+    if not marker.exists():
+        return
+    with marker.open(encoding='utf-8-sig') as handle:
+        raw = handle.read(65537)
+    fields = dict(line.partition('=')[::2] for line in raw.splitlines())
+    if len(raw) > 65536 or any(not re.fullmatch(r'[a-f0-9]{40}', fields.get(key, '')) for key in ('pre', 'target')):
+        raise RuntimeError('Native source recovery receipt is malformed; its evidence is retained.')
+    executable = fields.get('git', '')
+    executable = executable if os.path.isabs(executable) and Path(executable).is_file() else 'git'
+    head = subprocess.run([executable, '--no-replace-objects', '-C', str(root), 'rev-parse', 'HEAD'], capture_output=True, text=True, timeout=15, check=True).stdout.strip()
+    if head not in {fields['pre'], fields['target']} or not fields.get('pid', '').isdecimal():
+        raise RuntimeError('Native source recovery no longer matches the recorded checkout identity; its receipt is retained.')
+    # Read the native launch-repair procedure from the immutable baseline, never the damaged tree.
+    def constants(path, names):
+        found = subprocess.run([executable, '--no-replace-objects', '-C', str(root), 'show', fields['pre'] + ':' + path],
+                               capture_output=True, text=True, timeout=15, check=True)
+        values = {}
+        for node in ast.parse(found.stdout).body:
+            if isinstance(node, ast.Assign) and len(node.targets) == 1 and isinstance(node.targets[0], ast.Name) and node.targets[0].id in names:
+                values[node.targets[0].id] = ast.literal_eval(node.value)
+        if values.keys() != names:
+            raise RuntimeError('The recorded Agent baseline has no complete native launch-repair procedure.')
+        return values
+    template = constants('hermes_cli/_launchers.py', {'_CLOSURE_REPAIR'})['_CLOSURE_REPAIR']
+    keys = {'INTERRUPTED_PULL_MARKER', 'RECOVERY_CLOSURE_DIR', 'RECOVERY_CLOSURE_MANIFEST', 'RECOVERY_CLOSURE_INIT', 'RECOVERY_CLOSURE'}
+    values = constants('hermes_cli/_early_recovery.py', keys)
+    for placeholder, key in (('__MARKER__', 'INTERRUPTED_PULL_MARKER'), ('__CLOSURE_DIR__', 'RECOVERY_CLOSURE_DIR'),
+                             ('__MANIFEST__', 'RECOVERY_CLOSURE_MANIFEST'), ('__INIT__', 'RECOVERY_CLOSURE_INIT'), ('__CLOSURE__', 'RECOVERY_CLOSURE')):
+        template = template.replace(placeholder, repr(values[key]))
+    template = template.replace('__ROOT__', repr(str(root)))
+    namespace = {'os': os, 're': re, 'sys': sys}
+    exec(compile(template, '<native recorded launch repair>', 'exec'), namespace)
+    try:
+        namespace['_hermes_closure_repair']()  # Native verification, checkout custody and re-exec remain authoritative.
+    except SystemExit:
+        if not marker.exists():
+            # A proved no-op removes the receipt without changing files; discard the closure imports just as after a restore.
+            sys.modules['hermes_cli._early_recovery'].relaunch_after_restore()
+        raise
+
+
+def recovery_receipts(runtime, *, watch=False):
+    """Read only the configured checkout's receipts without importing its possibly torn code."""
+    root, home = runtime.agent_dir, runtime.hermes_home
+    if root is None:
+        return [], None
+    root = root.resolve()
+    state = os.environ.get('TALARIA_SIDECAR_WEB_STATE_DIR') or os.environ.get('HERMES_WEBUI_STATE_DIR', '').strip() or str(home / 'webui')
+    marker = Path(state).expanduser() / 'agent-dependency-sync' / hashlib.sha256(str(root).encode()).hexdigest()
+    key = hashlib.sha256(os.path.normcase(str(root)).encode()).hexdigest()[:12]
+    native = home / ('.hermes-update-paused-gateways.' + key + '.json')
+    gitdir = _git_directory(root)
+    paths = [services.recovery_path(root, home), marker, native,
+             root / '.update-incomplete', root / '.lazy-refresh-incomplete',
+             gitdir / 'hermes-update-pull', root / '.hermes-update-zip-swap']
+    paths.extend(home.glob(native.name + '.*.claim'))
+    common = gitdir
+    try:
+        common = (gitdir / (gitdir / 'commondir').read_text().strip()).resolve()
+    except FileNotFoundError:
+        pass
+    paths.extend((common / 'refs/talaria/autostash/pending').glob('*'))
+    packed = common / 'packed-refs'
+    try:
+        if any(' refs/talaria/autostash/pending/' in line for line in packed.read_text().splitlines()):
+            paths.append(packed)
+    except FileNotFoundError:
+        pass
+    def stamps(candidates):
+        result = []
+        for path in sorted(set(candidates)):
+            try:
+                stat = path.lstat()
+                result.append((str(path), stat.st_ino, stat.st_mtime_ns, stat.st_size))
+            except FileNotFoundError:
+                pass
+        return result
+    found = stamps(paths)
+    if watch and found:
+        # A repaired source/index or interpreter selection can make previously blocked debt provable again.
+        watched = [gitdir / 'HEAD', gitdir / 'index', root / '.venv/pyvenv.cfg', root / 'venv/pyvenv.cfg',
+                   root / '.venv/bin/python', root / 'venv/bin/python',
+                   home / 'installs' / hashlib.sha256(str(root).encode()).hexdigest()[:16] / 'facts.json']
+        try:
+            head = (gitdir / 'HEAD').read_text().strip()
+            if head.startswith('ref: '):
+                ref = Path(head[5:])
+                if not ref.is_absolute() and '..' not in ref.parts:
+                    watched.append(common / ref)
+        except (OSError, UnicodeError):
+            pass
+        try:
+            body = json.loads(services.recovery_path(root, home).read_text())
+            for baseline in body.get('tree', {}).get('baselines', []):
+                changed = [*baseline.get('dirty_at_pause', []), *baseline.get('move_paths', [])]
+                changed.extend(path for paths in baseline.get('landed', {}).values() for path in paths)
+                watched.extend(root / path for path in changed if isinstance(path, str) and not Path(path).is_absolute() and '..' not in Path(path).parts)
+        except (OSError, ValueError, TypeError, AttributeError):
+            pass  # The receipt's own stamp still rearms corrected evidence; the worker reports its exact refusal.
+        found.extend(stamps(watched))
+    return found, marker
+
+
+def recover_retained(runtime, ctx, *, probe=False, complete_revision=None):
+    """One leased continuation. UpdateService owns the bounded retry sequence."""
+    receipts, _ = recovery_receipts(runtime, watch=True)
+    fingerprint = hashlib.sha256(json.dumps(receipts).encode()).hexdigest() if receipts else ''
+    result = {'ok': not receipts, 'owed': bool(receipts), 'fingerprint': fingerprint, 'detail': ''}
+    if complete_revision is not None:
+        if not isinstance(complete_revision, str) or not re.fullmatch(r'[a-f0-9]{40}', complete_revision):
+            raise InvalidParams('A verified loaded revision is required to complete recovery.')
+        if not runtime.loaded or runtime.revision != complete_revision or runtime.is_stale():
+            return {**result, 'ok': False, 'detail': 'The loaded Agent runtime does not match the recovered revision.'}
+    if probe or not receipts:
+        return result
+    _reap_sessions()
+    from .methods.gateway import _ACTION_LOCK
+    if not _ACTION_LOCK.acquire(blocking=False):
+        return {**result, 'detail': 'A gateway lifecycle action or Agent update still owns recovery.'}
     from .home import _frozen_launch_env
+    root = runtime.agent_dir.resolve()
     env = _frozen_launch_env()
     env.update(HERMES_HOME=str(runtime.hermes_home), HERMES_DISABLE_LAZY_INSTALLS='1',
                PYTHONPATH=str(Path(__file__).parents[1]) + os.pathsep + str(root))
-    def recover():
-        detail = None
-        try:
-            result = subprocess.run([sys.executable, '-m', 'talaria_sidecar.agent_mutation', '--resume', str(root)],
-                                    cwd=root, env=env, stdin=subprocess.DEVNULL, capture_output=True, text=True, timeout=320, check=False)
-            reply = json.loads(result.stdout) if result.returncode == 0 else {}
-            if not isinstance(reply, dict) or reply.get('ok') is not True:
-                detail = str(reply.get('detail') or 'recovery was not verified') if isinstance(reply, dict) else 'invalid recovery response'
-        except (OSError, ValueError, subprocess.TimeoutExpired):
-            detail = 'recovery could not finish; its durable obligation is retained'
-        finally:
-            with _SESSIONS_LOCK:
-                _RECOVERING.discard(key)
-        if detail:
-            logging.getLogger(__name__).warning('Agent service recovery remains owed: %s', detail)
     try:
-        threading.Thread(target=recover, daemon=True).start()
-    except BaseException:
-        with _SESSIONS_LOCK:
-            _RECOVERING.discard(key)
-        raise
+        with tempfile.TemporaryFile() as stdout, tempfile.TemporaryFile() as stderr:
+            child = subprocess.Popen([sys.executable, '-m', 'talaria_sidecar.agent_mutation', '--recover-current', str(root), complete_revision or ''],
+                                     cwd=root, env=env, stdin=subprocess.PIPE, stdout=stdout, stderr=stderr)
+            try:
+                deadline = time.monotonic() + 660
+                while child.poll() is None:
+                    ctx.check_cancelled()
+                    if time.monotonic() >= deadline:
+                        raise RuntimeError('Agent recovery timed out; durable recovery remains owed.')
+                    ctx.cancel_event.wait(.05)
+                stdout.seek(0)
+                reply = json.loads(stdout.read(1024 * 1024))
+                if not isinstance(reply, dict) or not isinstance(reply.get('ok'), bool):
+                    raise ValueError('Invalid Agent recovery result.')
+                if not reply['ok']:
+                    stderr.seek(0, os.SEEK_END)
+                    stderr.seek(max(0, stderr.tell() - 4000))
+                    diagnostic = stderr.read().decode('utf-8', errors='replace').strip()
+                    if diagnostic:
+                        reply['detail'] = str(reply.get('detail') or '') + ': ' + diagnostic
+            finally:
+                child.stdin.close()
+                try:
+                    child.wait(timeout=330)
+                except subprocess.TimeoutExpired:
+                    child.kill()
+                    child.wait()
+        remaining, _ = recovery_receipts(runtime, watch=True)
+        return {**result, **reply, 'owed': bool(remaining),
+                'fingerprint': hashlib.sha256(json.dumps(remaining).encode()).hexdigest() if remaining else ''}
+    finally:
+        _ACTION_LOCK.release()
 
 
 def _exchange(session, request, ctx):
@@ -127,6 +269,7 @@ def call(runtime, ctx, params):
     if action not in {"begin", "git", "sync", "finish"}:
         raise InvalidParams("invalid Agent mutation action")
     if action == "begin":
+        _reap_sessions()
         revision = params.get("revision")
         homes = params.get("homes")
         if not isinstance(revision, str) or not re.fullmatch(r"[a-f0-9]{40}", revision):
@@ -150,10 +293,6 @@ def call(runtime, ctx, params):
                         or consent['revision'] != revision or consent['homes'] != sorted({str(Path(h).resolve()) for h in homes})):
                     return {'ok': False, 'skipped': False, 'detail': 'Legacy refresh confirmation expired, changed or was already used. Check for updates and confirm again.'}
                 binding = consent['binding']
-            for old_token, old in list(_SESSIONS.items()):
-                if old["proc"].poll() is not None:
-                    _SESSIONS.pop(old_token)
-                    _close(old)
             if any(s["root"] == root.resolve() for s in _SESSIONS.values()):
                 return {"ok": False, "skipped": False, "detail": "Another Agent update owns the writer lease."}
             from .home import _frozen_launch_env
@@ -314,12 +453,10 @@ def _worker(root, revision, homes, requests, stopped, send, refresh_binding=None
     if os.name not in {"posix", "nt"}:
         raise RuntimeError("A cooperative Agent writer lease is unavailable on this platform; source was not changed.")
     sys.path.insert(0, str(root))
-    for key in ("GIT_DIR", "GIT_WORK_TREE", "GIT_COMMON_DIR", "GIT_INDEX_FILE"):
-        os.environ.pop(key, None)
     # Keep the installed updater's resume closure loaded across replacement of its source files.
     modules = {name: importlib.import_module("hermes_cli." + name) for name in (
         "update_lock", "update_cmd_posix_pause", "update_pause_record", "update_cmd_pause_gate",
-        "update_cmd_windows", "update_custody", "process_identity")}
+        "update_cmd_windows", "update_custody", "process_identity", "update_cmd_commit")}
     if any(not Path(module.__file__).resolve().is_relative_to(root) for module in modules.values()):
         raise RuntimeError("Agent writer lease imported a different checkout.")
     pause, records, identity = (modules[name] for name in ("update_cmd_posix_pause", "update_pause_record", "process_identity"))
@@ -425,6 +562,8 @@ def _worker(root, revision, homes, requests, stopped, send, refresh_binding=None
                      unmapped_pids=[e["pid"] for e in gateway_entries if not e.get("kind")],
                      identities=owner_identities, resume_needed=bool(gateway_entries))
         records.record_pause(token, adopted, claims)
+        recovery.state.setdefault('transaction', {'revision': revision, 'homes': sorted(map(str, homes))})
+        recovery.save(token)
         if legacy:
             whole, why = records.tree_is_whole(token, root)
             if not whole:
@@ -511,6 +650,7 @@ def _worker(root, revision, homes, requests, stopped, send, refresh_binding=None
                     result = {"ok": False, "detail": "Agent dependency sync returned an invalid result."}
                 sync_failed = not result["ok"]
                 recovery.state['sync_failed'] = sync_failed
+                recovery.state['transaction']['dependencies_verified'] = not sync_failed
                 recovery.save(token)
                 if not bootstrap_repair and not sync_failed and records.tree_is_whole(token, root)[0]:
                     recovery_only = False
@@ -528,19 +668,38 @@ def _worker(root, revision, homes, requests, stopped, send, refresh_binding=None
                 whole_before = records.tree_is_whole(token, root)[0] if applying else False
                 mutating = args[0] in {"merge", "reset", "checkout", "apply", "clean", "stash"} and "--check" not in args
                 gate = modules["update_cmd_pause_gate"]._checkout_move(token, revision, paths=paths, revert=True) if mutating else contextlib.nullcontext({})
+                if mutating:
+                    recovery.state['transaction']['dependencies_verified'] = False
+                move_marker = None
+                if args[0] == 'merge' and '--ff-only' in args or args[0] == 'reset' and '--hard' in args:
+                    commit = modules['update_cmd_commit']
+                    current = records.tree_state(root)
+                    if current is None or current.get('dirty_at_pause'):
+                        raise RuntimeError('A source move requires the recorded clean tree; local edits remain retained.')
+                    # The native rollback receipt is immutable before Git can tear any source file.
+                    move_marker = commit.arm_tree_move(['git'], root, pre=current['pre_sha'], target=revision, stash=None, rollback='branch')
                 with gate as step:
                     recovery.save(token)
                     argv = modules["update_custody"].git_argv(["git"], args)
                     result = _command(argv, root, seconds, stopped, modules["update_custody"])
                     if result["ok"] and applying:
                         step["whole"] = True
+                if move_marker is not None and result['ok']:
+                    installed = records.tree_state(root)
+                    if installed and installed['pre_sha'] == revision and installed['dirty_at_pause'] == []:
+                        move_marker.unlink(missing_ok=True)
+                        if not needs_sync:
+                            recovery.state['sync_failed'] = False
+                            recovery.state['transaction']['dependencies_verified'] = True
+                    else:
+                        result = {'ok': False, 'detail': 'The source move did not leave a verified whole target; native rollback remains owed.'}
                 if result["ok"] and applying and whole_before:
                     after = records.tree_state(root)
                     if before is None or after is None or before["pre_sha"] != after["pre_sha"]:
                         raise RuntimeError("The completed local restore could not be verified; gateway resume remains owed.")
-                    # A completed atomic apply at the pause's own HEAD is an intended edit, not a torn move.
+                    # Every carried pause verified this HEAD before the atomic restore; retain the intended edits for all of them.
                     for baseline in token.get("baselines", []):
-                        if baseline.get("pause_id") == token.get("pause_id") and baseline.get("pre_sha") == after["pre_sha"]:
+                        if baseline.get("pre_sha") == after["pre_sha"]:
                             baseline.update(after)
                     records.write(token)
                 recovery.save(token)
@@ -567,6 +726,9 @@ def _worker(root, revision, homes, requests, stopped, send, refresh_binding=None
                 whole, why = records.tree_is_whole(token, root)
                 if not whole:
                     raise RuntimeError("Gateway resume remains owed: " + why)
+                pending = _command(modules['update_custody'].git_argv(['git'], ['for-each-ref', '--format=%(objectname)', 'refs/talaria/autostash/pending/']), root, 10, threading.Event(), modules['update_custody'])
+                if not pending['ok'] or pending['detail']:
+                    raise RuntimeError('Gateway resume remains owed until retained local Agent edits are restored.')
                 if token.get("resume_needed"):
                     if bootstrap_repair:
                         records.write({**token, "resume_needed": True}, owner=records.UNOWNED)
@@ -583,6 +745,14 @@ def _worker(root, revision, homes, requests, stopped, send, refresh_binding=None
                 recovery.resume(_writer_ledger, gateway_deadline=gateway_deadline)
             if token and not handed_off:
                 records.discharge(token)
+                from .runtime import AgentRuntime
+                _, marker = recovery_receipts(AgentRuntime(Path(os.environ['HERMES_HOME']), root))
+                if marker and marker.exists():
+                    recovery.state['transaction']['runtime_revision'] = found['detail']
+                    recovery.save(token)
+                else:
+                    recovery.state.pop('transaction', None)
+                    recovery.save()
         except BaseException as exc:
             error = (error + "; " if error else "") + str(exc)
             if token and not handed_off:
@@ -592,7 +762,7 @@ def _worker(root, revision, homes, requests, stopped, send, refresh_binding=None
     send({"ok": error is None, "detail": error or ""})
 
 
-def _resume_current(root, custody):
+def _resume_current(root, custody, stopped=None, complete_revision=None):
     try:
         from hermes_cli._launchers import resolve_store_python
         python = resolve_store_python(root)
@@ -602,15 +772,15 @@ def _resume_current(root, custody):
         python = None
     if python is None:
         python = next((path for path in (root / ".venv/bin/python", root / "venv/bin/python", root / "venv/Scripts/python.exe") if path.is_file()), Path(sys.executable))
-    result = _command([str(python), "-m", "talaria_sidecar.agent_mutation", "--resume", str(root)], root, 300, threading.Event(), custody)
+    result = _command([str(python), "-m", "talaria_sidecar.agent_mutation", "--resume-leased", str(root), complete_revision or ""], root, 660, stopped or threading.Event(), custody, cooperative=True)
     try:
         reply = json.loads(result["detail"]) if result["ok"] else {}
-        return {"ok": result["ok"] and reply.get("ok") is True, "detail": str(reply.get("detail") or result["detail"])}
+        return {**reply, "ok": result["ok"] and reply.get("ok") is True, "detail": str(reply.get("detail") or result["detail"])}
     except ValueError:
         return {"ok": False, "detail": "The current Agent could not verify its retained gateway resume obligation."}
 
 
-def _resume_worker(root):
+def _resume_worker(root, stopped=None, complete_revision=None):
     sys.path.insert(0, str(root))
     from hermes_cli import update_lock, update_pause_record as records, process_identity, update_cmd_posix_pause
     if any(not Path(module.__file__).resolve().is_relative_to(root) for module in (update_lock, records, process_identity, update_cmd_posix_pause)):
@@ -620,17 +790,83 @@ def _resume_worker(root):
         raise RuntimeError("The gateway recovery child could not join the native checkout lease.")
     try:
         recovery = services.ServiceRecovery(root, Path(os.environ['HERMES_HOME']), records, process_identity, update_cmd_posix_pause)
-        if recovery.state['entries']:
-            whole, why = records.tree_is_whole(recovery.state['tree'], root)
-            if not whole or recovery.state.get('sync_failed'):
-                return {'ok': False, 'detail': 'Service recovery remains owed until source/dependency repair completes: ' + why}
+        adopted = None
+        for _, body in records.orphans():
+            adopted = records.merge_into(adopted, body['token'])
+        tree = records.merge_into(adopted, recovery.state['tree']) if recovery.state['tree'] else adopted or {}
+        from .runtime import AgentRuntime
+        runtime = AgentRuntime(Path(os.environ['HERMES_HOME']), root)
+        receipts, marker = recovery_receipts(runtime)
+        custody = importlib.import_module('hermes_cli.update_custody')
+        stopped = stopped or threading.Event()
+        from hermes_cli._early_recovery import interrupted_pull_marker
+        if interrupted_pull_marker(root).exists():
+            return {'ok': False, 'detail': 'Native source recovery remains incomplete; its receipt is retained.'}
+        if (root / '.hermes-update-zip-swap').exists():
+            from hermes_cli._early_recovery import restore_interrupted_pull
+            if restore_interrupted_pull(root):
+                return _resume_current(root, custody, stopped, complete_revision)
+        if (root / '.update-incomplete').exists() or (root / '.lazy-refresh-incomplete').exists():
+            return {'ok': False, 'detail': 'Native source recovery remains incomplete; its receipt is preserved.'}
+        if receipts and not tree.get('baselines'):
+            return {'ok': False, 'detail': 'Recovery has no verified transaction baseline; its receipt is preserved.'}
+        whole, why = records.tree_is_whole(tree, root)
+        if not whole:
+            return {'ok': False, 'detail': 'Source recovery remains owed: ' + why}
+        head = _command(custody.git_argv(['git'], ['rev-parse', 'HEAD']), root, 10, stopped, custody)
+        if not head['ok'] or not re.fullmatch(r'[a-f0-9]{40}', head['detail']):
+            return {'ok': False, 'detail': 'Recovery cannot verify the installed revision.'}
+        revision = head['detail']
+        if revision not in {r for b in tree.get('baselines', []) for r in [b.get('pre_sha'), *b.get('move_targets', []), *b.get('landed', {})]}:
+            return {'ok': False, 'detail': 'Installed revision is outside the retained transaction; recovery was refused.'}
+        moved = any(b.get('pre_sha') != revision for b in tree.get('baselines', []))
+        transaction = recovery.state.get('transaction') or {}
+        if recovery.state.get('sync_failed') or (moved and not transaction.get('dependencies_verified')) or (marker and marker.exists() and not transaction):
+            if _writer_ledger(root, process_identity):
+                return {'ok': False, 'detail': 'Recorded dependency repair is waiting for the existing writer drain; no additional stop was sent.'}
+            sync = root / 'hermes_cli/venv_sync.py'
+            if sync.is_file():
+                recovery.state['sync_failed'] = True
+                recovery.save(tree)
+                synced = _command([sys.executable, '-m', 'hermes_cli.venv_sync', '--project-root', str(root), '--json'], root, 300, stopped, custody)
+                response = json.loads(synced['detail']) if synced['ok'] else {}
+                if response.get('ok') is not True:
+                    return {'ok': False, 'detail': 'Recorded dependency repair failed: ' + str(response.get('detail') or synced['detail'])}
+                recovery.state['sync_failed'] = False
+                if transaction:
+                    transaction['dependencies_verified'] = True
+                recovery.save(tree)
+            elif recovery.state.get('sync_failed'):
+                return {'ok': False, 'detail': 'The recorded dependency repair module is missing.'}
+        whole, why = records.tree_is_whole(tree, root)
+        if not whole:
+            return {'ok': False, 'detail': 'Recorded source/dependency repair remains unverified: ' + why}
+        pending = _command(custody.git_argv(['git'], ['for-each-ref', '--format=%(objectname)', 'refs/talaria/autostash/pending/']), root, 10, stopped, custody)
+        if not pending['ok']:
+            return {'ok': False, 'detail': 'Retained local edits could not be inspected.'}
+        if pending['detail']:
+            return {'ok': False, 'local_restore': True, 'revision': revision, 'detail': 'Retained local edits require the existing leased restore path.'}
         main_module = importlib.import_module("hermes_cli.main")
         if not Path(main_module.__file__).resolve().is_relative_to(root):
             raise RuntimeError("Gateway recovery loaded another Agent runtime.")
         records.recover(argv=[])
         recovery.resume(_writer_ledger)
-        owed = records.record_path().exists() or bool(records._claims(records.record_path()))
-        return {"ok": not owed, "detail": "Gateway recovery remains durably recorded." if owed else ""}
+        owed = records.record_path().exists() or bool(records._claims(records.record_path())) or bool(recovery.state['entries'])
+        runtime_pending = bool((marker and marker.exists()) or (recovery.state.get('transaction') or {}).get('runtime_revision'))
+        if not owed and runtime_pending:
+            transaction = recovery.state.setdefault('transaction', {'revision': revision, 'homes': [str(runtime.hermes_home)]})
+            if complete_revision == revision and transaction.get('runtime_revision') == revision:
+                runtime_pending = False
+            else:
+                transaction['runtime_revision'] = revision
+                recovery.save(tree)
+        if not owed and not runtime_pending:
+            recovery.state.pop('transaction', None)
+            recovery.state['sync_failed'] = False
+            recovery.save()
+            if marker:
+                marker.unlink(missing_ok=True)
+        return {"ok": not owed, "revision": revision, "runtime_pending": runtime_pending, "detail": "Gateway recovery remains durably recorded." if owed else ""}
     finally:
         lock.release()
 
@@ -655,15 +891,23 @@ def _patch_paths(root, patch, stopped, custody):
     return paths
 
 
-def _command(argv, root, timeout, stopped, custody):
+def _command(argv, root, timeout, stopped, custody, *, cooperative=False):
     with tempfile.TemporaryFile() as stdout, tempfile.TemporaryFile() as stderr:
-        child = custody.popen(argv, inherit_lock=True, cwd=root, stdin=subprocess.DEVNULL, stdout=stdout, stderr=stderr,
+        child = custody.popen(argv, inherit_lock=True, cwd=root, stdin=subprocess.PIPE if cooperative else subprocess.DEVNULL, stdout=stdout, stderr=stderr,
                               start_new_session=os.name != "nt")
         deadline = time.monotonic() + timeout
         try:
             while child.poll() is None:
                 if stopped.wait(.05) or time.monotonic() >= deadline:
-                    _stop_tree(child)
+                    if cooperative:
+                        child.stdin.close()
+                        try:
+                            child.wait(timeout=330)
+                        except subprocess.TimeoutExpired:
+                            child.kill()  # The service journal still owns unverified resume.
+                            child.wait()
+                    else:
+                        _stop_tree(child)
                     return {"ok": False, "detail": "Agent update command cancelled or timed out."}
             out = stdout if child.returncode == 0 else stderr
             out.seek(0, os.SEEK_END)
@@ -673,11 +917,21 @@ def _command(argv, root, timeout, stopped, custody):
             out.seek(0)
             return {"ok": child.returncode == 0, "detail": out.read().decode("utf-8", errors="replace").strip()}
         finally:
+            if cooperative:
+                child.stdin.close()
             if child.poll() is None:
                 _stop_tree(child)
 
 
 def main():
+    for key in ("GIT_DIR", "GIT_WORK_TREE", "GIT_COMMON_DIR", "GIT_INDEX_FILE"):
+        os.environ.pop(key, None)
+    if len(sys.argv) > 2 and sys.argv[1] in {'--recover-current', '--resume', '--resume-leased'}:
+        try:
+            _native_source_repair(Path(sys.argv[2]).resolve())
+        except BaseException as exc:
+            print(json.dumps({'ok': False, 'detail': str(exc) if str(exc) != '1' else 'Native recorded source repair could not complete; its receipt remains owed.'}), flush=True)
+            return
     from .__main__ import _claim_stdout
     output = _claim_stdout()
     stopped, requests = threading.Event(), queue.Queue()
@@ -691,8 +945,25 @@ def main():
     def send(result):
         output.write((json.dumps(result) + "\n").encode())
     try:
-        if sys.argv[1] == "--resume":
-            send(_resume_worker(Path(sys.argv[2]).resolve()))
+        if sys.argv[1] == "--recover-current":
+            root = Path(sys.argv[2]).resolve()
+            sys.path.insert(0, str(root))
+            custody = importlib.import_module('hermes_cli.update_custody')
+            update_lock = importlib.import_module('hermes_cli.update_lock')
+            if any(not Path(module.__file__).resolve().is_relative_to(root) for module in (custody, update_lock)):
+                raise RuntimeError('Recovery loaded another Agent checkout.')
+            lock = update_lock.UpdateLock(install_root=root)
+            if not lock.acquire():
+                raise RuntimeError('Another Agent update owns the native checkout lock.')
+            try:
+                send(_resume_current(root, custody, stopped, sys.argv[3] if len(sys.argv) > 3 and sys.argv[3] else None))
+            finally:
+                lock.release()
+            return
+        if sys.argv[1] in {"--resume", "--resume-leased"}:
+            with contextlib.redirect_stdout(sys.stderr):
+                reply = _resume_worker(Path(sys.argv[2]).resolve(), stopped if sys.argv[1] == "--resume-leased" else None, sys.argv[3] if len(sys.argv) > 3 and sys.argv[3] else None)
+            send(reply)
             return
         with contextlib.redirect_stdout(sys.stderr):
             _worker(Path(sys.argv[1]).resolve(), sys.argv[2], {Path(h).resolve() for h in json.loads(sys.argv[3])}, requests, stopped, send, sys.argv[4] if len(sys.argv) > 4 else None)

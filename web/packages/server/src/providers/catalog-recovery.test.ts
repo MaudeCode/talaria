@@ -29,6 +29,33 @@ async function setup(cold = false) {
 }
 
 describe('catalog recovery authority (TAL-1110)', () => {
+  it.each([false, true])('restores cold=%s provider, model, quota and readiness calls through the automatic coordinator', async (cold) => {
+    const t = await setup(cold)
+    let attempts = 0
+    let owed = true
+    t.sidecar.respond('runtime.agent_recovery', (params) => {
+      if (!params.probe && ++attempts > 1) { owed = false; t.hold(false) }
+      return { ok: !owed, owed, fingerprint: owed ? 'synthetic-owned-receipt' : '', detail: owed ? 'Synthetic transient identity failure' : '', ...(!owed ? { revision: t.sidecar.describe!.agent_revision! } : {}) }
+    })
+    try {
+      if (!cold) { await t.get('/api/models'); await t.get('/api/provider/quotas'); t.hold(true) }
+      expect((await t.get('/api/models')).availability.authoritative).toBe(false)
+      expect((await t.get('/api/provider/quotas')).availability.authoritative).toBe(false)
+      const failed = await t.s.deps.updateNotifications.begin({ owner: '*', profile: 'default', serverOwner: true }, 'agent')
+      await t.s.deps.updateNotifications.transition(failed.id, 'failed')
+      t.s.deps.updates.startAutoApply()
+      await vi.waitFor(() => { expect(t.s.deps.updates.cachedStatus().agent_recovery).toMatchObject({ phase: 'complete' }) }, { timeout: 5000 })
+      expect(attempts).toBe(2)
+      expect(t.sidecar.recycled).toEqual([])
+      expect((await t.get('/api/models')).availability.authoritative).toBe(true)
+      expect((await t.get('/api/provider/quotas')).sources).toHaveLength(1)
+      const health = await (await t.s.get('/api/health/agent')).json() as { chat: { available: boolean } }
+      expect(health.chat.available).toBe(true)
+      const notices = await t.s.deps.updateNotifications.list({ owner: '*', profile: 'default', serverOwner: true })
+      expect(notices.notifications.find((row) => row.id === failed.id)?.phase).toBe('failed')
+      expect(notices.notifications.find((row) => row.kind === 'agent_recovery')?.phase).toBe('succeeded')
+    } finally { await t.s.close() }
+  })
   it('marks cold HTTP catalogs unavailable without fabricating accounts or changing the configured model', async () => {
     const t = await setup(true)
     try {

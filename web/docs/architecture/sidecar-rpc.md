@@ -39,6 +39,42 @@ the boolean and its fallbacks once those supported versions all use `outcome`.
 
 ## Ownership
 
+Failed Agent updates are continued by `UpdateService` in the running server.
+It starts recovery at startup and after an update releases its lease, regardless
+of update-check preferences. One sequence owns its timer, cancellation signal,
+and `runtime.agent_recovery` calls. Six attempts use bounded backoff. Exhausted
+debt stays blocked with the actual failure; the existing update lifecycle only
+rearms it when the checkout's retained receipts change.
+
+`runtime.agent_recovery` probes the configured checkout's native pause records
+and claims, supervised companion, native repair receipts and Web dependency
+intent. A recovery step takes the existing gateway action lock and native
+checkout lease. It resolves the current interpreter, continues the native
+recorded source repair, verifies the recorded baseline/target and source tree,
+repairs owed dependencies and resumes the exact recorded services. Pending
+private autostashes return to the server's existing leased local-edit restore
+path before services resume. Unknown receipts and foreign or unprovable process
+identities stay blocked. Recovery never selects a release or replays legacy
+interruption consent.
+
+Source repair reads the native launch-repair procedure from the receipt's
+immutable baseline and uses its verified recovery closure before importing
+checkout modules. This also covers a torn recovery module. Invalid receipts
+remain in place. A failed source move carries recorded rollback intent, so a
+partially landed target can return to its baseline without selecting a release.
+
+After native debt is discharged, the server verifies `runtime.status` and
+`runtime.ensure_current`. A changed runtime is recycled through the normal
+interpreter resolver once active Web work drains. An unchanged valid runtime
+stays loaded. Provider readiness caches are invalidated after verification.
+The existing companion and Web repair intent remain durable until
+`runtime.agent_recovery` acknowledges the exact loaded revision under the native
+lease. An old or mismatched acknowledgement cannot discharge that debt.
+The update status's optional `agent_recovery` projection and the shared
+notification store expose running, waiting, blocked and complete recovery.
+Recovery does not overwrite the initiating update's result or claim that the
+requested revision was installed.
+
 | Concern | Owner |
 |---|---|
 | Tested Agent identity (`sidecar/agent_dependency.json`), drift guard, loaded-revision check | sidecar |
