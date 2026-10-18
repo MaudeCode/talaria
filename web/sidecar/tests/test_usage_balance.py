@@ -280,8 +280,10 @@ def test_balance_and_pool_resolve_keys_inside_profile_scope(tmp_path, monkeypatc
     usage.register(registry)
     params = {"profile_home": str(tmp_path), "provider": "openrouter", "env_vars": ["MISSING_KEY", "OPENROUTER_API_KEY"]}
     result = registry.methods["usage.balance"](None, params)
-    rows = registry.methods["usage.pool"](None, params)["entries"]
+    snapshot = registry.methods["usage.pool"](None, params)
+    rows = snapshot["entries"]
     usable = resolved.startswith("sk-")
+    assert snapshot.get("has_api_key") is usable
     assert result["status"] == ("ok" if usable else "no_key")
     assert rows[0]["matches_api_key"] is usable
     assert [r.get_header("Authorization") for r in requests] == (["Bearer sk-synthetic-scoped"] if usable else [])
@@ -334,7 +336,9 @@ seen = []
 for profile in ['work', 'home', 'missing', 'work']:
     params = {'profile_home': str(Path(os.environ['HERMES_HOME']) / 'profiles' / profile), 'provider': 'openrouter', 'env_vars': ['OPENROUTER_API_KEY']}
     balance = registry.methods['usage.balance'](None, params)
-    rows = registry.methods['usage.pool'](None, params)['entries']
+    snapshot = registry.methods['usage.pool'](None, params)
+    rows = snapshot['entries']
+    assert snapshot['has_api_key'] == (profile != 'missing')
     absent = registry.methods['usage.balance'](None, {**params, 'credential_id': 'removed'})
     seen.append([balance['status'], [r['credential_id'] for r in rows if r['matches_api_key']], absent['status']])
 print(json.dumps({'seen': seen, 'requests': requests}))

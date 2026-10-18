@@ -5718,6 +5718,9 @@
           ],
           "additionalProperties": false
         }
+      },
+      "has_api_key": {
+        "type": "boolean"
       }
     },
     "required": [

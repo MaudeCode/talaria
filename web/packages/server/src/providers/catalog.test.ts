@@ -18,22 +18,32 @@ describe('profile-scoped usage credentials (TAL-932)', () => {
     try {
       writeEnvFile(join(home, '.env'), { OPENROUTER_API_KEY: key })
       const sidecar = new FakeSidecar()
-      sidecar.respond('config.get', (p) => ({ path: join(p.profile_home, 'config.yaml'), exists: true, config: { model: { provider: 'openrouter' } } }))
-      sidecar.respond('usage.pool_providers', () => ({ providers: ['openrouter'] }))
-      sidecar.respond('usage.pool', () => ({ entries: [] }))
+      sidecar.respond('config.get', (p) => ({ path: join(p.profile_home, 'config.yaml'), exists: true, config: { model: { provider: 'anthropic' } } }))
+      sidecar.respond('usage.pool_providers', () => ({ providers: [] }))
+      sidecar.respond('usage.pool', (p) => ({ entries: [], has_api_key: p.provider === 'openrouter' }))
       sidecar.respond('usage.balance', () => ({ status: 'ok', http_status: null, quota: { usage: 3, limit: 100, limit_remaining: 97 }, label: 'Synthetic', is_available: null, balances: [], windows: [] }))
       const config = new AgentConfig({ sidecar: () => sidecar, env: {} })
       const catalog = new ProviderCatalog({ sidecar: () => sidecar, config, env: {}, now: () => 1_800_000_000, log: () => undefined, costBudget: () => null, isRootProfileHome: () => true })
       expect(await catalog.quota(home, 'openrouter')).toMatchObject({ status: 'available' })
       expect(await catalog.costHistory(home, 'openrouter', 30)).toMatchObject({ status: 'available' })
-      await catalog.quotas(home, 'synthetic')
-      const calls = sidecar.calls.filter((c) => c.method === 'usage.balance' || c.method === 'usage.pool')
+      expect((await catalog.providers(home)).providers.find((p) => p.id === 'openrouter')).toMatchObject({ has_key: true, configured: true, is_oauth: false })
+      expect((await catalog.models(home)).groups.some((g) => g.provider_id === 'openrouter')).toBe(true)
+      const quotas = await catalog.quotas(home, 'synthetic')
+      expect((quotas.sources as Json[]).find((s) => s.provider_id === 'openrouter')).toMatchObject({ status: 'available' })
+      const calls = sidecar.calls.filter((c) => (c.method === 'usage.balance' || c.method === 'usage.pool') && (c.params as Json).provider === 'openrouter')
       expect(calls.some((c) => c.method === 'usage.pool')).toBe(true)
       const expected = key.startsWith('sk-') ? { api_key: key } : { env_vars: ['OPENROUTER_API_KEY'] }
       for (const call of calls) {
         expect(call.params).toMatchObject(expected)
         expect(JSON.stringify(call.params)).not.toContain('op://')
         if (!key.startsWith('sk-')) expect(call.params).not.toHaveProperty('api_key')
+      }
+      for (const matches of [true, false]) {
+        sidecar.respond('usage.pool', (p) => ({ has_api_key: p.provider === 'openrouter', entries: p.provider === 'openrouter' ? [{ credential_id: 'work', label: 'Work', status: 'available', unavailable_reason: null, retry_after: null, matches_api_key: matches }] : [] }))
+        const sources = (await catalog.quotas(home, 'synthetic')).sources as Json[]
+        const providerSources = sources.filter((s) => s.provider_id === 'openrouter')
+        expect(providerSources).toHaveLength(matches ? 1 : 2)
+        expect(providerSources.every((s) => s.status === 'available')).toBe(true)
       }
     } finally {
       rmSync(home, { recursive: true, force: true })

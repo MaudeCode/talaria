@@ -17,7 +17,8 @@
         "provider": "deepseek"
       },
       "result": {
-        "entries": []
+        "entries": [],
+        "has_api_key": false
       }
     }
   ],

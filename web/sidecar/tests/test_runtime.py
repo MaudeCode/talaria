@@ -302,3 +302,11 @@ def test_load_rejects_agent_packages_for_the_other_free_threading_abi(tmp_path, 
         else:
             raise AssertionError(f"load() accepted {site_packages} built for the other free-threading ABI")
         monkeypatch.undo()
+
+
+@requires_agent
+def test_handshake_rejects_pre_scoped_usage_credentials(sidecar: SidecarProcess) -> None:
+    message, _ = sidecar.call("runtime.handshake", {"rpc_version": 41})
+    assert "error" in message, "pre-scoped usage peers must not silently ignore env_vars"
+    assert message["error"]["data"]["condition"] == "sidecar_rpc_version_mismatch"
+    assert sidecar.close() == 3

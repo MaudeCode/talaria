@@ -441,6 +441,10 @@ function looksLikeCodexOauthToken(value: string): boolean {
   }
 }
 
+function isBalanceProvider(pid: string): pid is SidecarParams<'usage.balance'>['provider'] {
+  return pid === 'openrouter' || pid === 'deepseek' || pid === 'opencode-go'
+}
+
 function valueCountsAsApiKey(pid: string, value: unknown): boolean {
   const text = str(value).trim()
   if (!text) return false
@@ -702,6 +706,10 @@ export class ProviderCatalog {
       // Python `_has_explicit_pool_credentials`: keys added with `hermes auth add` live only in the Agent's pool.
       hasKey = true
       keySource = 'credential_pool'
+    } else if (isBalanceProvider(pid)) {
+      const lookup = await this.poolEntries(profileHome, pid, null)
+      authoritative = lookup.authoritative
+      if (lookup.value?.has_api_key) { hasKey = true; keySource = 'env' }
     } else if (!providerEnvVar(pid) && /^[a-z][a-z0-9_-]{0,63}$/.test(pid)) {
       const lookup = await this.authStatus(profileHome, pid)
       authoritative = lookup.authoritative
@@ -937,7 +945,7 @@ export class ProviderCatalog {
     const pluginNames = new Map<string, string>()
     const providerState = (await this.providerRows(profileHome)).payload
     for (const row of providerState.providers) {
-      if (row.has_key !== true || (row.is_oauth !== true && row.is_plugin_provider !== true && row.key_source !== 'credential_pool')) continue
+      if (row.has_key !== true || (row.is_oauth !== true && row.is_plugin_provider !== true && row.key_source !== 'credential_pool' && row.key_source !== 'env')) continue
       signedIn.add(str(row.id))
       if (row.is_plugin_provider === true) pluginNames.set(str(row.id), str(row.display_name) || str(row.id))
     }
@@ -1315,7 +1323,7 @@ export class ProviderCatalog {
       const reason = str(limits?.unavailable_reason).trim()
       return answer(false, 'unavailable', reason ? `${name} account limits are unavailable. ${reason}` : `${name} account limits are unavailable. Confirm provider authentication and try again.`, { account_limits: limits })
     }
-    if (provider === 'openrouter' || provider === 'deepseek' || provider === 'opencode-go') {
+    if (isBalanceProvider(provider)) {
       const apiKey = this.apiKeyFor(provider, profileHome, config)
       const key = credential ? { credential_id: credential.credential_id } : this.usageKey(provider, apiKey)
       const read = await this.balance(profileHome, provider, key)
@@ -1348,7 +1356,7 @@ export class ProviderCatalog {
       return answer(false, 'unavailable', status === 403 ? 'OpenCode Go account limits require an active subscription.' : 'OpenCode Go account limits are temporarily unavailable.', { account_limits: null })
     }
     // Python `_local_pool_snapshot`: any other provider with a credential pool shows its accounts' local state.
-    const entries = credential ? [credential] : (await this.poolEntries(profileHome, provider, null)).value ?? []
+    const entries = credential ? [credential] : (await this.poolEntries(profileHome, provider, null)).value?.entries ?? []
     if (entries.length) {
       const limits = credential ? poolEntryLimits(credential, at) : poolLimits(entries, at)
       return limits.available ? answer(true, 'available', `${name} credential pool status loaded.`, { label: 'Credential pool', account_limits: limits }) : answer(false, 'unavailable', `${name} credential pool: all credentials are unavailable.`, { account_limits: limits })
@@ -1360,8 +1368,8 @@ export class ProviderCatalog {
    * TAL-548: the provider's credential-pool accounts as the sidecar reads them locally. Each says whether it holds
    * `apiKey`, the provider's configured key. Null when the pool is unknown (see `poolLookup`).
    */
-  private poolEntries(profileHome: string, pid: string, apiKey: string | null): Promise<CatalogLookup<PoolEntry[]>> {
-    return this.poolLookup(profileHome, `pool\0${pid}`, async (sidecar) => (await sidecar.call('usage.pool', { profile_home: profileHome, provider: pid, ...this.usageKey(pid, apiKey) })).entries)
+  private poolEntries(profileHome: string, pid: string, apiKey: string | null): Promise<CatalogLookup<SidecarResult<'usage.pool'>>> {
+    return this.poolLookup(profileHome, `pool\0${pid}`, (sidecar) => sidecar.call('usage.pool', { profile_home: profileHome, provider: pid, ...this.usageKey(pid, apiKey) }))
   }
 
   /** The last answer of each credential-pool lookup, by profile home and lookup. */
@@ -1453,10 +1461,10 @@ export class ProviderCatalog {
       const apiKey = this.apiKeyFor(pid, profileHome, config)
       const found = await this.poolEntries(profileHome, pid, apiKey)
       if (!found.authoritative) poolUnknown = true
-      const entries = found.value ?? []
+      const entries = found.value?.entries ?? []
       const accounts = entries.map((e) => ({ source_id: sourceId(pid, e.credential_id), provider_id: pid, provider_label: label, account_label: e.label, credential: e }))
       // The provider's own key is a source unless a pool account already holds it.
-      const ownKey = found.authoritative && ((!entries.length && (p.has_key === true || p.is_custom === true) && !pooled.has(pid)) || (apiKey !== null && !entries.some((e) => e.matches_api_key)))
+      const ownKey = found.authoritative && ((!entries.length && (p.has_key === true || p.is_custom === true) && !pooled.has(pid)) || ((apiKey !== null || found.value?.has_api_key === true) && !entries.some((e) => e.matches_api_key)))
       return ownKey ? [{ source_id: sourceId(pid, 'provider'), provider_id: pid, provider_label: label, account_label: label, credential: null }, ...accounts] : accounts
     }))
     let descriptors = uniqueQuotaSources(perProvider.flat())

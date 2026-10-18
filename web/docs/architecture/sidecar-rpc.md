@@ -534,4 +534,6 @@ inside `scoped_home`, including the profile's secret sources. Older Agents
 without that resolver use the scoped environment. Unresolved `op://` references
 are never sent to a balance endpoint. Pool-account reads keep their own runtime
 key and never fall back to another configured account. Resolved secrets stay in
-the sidecar; pool matching returns only `matches_api_key`.
+the sidecar; pool matching returns `matches_api_key` and a `has_api_key` boolean.
+Quota source membership uses that scoped presence even when the server has no
+raw key, and suppresses the provider source only when a pool account matches it.

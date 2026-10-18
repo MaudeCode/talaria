@@ -114,6 +114,8 @@ def _configured_key(api_key: str | None, env_vars: list[str] | None) -> str:
     """Called only inside scoped_home: prefer an explicit key, else let the Agent resolve its secret sources."""
     if api_key:
         return _usable_key(api_key)
+    if not env_vars:
+        return ""
     try:
         from hermes_cli.config import get_env_value_prefer_dotenv as get_env
     except ImportError:  # older Agents without the resolver
@@ -125,11 +127,11 @@ def _configured_key(api_key: str | None, env_vars: list[str] | None) -> str:
     return ""
 
 
-def pool(provider: str, *, api_key: str | None = None, env_vars: list[str] | None = None) -> list[dict]:
+def pool(provider: str, *, api_key: str | None = None) -> list[dict]:
     """Python `_local_pool_snapshot` rows: one per pool entry with an id, its local status, whether it holds the
     profile-resolved configured key, and no secrets."""
     agent_pool, entries = _pool(provider)
-    configured = _configured_key(api_key, env_vars)
+    configured = _usable_key(api_key)
     try:
         from agent.credential_pool import _exhausted_until
     except Exception:  # noqa: BLE001 - an Agent without it cannot date an exhausted mark, so the entry reads as available
@@ -376,7 +378,8 @@ def register(registry) -> None:
         if not provider:
             raise InvalidParams("provider is required")
         with scoped_home(profile_home_param(params)):
-            return {"entries": pool(provider, api_key=params.get("api_key"), env_vars=params.get("env_vars"))}
+            key = _configured_key(params.get("api_key"), params.get("env_vars"))
+            return {"entries": pool(provider, api_key=key), "has_api_key": bool(key)}
 
     @registry.method("usage.pool_providers")
     def pool_providers_(ctx: CallContext, params: dict) -> dict:
