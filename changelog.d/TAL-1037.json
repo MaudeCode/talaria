@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Chats retain instructions to reload skills after older tool output is compressed.",
+      "highlight": false,
+      "components": ["web"]
+    }
+  ]
+}
