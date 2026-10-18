@@ -48,6 +48,20 @@ describe('canonical owner attachment', () => {
     expect(sidecar.calls.filter((c) => c.method === 'chat.start')).toEqual([])
   })
 
+  it('preserves an explicit null provider in the owner model projection', async () => {
+    const option = vi.spyOn(s.deps.sessions.deps, 'modelOptionFor').mockImplementation((model, provider) => JSON.stringify([model, provider]))
+    const base = { session_id: sid, read_only_reason: CANONICAL_READ_ONLY_REASON, model: 'old-model', model_provider: 'old-backend', workspace: s.state }
+    sidecar.respond('gateway.session', () => attached(snapshot({ info: { model: 'native-model', provider: null } })))
+    const cleared = await s.deps.sessions.owner!.project(base)
+    expect(cleared.model_provider).toBeNull()
+    expect(cleared.model_option_id).toBe('["native-model",null]')
+    expect(option).toHaveBeenLastCalledWith('native-model', null)
+    sidecar.respond('gateway.session', () => attached(snapshot({ info: { model: 'native-model' } })))
+    const absent = await s.deps.sessions.owner!.project(base)
+    expect(absent.model_provider).toBe('old-backend')
+    expect(absent.model_option_id).toBe('["native-model","old-backend"]')
+  })
+
   it('retains the compatibility gate when the installed owner protocol is missing', async () => {
     sidecar.respond('gateway.session', () => ({ state: 'incompatible', reason: 'native_sessions_unavailable', snapshot: null, receipt: null }))
     const row = SessionEnvelopeSchema.parse(await (await s.get(`/api/session?session_id=${sid}`)).json())

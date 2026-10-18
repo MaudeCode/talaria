@@ -91,7 +91,8 @@ export class GatewaySessions {
       const projected = withMessages ? this.deps.service.foreignMessages(messages, base) : []
       const [rows, offset] = messageWindowForDisplay(projected, limit, before)
       const model = str(snapshot.info.model) || str(base.model) || null
-      const provider = str(snapshot.info.provider) || str(base.model_provider) || null
+      const provider = Object.hasOwn(snapshot.info, 'provider')
+        ? str(snapshot.info.provider) || null : str(base.model_provider) || null
       Object.assign(fields, { messages: limit === null ? rows : messagesForLimitedPayload(rows), message_count: Math.max(snapshot.message_count, nativeRows.length), _messages_offset: offset, _messages_truncated: offset > 0,
         title: str(snapshot.info.title) || base.title, model: str(snapshot.info.model) || base.model,
         model_provider: provider, model_option_id: this.deps.service.deps.modelOptionFor?.(model, provider) ?? null,
