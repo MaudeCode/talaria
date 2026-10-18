@@ -763,21 +763,64 @@ def _worker(root, revision, homes, requests, stopped, send, refresh_binding=None
 
 
 def _resume_current(root, custody, stopped=None, complete_revision=None):
+    # Resolve target PM code in a fresh stdlib process, after any source/dependency change.
     try:
-        from hermes_cli._launchers import resolve_store_python
-        python = resolve_store_python(root)
+        launchers = importlib.import_module('hermes_cli._launchers')
+        if not Path(launchers.__file__).resolve().is_relative_to(root):
+            raise RuntimeError('Recovery loaded another Agent bootstrap selector.')
+        bootstrap = launchers.resolve_store_python(root)
     except ModuleNotFoundError as exc:
-        if exc.name != "hermes_cli._launchers":
+        if exc.name != 'hermes_cli._launchers':
             raise
-        python = None
-    if python is None:
-        python = next((path for path in (root / ".venv/bin/python", root / "venv/bin/python", root / "venv/Scripts/python.exe") if path.is_file()), Path(sys.executable))
-    result = _command([str(python), "-m", "talaria_sidecar.agent_mutation", "--resume-leased", str(root), complete_revision or ""], root, 660, stopped or threading.Event(), custody, cooperative=True)
+        bootstrap = None
+    # A copied macOS venv interpreter can be its own _base_executable and later be retired.
+    bootstrap = bootstrap or getattr(sys, '_base_executable', None) or sys.executable
+    result = _command([str(bootstrap), "-m", "talaria_sidecar.agent_mutation", "--select-resume", str(root), complete_revision or "", sys.executable], root, 660, stopped or threading.Event(), custody, cooperative=True)
     try:
         reply = json.loads(result["detail"]) if result["ok"] else {}
         return {**reply, "ok": result["ok"] and reply.get("ok") is True, "detail": str(reply.get("detail") or result["detail"])}
     except ValueError:
         return {"ok": False, "detail": "The current Agent could not verify its retained gateway resume obligation."}
+
+
+def _recovery_environment(root):
+    """Reuse PM's selector and packaged launch policy without copying its facts/path rules."""
+    sys.path.insert(0, str(root))
+    environments = importlib.import_module('pm.environments')
+    if any(not Path(sys.modules[name].__file__).resolve().is_relative_to(root)
+           for name in ('pm', 'pm.environments', 'hermes_constants')):
+        raise RuntimeError('Recovery loaded another Agent environment selector.')
+    selected = environments.committed_venv(root)
+    if selected is None:
+        if environments.install_state_dir(root).exists():
+            raise RuntimeError('No dependency environment is committed for this Agent install; recovery remains owed.')
+        selected = environments.selected_venv(root)
+    return environments, selected
+
+
+def _select_resume(root, complete_revision, legacy_python):
+    if (root / 'pm').exists():
+        environments, selected = _recovery_environment(root)
+        command = environments.venv_command(root, selected)
+        environment = str(selected)
+    else:
+        python = next((path for venv in ('.venv', 'venv')
+                       for path in (root / venv / 'bin/python', root / venv / 'Scripts/python.exe') if path.is_file()), Path(legacy_python))
+        command, environment = [str(python)], ''
+    # Keep bin/python intact: realpath would turn a POSIX venv into its bare tool.
+    argv = [*command, '-m', 'talaria_sidecar.agent_mutation', '--resume-leased', str(root), complete_revision or '', environment]
+    os.execv(argv[0], argv)
+
+
+def _verify_recovery_environment(root, expected):
+    from .runtime import _check_site_packages_python
+    environments, selected = _recovery_environment(root)
+    if str(selected) != expected or environments.venv_python_version(selected) != sys.version_info[:2]:
+        raise RuntimeError('Agent recovery dependency environment changed or has an incompatible Python ABI.')
+    site = environments.site_packages(selected)
+    if not site.is_dir() or site.resolve() not in {Path(entry).resolve() for entry in sys.path if entry}:
+        raise RuntimeError('Agent recovery did not enter its selected dependency environment.')
+    _check_site_packages_python()
 
 
 def _resume_worker(root, stopped=None, complete_revision=None):
@@ -833,9 +876,10 @@ def _resume_worker(root, stopped=None, complete_revision=None):
                 if response.get('ok') is not True:
                     return {'ok': False, 'detail': 'Recorded dependency repair failed: ' + str(response.get('detail') or synced['detail'])}
                 recovery.state['sync_failed'] = False
-                if transaction:
-                    transaction['dependencies_verified'] = True
+                transaction = recovery.state.setdefault('transaction', {'revision': revision, 'homes': [str(runtime.hermes_home)]})
+                transaction['dependencies_verified'] = True
                 recovery.save(tree)
+                return _resume_current(root, custody, stopped, complete_revision)
             elif recovery.state.get('sync_failed'):
                 return {'ok': False, 'detail': 'The recorded dependency repair module is missing.'}
         whole, why = records.tree_is_whole(tree, root)
@@ -926,9 +970,11 @@ def _command(argv, root, timeout, stopped, custody, *, cooperative=False):
 def main():
     for key in ("GIT_DIR", "GIT_WORK_TREE", "GIT_COMMON_DIR", "GIT_INDEX_FILE"):
         os.environ.pop(key, None)
-    if len(sys.argv) > 2 and sys.argv[1] in {'--recover-current', '--resume', '--resume-leased'}:
+    if len(sys.argv) > 2 and sys.argv[1] in {'--recover-current', '--resume', '--resume-leased', '--select-resume'}:
         try:
             _native_source_repair(Path(sys.argv[2]).resolve())
+            if sys.argv[1] == '--select-resume':
+                _select_resume(Path(sys.argv[2]).resolve(), sys.argv[3], sys.argv[4])
         except BaseException as exc:
             print(json.dumps({'ok': False, 'detail': str(exc) if str(exc) != '1' else 'Native recorded source repair could not complete; its receipt remains owed.'}), flush=True)
             return
@@ -962,6 +1008,8 @@ def main():
             return
         if sys.argv[1] in {"--resume", "--resume-leased"}:
             with contextlib.redirect_stdout(sys.stderr):
+                if len(sys.argv) > 4 and sys.argv[4]:
+                    _verify_recovery_environment(Path(sys.argv[2]).resolve(), sys.argv[4])
                 reply = _resume_worker(Path(sys.argv[2]).resolve(), stopped if sys.argv[1] == "--resume-leased" else None, sys.argv[3] if len(sys.argv) > 3 and sys.argv[3] else None)
             send(reply)
             return

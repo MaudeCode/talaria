@@ -332,7 +332,24 @@ the obligation. Patch paths are recorded before atomic local restores; a HEAD
 that did not move cannot certify an interrupted patch. A successful atomic
 restore gets a verified native baseline checkpoint. A paused broken environment
 can repair without importing its main runtime first; verified resume then uses
-the current Agent interpreter and its canonical recovery reader.
+the current Agent dependency environment and its canonical recovery reader.
+The shared resume launcher first starts a fresh stdlib bootstrap under native
+checkout custody. The native durable Python tool is preferred for this stdlib
+bootstrap, since a macOS venv's copied interpreter can be retired during sync.
+The bootstrap imports the target checkout's `pm.environments` selector,
+uses its committed environment and `venv_command` launch prefix, and preserves
+the venv executable path. Packaged installs therefore retain their native
+environment-entry and package identity policy; a bare Python tool is never an
+Agent runtime by itself. Missing, malformed, foreign or ABI-incompatible PM
+selections retain recovery debt instead of falling back to an older venv.
+Legacy installs without PM retain their existing venv launch behavior.
+Successful recorded dependency repair passes through the same selector again
+before importing Agent-dependent recovery code, even when the parent still
+runs on the previous generation. Native source repair remains a stdlib-only
+bootstrap before selection. The lifetime pipe, inherited checkout lease and
+outer recovery deadline continue to own cancellation and retry. An empty
+service list still retains its transaction until the freshly loaded runtime
+acknowledges the independently verified installed revision.
 
 Within the held lease, the server inspects immutable target Git blobs and
 retained `cron/manual_runs` and `cron/bot_chat_pending` records, before dependency
