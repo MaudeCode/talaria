@@ -210,6 +210,8 @@ export const cronAction = (action: 'create' | 'update' | 'delete' | 'run' | 'pau
 }
 export const fetchCronHistory = (job_id: string, limit = 50) => orpc().crons.history({ job_id, limit: String(limit) })
 export const fetchCronRun = (job_id: string, filename: string) => orpc().crons.run({ job_id, filename })
+export const fetchCronBlueprints = () => orpc().crons.blueprints()
+export const fillCronBlueprint = (input: { key: string; values: Record<string, string> }) => orpc().crons.blueprintFill(input)
 export const fetchCronDeliveryOptions = () => orpc().crons.deliveryOptions()
 export const fetchCronStatus = () => orpc().crons.status({})
 export const fetchKanbanBoards = () => orpc().kanban.boards({})

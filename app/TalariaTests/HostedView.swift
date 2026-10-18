@@ -129,13 +129,20 @@ enum HostedAccessibility {
     }
 
     /// Taps an alert's button: SwiftUI alerts are `UIAlertController`s, whose buttons ignore `accessibilityActivate`.
-    /// Runs the action's handler and dismisses the alert, as a tap does.
-    static func tap(_ title: String, in alert: UIAlertController) -> Bool {
+    /// Completes the harness's manual dismissal before dispatching an action that may present another alert.
+    static func tap(
+        _ title: String,
+        in alert: UIAlertController,
+        dismiss: @MainActor (UIAlertController, @escaping () -> Void) -> Void = { alert, completion in
+            alert.dismiss(animated: false, completion: completion)
+        }
+    ) -> Bool {
         guard let action = alert.actions.first(where: { $0.title == title }),
               let handler = action.value(forKey: "handler") else { return false }
         typealias Handler = @convention(block) (UIAlertAction) -> Void
-        alert.dismiss(animated: false)
-        unsafeBitCast(handler as AnyObject, to: Handler.self)(action)
+        dismiss(alert) {
+            unsafeBitCast(handler as AnyObject, to: Handler.self)(action)
+        }
         RunLoop.current.run(until: Date().addingTimeInterval(0.05))
         return true
     }

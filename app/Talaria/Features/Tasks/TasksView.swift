@@ -36,7 +36,8 @@ struct TasksView: View {
                     saveTitle: String(localized: "Create"),
                     isSaving: viewModel.isMutating,
                     errorMessage: viewModel.actionErrorMessage,
-                    deliveryOptions: viewModel.deliveryOptions
+                    deliveryOptions: viewModel.deliveryOptions,
+                    allowsBlueprints: true
                 ) { draft in
                     let didCreate = await viewModel.create(from: draft)
                     if let lastError = viewModel.lastError {

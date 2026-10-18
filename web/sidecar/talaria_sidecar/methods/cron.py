@@ -629,6 +629,47 @@ def run_tracked(job: dict, store_home: Path, execution_home: Path | None, ctx: C
 # ── methods ───────────────────────────────────────────────────────────────
 
 def register(registry) -> None:
+    @registry.method("cron.blueprints")
+    def blueprints(ctx: CallContext, params: dict) -> dict:
+        try:
+            catalog = importlib.import_module("cron.blueprint_catalog")
+        except ModuleNotFoundError as exc:
+            if exc.name != "cron.blueprint_catalog":
+                raise
+            return {"blueprints": []}
+        with scoped_home(profile_home_param(params)):
+            rows = []
+            for blueprint in catalog.list_blueprints():
+                entry = catalog.blueprint_catalog_entry(blueprint)
+                schema = catalog.blueprint_form_schema(blueprint)
+                slots = [{**slot, "default": str(slot["default"]) if slot.get("default") is not None else None,
+                          "options": [str(value) for value in slot.get("options", [])]} for slot in schema["fields"]]
+                rows.append({key: entry[key] for key in ("key", "title", "description", "category", "source", "plugin")})
+                rows[-1].update(schedule_label=entry["scheduleHuman"], slots=slots)
+            return {"blueprints": rows}
+
+    @registry.method("cron.blueprint_fill")
+    def blueprint_fill(ctx: CallContext, params: dict) -> dict:
+        key, values = params.get("key"), params.get("values")
+        if not isinstance(key, str) or not key.strip() or not isinstance(values, dict) or not all(isinstance(v, str) for v in values.values()):
+            raise InvalidParams("key and string slot values are required")
+        try:
+            catalog = importlib.import_module("cron.blueprint_catalog")
+        except ModuleNotFoundError as exc:
+            if exc.name != "cron.blueprint_catalog":
+                raise
+            raise InvalidParams("Automation blueprints are unavailable") from exc
+        with scoped_home(profile_home_param(params)):
+            blueprint = catalog.get_blueprint(key)
+            if blueprint is None:
+                raise InvalidParams("Unknown automation blueprint")
+            try:
+                draft = catalog.fill_blueprint(blueprint, values)
+            except catalog.BlueprintFillError as exc:
+                raise InvalidParams(str(exc)) from exc
+            draft.setdefault("skills", [])
+            return {"draft": draft}
+
     @registry.method("cron.list")
     def list_(ctx: CallContext, params: dict) -> dict:
         """Jobs of one store, shaped for the API; the server merges profiles. ``probe_store`` adds the store's write health."""

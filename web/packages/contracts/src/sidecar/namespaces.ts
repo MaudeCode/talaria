@@ -303,7 +303,14 @@ export const CronJobSchema = z.object({ id: z.string(), name: z.string().nullabl
 const CronJob = ProfileHomeParams.extend({ job_id: z.string().min(1) })
 const JobEnvelope = z.object({ job: CronJobSchema })
 export const CronUsageSchema = z.object({ model: z.string().optional(), provider: z.string().optional(), estimated_cost_usd: z.number().optional(), duration_seconds: z.number().optional(), input_tokens: z.number().int().nullable().optional(), output_tokens: z.number().int().nullable().optional(), total_tokens: z.number().int().nullable().optional() })
+export const CronBlueprintSlotSchema = z.object({ name: z.string(), type: z.string(), label: z.string(), default: z.string().nullable(), options: z.array(z.string()), optional: z.boolean(), strict: z.boolean(), help: z.string() })
+export const CronBlueprintsSchema = z.object({ blueprints: z.array(z.object({ key: z.string(), title: z.string(), description: z.string(), category: z.string(), source: z.enum(['builtin', 'plugin']), plugin: z.string().nullable(), schedule_label: z.string(), slots: z.array(CronBlueprintSlotSchema) })) })
+export const CronBlueprintFillInputSchema = z.object({ key: z.string().min(1), values: z.record(z.string(), z.string()) })
+export const CronBlueprintFillSchema = z.object({ draft: z.object({ name: z.string(), prompt: z.string(), schedule: z.string(), deliver: z.string(), skills: z.array(z.string()) }) })
+export type CronBlueprint = z.infer<typeof CronBlueprintsSchema>['blueprints'][number]
 export const CRON_METHODS = {
+  'cron.blueprints': { params: ProfileHomeParams, result: CronBlueprintsSchema },
+  'cron.blueprint_fill': { params: CronBlueprintFillInputSchema.extend({ profile_home: z.string().optional() }), result: CronBlueprintFillSchema },
   /** `probe_store` adds the store's write probe (TAL-810): null when writes land or the Agent predates the probe. */
   'cron.list': { params: ProfileHomeParams.extend({ probe_store: z.boolean().optional() }), result: z.object({ jobs: z.array(CronJobSchema), store_health: z.object({ store: z.string(), error: z.string(), since: z.string(), fix: z.string() }).nullable().optional() }) },
   'cron.get': { params: CronJob, result: z.object({ job: CronJobSchema.nullable() }) },

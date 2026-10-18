@@ -7,7 +7,7 @@ import type { CronJob, CronStoreHealth } from '../../contracts'
 
 vi.mock(import('../../api/endpoints'), async (importOriginal) => ({
   ...(await importOriginal()),
-  fetchCrons: vi.fn(), fetchCronStatus: vi.fn(), fetchCronHistory: vi.fn(), fetchCronRun: vi.fn(), cronAction: vi.fn(),
+  fetchCronBlueprints: vi.fn(), fillCronBlueprint: vi.fn(), fetchCrons: vi.fn(), fetchCronStatus: vi.fn(), fetchCronHistory: vi.fn(), fetchCronRun: vi.fn(), cronAction: vi.fn(),
   fetchCronContextSources: vi.fn(), fetchCronDeliveryOptions: vi.fn(), fetchSkills: vi.fn(), fetchProfiles: vi.fn(), fetchModels: vi.fn(),
 }))
 import * as api from '../../api/endpoints'
@@ -76,6 +76,7 @@ describe('TasksPage', () => {
     // jsdom has no matchMedia; the empty state asks whether the sidebar is a drawer.
     vi.stubGlobal('matchMedia', (query: string) => ({ matches: true, media: query, addEventListener: () => undefined, removeEventListener: () => undefined }))
     vi.mocked(api.fetchCronContextSources).mockImplementation((input) => Promise.resolve({ profile: input.profile || 'work', sources: [{ job_id: feed.id!, label: 'Feed', selectable: true }] }))
+    vi.mocked(api.fetchCronBlueprints).mockResolvedValue({ blueprints: [] })
     vi.mocked(api.fetchCronStatus).mockResolvedValue({ running: {} })
     vi.mocked(api.fetchCronHistory).mockResolvedValue({ job_id: 'x', runs, total: 73, offset: 0 })
     vi.mocked(api.fetchCronRun).mockReset().mockResolvedValue({ content: '# Not markdown\n| literal |', snippet: 'literal', response: '# Not markdown\n| literal |', usage: { input_tokens: 1000, output_tokens: 50 } })
@@ -143,6 +144,7 @@ describe('TasksPage', () => {
   it.each(['refusal', 'transport failure'] as const)('marks only the confirmed delete, then restores state after %s', async (outcome) => {
     const held = deferred<Awaited<ReturnType<typeof api.cronAction>>>()
     vi.mocked(api.cronAction).mockImplementation(() => held.promise)
+    vi.mocked(api.fetchCronBlueprints).mockResolvedValue({ blueprints: [] })
     vi.mocked(api.fetchCronStatus).mockResolvedValue({ running: { [full.id!]: 1790000000 } })
     const detail = await openJob('Digest')
     await userEvent.click(detail.getByRole('button', { name: /^delete$/i }))
@@ -176,6 +178,7 @@ describe('TasksPage', () => {
     act(() => { held.reject(new Error('Unknown result')) })
     await waitFor(() => expect(detail.getByRole('status')).toHaveTextContent('Retry'))
     expect(detail.getByRole('button', { name: /^delete$/i })).toBeDisabled()
+    vi.mocked(api.fetchCronBlueprints).mockResolvedValue({ blueprints: [] })
     vi.mocked(api.fetchCronStatus).mockResolvedValue({ running: {} })
     vi.mocked(api.fetchCrons).mockResolvedValue(cronList([feed]))
     await userEvent.click(within(detail.getByRole('status')).getByRole('button', { name: 'Retry' }))
@@ -379,11 +382,13 @@ describe('TasksPage', () => {
   })
 
   it('refetches the job and its runs once a run leaves the running set', async () => {
+    vi.mocked(api.fetchCronBlueprints).mockResolvedValue({ blueprints: [] })
     vi.mocked(api.fetchCronStatus).mockResolvedValue({ running: { ab12cd34ef56: 1 } })
     await openJob('Digest')
     await waitFor(() => expect(api.fetchCronHistory).toHaveBeenCalledTimes(1))
     const listCalls = vi.mocked(api.fetchCrons).mock.calls.length
     // The next status poll (every 10s in the app) reports the run finished.
+    vi.mocked(api.fetchCronBlueprints).mockResolvedValue({ blueprints: [] })
     vi.mocked(api.fetchCronStatus).mockResolvedValue({ running: {} })
     await qc.refetchQueries({ queryKey: keys.crons.status })
     await waitFor(() => expect(api.fetchCronHistory).toHaveBeenCalledTimes(2))
@@ -540,4 +545,47 @@ describe('TasksPage', () => {
     expect(api.fetchCronHistory).not.toHaveBeenCalled()
     expect(api.fetchCronRun).not.toHaveBeenCalled()
   })
+
+  it('starts a task from a plugin blueprint and uses the server-filled editor fields', async () => {
+    vi.mocked(api.fetchCronBlueprints).mockResolvedValue({ blueprints: [{ key: 'team:brief', title: 'Team brief', description: 'A digest', category: 'daily', source: 'plugin', plugin: 'team', schedule_label: 'Daily', slots: [{ name: 'topic', type: 'text', label: 'Topic', default: null, options: [], optional: false, strict: true, help: '' }] }] })
+    vi.mocked(api.fillCronBlueprint).mockResolvedValue({ draft: { name: 'Team brief', prompt: 'Server-filled releases prompt', schedule: '30 8 * * *', deliver: 'local', skills: ['summary'] } })
+    renderPage([])
+    await userEvent.click(within(screen.getByTestId('sidebar')).getByRole('button', { name: /new job/i }))
+    await userEvent.click(await screen.findByRole('button', { name: 'Start from a blueprint' }))
+    await userEvent.click(await screen.findByRole('button', { name: /Team brief.*team/ }))
+    await userEvent.type(screen.getByLabelText('Topic'), 'releases')
+    await userEvent.click(screen.getByRole('button', { name: 'Use blueprint' }))
+    expect(await screen.findByDisplayValue('Server-filled releases prompt')).toBeVisible()
+    expect(screen.getByDisplayValue('30 8 * * *')).toBeVisible()
+    expect(screen.getByDisplayValue('summary')).toBeVisible()
+    expect(api.fillCronBlueprint).toHaveBeenCalledWith({ key: 'team:brief', values: { topic: 'releases' } })
+    await userEvent.click(screen.getByRole('button', { name: 'Start from a blueprint' }))
+    expect(screen.getByRole('button', { name: /Team brief.*team/ })).toBeVisible()
+  })
+
+  it('keeps blueprint slot errors editable without creating a task', async () => {
+    vi.mocked(api.fetchCronBlueprints).mockResolvedValue({ blueprints: [{ key: 'brief', title: 'Morning brief', description: 'Daily news', category: 'daily', source: 'builtin', plugin: null, schedule_label: 'Daily', slots: [{ name: 'topic', type: 'text', label: 'Topic', default: 'news', options: [], optional: false, strict: true, help: '' }] }] })
+    vi.mocked(api.fillCronBlueprint).mockRejectedValue(new Error('Unknown slot value'))
+    renderPage([])
+    await userEvent.click(within(screen.getByTestId('sidebar')).getByRole('button', { name: /new job/i }))
+    await userEvent.click(await screen.findByRole('button', { name: 'Start from a blueprint' }))
+    await userEvent.click(screen.getByRole('button', { name: /Morning brief/ }))
+    await userEvent.click(screen.getByRole('button', { name: 'Use blueprint' }))
+    expect(await screen.findByText('Unknown slot value')).toBeVisible()
+    expect(screen.getByLabelText('Topic')).toHaveValue('news')
+    expect(api.cronAction).not.toHaveBeenCalled()
+  })
+
+  it('can leave the blueprint step when its catalog becomes empty', async () => {
+    vi.mocked(api.fetchCronBlueprints).mockResolvedValue({ blueprints: [{ key: 'brief', title: 'Morning brief', description: 'Daily news', category: 'daily', source: 'builtin', plugin: null, schedule_label: 'Daily', slots: [] }] })
+    renderPage([])
+    await userEvent.click(within(screen.getByTestId('sidebar')).getByRole('button', { name: /new job/i }))
+    await userEvent.click(await screen.findByRole('button', { name: 'Start from a blueprint' }))
+    act(() => { qc.setQueryData(keys.crons.blueprints, { blueprints: [] }) })
+    const step = screen.getByRole('region', { name: 'Start from a blueprint' })
+    await userEvent.click(within(step).getByRole('button', { name: 'Cancel' }))
+    expect(screen.getByLabelText('Name')).toBeVisible()
+    expect(screen.queryByRole('button', { name: 'Start from a blueprint' })).toBeNull()
+  })
+
 })

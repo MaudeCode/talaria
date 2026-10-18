@@ -6,12 +6,14 @@ struct CronJobEditorSheet: View {
     let saveTitle: String
     let isSaving: Bool
     let errorMessage: String?
+    let allowsBlueprints: Bool
     let onSave: (CronJobEditorDraft) async -> Bool
 
     @State private var draft: CronJobEditorDraft
     /// Model catalog, profile list, and skill list for the Configuration
     /// section. Loaded when this sheet opens, not when the task list appears.
     @State private var catalogs: CronJobEditorCatalogs
+    @State private var isPresentingBlueprintPicker = false
     @State private var isPresentingModelPicker = false
     @State private var isPresentingSkillsPicker = false
     @Environment(\.dismiss) private var dismiss
@@ -55,8 +57,10 @@ struct CronJobEditorSheet: View {
         isSaving: Bool,
         errorMessage: String?,
         deliveryOptions: [CronDeliveryOption]? = nil,
+        allowsBlueprints: Bool = false,
         onSave: @escaping (CronJobEditorDraft) async -> Bool
     ) {
+        self.allowsBlueprints = allowsBlueprints
         self.title = title
         self.saveTitle = saveTitle
         self.isSaving = isSaving
@@ -66,12 +70,20 @@ struct CronJobEditorSheet: View {
         self.initialDeliver = draft.deliver
         self.initialProfile = draft.profile
         _draft = State(initialValue: draft)
-        _catalogs = State(initialValue: CronJobEditorCatalogs(client: client))
+        _catalogs = State(initialValue: CronJobEditorCatalogs(client: client, includesBlueprints: allowsBlueprints))
     }
 
     var body: some View {
         NavigationStack {
             Form {
+                if allowsBlueprints && !catalogs.blueprints.isEmpty {
+                    Section {
+                        Button("Start from a blueprint") {
+                            catalogs.selectBlueprint(nil)
+                            isPresentingBlueprintPicker = true
+                        }
+                    }
+                }
                 Section("Task") {
                     TextField("Name", text: $draft.name)
 
@@ -154,6 +166,9 @@ struct CronJobEditorSheet: View {
             .task {
                 await catalogs.load()
             }
+            .sheet(isPresented: $isPresentingBlueprintPicker) {
+                blueprintPicker
+            }
             .sheet(isPresented: $isPresentingModelPicker) {
                 // Favorites stay out of task editing: starring a model here
                 // would silently change what the chat composer offers.
@@ -215,6 +230,106 @@ struct CronJobEditorSheet: View {
             }
         }
         .adaptiveFormPresentation()
+    }
+
+    private var blueprintPicker: some View {
+        NavigationStack {
+            Form {
+                if let blueprint = catalogs.selectedBlueprint {
+                    Section {
+                        Text(verbatim: blueprint.description)
+                        Text(verbatim: blueprint.scheduleLabel)
+                            .foregroundStyle(.secondary)
+                    }
+                    Section {
+                        ForEach(blueprint.slots) { slot in
+                            let value = Binding(
+                                get: { catalogs.blueprintValues[slot.name] ?? "" },
+                                set: { catalogs.blueprintValues[slot.name] = $0 }
+                            )
+                            if slot.strict && !slot.options.isEmpty {
+                                Picker(slot.label, selection: value) {
+                                    Text("None").tag("")
+                                    ForEach(slot.options, id: \.self) { option in
+                                        Text(verbatim: option).tag(option)
+                                    }
+                                }
+                            } else {
+                                LabeledContent {
+                                    TextField("", text: value, axis: .vertical)
+                                        .lineLimit(1...4)
+                                        .multilineTextAlignment(.trailing)
+                                        .textInputAutocapitalization(.never)
+                                        .autocorrectionDisabled()
+                                        .accessibilityLabel(Text(verbatim: slot.label))
+                                } label: {
+                                    Text(verbatim: slot.label)
+                                }
+                            }
+                            if !slot.help.isEmpty {
+                                Text(verbatim: slot.help)
+                                    .font(.footnote)
+                                    .foregroundStyle(.secondary)
+                            }
+                        }
+                    }
+                    .disabled(catalogs.isFillingBlueprint)
+                    if let error = catalogs.blueprintErrorMessage {
+                        Section { Text(verbatim: error).foregroundStyle(.red) }
+                    }
+                    Section {
+                        Button("Use blueprint") {
+                            Task {
+                                if let filled = await catalogs.fillBlueprint() {
+                                    draft.applyBlueprint(filled)
+                                    isPresentingBlueprintPicker = false
+                                }
+                            }
+                        }
+                        .disabled(catalogs.isFillingBlueprint)
+                    }
+                } else {
+                    ForEach(catalogs.blueprints) { blueprint in
+                        Button {
+                            catalogs.selectBlueprint(blueprint)
+                        } label: {
+                            VStack(alignment: .leading, spacing: 4) {
+                                HStack {
+                                    Text(verbatim: blueprint.title)
+                                    if let plugin = blueprint.plugin {
+                                        Text(verbatim: plugin)
+                                            .font(.caption)
+                                            .foregroundStyle(.secondary)
+                                    }
+                                }
+                                Text(verbatim: blueprint.description)
+                                    .font(.footnote)
+                                    .foregroundStyle(.secondary)
+                                Text(verbatim: blueprint.scheduleLabel)
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                            }
+                            .foregroundStyle(.primary)
+                        }
+                    }
+                }
+            }
+            .navigationTitle(catalogs.selectedBlueprint?.title ?? String(localized: "Start from a blueprint"))
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancel") { isPresentingBlueprintPicker = false }
+                        .disabled(catalogs.isFillingBlueprint)
+                }
+                if catalogs.selectedBlueprint != nil {
+                    ToolbarItem(placement: .topBarTrailing) {
+                        Button("Back") { catalogs.selectBlueprint(nil) }
+                            .disabled(catalogs.isFillingBlueprint)
+                    }
+                }
+            }
+            .interactiveDismissDisabled(catalogs.isFillingBlueprint)
+        }
     }
 
     private var modelSelection: ModelCatalogOption? {

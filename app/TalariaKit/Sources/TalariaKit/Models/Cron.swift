@@ -674,6 +674,15 @@ public struct CronJobEditorDraft: Equatable {
         )
     }
 
+    /// Pre-fill the blueprint fields while preserving the user's other editor choices.
+    public mutating func applyBlueprint(_ filled: CronJobEditorDraft) {
+        name = filled.name
+        prompt = filled.prompt
+        schedule = filled.schedule
+        deliver = filled.deliver
+        skillsText = filled.skillsText
+    }
+
     public var trimmedName: String? {
         Self.nonEmpty(name)
     }
@@ -838,5 +847,53 @@ extension KeyedDecodingContainer {
         }
 
         return nil
+    }
+}
+
+/// The Agent's form schema and provenance. Clients render slots without filling templates.
+public struct CronBlueprintsResponse: Decodable {
+    public let blueprints: [CronBlueprint]
+}
+
+public struct CronBlueprint: Decodable, Identifiable {
+    public var id: String { key }
+    public let key: String
+    public let title: String
+    public let description: String
+    public let category: String
+    public let source: String
+    public let plugin: String?
+    public let scheduleLabel: String
+    public let slots: [CronBlueprintSlot]
+}
+
+public struct CronBlueprintSlot: Decodable, Identifiable {
+    public var id: String { name }
+    public let name: String
+    public let type: String
+    public let label: String
+    public let `default`: String?
+    public let options: [String]
+    public let optional: Bool
+    public let strict: Bool
+    public let help: String
+}
+
+public struct CronBlueprintFillResponse: Decodable {
+    public let draft: CronJobEditorDraft
+}
+
+extension CronJobEditorDraft: Decodable {
+    private enum CodingKeys: String, CodingKey { case name, prompt, schedule, deliver, skills }
+
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        self.init(
+            name: c.decodeLossyStringIfPresent(forKey: .name) ?? "",
+            prompt: c.decodeLossyStringIfPresent(forKey: .prompt) ?? "",
+            schedule: c.decodeLossyStringIfPresent(forKey: .schedule) ?? "",
+            deliver: c.decodeLossyStringIfPresent(forKey: .deliver) ?? "local",
+            skillsText: (c.decodeLossyArrayIfPresent(String.self, forKey: .skills) ?? []).joined(separator: ", ")
+        )
     }
 }

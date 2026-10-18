@@ -1193,3 +1193,27 @@ describe('extension state transactions (review round 41)', () => {
     }
   })
 })
+
+describe('automation blueprints', () => {
+  it('lists profile blueprints and fills an editable draft without creating a job', async () => {
+    const sidecar = new FakeSidecar()
+    const blueprint = { key: 'team:brief', title: 'Team brief', description: 'A team digest', category: 'daily', source: 'plugin' as const, plugin: 'team', schedule_label: 'daily at 09:00', slots: [] }
+    sidecar.respond('cron.blueprints', () => ({ blueprints: [blueprint] }))
+    sidecar.respond('cron.blueprint_fill', ({ key, values }) => {
+      if (values.time === 'bad') throw new SidecarError('invalid time', { code: -32602, condition: 'invalid_params' })
+      expect(key).toBe('team:brief')
+      return { draft: { name: 'Team brief', prompt: `Brief ${values.topic}`, schedule: '30 8 * * *', deliver: 'local', skills: ['summary'] } }
+    })
+    const s = await bootTestServer({ sidecar })
+    onTestFinished(() => s.close())
+    const listed = await s.get('/api/cron/blueprints')
+    expect(listed.status).toBe(200)
+    expect(await json(listed)).toEqual({ blueprints: [blueprint] })
+    const filled = await post(s, '/api/cron/blueprints/fill', { key: 'team:brief', values: { topic: 'releases' } })
+    expect(filled.status).toBe(200)
+    expect(await json(filled)).toMatchObject({ draft: { prompt: 'Brief releases', schedule: '30 8 * * *', skills: ['summary'] } })
+    expect((await post(s, '/api/cron/blueprints/fill', { key: 'team:brief', values: { time: 'bad' } })).status).toBe(400)
+    expect(sidecar.calls.filter((c) => c.method === 'cron.create')).toEqual([])
+    expect(sidecar.calls.filter((c) => c.method === 'cron.blueprints' || c.method === 'cron.blueprint_fill').every((c) => (c.params as Json).profile_home === s.deps.config.hermesHome)).toBe(true)
+  })
+})

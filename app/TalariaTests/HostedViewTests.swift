@@ -8,6 +8,19 @@ import TalariaKit
 /// tree, activating one runs its action, and the in-process fixture answers the App's requests.
 @MainActor
 final class HostedViewTests: XCTestCase {
+    func testAlertActionWaitsForManualDismissalBeforeRequestingAnotherWarning() throws {
+        let alert = UIAlertController(title: "Model warning", message: nil, preferredStyle: .alert)
+        var refreshRequests = 0
+        alert.addAction(UIAlertAction(title: "Refresh warning", style: .default) { _ in refreshRequests += 1 })
+        var finishDismissal: (() -> Void)?
+        XCTAssertTrue(HostedAccessibility.tap("Refresh warning", in: alert, dismiss: { _, completion in
+            finishDismissal = completion
+        }))
+        XCTAssertEqual(refreshRequests, 0, "A refreshed warning must not race the harness's unfinished dismissal")
+        try XCTUnwrap(finishDismissal)()
+        XCTAssertEqual(refreshRequests, 1, "Completing dismissal must dispatch the selected action exactly once")
+    }
+
     func testHostedWindowDisablesExplicitSwiftUIAnimations() async throws {
         // Reuse the real message marker to observe committed SwiftUI geometry.
         struct AnimatedMarker: View {

@@ -129,6 +129,8 @@ public enum Endpoint {
     case cronRunDetail(jobID: String, filename: String)
     case cronRecent
     case cronDeliveryOptions
+    case cronBlueprints
+    case cronBlueprintFill
     case kanbanConfig
     case kanbanBoards
     case kanbanCreateBoard
@@ -406,6 +408,10 @@ public enum Endpoint {
             return "/api/crons/run"
         case .cronRecent:
             return "/api/crons/recent"
+        case .cronBlueprints:
+            return "/api/cron/blueprints"
+        case .cronBlueprintFill:
+            return "/api/cron/blueprints/fill"
         case .cronDeliveryOptions:
             return "/api/crons/delivery-options"
         case .kanbanConfig:

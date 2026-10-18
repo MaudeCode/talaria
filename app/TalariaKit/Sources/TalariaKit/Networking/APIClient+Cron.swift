@@ -67,6 +67,14 @@ extension APIClient {
         )
     }
 
+    public func cronBlueprints() async throws -> CronBlueprintsResponse {
+        try await send(endpoint: .cronBlueprints, method: "GET")
+    }
+
+    public func fillCronBlueprint(key: String, values: [String: String]) async throws -> CronBlueprintFillResponse {
+        try await send(endpoint: .cronBlueprintFill, method: "POST", body: CronBlueprintFillRequest(key: key, values: values))
+    }
+
     public func cronDeliveryOptions() async throws -> CronDeliveryOptionsResponse {
         try await send(endpoint: .cronDeliveryOptions, method: "GET")
     }
@@ -155,3 +163,7 @@ private struct CronJobIDRequest: Encodable {
     let reason: String?
 }
 
+private struct CronBlueprintFillRequest: Encodable {
+    let key: String
+    let values: [String: String]
+}

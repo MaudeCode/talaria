@@ -80,6 +80,8 @@ def owner(tmp_path):
     model.daemon_threads = True
     model.started, model.release, model.requests = threading.Event(), threading.Event(), []
     model.cancel_received = tmp_path / "owner-cancellation.json"
+    model.terminal_release = tmp_path / "owner-terminal.release"
+    model.terminal_release.touch()
     def wait_cancelled(admission):
         wait_for(model.cancel_received.exists)
         assert json.loads(model.cancel_received.read_text()) == {
@@ -97,15 +99,29 @@ def owner(tmp_path):
     (home / ".env").write_text("OPENAI_API_KEY=loopback-only\n")
     env = isolated_env(home, home=tmp_path, OPENAI_API_KEY="loopback-only", OPENAI_BASE_URL=origin,
                        TALARIA_SIDECAR_AGENT_DIR=str(AGENT_DIR), PYTHONUNBUFFERED="1",
-                       TALARIA_TEST_CANCEL_MARKER=str(model.cancel_received))
+                       TALARIA_TEST_CANCEL_MARKER=str(model.cancel_received),
+                       TALARIA_TEST_TERMINAL_RELEASE=str(model.terminal_release))
     gateway_code = """
-import json, os
+import asyncio, json, os
 from pathlib import Path
 from gateway import session_cron
 from gateway.run import main
 
 real_operation = session_cron.operation
 marker = Path(os.environ['TALARIA_TEST_CANCEL_MARKER'])
+terminal_release = Path(os.environ['TALARIA_TEST_TERMINAL_RELEASE'])
+real_execute = session_cron.execute
+
+async def hold_terminal(*args, **kwargs):
+    try:
+        return await real_execute(*args, **kwargs)
+    finally:
+        if not terminal_release.exists():
+            terminal_release.with_suffix('.waiting').touch()
+            while not terminal_release.exists():
+                await asyncio.sleep(.02)
+
+session_cron.execute = hold_terminal
 
 async def observe_cancel(authority, name, params, actor=None):
     result = await real_operation(authority, name, params, actor)
@@ -147,6 +163,7 @@ main()
             }})["job"]
             yield home, model, sidecar, job
         finally:
+            model.terminal_release.touch()
             model.release.set()
             if sidecar:
                 sidecar.close()
@@ -171,6 +188,7 @@ def admissions(home):
 @canonical_agent
 def test_started_cancel_waits_for_exact_owner_terminal_before_releasing_run(owner):
     home, model, sidecar, job = owner
+    model.terminal_release.unlink()
     request = sidecar.request("cron.run", {"profile_home": str(home), "job_id": job["id"]})
     assert model.started.wait(60), sidecar.stderr_lines[-20:]
     [before] = admissions(home)
@@ -181,7 +199,10 @@ def test_started_cancel_waits_for_exact_owner_terminal_before_releasing_run(owne
     assert messages[-1]["result"]["cancelled"] is True
     # RPC acknowledgement precedes delivery to the gateway's cancellation latch.
     model.wait_cancelled(before)
-    # With the inference barrier held, cancellation is only acknowledged. The run must retain ownership.
+    # Inference may be interrupted while its HTTP handler is held; fence the actual owner return instead.
+    wait_for(model.terminal_release.with_suffix(".waiting").exists)
+    [held] = admissions(home)
+    assert held["admission_id"] == before["admission_id"] and held["status"] == "started", held
     try:
         while True:
             messages.append(sidecar.next_message(timeout=2.5))
@@ -191,6 +212,7 @@ def test_started_cancel_waits_for_exact_owner_terminal_before_releasing_run(owne
     stored = json.loads((home / "cron/jobs.json").read_text())["jobs"][0]
     assert stored.get("fire_claim"), stored
     model.release.set()
+    model.terminal_release.touch()
     reply = wait_for(lambda: (message if message.get("id") == request else None) if (message := sidecar.next_message(timeout=60)) else None)
     assert reply.get("error", {}).get("data", {}).get("condition") == "cancelled", reply
     [after] = admissions(home)

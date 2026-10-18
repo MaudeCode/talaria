@@ -32,10 +32,53 @@ public final class CronJobEditorCatalogs {
         modelsErrorMessage ?? profilesErrorMessage ?? skillsErrorMessage
     }
 
-    private let client: APIClient
+    public private(set) var blueprints: [CronBlueprint] = []
+    public private(set) var selectedBlueprint: CronBlueprint?
+    public var blueprintValues: [String: String] = [:]
+    public private(set) var isFillingBlueprint = false
+    public private(set) var blueprintErrorMessage: String?
 
-    public init(client: APIClient) {
+    public func selectBlueprint(_ blueprint: CronBlueprint?) {
+        guard !isFillingBlueprint else { return }
+        selectedBlueprint = blueprint
+        blueprintValues = [:]
+        for slot in blueprint?.slots ?? [] {
+            blueprintValues[slot.name] = slot.default
+        }
+        blueprintErrorMessage = nil
+    }
+
+    public func fillBlueprint() async -> CronJobEditorDraft? {
+        guard let selectedBlueprint, !isFillingBlueprint else { return nil }
+        isFillingBlueprint = true
+        blueprintErrorMessage = nil
+        defer { isFillingBlueprint = false }
+        do {
+            let response = try await client.fillCronBlueprint(key: selectedBlueprint.key, values: blueprintValues)
+            try Task.checkCancellation()
+            return response.draft
+        } catch {
+            blueprintErrorMessage = Self.failureMessage(error)
+            return nil
+        }
+    }
+
+    private func loadBlueprints() async {
+        guard includesBlueprints else { return }
+        do {
+            blueprints = try await client.cronBlueprints().blueprints
+        } catch {
+            // Older servers have no catalog route; the ordinary editor stays available.
+            blueprints = []
+        }
+    }
+
+    private let client: APIClient
+    private let includesBlueprints: Bool
+
+    public init(client: APIClient, includesBlueprints: Bool = false) {
         self.client = client
+        self.includesBlueprints = includesBlueprints
     }
 
     public func load() async {
@@ -43,10 +86,12 @@ public final class CronJobEditorCatalogs {
         isLoading = true
         defer { isLoading = false }
 
+        async let blueprintsLoad: () = loadBlueprints()
         async let modelsError = loadModels()
         async let profilesError = loadProfiles()
         async let skillsError = loadSkills()
         (modelsErrorMessage, profilesErrorMessage, skillsErrorMessage) = await (modelsError, profilesError, skillsError)
+        await blueprintsLoad
     }
 
     private func loadModels() async -> String? {
