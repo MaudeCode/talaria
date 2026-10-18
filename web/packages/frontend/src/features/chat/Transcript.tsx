@@ -263,13 +263,17 @@ export function Transcript(props: TranscriptProps) {
     }
     if (index < 0 && entry.focus && olderError) return
     entryRef.current = null
+    readerAnchor.current = null
     const target = index < 0 || virtualize ? null : scrollRef.current?.querySelector(`[data-message-key="${CSS.escape(rows[index]?.key ?? '')}"]`)
     if (index < 0 || (!virtualize && !target)) { scrollToBottom(false); return }
     pin(false)
     settlingRef.current = false
-    if (target) target.scrollIntoView({ block: 'center' })
-    else virtualizer.scrollToIndex(index, { align: 'center' })
-  }, [rows, loadedFrom, virtualize, virtualizer, truncated, loadingOlder, olderError, requestOlder, pin, scrollToBottom])
+    if (target) {
+      target.scrollIntoView({ block: 'center' })
+      lastTopRef.current = scrollRef.current?.scrollTop ?? 0
+      rememberReaderAnchor()
+    } else virtualizer.scrollToIndex(index, { align: 'center' })
+  }, [rows, loadedFrom, virtualize, virtualizer, truncated, loadingOlder, olderError, requestOlder, pin, scrollToBottom, rememberReaderAnchor])
 
   const sentinelRef = useRef<HTMLDivElement>(null)
   useEffect(() => {

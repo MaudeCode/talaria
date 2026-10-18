@@ -210,6 +210,7 @@ test('history errors wait for retry and resume a paged message deep link', async
   expect(requests).toBe(1)
   await retry.click()
   await expect(page.locator('[data-message-key="1"]')).toBeInViewport()
+  await page.screenshot({ path: testInfo.outputPath('history-retry-restored.png') })
   expect(requests).toBe(2)
 })
 
