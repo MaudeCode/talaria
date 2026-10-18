@@ -451,6 +451,14 @@ local file through the same lookup and retain anchored filesystem protections;
 they never mutate a shadowed local copy in place of a project skill.
 Older Agents without these helpers retain the legacy list and lookup shapes.
 
+## Session titles
+
+Talaria generates session titles on the server and syncs them through `state_db.sync_title`.
+Chat turns pass `title_user_message=""` when the Agent explicitly declares that parameter,
+preventing duplicate Agent title requests and titles derived from workspace-prefixed prompts.
+The sidecar caches turn signatures per Agent class. Older or uninspectable Agents retain
+their existing arguments.
+
 ## Session deletion
 
 `state_db.delete_cli_session` uses the installed Agent's canonical deletion transaction
