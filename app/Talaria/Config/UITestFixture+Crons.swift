@@ -9,6 +9,12 @@ extension UITestFixtureURLProtocol {
     static func cronResponseData(for request: URLRequest) -> Data {
         let body: String
         switch request.url?.path {
+        case "/api/cron/blueprints":
+            body = #"{"blueprints":[{"key":"team:brief","title":"Team brief","description":"A daily digest of team releases.","category":"daily","source":"plugin","plugin":"team","schedule_label":"Daily at 09:00","slots":[{"name":"topic","type":"text","label":"Topic","default":null,"options":[],"optional":false,"strict":true,"help":""},{"name":"time","type":"time","label":"Time","default":"09:00","options":[],"optional":false,"strict":true,"help":""}]}]}"#
+        case "/api/cron/blueprints/fill":
+            body = #"{"draft":{"name":"Team brief","prompt":"Summarize team releases.","schedule":"30 8 * * *","deliver":"local","skills":["summary"]}}"#
+        case "/api/crons" where ProcessInfo.processInfo.arguments.contains("--ui-test-cron-blueprints"):
+            body = #"{"ordered":true,"active_profile":"default","jobs":[],"unwritable_stores":[]}"#
         case "/api/crons":
             body = """
             {"ordered": true, "active_profile": "default", "jobs": [

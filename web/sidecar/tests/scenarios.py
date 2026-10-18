@@ -90,6 +90,8 @@ SCENARIOS: list[tuple[str, dict]] = [
     ("usage.balance", {"profile_home": "{home}", "provider": "deepseek"}),
     ("usage.limits", {"profile_home": "{home}", "providers": [{"slug": "deepseek", "models": ["deepseek-chat"]}]}),
     # cron
+    ("cron.blueprints", {"profile_home": "{home}"}),
+    ("cron.blueprint_fill", {"profile_home": "{home}", "key": "morning-brief", "values": {"time": "08:30"}}),
     ("cron.list", {"profile_home": "{home}"}),
     ("cron.create", {"profile_home": "{home}", "job": {"schedule": "every 1h", "prompt": "say hi", "name": "hello"}}),
     ("cron.delivery_options", {}),

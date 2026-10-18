@@ -2,6 +2,95 @@ import XCTest
 @testable import TalariaKit
 
 final class ContractReadinessTests: APIClientTestCase {
+    @MainActor
+    func testBlueprintCatalogLoadsWithEditorCatalogs() async throws {
+        var requested: [String] = []
+        let lock = NSLock()
+        let client = makeClient { request in
+            lock.withLock { requested.append(request.url!.path) }
+            return (HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: ["Content-Type": "application/json"])!, Data("{}".utf8))
+        }
+        let catalogs = CronJobEditorCatalogs(client: client)
+        await catalogs.load()
+        XCTAssertTrue(requested.contains("/api/cron/blueprints"), "The task editor must load the Agent blueprint catalog")
+    }
+
+    @MainActor
+    func testBlueprintPickFillAndEditorDraftUseServerFields() async throws {
+        let client = makeClient { request in
+            let json: String
+            if request.url!.path == "/api/cron/blueprints" {
+                XCTAssertEqual(request.httpMethod, "GET")
+                json = #"{"blueprints":[{"key":"team:brief","title":"Team brief","description":"A digest","category":"daily","source":"plugin","plugin":"team","schedule_label":"Daily","slots":[{"name":"topic","type":"text","label":"Topic","default":null,"options":[],"optional":false,"strict":true,"help":""}],"future":true}]}"#
+            } else if request.url!.path == "/api/cron/blueprints/fill" {
+                XCTAssertEqual(request.httpMethod, "POST")
+                let body = try JSONSerialization.jsonObject(with: apiTestBodyData(from: request)!) as! [String: Any]
+                XCTAssertEqual(body["key"] as? String, "team:brief")
+                XCTAssertEqual(body["values"] as? [String: String], ["topic": "releases"])
+                json = #"{"draft":{"name":"Team brief","prompt":"Server-filled releases","schedule":"30 8 * * *","deliver":"local","skills":["summary"],"future":true}}"#
+            } else {
+                json = "{}"
+            }
+            return (HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: ["Content-Type": "application/json"])!, Data(json.utf8))
+        }
+        let catalogs = CronJobEditorCatalogs(client: client)
+        await catalogs.load()
+        let blueprint = try XCTUnwrap(catalogs.blueprints.first)
+        XCTAssertEqual(blueprint.plugin, "team")
+        XCTAssertEqual(blueprint.scheduleLabel, "Daily")
+        catalogs.selectBlueprint(blueprint)
+        catalogs.blueprintValues["topic"] = "releases"
+        let filled = await catalogs.fillBlueprint()
+        let draft = try XCTUnwrap(filled)
+        XCTAssertEqual(draft.prompt, "Server-filled releases")
+        XCTAssertEqual(draft.schedule, "30 8 * * *")
+        XCTAssertEqual(draft.deliver, "local")
+        XCTAssertEqual(draft.skills, ["summary"])
+        XCTAssertNil(draft.validationMessage)
+        var existing = CronJobEditorDraft(model: "chosen-model", profile: "work", toastNotifications: false)
+        existing.applyBlueprint(draft)
+        XCTAssertEqual(existing.prompt, draft.prompt)
+        XCTAssertEqual(existing.skills, draft.skills)
+        XCTAssertEqual(existing.model, "chosen-model")
+        XCTAssertEqual(existing.profile, "work")
+        XCTAssertFalse(existing.toastNotifications)
+        catalogs.selectBlueprint(nil)
+        XCTAssertNil(catalogs.selectedBlueprint)
+        XCTAssertTrue(catalogs.blueprintValues.isEmpty)
+    }
+
+    @MainActor
+    func testBlueprintFillFailureKeepsSlotsForCorrection() async throws {
+        let client = makeClient { request in
+            if request.url!.path == "/api/cron/blueprints/fill" {
+                return (HTTPURLResponse(url: request.url!, statusCode: 400, httpVersion: nil, headerFields: ["Content-Type": "application/json"])!, Data(#"{"error":"invalid time"}"#.utf8))
+            }
+            let root = try JSONSerialization.jsonObject(with: sharedContractFixture("cron-blueprints")) as! [String: Any]
+            return (HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: ["Content-Type": "application/json"])!, try JSONSerialization.data(withJSONObject: root["catalog"]!))
+        }
+        let catalogs = CronJobEditorCatalogs(client: client)
+        await catalogs.load()
+        catalogs.selectBlueprint(try XCTUnwrap(catalogs.blueprints.first))
+        catalogs.blueprintValues["time"] = "25:99"
+        let draft = await catalogs.fillBlueprint()
+        XCTAssertNil(draft)
+        XCTAssertEqual(catalogs.blueprintValues["time"], "25:99")
+        XCTAssertNotNil(catalogs.selectedBlueprint)
+        XCTAssertTrue(catalogs.blueprintErrorMessage?.contains("invalid time") == true)
+        XCTAssertFalse(catalogs.isFillingBlueprint)
+    }
+
+    func testSharedBlueprintFixturesDecodeBothRoutes() throws {
+        let root = try XCTUnwrap(JSONSerialization.jsonObject(with: sharedContractFixture("cron-blueprints")) as? [String: Any])
+        let decoder = JSONDecoder()
+        decoder.keyDecodingStrategy = .convertFromSnakeCase
+        let catalog = try decoder.decode(CronBlueprintsResponse.self, from: JSONSerialization.data(withJSONObject: root["catalog"]!))
+        XCTAssertTrue(catalog.blueprints.contains { $0.key == "morning-brief" && $0.source == "builtin" })
+        let fill = try decoder.decode(CronBlueprintFillResponse.self, from: JSONSerialization.data(withJSONObject: root["fill"]!))
+        XCTAssertEqual(fill.draft.schedule, "30 8 * * *")
+        XCTAssertFalse(fill.draft.prompt.isEmpty)
+    }
+
     func testEndpointContractMatrixMatchesPinnedUpstreamPathsAndQueries() throws {
         let contracts: [EndpointContract] = [
             .init(name: "health", endpoint: .health, path: "/health"),
@@ -246,6 +335,8 @@ final class ContractReadinessTests: APIClientTestCase {
                 path: "/api/insights",
                 query: ["days": "30"]
             ),
+            .init(name: "cron blueprints", endpoint: .cronBlueprints, path: "/api/cron/blueprints"),
+            .init(name: "cron blueprint fill", endpoint: .cronBlueprintFill, path: "/api/cron/blueprints/fill"),
             .init(name: "crons", endpoint: .crons, path: "/api/crons"),
             .init(name: "cron create", endpoint: .cronCreate, path: "/api/crons/create"),
             .init(name: "cron update", endpoint: .cronUpdate, path: "/api/crons/update"),

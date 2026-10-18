@@ -132,3 +132,18 @@ Duplicating a job does carry its limit over.
 On edit, emptying a field clears it: an empty script path or monitor source
 removes it, deselecting every chained job clears the chain, and unchecking
 Continuity turns it off. Leaving a field untouched leaves it as it was.
+
+
+## Start from a blueprint
+
+When creating a task on Web or iOS, choose **Start from a blueprint** to browse
+built-in automations and enabled plugins from the active profile. Plugin rows
+show their plugin name. Fill the blueprint's slots and choose **Use blueprint**
+to pre-fill the existing editor's name, prompt, schedule, delivery and skills.
+Review or edit those fields before saving. Filling a blueprint creates no job.
+Agents without the blueprint catalog keep the ordinary blank editor.
+
+`GET /api/cron/blueprints` exposes the Agent's form schema and provenance;
+`POST /api/cron/blueprints/fill` delegates validation and templating to the Agent.
+Invalid slot values return HTTP 400. Blueprint membership is resolved in the
+request's active profile on every sidecar call.

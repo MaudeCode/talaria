@@ -3896,6 +3896,153 @@
     ],
     "additionalProperties": false
   },
+  "cron.blueprints": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "properties": {
+      "blueprints": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "properties": {
+            "key": {
+              "type": "string"
+            },
+            "title": {
+              "type": "string"
+            },
+            "description": {
+              "type": "string"
+            },
+            "category": {
+              "type": "string"
+            },
+            "source": {
+              "type": "string",
+              "enum": [
+                "builtin",
+                "plugin"
+              ]
+            },
+            "plugin": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "schedule_label": {
+              "type": "string"
+            },
+            "slots": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "name": {
+                    "type": "string"
+                  },
+                  "type": {
+                    "type": "string"
+                  },
+                  "label": {
+                    "type": "string"
+                  },
+                  "default": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "options": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  },
+                  "optional": {
+                    "type": "boolean"
+                  },
+                  "strict": {
+                    "type": "boolean"
+                  },
+                  "help": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "name",
+                  "type",
+                  "label",
+                  "default",
+                  "options",
+                  "optional",
+                  "strict",
+                  "help"
+                ],
+                "additionalProperties": false
+              }
+            }
+          },
+          "required": [
+            "key",
+            "title",
+            "description",
+            "category",
+            "source",
+            "plugin",
+            "schedule_label",
+            "slots"
+          ],
+          "additionalProperties": false
+        }
+      }
+    },
+    "required": [
+      "blueprints"
+    ],
+    "additionalProperties": false
+  },
+  "cron.blueprint_fill": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "properties": {
+      "draft": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "prompt": {
+            "type": "string"
+          },
+          "schedule": {
+            "type": "string"
+          },
+          "deliver": {
+            "type": "string"
+          },
+          "skills": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "required": [
+          "name",
+          "prompt",
+          "schedule",
+          "deliver",
+          "skills"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "required": [
+      "draft"
+    ],
+    "additionalProperties": false
+  },
   "cron.list": {
     "$schema": "https://json-schema.org/draft/2020-12/schema",
     "type": "object",

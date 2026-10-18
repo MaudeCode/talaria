@@ -61758,6 +61758,217 @@
         }
       }
     },
+    "/api/cron/blueprints": {
+      "get": {
+        "operationId": "crons.blueprints",
+        "tags": [
+          "automation"
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "blueprints": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "key": {
+                            "type": "string"
+                          },
+                          "title": {
+                            "type": "string"
+                          },
+                          "description": {
+                            "type": "string"
+                          },
+                          "category": {
+                            "type": "string"
+                          },
+                          "source": {
+                            "enum": [
+                              "builtin",
+                              "plugin"
+                            ],
+                            "type": "string"
+                          },
+                          "plugin": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "schedule_label": {
+                            "type": "string"
+                          },
+                          "slots": {
+                            "type": "array",
+                            "items": {
+                              "type": "object",
+                              "properties": {
+                                "name": {
+                                  "type": "string"
+                                },
+                                "type": {
+                                  "type": "string"
+                                },
+                                "label": {
+                                  "type": "string"
+                                },
+                                "default": {
+                                  "anyOf": [
+                                    {
+                                      "type": "string"
+                                    },
+                                    {
+                                      "type": "null"
+                                    }
+                                  ]
+                                },
+                                "options": {
+                                  "type": "array",
+                                  "items": {
+                                    "type": "string"
+                                  }
+                                },
+                                "optional": {
+                                  "type": "boolean"
+                                },
+                                "strict": {
+                                  "type": "boolean"
+                                },
+                                "help": {
+                                  "type": "string"
+                                }
+                              },
+                              "required": [
+                                "name",
+                                "type",
+                                "label",
+                                "default",
+                                "options",
+                                "optional",
+                                "strict",
+                                "help"
+                              ]
+                            }
+                          }
+                        },
+                        "required": [
+                          "key",
+                          "title",
+                          "description",
+                          "category",
+                          "source",
+                          "plugin",
+                          "schedule_label",
+                          "slots"
+                        ]
+                      }
+                    }
+                  },
+                  "required": [
+                    "blueprints"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/cron/blueprints/fill": {
+      "post": {
+        "operationId": "crons.blueprintFill",
+        "tags": [
+          "automation"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "key": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "values": {
+                    "type": "object",
+                    "propertyNames": {
+                      "type": "string"
+                    },
+                    "additionalProperties": {
+                      "type": "string"
+                    }
+                  }
+                },
+                "required": [
+                  "key",
+                  "values"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "draft": {
+                      "type": "object",
+                      "properties": {
+                        "name": {
+                          "type": "string"
+                        },
+                        "prompt": {
+                          "type": "string"
+                        },
+                        "schedule": {
+                          "type": "string"
+                        },
+                        "deliver": {
+                          "type": "string"
+                        },
+                        "skills": {
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          }
+                        }
+                      },
+                      "required": [
+                        "name",
+                        "prompt",
+                        "schedule",
+                        "deliver",
+                        "skills"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "draft"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/crons/context-sources": {
       "post": {
         "operationId": "crons.contextSources",

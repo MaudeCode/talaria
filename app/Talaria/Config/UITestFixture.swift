@@ -795,7 +795,7 @@ final class UITestFixtureURLProtocol: URLProtocol, @unchecked Sendable {
             return Data("event: stream_end\ndata: {}\n\n".utf8)
         default:
             if url.path.hasPrefix("/api/kanban/") { return kanbanResponseData(for: url) }
-            if url.path.hasPrefix("/api/crons"), UITestFixtureEnvironment.hasUnwritableCronStore {
+            if url.path.hasPrefix("/api/cron"), UITestFixtureEnvironment.hasUnwritableCronStore || ProcessInfo.processInfo.arguments.contains("--ui-test-cron-blueprints") {
                 return cronResponseData(for: request)
             }
             return json([:])

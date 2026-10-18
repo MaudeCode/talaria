@@ -1,7 +1,7 @@
 import { oc } from '@orpc/contract'
 import { z } from 'zod'
 import { CronsSchema, CronContextSourcesSchema, CronRecentSchema, CronHistorySchema, CronRunSchema, CronStatusSchema, CronMutationSchema, KanbanBoardsViewSchema, KanbanBoardViewSchema, KanbanStatsViewSchema, KanbanTaskPolicyShape, ExtensionStatusSchema } from '../views.js'
-import { KanbanAssigneeSchema, KanbanBoardMetaSchema, KanbanEventSchema, KanbanRunStartShape, KanbanTaskLinksShape, KanbanTaskSchema } from '../sidecar/namespaces.js'
+import { CronBlueprintsSchema, CronBlueprintFillInputSchema, CronBlueprintFillSchema, KanbanAssigneeSchema, KanbanBoardMetaSchema, KanbanEventSchema, KanbanRunStartShape, KanbanTaskLinksShape, KanbanTaskSchema } from '../sidecar/namespaces.js'
 
 /** Crons, kanban, extensions, and the embedded terminal. */
 
@@ -22,6 +22,8 @@ const TerminalBody = z.object({ session_id: z.string().optional() })
 
 export const automationContract = {
   crons: {
+    blueprints: oc.route({ method: 'GET', path: '/api/cron/blueprints', tags }).output(CronBlueprintsSchema),
+    blueprintFill: oc.route({ method: 'POST', path: '/api/cron/blueprints/fill', tags }).input(CronBlueprintFillInputSchema).output(CronBlueprintFillSchema),
     contextSources: oc.route({ method: 'POST', path: '/api/crons/context-sources', tags, summary: 'Read eligible context sources for the editor execution store.' }).input(z.object({ profile: z.string().optional(), editing_job_id: z.string().optional(), exclude_job_id: z.string().optional(), selected_refs: z.array(z.string()).optional() })).output(CronContextSourcesSchema),
     list: oc.route({ method: 'GET', path: '/api/crons', tags }).input(z.object({ all_profiles: z.string().optional() })).output(CronsSchema),
     history: oc.route({ method: 'GET', path: '/api/crons/history', tags }).input(JobId.extend({ offset: z.string().optional(), limit: z.string().optional() })).output(CronHistorySchema),

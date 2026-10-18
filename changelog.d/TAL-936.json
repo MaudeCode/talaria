@@ -1,0 +1,8 @@
+{
+  "entries": [{
+    "category": "Added",
+    "summary": "Start scheduled tasks from built-in and plugin automation blueprints.",
+    "highlight": false,
+    "components": ["web", "app"]
+  }]
+}

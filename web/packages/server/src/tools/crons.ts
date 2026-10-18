@@ -242,6 +242,19 @@ export class CronService {
     return s
   }
 
+  async blueprints(home: string) {
+    return this.sidecar().call('cron.blueprints', { profile_home: home })
+  }
+
+  async blueprintFill(home: string, input: { key: string; values: Record<string, string> }) {
+    try {
+      return await this.sidecar().call('cron.blueprint_fill', { ...input, profile_home: home })
+    } catch (error) {
+      if (error instanceof SidecarError && error.code === -32602) throw new HttpFailure(400, error.message)
+      throw error
+    }
+  }
+
   private async profileNames(active: string): Promise<string[]> {
     const names: string[] = []
     const seen = new Set<string>()
