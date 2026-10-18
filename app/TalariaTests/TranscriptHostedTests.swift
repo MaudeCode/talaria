@@ -103,15 +103,31 @@ final class TranscriptHostedTests: XCTestCase {
 
     func testFastUpwardScrollingKeepsLoadingWithoutLeavingThePrefetchRegion() async throws {
         var requested: [Int] = []
-        let window = try hostWindow(PagedHistoryTranscript(sparseOlderPages: true, onRequest: { requested.append($0) }))
+        var observedMetrics = false
+        let window = try hostWindow(PagedHistoryTranscript(sparseOlderPages: true,
+            onMetrics: { _ in observedMetrics = true }, onRequest: { requested.append($0) }))
         let scroll = try XCTUnwrap(historyScroll(in: window))
-        try await Task.sleep(for: .milliseconds(150))
+        let ready = await awaitCondition {
+            guard observedMetrics,
+                  let controller = self.historyObserver(in: window)?.coordinator?.scrollPositionController,
+                  let geometry = ChatScrollMetrics.geometry(of: scroll) else { return false }
+            return !controller.isNavigating && !controller.isRealizingRows
+                && geometry.contentHeight > geometry.visibleHeight
+        }
+        XCTAssertTrue(ready, "The native observer and initial layout must be ready before fast scrolling")
+        let coordinator = try XCTUnwrap(historyObserver(in: window)?.coordinator)
+        let controller = try XCTUnwrap(coordinator.scrollPositionController)
+        // Raw offsets do not send UIKit's drag-began event, which clears the
+        // initial bottom anchor before a reader moves through older messages.
+        controller.userDidBeginDragging()
+        coordinator.onFollowEvent(.userScrollBegin)
         // A fast reader repeatedly reaches the loaded edge while a prepend is settling.
         for _ in 0..<150 {
             scroll.contentOffset.y = -scroll.adjustedContentInset.top
             try await Task.sleep(for: .milliseconds(10))
         }
         try await Task.sleep(for: .milliseconds(200))
+        coordinator.onFollowEvent(.userScrollEnd(isAtBottom: false))
         XCTAssertGreaterThanOrEqual(requested.count, 3, "Fast scrolling must keep requesting older pages without an away/back gesture")
         let pages = Array(stride(from: 1_950, through: 50, by: -50))
         XCTAssertEqual(requested, Array(pages.prefix(requested.count)), "Every cursor is requested once; never request past the first page")

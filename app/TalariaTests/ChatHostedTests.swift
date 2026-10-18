@@ -384,7 +384,7 @@ final class ChatHostedTests: XCTestCase {
         XCTAssertFalse(frame.isEmpty, "The reader must be visibly on screen before releasing the page")
         let point = CGPoint(x: frame.midX, y: frame.midY)
         let registry = try messageMenuRegistry(in: window)
-        let before = try XCTUnwrap(registry.hit(at: scroll.convert(point, from: window), in: scroll))
+        var before = try XCTUnwrap(registry.hit(at: scroll.convert(point, from: window), in: scroll))
         XCTAssertEqual(before.content.messageID, readerID)
         let renderedReader = try XCTUnwrap(window.firstView(ofType: ChatMessageInteractionMarkerView.self) {
             $0.bounds.size == before.rowSize
@@ -411,6 +411,20 @@ final class ChatHostedTests: XCTestCase {
                     "presentationBoundsY": Double(presentation?.bounds.minY ?? renderedReader.bounds.minY),
                     "presentationHeight": Double(presentation?.bounds.height ?? renderedReader.bounds.height)]
         }
+        // A disclosure's rendered transition can outlive the position hold. Measure
+        // insertion only after that motion stops, while the page is still held.
+        var previousGeometry: [String: Double]?
+        var stableReaderSamples = 0
+        let readerSettled = await awaitCondition {
+            let geometry = readerGeometry()
+            stableReaderSamples = !controller.isHoldingPosition && geometry == previousGeometry
+                ? stableReaderSamples + 1 : 0
+            previousGeometry = geometry
+            return stableReaderSamples >= 5
+        }
+        XCTAssertTrue(readerSettled, "The rendered reader must settle before releasing the older page")
+        before = try XCTUnwrap(registry.hit(at: scroll.convert(point, from: window), in: scroll))
+        XCTAssertEqual(before.content.messageID, readerID)
         var baselineGeometry = readerGeometry()
         baselineGeometry["hitHeight"] = Double(before.rowSize.height)
         baselineGeometry["hitLocalY"] = Double(before.localPoint.y)
