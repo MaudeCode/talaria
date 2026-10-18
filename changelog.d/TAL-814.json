@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Security",
+      "summary": "Limit public authentication requests to 64 KiB and accept forwarded client addresses in logs only from trusted proxies.",
+      "highlight": false,
+      "components": ["web"]
+    }
+  ]
+}

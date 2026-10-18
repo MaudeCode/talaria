@@ -37,7 +37,7 @@ import type { BackgroundActivity } from '../sessions/background-tasks.js'
 import type { StreamSlots } from '../api/sse-routes.js'
 import type { BootstrapFeatures, ReleaseInfo } from '@maudecode/talaria-web-contracts'
 import { buildCspEnforcedPolicy, buildCspReportOnlyPolicy, cspExtras, CSP_REPORT_TO, type CspExtras } from './csp.js'
-import type { CsrfFailure } from './origin.js'
+import { forwardedClientIp, rawPeerIsTrustedProxy, type CsrfFailure } from './origin.js'
 import type { AgentConfig } from '../config/agent-config.js'
 import type { ProviderCatalog } from '../providers/catalog.js'
 import type { ProfileService } from '../profiles/profiles.js'
@@ -405,8 +405,12 @@ export class RequestContext {
       status,
       ms: Math.round((Date.now() - this.startedAtMs) * 10) / 10,
     }
-    const forwardedFor = (this.header('x-forwarded-for') ?? '').split(',')[0]?.trim()
-    if (forwardedFor) record.forwarded_for = forwardedFor
+    const env = this.deps.config.env
+    if (truthy(env.HERMES_WEBUI_TRUST_FORWARDED_FOR) && rawPeerIsTrustedProxy(this.peer, env) &&
+      (this.header('x-forwarded-for') !== undefined || this.header('x-real-ip') !== undefined)) {
+      const forwardedFor = forwardedClientIp(this.headerAll('x-forwarded-for'), this.header('x-real-ip'), this.peer, env)
+      if (forwardedFor) record.forwarded_for = forwardedFor.slice(0, 256)
+    }
     this.deps.log(`[webui] ${JSON.stringify(record)}`)
   }
 
