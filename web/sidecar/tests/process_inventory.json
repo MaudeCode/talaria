@@ -2073,7 +2073,8 @@
       "layer": "process",
       "reason": "Actual pytest subprocess startup, scheduling, isolation, journal/report validation and cleanup are the harness boundary under test.",
       "cases": [
-        ""
+        "[subprocess]",
+        "[os-system]"
       ]
     },
     "tests/test_suite_runner.py::test_policy_allows_boundary_fakes_without_an_agent": {
@@ -2351,9 +2352,10 @@
     },
     "tests/test_suite_runner.py::test_policy_rejects_real_network_access_in_fast_cases": {
       "layer": "process",
-      "reason": "Proves the harness rejects actual socket binding in an unclassified fast case.",
+      "reason": "Proves the harness rejects actual socket bind and UDP send operations in an unclassified fast case.",
       "cases": [
-        ""
+        "[bind]",
+        "[udp]"
       ]
     },
     "tests/test_suite_runner.py::test_collection_only_validates_inventory_without_executing_cases": {

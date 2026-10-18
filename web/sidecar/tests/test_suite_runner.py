@@ -49,9 +49,11 @@ def review_process_cases(project, reason, *nodeids):
     path.write_text(json.dumps(inventory))
 
 
-def test_policy_rejects_an_unclassified_process_launch(project):
+@pytest.mark.parametrize('api', ['subprocess', 'os-system'])
+def test_policy_rejects_an_unclassified_process_launch(project, api):
+    launch = "subprocess.run([sys.executable, '-c', 'pass'], check=True)" if api == 'subprocess' else "os.system('exit 0')"
     (project / 'tests/test_launch.py').write_text(
-        "import subprocess, sys\ndef test_launch(): subprocess.run([sys.executable, '-c', 'pass'], check=True)\n")
+        'import os, subprocess, sys\ndef test_launch(): ' + launch + '\n')
     result = run(project, 1)
     assert result.returncode != 0, result.stdout + result.stderr
     assert 'unclassified process launch' in result.stdout
@@ -151,11 +153,16 @@ def test_policy_rejects_an_unclassified_agent_skip(project):
     assert 'unclassified Agent case' in result.stdout
 
 
-def test_policy_rejects_real_network_access_in_fast_cases(project):
-    (project / 'tests/test_network.py').write_text(
-        "import socket\ndef test_network():\n"
-        " with socket.socket() as server: server.bind(('127.0.0.1', 0))\n")
-    result = run(project, 1)
+@pytest.mark.parametrize('api', ['bind', 'udp'])
+def test_policy_rejects_real_network_access_in_fast_cases(project, api):
+    import socket
+    with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as receiver:
+        receiver.bind(('127.0.0.1', 0))
+        operation = "server.bind(('127.0.0.1', 0))" if api == 'bind' else f"server.sendto(b'proof', {receiver.getsockname()!r})"
+        (project / 'tests/test_network.py').write_text(
+            'import socket\ndef test_network():\n'
+            ' with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as server: ' + operation + '\n')
+        result = run(project, 1)
     assert result.returncode != 0, result.stdout + result.stderr
     assert 'unclassified network access' in result.stdout
 

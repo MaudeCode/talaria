@@ -81,7 +81,9 @@ def pytest_configure(config):
 
 def _audit_launch(event, args):
     if event not in ('subprocess.Popen', 'os.fork', 'os.forkpty', 'os.posix_spawn', 'os.exec',
-                     'socket.connect', 'socket.bind', 'socket.getaddrinfo'):
+                     'os.system', 'os.startfile', 'os.startfile/2', 'socket.connect', 'socket.bind',
+                     'socket.getaddrinfo', 'socket.gethostbyname', 'socket.gethostbyname_ex',
+                     'socket.gethostbyaddr', 'socket.getnameinfo', 'socket.sendto', 'socket.sendmsg'):
         return
     family = (_active_case or '').split('[', 1)[0]
     if family not in _inventory:
