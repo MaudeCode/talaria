@@ -1,3 +1,4 @@
+import { ModelConfirmationRequiredSchema, sessionsContract } from './routes/sessions.js'
 import { MessageSchema, SessionSchema } from './views.js'
 import { describe, expect, it } from 'vitest'
 import { readFileSync } from 'node:fs'
@@ -8,6 +9,11 @@ import { AgentHealthSchema, ErrorBodySchema, ChatEventSchema, ClarifyPendingEnve
 const shared = (path: string): unknown => JSON.parse(readFileSync(resolve(import.meta.dirname, '../../../../contracts', path), 'utf8'))
 
 describe('contracts package', () => {
+  it('validates the native model confirmation refusal against the canonical server schema', () => {
+    const fixture = shared('fixtures/model-confirmation.json') as { request: unknown; refusal: unknown }
+    expect(sessionsContract.session.update['~orpc'].inputSchema!.parse(fixture.request)).toEqual(fixture.request)
+    expect(ModelConfirmationRequiredSchema.parse(fixture.refusal).warnings.map((warning) => warning.kind)).toEqual(['data_policy', 'context_cache'])
+  })
   it('preserves the shared readiness projection across health, refusal, and replay', () => {
     const fixture = shared('fixtures/chat-readiness.json') as { recovery: { health: unknown; http: unknown; event: unknown }[]; completed_update: unknown; legacy: unknown }
     for (const row of fixture.recovery) {

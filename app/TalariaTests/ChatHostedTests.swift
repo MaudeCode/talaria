@@ -9,6 +9,72 @@ import XCTest
 /// The fixture chat's media, long bodies, background work and pending steers, hosted in process (TAL-856).
 @MainActor
 final class ChatHostedTests: XCTestCase {
+    func testModelGuardCancelRefreshAndConfirmUseServerWarnings() async throws {
+        let fixture = try FixtureApp(for: self)
+        let stream = ScriptedSSEStreamingClient()
+        var updates = 0
+        let viewModel = try makeScriptedChatViewModel(streamClient: stream, sessionSummary: SessionSummary(sessionId: "session-abc", title: "Model confirmation", model: "old-model", modelProvider: "custom")) { request in
+            switch request.url?.path {
+            case "/api/session":
+                return apiTestJSONResponse(#"{"session":{"session_id":"session-abc","title":"Model confirmation","model":"old-model","model_provider":"custom","messages":[]}}"#, for: request)
+            case "/api/models":
+                return apiTestJSONResponse(#"{"groups":[{"provider":"Test provider","provider_id":"custom","models":[{"id":"contributor","label":"Contributor"}]}]}"#, for: request)
+            case "/api/session/update":
+                updates += 1
+                if updates == 4 {
+                    XCTAssertEqual(try apiTestJSONBody(from: request)["confirm_token"] as? String, "token-3")
+                    return apiTestJSONResponse(#"{"session":{"session_id":"session-abc","model":"contributor","model_provider":"custom"}}"#, for: request)
+                }
+                let title = updates == 3 ? "Context changed" : "Data policy"
+                let message = updates == 3 ? "The next reply will reread the updated context." : "This model may use your conversation for training."
+                let body: [String: Any] = ["error": "Confirm model change", "type": "model_confirmation_required", "confirm_token": "token-\(updates)",
+                    "warnings": [["kind": updates == 3 ? "context_cache" : "data_policy", "title": title, "message": message, "model": "contributor", "provider": "custom"]]]
+                return (HTTPURLResponse(url: request.url!, statusCode: 409, httpVersion: nil, headerFields: nil)!, try JSONSerialization.data(withJSONObject: body))
+            default: return apiTestJSONResponse("{}", for: request)
+            }
+        }
+        defer { MockURLProtocol.requestHandler = nil; stream.stop() }
+        await viewModel.loadMessages()
+        let window = try hostWindow(NavigationStack {
+            ChatView(session: SessionSummary(sessionId: "session-abc", title: "Model confirmation"), server: URL(string: "https://example.test")!,
+                     onAPIError: { _ in }, loadsInitialMessages: false, viewModel: viewModel)
+        }.environment(\.scenePhase, .active).modelContainer(fixture.cache))
+        settle(0.5)
+        attachHostedScreenshot(window, name: "model-before")
+        _ = await viewModel.executeSlashCommand(try XCTUnwrap(SlashCommandCatalog.command(named: "model")), args: "contributor")
+        let firstAlert = await presentedAlert(in: window)
+        let first = try XCTUnwrap(firstAlert)
+        XCTAssertEqual(first.title, "Change Model?")
+        XCTAssertEqual(first.message, "Data policy\n\nThis model may use your conversation for training.")
+        XCTAssertEqual(viewModel.selectedModelID, "old-model")
+        settle(0.4)
+        attachHostedScreenshot(window, name: "model-warning")
+        XCTAssertTrue(HostedAccessibility.tap("Cancel", in: first))
+        let cancelled = await awaitCondition { window.rootViewController?.presentedViewController == nil }
+        XCTAssertTrue(cancelled)
+        XCTAssertEqual(updates, 1)
+        XCTAssertEqual(viewModel.selectedModelID, "old-model")
+        settle(0.4)
+        attachHostedScreenshot(window, name: "model-cancelled")
+        _ = await viewModel.selectComposerModel(ModelCatalogOption(id: "contributor", displayName: "Contributor", providerID: "custom"))
+        let secondAlert = await presentedAlert(in: window)
+        XCTAssertTrue(HostedAccessibility.tap("Change Model", in: try XCTUnwrap(secondAlert)))
+        let refreshed = await awaitCondition { viewModel.modelSwitchConfirmation?.warnings[0].kind == "context_cache" }
+        XCTAssertTrue(refreshed)
+        settle(0.5)
+        let refreshedAlert = await presentedAlert(in: window)
+        let third = try XCTUnwrap(refreshedAlert)
+        XCTAssertEqual(third.message, "Context changed\n\nThe next reply will reread the updated context.")
+        XCTAssertEqual(viewModel.selectedModelID, "old-model")
+        attachHostedScreenshot(window, name: "model-refreshed")
+        XCTAssertTrue(HostedAccessibility.tap("Change Model", in: third))
+        let applied = await awaitCondition { viewModel.selectedModelID == "contributor" }
+        XCTAssertTrue(applied)
+        XCTAssertEqual(updates, 4)
+        settle(0.3)
+        attachHostedScreenshot(window, name: "model-confirmed")
+    }
+
     func testStreamingSendConsumesDraftWhileSteerIsHeldAndPreservesNewTyping() async throws {
         let fixture = try FixtureApp(["--ui-test-chat-controls", "--ui-test-hold-steer"], for: self)
         let window = try hostWindow(fixture.chat(try await fixture.session()))
