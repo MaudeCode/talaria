@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Agent updates can pause and restore dashboards configured to restart automatically.",
+      "highlight": false,
+      "components": ["web"]
+    }
+  ]
+}

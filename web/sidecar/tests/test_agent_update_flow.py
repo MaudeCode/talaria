@@ -17,11 +17,12 @@ pytestmark = pytest.mark.skipif(not NODE or not (SERVER / 'test/harness.js').exi
                                 reason='combined updater proof requires Node 24 and built Web contracts/server')
 
 
-@pytest.mark.parametrize('scenario', ['legacy', 'gateway-respawn'])
+@pytest.mark.parametrize('scenario', ['legacy', 'gateway-respawn', 'backend-keepalive'])
 @pytest.mark.parametrize('mode', ['apply', 'force'])
 @pytest.mark.parametrize('transient', [False, True])
-def test_http_update_refreshes_legacy_services_and_finishes_selected_revision(tmp_path, mode, scenario, transient):
-    with supervised_agent(tmp_path, dashboards=2, legacy=scenario == 'legacy', refresh=scenario == 'legacy', gateway_respawn=scenario == 'gateway-respawn', dependency_sync=True, transient=transient) as (root, home, base, target, sidecar, configs):
+@pytest.mark.parametrize('depth,manager,purpose', [(0, 'launchd', 'dashboard'), (1, 'launchd', 'serve'), (2, 'systemd', 'serve')])
+def test_http_update_refreshes_legacy_services_and_finishes_selected_revision(tmp_path, mode, scenario, transient, depth, manager, purpose):
+    with supervised_agent(tmp_path, dashboards=2, legacy=scenario == 'legacy', refresh=scenario == 'legacy', gateway_respawn=scenario == 'gateway-respawn', dependency_sync=True, transient=transient, backend_respawn=scenario == 'backend-keepalive', depth=depth, manager=manager, backend_purpose=purpose) as (root, home, base, target, sidecar, configs):
         # The original sidecar is idle. The server's sidecar owns the actual update RPCs.
         sidecar.close()
         git(root, 'tag', 'v1.0.0', base)
@@ -93,3 +94,10 @@ try {
         assert (home / 'sync-runs').read_text().splitlines() == ['sync']
         assert all((Path(c['home']) / 'backend.pid').read_text() != original[c['label']] for c in configs[1:])
         assert not list((home / '.talaria-agent-services').glob('*.json'))
+        for cfg in configs:
+            starts = (home / 'services' / cfg['label'] / 'starts').read_text().splitlines()
+            assert starts == ['start'] * (2 if scenario == 'legacy' and cfg['purpose'] != 'gateway' else 1)
+        from urllib.request import Request, urlopen
+        for cfg in configs[1:]:
+            with urlopen(Request(f"http://127.0.0.1:{cfg['port']}/api/host/identity", headers={'Authorization': 'Bearer synthetic-local-token'}), timeout=2) as response:
+                assert json.load(response)['pid'] == int((Path(cfg['home']) / 'backend.pid').read_text())

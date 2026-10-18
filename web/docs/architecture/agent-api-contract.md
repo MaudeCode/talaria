@@ -184,10 +184,23 @@ that service's debt; it never backfills the Agent-owned ledger.
 Talaria records the original service,
 profile, endpoint, configuration digest and process tree before requesting the
 backend's native retirement prepare/commit fence. Busy or indeterminate work
-refuses the update. After committed admission closure, SIGTERM runs the native
-graceful shutdown; the lease waits for the backend and its writer descendants,
-then disarms the original supervisor. A timeout never escalates to SIGKILL.
-Unexpected children, respawn or an unproved stop prevent source mutation.
+refuses the update. After committed admission closure, the companion durably
+records `backend_committed` and `backend_stop_requested`, rechecks the original
+configuration and complete process identities, and stops/disarms through that
+original supervisor. It never first signals the backend while KeepAlive/Restart
+remains armed. Launchd bootout and systemd stop use the original supervisor's
+configured graceful shutdown and timeout policy, including its own escalation
+if configured; Talaria sends no direct backend signal or SIGKILL on this path.
+Management calls are bounded. A failed/lost stop reply, cancellation or an
+unproved exit retains the exact recovery obligation. Every attested backend,
+writer descendant and supervisor must exit before source/dependency mutation;
+an acknowledgement alone proves no exit. Initial stop and recovery of a surviving
+original supervisor share this owner and the same configuration/identity checks.
+Unexpected children or an external replacement still refuse interruption and
+source mutation. The additive receipt fields preserve older recovery records;
+a lost commit reply is re-attested through native prepare/commit rather than
+assuming admission closed. Restoration verifies the original profile, endpoint,
+supervisor configuration and authenticated successor before clearing debt.
 
 Lifecycle calls use the backend's existing owner-local session credential.
 For a dashboard protected by native basic auth, the owning OS user's existing
