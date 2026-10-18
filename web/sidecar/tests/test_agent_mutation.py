@@ -147,7 +147,8 @@ def _ask_to_drain(entry):
  assert str(entry['pid']) in map(str,record['stop_sent']),'stop was not durably recorded before request'
  if (HOME/'refuse-drain').exists(): return False
  (HOME/'pause').touch(); return True
-def _drain_budget(): return .2
+# Allow journal fsync and child shutdown on loaded CI workers, as in supervised_agent.
+def _drain_budget(): return 4
 def _alive(pid,ct): return _active_pid()==pid
 def _disarm(entry): pass
 ''',
