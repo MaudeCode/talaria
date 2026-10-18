@@ -1031,7 +1031,7 @@ export class SessionService {
     raw.pending_steers = raw.active_stream_id ? (this.deps.runtime.pendingSteers?.(str(raw.active_stream_id)) ?? []) : []
     // TAL-1006: the compression a client shows on load: the running manual job's, else the live run's open span.
     const job = this.compressionJobs.get(s.session_id)
-    raw.run_status = job?.status === 'running' ? { phase: 'compressing' } : raw.active_stream_id ? (this.deps.runtime.runStatus?.(str(raw.active_stream_id)) ?? null) : null
+    raw.run_status = this.currentRunStatus(s.session_id, str(raw.active_stream_id) || null)
     raw.compression_started_at = job?.status === 'running' ? job.started_at : raw.active_stream_id ? (this.deps.runtime.compressionStartedAt?.(str(raw.active_stream_id)) ?? null) : null
     raw.automatic_turns_held = (await this.deps.runtime.automaticTurnsHeld?.(s.session_id)) ?? false
     raw.notices = this.deps.runtime.sessionNotices?.(s.session_id) ?? []
@@ -1799,6 +1799,12 @@ export class SessionService {
       // The caller may switch away on success, so a card saved nowhere is an error, not a summary.
       if (!saved) throw new HttpFailure(503, 'The handoff summary could not be saved; please retry.')
     }, { allowReadOnly: true })
+  }
+
+  /** The same live presentation for session detail and journal snapshot recovery. */
+  currentRunStatus(sid: string, streamId: string | null): RunStatus | null {
+    const job = this.compressionJobs.get(sid)
+    return job?.status === 'running' ? { phase: 'compressing' } : streamId ? (this.deps.runtime.runStatus?.(streamId) ?? null) : null
   }
 
   /** The session's compression job; a deleted session's finished result is dropped rather than served. */

@@ -218,8 +218,9 @@ persisted metadata is additive, and clients keep the explicit values in cache.
 `run_status` carries `{session_id, status}`. The server selects `status.phase` in this order:
 `compressing`, `rate_limit_wait` (with the existing `wait` object), `prompt_reading`
 (with `progress_percent` from 0 through 100, or null when unknown), then `working`.
-Session detail includes the same current `run_status` so an attach beyond earlier progress
-frames still shows the current phase. Older servers omit this additive field.
+Session detail and the journal stream's `session_snapshot` fallback include the same current
+`run_status` so an attach beyond earlier progress frames still shows the current phase.
+Older servers omit this additive field.
 
 The sidecar recognizes the Agent's exact local prompt-progress status line and forwards
 `provider_phase`, including explicit null clears. Ordinary reasoning text is never progress.

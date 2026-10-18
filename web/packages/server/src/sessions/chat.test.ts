@@ -181,6 +181,8 @@ describe('chat turns through the sidecar', () => {
     try {
       await vi.waitFor(async () => { expect(await status()).toEqual(progress) })
       expect(await status(other)).toBeNull()
+      const snapshot = await s.sse(`/api/sessions/${sid}/events?after_event_id=missing:1`, (f) => f.event === 'session_snapshot')
+      expect(((snapshot.find((f) => f.event === 'session_snapshot')?.data as Json).session as Json).run_status).toEqual(progress)
       const replay = await s.sse(`/api/chat/stream?stream_id=${streamId}&after_event_id=${streamId}:0`, (f) => f.event === 'run_status' && ((f.data as Json).status as Json)?.phase === 'prompt_reading')
       expect(replay.at(-1)?.data).toEqual({ session_id: sid, status: progress })
       send('rate_limit_wait', { provider: 'test', until: 1_800_000_600 })
@@ -193,6 +195,8 @@ describe('chat turns through the sidecar', () => {
       await vi.waitFor(async () => { expect(await status()).toEqual(progress) })
       await s.get(`/api/chat/cancel?stream_id=${streamId}`)
       expect(await status()).toBeNull()
+      const stoppedSnapshot = await s.sse(`/api/sessions/${sid}/events?after_event_id=missing:1`, (f) => f.event === 'session_snapshot')
+      expect(((stoppedSnapshot.find((f) => f.event === 'session_snapshot')?.data as Json).session as Json).run_status).toBeNull()
       send('provider_phase', { phase: progress })
       finish(completed([], { status: 'cancelled' }))
       await vi.waitFor(async () => { expect((await s.deps.sessionStore.get(sid)).active_stream_id).toBeNull() })
