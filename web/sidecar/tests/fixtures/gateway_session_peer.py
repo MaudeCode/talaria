@@ -71,12 +71,25 @@ async def probe(home, peer, desc, *, require_gap=False):
             assert len(peer.requests) == 2, peer.requests
             receipt = await asyncio.to_thread(call, "receipt", admission_id=first["receipt"]["admission_id"])
             assert receipt["receipt"]["status"] == "terminal", receipt
+            # A third exchange leaves a compressible head while retaining a complete recent turn.
+            await asyncio.to_thread(call, "submit", request_id="compression-tail", text="COMPRESSION_TAIL")
+            deadline = time.monotonic() + 40
+            while True:
+                final = await asyncio.to_thread(call, "snapshot")
+                if final["snapshot"] and not final["snapshot"]["pending"]:
+                    break
+                assert time.monotonic() < deadline, final
+                await asyncio.sleep(.05)
             # Stale revisions and generations reach the owner and are refused without a local writer.
             stale = await asyncio.to_thread(call, "mutate", request_id="stale", expected_revision=0,
                                             execution_generation=0, operation="workspace", payload={"cwd": str(home)})
             assert stale["state"] == "refused", stale
-            reset = await asyncio.to_thread(call, "mutate", request_id="reset-stable", expected_revision=final["snapshot"]["revision"],
-                execution_generation=final["snapshot"]["execution_generation"], operation="reset", payload={})
+            compressed = await asyncio.to_thread(call, "mutate", request_id="compress-stable", expected_revision=final["snapshot"]["revision"],
+                execution_generation=final["snapshot"]["execution_generation"], operation="compress", payload={})
+            assert compressed["state"] == "attached" and compressed["snapshot"]["session_id"] == sid, compressed
+            assert len(compressed["snapshot"]["messages"]) < len(final["snapshot"]["messages"]), compressed
+            reset = await asyncio.to_thread(call, "mutate", request_id="reset-stable", expected_revision=compressed["snapshot"]["revision"],
+                execution_generation=compressed["snapshot"]["execution_generation"], operation="reset", payload={})
             assert reset["state"] == "attached" and reset["snapshot"]["session_id"] == sid, reset
             assert reset["snapshot"]["messages"] == [], reset
             retained = await asyncio.to_thread(call, "receipt", admission_id=first["receipt"]["admission_id"])
@@ -396,6 +409,7 @@ def main():
     url = f"http://127.0.0.1:{peer.server_port}/v1"
     (home / "config.yaml").write_text(json.dumps({"gateway": {"multiplex_profiles": mode == "profiles"},
         "model": {"provider": "custom", "default": "owner-fixture", "base_url": url},
+        "compression": {"in_place": False, "protect_first_n": 0, "protect_last_n": 0, "min_tail_user_messages": 1},
         "auxiliary": {"title_generation": {"enabled": False}}, "approvals": {"mode": "manual", "timeout": 45}, "platform_toolsets": {"cli": []}}))
     if mode in {"profiles", "dedicated"}:
         alpha = home / "profiles/alpha"
