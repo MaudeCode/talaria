@@ -394,4 +394,14 @@ describe('GatewayRestartQueue readiness', () => {
     expect((await t.row(id))?.phase).toBe('succeeded')
     expect(t.calls).toEqual([])
   })
+
+  it('a resumed check without its recorded gateways fails closed instead of passing vacuously', async () => {
+    const t = (await setup())
+    t.gateway({ active_agents: 0 })
+    const id = (await t.waiting())
+    await t.store.transition(id, 'verifying')
+    await t.queue.resume()
+    await t.tick()
+    expect((await t.row(id))).toMatchObject({ phase: 'failed', detail: expect.stringContaining('could not be verified') as string })
+  })
 })

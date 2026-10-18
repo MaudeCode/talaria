@@ -119,7 +119,11 @@ gateway restart` manually." The native update path restarts the gateways inside
 its writer pause, so its `gateway_restart: "resumed"` result goes to
 `verifying` against the gateways recorded before the update. A Web exit stops
 the check early and leaves the record in `verifying`, and the restarted server
-runs the check again from the start.
+runs the check again from the start. The store saves the gateways to replace
+before it saves `verifying`. A `verifying` record without them fails closed with
+the manual command. On disk, `verifying` is stored as `restarting` plus a
+`verifying` flag. The current Stable release counts that record as an update in
+progress and marks it unknown when it starts.
 
 **Update Agent** keeps tracked local edits in the Agent checkout. It saves them
 with `git stash create` under a private `refs/talaria/autostash/<sha>` ref, never

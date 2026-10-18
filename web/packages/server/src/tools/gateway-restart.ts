@@ -35,6 +35,7 @@ const IDLE: RestartBlockers = { active_streams: 0, active_runs: 0, blocking_stre
 const HELD: RestartBlockers = { ...IDLE, restart_blocked: true }
 const REUSED = 'The gateway restart from an earlier Hermes Agent update is still waiting, and it loads this update too.'
 const NOT_BACK = 'Hermes Agent was updated, but the gateway did not come back. Run `hermes gateway restart` manually.'
+const UNVERIFIABLE = 'Hermes Agent was updated, but the gateway restart could not be verified. Run `hermes gateway restart` manually.'
 const READY_WINDOW_MS = 90_000
 const READY_POLL_MS = 1_000
 
@@ -91,7 +92,9 @@ export class GatewayRestartQueue {
   /** Resume the waits and checks a previous server process recorded; the newest wait carries any older ones. */
   async resume(): Promise<void> {
     for (const row of this.deps.notifications.pendingGatewayRestarts()) {
-      if (row.phase === 'verifying') void this.verify(row.id, row.profile, row.baseline, row.detail)
+      // Without the gateways recorded before the restart, no check can prove they came back: fail closed.
+      if (row.phase === 'verifying' && row.baseline === null) (await this.deps.notifications.transition(row.id, 'failed', null, undefined, [UNVERIFIABLE, row.detail].filter(Boolean).join('\n\n')))
+      else if (row.phase === 'verifying') void this.verify(row.id, row.profile, row.baseline ?? [], row.detail)
       else (await this.schedule(row.id, row.profile, row.detail))
     }
   }

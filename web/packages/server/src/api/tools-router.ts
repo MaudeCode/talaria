@@ -241,8 +241,8 @@ async function applyWithNotification(
       // TAL-1138: the native updater restarted the gateways inside its writer pause. Agent responding still needs the
       // new gateway processes and a current Agent runtime; a scheduled Web restart runs that check from the new server.
       const detail = result.stash_conflict === true ? str(result.message) : null
-      await ctx.deps.updateNotifications.transition(notification.id, 'verifying', null, verifiedIdentity, detail)
       await ctx.deps.updateNotifications.recordGatewayBaseline(notification.id, gatewaysBefore)
+      await ctx.deps.updateNotifications.transition(notification.id, 'verifying', null, verifiedIdentity, detail)
       if (result.restart_scheduled === true) (await ctx.deps.updateNotifications.markWebRestart(notification.id))
       else void ctx.deps.gatewayRestarts.verify(notification.id, scope.profile, gatewaysBefore, detail)
     } else if (result.gateway_restart === 'waiting_for_idle' || (target === 'agent' && ctx.deps.gatewayRestarts.pendingId() !== null)) {

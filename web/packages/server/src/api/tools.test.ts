@@ -1213,7 +1213,17 @@ describe('skills, memory, prompts, commands, mcp, health, updates, diagnostics',
       expect(s.deps.gatewayRestarts.pendingId()).toBeNull()
       // The native updater restarted the gateways itself; the restarted server checks that they and the Agent answer.
       s.deps.updates.apply = () => Promise.resolve({ ok: true, target: 'agent', verified_revision: 'e'.repeat(40), verified_version: 'v0.23.0', restart_scheduled: true, gateway_restart: 'resumed' })
+      // The resumable phase is saved only after the gateways it must replace, so a crash between them never resumes without them.
+      const order: string[] = []
+      const notifications = s.deps.updateNotifications
+      const recordBaseline = notifications.recordGatewayBaseline.bind(notifications)
+      const transitionTo = notifications.transition.bind(notifications)
+      const record = vi.spyOn(notifications, 'recordGatewayBaseline').mockImplementation((...args) => { order.push('baseline'); return recordBaseline(...args) })
+      const transition = vi.spyOn(notifications, 'transition').mockImplementation((...args) => { if (args[1] === 'verifying') order.push('verifying'); return transitionTo(...args) })
       const resumed = await json(await post(s, '/api/updates/apply', { target: 'agent', tab_id: 'tab-native' }))
+      record.mockRestore()
+      transition.mockRestore()
+      expect(order).toEqual(['baseline', 'verifying'])
       const resumedRow = (await json(await s.get('/api/update-notifications?tab_id=tab-native'))).tab_update as Json
       expect(resumedRow).toMatchObject({ id: resumed.notification_id, phase: 'verifying', active: true, presents_dialog: true, dialog_close: 'none' })
       expect(steps(resumedRow)).toEqual(['Installing:done', 'Restarting Talaria Web:active', 'Restarting gateway:pending', 'Agent responding:pending'])

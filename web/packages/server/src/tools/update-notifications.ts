@@ -389,10 +389,10 @@ export class UpdateNotificationStore {
    * TAL-953: gateway restarts still waiting for idle, and (TAL-1138) restarted gateways still being checked, newest
    * first, with the profile each update ran under, so a restarted server resumes them.
    */
-  pendingGatewayRestarts(): { id: string; profile: string; detail: string | null; phase: 'waiting_for_idle' | 'verifying'; baseline: GatewayProcess[] }[] {
+  pendingGatewayRestarts(): { id: string; profile: string; detail: string | null; phase: 'waiting_for_idle' | 'verifying'; baseline: GatewayProcess[] | null }[] {
     return this.rows.filter((row) => row.kind === 'update' && (row.phase === 'waiting_for_idle' || row.phase === 'verifying'))
       .sort((a, b) => b.created_at.localeCompare(a.created_at))
-      .map((row) => ({ id: row.id, profile: row.profile, detail: row.detail, phase: row.phase as 'waiting_for_idle' | 'verifying', baseline: row.gateway_baseline ?? [] }))
+      .map((row) => ({ id: row.id, profile: row.profile, detail: row.detail, phase: row.phase as 'waiting_for_idle' | 'verifying', baseline: row.gateway_baseline }))
   }
 
   /** `stale`: the requesting tab runs an older frontend build than the server serves (`syncTabBuild`'s comparison). */
@@ -577,7 +577,8 @@ export class UpdateNotificationStore {
           || (row.tab_id != null && !(typeof row.tab_id === 'string' && TAB_ID.test(row.tab_id)))) return []
         const kind = safeToken(row.kind, 'update')
         const target = row.target === 'webui' || row.target === 'agent' ? row.target : null
-        const phase = safeToken(row.phase, 'unknown')
+        // TAL-1138: `verifying` is stored as Stable's `restarting` plus a flag Stable ignores.
+        const phase = row.phase === 'restarting' && row.verifying === true ? 'verifying' : safeToken(row.phase, 'unknown')
         const fallback = target && PHASES.has(phase as UpdateNotificationPhase) ? wording(target, phase as UpdateNotificationPhase) : { title: 'Server notification', message: 'This server needs your attention.' }
         return [{
           id: row.id, owner: row.owner.slice(0, 256), profile: row.profile.slice(0, 64), visibility: row.visibility === 'profile' ? 'profile' : 'server', kind, target, phase,
@@ -629,9 +630,11 @@ export class UpdateNotificationStore {
       kept.push(row)
     }
     this.rows = [...kept.reverse(), ...tabNotices]
-    // TAL-1138 fields are written only once set, so records that never use them keep their stored bytes.
+    // TAL-1138 fields are written only once set, so records that never use them keep their stored bytes. A check in
+    // progress is stored as `restarting`, which the current Stable release counts as active and reconciles on startup.
     const rows = structuredClone(this.rows).map(({ web_restart_boot, gateway_tasks, gateway_baseline, failed_step, ...row }) => ({
       ...row,
+      ...(row.phase === 'verifying' ? { phase: 'restarting', verifying: true } : {}),
       ...(web_restart_boot === null ? {} : { web_restart_boot }),
       ...(gateway_tasks === null ? {} : { gateway_tasks }),
       ...(gateway_baseline === null ? {} : { gateway_baseline }),
