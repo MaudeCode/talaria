@@ -9,7 +9,6 @@ import inspect
 import json
 import logging
 import math
-import os
 import time
 import urllib.error
 import urllib.request
@@ -118,8 +117,11 @@ def _configured_key(api_key: str | None, env_vars: list[str] | None) -> str:
         return ""
     try:
         from hermes_cli.config import get_env_value_prefer_dotenv as get_env
-    except ImportError:  # older Agents without the resolver
-        get_env = os.environ.get
+    except ImportError:  # older Agents still resolve through the installed profile secret scope
+        try:
+            from agent.secret_scope import get_secret as get_env
+        except ImportError:
+            return ""
     for name in env_vars or []:
         key = _usable_key(get_env(name))
         if key:

@@ -531,7 +531,9 @@ method; version 41 peers fail the handshake before attempting it.
 list. With no explicit key (and no `credential_id` for a balance read), the
 sidecar resolves those names with the Agent's `get_env_value_prefer_dotenv`
 inside `scoped_home`, including the profile's secret sources. Older Agents
-without that resolver use the scoped environment. Unresolved `op://` references
+without that resolver use `agent.secret_scope.get_secret`; if neither scoped
+resolver exists, the sidecar returns no key. The sidecar never reads the process
+environment directly as a fallback. Unresolved `op://` references
 are never sent to a balance endpoint. Pool-account reads keep their own runtime
 key and never fall back to another configured account. Resolved secrets stay in
 the sidecar; pool matching returns `matches_api_key` and a `has_api_key` boolean.

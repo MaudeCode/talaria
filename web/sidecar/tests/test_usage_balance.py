@@ -250,13 +250,13 @@ def test_balance_and_pool_resolve_keys_inside_profile_scope(tmp_path, monkeypatc
 
     active = False
     looked_up = []
+    monkeypatch.setenv("OPENROUTER_API_KEY", "sk-launch-must-not-leak")
 
     @contextmanager
     def scope(home):
         nonlocal active
         assert home == tmp_path
         active = True
-        monkeypatch.setenv("OPENROUTER_API_KEY", resolved)
         try:
             yield
         finally:
@@ -271,6 +271,10 @@ def test_balance_and_pool_resolve_keys_inside_profile_scope(tmp_path, monkeypatc
 
     if agent_resolver:
         config.get_env_value_prefer_dotenv = get_env
+    secrets = types.ModuleType("agent.secret_scope")
+    secrets.get_secret = get_env
+    monkeypatch.setitem(sys.modules, "agent", types.ModuleType("agent"))
+    monkeypatch.setitem(sys.modules, "agent.secret_scope", secrets)
     monkeypatch.setitem(sys.modules, "hermes_cli", types.ModuleType("hermes_cli"))
     monkeypatch.setitem(sys.modules, "hermes_cli.config", config)
     monkeypatch.setattr(usage, "scoped_home", scope)
@@ -283,12 +287,11 @@ def test_balance_and_pool_resolve_keys_inside_profile_scope(tmp_path, monkeypatc
     snapshot = registry.methods["usage.pool"](None, params)
     rows = snapshot["entries"]
     usable = resolved.startswith("sk-")
+    assert [r.get_header("Authorization") for r in requests] == (["Bearer sk-synthetic-scoped"] if usable else [])
     assert snapshot.get("has_api_key") is usable
     assert result["status"] == ("ok" if usable else "no_key")
     assert rows[0]["matches_api_key"] is usable
-    assert [r.get_header("Authorization") for r in requests] == (["Bearer sk-synthetic-scoped"] if usable else [])
-    if agent_resolver:
-        assert looked_up == ["MISSING_KEY", "OPENROUTER_API_KEY"] * 2
+    assert looked_up == ["MISSING_KEY", "OPENROUTER_API_KEY"] * 2
     assert not active
 
 
@@ -348,3 +351,14 @@ print(json.dumps({'seen': seen, 'requests': requests}))
     result = json.loads(run.stdout.strip().splitlines()[-1])
     assert result['seen'] == [['ok', ['work'], 'no_key'], ['ok', ['home'], 'no_key'], ['no_key', [], 'no_key'], ['ok', ['work'], 'no_key']], (result, run.stderr[-6000:])
     assert result['requests'] == ['Bearer sk-work-vault', 'Bearer sk-home-vault', 'Bearer sk-work-vault']
+
+
+def test_missing_scoped_resolvers_never_read_ambient_key(monkeypatch):
+    monkeypatch.setitem(sys.modules, "hermes_cli", types.ModuleType("hermes_cli"))
+    monkeypatch.setitem(sys.modules, "hermes_cli.config", types.ModuleType("hermes_cli.config"))
+    monkeypatch.setitem(sys.modules, "agent.secret_scope", None)
+    monkeypatch.setenv("OPENROUTER_API_KEY", "sk-launch-must-not-leak")
+    requests = _stub_http(monkeypatch, {})
+    result = usage.balance("openrouter", credential_id=None, api_key=None, env_vars=["OPENROUTER_API_KEY"])
+    assert result["status"] == "no_key"
+    assert requests == []
