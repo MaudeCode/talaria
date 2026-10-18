@@ -1248,16 +1248,22 @@ export class ProviderCatalog {
     if (envVar) {
       for (const name of [envVar, ...(PROVIDER_ENV_VAR_ALIASES[pid] ?? [])]) {
         const v = str(envValues[name] ?? this.processEnv(name, profileHome)).trim()
-        if (v) return v
+        if (v && !v.startsWith('op://')) return v
       }
     }
     // The same config sources `providerHasKey` counts, so a provider shown as keyed resolves its key.
     const model = modelSection(config)
-    if (canonicaliseProviderId(model.provider) === canonicaliseProviderId(pid) && valueCountsAsApiKey(pid, model.api_key)) return str(model.api_key).trim()
+    if (canonicaliseProviderId(model.provider) === canonicaliseProviderId(pid) && valueCountsAsApiKey(pid, model.api_key) && !str(model.api_key).trim().startsWith('op://')) return str(model.api_key).trim()
     for (const [key, value] of Object.entries(dict(config.providers))) {
-      if (providerIdentity(key) === providerIdentity(pid) && isDict(value) && valueCountsAsApiKey(pid, value.api_key)) return str(value.api_key).trim()
+      if (providerIdentity(key) === providerIdentity(pid) && isDict(value) && valueCountsAsApiKey(pid, value.api_key) && !str(value.api_key).trim().startsWith('op://')) return str(value.api_key).trim()
     }
     return null
+  }
+
+  /** A raw key or the names the Agent resolves inside the profile's secret scope. */
+  private usageKey(pid: string, apiKey: string | null): Pick<SidecarParams<'usage.pool'>, 'api_key' | 'env_vars'> {
+    const envVar = providerEnvVar(pid)
+    return apiKey ? { api_key: apiKey } : { env_vars: envVar ? [envVar, ...(PROVIDER_ENV_VAR_ALIASES[pid] ?? [])] : [] }
   }
 
   /** Account-usage snapshots by profile home, provider, and pool account. */
@@ -1311,9 +1317,9 @@ export class ProviderCatalog {
     }
     if (provider === 'openrouter' || provider === 'deepseek' || provider === 'opencode-go') {
       const apiKey = this.apiKeyFor(provider, profileHome, config)
-      const key = credential ? { credential_id: credential.credential_id } : apiKey ? { api_key: apiKey } : null
-      const read = key ? await this.balance(profileHome, provider, key) : null
-      const status = !key || read?.status === 'no_key' ? 'no_key' : read?.status === 'ok' ? 'ok' : read?.status === 'http_error' ? read.http_status : null
+      const key = credential ? { credential_id: credential.credential_id } : this.usageKey(provider, apiKey)
+      const read = await this.balance(profileHome, provider, key)
+      const status = read?.status === 'no_key' ? 'no_key' : read?.status === 'ok' ? 'ok' : read?.status === 'http_error' ? read.http_status : null
       if (provider === 'openrouter') {
         if (status === 'no_key') return answer(false, 'no_key', 'OpenRouter quota status needs an OPENROUTER_API_KEY configured on the server.')
         if (status === 'ok' && read?.quota) {
@@ -1355,7 +1361,7 @@ export class ProviderCatalog {
    * `apiKey`, the provider's configured key. Null when the pool is unknown (see `poolLookup`).
    */
   private poolEntries(profileHome: string, pid: string, apiKey: string | null): Promise<CatalogLookup<PoolEntry[]>> {
-    return this.poolLookup(profileHome, `pool\0${pid}`, async (sidecar) => (await sidecar.call('usage.pool', { profile_home: profileHome, provider: pid, ...(apiKey ? { api_key: apiKey } : {}) })).entries)
+    return this.poolLookup(profileHome, `pool\0${pid}`, async (sidecar) => (await sidecar.call('usage.pool', { profile_home: profileHome, provider: pid, ...this.usageKey(pid, apiKey) })).entries)
   }
 
   /** The last answer of each credential-pool lookup, by profile home and lookup. */
@@ -1388,7 +1394,7 @@ export class ProviderCatalog {
   }
 
   /** TAL-548: one key-based balance read through the sidecar, which resolves a pool account's key itself; null when it fails. */
-  private async balance(profileHome: string, provider: SidecarParams<'usage.balance'>['provider'], key: { credential_id?: string; api_key?: string }): Promise<SidecarResult<'usage.balance'> | null> {
+  private async balance(profileHome: string, provider: SidecarParams<'usage.balance'>['provider'], key: Pick<SidecarParams<'usage.balance'>, 'credential_id' | 'api_key' | 'env_vars'>): Promise<SidecarResult<'usage.balance'> | null> {
     const sidecar = this.deps.sidecar()
     if (!sidecar) return null
     try {
@@ -1525,8 +1531,8 @@ export class ProviderCatalog {
     const budget = this.deps.costBudget()
     const config = await this.deps.config.read(profileHome)
     const apiKey = this.apiKeyFor('openrouter', profileHome, config)
-    if (!apiKey) return { ok: false, provider, display_name: name, supported: true, status: 'no_key', monthly_budget: budget, message: 'OpenRouter cost history needs an OPENROUTER_API_KEY configured on the server.' }
-    const info = await this.balance(profileHome, 'openrouter', { api_key: apiKey })
+    const info = await this.balance(profileHome, 'openrouter', this.usageKey('openrouter', apiKey))
+    if (info?.status === 'no_key') return { ok: false, provider, display_name: name, supported: true, status: 'no_key', monthly_budget: budget, message: 'OpenRouter cost history needs an OPENROUTER_API_KEY configured on the server.' }
     if (info?.status !== 'ok' || !info.quota) {
       return { ok: false, provider, display_name: name, supported: true, status: 'unavailable', window_days: days, ...costHistoryView(this.readCostSnapshots(profileHome), days, budget), limit: null, label: null, monthly_budget: budget, message: 'OpenRouter cost history is temporarily unavailable. Showing last known data.' }
     }

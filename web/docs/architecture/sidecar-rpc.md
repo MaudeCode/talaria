@@ -524,3 +524,14 @@ model/provider identities and measured context, falling back to the profile's
 cached Agent and then its read-only persisted usage anchor. A provider change
 cannot count as a same-model cache-preserving selection. RPC version 42 adds this
 method; version 41 peers fail the handshake before attempting it.
+
+## Provider balance credentials
+
+`usage.balance` and `usage.pool` accept a raw `api_key` or an ordered `env_vars`
+list. With no explicit key (and no `credential_id` for a balance read), the
+sidecar resolves those names with the Agent's `get_env_value_prefer_dotenv`
+inside `scoped_home`, including the profile's secret sources. Older Agents
+without that resolver use the scoped environment. Unresolved `op://` references
+are never sent to a balance endpoint. Pool-account reads keep their own runtime
+key and never fall back to another configured account. Resolved secrets stay in
+the sidecar; pool matching returns only `matches_api_key`.

@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Provider balances and quotas use keys resolved from the profile's secret sources.",
+      "highlight": false,
+      "components": ["web"]
+    }
+  ]
+}
