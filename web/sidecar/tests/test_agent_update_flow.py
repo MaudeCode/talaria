@@ -20,7 +20,7 @@ pytestmark = pytest.mark.skipif(not NODE or not (SERVER / 'test/harness.js').exi
 @pytest.mark.parametrize('scenario', ['legacy', 'gateway-respawn', 'backend-keepalive'])
 @pytest.mark.parametrize('mode', ['apply', 'force'])
 @pytest.mark.parametrize('transient', [False, True])
-@pytest.mark.parametrize('depth,manager,purpose', [(0, 'launchd', 'dashboard'), (1, 'launchd', 'serve'), (2, 'systemd', 'serve')])
+@pytest.mark.parametrize('depth,manager,purpose', [(0, 'launchd', 'dashboard'), (1, 'launchd', 'serve'), (0, 'systemd', 'dashboard'), (2, 'systemd', 'serve')])
 def test_http_update_refreshes_legacy_services_and_finishes_selected_revision(tmp_path, mode, scenario, transient, depth, manager, purpose):
     with supervised_agent(tmp_path, dashboards=2, legacy=scenario == 'legacy', refresh=scenario == 'legacy', gateway_respawn=scenario == 'gateway-respawn', dependency_sync=True, transient=transient, backend_respawn=scenario == 'backend-keepalive', depth=depth, manager=manager, backend_purpose=purpose) as (root, home, base, target, sidecar, configs):
         # The original sidecar is idle. The server's sidecar owns the actual update RPCs.

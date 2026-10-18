@@ -583,17 +583,23 @@ def service_pid(label):
  except FileNotFoundError: return None
 def native_pid(label):
  cfg=json.loads((HOME/'services'/label/'config.json').read_text())
- if cfg['purpose']=='gateway' and cfg['depth']==0:
-  try: pid=int((Path(cfg['home'])/'active').read_text())
+ if cfg['depth']==0:
+  file=Path(cfg['home'])/('active' if cfg['purpose']=='gateway' else 'backend.pid')
+  try: pid=int(file.read_text())
   except FileNotFoundError: return None
   return pid if alive(pid) else None
  return service_pid(label)
 def start(label):
+ cfg=json.loads((HOME/'services'/label/'config.json').read_text())
+ if cfg['depth']==0 and cfg['purpose']!='gateway':
+  # The fixture manager can still be reaping an exited direct job.
+  deadline=time.monotonic()+4
+  while service_pid(label) and not native_pid(label) and time.monotonic()<deadline: time.sleep(.01)
+  if native_pid(label): return
  with (HOME/'services'/label/'start-attempts').open('a') as f: f.write('attempt'+chr(10))
  if (HOME/'services'/label/'fail-start').exists(): raise RuntimeError('synthetic service start refused')
  if service_pid(label): return
  (HOME/'services'/label/'disarm').unlink(missing_ok=True)
- cfg=json.loads((HOME/'services'/label/'config.json').read_text())
  if cfg['purpose']=='gateway':
   (Path(cfg['home'])/'pause').unlink(missing_ok=True)
  with (HOME/'services'/label/'starts').open('a') as f: f.write('start\\n')
@@ -665,7 +671,7 @@ try:
    elif (folder/'respawn').exists():
     while (folder/'hold-respawn').exists(): time.sleep(.01)
     if not (folder/'disarm').exists(): child=spawn()
-   elif cfg.get('refresh') or (cfg['purpose']=='gateway' and not admission.exists()): break
+   elif cfg.get('refresh') or (cfg['purpose']!='gateway' and cfg['depth']==0) or (cfg['purpose']=='gateway' and not admission.exists()): break
   time.sleep(.01)
 finally:
  if helper is not None and helper.poll() is None: helper.terminate(); helper.wait(timeout=5)
@@ -741,9 +747,9 @@ def _is_pid_ancestor_of_current_process(pid): return False
 ''',
       'main_dashboard': '''from synthetic_services import *
 def _launchd_plist_dirs(): return [('agent',HOME/'plists')]
-def _loaded_launchd_backend_jobs(): return [('gui/12345',c['label'],['hermes',c['purpose']],service_pid(c['label'])) for c in services() if c['purpose']!='gateway' and c['manager']=='launchd' and service_pid(c['label'])]
+def _loaded_launchd_backend_jobs(): return [('gui/12345',c['label'],['hermes',c['purpose']],native_pid(c['label'])) for c in services() if c['purpose']!='gateway' and c['manager']=='launchd' and native_pid(c['label'])]
 def _launchd_job_owning_backend(pid,cmdline,jobs,ancestors=()): return next(((d,l,p) for d,l,a,p in jobs if p in ancestors),None)
-def _get_systemd_service_for_pid(pid): return next((c['label'] for c in services() if c['manager']=='systemd' and service_pid(c['label'])==pid),None)
+def _get_systemd_service_for_pid(pid): return next((c['label'] for c in services() if c['manager']=='systemd' and native_pid(c['label'])==pid),None)
 def _get_pid_cgroup_path(pid): return 'synthetic-user-cgroup'
 def _extract_scope_from_cgroup(cgroup): return 'user'
 ''',
@@ -983,7 +989,7 @@ def run_git(command,args,**kw):
         configs.append(cfg)
     binary = home / 'bin'
     binary.mkdir()
-    (binary / 'launchctl').write_text(f'#!{AGENT_PYTHON}\nimport sys\nfrom pathlib import Path\nsys.path.insert(0,{str(root)!r})\nfrom synthetic_services import start\nif sys.argv[1]=="bootstrap": start(Path(sys.argv[3]).stem)\n')
+    (binary / 'launchctl').write_text(f'#!{AGENT_PYTHON}\nimport sys\nfrom pathlib import Path\nsys.path.insert(0,{str(root)!r})\nfrom synthetic_services import start,native_pid\nif sys.argv[1]=="bootstrap": start(Path(sys.argv[3]).stem)\nif sys.argv[1]=="kickstart" and not native_pid(sys.argv[2].split("/")[-1]): start(sys.argv[2].split("/")[-1])\n')
     (binary / 'launchctl').chmod(0o755)
     if runtime_importable:
         (root / 'run_agent.py').write_text('class AIAgent: pass\n')
@@ -2824,11 +2830,14 @@ try {
 
 
 @pytest.mark.parametrize('mode', ['normal', 'force'])
-@pytest.mark.parametrize('depth,manager', [(0, 'launchd'), (1, 'launchd'), (2, 'systemd')])
+@pytest.mark.parametrize('depth,manager', [(0, 'launchd'), (1, 'launchd'), (0, 'systemd'), (2, 'systemd')])
 def test_keepalive_backend_completes_selected_update_without_old_source_respawn(tmp_path, mode, depth, manager):
     with supervised_agent(tmp_path, backend_respawn=True, depth=depth, manager=manager, dependency_sync=True) as (root, home, base, target, sidecar, configs):
         begun = rpc(sidecar, root, 'begin', revision=target, homes=[str(home)])
         assert begun['ok'], begun
+        debt = json.loads(next((home / '.talaria-agent-services').glob('*.json')).read_text())
+        backend = next(e for e in debt['entries'] if e['purpose'] != 'gateway')
+        assert (backend['service_pid'] == backend['pid']) == (depth == 0)
         assert not (home / 'backend.pid').exists()
         assert not list((home / 'services').glob('*/service.pid'))
         args = ['merge', '--ff-only', target] if mode == 'normal' else ['reset', '--hard', target]
