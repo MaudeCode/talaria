@@ -1256,14 +1256,15 @@ export class ProviderCatalog {
     if (envVar) {
       for (const name of [envVar, ...(PROVIDER_ENV_VAR_ALIASES[pid] ?? [])]) {
         const v = str(envValues[name] ?? this.processEnv(name, profileHome)).trim()
-        if (v && !v.startsWith('op://')) return v
+        // A reference owns this slot; only the Agent can resolve it before lower-priority keys.
+        if (v) return v.startsWith('op://') ? null : v
       }
     }
     // The same config sources `providerHasKey` counts, so a provider shown as keyed resolves its key.
     const model = modelSection(config)
-    if (canonicaliseProviderId(model.provider) === canonicaliseProviderId(pid) && valueCountsAsApiKey(pid, model.api_key) && !str(model.api_key).trim().startsWith('op://')) return str(model.api_key).trim()
+    if (canonicaliseProviderId(model.provider) === canonicaliseProviderId(pid) && valueCountsAsApiKey(pid, model.api_key)) return str(model.api_key).trim().startsWith('op://') ? null : str(model.api_key).trim()
     for (const [key, value] of Object.entries(dict(config.providers))) {
-      if (providerIdentity(key) === providerIdentity(pid) && isDict(value) && valueCountsAsApiKey(pid, value.api_key) && !str(value.api_key).trim().startsWith('op://')) return str(value.api_key).trim()
+      if (providerIdentity(key) === providerIdentity(pid) && isDict(value) && valueCountsAsApiKey(pid, value.api_key)) return str(value.api_key).trim().startsWith('op://') ? null : str(value.api_key).trim()
     }
     return null
   }
