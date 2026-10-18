@@ -1,0 +1,14 @@
+{
+  "chat.finalize_session": [
+    {
+      "params": {
+        "profile_home": "<home>",
+        "session_id": "finalize-test",
+        "reason": "clear"
+      },
+      "result": {
+        "messages": []
+      }
+    }
+  ]
+}

@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Added",
+      "summary": "Session plugins run when a chat is cleared or deleted, with closing messages shown after clearing.",
+      "highlight": false,
+      "components": ["web"]
+    }
+  ]
+}

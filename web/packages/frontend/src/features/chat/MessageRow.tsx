@@ -1,5 +1,5 @@
 import { memo, useState } from 'react'
-import { AlertTriangle, ArrowUp, CalendarClock, Copy, GitBranch, ListChecks, Pencil, RotateCcw, Shrink, Volume2, Webhook } from 'lucide-react'
+import { AlertTriangle, ArrowUp, CalendarClock, Copy, GitBranch, Info, ListChecks, Pencil, RotateCcw, Shrink, Volume2, Webhook } from 'lucide-react'
 import { m } from '../../paraglide/messages.js'
 import type { BackgroundLine, Message } from '../../contracts'
 import { StatusIcon } from '../background/BackgroundWork'
@@ -155,12 +155,14 @@ export const MarkerRow = memo(function MarkerRow({ row }: { row: VisibleMessage 
   )
 })
 
-/** TAL-815: an assistant row the server stamped `_notice_kind` (a failed turn's boundary), one quiet line in its place, never a reply. */
+/** A server-classified notice, one quiet line in its place, never a reply. */
 export const NoticeRow = memo(function NoticeRow({ row }: { row: VisibleMessage }) {
+  const failed = row.message._notice_kind === 'failed_turn'
+  const Icon = failed ? AlertTriangle : Info
   return (
     <div className="msg-row" data-role="notice" data-msg-idx={row.index} data-message-key={row.key}>
       <p role="note" className="flex items-center gap-2 text-[13px] text-muted">
-        <AlertTriangle size={14} aria-hidden="true" className="shrink-0 text-warning" />
+        <Icon size={14} aria-hidden="true" className={cn("shrink-0", failed && "text-warning")} />
         <span className="min-w-0">{messageText(row.message.content)}</span>
       </p>
     </div>

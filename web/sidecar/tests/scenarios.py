@@ -11,6 +11,7 @@ fail-closed shapes.
 from __future__ import annotations
 
 SCENARIOS: list[tuple[str, dict]] = [
+    ("chat.finalize_session", {"profile_home": "{home}", "session_id": "finalize-test", "reason": "clear"}),
     ("runtime.status", {}),
     ("runtime.agent_recovery", {"probe": True}),
     ("runtime.ensure_current", {}),

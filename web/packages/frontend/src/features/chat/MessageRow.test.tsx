@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { cleanup, fireEvent, render, screen } from '@testing-library/react'
-import { AssistantMessageRow, BackgroundUpdateRow, UserMessageRow } from './MessageRow'
+import { AssistantMessageRow, BackgroundUpdateRow, NoticeRow, UserMessageRow } from './MessageRow'
 import { Transcript } from './Transcript'
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
@@ -178,6 +178,15 @@ describe('compaction markers (TAL-305)', () => {
 })
 
 describe('Agent notices (TAL-815)', () => {
+  it('renders a session closing notice without reply controls or a warning icon (TAL-937)', () => {
+    const row = { index: 0, key: 'closing', message: { role: 'local_notice', content: 'bye', _notice_kind: 'session_finalize' as const } }
+    const view = render(<NoticeRow row={row} />)
+    expect(screen.getByRole('note')).toHaveTextContent('bye')
+    expect(view.container.querySelector('[data-role="notice"]')).not.toBeNull()
+    expect(view.container.querySelector('.text-warning')).toBeNull()
+    expect(screen.queryByRole('button')).toBeNull()
+  })
+
   const fixture = (): Message[] => (JSON.parse(readFileSync(resolve(import.meta.dirname, '../../../../../../contracts/fixtures/web-session.json'), 'utf8')) as { notice_session: { messages: Message[] } }).notice_session.messages
 
   it('shows a failed turn\'s boundary as a notice after the turn it closes, and nothing the server hides', () => {

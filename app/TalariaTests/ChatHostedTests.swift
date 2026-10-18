@@ -991,8 +991,8 @@ final class ChatHostedTests: XCTestCase {
         XCTAssertTrue(window.bounds.contains(window.convert(chip.accessibilityFrame, from: nil)), "The chip is off screen")
         XCTAssertFalse(HostedAccessibility.labels(in: window).contains("Compressing context..."), "The composer placeholder still says it")
         // A typed command leaves the composer when it is sent, not when it finishes (the job above is still running).
-        let draft = await composerTextView(in: window)
-        XCTAssertEqual(draft?.text, "", "The /compress draft stayed in the composer while the command ran")
+        _ = await awaitCondition { self.composerDraftText(in: window) == "" }
+        XCTAssertEqual(composerDraftText(in: window), "", "The /compress draft stayed in the composer while the command ran")
     }
 
     /// An edit or regenerate the server holds asks with the server's count, the edit only once its sheet has closed;

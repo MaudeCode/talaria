@@ -214,7 +214,7 @@ under Hermes Agent's context-local home override (`talaria_sidecar/home.py`).
 | `process` | `drain`, `recover`, `requeue`, `mark_consumed`, `consumed`, `format_notification`, `list` | |
 | `usage` | `account`, `pool`, `pool_providers`, `balance` | |
 | `gateway` | `control`, `restart` | `control`, `restart`: `progress` |
-| `chat` | `start`, `interrupt`, `steer`, `evict_agent` | `start`: `token`, `reasoning`, `interim_assistant`, `tool`, `tool_complete`, `approval`, `clarify`, `clarify_resolved`, `compressing`, `compression_finished`, `warning`, `status`, `context_status`, `notice`, `notice_clear`, `notices_reset`, `rate_limit_wait`; the settled transcript, usage, and terminal status come back as the result |
+| `chat` | `start`, `interrupt`, `steer`, `evict_agent`, `finalize_session` | `start`: `token`, `reasoning`, `interim_assistant`, `tool`, `tool_complete`, `approval`, `clarify`, `clarify_resolved`, `compressing`, `compression_finished`, `warning`, `status`, `context_status`, `notice`, `notice_clear`, `notices_reset`, `rate_limit_wait`; the settled transcript, usage, and terminal status come back as the result |
 | `approval`, `clarify` | `approval.pending`, `approval.respond`, `approval.set_yolo`, `clarify.respond` | |
 | `worktree` | `create` | |
 | `checkpoints` | `list`, `diff`, `restore` | |
@@ -321,6 +321,21 @@ per-session agent cache lives in the sidecar. An agent that leaves the cache
 close) ends its memory session with its transcript and releases its LLM clients
 under its profile, once no turn still holds it. Shutdown stops running turns
 and waits up to 4 s for those releases.
+
+Clear and delete call `chat.finalize_session` with the owning `profile_home`,
+`session_id`, and `reason` (`clear` or `delete`). Clear finalizes before removing
+the transcript. Delete finalizes only after the local session deletion commits,
+so Agent refusals and failed share, relay, or storage cleanup do not close a
+conversation that remains present. Repeated deletes skip finalization.
+It runs the Agent's `finalize_session` with platform `webui` under that profile,
+waiting at most 10 seconds. Missing lifecycle helpers, failed hooks, and timeouts
+return no messages and never prevent the requested boundary. A timed-out worker
+keeps its own profile scope until it finishes; profile deletion waits for it as
+it does for memory releases. Cache eviction alone does not finalize a session.
+Clear persists returned text as `local_notice` rows with `_notice_kind:
+session_finalize`; the shared model-history sanitizer excludes these rows,
+including after reload, duplicate, or branch. Delete discards the text.
+Read-only and subagent sessions retain their existing mutation refusals.
 
 Agent v0.21.6 clarify callbacks receive a normalized question list. The sidecar
 emits it in the existing batch frame, and the server returns a validated keyed

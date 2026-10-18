@@ -228,9 +228,10 @@ export const MessageSchema = z.looseObject({
   /**
    * TAL-815: an assistant row the Agent wrote as a notice, not the model's reply. `failed_turn`: the boundary closing a
    * turn that failed, with its copy in `content`. Clients show it as a notice in its place, never as a reply bubble or
-   * part of a turn's reply; it is absent when Web's own error row already reports that turn.
+   * part of a turn's reply; it is absent when Web's own error row already reports that turn. `session_finalize` is
+   * a plugin's closing text after clear, with role `local_notice`, display-only and excluded from model history.
    */
-  _notice_kind: z.enum(['failed_turn']).optional(),
+  _notice_kind: z.enum(['failed_turn', 'session_finalize']).optional(),
   /**
    * TAL-816: a user row of a messaging session that the Agent's gateway mirrored after a webhook route's or cron job's
    * delivery to the chat, not a message the user sent. Clients show it as a delivery notice titled by a localized label

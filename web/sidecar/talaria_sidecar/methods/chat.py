@@ -42,6 +42,7 @@ _AGENT_CACHE_MAX = 32
 _AGENT_RELEASE_TIMEOUT = 4.0
 # Profile deletion waits this long for the profile's memory flushes, under the server's 120 s call timeout.
 _PROFILE_RELEASE_TIMEOUT = 60.0
+_SESSION_FINALIZE_TIMEOUT = 10.0
 _TOOL_RESULT_SNIPPET_MAX = 4000
 # Predecessor ``_TOOL_ARG_CONTENT_KEYS`` (#4928): card content / diff-reconstruction inputs keep the long cap.
 _TOOL_ARG_CONTENT_KEYS = frozenset({"command", "cmd", "script", "code", "patch", "diff", "old_string", "new_string", "content", "path", "file_path"})
@@ -2114,6 +2115,45 @@ def register(registry) -> None:
         if run is None or run.agent is None:
             return {"redirected": False, "withdrawn": False, "reason": "not_running"}
         return steer_now(run.agent, pending, index)
+
+    @registry.method("chat.finalize_session", requires_agent=False)
+    def finalize_(ctx: CallContext, params: dict) -> dict:
+        session_id = str(params.get("session_id") or "").strip()
+        reason = params.get("reason")
+        if not session_id or reason not in ("clear", "delete"):
+            raise InvalidParams("session_id and reason (clear/delete) are required")
+        home = profile_home_param(params)
+        messages: list[str] = []
+
+        def finalize() -> None:
+            try:
+                # Scope inside the worker: a timed-out plugin keeps its own profile until it finishes.
+                with scoped_home(home):
+                    from hermes_cli import lifecycle
+
+                    callback = getattr(lifecycle, "finalize_session", None)
+                    if callback is None:
+                        return
+                    results = callback(session_id=session_id, platform="webui", reason=reason)
+                    extract = getattr(lifecycle, "session_end_messages", None)
+                    if extract is not None:
+                        messages.extend(extract(results))
+            except Exception:  # noqa: BLE001 - hooks must never block the boundary
+                log.warning("Session finalize failed for %s (%s)", session_id, reason, exc_info=True)
+            finally:
+                with _RELEASES_LOCK:
+                    _RELEASES.pop(worker, None)
+
+        worker = threading.Thread(target=finalize, name="session-finalize", daemon=True)
+        worker.failed = False  # type: ignore[attr-defined] - hook failures do not prevent profile deletion
+        with _RELEASES_LOCK:
+            _RELEASES[worker] = home
+        worker.start()
+        worker.join(_SESSION_FINALIZE_TIMEOUT)
+        if worker.is_alive():
+            log.warning("Session finalize exceeded %ss for %s (%s)", _SESSION_FINALIZE_TIMEOUT, session_id, reason)
+            return {"messages": []}
+        return {"messages": messages}
 
     @registry.method("chat.evict_agent", requires_agent=False)
     def evict_(ctx: CallContext, params: dict) -> dict:
