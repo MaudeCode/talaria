@@ -13,6 +13,20 @@ const alice: UpdateNotificationScope = { owner: 'oidc:alice', profile: 'work', s
 afterEach(() => { for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true }) })
 
 describe('UpdateNotificationStore', () => {
+  it('reconciles an interrupted recovery notice without changing the failed update history', async () => {
+    const root = temp()
+    const store = await initializeStore(new UpdateNotificationStore(new JsonDocuments(root)))
+    const original = await store.begin(alice, 'agent')
+    await store.transition(original.id, 'failed')
+    await store.agentRecovery({ phase: 'running', detail: '', attempt: 1, retry_at: null })
+    const restarted = await initializeStore(new UpdateNotificationStore(new JsonDocuments(root)))
+    await restarted.reconcileInterruptedUpdates('a'.repeat(40), '1.0.0')
+    const rows = (await restarted.list(alice)).notifications
+    expect(rows.find((row) => row.kind === 'agent_recovery')).toMatchObject({ phase: 'unknown', active: false })
+    expect(rows.find((row) => row.id === original.id)?.phase).toBe('failed')
+    await restarted.agentRecovery({ phase: 'complete', detail: '', attempt: 1, retry_at: null })
+    expect((await restarted.list(alice)).notifications.find((row) => row.kind === 'agent_recovery')?.phase).toBe('succeeded')
+  })
   it('preserves the failed update while projecting automatic recovery and its actual outcome', async () => {
     const store = await initializeStore(new UpdateNotificationStore(new JsonDocuments(temp())))
     const original = await store.begin(alice, 'agent')

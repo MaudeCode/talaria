@@ -41,10 +41,14 @@ the boolean and its fallbacks once those supported versions all use `outcome`.
 
 Failed Agent updates are continued by `UpdateService` in the running server.
 It starts recovery at startup and after an update releases its lease, regardless
-of update-check preferences. One sequence owns its timer, cancellation signal,
-and `runtime.agent_recovery` calls. Six attempts use bounded backoff. Exhausted
-debt stays blocked with the actual failure; the existing update lifecycle only
-rearms it when the checkout's retained receipts change.
+of update-check preferences and subscribes to validated sidecar reconnects.
+One sequence owns its timer, cancellation signal, handshake subscription and
+`runtime.agent_recovery` calls. Six failed attempts use bounded backoff. Waiting
+for active Web work uses a positive delay without spending that budget. Exhausted
+debt stays blocked with the actual failure; the existing update lifecycle
+rearms it when the retained receipts change or a healthy runtime reconnects.
+An interrupted recovery notice loses its active state at startup, then reaches
+verified completion only after the coordinator checks current loaded readiness.
 
 `runtime.agent_recovery` probes the configured checkout's native pause records
 and claims, supervised companion, native repair receipts and Web dependency

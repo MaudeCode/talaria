@@ -12,6 +12,7 @@ from __future__ import annotations
 
 SCENARIOS: list[tuple[str, dict]] = [
     ("runtime.status", {}),
+    ("runtime.agent_recovery", {"probe": True}),
     ("runtime.ensure_current", {}),
     ("runtime.env", {"set": {"TALARIA_SCENARIO_KEY": "sk-synthetic"}, "unset": ["TALARIA_SCENARIO_KEY"]}),
     ("rpc.methods", {}),

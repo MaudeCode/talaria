@@ -54,6 +54,9 @@ test('Agent recovery preserves failed update history in the shared notification 
   records = [recovery, failed]
   await expect(center).toContainText(recovery.message)
   await page.screenshot({ path: testInfo.outputPath('agent-recovery-waiting.png'), fullPage: true })
+  records = [{ ...recovery, phase: 'unknown', severity: 'warning', message: 'Agent recovery was interrupted. Current readiness has not been verified.', detail: null, updated_at: '2026-09-26T12:01:00Z' }, failed]
+  await expect(center).toContainText('Current readiness has not been verified.')
+  await page.screenshot({ path: testInfo.outputPath('agent-recovery-interrupted.png'), fullPage: true })
   records = [{ ...recovery, phase: 'succeeded', message: 'Hermes Agent is usable again. The original update result is unchanged.', detail: null, updated_at: '2026-09-26T12:02:00Z' }, failed]
   await expect(center).toContainText('Hermes Agent is usable again.')
   await expect(center).toContainText('The update could not be completed.')

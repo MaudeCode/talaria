@@ -195,6 +195,12 @@ export class UpdateNotificationStore {
     return created
   }
 
+  /** A retained notice still needs loaded-readiness verification after native debt clears. */
+  hasPendingAgentRecovery(): boolean {
+    const row = this.rows.findLast((entry) => entry.kind === 'agent_recovery')
+    return row !== undefined && row.phase !== 'succeeded'
+  }
+
   /** Recovery has its own row, so it can never rewrite the initiating update's failed outcome. */
   async agentRecovery(state: AgentRecoveryState): Promise<void> {
     if (state.phase === 'idle') return
@@ -381,6 +387,15 @@ export class UpdateNotificationStore {
   async reconcileInterruptedUpdates(currentWebIdentity: string | null, currentWebVersion: string | null = null): Promise<void> {
     let changed = false
     for (const row of this.rows) {
+      if (row.kind === 'agent_recovery' && row.phase === 'applying') {
+        row.phase = 'unknown'
+        row.message = 'Agent recovery was interrupted. Current readiness has not been verified.'
+        row.severity = 'warning'
+        row.updated_at = this.now().toISOString()
+        row.read_at = null
+        changed = true
+        continue
+      }
       if (row.kind !== 'update' || (row.target !== 'webui' && row.target !== 'agent') || !['applying', 'restarting'].includes(row.phase)) continue
       const phase: UpdateNotificationPhase = row.target === 'webui' && row.phase === 'restarting' && currentWebIdentity && REVISION.test(currentWebIdentity) && row.expected_identity === currentWebIdentity ? 'succeeded' : 'unknown'
       row.phase = phase

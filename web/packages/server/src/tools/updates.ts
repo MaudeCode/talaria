@@ -12,7 +12,7 @@
  */
 import { backupPersistedStores } from '../sessions/storage/json-installation.js'
 export { backupPersistedStores, CHANNEL_SWITCH_BACKUPS } from '../sessions/storage/json-installation.js'
-import { UpdatesSummarySchema, type AgentRecoveryState, type SidecarResult } from '@maudecode/talaria-web-contracts'
+import { UpdatesSummarySchema, type AgentRecoveryState, type RuntimeDescribe, type SidecarResult } from '@maudecode/talaria-web-contracts'
 import { z } from 'zod'
 import { readCapped } from '../http/capped.js'
 import { execFile } from 'node:child_process'
@@ -1279,8 +1279,10 @@ const RECOVERY_DELAYS = [0, 1000, 4000, 15000, 60000, 120000]
 
 export interface UpdateServiceDeps {
   /** One retained-transaction step, including loaded-runtime reconciliation. No release selection. */
-  recoverAgent?: (probe?: boolean, signal?: AbortSignal) => Promise<SidecarResult<'runtime.agent_recovery'>>
+  recoverAgent?: (probe?: boolean, signal?: AbortSignal) => Promise<SidecarResult<'runtime.agent_recovery'> & { waiting_for_idle?: boolean }>
   recoveryChanged?: (state: AgentRecoveryState) => Promise<void>
+  hasPendingRecovery?: () => boolean
+  onAgentReconnect?: (listener: (runtime: RuntimeDescribe) => void) => () => void
   /** `web/` of this installation (a Talaria checkout has it at `<root>/web`). */
   webRoot: string
   git?: GitRun
@@ -1326,6 +1328,7 @@ export interface UpdateServiceDeps {
 export class UpdateService {
   private recoveryTimer: NodeJS.Timeout | null = null
   private recoveryAbort: AbortController | null = null
+  private recoveryUnsubscribe: (() => void) | null = null
   private recoveryAttempt = 0
   private recoveryFingerprint = ''
   private recovery: AgentRecoveryState = { phase: 'idle', attempt: 0, detail: '', retry_at: null }
@@ -1517,8 +1520,16 @@ export class UpdateService {
   startAutoApply(intervalMs = AUTO_UPDATE_INTERVAL_MS): void {
     if (this.autoStarted || this.autoRestartScheduled) return
     this.autoStarted = true
-    this.armRecovery()
     const lifecycle = this.lifecycle
+    this.recoveryUnsubscribe = this.deps.onAgentReconnect?.((runtime) => {
+      if (!this.autoStarted || lifecycle !== this.lifecycle) return
+      if (runtime.compatible && !runtime.stale && this.recovery.phase === 'blocked') {
+        this.recoveryAttempt = 0
+        this.recovery = { ...this.recovery, phase: 'waiting', attempt: 0, retry_at: null }
+      }
+      this.armRecovery()
+    }) ?? null
+    this.armRecovery()
     const schedule = (delay: number): void => {
       this.autoTimer = setTimeout(() => {
         this.autoTimer = null
@@ -1538,6 +1549,8 @@ export class UpdateService {
     if (this.recoveryTimer) clearTimeout(this.recoveryTimer)
     this.recoveryTimer = null
     this.recoveryAbort?.abort()
+    this.recoveryUnsubscribe?.()
+    this.recoveryUnsubscribe = null
   }
 
   /** One sequence owns its timer and RPC; unchanged permanent debt cannot restart it. */
@@ -1561,11 +1574,17 @@ export class UpdateService {
     this.recoveryAbort = abort
     const current = (): boolean => !abort.signal.aborted && lifecycle === this.lifecycle && this.autoStarted
     let retry = false
+    let retryDelay = 1000
+    const waitForIdle = (detail: string): void => {
+      retry = true
+      this.recovery = { phase: 'waiting', attempt: this.recoveryAttempt, detail, retry_at: new Date(this.now() * 1000 + retryDelay).toISOString() }
+    }
     try {
       if (this.applying || this.deps.gatewayRestarting?.()) { retry = true; return }
       const probe = await this.deps.recoverAgent!(true, abort.signal)
       if (!current()) return
-      if (!probe.owed && ['idle', 'complete'].includes(this.recovery.phase)) return
+      if (probe.waiting_for_idle) { waitForIdle(probe.detail); return }
+      if (!probe.owed && ['idle', 'complete'].includes(this.recovery.phase) && !this.deps.hasPendingRecovery?.()) return
       if (probe.fingerprint !== this.recoveryFingerprint && ['idle', 'complete', 'blocked'].includes(this.recovery.phase)) this.recoveryAttempt = 0
       if (probe.owed && this.recovery.phase === 'blocked' && this.recoveryAttempt >= RECOVERY_DELAYS.length && probe.fingerprint === this.recoveryFingerprint) return
       this.recoveryFingerprint = probe.fingerprint
@@ -1576,6 +1595,7 @@ export class UpdateService {
       const result = await this.deps.recoverAgent!(false, abort.signal)
       if (!current()) return
       this.recoveryFingerprint = result.fingerprint
+      if (result.waiting_for_idle) { this.recoveryAttempt -= 1; waitForIdle(result.detail); return }
       if (result.local_restore && result.revision) {
         const path = this.deps.agentDir()
         if (!path) throw new Error('Agent checkout is unavailable for retained local-edit recovery.')
@@ -1595,15 +1615,15 @@ export class UpdateService {
       // A failed discovery also consumes the bounded sequence.
       if (this.recovery.phase !== 'running') this.recoveryAttempt += 1
       retry = this.recoveryAttempt < RECOVERY_DELAYS.length
-      const delay = RECOVERY_DELAYS[this.recoveryAttempt] ?? 0
-      this.recovery = { phase: retry ? 'waiting' : 'blocked', attempt: this.recoveryAttempt, detail: sanitizeGitDiagnostic((error as Error).message), retry_at: retry ? new Date(this.now() * 1000 + delay).toISOString() : null }
+      retryDelay = RECOVERY_DELAYS[this.recoveryAttempt] ?? 1000
+      this.recovery = { phase: retry ? 'waiting' : 'blocked', attempt: this.recoveryAttempt, detail: sanitizeGitDiagnostic((error as Error).message), retry_at: retry ? new Date(this.now() * 1000 + retryDelay).toISOString() : null }
     } finally {
       if (current()) {
         await this.publishRecovery()
       }
       this.recoveryAbort = null
       if (current() && retry) {
-        this.recoveryTimer = setTimeout(() => { this.recoveryTimer = null; void this.recoverOnce(lifecycle) }, RECOVERY_DELAYS[this.recoveryAttempt] ?? 1000)
+        this.recoveryTimer = setTimeout(() => { this.recoveryTimer = null; void this.recoverOnce(lifecycle) }, retryDelay)
         this.recoveryTimer.unref()
       }
     }

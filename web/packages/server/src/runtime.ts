@@ -2,7 +2,7 @@
  * Assemble the application dependencies for one state directory. Used by the
  * launcher and by tests, which pass a temp directory and a fixed environment.
  */
-import type { PendingSteer, SessionGoal, SessionNotice } from '@maudecode/talaria-web-contracts'
+import type { PendingSteer, RuntimeDescribe, SessionGoal, SessionNotice, SidecarResult } from '@maudecode/talaria-web-contracts'
 import { AsyncLocalStorage } from 'node:async_hooks'
 import { pinnedFetch, systemDnsLookup } from './http/pinned.js'
 import { mkdirSync, readdirSync, readFileSync } from 'node:fs'
@@ -740,6 +740,7 @@ export async function createDeps(opts: CreateDepsOptions): Promise<AppDeps> {
   }
   const purgeAgentPycache = (): void => { const dir = sidecar?.describe?.agent_dir; if (dir) purgePycache(dir) }
   let recoveredAgentRevision: string | null = null
+  let pendingRuntimeRecovery: SidecarResult<'runtime.agent_recovery'> | null = null
   deps.updates = new UpdateService({
     webRoot: config.webRoot,
     getJson: githubJson(lazyFetch, env),
@@ -755,18 +756,27 @@ export async function createDeps(opts: CreateDepsOptions): Promise<AppDeps> {
     },
     agentDir: () => sidecar?.describe?.agent_dir ?? null,
     agentHomes,
+    ...(sidecar?.onHandshake ? { onAgentReconnect: (listener: (runtime: RuntimeDescribe) => void) => sidecar.onHandshake!(listener) } : {}),
     recoverAgent: async (probe = false, signal) => {
       if (!sidecar) throw new Error('Hermes Agent sidecar is unavailable for recovery.')
       if (sidecar.status === 'starting' || sidecar.status === 'restarting' || sidecar.status === 'stopped') throw new Error('Agent recovery is waiting for its sidecar connection.')
       let result = await sidecar.call('runtime.agent_recovery', { probe }, { ...(signal ? { signal } : {}), timeoutMs: 660_000 })
       if (signal?.aborted) throw new Error('Agent recovery was cancelled.')
       if (!probe && result.local_restore && result.revision) recoveredAgentRevision = result.revision
-      if (probe || !result.ok || (result.owed && !result.runtime_pending)) return result
+      if (probe) {
+        if (pendingRuntimeRecovery?.fingerprint === result.fingerprint && restartBlockers().restart_blocked
+            && (sidecar.describe?.agent_revision !== recoveredAgentRevision || !sidecar.describe?.compatible)) {
+          return { ...result, waiting_for_idle: true, detail: 'Agent recovery is waiting for active Web work to finish before refreshing its runtime.' }
+        }
+        return result
+      }
+      if (!result.ok || (result.owed && !result.runtime_pending)) return result
       if (result.revision) recoveredAgentRevision = result.revision
+      if (result.runtime_pending) pendingRuntimeRecovery = result
       const runtime = await sidecar.call('runtime.status', {}, { ...(signal ? { signal } : {}), timeoutMs: 5000 })
       if (signal?.aborted) throw new Error('Agent recovery was cancelled.')
       if (recoveredAgentRevision && (runtime.agent_revision !== recoveredAgentRevision || !runtime.compatible)) {
-        if (restartBlockers().restart_blocked) throw new Error('Agent recovery is waiting for active Web work to finish before refreshing its runtime.')
+        if (restartBlockers().restart_blocked) return { ...result, waiting_for_idle: true, detail: 'Agent recovery is waiting for active Web work to finish before refreshing its runtime.' }
         if (['ready', 'incompatible'].includes(sidecar.status)) sidecar.recycle('Verified retained Agent recovery requires the current interpreter and source')
         throw new Error('Agent services recovered; waiting for the current sidecar runtime to become ready.')
       }
@@ -777,9 +787,11 @@ export async function createDeps(opts: CreateDepsOptions): Promise<AppDeps> {
       if (!runtime.compatible || runtime.stale) throw new Error('Agent recovery has no matching loaded runtime evidence; admission remains closed.')
       catalog.invalidate(undefined, undefined, { preserveConfirmed: true })
       recoveredAgentRevision = null
+      pendingRuntimeRecovery = null
       return result
     },
     recoveryChanged: (state) => updateNotifications.agentRecovery(state),
+    hasPendingRecovery: () => updateNotifications.hasPendingAgentRecovery(),
     agentMutation: async (path, revision, mutate, consent) => {
       if (!sidecar) throw new Error('Hermes Agent sidecar is unavailable')
       const begin = await sidecar.call('runtime.agent_mutation', { action: 'begin', agent_dir: path, revision, homes: agentHomes(), ...(consent?.mutationIntent ? { intent: consent.mutationIntent } : {}), ...(consent?.refreshToken ? { refresh_token: consent.refreshToken } : {}) }, { timeoutMs: 330_000 })

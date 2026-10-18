@@ -2686,7 +2686,7 @@ def test_successor_configuration_is_rechecked_before_drain(gateway_successor, mo
 
 
 @pytest.mark.parametrize('action', ['apply', 'force'])
-@pytest.mark.parametrize('failure', ['before-source', 'dependencies', 'local-restore'])
+@pytest.mark.parametrize('failure', ['before-source', 'dependencies', 'local-restore', 'sidecar-death'])
 def test_running_server_recovers_failed_update_without_another_apply_or_handshake(tmp_path, action, failure):
     import shutil
     if failure == 'local-restore' and action == 'force': pytest.skip('Force updates explicitly discard local edits; normal apply owns autostash recovery.')
@@ -2702,30 +2702,31 @@ def test_running_server_recovers_failed_update_without_another_apply_or_handshak
         subprocess.run(['git', '--git-dir', str(upstream), 'symbolic-ref', 'HEAD', 'refs/heads/main'], check=True)
         subprocess.run(['git', '-C', str(root), 'symbolic-ref', 'refs/remotes/origin/HEAD', 'refs/remotes/origin/main'], check=True)
         subprocess.run(['git', '-C', str(root), 'remote', 'add', 'origin', str(upstream)], check=True)
-        if failure == 'local-restore':
-            (root / 'local.txt').write_text('preserved local edits\n')
+        if failure in {'local-restore', 'sidecar-death'}:
+            if failure == 'local-restore': (root / 'local.txt').write_text('preserved local edits\n')
             real_git = shutil.which('git')
             shim = home / 'bin/git'
             shim.write_text(f"""#!{AGENT_PYTHON}
 import os,sys,subprocess,signal
 from pathlib import Path
-if sys.argv[1:2]==['merge'] and (Path({str(home)!r})/'kill-update-once').exists():
+if (sys.argv[1:2]==['merge'] or sys.argv[1:3]==['reset','--hard']) and (Path({str(home)!r})/'kill-update-once').exists():
  subprocess.run([{real_git!r},*sys.argv[1:]],check=True)
  (Path({str(home)!r})/'kill-update-once').unlink()
- os.kill(os.getppid(),signal.SIGKILL)
+ pid=os.getppid() if {failure!r} == 'local-restore' else int((Path({str(home)!r})/'sidecar-to-kill.pid').read_text())
+ os.kill(pid,signal.SIGKILL)
  raise SystemExit(0)
 os.execv({real_git!r},[{real_git!r},*sys.argv[1:]])
 """)
             shim.chmod(0o755)
             (home / 'kill-update-once').touch()
         flag = 'fail-sync' if failure == 'dependencies' else 'fail-gateway-disarm'
-        if failure != 'local-restore': (home / flag).touch()
+        if failure in {'before-source', 'dependencies'}: (home / flag).touch()
         args = dict(failure=failure, flag=flag, root=str(root), home=str(home), base=base, target=target, python=AGENT_PYTHON, action=action, web=str(web))
         script = tmp_path / 'server-recovery.mjs'
         script.write_text("import {createApp} from " + json.dumps((server / 'app.js').as_uri()) + ";\n"
                           + "import {createDeps} from " + json.dumps((server / 'runtime.js').as_uri()) + ";\n"
                           + "import {SidecarClient} from " + json.dumps((server / 'sidecar/client.js').as_uri()) + ";\n"
-                          + "import assert from 'node:assert/strict'; import {unlinkSync} from 'node:fs';\nconst a=" + json.dumps(args) + ";\n" + r"""
+                          + "import assert from 'node:assert/strict'; import {unlinkSync,writeFileSync,existsSync} from 'node:fs'; import {execFileSync} from 'node:child_process';\nconst a=" + json.dumps(args) + ";\n" + r"""
 const logs=[], phases=[];
 const env={...process.env,HERMES_HOME:a.home,HERMES_WEBUI_STATE_DIR:a.home+'/webui',HERMES_WEBUI_TEST_NETWORK_BLOCK:'1',HERMES_WEBUI_CLAUDE_PROJECTS_DIR:a.home+'/claude'};
 const client=new SidecarClient({python:a.python,agentDir:a.root,sidecarDir:a.web+'/sidecar',hermesHome:a.home,env,log:l=>logs.push(l)});
@@ -2739,22 +2740,26 @@ try {
  const notify=wire.recoveryChanged;
  wire.recoveryChanged=async state=>{
   await notify(state); phases.push(state.phase);
-  if(a.failure!=='local-restore' && state.phase==='waiting' && state.attempt===1) unlinkSync(a.home+'/'+a.flag);
+  if(['before-source','dependencies'].includes(a.failure) && state.phase==='waiting' && state.attempt===1) unlinkSync(a.home+'/'+a.flag);
  };
  deps.updates.startAutoApply();
  while(deps.updates.recoveryAbort || deps.updates.recoveryTimer) await new Promise(r=>setTimeout(r,10));
+ if(a.failure==='sidecar-death') writeFileSync(a.home+'/sidecar-to-kill.pid',String(pid));
  const result=await deps.updates[a.action]('agent',null,...(a.action==='apply'?[()=>true,{agentChannel:'experimental',confirmedRevision:a.target}]:[{agentChannel:'experimental',confirmedRevision:a.target}]));
  assert.equal(result.ok,false,JSON.stringify(result));
- assert.match(result.message ?? '',a.failure==='dependencies'?/dependency/:a.failure==='local-restore'?/lease|quiesce/:/disarm/,JSON.stringify(result));
+ assert.match(result.message ?? '',a.failure==='dependencies'?/dependency/:['local-restore','sidecar-death'].includes(a.failure)?/lease|quiesce/:/disarm/,JSON.stringify(result));
  // A changed preference is not authorization to resolve another target during recovery.
  wire.agentChannel=()=> 'stable';
  const deadline=Date.now()+30000;
  while(deps.updates.cachedStatus().agent_recovery.phase!=='complete' && Date.now()<deadline) await new Promise(r=>setTimeout(r,25));
  assert.equal(deps.updates.cachedStatus().agent_recovery.phase,'complete',JSON.stringify({logs,phases,status:deps.updates.cachedStatus()}));
- assert.ok(phases.includes('waiting'),JSON.stringify(phases));
+ if(a.failure!=='sidecar-death') assert.ok(phases.includes('waiting'),JSON.stringify(phases));
  assert.equal((await client.call('runtime.ensure_current',{})).current,true);
- assert.equal((await client.call('runtime.status',{})).agent_revision,a.failure==='dependencies'?a.target:a.base);
- if(a.failure==='dependencies') assert.notEqual(client.child.pid,pid,'changed source must refresh its loaded runtime');
+ const current=execFileSync('git',['-C',a.root,'rev-parse','HEAD'],{encoding:'utf8'}).trim();
+ assert.ok([a.base,a.target].includes(current));
+ assert.equal((await client.call('runtime.status',{})).agent_revision,a.failure==='sidecar-death'?current:a.failure==='dependencies'?a.target:a.base);
+ if(a.failure==='sidecar-death') assert.equal(existsSync(a.home+'/kill-update-once'),false,'sidecar-death trigger must be reached');
+ if(['dependencies','sidecar-death'].includes(a.failure)) assert.notEqual(client.child.pid,pid,'changed source must refresh its loaded runtime');
  else assert.equal(client.child.pid,pid,'source-unchanged recovery must keep its valid runtime');
  assert.equal(result.ok,false,'recovery must preserve the original failed outcome');
  console.log('same-server automatic recovery and loaded readiness verified');
@@ -2767,6 +2772,6 @@ try {
         assert result.returncode == 0, (result.stdout + result.stderr)[-10000:]
         assert 'same-server automatic recovery and loaded readiness verified' in result.stdout
         if failure == 'local-restore': assert (root / 'local.txt').read_text() == 'preserved local edits\n'
-        assert (root / 'VERSION').exists() == (failure == 'dependencies')
+        if failure != 'sidecar-death': assert (root / 'VERSION').exists() == (failure == 'dependencies')
         assert all((Path(c['home']) / ('active' if c['purpose']=='gateway' else 'backend.pid')).exists() for c in configs)
         assert all(not (home / 'services' / c['label'] / 'starts').exists() or (home / 'services' / c['label'] / 'starts').read_text().splitlines()==['start'] for c in configs)
