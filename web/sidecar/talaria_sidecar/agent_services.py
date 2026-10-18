@@ -745,12 +745,22 @@ class ServiceRecovery:
         verify_processes(owed, self.records)
         if backend_request(owed, 'commit', permit['token']).get('ok') is not True:
             raise RuntimeError(f'{_name(owed)} did not commit its backend retirement; recovery remains owed.')
-        verify_processes(owed, self.records)
-        os.kill(owed['pid'], signal.SIGTERM)
-        wait_stopped(owed, self.records, stopped, writers_only=True)
-        verify_processes(owed, self.records, stopping=True)
+        owed['backend_committed'] = True
+        self.save()
+        self._stop_backend_supervisor(owed, stopped)
+
+    def _stop_backend_supervisor(self, owed, stopped, *, stopping=False):
+        # Disarm through the original manager before its KeepAlive can admit a successor.
+        owed['backend_stop_requested'] = True
+        self.save()
+        verify_processes(owed, self.records, stopping=stopping)
+        if _config_stamp(owed) != owed['config_stamp']:
+            raise RuntimeError(f'{_name(owed)} service configuration changed before backend stop; recovery remains owed.')
+        if stopped.is_set():
+            raise RuntimeError(f'{_name(owed)} backend stop was cancelled; recovery remains owed.')
         self.pause._disarm(service_entry(owed))
         wait_stopped(owed, self.records, stopped)
+        verify_processes(owed, self.records, stopping=True)
         owed['phase'] = 'stopped'
         self.save()
 
@@ -968,10 +978,7 @@ class ServiceRecovery:
                     verify_processes(entry, self.records, stopping=True)
                     if any(self.records.identity_is_live({'pid': int(pid), 'ct': p['ct']}) for pid, p in entry['processes'].items() if int(pid) != entry['service_pid']):
                         raise RuntimeError(f'{_name(entry)} still has live writer descendants; recovery remains owed.')
-                    self.pause._disarm(service_entry(entry))
-                    wait_stopped(entry, self.records, threading.Event())
-                    entry['phase'] = 'stopped'
-                    self.save()
+                    self._stop_backend_supervisor(entry, threading.Event(), stopping=True)
                 _, active = _service_pid(entry)
                 if not active:
                     _start(entry, self.pause)

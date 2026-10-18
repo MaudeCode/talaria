@@ -80,6 +80,12 @@ def owner(tmp_path):
     model.daemon_threads = True
     model.started, model.release, model.requests = threading.Event(), threading.Event(), []
     model.cancel_received = tmp_path / "owner-cancellation.json"
+    def wait_cancelled(admission):
+        wait_for(model.cancel_received.exists)
+        assert json.loads(model.cancel_received.read_text()) == {
+            "session_id": admission["target_session_id"], "admission_id": admission["admission_id"],
+        }
+    model.wait_cancelled = wait_cancelled
     threading.Thread(target=model.serve_forever, daemon=True).start()
     origin = f"http://127.0.0.1:{model.server_port}/v1"
     (home / "config.yaml").write_text(json.dumps({
@@ -173,6 +179,8 @@ def test_started_cancel_waits_for_exact_owner_terminal_before_releasing_run(owne
     messages = []
     wait_for(lambda: (messages.append(sidecar.next_message()) or messages[-1].get("id") == cancel))
     assert messages[-1]["result"]["cancelled"] is True
+    # RPC acknowledgement precedes delivery to the gateway's cancellation latch.
+    model.wait_cancelled(before)
     # With the inference barrier held, cancellation is only acknowledged. The run must retain ownership.
     try:
         while True:
@@ -269,10 +277,7 @@ def test_lost_submitter_recovers_same_admission_without_another_run(owner, resta
             request = replacement.request("cron.run", params)
         wait_for(lambda: json.loads(record_path.read_text()).get("cancel_reason"))
         # The local intent precedes worker startup; wait for the real owner to latch cancellation.
-        wait_for(model.cancel_received.exists)
-        assert json.loads(model.cancel_received.read_text()) == {
-            "session_id": before["target_session_id"], "admission_id": before["admission_id"],
-        }
+        model.wait_cancelled(before)
         model.release.set()
         active = replacement or sidecar
         reply = wait_for(lambda: (message if message.get("id") == request else None) if (message := active.next_message(timeout=60)) else None)
