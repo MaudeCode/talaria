@@ -541,7 +541,7 @@ export class TurnRunner {
     let statusEnded = false
     // TAL-1006: the open compression span closes on the Agent's end of it, else on the next content frame.
     const closeCompression = async (createdAt?: number): Promise<void> => {
-      if (!this.compressionSpans.delete(streamId)) return
+      if (!this.compressionSpans.has(streamId)) return
       await put('compressed', { session_id: sessionId, message: 'Compression finished' }, createdAt === undefined ? {} : { createdAt })
     }
     const put = async (event: string, data: Record<string, unknown>, meta: JournalEventMeta = {}): Promise<void> => {
@@ -550,6 +550,12 @@ export class TurnRunner {
       if (terminal) statusEnded = true
       if (CONTENT_EVENTS.has(event) || terminal) providerPhase = null
       if (event === 'rate_limit_wait') waitDetail = data.wait as RateLimitWait | null
+      // Both pre-turn compaction and Agent callbacks publish through this boundary.
+      if (event === 'compressing' && !statusEnded) {
+        const startedAt = this.compressionSpans.get(streamId) ?? meta.createdAt ?? deps.now()
+        this.compressionSpans.set(streamId, startedAt)
+        data = { ...data, started_at: startedAt }
+      } else if (event === 'compressed') this.compressionSpans.delete(streamId)
       if (CONTENT_EVENTS.has(event)) {
         if (waitDetail) {
           await put('rate_limit_wait', { session_id: sessionId, wait: null }, meta.createdAt === undefined ? {} : { createdAt: meta.createdAt })
@@ -851,12 +857,9 @@ export class TurnRunner {
                 if (snapshot.success) (await emitFrame('connect_card', connectorOperation(snapshot.data, catalogNames(deps.profileHome(s.profile)))))
                 return
               }
-              case 'compressing': {
-                const startedAt = this.compressionSpans.get(streamId) ?? receivedAt
-                this.compressionSpans.set(streamId, startedAt)
-                await emitFrame('compressing', { ...data, started_at: startedAt })
+              case 'compressing':
+                await emitFrame('compressing', data)
                 return
-              }
               case 'compression_finished':
                 await closeCompression(receivedAt)
                 return

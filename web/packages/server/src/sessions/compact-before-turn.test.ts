@@ -79,6 +79,25 @@ describe('compaction before the next turn', () => {
   }
   const OVER = { last_prompt_tokens: 500, threshold_tokens: 400, next_turn_threshold_tokens: 400 }
 
+  it('publishes server-owned compressing status while pre-turn compaction is held (TAL-1058)', async () => {
+    const sid = await seeded(OVER)
+    let release!: () => void
+    const gate = new Promise<void>((resolve) => { release = resolve })
+    sidecar.respond('chat.compress', async (params) => { await gate; return compressed(params) })
+    const streamId = String((await json(await post(s, '/api/chat/start', { session_id: sid, message: 'after compaction' }))).stream_id)
+    let settled: SseFrame[] = []
+    try {
+      const waiting = await s.sse(`/api/chat/stream?stream_id=${streamId}`, (f) => f.event === 'compressing')
+      expect(waiting.filter((f) => f.event === 'run_status').at(-1)?.data).toEqual({ session_id: sid, status: { phase: 'compressing' } })
+      expect(((await json(await s.get(`/api/session?session_id=${sid}`))).session as Json).run_status).toEqual({ phase: 'compressing' })
+      expect(turns).toEqual([])
+    } finally {
+      release()
+      settled = await s.sse(`/api/chat/stream?stream_id=${streamId}&after_event_id=${streamId}:0`, (f) => f.event === 'stream_end')
+    }
+    expect(settled.filter((f) => f.event === 'run_status').map((f) => (f.data as Json).status)).toEqual([{ phase: 'compressing' }, { phase: 'working' }, null])
+  })
+
   for (const mode of ['deferred', 'eager'] as const) {
     it(`keeps one job running across a Stop during the wait, and a resend joins it (${mode} save)`, async () => {
       const turnDeps = (s.deps.turns as unknown as { deps: { saveMode: () => 'deferred' | 'eager' } }).deps
