@@ -397,8 +397,58 @@ def _capped_tool_result(text: str, tokens: int, keep_tokens: int) -> str:
     return cut(snippet) if snippet else note_only
 
 
-def _cap_tool_results(messages: list, compressor: Any) -> list:
-    """Newest tool results spend one shared budget; the first one over it is cut to the remainder, older ones to a note."""
+def _skill_result_stubs(messages: list) -> dict[int, str]:
+    """Recovery metadata for paired skill loads, captured before the Agent can prune their success/failure payloads.
+    Extends the Agent's call-id and marker helpers; its older summaries omit small-skill markers and failure verdicts."""
+    try:
+        from agent.context_compressor import _tool_calls_by_id
+    except ImportError:
+        return {}
+    try:
+        from agent.context_compressor import _skill_pruned_marker
+    except ImportError:
+        def _skill_pruned_marker(name: str) -> str:
+            return f"[SKILL_PRUNED: content lost in compression; reload with skill_view(name='{name}')]"
+
+    calls = _tool_calls_by_id(messages)
+    stubs = {}
+    for i, msg in enumerate(messages):
+        if msg.get("role") != "tool" or not msg.get("tool_call_id"):
+            continue
+        tool, raw_args = calls.get(msg["tool_call_id"], (None, None))
+        if tool != "skill_view":
+            continue
+        try:
+            args = json.loads(raw_args)
+        except (TypeError, ValueError, RecursionError):
+            continue
+        name = args.get("name") if isinstance(args, dict) else None
+        if not isinstance(name, str) or not name or args.get("file_path"):
+            continue
+        text = _content_text(msg.get("content"))
+        outcome = _tool_failure_outcome(text)
+        if text.startswith("[skill_view] ") and " FAILED" in text.split(" (", 1)[0]:
+            outcome = " FAILED"
+        if outcome:
+            stubs[i] = f"[skill_view] name={name}{outcome}"
+            continue
+        try:
+            payload = json.loads(text)
+        except (ValueError, RecursionError):
+            payload = None
+        successful = isinstance(payload, dict) and payload.get("success") is True and isinstance(payload.get("content"), str)
+        marker = _skill_pruned_marker(name)
+        # Lean-tail stubs predate the current cap and may have been persisted by a different supported Agent.
+        demoted = text.startswith(("[skill_view output demoted at compaction ", "[tool output demoted at compaction ")) and text.endswith("] " + marker)
+        if successful or text.startswith(f"[skill_view] name={name} (") or text == marker or demoted:
+            stubs[i] = marker
+    return stubs
+
+
+def _cap_tool_results(messages: list, compressor: Any, original_messages: list | None = None) -> list:
+    """Newest bodies spend one shared budget. Skill reload/failure stubs, like omission notes, survive exhaustion."""
+    originals = messages if original_messages is None else original_messages
+    skill_stubs = _skill_result_stubs(originals)
     budget = getattr(compressor, "tail_token_budget", None)
     budget = budget if isinstance(budget, int) and budget > 0 else _TAIL_TOOL_BUDGET_TOKENS
     threshold = getattr(compressor, "threshold_tokens", None)
@@ -412,13 +462,17 @@ def _cap_tool_results(messages: list, compressor: Any) -> list:
         if msg.get("role") != "tool":
             continue
         text = _content_text(msg.get("content"))
+        stub = skill_stubs.get(i)
+        if stub and text != _content_text(originals[i].get("content")):
+            text = stub
+            out[i] = {**msg, "content": text}
         if not text.strip():
             continue
         tokens = _rough_tokens(text)
         if tokens <= budget - spent:
             spent += tokens
             continue
-        out[i] = {**msg, "content": _capped_tool_result(text, tokens, budget - spent)}
+        out[i] = {**msg, "content": stub or _capped_tool_result(text, tokens, budget - spent)}
         spent = budget
     return out
 
@@ -437,7 +491,7 @@ def _post_compression_context(agent: Any, messages: list, system_message: Any) -
                 context = pruned
         except Exception:  # noqa: BLE001 - the hard cap below still bounds the context
             log.debug("post-compression tool-result pruning failed", exc_info=True)
-    context = _cap_tool_results(context, compressor)
+    context = _cap_tool_results(context, compressor, messages)
     estimate = None
     try:
         from agent.model_metadata import estimate_request_tokens_rough

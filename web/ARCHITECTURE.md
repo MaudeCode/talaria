@@ -156,6 +156,10 @@ the contract package and a recorded fixture under `packages/contracts/fixtures/s
 the pytest suite and the Vitest fake. `sidecar/scripts/replay_sidecar.py` replays those fixtures and stages
 one approval so browser e2e and the iOS contract runner need no Agent.
 
+After automatic compression, `chat.start` returns capped model context separately from the full visible
+transcript. The cap preserves paired skill loads' reload markers and failure verdicts even after the raw-output
+budget is exhausted. Skill bodies still spend that budget; inline slash-skill user messages remain intact.
+
 ## 5. Frontend
 
 `packages/frontend` keeps the TanStack Start structure documented in
