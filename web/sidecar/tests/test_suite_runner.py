@@ -153,6 +153,19 @@ def test_policy_rejects_an_unclassified_agent_skip(project):
     assert 'unclassified Agent case' in result.stdout
 
 
+@pytest.mark.parametrize('layer', ['process', 'fast'])
+def test_policy_owns_setup_hooks_before_the_fixture_protocol(project, layer):
+    (project / 'tests/conftest.py').write_text(
+        "import pytest, subprocess, sys\n@pytest.hookimpl(tryfirst=True)\n"
+        "def pytest_runtest_setup(item): subprocess.run([sys.executable, '-c', 'pass'], check=True)\n")
+    (project / 'tests/test_setup.py').write_text('def test_ok(): pass\n')
+    if layer == 'process':
+        review_process_cases(project, 'Proves a classified real launch in an early pytest setup hook has its owning case.',
+                             'tests/test_setup.py::test_ok')
+    result = run(project, 1)
+    assert (result.returncode == 0) is (layer == 'process'), result.stdout + result.stderr
+
+
 @pytest.mark.parametrize('api', ['bind', 'udp'])
 def test_policy_rejects_real_network_access_in_fast_cases(project, api):
     import socket

@@ -2364,6 +2364,14 @@
       "cases": [
         ""
       ]
+    },
+    "tests/test_suite_runner.py::test_policy_owns_setup_hooks_before_the_fixture_protocol": {
+      "layer": "process",
+      "reason": "Proves actual early pytest setup-hook launches are attributed to the declared owning case while fast hooks stay blocked.",
+      "cases": [
+        "[process]",
+        "[fast]"
+      ]
     }
   }
 }

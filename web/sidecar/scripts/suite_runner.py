@@ -104,12 +104,6 @@ def harness_process_scan():
         _harness_launch = previous
 
 
-def pytest_runtest_setup(item):
-    global _active_case, _active_phase
-    _active_case = item.nodeid
-    _active_phase = 'setup'
-
-
 def pytest_runtest_logreport(report):
     global _active_case, _active_phase
     _active_phase = {'setup': 'call', 'call': 'teardown', 'teardown': 'collection'}[report.when]
@@ -155,6 +149,8 @@ def pytest_collection_finish(session):
 
 
 def pytest_runtest_logstart(nodeid):
+    global _active_case, _active_phase
+    _active_case, _active_phase = nodeid, 'setup'
     _started.append(nodeid)
 
 
