@@ -1,13 +1,18 @@
 import workpoolTest from "@convex-dev/workpool/test";
 import { convexTest } from "convex-test";
-import { expect, it, vi } from "vitest";
+import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { internal } from "../convex/_generated/api";
 import schema from "../convex/schema";
 import { defaultNotificationPreferences } from "../convex/lib/model";
 import { webcrypto } from "node:crypto";
+import { setTimeout as realTimeout } from "node:timers/promises";
 import { bytesToBase64Url, sha256 } from "../convex/lib/crypto";
 
 const modules = import.meta.glob("../convex/**/*.ts");
+
+// Tests drive delivery explicitly; queued workpool callbacks must not outlive their test.
+beforeEach(() => { vi.useFakeTimers(); });
+afterEach(() => { vi.useRealTimers(); });
 
 async function fixture() {
   const backend = convexTest(schema, modules);
@@ -35,38 +40,47 @@ async function fixture() {
   return { backend, publish, list, now };
 }
 
+it("keeps scheduled fixture work pending until the test advances its clock", async () => {
+  const { backend } = await fixture();
+  const jobId = await backend.run((ctx) => ctx.scheduler.runAfter(0, internal.cleanup.prune, {}));
+  // A real event-loop turn must not execute work queued on the test-owned clock.
+  await realTimeout(25);
+  const state = async () => (await backend.run((ctx) => ctx.db.system.get(jobId)))?.state.kind;
+  expect(await state()).toBe("pending");
+  await vi.advanceTimersByTimeAsync(0);
+  await backend.finishInProgressScheduledFunctions();
+  expect(await state()).toBe("success");
+});
+
 it("keeps Done through heartbeat expiry, new runs and replay until exact acknowledgement", async () => {
-  vi.useFakeTimers();
   vi.setSystemTime(new Date(1_800_000_000_000));
-  try {
-    const { backend, publish, list, now } = await fixture();
-    await publish("running");
-    await publish("completed");
-    const first = (await list())!.completions[0]!;
-    expect(first.row.phase).toBe("completed");
-    await publish("completed");
-    expect((await list())!.completions).toHaveLength(1);
-    vi.setSystemTime(new Date(now + 86_400_000));
-    await backend.mutation(internal.cleanup.prune, {});
-    await backend.mutation(internal.delivery.recompute, { userId: "user" });
-    const jobs = await backend.run((ctx) => ctx.db.query("deliveryJobs").collect());
-    expect(jobs.at(-1)?.kind).toBe("live_activity_update");
-    expect(JSON.parse(jobs.at(-1)!.request.payloadJson).aps["content-state"]).toMatchObject({ activeCount: 0, rows: [{ phase: "completed" }] });
-    await publish("running", "run-2");
-    const beforeAck = await backend.query(internal.publishers.listCurrentStates, { userId: "user", now: Date.now() });
-    expect(beforeAck.some((state) => state.phase === "running" && state.streamId === "run-2")).toBe(true);
-    await publish("failed", "run-2");
-    expect((await list())!.completions).toHaveLength(2);
-    expect(await backend.mutation(internal.completions.acknowledge, { userId: "user", deviceId: "device", ids: [first.id] })).toEqual({ ok: true });
-    expect((await list())!.completions.map((c) => c.row.phase)).toEqual(["failed"]);
-    await publish("completed", "run-1");
-    expect((await list())!.completions.map((c) => c.row.phase)).toEqual(["failed"]);
-    const second = (await list())!.completions[0]!;
-    await backend.mutation(internal.completions.acknowledge, { userId: "user", deviceId: "device", ids: [first.id, second.id] });
-    expect((await list())!.completions).toEqual([]);
-    await backend.mutation(internal.delivery.recompute, { userId: "user" });
-    expect((await backend.run((ctx) => ctx.db.query("deliveryJobs").collect())).at(-1)?.kind).toBe("live_activity_end");
-  } finally { vi.useRealTimers(); }
+  const { backend, publish, list, now } = await fixture();
+  await publish("running");
+  await publish("completed");
+  const first = (await list())!.completions[0]!;
+  expect(first.row.phase).toBe("completed");
+  await publish("completed");
+  expect((await list())!.completions).toHaveLength(1);
+  vi.setSystemTime(new Date(now + 86_400_000));
+  await backend.mutation(internal.cleanup.prune, {});
+  await backend.mutation(internal.delivery.recompute, { userId: "user" });
+  const jobs = await backend.run((ctx) => ctx.db.query("deliveryJobs").collect());
+  expect(jobs.at(-1)?.kind).toBe("live_activity_update");
+  expect(JSON.parse(jobs.at(-1)!.request.payloadJson).aps["content-state"]).toMatchObject({ activeCount: 0, rows: [{ phase: "completed" }] });
+  await publish("running", "run-2");
+  const beforeAck = await backend.query(internal.publishers.listCurrentStates, { userId: "user", now: Date.now() });
+  expect(beforeAck.some((state) => state.phase === "running" && state.streamId === "run-2")).toBe(true);
+  await publish("failed", "run-2");
+  expect((await list())!.completions).toHaveLength(2);
+  expect(await backend.mutation(internal.completions.acknowledge, { userId: "user", deviceId: "device", ids: [first.id] })).toEqual({ ok: true });
+  expect((await list())!.completions.map((c) => c.row.phase)).toEqual(["failed"]);
+  await publish("completed", "run-1");
+  expect((await list())!.completions.map((c) => c.row.phase)).toEqual(["failed"]);
+  const second = (await list())!.completions[0]!;
+  await backend.mutation(internal.completions.acknowledge, { userId: "user", deviceId: "device", ids: [first.id, second.id] });
+  expect((await list())!.completions).toEqual([]);
+  await backend.mutation(internal.delivery.recompute, { userId: "user" });
+  expect((await backend.run((ctx) => ctx.db.query("deliveryJobs").collect())).at(-1)?.kind).toBe("live_activity_end");
 });
 
 it("requires a live device and current profile grant for listing and acknowledgement", async () => {
@@ -92,42 +106,39 @@ it("requires a live device and current profile grant for listing and acknowledge
 
 
 it("sends native per-session Done as an update and does not repush unchanged terminal content", async () => {
-  vi.useFakeTimers();
   vi.setSystemTime(new Date(1_800_000_000_000));
-  try {
-    const { backend, publish, now } = await fixture();
-    await backend.run(async (ctx) => {
-      const activity = await ctx.db.query("liveActivities").first();
-      await ctx.db.patch(activity!._id, { mode: "per_session", publisherId: "https://hermes.example", sessionId: "session", attributesType: "AgentRunActivityAttributes" });
-    });
-    await publish("running");
-    await publish("completed");
-    await backend.mutation(internal.delivery.recompute, { userId: "user" });
-    const jobs = await backend.run((ctx) => ctx.db.query("deliveryJobs").collect());
-    expect(jobs).toHaveLength(1);
-    const aps = JSON.parse(jobs[0]!.request.payloadJson).aps;
-    expect(jobs[0]!.kind).toBe("live_activity_update");
-    expect(jobs[0]!.request.priority).toBe("10");
-    expect(aps.event).toBe("update");
-    expect(aps["content-state"]).toEqual({
-      sessionID: "session", sessionTitle: "Synthetic task", status: "complete",
-      currentActivity: "Done", responseExcerpt: "", startedAt: 821692800,
-      updatedAt: 821692800, isStale: false, isFinal: true,
-    });
-    await backend.mutation(internal.delivery.markDelivered, { jobId: jobs[0]!._id, apnsStatus: 200, now });
-    vi.setSystemTime(new Date(now + 180_000));
-    await publish("completed");
-    await backend.mutation(internal.delivery.recompute, { userId: "user" });
-    const afterHeartbeat = await backend.run((ctx) => ctx.db.query("deliveryJobs").collect());
-    expect(afterHeartbeat).toHaveLength(1);
-    const headers = { authorization: "Bearer token", "x-talaria-device-id": "device" };
-    const snapshot = await backend.fetch("/v1/activity-snapshot?mode=per_session&publisherId=https%3A%2F%2Fhermes.example&sessionId=session", { headers });
-    expect((await snapshot.json()).aggregate).toMatchObject({ activeCount: 0, rows: [{ phase: "completed" }] });
-    const invalid = await backend.fetch("/v1/activity-completions/acknowledge", {
-      method: "POST", headers, body: JSON.stringify({ ids: ["not-an-id"] }),
-    });
-    expect(invalid.status).toBe(400);
-  } finally { vi.useRealTimers(); }
+  const { backend, publish, now } = await fixture();
+  await backend.run(async (ctx) => {
+    const activity = await ctx.db.query("liveActivities").first();
+    await ctx.db.patch(activity!._id, { mode: "per_session", publisherId: "https://hermes.example", sessionId: "session", attributesType: "AgentRunActivityAttributes" });
+  });
+  await publish("running");
+  await publish("completed");
+  await backend.mutation(internal.delivery.recompute, { userId: "user" });
+  const jobs = await backend.run((ctx) => ctx.db.query("deliveryJobs").collect());
+  expect(jobs).toHaveLength(1);
+  const aps = JSON.parse(jobs[0]!.request.payloadJson).aps;
+  expect(jobs[0]!.kind).toBe("live_activity_update");
+  expect(jobs[0]!.request.priority).toBe("10");
+  expect(aps.event).toBe("update");
+  expect(aps["content-state"]).toEqual({
+    sessionID: "session", sessionTitle: "Synthetic task", status: "complete",
+    currentActivity: "Done", responseExcerpt: "", startedAt: 821692800,
+    updatedAt: 821692800, isStale: false, isFinal: true,
+  });
+  await backend.mutation(internal.delivery.markDelivered, { jobId: jobs[0]!._id, apnsStatus: 200, now });
+  vi.setSystemTime(new Date(now + 180_000));
+  await publish("completed");
+  await backend.mutation(internal.delivery.recompute, { userId: "user" });
+  const afterHeartbeat = await backend.run((ctx) => ctx.db.query("deliveryJobs").collect());
+  expect(afterHeartbeat).toHaveLength(1);
+  const headers = { authorization: "Bearer token", "x-talaria-device-id": "device" };
+  const snapshot = await backend.fetch("/v1/activity-snapshot?mode=per_session&publisherId=https%3A%2F%2Fhermes.example&sessionId=session", { headers });
+  expect((await snapshot.json()).aggregate).toMatchObject({ activeCount: 0, rows: [{ phase: "completed" }] });
+  const invalid = await backend.fetch("/v1/activity-completions/acknowledge", {
+    method: "POST", headers, body: JSON.stringify({ ids: ["not-an-id"] }),
+  });
+  expect(invalid.status).toBe(400);
 });
 
 
@@ -212,110 +223,104 @@ it("refreshes corrected terminal outcomes without losing acknowledgement", async
 
 
 it("acknowledges a session's completions when its signed publisher reports it viewed", async () => {
-  vi.useFakeTimers();
   vi.setSystemTime(new Date(1_800_000_000_000));
-  try {
-    const { backend, publish, list, now } = await fixture();
-    const keys = await webcrypto.subtle.generateKey("Ed25519", true, ["sign", "verify"]) as CryptoKeyPair;
-    const publicKey = bytesToBase64Url(new Uint8Array(await webcrypto.subtle.exportKey("raw", keys.publicKey)));
-    await backend.run(async (ctx) => {
-      const key = await ctx.db.query("publisherKeys").first();
-      await ctx.db.patch(key!._id, { publicKey });
-    });
-    const viewed = async (through: number, nonce: string, { sessionId = "session", profileId = "profile", signed = true } = {}) => {
-      const path = `/v1/publishers/${encodeURIComponent("https://hermes.example")}/profiles/${profileId}/sessions/${sessionId}/viewed`;
-      const body = JSON.stringify({ through });
-      const timestamp = String(Math.floor(Date.now() / 1_000));
-      const message = ["PUT", path, timestamp, nonce, await sha256(body)].join("\n");
-      const signature = bytesToBase64Url(new Uint8Array(await webcrypto.subtle.sign("Ed25519", keys.privateKey, new TextEncoder().encode(message))));
-      const headers = { "content-type": "application/json", "x-talaria-key-id": "key", "x-talaria-timestamp": timestamp,
-        "x-talaria-nonce": nonce, ...(signed ? { "x-talaria-signature": signature } : {}) };
-      return await backend.fetch(path, { method: "PUT", headers, body });
-    };
-    const sessions = async () => (await list())!.completions.map((c) => `${c.row.sessionId}:${c.row.phase}`).sort();
+  const { backend, publish, list, now } = await fixture();
+  const keys = await webcrypto.subtle.generateKey("Ed25519", true, ["sign", "verify"]) as CryptoKeyPair;
+  const publicKey = bytesToBase64Url(new Uint8Array(await webcrypto.subtle.exportKey("raw", keys.publicKey)));
+  await backend.run(async (ctx) => {
+    const key = await ctx.db.query("publisherKeys").first();
+    await ctx.db.patch(key!._id, { publicKey });
+  });
+  const viewed = async (through: number, nonce: string, { sessionId = "session", profileId = "profile", signed = true } = {}) => {
+    const path = `/v1/publishers/${encodeURIComponent("https://hermes.example")}/profiles/${profileId}/sessions/${sessionId}/viewed`;
+    const body = JSON.stringify({ through });
+    const timestamp = String(Math.floor(Date.now() / 1_000));
+    const message = ["PUT", path, timestamp, nonce, await sha256(body)].join("\n");
+    const signature = bytesToBase64Url(new Uint8Array(await webcrypto.subtle.sign("Ed25519", keys.privateKey, new TextEncoder().encode(message))));
+    const headers = { "content-type": "application/json", "x-talaria-key-id": "key", "x-talaria-timestamp": timestamp,
+      "x-talaria-nonce": nonce, ...(signed ? { "x-talaria-signature": signature } : {}) };
+    return await backend.fetch(path, { method: "PUT", headers, body });
+  };
+  const sessions = async () => (await list())!.completions.map((c) => `${c.row.sessionId}:${c.row.phase}`).sort();
 
-    await publish("completed", "run-1", "session");
-    await publish("failed", "run-other", "other-session");
-    vi.setSystemTime(new Date(now + 60_000));
-    await publish("running", "run-2", "session");
-    expect(await sessions()).toEqual(["other-session:failed", "session:completed"]);
+  await publish("completed", "run-1", "session");
+  await publish("failed", "run-other", "other-session");
+  vi.setSystemTime(new Date(now + 60_000));
+  await publish("running", "run-2", "session");
+  expect(await sessions()).toEqual(["other-session:failed", "session:completed"]);
 
-    expect((await viewed(now, "unsigned", { signed: false })).status).toBe(401);
-    const otherProfile = await viewed(now, "other-profile", { profileId: "another-profile" });
-    expect(await otherProfile.json()).toEqual({ status: "accepted", acknowledged: 0 });
-    expect(await sessions()).toEqual(["other-session:failed", "session:completed"]);
+  expect((await viewed(now, "unsigned", { signed: false })).status).toBe(401);
+  const otherProfile = await viewed(now, "other-profile", { profileId: "another-profile" });
+  expect(await otherProfile.json()).toEqual({ status: "accepted", acknowledged: 0 });
+  expect(await sessions()).toEqual(["other-session:failed", "session:completed"]);
 
-    const response = await viewed(now + 10 ** 9, "viewed-1");
-    expect(response.status).toBe(200);
-    expect(await response.json()).toEqual({ status: "accepted", acknowledged: 1 });
-    expect(await sessions()).toEqual(["other-session:failed"]);
-    const scheduled = await backend.run((ctx) => ctx.db.system.query("_scheduled_functions").collect());
-    expect(scheduled.filter((job) => job.name.includes("recompute") && job.args[0]?.userId === "user").length).toBeGreaterThan(0);
-    const running = await backend.query(internal.publishers.listCurrentStates, { userId: "user", now: Date.now() });
-    expect(running.some((state) => state.sessionId === "session" && state.phase === "running")).toBe(true);
+  const response = await viewed(now + 10 ** 9, "viewed-1");
+  expect(response.status).toBe(200);
+  expect(await response.json()).toEqual({ status: "accepted", acknowledged: 1 });
+  expect(await sessions()).toEqual(["other-session:failed"]);
+  const scheduled = await backend.run((ctx) => ctx.db.system.query("_scheduled_functions").collect());
+  expect(scheduled.filter((job) => job.name.includes("recompute") && job.args[0]?.userId === "user").length).toBeGreaterThan(0);
+  const running = await backend.query(internal.publishers.listCurrentStates, { userId: "user", now: Date.now() });
+  expect(running.some((state) => state.sessionId === "session" && state.phase === "running")).toBe(true);
 
-    // A run finishing after the viewed instant stays until the next view; a replayed nonce changes nothing.
-    vi.setSystemTime(new Date(now + 120_000));
-    await publish("completed", "run-2", "session");
-    expect((await viewed(now + 60_000, "viewed-2")).status).toBe(200);
-    expect(await sessions()).toEqual(["other-session:failed", "session:completed"]);
-    expect((await viewed(now + 120_000, "viewed-2")).status).toBe(409);
-    expect(await sessions()).toEqual(["other-session:failed", "session:completed"]);
+  // A run finishing after the viewed instant stays until the next view; a replayed nonce changes nothing.
+  vi.setSystemTime(new Date(now + 120_000));
+  await publish("completed", "run-2", "session");
+  expect((await viewed(now + 60_000, "viewed-2")).status).toBe(200);
+  expect(await sessions()).toEqual(["other-session:failed", "session:completed"]);
+  expect((await viewed(now + 120_000, "viewed-2")).status).toBe(409);
+  expect(await sessions()).toEqual(["other-session:failed", "session:completed"]);
 
-    await backend.run(async (ctx) => {
-      const publisher = await ctx.db.query("publishers").first();
-      await ctx.db.patch(publisher!._id, { enabled: false });
-    });
-    expect((await viewed(now + 120_000, "disabled")).status).toBe(401);
-    await backend.run(async (ctx) => {
-      const publisher = await ctx.db.query("publishers").first();
-      await ctx.db.patch(publisher!._id, { enabled: true });
-    });
-    expect(await sessions()).toEqual(["other-session:failed", "session:completed"]);
-    expect(await (await viewed(now + 120_000, "viewed-3")).json()).toEqual({ status: "accepted", acknowledged: 1 });
-    expect(await sessions()).toEqual(["other-session:failed"]);
+  await backend.run(async (ctx) => {
+    const publisher = await ctx.db.query("publishers").first();
+    await ctx.db.patch(publisher!._id, { enabled: false });
+  });
+  expect((await viewed(now + 120_000, "disabled")).status).toBe(401);
+  await backend.run(async (ctx) => {
+    const publisher = await ctx.db.query("publishers").first();
+    await ctx.db.patch(publisher!._id, { enabled: true });
+  });
+  expect(await sessions()).toEqual(["other-session:failed", "session:completed"]);
+  expect(await (await viewed(now + 120_000, "viewed-3")).json()).toEqual({ status: "accepted", acknowledged: 1 });
+  expect(await sessions()).toEqual(["other-session:failed"]);
 
-    // `through` and `updatedAt` share the publisher's clock, so a publisher running ahead of the relay still clears its view.
-    const ahead = Date.now() + 5_000;
-    await backend.mutation(internal.publishers.acceptSnapshot, {
-      publisherOwnerUserId: "owner", publisherId: "https://hermes.example", profileId: "profile", keyId: "key",
-      nonce: "skewed", nonceExpiresAt: Date.now() + 60_000, receivedAt: Date.now(), snapshotId: "skewed",
-      states: [{ sessionId: "skewed-session", streamId: "run-skewed", eventId: "skewed", revision: 99, title: "Skewed", phase: "completed", updatedAt: ahead, deepLink: "/sessions/skewed-session" }],
-    });
-    expect(await (await viewed(ahead + 1, "skewed-view", { sessionId: "skewed-session" })).json()).toEqual({ status: "accepted", acknowledged: 1 });
+  // `through` and `updatedAt` share the publisher's clock, so a publisher running ahead of the relay still clears its view.
+  const ahead = Date.now() + 5_000;
+  await backend.mutation(internal.publishers.acceptSnapshot, {
+    publisherOwnerUserId: "owner", publisherId: "https://hermes.example", profileId: "profile", keyId: "key",
+    nonce: "skewed", nonceExpiresAt: Date.now() + 60_000, receivedAt: Date.now(), snapshotId: "skewed",
+    states: [{ sessionId: "skewed-session", streamId: "run-skewed", eventId: "skewed", revision: 99, title: "Skewed", phase: "completed", updatedAt: ahead, deepLink: "/sessions/skewed-session" }],
+  });
+  expect(await (await viewed(ahead + 1, "skewed-view", { sessionId: "skewed-session" })).json()).toEqual({ status: "accepted", acknowledged: 1 });
 
-    // A delayed deletion retry uses a fresh nonce but the same cutoff. It cannot resurrect a row or send an alert.
-    const alertCount = await backend.run(async (ctx) => (await ctx.db.query("deliveryJobs").collect()).filter((job) => job.kind === "notification").length);
-    expect(await (await viewed(now + 120_000, "viewed-retry")).json()).toEqual({ status: "accepted", acknowledged: 0 });
-    await backend.mutation(internal.delivery.recompute, { userId: "user" });
-    const remainingJobs = await backend.run((ctx) => ctx.db.query("deliveryJobs").collect());
-    const aggregate = JSON.parse(remainingJobs.at(-1)!.request.payloadJson).aps["content-state"];
-    expect(aggregate.rows.map((row: { sessionId: string }) => row.sessionId)).toEqual(["other-session"]);
-    expect(remainingJobs.filter((job) => job.kind === "notification")).toHaveLength(alertCount);
-    expect(await (await viewed(now + 120_000, "other-deleted", { sessionId: "other-session" })).json()).toEqual({ status: "accepted", acknowledged: 1 });
-    await backend.mutation(internal.delivery.recompute, { userId: "user" });
-    expect((await list())!.completions).toEqual([]);
-    expect((await backend.run((ctx) => ctx.db.query("deliveryJobs").collect())).at(-1)?.kind).toBe("live_activity_end");
-  } finally { vi.useRealTimers(); }
+  // A delayed deletion retry uses a fresh nonce but the same cutoff. It cannot resurrect a row or send an alert.
+  const alertCount = await backend.run(async (ctx) => (await ctx.db.query("deliveryJobs").collect()).filter((job) => job.kind === "notification").length);
+  expect(await (await viewed(now + 120_000, "viewed-retry")).json()).toEqual({ status: "accepted", acknowledged: 0 });
+  await backend.mutation(internal.delivery.recompute, { userId: "user" });
+  const remainingJobs = await backend.run((ctx) => ctx.db.query("deliveryJobs").collect());
+  const aggregate = JSON.parse(remainingJobs.at(-1)!.request.payloadJson).aps["content-state"];
+  expect(aggregate.rows.map((row: { sessionId: string }) => row.sessionId)).toEqual(["other-session"]);
+  expect(remainingJobs.filter((job) => job.kind === "notification")).toHaveLength(alertCount);
+  expect(await (await viewed(now + 120_000, "other-deleted", { sessionId: "other-session" })).json()).toEqual({ status: "accepted", acknowledged: 1 });
+  await backend.mutation(internal.delivery.recompute, { userId: "user" });
+  expect((await list())!.completions).toEqual([]);
+  expect((await backend.run((ctx) => ctx.db.query("deliveryJobs").collect())).at(-1)?.kind).toBe("live_activity_end");
 });
 
 it("prunes acknowledged completions after seven days and keeps pending ones", async () => {
-  vi.useFakeTimers();
   vi.setSystemTime(new Date(1_800_000_000_000));
-  try {
-    const { backend, publish, list, now } = await fixture();
-    await publish("completed", "run-1", "old-acknowledged");
-    await publish("completed", "run-2", "old-pending");
-    const old = (await list())!.completions.find((c) => c.row.sessionId === "old-acknowledged")!;
-    await backend.mutation(internal.completions.acknowledge, { userId: "user", deviceId: "device", ids: [old.id] });
-    vi.setSystemTime(new Date(now + 7 * 86_400_000 + 1));
-    await publish("completed", "run-3", "recent-acknowledged");
-    const recent = (await list())!.completions.find((c) => c.row.sessionId === "recent-acknowledged")!;
-    await backend.mutation(internal.completions.acknowledge, { userId: "user", deviceId: "device", ids: [recent.id] });
-    await backend.mutation(internal.cleanup.prune, {});
-    const remaining = await backend.run((ctx) => ctx.db.query("completions").collect());
-    expect(remaining.map((c) => c.row.sessionId).sort()).toEqual(["old-pending", "recent-acknowledged"]);
-  } finally { vi.useRealTimers(); }
+  const { backend, publish, list, now } = await fixture();
+  await publish("completed", "run-1", "old-acknowledged");
+  await publish("completed", "run-2", "old-pending");
+  const old = (await list())!.completions.find((c) => c.row.sessionId === "old-acknowledged")!;
+  await backend.mutation(internal.completions.acknowledge, { userId: "user", deviceId: "device", ids: [old.id] });
+  vi.setSystemTime(new Date(now + 7 * 86_400_000 + 1));
+  await publish("completed", "run-3", "recent-acknowledged");
+  const recent = (await list())!.completions.find((c) => c.row.sessionId === "recent-acknowledged")!;
+  await backend.mutation(internal.completions.acknowledge, { userId: "user", deviceId: "device", ids: [recent.id] });
+  await backend.mutation(internal.cleanup.prune, {});
+  const remaining = await backend.run((ctx) => ctx.db.query("completions").collect());
+  expect(remaining.map((c) => c.row.sessionId).sort()).toEqual(["old-pending", "recent-acknowledged"]);
 });
 
 it("prunes completions whose grant is gone or now names another profile", async () => {
