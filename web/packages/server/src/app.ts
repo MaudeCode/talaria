@@ -187,6 +187,7 @@ const ORPC_MAX_BODY_BYTES = 20 * 1024 * 1024
 const ROUTE_BODY_CAPS: Record<string, number> = { '/api/escape/authorize': 4096 }
 
 function bodyCap(path: string): { bytes: number; status: number } {
+  if (path.startsWith('/api/auth/') && isPublicPath(path)) return { bytes: 64 * 1024, status: 413 }
   const bytes = ROUTE_BODY_CAPS[path]
   return bytes === undefined ? { bytes: ORPC_MAX_BODY_BYTES, status: 413 } : { bytes, status: 400 }
 }

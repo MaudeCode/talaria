@@ -1,3 +1,5 @@
+import { IncomingMessage, request, ServerResponse } from 'node:http'
+import { Socket } from 'node:net'
 import { mkdirSync, mkdtempSync, readFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
@@ -5,6 +7,7 @@ import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
 import { BootstrapSchema, AuthStatusSchema, HealthSchema } from '@maudecode/talaria-web-contracts'
 import { bootTestServer, cookieHeader, WEB_ROOT, type TestServer } from './test/harness.js'
 import { FakeSidecar } from './sidecar/fake.js'
+import { RequestContext } from './http/context.js'
 
 const DIST_INDEX = resolve(WEB_ROOT, 'static/dist/index.html')
 
@@ -401,5 +404,104 @@ describe('trusted-header auth on an isolated profile instance', () => {
       const res = await s.get('/api/bootstrap', { headers: { 'X-Remote-User': 'alice' } })
       expect(BootstrapSchema.parse(await res.json()).profile?.name).toBe('alice')
     } finally { await s.close() }
+  })
+})
+
+describe('pre-auth request hardening', () => {
+  let s: TestServer
+  const password = 'synthetic-login-password'
+  beforeAll(async () => { s = await bootTestServer({ env: { HERMES_WEBUI_PASSWORD: password } }) })
+  afterAll(() => s.close())
+
+  const postBody = (path: string, bytes: number, chunked: boolean, headers: Record<string, string> = {}): Promise<{ status: number; body: string; cookies: string[] }> => new Promise((resolve, reject) => {
+    const json = JSON.stringify({ password })
+    const body = json + ' '.repeat(bytes - Buffer.byteLength(json))
+    const req = request(s.base + path, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', ...(!chunked ? { 'content-length': String(bytes) } : {}), ...headers },
+    }, (res) => {
+      let text = ''
+      res.setEncoding('utf8')
+      res.on('data', (chunk: string) => { text += chunk })
+      res.on('end', () => { resolve({ status: res.statusCode!, body: text, cookies: res.headers['set-cookie'] ?? [] }) })
+      res.on('error', reject)
+    })
+    req.on('error', reject)
+    // Multiple individually sub-limit writes exercise cumulative chunked counting.
+    for (let offset = 0; offset < body.length; offset += 8192) req.write(body.slice(offset, offset + 8192))
+    req.end()
+  })
+
+  for (const chunked of [false, true]) {
+    const framing = chunked ? 'chunked' : 'declared'
+    it.each([
+      '/api/auth/login',
+      '/api/auth/oidc/native/start',
+      '/api/auth/oidc/native/exchange',
+      '/api/auth/oidc/native/cancel',
+      '/api/auth/passkey/options',
+      '/api/auth/passkey/login',
+    ])(`rejects a ${framing} public auth body one byte over 64 KiB at %s`, async (path) => {
+      const res = await postBody(path, 64 * 1024 + 1, chunked)
+      expect(res.status).toBe(413)
+      expect((JSON.parse(res.body) as { error: string }).error).toContain('max 65536')
+    })
+
+    it(`rejects a 65 KiB ${framing} login body`, async () => {
+      expect((await postBody('/api/auth/login', 65 * 1024, chunked)).status).toBe(413)
+    })
+
+    it(`allows a ${framing} login at exactly 64 KiB and creates a working session`, async () => {
+      const res = await postBody('/api/auth/login', 64 * 1024, chunked)
+      expect(res.status).toBe(200)
+      expect(JSON.parse(res.body)).toMatchObject({ ok: true })
+      const cookie = cookieHeader(res.cookies, 'hermes_session')!
+      expect(cookie).toBeTruthy()
+      const status = await s.get('/api/auth/status', { headers: { cookie } })
+      expect(await status.json()).toMatchObject({ logged_in: true })
+      const boot = await s.get('/api/bootstrap', { headers: { cookie } })
+      const { csrf_token: csrf } = await boot.json() as { csrf_token: string }
+      const headers = { cookie, 'X-Hermes-CSRF-Token': csrf }
+      expect((await postBody('/api/auth/passkeys', 65 * 1024, chunked, headers)).status).toBe(200)
+      const oversized = await postBody('/api/auth/passkeys', 20 * 1024 * 1024 + 1, chunked, headers)
+      expect(oversized.status).toBe(413)
+      expect((JSON.parse(oversized.body) as { error: string }).error).toContain('max 20971520')
+      const escape = await postBody('/api/escape/authorize', 4097, chunked, headers)
+      expect(escape.status).toBe(400)
+      expect((JSON.parse(escape.body) as { error: string }).error).toContain('max 4096')
+    })
+  }
+
+  it('logs forwarded clients only with opt-in and a trusted raw peer', () => {
+    const env = s.deps.config.env
+    const record = (peer: string, forwarded: string | string[], realIp?: string): Record<string, unknown> => {
+      const socket = new Socket()
+      Object.defineProperty(socket, 'remoteAddress', { value: peer })
+      const req = new IncomingMessage(socket)
+      req.method = 'GET'
+      req.url = '/api/auth/status'
+      req.headers = { 'x-forwarded-for': forwarded, ...(realIp ? { 'x-real-ip': realIp } : {}) }
+      new RequestContext(req, new ServerResponse(req), s.deps).logRequest(200)
+      return JSON.parse(s.logs.at(-1)!.slice('[webui] '.length)) as Record<string, unknown>
+    }
+    expect(record('127.0.0.1', '203.0.113.9')).not.toHaveProperty('forwarded_for')
+    env.HERMES_WEBUI_TRUST_FORWARDED_FOR = '1'
+    env.HERMES_WEBUI_TRUSTED_PROXY_CIDRS = '10.0.0.0/8'
+    try {
+      expect(record('198.51.100.1', '203.0.113.9')).not.toHaveProperty('forwarded_for')
+      expect(record('10.0.0.1', ['198.51.100.7', '203.0.113.9, 10.0.0.2'])).toMatchObject({ remote: '10.0.0.1', forwarded_for: '203.0.113.9' })
+      expect(record('::ffff:10.0.0.1', '203.0.113.9')).toHaveProperty('forwarded_for', '203.0.113.9')
+      expect(record('10.0.0.1', 'bad, 10.0.0.2')).not.toHaveProperty('forwarded_for')
+      expect(record('10.0.0.1', 'x'.repeat(15_000))).not.toHaveProperty('forwarded_for')
+      expect(record('10.0.0.1', 'bad', '203.0.113.9')).not.toHaveProperty('forwarded_for')
+      expect(record('10.0.0.1', [])).not.toHaveProperty('forwarded_for')
+      expect(record('10.0.0.1', [], '203.0.113.9')).toHaveProperty('forwarded_for', '203.0.113.9')
+      const client = record('10.0.0.1', '2001:db8:ffff:ffff:ffff:ffff:ffff:ffff').forwarded_for
+      expect(client).toBe('2001:db8:ffff:ffff:ffff:ffff:ffff:ffff')
+      expect(String(client).length).toBeLessThanOrEqual(256)
+    } finally {
+      delete env.HERMES_WEBUI_TRUST_FORWARDED_FOR
+      delete env.HERMES_WEBUI_TRUSTED_PROXY_CIDRS
+    }
   })
 })

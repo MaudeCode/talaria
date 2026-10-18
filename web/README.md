@@ -140,6 +140,12 @@ commented template.
 | `HERMES_WEBUI_SIDECAR_COMMAND` | unset | Replace the sidecar spawn command (test fixtures only) |
 | `TALARIA_RELEASE_TOKEN` | unset | GitHub token with Contents read for private release lookups ([docs](docs/talaria-updates.md)) |
 
+Public authentication request bodies are limited to 64 KiB, including chunked requests;
+larger bodies receive HTTP 413. Authenticated routes retain their existing limits.
+Access logs include `forwarded_for` only when `HERMES_WEBUI_TRUST_FORWARDED_FOR` is enabled
+and the connection comes from a trusted proxy. The value uses the same validated
+client-IP selection as rate limiting and is limited to 256 characters.
+
 ### How chat runs
 
 The sidecar runs `run_agent.AIAgent` in-process on the Agent venv, reading your `HERMES_HOME` config
