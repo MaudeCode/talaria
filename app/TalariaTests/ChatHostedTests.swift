@@ -1,9 +1,10 @@
+import Darwin
 import SwiftData
 import SwiftUI
 import UIKit
 import XCTest
 @testable import Talaria
-import TalariaKit
+@testable import TalariaKit
 
 /// The fixture chat's media, long bodies, background work and pending steers, hosted in process (TAL-856).
 @MainActor
@@ -165,9 +166,114 @@ final class ChatHostedTests: XCTestCase {
         HostedAccessibility.activate(showLess)
         let collapsed = await awaitNoElement(in: window) { $0.accessibilityLabel == "Show less" }
         XCTAssertTrue(collapsed, "The expanded body did not collapse again")
+        recordPeakResidentMemory("original-long-user-bodies")
         // An unfocused composer is its collapsed "Message" shell.
         let composer = await awaitElement(in: window, label: "Message")
         XCTAssertNotNil(composer, "The composer went away")
+    }
+
+    func testAssistantHistoryWithOneFullNewestMarkdownReply() async throws {
+        try await checkAssistantHistory(collapseNewest: false)
+    }
+
+    func testAssistantHistoryWithAllBodiesCollapsedMemoryBaseline() async throws {
+        try await checkAssistantHistory(collapseNewest: true)
+    }
+
+    private func checkAssistantHistory(collapseNewest: Bool) async throws {
+        let scenario = ["--ui-test-long-bodies", "--ui-test-assistant-long-bodies"] + (collapseNewest ? ["--ui-test-collapse-newest-body"] : [])
+        let window = try await hostFixtureChat(scenario)
+        _ = try await requireElement(in: window, where: { $0.accessibilityLabel?.contains("Long fixture body 25") == true })
+        XCTAssertEqual(elements(named: "Show more", in: window).count, collapseNewest ? 25 : 24)
+        attachHostedScreenshot(window, name: collapseNewest ? "assistant-history-collapsed" : "assistant-history-newest-full")
+        recordPeakResidentMemory(collapseNewest ? "assistant-history-collapsed" : "assistant-history-newest-full")
+    }
+
+    private func recordPeakResidentMemory(_ scenario: String) {
+        var usage = rusage()
+        XCTAssertEqual(getrusage(RUSAGE_SELF, &usage), 0)
+        let evidence = "TAL1114 \(scenario) peak_rss_bytes=\(usage.ru_maxrss)"
+        print(evidence)
+        let attachment = XCTAttachment(string: evidence)
+        attachment.name = "\(scenario) peak RSS"
+        attachment.lifetime = .keepAlways
+        add(attachment)
+    }
+
+    func testTerminalExcerptTransferPreservesReaderAndBottomFollow() async throws {
+        for follows in [false, true] {
+            let fixture = try FixtureApp(for: self)
+            let stream = ScriptedSSEStreamingClient()
+            let paragraphA = "Paragraph A with a link https://example.test/answer.\n\n"
+            let answerA = String(repeating: paragraphA, count: 100)
+            let excerptA = String(repeating: paragraphA, count: 56).trimmingCharacters(in: .whitespacesAndNewlines)
+            let answerB = String(repeating: "Paragraph B is the newest full answer.\n\n", count: 100)
+            let initial: [[String: Any]] = [
+                ["role": "user", "content": "Question A", "message_id": "qa", "_turn_id": "A"],
+                ["role": "assistant", "content": answerA, "message_id": "a", "_turn_id": "A"]
+            ]
+            let final = [initial[0], initial[1].merging(["_display_truncated": true, "_display_excerpt": excerptA]) { _, new in new },
+                         ["role": "user", "content": "Question B", "message_id": "qb", "_turn_id": "stream-123"],
+                         ["role": "assistant", "content": answerB, "message_id": "b", "_turn_id": "stream-123"]]
+            var settled = false
+            let viewModel = try makeScriptedChatViewModel(streamClient: stream) { request in
+                let body: [String: Any]
+                switch request.url?.path {
+                case "/api/chat/start": body = ["session_id": "session-abc", "stream_id": "stream-123"]
+                case "/api/chat/stream/status": body = ["active": false]
+                case "/api/session": body = ["session": ["session_id": "session-abc", "messages": settled ? final : initial]]
+                default: body = [:]
+                }
+                return (HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!, try JSONSerialization.data(withJSONObject: body))
+            }
+            defer { MockURLProtocol.requestHandler = nil; stream.stop() }
+            await viewModel.loadMessages()
+            let window = try hostWindow(NavigationStack {
+                ChatView(session: SessionSummary(sessionId: "session-abc", title: "Excerpt lifecycle"), server: UITestFixtureEnvironment.serverURL,
+                         onAPIError: { _ in }, loadsInitialMessages: false, viewModel: viewModel)
+            }.environment(\.scenePhase, .active).modelContainer(fixture.cache))
+            let scroll = try transcriptScrollView(in: window)
+            let started = await viewModel.sendMessage("Question B")
+            XCTAssertTrue(started)
+            stream.emit(.token(answerB))
+            settle(0.3)
+            XCTAssertNil(viewModel.messages.first { $0.messageId == "a" }?.displayExcerpt)
+            XCTAssertTrue(elements(named: "Show more", in: window).isEmpty)
+            _ = try await requireElement(in: window, label: "Question B")
+            settle(0.5)
+            if !follows {
+                // A second hand scroll follows the composer's first response to reading older content.
+                for _ in 0..<2 {
+                    let prompt = try await requireElement(in: window, label: "Question B")
+                    scroll.contentOffset.y += prompt.accessibilityFrame.minY - 160
+                    settle(0.3)
+                    scroll.contentOffset.y -= 20
+                    settle(0.2)
+                }
+                _ = try await requireElement(in: window, label: "Scroll to latest message")
+            }
+            let before = try await requireElement(in: window, label: "Question B").accessibilityFrame.minY
+            if !follows { XCTAssertGreaterThan(before, 0); XCTAssertLessThan(before, 300) }
+            attachHostedScreenshot(window, name: follows ? "newest-reply-before-follow" : "newest-reply-before-reader")
+            let decoder = JSONDecoder(); decoder.keyDecodingStrategy = .convertFromSnakeCase
+            let detail = try decoder.decode(SessionDetail.self, from: JSONSerialization.data(withJSONObject: ["session_id": "session-abc", "messages": final]))
+            settled = true
+            stream.emit(.done(DoneStreamEvent(session: detail)))
+            stream.emit(.streamEnd)
+            settle(0.4)
+            await viewModel.loadMessages()
+            settle(0.3)
+            attachHostedScreenshot(window, name: follows ? "newest-reply-after-follow" : "newest-reply-after-reader")
+            if follows {
+                XCTAssertLessThan(abs(scroll.contentSize.height + scroll.adjustedContentInset.bottom - scroll.contentOffset.y - scroll.bounds.height), 5)
+            } else {
+                let after = try await requireElement(in: window, label: "Question B")
+                XCTAssertEqual(after.accessibilityFrame.minY, before, accuracy: 3, "Terminal excerpt transfer moved the visible anchor")
+            }
+            XCTAssertEqual(viewModel.messages.first { $0.messageId == "a" }?.displayExcerpt, excerptA)
+            XCTAssertNil(viewModel.messages.first { $0.messageId == "b" }?.displayExcerpt)
+            window.isHidden = true
+        }
     }
 
     /// Background work shows as one count chip above the composer (TAL-1001); its sheet lists the server's records, a

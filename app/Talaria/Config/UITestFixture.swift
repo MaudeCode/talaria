@@ -947,19 +947,28 @@ final class UITestFixtureURLProtocol: URLProtocol, @unchecked Sendable {
          ]]]
     ]
 
-    /// 25 user bodies of 20-100K characters, each with a link, between short replies, collapsed
-    /// the way the server ships them (TAL-456): the excerpt is a prefix and `content` stays whole.
-    private static let longBodyMessages: [[String: Any]] = (0..<50).map { index in
-        guard index.isMultiple(of: 2) else {
-            return ["role": "assistant", "content": "Short reply \(index / 2 + 1).", "message_id": "long-body-reply-\(index)", "_ts": 2_000_000_000 + index]
+    /// The original long-user crash case, or the same history with assistant Markdown and one full newest reply.
+    private static var longBodyMessages: [[String: Any]] {
+        let assistants = ProcessInfo.processInfo.arguments.contains("--ui-test-assistant-long-bodies")
+        let collapseNewest = ProcessInfo.processInfo.arguments.contains("--ui-test-collapse-newest-body")
+        return (0..<50).map { index in
+            let isLong = assistants ? !index.isMultiple(of: 2) : index.isMultiple(of: 2)
+            let role = index.isMultiple(of: 2) ? "user" : "assistant"
+            guard isLong else {
+                return ["role": role, "content": assistants ? "Short prompt \(index / 2 + 1)." : "Short reply \(index / 2 + 1).", "message_id": "long-body-\(assistants ? "user" : "reply")-\(index)", "_ts": 2_000_000_000 + index]
+            }
+            let line = assistants
+                ? "Paragraph with a [reference](https://example.test/long/\(index)).\n\n```swift\nlet answer = 42\n```\n\n| Key | Value |\n| --- | --- |\n| State | Complete |\n\n"
+                : "Delegated result line with details at https://example.test/long/\(index).\n"
+            let length = index == 48 ? 100_000 : 20_000 + index * 600
+            let content = "Long fixture body \(index / 2 + 1)\n" + String(repeating: line, count: length / line.count)
+            var row: [String: Any] = ["role": role, "content": content, "message_id": "long-body-\(role)-\(index)", "_ts": 2_000_000_000 + index]
+            if !assistants || index != 49 || collapseNewest {
+                row["_display_truncated"] = true
+                row["_display_excerpt"] = String(content.prefix(2_900))
+            }
+            return row
         }
-        let line = "Delegated result line with details at https://example.test/long/\(index).\n"
-        let length = index == 48 ? 100_000 : 20_000 + index * 600
-        let content = "Long fixture body \(index / 2 + 1)\n" + String(repeating: line, count: length / line.count)
-        return [
-            "role": "user", "content": content, "message_id": "long-body-user-\(index)", "_ts": 2_000_000_000 + index,
-            "_display_truncated": true, "_display_excerpt": String(content.prefix(2_900))
-        ]
     }
 
     /// A `diff` and a `patch` block whose lines are tinted by prefix, and `log` and `text` blocks with

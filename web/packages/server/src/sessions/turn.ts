@@ -34,7 +34,7 @@ import { SessionGoals } from './goals.js'
 import { hydrateAnchorActivityScenes, turnTerminalState, withTurnIds } from './anchor.js'
 import { persistentStateChanges, persistentStateSnapshot } from './state-saved.js'
 import { agentBuildParams, webuiEphemeralSystemPrompt, workspaceSystemMessage } from './turn-context.js'
-import { agentSteerText, assistantReplyAddedAfterCurrentTurn, attachedFilesPrompt, buildPartialMessage, dedupeContext, checkpointTurnStart, extractToolCallsFromMessages, hasNativeImages, injectMaxIterationSummaryFallback, isDict, mergeDisplayMessagesAfterAgentResult, messageIdentity, messageText, pendingUserRow, sanitizeMessagesForApi, sessionLacksFinalAssistantAnswer, splitDisplayText, stateDbSeenId, joinReasoning, reasoningFieldsText, toolOutcome, withAttachmentObjects, withBodyExcerpts, withDisplayMedia, withMarkerKinds, withToolCallOutcomes, withoutMaxIterationSummaryRequest, withNativeImagesRestored, withoutNativeImages, withoutToolImages } from './merge.js'
+import { agentSteerText, assistantReplyAddedAfterCurrentTurn, attachedFilesPrompt, buildPartialMessage, dedupeContext, checkpointTurnStart, extractToolCallsFromMessages, hasNativeImages, injectMaxIterationSummaryFallback, isDict, mergeDisplayMessagesAfterAgentResult, messageIdentity, messageText, pendingUserRow, sanitizeMessagesForApi, sessionLacksFinalAssistantAnswer, splitDisplayText, stateDbSeenId, joinReasoning, reasoningFieldsText, toolOutcome, withAttachmentObjects, newestSettledReply, withBodyExcerpts, withDisplayMedia, withMarkerKinds, withToolCallOutcomes, withoutMaxIterationSummaryRequest, withNativeImagesRestored, withoutNativeImages, withoutToolImages } from './merge.js'
 import { mayBecomeSilentReply, turnOrigin, recordBackgroundReview, recordBackgroundUpdate, type BackgroundUpdate } from './background-updates.js'
 import { countExchanges, fallbackTitleFromExchange, firstExchangeSnippets, isGenericFallbackTitle, latestExchangeSnippets, looksInvalidGeneratedTitle, looksLikeDefaultCliTitle, sanitizeGeneratedTitle, titleLanguageMismatch, titlePrompts } from './titles.js'
 import { WORKSPACE_BUSY_MESSAGE } from '../workspace/git.js'
@@ -1223,7 +1223,7 @@ export class TurnRunner {
     const service = this.deps.service()
     const scened = (await service.backgroundLinked(s, hydrateAnchorActivityScenes(withToolCallOutcomes((await service.backgroundUpdates(s, withMarkerKinds(withTurnIds(withAttachmentObjects(s.messages)), s))), s.tool_calls, s.active_stream_id), s.anchor_activity_scenes, { activeTurnId: s.active_stream_id, clipToolResults: true })))
     const [window, offset] = messageWindowForDisplay(scened, TERMINAL_SSE_VISIBLE_MESSAGE_LIMIT, null)
-    const limited = messagesForLimitedPayload(withBodyExcerpts(withDisplayMedia(window, (await service.mediaProjector(s))), s.active_stream_id))
+    const limited = messagesForLimitedPayload(withBodyExcerpts(withDisplayMedia(window, (await service.mediaProjector(s))), s.active_stream_id, newestSettledReply(scened, s.active_stream_id), offset))
     payload.messages = limited
     payload.message_count = s.messages.length
     payload._messages_offset = offset

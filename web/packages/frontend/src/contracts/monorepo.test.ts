@@ -85,9 +85,12 @@ describe('shared monorepo contracts', () => {
   it('collapses only the long bodies of the long-body example (TAL-456)', () => {
     const fixture = JSON.parse(readFileSync(resolve(import.meta.dirname, '../../../../../contracts/fixtures/web-session.json'), 'utf8')) as Record<string, unknown>
     const messages = MessageSchema.array().parse((fixture.long_body_session as { messages: unknown }).messages)
-    expect(messages.map((message) => message._display_truncated === true)).toEqual([true, true, false, false])
+    expect(messages.map((message) => message._display_truncated === true)).toEqual([true, true, false, false, false, false])
     const reply = groupAssistantTurns(projectMessages(messages)).find((row) => row.message.message_id === 'long-body-reply')!
     expect(persistedActivity(reply).finalAnswerExcerpt).toBe(messages[1]?._display_excerpt)
+    const newest = groupAssistantTurns(projectMessages(messages)).find((row) => row.message.message_id === 'newest-body-reply')!
+    expect(newest.message.content?.length).toBeGreaterThan(3000)
+    expect(persistedActivity(newest).finalAnswerExcerpt).toBeUndefined()
   })
 
   it('accepts the server\'s pending steers and their stream events (TAL-424)', () => {

@@ -1097,6 +1097,43 @@ export function withDisplayMedia<T>(messages: T[], project: (text: string) => Me
   })
 }
 
+/** Anthropic-style tool calls: `tool_use` blocks in the content array, interleaved with the text around them. */
+export function hasToolUseBlocks(message: Record<string, unknown>): boolean {
+  return Array.isArray(message.content) && message.content.some((part) => isDict(part) && part.type === 'tool_use')
+}
+
+/**
+ * The final answer rule: the turn's last assistant row, with visible content, no tool calls, not interim or partial.
+ * A Stop row is no answer: its outcome is the status (TAL-364; older rows still carry English copy).
+ */
+export function finalAnswerOf(last: Record<string, unknown>): string {
+  if ((Array.isArray(last.tool_calls) && last.tool_calls.length > 0) || hasToolUseBlocks(last) || last._interim === true || last._partial === true) return ''
+  if (last._error === true && (last._terminal_state === 'cancelled' || last.provider_details_label === 'Cancellation details')) return ''
+  return splitDisplayText(messageText(last.content))[0]
+}
+
+/** Conversation classification shared by the indexed selector and the hydrated projection. */
+export function isConversationalAssistant(message: unknown): message is Record<string, unknown> {
+  return isDict(message) && message.role === 'assistant' && !agentRowKind(message) && !markerKind(message)
+    && !message._marker_kind && !message._notice_kind && !message._background_silent && !message._background_update && !message._delivery
+}
+
+/** Absolute coordinate of the newest settled visible answer; running and answerless turns never displace it. */
+export function newestSettledReply(messages: unknown[], activeTurnId: string | null, offset = 0): number | null {
+  const visited = new Set<string>()
+  for (let i = messages.length - 1; i >= 0; i -= 1) {
+    const m = messages[i]
+    if (!isConversationalAssistant(m)) continue
+    const turn = typeof m._turn_id === 'string' ? m._turn_id : `row:${offset + i}`
+    if (turn === activeTurnId || visited.has(turn)) continue
+    visited.add(turn)
+    const scene = m._anchor_activity_scene
+    const answer = isDict(scene) ? str(scene.final_answer) : finalAnswerOf(m)
+    if (!m._error && !m._partial && !m._interim && splitDisplayText(answer)[0].trim()) return offset + i
+  }
+  return null
+}
+
 /** TAL-456: a settled user or assistant body longer than this ships a collapsed excerpt for clients to render. */
 export const BODY_EXCERPT_LIMIT = 3000
 
@@ -1120,18 +1157,25 @@ function bodyExcerpt(text: string): string {
 /**
  * TAL-456: stamps `_display_excerpt` and `_display_truncated` on settled user and assistant rows whose display text is longer than
  * `BODY_EXCERPT_LIMIT`, and `final_answer_excerpt` on a settled scene whose final answer is, so clients render a bounded
- * excerpt instead of laying out the whole body. Full text stays for copy and edit; the running turn's rows are left alone.
+ * excerpt instead of laying out the whole body. The newest settled answer and running turn stay full; copy and edit retain full text.
  * Runs after scene hydration. Returns copies; stored rows are untouched.
  */
-export function withBodyExcerpts<T>(messages: T[], activeTurnId: string | null): T[] {
-  return messages.map((m) => {
+export function withBodyExcerpts<T>(messages: T[], activeTurnId: string | null, newestReplyIndex = newestSettledReply(messages, activeTurnId), offset = 0): T[] {
+  return messages.map((m, index) => {
     if (!isDict(m) || (m.role !== 'user' && m.role !== 'assistant')) return m
-    if (activeTurnId && m._turn_id === activeTurnId) return m
-    let out: Record<string, unknown> = m
+    let out: Record<string, unknown> = { ...m }
+    delete out._display_excerpt
+    delete out._display_truncated
+    if (isDict(out._anchor_activity_scene)) {
+      const scene = { ...out._anchor_activity_scene }
+      delete scene.final_answer_excerpt
+      out._anchor_activity_scene = scene
+    }
+    if ((activeTurnId && m._turn_id === activeTurnId) || index + offset === newestReplyIndex) return out as T
     // A delivery shows its body under its own label (TAL-816), so the excerpt is the body's.
     const text = isDict(m._delivery) ? str(m._delivery.body) : typeof m._display_content === 'string' ? m._display_content : messageText(m.content)
     if (text.length > BODY_EXCERPT_LIMIT) out = { ...out, _display_excerpt: bodyExcerpt(text), _display_truncated: true }
-    const scene = m._anchor_activity_scene
+    const scene = out._anchor_activity_scene
     const finalAnswer = isDict(scene) ? (typeof scene.final_answer_display === 'string' ? scene.final_answer_display : scene.final_answer) : null
     if (isDict(scene) && typeof finalAnswer === 'string' && finalAnswer.length > BODY_EXCERPT_LIMIT) {
       out = { ...out, _anchor_activity_scene: { ...scene, final_answer_excerpt: bodyExcerpt(finalAnswer) } }

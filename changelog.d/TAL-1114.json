@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Changed",
+      "summary": "Keep the newest agent reply expanded while older long replies remain expandable.",
+      "highlight": false,
+      "components": ["app", "web"]
+    }
+  ]
+}

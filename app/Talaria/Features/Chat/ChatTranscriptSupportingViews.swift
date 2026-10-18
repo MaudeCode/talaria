@@ -200,6 +200,15 @@ final class ChatScrollPositionController {
         scheduleQuietRelease()
     }
 
+    /// A server projection changed row heights. Reuse the disclosure hold around the row nearest the viewport top.
+    func holdVisiblePosition(resync: @escaping () -> Void) {
+        guard let scrollView else { return }
+        let top = scrollView.contentOffset.y
+        let visible = rowMinY.filter { $0.value >= top && $0.value < top + scrollView.bounds.height }
+        let row = visible.min { $0.value < $1.value } ?? rowMinY.filter { $0.value < top }.max { $0.value < $1.value }
+        holdPosition(anchorRowID: row?.key, resync: resync)
+    }
+
     /// Hold ran to completion (quiet or capped): let go, then resync SwiftUI
     /// if the hold had to fight it. A hold ended by a gesture or a deliberate
     /// scroll needs no resync; that scroll does it.
