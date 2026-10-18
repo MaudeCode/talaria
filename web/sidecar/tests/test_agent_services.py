@@ -1376,7 +1376,8 @@ def test_backend_debt_closes_new_agent_admission(tmp_path):
         runtime.ensure_current()
 
 
-def test_backend_stop_ack_does_not_authorize_mutation_or_force_kill(supervised_inventory, monkeypatch):
+@pytest.mark.parametrize('wrapper_exits', [False, True])
+def test_backend_stop_ack_does_not_authorize_mutation_or_force_kill(supervised_inventory, monkeypatch, wrapper_exits):
     import threading
     import types
     from talaria_sidecar import agent_services as services
@@ -1386,7 +1387,7 @@ def test_backend_stop_ack_does_not_authorize_mutation_or_force_kill(supervised_i
     pause._discover_bare = lambda excluded: ([], [])
     rows.append(dict(purpose='dashboard', pid=41004, create_time=1, hermes_home=str(home), profile='default', host='127.0.0.1', port=9417, argv='hermes dashboard'))
     entry = _owners(root, {home}, pause, identity)[0]
-    records = types.SimpleNamespace(identity=lambda pid: {'ct': pid}, identity_is_live=lambda p: True)
+    records = types.SimpleNamespace(identity=lambda pid: {'ct': pid}, identity_is_live=lambda p: p['pid'] in parents)
     services.bind_processes(entry, records)
     recovery = services.ServiceRecovery(root, home, records, identity, pause)
     recovery.prepare([entry], {})
@@ -1394,7 +1395,12 @@ def test_backend_stop_ack_does_not_authorize_mutation_or_force_kill(supervised_i
     monkeypatch.setattr(services, 'STOP_SECONDS', .01)
     monkeypatch.setattr(services, 'backend_request', lambda entry, action=None, permit=None: {'ok': True, 'idle': True, 'token': 'synthetic-permit'})
     monkeypatch.setattr(services.os, 'kill', lambda pid, sig: signals.append((pid, sig)))
-    pause._disarm = lambda entry: disarmed.append(entry)
+    def disarm(entry):
+        disarmed.append(entry)
+        if wrapper_exits:
+            parents.pop(entry['pid'])
+            parents[entry['runtime_pid']] = 1
+    pause._disarm = disarm
     with pytest.raises(RuntimeError, match='graceful stop has not completed'):
         recovery.stop(entry, threading.Event())
     assert signals == []
