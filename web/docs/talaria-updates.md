@@ -100,10 +100,26 @@ gateway is idle, the update notification stays in `waiting_for_idle`, reports
 the running task count, and offers **Restart now**, which restarts the gateway
 immediately. That notification is the persisted record: a restarted Web
 resumes the wait, at most one wait runs at a time, and another Agent update
-while one waits is covered by it. No gateway restart starts while another update
-changes the Agent source, and Web exits only after a gateway restart in flight
-finishes. The manual Restart in Settings → System still restarts the gateway
-immediately.
+while one waits is covered by it. When the update also restarts Web, the wait
+starts in the restarted server, so Web always restarts first. No gateway restart
+starts while another update changes the Agent source, and Web exits only after a
+gateway restart command in flight finishes. The manual Restart in Settings →
+System still restarts the gateway immediately.
+
+A gateway restart counts as done only when the Agent answers again. Neither the
+CLI's exit nor its `in_progress` status is success. The update moves to
+`verifying` and the server polls two checks. First, every local gateway that was
+live when the restart began (its `gateway.pid` names a running process) must be
+running as a new process, with another pid or a new start time. Second, the
+sidecar's `runtime.status` must report the Agent runtime compatible and not
+stale. A gateway that was not running needs only the runtime check. When both
+pass, the update succeeds. If they do not pass within 90 seconds, it fails with
+"Hermes Agent was updated, but the gateway did not come back. Run `hermes
+gateway restart` manually." The native update path restarts the gateways inside
+its writer pause, so its `gateway_restart: "resumed"` result goes to
+`verifying` against the gateways recorded before the update. A Web exit stops
+the check early and leaves the record in `verifying`, and the restarted server
+runs the check again from the start.
 
 **Update Agent** keeps tracked local edits in the Agent checkout. It saves them
 with `git stash create` under a private `refs/talaria/autostash/<sha>` ref, never
@@ -194,8 +210,8 @@ read, acknowledgement, dismissal, severity, actions, destinations, and clearabil
 visible across the same owner's profiles because the installation being updated is server-wide; records
 for another authenticated owner remain isolated. Automatic Web updates produce server-wide owner notices.
 
-The notification lifecycle is `applying`, `awaiting_confirmation`, `restarting`, then `succeeded`,
-`blocked`, `failed`, or `unknown`. A failed or blocked record, and a succeeded Agent update that kept conflicting local edits in the git stash (`stash_conflict`), keeps the apply's own explanation as `detail` (line breaks kept, bounded, cleared by the next phase); the notification center and the Updating dialog show it under the message. A restarted server marks an interrupted `applying` operation unknown.
+The notification lifecycle is `applying`, `awaiting_confirmation`, `waiting_for_idle`, `restarting`,
+`verifying`, then `succeeded`, `blocked`, `failed`, or `unknown`. A failed or blocked record, and a succeeded Agent update that kept conflicting local edits in the git stash (`stash_conflict`), keeps the apply's own explanation as `detail` (line breaks kept, bounded, cleared by the next phase); the notification center and the Updating dialog show it under the message. A restarted server marks an interrupted `applying` operation unknown.
 A `restarting` Web operation becomes succeeded only when the running release identity exactly matches the
 persisted expected identity; otherwise it becomes unknown. A dropped connection never proves success.
 Failed updates show a factual failure message and their available detail in the notification itself,
@@ -216,17 +232,29 @@ and the server records it, with the time, on the operation it starts or rejoins.
 returns the operation that tab started or rejoined most recently as `tab_update`, including after it is dismissed
 from the notification center, and when the tab last joined it as `tab_joined_at`. A rejoin whose response is lost
 changes only that time, so the dialog still recognizes its operation. Automatic
-updates carry no tab and never open the dialog. The dialog shows the record's phase and message, so a reload or a
-route change keeps following the same operation, and a different owner never sees it.
+updates carry no tab and never open the dialog.
+
+The server owns everything the dialog shows. Each update record carries `steps`, each with an id, a label, and a
+`done`, `active`, `pending`, or `failed` state. A Web update lists Installing, Restarting Talaria Web, Ready. An
+Agent update lists Installing, Restarting Talaria Web, Waiting for N gateway tasks (only once the gateway was busy),
+Restarting gateway, Agent responding. An update that finished without a restart lists only the steps it ran, and a
+failure marks the step it stopped at. `presents_dialog` is true while an operation a tab started is in `applying`,
+`restarting`, or `verifying`, or waits for its Web restart. Every tab that can see such a record opens the dialog,
+so a deferred gateway restart reopens it in each open tab. `dialog_close` says how an open dialog closes: `none`
+(the update is still running), `close` (failures), `restart_later` (the gateway wait: **Restart now** or
+**Restart later**, which closes the dialog while the wait goes on in the notification center), or `auto` (a
+success shows briefly, then the dialog closes). A dialog opens only for a presenting record or a Settings click,
+so a closed or finished operation never reopens after a reload.
 
 A dropped apply response is an unknown outcome. While the read endpoint fails or the browser is offline, the
 dialog keeps the last verified phase and says it is reconnecting; the 2-second poll retries, and focus or a
 browser reconnection retries at once. Once the server answers, the dialog shows its record. When no record
 matches, it says the outcome could not be verified and offers **Check again**, which rereads without starting
 another update. The Agent confirmation dialog replaces it until **Update anyway** continues the same operation.
-Closing the dialog is remembered for the tab's session, including a close made before the operation's record
-arrived. A Web update that leaves the tab on an old bundle still
-shows the **Refresh now** notice below.
+When a Web update the tab started has finished while the tab still runs the old bundle, its record ends on
+"Talaria Web <version> is ready" with **Reload** (the `reload` action) as the only button, and the server does not
+add the separate refresh notice for that tab. Other open tabs get the **Refresh now** notice below, and so does the
+starting tab once a later Web update replaces the one it started.
 
 ## Stale Web tab refresh notice
 

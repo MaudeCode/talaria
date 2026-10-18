@@ -7,7 +7,7 @@ import { join } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { Dict } from '../config/agent-config.js'
 import { GatewayRestartQueue } from './gateway-restart.js'
-import { gatewayRestartBlockers } from './health.js'
+import { gatewayRestartBlockers, liveGateways } from './health.js'
 import { GATEWAY_RESTART_NOW, UpdateNotificationStore, type UpdateNotificationScope } from './update-notifications.js'
 import { bootTestServer } from '../test/harness.js'
 
@@ -18,26 +18,42 @@ const NOW = Date.parse('2026-10-13T12:00:00Z') / 1000
 const stamp = (offsetS = 0): string => new Date((NOW + offsetS) * 1000).toISOString()
 const flush = async (): Promise<void> => { for (let i = 0; i < 10; i += 1) await new Promise<void>((resolve) => { setImmediate(resolve) }) }
 
-/** A Hermes home with a synthetic gateway, a notification store, and a queue whose polls advance only on `tick()`. */
-async function setup(stateDir = mkdtempSync(join(tmpdir(), 'talaria-gateway-restart-')), restart: () => Promise<Dict> = () => Promise.resolve({ status: 'completed' }), updating = { now: false }, probe: () => void = () => undefined) {
+/** The gateway process a restart replaces, and the one that replaces it: both live, so only identity tells them apart. */
+const OLD_PID = process.pid
+const NEW_PID = process.ppid
+
+/**
+ * A Hermes home with a synthetic gateway, a notification store, and a queue whose polls advance only on `tick()`. The
+ * default restart replaces the gateway process (TAL-1138), and the Agent runtime reports ready unless `ready.now` is false.
+ */
+async function setup(stateDir = mkdtempSync(join(tmpdir(), 'talaria-gateway-restart-')), restart?: () => Promise<Dict>, updating = { now: false }, probe: () => void = () => undefined) {
   dirs.push(stateDir)
   const home = join(stateDir, 'home')
+  let last: { pid?: number | null; gateway_state?: string; active_agents?: number; updated_at?: string } = {}
   const gateway = (state: { pid?: number | null; gateway_state?: string; active_agents?: number; updated_at?: string } = {}): void => {
+    last = state
     rmSync(home, { recursive: true, force: true })
     mkdirSync(home, { recursive: true })
-    if (state.pid !== null) writeFileSync(join(home, 'gateway.pid'), JSON.stringify({ pid: state.pid ?? process.pid }))
+    if (state.pid !== null) writeFileSync(join(home, 'gateway.pid'), JSON.stringify({ pid: state.pid ?? OLD_PID }))
     writeFileSync(join(home, 'gateway_state.json'), JSON.stringify({ gateway_state: state.gateway_state ?? 'running', active_agents: state.active_agents ?? 0, updated_at: state.updated_at ?? stamp() }))
   }
+  /** `hermes gateway restart` as the Agent runs it: the old process exits and a new one writes its own pid record. */
+  const replaced = (): Promise<Dict> => { if (last.pid !== null) gateway({ ...last, pid: (last.pid ?? OLD_PID) === OLD_PID ? NEW_PID : OLD_PID, active_agents: 0 }); return Promise.resolve({ status: 'completed' }) }
   const store = (await initializeStore(new UpdateNotificationStore(new JsonDocuments(stateDir))))
   const calls: string[] = []
   const profiles: string[] = []
   const waiters: (() => void)[] = []
+  const clock = { ms: NOW * 1000 }
+  const ready = { now: true }
   const queue = new GatewayRestartQueue({
     notifications: store,
     blockers: (profile) => { profiles.push(`probe:${profile}`); const blockers = gatewayRestartBlockers(home, home, NOW); probe(); return blockers },
-    restart: (profile) => { calls.push('gateway.restart'); profiles.push(`restart:${profile}`); return restart() },
+    restart: (profile) => { calls.push('gateway.restart'); profiles.push(`restart:${profile}`); return (restart ?? replaced)() },
+    gateways: () => liveGateways(home, home, NOW),
+    runtimeReady: () => Promise.resolve(ready.now),
     updating: () => updating.now,
     sleep: () => new Promise<void>((resolve) => { waiters.push(resolve) }),
+    now: () => clock.ms,
     log: () => undefined,
   })
   const tick = async (): Promise<void> => { await flush(); for (const wake of waiters.splice(0)) wake(); await flush() }
@@ -48,7 +64,7 @@ async function setup(stateDir = mkdtempSync(join(tmpdir(), 'talaria-gateway-rest
     return row.id
   }
   const row = async (id: string) => (await store.list(OWNER)).notifications.find((entry) => entry.id === id)
-  return { stateDir, home, gateway, store, queue, calls, profiles, tick, waiting, row }
+  return { stateDir, home, gateway, replaced, store, queue, calls, profiles, tick, waiting, row, clock, ready }
 }
 
 describe('gatewayRestartBlockers', () => {
@@ -226,9 +242,11 @@ describe('GatewayRestartQueue', () => {
     expect((await after.row(id))).toMatchObject({ phase: 'succeeded', detail: 'stash kept' })
   })
 
-  it('quiesce lets a restart in flight finish before Web exits', async () => {
+  it('quiesce lets a restart in flight finish before Web exits, and leaves its check to the next server', async () => {
     let finish!: () => void
-    const t = (await setup(undefined, () => new Promise((resolve) => { finish = () => { resolve({ status: 'completed' }) } })))
+    const replace = { now: (): Promise<Dict> => Promise.resolve({ status: 'completed' }) }
+    const t = (await setup(undefined, () => new Promise((resolve) => { finish = () => { resolve(replace.now()) } })))
+    replace.now = t.replaced
     t.gateway({ active_agents: 0 })
     const id = (await t.waiting())
     await t.queue.schedule(id, 'default')
@@ -241,7 +259,8 @@ describe('GatewayRestartQueue', () => {
     expect(quiesced).toBe(false)
     finish()
     await done
-    expect((await t.row(id))?.phase).toBe('succeeded')
+    expect(t.calls).toEqual(['gateway.restart'])
+    expect((await t.row(id))?.phase).toBe('verifying')
     expect(t.queue.restarting()).toBe(false)
   })
 
@@ -266,7 +285,9 @@ describe('GatewayRestartQueue', () => {
 
   it('retries one transient failure and reports a failed restart with the manual command', async () => {
     const outcomes = [{ status: 'failed', message: 'launchd rotating' }, { status: 'completed' }]
-    const t = (await setup(undefined, () => Promise.resolve(outcomes.shift() ?? { status: 'failed', message: 'still down' })))
+    const replace = { now: (): Promise<Dict> => Promise.resolve({ status: 'completed' }) }
+    const t = (await setup(undefined, () => { const next = outcomes.shift() ?? { status: 'failed', message: 'still down' }; return next.status === 'completed' ? replace.now() : Promise.resolve(next) }))
+    replace.now = t.replaced
     t.gateway({ active_agents: 0 })
     const ok = (await t.waiting())
     await t.queue.schedule(ok, 'default')
@@ -278,5 +299,99 @@ describe('GatewayRestartQueue', () => {
     await t.tick()
     await t.tick()
     expect((await t.row(failed))).toMatchObject({ phase: 'failed', detail: expect.stringContaining('Run `hermes gateway restart` manually.') as string })
+  })
+})
+
+/** TAL-1138: a gateway restart succeeds only once a new gateway process is alive and the Agent runtime answers. */
+describe('GatewayRestartQueue readiness', () => {
+  it.each([
+    ['still restarting in the background', { status: 'in_progress' }],
+    ['exited 0 while the old process still runs', { status: 'completed' }],
+  ] as const)('a restart %s does not reach succeeded, and the 90 s window ends it failed', async (_name, outcome) => {
+    const t = (await setup(undefined, () => Promise.resolve(outcome)))
+    t.gateway({ active_agents: 0 })
+    const id = (await t.waiting())
+    await t.queue.schedule(id, 'default')
+    await t.tick()
+    expect(t.calls).toEqual(['gateway.restart'])
+    expect((await t.row(id))).toMatchObject({ phase: 'verifying', active: true })
+    t.clock.ms += 89_000
+    await t.tick()
+    expect((await t.row(id))?.phase).toBe('verifying')
+    t.clock.ms += 1_000
+    await t.tick()
+    expect((await t.row(id))).toMatchObject({ phase: 'failed', detail: 'Hermes Agent was updated, but the gateway did not come back. Run `hermes gateway restart` manually.' })
+    expect(t.queue.restarting()).toBe(false)
+  })
+
+  it('waits for the new gateway process and the Agent runtime before succeeding', async () => {
+    const t = (await setup(undefined, () => Promise.resolve({ status: 'in_progress' })))
+    t.gateway({ active_agents: 0 })
+    t.ready.now = false
+    const id = (await t.waiting('stash kept'))
+    await t.queue.schedule(id, 'default', 'stash kept')
+    await t.tick()
+    expect((await t.row(id))?.phase).toBe('verifying')
+    await t.replaced()
+    await t.tick()
+    expect((await t.row(id))?.phase).toBe('verifying')
+    t.ready.now = true
+    await t.tick()
+    expect((await t.row(id))).toMatchObject({ phase: 'succeeded', detail: 'stash kept' })
+  })
+
+  it('a dead gateway after the restart does not count as back', async () => {
+    const t = (await setup(undefined, () => { t.gateway({ pid: 2 ** 22 + 12345 }); return Promise.resolve({ status: 'completed' }) }))
+    t.gateway({ active_agents: 0 })
+    const id = (await t.waiting())
+    await t.queue.schedule(id, 'default')
+    await t.tick()
+    t.clock.ms += 90_000
+    await t.tick()
+    expect((await t.row(id))?.phase).toBe('failed')
+  })
+
+  it('a gateway that was not running needs only the Agent runtime', async () => {
+    const t = (await setup())
+    rmSync(t.home, { recursive: true, force: true })
+    const id = (await t.waiting())
+    await t.queue.schedule(id, 'default')
+    await t.tick()
+    await t.tick()
+    expect((await t.row(id))?.phase).toBe('succeeded')
+  })
+
+  it('Web exiting mid-check leaves the record verifying, and the restarted server finishes the check', async () => {
+    const before = (await setup(undefined, () => Promise.resolve({ status: 'in_progress' })))
+    before.gateway({ active_agents: 0 })
+    before.ready.now = false
+    const id = (await before.waiting(null, 'work'))
+    await before.queue.schedule(id, 'work')
+    await before.tick()
+    await before.queue.quiesce()
+    expect((await before.row(id))?.phase).toBe('verifying')
+    const after = (await setup(before.stateDir))
+    await after.replaced()
+    await after.queue.resume()
+    await after.tick()
+    expect(after.calls).toEqual([])
+    expect((await after.row(id))?.phase).toBe('succeeded')
+  })
+
+  it('verifies a native Agent update the server did not restart itself against the gateways from before the update', async () => {
+    const t = (await setup())
+    t.gateway({ active_agents: 0 })
+    const id = (await t.waiting())
+    const baseline = (await t.queue.gateways('default'))
+    expect(baseline).toHaveLength(1)
+    await t.store.transition(id, 'verifying')
+    t.ready.now = true
+    void t.queue.verify(id, 'default', baseline, null)
+    await t.tick()
+    expect((await t.row(id))?.phase).toBe('verifying')
+    await t.replaced()
+    await t.tick()
+    expect((await t.row(id))?.phase).toBe('succeeded')
+    expect(t.calls).toEqual([])
   })
 })

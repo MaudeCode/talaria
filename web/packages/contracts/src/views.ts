@@ -932,7 +932,8 @@ export const UpdateApplySchema = z.looseObject({
   recovery_compatibility: z.object({ manual_execution: z.boolean(), bot_chat_delivery: z.boolean() }).optional()
     .describe('Whether the target Agent can reconcile retained manual execution and pending Bot Chat records. A false value blocks the update before any source or repair-intent change.'),
   ok: z.boolean().optional(), status: z.string().optional(), error: z.string().optional(), message: z.string().optional(), lock: Json.optional(), confirmation_required: z.boolean().optional(), refresh_confirmation: AgentRefreshConfirmationSchema.optional(), candidate_revision: z.string().optional(), supported_revision: z.string().optional(), supported_version: z.string().optional(), agent_channel: z.enum(['stable', 'experimental']).optional(), notification_id: z.uuid().optional(), channel_switch: z.boolean().optional(), backup_dir: z.string().nullable().optional(), backup_failed: z.boolean().optional(), stash_conflict: z.boolean().optional(), gateway_restart: z.string().optional().describe('TAL-953: `waiting_for_idle` when an Agent update left the gateway restart to wait for the gateway\'s running work; the update notification reports its outcome.') })
-export const UpdateNotificationPhaseSchema = z.enum(['applying', 'awaiting_confirmation', 'waiting_for_idle', 'restarting', 'succeeded', 'blocked', 'failed', 'unknown'])
+/** `verifying` (TAL-1138): the gateway restarted, and the server is checking that the new gateway process and the Agent runtime answer. */
+export const UpdateNotificationPhaseSchema = z.enum(['applying', 'awaiting_confirmation', 'waiting_for_idle', 'restarting', 'verifying', 'succeeded', 'blocked', 'failed', 'unknown'])
 export const UpdateNotificationActionSchema = z.object({
   id: z.string().min(1).max(64).regex(/^[a-z0-9][a-z0-9_-]*$/),
   label: z.string().min(1).max(80),
@@ -942,6 +943,12 @@ export const UpdateNotificationActionSchema = z.object({
 export const UpdateNotificationDestinationSchema = z.object({
   key: z.string().min(1).max(64).regex(/^[a-z0-9][a-z0-9_.-]*$/),
   label: z.string().min(1).max(80),
+})
+/** TAL-1138: one step of an update as its Updating dialog lists it; the server derives every label and state. */
+export const UpdateStepSchema = z.object({
+  id: z.enum(['install', 'web_restart', 'ready', 'gateway_wait', 'gateway_restart', 'agent_ready']),
+  label: z.string().min(1).max(80),
+  state: z.enum(['done', 'active', 'pending', 'failed']),
 })
 export const UpdateNotificationSchema = z.object({
   id: z.uuid(),
@@ -968,6 +975,12 @@ export const UpdateNotificationSchema = z.object({
   active: z.boolean(),
   requires_interaction: z.boolean(),
   can_dismiss: z.boolean(),
+  /** TAL-1138: the update's steps in order; empty for records that are not updates. */
+  steps: z.array(UpdateStepSchema).max(8),
+  /** TAL-1138: every client that sees this record opens its Updating dialog, which cannot be closed while this holds. */
+  presents_dialog: z.boolean(),
+  /** TAL-1138: how an open Updating dialog for this record closes: not at all, with Close, with Restart later (the wait goes on), or by itself after showing the outcome. */
+  dialog_close: z.enum(['none', 'close', 'restart_later', 'auto']),
 })
 export const FrontendBuildIdSchema = z.string().regex(/^[a-f0-9]{64}$/)
 export const TabIdSchema = z.string().regex(/^[A-Za-z0-9_-]{8,64}$/)

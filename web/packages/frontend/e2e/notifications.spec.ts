@@ -1,32 +1,10 @@
+import type { UpdateNotification } from '../src/contracts'
 import { expect, settle, test } from './fixtures'
 
 test.use({ serviceWorkers: 'block' })
 
-interface NotificationRow {
-  id: string
-  kind: string
-  target: 'webui' | 'agent' | null
-  phase: string
-  severity: 'info' | 'warning' | 'critical'
-  persistent: boolean
-  requires_acknowledgement: boolean
-  actions: { id: string; label: string; style: 'default' | 'primary' | 'destructive'; acknowledges: boolean }[]
-  destination: { key: string; label: string } | null
-  title: string
-  message: string
-  created_at: string
-  updated_at: string
-  read_at: string | null
-  acknowledged_at: string | null
-  acknowledged_action_id: string | null
-  verified_revision: string | null
-  verified_version: string | null
-  detail: string | null
-  unread: boolean
-  active: boolean
-  requires_interaction: boolean
-  can_dismiss: boolean
-}
+/** These records model automatic updates and notices: none presents an Updating dialog (TAL-1138). */
+type NotificationRow = Omit<UpdateNotification, 'kind' | 'phase'> & { kind: string; phase: string }
 
 const row = (id: string, overrides: Partial<NotificationRow> = {}): NotificationRow => ({
   id, kind: 'system', target: null, phase: 'notice', severity: 'info', persistent: false,
@@ -34,6 +12,7 @@ const row = (id: string, overrides: Partial<NotificationRow> = {}): Notification
   title: 'Server notice', message: 'A notification arrived.', created_at: '2026-09-26T12:00:00Z', updated_at: '2026-09-26T12:00:00Z',
   read_at: null, acknowledged_at: null, acknowledged_action_id: null, verified_revision: null, verified_version: null, detail: null,
   unread: true, active: false, requires_interaction: false, can_dismiss: true,
+  steps: [], presents_dialog: false, dialog_close: 'close',
   ...overrides,
 })
 

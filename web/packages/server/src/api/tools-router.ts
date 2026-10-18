@@ -217,11 +217,13 @@ async function applyWithNotification(
   const scope = await updateNotificationScope(ctx, input.tab_id)
   const active = ctx.deps.updateNotifications.activeUpdate(scope, target)
   if (active) (await ctx.deps.updateNotifications.watch(scope, active.id))
-  if (active && (active.phase === 'applying' || active.phase === 'restarting')) {
+  if (active && (active.phase === 'applying' || active.phase === 'restarting' || active.phase === 'verifying')) {
     return { ok: false, status: 'already_in_progress', message: 'Update already in progress', notification_id: active.id }
   }
   const notification = active ?? (await ctx.deps.updateNotifications.begin(scope, target))
   if (active?.phase === 'awaiting_confirmation' && confirmed) (await ctx.deps.updateNotifications.transition(notification.id, 'applying'))
+  // TAL-1138: the gateways running before an Agent update; the update's check needs a new process for each.
+  const gatewaysBefore = target === 'agent' ? await ctx.deps.gatewayRestarts.gateways(scope.profile).catch(() => []) : []
   try {
     const options = { agentChannel: input.agent_channel, confirmedRevision: input.confirmed_agent_revision, version: input.version, refreshToken: input.agent_refresh_token, mutationIntent: principalHash(scope.owner, scope.profile, notification.id) }
     const result = action === 'apply' ? await ctx.deps.updates.apply(target, bodyChannel(input.channel), () => true, options)
@@ -235,11 +237,24 @@ async function applyWithNotification(
     else if (result.ok !== true) (await ctx.deps.updateNotifications.transition(notification.id, 'failed', null, verifiedIdentity, result.message || result.error))
     else if (target === 'webui' && result.restart_scheduled === true) {
       await ctx.deps.updateNotifications.transition(notification.id, 'restarting', str(result.sourceRevision || result.candidate_revision), verifiedIdentity)
+    } else if (target === 'agent' && result.gateway_restart === 'resumed') {
+      // TAL-1138: the native updater restarted the gateways inside its writer pause. Agent responding still needs the
+      // new gateway processes and a current Agent runtime; a scheduled Web restart runs that check from the new server.
+      const detail = result.stash_conflict === true ? str(result.message) : null
+      await ctx.deps.updateNotifications.transition(notification.id, 'verifying', null, verifiedIdentity, detail)
+      await ctx.deps.updateNotifications.recordGatewayBaseline(notification.id, gatewaysBefore)
+      if (result.restart_scheduled === true) (await ctx.deps.updateNotifications.markWebRestart(notification.id))
+      else void ctx.deps.gatewayRestarts.verify(notification.id, scope.profile, gatewaysBefore, detail)
     } else if (result.gateway_restart === 'waiting_for_idle' || (target === 'agent' && ctx.deps.gatewayRestarts.pendingId() !== null)) {
       // TAL-953: the gateway restarts once its own work drains. A restart already waiting covers this update too, and a
       // repeated request that found the Agent current follows that wait rather than reporting success before it.
       const detail = result.stash_conflict === true ? str(result.message) : null
       await ctx.deps.updateNotifications.transition(notification.id, 'waiting_for_idle', null, verifiedIdentity, detail)
+      // TAL-1138: a scheduled Web restart goes first, and the restarted server resumes this wait.
+      if (result.restart_scheduled === true && ctx.deps.gatewayRestarts.pendingId() === null) {
+        await ctx.deps.updateNotifications.markWebRestart(notification.id)
+        return { ...result, notification_id: notification.id }
+      }
       const pending = (await ctx.deps.gatewayRestarts.schedule(notification.id, scope.profile, detail))
       if (pending !== notification.id) (await ctx.deps.updateNotifications.watch(scope, pending))
       return { ...result, notification_id: pending }
@@ -676,7 +691,7 @@ export const toolsRouter = os.router({
     list: os.updateNotifications.list.handler(({ input, context: { ctx } }) => run(async () => {
       const scope = await updateNotificationScope(ctx, input.tab_id)
       const frontendBuild = (await ctx.deps.updateNotifications.syncTabBuild(scope, input.loaded_build ?? null, ctx.deps.spa.buildId()))
-      return { ...(await ctx.deps.updateNotifications.list(scope)), frontend_build: frontendBuild } as never
+      return { ...(await ctx.deps.updateNotifications.list(scope, frontendBuild.refresh_required)), frontend_build: frontendBuild } as never
     })),
     read: os.updateNotifications.read.handler(({ input, context: { ctx } }) => run(async () => {
       const notification = (await ctx.deps.updateNotifications.read(await updateNotificationScope(ctx, input.tab_id), input.id))
@@ -691,7 +706,7 @@ export const toolsRouter = os.router({
     clear: os.updateNotifications.clear.handler(({ input, context: { ctx } }) => run(async () => {
       const scope = await updateNotificationScope(ctx, input.tab_id)
       const frontendBuild = (await ctx.deps.updateNotifications.syncTabBuild(scope, input.loaded_build ?? null, ctx.deps.spa.buildId()))
-      return { ...(await ctx.deps.updateNotifications.clear(scope)), frontend_build: frontendBuild } as never
+      return { ...(await ctx.deps.updateNotifications.clear(scope, frontendBuild.refresh_required)), frontend_build: frontendBuild } as never
     })),
     cancel: os.updateNotifications.cancel.handler(({ input, context: { ctx } }) => run(async () => {
       const notification = (await ctx.deps.updateNotifications.cancelUpdate(await updateNotificationScope(ctx), input.id))

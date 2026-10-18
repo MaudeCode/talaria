@@ -778,6 +778,7 @@
 	"update_dialog_reconnecting": "Reconnecting to Talaria Web…",
 	"update_dialog_unverified": "The outcome could not be verified. Check the installed version before trying again.",
 	"update_dialog_check_again": "Check again",
+	"update_dialog_restart_later": "Restart later",
 	"update_notifications_description": "Recent activity and alerts from this server.",
 	"update_notifications_unread": "{count} unread update notifications",
 	"update_notifications_unavailable": "Update notifications could not be loaded.",

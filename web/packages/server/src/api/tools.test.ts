@@ -1160,9 +1160,11 @@ describe('skills, memory, prompts, commands, mcp, health, updates, diagnostics',
   it('TAL-953: an Agent update waits for the busy gateway, reuses the wait, and Restart now ends it with the stash note kept', async () => {
     const originalApply = s.deps.updates.apply.bind(s.deps.updates)
     const message = 'agent updated to v2.0.0. Your local modifications could not be re-applied cleanly and were set aside in the git stash.'
-    s.deps.updates.apply = () => Promise.resolve({ ok: true, target: 'agent', stash_conflict: true, message, restart_scheduled: true, gateway_restart: 'waiting_for_idle' })
+    // A wait with no Web restart to come runs in this server; one behind a Web restart waits for the restarted server.
+    s.deps.updates.apply = () => Promise.resolve({ ok: true, target: 'agent', stash_conflict: true, message, restart_scheduled: false, gateway_restart: 'waiting_for_idle' })
     let restarts = 0
-    sidecar.respond('gateway.restart', () => { restarts += 1; return { status: 'completed', message: 'ok' } })
+    // TAL-1138: the restart replaces the gateway process, so the update's check sees a new pid.
+    sidecar.respond('gateway.restart', () => { restarts += 1; writeFileSync(join(s.state, 'gateway.pid'), JSON.stringify({ pid: process.ppid })); return { status: 'completed', message: 'ok' } })
     writeFileSync(join(s.state, 'gateway.pid'), JSON.stringify({ pid: process.pid }))
     writeFileSync(join(s.state, 'gateway_state.json'), JSON.stringify({ gateway_state: 'running', active_agents: 2, updated_at: new Date().toISOString() }))
     const row = async (id: unknown) => ((await json(await s.get('/api/update-notifications'))).notifications as Json[]).find((entry) => entry.id === id)
@@ -1194,6 +1196,54 @@ describe('skills, memory, prompts, commands, mcp, health, updates, diagnostics',
       s.deps.updates.apply = originalApply
       rmSync(join(s.state, 'gateway.pid'), { force: true })
       rmSync(join(s.state, 'gateway_state.json'), { force: true })
+    }
+  })
+
+  it('TAL-1138: an Agent update behind a Web restart leaves the gateway steps to the restarted server', async () => {
+    const originalApply = s.deps.updates.apply.bind(s.deps.updates)
+    let restarts = 0
+    sidecar.respond('gateway.restart', () => { restarts += 1; return { status: 'completed', message: 'ok' } })
+    const steps = (row: Json | null | undefined) => (row?.steps as { label: string; state: string }[] | undefined)?.map((step) => `${step.label}:${step.state}`)
+    try {
+      s.deps.updates.apply = () => Promise.resolve({ ok: true, target: 'agent', restart_scheduled: true, gateway_restart: 'waiting_for_idle' })
+      const waiting = await json(await post(s, '/api/updates/apply', { target: 'agent', tab_id: 'tab-deferred' }))
+      const waitingRow = (await json(await s.get('/api/update-notifications?tab_id=tab-deferred'))).tab_update as Json
+      expect(waitingRow).toMatchObject({ id: waiting.notification_id, phase: 'waiting_for_idle', actions: [], presents_dialog: true, dialog_close: 'none' })
+      expect(steps(waitingRow)).toEqual(['Installing:done', 'Restarting Talaria Web:active', 'Restarting gateway:pending', 'Agent responding:pending'])
+      expect(s.deps.gatewayRestarts.pendingId()).toBeNull()
+      // The native updater restarted the gateways itself; the restarted server checks that they and the Agent answer.
+      s.deps.updates.apply = () => Promise.resolve({ ok: true, target: 'agent', verified_revision: 'e'.repeat(40), verified_version: 'v0.23.0', restart_scheduled: true, gateway_restart: 'resumed' })
+      const resumed = await json(await post(s, '/api/updates/apply', { target: 'agent', tab_id: 'tab-native' }))
+      const resumedRow = (await json(await s.get('/api/update-notifications?tab_id=tab-native'))).tab_update as Json
+      expect(resumedRow).toMatchObject({ id: resumed.notification_id, phase: 'verifying', active: true, presents_dialog: true, dialog_close: 'none' })
+      expect(steps(resumedRow)).toEqual(['Installing:done', 'Restarting Talaria Web:active', 'Restarting gateway:pending', 'Agent responding:pending'])
+      expect(s.deps.gatewayRestarts.restarting()).toBe(false)
+      expect(s.deps.updateNotifications.pendingGatewayRestarts().map((row) => [row.id, row.phase])).toEqual(expect.arrayContaining([[waiting.notification_id, 'waiting_for_idle'], [resumed.notification_id, 'verifying']]))
+      expect(restarts).toBe(0)
+    } finally {
+      s.deps.updates.apply = originalApply
+      // This server never restarts, so end both records rather than leave an update in progress for the next test.
+      for (const pending of s.deps.updateNotifications.pendingGatewayRestarts()) await s.deps.updateNotifications.transition(pending.id, 'failed')
+    }
+  })
+
+  it('TAL-1138: a native Agent update with no Web restart succeeds only once the Agent runtime answers', async () => {
+    const originalApply = s.deps.updates.apply.bind(s.deps.updates)
+    const row = async (id: unknown) => ((await json(await s.get('/api/update-notifications'))).notifications as Json[]).find((entry) => entry.id === id)
+    const until = async (check: () => Promise<boolean>) => { for (let i = 0; i < 250 && !(await check()); i += 1) await new Promise((resolve) => setTimeout(resolve, 20)) }
+    let ready = false
+    sidecar.respond('runtime.status', () => ({ ...sidecar.describe!, compatible: ready, stale: false }))
+    try {
+      s.deps.updates.apply = () => Promise.resolve({ ok: true, target: 'agent', verified_revision: 'e'.repeat(40), verified_version: 'v0.23.0', restart_scheduled: false, gateway_restart: 'resumed' })
+      const result = await json(await post(s, '/api/updates/apply', { target: 'agent', tab_id: 'tab-native-now' }))
+      await new Promise((resolve) => setTimeout(resolve, 100))
+      expect((await row(result.notification_id))?.phase).toBe('verifying')
+      ready = true
+      await until(async () => (await row(result.notification_id))?.phase === 'succeeded')
+      expect(await row(result.notification_id)).toMatchObject({ phase: 'succeeded', presents_dialog: false, dialog_close: 'auto' })
+    } finally {
+      s.deps.updates.apply = originalApply
+      sidecar.respond('runtime.status', undefined)
     }
   })
 

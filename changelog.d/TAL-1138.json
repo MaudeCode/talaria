@@ -1,0 +1,1 @@
+{"entries":[{"category":"Changed","summary":"One Updating dialog follows a Web or Agent update step by step until it is finished, with Reload when Talaria Web is ready.","highlight":true,"components":["web"]},{"category":"Fixed","summary":"Agent updates report success only once the gateway and the Agent respond again.","highlight":false,"components":["web"]}]}

@@ -370,4 +370,120 @@ describe('UpdateNotificationStore', () => {
       expect((await store.list(tabs[0]!)).notifications.map((row) => row.id)).toContain(created[0]!.notification_id)
     })
   })
+
+  /** TAL-1138: the Updating dialog renders the server's steps, presentation flag, and close mode. */
+  describe('Updating dialog steps', () => {
+    const oldBuild = 'a'.repeat(64)
+    const newBuild = 'b'.repeat(64)
+    const revision = 'd'.repeat(40)
+    const tabA = { ...alice, tab: 'tab-aaaaaaaa' }
+    const tabB = { ...alice, tab: 'tab-bbbbbbbb' }
+    const states = (row: { steps: { label: string; state: string }[] } | null | undefined) => row?.steps.map((step) => `${step.label}:${step.state}`)
+
+    it('runs a Web update to Ready with Reload in the starting tab, and the refresh notice only in other tabs', async () => {
+      const root = temp()
+      const store = (await initializeStore(new UpdateNotificationStore(new JsonDocuments(root))))
+      const row = (await store.begin(tabA, 'webui'))
+      expect((await store.list(tabA)).tab_update).toMatchObject({ presents_dialog: true, dialog_close: 'none' })
+      expect(states((await store.list(tabA)).tab_update)).toEqual(['Installing:active', 'Restarting Talaria Web:pending', 'Ready:pending'])
+      // Another tab of the owner sees the same operation's dialog while it runs.
+      expect((await store.list(tabB)).notifications.find((entry) => entry.id === row.id)).toMatchObject({ presents_dialog: true })
+      await store.transition(row.id, 'restarting', revision)
+      expect(states((await store.list(tabA)).tab_update)).toEqual(['Installing:done', 'Restarting Talaria Web:active', 'Ready:pending'])
+
+      const restarted = (await initializeStore(new UpdateNotificationStore(new JsonDocuments(root))))
+      await restarted.reconcileInterruptedUpdates(revision, 'web-v1.4.0')
+      expect((await restarted.syncTabBuild(tabA, oldBuild, newBuild))).toMatchObject({ refresh_required: true, notification_id: null })
+      const starting = (await restarted.list(tabA, true))
+      expect(starting.notifications.map((entry) => entry.kind)).toEqual(['update'])
+      expect(starting.tab_update).toMatchObject({ phase: 'succeeded', presents_dialog: true, dialog_close: 'none', actions: [{ id: 'reload', label: 'Reload', style: 'primary' }] })
+      expect(states(starting.tab_update)).toEqual(['Installing:done', 'Restarting Talaria Web:done', 'Talaria Web 1.4.0 is ready:done'])
+
+      const other = (await restarted.syncTabBuild(tabB, oldBuild, newBuild))
+      expect(other.notification_id).not.toBeNull()
+      const otherList = (await restarted.list(tabB, true))
+      expect(otherList.tab_update).toBeNull()
+      expect(otherList.notifications.find((entry) => entry.id === row.id)).toMatchObject({ presents_dialog: false, actions: [] })
+      expect(otherList.notifications.find((entry) => entry.kind === 'web_refresh')?.actions[0]?.id).toBe('reload')
+
+      expect((await restarted.action(tabA, row.id, 'reload'))?.id).toBe(row.id)
+      expect((await restarted.action(tabB, row.id, 'reload'))).toBeNull()
+      await restarted.syncTabBuild(tabA, newBuild, newBuild)
+      expect((await restarted.list(tabA, false)).tab_update).toMatchObject({ presents_dialog: false, dialog_close: 'auto', actions: [] })
+    })
+
+    it('hands Reload back to the refresh notice once a later Web update replaces the one the tab started', async () => {
+      const store = (await initializeStore(new UpdateNotificationStore(new JsonDocuments(temp()))))
+      const started = (await store.begin(tabA, 'webui'))
+      await store.transition(started.id, 'succeeded')
+      expect((await store.syncTabBuild(tabA, oldBuild, newBuild)).notification_id).toBeNull()
+      const automatic = (await store.begin({ owner: '*', profile: 'default', serverOwner: true }, 'webui'))
+      await store.transition(automatic.id, 'succeeded')
+      expect((await store.syncTabBuild(tabA, oldBuild, newBuild)).notification_id).not.toBeNull()
+      expect((await store.list(tabA, true)).tab_update).toMatchObject({ id: started.id, presents_dialog: false })
+    })
+
+    it('runs a native Agent update through the Web restart to Agent responding, then closes itself', async () => {
+      const root = temp()
+      const store = (await initializeStore(new UpdateNotificationStore(new JsonDocuments(root))))
+      const row = (await store.begin(tabA, 'agent'))
+      await store.transition(row.id, 'verifying', null, { revision: null, version: 'v0.22.1' })
+      await store.markWebRestart(row.id)
+      expect((await store.list(tabA)).tab_update).toMatchObject({ phase: 'verifying', active: true, presents_dialog: true, dialog_close: 'none' })
+      expect(states((await store.list(tabA)).tab_update)).toEqual(['Installing:done', 'Restarting Talaria Web:active', 'Restarting gateway:pending', 'Agent responding:pending'])
+      const restarted = (await initializeStore(new UpdateNotificationStore(new JsonDocuments(root))))
+      await restarted.reconcileInterruptedUpdates(revision)
+      expect(states((await restarted.list(tabA)).tab_update)).toEqual(['Installing:done', 'Restarting Talaria Web:done', 'Restarting gateway:done', 'Agent responding:active'])
+      expect((await restarted.list(tabB)).notifications.find((entry) => entry.id === row.id)).toMatchObject({ presents_dialog: true })
+      await restarted.transition(row.id, 'succeeded')
+      expect((await restarted.list(tabA)).tab_update).toMatchObject({ presents_dialog: false, dialog_close: 'auto', can_dismiss: true })
+      expect(states((await restarted.list(tabA)).tab_update)).toEqual(['Installing:done', 'Restarting Talaria Web:done', 'Restarting gateway:done', 'Hermes Agent v0.22.1 is running:done'])
+    })
+
+    it('waits for gateway tasks with Restart now and Restart later, reopens for the deferred restart, and marks its failed step', async () => {
+      const root = temp()
+      const store = (await initializeStore(new UpdateNotificationStore(new JsonDocuments(root))))
+      const row = (await store.begin(tabA, 'agent'))
+      await store.transition(row.id, 'waiting_for_idle')
+      await store.markWebRestart(row.id)
+      // Until Web restarts, the wait has not started: no Restart now, and the dialog stays up.
+      expect((await store.list(tabA)).tab_update).toMatchObject({ presents_dialog: true, dialog_close: 'none', actions: [] })
+      expect((await store.action(tabA, row.id, 'restart_gateway_now'))).toBeNull()
+      const restarted = (await initializeStore(new UpdateNotificationStore(new JsonDocuments(root))))
+      await restarted.gatewayWaiting(row.id, 2)
+      const waiting = (await restarted.list(tabA)).tab_update
+      expect(waiting).toMatchObject({ presents_dialog: false, dialog_close: 'restart_later', actions: [{ id: 'restart_gateway_now' }] })
+      expect(states(waiting)).toEqual(['Installing:done', 'Restarting Talaria Web:done', 'Waiting for 2 gateway tasks:active', 'Restarting gateway:pending', 'Agent responding:pending'])
+      await restarted.gatewayWaiting(row.id, 1)
+      expect(states((await restarted.list(tabA)).tab_update)?.[2]).toBe('Waiting for 1 gateway task:active')
+      await restarted.transition(row.id, 'restarting')
+      expect((await restarted.list(tabB)).notifications.find((entry) => entry.id === row.id)).toMatchObject({ presents_dialog: true, dialog_close: 'none' })
+      expect(states((await restarted.list(tabA)).tab_update)).toEqual(['Installing:done', 'Restarting Talaria Web:done', 'Waiting for 1 gateway task:done', 'Restarting gateway:active', 'Agent responding:pending'])
+      await restarted.transition(row.id, 'verifying')
+      await restarted.transition(row.id, 'failed', null, undefined, 'Hermes Agent was updated, but the gateway did not come back. Run `hermes gateway restart` manually.')
+      const failed = (await (await initializeStore(new UpdateNotificationStore(new JsonDocuments(root)))).list(tabA)).tab_update
+      expect(failed).toMatchObject({ presents_dialog: false, dialog_close: 'close', detail: expect.stringContaining('did not come back') as string })
+      expect(states(failed)).toEqual(['Installing:done', 'Restarting Talaria Web:done', 'Waiting for 1 gateway task:done', 'Restarting gateway:done', 'Agent responding:failed'])
+    })
+
+    it('lists only the steps an update ran, and fails the step an interrupted update stopped at', async () => {
+      const root = temp()
+      const store = (await initializeStore(new UpdateNotificationStore(new JsonDocuments(root))))
+      const current = (await store.begin(tabA, 'agent'))
+      await store.transition(current.id, 'succeeded')
+      expect(states((await store.list(tabA)).tab_update)).toEqual(['Installing:done', 'Hermes Agent is running:done'])
+      const web = (await store.begin(tabA, 'webui'))
+      await store.transition(web.id, 'failed', null, undefined, 'Build failed.')
+      expect(states((await store.list(tabA)).tab_update)).toEqual(['Installing:failed', 'Ready:pending'])
+      const restart = (await store.begin(tabB, 'agent'))
+      await store.transition(restart.id, 'restarting')
+      await (await initializeStore(new UpdateNotificationStore(new JsonDocuments(root)))).reconcileInterruptedUpdates(revision)
+      const interrupted = (await (await initializeStore(new UpdateNotificationStore(new JsonDocuments(root)))).list(tabB)).tab_update
+      expect(interrupted).toMatchObject({ phase: 'unknown', dialog_close: 'close', presents_dialog: false })
+      expect(states(interrupted)).toEqual(['Installing:done', 'Restarting Talaria Web:done', 'Restarting gateway:failed', 'Agent responding:pending'])
+      // Records without steps (system notices, recovery) close normally and never present a dialog.
+      const notice = (await (await initializeStore(new UpdateNotificationStore(new JsonDocuments(temp())))).create(alice, { kind: 'system', phase: 'notice', title: 'Notice', message: 'Hello.' }))
+      expect(notice).toMatchObject({ steps: [], presents_dialog: false, dialog_close: 'close' })
+    })
+  })
 })

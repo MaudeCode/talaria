@@ -27,12 +27,12 @@ const CenterContext = createContext<CenterContextValue | null>(null)
 /**
  * Settings' handle on the Updating dialog. `begin` opens it for the clicked target before the apply
  * request settles; `settle` hands over the apply response or error; `dismiss` hides it (the Agent
- * confirmation dialog takes over). Everything shown after that comes from the server's `tab_update`.
+ * confirmation dialog takes over). Everything shown after that comes from the server's record.
  */
 export interface UpdateProgress {
   begin: (target: UpdateDialogTarget) => void
   settle: (target: UpdateDialogTarget, outcome: { notification_id?: string | undefined; message?: string | undefined; error?: string | undefined; status?: string | undefined } | { failure: unknown }) => void
-  dismiss: (notificationId?: string) => void
+  dismiss: () => void
 }
 const ProgressContext = createContext<UpdateProgress | null>(null)
 /** Null outside the app shell (isolated component tests). */
@@ -48,27 +48,13 @@ interface Tracking {
   lostAt: number | null
   /** The server's answer when it returned no operation record to follow. */
   message: string | null
-  /** Closed before its record arrived: this start stays hidden, across reloads of the tab, until another start replaces it. */
-  hidden: boolean
 }
 /** The tab's server record as of now; a rejoin of the same record changes only its join time. */
 const recordKey = (row: UpdateNotification | null, joinedAt: string | null) => row ? `${row.id}@${row.updated_at}@${joinedAt ?? ''}` : null
 /** A lost connection leaves the apply outcome unknown; any other answer came from the server. */
 const lostServer = (error: unknown) => isApiError(error) ? error.kind === 'network' || error.kind === 'timeout' || [502, 503, 504].includes(error.status) : true
-const CLOSED_KEY = 'talaria-closed-update-dialogs'
-const HIDDEN_KEY = 'talaria-hidden-update-start'
-const readHidden = (): Tracking | null => {
-  try {
-    const parsed: unknown = JSON.parse(sessionStorage.getItem(HIDDEN_KEY) ?? 'null')
-    if (!parsed || typeof parsed !== 'object') return null
-    const { target, baseline, notificationId } = parsed as Record<string, unknown>
-    if ((target !== 'webui' && target !== 'agent') || (baseline !== null && typeof baseline !== 'string') || (notificationId !== null && typeof notificationId !== 'string')) return null
-    return { target, baseline, notificationId, lostAt: null, message: null, hidden: true }
-  } catch { return null }
-}
-const readClosed = (): string[] => {
-  try { const parsed: unknown = JSON.parse(sessionStorage.getItem(CLOSED_KEY) ?? '[]'); return Array.isArray(parsed) ? parsed.filter((id): id is string => typeof id === 'string') : [] } catch { return [] }
-}
+/** How long an outcome that closes by itself (`dialog_close: 'auto'`) stays readable. */
+const AUTO_CLOSE_MS = 2_500
 
 export function UpdateNotificationProvider({ children }: { children: ReactNode }) {
   const [open, setOpen] = useState(false)
@@ -81,35 +67,32 @@ export function UpdateNotificationProvider({ children }: { children: ReactNode }
   const visibleServerToasts = useRef(new Set<string>())
   const persistentVersions = useRef(new Map<string, string>())
   const notifications = useQuery({ queryKey: keys.updateNotifications, queryFn: api.fetchUpdateNotifications, staleTime: 1_000, refetchInterval: 2_000 })
-  const [tracking, setTracking] = useState(readHidden)
-  // A start closed before its record arrived is remembered for the tab's session, so its record never reopens the dialog.
-  useEffect(() => {
-    try {
-      if (tracking?.hidden) sessionStorage.setItem(HIDDEN_KEY, JSON.stringify({ target: tracking.target, baseline: tracking.baseline, notificationId: tracking.notificationId }))
-      else sessionStorage.removeItem(HIDDEN_KEY)
-    } catch { /* storage unavailable: the close lasts for this page load */ }
-  }, [tracking])
-  // Operations whose dialog this tab closed; sessionStorage keeps a reload from reopening them.
-  const [closed, setClosed] = useState(readClosed)
+  const [tracking, setTracking] = useState<Tracking | null>(null)
+  // The record whose dialog is open. The server opens it (`presents_dialog`); it stays open on that record until the
+  // record's `dialog_close` lets the user close it, or closes it by itself.
+  const [following, setFollowing] = useState<string | null>(null)
   const tabUpdate = notifications.data?.tab_update ?? null
   const tabJoinedAt = notifications.data?.tab_joined_at ?? null
-  const dialogRow = tracking
-    ? tabUpdate?.target === tracking.target && (tabUpdate.id === tracking.notificationId || recordKey(tabUpdate, tabJoinedAt) !== tracking.baseline) ? tabUpdate : null
-    : tabUpdate && !closed.includes(tabUpdate.id) ? tabUpdate : null
+  const records = useMemo(() => { const rows = notifications.data?.notifications ?? []; return tabUpdate && !rows.some((row) => row.id === tabUpdate.id) ? [tabUpdate, ...rows] : rows }, [notifications.data, tabUpdate])
+  const started = tracking && tabUpdate?.target === tracking.target && (tabUpdate.id === tracking.notificationId || recordKey(tabUpdate, tabJoinedAt) !== tracking.baseline) ? tabUpdate : null
+  const presenting = (tabUpdate?.presents_dialog ? tabUpdate : null) ?? records.find((row) => row.presents_dialog) ?? null
+  // Once the record this tab started arrives, or the server presents one, the dialog follows that record.
+  const opened = (started ?? presenting)?.id ?? null
+  if (opened !== null && opened !== following) setFollowing(opened)
+  if (started && tracking) setTracking(null)
+  const dialogRow = started ?? presenting ?? records.find((row) => row.id === following) ?? null
   const dialogRowId = dialogRow?.id ?? null
+  const closeDialog = useCallback(() => { setTracking(null); setFollowing(null) }, [])
+  const autoClose = dialogRow?.dialog_close === 'auto' ? `${dialogRow.id}@${dialogRow.updated_at}` : null
+  useEffect(() => {
+    if (!autoClose) return
+    const timer = setTimeout(closeDialog, AUTO_CLOSE_MS)
+    return () => { clearTimeout(timer) }
+  }, [autoClose, closeDialog])
   // The dialog replaces this record's phase toasts while it shows them.
-  const shownRowId = tracking?.hidden ? null : dialogRowId
-  const closeDialog = useCallback((id: string | null) => {
-    setTracking(null)
-    if (!id) return
-    setClosed((current) => {
-      const next = [...current.filter((entry) => entry !== id), id].slice(-20)
-      try { sessionStorage.setItem(CLOSED_KEY, JSON.stringify(next)) } catch { /* storage unavailable: closing lasts for this page load */ }
-      return next
-    })
-  }, [])
+  const shownRowId = dialogRowId
   const progress = useMemo<UpdateProgress>(() => ({
-    begin: (target) => { setTracking({ target, baseline: recordKey(tabUpdate, tabJoinedAt), notificationId: null, lostAt: null, message: null, hidden: false }) },
+    begin: (target) => { setFollowing(null); setTracking({ target, baseline: recordKey(tabUpdate, tabJoinedAt), notificationId: null, lostAt: null, message: null }) },
     settle: (target, outcome) => {
       setTracking((current) => {
         if (current?.target !== target) return current
@@ -120,7 +103,7 @@ export function UpdateNotificationProvider({ children }: { children: ReactNode }
       })
       void qc.invalidateQueries({ queryKey: keys.updateNotifications })
     },
-    dismiss: (notificationId) => { closeDialog(notificationId ?? null) },
+    dismiss: () => { closeDialog() },
   }), [tabUpdate, tabJoinedAt, qc, closeDialog])
   useEffect(() => () => { for (const toastId of visibleServerToasts.current) removeToast(toastId) }, [])
   // A new service worker taking over is a signal that the server may serve a newer build: recheck now.
@@ -140,6 +123,7 @@ export function UpdateNotificationProvider({ children }: { children: ReactNode }
     persistentVersions.current.clear()
     observedScope.current = null
     setTracking(null)
+    setFollowing(null)
   }, [notifications.data])
   const refresh = () => { void qc.invalidateQueries({ queryKey: keys.updateNotifications }) }
   const dismiss = useMutation({ mutationFn: api.dismissUpdateNotification, onSuccess: refresh, onError: (error) => showToast(`Couldn't dismiss the notification: ${error instanceof Error ? error.message : String(error)}`, 5_000, 'error') })
@@ -199,7 +183,7 @@ export function UpdateNotificationProvider({ children }: { children: ReactNode }
       visiblePersistent.current.clear()
       visibleServerToasts.current.clear()
       persistentVersions.current.clear()
-      if (observedScope.current !== null) setTracking(null)
+      if (observedScope.current !== null) { setTracking(null); setFollowing(null) }
       observedScope.current = notifications.data.scope_id
     }
     const destinationActions = (row: UpdateNotification): ToastAction[] => row.destination?.key === 'settings.system' ? [{
@@ -265,7 +249,7 @@ export function UpdateNotificationProvider({ children }: { children: ReactNode }
 
   return <CenterContext.Provider value={{ unread, show }}><ProgressContext.Provider value={progress}>
     {children}
-    {dialogTarget && !tracking?.hidden && <UpdatingDialog
+    {dialogTarget && <UpdatingDialog
       target={dialogTarget}
       row={dialogRow}
       message={tracking?.message ?? null}
@@ -275,9 +259,9 @@ export function UpdateNotificationProvider({ children }: { children: ReactNode }
       actionPending={action.isPending && action.variables?.id === dialogRowId}
       onAction={(actionId) => { if (dialogRow) action.mutate({ id: dialogRow.id, actionId }) }}
       onCheckAgain={() => { void notifications.refetch() }}
-      onClose={() => { if (tracking && !dialogRowId) setTracking({ ...tracking, hidden: true }); else closeDialog(dialogRowId) }}
+      onClose={closeDialog}
     />}
-    <ServerStoppedOverlay suppressed={(dialogTarget !== null && !tracking?.hidden) || notifications.data?.notifications.some((row) => row.active && row.target === 'webui') === true} />
+    <ServerStoppedOverlay suppressed={dialogTarget !== null || notifications.data?.notifications.some((row) => row.active && row.target === 'webui') === true} />
     <BaseDialog.Root open={open} onOpenChange={setOpen}>
       <BaseDialog.Portal>
         <BaseDialog.Backdrop className="fixed inset-0 z-[1300] bg-black/45" />

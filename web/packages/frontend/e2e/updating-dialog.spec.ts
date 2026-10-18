@@ -1,4 +1,5 @@
 import type { Page } from '@playwright/test'
+import type { UpdateNotification } from '../src/contracts'
 import { expect, settle, test } from './fixtures'
 import { updatesCheckView } from '../../server/dist/tools/updates.js'
 
@@ -16,17 +17,36 @@ const MESSAGES: Record<Phase, string> = {
   unknown: 'The connection closed before completion could be verified. Check the installed version before trying again.',
 }
 
-/** A synthetic server record for one update operation; `message` stands in for the server's wording. */
-const record = (id: string, phase: Phase, target: 'webui' | 'agent' = 'webui') => ({
-  id, kind: 'update', target, phase, severity: phase === 'failed' || phase === 'unknown' ? 'critical' : 'info',
-  persistent: false, requires_acknowledgement: false, actions: [], destination: phase === 'failed' ? null : { key: 'settings.system', label: 'Open System settings' },
-  title: target === 'webui' ? 'Talaria Web update' : 'Hermes Agent update',
-  message: target === 'webui' ? MESSAGES[phase] : MESSAGES[phase].replace('Talaria Web', 'Hermes Agent'),
-  created_at: '2026-09-27T12:00:00Z', updated_at: `2026-09-27T12:0${Object.keys(MESSAGES).indexOf(phase)}:00Z`,
-  read_at: null, acknowledged_at: null, acknowledged_action_id: null, verified_revision: null, verified_version: null, detail: null as string | null,
-  unread: true, active: phase === 'applying' || phase === 'restarting', requires_interaction: false, can_dismiss: true,
-})
-type Row = ReturnType<typeof record>
+/** TAL-1138: the steps the server lists for each target, and the label its last step takes once the update succeeded. */
+const STEPS = {
+  webui: { ids: ['install', 'web_restart', 'ready'], labels: ['Installing', 'Restarting Talaria Web', 'Ready'], done: 'Talaria Web 1.2.3 is ready' },
+  agent: { ids: ['install', 'web_restart', 'gateway_restart', 'agent_ready'], labels: ['Installing', 'Restarting Talaria Web', 'Restarting gateway', 'Agent responding'], done: 'Hermes Agent 0.22.1 is running' },
+} as const
+const AT: Record<Phase, number> = { applying: 0, awaiting_confirmation: 0, restarting: 1, succeeded: 9, blocked: 0, failed: 0, unknown: 1 }
+type Row = UpdateNotification
+
+/** A synthetic server record for one update operation; `message`, steps, and dialog fields stand in for the server's. */
+const record = (id: string, phase: Phase, target: 'webui' | 'agent' = 'webui'): Row => {
+  const plan = STEPS[target]
+  const presents = phase === 'applying' || phase === 'restarting'
+  const failed = phase === 'failed' || phase === 'blocked' || phase === 'unknown'
+  return {
+    id, kind: 'update', target, phase, severity: phase === 'failed' || phase === 'unknown' ? 'critical' : 'info',
+    persistent: false, requires_acknowledgement: false, actions: [], destination: phase === 'failed' ? null : { key: 'settings.system', label: 'Open System settings' },
+    title: target === 'webui' ? 'Talaria Web update' : 'Hermes Agent update',
+    message: target === 'webui' ? MESSAGES[phase] : MESSAGES[phase].replace('Talaria Web', 'Hermes Agent'),
+    created_at: '2026-09-27T12:00:00Z', updated_at: `2026-09-27T12:0${String(Object.keys(MESSAGES).indexOf(phase))}:00Z`,
+    read_at: null, acknowledged_at: null, acknowledged_action_id: null, verified_revision: null, verified_version: null, detail: null,
+    unread: true, active: presents, requires_interaction: false, can_dismiss: true,
+    steps: plan.ids.map((stepId, index) => ({
+      id: stepId, label: phase === 'succeeded' && index === plan.ids.length - 1 ? plan.done : plan.labels[index]!,
+      state: index < AT[phase] ? 'done' : index > AT[phase] ? 'pending' : failed ? 'failed' : 'active',
+    })),
+    presents_dialog: presents, dialog_close: presents ? 'none' : phase === 'succeeded' ? 'auto' : 'close',
+  }
+}
+/** The Web update this tab started has finished while the tab still runs the old build: Reload is the dialog's only way out. */
+const ready = (id: string): Row => ({ ...record(id, 'succeeded'), presents_dialog: true, dialog_close: 'none', actions: [{ id: 'reload', label: 'Reload', style: 'primary', acknowledges: false }] })
 
 /** The notification read endpoint, reachable or not, answering this tab's `tab_update` from test-owned state. */
 async function serveNotifications(page: Page) {
@@ -79,20 +99,23 @@ test('a dropped Web update keeps the dialog reconnecting, then shows the server 
   const dialog = page.getByRole('dialog', { name: 'Updating Talaria Web' })
   await expect(dialog).toBeVisible()
   await expect(dialog.getByRole('status')).toContainText('Starting the update')
-  await expect(dialog.getByRole('button', { name: 'Close', exact: true })).toBeFocused()
+  // TAL-1138: an update in progress cannot be closed.
+  await expect(dialog.getByRole('button')).toHaveCount(0)
+  await page.keyboard.press('Escape')
+  await expect(dialog).toBeVisible()
   expect(applies).toEqual([expect.objectContaining({ target: 'webui', tab_id: expect.stringMatching(/^[A-Za-z0-9_-]{8,64}$/) })])
   // Reduced motion (the Playwright default here) stops the spinner after one near-instant iteration.
   expect(await dialog.locator('.animate-spin').evaluateAll((nodes) => nodes.map((node) => getComputedStyle(node).animationIterationCount))).toEqual(['1'])
 
   server.tabUpdate = record(WEB_ID, 'applying')
-  await expect(dialog).toContainText(MESSAGES.applying)
+  await expect(dialog.locator('[aria-current="step"]')).toHaveText('Installing')
   server.tabUpdate = record(WEB_ID, 'restarting')
-  await expect(dialog).toContainText(MESSAGES.restarting)
+  await expect(dialog.locator('[aria-current="step"]')).toHaveText('Restarting Talaria Web')
 
   server.up = false
   dropApply()
   await expect(dialog.getByRole('status')).toContainText('Reconnecting')
-  await expect(dialog).toContainText(MESSAGES.restarting)
+  await expect(dialog.locator('[aria-current="step"]')).toHaveText('Restarting Talaria Web')
   await page.screenshot({ path: testInfo.outputPath('updating-reconnecting.png') })
   const box = await dialog.boundingBox()
   const viewport = page.viewportSize()!
@@ -101,18 +124,22 @@ test('a dropped Web update keeps the dialog reconnecting, then shows the server 
   // Browser offline, then online: the server's record answers at once, and the dialog never guessed success meanwhile.
   await context.setOffline(true)
   server.up = true
-  server.tabUpdate = record(WEB_ID, 'succeeded')
+  server.tabUpdate = ready(WEB_ID)
   await expect(dialog.getByRole('status')).toContainText('Reconnecting')
-  await expect(dialog).not.toContainText(MESSAGES.succeeded)
+  await expect(dialog).not.toContainText(STEPS.webui.done)
   await context.setOffline(false)
-  await expect(dialog).toContainText(MESSAGES.succeeded, { timeout: 1_900 })
+  await expect(dialog).toContainText(STEPS.webui.done, { timeout: 1_900 })
   await expect(dialog.getByRole('status')).not.toContainText('Reconnecting')
+  await expect(dialog.getByRole('button')).toHaveText(['Reload'])
   await page.screenshot({ path: testInfo.outputPath('updating-succeeded.png') })
 
   expect(applies).toHaveLength(1)
+  // Reload loads the new build; the server then no longer presents the finished update to this tab.
   await page.keyboard.press('Escape')
-  await expect(dialog).toBeHidden()
-  await page.reload()
+  await expect(dialog).toBeVisible()
+  server.tabUpdate = record(WEB_ID, 'succeeded')
+  await dialog.getByRole('button', { name: 'Reload', exact: true }).click()
+  await page.waitForLoadState('load')
   await settle(page)
   await expect(dialog).toBeHidden()
   dropExpectedFailures(errors)
@@ -146,7 +173,7 @@ test('an unverifiable outcome says so and checks again without starting another 
   dropExpectedFailures(errors)
 })
 
-test('closing before the server record arrives keeps that operation closed across a reload', async ({ page }) => {
+test('an update in progress keeps its dialog open, across a reload, until the server stops presenting it', async ({ page }) => {
   const server = await serveNotifications(page)
   await serveUpdatesCheck(page, { web: 1, agent: 0 })
   await page.route('**/api/updates/apply', async (route) => {
@@ -160,9 +187,13 @@ test('closing before the server record arrives keeps that operation closed acros
   const dialog = page.getByRole('dialog', { name: 'Updating Talaria Web' })
   await expect(dialog.getByRole('status')).toContainText('Starting the update')
   await page.keyboard.press('Escape')
-  await expect(dialog).toBeHidden()
-  const reads = server.reads
-  await expect.poll(() => server.reads).toBeGreaterThan(reads + 1)
+  await expect(dialog.locator('[aria-current="step"]')).toHaveText('Installing')
+  await page.reload()
+  await settle(page)
+  await expect(dialog.locator('[aria-current="step"]')).toHaveText('Installing')
+  server.tabUpdate = { ...record(WEB_ID, 'failed'), detail: 'npm run build failed.' }
+  await expect(dialog).toContainText('npm run build failed.')
+  await dialog.getByRole('button', { name: 'Close', exact: true }).click()
   await expect(dialog).toBeHidden()
   await page.reload()
   await settle(page)
@@ -171,31 +202,42 @@ test('closing before the server record arrives keeps that operation closed acros
   await expect(dialog).toBeHidden()
 })
 
-test('rejoining the operation the tab already follows shows its phase even when the response is lost', async ({ page, errors }) => {
+test('rejoining the gateway wait the tab already follows shows it even when the response is lost', async ({ page, errors }, testInfo) => {
   const server = await serveNotifications(page)
-  await serveUpdatesCheck(page, { web: 1, agent: 0 })
-  server.tabUpdate = record(WEB_ID, 'applying')
+  await serveUpdatesCheck(page, { web: 0, agent: 1 })
+  const WAIT_ID = '00000000-0000-4000-8000-000000000120'
+  server.tabUpdate = {
+    ...record(WAIT_ID, 'awaiting_confirmation', 'agent'), phase: 'waiting_for_idle', message: 'Waiting for 2 running gateway tasks to finish before restarting the gateway.', can_dismiss: false,
+    actions: [{ id: 'restart_gateway_now', label: 'Restart now', style: 'destructive', acknowledges: false }], dialog_close: 'restart_later',
+    steps: [
+      { id: 'install', label: 'Installing', state: 'done' }, { id: 'web_restart', label: 'Restarting Talaria Web', state: 'done' },
+      { id: 'gateway_wait', label: 'Waiting for 2 gateway tasks', state: 'active' }, { id: 'gateway_restart', label: 'Restarting gateway', state: 'pending' },
+      { id: 'agent_ready', label: 'Agent responding', state: 'pending' },
+    ],
+  }
   server.joinedAt = '2026-09-27T12:00:00Z'
   let applies = 0
   await page.route('**/api/updates/apply', (route) => {
     applies += 1
-    // The server rejoins the same record (only this tab's join time changes), then the response is lost.
+    // The server rejoins the waiting record (only this tab's join time changes), then the response is lost.
     server.joinedAt = '2026-09-27T12:05:00Z'
     return route.abort('connectionreset')
   })
   await page.goto('/settings/system')
   await settle(page)
-  const dialog = page.getByRole('dialog', { name: 'Updating Talaria Web' })
-  await expect(dialog).toContainText(MESSAGES.applying)
-  await page.keyboard.press('Escape')
+  const dialog = page.getByRole('dialog', { name: 'Updating Hermes Agent' })
+  // A wait the tab left with Restart later does not reopen by itself.
   await expect(dialog).toBeHidden()
 
-  await page.getByRole('button', { name: 'Update Web', exact: true }).click()
-  await expect(dialog).toContainText(MESSAGES.applying)
+  await page.getByRole('button', { name: 'Update Agent', exact: true }).click()
+  await expect(dialog.locator('[aria-current="step"]')).toHaveText('Waiting for 2 gateway tasks')
   const reads = server.reads
   await expect.poll(() => server.reads).toBeGreaterThan(reads + 1)
-  await expect(dialog).toContainText(MESSAGES.applying)
   await expect(dialog.getByRole('status')).not.toContainText('could not be verified')
+  await expect(dialog.getByRole('button')).toHaveText(['Restart later', 'Restart now'])
+  await page.screenshot({ path: testInfo.outputPath('updating-gateway-wait.png') })
+  await dialog.getByRole('button', { name: 'Restart later', exact: true }).click()
+  await expect(dialog).toBeHidden()
   expect(applies).toBe(1)
   dropExpectedFailures(errors)
 })
@@ -207,14 +249,14 @@ test('the dialog follows the server operation across route change and reload, an
   await page.goto('/settings/system')
   await settle(page)
   const dialog = page.getByRole('dialog', { name: 'Updating Talaria Web' })
-  await expect(dialog).toContainText(MESSAGES.applying)
+  await expect(dialog.locator('[aria-current="step"]')).toHaveText('Installing')
 
   await page.evaluate(() => { history.pushState({}, '', '/'); dispatchEvent(new PopStateEvent('popstate')) })
   await expect(page).toHaveURL(/\/$/)
-  await expect(dialog).toContainText(MESSAGES.applying)
+  await expect(dialog.locator('[aria-current="step"]')).toHaveText('Installing')
   await page.reload()
   await settle(page)
-  await expect(dialog).toContainText(MESSAGES.applying)
+  await expect(dialog.locator('[aria-current="step"]')).toHaveText('Installing')
 
   server.scope = 'owner-b'
   server.tabUpdate = null
@@ -260,12 +302,12 @@ test('the Agent confirmation can cancel or continue without claiming success, an
 
   await page.getByRole('button', { name: 'Update Agent', exact: true }).click()
   await page.getByRole('button', { name: 'Update anyway', exact: true }).click()
-  await expect(updating).toContainText(MESSAGES.applying.replace('Talaria Web', 'Hermes Agent'))
+  await expect(updating.locator('[aria-current="step"]')).toHaveText('Installing')
   expect(bodies.at(-1)).toMatchObject({ target: 'agent', confirmed_agent_revision: 'b'.repeat(40) })
   releaseSecond()
-  await expect(updating).toContainText('Hermes Agent was updated successfully.')
+  // The outcome shows briefly, then the dialog closes by itself.
+  await expect(updating).toContainText(STEPS.agent.done)
   expect(bodies).toHaveLength(3)
-  await updating.getByRole('button', { name: 'Close', exact: true }).click()
   await expect(updating).toBeHidden()
 })
 
@@ -313,7 +355,7 @@ test('legacy dashboard confirmation supports cancel, retry and update continuati
   await page.getByRole('button', { name: 'Update Agent', exact: true }).click()
   await expect(confirmation).toBeVisible()
   await confirmation.getByRole('button', { name: 'Refresh and update', exact: true }).click()
-  await expect(progress).toContainText('Hermes Agent was updated successfully')
+  await expect(progress).toContainText(STEPS.agent.done)
   expect(await page.locator('.notification-toast').filter({ hasText: 'Active dashboard work may be interrupted' }).count()).toBe(0)
   await page.screenshot({ path: testInfo.outputPath('after-legacy-completed.png') })
   expect(applies).toHaveLength(4)

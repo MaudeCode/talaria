@@ -74,7 +74,7 @@ export function SystemSection() {
     onMutate: () => { progress?.begin(target) },
     onSuccess: (r: z.infer<typeof UpdateApplySchema>, request: ApplyRequest) => {
       if (r.confirmation_required && r.candidate_revision && r.agent_channel) {
-        progress?.dismiss(r.notification_id)
+        progress?.dismiss()
         acceptedAgentConfirmation.current = false
         setAgentConfirmation({ result: r, request: { ...request, agentChannel: r.agent_channel } })
       } else progress?.settle(target, r)
