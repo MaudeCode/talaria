@@ -68182,6 +68182,7 @@
                                   "awaiting_confirmation",
                                   "waiting_for_idle",
                                   "restarting",
+                                  "verifying",
                                   "succeeded",
                                   "blocked",
                                   "failed",
@@ -68365,6 +68366,57 @@
                           },
                           "can_dismiss": {
                             "type": "boolean"
+                          },
+                          "steps": {
+                            "type": "array",
+                            "maxItems": 8,
+                            "items": {
+                              "type": "object",
+                              "properties": {
+                                "id": {
+                                  "enum": [
+                                    "install",
+                                    "web_restart",
+                                    "ready",
+                                    "gateway_wait",
+                                    "gateway_restart",
+                                    "agent_ready"
+                                  ],
+                                  "type": "string"
+                                },
+                                "label": {
+                                  "type": "string",
+                                  "minLength": 1,
+                                  "maxLength": 80
+                                },
+                                "state": {
+                                  "enum": [
+                                    "done",
+                                    "active",
+                                    "pending",
+                                    "failed"
+                                  ],
+                                  "type": "string"
+                                }
+                              },
+                              "required": [
+                                "id",
+                                "label",
+                                "state"
+                              ]
+                            }
+                          },
+                          "presents_dialog": {
+                            "type": "boolean"
+                          },
+                          "dialog_close": {
+                            "enum": [
+                              "none",
+                              "close",
+                              "restart_later",
+                              "auto"
+                            ],
+                            "type": "string"
                           }
                         },
                         "required": [
@@ -68390,7 +68442,10 @@
                           "unread",
                           "active",
                           "requires_interaction",
-                          "can_dismiss"
+                          "can_dismiss",
+                          "steps",
+                          "presents_dialog",
+                          "dialog_close"
                         ]
                       }
                     },
@@ -68431,6 +68486,7 @@
                                     "awaiting_confirmation",
                                     "waiting_for_idle",
                                     "restarting",
+                                    "verifying",
                                     "succeeded",
                                     "blocked",
                                     "failed",
@@ -68614,6 +68670,57 @@
                             },
                             "can_dismiss": {
                               "type": "boolean"
+                            },
+                            "steps": {
+                              "type": "array",
+                              "maxItems": 8,
+                              "items": {
+                                "type": "object",
+                                "properties": {
+                                  "id": {
+                                    "enum": [
+                                      "install",
+                                      "web_restart",
+                                      "ready",
+                                      "gateway_wait",
+                                      "gateway_restart",
+                                      "agent_ready"
+                                    ],
+                                    "type": "string"
+                                  },
+                                  "label": {
+                                    "type": "string",
+                                    "minLength": 1,
+                                    "maxLength": 80
+                                  },
+                                  "state": {
+                                    "enum": [
+                                      "done",
+                                      "active",
+                                      "pending",
+                                      "failed"
+                                    ],
+                                    "type": "string"
+                                  }
+                                },
+                                "required": [
+                                  "id",
+                                  "label",
+                                  "state"
+                                ]
+                              }
+                            },
+                            "presents_dialog": {
+                              "type": "boolean"
+                            },
+                            "dialog_close": {
+                              "enum": [
+                                "none",
+                                "close",
+                                "restart_later",
+                                "auto"
+                              ],
+                              "type": "string"
                             }
                           },
                           "required": [
@@ -68639,7 +68746,10 @@
                             "unread",
                             "active",
                             "requires_interaction",
-                            "can_dismiss"
+                            "can_dismiss",
+                            "steps",
+                            "presents_dialog",
+                            "dialog_close"
                           ]
                         },
                         {
@@ -68768,6 +68878,7 @@
                             "awaiting_confirmation",
                             "waiting_for_idle",
                             "restarting",
+                            "verifying",
                             "succeeded",
                             "blocked",
                             "failed",
@@ -68951,6 +69062,57 @@
                     },
                     "can_dismiss": {
                       "type": "boolean"
+                    },
+                    "steps": {
+                      "type": "array",
+                      "maxItems": 8,
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "id": {
+                            "enum": [
+                              "install",
+                              "web_restart",
+                              "ready",
+                              "gateway_wait",
+                              "gateway_restart",
+                              "agent_ready"
+                            ],
+                            "type": "string"
+                          },
+                          "label": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 80
+                          },
+                          "state": {
+                            "enum": [
+                              "done",
+                              "active",
+                              "pending",
+                              "failed"
+                            ],
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "id",
+                          "label",
+                          "state"
+                        ]
+                      }
+                    },
+                    "presents_dialog": {
+                      "type": "boolean"
+                    },
+                    "dialog_close": {
+                      "enum": [
+                        "none",
+                        "close",
+                        "restart_later",
+                        "auto"
+                      ],
+                      "type": "string"
                     }
                   },
                   "required": [
@@ -68976,7 +69138,10 @@
                     "unread",
                     "active",
                     "requires_interaction",
-                    "can_dismiss"
+                    "can_dismiss",
+                    "steps",
+                    "presents_dialog",
+                    "dialog_close"
                   ]
                 }
               }
@@ -69175,6 +69340,7 @@
                                   "awaiting_confirmation",
                                   "waiting_for_idle",
                                   "restarting",
+                                  "verifying",
                                   "succeeded",
                                   "blocked",
                                   "failed",
@@ -69358,6 +69524,57 @@
                           },
                           "can_dismiss": {
                             "type": "boolean"
+                          },
+                          "steps": {
+                            "type": "array",
+                            "maxItems": 8,
+                            "items": {
+                              "type": "object",
+                              "properties": {
+                                "id": {
+                                  "enum": [
+                                    "install",
+                                    "web_restart",
+                                    "ready",
+                                    "gateway_wait",
+                                    "gateway_restart",
+                                    "agent_ready"
+                                  ],
+                                  "type": "string"
+                                },
+                                "label": {
+                                  "type": "string",
+                                  "minLength": 1,
+                                  "maxLength": 80
+                                },
+                                "state": {
+                                  "enum": [
+                                    "done",
+                                    "active",
+                                    "pending",
+                                    "failed"
+                                  ],
+                                  "type": "string"
+                                }
+                              },
+                              "required": [
+                                "id",
+                                "label",
+                                "state"
+                              ]
+                            }
+                          },
+                          "presents_dialog": {
+                            "type": "boolean"
+                          },
+                          "dialog_close": {
+                            "enum": [
+                              "none",
+                              "close",
+                              "restart_later",
+                              "auto"
+                            ],
+                            "type": "string"
                           }
                         },
                         "required": [
@@ -69383,7 +69600,10 @@
                           "unread",
                           "active",
                           "requires_interaction",
-                          "can_dismiss"
+                          "can_dismiss",
+                          "steps",
+                          "presents_dialog",
+                          "dialog_close"
                         ]
                       }
                     },
@@ -69424,6 +69644,7 @@
                                     "awaiting_confirmation",
                                     "waiting_for_idle",
                                     "restarting",
+                                    "verifying",
                                     "succeeded",
                                     "blocked",
                                     "failed",
@@ -69607,6 +69828,57 @@
                             },
                             "can_dismiss": {
                               "type": "boolean"
+                            },
+                            "steps": {
+                              "type": "array",
+                              "maxItems": 8,
+                              "items": {
+                                "type": "object",
+                                "properties": {
+                                  "id": {
+                                    "enum": [
+                                      "install",
+                                      "web_restart",
+                                      "ready",
+                                      "gateway_wait",
+                                      "gateway_restart",
+                                      "agent_ready"
+                                    ],
+                                    "type": "string"
+                                  },
+                                  "label": {
+                                    "type": "string",
+                                    "minLength": 1,
+                                    "maxLength": 80
+                                  },
+                                  "state": {
+                                    "enum": [
+                                      "done",
+                                      "active",
+                                      "pending",
+                                      "failed"
+                                    ],
+                                    "type": "string"
+                                  }
+                                },
+                                "required": [
+                                  "id",
+                                  "label",
+                                  "state"
+                                ]
+                              }
+                            },
+                            "presents_dialog": {
+                              "type": "boolean"
+                            },
+                            "dialog_close": {
+                              "enum": [
+                                "none",
+                                "close",
+                                "restart_later",
+                                "auto"
+                              ],
+                              "type": "string"
                             }
                           },
                           "required": [
@@ -69632,7 +69904,10 @@
                             "unread",
                             "active",
                             "requires_interaction",
-                            "can_dismiss"
+                            "can_dismiss",
+                            "steps",
+                            "presents_dialog",
+                            "dialog_close"
                           ]
                         },
                         {
@@ -69757,6 +70032,7 @@
                             "awaiting_confirmation",
                             "waiting_for_idle",
                             "restarting",
+                            "verifying",
                             "succeeded",
                             "blocked",
                             "failed",
@@ -69940,6 +70216,57 @@
                     },
                     "can_dismiss": {
                       "type": "boolean"
+                    },
+                    "steps": {
+                      "type": "array",
+                      "maxItems": 8,
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "id": {
+                            "enum": [
+                              "install",
+                              "web_restart",
+                              "ready",
+                              "gateway_wait",
+                              "gateway_restart",
+                              "agent_ready"
+                            ],
+                            "type": "string"
+                          },
+                          "label": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 80
+                          },
+                          "state": {
+                            "enum": [
+                              "done",
+                              "active",
+                              "pending",
+                              "failed"
+                            ],
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "id",
+                          "label",
+                          "state"
+                        ]
+                      }
+                    },
+                    "presents_dialog": {
+                      "type": "boolean"
+                    },
+                    "dialog_close": {
+                      "enum": [
+                        "none",
+                        "close",
+                        "restart_later",
+                        "auto"
+                      ],
+                      "type": "string"
                     }
                   },
                   "required": [
@@ -69965,7 +70292,10 @@
                     "unread",
                     "active",
                     "requires_interaction",
-                    "can_dismiss"
+                    "can_dismiss",
+                    "steps",
+                    "presents_dialog",
+                    "dialog_close"
                   ]
                 }
               }
@@ -70063,6 +70393,7 @@
                             "awaiting_confirmation",
                             "waiting_for_idle",
                             "restarting",
+                            "verifying",
                             "succeeded",
                             "blocked",
                             "failed",
@@ -70246,6 +70577,57 @@
                     },
                     "can_dismiss": {
                       "type": "boolean"
+                    },
+                    "steps": {
+                      "type": "array",
+                      "maxItems": 8,
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "id": {
+                            "enum": [
+                              "install",
+                              "web_restart",
+                              "ready",
+                              "gateway_wait",
+                              "gateway_restart",
+                              "agent_ready"
+                            ],
+                            "type": "string"
+                          },
+                          "label": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 80
+                          },
+                          "state": {
+                            "enum": [
+                              "done",
+                              "active",
+                              "pending",
+                              "failed"
+                            ],
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "id",
+                          "label",
+                          "state"
+                        ]
+                      }
+                    },
+                    "presents_dialog": {
+                      "type": "boolean"
+                    },
+                    "dialog_close": {
+                      "enum": [
+                        "none",
+                        "close",
+                        "restart_later",
+                        "auto"
+                      ],
+                      "type": "string"
                     }
                   },
                   "required": [
@@ -70271,7 +70653,10 @@
                     "unread",
                     "active",
                     "requires_interaction",
-                    "can_dismiss"
+                    "can_dismiss",
+                    "steps",
+                    "presents_dialog",
+                    "dialog_close"
                   ]
                 }
               }

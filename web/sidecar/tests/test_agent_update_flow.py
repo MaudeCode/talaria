@@ -75,7 +75,11 @@ try {
  assert.equal(result.verified_revision, process.env.TEST_TARGET)
  assert.equal(result.gateway_restart, 'resumed')
  const history = await (await server.get('/api/update-notifications')).json()
- assert.equal(history.notifications.find((row) => row.id === result.notification_id).phase, 'succeeded')
+ // TAL-1138: the scheduled Web restart runs the gateway and Agent check, so the record waits in verifying for it.
+ const record = history.notifications.find((row) => row.id === result.notification_id)
+ assert.equal(record.phase, 'verifying')
+ assert.equal(record.steps.find((step) => step.state === 'active').id, 'web_restart')
+ assert.deepEqual(server.deps.updateNotifications.pendingGatewayRestarts().filter((row) => row.id === result.notification_id).map((row) => [row.phase, Array.isArray(row.baseline)]), [['verifying', true]])
  console.log('selected revision, refresh consent, dependency repair, restoration and HTTP completion verified')
 } finally {
  await server?.close()

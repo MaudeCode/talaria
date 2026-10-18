@@ -1,19 +1,27 @@
 import type { Dict } from '../config/agent-config.js'
 import type { SidecarLike } from '../sidecar/client.js'
 import { str } from '../util.js'
+import type { GatewayProcess } from './health.js'
 import type { UpdateNotificationStore } from './update-notifications.js'
 import { waitUntilRestartSafe, type RestartBlockers } from './updates.js'
 
 export interface GatewayRestartQueueDeps {
-  notifications: Pick<UpdateNotificationStore, 'transition' | 'gatewayWaiting' | 'waitingGatewayRestarts'>
+  notifications: Pick<UpdateNotificationStore, 'transition' | 'gatewayWaiting' | 'pendingGatewayRestarts' | 'recordGatewayBaseline'>
   /** `gatewayRestartBlockers` for the profile whose update owns the restart. */
   blockers: (profile: string) => Promise<RestartBlockers>
   /** Sidecar `gateway.restart` (`hermes gateway restart`) for that profile. */
   restart: (profile: string) => Promise<Dict>
+  /** TAL-1138: `liveGateways` for that profile: the gateway processes a restart must replace. */
+  gateways: (profile: string) => Promise<GatewayProcess[]>
+  /** TAL-1138: the server's Agent runtime check (sidecar `runtime.status`) reports compatible and not stale. */
+  runtimeReady: () => Promise<boolean>
   /** An update is changing the Agent source; no restart, even a forced one, starts mid-checkout. */
   updating?: () => boolean
   pollMs?: number
+  /** TAL-1138: how long a restarted gateway and the Agent runtime have to answer; 90 s by default. */
+  readyWindowMs?: number
   sleep?: (ms: number) => Promise<void>
+  now?: () => number
   log: (line: string) => void
 }
 
@@ -26,6 +34,14 @@ export const restartGateway = (sidecar: SidecarLike, profileHome: string) => sid
 const IDLE: RestartBlockers = { active_streams: 0, active_runs: 0, blocking_stream_ids: [], blocking_run_ids: [], restart_blocked: false }
 const HELD: RestartBlockers = { ...IDLE, restart_blocked: true }
 const REUSED = 'The gateway restart from an earlier Hermes Agent update is still waiting, and it loads this update too.'
+const NOT_BACK = 'Hermes Agent was updated, but the gateway did not come back. Run `hermes gateway restart` manually.'
+const UNVERIFIABLE = 'Hermes Agent was updated, but the gateway restart could not be verified. Run `hermes gateway restart` manually.'
+const READY_WINDOW_MS = 90_000
+const READY_POLL_MS = 1_000
+
+/** TAL-1138: every gateway that ran before the restart now runs as a new process (another pid, or the same pid started again). */
+const replaced = (before: GatewayProcess[], after: GatewayProcess[]): boolean =>
+  before.every((old) => after.some((now) => now.dir === old.dir && (now.pid !== old.pid || (now.start_time !== null && now.start_time !== old.start_time))))
 
 /**
  * TAL-953: after an Agent update, restart the messaging gateway only once its own work drains, so its shutdown never
@@ -36,11 +52,18 @@ export class GatewayRestartQueue {
   private pending: { id: string; profile: string; forced: boolean; wake: () => void } | null = null
   private inFlight: Promise<void> | null = null
   private stopped = false
+  private stop = (): void => undefined
+  private readonly stopping = new Promise<void>((resolve) => { this.stop = resolve })
   private readonly sleep: (ms: number) => Promise<void>
+  private readonly now: () => number
 
   constructor(private readonly deps: GatewayRestartQueueDeps) {
     this.sleep = deps.sleep ?? ((ms) => new Promise((r) => setTimeout(r, ms)))
+    this.now = deps.now ?? Date.now
   }
+
+  /** TAL-1138: the gateway processes running now, the baseline a later check needs a new process for. */
+  gateways(profile: string): Promise<GatewayProcess[]> { return this.deps.gateways(profile) }
 
   /** A gateway restart is running; the Agent source must not change until it settles. */
   restarting(): boolean { return this.inFlight !== null }
@@ -66,9 +89,26 @@ export class GatewayRestartQueue {
     return id
   }
 
-  /** Resume the waits a previous server process recorded; the newest one carries any older ones. */
+  /** Resume the waits and checks a previous server process recorded; the newest wait carries any older ones. */
   async resume(): Promise<void> {
-    for (const row of this.deps.notifications.waitingGatewayRestarts()) (await this.schedule(row.id, row.profile, row.detail))
+    for (const row of this.deps.notifications.pendingGatewayRestarts()) {
+      // Without the gateways recorded before the restart, no check can prove they came back: fail closed.
+      if (row.phase === 'verifying' && row.baseline === null) (await this.deps.notifications.transition(row.id, 'failed', null, undefined, [UNVERIFIABLE, row.detail].filter(Boolean).join('\n\n')))
+      else if (row.phase === 'verifying') void this.verify(row.id, row.profile, row.baseline ?? [], row.detail)
+      else (await this.schedule(row.id, row.profile, row.detail))
+    }
+  }
+
+  /**
+   * TAL-1138: check notification `id`, already `verifying`, until the gateways in `baseline` run as new processes and
+   * the Agent runtime answers, then mark it succeeded; after the bounded window it fails with the manual command. It
+   * counts as a restart in flight. A Web exit ends the check early and leaves the record for the next process.
+   */
+  verify(id: string, profile: string, baseline: GatewayProcess[], detail: string | null): Promise<void> {
+    const check = this.inFlight ?? Promise.resolve()
+    const run = check.then(() => this.checkReady(id, profile, baseline, detail)).catch((error: unknown) => { this.deps.log(`[updates] gateway readiness check failed: ${(error as Error).message}`) })
+    this.inFlight = run
+    return run.finally(() => { if (this.inFlight === run) this.inFlight = null })
   }
 
   /** The Restart now action: restart while the gateway is still busy. False when `id` is not the waiting restart. */
@@ -82,6 +122,7 @@ export class GatewayRestartQueue {
   /** Before Web exits: start no restart, and let one in flight finish so the sidecar is not killed under it. A waiting record stays for the next process. */
   async quiesce(): Promise<void> {
     this.stopped = true
+    this.stop()
     this.pending?.wake()
     while (this.inFlight) await this.inFlight
   }
@@ -115,11 +156,33 @@ export class GatewayRestartQueue {
 
   private async restartGateway({ id, profile }: { id: string; profile: string }, detail: string | null): Promise<void> {
     await this.deps.notifications.transition(id, 'restarting')
+    const baseline = await this.deps.gateways(profile)
+    await this.deps.notifications.recordGatewayBaseline(id, baseline)
     const [ok, gateway] = await this.attempt(profile)
     this.deps.log(`[updates] gateway restart after the Agent update: ${str(gateway.status) || 'failed'}`)
-    if (ok) { (await this.deps.notifications.transition(id, 'succeeded', null, undefined, detail)); return }
+    // TAL-1138: the CLI returning (or still restarting in the background) is not success; the new gateway and the Agent must answer.
+    if (ok) {
+      await this.deps.notifications.transition(id, 'verifying', null, undefined, detail)
+      await this.checkReady(id, profile, baseline, detail)
+      return
+    }
     const failure = gateway.message ? `Hermes Agent was updated, but the gateway restart did not complete: ${str(gateway.message)}. Run \`hermes gateway restart\` manually.` : 'Hermes Agent was updated, but the gateway restart did not complete. Run `hermes gateway restart` manually.'
     await this.deps.notifications.transition(id, 'failed', null, undefined, [failure, detail].filter(Boolean).join('\n\n'))
+  }
+
+  private async checkReady(id: string, profile: string, baseline: GatewayProcess[], detail: string | null): Promise<void> {
+    const deadline = this.now() + (this.deps.readyWindowMs ?? READY_WINDOW_MS)
+    while (!this.stopped) {
+      let ready = false
+      try { ready = replaced(baseline, await this.deps.gateways(profile)) && (await this.deps.runtimeReady()) } catch (error) { this.deps.log(`[updates] gateway readiness unavailable: ${(error as Error).message}`) }
+      if (ready) { (await this.deps.notifications.transition(id, 'succeeded', null, undefined, detail)); return }
+      if (this.now() >= deadline) {
+        this.deps.log('[updates] the gateway did not come back after the Agent update')
+        await this.deps.notifications.transition(id, 'failed', null, undefined, [NOT_BACK, detail].filter(Boolean).join('\n\n'))
+        return
+      }
+      await Promise.race([this.sleep(this.deps.pollMs ?? READY_POLL_MS), this.stopping])
+    }
   }
 
   /** Python `_ensure_gateway_restart_for_agent_update`: retry once after a transient supervisor handoff failure. */

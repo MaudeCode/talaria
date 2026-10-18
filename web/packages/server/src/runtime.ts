@@ -64,7 +64,7 @@ import { CronService } from './tools/crons.js'
 import { KanbanService } from './tools/kanban.js'
 import { DashboardPlugins } from './tools/dashboard-plugins.js'
 import { ExtensionService } from './tools/extensions.js'
-import { dashboardStatus, gatewayRestartBlockers } from './tools/health.js'
+import { dashboardStatus, gatewayRestartBlockers, liveGateways } from './tools/health.js'
 import { GatewayRestartQueue, restartGateway } from './tools/gateway-restart.js'
 import { TerminalRegistry } from './tools/terminal.js'
 
@@ -850,6 +850,12 @@ export async function createDeps(opts: CreateDepsOptions): Promise<AppDeps> {
     restart: async (profile) => {
       if (!sidecar) throw new Error('Hermes Agent sidecar is unavailable')
       return restartGateway(sidecar, profileHome(profile))
+    },
+    gateways: (profile) => liveGateways(config.hermesHome, profileHome(profile), now()),
+    runtimeReady: async () => {
+      if (!sidecar) return false
+      const runtime = await sidecar.call('runtime.status', {}, { timeoutMs: 5000 })
+      return runtime.compatible && !runtime.stale
     },
     log,
   })

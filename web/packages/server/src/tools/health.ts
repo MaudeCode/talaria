@@ -204,20 +204,20 @@ async function localGatewayHealth(hermesHome: string, profileHome: string, now: 
   return (await gatewayHealthAt(dirname(pidPath), now)).health
 }
 
-/** One gateway's liveness from the pid record and runtime status in `dir`, with the raw status it read. */
-async function gatewayHealthAt(dir: string, now: number): Promise<{ health: Dict; status: Dict | null }> {
+/** One gateway's liveness from the pid record and runtime status in `dir`, with the raw status it read and the live process its pid record names. */
+async function gatewayHealthAt(dir: string, now: number): Promise<{ health: Dict; status: Dict | null; process: { pid: number; startTime: number | null } | null }> {
   const runtimeStatus = readJsonFile(join(dir, 'gateway_state.json'))
   const safe = runtimeDetailSubset(runtimeStatus)
   const checked = checkedAt()
-  const result = (alive: boolean | null, details: Dict) => ({ health: { alive, checked_at: checked, details }, status: runtimeStatus })
-  let runningPid: number | null = null
+  let running: { pid: number; startTime: number | null } | null = null
+  const result = (alive: boolean | null, details: Dict) => ({ health: { alive, checked_at: checked, details }, status: runtimeStatus, process: running })
   try {
     const { pid, startTime } = gatewayPid(readFileSync(join(dir, 'gateway.pid'), 'utf8'))
     // Agent `_live_pid_from_record`: a start time known on both sides that disagrees means the pid was reused.
     const reused = async (): Promise<boolean> => { if (startTime === null) return false; const current = await processStartTime(pid); return current !== null && Math.abs(current - startTime) > START_TIME_TOLERANCE }
-    if (Number.isInteger(pid) && pid > 0 && pidAlive(pid) && !(await reused())) runningPid = pid
-  } catch { runningPid = null }
-  if (runningPid !== null) return result(true, { state: 'alive', ...safe })
+    if (Number.isInteger(pid) && pid > 0 && pidAlive(pid) && !(await reused())) running = { pid, startTime }
+  } catch { running = null }
+  if (running !== null) return result(true, { state: 'alive', ...safe })
   if (runtimeStatusIsFresh(runtimeStatus, now)) return result(true, { state: 'alive', reason: 'cross_container_freshness', ...safe })
   const stoppedAge = ageSeconds(runtimeStatus, 'stopped', now)
   if (stoppedAge !== null && stoppedAge > GATEWAY_FRESHNESS_THRESHOLD_S) return result(null, { state: 'unknown', reason: 'gateway_stale_stopped_state', ...safe })
@@ -245,6 +245,23 @@ export async function gatewayRestartBlockers(hermesHome: string, profileHome: st
     else unknown = true
   }
   return { active_streams: 0, active_runs: runs, blocking_stream_ids: [], blocking_run_ids: [], restart_blocked: unknown || runs > 0 }
+}
+
+/** TAL-1138: a live local gateway process, identified by its pid and process start time. */
+export interface GatewayProcess { dir: string; pid: number; start_time: number | null }
+
+/**
+ * TAL-1138: the live local gateway processes a restart of `profileHome` replaces (the root host gateway and the
+ * profile's own, as `gatewayRestartBlockers` reads them). Only a pid record naming a live process counts; the
+ * record's start time tells a new process from the old one when the pid repeats.
+ */
+export async function liveGateways(hermesHome: string, profileHome: string, now: number): Promise<GatewayProcess[]> {
+  const live: GatewayProcess[] = []
+  for (const dir of new Set([hermesHome, profileHome])) {
+    const { process } = await gatewayHealthAt(dir, now)
+    if (process) live.push({ dir, pid: process.pid, start_time: process.startTime })
+  }
+  return live
 }
 
 /** Python `build_agent_health_payload` + `gateway_chat_config_status`: remote probe (5 s single-flight cache) else local pid/state files. */

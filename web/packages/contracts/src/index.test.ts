@@ -161,11 +161,14 @@ describe('contracts package', () => {
   it('parses the shared update notification fixture', () => {
     const fixture = shared('fixtures/update-notifications.json')
     const parsed = UpdateNotificationsSchema.parse(fixture)
-    expect(parsed.notifications.map((row) => row.kind)).toEqual(['system', 'update', 'update'])
+    expect(parsed.notifications.map((row) => row.kind)).toEqual(['update', 'system', 'update', 'update'])
     expect(parsed.frontend_build).toMatchObject({ refresh_required: true, notification_id: null })
-    expect(parsed.notifications[0]).toMatchObject({ requires_interaction: true, can_dismiss: false, destination: { key: 'settings.system' } })
-    expect(parsed.notifications[1]).toMatchObject({ verified_revision: 'a'.repeat(40), verified_version: 'web-v1.2.3' })
-    expect(parsed.notifications[2]).toMatchObject({ target: 'agent', phase: 'waiting_for_idle', can_dismiss: false, actions: [{ id: 'restart_gateway_now', style: 'destructive', acknowledges: false }] })
+    expect(parsed.notifications[0]).toMatchObject({ phase: 'verifying', presents_dialog: true, dialog_close: 'none', steps: [{ state: 'done' }, { state: 'done' }, { state: 'done' }, { id: 'agent_ready', state: 'active' }] })
+    expect(parsed.tab_update).toEqual(parsed.notifications[0])
+    expect(parsed.notifications[1]).toMatchObject({ requires_interaction: true, can_dismiss: false, destination: { key: 'settings.system' }, steps: [], dialog_close: 'close' })
+    expect(parsed.notifications[2]).toMatchObject({ verified_revision: 'a'.repeat(40), verified_version: 'web-v1.2.3', dialog_close: 'auto' })
+    expect(parsed.notifications[3]).toMatchObject({ target: 'agent', phase: 'waiting_for_idle', can_dismiss: false, actions: [{ id: 'restart_gateway_now', style: 'destructive', acknowledges: false }], dialog_close: 'restart_later' })
+    expect(UpdateNotificationsSchema.safeParse({ ...parsed, tab_update: { ...parsed.tab_update, steps: [{ id: 'install', label: 'Installing', state: 'running' }] } }).success).toBe(false)
   })
 })
 
