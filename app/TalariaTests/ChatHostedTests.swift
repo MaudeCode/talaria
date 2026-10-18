@@ -319,13 +319,34 @@ final class ChatHostedTests: XCTestCase {
         let registry = try messageMenuRegistry(in: window)
         let before = try XCTUnwrap(registry.hit(at: scroll.convert(point, from: window), in: scroll))
         XCTAssertEqual(before.content.messageID, readerID)
-        let momentumReader: ChatMessageInteractionMarkerView?
-        if nativeFling {
-            momentumReader = try XCTUnwrap(window.firstView(ofType: ChatMessageInteractionMarkerView.self) {
-                $0.bounds.size == before.rowSize
-                    && abs($0.convert(point, from: window).y - before.localPoint.y) < 0.5
-            }, "Track the actual rendered reader even after momentum carries it away from the probe point")
-        } else { momentumReader = nil }
+        let renderedReader = try XCTUnwrap(window.firstView(ofType: ChatMessageInteractionMarkerView.self) {
+            $0.bounds.size == before.rowSize
+                && abs($0.convert(point, from: window).y - before.localPoint.y) < 0.5
+        }, "Track the same rendered reader throughout insertion and native momentum")
+        func readerGeometry() -> [String: Double] {
+            let textFrame = window.convert(reader.accessibilityFrame, from: nil)
+            let presentation = renderedReader.layer.presentation()
+            let presentedY: CGFloat?
+            if let presentation, let windowPresentation = window.layer.presentation() {
+                presentedY = presentation.convert(presentation.bounds.origin, to: windowPresentation).y
+            } else { presentedY = nil }
+            return ["textY": Double(textFrame.minY), "textHeight": Double(textFrame.height),
+                    "markerAttached": renderedReader.window === window ? 1 : 0,
+                    "markerY": Double(renderedReader.convert(renderedReader.bounds.origin, to: window).y),
+                    "markerLocalY": Double(renderedReader.convert(point, from: window).y),
+                    "markerBoundsY": Double(renderedReader.bounds.minY),
+                    "markerHeight": Double(renderedReader.bounds.height),
+                    "markerTransformY": Double(renderedReader.transform.ty),
+                    "markerScaleY": Double(renderedReader.transform.d),
+                    "hasPresentation": presentedY == nil ? 0 : 1,
+                    "presentationWindowY": Double(presentedY ?? renderedReader.convert(renderedReader.bounds.origin, to: window).y),
+                    "presentationPositionY": Double(presentation?.position.y ?? renderedReader.layer.position.y),
+                    "presentationBoundsY": Double(presentation?.bounds.minY ?? renderedReader.bounds.minY),
+                    "presentationHeight": Double(presentation?.bounds.height ?? renderedReader.bounds.height)]
+        }
+        var baselineGeometry = readerGeometry()
+        baselineGeometry["hitHeight"] = Double(before.rowSize.height)
+        baselineGeometry["hitLocalY"] = Double(before.localPoint.y)
         let oldHeight = scroll.contentSize.height
         let maximumFrameGapMilliseconds: Double = 100
         var samples: [[String: Double]] = []
@@ -374,7 +395,7 @@ final class ChatHostedTests: XCTestCase {
                     dragSamples += 1
                 }
             }
-            if nativeFling, momentumReader?.window !== window { lostMomentumReader = true }
+            if nativeFling, renderedReader.window !== window { lostMomentumReader = true }
             let hit = registry.hit(at: scroll.convert(samplePoint, from: window), in: scroll)
             let delta = (hit?.localPoint.y ?? 0) - before.localPoint.y
             if !nativeFling || touchDragging {
@@ -385,7 +406,7 @@ final class ChatHostedTests: XCTestCase {
                             "time": now,
                             "modelTime": info.modelTime,
                             "completionDeadline": info.completionDeadlineTime,
-                            "readerY": Double(momentumReader?.convert(.zero, to: window).y ?? 0),
+                            "readerY": Double(renderedReader.convert(.zero, to: window).y),
                             "readerDelta": Double(delta), "offset": Double(scroll.contentOffset.y),
                             "height": Double(scroll.contentSize.height), "translation": Double(translation),
                             "pointY": Double(samplePoint.y),
@@ -396,6 +417,16 @@ final class ChatHostedTests: XCTestCase {
                             "tracking": scroll.isTracking ? 1 : 0,
                             "decelerating": scroll.isDecelerating ? 1 : 0,
                             "messageIndex": Double(Int(hit?.content.messageID.replacingOccurrences(of: "history-", with: "") ?? "") ?? -1)])
+            if !nativeDrag {
+                // Keep CI diagnostics out of the native gesture frame-budget measurement.
+                var geometry = readerGeometry()
+                geometry["hitHeight"] = Double(hit?.rowSize.height ?? -1)
+                geometry["hitLocalY"] = Double(hit?.localPoint.y ?? -1)
+                let markerPoint = renderedReader.convert(samplePoint, from: window)
+                geometry["hitMatchesMarker"] = hit?.rowSize == renderedReader.bounds.size
+                    && abs((hit?.localPoint.y ?? .infinity) - markerPoint.y) < 0.01 ? 1 : 0
+                samples[samples.count - 1].merge(geometry) { _, new in new }
+            }
             previousTick = now
         }
         updateLink.requiresContinuousUpdates = nativeDrag
@@ -417,6 +448,11 @@ final class ChatHostedTests: XCTestCase {
         XCTAssertGreaterThan(samples.count, 0, "The test must observe committed display frames")
         updateLink.isEnabled = false
         coordinator.onFollowEvent(.userScrollEnd(isAtBottom: false))
+        let baselineData = try JSONSerialization.data(withJSONObject: baselineGeometry, options: [.prettyPrinted, .sortedKeys])
+        let baselineAttachment = XCTAttachment(data: baselineData, uniformTypeIdentifier: "public.json")
+        baselineAttachment.name = "History reader baseline geometry"
+        baselineAttachment.lifetime = .keepAlways
+        add(baselineAttachment)
         let data = try JSONSerialization.data(withJSONObject: samples, options: [.prettyPrinted, .sortedKeys])
         let attachment = XCTAttachment(data: data, uniformTypeIdentifier: "public.json")
         attachment.name = "Full chat history insertion frames"; attachment.lifetime = .keepAlways; add(attachment)
