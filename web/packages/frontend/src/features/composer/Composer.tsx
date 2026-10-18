@@ -132,6 +132,7 @@ export function Composer(props: ComposerProps) {
   const qc = useQueryClient()
   const localStateId = composerStateId(session)
   const [text, setText] = useState(() => (localStateId ? readLocalDraft(localStateId) : ''))
+  const [draftIdentity, setDraftIdentity] = useState(localStateId)
   const [files, setFiles] = useState<PendingFile[]>([])
   const intent = useTurnIntent(sessionId)
   const sending = !!intent.send
@@ -221,7 +222,9 @@ export function Composer(props: ComposerProps) {
   const setValue = clarify ? clarify.setText : setText
   const palette = useCommandPalette(clarify ? '' : text)
   const catalog = palette.catalog
-  useDraftPersistence(localStateId, text, !session?.owner_attachment)
+  // A newly resolved identity first adopts its text. Persisting the previous render would erase
+  // the loaded draft or copy another owner's text; the identity state also preserves early typing.
+  useDraftPersistence(draftIdentity === localStateId ? localStateId : null, text, !session?.owner_attachment)
   useServerDraft(session && !session.owner_attachment ? sessionId : null, setText)
 
   // T3 Code's resting composer: a hand scroll of an overflowing transcript flattens the card to one row until the next
@@ -241,6 +244,8 @@ export function Composer(props: ComposerProps) {
   useEffect(() => {
     const previous = previousIdentity.current
     previousIdentity.current = { sessionId, localStateId }
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- storage identity adoption must render even when early typing keeps the same text
+    setDraftIdentity(localStateId)
     if (localStateId && adopted.current === localStateId) return
     const loadedIdentity = previous.sessionId === sessionId && previous.localStateId === null && localStateId !== null
     setText((current) => loadedIdentity && current.trim() ? current : localStateId ? readLocalDraft(localStateId) : '')

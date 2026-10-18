@@ -34,7 +34,7 @@ export function useSessionUpdate(sessionId: string | null, refresh: () => Promis
         await api.ownerAction({ session_id: sessionId, action: 'mutate', request_id: randomHex(),
           expected_revision: nativeOwner.revision, execution_generation: nativeOwner.execution_generation,
           operation: body.workspace === undefined ? 'model' : 'workspace',
-          payload: body.workspace === undefined ? { model: body.model, ...(body.model_provider ? { provider: body.model_provider } : {}) } : { cwd: body.workspace } })
+          payload: body.workspace === undefined ? { model: body.model, ...(body.model_provider !== undefined ? { provider: body.model_provider } : {}) } : { cwd: body.workspace } })
       } else await api.updateSession(sessionId, body)
       if (current()) { setPending(null); await refresh() }
     } catch (error) {

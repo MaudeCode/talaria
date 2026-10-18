@@ -62,6 +62,8 @@ async def probe(home, peer, desc, *, require_gap=False):
                 assert time.monotonic() < deadline, final
                 await asyncio.sleep(.05)
             native_final = await rpc(native, "session.resume", session_id=sid)
+            resumed_again = await rpc(native, "session.resume", session_id=sid)
+            assert resumed_again["result"]["subscription_id"] == native_final["result"]["subscription_id"], resumed_again
             assert [(m["role"], m.get("content")) for m in final["snapshot"]["messages"]] == [(m["role"], m.get("content")) for m in native_final["result"]["messages"]]
             assert "gateway_input_owner" not in json.dumps(final)
             assert "system_prompt" not in final["snapshot"]["info"]

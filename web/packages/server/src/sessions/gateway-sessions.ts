@@ -24,6 +24,12 @@ const ownerStateId = (identity: string): string => `owner-${createHash('sha256')
 /** The scope remains verifiable after a server restart, before a journal lookup or stream subscription. */
 export const gatewayStreamVisible = (stream: string, home: string): boolean => !stream.startsWith('owner-') || stream.startsWith(ownerStreamPrefix(home))
 
+/** A preview can be absent in a valid native receipt; only original nonblank text can become a retry draft. */
+function retryText(admission: GatewaySnapshot['pending'][number]): string | null {
+  const text = admission.text
+  return typeof text === 'string' && text.trim() ? text : null
+}
+
 export class GatewaySessions {
   private readonly watches = new Map<string, Watch>()
   constructor(private readonly deps: {
@@ -61,7 +67,11 @@ export class GatewaySessions {
       can_interrupt: result.state === 'attached' && snapshot?.running === true, can_attach: false,
       revision: snapshot?.revision ?? null, execution_generation: snapshot?.execution_generation ?? null,
       active_admission: snapshot?.pending.find((p) => p.status === 'started') ?? null,
-      admissions: (snapshot?.pending ?? []).filter((p) => p.status === 'queued' || p.status === 'unknown').map((p) => ({ ...p, actions: p.status === 'queued' ? ['cancel'] : p.execution_generation !== null ? ['retry', 'discard'] : [] })),
+      admissions: (snapshot?.pending ?? []).filter((p) => p.status === 'queued' || p.status === 'unknown').map((p) => ({ ...p,
+        actions: p.status === 'queued' ? ['cancel']
+          : p.execution_generation === null ? []
+          : retryText(p) === null ? ['discard'] : ['retry', 'discard'],
+      })),
     }
     return redactNestedMessageContainers(value, this.deps.redactEnabled()) as OwnerAttachment
   }
@@ -147,8 +157,10 @@ export class GatewaySessions {
     const current = await this.call(target, { action: 'snapshot' })
     const admission = current.snapshot?.pending.find((p) => p.admission_id === admissionId && p.status === 'unknown' && p.execution_generation === generation)
     if (!admission) throw new HttpFailure(409, 'The unknown admission is stale')
+    const text = retryText(admission)
+    if (text === null) throw new HttpFailure(409, 'The original input text is unavailable; inspect the owner before discarding this work')
     await this.action(sid, { action: 'discard', admission_id: admissionId, execution_generation: generation })
-    return admission.text ?? ''
+    return text
   }
 
   private prompts(snapshot: GatewaySnapshot | null, sid: string): PendingPrompts {

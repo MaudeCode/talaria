@@ -112,6 +112,8 @@ async def _run(ctx, params: dict, home: Path, discovery) -> dict:
             nonlocal subscription, sid
             value = await client.rpc("session.resume", session_id=sid)
             sid = value["session_id"]
+            # Native attach reuses this actor's subscription; overflow retires it before
+            # a replacement is issued. A resume does not accumulate live subscriptions.
             subscription = value["subscription_id"]
             if reason := await asyncio.to_thread(_control_refusal, home, sid):
                 raise GatewayRPCError(reason)

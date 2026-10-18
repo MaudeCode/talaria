@@ -94,6 +94,18 @@ describe('canonical owner attachment', () => {
     expect(sidecar.calls.some((c) => c.method === 'chat.start' || c.method === 'gateway.session' && (c.params as { action: string }).action === 'submit')).toBe(false)
   })
 
+  it.each([undefined, ''])('withholds Retry without recoverable admission text (%s)', async (text) => {
+    const lost: GatewaySnapshot['pending'][number] = { ...admission('unknown') }
+    if (text === undefined) delete lost.text
+    else lost.text = text
+    sidecar.respond('gateway.session', () => attached(snapshot({ pending: [lost] })))
+    const row = SessionEnvelopeSchema.parse(await (await s.get(`/api/session?session_id=${sid}`)).json())
+    expect(row.session.owner_attachment?.admissions[0]?.actions).toEqual(['discard'])
+    const response = await post('/api/chat/owner-action', { session_id: sid, action: 'retry', admission_id: lost.admission_id, execution_generation: 1 })
+    expect(response.status).toBe(409)
+    expect(sidecar.calls.some((c) => c.method === 'gateway.session' && (c.params as { action: string }).action === 'discard')).toBe(false)
+  })
+
   it('redacts owner input previews on admission refusals as well as session reads', async () => {
     const secret = 'sk-synthetic-unknown-preview-secret-123456789012345'
     sidecar.respond('gateway.session', () => attached(snapshot({ pending: [{ ...admission('unknown'), text: `OPENAI_API_KEY=${secret}` }] })))

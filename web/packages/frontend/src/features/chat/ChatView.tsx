@@ -91,9 +91,10 @@ export function ChatView({ sessionId }: { sessionId: string | null }) {
     draining.current = true
     const scope = getStreamContext()
     void startTurn({ sessionId, message: next.text, queueId: next.id, request: { ...next.request, ...(next.attachments.length ? { attachments: next.attachments } : {}) } })
+      // External-store queue updates notify synchronously; release before publishing the next queue.
+      .finally(() => { draining.current = false })
       .then(() => { if (scope === getStreamContext()) setQueued((q) => q.filter((t) => t.id !== next.id)) })
       .catch((e: unknown) => { if (scope !== getStreamContext()) return; setFailedQueued(next.id); showToast(e instanceof Error ? e.message : String(e), 4000, 'error') })
-      .finally(() => { draining.current = false })
   }, [sessionId, session, queued, live, setQueued, intent, operation, failedQueued])
 
   const ensureSession = useCallback(async (onCreated?: (sessionId: string) => void): Promise<Session> => {
