@@ -630,11 +630,13 @@ export class UpdateNotificationStore {
     }
     this.rows = [...kept.reverse(), ...tabNotices]
     // TAL-1138 fields are written only once set, so records that never use them keep their stored bytes.
-    const rows = structuredClone(this.rows).map((row) => {
-      const stored: Partial<StoredUpdateNotification> = row
-      for (const key of ['web_restart_boot', 'gateway_tasks', 'gateway_baseline', 'failed_step'] as const) if (stored[key] === null) delete stored[key]
-      return stored
-    })
+    const rows = structuredClone(this.rows).map(({ web_restart_boot, gateway_tasks, gateway_baseline, failed_step, ...row }) => ({
+      ...row,
+      ...(web_restart_boot === null ? {} : { web_restart_boot }),
+      ...(gateway_tasks === null ? {} : { gateway_tasks }),
+      ...(gateway_baseline === null ? {} : { gateway_baseline }),
+      ...(failed_step === null ? {} : { failed_step }),
+    }))
     const write = this.writes.catch(() => undefined).then(async () => { this.revision = await this.documents.put('update-notifications', 'update-notifications', rows, this.revision) })
     this.writes = write
     await write
