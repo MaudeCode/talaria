@@ -476,9 +476,10 @@
     },
     "tests/test_chat_finalize.py::test_finalize_runs_profile_plugin_without_starting_a_turn": {
       "layer": "compatibility",
-      "reason": "Supported-Agent API compatibility: finalize runs profile plugin without starting a turn. Uses the real installed release, not a fabricated API response.",
+      "reason": "Actual supported-Agent lifecycle plugin dispatch, profile scoping and native hook-failure result extraction must remain compatible.",
       "cases": [
-        ""
+        "[message]",
+        "[raises]"
       ]
     },
     "tests/test_chat_next_turn_threshold.py::test_next_turn_threshold_is_the_primary_runtimes_after_a_fallback_turn": {
@@ -2371,6 +2372,13 @@
       "cases": [
         "[process]",
         "[fast]"
+      ]
+    },
+    "tests/test_env_write.py::test_native_lock_timeout_maps_to_env_locked": {
+      "layer": "compatibility",
+      "reason": "Actual cross-process native environment lock contention must produce the exception Talaria maps to env_locked. The original lock runs with a short test-only budget; production defaults are unchanged.",
+      "cases": [
+        ""
       ]
     }
   }

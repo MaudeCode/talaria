@@ -10,11 +10,13 @@ from conftest import requires_agent
 
 
 @requires_agent
-def test_finalize_runs_profile_plugin_without_starting_a_turn(handshaken, hermes_home):
+@pytest.mark.parametrize('mode', ['message', 'raises'])
+def test_finalize_runs_profile_plugin_without_starting_a_turn(handshaken, hermes_home, mode):
     profile = hermes_home / 'profiles' / 'closing'
     plugin = profile / 'plugins' / 'closing-test'
     plugin.mkdir(parents=True)
     (plugin / 'plugin.yaml').write_text('name: closing-test\nversion: 0.0.1\n')
+    action = "return {'message': 'bye'}" if mode == 'message' else "raise RuntimeError('synthetic plugin failure')"
     (plugin / '__init__.py').write_text(f'''import json, time
 from hermes_constants import get_hermes_home
 
@@ -22,7 +24,7 @@ def register(ctx):
     def closing(**kwargs):
         home = get_hermes_home()
         (home / 'finalized.json').write_text(json.dumps({{key: kwargs[key] for key in ('session_id', 'platform', 'reason')}}))
-        return {{'message': 'bye'}}
+        {action}
     ctx.register_hook('on_session_finalize', closing)
 ''')
     (profile / 'config.yaml').write_text('plugins:\n  isolation: in_process\n  enabled: [closing-test]\n')
@@ -30,7 +32,7 @@ def register(ctx):
     reply, _ = handshaken.call('chat.finalize_session', {
         'profile_home': str(profile), 'session_id': 'closing-chat', 'reason': 'clear',
     }, timeout=30)
-    assert reply.get('result') == {'messages': ['bye']}, reply
+    assert reply.get('result') == {'messages': ['bye'] if mode == 'message' else []}, reply
     assert time.monotonic() - started < 11.5
     assert json.loads((profile / 'finalized.json').read_text()) == {
         'session_id': 'closing-chat', 'platform': 'webui', 'reason': 'clear',
