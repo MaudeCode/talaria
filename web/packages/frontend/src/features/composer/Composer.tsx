@@ -244,15 +244,23 @@ export function Composer(props: ComposerProps) {
   useEffect(() => {
     const previous = previousIdentity.current
     previousIdentity.current = { sessionId, localStateId }
-    // eslint-disable-next-line react-hooks/set-state-in-effect -- storage identity adoption must render even when early typing keeps the same text
-    setDraftIdentity(localStateId)
-    if (localStateId && adopted.current === localStateId) return
+    const changedIdentity = previous.sessionId !== sessionId || previous.localStateId !== localStateId
+    const adoptedIdentity = !!localStateId && adopted.current === localStateId
     const loadedIdentity = previous.sessionId === sessionId && previous.localStateId === null && localStateId !== null
-    setText((current) => loadedIdentity && current.trim() ? current : localStateId ? readLocalDraft(localStateId) : '')
-    setFiles([])
-    inflight.current.clear()
-    setRestRequested(false)
-  }, [sessionId, localStateId])
+    if (changedIdentity) {
+      setDraftIdentity(localStateId)
+      if (!adoptedIdentity) {
+        setText((current) => loadedIdentity && current.trim() ? current : localStateId ? readLocalDraft(localStateId) : '')
+        setRestRequested(false)
+      }
+    }
+    if (!attachmentsSupported || (changedIdentity && !loadedIdentity && !adoptedIdentity)) {
+      const receipts = [...new Set(files.flatMap((file) => file.upload?.rollback_token ? [file.upload.rollback_token] : []))]
+      if (previous.sessionId && receipts.length) void api.rollbackUpload(previous.sessionId, receipts).catch(() => undefined)
+      if (files.length) setFiles([])
+      inflight.current.clear()
+    }
+  }, [sessionId, localStateId, attachmentsSupported, files])
 
   // Autosize.
   useEffect(() => {

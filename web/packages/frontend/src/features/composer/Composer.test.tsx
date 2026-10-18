@@ -43,6 +43,88 @@ function renderComposer(session: Session | null, live: LiveTurn | null = null, o
 }
 
 describe('Composer', () => {
+  it.each([false, true])('keeps an early attachment when its upload completes before transcript load: %s', async (completedBeforeLoad) => {
+    const upload = deferred<Awaited<ReturnType<typeof api.uploadFile>>>()
+    const receipt = { filename: 'early.png', path: '/synthetic/early.png', size: 1, mime: 'image/png', rollback_token: 'early-receipt' }
+    vi.mocked(api.uploadFile).mockReturnValue(upload.promise)
+    const view = renderComposer(null, null, noop, undefined, undefined, undefined, { sessionId: 'loading' })
+    const file = new File(['x'], 'early.png', { type: 'image/png', lastModified: 1 })
+    fireEvent.change(document.querySelector<HTMLInputElement>('#fileInput')!, { target: { files: [file] } })
+    await waitFor(() => expect(api.uploadFile).toHaveBeenCalledWith('loading', file))
+    expect(screen.getByRole('button', { name: 'Remove early.png' })).toBeVisible()
+    if (completedBeforeLoad) await act(async () => { upload.resolve(receipt); await upload.promise })
+    view.rerenderSession({ ...writable, session_id: 'loading' })
+    if (!completedBeforeLoad) {
+      expect(document.querySelector('.attach-tray [data-status="uploading"]')).not.toBeNull()
+      await act(async () => { upload.resolve(receipt); await upload.promise })
+    }
+    expect(document.querySelector('.attach-tray [data-status="done"]')).not.toBeNull()
+    expect(api.uploadFile).toHaveBeenCalledOnce()
+    expect(api.rollbackUpload).not.toHaveBeenCalled()
+  })
+
+  it('keeps an early attachment failure retryable after transcript load', async () => {
+    const receipt = { filename: 'early.png', path: '/synthetic/early.png', size: 1, mime: 'image/png' }
+    vi.mocked(api.uploadFile).mockRejectedValueOnce(new Error('synthetic upload failure')).mockResolvedValue(receipt)
+    const view = renderComposer(null, null, noop, undefined, undefined, undefined, { sessionId: 'loading' })
+    fireEvent.change(document.querySelector<HTMLInputElement>('#fileInput')!, { target: { files: [new File(['x'], 'early.png', { type: 'image/png', lastModified: 1 })] } })
+    await screen.findByRole('button', { name: 'Retry early.png' })
+    view.rerenderSession({ ...writable, session_id: 'loading' })
+    await userEvent.click(screen.getByRole('button', { name: 'Retry early.png' }))
+    await waitFor(() => expect(document.querySelector('.attach-tray [data-status="done"]')).not.toBeNull())
+    expect(api.uploadFile).toHaveBeenCalledTimes(2)
+    expect(vi.mocked(api.uploadFile).mock.calls.map(([id]) => id)).toEqual(['loading', 'loading'])
+  })
+
+  it('does not restore a removed early attachment when transcript and upload finish', async () => {
+    const upload = deferred<Awaited<ReturnType<typeof api.uploadFile>>>()
+    vi.mocked(api.uploadFile).mockReturnValue(upload.promise)
+    const view = renderComposer(null, null, noop, undefined, undefined, undefined, { sessionId: 'loading' })
+    fireEvent.change(document.querySelector<HTMLInputElement>('#fileInput')!, { target: { files: [new File(['x'], 'early.png', { type: 'image/png', lastModified: 1 })] } })
+    await userEvent.click(screen.getByRole('button', { name: 'Remove early.png' }))
+    view.rerenderSession({ ...writable, session_id: 'loading' })
+    await act(async () => { upload.resolve({ filename: 'early.png', path: '/synthetic/early.png', size: 1, mime: 'image/png', rollback_token: 'removed-receipt' }); await upload.promise })
+    expect(document.querySelector('.attach-tray')).toBeNull()
+    expect(api.rollbackUpload).toHaveBeenCalledExactlyOnceWith('loading', ['removed-receipt'])
+  })
+
+  it.each(['session', 'owner', 'attachment refusal', 'capability refusal'].flatMap((replacement) => [false, true].map((completedBeforeReplacement) => ({ replacement, completedBeforeReplacement }))))('clears attachment identity on $replacement (completed: $completedBeforeReplacement) and rolls back its receipt', async ({ replacement, completedBeforeReplacement }) => {
+    const upload = deferred<Awaited<ReturnType<typeof api.uploadFile>>>()
+    const receipt = { filename: 'early.png', path: '/synthetic/early.png', size: 1, mime: 'image/png', rollback_token: 'obsolete-receipt' }
+    vi.mocked(api.uploadFile).mockReturnValue(upload.promise)
+    const initial = replacement === 'attachment refusal' ? null : { ...writable, session_id: 'loading', composer_state_key: 'original-owner' }
+    const view = renderComposer(initial, null, noop, undefined, undefined, undefined, initial ? {} : { sessionId: 'loading' })
+    if (replacement === 'capability refusal') await userEvent.type(screen.getByRole('textbox'), 'Keep newer text')
+    fireEvent.change(document.querySelector<HTMLInputElement>('#fileInput')!, { target: { files: [new File(['x'], 'early.png', { type: 'image/png', lastModified: 1 })] } })
+    await waitFor(() => expect(api.uploadFile).toHaveBeenCalled())
+    if (completedBeforeReplacement) await act(async () => { upload.resolve(receipt); await upload.promise })
+    view.rerenderSession({ ...writable, session_id: replacement === 'session' ? 'other' : 'loading', composer_state_key: replacement === 'capability refusal' ? 'original-owner' : 'replacement-owner',
+      ...(replacement.endsWith('refusal') ? { owner_attachment: { state: 'attached' as const, reason: null, can_submit: true, can_interrupt: false, can_attach: false, revision: 1, execution_generation: 1, admissions: [] } } : {}) })
+    if (!completedBeforeReplacement) await act(async () => { upload.resolve(receipt); await upload.promise })
+    expect(document.querySelector('.attach-tray')).toBeNull()
+    expect(api.rollbackUpload).toHaveBeenCalledExactlyOnceWith('loading', ['obsolete-receipt'])
+    expect(api.uploadFile).toHaveBeenCalledOnce()
+    if (replacement === 'capability refusal') expect(screen.getByRole('textbox')).toHaveValue('Keep newer text')
+  })
+
+  it('rolls back all completed early attachments and separately fences a pending upload on refusal', async () => {
+    const late = deferred<Awaited<ReturnType<typeof api.uploadFile>>>()
+    vi.mocked(api.uploadFile)
+      .mockResolvedValueOnce({ filename: 'one.png', path: '/synthetic/one.png', size: 1, mime: 'image/png', rollback_token: 'completed-one' })
+      .mockResolvedValueOnce({ filename: 'two.png', path: '/synthetic/two.png', size: 1, mime: 'image/png', rollback_token: 'completed-two' })
+      .mockReturnValueOnce(late.promise)
+    const view = renderComposer({ ...writable, session_id: 'loading', composer_state_key: 'same-owner' })
+    fireEvent.change(document.querySelector<HTMLInputElement>('#fileInput')!, { target: { files: ['one.png', 'two.png', 'three.png'].map((name) => new File(['x'], name, { type: 'image/png', lastModified: 1 })) } })
+    await waitFor(() => expect(document.querySelectorAll('.attach-tray [data-status="done"]')).toHaveLength(2))
+    view.rerenderSession({ ...writable, session_id: 'loading', composer_state_key: 'same-owner', owner_attachment: { state: 'attached', reason: null, can_submit: true, can_interrupt: false, can_attach: false, revision: 1, execution_generation: 1, admissions: [] } })
+    expect(api.rollbackUpload).toHaveBeenCalledExactlyOnceWith('loading', ['completed-one', 'completed-two'])
+    await act(async () => { late.resolve({ filename: 'three.png', path: '/synthetic/three.png', size: 1, mime: 'image/png', rollback_token: 'late-three' }); await late.promise })
+    expect(api.rollbackUpload).toHaveBeenNthCalledWith(2, 'loading', ['late-three'])
+    expect(api.rollbackUpload).toHaveBeenCalledTimes(2)
+    expect(api.uploadFile).toHaveBeenCalledTimes(3)
+    expect(document.querySelector('.attach-tray')).toBeNull()
+  })
+
   it('loads the saved draft before persisting a newly resolved identity', async () => {
     const session_id = 'loading-draft'
     localStorage.setItem(`hermes-draft:${session_id}`, JSON.stringify({ text: 'Draft 日本', updatedAt: Date.now() }))
