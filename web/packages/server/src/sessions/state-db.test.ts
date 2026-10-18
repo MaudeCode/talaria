@@ -4,7 +4,7 @@ import { chmodSync, existsSync, mkdirSync, mkdtempSync, realpathSync, renameSync
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
-import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
+import { afterAll, beforeAll, describe, expect, it, onTestFinished, vi } from 'vitest'
 import { bootTestServer, type TestServer } from '../test/harness.js'
 import { FakeSidecar } from '../sidecar/fake.js'
 import type { SidecarResult } from '@maudecode/talaria-web-contracts'
@@ -13,6 +13,7 @@ import { str } from '../util.js'
 import { Session } from './session.js'
 import { recordBackgroundUpdate } from './background-updates.js'
 import { agentSessionRowsExisting, cheapChangeFingerprint, latestCronSessionInfo, isCliSessionRowVisible, normalizeAgentSessionSource, projectAgentSessionRows, readImportableAgentSessionRows, stateDbCompressionLineage, stateDbHasSession, stateDbLineageReport, stateDbSessionRead, stateDbSessionSources } from './state-db.js'
+import { MESSAGING_SOURCES } from './source-kind.js'
 import { GatewayWatcher, snapshotHash } from './gateway-watcher.js'
 import { capRecentCliSessions, keepLatestMessagingSessionPerSource, mergeCliSidebarMetadata, withOwnerLocks, type GatewayIdentity } from './list.js'
 
@@ -262,6 +263,37 @@ describe('state.db projection', () => {
     expect(normalizeAgentSessionSource('api_server')).toMatchObject({ session_source: 'api', source_label: 'API' })
     expect(normalizeAgentSessionSource(null)).toEqual({ raw_source: null, session_source: 'other', source_label: 'Agent' })
     expect(normalizeAgentSessionSource('my_bridge')).toMatchObject({ session_source: 'other', source_label: 'My Bridge' })
+  })
+
+  it('normalizes every messaging source into the messaging family (TAL-939)', () => {
+    for (const source of MESSAGING_SOURCES) expect(normalizeAgentSessionSource(source).session_source, source).toBe('messaging')
+  })
+
+  it.each([
+    ['feishu', 'Feishu'], ['dingtalk', 'DingTalk'], ['bluebubbles', 'BlueBubbles'],
+    ['qqbot', 'QQBot'], ['yuanbao', 'Yuanbao'], ['whatsapp_cloud', 'WhatsApp Cloud'],
+  ])('projects, deduplicates and protects %s sessions (TAL-939)', async (source, label) => {
+    const sid = `platform-${source}`
+    onTestFinished(() => {
+      db.prepare('DELETE FROM messages WHERE session_id = ?').run(sid)
+      db.prepare('DELETE FROM sessions WHERE id = ?').run(sid)
+    })
+    expect(normalizeAgentSessionSource(` ${source.toUpperCase()} `)).toEqual({ raw_source: source, session_source: 'messaging', source_label: label })
+    insertSession(db, { id: sid, source, title: label, started_at: 3000, chat_id: 'platform-chat', messages: [['user', 3001], ['assistant', 3002]] })
+    const post = (path: string, body: unknown) => s.get(path, { method: 'POST', body: JSON.stringify(body), headers: { 'content-type': 'application/json' } })
+    const detail = (await json(await s.get(`/api/session?session_id=${sid}`))).session as Json
+    expect(detail).toMatchObject({ source_kind: 'messaging', source_label: label, is_messaging_session: true, is_cli_session: false, read_only: true, can_delete: false })
+    expect((await post('/api/chat/start', { session_id: sid, message: 'Do not send' })).status).toBe(403)
+    expect((await post('/api/session/delete', { session_id: sid })).status).toBe(400)
+    expect(stateDbHasSession(dbPath, sid)).toBe(true)
+    expect(await s.deps.sessionStore.loadMetadataOnly(sid)).toBeNull()
+    const rows = [
+      { session_id: 'old', raw_source: source, chat_id: 'same', updated_at: 1 },
+      { session_id: 'new', raw_source: source, chat_id: 'same', updated_at: 2 },
+      { session_id: 'other', raw_source: source, chat_id: 'different', updated_at: 1 },
+    ]
+    expect(keepLatestMessagingSessionPerSource(rows, { showPrevious: false, identity: new Map(), isPreCompressionSnapshotId: () => false }).map((r) => r.session_id)).toEqual(['new', 'other'])
+    expect(keepLatestMessagingSessionPerSource(rows, { showPrevious: true, identity: new Map(), isPreCompressionSnapshotId: () => false })).toHaveLength(3)
   })
 
   it('projects messageful gateway rows, hides empty ones, and keeps cron out of the default window', () => {

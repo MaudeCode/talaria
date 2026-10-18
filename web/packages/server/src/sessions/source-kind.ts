@@ -11,6 +11,7 @@ type Row = Record<string, unknown>
  * `messaging` marker is not a platform: the gateway dedupe falls back to it for rows with no source at all.
  */
 export const MESSAGING_SOURCES = new Set([
+  'bluebubbles', 'dingtalk', 'feishu', 'qqbot', 'yuanbao', 'whatsapp_cloud',
   'discord', 'email', 'imessage', 'irc', 'line', 'matrix', 'mattermost', 'signal', 'slack', 'sms', 'teams',
   'telegram', 'twilio', 'webex', 'wecom', 'wecom_callback', 'weixin', 'whatsapp',
 ])
