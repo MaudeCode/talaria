@@ -6,6 +6,7 @@ from pathlib import Path
 import shutil
 import subprocess
 import tempfile
+import time
 
 import pytest
 
@@ -253,6 +254,7 @@ def test_competing_update_lock_keeps_selected_recovery_debt(tmp_path):
 
 def test_cancel_selected_recovery_stops_dependency_writer_and_retains_debt(tmp_path):
     from conftest import SidecarProcess, process_snapshot
+    from talaria_sidecar.errors import CANCELLED
     layout = recovery_layout(tmp_path)
     root, home, old, _, _, receipt, _, _ = layout
     state = json.loads(receipt.read_text())
@@ -264,8 +266,24 @@ def test_cancel_selected_recovery_stops_dependency_writer_and_retains_debt(tmp_p
         request = sidecar.request('runtime.agent_recovery', {})
         wait_for(lambda: (root / 'sync-writer.pid').exists())
         writer = int((root / 'sync-writer.pid').read_text())
-        sidecar.request('rpc.cancel', {'id': request})
-        wait_for(lambda: not any(pid == writer for pid, *_ in process_snapshot()))
+        helpers = {pid for pid, _, _, args in process_snapshot()
+                   if str(root) in args and ('--recover-current' in args or '--resume-leased' in args)}
+        assert helpers, 'the real recovery helper was not observed'
+        cancelled = sidecar.request('rpc.cancel', {'id': request})
+        replies = {}
+        deadline = time.monotonic() + 10
+        # rpc.cancel acknowledges a request; the recovery's terminal reply owns child cleanup.
+        while not {request, cancelled} <= replies.keys():
+            remaining = deadline - time.monotonic()
+            assert remaining > 0, 'recovery did not complete cancellation'
+            message = sidecar.next_message(timeout=remaining)
+            assert message is not None, 'sidecar exited before completing cancellation'
+            if message.get('id') in {request, cancelled}:
+                replies[message['id']] = message
+        assert replies[cancelled]['result'] == {'cancelled': True}
+        assert replies[request]['error']['code'] == CANCELLED
+        live = {pid for pid, *_ in process_snapshot()}
+        assert not ({writer} | helpers) & live, 'cancelled recovery replied before reaping its children'
         assert json.loads(receipt.read_text())['sync_failed'] is True
         assert not (home / 'entered.jsonl').exists()
     finally:
