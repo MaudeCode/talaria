@@ -1,6 +1,9 @@
 import { z } from 'zod'
 import { SpeedTierSchema } from '../speed.js'
 
+/** Warnings and wording come from the Agent's selection guard registry, including future guard kinds. */
+export const ModelSelectionWarningSchema = z.object({ kind: z.string(), title: z.string(), model: z.string(), provider: z.string(), message: z.string() })
+
 /** Shared param shapes. */
 export const ProfileHomeParams = z.object({ profile_home: z.string().min(1) })
 export const BaseHomeParams = z.object({ base_home: z.string().min(1) })
@@ -333,6 +336,7 @@ export const PROVIDERS_METHODS = {
   'providers.local_models': { params: ProfileHomeParams, result: z.object({ provider_id: z.string(), models: z.array(z.string()), current_endpoint: z.string().nullable() }) },
   'providers.resolve_runtime': { params: ProfileHomeParams.extend({ requested: z.string().nullable().optional(), api_key: z.string().nullable().optional(), base_url: z.string().nullable().optional(), target_model: z.string().nullable().optional() }), result: z.object({ runtime: Loose }) },
   'providers.credential_pool': { params: ProfileHomeParams.extend({ provider: z.string().min(1) }), result: z.object({ available: z.boolean(), strategy: z.string(), entries: z.array(Loose) }) },
+  'models.selection_warnings': { params: ProfileHomeParams.extend({ session_id: z.string().min(1), model: z.string().min(1), provider: z.string().nullable(), current_model: z.string().nullable(), current_provider: z.string().nullable(), context_tokens: z.number().int().positive().nullable(), messages: z.array(Loose) }), result: z.object({ warnings: z.array(ModelSelectionWarningSchema), context_tokens: z.number().int().positive().nullable(), provider: z.string(), base_url: z.string() }) },
   'models.speed_tiers': { params: ProfileHomeParams.extend({ routes: z.array(z.object({ model: z.string().min(1), provider: z.string(), base_url: z.string().optional() })) }), result: z.object({ tiers: z.array(z.array(SpeedTierSchema)) }) },
   'models.context_length': { params: ProfileHomeParams.extend({ model: z.string().min(1), base_url: z.string().optional(), api_key: z.string().optional(), provider: z.string().optional(), config_context_length: z.number().int().nullable().optional() }), result: z.object({ model: z.string(), context_length: z.number().int().nullable() }) },
   'models.estimate_tokens': { params: z.object({ messages: z.array(Loose) }), result: z.object({ tokens: z.number().int() }) },

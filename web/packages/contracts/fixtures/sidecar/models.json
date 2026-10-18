@@ -146,5 +146,40 @@
         "capabilities": null
       }
     }
+  ],
+  "models.selection_warnings": [
+    {
+      "params": {
+        "profile_home": "<home>",
+        "session_id": "guard-test",
+        "model": "muse-spark-1.2-contributor",
+        "provider": "custom",
+        "current_model": "old-model",
+        "context_tokens": 200000,
+        "messages": [],
+        "current_provider": "custom"
+      },
+      "result": {
+        "warnings": [
+          {
+            "kind": "data_policy",
+            "title": "Data-Training Tier Warning",
+            "model": "muse-spark-1.2-contributor",
+            "provider": "custom",
+            "message": "!!! CONTRIBUTOR TIER — TRAINS ON YOUR DATA !!!\n\nThis is Meta's contributor tier. Selecting it permits Meta to use your\nprompts and completions to train future Meta models.\n\nSee current pricing and rate limits for the Meta Model API here:\n  https://dev.meta.ai/docs/pricing-rate-limits/\n\nIt lowers the barrier to entry for prototyping, testing integrations, and\nscaling experiments where training on your data is acceptable. Do NOT use it\nfor confidential, proprietary, personal, or otherwise sensitive data. For the\nsame model with no training on your data, select the standard variant\n(without the -contributor suffix).\n\nConfirm only if training on your prompts and completions is acceptable."
+          },
+          {
+            "kind": "context_cache",
+            "title": "Large Context Switch Warning",
+            "model": "muse-spark-1.2-contributor",
+            "provider": "custom",
+            "message": "!!! LARGE CONTEXT MODEL SWITCH !!!\n\nThis session holds ~200,000 tokens of context.\nSwitching to muse-spark-1.2-contributor makes the next reply re-read all of it uncached (providers key prompt caches per model) — a one-time full-price input cost.\n\nThreshold: model.switch_context_confirm_tokens (currently 100,000; 0 disables this check).\nConfirm only if you intend to switch now."
+          }
+        ],
+        "context_tokens": 200000,
+        "provider": "custom",
+        "base_url": "https://provider.invalid/v1"
+      }
+    }
   ]
 }

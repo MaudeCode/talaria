@@ -14748,6 +14748,9 @@
                         "type": "null"
                       }
                     ]
+                  },
+                  "confirm_token": {
+                    "type": "string"
                   }
                 },
                 "required": [
@@ -17011,6 +17014,69 @@
                     "session"
                   ],
                   "additionalProperties": {}
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Model selection requires confirmation. No session state changed.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$schema": "https://json-schema.org/draft/2020-12/schema",
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "type": {
+                      "type": "string",
+                      "const": "model_confirmation_required"
+                    },
+                    "warnings": {
+                      "minItems": 1,
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "kind": {
+                            "type": "string"
+                          },
+                          "title": {
+                            "type": "string"
+                          },
+                          "model": {
+                            "type": "string"
+                          },
+                          "provider": {
+                            "type": "string"
+                          },
+                          "message": {
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "kind",
+                          "title",
+                          "model",
+                          "provider",
+                          "message"
+                        ],
+                        "additionalProperties": false
+                      }
+                    },
+                    "confirm_token": {
+                      "type": "string",
+                      "minLength": 1
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "type",
+                    "warnings",
+                    "confirm_token"
+                  ],
+                  "additionalProperties": false
                 }
               }
             }

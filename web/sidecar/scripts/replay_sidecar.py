@@ -134,6 +134,9 @@ def build_methods() -> dict:
                 spoken = {entry["params"]["text"]: entry["result"] for entry in entries}
     handshake = methods["runtime.handshake"]
     methods["runtime.handshake"] = lambda ctx, params: {**handshake(ctx, params), "rpc_version": params.get("rpc_version", 1)}
+    # Selection fixtures apply only to their recorded target; ordinary replay model picks stay neutral.
+    selection = methods["models.selection_warnings"]
+    methods["models.selection_warnings"] = lambda ctx, params: selection(ctx, params) if params.get("model") == "muse-spark-1.2-contributor" else {"warnings": [], "context_tokens": params.get("context_tokens"), "provider": params.get("provider") or "", "base_url": ""}
     methods["chat.start"] = _chat_start
     methods["chat.interrupt"] = lambda ctx, params: {"ok": True, "reason": "replay"}
     methods["chat.steer"] = lambda ctx, params: {"accepted": True, "fallback": None}

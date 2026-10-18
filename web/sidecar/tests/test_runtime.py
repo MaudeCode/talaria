@@ -109,6 +109,14 @@ def test_handshake_rejects_pre_receipt_delivery_protocol(sidecar: SidecarProcess
 
 
 @requires_agent
+def test_handshake_rejects_pre_selection_guard_protocol(sidecar: SidecarProcess) -> None:
+    message, _ = sidecar.call("runtime.handshake", {"rpc_version": 41})
+    assert "error" in message, "pre-guard servers must not admit the selection-warning protocol"
+    assert message["error"]["data"]["condition"] == "sidecar_rpc_version_mismatch"
+    assert sidecar.close() == 3
+
+
+@requires_agent
 def test_status_before_handshake_reports_nothing_loaded(sidecar: SidecarProcess) -> None:
     result = sidecar.result("runtime.status")
     assert result["compatible"] is False
