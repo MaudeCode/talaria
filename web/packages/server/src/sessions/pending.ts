@@ -108,6 +108,7 @@ const VAULT_FIELDS: Record<VaultPrompt['kind'], VaultPromptField[]> = {
   vault_unlock: [{ key: 'master_password', secure: true }],
   vault_save_login: [{ key: 'identifier', secure: false }, { key: 'password', secure: true }],
   vault_code: [{ key: 'code', secure: false }],
+  skill_secret: [{ key: 'secret', secure: true }],
 }
 
 const vaultKind = (kind: unknown): VaultPrompt['kind'] | null => typeof kind === 'string' && Object.hasOwn(VAULT_FIELDS, kind) ? kind as VaultPrompt['kind'] : null
@@ -115,7 +116,9 @@ const vaultKind = (kind: unknown): VaultPrompt['kind'] | null => typeof kind ===
 /** The password-manager prompt a sidecar frame carries, built once the frame has its timeout metadata. */
 function vaultPrompt(item: Record<string, unknown>, kind: VaultPrompt['kind']): VaultPrompt {
   const text = (key: string): string | null => typeof item[key] === 'string' ? item[key] : null
-  return { kind, backend: text('backend'), display_name: text('display_name'), origin: text('origin'), site: text('site'), hint: text('hint') || null, fields: VAULT_FIELDS[kind], timeout_at: Number(item.expires_at) }
+  return { kind, backend: text('backend'), display_name: text('display_name'), origin: text('origin'), site: text('site'), hint: text(kind === 'skill_secret' ? 'prompt' : 'hint') || null,
+    ...(kind === 'skill_secret' ? { skill: { env_var: text('env_var') ?? '', skill_name: text('skill_name') ?? '', help: text('help'), required_for: text('required_for') } } : {}),
+    fields: VAULT_FIELDS[kind], timeout_at: Number(item.expires_at) }
 }
 
 /**
@@ -127,7 +130,7 @@ export function vaultReply(entry: Record<string, unknown>, answers: ClarifyAnswe
   const value = (key: string): string => { const raw = answers?.[key]; return typeof raw === 'string' ? raw : '' }
   if (VAULT_FIELDS[kind].some((field) => !value(field.key).trim())) return ''
   if (kind === 'vault_save_login') return JSON.stringify({ identifier: value('identifier').trim(), password: value('password') })
-  return value(kind === 'vault_unlock' ? 'master_password' : 'code')
+  return value(VAULT_FIELDS[kind][0]!.key)
 }
 
 export const isVaultPrompt = (entry: Record<string, unknown>): boolean => entry.vault !== undefined
@@ -288,6 +291,7 @@ export class PendingPrompts {
     if (vault) {
       item.vault = vaultPrompt(item, vault)
       delete item.backend; delete item.display_name; delete item.origin; delete item.site; delete item.hint
+      delete item.env_var; delete item.skill_name; delete item.prompt; delete item.help; delete item.required_for
     } else item.kind = 'clarify'
     // The server owns the batch shape: the normalized list (iOS reads it) and the steps every client renders.
     const batch = normalizeQuestions(item.questions)

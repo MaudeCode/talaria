@@ -501,3 +501,20 @@ Session-not-found, authentication, transport, server, and decoding failures reta
 Both chat and manual compression forward the profile's parsed `agent.disabled_toolsets` to
 `AIAgent`. The cached chat Agent identity includes this policy so changing it replaces the Agent
 on the next turn. The Agent's filter also scopes deferred tool search and calls.
+
+## Skill secret setup
+
+On Agents exposing `tools.skills_tool.bind_turn_secret_capture`, each direct chat
+turn binds the existing secure prompt bridge for skill environment setup. Tool
+workers inherit the callback and profile scope. Nonempty single-line ASCII
+answers go through `hermes_cli.config.save_env_value_secure` to the owning
+profile, with a lifetime check against cancellation, replacement and session
+eviction. Unsupported encodings are refused rather than silently changed or
+reported by the Agent writer in logs. Skip, expiry and disconnect leave setup
+unanswered. No answer is echoed, streamed, journaled, or put in a transcript.
+
+v0.22.1 provides the turn-local API; v0.22.0 and v0.22.2 do not. Talaria leaves
+their normal setup-needed result intact and never uses the process-global
+capture callback or ordinary clarification as a secret fallback. The Web uses
+the shared `skill_secret` secure prompt variant; native App adoption is tracked
+separately.

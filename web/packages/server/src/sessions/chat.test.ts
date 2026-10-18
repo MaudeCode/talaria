@@ -1,6 +1,6 @@
 import { filterAsync } from '../util.js'
 import { sessionPath, sessionDirectory } from '../test/storage.js'
-import { existsSync, mkdirSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readFileSync, readdirSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
 import { CANCEL_UNWIND_CEILING_S } from './streams.js'
 import { join } from 'node:path'
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
@@ -1045,6 +1045,7 @@ describe('chat turns through the sidecar', () => {
     sidecar.respond('chat.start', async (params, emit) => {
       await ask(emit, 'v-unlock', { kind: 'vault_unlock', backend: 'bitwarden', display_name: 'Bitwarden', timeout_seconds: 120 })
       await ask(emit, 'v-login', { kind: 'vault_save_login', origin: 'https://login.example.com', site: 'login.example.com', timeout_seconds: 180 })
+      await ask(emit, 'v-skill', { kind: 'skill_secret', env_var: 'EXAMPLE_API_KEY', skill_name: 'example', prompt: 'Enter the test key', help: 'https://example.com/keys', required_for: 'setup', timeout_seconds: 120 })
       await ask(emit, 'v-code', { kind: 'vault_code', site: 'login.example.com', hint: '', timeout_seconds: 180 })
       return completed([{ role: 'user', content: str(params.user_message) }, { role: 'assistant', content: 'Signed in.' }])
     })
@@ -1071,19 +1072,44 @@ describe('chat turns through the sidecar', () => {
     expect(pending.vault).toEqual({ kind: 'vault_save_login', backend: null, display_name: null, origin: 'https://login.example.com', site: 'login.example.com', hint: null, fields: [{ key: 'identifier', secure: false }, { key: 'password', secure: true }], timeout_at: 1800000180 })
     expect(await json(res)).toEqual({ ok: true })
 
+    const secret = 'unique-skill-setup-secret'
+    ;[pending, res, seen] = await respond(seen, { response: secret })
+    expect(res.status).toBe(400)
+    expect(pending).toMatchObject({ kind: 'skill_secret', steps: [], vault: { kind: 'skill_secret', hint: 'Enter the test key', skill: { env_var: 'EXAMPLE_API_KEY', skill_name: 'example', help: 'https://example.com/keys', required_for: 'setup' }, fields: [{ key: 'secret', secure: true }] } })
+    expect(pending).not.toHaveProperty('env_var')
+    res = await post(s, '/api/clarify/respond', { session_id: sid, clarify_id: 'v-skill', answers: { secret } })
+    expect(await json(res)).toEqual({ ok: true })
+    const stale = await post(s, '/api/clarify/respond', { session_id: sid, clarify_id: 'v-skill', answers: { secret } })
+    expect(stale.status).toBe(409)
+
     ;[pending, res] = await respond(seen, { decline: true })
     expect(pending.vault).toMatchObject({ kind: 'vault_code', site: 'login.example.com', fields: [{ key: 'code', secure: false }] })
     expect(await json(res)).toEqual({ ok: true })
-    expect(replies).toEqual([secrets.master, JSON.stringify({ identifier: 'me@example.com', password: secrets.password }), ''])
+    expect(replies).toEqual([secrets.master, JSON.stringify({ identifier: 'me@example.com', password: secrets.password }), secret, ''])
 
     const replay = await s.sse(`/api/chat/stream?stream_id=${streamId}&replay=1`, (f) => f.event === 'stream_end')
     expect(eventNames(replay)).toContain('done')
     expect(await json(await s.get(`/api/clarify/pending?session_id=${sid}`))).toEqual({ pending: null, pending_count: 0 })
     // No answer survives anywhere the server keeps or serves the session.
     const exports = await Promise.all(['json', 'md', 'html'].map(async (format) => (await s.get(`/api/session/export?session_id=${sid}&format=${format}`)).text()))
-    const kept = [JSON.stringify(replay), JSON.stringify((await s.deps.sessionStore.get(sid))), JSON.stringify(await json(await s.get(`/api/session?session_id=${sid}`))), ...exports, s.logs.join('\n')].join('\n')
+    const disk = readdirSync(s.state, { recursive: true, withFileTypes: true }).filter((entry) => entry.isFile()).map((entry) => readFileSync(join(entry.parentPath, entry.name), 'utf8')).join('\n')
+    const kept = [disk, JSON.stringify(replay), JSON.stringify((await s.deps.sessionStore.get(sid))), JSON.stringify(await json(await s.get(`/api/session?session_id=${sid}`))), ...exports, s.logs.join('\n')].join('\n')
     expect(exports.every((text) => text.includes('Signed in.'))).toBe(true)
-    for (const secret of [...Object.values(secrets), 'me@example.com']) expect(kept).not.toContain(secret)
+    for (const value of [...Object.values(secrets), secret, 'me@example.com']) expect(kept).not.toContain(value)
+  })
+
+  it('does not echo a secure answer from a sidecar failure and retains the prompt for retry', async () => {
+    const sid = await newSession(s)
+    const secret = 'unique-error-body-secret'
+    s.deps.pending.submitClarify(sid, { clarify_id: 'failed-secret', kind: 'skill_secret', env_var: 'EXAMPLE_API_KEY' })
+    sidecar.respond('clarify.respond', () => { throw new SidecarError(secret, { condition: 'sidecar_unavailable' }) })
+    const response = await post(s, '/api/clarify/respond', { session_id: sid, clarify_id: 'failed-secret', answers: { secret } })
+    expect(response.status).toBe(503)
+    expect(await response.text()).not.toContain(secret)
+    expect(s.logs.join('\n')).not.toContain(secret)
+    expect((await json(await s.get(`/api/clarify/pending?session_id=${sid}`))).pending).toMatchObject({ clarify_id: 'failed-secret' })
+    sidecar.respond('clarify.respond', () => ({ ok: true, clarify_id: 'failed-secret' }))
+    expect(await json(await post(s, '/api/clarify/respond', { session_id: sid, clarify_id: 'failed-secret', decline: true }))).toEqual({ ok: true })
   })
 
   it.each(['first title', 'adaptive refresh', 'explicit regenerate'])('routes %s through the session model with main fallback (TAL-1013)', async (route) => {

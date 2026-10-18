@@ -8,7 +8,7 @@ import type { ClarifyPending } from '../../contracts'
 import type { LiveTurn } from '../../stream/reducer'
 
 // The shared contract examples every client renders (TAL-887).
-const fixture = JSON.parse(readFileSync(resolve(import.meta.dirname, '../../../../../../contracts/fixtures/vault-prompts.json'), 'utf8')) as Record<'unlock' | 'save_login' | 'code', { pending: ClarifyPending }>
+const fixture = JSON.parse(readFileSync(resolve(import.meta.dirname, '../../../../../../contracts/fixtures/vault-prompts.json'), 'utf8')) as Record<'unlock' | 'save_login' | 'code' | 'skill_secret', { pending: ClarifyPending }>
 let head: ClarifyPending | null = null
 vi.mock(import('../../api/endpoints'), async (importOriginal) => ({
   ...(await importOriginal()), fetchClarifyPending: vi.fn(() => Promise.resolve({ pending: head, pending_count: head ? 1 : 0 })), respondClarify: vi.fn(() => Promise.resolve({ ok: true })),
@@ -71,6 +71,20 @@ describe('password-manager prompts (TAL-887)', () => {
     await userEvent.type(screen.getByLabelText('Password'), 's3cret')
     await userEvent.click(screen.getByRole('button', { name: 'Save' }))
     expect(api.respondClarify).toHaveBeenCalledWith({ session_id: 's1', clarify_id: 'contract-vault-login', answers: { identifier: 'me@example.com', password: 's3cret' } })
+  })
+
+  it('saves a skill secret in the shared masked prompt, with explicit Skip', async () => {
+    const { container } = renderHead(fixture.skill_secret.pending)
+    expect(await screen.findByRole('dialog', { name: 'Set up example' })).toBeTruthy()
+    expect(screen.queryByTestId('clarify')).toBeNull()
+    const input = screen.getByLabelText('EXAMPLE_API_KEY')
+    expect(input.getAttribute('type')).toBe('password')
+    expect(input.getAttribute('autocomplete')).toBe('off')
+    expect(screen.getByRole('button', { name: 'Skip' })).toBeTruthy()
+    await userEvent.type(input, 'unique-skill-secret')
+    await userEvent.click(screen.getByRole('button', { name: 'Save' }))
+    expect(api.respondClarify).toHaveBeenCalledWith({ session_id: 's1', clarify_id: 'contract-skill-secret', answers: { secret: 'unique-skill-secret' } })
+    expect(container.innerHTML).not.toContain('unique-skill-secret')
   })
 
   it('takes a one-time code as typed, and Skip declines without an answer', async () => {

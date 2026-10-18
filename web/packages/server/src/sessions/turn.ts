@@ -2262,6 +2262,7 @@ export class TurnRunner {
     try {
       ok = (await sidecar.call('clarify.respond', { session_id: sessionId, clarify_id: str(entry.clarify_id), response })).ok
     } catch (error) {
+      if (vault) return { ok: false, error: 'The Agent sidecar did not accept the secure answer; retry in a moment.' }
       return { ok: false, error: `The Agent sidecar did not accept the answer (${str((error as Error).message)}); retry in a moment.` }
     }
     if (!ok) return { ok: false, stale: true }
