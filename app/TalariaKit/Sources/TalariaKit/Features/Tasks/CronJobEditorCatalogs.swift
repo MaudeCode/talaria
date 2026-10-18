@@ -64,6 +64,7 @@ public final class CronJobEditorCatalogs {
     }
 
     private func loadBlueprints() async {
+        guard includesBlueprints else { return }
         do {
             blueprints = try await client.cronBlueprints().blueprints
         } catch {
@@ -73,9 +74,11 @@ public final class CronJobEditorCatalogs {
     }
 
     private let client: APIClient
+    private let includesBlueprints: Bool
 
-    public init(client: APIClient) {
+    public init(client: APIClient, includesBlueprints: Bool = false) {
         self.client = client
+        self.includesBlueprints = includesBlueprints
     }
 
     public func load() async {

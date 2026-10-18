@@ -70,7 +70,7 @@ struct CronJobEditorSheet: View {
         self.initialDeliver = draft.deliver
         self.initialProfile = draft.profile
         _draft = State(initialValue: draft)
-        _catalogs = State(initialValue: CronJobEditorCatalogs(client: client))
+        _catalogs = State(initialValue: CronJobEditorCatalogs(client: client, includesBlueprints: allowsBlueprints))
     }
 
     var body: some View {

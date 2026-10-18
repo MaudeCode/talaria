@@ -934,8 +934,6 @@ final class CronManagementViewModelTests: APIClientTestCase {
     func testCronJobEditorCatalogsLoadModelsProfilesAndEnabledSkills() async throws {
         let client = makeClient { request in
             switch request.url?.path {
-            case "/api/cron/blueprints":
-                return apiTestJSONResponse(#"{"blueprints":[]}"#, for: request)
             case "/api/models":
                 return apiTestJSONResponse("""
                 {
@@ -975,8 +973,6 @@ final class CronManagementViewModelTests: APIClientTestCase {
         var profilesFail = true
         let client = makeClient { request in
             switch request.url?.path {
-            case "/api/cron/blueprints":
-                return apiTestJSONResponse(#"{"blueprints":[]}"#, for: request)
             case "/api/models":
                 throw URLError(.timedOut)
             case "/api/profiles":

@@ -10,9 +10,11 @@ final class ContractReadinessTests: APIClientTestCase {
             lock.withLock { requested.append(request.url!.path) }
             return (HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: ["Content-Type": "application/json"])!, Data("{}".utf8))
         }
-        let catalogs = CronJobEditorCatalogs(client: client)
+        let catalogs = CronJobEditorCatalogs(client: client, includesBlueprints: true)
         await catalogs.load()
         XCTAssertTrue(requested.contains("/api/cron/blueprints"), "The task editor must load the Agent blueprint catalog")
+        await catalogs.load()
+        XCTAssertEqual(requested.filter { $0 == "/api/cron/blueprints" }.count, 2, "Retries keep the create-only catalog option")
     }
 
     @MainActor
@@ -33,7 +35,7 @@ final class ContractReadinessTests: APIClientTestCase {
             }
             return (HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: ["Content-Type": "application/json"])!, Data(json.utf8))
         }
-        let catalogs = CronJobEditorCatalogs(client: client)
+        let catalogs = CronJobEditorCatalogs(client: client, includesBlueprints: true)
         await catalogs.load()
         let blueprint = try XCTUnwrap(catalogs.blueprints.first)
         XCTAssertEqual(blueprint.plugin, "team")
@@ -68,7 +70,7 @@ final class ContractReadinessTests: APIClientTestCase {
             let root = try JSONSerialization.jsonObject(with: sharedContractFixture("cron-blueprints")) as! [String: Any]
             return (HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: ["Content-Type": "application/json"])!, try JSONSerialization.data(withJSONObject: root["catalog"]!))
         }
-        let catalogs = CronJobEditorCatalogs(client: client)
+        let catalogs = CronJobEditorCatalogs(client: client, includesBlueprints: true)
         await catalogs.load()
         catalogs.selectBlueprint(try XCTUnwrap(catalogs.blueprints.first))
         catalogs.blueprintValues["time"] = "25:99"
