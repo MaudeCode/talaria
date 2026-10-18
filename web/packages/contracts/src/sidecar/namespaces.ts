@@ -482,7 +482,7 @@ export const USAGE_METHODS = {
   'usage.account': { params: ProfileHomeParams.extend({ provider: z.string().min(1), base_url: z.string().nullable().optional(), api_key: z.string().nullable().optional(), credential_id: CredentialId }), result: z.object({ snapshot: AccountUsageSnapshotSchema.nullable() }) },
   'usage.pool': { params: ProfileHomeParams.extend({ provider: z.string().min(1), api_key: z.string().nullable().optional(), env_vars: z.array(z.string().min(1)).optional() }), result: z.object({ entries: z.array(PoolEntrySchema), has_api_key: z.boolean().optional() }) },
   /** TAL-548: the providers whose persisted credential pool holds an account the user added, keyed or not. */
-  'usage.pool_providers': { params: ProfileHomeParams, result: z.object({ providers: z.array(z.string()) }) },
+  'usage.pool_providers': { params: ProfileHomeParams.extend({ key_envs: z.record(z.string(), z.array(z.string().min(1))).optional() }), result: z.object({ providers: z.array(z.string()), keys: z.record(z.string(), z.object({ present: z.boolean(), revision: z.string().nullable() })).default({}) }) },
   /** TAL-807: pool rate limits by provider slug, only for pooled providers that are limited; `models` are bare ids. */
   'usage.limits': { params: ProfileHomeParams.extend({ providers: z.array(z.object({ slug: z.string().min(1), models: z.array(z.string()) })) }), result: z.object({ limits: z.record(z.string(), PoolLimitSchema) }) },
   'usage.balance': { params: ProfileHomeParams.extend({ provider: z.enum(['openrouter', 'deepseek', 'opencode-go']), credential_id: CredentialId, api_key: z.string().nullable().optional(), env_vars: z.array(z.string().min(1)).optional() }), result: BalanceResultSchema },

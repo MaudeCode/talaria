@@ -293,6 +293,18 @@ def test_balance_and_pool_resolve_keys_inside_profile_scope(tmp_path, monkeypatc
     assert rows[0]["matches_api_key"] is usable
     assert looked_up == ["MISSING_KEY", "OPENROUTER_API_KEY"] * 2
     assert not active
+    monkeypatch.setattr(usage, "pool_providers", lambda: [])
+    metadata_params = {"profile_home": str(tmp_path), "key_envs": {"openrouter": params["env_vars"]}}
+    first = registry.methods["usage.pool_providers"](None, metadata_params)
+    second = registry.methods["usage.pool_providers"](None, metadata_params)
+    assert first.get("keys", {}).get("openrouter", {}).get("present") is usable
+    assert first == second
+    before = first["keys"]["openrouter"]["revision"]
+    assert (isinstance(before, str) and len(before) == 64) if usable else before is None
+    assert "sk-" not in json.dumps(first) and "op://" not in json.dumps(first)
+    resolved = "sk-rotated-scoped"
+    rotated = registry.methods["usage.pool_providers"](None, metadata_params)
+    assert rotated["keys"]["openrouter"]["revision"] != before
 
 
 def test_unresolved_explicit_keys_are_never_sent_to_provider(monkeypatch):
@@ -335,22 +347,28 @@ usage.urllib.request.urlopen = urlopen
 usage._pool = lambda provider: (None, [types.SimpleNamespace(id='work', runtime_api_key='sk-work-vault'), types.SimpleNamespace(id='home', runtime_api_key='sk-home-vault')])
 registry = Registry(runtime=types.SimpleNamespace(load=lambda: None, ensure_current=lambda: None))
 usage.register(registry)
-seen = []
+seen, revisions = [], []
 for profile in ['work', 'home', 'missing', 'work']:
     params = {'profile_home': str(Path(os.environ['HERMES_HOME']) / 'profiles' / profile), 'provider': 'openrouter', 'env_vars': ['OPENROUTER_API_KEY']}
+    state = registry.methods['usage.pool_providers'](None, {'profile_home': params['profile_home'], 'key_envs': {'openrouter': ['OPENROUTER_API_KEY']}})['keys']['openrouter']
+    assert state['present'] == (profile != 'missing')
+    revisions.append(state['revision'])
     balance = registry.methods['usage.balance'](None, params)
     snapshot = registry.methods['usage.pool'](None, params)
     rows = snapshot['entries']
     assert snapshot['has_api_key'] == (profile != 'missing')
     absent = registry.methods['usage.balance'](None, {**params, 'credential_id': 'removed'})
     seen.append([balance['status'], [r['credential_id'] for r in rows if r['matches_api_key']], absent['status']])
-print(json.dumps({'seen': seen, 'requests': requests}))
+print(json.dumps({'seen': seen, 'requests': requests, 'revisions': revisions}))
 '''
     run = subprocess.run([AGENT_PYTHON, '-c', code, str(AGENT_DIR)], env=isolated_env(root, OPENROUTER_API_KEY='sk-root-must-not-leak'), capture_output=True, text=True, timeout=120)
     assert run.returncode == 0, run.stderr[-4000:]
     result = json.loads(run.stdout.strip().splitlines()[-1])
     assert result['seen'] == [['ok', ['work'], 'no_key'], ['ok', ['home'], 'no_key'], ['no_key', [], 'no_key'], ['ok', ['work'], 'no_key']], (result, run.stderr[-6000:])
     assert result['requests'] == ['Bearer sk-work-vault', 'Bearer sk-home-vault', 'Bearer sk-work-vault']
+    work, home, missing, repeated = result['revisions']
+    assert work == repeated and work != home and missing is None
+    assert len(work) == len(home) == 64
 
 
 def test_missing_scoped_resolvers_never_read_ambient_key(monkeypatch):

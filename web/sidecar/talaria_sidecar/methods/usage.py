@@ -5,10 +5,13 @@ from __future__ import annotations
 
 import dataclasses
 import functools
+import hashlib
+import hmac
 import inspect
 import json
 import logging
 import math
+import secrets
 import time
 import urllib.error
 import urllib.request
@@ -20,6 +23,7 @@ from ..home import profile_home_param, scoped_home
 from ..rpc import CallContext
 
 log = logging.getLogger("talaria_sidecar.usage")
+_KEY_REVISION_SALT = secrets.token_bytes(32)
 
 
 def _plain(value: Any) -> Any:
@@ -385,8 +389,15 @@ def register(registry) -> None:
 
     @registry.method("usage.pool_providers")
     def pool_providers_(ctx: CallContext, params: dict) -> dict:
+        key_envs = params.get("key_envs") or {}
+        if not isinstance(key_envs, dict) or not all(isinstance(pid, str) and isinstance(names, list) and all(isinstance(name, str) for name in names) for pid, names in key_envs.items()):
+            raise InvalidParams("key_envs must map providers to environment variable names")
         with scoped_home(profile_home_param(params)):
-            return {"providers": pool_providers()}
+            keys = {}
+            for provider, names in key_envs.items():
+                key = _configured_key(None, names)
+                keys[provider] = {"present": bool(key), "revision": hmac.new(_KEY_REVISION_SALT, key.encode(), hashlib.sha256).hexdigest() if key else None}
+            return {"providers": pool_providers(), "keys": keys}
 
     @registry.method("usage.limits")
     def limits_(ctx: CallContext, params: dict) -> dict:

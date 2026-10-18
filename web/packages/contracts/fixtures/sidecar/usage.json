@@ -28,7 +28,8 @@
         "profile_home": "<home>"
       },
       "result": {
-        "providers": []
+        "providers": [],
+        "keys": {}
       }
     }
   ],

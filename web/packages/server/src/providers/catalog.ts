@@ -441,8 +441,9 @@ function looksLikeCodexOauthToken(value: string): boolean {
   }
 }
 
+const BALANCE_PROVIDERS = ['openrouter', 'deepseek', 'opencode-go'] as const
 function isBalanceProvider(pid: string): pid is SidecarParams<'usage.balance'>['provider'] {
-  return pid === 'openrouter' || pid === 'deepseek' || pid === 'opencode-go'
+  return BALANCE_PROVIDERS.some((provider) => provider === pid)
 }
 
 function valueCountsAsApiKey(pid: string, value: unknown): boolean {
@@ -517,6 +518,9 @@ export function uniqueQuotaSources<T extends { source_id: string; provider_id: s
 interface KeyProbe { authoritative: boolean; hasKey: boolean; keySource: string; authError: string | null; isOauth: boolean; removable: boolean }
 
 export class ProviderCatalog {
+  private readonly scopedKeyRevisions = new Map<string, string>()
+  private readonly scopedKeyAuthority = new Map<string, boolean>()
+  private readonly credentialReads = new Map<string, Promise<CatalogLookup<SidecarResult<'usage.pool_providers'>>>>()
   /** Failed live lookups by home, provider, and the `sourceFingerprint` they ran under (TAL-542). */
   private readonly liveFailed = new Set<string>()
   /** `source`: the `sourceFingerprint` the ids were fetched under; another one makes them stale (TAL-542). `ttl`: seconds they stay fresh. */
@@ -572,9 +576,9 @@ export class ProviderCatalog {
   /**
    * TAL-542: the identity of the files a catalog and its live ids derive from: config.yaml, `.env`, the Agent's sign-in
    * store (`auth.json`, rewritten by an account switch), and the installed plugins directory, so a change outside Web
-   * makes both stale.
+   * makes both stale. Opaque scoped-key revisions cover external secret sources without exposing their keys.
    */
-  private sourceFingerprint(profileHome: string): string {
+  private sourceFingerprint(profileHome: string, includeScoped = true): string {
     const stamp = (name: string): string => {
       try { const st = statSync(join(profileHome, name), { bigint: true }); return `${String(st.mtimeNs)}:${String(st.ctimeNs)}:${String(st.size)}:${String(st.ino)}` } catch { return 'missing' }
     }
@@ -585,14 +589,14 @@ export class ProviderCatalog {
     }
     const credentials = [...names].sort().map((name) => [name, this.processEnv(name, profileHome)])
     const models = ['HERMES_MODEL', 'OPENAI_MODEL', 'LLM_MODEL'].map((name) => [name, this.deps.env[name]])
-    const environment = createHash('sha256').update(JSON.stringify([credentials, models])).digest('hex')
+    const environment = createHash('sha256').update(JSON.stringify([credentials, models, includeScoped ? this.scopedKeyRevisions.get(profileHome) ?? '[]' : '[]'])).digest('hex')
     return [profileHome, environment, this.deps.config.fingerprint(profileHome), ...['.env', 'auth.json', 'plugins'].map(stamp)].join('|')
   }
 
   /** The last catalog built for this home, younger than `maxAgeS`, while its source files are unchanged since (TAL-542). */
   private currentModels(profileHome: string, maxAgeS = Infinity): ModelsCatalog | undefined {
     const meta = this.lastModelsMeta.get(profileHome)
-    return meta?.source === this.sourceFingerprint(profileHome) && this.deps.now() - meta.at < maxAgeS ? this.lastModels.get(profileHome) : undefined
+    return this.scopedKeyAuthority.get(profileHome) !== false && meta?.source === this.sourceFingerprint(profileHome) && this.deps.now() - meta.at < maxAgeS ? this.lastModels.get(profileHome) : undefined
   }
 
   /**
@@ -611,6 +615,7 @@ export class ProviderCatalog {
    * await. A source that changed while the build awaited makes that build stale, so it is rebuilt once.
    */
   async warmSessionModelRepair(profileHome: string): Promise<void> {
+    await this.poolProviders(profileHome)
     for (let attempt = 0; attempt < 2 && !this.currentModels(profileHome, PROVIDERS_TTL_S); attempt += 1) {
       try { await this.models(profileHome) } catch { return /* fail closed: the pair is kept */ }
     }
@@ -618,6 +623,7 @@ export class ProviderCatalog {
 
   /** Builds the catalog `modelOptionFor` reads once per home, again after config.yaml or `.env` changes; an unavailable catalog leaves every option id null. */
   async warmModelOptions(profileHome: string): Promise<void> {
+    await this.poolProviders(profileHome)
     if (this.currentModels(profileHome)) return
     try { await this.models(profileHome) } catch { /* fail closed: no option ids */ }
   }
@@ -664,7 +670,7 @@ export class ProviderCatalog {
   }
 
   /** `pooled`: the providers whose persisted credential pool holds an added account (TAL-638). */
-  private async probeKey(profileHome: string, pid: string, config: Config, envValues: Record<string, string>, pooled: ReadonlySet<string>): Promise<KeyProbe> {
+  private async probeKey(profileHome: string, pid: string, config: Config, envValues: Record<string, string>, pooled: ReadonlySet<string>, scopedKeys: SidecarResult<'usage.pool_providers'>['keys']): Promise<KeyProbe> {
     let authoritative = true
     let hasKey = this.providerHasKey(pid, config, envValues, profileHome)
     let isOauth = OAUTH_PROVIDERS.has(pid)
@@ -707,9 +713,7 @@ export class ProviderCatalog {
       hasKey = true
       keySource = 'credential_pool'
     } else if (isBalanceProvider(pid)) {
-      const lookup = await this.poolEntries(profileHome, pid, null)
-      authoritative = lookup.authoritative
-      if (lookup.value?.has_api_key) { hasKey = true; keySource = 'env' }
+      if (scopedKeys[pid]?.present) { hasKey = true; keySource = 'env' }
     } else if (!providerEnvVar(pid) && /^[a-z][a-z0-9_-]{0,63}$/.test(pid)) {
       const lookup = await this.authStatus(profileHome, pid)
       authoritative = lookup.authoritative
@@ -725,10 +729,16 @@ export class ProviderCatalog {
   }
 
   /** Live model ids from the Agent for one provider, cached per profile home. */
-  async liveModelIds(profileHome: string, pid: string, opts: { force?: boolean } = {}): Promise<string[]> {
+  async liveModelIds(profileHome: string, pid: string, opts: { force?: boolean; source?: string } = {}): Promise<string[]> {
+    const inputSource = this.sourceFingerprint(profileHome, false)
+    if (!opts.source || opts.source !== this.sourceFingerprint(profileHome)) await this.poolProviders(profileHome)
     const key = `${profileHome}\0${pid}`
-    const source = this.sourceFingerprint(profileHome)
+    const source = inputSource === this.sourceFingerprint(profileHome, false) ? this.sourceFingerprint(profileHome) : inputSource
     const hit = this.liveIds.get(key)
+    if (this.scopedKeyAuthority.get(profileHome) === false) {
+      this.liveFailed.add(`${key}\0${source}`)
+      return hit?.source === source ? hit.ids : []
+    }
     if (hit?.source === source && !opts.force && this.deps.now() - hit.at < hit.ttl) return hit.ids
     // A lookup started under another source answers for the old endpoint or credential; this one starts its own.
     const flightKey = `${key}\0${source}`
@@ -783,15 +793,15 @@ export class ProviderCatalog {
   }
 
   /** The cached `providers` answer, shared with `quotas`; callers never mutate it. */
-  private async providerRows(profileHome: string): Promise<{ payload: { providers: Dict[]; active_provider: string | null; availability: CatalogAvailability }; pooled: string[] | null }> {
+  private async providerRows(profileHome: string, pool?: CatalogLookup<SidecarResult<'usage.pool_providers'>>): Promise<{ payload: { providers: Dict[]; active_provider: string | null; availability: CatalogAvailability }; pooled: string[] | null }> {
     const config = await this.deps.config.read(profileHome)
     const envValues = loadEnvFile(join(profileHome, '.env'))
+    pool ??= await this.poolProviders(profileHome)
     const source = this.sourceFingerprint(profileHome)
     const cacheKey = source
     const hit = this.providersCache.get(profileHome)
-    if (hit?.key === cacheKey && this.deps.now() - hit.at < PROVIDERS_TTL_S) return hit
-    const pool = await this.poolProviders(profileHome)
-    const pooledIds = pool.value
+    if (pool.authoritative && hit?.key === cacheKey && this.deps.now() - hit.at < PROVIDERS_TTL_S) return hit
+    const pooledIds = pool.value?.providers ?? null
     const pluginLookup = await this.pluginProviders(profileHome)
     let authoritative = pool.authoritative && pluginLookup.authoritative
     const pooled = new Set(pooledIds ?? [])
@@ -809,7 +819,7 @@ export class ProviderCatalog {
     }
     const rows: Dict[] = []
     for (const pid of [...known].sort()) {
-      const probe = await this.probeKey(profileHome, pid, config, envValues, pooled)
+      const probe = await this.probeKey(profileHome, pid, config, envValues, pooled, pool.value?.keys ?? {})
       authoritative &&= probe.authoritative
       if (pid === 'openai' && !probe.hasKey && looksLikeCodexOauthToken(str(envValues[providerEnvVar('openai') ?? ''] ?? this.deps.env.OPENAI_API_KEY))) continue
       const configured = probe.hasKey || selfHostedEndpoint(pid, config)
@@ -818,7 +828,7 @@ export class ProviderCatalog {
       // Python: the card prefers the live catalog for every keyed provider (exactly like the picker), keeping the
       // static list as the cold/failed-probe fallback; Nous renders a featured subset with the full count.
       if (configured && (probe.isOauth || pid === 'lmstudio' || pid === 'nous' || !BESPOKE_CATALOG_PROVIDERS.has(pid))) {
-        const live = await this.liveModelIds(profileHome, pid)
+        const live = await this.liveModelIds(profileHome, pid, { source })
         if (live.length) {
           models = pid === 'nous' ? live.slice(0, 25).map((id) => ({ id: `@nous:${id}`, label: `${formatOllamaLabel(id.includes('/') ? id.slice(id.indexOf('/') + 1) : id)} (via Nous)` })) : live.map((id) => ({ id, label: labelForModel(id, []) }))
           modelsTotal = live.length
@@ -900,7 +910,9 @@ export class ProviderCatalog {
 
   /** Python `get_available_models` (static catalog + live ids for keyed providers). */
   async models(profileHome: string, attempt = 0): Promise<ModelsCatalog> {
+    const pool = await this.poolProviders(profileHome)
     const source = this.sourceFingerprint(profileHome)
+    const providerState = (await this.providerRows(profileHome, pool)).payload
     const unconfirmed = new Set<string>()
     const config = await this.deps.config.read(profileHome)
     const envValues = loadEnvFile(join(profileHome, '.env'))
@@ -943,7 +955,6 @@ export class ProviderCatalog {
     // ready plugin providers (TAL-288), under their own name, and providers keyed only through the credential pool (TAL-638).
     const signedIn = new Set<string>()
     const pluginNames = new Map<string, string>()
-    const providerState = (await this.providerRows(profileHome)).payload
     for (const row of providerState.providers) {
       if (row.has_key !== true || (row.is_oauth !== true && row.is_plugin_provider !== true && row.key_source !== 'credential_pool' && row.key_source !== 'env')) continue
       signedIn.add(str(row.id))
@@ -1006,7 +1017,7 @@ export class ProviderCatalog {
       if (!raw.length) {
         // TAL-799: a provider without credentials lists the Agent's curated catalog too; the static tables only cover a missing sidecar.
         const keyed = this.providerHasKey(pid, config, envValues, profileHome) || selfHostedEndpoint(pid, config) || signedIn.has(pid)
-        const live = await this.liveModelIds(profileHome, pid)
+        const live = await this.liveModelIds(profileHome, pid, { source })
         const failed = this.liveLookupFailed(profileHome, pid, source)
         // TAL-542: a failed lookup, or a curated list no account confirmed, leaves this group unconfirmed, so the stale-model repair never trusts it.
         allowFallback = failed || !keyed
@@ -1397,9 +1408,26 @@ export class ProviderCatalog {
     }
   }
 
-  /** TAL-548: the providers whose persisted credential pool holds an added account; none when the sidecar cannot say. */
-  private poolProviders(profileHome: string): Promise<CatalogLookup<string[]>> {
-    return this.poolLookup(profileHome, 'providers', async (sidecar) => (await sidecar.call('usage.pool_providers', { profile_home: profileHome })).providers)
+  /** One shared read of pool membership and scoped key revisions before reusing catalog data. */
+  private poolProviders(profileHome: string): Promise<CatalogLookup<SidecarResult<'usage.pool_providers'>>> {
+    const inputSource = this.sourceFingerprint(profileHome, false)
+    const readKey = this.sourceFingerprint(profileHome)
+    const pending = this.credentialReads.get(readKey)
+    if (pending) return pending
+    const read = (async () => {
+      const config = await this.deps.config.read(profileHome)
+      const key_envs = Object.fromEntries(BALANCE_PROVIDERS.filter((pid) => this.apiKeyFor(pid, profileHome, config) === null).map((pid) => [pid, this.usageKey(pid, null).env_vars ?? []]))
+      const result = await this.poolLookup(profileHome, 'providers', (sidecar) => sidecar.call('usage.pool_providers', { profile_home: profileHome, key_envs }))
+      if (inputSource !== this.sourceFingerprint(profileHome, false)) return { value: null, authoritative: false }
+      this.scopedKeyAuthority.set(profileHome, result.authoritative)
+      if (result.authoritative) this.scopedKeyRevisions.set(profileHome, JSON.stringify(Object.entries(result.value?.keys ?? {}).sort(([a], [b]) => a.localeCompare(b)).map(([pid, state]) => [pid, state.revision])))
+      return result
+    })().catch(() => {
+      if (inputSource === this.sourceFingerprint(profileHome, false)) this.scopedKeyAuthority.set(profileHome, false)
+      return { value: null, authoritative: false }
+    }).finally(() => { this.credentialReads.delete(readKey) })
+    this.credentialReads.set(readKey, read)
+    return read
   }
 
   /** TAL-548: one key-based balance read through the sidecar, which resolves a pool account's key itself; null when it fails. */
