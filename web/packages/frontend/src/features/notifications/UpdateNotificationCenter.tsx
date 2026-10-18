@@ -228,7 +228,7 @@ export function UpdateNotificationProvider({ children }: { children: ReactNode }
           visibleServerToasts.current.add(toastId)
           persistentVersions.current.set(toastId, row.updated_at)
         }
-      } else if (primed.current && row.id !== shownRowId && (priorPhase === undefined || (row.kind === 'update' && priorPhase !== row.phase))) {
+      } else if (primed.current && row.id !== shownRowId && (priorPhase === undefined || ((row.kind === 'update' || row.kind === 'agent_recovery') && priorPhase !== row.phase))) {
         showRichToast({
           id: toastId,
           revision: row.updated_at,

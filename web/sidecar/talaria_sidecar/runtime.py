@@ -346,14 +346,12 @@ class AgentRuntime:
     def web_repair_state(self) -> str:
         if self.agent_dir is None:
             return "absent"
-        from .agent_services import recovery_path
-        backend = _marker_presence(recovery_path(self.agent_dir, self.hermes_home))
-        if backend != 'absent':
-            return backend
-        state = os.environ.get("TALARIA_SIDECAR_WEB_STATE_DIR") or os.environ.get("HERMES_WEBUI_STATE_DIR", "").strip()
-        root = Path(state).expanduser() if state else self.hermes_home / "webui"
-        key = hashlib.sha256(str(self.agent_dir.resolve()).encode()).hexdigest()
-        return _marker_presence(root / "agent-dependency-sync" / key)
+        from .agent_mutation import recovery_receipts
+        try:
+            receipts, _ = recovery_receipts(self)
+            return 'present' if receipts else 'absent'
+        except (OSError, UnicodeError):
+            return 'unknown'
 
     def is_stale(self) -> bool:
         """True when the checkout revision no longer matches the loaded module.

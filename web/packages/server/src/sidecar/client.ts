@@ -73,6 +73,8 @@ export interface SidecarLike {
   close(): Promise<void>
   /** Kill the child so it restarts from the current environment; pending calls fail with `sidecar_unavailable`. */
   recycle(reason: string): void
+  /** Observe future validated handshakes, including import-failed runtimes that recovery can repair. */
+  onHandshake?: (listener: (runtime: RuntimeDescribe) => void) => () => void
 }
 
 export type SidecarStatus = 'stopped' | 'starting' | 'ready' | 'incompatible' | 'restarting'
@@ -144,6 +146,8 @@ export class SidecarClient implements SidecarLike {
   describe: RuntimeDescribe | null = null
   private child: ChildProcess | null = null
   private nextId = 1
+  private runtimeStatusSequence = 0
+  private readonly handshakeListeners = new Set<(runtime: RuntimeDescribe) => void>()
   private readonly pending = new Map<number, Pending>()
   private restartAttempt = 0
   private restartTimer: ReturnType<typeof setTimeout> | null = null
@@ -152,6 +156,11 @@ export class SidecarClient implements SidecarLike {
 
   constructor(private readonly opts: SidecarSpawnOptions) {
     this.log = opts.log ?? ((line) => { process.stderr.write(line + '\n') })
+  }
+
+  onHandshake(listener: (runtime: RuntimeDescribe) => void): () => void {
+    this.handshakeListeners.add(listener)
+    return () => { this.handshakeListeners.delete(listener) }
   }
 
   /** Spawn and handshake. Resolves with the handshake payload; rejects only on spawn failure. */
@@ -184,12 +193,17 @@ export class SidecarClient implements SidecarLike {
 
     try {
       const describe = await this.rawCall('runtime.handshake', { rpc_version: SIDECAR_RPC_VERSION }, { timeoutMs: this.opts.handshakeTimeoutMs ?? 60_000 })
+      if (this.child !== child || this.closed) throw new SidecarError('sidecar handshake was superseded', { condition: 'sidecar_unavailable' })
       if (describe.rpc_version !== SIDECAR_RPC_VERSION) throw new SidecarError('sidecar RPC version mismatch', { condition: 'sidecar_rpc_version_mismatch' })
       this.describe = describe
       this.status = describe.compatible && !describe.stale ? 'ready' : 'incompatible'
       const tested = describe.agent_revision !== null ? describe.agent_revision === describe.pinned_revision : describe.agent_version === describe.pinned_version
       if (describe.compatible && !tested) this.log('[sidecar] This Agent version is not officially supported by Talaria and may cause issues.')
       this.restartAttempt = 0
+      for (const listener of [...this.handshakeListeners]) {
+        try { listener(describe) }
+        catch (error) { this.log(`[sidecar] handshake observer failed: ${String(error)}`) }
+      }
       return describe
     } catch (error) {
       // A decoded version mismatch is final: the sidecar exits 3 on its own and restarting cannot help.
@@ -279,7 +293,16 @@ export class SidecarClient implements SidecarLike {
     if (condition !== null && !configAccess && !method.startsWith('runtime.') && method !== 'rpc.methods') {
       return Promise.reject(new SidecarError(`sidecar not ready (${this.status})`, { condition }))
     }
-    return this.rawCall(method, params, opts)
+    const child = this.child
+    const refreshStatus = method === 'runtime.status' && (this.status === 'ready' || this.status === 'incompatible')
+    const statusSequence = method === 'runtime.status' ? ++this.runtimeStatusSequence : 0
+    return this.rawCall(method, params, opts).then((result) => {
+      if (refreshStatus && statusSequence === this.runtimeStatusSequence && this.child === child && !this.closed && !opts.signal?.aborted && (this.status === 'ready' || this.status === 'incompatible')) {
+        this.describe = result as RuntimeDescribe
+        this.status = this.describe.compatible && !this.describe.stale ? 'ready' : 'incompatible'
+      }
+      return result
+    })
   }
 
   private async rawCall<M extends SidecarMethodName>(method: M, params: SidecarParams<M>, opts: CallOptions = {}): Promise<SidecarResult<M>> {
@@ -330,6 +353,7 @@ export class SidecarClient implements SidecarLike {
 
   async close(): Promise<void> {
     this.closed = true
+    this.handshakeListeners.clear()
     if (this.restartTimer) { clearTimeout(this.restartTimer); this.restartTimer = null }
     const child = this.child
     if (!child) { this.status = 'stopped'; return }

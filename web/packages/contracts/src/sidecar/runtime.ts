@@ -37,6 +37,14 @@ export const RpcMethodsResultSchema = z.object({ methods: z.array(z.string()) })
 export const RuntimeSyncDependenciesParamsSchema = z.object({ agent_dir: z.string().min(1) })
 export const RuntimeSyncDependenciesResultSchema = z.object({ ok: z.boolean(), skipped: z.boolean(), detail: z.string() })
 
+/** Continue retained work only; never resolve a release or accept interruption consent. */
+export const RuntimeAgentRecoveryParamsSchema = z.object({ probe: z.boolean().optional(), complete_revision: z.string().regex(/^[a-f0-9]{40}$/).optional() })
+export const RuntimeAgentRecoveryResultSchema = z.object({
+  ok: z.boolean(), owed: z.boolean(), fingerprint: z.string(), detail: z.string(),
+  local_restore: z.boolean().optional(), revision: z.string().regex(/^[a-f0-9]{40}$/).optional(),
+  runtime_pending: z.boolean().optional(),
+})
+
 /** A single-use interruption consent; the sidecar binds it to the operator intent and attested services. */
 export const AgentRefreshConfirmationSchema = z.object({ token: z.string().regex(/^[a-f0-9]{32}$/), services: z.array(z.string().min(1)).min(1) })
 

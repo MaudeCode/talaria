@@ -25,6 +25,11 @@ def register(registry) -> None:
         from ..agent_mutation import call
         return call(runtime, ctx, params)
 
+    @registry.method("runtime.agent_recovery", requires_agent=False)
+    def agent_recovery(ctx: CallContext, params: dict) -> dict:
+        from ..agent_mutation import recover_retained
+        return recover_retained(runtime, ctx, probe=params.get('probe') is True, complete_revision=params.get('complete_revision'))
+
     @registry.method("runtime.sync_dependencies", requires_agent=False)
     def sync_dependencies(ctx: CallContext, params: dict) -> dict:
         # Source has already advanced; loading it or checking the old revision would prevent repair.
@@ -84,8 +89,6 @@ def register(registry) -> None:
                 condition="sidecar_rpc_version_mismatch",
                 data={"server_rpc_version": requested, "sidecar_rpc_version": SIDECAR_RPC_VERSION},
             )
-        from ..agent_mutation import recover_retained
-        recover_retained(runtime)
         try:
             runtime.load()
         except RpcError:

@@ -13,6 +13,33 @@ const alice: UpdateNotificationScope = { owner: 'oidc:alice', profile: 'work', s
 afterEach(() => { for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true }) })
 
 describe('UpdateNotificationStore', () => {
+  it('reconciles an interrupted recovery notice without changing the failed update history', async () => {
+    const root = temp()
+    const store = await initializeStore(new UpdateNotificationStore(new JsonDocuments(root)))
+    const original = await store.begin(alice, 'agent')
+    await store.transition(original.id, 'failed')
+    await store.agentRecovery({ phase: 'running', detail: '', attempt: 1, retry_at: null })
+    const restarted = await initializeStore(new UpdateNotificationStore(new JsonDocuments(root)))
+    await restarted.reconcileInterruptedUpdates('a'.repeat(40), '1.0.0')
+    const rows = (await restarted.list(alice)).notifications
+    expect(rows.find((row) => row.kind === 'agent_recovery')).toMatchObject({ phase: 'unknown', active: false })
+    expect(rows.find((row) => row.id === original.id)?.phase).toBe('failed')
+    await restarted.agentRecovery({ phase: 'complete', detail: '', attempt: 1, retry_at: null })
+    expect((await restarted.list(alice)).notifications.find((row) => row.kind === 'agent_recovery')?.phase).toBe('succeeded')
+  })
+  it('preserves the failed update while projecting automatic recovery and its actual outcome', async () => {
+    const store = await initializeStore(new UpdateNotificationStore(new JsonDocuments(temp())))
+    const original = await store.begin(alice, 'agent')
+    await store.transition(original.id, 'failed', null, undefined, 'Synthetic update failed before source mutation.')
+    for (const phase of ['running', 'waiting', 'blocked', 'complete'] as const) {
+      await store.agentRecovery({ phase, detail: phase === 'blocked' ? 'The recorded supervisor identity is unavailable.' : '', attempt: 2, retry_at: null })
+      const list = await store.list(alice)
+      expect(list.notifications.find((row) => row.id === original.id)).toMatchObject({ phase: 'failed', verified_revision: null })
+      expect(list.notifications.filter((row) => row.kind === 'agent_recovery')).toHaveLength(1)
+      expect(list.notifications.find((row) => row.kind === 'agent_recovery')).toMatchObject({ phase: phase === 'complete' ? 'succeeded' : phase === 'running' ? 'applying' : 'blocked', verified_revision: null })
+    }
+    expect((await store.list(alice)).notifications.find((row) => row.kind === 'agent_recovery')?.message).toBe('Hermes Agent is usable again. The original update result is unchanged.')
+  })
   it.each(['agent', 'webui'] as const)('projects truthful %s failures with or without detail across every public path', async (target) => {
     const store = (await initializeStore(new UpdateNotificationStore(new JsonDocuments(temp()))))
     const scope = { ...alice, tab: 'tab-aaaaaaaa' }

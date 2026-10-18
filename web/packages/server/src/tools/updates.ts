@@ -12,7 +12,7 @@
  */
 import { backupPersistedStores } from '../sessions/storage/json-installation.js'
 export { backupPersistedStores, CHANNEL_SWITCH_BACKUPS } from '../sessions/storage/json-installation.js'
-import { UpdatesSummarySchema, type SidecarResult } from '@maudecode/talaria-web-contracts'
+import { UpdatesSummarySchema, type AgentRecoveryState, type RuntimeDescribe, type SidecarResult } from '@maudecode/talaria-web-contracts'
 import { z } from 'zod'
 import { readCapped } from '../http/capped.js'
 import { execFile } from 'node:child_process'
@@ -836,7 +836,7 @@ export async function checkAgentUpdate(path: string | null, git: GitRun, channel
   try {
     const pending = await pendingAutostashes(path, git)
     return { ...await agentTarget(path, git, channel, undefined, published), dirty: await isDirty(path, git),
-      ...(pending.length ? { metadata_repair: true, message: 'Local Agent changes need recovery. Apply the update again to finish it.' } : {}) }
+      ...(pending.length ? { metadata_repair: true, message: 'Local Agent changes need recovery. Their saved recovery records are retained.' } : {}) }
   }
   catch (error) { return { name: 'agent', channel, behind: null, error: (error as Error).message } }
 }
@@ -1019,13 +1019,14 @@ async function saveLocalChanges(path: string, git: GitRun): Promise<Autostash | 
 }
 
 /** Re-apply the saved changes atomically; on a conflict keep the commit under its own ref and leave the files as the update wrote them. */
-async function restoreLocalChanges(path: string, git: GitRun, saved: Autostash): Promise<{ applied: boolean; note: string }> {
+async function restoreLocalChanges(path: string, git: GitRun, saved: Autostash, retainPending = false): Promise<{ applied: boolean; note: string }> {
   try {
     if (lstatSync(saved.patch).size === 0 || (await git(['apply', '--whitespace=nowarn', saved.patch], path)).ok) {
       await git(['update-ref', '-d', saved.ref, saved.sha], path)
       return { applied: true, note: 'Local modifications were restored.' }
     }
   } finally { rmSync(saved.dir, { recursive: true, force: true }) }
+  if (retainPending) return { applied: false, note: `Retained local Agent changes could not be restored. Recovery remains recorded under ${saved.ref}; inspect the conflict before changing this receipt.` }
   const short = saved.sha.slice(0, 12)
   // The kept ref owns the commit; the stash list entry is only a convenience others may drop.
   const keptRef = `${AUTOSTASH_REFS}${saved.sha}`
@@ -1043,7 +1044,7 @@ async function pendingAutostashes(path: string, git: GitRun): Promise<string[]> 
   return refs.out.split('\n').filter((line) => SHA.test(line))
 }
 
-async function recoverInterruptedAutostash(path: string, git: GitRun): Promise<boolean> {
+async function recoverInterruptedAutostash(path: string, git: GitRun, requireRestore = false): Promise<boolean> {
   let recovered = false
   for (const sha of await pendingAutostashes(path, git)) {
     const saved = await autostashPatch(path, git, sha)
@@ -1053,7 +1054,10 @@ async function recoverInterruptedAutostash(path: string, git: GitRun): Promise<b
     if (lstatSync(saved.patch).size === 0 || (await git(['apply', '-R', '--check', saved.patch], path)).ok) {
       rmSync(saved.dir, { recursive: true, force: true })
       await git(['update-ref', '-d', saved.ref, sha], path)
-    } else await restoreLocalChanges(path, git, saved)
+    } else {
+      const restored = await restoreLocalChanges(path, git, saved, requireRestore)
+      if (requireRestore && !restored.applied) throw new Error(restored.note)
+    }
   }
   return recovered
 }
@@ -1271,7 +1275,14 @@ async function syncAgentDependencies(path: string | null, revision: string, sync
 
 export interface RestartBlockers { active_streams: number; active_runs: number; active_terminals?: number; active_cron_jobs?: number; blocking_stream_ids: string[]; blocking_run_ids: string[]; restart_blocked: boolean }
 
+const RECOVERY_DELAYS = [0, 1000, 4000, 15000, 60000, 120000]
+
 export interface UpdateServiceDeps {
+  /** One retained-transaction step, including loaded-runtime reconciliation. No release selection. */
+  recoverAgent?: (probe?: boolean, signal?: AbortSignal) => Promise<SidecarResult<'runtime.agent_recovery'> & { waiting_for_idle?: boolean }>
+  recoveryChanged?: (state: AgentRecoveryState) => Promise<void>
+  hasPendingRecovery?: () => boolean
+  onAgentReconnect?: (listener: (runtime: RuntimeDescribe) => void) => () => void
   /** `web/` of this installation (a Talaria checkout has it at `<root>/web`). */
   webRoot: string
   git?: GitRun
@@ -1315,6 +1326,12 @@ export interface UpdateServiceDeps {
 }
 
 export class UpdateService {
+  private recoveryTimer: NodeJS.Timeout | null = null
+  private recoveryAbort: AbortController | null = null
+  private recoveryUnsubscribe: (() => void) | null = null
+  private recoveryAttempt = 0
+  private recoveryFingerprint = ''
+  private recovery: AgentRecoveryState = { phase: 'idle', attempt: 0, detail: '', retry_at: null }
   private readonly cache: Dict = { webui: null, agent: null, checked_at: 0, include_agent: true, channel: DEFAULT_CHANNEL, agent_channel: DEFAULT_CHANNEL }
   private checking: Promise<Dict> | null = null
   private checkingKey: string | null = null
@@ -1402,7 +1419,7 @@ export class UpdateService {
     this.publishedTags.set(repoUrl, { at: this.now(), tag })
     return tag
   }
-  private agentPolicy(options: UpdateOptions = {}, force = false): AgentUpdatePolicy {
+  private agentPolicy(options: UpdateOptions = {}, force = false, retainRuntimeIntent = false): AgentUpdatePolicy {
     const supported = dict(this.deps.identity.release().compatibleAgent)
     const marker = agentSyncMarker(this.deps.agentDir(), this.deps.stateDir)
     return {
@@ -1415,7 +1432,7 @@ export class UpdateService {
           const applied = await mutate(git)
           return applied.ok ? this.finishAgent(applied, path, sync, false) : applied
         }, { refreshToken: options.refreshToken, mutationIntent: options.mutationIntent ? JSON.stringify([options.mutationIntent, force, options.agentChannel ?? this.agentChannel(), options.version ?? '', options.confirmedRevision ?? '']) : undefined })
-        if (result.ok) {
+        if (result.ok && !retainRuntimeIntent) {
           const intent = agentSyncMarker(path, this.deps.stateDir)
           try { if (intent) rmSync(intent, { force: true }) }
           catch (error) { return { ...result, ok: false, restart_scheduled: false, message: `Agent writers resumed, but recovery intent could not be cleared: ${sanitizeGitDiagnostic((error as Error).message)}` } }
@@ -1428,9 +1445,11 @@ export class UpdateService {
     }
   }
 
+  private statusSnapshot(): Dict { return { ...this.cache, agent_recovery: this.recovery } }
+
   /** Python `cached_update_status`: no network, no git mutations. */
   cachedStatus(includeAgent = this.deps.includeAgent(), channel = this.deps.channel(), agentChannel = this.agentChannel()): Dict {
-    const cached: Dict = { ...this.cache }
+    const cached = this.statusSnapshot()
     if (cached.channel !== channel) { cached.channel = channel; cached.webui = null; cached.stale_channel = true }
     if (cached.agent_channel !== agentChannel) { cached.agent_channel = agentChannel; cached.agent = null; cached.stale_agent_channel = true }
     if (cached.include_agent !== includeAgent) {
@@ -1456,7 +1475,7 @@ export class UpdateService {
     const matches = this.cache.include_agent === includeAgent && this.cache.channel === channel && this.cache.agent_channel === agentChannel
     if (!force && matches && this.now() - Number(this.cache.checked_at) < CACHE_TTL_S) {
       this.preGenerateSummaries(this.cache)
-      return { ...this.cache }
+      return this.statusSnapshot()
     }
     this.checkingKey = key
     this.checking = (async () => {
@@ -1470,14 +1489,14 @@ export class UpdateService {
         const agent = includeAgent ? this.keepLastGood('agent', agentChannel, await checkAgentUpdate(agentDir, this.git, agentChannel, this.publishedTag)) : ignoredAgent()
         const marker = agentSyncMarker(agentDir, this.deps.stateDir)
         if (includeAgent && marker && existsSync(marker)) {
-          Object.assign(agent, { metadata_repair: true, message: 'Agent update recovery is incomplete. Apply the update again to finish it.' })
+          Object.assign(agent, { metadata_repair: true, message: this.recovery.phase === 'blocked' ? this.recovery.detail || 'Agent update recovery needs attention.' : 'Agent update recovery is incomplete. Recovery will retry automatically when it is safe.' })
         }
         const policy = this.agentPolicy()
         if (agent.latest_sha) Object.assign(agent, agentWarning(agent, policy))
         if (Array.isArray(agent.versions)) agent.versions = agent.versions.map((v) => ({ ...dict(v), ...supportOf(dict(v).sha, policy) }))
         Object.assign(this.cache, { webui, agent, checked_at: this.now(), include_agent: includeAgent, channel, agent_channel: agentChannel })
         this.preGenerateSummaries(this.cache)
-        return { ...this.cache }
+        return this.statusSnapshot()
       } finally {
         this.checking = null
         this.checkingKey = null
@@ -1502,9 +1521,19 @@ export class UpdateService {
     if (this.autoStarted || this.autoRestartScheduled) return
     this.autoStarted = true
     const lifecycle = this.lifecycle
+    this.recoveryUnsubscribe = this.deps.onAgentReconnect?.((runtime) => {
+      if (!this.autoStarted || lifecycle !== this.lifecycle) return
+      if (runtime.compatible && !runtime.stale && this.recovery.phase === 'blocked') {
+        this.recoveryAttempt = 0
+        this.recovery = { ...this.recovery, phase: 'waiting', attempt: 0, retry_at: null }
+      }
+      this.armRecovery()
+    }) ?? null
+    this.armRecovery()
     const schedule = (delay: number): void => {
       this.autoTimer = setTimeout(() => {
         this.autoTimer = null
+        this.armRecovery()
         void this.autoApplyOnce().finally(() => { if (this.autoStarted && lifecycle === this.lifecycle && !this.autoRestartScheduled) schedule(intervalMs) })
       }, delay)
       this.autoTimer.unref()
@@ -1517,6 +1546,88 @@ export class UpdateService {
     this.lifecycle += 1
     if (this.autoTimer) clearTimeout(this.autoTimer)
     this.autoTimer = null
+    if (this.recoveryTimer) clearTimeout(this.recoveryTimer)
+    this.recoveryTimer = null
+    this.recoveryAbort?.abort()
+    this.recoveryUnsubscribe?.()
+    this.recoveryUnsubscribe = null
+  }
+
+  /** One sequence owns its timer and RPC; unchanged permanent debt cannot restart it. */
+  private armRecovery(): void {
+    if (!this.deps.recoverAgent || !this.deps.agentDir() || this.recoveryTimer || this.recoveryAbort || !this.autoStarted) return
+    const lifecycle = this.lifecycle
+    this.recoveryTimer = setTimeout(() => {
+      this.recoveryTimer = null
+      void this.recoverOnce(lifecycle)
+    }, 0)
+    this.recoveryTimer.unref()
+  }
+
+  private async publishRecovery(): Promise<void> {
+    try { await this.deps.recoveryChanged?.(this.recovery) }
+    catch (error) { this.deps.log(`Could not persist Agent recovery notice: ${String(error)}`) }
+  }
+
+  private async recoverOnce(lifecycle: number): Promise<void> {
+    const abort = new AbortController()
+    this.recoveryAbort = abort
+    const current = (): boolean => !abort.signal.aborted && lifecycle === this.lifecycle && this.autoStarted
+    let retry = false
+    let retryDelay = 1000
+    const waitForIdle = (detail: string): void => {
+      retry = true
+      this.recovery = { phase: 'waiting', attempt: this.recoveryAttempt, detail, retry_at: new Date(this.now() * 1000 + retryDelay).toISOString() }
+    }
+    try {
+      if (this.applying || this.deps.gatewayRestarting?.()) { retry = true; return }
+      const probe = await this.deps.recoverAgent!(true, abort.signal)
+      if (!current()) return
+      if (probe.waiting_for_idle) { waitForIdle(probe.detail); return }
+      if (!probe.owed && ['idle', 'complete'].includes(this.recovery.phase) && !this.deps.hasPendingRecovery?.()) return
+      if (probe.fingerprint !== this.recoveryFingerprint && ['idle', 'complete', 'blocked'].includes(this.recovery.phase)) this.recoveryAttempt = 0
+      if (probe.owed && this.recovery.phase === 'blocked' && this.recoveryAttempt >= RECOVERY_DELAYS.length && probe.fingerprint === this.recoveryFingerprint) return
+      this.recoveryFingerprint = probe.fingerprint
+      this.recoveryAttempt += 1
+      this.recovery = { phase: 'running', attempt: this.recoveryAttempt, detail: '', retry_at: null }
+      await this.publishRecovery()
+      if (!current()) return
+      const result = await this.deps.recoverAgent!(false, abort.signal)
+      if (!current()) return
+      this.recoveryFingerprint = result.fingerprint
+      if (result.waiting_for_idle) { this.recoveryAttempt -= 1; waitForIdle(result.detail); return }
+      if (result.local_restore && result.revision) {
+        const path = this.deps.agentDir()
+        if (!path) throw new Error('Agent checkout is unavailable for retained local-edit recovery.')
+        const restored = await withAgentMutation(path, { latest_sha: result.revision, current_sha: result.revision }, this.git, this.agentPolicy({}, false, true), async (git) => {
+          await recoverInterruptedAutostash(path, git, true)
+          const verified = await verifiedAgentIdentity(path, result.revision!, git)
+          return verified ? { ok: true, ...verified } : { ok: false, message: 'Retained Agent source could not be verified.' }
+        }, 'local-recovery')
+        if (!restored.ok) throw new Error(str(restored.message))
+        throw new Error('Retained local edits were recovered; verifying runtime admission.')
+      }
+      if (!result.ok || result.owed) throw new Error(result.detail || 'Agent recovery remains unverified.')
+      this.cache.checked_at = 0
+      this.recovery = { phase: 'complete', attempt: this.recoveryAttempt, detail: 'Agent service and runtime recovery is verified. The original update outcome is unchanged.', retry_at: null }
+    } catch (error) {
+      if (!current()) return
+      // A failed discovery also consumes the bounded sequence.
+      if (this.recovery.phase !== 'running') this.recoveryAttempt += 1
+      retry = this.recoveryAttempt < RECOVERY_DELAYS.length
+      retryDelay = RECOVERY_DELAYS[this.recoveryAttempt] ?? 1000
+      this.recovery = { phase: retry ? 'waiting' : 'blocked', attempt: this.recoveryAttempt, detail: sanitizeGitDiagnostic((error as Error).message), retry_at: retry ? new Date(this.now() * 1000 + retryDelay).toISOString() : null }
+    } finally {
+      if (current()) {
+        await this.publishRecovery()
+      }
+      if (this.recoveryAbort === abort) this.recoveryAbort = null
+      if (this.autoStarted && lifecycle !== this.lifecycle) this.armRecovery()
+      if (current() && retry) {
+        this.recoveryTimer = setTimeout(() => { this.recoveryTimer = null; void this.recoverOnce(lifecycle) }, retryDelay)
+        this.recoveryTimer.unref()
+      }
+    }
   }
 
   /** Shared turn admission stays closed from update start through the supervisor restart. */
@@ -1573,9 +1684,9 @@ export class UpdateService {
   }
 
   private async locked(fn: () => Promise<Dict>): Promise<Dict> {
-    if (this.applying) return { ok: false, message: 'Update already in progress' }
+    if (this.applying || this.recoveryAbort) return { ok: false, message: 'Update or retained recovery already in progress' }
     this.applying = true
-    try { return await fn() } finally { this.applying = false }
+    try { return await fn() } finally { this.applying = false; this.armRecovery() }
   }
 
   /** Python `apply_update`. */

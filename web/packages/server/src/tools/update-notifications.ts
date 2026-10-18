@@ -1,3 +1,4 @@
+import type { AgentRecoveryState } from '@maudecode/talaria-web-contracts'
 import { createHash, randomUUID } from 'node:crypto'
 import { readDocument } from '../sessions/storage/document.js'
 import type { DocumentBackend } from '../sessions/storage/backend.js'
@@ -93,7 +94,7 @@ const copy = (row: StoredUpdateNotification): PublicUpdateNotification => ({
   acknowledged_at: row.acknowledged_at, acknowledged_action_id: row.acknowledged_action_id,
   verified_revision: row.verified_revision, verified_version: row.verified_version, detail: row.detail,
   unread: row.read_at === null,
-  active: row.kind === 'update' && ['applying', 'restarting'].includes(row.phase),
+  active: ['update', 'agent_recovery'].includes(row.kind) && ['applying', 'restarting'].includes(row.phase),
   requires_interaction: row.requires_acknowledgement && row.acknowledged_at === null,
   can_dismiss: isDismissible(row),
 })
@@ -192,6 +193,40 @@ export class UpdateNotificationStore {
     }))
     await this.watch(scope, created.id)
     return created
+  }
+
+  /** A retained notice still needs loaded-readiness verification after native debt clears. */
+  hasPendingAgentRecovery(): boolean {
+    const row = this.rows.findLast((entry) => entry.kind === 'agent_recovery')
+    return row !== undefined && row.phase !== 'succeeded'
+  }
+
+  /** Recovery has its own row, so it can never rewrite the initiating update's failed outcome. */
+  async agentRecovery(state: AgentRecoveryState): Promise<void> {
+    if (state.phase === 'idle') return
+    const phase = state.phase === 'complete' ? 'succeeded' : state.phase === 'running' ? 'applying' : 'blocked'
+    const title = 'Hermes Agent recovery'
+    const message = state.phase === 'complete' ? 'Hermes Agent is usable again. The original update result is unchanged.'
+      : state.phase === 'running' ? 'Recovering Hermes Agent after an interrupted update.'
+        : state.phase === 'waiting' ? 'Hermes Agent recovery will retry automatically.' : 'Hermes Agent recovery needs attention.'
+    const row = this.rows.findLast((entry) => entry.kind === 'agent_recovery')
+    if (!row) {
+      await this.create({ owner: '*', profile: 'default', serverOwner: true }, {
+        kind: 'agent_recovery', target: 'agent', phase, title, message, visibility: 'server',
+        severity: state.phase === 'blocked' ? 'warning' : 'info',
+      })
+      return this.agentRecovery(state)
+    }
+    if (row.phase === phase && row.message === message && row.detail === safeDetail(state.detail)) return
+    row.phase = phase
+    row.title = title
+    row.message = message
+    row.detail = safeDetail(state.detail)
+    row.severity = state.phase === 'blocked' ? 'warning' : 'info'
+    row.updated_at = this.now().toISOString()
+    row.dismissed_at = null
+    row.read_at = null
+    await this.save()
   }
 
   /** Let the requesting tab follow an update operation it started or rejoined. Watchers live as long as the record; only a server owner's Update click adds one. */
@@ -352,6 +387,15 @@ export class UpdateNotificationStore {
   async reconcileInterruptedUpdates(currentWebIdentity: string | null, currentWebVersion: string | null = null): Promise<void> {
     let changed = false
     for (const row of this.rows) {
+      if (row.kind === 'agent_recovery' && row.phase === 'applying') {
+        row.phase = 'unknown'
+        row.message = 'Agent recovery was interrupted. Current readiness has not been verified.'
+        row.severity = 'warning'
+        row.updated_at = this.now().toISOString()
+        row.read_at = null
+        changed = true
+        continue
+      }
       if (row.kind !== 'update' || (row.target !== 'webui' && row.target !== 'agent') || !['applying', 'restarting'].includes(row.phase)) continue
       const phase: UpdateNotificationPhase = row.target === 'webui' && row.phase === 'restarting' && currentWebIdentity && REVISION.test(currentWebIdentity) && row.expected_identity === currentWebIdentity ? 'succeeded' : 'unknown'
       row.phase = phase

@@ -322,6 +322,41 @@
     ],
     "additionalProperties": false
   },
+  "runtime.agent_recovery": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "properties": {
+      "ok": {
+        "type": "boolean"
+      },
+      "owed": {
+        "type": "boolean"
+      },
+      "fingerprint": {
+        "type": "string"
+      },
+      "detail": {
+        "type": "string"
+      },
+      "local_restore": {
+        "type": "boolean"
+      },
+      "revision": {
+        "type": "string",
+        "pattern": "^[a-f0-9]{40}$"
+      },
+      "runtime_pending": {
+        "type": "boolean"
+      }
+    },
+    "required": [
+      "ok",
+      "owed",
+      "fingerprint",
+      "detail"
+    ],
+    "additionalProperties": false
+  },
   "goals.get": {
     "$schema": "https://json-schema.org/draft/2020-12/schema",
     "type": "object",

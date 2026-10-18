@@ -89,7 +89,8 @@ def adopt_orphans():
 def record_pause(token,adopted,claims):
  if adopted:
   token.update(adopted)
- token.setdefault('pause_id',uuid.uuid4().hex); write(token)
+ token.setdefault('pause_id',uuid.uuid4().hex)
+ token.setdefault('baselines',[{'pause_id':token['pause_id'],**tree_state(Path(__file__).parents[1])}]); write(token)
 def mark_stop_requested(token,pids): token['stop_requested']=pids; write(token)
 def mark_stop_sent(token,pid):
  token.setdefault('stop_sent',[]).append(pid)
@@ -104,6 +105,9 @@ def discharge(token): file().unlink(missing_ok=True)
 def tree_is_whole(token,root=None): return not ((HOME/'torn').exists() or (HOME/'dependency-stale').exists()),'synthetic torn tree or stale dependencies'
 def record_path(): return file()
 def _claims(path): return []
+def orphans(): return [(file(),{'token':json.loads(file().read_text())})] if file().exists() else []
+def merge_into(token,adopted):
+ token=token or {}; token.update(adopted); return token
 def tree_state(root):
  import subprocess
  return {'pre_sha':subprocess.check_output(['git','rev-parse','HEAD'],cwd=root,text=True).strip(),'dirty_at_pause':[],'dirty_digests':{}}
@@ -159,9 +163,15 @@ def _resume_windows_gateways_after_update(token):
  if not (HOME/'active').exists(): raise RuntimeError('resume was not ready')
  (HOME/'resumed').write_text(str(proc.pid)); token['resume_needed']=False
 ''',
+        '_launchers': 'def resolve_store_python(root): return None\n',
+        '_early_recovery': "def interrupted_pull_marker(root): return root/'.interrupted'\n",
+        'update_cmd_commit': "def arm_tree_move(command,root,**kwargs): return root/'.synthetic-source-move'\n",
         'update_cmd_pause_gate': '''from contextlib import contextmanager
 @contextmanager
-def _checkout_move(token,*args,**kwargs): yield {}
+def _checkout_move(token,*args,**kwargs):
+ for baseline in token.get('baselines',[]):
+  baseline.setdefault('move_targets',[]).extend(args)
+ yield {}
 ''',
     }
     for name, content in modules.items():
@@ -525,7 +535,8 @@ def test_dependency_failure_retains_the_pause_and_a_retry_resumes_it(owned, brok
     assert retried['ok'], retried
     assert rpc(sidecar, root, 'git', token=retried['token'], args=['reset', '--hard', target], timeout_ms=1000)['ok'] is False
     assert rpc(sidecar, root, 'sync', token=retried['token'])['ok']
-    assert rpc(sidecar, root, 'finish', token=retried['token'])['ok']
+    finished = rpc(sidecar, root, 'finish', token=retried['token'])
+    assert finished['ok'], finished
     wait_for(lambda: (home / 'resumed').exists())
     wait_for(lambda: not (home / 'pause-record.json').exists())
 
@@ -543,7 +554,8 @@ def test_a_killed_supervisor_leaves_an_adoptable_native_resume_record(owned):
     assert 'error' in message
     retried = rpc(sidecar, root, 'begin', revision=target, homes=[str(home)])
     assert retried['ok'], retried
-    assert rpc(sidecar, root, 'finish', token=retried['token'])['ok']
+    finished = rpc(sidecar, root, 'finish', token=retried['token'])
+    assert finished['ok'], finished
     wait_for(lambda: (home / 'resumed').exists())
 
 
@@ -567,7 +579,8 @@ def test_a_confirmed_legacy_target_can_recover_a_paused_broken_environment(owned
     retried = rpc(sidecar, root, 'begin', revision=legacy, homes=[str(home)])
     assert retried['ok'], retried
     assert rpc(sidecar, root, 'git', token=retried['token'], args=['reset', '--hard', legacy], timeout_ms=10000)['ok']
-    assert rpc(sidecar, root, 'finish', token=retried['token'])['ok']
+    finished = rpc(sidecar, root, 'finish', token=retried['token'])
+    assert finished['ok'], finished
     wait_for(lambda: (home / 'resumed').exists())
 
 

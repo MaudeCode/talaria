@@ -3,7 +3,7 @@ import { existsSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { resolve } from 'node:path'
 import { tmpdir } from 'node:os'
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { SIDECAR_RPC_VERSION } from '@maudecode/talaria-web-contracts'
 import { SidecarClient, SidecarError, sidecarSpawnEnv } from './client.js'
 import { FakeSidecar } from './fake.js'
@@ -91,6 +91,53 @@ describe('SidecarClient version mismatch', () => {
     await expect(client.call('runtime.ensure_current', {}, { signal: controller.signal })).rejects.toMatchObject({ condition: 'cancelled' })
     await new Promise((r) => setTimeout(r, 100))
     expect(logs.filter((l) => l.includes('seen runtime.ensure_current'))).toEqual([])
+  })
+
+  it('a delayed runtime status cannot replace a newer readiness verdict', async () => {
+    const dir = mkdtempSync(resolve(tmpdir(), 'talaria-sidecar-status-'))
+    const fixture = resolve(import.meta.dirname, '../../../contracts/fixtures/sidecar/runtime.json')
+    const script = `const fs=require('fs');const value=JSON.parse(fs.readFileSync(process.argv[1],'utf8'))['runtime.handshake'][0].result;let count=0;require('readline').createInterface({input:process.stdin}).on('line',line=>{const req=JSON.parse(line);const send=result=>process.stdout.write(JSON.stringify({jsonrpc:'2.0',id:req.id,result})+'\\n');if(req.method==='runtime.handshake')send(value);if(req.method==='runtime.status'){if(++count===1)setTimeout(()=>send(value),80);else send({...value,stale:true,agent_source_changed:true})}})`
+    client = new SidecarClient({ python: process.execPath, command: [process.execPath, '-e', script, fixture], agentDir: '', sidecarDir: dir, hermesHome: dir, log: () => undefined })
+    await client.start()
+    const earlier = client.call('runtime.status', {})
+    await client.call('runtime.status', {})
+    expect(client.status).toBe('incompatible')
+    await earlier
+    expect(client.status).toBe('incompatible')
+    expect(client.describe?.stale).toBe(true)
+  })
+
+  it('notifies validated reconnects once and releases its handshake subscription', async () => {
+    const dir = mkdtempSync(resolve(tmpdir(), 'talaria-sidecar-handshake-listener-'))
+    const fixture = resolve(import.meta.dirname, '../../../contracts/fixtures/sidecar/runtime.json')
+    const starts = resolve(dir, 'starts')
+    const script = `const fs=require('fs');const [fixture,starts]=process.argv.slice(1);fs.appendFileSync(starts,'x');const value=JSON.parse(fs.readFileSync(fixture,'utf8'))['runtime.handshake'][0].result;require('readline').createInterface({input:process.stdin}).on('line',line=>{const req=JSON.parse(line);if(req.method==='runtime.handshake')process.stdout.write(JSON.stringify({jsonrpc:'2.0',id:req.id,result:value})+'\\n')})`
+    client = new SidecarClient({ python: process.execPath, command: [process.execPath, '-e', script, fixture, starts], agentDir: '', sidecarDir: dir, hermesHome: dir, log: () => undefined, backoffMs: [10] })
+    const listener = vi.fn()
+    const unsubscribe = client.onHandshake(listener)
+    await client.start()
+    expect(listener).toHaveBeenCalledTimes(1)
+    client.recycle('synthetic reconnect')
+    await vi.waitFor(() => { expect(listener).toHaveBeenCalledTimes(2) })
+    unsubscribe()
+    client.recycle('synthetic reconnect after unsubscribe')
+    await vi.waitFor(() => { expect(readFileSync(starts, 'utf8')).toBe('xxx'); expect(client?.status).toBe('ready') })
+    expect(listener).toHaveBeenCalledTimes(2)
+  })
+
+  it('a closed client cannot publish a late handshake or notify recovery', async () => {
+    const dir = mkdtempSync(resolve(tmpdir(), 'talaria-sidecar-closed-handshake-'))
+    const fixture = resolve(import.meta.dirname, '../../../contracts/fixtures/sidecar/runtime.json')
+    const script = `const fs=require('fs');const value=JSON.parse(fs.readFileSync(process.argv[1],'utf8'))['runtime.handshake'][0].result;require('readline').createInterface({input:process.stdin}).on('line',line=>{const req=JSON.parse(line);if(req.method==='runtime.handshake')setTimeout(()=>process.stdout.write(JSON.stringify({jsonrpc:'2.0',id:req.id,result:value})+'\\n'),80)})`
+    client = new SidecarClient({ python: process.execPath, command: [process.execPath, '-e', script, fixture], agentDir: '', sidecarDir: dir, hermesHome: dir, log: () => undefined })
+    const listener = vi.fn()
+    client.onHandshake(listener)
+    const pending = expect(client.start()).rejects.toMatchObject({ condition: 'sidecar_unavailable' })
+    await client.close()
+    await pending
+    expect(client.status).toBe('stopped')
+    expect(client.describe).toBeNull()
+    expect(listener).not.toHaveBeenCalled()
   })
 
   it('a spawn failure schedules the same backoff restart as a crash instead of parking the client', async () => {

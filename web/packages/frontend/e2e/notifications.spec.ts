@@ -37,6 +37,33 @@ const row = (id: string, overrides: Partial<NotificationRow> = {}): Notification
   ...overrides,
 })
 
+test('Agent recovery preserves failed update history in the shared notification center', async ({ page }, testInfo) => {
+  const failed = row('00000000-0000-4000-8000-000000000081', { kind: 'update', target: 'agent', phase: 'failed', title: 'Hermes Agent update', message: 'The update could not be completed.', destination: null, detail: 'Gateway resume remained unverified.' })
+  let records = [failed]
+  await page.route('**/api/update-notifications**', (route) => {
+    if (route.request().method() === 'GET') return route.fulfill({ json: { scope_id: 'recovery-scope', notifications: records, tab_update: null, tab_joined_at: null, unread_count: records.length, clearable_count: records.length, can_clear: true } })
+    return route.fulfill({ json: records.find((item) => route.request().url().includes(item.id)) ?? failed })
+  })
+  await page.goto('/')
+  await settle(page)
+  await page.getByRole('button', { name: 'Notifications', exact: true }).click()
+  const center = page.getByRole('dialog')
+  await expect(center).toContainText('The update could not be completed.')
+  await page.screenshot({ path: testInfo.outputPath('agent-recovery-before.png'), fullPage: true })
+  const recovery = row('00000000-0000-4000-8000-000000000082', { kind: 'agent_recovery', target: 'agent', phase: 'blocked', title: 'Hermes Agent recovery', message: 'Hermes Agent recovery will retry automatically.', destination: null, detail: 'The recorded gateway identity is temporarily unavailable.' })
+  records = [recovery, failed]
+  await expect(center).toContainText(recovery.message)
+  await page.screenshot({ path: testInfo.outputPath('agent-recovery-waiting.png'), fullPage: true })
+  records = [{ ...recovery, phase: 'unknown', severity: 'warning', message: 'Agent recovery was interrupted. Current readiness has not been verified.', detail: null, updated_at: '2026-09-26T12:01:00Z' }, failed]
+  await expect(center).toContainText('Current readiness has not been verified.')
+  await page.screenshot({ path: testInfo.outputPath('agent-recovery-interrupted.png'), fullPage: true })
+  records = [{ ...recovery, phase: 'succeeded', message: 'Hermes Agent is usable again. The original update result is unchanged.', detail: null, updated_at: '2026-09-26T12:02:00Z' }, failed]
+  await expect(center).toContainText('Hermes Agent is usable again.')
+  await expect(center).toContainText('The update could not be completed.')
+  await expect(center).not.toContainText('was updated successfully')
+  await page.screenshot({ path: testInfo.outputPath('agent-recovery-after.png'), fullPage: true })
+})
+
 test('server notification interactions preserve canonical read, clear, action, scope, and lifecycle behavior', async ({ page }, testInfo) => {
   let scopeID = 'scope-a'
   let records: NotificationRow[] = []

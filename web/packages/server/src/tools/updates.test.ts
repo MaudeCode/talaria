@@ -13,6 +13,7 @@ vi.mock('node:fs', async (original) => {
   const fs = await original<typeof import('node:fs')>()
   return { ...fs, existsSync: (path: import('node:fs').PathLike) => ['/run/.containerenv', '/.dockerenv', '/.within_container'].includes(String(path)) ? false : fs.existsSync(path) }
 })
+import type { RuntimeDescribe } from '@maudecode/talaria-web-contracts'
 import type { Dict } from '../config/agent-config.js'
 import { detectWebuiVersion, developmentInfo } from '../release.js'
 import { bootTestServer, WEB_ROOT } from '../test/harness.js'
@@ -179,6 +180,207 @@ describe('Web source updates (test_tal203_source_update.py)', () => {
       await vi.advanceTimersByTimeAsync(2000)
       expect(tick).toHaveBeenCalledTimes(2)
     } finally { vi.useRealTimers() }
+  })
+
+  it('recovers retained Agent debt without another apply or enabled update checks', async () => {
+    vi.useFakeTimers()
+    const { svc } = service(sourceInstall(), { checkEnabled: () => false, agentDir: '/synthetic' })
+    let attempts = 0
+    const recover = vi.fn((probe: boolean) => Promise.resolve(probe ? { ok: false, owed: attempts < 2, fingerprint: attempts < 2 ? 'receipt' : '', detail: '' }
+      : ++attempts === 1 ? { ok: false, owed: true, fingerprint: 'receipt', detail: 'identity temporarily unreadable' } : { ok: true, owed: false, fingerprint: '', detail: '' }))
+    Object.assign((svc as unknown as { deps: object }).deps, { recoverAgent: recover })
+    try {
+      svc.startAutoApply(1000)
+      await vi.advanceTimersByTimeAsync(0)
+      expect(recover.mock.calls.filter(([probe]) => !probe)).toHaveLength(1)
+      await vi.advanceTimersByTimeAsync(1000)
+      expect(recover.mock.calls.filter(([probe]) => !probe)).toHaveLength(2)
+      await vi.advanceTimersByTimeAsync(60000)
+      expect(recover.mock.calls.filter(([probe]) => !probe)).toHaveLength(2)
+    } finally { svc.stopAutoApply(); vi.useRealTimers() }
+  })
+
+  it('bounds automatic recovery, rearms changed receipts, and cancels stale completions', async () => {
+    vi.useFakeTimers()
+    const { svc } = service(sourceInstall(), { checkEnabled: () => false, agentDir: '/synthetic' })
+    let reconnect: ((runtime: RuntimeDescribe) => void) | undefined
+    let fingerprint = 'first'
+    let finish: (() => void) | undefined
+    let attempts = 0
+    let signal: AbortSignal | undefined
+    Object.assign((svc as unknown as { deps: object }).deps, {
+      onAgentReconnect: (listener: (runtime: RuntimeDescribe) => void) => { reconnect = listener; return () => { reconnect = undefined } },
+      recoverAgent: async (probe: boolean, abort: AbortSignal) => {
+        if (!probe) {
+          attempts += 1
+          signal = abort
+          if (fingerprint === 'second') await new Promise<void>((resolve) => { finish = resolve })
+        }
+        return { ok: false, owed: true, fingerprint, detail: 'synthetic supervisor identity is unverified' }
+      },
+    })
+    try {
+      svc.startAutoApply(1000)
+      await vi.advanceTimersByTimeAsync(300000)
+      expect(attempts).toBe(6)
+      expect(svc.cachedStatus().agent_recovery).toMatchObject({ phase: 'blocked', detail: 'synthetic supervisor identity is unverified' })
+      await vi.advanceTimersByTimeAsync(10000)
+      expect(attempts).toBe(6)
+      reconnect?.({ ...new FakeSidecar().describe!, compatible: false })
+      await vi.advanceTimersByTimeAsync(1)
+      expect(attempts).toBe(6)
+      reconnect?.(new FakeSidecar().describe!)
+      await vi.advanceTimersByTimeAsync(1)
+      expect(attempts).toBe(7)
+      fingerprint = 'second'
+      await vi.advanceTimersByTimeAsync(1000)
+      expect(attempts).toBe(8)
+      svc.stopAutoApply()
+      expect(signal?.aborted).toBe(true)
+      finish?.()
+      await vi.advanceTimersByTimeAsync(300000)
+      expect(attempts).toBe(8)
+      expect(svc.cachedStatus().agent_recovery).not.toMatchObject({ phase: 'complete' })
+      expect(vi.getTimerCount()).toBe(0)
+    } finally { svc.stopAutoApply(); vi.useRealTimers() }
+  })
+
+  it('arms retained recovery immediately after a sidecar reconnect and releases its listener', async () => {
+    vi.useFakeTimers()
+    const { svc } = service(sourceInstall(), { checkEnabled: () => false, agentDir: '/synthetic' })
+    let connected: ((runtime: RuntimeDescribe) => void) | undefined
+    let owed = false
+    let attempts = 0
+    const release = vi.fn()
+    Object.assign((svc as unknown as { deps: object }).deps, {
+      onAgentReconnect: (listener: (runtime: RuntimeDescribe) => void) => { connected = listener; return release },
+      recoverAgent: (probe: boolean) => {
+        if (!probe) { attempts += 1; owed = false }
+        return Promise.resolve({ ok: !owed, owed, fingerprint: owed ? 'retained' : '', detail: '' })
+      },
+    })
+    try {
+      svc.startAutoApply(300000)
+      await vi.advanceTimersByTimeAsync(1)
+      expect(attempts).toBe(0)
+      owed = true
+      connected?.(new FakeSidecar().describe!)
+      await vi.advanceTimersByTimeAsync(1)
+      expect(attempts).toBe(1)
+      expect(svc.cachedStatus().agent_recovery).toMatchObject({ phase: 'complete' })
+      const retired = connected
+      svc.stopAutoApply()
+      expect(release).toHaveBeenCalledTimes(1)
+      svc.startAutoApply(300000)
+      await vi.advanceTimersByTimeAsync(1)
+      owed = true
+      retired?.(new FakeSidecar().describe!)
+      await vi.advanceTimersByTimeAsync(1)
+      expect(attempts).toBe(1)
+      connected?.(new FakeSidecar().describe!)
+      await vi.advanceTimersByTimeAsync(1)
+      expect(attempts).toBe(2)
+    } finally { svc.stopAutoApply(); vi.useRealTimers() }
+  })
+
+  it('rearms a new lifecycle after cancelled discovery finishes without overlapping owners', async () => {
+    vi.useFakeTimers()
+    const { svc } = service(sourceInstall(), { checkEnabled: () => false, agentDir: '/synthetic' })
+    let finish: (() => void) | undefined
+    let oldSignal: AbortSignal | undefined
+    let probes = 0
+    let actions = 0
+    Object.assign((svc as unknown as { deps: object }).deps, {
+      recoverAgent: (probe: boolean, signal: AbortSignal) => {
+        if (!probe) { actions += 1; return Promise.resolve({ ok: true, owed: false, fingerprint: '', detail: '' }) }
+        probes += 1
+        if (probes === 1) {
+          oldSignal = signal
+          return new Promise((resolve) => { finish = () => { resolve({ ok: true, owed: false, fingerprint: '', detail: '' }) } })
+        }
+        return Promise.resolve({ ok: false, owed: true, fingerprint: 'retained', detail: '' })
+      },
+    })
+    try {
+      svc.startAutoApply(300000)
+      await vi.advanceTimersByTimeAsync(1)
+      svc.stopAutoApply()
+      expect(oldSignal?.aborted).toBe(true)
+      svc.startAutoApply(300000)
+      await vi.advanceTimersByTimeAsync(1)
+      expect(probes).toBe(1)
+      expect(actions).toBe(0)
+      finish!()
+      await vi.advanceTimersByTimeAsync(1)
+      expect(actions).toBe(1)
+      expect(svc.cachedStatus().agent_recovery).toMatchObject({ phase: 'complete' })
+    } finally { finish?.(); svc.stopAutoApply(); vi.useRealTimers() }
+  })
+
+  it('uses a positive retry delay while another lifecycle operation owns recovery', async () => {
+    vi.useFakeTimers()
+    const { svc } = service(sourceInstall(), { checkEnabled: () => false, agentDir: '/synthetic' })
+    let busy = true
+    const recover = vi.fn((probe: boolean) => Promise.resolve({ ok: !probe, owed: probe, fingerprint: probe ? 'owned' : '', detail: '' }))
+    Object.assign((svc as unknown as { deps: object }).deps, { gatewayRestarting: () => busy, recoverAgent: recover })
+    const schedule = vi.spyOn(globalThis, 'setTimeout')
+    try {
+      svc.startAutoApply(300000)
+      const initial = schedule.mock.calls.length
+      await vi.advanceTimersByTimeAsync(1)
+      expect(schedule.mock.calls.slice(initial).map((call) => call[1])).not.toContain(0)
+      expect(recover).not.toHaveBeenCalled()
+      busy = false
+      await vi.advanceTimersByTimeAsync(1000)
+      expect(svc.cachedStatus().agent_recovery).toMatchObject({ phase: 'complete' })
+    } finally { svc.stopAutoApply(); schedule.mockRestore(); vi.useRealTimers() }
+  })
+
+  it('waits for active work without spending the failure retry budget', async () => {
+    vi.useFakeTimers()
+    const { svc } = service(sourceInstall(), { checkEnabled: () => false, agentDir: '/synthetic' })
+    let busy = true
+    let prepared = false
+    let actions = 0
+    Object.assign((svc as unknown as { deps: object }).deps, {
+      recoverAgent: (probe: boolean) => {
+        if (!probe) { actions += 1; prepared = true }
+        const waiting = busy && prepared
+        return Promise.resolve({ ok: !probe && !busy, owed: probe || busy, fingerprint: 'owned', waiting_for_idle: waiting, detail: 'Waiting for active Web work to finish.' })
+      },
+    })
+    try {
+      svc.startAutoApply(300000)
+      await vi.advanceTimersByTimeAsync(300000)
+      expect(svc.cachedStatus().agent_recovery).toMatchObject({ phase: 'waiting', attempt: 0 })
+      expect(actions).toBe(1)
+      busy = false
+      await vi.advanceTimersByTimeAsync(1000)
+      expect(svc.cachedStatus().agent_recovery).toMatchObject({ phase: 'complete' })
+      expect(actions).toBe(2)
+    } finally { svc.stopAutoApply(); vi.useRealTimers() }
+  })
+
+  it('verifies loaded readiness for a persisted recovery notice after its debt disappeared', async () => {
+    vi.useFakeTimers()
+    const { svc } = service(sourceInstall(), { checkEnabled: () => false, agentDir: '/synthetic' })
+    let pending = true
+    let verified = 0
+    Object.assign((svc as unknown as { deps: object }).deps, {
+      hasPendingRecovery: () => pending,
+      recoverAgent: (probe: boolean) => {
+        if (!probe) verified += 1
+        return Promise.resolve({ ok: true, owed: false, fingerprint: '', detail: '' })
+      },
+      recoveryChanged: (state: { phase: string }) => { if (state.phase === 'complete') pending = false; return Promise.resolve() },
+    })
+    try {
+      svc.startAutoApply(300000)
+      await vi.advanceTimersByTimeAsync(1)
+      expect(verified).toBe(1)
+      expect(pending).toBe(false)
+      expect(svc.cachedStatus().agent_recovery).toMatchObject({ phase: 'complete' })
+    } finally { svc.stopAutoApply(); vi.useRealTimers() }
   })
 
   it.each(['disabled', 'channel', 'shutdown'])('cancels an automatic apply after %s changes during its check', async (change) => {
