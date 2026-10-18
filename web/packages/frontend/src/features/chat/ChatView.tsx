@@ -2,7 +2,7 @@ import { useResourceIntents, useResourceMutation } from '../sessions/useResource
 import { ResourcePending } from '../sessions/ResourcePending'
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate, useSearch } from '@tanstack/react-router'
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { m } from '../../paraglide/messages.js'
 import { cn } from '../../ui/cn'
 import { MAIN_VIEW } from '../../shell/AppShell'

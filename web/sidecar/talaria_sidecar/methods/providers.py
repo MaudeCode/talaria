@@ -504,7 +504,9 @@ def selection_warnings(home: Path, params: dict) -> dict:
             config = json.loads(row[0] or "{}") if row else {}
             reader = SimpleNamespace(get_session_model_config_value=lambda sid, key, default=None: config.get(key, default))
             tokens = persisted_anchor_tokens(reader, params["session_id"], params.get("messages", []))
-    context = SelectionContext(context_tokens=tokens, current_model=params.get("current_model"))
+    # A same-model pick on another provider still abandons the previous route's prompt cache.
+    current = params.get("current_model") if params.get("current_provider") == params.get("provider") else None
+    context = SelectionContext(context_tokens=tokens, current_model=current)
     result = warnings(model, provider=provider, base_url=base_url, api_key=runtime.get("api_key"), selection_context=context)
     return {"warnings": [_plain(w) for w in result], "context_tokens": tokens or None, "provider": provider, "base_url": base_url}
 

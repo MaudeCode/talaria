@@ -7,7 +7,7 @@ import { sessionFixture } from '../../test/fixtures'
 import { ApiError } from '../../contracts/common'
 import { teardownAll } from '../../stream/connection'
 import { useSessionUpdate } from './useSessionUpdate'
-const refresh = vi.fn(async () => undefined)
+const refresh = vi.fn(() => Promise.resolve())
 const body = { model: 'contributor', model_provider: 'custom' }
 const refusal = (token: string, message = 'This model may train on your conversation.') => new ApiError({ kind: 'http', status: 409, path: '/api/session/update', message, body: { error: message, type: 'model_confirmation_required', confirm_token: token, warnings: [{ kind: 'data_policy', title: 'Warning', model: 'contributor', provider: 'custom', message }] } })
 function Chat({ sid = 's1' }: { sid?: string }) {
@@ -44,11 +44,22 @@ it('fences late refusals after navigation, unmount and authentication changes', 
   const view = render(<Chat />)
   await userEvent.click(screen.getByText('Pick model'))
   view.rerender(<Chat sid="other" />)
-  await act(async () => { reject(refusal('foreign')) })
+  await act(() => { reject(refusal('foreign')); return Promise.resolve() })
   expect(screen.queryByRole('alertdialog')).toBeNull()
   await userEvent.click(screen.getByText('Pick model'))
   teardownAll()
-  await act(async () => { reject(refusal('foreign')) })
+  await act(() => { reject(refusal('foreign')); return Promise.resolve() })
   expect(screen.queryByRole('alertdialog')).toBeNull(); expect(refresh).not.toHaveBeenCalled()
   view.unmount()
+})
+it('does not restore an old prompt when navigating away and back', async () => {
+  vi.mocked(api.updateSession).mockRejectedValueOnce(refusal('old'))
+  const view = render(<Chat />)
+  await userEvent.click(screen.getByText('Pick model'))
+  expect(await screen.findByRole('alertdialog')).toBeVisible()
+  view.rerender(<Chat sid="other" />)
+  await waitFor(() => expect(screen.queryByRole('alertdialog')).toBeNull())
+  view.rerender(<Chat />)
+  await waitFor(() => expect(screen.queryByRole('alertdialog')).toBeNull())
+  expect(api.updateSession).toHaveBeenCalledOnce()
 })

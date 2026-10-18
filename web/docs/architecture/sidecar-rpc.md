@@ -517,3 +517,10 @@ Agent, but cannot retire its canonical runtime history or local-reset receipts.
 The guarded legacy path detects that retained state inside its write transaction
 and refuses without deleting rows or artifacts. Single and bulk HTTP deletion
 return the same actionable conflict before Web cleanup.
+
+`models.selection_warnings` evaluates the profile's Agent selection guard registry
+without mutating the session or evicting its Agent. It receives current and target
+model/provider identities and measured context, falling back to the profile's
+cached Agent and then its read-only persisted usage anchor. A provider change
+cannot count as a same-model cache-preserving selection. RPC version 42 adds this
+method; version 41 peers fail the handshake before attempting it.

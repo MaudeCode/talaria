@@ -97,3 +97,17 @@ it('rechecks context that changes while the Agent guard is answering', async () 
   expect((await update({ confirm_token: body.confirm_token })).status).toBe(200)
   expect(evict).toHaveBeenCalledTimes(1)
 })
+
+it('holds a provider-only switch on the same model before abandoning its cached context', async () => {
+  const { sidecar, session, update, evict } = await setup()
+  sidecar.respond('models.selection_warnings', (params) => {
+    expect(params).toMatchObject({ current_model: 'old-model', current_provider: 'custom', model: 'old-model', provider: 'another-provider' })
+    return { warnings: params.current_provider !== params.provider ? [{ ...warning, kind: 'context_cache' }] : [], context_tokens: params.context_tokens, provider: params.provider ?? '', base_url: 'https://another.invalid/v1' }
+  })
+  const held = await update({ model: 'old-model', model_provider: 'another-provider' })
+  expect(held.status).toBe(409)
+  expect(session.model_provider).toBe('custom'); expect(evict).not.toHaveBeenCalled()
+  const body = await held.json() as { confirm_token: string }
+  expect((await update({ model: 'old-model', model_provider: 'another-provider', confirm_token: body.confirm_token })).status).toBe(200)
+  expect(session.model_provider).toBe('another-provider'); expect(evict).toHaveBeenCalledTimes(1)
+})

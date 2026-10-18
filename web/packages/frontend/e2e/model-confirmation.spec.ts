@@ -1,8 +1,13 @@
 import { test, expect } from '@playwright/test'
+import { settle } from './fixtures'
 
 test.use({ serviceWorkers: 'block', video: 'on' })
 
 test('guarded model switch preserves the selection until confirmation', async ({ page, request }, info) => {
+  await expect.poll(async () => {
+    const health = await request.get('/health')
+    return (await health.json() as { agent: { status: string } }).agent.status
+  }).toBe('ready')
   const created = await request.post('/api/session/new', { data: { model: 'old-model', model_provider: 'custom' } })
   expect(created.ok()).toBe(true)
   const { session } = await created.json() as { session: { session_id: string } }
@@ -11,6 +16,8 @@ test('guarded model switch preserves the selection until confirmation', async ({
     return (await res.json() as { session: { model: string } }).session.model
   }
   await page.goto(`/session/${session.session_id}`)
+  await settle(page)
+  await expect(page.locator('#composerModelChip')).toContainText('old-model')
   const composer = page.locator('#msg')
   await expect(composer).toBeVisible()
   await composer.click()

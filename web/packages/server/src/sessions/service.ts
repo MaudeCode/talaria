@@ -1465,7 +1465,7 @@ export class SessionService {
     try {
       const sidecar = this.deps.sidecar?.()
       if (!sidecar) throw new Error('Agent sidecar is unavailable')
-      decision = await sidecar.call('models.selection_warnings', { profile_home: home, session_id: s.session_id, model, provider, current_model: s.model, context_tokens: context, messages })
+      decision = await sidecar.call('models.selection_warnings', { profile_home: home, session_id: s.session_id, model, provider, current_model: s.model, current_provider: s.model_provider, context_tokens: context, messages })
     } catch (error) {
       throw new HttpFailure(503, `Cannot check model selection warnings: ${(error as Error).message}`)
     }

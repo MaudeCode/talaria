@@ -17,7 +17,7 @@ def test_real_selection_guards_and_read_only_context(tmp_path):
         from talaria_sidecar.methods import providers, chat
         from talaria_sidecar.home import scoped_home
         home = Path(sys.argv[1]); home.mkdir()
-        params = dict(session_id='guard-test', model='muse-spark-1.2-contributor', provider='custom', current_model='old-model', context_tokens=200000, messages=[])
+        params = dict(session_id='guard-test', model='muse-spark-1.2-contributor', provider='custom', current_provider='custom', current_model='old-model', context_tokens=200000, messages=[])
         route = dict(provider='custom', base_url='https://provider.invalid/v1', api_key='synthetic-key')
         with scoped_home(home), patch.object(chat, '_resolve_runtime', return_value=route), patch('agent.models_dev.get_model_info', return_value=None), patch('agent.usage_pricing.get_pricing_entry', return_value=None):
             result = providers.selection_warnings(home, params)
@@ -25,7 +25,14 @@ def test_real_selection_guards_and_read_only_context(tmp_path):
             (home / 'config.yaml').write_text('model:\\n  switch_context_confirm_tokens: 0\\n')
             assert {w['kind'] for w in providers.selection_warnings(home, params)['warnings']} == {'data_policy'}
             (home / 'config.yaml').write_text('model:\\n  switch_context_confirm_tokens: 100000\\n')
-            params['model'] = 'ordinary/model'; params['context_tokens'] = None
+            params.update(model='ordinary/model', current_model='ordinary/model')
+            assert providers.selection_warnings(home, params)['warnings'] == []
+            params['provider'] = 'other-provider'
+            route.update(provider='other-provider', base_url='https://other.invalid/v1')
+            assert {w['kind'] for w in providers.selection_warnings(home, params)['warnings']} == {'context_cache'}
+            params.update(provider='custom', current_model='old-model')
+            route.update(provider='custom', base_url='https://provider.invalid/v1')
+            params['context_tokens'] = None
             assert providers.selection_warnings(home, params)['warnings'] == []
             # A different profile's cached Agent must never supply this profile's context.
             agent = SimpleNamespace(model='old-model', context_compressor=SimpleNamespace(last_prompt_tokens=250000))

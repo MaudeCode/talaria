@@ -156,7 +156,8 @@
         "provider": "custom",
         "current_model": "old-model",
         "context_tokens": 200000,
-        "messages": []
+        "messages": [],
+        "current_provider": "custom"
       },
       "result": {
         "warnings": [
