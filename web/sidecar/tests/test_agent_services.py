@@ -932,16 +932,21 @@ def acquire_checkout(self,root):
  return self.acquire()
 UpdateLock.acquire_checkout=acquire_checkout
 ''')
-    with (modules / 'update_lock.py').open('a') as file:
-        tree = ast.parse((root / 'synthetic_services.py').read_text())
-        for node in tree.body:
-            if isinstance(node, ast.FunctionDef) and node.name in {'birth', 'alive'}:
-                file.write(ast.unparse(node) + '\n')
+    # Native repair imports only its verified closure, never the damaged checkout.
+    with (modules / 'update_custody.py').open('a') as file:
+        file.write("\nimport json, os, psutil\nfrom pathlib import Path\nHOME=Path(os.environ['HERMES_HOME'])\n")
+    tree = ast.parse((root / 'synthetic_services.py').read_text())
+    for name, helpers in (
+            ('update_lock.py', {'birth', 'alive'}),
+            ('update_custody.py', {'birth', 'alive', 'services', 'service_pid', 'ledger'})):
+        with (modules / name).open('a') as file:
+            for node in tree.body:
+                if isinstance(node, ast.FunctionDef) and node.name in helpers:
+                    file.write(ast.unparse(node) + '\n')
     with (modules / 'update_custody.py').open('a') as file:
         file.write('''
 def run_git(command,args,**kw):
- from synthetic_services import ledger, services, service_pid
- if args and args[0] in ('merge','reset','checkout','stash','apply'):
+ if args and args[0] in ('merge','reset','checkout','stash','apply','restore','clean'):
   assert not ledger(), 'old-source writer survived quiescence'
   assert not any(service_pid(c['label']) for c in services()), 'supervisor survived quiescence'
  return subprocess.run([*command,*args],**kw)
