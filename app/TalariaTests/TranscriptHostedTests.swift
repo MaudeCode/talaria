@@ -416,8 +416,8 @@ final class TranscriptHostedTests: XCTestCase {
         let reply = try await requireElement(in: window, label: "The audit finished and the test run failed.")
         XCTAssertLessThan(batch.accessibilityFrame.maxY, reply.accessibilityFrame.minY, "The reply is not under its completion lines")
         XCTAssertNil(HostedAccessibility.element(in: window, label: "[SILENT]"), "A silent background reply is shown")
-        XCTAssertNotNil(
-            HostedAccessibility.element(in: window, label: "[ASYNC DELEGATION BATCH COMPLETE — typed] I typed this"),
+        _ = try await requireElement(
+            in: window, label: "[ASYNC DELEGATION BATCH COMPLETE — typed] I typed this",
             "The typed marker is no longer the user's message"
         )
 
