@@ -283,6 +283,40 @@ describe('Web source updates (test_tal203_source_update.py)', () => {
     } finally { svc.stopAutoApply(); vi.useRealTimers() }
   })
 
+  it('rearms a new lifecycle after cancelled discovery finishes without overlapping owners', async () => {
+    vi.useFakeTimers()
+    const { svc } = service(sourceInstall(), { checkEnabled: () => false, agentDir: '/synthetic' })
+    let finish: (() => void) | undefined
+    let oldSignal: AbortSignal | undefined
+    let probes = 0
+    let actions = 0
+    Object.assign((svc as unknown as { deps: object }).deps, {
+      recoverAgent: (probe: boolean, signal: AbortSignal) => {
+        if (!probe) { actions += 1; return Promise.resolve({ ok: true, owed: false, fingerprint: '', detail: '' }) }
+        probes += 1
+        if (probes === 1) {
+          oldSignal = signal
+          return new Promise((resolve) => { finish = () => { resolve({ ok: true, owed: false, fingerprint: '', detail: '' }) } })
+        }
+        return Promise.resolve({ ok: false, owed: true, fingerprint: 'retained', detail: '' })
+      },
+    })
+    try {
+      svc.startAutoApply(300000)
+      await vi.advanceTimersByTimeAsync(1)
+      svc.stopAutoApply()
+      expect(oldSignal?.aborted).toBe(true)
+      svc.startAutoApply(300000)
+      await vi.advanceTimersByTimeAsync(1)
+      expect(probes).toBe(1)
+      expect(actions).toBe(0)
+      finish!()
+      await vi.advanceTimersByTimeAsync(1)
+      expect(actions).toBe(1)
+      expect(svc.cachedStatus().agent_recovery).toMatchObject({ phase: 'complete' })
+    } finally { finish?.(); svc.stopAutoApply(); vi.useRealTimers() }
+  })
+
   it('uses a positive retry delay while another lifecycle operation owns recovery', async () => {
     vi.useFakeTimers()
     const { svc } = service(sourceInstall(), { checkEnabled: () => false, agentDir: '/synthetic' })

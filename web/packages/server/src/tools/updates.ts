@@ -1621,7 +1621,8 @@ export class UpdateService {
       if (current()) {
         await this.publishRecovery()
       }
-      this.recoveryAbort = null
+      if (this.recoveryAbort === abort) this.recoveryAbort = null
+      if (this.autoStarted && lifecycle !== this.lifecycle) this.armRecovery()
       if (current() && retry) {
         this.recoveryTimer = setTimeout(() => { this.recoveryTimer = null; void this.recoverOnce(lifecycle) }, retryDelay)
         this.recoveryTimer.unref()
