@@ -37,11 +37,7 @@ test('prompt-reading progress uses the existing status and survives a cold attac
     await route.fulfill({ json: { ok: true } })
   })
   const shot = async (name: string) => {
-    const tab = page.locator('.composer-tab')
-    if (await tab.count()) await tab.evaluate(async (el) => {
-      await Promise.all(el.getAnimations({ subtree: true }).filter((animation) => animation.effect?.getComputedTiming().iterations !== Infinity).map((animation) => animation.finished.catch(() => undefined)))
-    })
-    if (process.env.TAL1058_SHOTS) await page.screenshot({ path: `${process.env.TAL1058_SHOTS}/${name}-${testInfo.project.name}.png` })
+    if (process.env.TAL1058_SHOTS) await page.screenshot({ path: `${process.env.TAL1058_SHOTS}/${name}-${testInfo.project.name}.png`, animations: 'disabled' })
   }
   try {
     await page.goto(`/session/${sid}`)
