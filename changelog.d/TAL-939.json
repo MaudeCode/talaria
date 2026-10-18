@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Feishu, DingTalk, BlueBubbles, QQBot, Yuanbao and WhatsApp Cloud chats are grouped as messaging and protected from editing or deletion.",
+      "highlight": false,
+      "components": ["web"]
+    }
+  ]
+}

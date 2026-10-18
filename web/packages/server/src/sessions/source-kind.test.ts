@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { withSessionWireFlags } from './list.js'
+import { isClaimableCliSource, withOwnerLocks, withSessionWireFlags } from './list.js'
 import { sourceKind } from './source-kind.js'
 
 describe('sourceKind (TAL-310)', () => {
@@ -55,5 +55,20 @@ describe('withSessionWireFlags source fields (TAL-310)', () => {
 
   it('files a scheduled run that delivers to a messaging channel as cron', () => {
     expect(wire({ session_id: 'cron_job_1', raw_source: 'telegram' })).toMatchObject({ source_kind: 'cron', is_messaging_session: false })
+  })
+})
+
+describe('Agent messaging platforms (TAL-939)', () => {
+  it.each(['feishu', 'dingtalk', 'bluebubbles', 'qqbot', 'yuanbao', 'whatsapp_cloud'])('classifies and locks %s even with stale CLI metadata', (source) => {
+    for (const marker of ['raw_source', 'source_tag']) {
+      const row = { [marker]: ` ${source.toUpperCase()} `, is_cli_session: true }
+      expect(sourceKind(row)).toBe('messaging')
+      expect(isClaimableCliSource(row, source)).toBe(false)
+      const locked = withOwnerLocks([{ session_id: 'platform-session', ...row }], () => new Map([['platform-session', source]]))[0]!
+      expect(withSessionWireFlags(locked, new Set())).toMatchObject({
+        source_kind: 'messaging', is_messaging_session: true, is_cli_session: false,
+        read_only: true, can_delete: false,
+      })
+    }
   })
 })

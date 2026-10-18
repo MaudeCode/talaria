@@ -24,6 +24,7 @@ const STATE_DB_BUSY_TIMEOUT_MS = 5000
 const STATE_DB_FINGERPRINT_BUSY_TIMEOUT_MS = 500
 
 const SOURCE_LABELS: Record<string, string> = {
+  bluebubbles: 'BlueBubbles', dingtalk: 'DingTalk', feishu: 'Feishu', qqbot: 'QQBot', yuanbao: 'Yuanbao', whatsapp_cloud: 'WhatsApp Cloud',
   acp: 'ACP', api_server: 'API', cli: 'CLI', cron: 'Cron', discord: 'Discord', email: 'Email', kanban: 'Kanban', wecom: 'WeCom', wecom_callback: 'WeCom Callback',
   slack: 'Slack', telegram: 'Telegram', tool: 'Tool', tui: 'TUI', webhook: 'Webhook', webui: 'WebUI', weixin: 'Weixin', matrix: 'Matrix', signal: 'Signal',
 }
