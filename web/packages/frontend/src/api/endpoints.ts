@@ -113,8 +113,8 @@ export const renameProject = (project_id: string, name: string, color?: string) 
 export const deleteProject = (project_id: string) => orpc().projects.delete({ project_id })
 
 // Chat
-/** Web draws the `connect_card`, so every turn it starts asks the Agent for one (TAL-818). */
-export const startChat = (body: ChatStartRequest) => orpc().chat.start({ ...body, connect_card: true }, { signal: timeout(60_000) })
+/** Web renders connect cards and masked skill setup; advertise both on every user-started turn. */
+export const startChat = (body: ChatStartRequest) => orpc().chat.start({ ...body, connect_card: true, skill_secret: true }, { signal: timeout(60_000) })
 export const cancelChat = (stream_id: string) => orpc().chat.cancel({ stream_id })
 export const steerChat = (body: z.infer<typeof SteerRequestSchema>) => orpc().chat.steer(body)
 export const withdrawSteer = (body: SteerWithdrawRequest) => orpc().chat.steerWithdraw(body)

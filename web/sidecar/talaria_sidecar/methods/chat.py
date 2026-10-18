@@ -73,6 +73,7 @@ class _ClarifyEntry:
         self.data = data
         self.event = threading.Event()
         self.result: str | None = None
+        self.deadline: float | None = None
 
 
 _RUNS: dict[str, _Run] = {}
@@ -507,7 +508,7 @@ def _post_compression_context(agent: Any, messages: list, system_message: Any) -
 
 
 # TAL-887: the Agent's password-manager prompts, answered like a clarify; the waits are the Agent's own surfaces' (its TUI).
-_VAULT_PROMPT_TIMEOUTS = {"vault_unlock": 120, "vault_save_login": 180, "vault_code": 180}
+_VAULT_PROMPT_TIMEOUTS = {"vault_unlock": 120, "vault_save_login": 180, "vault_code": 180, "skill_secret": 120}
 
 
 def _set_vault_session(session_id) -> None:
@@ -1510,17 +1511,17 @@ def start(ctx: CallContext, params: dict) -> dict:  # noqa: PLR0915 - one turn, 
             passes (``<= 0``: no limit). The answer, or None, goes back to the Agent and is never emitted."""
             entry = _ClarifyEntry(data)
             entry.data["clarify_id"] = entry.clarify_id
+            entry.deadline = None if timeout <= 0 else time.monotonic() + float(timeout)
             with run.lock:
                 run.clarify_entries[entry.clarify_id] = entry
             emit("clarify", dict(entry.data))
-            deadline = None if timeout <= 0 else time.monotonic() + float(timeout)
             while not entry.event.is_set():
-                if run.cancel.is_set() or run.finished.is_set():
+                if run.cancel.is_set() or run.finished.is_set() or (data.get("kind") == "skill_secret" and (ctx.cancelled or run.session_ended)):
                     break
-                if deadline is None:
+                if entry.deadline is None:
                     entry.event.wait(1.0)
                     continue
-                remaining = deadline - time.monotonic()
+                remaining = entry.deadline - time.monotonic()
                 if remaining <= 0:
                     break
                 entry.event.wait(min(1.0, remaining))
@@ -1553,6 +1554,35 @@ def start(ctx: CallContext, params: dict) -> dict:  # noqa: PLR0915 - one turn, 
 
         def vault_code_prompt(site, hint):
             return ask_vault("vault_code", {"site": str(site), "hint": str(hint or "")})
+
+        def skill_secret_prompt(env_var, prompt, metadata=None):
+            skipped = {"success": True, "stored_as": env_var, "validated": False, "skipped": True}
+            if not isinstance(env_var, str) or not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", env_var):
+                return skipped
+            metadata = metadata if isinstance(metadata, dict) else {}
+            fields = {"env_var": env_var, "prompt": str(prompt), **{key: str(metadata.get(key) or "") for key in ("skill_name", "help", "required_for")}}
+            value = ask_vault("skill_secret", fields)
+            if not value.strip():
+                return skipped
+            # The native writer strips these bytes, and reports non-ASCII characters to stderr. Refuse rather
+            # than change the credential or expose any of its characters in logs.
+            if not value.isascii() or any(char in value for char in ("\r", "\n", "\0")):
+                return {**skipped, "success": False}
+            try:
+                from hermes_cli.config import save_env_value_secure
+                from hermes_constants import get_hermes_home
+
+                # Keep the inherited secret scope so setup can use the value immediately. Fence the write against
+                # eviction/replacement under the same lock that changes the run's identity and session lifetime.
+                with _RUNS_LOCK:
+                    if (ctx.cancelled or run.cancel.is_set() or run.finished.is_set() or run.session_ended
+                            or _RUNS_BY_SESSION.get(session_id) != stream_id or _RUNS.get(stream_id) is not run
+                            or get_hermes_home() != home):
+                        return skipped
+                    saved = save_env_value_secure(env_var, value)
+                return {"success": saved.get("success") is True, "stored_as": env_var, "validated": saved.get("validated") is True, "skipped": False}
+            except Exception:  # noqa: BLE001 - never expose an exception that could include the submitted value
+                return {**skipped, "success": False}
 
         def clarify_callback(question, choices=None, multi_select=False, questions=None):
             # TAL-351: remove the legacy signature path when v0.21.6 is the oldest supported Agent.
@@ -1729,7 +1759,13 @@ def start(ctx: CallContext, params: dict) -> dict:  # noqa: PLR0915 - one turn, 
         # The Agent reads its vault prompts from the thread running the turn (and copies them onto tool workers).
         _set_vault_prompts(session_id, vault_unlock_prompt, vault_save_login_prompt, vault_code_prompt)
         try:
-            raw = agent.run_conversation(**run_kwargs)
+            try:
+                from tools.skills_tool import bind_turn_secret_capture
+            except ImportError:  # Older Agents and v0.22.2 have only an unsafe process-global callback slot.
+                bind_turn_secret_capture = None
+                log.debug("Agent lacks turn-local skill secret capture; secure setup is unavailable")
+            with bind_turn_secret_capture(skill_secret_prompt) if bind_turn_secret_capture and params.get("skill_secret") is True else contextlib.nullcontext():
+                raw = agent.run_conversation(**run_kwargs)
             result = raw if isinstance(raw, dict) else {}
         except Exception as exc:  # noqa: BLE001
             log.warning("agent turn failed for %s: %s", session_id, exc)
@@ -2277,21 +2313,22 @@ def register(registry) -> None:
         run = _run_for(params)
         if run is None:
             return {"ok": False}
+        if params.get("session_id") and str(params["session_id"]) != run.session_id:
+            return {"ok": False}
         with run.lock:
             entries = list(run.clarify_entries.values())
-        target = None
-        if clarify_id:
-            target = next((e for e in entries if e.clarify_id == clarify_id), None)
-        elif entries:
-            target = entries[0]
-        if target is None:
-            return {"ok": False}
-        # A password or code is the Agent's as typed; only a vault prompt takes an empty answer, its decline (TAL-887).
-        vault = str(target.data.get("kind") or "").startswith("vault_")
-        if not vault:
-            response = response.strip()
-        if not response and not vault:
-            raise InvalidParams("response is required")
-        target.result = response
-        target.event.set()
-        return {"ok": True, "clarify_id": target.clarify_id}
+            target = next((e for e in entries if e.clarify_id == clarify_id), None) if clarify_id else (entries[0] if entries else None)
+            if target is None or target.event.is_set() or (target.deadline is not None and time.monotonic() >= target.deadline):
+                return {"ok": False}
+            skill_secret = target.data.get("kind") == "skill_secret"
+            if skill_secret and (not clarify_id or ctx.cancelled or run.ctx.cancelled or run.cancel.is_set() or run.finished.is_set() or run.session_ended):
+                return {"ok": False}
+            # Secure answers are as typed; an empty reply is their decline. Only the first answer releases a waiter.
+            secure = str(target.data.get("kind") or "").startswith("vault_") or skill_secret
+            if not secure:
+                response = response.strip()
+            if not response and not secure:
+                raise InvalidParams("response is required")
+            target.result = response
+            target.event.set()
+            return {"ok": True, "clarify_id": target.clarify_id}

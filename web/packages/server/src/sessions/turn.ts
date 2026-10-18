@@ -136,6 +136,8 @@ export interface StartTurnOptions {
   voiceTurn?: boolean
   /** TAL-818: the starting client renders `connect_card`; other turns keep the Agent's plain connect links. */
   connectCard?: boolean
+  /** The starting client can answer the masked skill-secret variant. */
+  skillSecret?: boolean
   /** The settled turn's answer: its last non-error assistant reply, or `` when it produced none. */
   onDone?: (answer: string) => void | Promise<void>
   /** Runs on every other end: an error, a cancel, or a writeback another stream took over (Python background runner: `complete_background(..., "(background task failed)")`). */
@@ -724,6 +726,7 @@ export class TurnRunner {
         user_message: userMessage, ...turnContext, conversation_history: conversationHistory, enabled_toolsets: deps.toolsetsFor(s), ...(msgText ? { persist_user_message: msgText } : {}), ...(opts.ephemeral ? { ephemeral: true } : {}),
         ...(opts.voiceTurn ? { voice_turn: true } : {}),
         ...(opts.connectCard ? { connect_card: true } : {}),
+        ...(opts.skillSecret ? { skill_secret: true } : {}),
       }, {
         signal: controller.signal,
         timeoutMs: 0,
@@ -2262,6 +2265,7 @@ export class TurnRunner {
     try {
       ok = (await sidecar.call('clarify.respond', { session_id: sessionId, clarify_id: str(entry.clarify_id), response })).ok
     } catch (error) {
+      if (vault) return { ok: false, error: 'The Agent sidecar did not accept the secure answer; retry in a moment.' }
       return { ok: false, error: `The Agent sidecar did not accept the answer (${str((error as Error).message)}); retry in a moment.` }
     }
     if (!ok) return { ok: false, stale: true }

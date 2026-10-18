@@ -8,7 +8,7 @@ import { keys } from '../../api/queryKeys'
 import { isApiError } from '../../contracts/common'
 import type { LiveTurn } from '../../stream/reducer'
 import { Button } from '../../ui/Button'
-import { TextInput } from '../../ui/Field'
+import { HelpTip, TextInput } from '../../ui/Field'
 import { showToast } from '../toast/toast'
 import { useClarifyHead } from './useClarify'
 
@@ -23,12 +23,13 @@ const HEADING: Record<VaultPrompt['kind'], (vault: VaultPrompt) => string> = {
   vault_unlock: (vault) => m.vault_unlock_heading({ name: vault.display_name ?? vault.backend ?? '' }),
   vault_save_login: (vault) => m.vault_save_login_heading({ site: vault.site ?? '' }),
   vault_code: (vault) => m.vault_code_heading({ site: vault.site ?? '' }),
+  skill_secret: (vault) => m.skill_secret_heading({ name: vault.skill?.skill_name ?? '' }),
 }
-const SUBMIT: Record<VaultPrompt['kind'], () => string> = { vault_unlock: m.vault_unlock_submit, vault_save_login: m.vault_save_login_submit, vault_code: m.vault_code_submit }
-const LABEL: Record<VaultPromptField['key'], () => string> = { master_password: m.vault_field_master_password, identifier: m.vault_field_identifier, password: m.vault_field_password, code: m.vault_field_code }
+const SUBMIT: Record<VaultPrompt['kind'], () => string> = { vault_unlock: m.vault_unlock_submit, vault_save_login: m.vault_save_login_submit, vault_code: m.vault_code_submit, skill_secret: m.vault_save_login_submit }
+const LABEL: Record<VaultPromptField['key'], () => string> = { master_password: m.vault_field_master_password, identifier: m.vault_field_identifier, password: m.vault_field_password, code: m.vault_field_code, secret: m.vault_field_secret }
 // The answers are for another site or a password manager, never Talaria's own login: ask the browser and password
 // managers for nothing they keep for this origin. A one-time code may be read from the message the site sent.
-const AUTOCOMPLETE: Record<VaultPromptField['key'], string> = { master_password: 'off', identifier: 'off', password: 'off', code: 'one-time-code' }
+const AUTOCOMPLETE: Record<VaultPromptField['key'], string> = { master_password: 'off', identifier: 'off', password: 'off', code: 'one-time-code', secret: 'off' }
 
 /**
  * The Agent asks for a master password, a login to save, or a one-time code. The answer goes to the server once and
@@ -70,6 +71,7 @@ export function VaultPromptCard({ sessionId, clarifyId, vault }: { sessionId: st
         <div className="flex items-center gap-2 text-sm font-semibold text-text">
           <KeyRound size={14} className="text-info" aria-hidden="true" />
           <span id="vaultHeading">{heading}</span>
+          {vault.skill?.help && <HelpTip label={heading}>{vault.skill.help}</HelpTip>}
           <span className="flex-1" />
           <span className="text-xs font-normal tabular-nums text-muted">{remaining}s</span>
         </div>
@@ -77,7 +79,7 @@ export function VaultPromptCard({ sessionId, clarifyId, vault }: { sessionId: st
         <div className="mt-2 flex flex-col gap-2">
           {vault.fields.map((field, i) => (
             <label key={field.key} className="flex flex-col gap-1 text-xs text-muted">
-              {LABEL[field.key]()}
+              {field.key === 'secret' ? vault.skill?.env_var || LABEL[field.key]() : LABEL[field.key]()}
               <TextInput
                 type={field.secure ? 'password' : 'text'}
                 name={field.key}

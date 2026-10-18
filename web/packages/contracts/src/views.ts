@@ -423,6 +423,8 @@ export const ChatStartRequestSchema = z.looseObject({
   voice_turn: z.boolean().optional(),
   /** TAL-818: this client renders `connect_card`, so a `manage_connections` call waits on the card; without it the Agent answers with plain links. */
   connect_card: z.boolean().optional(),
+  /** The starting client renders the masked `skill_secret` prompt; omitted by older and native clients. */
+  skill_secret: z.boolean().optional(),
 })
 export type ChatStartRequest = z.infer<typeof ChatStartRequestSchema>
 /** Accepted turn. `stream_id` is the owner identity for the SSE connection. */
@@ -483,21 +485,22 @@ export type ClarifyStep = z.infer<typeof ClarifyStepSchema>
 export const ClarifyAnswersSchema = z.record(z.string(), z.union([z.string(), z.array(z.string())]))
 export type ClarifyAnswers = z.infer<typeof ClarifyAnswersSchema>
 /** TAL-887: one input of a password-manager prompt, answered under its `key`; a `secure` input is masked. */
-export const VaultPromptFieldSchema = z.object({ key: z.enum(['master_password', 'identifier', 'password', 'code']), secure: z.boolean() })
+export const VaultPromptFieldSchema = z.object({ key: z.enum(['master_password', 'identifier', 'password', 'code', 'secret']), secure: z.boolean() })
 export type VaultPromptField = z.infer<typeof VaultPromptFieldSchema>
 /**
  * TAL-887: the Agent asks for a password manager's master password (`vault_unlock`), a login to save for the page it is
- * on (`vault_save_login`), or the one-time code a site sent (`vault_code`). Clients render `fields` and answer through
+ * on (`vault_save_login`), a one-time code (`vault_code`), or a skill environment secret (`skill_secret`). Clients answer through
  * `/api/clarify/respond` with keyed `answers`, or `decline`; an empty answer, a decline, a cancel and `timeout_at` all
- * resolve it unanswered. Answers go to the Agent only: never stored, logged, streamed, or echoed back.
+ * resolve it unanswered. Answers never enter chat, logs, streams, or responses. Skill secrets are saved only to the invoking profile.
  */
 export const VaultPromptSchema = z.object({
-  kind: z.enum(['vault_unlock', 'vault_save_login', 'vault_code']),
+  kind: z.enum(['vault_unlock', 'vault_save_login', 'vault_code', 'skill_secret']),
   backend: z.string().nullable().describe('The password manager (`vault_unlock`).'),
   display_name: z.string().nullable().describe('Its display name (`vault_unlock`).'),
   origin: z.string().nullable().describe('The page origin the login is saved for (`vault_save_login`).'),
   site: z.string().nullable().describe('The site, by host (`vault_save_login`, `vault_code`).'),
   hint: z.string().nullable().describe('Where the code was sent, when the Agent says (`vault_code`).'),
+  skill: z.object({ env_var: z.string(), skill_name: z.string(), help: z.string().nullable(), required_for: z.string().nullable() }).optional().describe('Profile-local environment setup metadata (`skill_secret`).'),
   fields: z.array(VaultPromptFieldSchema),
   timeout_at: z.number().describe('Unix seconds when the Agent stops waiting.'),
 })

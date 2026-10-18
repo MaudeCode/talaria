@@ -39648,6 +39648,9 @@
                   },
                   "connect_card": {
                     "type": "boolean"
+                  },
+                  "skill_secret": {
+                    "type": "boolean"
                   }
                 },
                 "required": [
@@ -45070,7 +45073,8 @@
                                   "enum": [
                                     "vault_unlock",
                                     "vault_save_login",
-                                    "vault_code"
+                                    "vault_code",
+                                    "skill_secret"
                                   ],
                                   "type": "string"
                                 },
@@ -45129,6 +45133,44 @@
                                   ],
                                   "description": "Where the code was sent, when the Agent says (`vault_code`)."
                                 },
+                                "skill": {
+                                  "type": "object",
+                                  "properties": {
+                                    "env_var": {
+                                      "type": "string"
+                                    },
+                                    "skill_name": {
+                                      "type": "string"
+                                    },
+                                    "help": {
+                                      "anyOf": [
+                                        {
+                                          "type": "string"
+                                        },
+                                        {
+                                          "type": "null"
+                                        }
+                                      ]
+                                    },
+                                    "required_for": {
+                                      "anyOf": [
+                                        {
+                                          "type": "string"
+                                        },
+                                        {
+                                          "type": "null"
+                                        }
+                                      ]
+                                    }
+                                  },
+                                  "required": [
+                                    "env_var",
+                                    "skill_name",
+                                    "help",
+                                    "required_for"
+                                  ],
+                                  "description": "Profile-local environment setup metadata (`skill_secret`)."
+                                },
                                 "fields": {
                                   "type": "array",
                                   "items": {
@@ -45139,7 +45181,8 @@
                                           "master_password",
                                           "identifier",
                                           "password",
-                                          "code"
+                                          "code",
+                                          "secret"
                                         ],
                                         "type": "string"
                                       },

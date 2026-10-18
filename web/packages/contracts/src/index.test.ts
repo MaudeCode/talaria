@@ -119,7 +119,7 @@ describe('contracts package', () => {
     const fixture = shared('fixtures/vault-prompts.json') as Record<string, unknown>
     const prompts = Object.values(fixture).map((body) => ClarifyPendingEnvelopeSchema.parse(body).pending?.vault)
     expect(prompts.map((p) => [p?.kind, p?.fields.map((f) => `${f.key}${f.secure ? '*' : ''}`)])).toEqual([
-      ['vault_unlock', ['master_password*']], ['vault_save_login', ['identifier', 'password*']], ['vault_code', ['code']],
+      ['vault_unlock', ['master_password*']], ['vault_save_login', ['identifier', 'password*']], ['vault_code', ['code']], ['skill_secret', ['secret*']],
     ])
   })
   it('parses the shared speech.prepare exchange, which is the Agent answer recorded for its text (TAL-906)', () => {

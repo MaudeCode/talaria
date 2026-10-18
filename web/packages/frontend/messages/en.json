@@ -232,6 +232,8 @@
 	"vault_save_login_submit": "Save",
 	"vault_code_submit": "Enter code",
 	"vault_skip": "Skip",
+	"skill_secret_heading": "Set up {name}",
+	"vault_field_secret": "Secret",
 	"session_attention_approval": [
 		{
 			"declarations": [

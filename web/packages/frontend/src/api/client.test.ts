@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { z } from 'zod'
 import { configureClient, get, post, request, resetClientForTests } from './client'
 import { createMemoryAdapter, makeSession } from '../contracts/adapters/memory'
-import { checkUpdatesNow, fetchSession, fetchUpdatesCheck, renameSession } from './endpoints'
+import { checkUpdatesNow, fetchSession, fetchUpdatesCheck, renameSession, startChat } from './endpoints'
 import { isApiError } from '../contracts/common'
 import { resetAppRootForTests } from '../lib/appRoot'
 
@@ -35,6 +35,13 @@ describe('typed client against the in-memory adapter', () => {
     expect(call.method).toBe('POST')
     expect(call.headers.get('X-Hermes-CSRF-Token')).toBe('csrf-test-token')
     expect(call.credentials).toBe('include')
+  })
+
+  it('advertises the secure skill prompt at the shared Web chat-start boundary', async () => {
+    const adapter = createMemoryAdapter({ routes: { 'POST /api/chat/start': () => [200, { session_id: 'abc', stream_id: 'stream' }] } })
+    configureClient({ transport: adapter })
+    await startChat({ session_id: 'abc', message: 'Set up the skill' })
+    expect(JSON.parse(adapter.calls.at(-1)!.body as string)).toMatchObject({ session_id: 'abc', skill_secret: true, connect_card: true })
   })
 
   it('reads update status with a passive GET and runs a manual check only via POST {force:true}', async () => {

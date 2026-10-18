@@ -3,14 +3,15 @@ import { createServer, type ServerResponse } from 'node:http'
 import { join } from 'node:path'
 import { expect, test } from './fixtures'
 
-test.use({ serviceWorkers: 'block' })
+test.use({ serviceWorkers: 'block', video: 'on' })
 
-const fixture = JSON.parse(readFileSync(join(import.meta.dirname, '../../../../contracts/fixtures/vault-prompts.json'), 'utf8')) as Record<'unlock' | 'save_login' | 'code', { pending: Record<string, unknown> }>
+const fixture = JSON.parse(readFileSync(join(import.meta.dirname, '../../../../contracts/fixtures/vault-prompts.json'), 'utf8')) as Record<'unlock' | 'save_login' | 'code' | 'skill_secret', { pending: Record<string, unknown> }>
 
 /** TAL-887: the Agent's password-manager prompt renders from the server's queue head, masked, and answers once. */
-test('a password-manager prompt takes a masked master password and sends it only to the respond route', async ({ page }) => {
+for (const kind of ['unlock', 'skill_secret'] as const) {
+test(`${kind} takes a masked answer and sends it only to the respond route`, async ({ page }, testInfo) => {
   const sid = 'vault-prompt'
-  let head: Record<string, unknown> | null = { ...fixture.unlock.pending, timeout_seconds: 120, vault: { ...(fixture.unlock.pending.vault as object), timeout_at: Date.now() / 1000 + 120 } }
+  let head: Record<string, unknown> | null = { ...fixture[kind].pending, timeout_seconds: 120, vault: { ...(fixture[kind].pending.vault as object), timeout_at: Date.now() / 1000 + 120 } }
   await page.route('**/api/session?**', (route) => route.fulfill({ json: { session: {
     session_id: sid, title: 'Log in', active_stream_id: 'vault-run', is_streaming: true, read_only: false, can_branch: true, can_pin: true, can_archive: true, can_delete: true, can_duplicate: true,
     transcript_seq: null, messages: [{ role: 'user', id: 1, content: 'Log in to example', _turn_id: 'vault-run' }],
@@ -37,16 +38,28 @@ test('a password-manager prompt takes a masked master password and sends it only
   await page.route('**/api/chat/stream?**', (route) => route.continue({ url: `http://127.0.0.1:${String(address.port)}${new URL(route.request().url()).search}` }))
   try {
     await page.goto(`/session/${sid}`)
-    const prompt = page.getByRole('dialog', { name: 'Unlock Bitwarden' })
+    const prompt = page.getByRole('dialog', { name: kind === 'unlock' ? 'Unlock Bitwarden' : 'Set up example' })
     await expect(prompt).toBeVisible()
-    const password = prompt.getByLabel('Master password')
+    const password = prompt.getByLabel(kind === 'unlock' ? 'Master password' : 'EXAMPLE_API_KEY')
     await expect(password).toHaveAttribute('type', 'password')
+    await page.screenshot({ path: testInfo.outputPath('prompt-empty.png'), fullPage: true })
     await password.fill('correct horse battery')
-    await prompt.getByRole('button', { name: 'Unlock' }).click()
+    await page.screenshot({ path: testInfo.outputPath('prompt-masked.png'), fullPage: true })
+    await prompt.getByRole('button', { name: kind === 'unlock' ? 'Unlock' : 'Save', exact: true }).click()
     await expect(prompt).toHaveCount(0)
-    expect(responses).toEqual([{ session_id: sid, clarify_id: 'contract-vault-unlock', answers: { master_password: 'correct horse battery' } }])
+    expect(responses).toEqual([{ session_id: sid, clarify_id: kind === 'unlock' ? 'contract-vault-unlock' : 'contract-skill-secret', answers: { [kind === 'unlock' ? 'master_password' : 'secret']: 'correct horse battery' } }])
+    await page.screenshot({ path: testInfo.outputPath('prompt-saved.png'), fullPage: true })
+    if (kind === 'skill_secret') {
+      head = { ...fixture[kind].pending, clarify_id: 'skip-skill-secret', vault: { ...(fixture[kind].pending.vault as object), timeout_at: Date.now() / 1000 + 120 } }
+      await page.reload()
+      await expect(prompt).toBeVisible()
+      await prompt.getByRole('button', { name: 'Skip', exact: true }).click()
+      await expect(prompt).toHaveCount(0)
+      expect(responses[1]).toEqual({ session_id: sid, clarify_id: 'skip-skill-secret', decline: true })
+    }
   } finally {
     for (const response of streams) response.end()
     await new Promise<void>((resolve) => server.close(() => { resolve() }))
   }
 })
+}

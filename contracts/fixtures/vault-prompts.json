@@ -37,5 +37,38 @@
       "vault": { "kind": "vault_code", "backend": null, "display_name": null, "origin": null, "site": "login.example.com", "hint": null, "fields": [{ "key": "code", "secure": false }], "timeout_at": 1800000180 }
     },
     "pending_count": 1
+  },
+  "skill_secret": {
+    "pending": {
+      "clarify_id": "contract-skill-secret",
+      "session_id": "contract-session",
+      "kind": "skill_secret",
+      "steps": [],
+      "vault": {
+        "kind": "skill_secret",
+        "backend": null,
+        "display_name": null,
+        "origin": null,
+        "site": null,
+        "hint": "Enter the test key",
+        "skill": {
+          "env_var": "EXAMPLE_API_KEY",
+          "skill_name": "example",
+          "help": "https://example.com/keys",
+          "required_for": "example setup"
+        },
+        "fields": [
+          {
+            "key": "secret",
+            "secure": true
+          }
+        ],
+        "timeout_at": 1800000120
+      },
+      "requested_at": 1800000000,
+      "timeout_seconds": 120,
+      "expires_at": 1800000120
+    },
+    "pending_count": 1
   }
 }
