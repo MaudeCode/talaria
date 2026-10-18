@@ -106,6 +106,19 @@ def test_a_btw_side_question_stays_out_of_state_db(home) -> None:
         proc.close()
 
 
+def test_server_generated_title_survives_a_cached_agent_turn(home) -> None:
+    proc = SidecarProcess(home)
+    try:
+        first = _turn(proc, home, "web-title", "ping")
+        assert proc.result("state_db.sync_title", {"profile_home": str(home), "session_id": "web-title",
+                                                   "title": "Server-generated title"}) == {"ok": True}
+        _turn(proc, home, "web-title", "again", first["messages"])
+        with closing(sqlite3.connect(home / "state.db")) as db:
+            assert db.execute("SELECT title, title_source FROM sessions WHERE id = ?", ("web-title",)).fetchone() == ("Server-generated title", "llm")
+    finally:
+        proc.close()
+
+
 def _seed_compressed(home) -> None:
     """The Agent compressed ``web-2`` in a sidecar that is gone: the Web id ended, its continuation ``web-2-tip`` is live."""
     script = textwrap.dedent(

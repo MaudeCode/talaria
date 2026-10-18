@@ -24,6 +24,7 @@ import threading
 import time
 import uuid
 from collections import OrderedDict
+from functools import lru_cache
 from pathlib import Path
 from typing import Any
 
@@ -1210,6 +1211,15 @@ def _supported(cls, name: str) -> bool:
     return name in parameters or any(p.kind is inspect.Parameter.VAR_KEYWORD for p in parameters.values())
 
 
+@lru_cache(maxsize=32)
+def _run_conversation_parameters(cls) -> frozenset[str]:
+    """Probe explicit turn capabilities once per Agent class; unknown signatures keep legacy arguments."""
+    try:
+        return frozenset(inspect.signature(cls.run_conversation).parameters)
+    except (TypeError, ValueError):
+        return frozenset()
+
+
 def _approval_notifier(session_id: str, emit):
     """The Agent's gateway notify callback for one turn: emits each parked approval, then ``approval_resolved``
     (id plus the Agent's reason) once its wait ends by any path, an ``approvals.timeout`` expiry included (TAL-514)."""
@@ -1689,12 +1699,12 @@ def start(ctx: CallContext, params: dict) -> dict:  # noqa: PLR0915 - one turn, 
         watcher = threading.Thread(target=_watch_cancel, daemon=True, name=f"chat-cancel-{stream_id[:8]}")
         watcher.start()
         run_kwargs: dict = {"user_message": user_message, "conversation_history": history, "task_id": session_id}
-        try:
-            run_params = set(inspect.signature(agent.run_conversation).parameters)
-        except (TypeError, ValueError):
-            run_params = set()
+        run_params = _run_conversation_parameters(type(agent))
         if system_message and ("system_message" in run_params or not run_params):
             run_kwargs["system_message"] = system_message
+        # Talaria generates and syncs the title; suppress the Agent's duplicate auxiliary request.
+        if "title_user_message" in run_params:
+            run_kwargs["title_user_message"] = ""
         # The server's clean user text (no workspace prefix) is what state.db stores; the Agent keeps the sent bytes beside it.
         persist = params.get("persist_user_message")
         if not (isinstance(persist, str) and persist.strip()):

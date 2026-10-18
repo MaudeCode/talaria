@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Changed",
+      "summary": "Chat titles use a single generation request and stay consistent across turns.",
+      "highlight": false,
+      "components": ["web"]
+    }
+  ]
+}
