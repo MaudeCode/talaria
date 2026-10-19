@@ -144,6 +144,9 @@ public enum SSEEvent: Equatable {
     case streamEnd
     /// The settled session an error or cancel frame carries, delivered just before that terminal event.
     case settledSession(SessionDetail)
+    /// TAL-1043: an owner chat's current state, which replaces the live text. `replayGap` means the owner could not
+    /// replay what came before, so the final answer arrives with the turn's settled session.
+    case sessionSnapshot(SessionDetail, replayGap: Bool)
     case cancelled
     /// A provider diagnostic that does not end the response or the SSE connection.
     case warning(String)
@@ -442,6 +445,9 @@ struct SSEEventDecoder {
         case "approval":
             logInvalidJSONIfNeeded(eventType: eventType, payloadName: "approval stream payload", data: eventData)
             return .approvalPending(ApprovalPendingResponse.streamPayload(from: eventData, decoder: decoder))
+        case "approval_cleared":
+            // The last approval settled, here or in another client.
+            return .approvalPending(ApprovalPendingResponse(pending: nil, pendingCount: 0))
         case "clarify":
             logInvalidJSONIfNeeded(eventType: eventType, payloadName: "clarification stream payload", data: eventData)
             return .clarificationPending(ClarificationPendingResponse.streamPayload(from: eventData, decoder: decoder))
@@ -470,6 +476,9 @@ struct SSEEventDecoder {
             return .compressing(startedAt: Date(timeIntervalSince1970: payload.startedAt))
         case "compressed":
             return .compressed
+        case "session_snapshot":
+            guard let payload = decodePayload(SessionSnapshotPayload.self, eventType: eventType, from: eventData, decoder: snakeCaseDecoder) else { return .ignored }
+            return .sessionSnapshot(payload.session, replayGap: payload.replayGap == true)
         case "stream_end":
             return .streamEnd
         case "cancel":
@@ -659,6 +668,11 @@ public struct DoneStreamEvent: Equatable {
         self.session = session
         self.terminalState = terminalState
     }
+}
+
+private struct SessionSnapshotPayload: Decodable {
+    let session: SessionDetail
+    let replayGap: Bool?
 }
 
 private struct DonePayload: Decodable {

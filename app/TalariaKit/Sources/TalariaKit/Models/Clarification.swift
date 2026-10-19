@@ -23,17 +23,18 @@ public struct ClarificationPendingResponse: Decodable, Equatable {
     }
 
     static func streamPayload(from data: Data, decoder: JSONDecoder = JSONDecoder()) -> ClarificationPendingResponse {
-        if let wrapped = try? decoder.decode(Self.self, from: data),
-           wrapped.pending != nil || wrapped.pendingCount != nil {
+        let wrapped = try? decoder.decode(Self.self, from: data)
+        if let wrapped, wrapped.pending != nil {
             return wrapped
         }
 
+        // The live chat frame is the queue head itself, with the queue depth beside it (TAL-1043).
         if let direct = try? decoder.decode(PendingClarification.self, from: data),
            !direct.isEmpty {
-            return ClarificationPendingResponse(pending: direct, pendingCount: 1)
+            return ClarificationPendingResponse(pending: direct, pendingCount: wrapped?.pendingCount ?? 1)
         }
 
-        return ClarificationPendingResponse(pending: nil, pendingCount: nil)
+        return wrapped ?? ClarificationPendingResponse(pending: nil, pendingCount: nil)
     }
 
     static func containsClarificationMarkers(in data: Data) -> Bool {

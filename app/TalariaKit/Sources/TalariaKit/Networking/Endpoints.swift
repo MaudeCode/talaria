@@ -51,6 +51,7 @@ public enum Endpoint {
     case chatSteer
     case chatSteerWithdraw
     case chatSteerSendNow
+    case chatOwnerAction
     case submitGoal
     case approvalPending(sessionID: String)
     case approvalStream(sessionID: String)
@@ -255,6 +256,8 @@ public enum Endpoint {
             return "/api/chat/steer/withdraw"
         case .chatSteerSendNow:
             return "/api/chat/steer/send-now"
+        case .chatOwnerAction:
+            return "/api/chat/owner-action"
         case .submitGoal:
             return "/api/goal"
         case .approvalPending:

@@ -10,6 +10,8 @@ public enum AgentLiveActivityEvent: Equatable {
     case toolCompleted
     case waitingForApproval
     case waitingForClarification
+    /// The pending approval or clarification settled, here or in another client, and the run goes on.
+    case promptSettled
 }
 
 /// A persisted Live Activity left over from a previous launch that this manager

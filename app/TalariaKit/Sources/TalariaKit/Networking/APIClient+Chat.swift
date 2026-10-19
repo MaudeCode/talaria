@@ -10,7 +10,8 @@ extension APIClient {
         profile: String? = nil,
         explicitModelPick: Bool = false,
         attachments: [JSONValue]? = nil,
-        voiceTurn: Bool = false
+        voiceTurn: Bool = false,
+        submissionID: String? = nil
     ) async throws -> ChatStartResponse {
         try await send(
             endpoint: .chatStart,
@@ -24,7 +25,23 @@ extension APIClient {
                 profile: profile,
                 explicitModelPick: explicitModelPick ? true : nil,
                 attachments: attachments,
-                voiceTurn: voiceTurn ? true : nil
+                voiceTurn: voiceTurn ? true : nil,
+                submissionId: submissionID
+            )
+        )
+    }
+
+    /// TAL-1043: one action the server offers on an owner chat's admission. Retry and Discard carry the admission's
+    /// execution generation, so a stale control is refused rather than applied to newer work.
+    public func ownerAction(sessionID: String, action: OwnerAdmission.Action, admission: OwnerAdmission) async throws -> OwnerActionResponse {
+        try await send(
+            endpoint: .chatOwnerAction,
+            method: "POST",
+            body: OwnerActionRequest(
+                sessionId: sessionID,
+                action: action,
+                admissionId: admission.admissionId,
+                executionGeneration: action == .cancel ? nil : admission.executionGeneration
             )
         )
     }
@@ -190,6 +207,15 @@ private struct ChatStartRequest: Encodable {
     let attachments: [JSONValue]?
     /// A spoken turn, which the Agent runs on the profile's voice-chat model (TAL-801).
     let voiceTurn: Bool?
+    /// An owner chat's admission identity (TAL-1043); nil for a chat Talaria runs itself.
+    let submissionId: String?
+}
+
+private struct OwnerActionRequest: Encodable {
+    let sessionId: String
+    let action: OwnerAdmission.Action
+    let admissionId: String
+    let executionGeneration: Int?
 }
 
 private struct SteerWithdrawRequest: Encodable {

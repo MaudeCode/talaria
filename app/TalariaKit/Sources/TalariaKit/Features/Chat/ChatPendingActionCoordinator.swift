@@ -129,6 +129,7 @@ final class ChatPendingActionCoordinator {
 
     private var approvalPendingBySession: [String: ApprovalPromptState] = [:]
     @ObservationIgnored private var approvalMonitor: PendingPromptMonitor
+    @ObservationIgnored private var approvalUpdateRevision = 0
 
     private var clarificationPendingBySession: [String: ClarificationPromptState] = [:]
     @ObservationIgnored private var clarificationMonitor: PendingPromptMonitor
@@ -162,11 +163,7 @@ final class ChatPendingActionCoordinator {
         do {
             let response = try await client.sessionYolo(sessionID: sessionID)
             isSessionApprovalBypassEnabled = response.yoloEnabled == true
-            if isSessionApprovalBypassEnabled {
-                approvalPrompt = nil
-            } else {
-                renderApprovalPromptForCurrentSession()
-            }
+            renderApprovalPromptForCurrentSession()
         } catch {
             // Approval bypass state is advisory UI; failures should not block chat.
         }
@@ -286,6 +283,7 @@ final class ChatPendingActionCoordinator {
     }
 
     func applyApprovalUpdate(_ update: ApprovalPendingResponse, sessionID: String) {
+        approvalUpdateRevision &+= 1
         if let pending = update.pending, !pending.isEmpty {
             let prompt = ApprovalPromptState(
                 sessionID: sessionID,
@@ -468,8 +466,17 @@ final class ChatPendingActionCoordinator {
 
     private func startApprovalMonitoring() {
         guard let sessionID = sessionToMonitor(approvalMonitor) else { return }
+        let initialRevision = approvalUpdateRevision
+        var awaitsSnapshot = true
         approvalMonitor.start(sessionID: sessionID, url: client.approvalStreamURL(sessionID: sessionID)) { [weak self] event in
-            self?.handleApprovalMonitorEvent(event, sessionID: sessionID)
+            guard let self else { return }
+            // The stream opens with a snapshot of the server's local queue, which an owner chat's prompts never enter
+            // (TAL-1043). An empty one that lands after the chat stream showed a newer approval must not hide it.
+            if case .approvalPending(let update) = event, awaitsSnapshot {
+                awaitsSnapshot = false
+                if update.pending == nil, approvalUpdateRevision != initialRevision { return }
+            }
+            handleApprovalMonitorEvent(event, sessionID: sessionID)
         }
     }
 
@@ -491,7 +498,7 @@ final class ChatPendingActionCoordinator {
         case .transportError, .error:
             startApprovalFallbackPolling(sessionID: sessionID)
         case .token, .interimAssistant, .reasoning, .toolStarted, .toolCompleted, .title, .metering, .done, .clarificationPending,
-             .steerConsumed, .steerPending, .steerWithdrawn, .notices, .runStatus, .compressing, .compressed, .streamEnd, .settledSession, .cancelled, .warning, .heartbeat, .ignored:
+             .steerConsumed, .steerPending, .steerWithdrawn, .notices, .runStatus, .compressing, .compressed, .streamEnd, .settledSession, .sessionSnapshot, .cancelled, .warning, .heartbeat, .ignored:
             break
         }
     }
@@ -527,9 +534,10 @@ final class ChatPendingActionCoordinator {
             return
         }
 
+        // Bypass hides only approvals it can answer; an owner that refuses bypass still waits on this one (TAL-1043).
         guard delegate?.pendingActionHasActiveStream == true,
-              !isSessionApprovalBypassEnabled,
-              let prompt = approvalPendingBySession[sessionID]
+              let prompt = approvalPendingBySession[sessionID],
+              !isSessionApprovalBypassEnabled || !prompt.pending.allowsApprovalBypass
         else {
             if approvalPrompt?.sessionID == sessionID {
                 approvalPrompt = nil
@@ -584,7 +592,7 @@ final class ChatPendingActionCoordinator {
         case .transportError, .error:
             startClarificationFallbackPolling(sessionID: sessionID)
         case .token, .interimAssistant, .reasoning, .toolStarted, .toolCompleted, .title, .metering, .done,
-             .steerConsumed, .steerPending, .steerWithdrawn, .notices, .runStatus, .compressing, .compressed, .streamEnd, .settledSession, .cancelled, .warning, .heartbeat, .ignored:
+             .steerConsumed, .steerPending, .steerWithdrawn, .notices, .runStatus, .compressing, .compressed, .streamEnd, .settledSession, .sessionSnapshot, .cancelled, .warning, .heartbeat, .ignored:
             break
         }
     }

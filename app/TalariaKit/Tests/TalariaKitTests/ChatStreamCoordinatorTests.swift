@@ -1994,6 +1994,7 @@ private final class CoordinatorDelegateSpy: ChatStreamCoordinatorDelegate {
     }
 
     func streamCoordinatorApplySettledSession(_ session: SessionDetail) {}
+    func streamCoordinatorApplySessionSnapshot(_ session: SessionDetail, replayGap: Bool) {}
 
     func streamCoordinatorApplyApprovalUpdate(_ update: ApprovalPendingResponse) {}
 

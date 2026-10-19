@@ -75,6 +75,7 @@ public protocol ChatStreamCoordinatorDelegate: AnyObject {
     @discardableResult
     func streamCoordinatorApplyDone(_ payload: DoneStreamEvent) -> Bool
     func streamCoordinatorApplySettledSession(_ session: SessionDetail)
+    func streamCoordinatorApplySessionSnapshot(_ session: SessionDetail, replayGap: Bool)
     func streamCoordinatorApplyApprovalUpdate(_ update: ApprovalPendingResponse)
     func streamCoordinatorApplyClarificationUpdate(_ update: ClarificationPendingResponse)
     @discardableResult
@@ -794,11 +795,12 @@ public final class ChatStreamCoordinator {
             let hasCompletedTranscript = delegate?.streamCoordinatorApplyDone(payload) == true
             completeCurrentResponse(needsTranscriptRefresh: !hasCompletedTranscript, terminalState: payload.terminalState)
         case .approvalPending(let update):
-            liveActivityManager?.update(.waitingForApproval)
+            // An empty update is the settled prompt (`approval_cleared`); the run goes on.
+            liveActivityManager?.update(update.pending == nil ? .promptSettled : .waitingForApproval)
             delegate?.streamCoordinatorApplyApprovalUpdate(update)
             markProgress()
         case .clarificationPending(let update):
-            liveActivityManager?.update(.waitingForClarification)
+            liveActivityManager?.update(update.pending == nil ? .promptSettled : .waitingForClarification)
             delegate?.streamCoordinatorApplyClarificationUpdate(update)
             markProgress()
         case .steerConsumed(let event):
@@ -831,6 +833,9 @@ public final class ChatStreamCoordinator {
         case .settledSession(let session):
             // The server's settled turn (its scene, outcome and answer) replaces the live view, as after `done`.
             delegate?.streamCoordinatorApplySettledSession(session)
+        case .sessionSnapshot(let session, let replayGap):
+            delegate?.streamCoordinatorApplySessionSnapshot(session, replayGap: replayGap)
+            markProgress()
         case .cancelled:
             if !isCurrentRunTerminated {
                 liveActivityManager?.end(status: .cancelled, activity: String(localized: "Stopped"), errorSummary: nil)

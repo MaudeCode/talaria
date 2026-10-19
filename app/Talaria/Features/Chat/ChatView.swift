@@ -268,7 +268,8 @@ struct ChatView: View {
             isWaitingForStream: prompt == nil && viewModel.activeStreamID != nil,
             isCancellingStream: prompt == nil && viewModel.isCancellingStream,
             isOfflineReadOnly: viewModel.isViewingCachedData,
-            isSessionReadOnly: viewModel.isSessionReadOnly,
+            isSessionReadOnly: viewModel.isComposerReadOnly,
+            ownerAttachment: viewModel.ownerAttachment,
             isChromeCompact: isComposerChromeCompact,
             errorMessage: prompt == nil ? viewModel.sendErrorMessage : nil,
             warningMessage: prompt == nil ? viewModel.streamWarningMessage : nil,
@@ -742,12 +743,19 @@ struct ChatView: View {
             .sheet(isPresented: $showsQueuedMessagesSheet) {
                 QueuedMessagesSheet(
                     previews: viewModel.queuedMessagePreviews,
+                    admissions: viewModel.ownerAttachment?.admissions ?? [],
+                    canActOnAdmissions: !viewModel.isViewingCachedData && viewModel.ownerActionAdmissionID == nil,
                     onSendNow: { id in Task { await viewModel.sendQueuedMessageNow(id: id) } },
                     onEdit: { id in
                         showsQueuedMessagesSheet = false
                         viewModel.editQueuedMessage(id: id)
                     },
-                    onRemove: { id in Task { await viewModel.removeQueuedMessage(id: id) } }
+                    onRemove: { id in Task { await viewModel.removeQueuedMessage(id: id) } },
+                    onAdmissionAction: { action, admission in
+                        // Retry's text returns to the composer, so the sheet steps aside for it.
+                        if action == .retry { showsQueuedMessagesSheet = false }
+                        Task { await viewModel.performOwnerAction(action, on: admission, modelContext: modelContext) }
+                    }
                 )
                 .presentationDetents([.medium, .large])
                 .presentationDragIndicator(.visible)
@@ -1171,8 +1179,11 @@ struct ChatView: View {
             .animation(ChatMotion.quickState(reduceMotion: reduceMotion), value: goalChipPresentation)
             .animation(ChatMotion.quickState(reduceMotion: reduceMotion), value: viewModel.pinnedBackgroundTasks)
             .animation(ChatMotion.quickState(reduceMotion: reduceMotion), value: viewModel.queuedMessagePreviews)
+            .animation(ChatMotion.quickState(reduceMotion: reduceMotion), value: ownerAdmissions)
         }
     }
+
+    private var ownerAdmissions: [OwnerAdmission] { viewModel.ownerAttachment?.admissions ?? [] }
 
     private var hasCompactStatusItems: Bool {
         activeRunStatusPresentation != nil || hasReservedCompactStatusItems
@@ -1224,15 +1235,15 @@ struct ChatView: View {
                 }
                 .transition(ChatMotion.bottomOverlayTransition(reduceMotion: reduceMotion))
             }
-            if !viewModel.queuedMessagePreviews.isEmpty {
-                queuedMessagesChip(viewModel.queuedMessagePreviews)
+            if !viewModel.queuedMessagePreviews.isEmpty || !ownerAdmissions.isEmpty {
+                queuedMessagesChip
             }
         }
     }
 
     /// What waits to send after this response (TAL-630); tapping opens the queue sheet.
     private var showsSheetChipRow: Bool {
-        !viewModel.pinnedBackgroundTasks.isEmpty || !viewModel.queuedMessagePreviews.isEmpty
+        !viewModel.pinnedBackgroundTasks.isEmpty || !viewModel.queuedMessagePreviews.isEmpty || !ownerAdmissions.isEmpty
     }
 
     private func backgroundTasksChip(_ tasks: [BackgroundWorkTask]) -> some View {
@@ -1247,13 +1258,20 @@ struct ChatView: View {
         .accessibilityHint(String(localized: "Shows the background tasks"))
     }
 
-    private func queuedMessagesChip(_ previews: [QueuedMessagePreview]) -> some View {
-        Button {
+    /// An owner input with an unknown outcome blocks sending until it is retried or discarded, so it says so (TAL-1043).
+    private var queuedMessagesChip: some View {
+        let unknown = ownerAdmissions.contains(where: \.isOutcomeUnknown)
+        let count = viewModel.queuedMessagePreviews.count + ownerAdmissions.count
+        return Button {
             showsQueuedMessagesSheet = true
         } label: {
-            StatusChip(label: String(localized: "\(previews.count) queued"), icon: .symbol("text.badge.plus"))
-                .frame(minHeight: 44)
-                .contentShape(.rect)
+            StatusChip(
+                label: unknown ? String(localized: "Outcome unknown") : String(localized: "\(count) queued"),
+                icon: .symbol(unknown ? "questionmark.circle" : "text.badge.plus"),
+                emphasis: unknown ? .prominent : .standard
+            )
+            .frame(minHeight: 44)
+            .contentShape(.rect)
         }
         .buttonStyle(.plain)
         .accessibilityHint(String(localized: "Shows the queued messages"))
@@ -1853,7 +1871,7 @@ struct ChatView: View {
 
     private func submitClarification(_ response: String? = nil, promptID: String) async {
         guard viewModel.clarificationPrompt?.id == promptID,
-              !viewModel.isViewingCachedData, !viewModel.isSessionReadOnly else { return }
+              !viewModel.isViewingCachedData, !viewModel.isComposerReadOnly else { return }
         let didRespond: Bool
         if let response {
             didRespond = await viewModel.respondToClarification(response)
@@ -1885,7 +1903,9 @@ struct ChatView: View {
             pendingSlash = parsed
         }
 
-        if pendingSlash == nil, !sendsWithChosenBehavior, commandText.trimmingCharacters(in: .whitespacesAndNewlines).hasPrefix("/") {
+        // An owner chat's slash text goes to its owner as typed (TAL-1043).
+        if pendingSlash == nil, !sendsWithChosenBehavior, viewModel.ownerAttachment == nil,
+           commandText.trimmingCharacters(in: .whitespacesAndNewlines).hasPrefix("/") {
             let parsed = SlashCommandExecutor.parse(commandText, catalog: viewModel.agentCommands)
             let parsedCommand = parsed?.command
             // A typed command leaves the composer whatever its result, so it leaves as it is sent, like a message,
