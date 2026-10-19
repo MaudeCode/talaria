@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "A Kanban worker chat compressed more than 99 times can be continued from Talaria, matching the Agent.",
+      "highlight": false,
+      "components": ["web"]
+    }
+  ]
+}

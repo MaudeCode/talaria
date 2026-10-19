@@ -101,6 +101,8 @@ export function isCliSessionRowVisible(row: Dict): boolean {
 
 /** The Agent's `_CHAIN_CAP`: the most hops a walk along a compression lineage takes. Its visited check stops a cycle sooner. */
 const COMPRESSION_CHAIN_CAP = 1000
+/** The most ids the Agent's `_resume_lineage_ids` returns, a tighter defensive bound than `_CHAIN_CAP`. */
+const RESUME_LINEAGE_CAP = 100
 
 function isContinuationSession(parent: Dict | undefined, child: Dict | undefined): boolean {
   if (!parent || !child) return false
@@ -735,8 +737,8 @@ function isExplicitForkChild(row: Dict, includeReset: boolean): boolean {
 
 /**
  * Python `_resume_lineage_ids`: `sid` and the compression ancestors a resume loads, root first. Each hop's parent ended
- * `compression` and the child is no branch, reset, delegate or tool fork. The walk stops at a cycle or the Agent's
- * 1000-hop `_CHAIN_CAP`; without the lineage columns it is `[sid]`.
+ * `compression` and the child is no branch, reset, delegate or tool fork. The walk stops at a cycle or
+ * `RESUME_LINEAGE_CAP` ids; without the lineage columns it is `[sid]`.
  */
 function resumeLineageWalker(db: DatabaseSync, cols: Set<string>): (sid: string) => string[] {
   if (!['parent_session_id', 'end_reason'].every((c) => cols.has(c))) return (sid) => [sid]
@@ -745,7 +747,7 @@ function resumeLineageWalker(db: DatabaseSync, cols: Set<string>): (sid: string)
     const chain = [sid]
     let current = select.get(sid) as Dict | undefined
     if (!current || isExplicitForkChild(current, false)) return chain
-    while (chain.length < 1000) {
+    while (chain.length < RESUME_LINEAGE_CAP) {
       const parentId = str(current.parent_session_id)
       if (!parentId || chain.includes(parentId) || isExplicitForkChild(current, true)) break
       const parent = select.get(parentId) as Dict | undefined
