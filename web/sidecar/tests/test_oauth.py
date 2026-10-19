@@ -70,6 +70,13 @@ def settle(home, flow_id, *, timeout: float = 5.0) -> dict:
     raise AssertionError("flow never ended")
 
 
+def wait_until(condition, *, timeout: float = 5.0) -> None:
+    deadline = time.monotonic() + timeout
+    while not condition():
+        assert time.monotonic() < deadline, "condition never held"
+        time.sleep(0.01)
+
+
 def start(provider: Provider, home, name: str = "openai-codex") -> dict:
     return oauth.start(pathlib.Path(home), name, providers={name: provider.steps()})
 
@@ -252,12 +259,15 @@ CODE = state("code", link="https://portal.example.test/claim/GUEST-42", code="GU
 
 class SignIn:
     """A scripted ``anon_auth.run_sign_in``: yields ``first``, waits for the user's answer, then yields ``ending`` or
-    persists through the caller's guard and yields ``completed``. Cancels reach it only through that guard and the
-    ``cancelled`` callable it was handed, as after a connector transfer."""
+    persists through the caller's guard, waits for the account to settle and yields ``settled`` (``completed`` by
+    default). Cancels reach it only through that guard and the ``cancelled`` callable it was handed, as after a
+    connector transfer."""
 
-    def __init__(self, first=CODE, ending=None):
+    def __init__(self, first=CODE, ending=None, settled=None):
         self.first, self.ending = first, ending
+        self.settled = settled or state("completed", ok=True)
         self.answer = threading.Event()
+        self.settle = threading.Event()
         self.kwargs: dict = {}
         self.persisted: list = []
         self.closed = False
@@ -281,7 +291,11 @@ class SignIn:
             with scope() as home, persist_guard() as may_persist:
                 if may_persist:
                     self.persisted.append(home)
-            yield state("completed", ok=True) if may_persist else state("superseded", copy="A newer sign-in code replaced this one.")
+            if not may_persist:
+                yield state("superseded", copy="A newer sign-in code replaced this one.")
+                return
+            assert self.settle.wait(5)
+            yield self.settled
         finally:
             self.closed = True
 
@@ -344,10 +358,25 @@ def test_nous_over_a_guest_signs_in_through_the_agent_and_keeps_its_connected_ap
     assert flow == {"flow_id": flow["flow_id"], "provider": "nous", "status": "pending", "user_code": "GUEST-42", "verification_url": "https://portal.example.test/claim/GUEST-42", "expires_in": 600, "interval": 2}
     assert sign_in.kwargs["cancel_wins_after_promotion"] is True
     sign_in.answer.set()
-    assert settle(tmp_path, flow["flow_id"]) == {"flow_id": flow["flow_id"], "provider": "nous", "status": "approved", "error": None}
+    wait_until(lambda: sign_in.persisted)
     assert sign_in.persisted == [tmp_path]  # under the flow's own home
+    # Saved but not yet settled: the flow is still pending, and a cancel can no longer undo the save.
+    assert oauth.poll(tmp_path, flow["flow_id"])["status"] == "pending"
+    assert oauth.cancel(tmp_path, flow["flow_id"])["status"] == "pending"
+    assert sign_in.kwargs["cancelled"]() is False
+    sign_in.settle.set()
+    assert settle(tmp_path, flow["flow_id"]) == {"flow_id": flow["flow_id"], "provider": "nous", "status": "approved", "error": None}
     assert requests == []  # neither a plain device code nor the plain save
     assert sign_in.closed
+
+
+def test_a_guest_sign_in_that_fails_to_settle_after_the_save_ends_in_error(provider, monkeypatch, tmp_path):
+    sign_in = SignIn(settled=state("failed", copy="Sign-in didn't finish. Try again whenever you're ready."))
+    stub_agent(monkeypatch, guest=True, shape="0.22", sign_in=sign_in)
+    flow = oauth.start(tmp_path, "nous")
+    sign_in.answer.set()
+    sign_in.settle.set()
+    assert settle(tmp_path, flow["flow_id"]) == {"flow_id": flow["flow_id"], "provider": "nous", "status": "error", "error": "Sign-in didn't finish. Try again whenever you're ready."}
 
 
 @pytest.mark.parametrize(("ending", "status", "error"), [
@@ -373,10 +402,7 @@ def test_a_cancelled_guest_sign_in_persists_nothing(provider, monkeypatch, tmp_p
     assert oauth.cancel(tmp_path, flow["flow_id"])["status"] == "cancelled"
     assert sign_in.kwargs["cancelled"]() is True
     sign_in.answer.set()  # the transfer completes in the browser after the cancel
-    deadline = time.monotonic() + 5
-    while not sign_in.closed and time.monotonic() < deadline:
-        time.sleep(0.01)
-    assert sign_in.closed
+    wait_until(lambda: sign_in.closed)
     assert oauth.poll(tmp_path, flow["flow_id"])["status"] == "cancelled"
     assert sign_in.persisted == [] and requests == []
 

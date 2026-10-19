@@ -56,6 +56,13 @@ class Flow:
     cancelled: threading.Event = field(default_factory=threading.Event)
     # Serialises the cancel check with the credential save: a cancel cannot land between them.
     lock: threading.Lock = field(default_factory=threading.Lock)
+    # The credential is saved but the sign-in has not finished (a guest sign-in still settles the account): a cancel or
+    # an expiry can no longer undo it, and the flow stays pending until its own ending.
+    committed: bool = False
+
+    @property
+    def stoppable(self) -> bool:
+        return self.status == "pending" and not self.committed
 
     def end(self, status: str, error: str | None = None) -> None:
         self.status, self.error, self.ended_at = status, error, time.time()
@@ -151,13 +158,14 @@ def _nous_sign_in(anon_auth: Any) -> tuple[dict, dict]:
 
     @contextlib.contextmanager
     def persist_guard():
-        # As ``_run`` does for a plain save: the final cancel check, the save and the flow's ending share its lock.
+        # As ``_run`` does for a plain save, the final cancel check and the save share the flow's lock; the flow ends
+        # approved only when the Agent has also settled the account, through ``_run``.
         flow = state["flow"]
         with flow.lock:
             may_persist = flow.status == "pending"
             yield may_persist
             if may_persist:
-                flow.end("approved")
+                flow.committed = True
 
     def scope():
         flow = state.get("flow")
@@ -201,11 +209,11 @@ def _nous_wait(flow: Flow, state: dict) -> dict:
 
 
 def _nous_save(flow: Flow, state: dict, token_data: dict) -> None:
+    if "sign_in" in state:  # the guest sign-in persisted and settled the account itself
+        return
     from hermes_cli import anon_auth
     from hermes_cli.auth import persist_nous_credentials, refresh_nous_oauth_from_state
 
-    if "sign_in" in state:  # the guest sign-in persisted and settled the account itself
-        return
     now = datetime.now(timezone.utc)
     ttl = int(token_data.get("expires_in") or 0)
     auth_state = {
@@ -389,7 +397,7 @@ def _discard(state: dict) -> None:
 
 def _cancel(flow: Flow) -> None:
     with flow.lock:
-        if flow.status == "pending":
+        if flow.stoppable:
             flow.cancelled.set()
             flow.end("cancelled")
 
@@ -469,10 +477,10 @@ def _flow(home: Path, flow_id: str) -> Flow:
 
 def poll(home: Path, flow_id: str) -> dict:
     flow = _flow(home, flow_id)
-    if flow.status == "pending" and time.time() > flow.expires_at + _EXPIRY_GRACE:
+    if flow.stoppable and time.time() > flow.expires_at + _EXPIRY_GRACE:
         # The provider call outlived its code: end it now, and a late approval can no longer save.
         with flow.lock:
-            if flow.status == "pending":
+            if flow.stoppable:
                 flow.cancelled.set()
                 flow.end("expired", _EXPIRED)
     return flow.view()
