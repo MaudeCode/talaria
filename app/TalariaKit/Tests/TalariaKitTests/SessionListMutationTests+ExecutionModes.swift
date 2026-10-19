@@ -12,8 +12,10 @@ extension SessionListMutationTests {
         var creationBodies: [[String: Any]] = []
     }
 
+    /// Its own host: loading the active profile records it per server for the whole process (`ActiveServerProfile`).
     func executionModesViewModel(_ server: ExecutionModeServer) throws -> SessionListViewModel {
-        try makeViewModel { request in
+        let url = try XCTUnwrap(URL(string: "https://execution-modes-\(UUID().uuidString.lowercased()).test"))
+        let client = try makeClient(server: url) { request in
             switch request.url?.path {
             case "/api/session/execution-modes":
                 return apiTestJSONResponse(server.modes.json, statusCode: server.modes.status, for: request)
@@ -26,6 +28,7 @@ extension SessionListMutationTests {
                 return apiTestJSONResponse(#"{"workspaces":[],"last":"/tmp/fixture"}"#, for: request)
             }
         }
+        return SessionListViewModel(server: url, client: client, responseCache: makeResponseCache(server: url))
     }
 
     func testNewChatOffersTheServersDiagnosticModesWithTheirAvailability() async throws {
