@@ -21,7 +21,7 @@ import { ContextRing, ContextRow, type ContextFigures, ExecutionModeChip, ModelC
 import { clearDraft, readLocalDraft, useDraftPersistence, useServerDraft } from './useDraft'
 import { createRecognition, dictationSupported, classifyDictationError, type DictationErrorKind } from '../voice/dictation'
 import { dictateLive, liveDictationErrorKind, liveDictationSupported, type LiveDictationHandle } from '../voice/liveDictation'
-import { useTranscribeCapabilityQuery } from '../../app/queries'
+import { useExecutionModesQuery, useTranscribeCapabilityQuery } from '../../app/queries'
 import { ProfileMenu } from '../../shell/ProfileMenu'
 import { setTheme } from '../../app/appearance'
 import { ThemeSchema } from '../../contracts/persisted'
@@ -171,7 +171,11 @@ export function Composer(props: ComposerProps) {
   // renders change neither, so they never force the measuring layout pass (TAL-278). Class changes are not observed:
   // the fit pass sets them itself.
   const nativeOwner = session?.owner_attachment?.state === 'attached'
-  const attachmentsSupported = session?.owner_attachment?.can_attach !== false
+  // An unsaved chat in a chosen mode attaches only where the server's mode list says so (TAL-1040); unknown is no.
+  const pendingMode = session ? undefined : pendingChoices?.execution_mode
+  const modes = useExecutionModesQuery(pendingMode !== undefined)
+  const attachmentsSupported = session ? session.owner_attachment?.can_attach !== false
+    : pendingMode === undefined || modes.data?.modes.find((option) => option.mode === pendingMode)?.can_attach === true
   const readOnly = !!session?.read_only && !nativeOwner
   useLayoutEffect(() => {
     const f = footer.current

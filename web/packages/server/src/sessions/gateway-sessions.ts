@@ -13,7 +13,7 @@ import type { RunJournal, RunJournalWriter } from './journal.js'
 import { SessionEventBus } from './events.js'
 import { messageWindowForDisplay, messagesForLimitedPayload } from './window.js'
 import { pendingUserRow } from './merge.js'
-import { CANONICAL_READ_ONLY_REASON } from './state-db.js'
+import { CANONICAL_READ_ONLY_REASON, WEB_DIAGNOSTIC_REQUEST_PREFIX } from './state-db.js'
 
 type Row = Record<string, unknown>
 interface Target { sid: string; profile: string; home: string; key: string }
@@ -72,7 +72,8 @@ export class GatewaySessions {
   async modes(profile: string): Promise<ExecutionModes> {
     const result = await this.createCall({ profile_home: this.deps.profileHome(profile), probe: true })
     const reason = result.state === 'attached' ? null : unavailableReason(result)
-    return { modes: [{ mode: 'normal', available: true, reason: null }, ...(['ignore_config', 'safe'] as const).map((mode) => ({ mode, available: reason === null, reason }))] }
+    // Owner chats take no file attachments (`submit` refuses them), so a fresh chat in either bypass mode cannot attach.
+    return { modes: [{ mode: 'normal', available: true, reason: null, can_attach: true }, ...(['ignore_config', 'safe'] as const).map((mode) => ({ mode, available: reason === null, reason, can_attach: false }))] }
   }
 
   /**
@@ -80,7 +81,7 @@ export class GatewaySessions {
    * private worker. Talaria keeps no local Session and never falls back to an ordinary chat; no credential is sent.
    */
   async create(profile: string, params: Omit<GatewayCreateParams, 'profile_home' | 'probe' | 'request_id'>): Promise<string> {
-    const result = await this.createCall({ ...params, profile_home: this.deps.profileHome(profile), request_id: randomUUID() })
+    const result = await this.createCall({ ...params, profile_home: this.deps.profileHome(profile), request_id: WEB_DIAGNOSTIC_REQUEST_PREFIX + randomUUID() })
     if (result.state !== 'attached' || !result.snapshot) {
       throw new HttpFailure(409, 'The Agent cannot start a chat in this mode', { code: 'execution_mode_unavailable', reason: unavailableReason(result) })
     }

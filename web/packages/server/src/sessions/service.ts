@@ -22,7 +22,7 @@ import { SessionBusy, SessionNotFound, type SessionStore } from './store.js'
 import { UNSETTLED_TODO_KEY, attachTodoSnapshot, attachTodoState } from './todo.js'
 import { isClaudeCodeSessionId, type ClaudeCodeSessionSource } from './claude-code.js'
 import { auditSessionRecovery, repairSafeSessionRecovery, type RecoveryDeps } from './recovery.js'
-import { agentSessionRowsExisting, agentSessionRowsExistingAsync, CANONICAL_READ_ONLY_REASON, OWNERSHIP_UNAVAILABLE_REASON, CONVERSATION_ROUND_THRESHOLD, countConversationRounds, stateDbCompressionLineage, stateDbTailToolContent, stateDbLineageReport, stateDbLocalTarget, stateDbSessionMessages, stateDbSessionRead, stateDbSessionTailRead, stateDbSessionRow, stateDbSessionSources, stateDbSessionSourcesAsync, stateDbTimestampSeconds, type StateDbRead, type StateDbSessionSource } from './state-db.js'
+import { stateDbWebDiagnosticIdsAsync, agentSessionRowsExisting, agentSessionRowsExistingAsync, CANONICAL_READ_ONLY_REASON, OWNERSHIP_UNAVAILABLE_REASON, CONVERSATION_ROUND_THRESHOLD, countConversationRounds, stateDbCompressionLineage, stateDbTailToolContent, stateDbLineageReport, stateDbLocalTarget, stateDbSessionMessages, stateDbSessionRead, stateDbSessionTailRead, stateDbSessionRow, stateDbSessionSources, stateDbSessionSourcesAsync, stateDbTimestampSeconds, type StateDbRead, type StateDbSessionSource } from './state-db.js'
 import { completionIncomplete, fallbackHandoffSummary, HANDOFF_SYSTEM_PROMPT, handoffMarker, handoffPayload, handoffTranscript, messageHandoffPayload, sameHandoff } from './handoff.js'
 import { anchorMessageKey, anchorSummary, CompressionJobs, compressionReference, visibleMessagesForAnchor, type CompressionJob } from './compress.js'
 import { chatReadiness, runtimeFailureDetails, SidecarError, type SidecarLike } from '../sidecar/client.js'
@@ -1218,7 +1218,7 @@ export class SessionService {
     return { rows: [...new Map([...existing, ...extra.rows].map((row) => [str(row.session_id), row])).values()], storage: extra.storage }
   }
 
-  async list(params: Omit<ListParams, 'activeProfile' | 'isolatedProfileMode' | 'profilesMatch' | 'cliRows' | 'gatewayIdentity' | 'stateDbSources' | 'truncatedSources' | 'agentStorage' | 'pruneOrphanedImports' | 'webuiRows'>): Promise<{ body: ListResponse; etag: string }> {
+  async list(params: Omit<ListParams, 'activeProfile' | 'isolatedProfileMode' | 'profilesMatch' | 'cliRows' | 'gatewayIdentity' | 'stateDbSources' | 'truncatedSources' | 'agentStorage' | 'pruneOrphanedImports' | 'webuiRows' | 'webDiagnosticIds'>): Promise<{ body: ListResponse; etag: string }> {
     const activeProfile = this.deps.activeProfile()
     const webuiRows = (await allSessions(this.store, { sidebarMetadataOnly: true }))
     const wantState = params.showCliSessions || params.showCronSessions || params.showWebhookSessions || params.showKanbanSessions
@@ -1226,16 +1226,24 @@ export class SessionService {
     const cliRead = wantState ? await this.deps.cliSessions(activeProfile, { sourceFilter: params.sourceFilter ?? null }) : undefined
     const claudeCodeRows = params.showCliSessions && params.showClaudeCodeSessions ? (await this.claudeCodeRows()) : []
     let cliRows = cliRead ? [...cliRead.rows, ...claudeCodeRows] : undefined
+    let agentStorage = cliRead?.storage
+    // TAL-1040: diagnostic chats Web started are Web chats, read even when external Agent sessions are hidden.
+    const webDiagnosticIds = new Set(params.sourceFilter ? [] : await stateDbWebDiagnosticIdsAsync(join(this.deps.profileHome(activeProfile), 'state.db')))
+    const unread = [...webDiagnosticIds].filter((id) => !cliRows?.some((row) => str(row.session_id) === id))
+    if (unread.length) {
+      const extra = await this.deps.cliSessions(activeProfile, { sourceFilter: null, sessionIds: unread })
+      cliRows = [...(cliRows ?? []), ...extra.rows]
+      agentStorage ??= extra.storage
+    }
     const gatewayIdentity = loadGatewaySessionIdentityMap(join(this.deps.profileHome(activeProfile), 'sessions', 'sessions.json'))
     const truncatedSources = cliRead?.truncated
-    let agentStorage = cliRead?.storage
     if (cliRows) {
       const expanded = await this.persistedAliasMetadata(webuiRows, cliRows)
       cliRows = expanded.rows
       if (expanded.storage && (expanded.storage.state === 'corrupt' || agentStorage?.state === 'ok')) agentStorage = expanded.storage
     }
     const lookups = await this.listStateDbLookups(webuiRows, (cliRows ?? []).map((r) => str(r.session_id)))
-    const payload = (await buildSessionListPayload(this.store, { ...params, ...(cliRows ? { cliRows } : {}), ...(truncatedSources ? { truncatedSources } : {}), ...(agentStorage ? { agentStorage } : {}), gatewayIdentity, ...lookups, webuiRows, activeProfile, isolatedProfileMode: this.deps.isolatedProfileMode(), profilesMatch: this.deps.profilesMatch }))
+    const payload = (await buildSessionListPayload(this.store, { ...params, ...(cliRows ? { cliRows } : {}), ...(truncatedSources ? { truncatedSources } : {}), ...(agentStorage ? { agentStorage } : {}), gatewayIdentity, ...lookups, webuiRows, webDiagnosticIds, activeProfile, isolatedProfileMode: this.deps.isolatedProfileMode(), profilesMatch: this.deps.profilesMatch }))
     return sessionListResponse(payload, this.deps.runtime, this.deps.redactEnabled(), this.deps.now(), await this.workspaceNames([...payload.sessions, ...payload.sidebar_reference_sessions]))
   }
 

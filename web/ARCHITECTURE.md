@@ -176,7 +176,9 @@ minted by the same owner through `gateway.create`, which requests `session.creat
 The owner freezes the policy in its creation receipt and runs every turn in a fresh private worker;
 Talaria never imports the Agent with it, flips a process global or passes it through the environment,
 and never falls back to an ordinary chat. The effective `execution_mode` on session rows is read from
-that receipt, so it survives reconnects and restarts.
+that receipt, so it survives reconnects and restarts. Talaria mints these requests as `talaria-web:<id>`;
+the sidebar lists receipt-proven Web-created diagnostic chats even when external Agent sessions are hidden.
+Owner chats take no attachments, so the mode list carries `can_attach` for the unsaved composer.
 
 ## 5. Frontend
 

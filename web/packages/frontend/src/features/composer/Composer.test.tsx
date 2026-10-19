@@ -16,12 +16,13 @@ import { endFirstSend, getFirstSend } from '../chat/firstSend'
 import { returnToComposer } from './composerReturn'
 import { showToast } from '../toast/toast'
 
-vi.mock(import('../../api/endpoints'), async (importOriginal) => ({ ...(await importOriginal()), cancelChat: vi.fn(), fetchStreamStatus: vi.fn(), fetchSession: vi.fn(), uploadFile: vi.fn(), rollbackUpload: vi.fn(), saveDraft: vi.fn(), fetchDraft: vi.fn(), steerChat: vi.fn(), startChat: vi.fn(), startBackground: vi.fn(), fetchBackgroundTasks: vi.fn(), askBtw: vi.fn(), fetchCommands: vi.fn(), execCommand: vi.fn(), fetchTranscribeCapability: vi.fn() }))
+vi.mock(import('../../api/endpoints'), async (importOriginal) => ({ ...(await importOriginal()), cancelChat: vi.fn(), fetchStreamStatus: vi.fn(), fetchSession: vi.fn(), uploadFile: vi.fn(), rollbackUpload: vi.fn(), saveDraft: vi.fn(), fetchDraft: vi.fn(), steerChat: vi.fn(), startChat: vi.fn(), startBackground: vi.fn(), fetchBackgroundTasks: vi.fn(), askBtw: vi.fn(), fetchCommands: vi.fn(), execCommand: vi.fn(), fetchTranscribeCapability: vi.fn(), fetchExecutionModes: vi.fn(() => Promise.resolve({ modes: [{ mode: 'normal', available: true, reason: null, can_attach: true }, { mode: 'ignore_config', available: true, reason: null, can_attach: false }, { mode: 'safe', available: true, reason: null, can_attach: false }] } satisfies ExecutionModes)) }))
 // jsdom has no EventSource: a followed turn opens a stream handle that does nothing.
 vi.mock(import('../toast/toast'), async (importOriginal) => ({ ...(await importOriginal()), showToast: vi.fn() }))
 vi.mock(import('../../api/sse'), async (importOriginal) => ({ ...(await importOriginal()), openChatStream: vi.fn(() => ({ close: () => undefined, readyState: () => 0 })) }))
 vi.mock(import('../voice/liveDictation'), async (importOriginal) => ({ ...(await importOriginal()), dictateLive: vi.fn(), liveDictationSupported: vi.fn(() => true) }))
 import { Composer, type ComposerProps } from './Composer'
+import type { ExecutionModes } from '@maudecode/talaria-web-contracts'
 import { dictateLive } from '../voice/liveDictation'
 
 const noop = (): void => undefined
@@ -43,6 +44,16 @@ function renderComposer(session: Session | null, live: LiveTurn | null = null, o
 }
 
 describe('Composer', () => {
+  it('offers no attachment before a fresh chat starts in a mode the server says cannot attach (TAL-1040)', async () => {
+    const onEnsureSession = vi.fn(() => Promise.reject(new Error('must not create')))
+    const view = renderComposer(null, null, noop, undefined, onEnsureSession, undefined, { onExecutionModeChange: vi.fn(), pendingChoices: { execution_mode: 'safe' } })
+    await waitFor(() => { expect(view.container.querySelector('#btnAttach')).toBeNull() })
+    view.unmount()
+    renderComposer(null, null, noop, undefined, onEnsureSession, undefined, { onExecutionModeChange: vi.fn(), pendingChoices: { execution_mode: 'normal' } })
+    await waitFor(() => { expect(document.querySelector('#btnAttach')).not.toBeNull() })
+    expect(onEnsureSession).not.toHaveBeenCalled()
+  })
+
   it('keeps the fresh-chat Agent mode reachable when the other strip controls are hidden (TAL-1040)', () => {
     const settings = { hide_composer_workspace: true, hide_composer_toolsets: true, hide_composer_profile: true } as unknown as Settings
     renderComposer(null, null, noop, settings, undefined, undefined, { onExecutionModeChange: vi.fn() })

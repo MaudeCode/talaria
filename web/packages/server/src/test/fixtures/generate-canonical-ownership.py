@@ -46,12 +46,16 @@ with tempfile.TemporaryDirectory(prefix='tal1036-') as home:
             authority.db.set_session_title(sid, f'Canonical {surface.upper()} fixture')
             admit_session_input(authority.db, epoch=authority.epoch, principal_id=actor.subject, session_id=sid, request_id='pending', payload={'text': 'accepted but not started'})
             sessions[surface] = sid
-        # TAL-1040: fresh diagnostic sessions exactly as the owner's session.create commits them.
-        for mode, flags in [('safe', {'safe_mode': True}), ('ignore_config', {'ignore_user_config': True})]:
-            ref = create_local_session(authority, actor, {'request_id': mode, 'source': 'cli', 'cwd': home, 'model': 'fixture', **flags})
+        # TAL-1040: diagnostic sessions as the owner's session.create commits them, each with one exchange. Talaria
+        # mints its own requests as `talaria-web:<id>`; the config-only one stands in for another client's.
+        for mode, request_id, flags in [('safe', 'talaria-web:fixture-safe', {'safe_mode': True}),
+                                        ('ignore_config', 'ignore_config', {'ignore_user_config': True})]:
+            ref = create_local_session(authority, actor, {'request_id': request_id, 'source': 'cli', 'cwd': home, 'model': 'fixture', **flags})
             sid = ref.session_id
             source = authority.sessions[sid].source
             authority.db.record_gateway_session_peer(sid, source=storage_source(authority.db, source, sid, 'local'), session_key=authority.sessions[sid].route, chat_id=source.chat_id)
+            for role, text in [('user', f'Diagnose {mode}'), ('assistant', f'{mode} answer')]:
+                authority.db.append_message(sid, role, text)
             diagnostic[mode] = sid
         authority.db.close()
         return sessions, diagnostic

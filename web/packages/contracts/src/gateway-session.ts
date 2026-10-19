@@ -44,7 +44,8 @@ export type GatewayCreateParams = z.infer<typeof GatewayCreateParamsSchema>
 /** Why the server cannot start a fresh chat in a mode; clients word each code. */
 export const ExecutionModeUnavailableSchema = z.enum(['agent_unsupported', 'served_profile', 'gateway_stopped', 'gateway_unavailable'])
 export const ExecutionModesSchema = z.object({
-  modes: z.array(z.object({ mode: ExecutionModeSchema, available: z.boolean(), reason: ExecutionModeUnavailableSchema.nullable() })),
+  modes: z.array(z.object({ mode: ExecutionModeSchema, available: z.boolean(), reason: ExecutionModeUnavailableSchema.nullable(),
+    can_attach: z.boolean().describe('A fresh chat in this mode accepts file attachments.') })),
 })
 export type ExecutionModes = z.infer<typeof ExecutionModesSchema>
 const OwnerActionBase = z.object({ session_id: z.string().min(1) })

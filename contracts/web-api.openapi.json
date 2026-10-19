@@ -9416,12 +9416,17 @@
                                 "type": "null"
                               }
                             ]
+                          },
+                          "can_attach": {
+                            "type": "boolean",
+                            "description": "A fresh chat in this mode accepts file attachments."
                           }
                         },
                         "required": [
                           "mode",
                           "available",
-                          "reason"
+                          "reason",
+                          "can_attach"
                         ]
                       }
                     }

@@ -72,6 +72,6 @@ export function useToolsetsCatalogQuery(value: string[] | null, sessionId?: stri
 }
 
 /** TAL-1040: read when the fresh-chat mode menu opens, so a stopped or older owner is current. */
-export function useExecutionModesQuery() {
-  return useQuery({ queryKey: keys.executionModes, queryFn: api.fetchExecutionModes, gcTime: 0, retry: false })
+export function useExecutionModesQuery(enabled = true) {
+  return useQuery({ queryKey: keys.executionModes, queryFn: api.fetchExecutionModes, gcTime: 0, retry: false, enabled })
 }

@@ -273,7 +273,7 @@ describe('diagnostic execution modes (TAL-1040)', () => {
     const calls = sidecar.calls.filter((c) => c.method === 'gateway.create').map((c) => c.params as Record<string, unknown>)
     expect(calls).toEqual([expect.objectContaining({ profile_home: s.state, execution_mode: mode, model: 'fixture', provider: 'custom' })])
     expect(String(calls[0]!.cwd)).toMatch(/^\//)
-    expect(calls[0]!.request_id).toMatch(/^[0-9a-f-]{36}$/)
+    expect(calls[0]!.request_id).toMatch(/^talaria-web:[0-9a-f-]{36}$/)
     expect(JSON.stringify(calls)).not.toMatch(/api_key/)
     expect(await s.deps.sessionStore.exists(created)).toBe(false)
     expect(sidecar.calls.some((c) => c.method === 'chat.start')).toBe(false)
@@ -291,6 +291,13 @@ describe('diagnostic execution modes (TAL-1040)', () => {
     const response = await post('/api/session/new', { execution_mode: 'safe', model: 'fixture', model_provider: provider })
     expect(response.status, await response.clone().text()).toBe(200)
     expect(sidecar.calls.filter((c) => c.method === 'gateway.create').map((c) => c.params)).toEqual([expect.objectContaining({ provider: sent, base_url: url })])
+  })
+
+  it('keeps Web-created diagnostic chats in the sidebar when external Agent sessions are hidden', async () => {
+    await s.deps.settings.save({ show_cli_sessions: false })
+    const listed = (await (await s.get('/api/sessions')).json() as { sessions: { session_id: string; execution_mode?: string }[] }).sessions
+    expect(listed.map((row) => row.session_id)).toEqual([ids.safe])
+    expect(listed[0]).toMatchObject({ execution_mode: 'safe', read_only: true })
   })
 
   it('reads every effective mode from the owner receipt, so it survives a server restart', async () => {
@@ -312,15 +319,16 @@ describe('diagnostic execution modes (TAL-1040)', () => {
     expect(response.status).toBe(409)
     expect(await response.json()).toMatchObject({ code: 'execution_mode_unavailable', reason })
     const modes = await (await s.get('/api/session/execution-modes')).json()
-    expect(modes).toEqual({ modes: [{ mode: 'normal', available: true, reason: null }, { mode: 'ignore_config', available: false, reason }, { mode: 'safe', available: false, reason }] })
+    expect(modes).toEqual({ modes: [{ mode: 'normal', available: true, reason: null, can_attach: true }, { mode: 'ignore_config', available: false, reason, can_attach: false }, { mode: 'safe', available: false, reason, can_attach: false }] })
     expect(sidecar.calls.filter((c) => c.method === 'gateway.create').map((c) => c.params)).toContainEqual({ profile_home: s.state, probe: true })
-    expect((await (await s.get('/api/sessions')).json() as { sessions: { session_id: string }[] }).sessions.map((row) => row.session_id).sort()).toEqual([ids.cli, fixture.sessions.tui!, fixture.sessions.acp!].sort())
+    expect((await (await s.get('/api/sessions')).json() as { sessions: { session_id: string }[] }).sessions.map((row) => row.session_id).sort()).toEqual([ids.cli, fixture.sessions.tui!, fixture.sessions.acp!, ids.safe, ids.ignore_config].sort())
   })
 
   it('reports available modes from a capable owner and keeps normal chats on the local path', async () => {
     sidecar.respond('gateway.create', () => ({ state: 'attached', reason: null, snapshot: null, receipt: null }))
     expect(await (await s.get('/api/session/execution-modes')).json()).toEqual({ modes: [
-      { mode: 'normal', available: true, reason: null }, { mode: 'ignore_config', available: true, reason: null }, { mode: 'safe', available: true, reason: null }] })
+      { mode: 'normal', available: true, reason: null, can_attach: true }, { mode: 'ignore_config', available: true, reason: null, can_attach: false },
+      { mode: 'safe', available: true, reason: null, can_attach: false }] })
     const normal = await post('/api/session/new', { execution_mode: 'normal', model: 'fixture' })
     expect(normal.status).toBe(200)
     expect(SessionEnvelopeSchema.parse(await normal.json()).session).not.toHaveProperty('owner_attachment')

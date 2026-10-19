@@ -680,6 +680,24 @@ function sessionSources(db: DatabaseSync, cols: Set<string>, ids: string[]): Map
   return sources
 }
 
+/** TAL-1040: the request-id prefix Talaria mints for the diagnostic chats it asks an owner to create; its receipt keeps it. */
+export const WEB_DIAGNOSTIC_REQUEST_PREFIX = 'talaria-web:'
+
+/** Owner ids whose creation receipt carries Talaria's request prefix: chats Web started, shown whatever the external-session setting. */
+export function stateDbWebDiagnosticIds(dbPath: string): string[] {
+  if (!existsSync(dbPath)) return []
+  let db: DatabaseSync
+  try { db = openStateDbReadonly(dbPath) } catch { return [] }
+  try {
+    if (!tableColumns(db, 'state_meta').has('value')) return []
+    const rows = db.prepare("SELECT key FROM state_meta WHERE key GLOB ? AND json_valid(value) AND json_extract(value, '$.request_id') GLOB ?")
+      .all(`${LOCAL_POLICY_PREFIX}*`, `${WEB_DIAGNOSTIC_REQUEST_PREFIX}*`) as { key: string }[]
+    return rows.map((row) => row.key.slice(LOCAL_POLICY_PREFIX.length))
+  } catch {
+    return []
+  } finally { db.close() }
+}
+
 /** Batched source/ownership probe. An unreadable authority answers null so callers fail closed. */
 export function stateDbSessionSources(dbPath: string, sessionIds: Iterable<string>): Map<string, StateDbSessionSource> | null {
   const ids = [...new Set([...sessionIds].map((s) => s.trim()).filter(Boolean))]
@@ -808,7 +826,7 @@ export function cheapChangeFingerprint(dbPath: string, onError?: (reason: string
 type ListingCall =
   | { op: 'rows'; dbPath: string; opts: Omit<ReadRowsOptions, 'log'> }
   | { op: 'fingerprint'; dbPath: string }
-  | { op: 'storage'; dbPath: string }
+  | { op: 'storage' | 'webDiagnostic'; dbPath: string }
   | { op: 'sources' | 'existing'; dbPath: string; ids: string[] }
   | { op: 'crash' }
 /** A request to the listing worker; `delayMs` carries the test read delay across the thread boundary. */
@@ -894,6 +912,11 @@ export async function stateDbStorageAsync(dbPath: string): Promise<AgentStorage>
 /** `stateDbSessionSources` on the listing worker; a worker failure is an unreadable state.db (null), so owners stay locked. */
 export async function stateDbSessionSourcesAsync(dbPath: string, sessionIds: Iterable<string>): Promise<Map<string, StateDbSessionSource> | null> {
   try { return (await callListingWorker({ op: 'sources', dbPath, ids: [...sessionIds] })).value as Map<string, StateDbSessionSource> | null } catch { return null }
+}
+
+/** `stateDbWebDiagnosticIds` on the listing worker; a failed read lists none, so the setting still governs every other row. */
+export async function stateDbWebDiagnosticIdsAsync(dbPath: string): Promise<string[]> {
+  try { return (await callListingWorker({ op: 'webDiagnostic', dbPath })).value as string[] } catch { return [] }
 }
 
 /** `agentSessionRowsExisting` on the listing worker; a worker failure assumes every row present, so nothing is pruned. */

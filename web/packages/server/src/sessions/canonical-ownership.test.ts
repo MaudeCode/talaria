@@ -10,7 +10,7 @@ import { HttpFailure, stampCompressionExhaustedRecovery } from './turn.js'
 import { CONVERSATION_ROUND_THRESHOLD, readImportableAgentSessionRows, stateDbSessionSources } from './state-db.js'
 
 const fixture = JSON.parse(readFileSync(new URL('../test/fixtures/canonical-ownership.json', import.meta.url), 'utf8')) as {
-  sessions: Record<string, string>; schema: string[]; inserts: string[]
+  sessions: Record<string, string>; diagnostic: Record<string, string>; schema: string[]; inserts: string[]
 }
 const json = async (res: Response): Promise<Record<string, unknown>> => await res.json() as Record<string, unknown>
 const post = (s: TestServer, path: string, body: unknown): Promise<Response> => s.get(path, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) })
@@ -205,8 +205,10 @@ describe('canonical Agent ownership (TAL-1036)', () => {
   })
 
   it('filters native LOCAL transport rows by their recorded CLI/TUI/ACP surface', () => {
+    // TAL-1040's diagnostic fixtures are CLI-surface sessions too.
     for (const [surface, sid] of Object.entries(fixture.sessions)) {
-      expect(readImportableAgentSessionRows(join(s.state, 'state.db'), { includeSources: [surface] }).map((r) => r.id)).toEqual([sid])
+      const expected = surface === 'cli' ? [sid, ...Object.values(fixture.diagnostic)] : [sid]
+      expect(readImportableAgentSessionRows(join(s.state, 'state.db'), { includeSources: [surface] }).map((r) => r.id).sort()).toEqual(expected.sort())
     }
   })
 
