@@ -165,7 +165,8 @@ struct MessageComposerView: View {
     }
 
     private var showsSlashAutocomplete: Bool {
-        guard !isAnsweringClarification else { return false }
+        // An owner chat sends slash text to its owner as typed (TAL-1043), so it offers no local commands.
+        guard !isAnsweringClarification, ownerAttachment == nil else { return false }
         let query = draftMessage.drop(while: { $0.isWhitespace })
         guard query.hasPrefix("/") else { return false }
 

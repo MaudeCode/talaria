@@ -190,6 +190,43 @@ extension ChatViewModelSendTests {
         XCTAssertEqual(viewModel.streamWarningMessage, "Live history was truncated. The final answer will refresh from the owning Agent.")
     }
 
+    /// The approval stream opens with a snapshot of the server's local queue, which an owner's prompts never enter; that
+    /// empty snapshot must not hide the owner approval the chat stream already showed. Later updates still apply.
+    func testTheApprovalStreamsEmptySnapshotKeepsAnOwnerApprovalTheChatStreamShowed() async throws {
+        let stream = SpySSEStreamingClient()
+        let approvals = SpySSEStreamingClient()
+        let normal = try Self.ownerAttachmentJSON("normal")
+        let viewModel = try ownerViewModel(OwnerRequestLog(), streamClient: stream, approvalStreamClient: approvals, session: {
+            Self.ownerSessionObject(attachment: normal, activeStreamID: "owner-stream")
+        })
+        await viewModel.loadMessages()
+        await viewModel.reconnectStreamIfNeeded()
+        XCTAssertFalse(approvals.startedURLs.isEmpty, "The run opened the approval stream")
+
+        stream.emit(SSEEventDecoder.decode(eventType: "approval", data: #"{"approval_id":"owner-approval","command":"rm -rf build","allowed_choices":["once","deny"],"can_enable_yolo":false,"pending_count":1}"#))
+        approvals.emit(SSEEventDecoder.decode(eventType: "initial", data: #"{"pending":null,"pending_count":0}"#))
+
+        XCTAssertEqual(viewModel.approvalPrompt?.pending.approvalId, "owner-approval", "The late empty snapshot must not hide the owner's approval")
+        approvals.emit(SSEEventDecoder.decode(eventType: "approval", data: #"{"pending":null,"pending_count":0}"#))
+        XCTAssertNil(viewModel.approvalPrompt, "A later update from the approval stream still applies")
+    }
+
+    /// Slash text in an owner chat goes to the owning Agent as typed; no local command runs (no device queue, no setting change).
+    func testOwnerChatSlashTextGoesToTheOwnerAsTyped() async throws {
+        let log = OwnerRequestLog()
+        let normal = try Self.ownerAttachmentJSON("normal")
+        let viewModel = try ownerViewModel(log, session: { Self.ownerSessionObject(attachment: normal, activeStreamID: "owner-stream") })
+        await viewModel.loadMessages()
+        await viewModel.reconnectStreamIfNeeded()
+
+        for text in ["/queue Then summarize", "/model fixture-model", "/steer Check the logs"] {
+            let result = await SlashCommandExecutor.execute(text: text, viewModel: viewModel)
+            XCTAssertEqual(result, .sendAsMessage, text)
+        }
+        XCTAssertTrue(viewModel.queuedMessagePreviews.isEmpty)
+        XCTAssertEqual(Set(log.bodies.keys), [], "No local command reached the server")
+    }
+
     func testOwnerStateIsCachedPerServerForOfflineDisplay() async throws {
         final class State: @unchecked Sendable { var offline = false }
         let state = State()

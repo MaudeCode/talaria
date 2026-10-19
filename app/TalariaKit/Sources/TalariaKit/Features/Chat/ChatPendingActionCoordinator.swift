@@ -129,6 +129,7 @@ final class ChatPendingActionCoordinator {
 
     private var approvalPendingBySession: [String: ApprovalPromptState] = [:]
     @ObservationIgnored private var approvalMonitor: PendingPromptMonitor
+    @ObservationIgnored private var approvalUpdateRevision = 0
 
     private var clarificationPendingBySession: [String: ClarificationPromptState] = [:]
     @ObservationIgnored private var clarificationMonitor: PendingPromptMonitor
@@ -286,6 +287,7 @@ final class ChatPendingActionCoordinator {
     }
 
     func applyApprovalUpdate(_ update: ApprovalPendingResponse, sessionID: String) {
+        approvalUpdateRevision &+= 1
         if let pending = update.pending, !pending.isEmpty {
             let prompt = ApprovalPromptState(
                 sessionID: sessionID,
@@ -468,8 +470,17 @@ final class ChatPendingActionCoordinator {
 
     private func startApprovalMonitoring() {
         guard let sessionID = sessionToMonitor(approvalMonitor) else { return }
+        let initialRevision = approvalUpdateRevision
+        var awaitsSnapshot = true
         approvalMonitor.start(sessionID: sessionID, url: client.approvalStreamURL(sessionID: sessionID)) { [weak self] event in
-            self?.handleApprovalMonitorEvent(event, sessionID: sessionID)
+            guard let self else { return }
+            // The stream opens with a snapshot of the server's local queue, which an owner chat's prompts never enter
+            // (TAL-1043). An empty one that lands after the chat stream showed a newer approval must not hide it.
+            if case .approvalPending(let update) = event, awaitsSnapshot {
+                awaitsSnapshot = false
+                if update.pending == nil, approvalUpdateRevision != initialRevision { return }
+            }
+            handleApprovalMonitorEvent(event, sessionID: sessionID)
         }
     }
 

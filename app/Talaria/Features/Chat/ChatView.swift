@@ -1903,7 +1903,9 @@ struct ChatView: View {
             pendingSlash = parsed
         }
 
-        if pendingSlash == nil, !sendsWithChosenBehavior, commandText.trimmingCharacters(in: .whitespacesAndNewlines).hasPrefix("/") {
+        // An owner chat's slash text goes to its owner as typed (TAL-1043).
+        if pendingSlash == nil, !sendsWithChosenBehavior, viewModel.ownerAttachment == nil,
+           commandText.trimmingCharacters(in: .whitespacesAndNewlines).hasPrefix("/") {
             let parsed = SlashCommandExecutor.parse(commandText, catalog: viewModel.agentCommands)
             let parsedCommand = parsed?.command
             // A typed command leaves the composer whatever its result, so it leaves as it is sent, like a message,

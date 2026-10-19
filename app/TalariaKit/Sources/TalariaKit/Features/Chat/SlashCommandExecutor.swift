@@ -50,6 +50,9 @@ public enum SlashCommandExecutor {
 
     @MainActor
     public static func execute(text: String, viewModel: ChatViewModel) async -> SlashCommandExecutionResult {
+        // An owner chat's slash text goes to the owning Agent as typed (TAL-1043): its owner orders input and owns the
+        // settings, so no local queue, steer or configuration command runs.
+        if viewModel.ownerAttachment != nil { return .sendAsMessage }
         let catalog = viewModel.agentCommands
         guard let parsed = parse(text, catalog: catalog) else { return .sendAsMessage }
         guard !parsed.name.isEmpty else { return .needsSubArg }

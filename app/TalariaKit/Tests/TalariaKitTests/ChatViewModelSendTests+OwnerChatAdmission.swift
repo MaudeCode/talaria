@@ -29,10 +29,11 @@ extension ChatViewModelSendTests {
     func ownerViewModel(
         _ log: OwnerRequestLog,
         streamClient: SpySSEStreamingClient? = nil,
+        approvalStreamClient: SpySSEStreamingClient? = nil,
         session: @escaping () -> String,
         respond: @escaping (String, URLRequest) -> (HTTPURLResponse, Data)? = { _, _ in nil }
     ) throws -> ChatViewModel {
-        try makeViewModel(streamClient: streamClient ?? SpySSEStreamingClient()) { request in
+        try makeViewModel(streamClient: streamClient ?? SpySSEStreamingClient(), approvalStreamClient: approvalStreamClient) { request in
             let path = request.url?.path ?? ""
             if let data = apiTestBodyData(from: request), let body = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
                 log.bodies[path, default: []].append(body)
