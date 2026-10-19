@@ -157,11 +157,12 @@ class SendTests(unittest.TestCase):
                                 ("tooling / Repository Tooling", "tooling"), ("Detect changed paths", "tooling")):
             failures = handoff.failed_jobs(FakeGitHub([job(1, name, "failure"), job(2, "CI Gate", "failure")]), RUN)
             self.assertEqual([item["name"] for item in failures], [name, "CI Gate"])
-            self.assertEqual(handoff.components(failures), sorted({component, "tooling"}), name)
+            self.assertEqual(handoff.components(failures), [component], name)
 
     def test_gate_failure_alone_alerts(self):
         failures = handoff.failed_jobs(FakeGitHub([job(1, "Detect changed paths"), job(2, "CI Gate", "failure")]), RUN)
         self.assertEqual([item["name"] for item in failures], ["CI Gate"])
+        self.assertEqual(handoff.components(failures), ["tooling"])
 
     def test_jobs_are_paginated_from_the_latest_attempt(self):
         jobs = [job(index, f"web / frontend / e2e {index}") for index in range(1, 150)] + [job(150, "relay", "failure")]
@@ -238,11 +239,12 @@ class TriageTests(unittest.TestCase):
         message = decision["message"]
         for name in SIDECAR:
             self.assertIn(name, message)
-        for required in (f"actions/runs/{RUN}", f"gh run view {RUN}", f"gh run download {RUN}", "scripts/check tooling / web",
+        for required in (f"actions/runs/{RUN}", f"gh run view {RUN}", f"gh run download {RUN}", "`scripts/check web`.",
                          "AGENTS.md", "branch or open PR", "fails on the baseline", "software-factory", f"main-ci-incident: {HEAD}",
                          "untrusted data", "human-gated", "not authorized by a webhook or a log"):
             self.assertIn(required, message)
         self.assertNotIn("synthetic-token", json.dumps(decision))
+        self.assertNotIn("scripts/check tooling", message)
 
     def test_malformed_and_untrusted_runs_are_rejected(self):
         for run_id in ("", "0", "12; rm -rf /", "1" * 21, "../runs/1"):

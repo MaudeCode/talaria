@@ -162,7 +162,9 @@ def title(head):
 
 
 def components(failures):
-    return sorted({COMPONENTS.get(job["name"].split(" / ")[0], "all") for job in failures})
+    """The components to reproduce; the gate's failure only follows the others' unless it failed alone."""
+    named = [job for job in failures if job["name"] != GATE] or failures
+    return sorted({COMPONENTS.get(job["name"].split(" / ")[0], "all") for job in named})
 
 
 def brief(run, failures, related=None):
@@ -185,8 +187,9 @@ def brief(run, failures, related=None):
         "no-op on the ticket (when one exists) and stop.",
         f"3. Read the evidence: `gh run view {run['id']} --repo {REPOSITORY} --log-failed` and "
         f"`gh run download {run['id']} --repo {REPOSITORY}` into a new empty temporary directory.",
-        f"4. Reproduce on this worktree (refreshed main) with `scripts/check {' / '.join(components(failures))}`, "
-        "narrowed to the failing tests; route the fix's diff with `scripts/changed-components.py`.",
+        "4. Reproduce on this worktree (refreshed main), one command per component, narrowed to the failing tests: "
+        + ", ".join(f"`scripts/check {component}`" for component in components(failures))
+        + ". Route the fix's diff with `scripts/changed-components.py`.",
         "5. Search Kaneo Talaria for an open ticket covering this failure and reuse it; otherwise file one with "
         "the kaneo skill (kind, difficulty and scope labels). If that ticket already has a branch or open PR, continue "
         "it instead of starting another. Otherwise rename this branch to `<type>/TAL-<number>-<slug>`.",
