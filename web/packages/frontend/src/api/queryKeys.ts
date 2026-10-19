@@ -1,6 +1,7 @@
 /** Query key families. Invalidate by prefix: `queryClient.invalidateQueries({ queryKey: keys.sessions.all })`. */
 export const keys = {
   toolsets: (sessionId: string | undefined, value: string[] | null) => ['toolsets', sessionId, value] as const,
+  executionModes: ['execution-modes'] as const,
   bootstrap: ['bootstrap'] as const,
   auth: ['auth'] as const,
   settings: ['settings'] as const,

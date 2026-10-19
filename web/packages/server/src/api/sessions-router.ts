@@ -187,7 +187,14 @@ export const sessionsRouter = os.router({
       await guardVisibility(ctx, input.session_id)
       return (await ctx.deps.sessions.usage(input.session_id)) as { input_tokens: number; output_tokens: number; total_tokens: number; estimated_cost: unknown; model: string | null }
     })),
+    executionModes: os.session.executionModes.handler(({ context: { ctx } }) => run(async () => ctx.deps.sessions.owner!.modes(ctx.deps.activeProfile()))),
     new: os.session.new.handler(({ input, context: { ctx } }) => run(async () => {
+      if (input.execution_mode === 'ignore_config' || input.execution_mode === 'safe') {
+        // The owner has no worktree flow; refuse it rather than silently start an ordinary chat.
+        if (input.worktree !== undefined && input.worktree !== false) throw new HttpError(400, 'A diagnostic chat cannot start in a new worktree')
+        await ctx.deps.agentConfig.read(ctx.deps.profileHome(ctx.deps.activeProfile())).catch(() => undefined)
+        return { session: (await ctx.deps.sessions.createDiagnostic(input, input.execution_mode)) as { session_id: string; title: string } }
+      }
       // Python: an invisible prev_session_id is ignored (the service drops it), never an error (#5420).
       const profile = input.profile || null
       // The middleware warms only the cookie profile's config; new-session defaults read the target's synchronously.

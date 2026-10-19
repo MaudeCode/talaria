@@ -1,6 +1,7 @@
 import { oc } from '@orpc/contract'
 import { z } from 'zod'
 import { ModelSelectionWarningSchema, SessionDeleteRefusedSchema } from '../sidecar/namespaces.js'
+import { ExecutionModesSchema } from '../gateway-session.js'
 import { AgentRuntimeMetadataSchema, SessionIdSchema, SessionRowSchema, SessionEnvelopeSchema, SessionsListSchema, SessionNewRequestSchema, DraftSchema, DraftResponseSchema, ProjectSchema, ProjectsSchema, SessionStatusSchema, SessionUsageSchema, SessionDeleteResultSchema, ShareReadSchema, ShareCreateResponseSchema, ActivitySceneRowSchema, ToolResultViewSchema, SessionSchema, AttachmentSchema } from '../views.js'
 
 /** Session, project, share, and draft routes. Response rows are loose: the sidecar carries operator-defined extras. */
@@ -142,6 +143,7 @@ export const sessionsContract = {
     status: oc.route({ method: 'GET', path: '/api/session/status', tags }).input(SessionQuery).output(SessionStatusSchema),
     usage: oc.route({ method: 'GET', path: '/api/session/usage', tags }).input(SessionQuery).output(SessionUsageSchema),
     new: oc.route({ method: 'POST', path: '/api/session/new', tags }).input(SessionNewRequestSchema).output(SessionEnvelopeSchema.extend({ worktree_skipped: z.string().optional() })),
+    executionModes: oc.route({ method: 'GET', path: '/api/session/execution-modes', tags, summary: 'TAL-1040: which execution modes a fresh chat in the active profile can start in now.' }).input(z.object({})).output(ExecutionModesSchema),
     rename: oc.route({ method: 'POST', path: '/api/session/rename', tags }).input(SessionBody.extend({ title: z.string() })).output(SessionEnvelopeSchema),
     delete: oc.route({ method: 'POST', path: '/api/session/delete', tags, summary: 'Delete a session and its Agent state.db rows. 409 with `refused: active_turn` while another Agent process runs or compresses it, or `runtime_history_unsupported` when this Agent cannot retire retained history; the session is kept.' }).input(z.object({ session_id: z.string() })).output(SessionDeleteResultSchema),
     pin: oc.route({ method: 'POST', path: '/api/session/pin', tags }).input(SessionBody.extend({ pinned: z.boolean().optional() })).output(OkSchema.extend({ session: SessionRowSchema })),

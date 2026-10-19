@@ -1,4 +1,4 @@
-import { mkdirSync, readFileSync } from 'node:fs'
+import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -8,7 +8,7 @@ import { bootTestServer, type TestServer } from '../test/harness.js'
 import { FakeSidecar } from '../sidecar/fake.js'
 import { CANONICAL_READ_ONLY_REASON } from './state-db.js'
 
-const fixture = JSON.parse(readFileSync(new URL('../test/fixtures/canonical-ownership.json', import.meta.url), 'utf8')) as { sessions: Record<string, string>; schema: string[]; inserts: string[] }
+const fixture = JSON.parse(readFileSync(new URL('../test/fixtures/canonical-ownership.json', import.meta.url), 'utf8')) as { sessions: Record<string, string>; diagnostic: Record<'safe' | 'ignore_config' | 'fresh', string>; schema: string[]; inserts: string[] }
 const sid = fixture.sessions.cli!
 const snapshot = (extra: Partial<GatewaySnapshot> = {}): GatewaySnapshot => ({ session_id: sid, stored_session_id: sid,
   messages: [{ role: 'user', content: 'native question' }, { role: 'assistant', content: 'owner answer' }], message_count: 2,
@@ -243,5 +243,110 @@ describe('canonical owner attachment', () => {
       // The scope guard still holds for journal replay after the live channel has retired.
       expect((await s.get(`/api/chat/stream?stream_id=${stream}`, { headers: { cookie: 'hermes_profile=work' } })).status).toBe(404)
     } finally { other.close() }
+  })
+})
+
+describe('diagnostic execution modes (TAL-1040)', () => {
+  let s: TestServer
+  let db: DatabaseSync
+  let sidecar: FakeSidecar
+  const ids = { cli: fixture.sessions.cli!, ...fixture.diagnostic }
+  const fresh = (session: string): GatewaySnapshot => snapshot({ session_id: session, stored_session_id: session, messages: [], message_count: 0, revision: 1, execution_generation: 0, info: { model: 'fixture', source: 'cli' } })
+  beforeEach(async () => {
+    sidecar = new FakeSidecar()
+    s = await bootTestServer({ sidecar })
+    db = new DatabaseSync(join(s.state, 'state.db'))
+    db.exec(fixture.schema.join('\n'))
+    for (const sql of fixture.inserts) db.exec(sql)
+    await s.deps.settings.save({ show_cli_sessions: true })
+    sidecar.respond('gateway.session', (params) => attached(fresh(params.session_id)))
+  })
+  afterEach(async () => { db.close(); await s.close() })
+  const post = (path: string, body: unknown) => s.get(path, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) })
+
+  it.each([['safe', ids.safe], ['ignore_config', ids.ignore_config]] as const)('starts a %s chat through its owner and shows the frozen mode', async (mode, created) => {
+    sidecar.respond('gateway.create', () => attached(fresh(created)))
+    const response = await post('/api/session/new', { execution_mode: mode, model: 'fixture', model_provider: 'custom' })
+    expect(response.status, await response.clone().text()).toBe(200)
+    const body = SessionEnvelopeSchema.parse(await response.json())
+    expect(body.session).toMatchObject({ session_id: created, execution_mode: mode, read_only: true, owner_attachment: { state: 'attached', can_submit: true } })
+    const calls = sidecar.calls.filter((c) => c.method === 'gateway.create').map((c) => c.params as Record<string, unknown>)
+    expect(calls).toEqual([expect.objectContaining({ profile_home: s.state, execution_mode: mode, model: 'fixture', provider: 'custom' })])
+    expect(String(calls[0]!.cwd)).toMatch(/^\//)
+    expect(calls[0]!.request_id).toMatch(/^talaria-web:[0-9a-f-]{36}$/)
+    expect(JSON.stringify(calls)).not.toMatch(/api_key/)
+    expect(await s.deps.sessionStore.exists(created)).toBe(false)
+    expect(sidecar.calls.some((c) => c.method === 'chat.start')).toBe(false)
+  })
+
+  it.each([
+    ['lmstudio', 'lmstudio', 'http://127.0.0.1:1234/v1'],
+    ['custom:local-box', 'custom', 'http://127.0.0.1:9000/v1'],
+  ] as const)('launches %s at its configured endpoint, not only the profile default route', async (provider, sent, url) => {
+    writeFileSync(join(s.state, 'config.yaml'), 'model: {}\n')
+    sidecar.respond('config.get', () => ({ path: join(s.state, 'config.yaml'), exists: true, config: { model: { provider: 'openrouter', default: 'other' }, providers: { lmstudio: { base_url: 'http://127.0.0.1:1234/v1' } },
+      custom_providers: [{ name: 'local box', base_url: 'http://127.0.0.1:9000/v1' }] } }))
+    await s.deps.agentConfig.read(s.state)
+    sidecar.respond('gateway.create', () => attached(fresh(ids.safe)))
+    const response = await post('/api/session/new', { execution_mode: 'safe', model: 'fixture', model_provider: provider })
+    expect(response.status, await response.clone().text()).toBe(200)
+    expect(sidecar.calls.filter((c) => c.method === 'gateway.create').map((c) => c.params)).toEqual([expect.objectContaining({ provider: sent, base_url: url })])
+  })
+
+  it('keeps Web-created diagnostic chats in the sidebar when external Agent sessions are hidden', async () => {
+    await s.deps.settings.save({ show_cli_sessions: false })
+    const listed = (await (await s.get('/api/sessions')).json() as { sessions: { session_id: string; execution_mode?: string }[] }).sessions
+    // The Web-created chat whose first turn never ran stays discoverable too; another client's config-only chat does not.
+    expect(listed.map((row) => row.session_id).sort()).toEqual([ids.safe, ids.fresh].sort())
+    for (const row of listed) expect(row).toMatchObject({ execution_mode: 'safe', read_only: true })
+  })
+
+  it('reads every effective mode from the owner receipt, so it survives a server restart', async () => {
+    for (const [sid, mode] of [[ids.safe, 'safe'], [ids.ignore_config, 'ignore_config'], [ids.cli, 'normal']] as const) {
+      const row = SessionEnvelopeSchema.parse(await (await s.get(`/api/session?session_id=${sid}`)).json())
+      expect(row.session.execution_mode, sid).toBe(mode)
+    }
+  })
+
+  it.each([
+    [{ state: 'incompatible', reason: 'native_sessions_unavailable' }, 'agent_unsupported'],
+    [{ state: 'incompatible', reason: 'execution_mode_unavailable' }, 'agent_unsupported'],
+    [{ state: 'incompatible', reason: 'served_profile_sessions_unavailable' }, 'served_profile'],
+    [{ state: 'stopped', reason: 'stopped' }, 'gateway_stopped'],
+    [{ state: 'unavailable', reason: 'owner_connection_lost' }, 'gateway_unavailable'],
+  ] as const)('refuses a diagnostic chat the owner cannot start (%o) without a local fallback', async (refusal, reason) => {
+    sidecar.respond('gateway.create', () => ({ ...refusal, snapshot: null, receipt: null }))
+    const response = await post('/api/session/new', { execution_mode: 'safe', model: 'fixture' })
+    expect(response.status).toBe(409)
+    expect(await response.json()).toMatchObject({ code: 'execution_mode_unavailable', reason })
+    const modes = await (await s.get('/api/session/execution-modes')).json()
+    expect(modes).toEqual({ modes: [{ mode: 'normal', available: true, reason: null, can_attach: true }, { mode: 'ignore_config', available: false, reason, can_attach: false }, { mode: 'safe', available: false, reason, can_attach: false }] })
+    expect(sidecar.calls.filter((c) => c.method === 'gateway.create').map((c) => c.params)).toContainEqual({ profile_home: s.state, probe: true })
+    expect((await (await s.get('/api/sessions')).json() as { sessions: { session_id: string }[] }).sessions.map((row) => row.session_id).sort()).toEqual([ids.cli, fixture.sessions.tui!, fixture.sessions.acp!, ids.safe, ids.ignore_config, ids.fresh].sort())
+  })
+
+  it('reports available modes from a capable owner and keeps normal chats on the local path', async () => {
+    sidecar.respond('gateway.create', () => ({ state: 'attached', reason: null, snapshot: null, receipt: null }))
+    expect(await (await s.get('/api/session/execution-modes')).json()).toEqual({ modes: [
+      { mode: 'normal', available: true, reason: null, can_attach: true }, { mode: 'ignore_config', available: true, reason: null, can_attach: false },
+      { mode: 'safe', available: true, reason: null, can_attach: false }] })
+    const normal = await post('/api/session/new', { execution_mode: 'normal', model: 'fixture' })
+    expect(normal.status).toBe(200)
+    expect(SessionEnvelopeSchema.parse(await normal.json()).session).not.toHaveProperty('owner_attachment')
+    expect(sidecar.calls.filter((c) => c.method === 'gateway.create').map((c) => c.params)).toEqual([{ profile_home: s.state, probe: true }])
+  })
+
+  it('reuses the client creation id so a retried creation recovers the same owner session', async () => {
+    sidecar.respond('gateway.create', () => attached(fresh(ids.safe)))
+    for (let i = 0; i < 2; i++) expect((await post('/api/session/new', { execution_mode: 'safe', model: 'fixture', request_id: 'stable-creation' })).status).toBe(200)
+    expect(sidecar.calls.filter((c) => c.method === 'gateway.create').map((c) => (c.params as { request_id: string }).request_id)).toEqual(['talaria-web:stable-creation', 'talaria-web:stable-creation'])
+    expect((await post('/api/session/new', { execution_mode: 'safe', model: 'fixture', request_id: 'bad id!' })).status).toBe(400)
+  })
+
+  it('refuses a diagnostic chat without an explicit model or with a worktree', async () => {
+    sidecar.respond('gateway.create', () => attached(fresh(ids.safe)))
+    expect((await post('/api/session/new', { execution_mode: 'safe', worktree: true, model: 'fixture' })).status).toBe(400)
+    expect((await post('/api/session/new', { execution_mode: 'bogus' })).status).toBe(400)
+    expect(sidecar.calls.some((c) => c.method === 'gateway.create')).toBe(false)
   })
 })

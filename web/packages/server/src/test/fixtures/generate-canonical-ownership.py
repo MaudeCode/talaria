@@ -1,4 +1,4 @@
-"""Record real v0.22.1 local receipts and queued admission SQLite rows, without running a model.
+"""Record real v0.22.1 local receipts, queued admission and fresh diagnostic-session SQLite rows, without running a model.
 
 Usage: <agent-python> generate-canonical-ownership.py <unmodified-agent-checkout>
 The existing typed-row fixture format keeps the server regression independent of Python at runtime.
@@ -35,7 +35,7 @@ with tempfile.TemporaryDirectory(prefix='tal1036-') as home:
         runner = SimpleNamespace(session_store=store, _session_db=store._db, adapters={}, _draining=False)
         authority = await initialize_session_authority(runner, profile_id='fixture', instance_id='fixture')
         actor = Principal('owner', 'fixture', frozenset({'session:create', 'session:read'}), 'socket')
-        sessions = {}
+        sessions, diagnostic = {}, {}
         for surface in ['cli', 'tui', 'acp']:
             ref = create_local_session(authority, actor, {'request_id': surface, 'source': surface, 'cwd': home, 'model': 'fixture', 'toolsets': []})
             sid = ref.session_id
@@ -46,10 +46,26 @@ with tempfile.TemporaryDirectory(prefix='tal1036-') as home:
             authority.db.set_session_title(sid, f'Canonical {surface.upper()} fixture')
             admit_session_input(authority.db, epoch=authority.epoch, principal_id=actor.subject, session_id=sid, request_id='pending', payload={'text': 'accepted but not started'})
             sessions[surface] = sid
+        # TAL-1040: diagnostic sessions as the owner's session.create commits them, each with one exchange. Talaria
+        # mints its own requests as `talaria-web:<id>`; the config-only one stands in for another client's.
+        for mode, request_id, flags in [('safe', 'talaria-web:fixture-safe', {'safe_mode': True}),
+                                        ('ignore_config', 'ignore_config', {'ignore_user_config': True})]:
+            ref = create_local_session(authority, actor, {'request_id': request_id, 'source': 'cli', 'cwd': home, 'model': 'fixture', **flags})
+            sid = ref.session_id
+            source = authority.sessions[sid].source
+            authority.db.record_gateway_session_peer(sid, source=storage_source(authority.db, source, sid, 'local'), session_key=authority.sessions[sid].route, chat_id=source.chat_id)
+            for role, text in [('user', f'Diagnose {mode}'), ('assistant', f'{mode} answer')]:
+                authority.db.append_message(sid, role, text)
+            diagnostic[mode] = sid
+        # A Web-created chat whose first turn never ran.
+        ref = create_local_session(authority, actor, {'request_id': 'talaria-web:fixture-fresh', 'source': 'cli', 'cwd': home, 'model': 'fixture', 'safe_mode': True})
+        source = authority.sessions[ref.session_id].source
+        authority.db.record_gateway_session_peer(ref.session_id, source=storage_source(authority.db, source, ref.session_id, 'local'), session_key=authority.sessions[ref.session_id].route, chat_id=source.chat_id)
+        diagnostic['fresh'] = ref.session_id
         authority.db.close()
-        return sessions
+        return sessions, diagnostic
 
-    sessions = asyncio.run(seed())
+    sessions, diagnostic = asyncio.run(seed())
     def sql_value(value):
         if value is None:
             return 'NULL'
@@ -63,5 +79,5 @@ with tempfile.TemporaryDirectory(prefix='tal1036-') as home:
         marks = ','.join('?' for _ in tables)
         definitions = [r[0] for r in conn.execute(f"SELECT sql FROM sqlite_master WHERE tbl_name IN ({marks}) AND type IN ('table','index') AND sql IS NOT NULL ORDER BY type DESC,name", tables)]
         inserts = [f'INSERT INTO "{table}" VALUES({",".join(sql_value(v) for v in row)});' for table in tables for row in conn.execute(f'SELECT * FROM "{table}"')]
-    fixture = {'agentRelease': 'v0.22.1', 'agentRevision': revision, 'sessions': sessions, 'schema': (';\n'.join(definitions) + ';').splitlines(), 'inserts': inserts}
+    fixture = {'agentRelease': 'v0.22.1', 'agentRevision': revision, 'sessions': sessions, 'diagnostic': diagnostic, 'schema': (';\n'.join(definitions) + ';').splitlines(), 'inserts': inserts}
     Path(__file__).with_name('canonical-ownership.json').write_text(json.dumps(fixture, indent=2) + '\n')

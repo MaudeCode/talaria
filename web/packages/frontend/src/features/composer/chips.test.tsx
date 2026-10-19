@@ -34,8 +34,9 @@ let catalog: unknown = PLUGIN_CATALOG
 // The server's registry: every entry named, the default one `Home` (TAL-303).
 const WORKSPACES = { workspaces: [{ path: '/src/talaria-main', name: 'Talaria' }, { path: '/src/scratch', name: 'scratch' }], last: '/src/talaria-main' }
 
-vi.mock('../../api/endpoints', () => ({ fetchToolsetsCatalog: vi.fn(() => Promise.resolve({ toolsets: [{ name: 'file', description: 'Files', available: true, selected: true, unavailable_reason: null }, { name: 'todo', description: 'Tasks', available: false, selected: false, unavailable_reason: 'disabled' }], selected_toolsets: ['file'], using_defaults: true })), fetchModels: vi.fn(() => Promise.resolve(catalog)), fetchWorkspaces: vi.fn(() => Promise.resolve(WORKSPACES)) }))
-import { ModelChip, ToolsetsChip, WorkspaceChip } from './chips'
+let modes: unknown = { modes: [{ mode: 'normal', available: true, reason: null }, { mode: 'ignore_config', available: true, reason: null }, { mode: 'safe', available: true, reason: null }] }
+vi.mock('../../api/endpoints', () => ({ fetchExecutionModes: vi.fn(() => Promise.resolve(modes)), fetchToolsetsCatalog: vi.fn(() => Promise.resolve({ toolsets: [{ name: 'file', description: 'Files', available: true, selected: true, unavailable_reason: null }, { name: 'todo', description: 'Tasks', available: false, selected: false, unavailable_reason: 'disabled' }], selected_toolsets: ['file'], using_defaults: true })), fetchModels: vi.fn(() => Promise.resolve(catalog)), fetchWorkspaces: vi.fn(() => Promise.resolve(WORKSPACES)) }))
+import { ExecutionModeChip, ModelChip, ToolsetsChip, WorkspaceChip } from './chips'
 import { fetchModels } from '../../api/endpoints'
 
 function renderChip(props: { model: string | null; optionId: string | null }, onChange = vi.fn()) {
@@ -172,4 +173,37 @@ it('does not offer saves when the toolset catalog fails', async () => {
   expect(screen.queryByRole('button', { name: 'Save' })).not.toBeInTheDocument()
   await userEvent.click(screen.getByRole('button', { name: 'Retry' }))
   expect(await screen.findByRole('checkbox', { name: 'file' })).toBeEnabled()
+})
+
+describe('ExecutionModeChip (TAL-1040)', () => {
+  const renderMode = (props: Parameters<typeof ExecutionModeChip>[0]) => {
+    const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    return render(<QueryClientProvider client={qc}><ExecutionModeChip {...props} /></QueryClientProvider>)
+  }
+
+  it('picks a mode the server offers for the fresh chat', async () => {
+    const onChange = vi.fn()
+    renderMode({ value: 'normal', onChange })
+    await userEvent.click(screen.getByRole('button', { name: 'Agent mode: Normal' }))
+    await userEvent.click(await screen.findByRole('menuitemradio', { name: 'Safe mode' }))
+    expect(onChange).toHaveBeenCalledWith('safe')
+  })
+
+  it('shows the server reason and refuses a mode the owner cannot start', async () => {
+    modes = { modes: [{ mode: 'normal', available: true, reason: null }, { mode: 'ignore_config', available: false, reason: 'agent_unsupported' }, { mode: 'safe', available: false, reason: 'agent_unsupported' }] }
+    const onChange = vi.fn()
+    renderMode({ value: 'normal', onChange })
+    await userEvent.click(screen.getByRole('button'))
+    const safe = await screen.findByRole('menuitemradio', { name: /Safe mode/ })
+    expect(safe).toHaveAttribute('aria-disabled', 'true')
+    expect(safe).toHaveTextContent('Not supported by this Agent')
+    await userEvent.click(safe)
+    expect(onChange).not.toHaveBeenCalled()
+  })
+
+  it('shows the frozen mode of a started chat without a picker', () => {
+    renderMode({ value: 'ignore_config' })
+    expect(screen.getByLabelText('Agent mode: Ignore profile config')).toBeInTheDocument()
+    expect(screen.queryByRole('button')).toBeNull()
+  })
 })

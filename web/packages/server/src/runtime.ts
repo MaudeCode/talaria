@@ -53,7 +53,7 @@ import { TurnRunner } from './sessions/turn.js'
 import { SessionChannels, StreamRegistry } from './sessions/streams.js'
 import { PendingPrompts } from './sessions/pending.js'
 import { StreamSlots } from './api/sse-routes.js'
-import { AgentConfig, coerceProviderCostBudgetValue, dict as asDict, parseProviderQualifiedModel } from './config/agent-config.js'
+import { AgentConfig, coerceProviderCostBudgetValue, dict as asDict, modelBaseUrl, parseProviderQualifiedModel } from './config/agent-config.js'
 import { ProviderCatalog } from './providers/catalog.js'
 import { containedProfileHome, escapedProfileMessage, ProfileError, ProfileService } from './profiles/profiles.js'
 import { Onboarding } from './onboarding.js'
@@ -415,6 +415,12 @@ export async function createDeps(opts: CreateDepsOptions): Promise<AppDeps> {
       if (parsed) return [parsed[0], parsed[1]]
       if (requestedProvider === undefined && !provider) provider = currentProvider
       return [raw, provider]
+    },
+    profileLaunchRoute: (profile, provider) => {
+      const config = agentConfig.peek(profileHome(profile))
+      const baseUrl = config ? modelBaseUrl(config, provider) : ''
+      // A bypass owner reads no custom_providers entry, so a named custom endpoint launches as `custom` at its own URL.
+      return { provider: baseUrl && provider.toLowerCase().startsWith('custom:') ? 'custom' : provider, baseUrl: baseUrl || null }
     },
     repairSessionModel: (profile, model, provider) => catalog.sessionModelRepair(profileHome(profile ?? activeProfile()), model, provider),
     warmSessionModelRepair: (profile) => catalog.warmSessionModelRepair(profileHome(profile ?? activeProfile())),

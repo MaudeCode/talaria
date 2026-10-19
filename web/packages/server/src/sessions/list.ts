@@ -314,6 +314,7 @@ export const SIDEBAR_SESSION_RESPONSE_FIELDS = new Set([
   'worktree_path', 'worktree_branch', 'parent_session_id', 'parent_title', 'parent_source', 'relationship_type', 'pre_compression_snapshot', '_lineage_root_id',
   '_lineage_tip_id', '_compression_segment_count', '_lineage_collapsed_count', '_parent_lineage_root_id', '_parent_lineage_tip_id', '_cross_surface_child_session',
   'match_type', 'match_preview', 'read_only', 'read_only_reason', 'can_branch', 'can_pin', 'can_archive', 'can_delete', 'can_duplicate', 'gateway_routing', 'share_url',
+  'execution_mode',
 ])
 
 export function isCliSessionRow(row: Row): boolean {
@@ -368,6 +369,8 @@ export interface ListParams {
   /** Gateway `sessions.json` identity map for the messaging dedupe (Python `_load_gateway_session_identity_map`). */
   gatewayIdentity?: Map<string, GatewayIdentity>
   sourceFilter?: string | null
+  /** TAL-1040: owner sessions Web created as diagnostic chats; listed even when external Agent sessions are hidden. */
+  webDiagnosticIds?: ReadonlySet<string>
   /** TAL-358: batched active-profile state.db owner lookup (`stateDbSessionSources`) for the sidecar owner lock and the `cliRows` claim gate. */
   stateDbSources?: (ids: string[], profile?: string) => Map<string, StateDbSessionSource> | null
   /** TAL-482: background kinds whose state.db rows stopped at the per-kind cap, so more exist than `cliRows` holds. */
@@ -453,7 +456,7 @@ export function withOwnerLocks(rows: Row[], stateDbSources: (ids: string[], prof
   return rows.map((r) => {
     const owners = ownersByProfile.get(str(r.profile) || 'default')
     const owner = owners?.get(str(r.session_id).trim())
-    if (typeof owner === 'object') return { ...r, ...(owner.source ? { ...normalizeAgentSessionSource(owner.source), source_tag: owner.source } : {}), read_only: true, read_only_reason: owner.reason ?? CANONICAL_READ_ONLY_REASON }
+    if (typeof owner === 'object') return { ...r, ...(owner.source ? { ...normalizeAgentSessionSource(owner.source), source_tag: owner.source } : {}), ...(owner.execution_mode ? { execution_mode: owner.execution_mode } : {}), read_only: true, read_only_reason: owner.reason ?? CANONICAL_READ_ONLY_REASON }
     const webui = ['source_tag', 'raw_source', 'session_source'].some((k) => ['webui', 'fork'].includes(str(r[k]).trim().toLowerCase()))
     if (!owners || (!webui && owner && !isClaimableCliSource({ source_tag: owner, ...normalizeAgentSessionSource(owner) }, owner))) return { ...r, read_only: true, ...(!owners ? { read_only_reason: OWNERSHIP_UNAVAILABLE_REASON } : {}) }
     return r
@@ -537,6 +540,11 @@ function sessionSourceIsWebui(row: Row): boolean {
   return ['source_tag', 'raw_source', 'session_source', 'source'].some((k) => str(row[k]).trim().toLowerCase() === 'webui')
 }
 
+/** TAL-1040: a chat Web created through the owner, by its receipt identity anywhere in the row's lineage (compression moves the tip). */
+export function isWebDiagnosticRow(row: Row, ids: ReadonlySet<string> | undefined): boolean {
+  return ids !== undefined && ids.size > 0 && [...sessionLineageIds(row)].some((id) => ids.has(id))
+}
+
 export function sessionLineageIds(row: Row): Set<string> {
   const ids = new Set<string>()
   for (const key of ['session_id', '_lineage_root_id', '_lineage_tip_id']) if (row[key]) ids.add(str(row[key]))
@@ -579,13 +587,14 @@ export function reconcileLocalSessionRows(rows: Row[], cli: Row[], profilesMatch
 }
 
 /** Python `_dedupe_cli_sidebar_sessions_for_api`: additive state rows, keeping project-hidden background rows addressable. */
-export function dedupeCliSidebarSessions(cli: Row[], represented: Set<string>, opts: { showCli: boolean; showCron: boolean; showWebhook: boolean; showKanban: boolean; sourceFilter: string | null; requestVisibilityOverrides: boolean }): Row[] {
+export function dedupeCliSidebarSessions(cli: Row[], represented: Set<string>, opts: { showCli: boolean; showCron: boolean; showWebhook: boolean; showKanban: boolean; sourceFilter: string | null; requestVisibilityOverrides: boolean; webCreated?: ReadonlySet<string> | undefined }): Row[] {
+  const webCreated = (r: Row): boolean => isWebDiagnosticRow(r, opts.webCreated)
   const sf = str(opts.sourceFilter).trim().toLowerCase()
   const showCron = opts.showCron || sf === 'cron'
   const showWebhook = opts.showWebhook || sf === 'webhook'
   const showKanban = opts.showKanban || sf === 'kanban'
-  const candidates = cli.filter((r) => !represented.has(str(r.session_id)) && !(sessionSourceIsWebui(r) && [...sessionLineageIds(r)].some((id) => represented.has(id))) && isCliSessionRowVisible(r))
-  const visible = candidates.filter((r) => (!isIntentionallyBackground(r) && opts.showCli) || (isIntentionallyBackground(r) && !hideFromDefaultSidebar(r, { showCron, showWebhook, showKanban })))
+  const candidates = cli.filter((r) => !represented.has(str(r.session_id)) && !(sessionSourceIsWebui(r) && [...sessionLineageIds(r)].some((id) => represented.has(id))) && (isCliSessionRowVisible(r) || webCreated(r)))
+  const visible = candidates.filter((r) => (!isIntentionallyBackground(r) && (opts.showCli || webCreated(r))) || (isIntentionallyBackground(r) && !hideFromDefaultSidebar(r, { showCron, showWebhook, showKanban })))
   if (opts.requestVisibilityOverrides) return visible
   return includeProjectHiddenBackground(candidates, visible)
 }
@@ -731,7 +740,7 @@ export async function buildSessionListPayload(store: SessionStore, params: ListP
     webuiSessions = webuiSessions.filter(isCliSessionRowVisible)
     const represented = new Set<string>()
     for (const s of webuiSessions) for (const id of sessionLineageIds(s)) represented.add(id)
-    dedupedCli = dedupeCliSidebarSessions(cliRows, represented, { showCli: params.showCliSessions, showCron: params.showCronSessions, showWebhook: params.showWebhookSessions, showKanban: params.showKanbanSessions, sourceFilter: params.sourceFilter ?? null, requestVisibilityOverrides: params.requestVisibilityOverrides })
+    dedupedCli = dedupeCliSidebarSessions(cliRows, represented, { showCli: params.showCliSessions, showCron: params.showCronSessions, showWebhook: params.showWebhookSessions, showKanban: params.showKanbanSessions, sourceFilter: params.sourceFilter ?? null, requestVisibilityOverrides: params.requestVisibilityOverrides, webCreated: params.webDiagnosticIds })
     const owners = params.stateDbSources ? params.stateDbSources(dedupedCli.map((r) => str(r.session_id))) : new Map<string, string>()
     // A sidecar-less foreign row whose owner refuses claiming is read-only, as its detail and mutations are; an
     // unreadable owner read (null) locks every row, as it locks sidecars.
@@ -765,8 +774,10 @@ export async function buildSessionListPayload(store: SessionStore, params: ListP
     visibleScoped = capRecentCliSessions(visibleScoped)
   }
   if (params.visibleOnly) {
-    archivedScoped = archivedScoped.filter(sessionHasServerVisibleMessages)
-    visibleScoped = visibleScoped.filter(sessionHasServerVisibleMessages)
+    // A Web-created diagnostic chat exists from creation, like a worktree chat, even before its first turn ran.
+    const visible = (r: Row): boolean => sessionHasServerVisibleMessages(r) || isWebDiagnosticRow(r, params.webDiagnosticIds)
+    archivedScoped = archivedScoped.filter(visible)
+    visibleScoped = visibleScoped.filter(visible)
   }
   if (params.excludeHidden) {
     archivedScoped = archivedScoped.filter((r) => !r.default_hidden)

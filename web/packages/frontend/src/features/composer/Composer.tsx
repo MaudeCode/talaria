@@ -5,6 +5,7 @@ import { m } from '../../paraglide/messages.js'
 import * as api from '../../api/endpoints'
 import { keys } from '../../api/queryKeys'
 import type { Session, Settings } from '../../contracts'
+import type { ExecutionMode } from '@maudecode/talaria-web-contracts'
 import type { LiveTurn } from '../../stream/reducer'
 import { isTerminal } from '../../stream/reducer'
 import { adoptTurn, cancelTurn, getStreamContext, retryPendingTurn, startTurn } from '../../stream/connection'
@@ -16,11 +17,11 @@ import { showToast } from '../toast/toast'
 import { AttachmentTray, type PendingFile } from './Attachments'
 import { CommandPaletteList, useCommandPalette } from './CommandPalette'
 import { parseCommand, resolveCommand, runsOnServer, type CommandSuggestion } from './commands'
-import { ContextRing, ContextRow, type ContextFigures, ModelChip, ReasoningChip, ToolsetsChip, WorkspaceChip } from './chips'
+import { ContextRing, ContextRow, type ContextFigures, ExecutionModeChip, ModelChip, ReasoningChip, ToolsetsChip, WorkspaceChip } from './chips'
 import { clearDraft, readLocalDraft, useDraftPersistence, useServerDraft } from './useDraft'
 import { createRecognition, dictationSupported, classifyDictationError, type DictationErrorKind } from '../voice/dictation'
 import { dictateLive, liveDictationErrorKind, liveDictationSupported, type LiveDictationHandle } from '../voice/liveDictation'
-import { useTranscribeCapabilityQuery } from '../../app/queries'
+import { useExecutionModesQuery, useTranscribeCapabilityQuery } from '../../app/queries'
 import { ProfileMenu } from '../../shell/ProfileMenu'
 import { setTheme } from '../../app/appearance'
 import { ThemeSchema } from '../../contracts/persisted'
@@ -44,7 +45,7 @@ export interface ComposerProps {
   sessionId: string | null
   session: Session | null
   /** Choices made on the unsaved chat, shown by the chips until the session exists. */
-  pendingChoices?: { model?: string; model_provider?: string | null; workspace?: string; enabled_toolsets?: string[] | null } | undefined
+  pendingChoices?: { model?: string; model_provider?: string | null; workspace?: string; enabled_toolsets?: string[] | null; execution_mode?: ExecutionMode } | undefined
   live: LiveTurn | null
   settings: Settings | undefined
   /** Creates the unsaved chat's session; `onCreated` hears its id before the route changes to it. */
@@ -57,6 +58,8 @@ export interface ComposerProps {
   onNewWorktreeChat?: ((workspace: string | undefined) => void) | undefined
   onRemoveWorktree?: (() => void) | undefined
   onToolsetsChange: (toolsets: string[] | null) => void
+  /** TAL-1040: the unsaved chat's execution mode; a started chat shows the server's frozen mode instead. */
+  onExecutionModeChange?: (mode: ExecutionMode) => void
   onReasoningChange: (level: string | null) => void
   reasoningLevels?: string[] | undefined
   /** False when the model has neither an effort ladder nor a thinking toggle; the chip is hidden, as legacy did. */
@@ -127,7 +130,7 @@ function fileKey(f: File): string {
 let handoff: { draft: { readonly current: string }; files: File[]; sessionId: string | null } | null = null
 
 export function Composer(props: ComposerProps) {
-  const { sessionId, session, live, settings, onEnsureSession, onLocalCommand, terminalOpen, onToggleTerminal, onModelChange, onWorkspaceChange, onNewWorktreeChat, onRemoveWorktree, onToolsetsChange, onReasoningChange, reasoning, reasoningLevels, reasoningSupported = true, pendingChoices, locked = false, yolo, onToggleYolo, queued, onQueue, onQueueChange, clarify, notices = [] } = props
+  const { sessionId, session, live, settings, onEnsureSession, onLocalCommand, terminalOpen, onToggleTerminal, onModelChange, onWorkspaceChange, onNewWorktreeChat, onRemoveWorktree, onToolsetsChange, onExecutionModeChange, onReasoningChange, reasoning, reasoningLevels, reasoningSupported = true, pendingChoices, locked = false, yolo, onToggleYolo, queued, onQueue, onQueueChange, clarify, notices = [] } = props
   const bootstrap = useBootstrap()
   const qc = useQueryClient()
   const localStateId = composerStateId(session)
@@ -168,7 +171,11 @@ export function Composer(props: ComposerProps) {
   // renders change neither, so they never force the measuring layout pass (TAL-278). Class changes are not observed:
   // the fit pass sets them itself.
   const nativeOwner = session?.owner_attachment?.state === 'attached'
-  const attachmentsSupported = session?.owner_attachment?.can_attach !== false
+  // An unsaved chat in a chosen mode attaches only where the server's mode list says so (TAL-1040); unknown is no.
+  const pendingMode = session ? undefined : pendingChoices?.execution_mode
+  const modes = useExecutionModesQuery(pendingMode !== undefined)
+  const attachmentsSupported = session ? session.owner_attachment?.can_attach !== false
+    : pendingMode === undefined || modes.data?.modes.find((option) => option.mode === pendingMode)?.can_attach === true
   const readOnly = !!session?.read_only && !nativeOwner
   useLayoutEffect(() => {
     const f = footer.current
@@ -668,6 +675,10 @@ export function Composer(props: ComposerProps) {
   // The server marks sessions Web may not continue (TAL-312); it would refuse every send, so none is offered.
   if (readOnly) return <div className="composer-wrap" id="composerWrap"><div className="mx-auto max-w-(--msg-max) px-3 py-2 text-center text-xs text-muted" role="note">{session?.owner_attachment?.reason === 'native_clarify_batch_unavailable' ? m.owner_batch_unavailable() : session?.owner_attachment?.reason === 'served_profile_sessions_unavailable' ? m.owner_profile_unverified() : m.session_read_only_notice()}</div></div>
 
+  // A fresh chat picks its Agent mode; a started one shows a frozen non-normal mode. No hide preference covers it.
+  const modeChip = !sessionId && onExecutionModeChange ? <ExecutionModeChip value={pendingChoices?.execution_mode ?? 'normal'} onChange={onExecutionModeChange} />
+    : session?.execution_mode && session.execution_mode !== 'normal' ? <ExecutionModeChip value={session.execution_mode} /> : null
+
   return (
     <div className="composer-wrap" id="composerWrap">
       <ComposerTab notices={tabNotices} />
@@ -754,10 +765,11 @@ export function Composer(props: ComposerProps) {
         </div>
       </div>
       {/* T3 Code's context strip: where the message runs (workspace, toolsets, profile), tucked under the card. */}
-      {!collapsed && (!hide('hide_composer_workspace') || !hide('hide_composer_toolsets') || !hide('hide_composer_profile')) && (
+      {!collapsed && (!hide('hide_composer_workspace') || !hide('hide_composer_toolsets') || !hide('hide_composer_profile') || modeChip) && (
         <div className="composer-strip" role="group" aria-label={m.composer_config_title()}>
           {!hide('hide_composer_workspace') && <WorkspaceChip value={session?.workspace ?? pendingChoices?.workspace ?? settings?.default_workspace} name={session ? session.workspace_name ?? null : undefined} onChange={onWorkspaceChange} onNewWorktree={onNewWorktreeChat} onRemoveWorktree={onRemoveWorktree} />}
           {!session?.read_only && !hide('hide_composer_toolsets') && <ToolsetsChip sessionId={sessionId ?? undefined} value={session?.enabled_toolsets ?? pendingChoices?.enabled_toolsets ?? null} onChange={onToolsetsChange} />}
+          {modeChip}
           {!hide('hide_composer_profile') && <ProfileMenu />}
         </div>
       )}

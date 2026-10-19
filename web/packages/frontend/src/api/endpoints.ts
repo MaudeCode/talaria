@@ -83,6 +83,7 @@ export const fetchSessionStatus = (id: SessionId) => orpc().session.status({ ses
 export const fetchSessionUsage = (id: SessionId) => orpc().session.usage({ session_id: id })
 export const markSessionViewed = (session_id: SessionId) => orpc().talaria.viewed({ session_id })
 export const newSession = (body: z.infer<typeof SessionNewRequestSchema>) => orpc().session.new(body)
+export const fetchExecutionModes = () => orpc().session.executionModes({})
 export const renameSession = (session_id: SessionId, title: string) => orpc().session.rename({ session_id, title })
 export const deleteSession = (session_id: SessionId) => orpc().session.delete({ session_id })
 export const pinSession = (session_id: SessionId, pinned: boolean) => orpc().session.pin({ session_id, pinned })

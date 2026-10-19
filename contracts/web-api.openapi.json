@@ -5619,6 +5619,15 @@
                             }
                           ]
                         },
+                        "execution_mode": {
+                          "enum": [
+                            "normal",
+                            "ignore_config",
+                            "safe"
+                          ],
+                          "type": "string",
+                          "description": "TAL-1040: the Agent execution policy frozen when the session was created; absent from older servers."
+                        },
                         "enabled_toolsets": {
                           "anyOf": [
                             {
@@ -6739,6 +6748,20 @@
                   },
                   "parent_session_id": {
                     "type": "string"
+                  },
+                  "execution_mode": {
+                    "enum": [
+                      "normal",
+                      "ignore_config",
+                      "safe"
+                    ],
+                    "type": "string",
+                    "description": "TAL-1040: `ignore_config` and `safe` start the session through the Agent owner; omitted means normal."
+                  },
+                  "request_id": {
+                    "type": "string",
+                    "pattern": "^[A-Za-z0-9_-]{1,64}$",
+                    "description": "TAL-1040: stable creation identity for a diagnostic chat. Reuse it only to retry the same creation."
                   }
                 },
                 "additionalProperties": {}
@@ -8725,6 +8748,15 @@
                             }
                           ]
                         },
+                        "execution_mode": {
+                          "enum": [
+                            "normal",
+                            "ignore_config",
+                            "safe"
+                          ],
+                          "type": "string",
+                          "description": "TAL-1040: the Agent execution policy frozen when the session was created; absent from older servers."
+                        },
                         "enabled_toolsets": {
                           "anyOf": [
                             {
@@ -9335,6 +9367,78 @@
                     "session"
                   ],
                   "additionalProperties": {}
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/session/execution-modes": {
+      "get": {
+        "operationId": "session.executionModes",
+        "summary": "TAL-1040: which execution modes a fresh chat in the active profile can start in now.",
+        "tags": [
+          "sessions"
+        ],
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "modes": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "mode": {
+                            "enum": [
+                              "normal",
+                              "ignore_config",
+                              "safe"
+                            ],
+                            "type": "string"
+                          },
+                          "available": {
+                            "type": "boolean"
+                          },
+                          "reason": {
+                            "anyOf": [
+                              {
+                                "enum": [
+                                  "agent_unsupported",
+                                  "served_profile",
+                                  "gateway_stopped",
+                                  "gateway_unavailable"
+                                ],
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "can_attach": {
+                            "type": "boolean",
+                            "description": "A fresh chat in this mode accepts file attachments."
+                          }
+                        },
+                        "required": [
+                          "mode",
+                          "available",
+                          "reason",
+                          "can_attach"
+                        ]
+                      }
+                    }
+                  },
+                  "required": [
+                    "modes"
+                  ]
                 }
               }
             }
@@ -11349,6 +11453,15 @@
                               "type": "null"
                             }
                           ]
+                        },
+                        "execution_mode": {
+                          "enum": [
+                            "normal",
+                            "ignore_config",
+                            "safe"
+                          ],
+                          "type": "string",
+                          "description": "TAL-1040: the Agent execution policy frozen when the session was created; absent from older servers."
                         },
                         "enabled_toolsets": {
                           "anyOf": [
@@ -15855,6 +15968,15 @@
                             }
                           ]
                         },
+                        "execution_mode": {
+                          "enum": [
+                            "normal",
+                            "ignore_config",
+                            "safe"
+                          ],
+                          "type": "string",
+                          "description": "TAL-1040: the Agent execution policy frozen when the session was created; absent from older servers."
+                        },
                         "enabled_toolsets": {
                           "anyOf": [
                             {
@@ -20010,6 +20132,15 @@
                               "type": "null"
                             }
                           ]
+                        },
+                        "execution_mode": {
+                          "enum": [
+                            "normal",
+                            "ignore_config",
+                            "safe"
+                          ],
+                          "type": "string",
+                          "description": "TAL-1040: the Agent execution policy frozen when the session was created; absent from older servers."
                         },
                         "enabled_toolsets": {
                           "anyOf": [
@@ -24890,6 +25021,15 @@
                             }
                           ]
                         },
+                        "execution_mode": {
+                          "enum": [
+                            "normal",
+                            "ignore_config",
+                            "safe"
+                          ],
+                          "type": "string",
+                          "description": "TAL-1040: the Agent execution policy frozen when the session was created; absent from older servers."
+                        },
                         "enabled_toolsets": {
                           "anyOf": [
                             {
@@ -27539,6 +27679,15 @@
                               "type": "null"
                             }
                           ]
+                        },
+                        "execution_mode": {
+                          "enum": [
+                            "normal",
+                            "ignore_config",
+                            "safe"
+                          ],
+                          "type": "string",
+                          "description": "TAL-1040: the Agent execution policy frozen when the session was created; absent from older servers."
                         },
                         "enabled_toolsets": {
                           "anyOf": [
@@ -30252,6 +30401,15 @@
                             }
                           ]
                         },
+                        "execution_mode": {
+                          "enum": [
+                            "normal",
+                            "ignore_config",
+                            "safe"
+                          ],
+                          "type": "string",
+                          "description": "TAL-1040: the Agent execution policy frozen when the session was created; absent from older servers."
+                        },
                         "enabled_toolsets": {
                           "anyOf": [
                             {
@@ -32961,6 +33119,15 @@
                               "type": "null"
                             }
                           ]
+                        },
+                        "execution_mode": {
+                          "enum": [
+                            "normal",
+                            "ignore_config",
+                            "safe"
+                          ],
+                          "type": "string",
+                          "description": "TAL-1040: the Agent execution policy frozen when the session was created; absent from older servers."
                         },
                         "enabled_toolsets": {
                           "anyOf": [
@@ -43992,6 +44159,15 @@
                             }
                           ]
                         },
+                        "execution_mode": {
+                          "enum": [
+                            "normal",
+                            "ignore_config",
+                            "safe"
+                          ],
+                          "type": "string",
+                          "description": "TAL-1040: the Agent execution policy frozen when the session was created; absent from older servers."
+                        },
                         "enabled_toolsets": {
                           "anyOf": [
                             {
@@ -46653,6 +46829,15 @@
                               "type": "null"
                             }
                           ]
+                        },
+                        "execution_mode": {
+                          "enum": [
+                            "normal",
+                            "ignore_config",
+                            "safe"
+                          ],
+                          "type": "string",
+                          "description": "TAL-1040: the Agent execution policy frozen when the session was created; absent from older servers."
                         },
                         "enabled_toolsets": {
                           "anyOf": [
@@ -49679,6 +49864,15 @@
                             }
                           ]
                         },
+                        "execution_mode": {
+                          "enum": [
+                            "normal",
+                            "ignore_config",
+                            "safe"
+                          ],
+                          "type": "string",
+                          "description": "TAL-1040: the Agent execution policy frozen when the session was created; absent from older servers."
+                        },
                         "enabled_toolsets": {
                           "anyOf": [
                             {
@@ -52583,6 +52777,15 @@
                                   "type": "null"
                                 }
                               ]
+                            },
+                            "execution_mode": {
+                              "enum": [
+                                "normal",
+                                "ignore_config",
+                                "safe"
+                              ],
+                              "type": "string",
+                              "description": "TAL-1040: the Agent execution policy frozen when the session was created; absent from older servers."
                             },
                             "enabled_toolsets": {
                               "anyOf": [

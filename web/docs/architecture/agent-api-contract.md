@@ -537,3 +537,22 @@ v0.22.1 provides the turn-local API; v0.22.0 and v0.22.2 do not. Talaria leaves
 their normal setup-needed result intact and never uses the process-global
 capture callback or ordinary clarification as a secret fallback. The Web and the
 App render the shared `skill_secret` secure prompt variant.
+
+## Diagnostic execution modes
+
+`gateway.create` starts a fresh `ignore_config` or `safe` chat through an already running,
+dedicated canonical owner. It requires `local-cli-create-v1` and `safe_mode` /
+`ignore_user_config` in `runtime.describe.session_create.parameters`; otherwise it returns
+`execution_mode_unavailable`. A served profile, a stopped owner and an Agent without native
+sessions keep their existing refusals. The request carries the explicit model, provider,
+that provider's configured endpoint (a named custom provider launches as `custom` at its
+URL, since the bypass owner reads no `custom_providers`), workspace and toolsets; never a
+credential.
+`probe: true` answers availability without creating a session.
+
+v0.22.1 provides this owner path; v0.22.0 and v0.22.2 have no native sessions, so Web
+reports the modes unavailable. On v0.22.1 the owner binds `DEFAULT_CONFIG`'s
+`voice.record_key` as a launch-only secret of every bypass session. After an owner restart
+it refuses that session's next turn with `launch_credentials_unavailable` before any worker
+starts, and the admission is held as unknown for the user's Discard. The frozen mode is never
+weakened; this is Agent behavior that Talaria does not patch.

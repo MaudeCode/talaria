@@ -8,7 +8,7 @@ import { z } from 'zod'
 import { RunStatusSchema } from './run-status.js'
 import { AgentRefreshConfirmationSchema } from './sidecar/runtime.js'
 import { SpeedTierSchema } from './speed.js'
-import { OwnerAttachmentSchema } from './gateway-session.js'
+import { ExecutionModeSchema, OwnerAttachmentSchema } from './gateway-session.js'
 import { CanonicalBotChatSchema, GatewayModeSchema, PluginSettingFieldSchema, SkillCatalogIdentitySchema } from './sidecar/namespaces.js'
 
 export { SpeedTierSchema } from './speed.js'
@@ -351,6 +351,7 @@ export const SessionSchema = z.looseObject({
   automatic_turns_held: z.boolean().optional().describe('TAL-899: the user pressed Stop, so no automatic turn (background wakeup or goal continuation) starts until their next message.'), has_pending_user_message: z.boolean().optional(),
   pending_user_message: NullableString.optional(), pending_attachments: z.array(AttachmentSchema).optional(), pending_started_at: NullableNumber.optional(), pending_user_source: NullableString.optional(),
   context_length: NullableNumber.optional(), threshold_tokens: NullableNumber.optional(), last_prompt_tokens: NullableNumber.optional(), post_compression_context_tokens_estimate: NullableNumber.optional(), ...ContextUsageFields,
+  execution_mode: ExecutionModeSchema.optional().describe('TAL-1040: the Agent execution policy frozen when the session was created; absent from older servers.'),
   enabled_toolsets: z.array(z.string()).nullable().optional(), composer_draft: ComposerDraftSchema.optional(), is_cli_session: z.boolean().optional(), source_kind: SourceKindSchema, is_messaging_session: IsMessagingSessionSchema, sort_ts: SortTsSchema, read_only: ReadOnlySchema, read_only_reason: ReadOnlyReasonSchema, owner_attachment: OwnerAttachmentSchema.optional(), can_branch: CanBranchSchema, can_pin: CanPinSchema, can_archive: CanArchiveSchema, can_delete: CanDeleteSchema, can_duplicate: CanDuplicateSchema, source_tag: NullableString.optional(),
   can_compress: z.boolean().optional().describe('TAL-614: a manual compression would start now: writable, no running turn, and at least four model-history messages. Only the full session detail carries it; absent means no.'),
   confirms_deep_truncate: z.boolean().optional().describe('TAL-929: this server holds a `session.truncate` that discards more than one user turn until it is confirmed; absent on older servers, which cut at once.'),
@@ -575,6 +576,8 @@ export const ShareReadSchema = z.looseObject({ share: ShareSchema })
 export const SessionNewRequestSchema = z.looseObject({
   title: z.string().optional(), workspace: z.string().optional(), workspace_inherited_from_prev_session: z.boolean().optional(), model: z.string().nullable().optional(), model_provider: z.string().nullable().optional(),
   profile: z.string().nullable().optional(), prev_session_id: z.string().optional(), project_id: z.string().nullable().optional(), worktree: Json.optional(), enabled_toolsets: z.array(z.string()).nullable().optional(), parent_session_id: z.string().optional(),
+  execution_mode: ExecutionModeSchema.optional().describe('TAL-1040: `ignore_config` and `safe` start the session through the Agent owner; omitted means normal.'),
+  request_id: z.string().regex(/^[A-Za-z0-9_-]{1,64}$/).optional().describe('TAL-1040: stable creation identity for a diagnostic chat. Reuse it only to retry the same creation.'),
 })
 /**
  * `streaming` (TAL-802): live dictation over `TRANSCRIBE_STREAM_PATH` would open for this profile (`stt.streaming` on, a live provider wire).

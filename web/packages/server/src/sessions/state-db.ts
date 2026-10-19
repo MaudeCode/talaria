@@ -9,7 +9,7 @@ import { existsSync, openSync, readSync, closeSync, statSync } from 'node:fs'
 import { DatabaseSync } from 'node:sqlite'
 import { createHash } from 'node:crypto'
 import { Worker } from 'node:worker_threads'
-import type { AgentStorage } from '@maudecode/talaria-web-contracts'
+import type { AgentStorage, ExecutionMode } from '@maudecode/talaria-web-contracts'
 import { str } from '../util.js'
 import { stateDbMessageFingerprint, stateDbMessageKey } from './state-db-identity.js'
 import { MESSAGING_SOURCES } from './source-kind.js'
@@ -136,7 +136,7 @@ function continuationRootId(rowsById: Map<string, Dict>, sessionId: string | nul
 }
 
 /** Python `_project_agent_session_rows`: collapse compression chains into one sidebar row pointing at the freshest importable tip. */
-export function projectAgentSessionRows(rows: Dict[]): Dict[] {
+export function projectAgentSessionRows(rows: Dict[], keepEmpty = false): Dict[] {
   const rowsById = new Map(rows.map((r) => [str(r.id), r]))
   const childrenByParent = new Map<string, Dict[]>()
   const continuationChildIds = new Set<string>()
@@ -191,7 +191,8 @@ export function projectAgentSessionRows(rows: Dict[]): Dict[] {
     let segments = 1
     let tip: Dict | null = row
     if (['compression', 'cli_close'].includes(str(row.end_reason))) [tip, segments] = compressionTip(row)
-    if (!tip || positiveInt(tip.actual_message_count) <= 0) continue
+    // `keepEmpty` (a direct lookup of receipt-proven Web diagnostic chats, TAL-1040) keeps a turnless plain row.
+    if (!tip || positiveInt(tip.actual_message_count) <= 0) { if (keepEmpty && tip === row) projected.push({ ...row }); continue }
     if (tip === row) { projected.push({ ...row }); continue }
     const merged: Dict = { ...row }
     for (const key of ['id', 'model', 'message_count', 'actual_message_count', 'actual_user_message_count', 'ended_at', 'end_reason', 'last_activity']) if (key in tip) merged[key] = tip[key]
@@ -356,6 +357,8 @@ export interface ReadRowsOptions {
   limit?: number | null
   /** A direct metadata lookup uses the same projection without the sidebar's recency window. */
   sessionIds?: readonly string[]
+  /** With `sessionIds`: keep those rows even without a visible turn (TAL-1040's receipt-proven Web diagnostic chats). */
+  keepEmpty?: boolean
   excludeSources?: readonly string[] | null
   includeSources?: readonly string[] | null
   log?: (line: string) => void
@@ -475,6 +478,7 @@ export function readImportableAgentSessionRows(dbPath: string, opts: ReadRowsOpt
     }
     const owners = sessionSources(db, sessionCols, raw.map((r) => str(r.id)))
     raw = raw.map((r) => { const owner = owners.get(str(r.id)); return { ...r, source: typeof owner === 'object' ? owner.source : owner || r.source } })
+    const keepEmpty = opts.keepEmpty === true && opts.sessionIds !== undefined
     let projected = projectAgentSessionRows(raw.map((r) => {
       const lineage = local.get(str(r.id))
       if (!lineage) return { ...r }
@@ -482,12 +486,12 @@ export function readImportableAgentSessionRows(dbPath: string, opts: ReadRowsOpt
       const title = lineage.title || r.title
       return { ...r, title, started_at: root.started_at, last_activity: r.last_activity ?? r.started_at, parent_session_id: root.parent_session_id,
         _lineage_root_id: lineage.owner, _lineage_tip_id: r.id, _lineage_ids: [...lineage.ids], _compression_segment_count: lineage.ids.length }
-    }))
+    }), keepEmpty)
     projected = projected.map((r) => {
       const parent = local.get(str(r.parent_session_id))
       return { ...r, ...normalizeAgentSessionSource(r.source), ...(parent ? { _parent_lineage_root_id: parent.owner, parent_title: parent.title, parent_source: parent.rows.at(-1)?.source ?? null } : {}) }
     })
-    projected = projected.filter(isCliSessionRowVisible)
+    if (!keepEmpty) projected = projected.filter(isCliSessionRowVisible)
     if (limit === null) return projected
     const selected = projected.slice(0, Math.max(0, Math.trunc(limit)))
     const have = new Set(selected.map((r) => str(r.id)))
@@ -571,7 +575,8 @@ export function latestCronSessionInfo(dbPath: string, jobIds: Iterable<string>, 
 export const CANONICAL_READ_ONLY_REASON = 'This session is owned by the Agent gateway and is display-only in Talaria.'
 export const OWNERSHIP_UNAVAILABLE_REASON = 'Agent session ownership could not be verified. The session is read-only until storage is readable.'
 export const RETIRED_READ_ONLY_REASON = 'The Agent has retired this session identity. Open or import a new conversation to continue.'
-export type StateDbSessionSource = string | { source: string; canonical: true; reason?: string }
+/** `execution_mode` (TAL-1040) is the frozen bypass in the owner's creation receipt; absent without a readable receipt. */
+export type StateDbSessionSource = string | { source: string; canonical: true; reason?: string; execution_mode?: ExecutionMode }
 
 /** Ownership fences outlive the fully validated localLineages history: even a pruned or broken receipt cannot release a writer. */
 function sessionSources(db: DatabaseSync, cols: Set<string>, ids: string[]): Map<string, StateDbSessionSource> {
@@ -651,6 +656,7 @@ function sessionSources(db: DatabaseSync, cols: Set<string>, ids: string[]): Map
     let source = kanban.has(id) ? 'kanban' : str(row?.source)
     let canonical = false
     let retiredId = false
+    let mode: ExecutionMode | undefined
     for (const segment of lineages.get(id) ?? [id]) {
       const chatId = str(rows.get(segment)?.chat_id)
       for (const owner of new Set([segment, chatId, receiptOwners.get(segment)].filter((v): v is string => Boolean(v)))) {
@@ -661,16 +667,39 @@ function sessionSources(db: DatabaseSync, cols: Set<string>, ids: string[]): Map
         // A broken receipt never releases its owner or a physical row naming that owner.
         canonical = true
         const origin = policy?.policy
-        if (origin && typeof origin === 'object' && !Array.isArray(origin) && str((origin as Dict).source)) source = str((origin as Dict).source)
+        if (origin && typeof origin === 'object' && !Array.isArray(origin)) {
+          const frozen = origin as Dict
+          if (str(frozen.source)) source = str(frozen.source)
+          mode ??= frozen.safe_mode === true ? 'safe' : frozen.ignore_user_config === true ? 'ignore_config' : 'normal'
+        }
       }
     }
     const authority = canonical
     // LOCAL is the canonical transport. Missing receipts cannot prove it safe to claim.
     if (lower(source) === 'local') canonical = true
     if (!row && !canonical && !retiredId) continue
-    sources.set(id, retiredId && !authority ? { source, canonical: true, reason: RETIRED_READ_ONLY_REASON } : canonical ? { source, canonical: true } : source)
+    const owned = { source, canonical: true as const, ...(mode ? { execution_mode: mode } : {}) }
+    sources.set(id, retiredId && !authority ? { ...owned, reason: RETIRED_READ_ONLY_REASON } : canonical ? owned : source)
   }
   return sources
+}
+
+/** TAL-1040: the request-id prefix Talaria mints for the diagnostic chats it asks an owner to create; its receipt keeps it. */
+export const WEB_DIAGNOSTIC_REQUEST_PREFIX = 'talaria-web:'
+
+/** Owner ids whose creation receipt carries Talaria's request prefix: chats Web started, shown whatever the external-session setting. */
+export function stateDbWebDiagnosticIds(dbPath: string): string[] {
+  if (!existsSync(dbPath)) return []
+  let db: DatabaseSync
+  try { db = openStateDbReadonly(dbPath) } catch { return [] }
+  try {
+    if (!tableColumns(db, 'state_meta').has('value')) return []
+    const rows = db.prepare("SELECT key FROM state_meta WHERE key GLOB ? AND json_valid(value) AND json_extract(value, '$.request_id') GLOB ?")
+      .all(`${LOCAL_POLICY_PREFIX}*`, `${WEB_DIAGNOSTIC_REQUEST_PREFIX}*`) as { key: string }[]
+    return rows.map((row) => row.key.slice(LOCAL_POLICY_PREFIX.length))
+  } catch {
+    return []
+  } finally { db.close() }
 }
 
 /** Batched source/ownership probe. An unreadable authority answers null so callers fail closed. */
@@ -801,7 +830,7 @@ export function cheapChangeFingerprint(dbPath: string, onError?: (reason: string
 type ListingCall =
   | { op: 'rows'; dbPath: string; opts: Omit<ReadRowsOptions, 'log'> }
   | { op: 'fingerprint'; dbPath: string }
-  | { op: 'storage'; dbPath: string }
+  | { op: 'storage' | 'webDiagnostic'; dbPath: string }
   | { op: 'sources' | 'existing'; dbPath: string; ids: string[] }
   | { op: 'crash' }
 /** A request to the listing worker; `delayMs` carries the test read delay across the thread boundary. */
@@ -887,6 +916,11 @@ export async function stateDbStorageAsync(dbPath: string): Promise<AgentStorage>
 /** `stateDbSessionSources` on the listing worker; a worker failure is an unreadable state.db (null), so owners stay locked. */
 export async function stateDbSessionSourcesAsync(dbPath: string, sessionIds: Iterable<string>): Promise<Map<string, StateDbSessionSource> | null> {
   try { return (await callListingWorker({ op: 'sources', dbPath, ids: [...sessionIds] })).value as Map<string, StateDbSessionSource> | null } catch { return null }
+}
+
+/** `stateDbWebDiagnosticIds` on the listing worker; a failed read lists none, so the setting still governs every other row. */
+export async function stateDbWebDiagnosticIdsAsync(dbPath: string): Promise<string[]> {
+  try { return (await callListingWorker({ op: 'webDiagnostic', dbPath })).value as string[] } catch { return [] }
 }
 
 /** `agentSessionRowsExisting` on the listing worker; a worker failure assumes every row present, so nothing is pruned. */

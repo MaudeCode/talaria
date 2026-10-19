@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Added",
+      "summary": "Start a new chat in safe mode or without the profile config to troubleshoot plugins, rules, skills or memory; the chat shows its mode.",
+      "highlight": false,
+      "components": ["web"]
+    }
+  ]
+}
