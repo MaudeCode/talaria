@@ -1331,16 +1331,20 @@ public final class SessionListViewModel {
         projectID: String? = nil
     ) async -> SessionSummary? {
         switch await createSessionResult(modelContext: modelContext, profile: profile, provider: provider, projectID: projectID) {
-        case .started(let session): return session
+        case .started(let session, _): return session
         case .failed: return nil
         }
     }
 
+    /// A diagnostic `executionMode` starts the chat through the profile's Agent owner (TAL-1045). Its `requestID`
+    /// makes the creation safe to retry after an unconfirmed response: the server returns the chat it already made.
     public func createSessionResult(
         modelContext: ModelContext? = nil,
         profile: String? = nil,
         provider: String? = nil,
-        projectID: String? = nil
+        projectID: String? = nil,
+        executionMode: ExecutionMode? = nil,
+        requestID: String? = nil
     ) async -> ChatSessionStartResult {
         var didRequestCreation = false
         isCreatingSession = true
@@ -1368,7 +1372,9 @@ public final class SessionListViewModel {
                 model: requestedModel?.id,
                 modelProvider: requestedModel?.providerID,
                 profile: Self.nonEmpty(profile),
-                projectID: Self.nonEmpty(projectID)
+                projectID: Self.nonEmpty(projectID),
+                executionMode: executionMode,
+                requestID: requestID
             )
             try Task.checkCancellation()
 
@@ -1397,11 +1403,12 @@ public final class SessionListViewModel {
                 }
             }
 
-            return .started(newSession)
+            return .started(newSession, detail: sessionDetail)
         } catch {
+            let retriesSameCreation = executionMode?.isDiagnostic == true && requestID != nil
             let result = ChatSessionStartResult.failed(
-                error.localizedDescription,
-                canRetry: !didRequestCreation || APIError.isDefinitiveWriteFailure(error),
+                Self.creationFailureMessage(error, executionMode: executionMode),
+                canRetry: !didRequestCreation || retriesSameCreation || APIError.isDefinitiveWriteFailure(error),
                 error: error
             )
             guard !APIError.isCancellation(error) else { return result }
@@ -1409,6 +1416,33 @@ public final class SessionListViewModel {
             actionErrorMessage = error.localizedDescription
             return result
         }
+    }
+
+    /// The server's `execution_mode_unavailable` refusal names why in a code the App words (TAL-1045).
+    private static func creationFailureMessage(_ error: Error, executionMode: ExecutionMode?) -> String {
+        guard let executionMode, let apiError = error as? APIError, apiError.serverCode == "execution_mode_unavailable",
+              let reason = ExecutionModeOption(mode: executionMode, available: false, reason: apiError.serverReason).reasonTitle
+        else { return error.localizedDescription }
+        return String(localized: "\(executionMode.title) isn't available: \(reason)")
+    }
+
+    /// TAL-1045: the diagnostic modes the server reported for `executionModesProfile`.
+    private var executionModeOptions: [ExecutionModeOption] = []
+    private var executionModesProfile: String?
+
+    /// The modes besides normal a new chat in the active profile can start in. Modes read for another profile are
+    /// never offered, so a profile switch cannot carry a choice into a request it does not hold for.
+    public var newChatExecutionModes: [ExecutionModeOption] {
+        executionModesProfile == activeProfileName ? executionModeOptions.filter(\.mode.isDiagnostic) : []
+    }
+
+    /// Reads the active profile's modes. An older server (404) or a failed read offers none.
+    public func loadExecutionModes() async {
+        let profile = activeProfileName
+        let modes = (try? await client.executionModes().modes) ?? []
+        guard !Task.isCancelled, profile == activeProfileName else { return }
+        executionModeOptions = modes
+        executionModesProfile = profile
     }
 
     public func clearActionError() {

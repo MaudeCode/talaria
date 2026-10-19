@@ -79,14 +79,19 @@ extension APIClient {
         try await send(endpoint: .toolResult(sessionID: sessionID, toolCallID: toolCallID), method: "GET")
     }
 
+    /// A diagnostic `executionMode` (TAL-1045) carries `requestID`, the creation's identity: a retry with the same one
+    /// returns the chat the owner already created. A normal chat sends neither.
     public func createSession(
         workspace: String?,
         model: String?,
         modelProvider: String?,
         profile: String?,
-        projectID: String? = nil
+        projectID: String? = nil,
+        executionMode: ExecutionMode? = nil,
+        requestID: String? = nil
     ) async throws -> SessionResponse {
-        try await send(
+        let diagnostic = executionMode?.isDiagnostic == true
+        return try await send(
             endpoint: .newSession,
             method: "POST",
             body: NewSessionRequest(
@@ -94,9 +99,16 @@ extension APIClient {
                 model: model,
                 modelProvider: modelProvider,
                 profile: profile,
-                projectId: projectID
+                projectId: projectID,
+                executionMode: diagnostic ? executionMode : nil,
+                requestId: diagnostic ? requestID : nil
             )
         )
+    }
+
+    /// TAL-1045: which modes a new chat in the active profile can start in now. An older server answers 404.
+    public func executionModes() async throws -> ExecutionModesResponse {
+        try await send(endpoint: .executionModes, method: "GET")
     }
 
     public func renameSession(id: String, title: String) async throws -> SessionMutationResponse {
@@ -292,6 +304,8 @@ private struct NewSessionRequest: Encodable {
     let modelProvider: String?
     let profile: String?
     let projectId: String?
+    let executionMode: ExecutionMode?
+    let requestId: String?
 }
 
 private struct RenameSessionRequest: Encodable {

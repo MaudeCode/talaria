@@ -161,6 +161,7 @@ final class ContractReadinessTests: APIClientTestCase {
                 query: ["session_id": "session-123", "tool_call_id": "call-1"]
             ),
             .init(name: "new session", endpoint: .newSession, path: "/api/session/new"),
+            .init(name: "execution modes", endpoint: .executionModes, path: "/api/session/execution-modes"),
             .init(name: "rename session", endpoint: .renameSession, path: "/api/session/rename"),
             .init(name: "delete session", endpoint: .deleteSession, path: "/api/session/delete"),
             .init(name: "pin session", endpoint: .pinSession, path: "/api/session/pin"),

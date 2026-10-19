@@ -16,9 +16,13 @@ struct PendingNewChatView: View {
     let profileName: String?
     let providerID: String?
     let projectID: String?
+    let executionMode: ExecutionMode?
     let draftStore: ChatDraftStore
 
     @State private var createdSession: SessionSummary?
+    @State private var createdDetail: SessionDetail?
+    /// One diagnostic creation's identity (TAL-1045): Retry after a lost response gets back the chat the owner made.
+    @State private var creationID = UUID().uuidString
     @State private var unconfirmedCreationMessage: String?
     @State private var draftMessage = ""
     @State private var didStartConversation = false
@@ -33,6 +37,7 @@ struct PendingNewChatView: View {
         profileName: String? = nil,
         providerID: String? = nil,
         projectID: String? = nil,
+        executionMode: ExecutionMode? = nil,
         server: URL,
         viewModel: SessionListViewModel,
         onAPIError: @escaping (Error) -> Void,
@@ -48,6 +53,7 @@ struct PendingNewChatView: View {
         self.profileName = profileName
         self.providerID = providerID
         self.projectID = projectID
+        self.executionMode = executionMode
         self.draftStore = draftStore ?? .shared
         _draftMessage = State(initialValue: initialDraft)
     }
@@ -80,19 +86,23 @@ struct PendingNewChatView: View {
     /// Creates the chat's session for `ChatView`, which takes it on in place and moves the draft
     /// to it. A failure comes back as the message the composer's strip shows with Retry.
     private func createSession() async -> ChatSessionStartResult {
-        if let createdSession { return .started(createdSession) }
+        if let createdSession { return .started(createdSession, detail: createdDetail) }
         if let unconfirmedCreationMessage { return .failed(unconfirmedCreationMessage, canRetry: false) }
         viewModel.clearActionError()
         let result = await viewModel.createSessionResult(
             modelContext: modelContext,
             profile: profileName,
             provider: providerID,
-            projectID: projectID
+            projectID: projectID,
+            executionMode: executionMode,
+            requestID: creationID
         )
         guard !Task.isCancelled else { return .failed(String(localized: "Chat creation was cancelled.")) }
         let session: SessionSummary
         switch result {
-        case .started(let created): session = created
+        case .started(let created, let detail):
+            session = created
+            createdDetail = detail
         case .failed(var message, let canRetry, let error):
             if let error { onAPIError(error) }
             if !canRetry {
@@ -105,7 +115,7 @@ struct PendingNewChatView: View {
         SessionHaptics.sessionCreated(isEnabled: isHapticsEnabled)
         onSessionCreated(session)
         createdSession = session
-        return .started(session)
+        return .started(session, detail: createdDetail)
     }
 
     private var draftKey: ChatDraftKey {

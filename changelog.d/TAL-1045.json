@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Added",
+      "summary": "Touch and hold New Chat to start a chat in Safe Mode or without the profile config to troubleshoot plugins, rules, skills or memory; the chat's header shows its mode.",
+      "highlight": false,
+      "components": ["app"]
+    }
+  ]
+}

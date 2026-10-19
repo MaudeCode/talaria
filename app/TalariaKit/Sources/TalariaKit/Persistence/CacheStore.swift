@@ -101,6 +101,16 @@ public enum CacheStore {
         try cachedDetailField(OwnerAttachment.self, at: \.ownerAttachmentData, serverURL: serverURL, sessionID: sessionID, in: context, now: now)
     }
 
+    @MainActor
+    public static func cacheExecutionMode(_ mode: ExecutionMode?, serverURL: URL, sessionID: String, in context: ModelContext) throws {
+        try cacheDetailField(mode, at: \.executionModeData, serverURL: serverURL, sessionID: sessionID, in: context)
+    }
+
+    @MainActor
+    public static func cachedExecutionMode(serverURL: URL, sessionID: String, in context: ModelContext, now: Date = Date()) throws -> ExecutionMode? {
+        try cachedDetailField(ExecutionMode.self, at: \.executionModeData, serverURL: serverURL, sessionID: sessionID, in: context, now: now)
+    }
+
     /// A detail-only server field kept as JSON on the session's cached row, which must already exist.
     @MainActor
     private static func cacheDetailField<Value: Encodable>(

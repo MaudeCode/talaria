@@ -238,7 +238,10 @@ public final class ChatViewModel {
     /// Mirrors the list-row merge rule: the server's `read_only` replaces the
     /// seeded flag; a detail that omits it keeps it. A load passes the notices count it fetched at.
     private func applyReadOnlyState(from session: SessionDetail?, noticesChangesAtFetch: Int? = nil) {
-        if let session { ownerAttachment = session.ownerAttachment }
+        if let session {
+            ownerAttachment = session.ownerAttachment
+            executionMode = session.executionMode
+        }
         if let readOnly = session?.readOnly { isSessionReadOnly = readOnly }
         if let canBranch = session?.canBranch { self.canBranch = canBranch }
         if let assistantName = session?.assistantName { self.assistantName = assistantName }
@@ -374,8 +377,9 @@ public final class ChatViewModel {
 
     /// A new chat starts with no session so its screen, and the composer the user is already typing
     /// in, can appear before the server answers; this takes on the session the server created, in
-    /// place, so nothing is rebuilt (TAL-636). Only the first adoption counts.
-    public func adoptCreatedSession(_ session: SessionSummary) {
+    /// place, so nothing is rebuilt (TAL-636). Only the first adoption counts. The creation's `detail` brings what a
+    /// list row lacks, such as a diagnostic chat's owner and frozen mode (TAL-1045).
+    public func adoptCreatedSession(_ session: SessionSummary, detail: SessionDetail? = nil) {
         guard sessionID == nil, let id = Self.nonEmpty(session.sessionId) else { return }
         sessionID = id
         currentWorkspace = session.workspace
@@ -389,6 +393,7 @@ public final class ChatViewModel {
         isSessionReadOnly = session.isSessionReadOnly
         canBranch = session.canBranch == true
         displayTitle = Self.displayTitle(from: session.title)
+        if let detail { applyReadOnlyState(from: detail) }
     }
 
     public var isRespondingToClarification: Bool { pendingActionCoordinator.isRespondingToClarification }
@@ -428,14 +433,25 @@ public final class ChatViewModel {
     public private(set) var ownerAttachment: OwnerAttachment? {
         didSet { if ownerAttachment != oldValue { cacheOwnerAttachment() } }
     }
+    /// TAL-1045: the mode the server froze when it created this chat; nil for a normal chat or an older server.
+    /// Refreshed from every applied `SessionDetail`; the offline cache keeps the last one.
+    public private(set) var executionMode: ExecutionMode? {
+        didSet { if executionMode != oldValue { cacheExecutionMode() } }
+    }
     /// The admission whose owner action awaits the server; its controls wait until it settles.
     public private(set) var ownerActionAdmissionID: String?
 
-    /// The owner's latest state is the offline copy, whichever authoritative update brought it.
+    /// The owner's latest state and the frozen mode are the offline copy, whichever authoritative update brought them.
     private func cacheOwnerAttachment() {
+        cacheDetailField { try CacheStore.cacheOwnerAttachment(self.ownerAttachment, serverURL: $0, sessionID: $1, in: $2) }
+    }
+    private func cacheExecutionMode() {
+        cacheDetailField { try CacheStore.cacheExecutionMode(self.executionMode, serverURL: $0, sessionID: $1, in: $2) }
+    }
+    private func cacheDetailField(_ write: (URL, String, ModelContext) throws -> Void) {
         guard !isViewingCachedData, ownsCurrentCache, let sessionID, let context = runStatusCacheContext else { return }
         do {
-            try CacheStore.cacheOwnerAttachment(ownerAttachment, serverURL: server, sessionID: sessionID, in: context)
+            try write(server, sessionID, context)
         } catch {
             cacheErrorMessage = error.localizedDescription
         }
@@ -1662,8 +1678,9 @@ public final class ChatViewModel {
             if let modelContext {
                 do {
                     try cacheMessagesIfCurrent(messages, sessionID: sessionID, in: modelContext)
-                    // The first load creates the cached row after the owner state was applied.
+                    // The first load creates the cached row after the owner state and mode were applied.
                     cacheOwnerAttachment()
+                    cacheExecutionMode()
                 } catch {
                     cacheErrorMessage = error.localizedDescription
                 }
@@ -1691,6 +1708,7 @@ public final class ChatViewModel {
                         restoreCachedTranscriptWindow(cachedMessages)
                         cachedRunStatus = try CacheStore.cachedRunStatus(serverURL: server, sessionID: sessionID, in: modelContext)
                         ownerAttachment = try CacheStore.cachedOwnerAttachment(serverURL: server, sessionID: sessionID, in: modelContext)
+                        executionMode = try CacheStore.cachedExecutionMode(serverURL: server, sessionID: sessionID, in: modelContext)
                         latestServerLoadHadAssistantResponseAfterLatestUser = Self.hasAssistantResponseAfterLatestUser(
                             in: messages
                         )

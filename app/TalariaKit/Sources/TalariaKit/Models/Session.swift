@@ -899,6 +899,8 @@ public struct SessionDetail: Decodable, Equatable, Identifiable {
     /// TAL-1043: the Agent runtime that owns this chat and what it allows; nil for a chat Talaria runs itself or from
     /// a server that predates owner chats.
     public let ownerAttachment: OwnerAttachment?
+    /// TAL-1045: the mode the server froze when it created this chat; nil from a server that predates execution modes.
+    public let executionMode: ExecutionMode?
     public let canBranch: Bool?
     public let canPin: Bool?
     public let canArchive: Bool?
@@ -971,6 +973,7 @@ public struct SessionDetail: Decodable, Equatable, Identifiable {
         case relationshipType
         case readOnly
         case ownerAttachment
+        case executionMode
         case canBranch
         case canPin
         case canArchive
@@ -1042,6 +1045,7 @@ public struct SessionDetail: Decodable, Equatable, Identifiable {
         relationshipType = container.decodeLossyStringIfPresent(forKey: .relationshipType)
         readOnly = container.decodeLossyBoolIfPresent(forKey: .readOnly)
         ownerAttachment = try? container.decodeIfPresent(OwnerAttachment.self, forKey: .ownerAttachment)
+        executionMode = ExecutionMode(serverValue: container.decodeLossyStringIfPresent(forKey: .executionMode))
         canBranch = container.decodeLossyBoolIfPresent(forKey: .canBranch)
         canPin = container.decodeLossyBoolIfPresent(forKey: .canPin)
         canArchive = container.decodeLossyBoolIfPresent(forKey: .canArchive)

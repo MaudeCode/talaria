@@ -87,6 +87,12 @@ public enum APIError: LocalizedError {
         return Self.serverErrorMessage(from: body)
     }
 
+    /// TAL-1045: the classification a typed refusal carries beside its `code`, such as why an execution mode is unavailable.
+    public var serverReason: String? {
+        guard case .http(_, let body) = self, let body else { return nil }
+        return (try? JSONDecoder().decode(ReasonRefusal.self, from: Data(body.utf8)))?.reason
+    }
+
     /// TAL-1043: the owner's current state an owner chat's refusal carries.
     public var ownerAttachment: OwnerAttachment? {
         guard case .http(_, let body) = self, let body else { return nil }
@@ -234,6 +240,10 @@ private extension APIError {
         guard let body, let data = body.data(using: .utf8) else { return nil }
         return try? JSONDecoder().decode(ErrorPayload.self, from: data)
     }
+}
+
+private struct ReasonRefusal: Decodable {
+    let reason: String?
 }
 
 private struct OwnerRefusal: Decodable {
