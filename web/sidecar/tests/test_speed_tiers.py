@@ -46,3 +46,38 @@ def test_resolver_errors_are_not_mistaken_for_missing_capability(monkeypatch):
     install_models(monkeypatch, resolver)
     with pytest.raises(TypeError, match='broken resolver'):
         supported_speed_tiers('gpt-5.4', 'openai', '')
+
+
+def install_codex_tiers(monkeypatch, offered=None):
+    package = ModuleType('agent')
+    tiers = ModuleType('agent.codex_service_tiers')
+    if offered is not None:
+        tiers.ultrafast_offered = offered
+    package.codex_service_tiers = tiers
+    monkeypatch.setitem(sys.modules, 'agent', package)
+    monkeypatch.setitem(sys.modules, 'agent.codex_service_tiers', tiers)
+
+
+@pytest.mark.parametrize('offered, expected', [
+    (False, [{'id': 'standard', 'service_tier': 'default'}, {'id': 'priority', 'service_tier': 'priority'}]),
+    (True, [{'id': 'standard', 'service_tier': 'default'}, {'id': 'priority', 'service_tier': 'priority'},
+            {'id': 'ultrafast', 'service_tier': 'ultrafast'}]),
+    (None, [{'id': 'standard', 'service_tier': 'default'}, {'id': 'priority', 'service_tier': 'priority'},
+            {'id': 'ultrafast', 'service_tier': 'ultrafast'}]),
+])
+def test_codex_account_catalog_decides_ultrafast(monkeypatch, offered, expected):
+    install_models(monkeypatch, lambda model, *, provider, base_url, tier: {'service_tier': tier})
+    calls = []
+    def ultrafast_offered(model, *, provider, base_url):
+        calls.append((model, provider, base_url))
+        return offered
+    install_codex_tiers(monkeypatch, None if offered is None else ultrafast_offered)
+    base = 'https://chatgpt.com/backend-api/codex'
+    assert supported_speed_tiers('gpt-6-astra', 'openai-codex', base) == expected
+    assert calls == ([] if offered is None else [('gpt-6-astra', 'openai-codex', base)])
+
+
+def test_agent_without_codex_tier_module_keeps_route_gate(monkeypatch):
+    install_models(monkeypatch, lambda model, *, provider, base_url, tier: {'service_tier': tier})
+    monkeypatch.setitem(sys.modules, 'agent', None)
+    assert [tier['id'] for tier in supported_speed_tiers('gpt-6-astra', 'openai-codex', '')] == ['standard', 'priority', 'ultrafast']

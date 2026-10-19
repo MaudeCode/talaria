@@ -1,0 +1,12 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Ultrafast appears for a ChatGPT subscription only when its plan serves Ultrafast.",
+      "highlight": false,
+      "components": [
+        "web"
+      ]
+    }
+  ]
+}
