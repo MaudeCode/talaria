@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Added",
+      "summary": "A free-tier Nous profile can sign in to a Nous account from Settings, and its connected apps carry over to the account.",
+      "highlight": false,
+      "components": ["web"]
+    }
+  ]
+}

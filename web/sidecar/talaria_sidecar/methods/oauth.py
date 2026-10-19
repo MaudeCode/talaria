@@ -9,6 +9,7 @@ Flows live in this process only.
 
 from __future__ import annotations
 
+import contextlib
 import logging
 import os
 import secrets
@@ -55,6 +56,13 @@ class Flow:
     cancelled: threading.Event = field(default_factory=threading.Event)
     # Serialises the cancel check with the credential save: a cancel cannot land between them.
     lock: threading.Lock = field(default_factory=threading.Lock)
+    # The credential is saved but the sign-in has not finished (a guest sign-in still settles the account): a cancel or
+    # an expiry can no longer undo it, and the flow stays pending until its own ending.
+    committed: bool = False
+
+    @property
+    def stoppable(self) -> bool:
+        return self.status == "pending" and not self.committed
 
     def end(self, status: str, error: str | None = None) -> None:
         self.status, self.error, self.ended_at = status, error, time.time()
@@ -124,8 +132,9 @@ def _nous_begin() -> tuple[dict, dict]:
     # v0.22.0 replaced ``guest_enabled`` with ``guest_allowed``; 0.21.x releases only have the former.
     guest_gate = getattr(anon_auth, "guest_allowed", None) or getattr(anon_auth, "guest_enabled")
     if guest_gate() and anon_auth.has_guest():
-        # The free tier's sign-in moves its connectors to the account (``anon_auth.run_sign_in``); a plain device-code
-        # sign-in here would orphan them.
+        # A plain device-code sign-in here would orphan the guest's connected apps.
+        if hasattr(anon_auth, "run_sign_in"):
+            return _nous_sign_in(anon_auth)
         hint = getattr(anon_auth, "UPGRADE_HINT", None) or "Sign in from Hermes with `hermes auth upgrade`."
         raise RpcError(f"This profile uses the Nous free tier. {hint}", condition="oauth_unsupported")
     pconfig = PROVIDER_REGISTRY["nous"]
@@ -136,7 +145,62 @@ def _nous_begin() -> tuple[dict, dict]:
     return display, {"portal": portal, "client_id": pconfig.client_id, "scope": pconfig.scope, "device_code": str(data["device_code"])}
 
 
+def _nous_sign_in(anon_auth: Any) -> tuple[dict, dict]:
+    """Over a guest, the Agent's own sign-in (``anon_auth.run_sign_in``, as its dashboard runs it): it moves the guest's
+    connected apps to the account, then persists and settles the account itself. Its cancel check, persist guard and
+    home scope read the flow ``_nous_wait`` binds into the state; before that only ``start``'s first step runs, already
+    under the flow's home."""
+    state: dict = {}
+
+    def cancelled() -> bool:
+        flow = state.get("flow")
+        return flow is not None and flow.cancelled.is_set()
+
+    @contextlib.contextmanager
+    def persist_guard():
+        # As ``_run`` does for a plain save, the final cancel check and the save share the flow's lock; the flow ends
+        # approved only when the Agent has also settled the account, through ``_run``.
+        flow = state["flow"]
+        with flow.lock:
+            may_persist = flow.status == "pending"
+            yield may_persist
+            if may_persist:
+                flow.committed = True
+
+    def scope():
+        flow = state.get("flow")
+        return scoped_home(flow.home) if flow is not None else contextlib.nullcontext()
+
+    # A cancel after the transfer persists nothing, as on the desktop: the guest is minted again on next use.
+    sign_in = anon_auth.run_sign_in(cancelled=cancelled, cancel_wins_after_promotion=True, persist_guard=persist_guard, scope=scope)
+    first = next(sign_in)
+    if first.kind != "code":
+        sign_in.close()
+        raise RpcError(first.copy_terminal, condition="oauth_unsupported" if first.precondition else "oauth_failed")
+    state["sign_in"] = sign_in
+    return {"user_code": first.code, "verification_url": first.link, "expires_in": first.expires_in, "interval": first.interval}, state
+
+
+class _SignInEnded(Exception):
+    """A guest sign-in that ended without an account; ``code`` lets ``_ending`` classify a decline and an expiry."""
+
+    def __init__(self, ended: Any):
+        super().__init__(ended.copy)
+        self.code = {"declined": "access_denied", "timed_out": "expired_token"}.get(ended.kind, ended.kind)
+
+
 def _nous_wait(flow: Flow, state: dict) -> dict:
+    sign_in = state.get("sign_in")
+    if sign_in is not None:
+        state["flow"] = flow
+        try:
+            for ended in sign_in:  # the generator always ends on one terminal state
+                pass
+        finally:
+            sign_in.close()
+        if not ended.ok:
+            raise _SignInEnded(ended)
+        return {}
     from hermes_cli.auth import _poll_for_token
 
     with _client(15.0) as client:
@@ -145,6 +209,8 @@ def _nous_wait(flow: Flow, state: dict) -> dict:
 
 
 def _nous_save(flow: Flow, state: dict, token_data: dict) -> None:
+    if "sign_in" in state:  # the guest sign-in persisted and settled the account itself
+        return
     from hermes_cli import anon_auth
     from hermes_cli.auth import persist_nous_credentials, refresh_nous_oauth_from_state
 
@@ -323,9 +389,15 @@ def _run(flow: Flow, wait: Callable[[Flow, dict], dict], save: Callable[[Flow, d
         log.info("oauth: %s sign-in ended %s (flow=%s)", flow.provider, flow.status, flow.flow_id[:6])
 
 
+def _discard(state: dict) -> None:
+    """Releases a begun sign-in that is never published: a guest sign-in's generator holds its HTTP client."""
+    if "sign_in" in state:
+        state["sign_in"].close()
+
+
 def _cancel(flow: Flow) -> None:
     with flow.lock:
-        if flow.status == "pending":
+        if flow.stoppable:
             flow.cancelled.set()
             flow.end("cancelled")
 
@@ -379,11 +451,13 @@ def start(home: Path, provider: str, *, providers: dict[str, Provider] | None = 
         raise RpcError(_first_line(exc), condition="oauth_failed") from exc
     if not str(display["verification_url"]).lower().startswith(("https://", "http://")):
         # The browser opens this link: anything but a web address is refused before a flow exists.
+        _discard(state)
         raise RpcError("The provider answered an invalid sign-in link.", condition="oauth_failed")
     flow = Flow(secrets.token_urlsafe(16), provider, home, time.time() + int(display["expires_in"]), max(1, int(display["interval"])))
     with _FLOWS_LOCK:
         if _GENERATIONS.get(key) != generation:
             # A newer start for this home and provider began while this one waited on the provider: it owns the sign-in.
+            _discard(state)
             raise RpcError("A newer sign-in for this provider replaced this one.", condition="oauth_superseded")
         superseded = [f for f in _FLOWS.values() if f.provider == provider and f.status == "pending" and _same_home(f.home, home)]
         _FLOWS[flow.flow_id] = flow
@@ -403,10 +477,10 @@ def _flow(home: Path, flow_id: str) -> Flow:
 
 def poll(home: Path, flow_id: str) -> dict:
     flow = _flow(home, flow_id)
-    if flow.status == "pending" and time.time() > flow.expires_at + _EXPIRY_GRACE:
+    if flow.stoppable and time.time() > flow.expires_at + _EXPIRY_GRACE:
         # The provider call outlived its code: end it now, and a late approval can no longer save.
         with flow.lock:
-            if flow.status == "pending":
+            if flow.stoppable:
                 flow.cancelled.set()
                 flow.end("expired", _EXPIRED)
     return flow.view()

@@ -14,6 +14,7 @@ import threading
 import time
 from contextlib import contextmanager
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from urllib.parse import parse_qs
 
 STAMP = "2026-10-14T00:00:00Z"
 
@@ -90,15 +91,20 @@ class Portal:
 
 
 @contextmanager
-def serve(portal: Portal):
+def serve(portal, *, bearer: bool = True):
+    """Serves ``portal.answer(method, path, body)``; ``bearer`` refuses a request without a bearer token first."""
     class Handler(BaseHTTPRequestHandler):
         def log_message(self, *args):  # noqa: D102 - quiet
             pass
 
         def _answer(self) -> None:
             length = int(self.headers.get("Content-Length") or 0)
-            body = json.loads(self.rfile.read(length) or b"{}") if length else {}
-            if not str(self.headers.get("Authorization") or "").startswith("Bearer "):
+            raw = self.rfile.read(length) if length else b""
+            try:
+                body = json.loads(raw or b"{}")
+            except ValueError:  # the OAuth device and token endpoints take a form body
+                body = {key: values[0] for key, values in parse_qs(raw.decode()).items()}
+            if bearer and not str(self.headers.get("Authorization") or "").startswith("Bearer "):
                 status, payload = 401, {"error": {"code": "NO_TOKEN", "message": "no token"}}
             else:
                 status, payload = portal.answer(self.command, self.path.split("?", 1)[0], body)
