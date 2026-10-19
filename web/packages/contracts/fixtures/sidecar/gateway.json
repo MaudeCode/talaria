@@ -35,5 +35,19 @@
         "receipt": null
       }
     }
+  ],
+  "gateway.create": [
+    {
+      "params": {
+        "profile_home": "<home>",
+        "probe": true
+      },
+      "result": {
+        "state": "incompatible",
+        "reason": "native_sessions_unavailable",
+        "snapshot": null,
+        "receipt": null
+      }
+    }
   ]
 }

@@ -238,6 +238,12 @@ def register(registry) -> None:
 
         return session(ctx, params)
 
+    @registry.method("gateway.create")
+    def create_(ctx: CallContext, params: dict) -> dict:
+        from .gateway_sessions import create
+
+        return create(params)
+
     def run(ctx: CallContext, params: dict, action: str) -> dict:
         home = profile_home_param(params)
         cli_profile = params.get("cli_profile")

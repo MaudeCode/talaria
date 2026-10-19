@@ -1,4 +1,4 @@
-"""Authenticated observations and fenced controls of an existing native owner.
+"""Authenticated observations, fenced controls and diagnostic creation through an existing native owner.
 
 Never ensure/start a gateway, build an Agent, or write its transcript locally.
 Each call owns its connection and subscription; cancellation only detaches it.
@@ -17,6 +17,7 @@ from ..home import profile_home_param, scoped_home
 _ACTIONS = {"snapshot", "watch", "submit", "receipt", "cancel", "interrupt", "approval", "clarify", "discard", "mutate"}
 _CAPABILITIES = {"durable-admission-v1", "event-replay-v1"}
 _CONTROL_REFUSALS = {"native_clarify_batch_unavailable", "owner_controls_unverified"}
+_CREATE_FIELDS = {"request_id", "source", "cwd", "model", "provider", "base_url", "toolsets", "safe_mode", "ignore_user_config"}
 
 
 def _control_refusal(home: Path, sid: str) -> str | None:
@@ -89,23 +90,33 @@ async def _connect(home: Path, endpoint):
                 await reader
 
 
+def _served(home: Path, endpoint) -> bool:
+    # v1's served LOCAL route can lose its frozen policy when the shared runner pins
+    # transport identity. A dedicated owner's profile is isolated; a served profile
+    # needs a verified execution contract before Talaria may submit through it.
+    return bool(endpoint.control_home) and Path(endpoint.control_home).resolve() != home
+
+
+def _owner_refusal(described: dict, endpoint) -> dict | None:
+    if (described.get("instance_id") != endpoint.instance_id
+            or described.get("profile_id") != endpoint.profile_id
+            or described.get("authority_epoch") != endpoint.authority_epoch
+            or not _CAPABILITIES.issubset(described.get("capabilities", []))):
+        return _refused("incompatible", "owner_capabilities")
+    return None
+
+
 async def _run(ctx, params: dict, home: Path, discovery) -> dict:
     from hermes_cli.gateway_client import GatewayRPCError
 
     endpoint = discovery.endpoint
-    # v1's served LOCAL route can lose its frozen policy when the shared runner pins
-    # transport identity. A dedicated owner's profile is isolated; a served profile
-    # needs a verified execution contract before Talaria may submit through it.
-    if endpoint.control_home and Path(endpoint.control_home).resolve() != home:
+    if _served(home, endpoint):
         return _refused("incompatible", "served_profile_sessions_unavailable")
     subscription = None
     async with _connect(home, endpoint) as (client, events):
         described = await client.rpc("runtime.describe")
-        if (described.get("instance_id") != endpoint.instance_id
-                or described.get("profile_id") != endpoint.profile_id
-                or described.get("authority_epoch") != endpoint.authority_epoch
-                or not _CAPABILITIES.issubset(described.get("capabilities", []))):
-            return _refused("incompatible", "owner_capabilities")
+        if refusal := _owner_refusal(described, endpoint):
+            return refusal
         sid = params["session_id"]
 
         async def snapshot():
@@ -217,6 +228,10 @@ def session(ctx, params: dict) -> dict:
     }.get(action, ())
     if any(key not in params for key in required):
         raise InvalidParams("missing gateway session action fields")
+    return _with_owner(home, lambda discovery: _run(ctx, params, home, discovery))
+
+
+def _with_owner(home: Path, run) -> dict:
     try:
         from hermes_constants import set_hermes_home_override, reset_hermes_home_override  # noqa: F401
         from hermes_cli.gateway_runtime import discover_gateway_endpoint
@@ -228,7 +243,58 @@ def session(ctx, params: dict) -> dict:
         if discovery.state != "ready" or discovery.endpoint is None:
             return _refused("stopped" if discovery.state in {"stopped", "absent"} else "unavailable", discovery.reason_code or discovery.state)
         try:
-            return asyncio.run(_run(ctx, params, home, discovery))
+            return asyncio.run(run(discovery))
         except Exception:  # noqa: BLE001 - native transport/contract failures never authorize another writer
             # Do not expose peer diagnostics, endpoint paths or bootstrap credentials.
             return _refused("unavailable", "owner_connection_lost")
+
+
+async def _create(params: dict, home: Path, discovery) -> dict:
+    """Mint one diagnostic session through the owner, which freezes the bypass in its creation
+    policy and runs every turn in a fresh private worker. Talaria never imports the Agent with
+    that policy, flips a process global or passes it through the environment."""
+    from hermes_cli.gateway_client import GatewayRPCError
+
+    endpoint = discovery.endpoint
+    if _served(home, endpoint):
+        return _refused("incompatible", "served_profile_sessions_unavailable")
+    async with _connect(home, endpoint) as (client, _):
+        described = await client.rpc("runtime.describe")
+        if refusal := _owner_refusal(described, endpoint):
+            return refusal
+        accepted = set((described.get("session_create") or {}).get("parameters", []))
+        if "local-cli-create-v1" not in described.get("capabilities", []) or not _CREATE_FIELDS.issubset(accepted):
+            return _refused("incompatible", "execution_mode_unavailable")
+        if params.get("probe") is True:
+            return {"state": "attached", "reason": None, "snapshot": None, "receipt": None}
+        fields = {key: params[key] for key in ("cwd", "model", "provider", "base_url", "toolsets") if params.get(key) is not None}
+        try:
+            # Safe implies config-only; the owner normalizes it too. No credential is sent or receipted.
+            created = await client.rpc("session.create", request_id=params["request_id"], source="cli", **fields,
+                                       safe_mode=params["execution_mode"] == "safe", ignore_user_config=True)
+        except GatewayRPCError as exc:
+            return _refused("refused", str(exc))
+        with suppress(Exception):
+            await client.rpc("session.detach", session_id=created["session_id"], subscription_id=created["subscription_id"])
+        return {"state": "attached", "reason": None, "snapshot": _snapshot(created), "receipt": None}
+
+
+def _text(params: dict, key: str, required: bool = True) -> bool:
+    value = params.get(key)
+    if value is None:
+        return not required
+    return isinstance(value, str) and bool(value) and value == value.strip()
+
+
+def create(params: dict) -> dict:
+    """``probe`` answers whether this owner can create diagnostic sessions, without creating one."""
+    home = profile_home_param(params).resolve()
+    toolsets = params.get("toolsets")
+    if params.get("probe") is not True and (
+            params.get("execution_mode") not in {"ignore_config", "safe"}
+            or not _text(params, "request_id") or len(params["request_id"]) > 128
+            or not _text(params, "model") or not _text(params, "cwd") or not Path(params["cwd"]).is_absolute()
+            or not _text(params, "provider", False) or not _text(params, "base_url", False)
+            or toolsets is not None and (not isinstance(toolsets, list) or not all(isinstance(t, str) and t for t in toolsets))):
+        raise InvalidParams("execution_mode, request_id, model and an absolute cwd are required")
+    return _with_owner(home, lambda discovery: _create(params, home, discovery))

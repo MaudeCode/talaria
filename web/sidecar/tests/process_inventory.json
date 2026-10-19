@@ -1092,6 +1092,20 @@
         "[replay]"
       ]
     },
+    "tests/test_gateway_sessions.py::test_diagnostic_creation_refuses_without_starting": {
+      "layer": "compatibility",
+      "reason": "Supported-Agent API compatibility: diagnostic creation refuses without starting. Uses the real installed release, not a fabricated API response.",
+      "cases": [
+        ""
+      ]
+    },
+    "tests/test_gateway_sessions.py::test_real_owner_diagnostic_execution_modes": {
+      "layer": "compatibility",
+      "reason": "Supported-Agent API compatibility: real owner diagnostic execution modes. Uses the real installed release, not a fabricated API response.",
+      "cases": [
+        ""
+      ]
+    },
     "tests/test_goals_dispatch.py::test_gate_runs_in_the_session_workspace": {
       "layer": "compatibility",
       "reason": "Supported-Agent API compatibility: gate runs in the session workspace. Uses the real installed release, not a fabricated API response.",

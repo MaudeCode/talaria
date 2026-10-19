@@ -6390,6 +6390,264 @@
     ],
     "additionalProperties": false
   },
+  "gateway.create": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "properties": {
+      "state": {
+        "type": "string",
+        "enum": [
+          "attached",
+          "stopped",
+          "unavailable",
+          "incompatible",
+          "refused"
+        ]
+      },
+      "reason": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "replay_gap": {
+        "type": "boolean"
+      },
+      "snapshot": {
+        "anyOf": [
+          {
+            "type": "object",
+            "properties": {
+              "session_id": {
+                "type": "string"
+              },
+              "stored_session_id": {
+                "type": "string"
+              },
+              "messages": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "propertyNames": {
+                    "type": "string"
+                  },
+                  "additionalProperties": {}
+                }
+              },
+              "message_count": {
+                "type": "integer",
+                "minimum": -9007199254740991,
+                "maximum": 9007199254740991
+              },
+              "running": {
+                "type": "boolean"
+              },
+              "authority_epoch": {
+                "type": "integer",
+                "minimum": -9007199254740991,
+                "maximum": 9007199254740991
+              },
+              "replay_epoch": {
+                "type": "string"
+              },
+              "last_sequence": {
+                "type": "integer",
+                "minimum": -9007199254740991,
+                "maximum": 9007199254740991
+              },
+              "subscription_id": {
+                "type": "string"
+              },
+              "revision": {
+                "type": "integer",
+                "minimum": -9007199254740991,
+                "maximum": 9007199254740991
+              },
+              "execution_generation": {
+                "type": "integer",
+                "minimum": -9007199254740991,
+                "maximum": 9007199254740991
+              },
+              "pending": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "admission_id": {
+                      "type": "string"
+                    },
+                    "sequence": {
+                      "type": "integer",
+                      "minimum": -9007199254740991,
+                      "maximum": 9007199254740991
+                    },
+                    "status": {
+                      "type": "string",
+                      "enum": [
+                        "queued",
+                        "started",
+                        "unknown",
+                        "terminal"
+                      ]
+                    },
+                    "outcome": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "authority_epoch": {
+                      "type": "integer",
+                      "minimum": -9007199254740991,
+                      "maximum": 9007199254740991
+                    },
+                    "execution_generation": {
+                      "anyOf": [
+                        {
+                          "type": "integer",
+                          "minimum": -9007199254740991,
+                          "maximum": 9007199254740991
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "text": {
+                      "type": "string"
+                    },
+                    "input_id": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "admission_id",
+                    "sequence",
+                    "status",
+                    "outcome",
+                    "authority_epoch",
+                    "execution_generation"
+                  ],
+                  "additionalProperties": false
+                }
+              },
+              "prompts": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "propertyNames": {
+                    "type": "string"
+                  },
+                  "additionalProperties": {}
+                }
+              },
+              "info": {
+                "type": "object",
+                "propertyNames": {
+                  "type": "string"
+                },
+                "additionalProperties": {}
+              }
+            },
+            "required": [
+              "session_id",
+              "stored_session_id",
+              "messages",
+              "message_count",
+              "running",
+              "authority_epoch",
+              "replay_epoch",
+              "last_sequence",
+              "subscription_id",
+              "revision",
+              "execution_generation",
+              "pending",
+              "prompts",
+              "info"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
+      "receipt": {
+        "anyOf": [
+          {
+            "type": "object",
+            "properties": {
+              "admission_id": {
+                "type": "string"
+              },
+              "sequence": {
+                "type": "integer",
+                "minimum": -9007199254740991,
+                "maximum": 9007199254740991
+              },
+              "status": {
+                "type": "string",
+                "enum": [
+                  "queued",
+                  "started",
+                  "unknown",
+                  "terminal"
+                ]
+              },
+              "outcome": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "authority_epoch": {
+                "type": "integer",
+                "minimum": -9007199254740991,
+                "maximum": 9007199254740991
+              },
+              "execution_generation": {
+                "anyOf": [
+                  {
+                    "type": "integer",
+                    "minimum": -9007199254740991,
+                    "maximum": 9007199254740991
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "text": {
+                "type": "string"
+              },
+              "input_id": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "admission_id",
+              "sequence",
+              "status",
+              "outcome",
+              "authority_epoch",
+              "execution_generation"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "type": "null"
+          }
+        ]
+      }
+    },
+    "required": [
+      "state",
+      "reason",
+      "snapshot",
+      "receipt"
+    ],
+    "additionalProperties": false
+  },
   "gateway.control": {
     "$schema": "https://json-schema.org/draft/2020-12/schema",
     "type": "object",
