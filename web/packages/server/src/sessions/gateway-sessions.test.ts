@@ -8,7 +8,7 @@ import { bootTestServer, type TestServer } from '../test/harness.js'
 import { FakeSidecar } from '../sidecar/fake.js'
 import { CANONICAL_READ_ONLY_REASON } from './state-db.js'
 
-const fixture = JSON.parse(readFileSync(new URL('../test/fixtures/canonical-ownership.json', import.meta.url), 'utf8')) as { sessions: Record<string, string>; diagnostic: Record<'safe' | 'ignore_config', string>; schema: string[]; inserts: string[] }
+const fixture = JSON.parse(readFileSync(new URL('../test/fixtures/canonical-ownership.json', import.meta.url), 'utf8')) as { sessions: Record<string, string>; diagnostic: Record<'safe' | 'ignore_config' | 'fresh', string>; schema: string[]; inserts: string[] }
 const sid = fixture.sessions.cli!
 const snapshot = (extra: Partial<GatewaySnapshot> = {}): GatewaySnapshot => ({ session_id: sid, stored_session_id: sid,
   messages: [{ role: 'user', content: 'native question' }, { role: 'assistant', content: 'owner answer' }], message_count: 2,
@@ -296,8 +296,9 @@ describe('diagnostic execution modes (TAL-1040)', () => {
   it('keeps Web-created diagnostic chats in the sidebar when external Agent sessions are hidden', async () => {
     await s.deps.settings.save({ show_cli_sessions: false })
     const listed = (await (await s.get('/api/sessions')).json() as { sessions: { session_id: string; execution_mode?: string }[] }).sessions
-    expect(listed.map((row) => row.session_id)).toEqual([ids.safe])
-    expect(listed[0]).toMatchObject({ execution_mode: 'safe', read_only: true })
+    // The Web-created chat whose first turn never ran stays discoverable too; another client's config-only chat does not.
+    expect(listed.map((row) => row.session_id).sort()).toEqual([ids.safe, ids.fresh].sort())
+    for (const row of listed) expect(row).toMatchObject({ execution_mode: 'safe', read_only: true })
   })
 
   it('reads every effective mode from the owner receipt, so it survives a server restart', async () => {
@@ -321,7 +322,7 @@ describe('diagnostic execution modes (TAL-1040)', () => {
     const modes = await (await s.get('/api/session/execution-modes')).json()
     expect(modes).toEqual({ modes: [{ mode: 'normal', available: true, reason: null, can_attach: true }, { mode: 'ignore_config', available: false, reason, can_attach: false }, { mode: 'safe', available: false, reason, can_attach: false }] })
     expect(sidecar.calls.filter((c) => c.method === 'gateway.create').map((c) => c.params)).toContainEqual({ profile_home: s.state, probe: true })
-    expect((await (await s.get('/api/sessions')).json() as { sessions: { session_id: string }[] }).sessions.map((row) => row.session_id).sort()).toEqual([ids.cli, fixture.sessions.tui!, fixture.sessions.acp!, ids.safe, ids.ignore_config].sort())
+    expect((await (await s.get('/api/sessions')).json() as { sessions: { session_id: string }[] }).sessions.map((row) => row.session_id).sort()).toEqual([ids.cli, fixture.sessions.tui!, fixture.sessions.acp!, ids.safe, ids.ignore_config, ids.fresh].sort())
   })
 
   it('reports available modes from a capable owner and keeps normal chats on the local path', async () => {
@@ -333,6 +334,13 @@ describe('diagnostic execution modes (TAL-1040)', () => {
     expect(normal.status).toBe(200)
     expect(SessionEnvelopeSchema.parse(await normal.json()).session).not.toHaveProperty('owner_attachment')
     expect(sidecar.calls.filter((c) => c.method === 'gateway.create').map((c) => c.params)).toEqual([{ profile_home: s.state, probe: true }])
+  })
+
+  it('reuses the client creation id so a retried creation recovers the same owner session', async () => {
+    sidecar.respond('gateway.create', () => attached(fresh(ids.safe)))
+    for (let i = 0; i < 2; i++) expect((await post('/api/session/new', { execution_mode: 'safe', model: 'fixture', request_id: 'stable-creation' })).status).toBe(200)
+    expect(sidecar.calls.filter((c) => c.method === 'gateway.create').map((c) => (c.params as { request_id: string }).request_id)).toEqual(['talaria-web:stable-creation', 'talaria-web:stable-creation'])
+    expect((await post('/api/session/new', { execution_mode: 'safe', model: 'fixture', request_id: 'bad id!' })).status).toBe(400)
   })
 
   it('refuses a diagnostic chat without an explicit model or with a worktree', async () => {

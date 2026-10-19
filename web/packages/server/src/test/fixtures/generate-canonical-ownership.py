@@ -57,6 +57,11 @@ with tempfile.TemporaryDirectory(prefix='tal1036-') as home:
             for role, text in [('user', f'Diagnose {mode}'), ('assistant', f'{mode} answer')]:
                 authority.db.append_message(sid, role, text)
             diagnostic[mode] = sid
+        # A Web-created chat whose first turn never ran.
+        ref = create_local_session(authority, actor, {'request_id': 'talaria-web:fixture-fresh', 'source': 'cli', 'cwd': home, 'model': 'fixture', 'safe_mode': True})
+        source = authority.sessions[ref.session_id].source
+        authority.db.record_gateway_session_peer(ref.session_id, source=storage_source(authority.db, source, ref.session_id, 'local'), session_key=authority.sessions[ref.session_id].route, chat_id=source.chat_id)
+        diagnostic['fresh'] = ref.session_id
         authority.db.close()
         return sessions, diagnostic
 

@@ -169,7 +169,7 @@ export interface SessionServiceDeps {
   yolo: { isEnabled: (sid: string) => boolean; set: (sid: string, enabled: boolean) => void }
   /** state.db sidebar rows for a profile (Python `get_cli_sessions`); null when the projection is unavailable. */
   /** `truncated`: source kinds whose rows stopped at the per-kind window on this read (TAL-482). */
-  cliSessions: (profile: string, opts: { sourceFilter: string | null; sessionIds?: readonly string[] }) => Promise<{ rows: Row[]; truncated: ReadonlySet<string>; storage: AgentStorage }>
+  cliSessions: (profile: string, opts: { sourceFilter: string | null; sessionIds?: readonly string[]; keepEmpty?: boolean }) => Promise<{ rows: Row[]; truncated: ReadonlySet<string>; storage: AgentStorage }>
   /** `cliSessions` read on this thread, for the synchronous single-session lookups. */
   cliSessionsSync: (profile: string, opts: { sourceFilter: string | null; sessionIds?: readonly string[] }) => Promise<{ rows: Row[]; truncated: ReadonlySet<string> }>
   /** TAL-551: read-only Claude Code transcripts, listed with the CLI rows when both toggles are on. */
@@ -1229,9 +1229,9 @@ export class SessionService {
     let agentStorage = cliRead?.storage
     // TAL-1040: diagnostic chats Web started are Web chats, read even when external Agent sessions are hidden.
     const webDiagnosticIds = new Set(params.sourceFilter ? [] : await stateDbWebDiagnosticIdsAsync(join(this.deps.profileHome(activeProfile), 'state.db')))
-    const unread = [...webDiagnosticIds].filter((id) => !cliRows?.some((row) => str(row.session_id) === id))
+    const unread = [...webDiagnosticIds].filter((id) => !cliRows?.some((row) => sessionLineageIds(row).has(id)))
     if (unread.length) {
-      const extra = await this.deps.cliSessions(activeProfile, { sourceFilter: null, sessionIds: unread })
+      const extra = await this.deps.cliSessions(activeProfile, { sourceFilter: null, sessionIds: unread, keepEmpty: true })
       cliRows = [...(cliRows ?? []), ...extra.rows]
       agentStorage ??= extra.storage
     }
@@ -1402,7 +1402,7 @@ export class SessionService {
     if (!model) throw new HttpFailure(400, 'Choose a model before starting a diagnostic chat')
     const toolsets = this.validateToolsetsShape(body.enabled_toolsets)
     const route = provider ? this.deps.profileLaunchRoute?.(profile, provider) ?? { provider, baseUrl: null } : null
-    const sid = await this.owner.create(profile, { execution_mode: mode, cwd: workspace ?? defaults.workspace, model,
+    const sid = await this.owner.create(profile, typeof body.request_id === 'string' ? body.request_id : null, { execution_mode: mode, cwd: workspace ?? defaults.workspace, model,
       ...(route ? { provider: route.provider } : {}), ...(route?.baseUrl ? { base_url: route.baseUrl } : {}), ...(toolsets ? { toolsets } : {}) })
     return this.detail(sid, {})
   }

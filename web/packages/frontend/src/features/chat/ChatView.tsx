@@ -39,7 +39,7 @@ import { isApiError } from '../../contracts/common'
 import { ErrorState, formatDate } from '../../ui/States'
 import { readPersisted, removePersisted, writePersisted } from '../../lib/persisted'
 import type { ActivityMode } from './blocks/Worklog'
-import { createSessionNow } from '../sessions/useNewChat'
+import { createSessionNow, useCreationId } from '../sessions/useNewChat'
 import type { ExecutionMode } from '@maudecode/talaria-web-contracts'
 import { WorktreeRemoveDialog } from '../sessions/WorktreeRemoveDialog'
 import { beginDock, playDock, requestScroll } from './sendMotion'
@@ -67,6 +67,7 @@ export function ChatView({ sessionId }: { sessionId: string | null }) {
   // Choices made on the unsaved chat (no session yet) apply when the session is created.
   const [pending, setPending] = useState<{ model?: string; model_provider?: string | null; workspace?: string; enabled_toolsets?: string[] | null; execution_mode?: ExecutionMode }>({})
   const focusKey = useSearch({ strict: false }).msg
+  const creation = useCreationId(pending)
 
   useEffect(() => {
     configureStream({ queryClient: qc, onCompressed: (sid, next) => { if (sid === sessionId) void navigate({ to: '/session/$sessionId', params: { sessionId: next } }) } })
@@ -101,14 +102,15 @@ export function ChatView({ sessionId }: { sessionId: string | null }) {
   const ensureSession = useCallback(async (onCreated?: (sessionId: string) => void): Promise<Session> => {
     if (session) return session
     const scope = getStreamContext()
-    const created = await createSessionNow({ ...(settings.data?.default_workspace ? { workspace: settings.data.default_workspace } : {}), ...pending, profile: bootstrap.profile?.name ?? 'default' })
+    const created = await createSessionNow({ ...(settings.data?.default_workspace ? { workspace: settings.data.default_workspace } : {}), ...pending, profile: bootstrap.profile?.name ?? 'default', request_id: creation.next() })
+    creation.settle()
     if (scope !== getStreamContext()) throw new DOMException('Context changed', 'AbortError')
     onCreated?.(created.session_id)
     qc.setQueryData(keys.sessions.detail(created.session_id), { session: created })
     bindFirstSend(created.session_id)
     await navigate({ to: '/session/$sessionId', params: { sessionId: created.session_id }, replace: true })
     return created
-  }, [session, settings.data, bootstrap.profile, qc, navigate, pending])
+  }, [session, settings.data, bootstrap.profile, qc, navigate, pending, creation])
 
   const [removingWorktree, setRemovingWorktree] = useState(false)
   // TAL-605: a new conversation in its own git worktree of the chosen workspace; the server creates the worktree.

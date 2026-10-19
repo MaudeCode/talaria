@@ -205,9 +205,9 @@ describe('canonical Agent ownership (TAL-1036)', () => {
   })
 
   it('filters native LOCAL transport rows by their recorded CLI/TUI/ACP surface', () => {
-    // TAL-1040's diagnostic fixtures are CLI-surface sessions too.
+    // TAL-1040's diagnostic fixtures with a turn are CLI-surface sessions too; the turnless one is not listed here.
     for (const [surface, sid] of Object.entries(fixture.sessions)) {
-      const expected = surface === 'cli' ? [sid, ...Object.values(fixture.diagnostic)] : [sid]
+      const expected = surface === 'cli' ? [sid, fixture.diagnostic.safe!, fixture.diagnostic.ignore_config!] : [sid]
       expect(readImportableAgentSessionRows(join(s.state, 'state.db'), { includeSources: [surface] }).map((r) => r.id).sort()).toEqual(expected.sort())
     }
   })

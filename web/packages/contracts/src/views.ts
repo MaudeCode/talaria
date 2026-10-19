@@ -577,6 +577,7 @@ export const SessionNewRequestSchema = z.looseObject({
   title: z.string().optional(), workspace: z.string().optional(), workspace_inherited_from_prev_session: z.boolean().optional(), model: z.string().nullable().optional(), model_provider: z.string().nullable().optional(),
   profile: z.string().nullable().optional(), prev_session_id: z.string().optional(), project_id: z.string().nullable().optional(), worktree: Json.optional(), enabled_toolsets: z.array(z.string()).nullable().optional(), parent_session_id: z.string().optional(),
   execution_mode: ExecutionModeSchema.optional().describe('TAL-1040: `ignore_config` and `safe` start the session through the Agent owner; omitted means normal.'),
+  request_id: z.string().regex(/^[A-Za-z0-9_-]{1,64}$/).optional().describe('TAL-1040: stable creation identity for a diagnostic chat. Reuse it only to retry the same creation.'),
 })
 /**
  * `streaming` (TAL-802): live dictation over `TRANSCRIBE_STREAM_PATH` would open for this profile (`stt.streaming` on, a live provider wire).

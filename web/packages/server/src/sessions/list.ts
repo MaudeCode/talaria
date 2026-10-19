@@ -540,6 +540,11 @@ function sessionSourceIsWebui(row: Row): boolean {
   return ['source_tag', 'raw_source', 'session_source', 'source'].some((k) => str(row[k]).trim().toLowerCase() === 'webui')
 }
 
+/** TAL-1040: a chat Web created through the owner, by its receipt identity anywhere in the row's lineage (compression moves the tip). */
+export function isWebDiagnosticRow(row: Row, ids: ReadonlySet<string> | undefined): boolean {
+  return ids !== undefined && ids.size > 0 && [...sessionLineageIds(row)].some((id) => ids.has(id))
+}
+
 export function sessionLineageIds(row: Row): Set<string> {
   const ids = new Set<string>()
   for (const key of ['session_id', '_lineage_root_id', '_lineage_tip_id']) if (row[key]) ids.add(str(row[key]))
@@ -583,12 +588,13 @@ export function reconcileLocalSessionRows(rows: Row[], cli: Row[], profilesMatch
 
 /** Python `_dedupe_cli_sidebar_sessions_for_api`: additive state rows, keeping project-hidden background rows addressable. */
 export function dedupeCliSidebarSessions(cli: Row[], represented: Set<string>, opts: { showCli: boolean; showCron: boolean; showWebhook: boolean; showKanban: boolean; sourceFilter: string | null; requestVisibilityOverrides: boolean; webCreated?: ReadonlySet<string> | undefined }): Row[] {
+  const webCreated = (r: Row): boolean => isWebDiagnosticRow(r, opts.webCreated)
   const sf = str(opts.sourceFilter).trim().toLowerCase()
   const showCron = opts.showCron || sf === 'cron'
   const showWebhook = opts.showWebhook || sf === 'webhook'
   const showKanban = opts.showKanban || sf === 'kanban'
-  const candidates = cli.filter((r) => !represented.has(str(r.session_id)) && !(sessionSourceIsWebui(r) && [...sessionLineageIds(r)].some((id) => represented.has(id))) && isCliSessionRowVisible(r))
-  const visible = candidates.filter((r) => (!isIntentionallyBackground(r) && (opts.showCli || opts.webCreated?.has(str(r.session_id)) === true)) || (isIntentionallyBackground(r) && !hideFromDefaultSidebar(r, { showCron, showWebhook, showKanban })))
+  const candidates = cli.filter((r) => !represented.has(str(r.session_id)) && !(sessionSourceIsWebui(r) && [...sessionLineageIds(r)].some((id) => represented.has(id))) && (isCliSessionRowVisible(r) || webCreated(r)))
+  const visible = candidates.filter((r) => (!isIntentionallyBackground(r) && (opts.showCli || webCreated(r))) || (isIntentionallyBackground(r) && !hideFromDefaultSidebar(r, { showCron, showWebhook, showKanban })))
   if (opts.requestVisibilityOverrides) return visible
   return includeProjectHiddenBackground(candidates, visible)
 }
@@ -768,8 +774,10 @@ export async function buildSessionListPayload(store: SessionStore, params: ListP
     visibleScoped = capRecentCliSessions(visibleScoped)
   }
   if (params.visibleOnly) {
-    archivedScoped = archivedScoped.filter(sessionHasServerVisibleMessages)
-    visibleScoped = visibleScoped.filter(sessionHasServerVisibleMessages)
+    // A Web-created diagnostic chat exists from creation, like a worktree chat, even before its first turn ran.
+    const visible = (r: Row): boolean => sessionHasServerVisibleMessages(r) || isWebDiagnosticRow(r, params.webDiagnosticIds)
+    archivedScoped = archivedScoped.filter(visible)
+    visibleScoped = visibleScoped.filter(visible)
   }
   if (params.excludeHidden) {
     archivedScoped = archivedScoped.filter((r) => !r.default_hidden)

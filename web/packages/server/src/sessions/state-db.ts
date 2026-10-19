@@ -136,7 +136,7 @@ function continuationRootId(rowsById: Map<string, Dict>, sessionId: string | nul
 }
 
 /** Python `_project_agent_session_rows`: collapse compression chains into one sidebar row pointing at the freshest importable tip. */
-export function projectAgentSessionRows(rows: Dict[]): Dict[] {
+export function projectAgentSessionRows(rows: Dict[], keepEmpty = false): Dict[] {
   const rowsById = new Map(rows.map((r) => [str(r.id), r]))
   const childrenByParent = new Map<string, Dict[]>()
   const continuationChildIds = new Set<string>()
@@ -191,7 +191,8 @@ export function projectAgentSessionRows(rows: Dict[]): Dict[] {
     let segments = 1
     let tip: Dict | null = row
     if (['compression', 'cli_close'].includes(str(row.end_reason))) [tip, segments] = compressionTip(row)
-    if (!tip || positiveInt(tip.actual_message_count) <= 0) continue
+    // `keepEmpty` (a direct lookup of receipt-proven Web diagnostic chats, TAL-1040) keeps a turnless plain row.
+    if (!tip || positiveInt(tip.actual_message_count) <= 0) { if (keepEmpty && tip === row) projected.push({ ...row }); continue }
     if (tip === row) { projected.push({ ...row }); continue }
     const merged: Dict = { ...row }
     for (const key of ['id', 'model', 'message_count', 'actual_message_count', 'actual_user_message_count', 'ended_at', 'end_reason', 'last_activity']) if (key in tip) merged[key] = tip[key]
@@ -356,6 +357,8 @@ export interface ReadRowsOptions {
   limit?: number | null
   /** A direct metadata lookup uses the same projection without the sidebar's recency window. */
   sessionIds?: readonly string[]
+  /** With `sessionIds`: keep those rows even without a visible turn (TAL-1040's receipt-proven Web diagnostic chats). */
+  keepEmpty?: boolean
   excludeSources?: readonly string[] | null
   includeSources?: readonly string[] | null
   log?: (line: string) => void
@@ -475,6 +478,7 @@ export function readImportableAgentSessionRows(dbPath: string, opts: ReadRowsOpt
     }
     const owners = sessionSources(db, sessionCols, raw.map((r) => str(r.id)))
     raw = raw.map((r) => { const owner = owners.get(str(r.id)); return { ...r, source: typeof owner === 'object' ? owner.source : owner || r.source } })
+    const keepEmpty = opts.keepEmpty === true && opts.sessionIds !== undefined
     let projected = projectAgentSessionRows(raw.map((r) => {
       const lineage = local.get(str(r.id))
       if (!lineage) return { ...r }
@@ -482,12 +486,12 @@ export function readImportableAgentSessionRows(dbPath: string, opts: ReadRowsOpt
       const title = lineage.title || r.title
       return { ...r, title, started_at: root.started_at, last_activity: r.last_activity ?? r.started_at, parent_session_id: root.parent_session_id,
         _lineage_root_id: lineage.owner, _lineage_tip_id: r.id, _lineage_ids: [...lineage.ids], _compression_segment_count: lineage.ids.length }
-    }))
+    }), keepEmpty)
     projected = projected.map((r) => {
       const parent = local.get(str(r.parent_session_id))
       return { ...r, ...normalizeAgentSessionSource(r.source), ...(parent ? { _parent_lineage_root_id: parent.owner, parent_title: parent.title, parent_source: parent.rows.at(-1)?.source ?? null } : {}) }
     })
-    projected = projected.filter(isCliSessionRowVisible)
+    if (!keepEmpty) projected = projected.filter(isCliSessionRowVisible)
     if (limit === null) return projected
     const selected = projected.slice(0, Math.max(0, Math.trunc(limit)))
     const have = new Set(selected.map((r) => str(r.id)))

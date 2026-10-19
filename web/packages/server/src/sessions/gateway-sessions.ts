@@ -80,8 +80,9 @@ export class GatewaySessions {
    * TAL-1040: the owner mints a diagnostic chat, freezes its bypass in the creation receipt and runs each turn in a fresh
    * private worker. Talaria keeps no local Session and never falls back to an ordinary chat; no credential is sent.
    */
-  async create(profile: string, params: Omit<GatewayCreateParams, 'profile_home' | 'probe' | 'request_id'>): Promise<string> {
-    const result = await this.createCall({ ...params, profile_home: this.deps.profileHome(profile), request_id: WEB_DIAGNOSTIC_REQUEST_PREFIX + randomUUID() })
+  async create(profile: string, creationId: string | null, params: Omit<GatewayCreateParams, 'profile_home' | 'probe' | 'request_id'>): Promise<string> {
+    // The client's creation id survives a lost response, so a retry recovers the owner's committed session, never a second one.
+    const result = await this.createCall({ ...params, profile_home: this.deps.profileHome(profile), request_id: WEB_DIAGNOSTIC_REQUEST_PREFIX + (creationId ?? randomUUID()) })
     if (result.state !== 'attached' || !result.snapshot) {
       throw new HttpFailure(409, 'The Agent cannot start a chat in this mode', { code: 'execution_mode_unavailable', reason: unavailableReason(result) })
     }
