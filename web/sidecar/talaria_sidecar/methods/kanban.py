@@ -595,6 +595,7 @@ def task_detail_payload(params: dict) -> dict:
 def events_payload(params: dict) -> dict:
     since = _int(params, "since", 0, minimum=0)
     limit = _int(params, "limit", 200, minimum=1, maximum=200)
+    kb = _kb()
     with _conn(board=_board(params)) as conn:
         rows = conn.execute(
             "SELECT id, task_id, run_id, kind, payload, created_at FROM task_events WHERE id > ? ORDER BY id ASC LIMIT ?", (since, limit)
@@ -605,7 +606,7 @@ def events_payload(params: dict) -> dict:
                 payload = json.loads(row["payload"]) if row["payload"] else None
             except Exception:  # noqa: BLE001
                 payload = None
-            events.append({"id": row["id"], "task_id": row["task_id"], "run_id": row["run_id"], "kind": row["kind"], "payload": payload, "created_at": row["created_at"]})
+            events.append({"id": row["id"], "task_id": row["task_id"], "run_id": row["run_id"], "kind": row["kind"], "payload": payload, "created_at": kb._to_epoch(row["created_at"])})
             cursor = int(row["id"])
         latest = _latest_event_id(conn)
         if not events:

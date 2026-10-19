@@ -1256,6 +1256,13 @@
         ""
       ]
     },
+    "tests/test_kanban_events.py::test_events_coerce_text_created_at_and_advance_past_unparseable_rows": {
+      "layer": "compatibility",
+      "reason": "Supported-Agent API compatibility: events coerce text created_at and advance past unparseable rows. Uses the real installed release, not a fabricated API response.",
+      "cases": [
+        ""
+      ]
+    },
     "tests/test_kanban_task_detail.py::test_task_detail_names_each_linked_task": {
       "layer": "compatibility",
       "reason": "Supported-Agent API compatibility: task detail names each linked task. Uses the real installed release, not a fabricated API response.",
