@@ -58,6 +58,8 @@ SCRIPTS = {
     "test-check-hosted-runners.py": {"tooling"},
     "review-agent-range.py": {"tooling"},
     "test-review-agent-range.py": {"tooling"},
+    "main-ci-failure.py": {"tooling"},
+    "test-main-ci-failure.py": {"tooling"},
 }
 
 
