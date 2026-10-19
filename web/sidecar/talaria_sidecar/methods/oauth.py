@@ -126,7 +126,10 @@ def _nous_begin() -> tuple[dict, dict]:
     guest_gate = getattr(anon_auth, "guest_allowed", None) or getattr(anon_auth, "guest_enabled")
     if guest_gate() and anon_auth.has_guest():
         # A plain device-code sign-in here would orphan the guest's connected apps.
-        return _nous_sign_in(anon_auth)
+        if hasattr(anon_auth, "run_sign_in"):
+            return _nous_sign_in(anon_auth)
+        hint = getattr(anon_auth, "UPGRADE_HINT", None) or "Sign in from Hermes with `hermes auth upgrade`."
+        raise RpcError(f"This profile uses the Nous free tier. {hint}", condition="oauth_unsupported")
     pconfig = PROVIDER_REGISTRY["nous"]
     portal = (os.getenv("HERMES_PORTAL_BASE_URL") or os.getenv("NOUS_PORTAL_BASE_URL") or pconfig.portal_base_url).rstrip("/")
     with _client(15.0) as client:

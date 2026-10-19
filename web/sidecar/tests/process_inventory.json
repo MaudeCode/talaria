@@ -2401,6 +2401,20 @@
       "cases": [
         ""
       ]
+    },
+    "tests/test_oauth_guest.py::test_an_approved_guest_sign_in_promotes_the_guest_to_the_account": {
+      "layer": "compatibility",
+      "reason": "Supported-Agent API compatibility: an approved guest sign-in promotes the guest to the account. Runs the real installed release's run_sign_in against a synthetic portal, not a fabricated generator.",
+      "cases": [
+        ""
+      ]
+    },
+    "tests/test_oauth_guest.py::test_a_guest_sign_in_cancelled_after_the_transfer_persists_nothing": {
+      "layer": "compatibility",
+      "reason": "Supported-Agent API compatibility: a guest sign-in cancelled after the transfer persists nothing. Runs the real installed release's run_sign_in against a synthetic portal, not a fabricated generator.",
+      "cases": [
+        ""
+      ]
     }
   }
 }

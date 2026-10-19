@@ -328,6 +328,15 @@ def test_nous_without_a_guest_requests_a_device_code(monkeypatch, shape):
     assert state["device_code"] == "synthetic-device"
 
 
+def test_nous_over_a_guest_on_an_agent_without_run_sign_in_is_refused_with_the_upgrade_hint(monkeypatch):
+    requests = stub_agent(monkeypatch, guest=True, shape="0.21")
+    with pytest.raises(RpcError) as refused:
+        oauth._nous_begin()
+    assert refused.value.data["condition"] == "oauth_unsupported"
+    assert "`hermes auth upgrade`" in str(refused.value)
+    assert requests == []
+
+
 def test_nous_over_a_guest_signs_in_through_the_agent_and_keeps_its_connected_apps(provider, monkeypatch, tmp_path):
     sign_in = SignIn()
     requests = stub_agent(monkeypatch, guest=True, shape="0.22", sign_in=sign_in)
