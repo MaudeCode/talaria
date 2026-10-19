@@ -70,3 +70,8 @@ export function useSwitchProfile() {
 export function useToolsetsCatalogQuery(value: string[] | null, sessionId?: string) {
   return useQuery({ queryKey: keys.toolsets(sessionId, value), queryFn: () => api.fetchToolsetsCatalog(value, sessionId), gcTime: 0, retry: false })
 }
+
+/** TAL-1040: read when the fresh-chat mode menu opens, so a stopped or older owner is current. */
+export function useExecutionModesQuery() {
+  return useQuery({ queryKey: keys.executionModes, queryFn: api.fetchExecutionModes, gcTime: 0, retry: false })
+}

@@ -170,6 +170,14 @@ observational journals and stream scope include the complete profile home and se
 Unknown admissions require an explicit recovery decision. Unsupported native CLI batch controls remain
 locked without answering or cancelling them; ordinary native secure-input requests are declined.
 
+Diagnostic fresh chats (`execution_mode` `ignore_config` or `safe` on `POST /api/session/new`) are
+minted by the same owner through `gateway.create`, which requests `session.create` with the Agent's
+`ignore_user_config` / `safe_mode` creation policy after `runtime.describe` advertises those fields.
+The owner freezes the policy in its creation receipt and runs every turn in a fresh private worker;
+Talaria never imports the Agent with it, flips a process global or passes it through the environment,
+and never falls back to an ordinary chat. The effective `execution_mode` on session rows is read from
+that receipt, so it survives reconnects and restarts.
+
 ## 5. Frontend
 
 `packages/frontend` keeps the TanStack Start structure documented in

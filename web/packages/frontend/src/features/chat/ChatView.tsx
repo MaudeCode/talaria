@@ -40,6 +40,7 @@ import { ErrorState, formatDate } from '../../ui/States'
 import { readPersisted, removePersisted, writePersisted } from '../../lib/persisted'
 import type { ActivityMode } from './blocks/Worklog'
 import { createSessionNow } from '../sessions/useNewChat'
+import type { ExecutionMode } from '@maudecode/talaria-web-contracts'
 import { WorktreeRemoveDialog } from '../sessions/WorktreeRemoveDialog'
 import { beginDock, playDock, requestScroll } from './sendMotion'
 import { bindFirstSend, ownsFirstSend, useFirstSend } from './firstSend'
@@ -64,7 +65,7 @@ export function ChatView({ sessionId }: { sessionId: string | null }) {
   const [failedQueued, setFailedQueued] = useState<string | null>(null)
   const [yolo, setYolo] = useState(false)
   // Choices made on the unsaved chat (no session yet) apply when the session is created.
-  const [pending, setPending] = useState<{ model?: string; model_provider?: string | null; workspace?: string; enabled_toolsets?: string[] | null }>({})
+  const [pending, setPending] = useState<{ model?: string; model_provider?: string | null; workspace?: string; enabled_toolsets?: string[] | null; execution_mode?: ExecutionMode }>({})
   const focusKey = useSearch({ strict: false }).msg
 
   useEffect(() => {
@@ -150,6 +151,7 @@ export function ChatView({ sessionId }: { sessionId: string | null }) {
 
   const onModelChange = useCallback((model: string, provider: string | null) => { if (!sessionId) { setPending((p) => ({ ...p, model, model_provider: provider })); return } void updateSession({ model, model_provider: provider }) }, [sessionId, updateSession])
   const onWorkspaceChange = useCallback((path: string) => { if (!sessionId) { setPending((p) => ({ ...p, workspace: path })); return } void updateSession({ workspace: path }) }, [sessionId, updateSession])
+  const onExecutionModeChange = useCallback((mode: ExecutionMode) => { setPending((p) => ({ ...p, execution_mode: mode })) }, [])
   const onToolsetsChange = useCallback((toolsets: string[] | null) => { if (!sessionId) { setPending((p) => ({ ...p, enabled_toolsets: toolsets })); return } void api.setSessionToolsets(sessionId, toolsets).then(() => refresh()).catch((e: unknown) => showToast(e instanceof Error ? e.message : String(e), 4000, 'error')) }, [sessionId, refresh])
   const onToggleYolo = useCallback(() => { if (!sessionId) return; void api.setSessionYolo(sessionId, !yolo).then((r) => setYolo(r.yolo_enabled)).catch((e: unknown) => showToast(e instanceof Error ? e.message : String(e), 4000, 'error')) }, [sessionId, yolo])
 
@@ -410,6 +412,7 @@ export function ChatView({ sessionId }: { sessionId: string | null }) {
           onNewWorktreeChat={bootstrap.features.terminal_remote_backend ? undefined : (ws) => { void newWorktreeChat(ws) }}
           onRemoveWorktree={sessionId && session?.worktree_branch ? () => setRemovingWorktree(true) : undefined}
           onToolsetsChange={onToolsetsChange}
+          onExecutionModeChange={onExecutionModeChange}
           onReasoningChange={setReasoning}
           reasoning={reasoning}
           reasoningLevels={reasoningLevels}

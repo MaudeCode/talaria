@@ -5,6 +5,7 @@ import * as api from '../../api/endpoints'
 import { keys } from '../../api/queryKeys'
 import { removePersisted } from '../../lib/persisted'
 import { closeMobileSidebar } from '../../shell/useShellState'
+import type { ExecutionMode } from '@maudecode/talaria-web-contracts'
 
 /**
  * Start a new conversation: navigate to `/` with a fresh (unsaved) chat. The
@@ -22,7 +23,8 @@ export function useNewChat() {
   }, [navigate, qc])
 }
 
-export async function createSessionNow(opts: { workspace?: string; model?: string; model_provider?: string | null; profile?: string; enabled_toolsets?: string[] | null; worktree?: boolean } = {}) {
-  const { session } = await api.newSession({ ...(opts.workspace ? { workspace: opts.workspace } : {}), ...(opts.model ? { model: opts.model } : {}), ...(opts.model_provider !== undefined ? { model_provider: opts.model_provider } : {}), ...(opts.profile ? { profile: opts.profile } : {}), ...(opts.enabled_toolsets !== undefined ? { enabled_toolsets: opts.enabled_toolsets } : {}), worktree: opts.worktree ?? false })
+export async function createSessionNow(opts: { workspace?: string; model?: string; model_provider?: string | null; profile?: string; enabled_toolsets?: string[] | null; worktree?: boolean; execution_mode?: ExecutionMode } = {}) {
+  const diagnostic = opts.execution_mode !== undefined && opts.execution_mode !== 'normal'
+  const { session } = await api.newSession({ ...(opts.workspace ? { workspace: opts.workspace } : {}), ...(opts.model ? { model: opts.model } : {}), ...(opts.model_provider !== undefined ? { model_provider: opts.model_provider } : {}), ...(opts.profile ? { profile: opts.profile } : {}), ...(opts.enabled_toolsets !== undefined ? { enabled_toolsets: opts.enabled_toolsets } : {}), ...(diagnostic ? { execution_mode: opts.execution_mode } : { worktree: opts.worktree ?? false }) })
   return session
 }

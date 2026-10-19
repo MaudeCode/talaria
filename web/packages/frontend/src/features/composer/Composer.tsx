@@ -5,6 +5,7 @@ import { m } from '../../paraglide/messages.js'
 import * as api from '../../api/endpoints'
 import { keys } from '../../api/queryKeys'
 import type { Session, Settings } from '../../contracts'
+import type { ExecutionMode } from '@maudecode/talaria-web-contracts'
 import type { LiveTurn } from '../../stream/reducer'
 import { isTerminal } from '../../stream/reducer'
 import { adoptTurn, cancelTurn, getStreamContext, retryPendingTurn, startTurn } from '../../stream/connection'
@@ -16,7 +17,7 @@ import { showToast } from '../toast/toast'
 import { AttachmentTray, type PendingFile } from './Attachments'
 import { CommandPaletteList, useCommandPalette } from './CommandPalette'
 import { parseCommand, resolveCommand, runsOnServer, type CommandSuggestion } from './commands'
-import { ContextRing, ContextRow, type ContextFigures, ModelChip, ReasoningChip, ToolsetsChip, WorkspaceChip } from './chips'
+import { ContextRing, ContextRow, type ContextFigures, ExecutionModeChip, ModelChip, ReasoningChip, ToolsetsChip, WorkspaceChip } from './chips'
 import { clearDraft, readLocalDraft, useDraftPersistence, useServerDraft } from './useDraft'
 import { createRecognition, dictationSupported, classifyDictationError, type DictationErrorKind } from '../voice/dictation'
 import { dictateLive, liveDictationErrorKind, liveDictationSupported, type LiveDictationHandle } from '../voice/liveDictation'
@@ -44,7 +45,7 @@ export interface ComposerProps {
   sessionId: string | null
   session: Session | null
   /** Choices made on the unsaved chat, shown by the chips until the session exists. */
-  pendingChoices?: { model?: string; model_provider?: string | null; workspace?: string; enabled_toolsets?: string[] | null } | undefined
+  pendingChoices?: { model?: string; model_provider?: string | null; workspace?: string; enabled_toolsets?: string[] | null; execution_mode?: ExecutionMode } | undefined
   live: LiveTurn | null
   settings: Settings | undefined
   /** Creates the unsaved chat's session; `onCreated` hears its id before the route changes to it. */
@@ -57,6 +58,8 @@ export interface ComposerProps {
   onNewWorktreeChat?: ((workspace: string | undefined) => void) | undefined
   onRemoveWorktree?: (() => void) | undefined
   onToolsetsChange: (toolsets: string[] | null) => void
+  /** TAL-1040: the unsaved chat's execution mode; a started chat shows the server's frozen mode instead. */
+  onExecutionModeChange?: (mode: ExecutionMode) => void
   onReasoningChange: (level: string | null) => void
   reasoningLevels?: string[] | undefined
   /** False when the model has neither an effort ladder nor a thinking toggle; the chip is hidden, as legacy did. */
@@ -127,7 +130,7 @@ function fileKey(f: File): string {
 let handoff: { draft: { readonly current: string }; files: File[]; sessionId: string | null } | null = null
 
 export function Composer(props: ComposerProps) {
-  const { sessionId, session, live, settings, onEnsureSession, onLocalCommand, terminalOpen, onToggleTerminal, onModelChange, onWorkspaceChange, onNewWorktreeChat, onRemoveWorktree, onToolsetsChange, onReasoningChange, reasoning, reasoningLevels, reasoningSupported = true, pendingChoices, locked = false, yolo, onToggleYolo, queued, onQueue, onQueueChange, clarify, notices = [] } = props
+  const { sessionId, session, live, settings, onEnsureSession, onLocalCommand, terminalOpen, onToggleTerminal, onModelChange, onWorkspaceChange, onNewWorktreeChat, onRemoveWorktree, onToolsetsChange, onExecutionModeChange, onReasoningChange, reasoning, reasoningLevels, reasoningSupported = true, pendingChoices, locked = false, yolo, onToggleYolo, queued, onQueue, onQueueChange, clarify, notices = [] } = props
   const bootstrap = useBootstrap()
   const qc = useQueryClient()
   const localStateId = composerStateId(session)
@@ -758,6 +761,8 @@ export function Composer(props: ComposerProps) {
         <div className="composer-strip" role="group" aria-label={m.composer_config_title()}>
           {!hide('hide_composer_workspace') && <WorkspaceChip value={session?.workspace ?? pendingChoices?.workspace ?? settings?.default_workspace} name={session ? session.workspace_name ?? null : undefined} onChange={onWorkspaceChange} onNewWorktree={onNewWorktreeChat} onRemoveWorktree={onRemoveWorktree} />}
           {!session?.read_only && !hide('hide_composer_toolsets') && <ToolsetsChip sessionId={sessionId ?? undefined} value={session?.enabled_toolsets ?? pendingChoices?.enabled_toolsets ?? null} onChange={onToolsetsChange} />}
+          {!sessionId && onExecutionModeChange ? <ExecutionModeChip value={pendingChoices?.execution_mode ?? 'normal'} onChange={onExecutionModeChange} />
+            : session?.execution_mode && session.execution_mode !== 'normal' && <ExecutionModeChip value={session.execution_mode} />}
           {!hide('hide_composer_profile') && <ProfileMenu />}
         </div>
       )}

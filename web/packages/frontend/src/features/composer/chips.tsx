@@ -1,21 +1,31 @@
 import { useMemo, useState } from 'react'
 import { Popover } from '@base-ui/react/popover'
-import { ChevronDown, Cpu, Brain, Wrench, FolderOpen, GitBranch } from 'lucide-react'
+import { ChevronDown, Cpu, Brain, Wrench, FolderOpen, GitBranch, Shield } from 'lucide-react'
 import { m } from '../../paraglide/messages.js'
-import { useModelsQuery, useWorkspacesQuery, useToolsetsCatalogQuery } from '../../app/queries'
+import { useExecutionModesQuery, useModelsQuery, useWorkspacesQuery, useToolsetsCatalogQuery } from '../../app/queries'
 import { Menu, MenuGroup, MenuGroupLabel, MenuItem, MenuRadioGroup, MenuRadioItem, MenuSeparator } from '../../ui/Menu'
 import { cn } from '../../ui/cn'
 import { catalogEntryById, catalogGroupLabel } from '../../lib/modelEntry'
 import { useLocale } from '../../i18n/useLocale'
 import { resetTime } from '../../i18n/units'
-import type { Models } from '@maudecode/talaria-web-contracts'
+import type { ExecutionMode, ExecutionModes, Models } from '@maudecode/talaria-web-contracts'
 
 /**
  * T3 Code's composer control (TAL-429): borderless and muted until hovered, with a faded chevron. `sm` sits in the card's
  * footer, `xs` in the context strip under it; `row` is a labelled row for the composer overflow panel. Also the render
  * target of `Menu`'s trigger, so every other prop (Base UI's aria attributes, handlers, ref) is spread onto the button.
+ * `readOnly` shows a value the server froze: the same chip as text, with no chevron or hover.
  */
-export function Chip({ icon, label, title, className, disabled, row, size = 'sm', id, ...rest }: { icon: React.ReactNode; label: string; title: string; className?: string; disabled?: boolean; row?: boolean | undefined; size?: 'sm' | 'xs'; id?: string | undefined } & Omit<React.ComponentProps<'button'>, 'title' | 'className' | 'disabled' | 'id'>) {
+export function Chip({ icon, label, title, className, disabled, row, size = 'sm', id, readOnly, ...rest }: { icon: React.ReactNode; label: string; title: string; className?: string; disabled?: boolean; row?: boolean | undefined; size?: 'sm' | 'xs'; id?: string | undefined; readOnly?: boolean } & Omit<React.ComponentProps<'button'>, 'title' | 'className' | 'disabled' | 'id'>) {
+  const sized = size === 'sm' ? 'h-7 max-w-[240px] gap-1.5 px-2.5 text-[13px] font-medium' : 'h-6 max-w-[220px] gap-1 px-1.5 text-xs font-normal'
+  if (readOnly) {
+    return (
+      <span id={id} title={title} aria-label={`${title}: ${label}`} className={cn('composer-chip inline-flex shrink-0 items-center whitespace-nowrap rounded-(--control-radius) border border-(--chip-border) bg-(--chip-bg) text-(--chip-fg)', sized, className)}>
+        {icon}
+        <span className="truncate">{label}</span>
+      </span>
+    )
+  }
   if (row) {
     return (
       <button type="button" {...rest} id={id} disabled={disabled} title={title} aria-label={`${title}: ${label}`} className="composer-mobile-config-action">
@@ -25,7 +35,7 @@ export function Chip({ icon, label, title, className, disabled, row, size = 'sm'
     )
   }
   return (
-    <button type="button" {...rest} id={id} disabled={disabled} title={title} aria-label={`${title}: ${label}`} className={cn('composer-chip inline-flex shrink-0 items-center whitespace-nowrap rounded-(--control-radius) border border-(--chip-border) bg-(--chip-bg) text-(--chip-fg) outline-none hover:border-(--chip-hover-border) hover:bg-(--chip-hover-bg) hover:text-(--chip-hover-fg) data-[popup-open]:bg-(--chip-hover-bg) data-[popup-open]:text-(--chip-hover-fg) focus-visible:ring-2 focus-visible:ring-(--focus-ring) disabled:pointer-events-none disabled:opacity-60', size === 'sm' ? 'h-7 max-w-[240px] gap-1.5 px-2.5 text-[13px] font-medium' : 'h-6 max-w-[220px] gap-1 px-1.5 text-xs font-normal', className)}>
+    <button type="button" {...rest} id={id} disabled={disabled} title={title} aria-label={`${title}: ${label}`} className={cn('composer-chip inline-flex shrink-0 items-center whitespace-nowrap rounded-(--control-radius) border border-(--chip-border) bg-(--chip-bg) text-(--chip-fg) outline-none hover:border-(--chip-hover-border) hover:bg-(--chip-hover-bg) hover:text-(--chip-hover-fg) data-[popup-open]:bg-(--chip-hover-bg) data-[popup-open]:text-(--chip-hover-fg) focus-visible:ring-2 focus-visible:ring-(--focus-ring) disabled:pointer-events-none disabled:opacity-60', sized, className)}>
       {icon}
       <span className="truncate">{label}</span>
       <ChevronDown size={12} className="-me-0.5 shrink-0 opacity-50" aria-hidden="true" />
@@ -125,6 +135,42 @@ function ToolsetsPicker({ value, sessionId, onChange }: { value: string[] | null
       <button type="submit" disabled={selected.length === 0} className="min-h-11 min-w-11 rounded-md bg-accent px-3 py-1.5 text-sm text-accent-fg disabled:opacity-50">{m.save()}</button>
     </div>
   </form>
+}
+
+const EXECUTION_MODE_LABEL: Record<ExecutionMode, () => string> = {
+  normal: m.execution_mode_normal, ignore_config: m.execution_mode_ignore_config, safe: m.execution_mode_safe,
+}
+const EXECUTION_MODE_REASON: Record<NonNullable<ExecutionModes['modes'][number]['reason']>, () => string> = {
+  agent_unsupported: m.execution_mode_agent_unsupported, served_profile: m.execution_mode_served_profile,
+  gateway_stopped: m.execution_mode_gateway_stopped, gateway_unavailable: m.execution_mode_gateway_unavailable,
+}
+
+/** TAL-1040: a fresh chat picks how its Agent runs; without `onChange` it shows the mode the server froze. */
+export function ExecutionModeChip({ value, onChange, row }: { value: ExecutionMode; onChange?: ((mode: ExecutionMode) => void) | undefined; row?: boolean | undefined }) {
+  const [open, setOpen] = useState(false)
+  const chip = { icon: <Shield size={13} aria-hidden="true" />, label: EXECUTION_MODE_LABEL[value](), title: m.composer_control_execution_mode(), row, size: 'xs' as const, className: 'composer-execution-mode-chip' }
+  if (!onChange) return <Chip {...chip} readOnly />
+  return (
+    <Menu open={open} onOpenChange={setOpen} label={m.composer_control_execution_mode()} side="top" className="min-w-64" trigger={<Chip {...chip} />}>
+      {open && <ExecutionModePicker value={value} onChange={(mode) => { onChange(mode); setOpen(false) }} />}
+    </Menu>
+  )
+}
+
+function ExecutionModePicker({ value, onChange }: { value: ExecutionMode; onChange: (mode: ExecutionMode) => void }) {
+  const query = useExecutionModesQuery()
+  if (query.isPending) return <div role="status" className="p-3">{m.loading()}</div>
+  if (query.isError) return <div className="p-3"><p role="alert">{m.execution_mode_gateway_unavailable()}</p><button type="button" onClick={() => { void query.refetch() }}>{m.retry()}</button></div>
+  return (
+    <MenuRadioGroup value={value} onValueChange={(mode: ExecutionMode) => onChange(mode)}>
+      {query.data.modes.map((option) => (
+        <MenuRadioItem key={option.mode} value={option.mode} disabled={!option.available} className={cn(RADIO_CLASS, 'data-[disabled]:opacity-60')}>
+          <span>{EXECUTION_MODE_LABEL[option.mode]()}</span>
+          {option.reason && <span className="ms-auto text-xs text-muted">{EXECUTION_MODE_REASON[option.reason]()}</span>}
+        </MenuRadioItem>
+      ))}
+    </MenuRadioGroup>
+  )
 }
 
 /** `name` is the session's `workspace_name`; without a session the chip shows the chosen registry entry's name (TAL-303). */
