@@ -441,6 +441,7 @@ final class UITestFixtureURLProtocol: URLProtocol, @unchecked Sendable {
         transcriptReads = 0
         archivedSessionIDs = []
         backgroundDismissed.withLock { $0 = false }
+        ownerSettledAdmissions.withLock { $0 = [] }
         sessionCreationFailureLock.withLock {
             didFailSessionCreation = false
             initialUploadAttempts = 0
@@ -621,6 +622,10 @@ final class UITestFixtureURLProtocol: URLProtocol, @unchecked Sendable {
         case "/api/sessions/bulk":
             let ids = requestJSON(request)["session_ids"] as? [String] ?? []
             return json(["results": ids.map { ["session_id": $0, "ok": true] }])
+        case "/api/session" where servesOwnerChat:
+            return ownerSessionResponse()
+        case "/api/chat/owner-action":
+            return ownerActionResponse(request)
         case "/api/session" where UITestFixtureEnvironment.hasBranchedFrom:
             return branchedSessionResponse(url)
         case "/api/session":
@@ -1463,7 +1468,7 @@ final class UITestFixtureURLProtocol: URLProtocol, @unchecked Sendable {
                     "approval_id": "ui-fixture-approval",
                     "command": "fixture-tool --synthetic",
                     "description": "Allow the deterministic fixture to continue."
-                ])
+                ].merging(Self.ownerApprovalChoices) { $1 })
             ])
             wait { $0.approvalWasAnswered }
             guard !isStopped else { return }

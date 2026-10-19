@@ -213,6 +213,7 @@ final class ContractReadinessTests: APIClientTestCase {
             .init(name: "chat steer", endpoint: .chatSteer, path: "/api/chat/steer"),
             .init(name: "chat steer withdraw", endpoint: .chatSteerWithdraw, path: "/api/chat/steer/withdraw"),
             .init(name: "chat steer send now", endpoint: .chatSteerSendNow, path: "/api/chat/steer/send-now"),
+            .init(name: "chat owner action", endpoint: .chatOwnerAction, path: "/api/chat/owner-action"),
             .init(name: "goal", endpoint: .submitGoal, path: "/api/goal"),
             .init(
                 name: "approval pending",

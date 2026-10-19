@@ -8,9 +8,12 @@ public struct ChatStartResponse: Decodable, Equatable {
     /// flight. Decoded lossily: absent or malformed values leave it nil.
     let pendingStartedAt: Double?
     public let error: String?
+    /// TAL-1043: an owner chat's admission answers with the owner's state and the refreshed session.
+    let ownerAttachment: OwnerAttachment?
+    let session: SessionDetail?
 
     private enum CodingKeys: String, CodingKey {
-        case streamId, sessionId, pendingStartedAt, error
+        case streamId, sessionId, pendingStartedAt, error, ownerAttachment, session
     }
 
     public init(from decoder: Decoder) throws {
@@ -19,6 +22,8 @@ public struct ChatStartResponse: Decodable, Equatable {
         sessionId = try container.decodeIfPresent(String.self, forKey: .sessionId)
         pendingStartedAt = container.decodeLossyDoubleIfPresent(forKey: .pendingStartedAt)
         error = try container.decodeIfPresent(String.self, forKey: .error)
+        ownerAttachment = try? container.decodeIfPresent(OwnerAttachment.self, forKey: .ownerAttachment)
+        session = try? container.decodeIfPresent(SessionDetail.self, forKey: .session)
     }
 
     /// When the turn this response opened really started: the server's

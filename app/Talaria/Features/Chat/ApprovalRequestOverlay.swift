@@ -102,24 +102,35 @@ struct ApprovalRequestOverlay: View {
 
     private var actions: some View {
         VStack(spacing: 8) {
+            // The approval's owner may accept fewer choices (TAL-1043); only those are offered.
             HStack(spacing: 8) {
-                approvalButton("Allow once", systemImage: "checkmark.circle.fill", choice: .once, prominent: true)
-                approvalButton("Allow session", systemImage: "lock.open", choice: .session, prominent: false)
+                if prompt.pending.allows(.once) {
+                    approvalButton("Allow once", systemImage: "checkmark.circle.fill", choice: .once, prominent: true)
+                }
+                if prompt.pending.allows(.session) {
+                    approvalButton("Allow session", systemImage: "lock.open", choice: .session, prominent: false)
+                }
             }
 
             HStack(spacing: 8) {
-                approvalButton("Always allow", systemImage: "star.fill", choice: .always, prominent: false)
-                approvalButton("Deny", systemImage: "xmark.circle.fill", choice: .deny, prominent: false, role: .destructive)
+                if prompt.pending.allows(.always) {
+                    approvalButton("Always allow", systemImage: "star.fill", choice: .always, prominent: false)
+                }
+                if prompt.pending.allows(.deny) {
+                    approvalButton("Deny", systemImage: "xmark.circle.fill", choice: .deny, prominent: false, role: .destructive)
+                }
             }
 
-            Button {
-                onSkipAll()
-            } label: {
-                Label("Skip all this session", systemImage: "bolt.slash")
-                    .frame(maxWidth: .infinity)
+            if prompt.pending.allowsApprovalBypass {
+                Button {
+                    onSkipAll()
+                } label: {
+                    Label("Skip all this session", systemImage: "bolt.slash")
+                        .frame(maxWidth: .infinity)
+                }
+                .buttonStyle(.chatDecision(.secondary))
+                .disabled(isResponding)
             }
-            .buttonStyle(.chatDecision(.secondary))
-            .disabled(isResponding)
         }
     }
 

@@ -868,6 +868,30 @@ final class SSEClientTests: XCTestCase {
         XCTAssertEqual(response.pendingCount, 1)
     }
 
+    /// TAL-1043: the server's live chat frames carry the queue head itself with `pending_count` beside it, and an
+    /// owner chat's prompts arrive only this way.
+    func testDecodesTheLiveChatPromptHeadFramesWithTheirQueueDepth() {
+        guard case .approvalPending(let approval) = SSEEventDecoder.decode(
+            eventType: "approval",
+            data: #"{"approval_id":"approval-3","command":"rm -rf build","pending_count":2}"#
+        ) else { return XCTFail("Expected approvalPending") }
+        XCTAssertEqual(approval.pending?.approvalId, "approval-3", "The head is the pending approval")
+        XCTAssertEqual(approval.pendingCount, 2)
+
+        guard case .clarificationPending(let clarification) = SSEEventDecoder.decode(
+            eventType: "clarify",
+            data: #"{"clarify_id":"clarify-3","steps":[{"qid":"q0","question":"Pick a color","choices":["red","blue"],"multi_select":false}],"pending_count":1}"#
+        ) else { return XCTFail("Expected clarificationPending") }
+        XCTAssertEqual(clarification.pending?.clarifyId, "clarify-3", "The head is the pending clarification")
+        XCTAssertEqual(clarification.pendingCount, 1)
+
+        XCTAssertEqual(
+            SSEEventDecoder.decode(eventType: "approval_cleared", data: #"{"session_id":"abc123","pending_count":0}"#),
+            .approvalPending(ApprovalPendingResponse(pending: nil, pendingCount: 0)),
+            "The last approval settled, so its card closes"
+        )
+    }
+
     func testDecodesTitleEventFromUpstreamPayload() {
         let event = SSEEventDecoder.decode(
             eventType: "title",

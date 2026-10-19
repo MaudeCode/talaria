@@ -30,17 +30,18 @@ public struct ApprovalPendingResponse: Decodable, Equatable {
     }
 
     static func streamPayload(from data: Data, decoder: JSONDecoder = JSONDecoder()) -> ApprovalPendingResponse {
-        if let wrapped = try? decoder.decode(Self.self, from: data),
-           wrapped.pending != nil || wrapped.pendingCount != nil {
+        let wrapped = try? decoder.decode(Self.self, from: data)
+        if let wrapped, wrapped.pending != nil {
             return wrapped
         }
 
+        // The live chat frame is the queue head itself, with the queue depth beside it (TAL-1043).
         if let direct = try? decoder.decode(PendingApproval.self, from: data),
            !direct.isEmpty {
-            return ApprovalPendingResponse(pending: direct, pendingCount: 1)
+            return ApprovalPendingResponse(pending: direct, pendingCount: wrapped?.pendingCount ?? 1)
         }
 
-        return ApprovalPendingResponse(pending: nil, pendingCount: nil)
+        return wrapped ?? ApprovalPendingResponse(pending: nil, pendingCount: nil)
     }
 }
 
@@ -58,6 +59,16 @@ public struct PendingApproval: Decodable, Equatable, Identifiable {
     public let description: String?
     let patternKey: String?
     let patternKeys: [String]?
+    /// TAL-1043: the choices the approval's owner accepts; nil allows all four.
+    let allowedChoices: [ApprovalChoice]?
+    /// TAL-1043: false when the owner cannot turn on approval bypass for the session.
+    let canEnableYolo: Bool?
+
+    public func allows(_ choice: ApprovalChoice) -> Bool {
+        allowedChoices?.contains(choice) ?? true
+    }
+
+    public var allowsApprovalBypass: Bool { canEnableYolo != false }
 
     public var displayPatternKeys: [String] {
         let keys = patternKeys?.filter { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty } ?? []
@@ -87,13 +98,17 @@ public struct PendingApproval: Decodable, Equatable, Identifiable {
         command: String? = nil,
         description: String? = nil,
         patternKey: String? = nil,
-        patternKeys: [String]? = nil
+        patternKeys: [String]? = nil,
+        allowedChoices: [ApprovalChoice]? = nil,
+        canEnableYolo: Bool? = nil
     ) {
         self.approvalId = Self.normalizedApprovalId(approvalId)
         self.command = command
         self.description = description
         self.patternKey = patternKey
         self.patternKeys = patternKeys
+        self.allowedChoices = allowedChoices
+        self.canEnableYolo = canEnableYolo
     }
 
     enum CodingKeys: String, CodingKey {
@@ -106,6 +121,10 @@ public struct PendingApproval: Decodable, Equatable, Identifiable {
         case patternKeySnake = "pattern_key"
         case patternKeys
         case patternKeysSnake = "pattern_keys"
+        case allowedChoices
+        case allowedChoicesSnake = "allowed_choices"
+        case canEnableYolo
+        case canEnableYoloSnake = "can_enable_yolo"
     }
 
     public init(from decoder: Decoder) throws {
@@ -116,6 +135,10 @@ public struct PendingApproval: Decodable, Equatable, Identifiable {
         patternKey = container.decodeLossyStringIfPresent(forKey: .patternKey)
             ?? container.decodeLossyStringIfPresent(forKey: .patternKeySnake)
         patternKeys = Self.decodeStringArray(from: container, keys: [.patternKeys, .patternKeysSnake])
+        allowedChoices = Self.decodeStringArray(from: container, keys: [.allowedChoices, .allowedChoicesSnake])?
+            .compactMap(ApprovalChoice.init(rawValue:))
+        canEnableYolo = container.decodeLossyBoolIfPresent(forKey: .canEnableYolo)
+            ?? container.decodeLossyBoolIfPresent(forKey: .canEnableYoloSnake)
     }
 
     private static func decodeStringArray(

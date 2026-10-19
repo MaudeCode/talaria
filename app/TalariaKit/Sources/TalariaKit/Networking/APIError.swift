@@ -87,6 +87,12 @@ public enum APIError: LocalizedError {
         return Self.serverErrorMessage(from: body)
     }
 
+    /// TAL-1043: the owner's current state an owner chat's refusal carries.
+    public var ownerAttachment: OwnerAttachment? {
+        guard case .http(_, let body) = self, let body else { return nil }
+        return (try? APIClient.responseDecoder().decode(OwnerRefusal.self, from: Data(body.utf8)))?.ownerAttachment
+    }
+
     public var modelConfirmationRequired: ModelConfirmationRequired? {
         guard case .http(409, let body) = self, let body,
               let refusal = try? APIClient.responseDecoder().decode(ModelConfirmationRequired.self, from: Data(body.utf8)),
@@ -228,6 +234,10 @@ private extension APIError {
         guard let body, let data = body.data(using: .utf8) else { return nil }
         return try? JSONDecoder().decode(ErrorPayload.self, from: data)
     }
+}
+
+private struct OwnerRefusal: Decodable {
+    let ownerAttachment: OwnerAttachment?
 }
 
 private extension String {

@@ -30,6 +30,9 @@ struct MessageComposerView: View {
     /// transcript, or an external source the server imported read-only), so the
     /// composer stays disabled even while online.
     let isSessionReadOnly: Bool
+    /// TAL-1043: the Agent runtime that owns this chat; its capabilities gate sending, stopping, attaching and the
+    /// session settings it freezes. Nil for a chat Talaria runs itself.
+    let ownerAttachment: OwnerAttachment?
     let isChromeCompact: Bool
     let errorMessage: String?
     var warningMessage: String? = nil
@@ -1039,7 +1042,11 @@ struct MessageComposerView: View {
         if isOfflineReadOnly {
             return (String(localized: "Reconnect to send messages."), false, false)
         } else if isSessionReadOnly {
-            return (String(localized: "This session is read-only."), false, false)
+            return (readOnlyStatusText, false, false)
+        } else if let ownerAttachment, !ownerAttachment.canSubmit {
+            return (ownerAttachment.hasUnknownAdmission
+                ? String(localized: "Retry or discard the unknown input first.")
+                : String(localized: "The owning Agent isn't taking input."), false, false)
         } else if isWaitingForStream && isCancellingStream {
             return (String(localized: "Stopping response..."), false, false)
         } else if let uploadAttachmentErrorMessage {
@@ -1059,6 +1066,20 @@ struct MessageComposerView: View {
         }
 
         return nil
+    }
+
+    /// The server's reason an owner chat is read-only (TAL-1043), else the generic notice.
+    private var readOnlyStatusText: String {
+        switch ownerAttachment?.reason {
+        case "native_clarify_batch_unavailable":
+            String(localized: "Continue this chat in its native CLI.")
+        case "served_profile_sessions_unavailable":
+            String(localized: "This gateway's chats are read-only here.")
+        default:
+            ownerAttachment.map { !$0.isAttached } == true
+                ? String(localized: "The owning Agent is unavailable.")
+                : String(localized: "This session is read-only.")
+        }
     }
 
     private var voiceStatus: ComposerVoiceStatus? {
@@ -1136,9 +1157,10 @@ struct MessageComposerView: View {
         optimisticWorkspacePath ?? selectedWorkspacePath
     }
 
+    /// An owner chat's model, workspace and toolsets belong to its owner, and it takes no files (TAL-1043).
     private var isConfigurationControlDisabled: Bool {
         isAnsweringClarification || isReadOnly || isSending || isCompressingSession || isWaitingForStream || isUpdatingConfiguration
-            || sessionStart != nil
+            || sessionStart != nil || ownerAttachment != nil
     }
 
     private var hasUnreadyAttachments: Bool {
@@ -1165,7 +1187,7 @@ struct MessageComposerView: View {
     /// Recording mid-stream is fine (it queues like any send), so unlike dictation
     /// this does not block on `isWaitingForStream`.
     private var isVoiceNoteRecordingDisabled: Bool {
-        isAnsweringClarification || isReadOnly || sessionStart != nil
+        isAnsweringClarification || isReadOnly || sessionStart != nil || ownerAttachment?.canAttach == false
             || isSending
             || isSendingVoiceNote
             || hasUnsentVoiceNote
@@ -1265,8 +1287,9 @@ struct MessageComposerView: View {
         }
 
         if showsStopButton {
-            return isCancellingStream
+            return isCancellingStream || ownerAttachment?.canInterrupt == false
         }
+        if ownerAttachment?.canSubmit == false { return true }
 
         if sessionStart != nil, trimmedDraftMessage.hasPrefix("/") {
             guard !isWaitingForStream,
@@ -1312,7 +1335,8 @@ struct MessageComposerView: View {
     }
 
     private var sendOptions: [ComposerSendButton.Option] {
-        guard sessionStart == nil, !isAnsweringClarification, !showsStopButton, !isActionButtonDisabled else { return [] }
+        // An owner orders input during a run itself, so there is no steer, queue or interrupt to choose (TAL-1043).
+        guard sessionStart == nil, !isAnsweringClarification, !showsStopButton, !isActionButtonDisabled, ownerAttachment == nil else { return [] }
         return ComposerSendButton.options(
             isWaitingForStream: isWaitingForStream,
             carriesFiles: !pendingAttachments.isEmpty,

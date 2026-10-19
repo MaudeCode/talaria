@@ -1,0 +1,16 @@
+{
+  "entries": [
+    {
+      "category": "Added",
+      "summary": "Continue chats owned by another Agent client from the app, with its approvals, queued inputs and Retry or Discard for an input whose outcome is unknown.",
+      "highlight": true,
+      "components": ["app"]
+    },
+    {
+      "category": "Fixed",
+      "summary": "Approval and clarification requests that arrive during a reply always appear, and a settled approval closes its card.",
+      "highlight": false,
+      "components": ["app"]
+    }
+  ]
+}

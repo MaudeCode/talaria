@@ -83,20 +83,54 @@ public enum CacheStore {
 
     @MainActor
     public static func cacheRunStatus(_ status: RunStatus?, serverURL: URL, sessionID: String, in context: ModelContext) throws {
-        let key = CachedSession.cacheKey(serverURLString: serverURL.absoluteString, sessionID: sessionID)
-        guard let row = try cachedSession(cacheKey: key, in: context) else { return }
-        let data = try status.map { try JSONEncoder().encode($0) }
-        guard row.runStatusData != data else { return }
-        row.runStatusData = data
-        try context.save()
+        try cacheDetailField(status, at: \.runStatusData, serverURL: serverURL, sessionID: sessionID, in: context)
     }
 
     @MainActor
     public static func cachedRunStatus(serverURL: URL, sessionID: String, in context: ModelContext, now: Date = Date()) throws -> RunStatus? {
+        try cachedDetailField(RunStatus.self, at: \.runStatusData, serverURL: serverURL, sessionID: sessionID, in: context, now: now)
+    }
+
+    @MainActor
+    public static func cacheOwnerAttachment(_ attachment: OwnerAttachment?, serverURL: URL, sessionID: String, in context: ModelContext) throws {
+        try cacheDetailField(attachment, at: \.ownerAttachmentData, serverURL: serverURL, sessionID: sessionID, in: context)
+    }
+
+    @MainActor
+    public static func cachedOwnerAttachment(serverURL: URL, sessionID: String, in context: ModelContext, now: Date = Date()) throws -> OwnerAttachment? {
+        try cachedDetailField(OwnerAttachment.self, at: \.ownerAttachmentData, serverURL: serverURL, sessionID: sessionID, in: context, now: now)
+    }
+
+    /// A detail-only server field kept as JSON on the session's cached row, which must already exist.
+    @MainActor
+    private static func cacheDetailField<Value: Encodable>(
+        _ value: Value?,
+        at field: ReferenceWritableKeyPath<CachedSession, Data?>,
+        serverURL: URL,
+        sessionID: String,
+        in context: ModelContext
+    ) throws {
+        let key = CachedSession.cacheKey(serverURLString: serverURL.absoluteString, sessionID: sessionID)
+        guard let row = try cachedSession(cacheKey: key, in: context) else { return }
+        let data = try value.map { try JSONEncoder().encode($0) }
+        guard row[keyPath: field] != data else { return }
+        row[keyPath: field] = data
+        try context.save()
+    }
+
+    @MainActor
+    private static func cachedDetailField<Value: Decodable>(
+        _ type: Value.Type,
+        at field: KeyPath<CachedSession, Data?>,
+        serverURL: URL,
+        sessionID: String,
+        in context: ModelContext,
+        now: Date
+    ) throws -> Value? {
         let key = CachedSession.cacheKey(serverURLString: serverURL.absoluteString, sessionID: sessionID)
         guard let row = try cachedSession(cacheKey: key, in: context), row.expiresAt > now,
-              let data = row.runStatusData else { return nil }
-        return try? JSONDecoder().decode(RunStatus.self, from: data)
+              let data = row[keyPath: field] else { return nil }
+        return try? JSONDecoder().decode(type, from: data)
     }
 
     @MainActor

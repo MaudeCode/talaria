@@ -887,6 +887,71 @@ final class ChatHostedTests: XCTestCase {
         XCTAssertNotNil(remaining, "Dismiss removed running work")
     }
 
+    /// TAL-1043: an owner chat lists the owner's inputs with only the server's actions. An input with an unknown
+    /// outcome blocks sending until Retry returns its text to the composer; nothing resends on its own.
+    func testOwnerChatRecoversAnUnknownInputOnPhone() async throws {
+        try await assertOwnerChatRecovery(size: HostedSize.phone, name: "phone")
+    }
+
+    func testOwnerChatRecoversAnUnknownInputOnPad() async throws {
+        try await assertOwnerChatRecovery(size: HostedSize.padLandscape, name: "pad")
+    }
+
+    private func assertOwnerChatRecovery(size: CGSize, name: String) async throws {
+        continueAfterFailure = false
+        let window = try await hostFixtureChat([UITestFixtureURLProtocol.ownerChatArgument], size: size)
+        let chip = try await requireElement(in: window, label: "Outcome unknown")
+        _ = try await requireElement(in: window, label: "Retry or discard the unknown input first.")
+        let options = HostedAccessibility.element(in: window, label: "Composer options")
+        XCTAssertTrue(options.map { $0.accessibilityTraits.contains(.notEnabled) } ?? true, "An owner chat takes no files or setting changes")
+        settle(0.3)
+        attachHostedScreenshot(window, name: "owner-unknown-\(name)")
+
+        HostedAccessibility.activate(chip)
+        _ = try await requireElement(in: window, label: UITestFixtureURLProtocol.ownerUnknownText)
+        _ = try await requireElement(in: window, label: "Then post the summary in #ops")
+        XCTAssertEqual(elements(named: "Retry", in: window).count, 1, "Only the unknown input offers Retry")
+        XCTAssertEqual(elements(named: "Discard", in: window).count, 1)
+        XCTAssertEqual(elements(named: "Cancel", in: window).count, 1, "Only the queued input offers Cancel")
+        settle(0.3)
+        attachHostedScreenshot(window, name: "owner-inputs-\(name)")
+
+        HostedAccessibility.activate(try XCTUnwrap(elements(named: "Retry", in: window).first))
+        let closed = await awaitCondition { window.rootViewController?.presentedViewController == nil }
+        XCTAssertTrue(closed, "Retry leaves the sheet for the composer")
+        _ = try await requireElement(in: window, label: "1 queued")
+        let draft = await composerTextView(in: window)
+        XCTAssertEqual(draft?.text, UITestFixtureURLProtocol.ownerUnknownText, "Retry returns the text to review, unsent")
+        let unknownGone = await awaitNoElement(in: window) { $0.accessibilityLabel == "Retry or discard the unknown input first." }
+        XCTAssertTrue(unknownGone)
+        settle(0.3)
+        attachHostedScreenshot(window, name: "owner-retried-\(name)")
+    }
+
+    /// TAL-1043: an owner the App cannot reattach keeps the chat read-only with the server's reason.
+    func testOwnerChatTheAppCannotReattachSaysWhy() async throws {
+        let window = try await hostFixtureChat([UITestFixtureURLProtocol.ownerChatBatchArgument])
+        _ = try await requireElement(in: window, label: "Continue this chat in its native CLI.")
+        settle(0.3)
+        attachHostedScreenshot(window, name: "owner-batch-phone")
+    }
+
+    /// TAL-1043: an owner's approval offers only the choices its owner accepts, and no approval bypass.
+    func testOwnerApprovalOffersOnlyTheOwnersChoices() async throws {
+        let window = try await hostFixtureChat(["--ui-test-chat-full", UITestFixtureURLProtocol.ownerApprovalArgument])
+        try await sendFromComposer("Run the deterministic fixture", in: window)
+        _ = try await requireElement(in: window, label: "Approval required")
+        _ = try await requireElement(in: window, label: "Allow once")
+        _ = try await requireElement(in: window, label: "Deny")
+        for hidden in ["Allow session", "Always allow", "Skip all this session"] {
+            XCTAssertNil(HostedAccessibility.element(in: window, label: hidden), "\(hidden) is not the owner's choice")
+        }
+        settle(0.3)
+        attachHostedScreenshot(window, name: "owner-approval-phone")
+        HostedAccessibility.activate(try await requireElement(in: window, label: "Allow once"))
+        _ = try await requireElement(in: window, label: "Clarification Required")
+    }
+
     /// The session's standing `/goal` shows as one chip above the composer, worded from the server's field (TAL-833).
     func testTheStandingGoalShowsAboveTheComposer() async throws {
         let window = try await hostFixtureChat(["--ui-test-goal"])

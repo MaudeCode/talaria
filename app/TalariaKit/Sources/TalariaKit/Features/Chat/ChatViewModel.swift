@@ -238,6 +238,7 @@ public final class ChatViewModel {
     /// Mirrors the list-row merge rule: the server's `read_only` replaces the
     /// seeded flag; a detail that omits it keeps it. A load passes the notices count it fetched at.
     private func applyReadOnlyState(from session: SessionDetail?, noticesChangesAtFetch: Int? = nil) {
+        if let session { ownerAttachment = session.ownerAttachment }
         if let readOnly = session?.readOnly { isSessionReadOnly = readOnly }
         if let canBranch = session?.canBranch { self.canBranch = canBranch }
         if let assistantName = session?.assistantName { self.assistantName = assistantName }
@@ -418,6 +419,12 @@ public final class ChatViewModel {
     /// Server-owned view-only state (TAL-152). Seeded from the list row and
     /// refreshed from every applied `SessionDetail`, which is authoritative.
     public private(set) var isSessionReadOnly: Bool
+    /// An owner chat stays `read_only` for Talaria's own writers (edit, regenerate, branch), but its owner takes new
+    /// input while attached (TAL-1043).
+    public var isComposerReadOnly: Bool { isSessionReadOnly && ownerAttachment?.isAttached != true }
+    /// TAL-1043: the Agent runtime that owns this chat, its capabilities and pending inputs; nil for a chat Talaria
+    /// runs itself. Refreshed from every applied `SessionDetail`; the offline cache keeps the last one.
+    public private(set) var ownerAttachment: OwnerAttachment?
     /// The server's branch gate (TAL-312), seeded and refreshed like `isSessionReadOnly`;
     /// a row without it (one cached before TAL-723) does not branch.
     public private(set) var canBranch: Bool
@@ -1640,6 +1647,9 @@ public final class ChatViewModel {
             if let modelContext {
                 do {
                     try cacheMessagesIfCurrent(messages, sessionID: sessionID, in: modelContext)
+                    if ownsCurrentCache {
+                        try CacheStore.cacheOwnerAttachment(ownerAttachment, serverURL: server, sessionID: sessionID, in: modelContext)
+                    }
                 } catch {
                     cacheErrorMessage = error.localizedDescription
                 }
@@ -1666,6 +1676,7 @@ public final class ChatViewModel {
                         restoreCachedBranchedFrom(sessionID: sessionID, modelContext: modelContext)
                         restoreCachedTranscriptWindow(cachedMessages)
                         cachedRunStatus = try CacheStore.cachedRunStatus(serverURL: server, sessionID: sessionID, in: modelContext)
+                        ownerAttachment = try CacheStore.cachedOwnerAttachment(serverURL: server, sessionID: sessionID, in: modelContext)
                         latestServerLoadHadAssistantResponseAfterLatestUser = Self.hasAssistantResponseAfterLatestUser(
                             in: messages
                         )
@@ -2643,6 +2654,10 @@ public final class ChatViewModel {
             !$0.path.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
         }
         guard !message.isEmpty || hasSendableAttachments else { return ChatSendOutcome(didStart: false) }
+        if hasSendableAttachments, ownerAttachment?.canAttach == false {
+            sendErrorMessage = Self.ownerAttachmentsUnavailableMessage
+            return ChatSendOutcome(didStart: false)
+        }
 
         guard sessionID != nil || waitForSession != nil else {
             sendErrorMessage = String(localized: "The server did not provide a session ID.")
@@ -2924,7 +2939,7 @@ public final class ChatViewModel {
             restorePendingAttachments(attachmentsToRestoreOnFailure)
             return ChatSendOutcome(didStart: false)
         }
-        guard !isViewingCachedData, !isSessionReadOnly else {
+        guard !isViewingCachedData, !isComposerReadOnly else {
             rollbackOptimisticMessage(id: localMessageID)
             restorePendingAttachments(attachmentsToRestoreOnFailure)
             sendErrorMessage = String(localized: "Reconnect to a writable session to send a message.")
@@ -2954,11 +2969,21 @@ public final class ChatViewModel {
                 profile: requestProfileName,
                 explicitModelPick: explicitModelPick,
                 attachments: sendPayloads.isEmpty ? nil : sendPayloads,
-                voiceTurn: voiceTurn
+                voiceTurn: voiceTurn,
+                submissionID: ownerAttachment == nil ? nil : UUID().uuidString
             )
+            // An owner admitted the input (TAL-1043): its state and inputs replace the shown ones.
+            if response.ownerAttachment != nil, ownership == sendOwnershipGeneration {
+                applyReadOnlyState(from: response.session)
+            }
 
             guard let streamID = Self.nonEmpty(response.streamId) else {
                 guard ownership == sendOwnershipGeneration, !Task.isCancelled else { return ChatSendOutcome(didStart: false) }
+                if response.ownerAttachment != nil {
+                    // Admitted with no run to follow: the transcript converges on the owner's.
+                    await loadMessages(modelContext: modelContext, waitsForPendingMessageSend: false)
+                    return ChatSendOutcome(didStart: true)
+                }
                 sendErrorMessage = response.error ?? String(localized: "The server did not return a stream ID.")
                 rollbackOptimisticMessage(id: localMessageID)
                 cacheCurrentMessages(sessionID: sessionID, modelContext: modelContext)
@@ -2989,12 +3014,67 @@ public final class ChatViewModel {
                 // the coordinator reconnects to the existing response.
                 return ChatSendOutcome(didStart: false)
             }
-            lastError = error
-            sendErrorMessage = error.localizedDescription
             rollbackOptimisticMessage(id: localMessageID)
             cacheCurrentMessages(sessionID: sessionID, modelContext: modelContext)
             restorePendingAttachments(restoredFiles)
+            if ownerAttachment != nil {
+                // The owner may have taken it anyway: its state shows any input with an unknown outcome, for an explicit
+                // Retry or Discard. Nothing resends on its own.
+                await reconcileOwnerRefusal(error, modelContext: modelContext)
+            }
+            lastError = error
+            sendErrorMessage = error.localizedDescription
             return ChatSendOutcome(didStart: false, error: error)
+        }
+    }
+
+    static let ownerAttachmentsUnavailableMessage = String(localized: "File attachments are unavailable through this owner connection.")
+
+    /// A refused owner request: the refusal's owner state replaces the shown one, and an idle chat reloads, so stale
+    /// controls disappear and an input with an unknown outcome appears.
+    private func reconcileOwnerRefusal(_ error: Error, modelContext: ModelContext?) async {
+        if let attachment = (error as? APIError)?.ownerAttachment { ownerAttachment = attachment }
+        guard activeStreamID == nil else { return }
+        await loadMessages(modelContext: modelContext, waitsForPendingMessageSend: false)
+    }
+
+    /// TAL-1043: Cancel, Retry or Discard an owner input, as the server offers it. Retry returns the original text to
+    /// the composer for review and never resends it; closing the sheet never cancels anything.
+    public func performOwnerAction(_ action: OwnerAdmission.Action, on admission: OwnerAdmission, modelContext: ModelContext? = nil) async {
+        guard let sessionID, !isViewingCachedData, admission.actions.contains(action) else { return }
+        do {
+            let response = try await client.ownerAction(sessionID: sessionID, action: action, admission: admission)
+            applyReadOnlyState(from: response.session)
+            if let draft = response.draft { returnedComposerTexts.append(draft) }
+        } catch {
+            await reconcileOwnerRefusal(error, modelContext: modelContext)
+            lastError = error
+            sendErrorMessage = error.localizedDescription
+        }
+    }
+
+    /// An owner chat orders input during a run itself (TAL-1043); the App neither steers, queues nor interrupts.
+    private func submitOwnerInput(_ draft: String) async -> SlashCommandExecutionResult {
+        let message = draft.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let sessionID, !message.isEmpty else { return .unsupported(friendlyMessage: String(localized: "Type a message to send.")) }
+        guard attachmentCoordinator.pendingAttachments.isEmpty else {
+            return .unsupported(friendlyMessage: Self.ownerAttachmentsUnavailableMessage)
+        }
+        do {
+            let response = try await client.startChat(
+                sessionID: sessionID,
+                message: message,
+                workspace: nil,
+                model: nil,
+                profile: requestProfileName,
+                submissionID: UUID().uuidString
+            )
+            applyReadOnlyState(from: response.session)
+            return .executed(message: nil)
+        } catch {
+            await reconcileOwnerRefusal(error, modelContext: nil)
+            lastError = error
+            return .unsupported(friendlyMessage: error.localizedDescription)
         }
     }
 
@@ -3363,6 +3443,7 @@ public final class ChatViewModel {
         _ draft: String,
         behavior: StreamingSendBehavior
     ) async -> SlashCommandExecutionResult {
+        if ownerAttachment != nil { return await submitOwnerInput(draft) }
         if let error = attachmentSendReadinessError() { return .unsupported(friendlyMessage: error) }
         switch behavior.sending(withFiles: !attachmentCoordinator.pendingAttachments.isEmpty) {
         case .steer:
@@ -5281,7 +5362,7 @@ public final class ChatViewModel {
             updateActiveBtwMessage(isLoading: true)
         case .done:
             updateActiveBtwMessage(isLoading: false)
-        case .approvalPending, .clarificationPending, .settledSession:
+        case .approvalPending, .clarificationPending, .settledSession, .sessionSnapshot:
             break
         case .streamEnd, .cancelled:
             finishBtwStream()
@@ -6409,6 +6490,16 @@ extension ChatViewModel: ChatStreamCoordinatorDelegate {
 
     public func streamCoordinatorApplySettledSession(_ session: SessionDetail) {
         applyCompletedStreamSession(session)
+    }
+
+    /// TAL-1043: the owner's snapshot replaces the live text; the run's next output starts a fresh reply row.
+    public func streamCoordinatorApplySessionSnapshot(_ session: SessionDetail, replayGap: Bool) {
+        flushPendingStreamingContent()
+        applyCompletedStreamSession(session)
+        streamingAssistantMessageID = nil
+        if replayGap {
+            streamWarningMessage = String(localized: "Live history was truncated. The final answer will refresh from the owning Agent.")
+        }
     }
 
     @discardableResult
