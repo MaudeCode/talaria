@@ -160,8 +160,8 @@ export interface SessionServiceDeps {
   resolveContextLength?: (model: string | null, provider: string | null, profile: string | null) => Promise<number | null>
   /** `(model, provider)` normalisation from a request (checkpoint 7 wires provider-qualified ids). */
   modelStateFromRequest: (model: unknown, requestedProvider: unknown, currentProvider: string | null) => [string | null, string | null]
-  /** TAL-1040: the profile's own endpoint for `provider` (its config.yaml `model.base_url`), else null. */
-  profileBaseUrl?: (profile: string, provider: string) => string | null
+  /** TAL-1040: the explicit launch route for `provider`: its configured endpoint (model, providers or custom_providers), else null. */
+  profileLaunchRoute?: (profile: string, provider: string) => { provider: string; baseUrl: string | null }
   /** TAL-542: the pair a stale session model starts on, from the profile's catalog; `null` keeps it. */
   repairSessionModel?: (profile: string | null, model: string, provider: string | null) => [string, string] | null
   /** TAL-542: builds the catalog `repairSessionModel` reads unless a fresh enough one exists. */
@@ -1375,7 +1375,7 @@ export class SessionService {
   /**
    * TAL-1040: an `ignore_config` / `safe` chat starts through the active profile's Agent owner, which freezes the mode before
    * any Agent import. That owner reads no profile default, so the launch route is explicit: the requested model, else this
-   * profile's default as a normal chat starts, with the profile's own endpoint for that provider.
+   * profile's default as a normal chat starts, with that provider's configured endpoint.
    */
   async createDiagnostic(body: Record<string, unknown>, mode: 'ignore_config' | 'safe'): Promise<Record<string, unknown>> {
     const profile = (typeof body.profile === 'string' && body.profile) || this.deps.activeProfile()
@@ -1393,9 +1393,9 @@ export class SessionService {
     const provider = requested ? requestedProvider : requestedProvider ?? defaults.modelProvider ?? null
     if (!model) throw new HttpFailure(400, 'Choose a model before starting a diagnostic chat')
     const toolsets = this.validateToolsetsShape(body.enabled_toolsets)
-    const baseUrl = provider ? this.deps.profileBaseUrl?.(profile, provider) ?? null : null
+    const route = provider ? this.deps.profileLaunchRoute?.(profile, provider) ?? { provider, baseUrl: null } : null
     const sid = await this.owner.create(profile, { execution_mode: mode, cwd: workspace ?? defaults.workspace, model,
-      ...(provider ? { provider } : {}), ...(baseUrl ? { base_url: baseUrl } : {}), ...(toolsets ? { toolsets } : {}) })
+      ...(route ? { provider: route.provider } : {}), ...(route?.baseUrl ? { base_url: route.baseUrl } : {}), ...(toolsets ? { toolsets } : {}) })
     return this.detail(sid, {})
   }
 

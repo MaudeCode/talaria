@@ -192,6 +192,7 @@ export const sessionsRouter = os.router({
       if (input.execution_mode === 'ignore_config' || input.execution_mode === 'safe') {
         // The owner has no worktree flow; refuse it rather than silently start an ordinary chat.
         if (input.worktree !== undefined && input.worktree !== false) throw new HttpError(400, 'A diagnostic chat cannot start in a new worktree')
+        await ctx.deps.agentConfig.read(ctx.deps.profileHome(ctx.deps.activeProfile())).catch(() => undefined)
         return { session: (await ctx.deps.sessions.createDiagnostic(input, input.execution_mode)) as { session_id: string; title: string } }
       }
       // Python: an invisible prev_session_id is ignored (the service drops it), never an error (#5420).

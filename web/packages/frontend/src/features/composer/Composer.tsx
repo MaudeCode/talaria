@@ -671,6 +671,10 @@ export function Composer(props: ComposerProps) {
   // The server marks sessions Web may not continue (TAL-312); it would refuse every send, so none is offered.
   if (readOnly) return <div className="composer-wrap" id="composerWrap"><div className="mx-auto max-w-(--msg-max) px-3 py-2 text-center text-xs text-muted" role="note">{session?.owner_attachment?.reason === 'native_clarify_batch_unavailable' ? m.owner_batch_unavailable() : session?.owner_attachment?.reason === 'served_profile_sessions_unavailable' ? m.owner_profile_unverified() : m.session_read_only_notice()}</div></div>
 
+  // A fresh chat picks its Agent mode; a started one shows a frozen non-normal mode. No hide preference covers it.
+  const modeChip = !sessionId && onExecutionModeChange ? <ExecutionModeChip value={pendingChoices?.execution_mode ?? 'normal'} onChange={onExecutionModeChange} />
+    : session?.execution_mode && session.execution_mode !== 'normal' ? <ExecutionModeChip value={session.execution_mode} /> : null
+
   return (
     <div className="composer-wrap" id="composerWrap">
       <ComposerTab notices={tabNotices} />
@@ -757,12 +761,11 @@ export function Composer(props: ComposerProps) {
         </div>
       </div>
       {/* T3 Code's context strip: where the message runs (workspace, toolsets, profile), tucked under the card. */}
-      {!collapsed && (!hide('hide_composer_workspace') || !hide('hide_composer_toolsets') || !hide('hide_composer_profile')) && (
+      {!collapsed && (!hide('hide_composer_workspace') || !hide('hide_composer_toolsets') || !hide('hide_composer_profile') || modeChip) && (
         <div className="composer-strip" role="group" aria-label={m.composer_config_title()}>
           {!hide('hide_composer_workspace') && <WorkspaceChip value={session?.workspace ?? pendingChoices?.workspace ?? settings?.default_workspace} name={session ? session.workspace_name ?? null : undefined} onChange={onWorkspaceChange} onNewWorktree={onNewWorktreeChat} onRemoveWorktree={onRemoveWorktree} />}
           {!session?.read_only && !hide('hide_composer_toolsets') && <ToolsetsChip sessionId={sessionId ?? undefined} value={session?.enabled_toolsets ?? pendingChoices?.enabled_toolsets ?? null} onChange={onToolsetsChange} />}
-          {!sessionId && onExecutionModeChange ? <ExecutionModeChip value={pendingChoices?.execution_mode ?? 'normal'} onChange={onExecutionModeChange} />
-            : session?.execution_mode && session.execution_mode !== 'normal' && <ExecutionModeChip value={session.execution_mode} />}
+          {modeChip}
           {!hide('hide_composer_profile') && <ProfileMenu />}
         </div>
       )}

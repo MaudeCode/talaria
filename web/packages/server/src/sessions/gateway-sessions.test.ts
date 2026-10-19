@@ -1,4 +1,4 @@
-import { mkdirSync, readFileSync } from 'node:fs'
+import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -277,6 +277,20 @@ describe('diagnostic execution modes (TAL-1040)', () => {
     expect(JSON.stringify(calls)).not.toMatch(/api_key/)
     expect(await s.deps.sessionStore.exists(created)).toBe(false)
     expect(sidecar.calls.some((c) => c.method === 'chat.start')).toBe(false)
+  })
+
+  it.each([
+    ['lmstudio', 'lmstudio', 'http://127.0.0.1:1234/v1'],
+    ['custom:local-box', 'custom', 'http://127.0.0.1:9000/v1'],
+  ] as const)('launches %s at its configured endpoint, not only the profile default route', async (provider, sent, url) => {
+    writeFileSync(join(s.state, 'config.yaml'), 'model: {}\n')
+    sidecar.respond('config.get', () => ({ path: join(s.state, 'config.yaml'), exists: true, config: { model: { provider: 'openrouter', default: 'other' }, providers: { lmstudio: { base_url: 'http://127.0.0.1:1234/v1' } },
+      custom_providers: [{ name: 'local box', base_url: 'http://127.0.0.1:9000/v1' }] } }))
+    await s.deps.agentConfig.read(s.state)
+    sidecar.respond('gateway.create', () => attached(fresh(ids.safe)))
+    const response = await post('/api/session/new', { execution_mode: 'safe', model: 'fixture', model_provider: provider })
+    expect(response.status, await response.clone().text()).toBe(200)
+    expect(sidecar.calls.filter((c) => c.method === 'gateway.create').map((c) => c.params)).toEqual([expect.objectContaining({ provider: sent, base_url: url })])
   })
 
   it('reads every effective mode from the owner receipt, so it survives a server restart', async () => {

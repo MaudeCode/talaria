@@ -43,6 +43,12 @@ function renderComposer(session: Session | null, live: LiveTurn | null = null, o
 }
 
 describe('Composer', () => {
+  it('keeps the fresh-chat Agent mode reachable when the other strip controls are hidden (TAL-1040)', () => {
+    const settings = { hide_composer_workspace: true, hide_composer_toolsets: true, hide_composer_profile: true } as unknown as Settings
+    renderComposer(null, null, noop, settings, undefined, undefined, { onExecutionModeChange: vi.fn() })
+    expect(screen.getByRole('button', { name: 'Agent mode: Normal' })).toBeInTheDocument()
+  })
+
   it.each([false, true])('keeps an early attachment when its upload completes before transcript load: %s', async (completedBeforeLoad) => {
     const upload = deferred<Awaited<ReturnType<typeof api.uploadFile>>>()
     const receipt = { filename: 'early.png', path: '/synthetic/early.png', size: 1, mime: 'image/png', rollback_token: 'early-receipt' }

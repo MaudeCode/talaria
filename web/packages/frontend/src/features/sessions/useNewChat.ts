@@ -25,6 +25,6 @@ export function useNewChat() {
 
 export async function createSessionNow(opts: { workspace?: string; model?: string; model_provider?: string | null; profile?: string; enabled_toolsets?: string[] | null; worktree?: boolean; execution_mode?: ExecutionMode } = {}) {
   const diagnostic = opts.execution_mode !== undefined && opts.execution_mode !== 'normal'
-  const { session } = await api.newSession({ ...(opts.workspace ? { workspace: opts.workspace } : {}), ...(opts.model ? { model: opts.model } : {}), ...(opts.model_provider !== undefined ? { model_provider: opts.model_provider } : {}), ...(opts.profile ? { profile: opts.profile } : {}), ...(opts.enabled_toolsets !== undefined ? { enabled_toolsets: opts.enabled_toolsets } : {}), ...(diagnostic ? { execution_mode: opts.execution_mode } : { worktree: opts.worktree ?? false }) })
+  const { session } = await api.newSession({ ...(opts.workspace ? { workspace: opts.workspace } : {}), ...(opts.model ? { model: opts.model } : {}), ...(opts.model_provider !== undefined ? { model_provider: opts.model_provider } : {}), ...(opts.profile ? { profile: opts.profile } : {}), ...(opts.enabled_toolsets !== undefined ? { enabled_toolsets: opts.enabled_toolsets } : {}), worktree: opts.worktree ?? false, ...(diagnostic ? { execution_mode: opts.execution_mode } : {}) })
   return session
 }
