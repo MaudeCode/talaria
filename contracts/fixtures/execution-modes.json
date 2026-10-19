@@ -1,0 +1,126 @@
+{
+  "available": {
+    "modes": [
+      {
+        "mode": "normal",
+        "available": true,
+        "reason": null,
+        "can_attach": true
+      },
+      {
+        "mode": "ignore_config",
+        "available": true,
+        "reason": null,
+        "can_attach": false
+      },
+      {
+        "mode": "safe",
+        "available": true,
+        "reason": null,
+        "can_attach": false
+      }
+    ]
+  },
+  "unavailable": {
+    "modes": [
+      {
+        "mode": "normal",
+        "available": true,
+        "reason": null,
+        "can_attach": true
+      },
+      {
+        "mode": "ignore_config",
+        "available": false,
+        "reason": "gateway_stopped",
+        "can_attach": false
+      },
+      {
+        "mode": "safe",
+        "available": false,
+        "reason": "gateway_stopped",
+        "can_attach": false
+      }
+    ]
+  },
+  "create_request": {
+    "execution_mode": "safe",
+    "request_id": "fixture-creation-1",
+    "model": "fixture"
+  },
+  "created": {
+    "session": {
+      "session_id": "local-fb4d9dabd7f0c5c106d3df779f54c429dd5d17c3fe2fdfe77245f6d22d8745bc",
+      "title": "Cli Session",
+      "model": "fixture",
+      "messages": [],
+      "message_count": 0,
+      "profile": "default",
+      "active_stream_id": null,
+      "is_streaming": false,
+      "execution_mode": "safe",
+      "is_cli_session": true,
+      "source_kind": "cli",
+      "read_only": true,
+      "read_only_reason": "This session is owned by the Agent gateway and is display-only in Talaria.",
+      "owner_attachment": {
+        "state": "attached",
+        "reason": null,
+        "can_submit": true,
+        "can_interrupt": false,
+        "can_attach": false,
+        "revision": 1,
+        "execution_generation": 0,
+        "active_admission": null,
+        "admissions": []
+      },
+      "can_branch": false,
+      "can_pin": false,
+      "can_archive": false,
+      "can_delete": false,
+      "can_duplicate": false,
+      "source_label": "CLI",
+      "workspace_name": "Home"
+    }
+  },
+  "existing": {
+    "session": {
+      "session_id": "local-60b079a7100dd6e414e4fe2365e35f240f598acf8c993f70501190f3ae4eeed9",
+      "title": "Cli Session",
+      "model": "fixture",
+      "messages": [],
+      "message_count": 0,
+      "profile": "default",
+      "active_stream_id": null,
+      "is_streaming": false,
+      "execution_mode": "ignore_config",
+      "is_cli_session": true,
+      "source_kind": "cli",
+      "read_only": true,
+      "read_only_reason": "This session is owned by the Agent gateway and is display-only in Talaria.",
+      "owner_attachment": {
+        "state": "attached",
+        "reason": null,
+        "can_submit": true,
+        "can_interrupt": false,
+        "can_attach": false,
+        "revision": 1,
+        "execution_generation": 0,
+        "active_admission": null,
+        "admissions": []
+      },
+      "can_branch": false,
+      "can_pin": false,
+      "can_archive": false,
+      "can_delete": false,
+      "can_duplicate": false,
+      "source_label": "CLI",
+      "workspace_name": "Home"
+    }
+  },
+  "refusal": {
+    "error": "The Agent cannot start a chat in this mode",
+    "code": "execution_mode_unavailable",
+    "reason": "gateway_stopped"
+  }
+}

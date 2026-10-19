@@ -343,6 +343,22 @@ describe('diagnostic execution modes (TAL-1040)', () => {
     expect((await post('/api/session/new', { execution_mode: 'safe', model: 'fixture', request_id: 'bad id!' })).status).toBe(400)
   })
 
+  it('answers with the shared App fixture: modes, a created and an existing diagnostic chat, and the refusal (TAL-1045)', async () => {
+    const shared = JSON.parse(readFileSync(new URL('../../../../../contracts/fixtures/execution-modes.json', import.meta.url), 'utf8')) as Record<'available' | 'unavailable' | 'create_request' | 'created' | 'existing' | 'refusal', unknown>
+    sidecar.respond('gateway.create', (params) => (params as { probe?: boolean }).probe ? { state: 'attached', reason: null, snapshot: null, receipt: null } : attached(fresh(ids.safe)))
+    expect(await (await s.get('/api/session/execution-modes')).json()).toEqual(shared.available)
+    const created = await post('/api/session/new', shared.create_request)
+    expect(created.status, await created.clone().text()).toBe(200)
+    expect(await created.json()).toMatchObject(shared.created as object)
+    expect(sidecar.calls.filter((c) => c.method === 'gateway.create' && !(c.params as { probe?: boolean }).probe).map((c) => (c.params as { request_id: string }).request_id)).toEqual(['talaria-web:fixture-creation-1'])
+    expect(await (await s.get(`/api/session?session_id=${ids.ignore_config}`)).json()).toMatchObject(shared.existing as object)
+    sidecar.respond('gateway.create', () => ({ state: 'stopped', reason: 'stopped', snapshot: null, receipt: null }))
+    expect(await (await s.get('/api/session/execution-modes')).json()).toEqual(shared.unavailable)
+    const refused = await post('/api/session/new', shared.create_request)
+    expect(refused.status).toBe(409)
+    expect(await refused.json()).toEqual(shared.refusal)
+  })
+
   it('refuses a diagnostic chat without an explicit model or with a worktree', async () => {
     sidecar.respond('gateway.create', () => attached(fresh(ids.safe)))
     expect((await post('/api/session/new', { execution_mode: 'safe', worktree: true, model: 'fixture' })).status).toBe(400)
