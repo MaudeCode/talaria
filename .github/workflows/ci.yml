@@ -4,8 +4,8 @@
 # Release metadata always validates; uncertain classification runs every suite.
 # The always-reporting CI Gate is the required check, including skipped jobs.
 #
-# Every job runs on GitHub-hosted runners and uses no repository secrets (TAL-380); handoffs are
-# Actions artifacts. Only Xcode work runs on hosted macOS: the App build, its hosted unit tests and the
+# Every job runs on GitHub-hosted runners and uses no repository secrets (TAL-380) except the main-only failure
+# handoff to T3 (TAL-1103); handoffs between jobs are Actions artifacts. Only Xcode work runs on hosted macOS: the App build, its hosted unit tests and the
 # TalariaKit package tests (app-tests.yml). A manual run exercises every suite.
 
 name: CI
@@ -166,3 +166,34 @@ jobs:
         env:
           CI_NEEDS: ${{ toJSON(needs) }}
         run: python3 scripts/changed-components.py --check-results
+
+  alert:
+    # Hands a failed push run of main to the T3 repair dispatcher (TAL-1103, docs/main-ci-repair.md): one signed,
+    # bounded report, which the dispatcher re-verifies against GitHub before it starts or updates a repair thread.
+    # After the gate, so the gate's own failure is reported; it never changes that result. Only main's push runs reach
+    # the MAIN_CI_WEBHOOK_URL and MAIN_CI_WEBHOOK_SECRET secrets: pull requests and forks never run this job. A run a
+    # person cancelled sends nothing; a job GitHub cancelled at its timeout still counts (TAL-670).
+    name: Hand the failure to T3
+    needs: gate
+    if: >-
+      always() && github.repository == 'MaudeCode/talaria' && github.event_name == 'push'
+      && github.ref == 'refs/heads/main' && needs.gate.result != 'success'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      actions: read
+      # Reads cancelled jobs' annotations for a timeout.
+      checks: read
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          sparse-checkout: scripts
+      - name: Post the signed failure report
+        working-directory: .
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GATE_RESULT: ${{ needs.gate.result }}
+          WEBHOOK_URL: ${{ secrets.MAIN_CI_WEBHOOK_URL }}
+          WEBHOOK_SECRET: ${{ secrets.MAIN_CI_WEBHOOK_SECRET }}
+        run: python3 scripts/main-ci-failure.py send
