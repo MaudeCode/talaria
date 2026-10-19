@@ -744,7 +744,7 @@ struct ChatView: View {
                 QueuedMessagesSheet(
                     previews: viewModel.queuedMessagePreviews,
                     admissions: viewModel.ownerAttachment?.admissions ?? [],
-                    canActOnAdmissions: !viewModel.isViewingCachedData,
+                    canActOnAdmissions: !viewModel.isViewingCachedData && viewModel.ownerActionAdmissionID == nil,
                     onSendNow: { id in Task { await viewModel.sendQueuedMessageNow(id: id) } },
                     onEdit: { id in
                         showsQueuedMessagesSheet = false

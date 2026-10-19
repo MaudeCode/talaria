@@ -423,8 +423,22 @@ public final class ChatViewModel {
     /// input while attached (TAL-1043).
     public var isComposerReadOnly: Bool { isSessionReadOnly && ownerAttachment?.isAttached != true }
     /// TAL-1043: the Agent runtime that owns this chat, its capabilities and pending inputs; nil for a chat Talaria
-    /// runs itself. Refreshed from every applied `SessionDetail`; the offline cache keeps the last one.
-    public private(set) var ownerAttachment: OwnerAttachment?
+    /// runs itself. Refreshed from every applied `SessionDetail`, admission and refusal; the offline cache keeps the last one.
+    public private(set) var ownerAttachment: OwnerAttachment? {
+        didSet { if ownerAttachment != oldValue { cacheOwnerAttachment() } }
+    }
+    /// The admission whose owner action awaits the server; its controls wait until it settles.
+    public private(set) var ownerActionAdmissionID: String?
+
+    /// The owner's latest state is the offline copy, whichever authoritative update brought it.
+    private func cacheOwnerAttachment() {
+        guard !isViewingCachedData, ownsCurrentCache, let sessionID, let context = runStatusCacheContext else { return }
+        do {
+            try CacheStore.cacheOwnerAttachment(ownerAttachment, serverURL: server, sessionID: sessionID, in: context)
+        } catch {
+            cacheErrorMessage = error.localizedDescription
+        }
+    }
     /// The server's branch gate (TAL-312), seeded and refreshed like `isSessionReadOnly`;
     /// a row without it (one cached before TAL-723) does not branch.
     public private(set) var canBranch: Bool
@@ -1647,9 +1661,8 @@ public final class ChatViewModel {
             if let modelContext {
                 do {
                     try cacheMessagesIfCurrent(messages, sessionID: sessionID, in: modelContext)
-                    if ownsCurrentCache {
-                        try CacheStore.cacheOwnerAttachment(ownerAttachment, serverURL: server, sessionID: sessionID, in: modelContext)
-                    }
+                    // The first load creates the cached row after the owner state was applied.
+                    cacheOwnerAttachment()
                 } catch {
                     cacheErrorMessage = error.localizedDescription
                 }
@@ -3041,7 +3054,9 @@ public final class ChatViewModel {
     /// TAL-1043: Cancel, Retry or Discard an owner input, as the server offers it. Retry returns the original text to
     /// the composer for review and never resends it; closing the sheet never cancels anything.
     public func performOwnerAction(_ action: OwnerAdmission.Action, on admission: OwnerAdmission, modelContext: ModelContext? = nil) async {
-        guard let sessionID, !isViewingCachedData, admission.actions.contains(action) else { return }
+        guard let sessionID, !isViewingCachedData, ownerActionAdmissionID == nil, admission.actions.contains(action) else { return }
+        ownerActionAdmissionID = admission.admissionId
+        defer { ownerActionAdmissionID = nil }
         do {
             let response = try await client.ownerAction(sessionID: sessionID, action: action, admission: admission)
             applyReadOnlyState(from: response.session)
@@ -3070,6 +3085,10 @@ public final class ChatViewModel {
                 submissionID: UUID().uuidString
             )
             applyReadOnlyState(from: response.session)
+            // The run can end while the input is on its way; the owner then admits it on a new stream.
+            if let streamID = Self.nonEmpty(response.streamId), streamID != activeStreamID {
+                await attachToServerStartedRun(streamID: streamID, modelContext: nil)
+            }
             return .executed(message: nil)
         } catch {
             await reconcileOwnerRefusal(error, modelContext: nil)

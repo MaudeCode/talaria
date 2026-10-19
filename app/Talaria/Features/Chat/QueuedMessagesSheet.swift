@@ -8,7 +8,7 @@ import TalariaKit
 struct QueuedMessagesSheet: View {
     let previews: [QueuedMessagePreview]
     var admissions: [OwnerAdmission] = []
-    /// False while offline: the inputs show, but nothing can act on them.
+    /// False while offline or while an owner action awaits the server: the inputs show, but nothing can act on them.
     var canActOnAdmissions = true
     let onSendNow: (UUID) -> Void
     let onEdit: (UUID) -> Void

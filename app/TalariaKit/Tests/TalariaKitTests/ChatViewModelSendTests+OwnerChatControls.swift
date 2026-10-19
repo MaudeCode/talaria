@@ -227,6 +227,78 @@ extension ChatViewModelSendTests {
         XCTAssertEqual(Set(log.bodies.keys), [], "No local command reached the server")
     }
 
+    /// An owner run can finish while a message is on its way; the owner then admits it on a new stream, which the chat follows.
+    func testAnOwnerAdmissionOnANewStreamIsFollowed() async throws {
+        let stream = SpySSEStreamingClient()
+        let normal = try Self.ownerAttachmentJSON("normal")
+        let viewModel = try ownerViewModel(OwnerRequestLog(), streamClient: stream, session: {
+            Self.ownerSessionObject(attachment: normal, activeStreamID: "owner-stream")
+        }) { path, request in
+            guard path == "/api/chat/start" else { return nil }
+            return apiTestJSONResponse(#"{"session_id":"session-abc","stream_id":"owner-stream-2","owner_attachment":\#(normal)}"#, for: request)
+        }
+        await viewModel.loadMessages()
+        await viewModel.reconnectStreamIfNeeded()
+        XCTAssertEqual(viewModel.activeStreamID, "owner-stream")
+
+        _ = await viewModel.submitStreamingMessage("One more thing", behavior: .steer)
+
+        XCTAssertEqual(viewModel.activeStreamID, "owner-stream-2", "The accepted input's run is followed")
+        let streamURL = try XCTUnwrap(stream.startedURLs.last)
+        XCTAssertTrue(streamURL.absoluteString.contains("stream_id=owner-stream-2"))
+    }
+
+    /// A second tap while an owner action is in flight sends nothing; the first answer settles it.
+    func testOwnerActionsAreSerialized() async throws {
+        let log = OwnerRequestLog()
+        let unknown = try Self.ownerAttachmentJSON("unknown")
+        let normal = try Self.ownerAttachmentJSON("normal")
+        let viewModel = try ownerViewModel(log, session: { Self.ownerSessionObject(attachment: unknown) }) { path, request in
+            guard path == "/api/chat/owner-action" else { return nil }
+            Thread.sleep(forTimeInterval: 0.2)
+            return apiTestJSONResponse(#"{"ok":true,"session":\#(Self.ownerSessionObject(attachment: normal))}"#, for: request)
+        }
+        await viewModel.loadMessages()
+        let admission = try XCTUnwrap(viewModel.ownerAttachment?.admissions.first)
+
+        async let first: Void = viewModel.performOwnerAction(.discard, on: admission)
+        async let second: Void = viewModel.performOwnerAction(.discard, on: admission)
+        _ = await (first, second)
+
+        XCTAssertEqual(log.bodies["/api/chat/owner-action"]?.count, 1, "The duplicate tap never reaches the server")
+        XCTAssertNil(viewModel.sendErrorMessage)
+        XCTAssertNil(viewModel.ownerActionAdmissionID, "The action settled")
+    }
+
+    /// Owner state from an owner action (or a snapshot or admission) is the last server state, so offline shows it.
+    func testOwnerStateFromAnActionPersistsForOfflineDisplay() async throws {
+        final class State: @unchecked Sendable { var offline = false }
+        let state = State()
+        let context = try makeContext()
+        let normal = try Self.ownerAttachmentJSON("normal")
+        let unknown = try Self.ownerAttachmentJSON("unknown")
+        func viewModel() throws -> ChatViewModel {
+            try makeViewModel { request in
+                if state.offline { throw URLError(.notConnectedToInternet) }
+                if request.url?.path == "/api/chat/owner-action" {
+                    return apiTestJSONResponse(#"{"ok":true,"session":\#(Self.ownerSessionObject(attachment: normal))}"#, for: request)
+                }
+                return apiTestJSONResponse(#"{"session":\#(Self.ownerSessionObject(attachment: unknown))}"#, for: request)
+            }
+        }
+        let online = try viewModel()
+        await online.loadMessages(modelContext: context)
+        await online.performOwnerAction(.discard, on: try XCTUnwrap(online.ownerAttachment?.admissions.first), modelContext: context)
+        XCTAssertEqual(online.ownerAttachment?.admissions, [])
+
+        state.offline = true
+        let offline = try viewModel()
+        await offline.loadMessages(modelContext: context)
+        XCTAssertTrue(offline.isViewingCachedData)
+        XCTAssertEqual(offline.ownerAttachment?.admissions, [], "Offline shows the owner's last state, not the older load")
+        XCTAssertEqual(offline.ownerAttachment?.canSubmit, true)
+    }
+
     func testOwnerStateIsCachedPerServerForOfflineDisplay() async throws {
         final class State: @unchecked Sendable { var offline = false }
         let state = State()
