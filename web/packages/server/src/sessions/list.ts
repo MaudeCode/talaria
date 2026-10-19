@@ -453,7 +453,7 @@ export function withOwnerLocks(rows: Row[], stateDbSources: (ids: string[], prof
   return rows.map((r) => {
     const owners = ownersByProfile.get(str(r.profile) || 'default')
     const owner = owners?.get(str(r.session_id).trim())
-    if (typeof owner === 'object') return { ...r, ...(owner.source ? { ...normalizeAgentSessionSource(owner.source), source_tag: owner.source } : {}), read_only: true, read_only_reason: owner.reason ?? CANONICAL_READ_ONLY_REASON }
+    if (typeof owner === 'object') return { ...r, ...(owner.source ? { ...normalizeAgentSessionSource(owner.source), source_tag: owner.source } : {}), ...(owner.execution_mode ? { execution_mode: owner.execution_mode } : {}), read_only: true, read_only_reason: owner.reason ?? CANONICAL_READ_ONLY_REASON }
     const webui = ['source_tag', 'raw_source', 'session_source'].some((k) => ['webui', 'fork'].includes(str(r[k]).trim().toLowerCase()))
     if (!owners || (!webui && owner && !isClaimableCliSource({ source_tag: owner, ...normalizeAgentSessionSource(owner) }, owner))) return { ...r, read_only: true, ...(!owners ? { read_only_reason: OWNERSHIP_UNAVAILABLE_REASON } : {}) }
     return r

@@ -160,6 +160,8 @@ export interface SessionServiceDeps {
   resolveContextLength?: (model: string | null, provider: string | null, profile: string | null) => Promise<number | null>
   /** `(model, provider)` normalisation from a request (checkpoint 7 wires provider-qualified ids). */
   modelStateFromRequest: (model: unknown, requestedProvider: unknown, currentProvider: string | null) => [string | null, string | null]
+  /** TAL-1040: the profile's own endpoint for `provider` (its config.yaml `model.base_url`), else null. */
+  profileBaseUrl?: (profile: string, provider: string) => string | null
   /** TAL-542: the pair a stale session model starts on, from the profile's catalog; `null` keeps it. */
   repairSessionModel?: (profile: string | null, model: string, provider: string | null) => [string, string] | null
   /** TAL-542: builds the catalog `repairSessionModel` reads unless a fresh enough one exists. */
@@ -677,7 +679,8 @@ export class SessionService {
     if (((await this.indexMarksWasWebui(sid)) || ((await this.store.wasDeleted(sid)) && ['', 'webui', 'fork'].includes(stateDbSource))) && !subagentChild && !canonical) return { session: null, reason: 'was_webui' }
     const msgs = isClaudeCodeSessionId(sid) ? this.deps.claudeCode?.messages(sid) ?? [] : stateDbSessionMessages(dbPath, sid, { stitch: true })
     const meta: Row = { ...(metaIn ?? (await this.lookupCliMeta(sid)) ?? {}) }
-    if (!msgs.length && !(meta._lineage_root_id && meta._lineage_tip_id)) return { session: null, reason: 'no_foreign_state' }
+    // An owner receipt proves a session before its first turn (a fresh diagnostic chat, TAL-1040); a bare row does not.
+    if (!msgs.length && !(meta._lineage_root_id && meta._lineage_tip_id) && !canonical) return { session: null, reason: 'no_foreign_state' }
     if (row) {
       if (!meta.source_tag && stateDbSource) meta.source_tag = stateDbSource
       if (!meta.raw_source && stateDbSource) meta.raw_source = stateDbSource
@@ -1367,6 +1370,33 @@ export class SessionService {
     const s = (await this.store.newSession({ workspace, model, modelProvider: provider, profile, projectId: typeof body.project_id === 'string' && body.project_id ? body.project_id : null, worktree: opts.worktree ?? null, enabledToolsets: toolsets }))
     if (opts.worktree) this.publish('session_new', s.profile, s.session_id)
     return s
+  }
+
+  /**
+   * TAL-1040: an `ignore_config` / `safe` chat starts through the active profile's Agent owner, which freezes the mode before
+   * any Agent import. That owner reads no profile default, so the launch route is explicit: the requested model, else this
+   * profile's default as a normal chat starts, with the profile's own endpoint for that provider.
+   */
+  async createDiagnostic(body: Record<string, unknown>, mode: 'ignore_config' | 'safe'): Promise<Record<string, unknown>> {
+    const profile = (typeof body.profile === 'string' && body.profile) || this.deps.activeProfile()
+    if (profile !== this.deps.activeProfile()) throw new HttpFailure(400, 'A diagnostic chat starts in the active profile')
+    if (!this.owner) throw new HttpFailure(409, 'The Agent cannot start a chat in this mode', { code: 'execution_mode_unavailable', reason: 'gateway_unavailable' })
+    const defaults = await this.store.deps.defaults(profile)
+    let workspace: string | null
+    try {
+      workspace = await this.resolveNewSessionWorkspace(body, null, profile)
+    } catch (error) {
+      throw new HttpFailure(400, (error as Error).message)
+    }
+    const [requested, requestedProvider] = this.deps.modelStateFromRequest(body.model, body.model_provider, null)
+    const model = requested ?? defaults.model
+    const provider = requested ? requestedProvider : requestedProvider ?? defaults.modelProvider ?? null
+    if (!model) throw new HttpFailure(400, 'Choose a model before starting a diagnostic chat')
+    const toolsets = this.validateToolsetsShape(body.enabled_toolsets)
+    const baseUrl = provider ? this.deps.profileBaseUrl?.(profile, provider) ?? null : null
+    const sid = await this.owner.create(profile, { execution_mode: mode, cwd: workspace ?? defaults.workspace, model,
+      ...(provider ? { provider } : {}), ...(baseUrl ? { base_url: baseUrl } : {}), ...(toolsets ? { toolsets } : {}) })
+    return this.detail(sid, {})
   }
 
   // ── simple metadata mutations ────────────────────────────────────────────

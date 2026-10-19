@@ -9,7 +9,7 @@ import { existsSync, openSync, readSync, closeSync, statSync } from 'node:fs'
 import { DatabaseSync } from 'node:sqlite'
 import { createHash } from 'node:crypto'
 import { Worker } from 'node:worker_threads'
-import type { AgentStorage } from '@maudecode/talaria-web-contracts'
+import type { AgentStorage, ExecutionMode } from '@maudecode/talaria-web-contracts'
 import { str } from '../util.js'
 import { stateDbMessageFingerprint, stateDbMessageKey } from './state-db-identity.js'
 import { MESSAGING_SOURCES } from './source-kind.js'
@@ -571,7 +571,8 @@ export function latestCronSessionInfo(dbPath: string, jobIds: Iterable<string>, 
 export const CANONICAL_READ_ONLY_REASON = 'This session is owned by the Agent gateway and is display-only in Talaria.'
 export const OWNERSHIP_UNAVAILABLE_REASON = 'Agent session ownership could not be verified. The session is read-only until storage is readable.'
 export const RETIRED_READ_ONLY_REASON = 'The Agent has retired this session identity. Open or import a new conversation to continue.'
-export type StateDbSessionSource = string | { source: string; canonical: true; reason?: string }
+/** `execution_mode` (TAL-1040) is the frozen bypass in the owner's creation receipt; absent without a readable receipt. */
+export type StateDbSessionSource = string | { source: string; canonical: true; reason?: string; execution_mode?: ExecutionMode }
 
 /** Ownership fences outlive the fully validated localLineages history: even a pruned or broken receipt cannot release a writer. */
 function sessionSources(db: DatabaseSync, cols: Set<string>, ids: string[]): Map<string, StateDbSessionSource> {
@@ -651,6 +652,7 @@ function sessionSources(db: DatabaseSync, cols: Set<string>, ids: string[]): Map
     let source = kanban.has(id) ? 'kanban' : str(row?.source)
     let canonical = false
     let retiredId = false
+    let mode: ExecutionMode | undefined
     for (const segment of lineages.get(id) ?? [id]) {
       const chatId = str(rows.get(segment)?.chat_id)
       for (const owner of new Set([segment, chatId, receiptOwners.get(segment)].filter((v): v is string => Boolean(v)))) {
@@ -661,14 +663,19 @@ function sessionSources(db: DatabaseSync, cols: Set<string>, ids: string[]): Map
         // A broken receipt never releases its owner or a physical row naming that owner.
         canonical = true
         const origin = policy?.policy
-        if (origin && typeof origin === 'object' && !Array.isArray(origin) && str((origin as Dict).source)) source = str((origin as Dict).source)
+        if (origin && typeof origin === 'object' && !Array.isArray(origin)) {
+          const frozen = origin as Dict
+          if (str(frozen.source)) source = str(frozen.source)
+          mode ??= frozen.safe_mode === true ? 'safe' : frozen.ignore_user_config === true ? 'ignore_config' : 'normal'
+        }
       }
     }
     const authority = canonical
     // LOCAL is the canonical transport. Missing receipts cannot prove it safe to claim.
     if (lower(source) === 'local') canonical = true
     if (!row && !canonical && !retiredId) continue
-    sources.set(id, retiredId && !authority ? { source, canonical: true, reason: RETIRED_READ_ONLY_REASON } : canonical ? { source, canonical: true } : source)
+    const owned = { source, canonical: true as const, ...(mode ? { execution_mode: mode } : {}) }
+    sources.set(id, retiredId && !authority ? { ...owned, reason: RETIRED_READ_ONLY_REASON } : canonical ? owned : source)
   }
   return sources
 }

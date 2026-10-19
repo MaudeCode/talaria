@@ -1,6 +1,6 @@
 /** One native-owner seam. Talaria observes its history and never settles it into a local Session. */
 import { createHash, randomUUID } from 'node:crypto'
-import { GatewaySessionResultSchema, type GatewaySessionParams, type GatewaySessionResult, type GatewaySnapshot, type OwnerAttachment } from '@maudecode/talaria-web-contracts'
+import { GatewaySessionResultSchema, type ExecutionModes, type GatewayCreateParams, type GatewaySessionParams, type GatewaySessionResult, type GatewaySnapshot, type OwnerAttachment } from '@maudecode/talaria-web-contracts'
 import type { SidecarLike } from '../sidecar/client.js'
 import { redactNestedMessageContainers, publicToolFrame } from '../redact.js'
 import { str } from '../util.js'
@@ -23,6 +23,15 @@ const ownerStreamPrefix = (home: string): string => `owner-${createHash('sha256'
 const ownerStateId = (identity: string): string => `owner-${createHash('sha256').update(identity).digest('hex')}`
 /** The scope remains verifiable after a server restart, before a journal lookup or stream subscription. */
 export const gatewayStreamVisible = (stream: string, home: string): boolean => !stream.startsWith('owner-') || stream.startsWith(ownerStreamPrefix(home))
+
+type Unavailable = NonNullable<ExecutionModes['modes'][number]['reason']>
+/** The server's one classification of why an owner cannot start a diagnostic chat; clients word the code. */
+function unavailableReason(result: GatewaySessionResult): Unavailable {
+  if (result.state === 'stopped') return 'gateway_stopped'
+  if (result.reason === 'served_profile_sessions_unavailable') return 'served_profile'
+  if (result.state === 'incompatible') return 'agent_unsupported'
+  return 'gateway_unavailable'
+}
 
 /** A preview can be absent in a valid native receipt; only original nonblank text can become a retry draft. */
 function retryText(admission: GatewaySnapshot['pending'][number]): string | null {
@@ -48,6 +57,35 @@ export class GatewaySessions {
   }
 
   isOwned(sid: string): boolean { return this.target(sid) !== null }
+
+  private async createCall(params: GatewayCreateParams): Promise<GatewaySessionResult> {
+    const sidecar = this.deps.sidecar()
+    if (!sidecar) return { state: 'unavailable', reason: 'sidecar_unavailable', snapshot: null, receipt: null }
+    try {
+      return await sidecar.call('gateway.create', params, { timeoutMs: 35_000 })
+    } catch {
+      return { state: 'unavailable', reason: 'owner_connection_lost', snapshot: null, receipt: null }
+    }
+  }
+
+  /** TAL-1040: normal always runs; the bypass modes need an owner that freezes them before any Agent import. */
+  async modes(profile: string): Promise<ExecutionModes> {
+    const result = await this.createCall({ profile_home: this.deps.profileHome(profile), probe: true })
+    const reason = result.state === 'attached' ? null : unavailableReason(result)
+    return { modes: [{ mode: 'normal', available: true, reason: null }, ...(['ignore_config', 'safe'] as const).map((mode) => ({ mode, available: reason === null, reason }))] }
+  }
+
+  /**
+   * TAL-1040: the owner mints a diagnostic chat, freezes its bypass in the creation receipt and runs each turn in a fresh
+   * private worker. Talaria keeps no local Session and never falls back to an ordinary chat; no credential is sent.
+   */
+  async create(profile: string, params: Omit<GatewayCreateParams, 'profile_home' | 'probe' | 'request_id'>): Promise<string> {
+    const result = await this.createCall({ ...params, profile_home: this.deps.profileHome(profile), request_id: randomUUID() })
+    if (result.state !== 'attached' || !result.snapshot) {
+      throw new HttpFailure(409, 'The Agent cannot start a chat in this mode', { code: 'execution_mode_unavailable', reason: unavailableReason(result) })
+    }
+    return result.snapshot.session_id
+  }
 
   private async call(target: Target, params: Omit<GatewaySessionParams, 'session_id' | 'profile_home'>): Promise<GatewaySessionResult> {
     const sidecar = this.deps.sidecar()

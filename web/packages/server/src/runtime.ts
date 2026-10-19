@@ -416,6 +416,10 @@ export async function createDeps(opts: CreateDepsOptions): Promise<AppDeps> {
       if (requestedProvider === undefined && !provider) provider = currentProvider
       return [raw, provider]
     },
+    profileBaseUrl: (profile, provider) => {
+      const { provider: configured, base_url: url } = asDict(agentConfig.peek(profileHome(profile))?.model)
+      return configured === provider && typeof url === 'string' && url.trim() ? url.trim() : null
+    },
     repairSessionModel: (profile, model, provider) => catalog.sessionModelRepair(profileHome(profile ?? activeProfile()), model, provider),
     warmSessionModelRepair: (profile) => catalog.warmSessionModelRepair(profileHome(profile ?? activeProfile())),
     yolo: { isEnabled: (sid) => yoloSessions.has(sid), set: (sid, enabled) => { if (enabled) yoloSessions.add(sid); else yoloSessions.delete(sid) } },
