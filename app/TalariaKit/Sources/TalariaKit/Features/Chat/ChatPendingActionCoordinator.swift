@@ -163,11 +163,7 @@ final class ChatPendingActionCoordinator {
         do {
             let response = try await client.sessionYolo(sessionID: sessionID)
             isSessionApprovalBypassEnabled = response.yoloEnabled == true
-            if isSessionApprovalBypassEnabled {
-                approvalPrompt = nil
-            } else {
-                renderApprovalPromptForCurrentSession()
-            }
+            renderApprovalPromptForCurrentSession()
         } catch {
             // Approval bypass state is advisory UI; failures should not block chat.
         }
@@ -538,9 +534,10 @@ final class ChatPendingActionCoordinator {
             return
         }
 
+        // Bypass hides only approvals it can answer; an owner that refuses bypass still waits on this one (TAL-1043).
         guard delegate?.pendingActionHasActiveStream == true,
-              !isSessionApprovalBypassEnabled,
-              let prompt = approvalPendingBySession[sessionID]
+              let prompt = approvalPendingBySession[sessionID],
+              !isSessionApprovalBypassEnabled || !prompt.pending.allowsApprovalBypass
         else {
             if approvalPrompt?.sessionID == sessionID {
                 approvalPrompt = nil

@@ -204,6 +204,10 @@ final class AgentLiveActivityManager: AgentLiveActivityManaging {
             updateCurrentState { state in
                 AgentRunActivityStateReducer.waitingForClarification(state: state)
             }
+        case .promptSettled:
+            updateCurrentState { state in
+                AgentRunActivityStateReducer.promptSettled(state: state)
+            }
         }
     }
 

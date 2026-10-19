@@ -347,7 +347,8 @@ public final class ChatViewModel {
     public var approvalPrompt: ApprovalPromptState? { pendingActionCoordinator.approvalPrompt }
     public var isRespondingToApproval: Bool { pendingActionCoordinator.isRespondingToApproval }
     public var approvalErrorMessage: String? { pendingActionCoordinator.approvalErrorMessage }
-    public var isSessionApprovalBypassEnabled: Bool { pendingActionCoordinator.isSessionApprovalBypassEnabled }
+    /// The local bypass bit belongs to chats Talaria runs; an owner chat's owner decides its approvals (TAL-1043).
+    public var isSessionApprovalBypassEnabled: Bool { ownerAttachment == nil && pendingActionCoordinator.isSessionApprovalBypassEnabled }
     public var clarificationPrompt: ClarificationPromptState? { pendingActionCoordinator.clarificationPrompt }
     public var clarificationDraftResponse: String { pendingActionCoordinator.clarificationDraftResponse }
     public var clarificationSelectedChoices: [String] { pendingActionCoordinator.clarificationSelectedChoices }

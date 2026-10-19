@@ -795,11 +795,12 @@ public final class ChatStreamCoordinator {
             let hasCompletedTranscript = delegate?.streamCoordinatorApplyDone(payload) == true
             completeCurrentResponse(needsTranscriptRefresh: !hasCompletedTranscript, terminalState: payload.terminalState)
         case .approvalPending(let update):
-            liveActivityManager?.update(.waitingForApproval)
+            // An empty update is the settled prompt (`approval_cleared`); the run goes on.
+            liveActivityManager?.update(update.pending == nil ? .promptSettled : .waitingForApproval)
             delegate?.streamCoordinatorApplyApprovalUpdate(update)
             markProgress()
         case .clarificationPending(let update):
-            liveActivityManager?.update(.waitingForClarification)
+            liveActivityManager?.update(update.pending == nil ? .promptSettled : .waitingForClarification)
             delegate?.streamCoordinatorApplyClarificationUpdate(update)
             markProgress()
         case .steerConsumed(let event):

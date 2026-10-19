@@ -572,6 +572,13 @@ public enum AgentRunActivityStateReducer {
         statusState(.waitingForApproval, activity: String(localized: "Waiting for approval"), state: state, now: now)
     }
 
+    public static func promptSettled(
+        state: AgentRunActivityAttributes.ContentState,
+        now: Date = Date()
+    ) -> AgentRunActivityAttributes.ContentState {
+        statusState(.thinking, activity: String(localized: "Working"), state: state, now: now)
+    }
+
     public static func waitingForClarification(
         state: AgentRunActivityAttributes.ContentState,
         now: Date = Date()

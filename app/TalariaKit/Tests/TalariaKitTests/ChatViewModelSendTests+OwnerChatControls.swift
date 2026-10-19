@@ -299,6 +299,53 @@ extension ChatViewModelSendTests {
         XCTAssertEqual(offline.ownerAttachment?.canSubmit, true)
     }
 
+    /// The local approval-bypass bit belongs to chats Talaria runs; an owner's approval still shows while it is set.
+    func testAnOwnerApprovalShowsDespiteTheLocalApprovalBypass() async throws {
+        let stream = SpySSEStreamingClient()
+        let normal = try Self.ownerAttachmentJSON("normal")
+        let viewModel = try ownerViewModel(OwnerRequestLog(), streamClient: stream, session: {
+            Self.ownerSessionObject(attachment: normal, activeStreamID: "owner-stream")
+        }) { path, request in
+            path == "/api/session/yolo" ? apiTestJSONResponse(#"{"ok":true,"yolo_enabled":true}"#, for: request) : nil
+        }
+        await viewModel.loadMessages()
+        await viewModel.reconnectStreamIfNeeded()
+        await viewModel.refreshApprovalBypassState()
+
+        stream.emit(SSEEventDecoder.decode(eventType: "approval", data: #"{"approval_id":"owner-approval","command":"rm -rf build","allowed_choices":["once","deny"],"can_enable_yolo":false,"pending_count":1}"#))
+
+        XCTAssertEqual(viewModel.approvalPrompt?.pending.approvalId, "owner-approval", "The owner still waits for this answer")
+        XCTAssertFalse(viewModel.isSessionApprovalBypassEnabled, "No bypass chip: the owner decides its approvals")
+    }
+
+    /// A settled prompt returns the Live Activity to work instead of announcing the wait again.
+    func testASettledOwnerPromptReturnsTheLiveActivityToWork() async throws {
+        let stream = SpySSEStreamingClient()
+        let activity = SpyChatLiveActivityManager()
+        let normal = try Self.ownerAttachmentJSON("normal")
+        let viewModel = try makeViewModel(streamClient: stream, liveActivityManager: activity) { request in
+            switch request.url?.path {
+            case "/api/session": return apiTestJSONResponse(#"{"session":\#(Self.ownerSessionObject(attachment: normal, activeStreamID: "owner-stream"))}"#, for: request)
+            case "/api/chat/stream/status": return apiTestJSONResponse(#"{"active":true,"stream_id":"owner-stream","replay_available":true}"#, for: request)
+            default: return apiTestJSONResponse("{}", for: request)
+            }
+        }
+        await viewModel.loadMessages()
+        await viewModel.reconnectStreamIfNeeded()
+
+        stream.emit(SSEEventDecoder.decode(eventType: "approval", data: #"{"approval_id":"owner-approval","command":"ls","pending_count":1}"#))
+        XCTAssertEqual(activity.updates.last, .waitingForApproval)
+        stream.emit(SSEEventDecoder.decode(eventType: "approval_cleared", data: #"{"session_id":"session-abc","pending_count":0}"#))
+        XCTAssertNotEqual(activity.updates.last, .waitingForApproval, "The settled approval is not announced as a wait")
+        XCTAssertEqual(activity.updates.last, .promptSettled)
+
+        stream.emit(SSEEventDecoder.decode(eventType: "clarify", data: #"{"clarify_id":"owner-clarify","steps":[{"qid":"q0","question":"Pick","choices":["a"],"multi_select":false}],"pending_count":1}"#))
+        XCTAssertEqual(activity.updates.last, .waitingForClarification)
+        stream.emit(SSEEventDecoder.decode(eventType: "clarify", data: #"{"status":"resolved","clarify_id":"owner-clarify"}"#))
+        XCTAssertNotEqual(activity.updates.last, .waitingForClarification, "The settled clarification is not announced as a wait")
+        XCTAssertEqual(activity.updates.last, .promptSettled)
+    }
+
     func testOwnerStateIsCachedPerServerForOfflineDisplay() async throws {
         final class State: @unchecked Sendable { var offline = false }
         let state = State()
