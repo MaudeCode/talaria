@@ -1880,7 +1880,7 @@ struct SessionListView: View {
 
     /// The server creates the chat in `mode` as it opens (TAL-1045).
     private func openNewChat(in mode: ExecutionMode) {
-        navigationState.select(PendingNewChatRoute(projectID: selectedProjectID, executionMode: mode))
+        navigationState.select(viewModel.diagnosticChatRoute(mode, projectID: selectedProjectID))
     }
 
     private func openSession(_ session: SessionSummary, in list: AppSection = .chats) async {

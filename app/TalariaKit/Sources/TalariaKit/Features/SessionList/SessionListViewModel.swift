@@ -1436,6 +1436,12 @@ public final class SessionListViewModel {
         executionModesProfile == activeProfileName ? executionModeOptions.filter(\.mode.isDiagnostic) : []
     }
 
+    /// New Chat's route for `mode`. It names the profile the mode was offered for, so if the active profile changes before
+    /// the chat is created the server refuses it rather than creating it in another profile.
+    public func diagnosticChatRoute(_ mode: ExecutionMode, projectID: String?) -> PendingNewChatRoute {
+        PendingNewChatRoute(profileName: executionModesProfile, projectID: projectID, executionMode: mode)
+    }
+
     /// Reads the active profile's modes. An older server (404) or a failed read offers none.
     public func loadExecutionModes() async {
         let profile = activeProfileName

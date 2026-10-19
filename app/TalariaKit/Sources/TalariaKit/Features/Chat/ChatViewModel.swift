@@ -1678,9 +1678,6 @@ public final class ChatViewModel {
             if let modelContext {
                 do {
                     try cacheMessagesIfCurrent(messages, sessionID: sessionID, in: modelContext)
-                    // The first load creates the cached row after the owner state and mode were applied.
-                    cacheOwnerAttachment()
-                    cacheExecutionMode()
                 } catch {
                     cacheErrorMessage = error.localizedDescription
                 }
@@ -3354,6 +3351,9 @@ public final class ChatViewModel {
             messagesOffset: recentMessagesOffset, hasOlderMessages: recentHasOlderMessages
         )
         try CacheStore.cacheRunStatus(streamCoordinator.runStatus, serverURL: server, sessionID: sessionID, in: modelContext)
+        // The row may be new: a first load or a new chat's first save follows the owner state and mode it applied.
+        try CacheStore.cacheOwnerAttachment(ownerAttachment, serverURL: server, sessionID: sessionID, in: modelContext)
+        try CacheStore.cacheExecutionMode(executionMode, serverURL: server, sessionID: sessionID, in: modelContext)
     }
 
     /// Saves the transcript as it stands, a partial answer included, when the chat leaves the

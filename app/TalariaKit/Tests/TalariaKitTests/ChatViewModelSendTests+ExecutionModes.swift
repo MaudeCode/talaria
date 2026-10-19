@@ -29,6 +29,35 @@ extension ChatViewModelSendTests {
         XCTAssertFalse(viewModel.isComposerReadOnly, "The attached owner takes the first message")
     }
 
+    /// A new chat has no cache until its first transcript save, so the mode it adopted must still reach that row.
+    func testANewDiagnosticChatsModeIsCachedWithItsFirstTranscript() async throws {
+        final class State: @unchecked Sendable { var offline = false }
+        let state = State()
+        let context = try makeContext()
+        let created = try APIClient.responseDecoder().decode(SessionResponse.self, from: Data(try executionModesFixture("created").utf8))
+        let detail = try XCTUnwrap(created.session)
+        let sessionID = try XCTUnwrap(detail.sessionId)
+        let viewModel = try makeViewModel(sessionSummary: SessionSummary(title: "New Chat")) { request in
+            if state.offline { throw URLError(.notConnectedToInternet) }
+            guard request.url?.path == "/api/chat/start" else { return apiTestJSONResponse("{}", for: request) }
+            return apiTestJSONResponse(#"{"session_id":"\#(sessionID)","stream_id":"owner-stream","admission_id":"admission-1"}"#, for: request)
+        }
+        // The list caches the created row when it claims it, before the chat has a cache context of its own.
+        try CacheStore.cacheSession(SessionSummary(from: detail), serverURL: try XCTUnwrap(URL(string: "https://example.test")), in: context)
+        viewModel.adoptCreatedSession(SessionSummary(from: detail), detail: detail)
+        let sent = await viewModel.sendMessage("Is a plugin breaking this?")
+        XCTAssertTrue(sent)
+        viewModel.persistTranscript(modelContext: context)
+
+        state.offline = true
+        let reopened = try makeViewModel(sessionSummary: SessionSummary(from: detail)) { _ in throw URLError(.notConnectedToInternet) }
+        await reopened.loadMessages(modelContext: context)
+
+        XCTAssertTrue(reopened.isViewingCachedData)
+        XCTAssertEqual(reopened.executionMode, .safe, "The cached new chat still says how it runs")
+        XCTAssertEqual(reopened.ownerAttachment?.isAttached, true)
+    }
+
     func testAnExistingChatShowsItsFrozenModeFromEveryDetailAndOfflineCache() async throws {
         final class State: @unchecked Sendable { var offline = false }
         let state = State()

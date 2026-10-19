@@ -76,6 +76,23 @@ extension SessionListMutationTests {
         XCTAssertEqual(viewModel.newChatExecutionModes.map(\.available), [false, false], "The work profile's own answer replaces them")
     }
 
+    func testADiagnosticChatIsCreatedInTheProfileItsModeWasOfferedFor() async throws {
+        let server = ExecutionModeServer()
+        server.modes = (200, try executionModesFixture("available"))
+        server.creation = (200, try executionModesFixture("created"))
+        let viewModel = try executionModesViewModel(server)
+        await viewModel.loadActiveProfile()
+        await viewModel.loadExecutionModes()
+
+        let route = viewModel.diagnosticChatRoute(.safe, projectID: nil)
+        server.activeProfile = "work"
+        await viewModel.loadActiveProfile()
+        _ = await viewModel.createSessionResult(profile: route.profileName, executionMode: route.executionMode, requestID: "fixture-creation-1")
+
+        XCTAssertEqual(route.executionMode, .safe)
+        XCTAssertEqual(server.creationBodies.last?["profile"] as? String, "default", "A switch after choosing gets the server's refusal, not a chat in another profile")
+    }
+
     func testADiagnosticCreationSendsItsModeAndCreationIdentityAndReturnsTheServersSession() async throws {
         let server = ExecutionModeServer()
         server.creation = (200, try executionModesFixture("created"))
