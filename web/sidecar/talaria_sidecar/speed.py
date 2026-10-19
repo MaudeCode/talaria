@@ -30,6 +30,18 @@ def supported_speed_tiers(model: str, provider: str, base_url: str) -> list[dict
     tiers = []
     for tier in ("priority", "ultrafast"):
         override = fast_overrides(model, provider, base_url, tier)
-        if override:
+        if override and (tier != "ultrafast" or ultrafast_offered(model, provider, base_url)):
             tiers.append({"id": "fast" if override.get("speed") == "fast" else tier, "service_tier": tier})
     return [{"id": "standard", "service_tier": "default"}, *tiers] if tiers else []
+
+
+def ultrafast_offered(model: str, provider: str, base_url: str) -> bool:
+    """The Agent's account check: a Codex plan without Ultrafast accepts the tier and silently serves default."""
+    try:
+        from agent import codex_service_tiers
+    except ModuleNotFoundError as error:
+        if error.name not in ("agent", "agent.codex_service_tiers"):
+            raise
+        return True
+    offered = getattr(codex_service_tiers, "ultrafast_offered", None)
+    return offered is None or bool(offered(model, provider=provider, base_url=base_url))
