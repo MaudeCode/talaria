@@ -522,7 +522,7 @@ on the next turn. The Agent's filter also scopes deferred tool search and calls.
 ## Skill secret setup
 
 A client must explicitly advertise `skill_secret: true` on `chat.start`. The Web
-client does this at its shared start boundary; older/native clients and automatic
+and App clients do this at their shared start boundaries; older clients and automatic
 turns omit it and keep the ordinary setup-needed result without a prompt. The
 server forwards this per-turn capability to the sidecar. On Agents exposing
 `tools.skills_tool.bind_turn_secret_capture`, only an opted-in direct chat turn
@@ -535,6 +535,5 @@ unanswered. No answer is echoed, streamed, journaled, or put in a transcript.
 
 v0.22.1 provides the turn-local API; v0.22.0 and v0.22.2 do not. Talaria leaves
 their normal setup-needed result intact and never uses the process-global
-capture callback or ordinary clarification as a secret fallback. The Web uses
-the shared `skill_secret` secure prompt variant; native App adoption is tracked
-separately.
+capture callback or ordinary clarification as a secret fallback. The Web and the
+App render the shared `skill_secret` secure prompt variant.

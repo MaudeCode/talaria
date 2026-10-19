@@ -181,6 +181,37 @@ final class StreamHostedTests: XCTestCase {
         XCTAssertTrue(draftShown != nil || input?.text == "Ordinary fixture draft", "The reopened chat lost its ordinary draft")
     }
 
+    /// A running skill's missing secret opens the masked vault sheet over the chat, never the composer; the secret goes
+    /// to the respond endpoint only and appears nowhere in the chat, draft, or transcript afterwards (TAL-1046).
+    func testSkillSecretSheetSendsTheMaskedValueAndKeepsItOutOfTheChat() async throws {
+        let fixture = try FixtureApp(["--ui-test-chat-skill-secret"], for: self)
+        let session = try await fixture.session()
+        let window = try hostWindow(fixture.chat(session))
+        _ = try await requireElement(in: window, label: "Set Up example")
+        XCTAssertNotNil(HostedAccessibility.element(in: window, label: "Required for example setup"))
+        XCTAssertNil(HostedAccessibility.element(in: window, label: "Clarification Required"), "The secret prompt reached the composer")
+        let secureField = await awaitElement(in: window) { ($0 as? UITextField)?.isSecureTextEntry == true }
+        let field = try XCTUnwrap(secureField as? UITextField, "No masked field")
+        attachHostedScreenshot(window, name: "skill-secret-sheet-empty")
+        field.becomeFirstResponder()
+        field.insertText("synthetic-skill-secret")
+        settle()
+        attachHostedScreenshot(window, name: "skill-secret-sheet-masked")
+        let save = await awaitElement(in: window) { HostedAccessibility.identifier(of: $0) == "vault-prompt-submit" && self.isEnabled($0) }
+        HostedAccessibility.activate(try XCTUnwrap(save, "Save never enabled"))
+
+        let closed = await awaitNoElement(in: window, timeout: 5, where: label("Set Up example"))
+        XCTAssertTrue(closed)
+        _ = try await requireElement(in: window, label: "Agent setup: Saved EXAMPLE_API_KEY")
+        attachHostedScreenshot(window, name: "skill-secret-saved")
+        let draft = await composerText(in: window)
+        XCTAssertEqual(draft, "Ordinary fixture draft")
+        XCTAssertTrue(HostedAccessibility.elements(in: window, labelContaining: "synthetic-skill-secret").isEmpty)
+        XCTAssertFalse(HostedAccessibility.elements(in: window).contains {
+            $0.accessibilityValue?.contains("synthetic-skill-secret") == true || ($0 as? UITextView)?.text.contains("synthetic-skill-secret") == true
+        })
+    }
+
     /// A full run streams its rows in order, takes an approval and a slash-text clarification answer in the composer,
     /// and after a reopen settles into the server's transcript once each, with the clipped tool result and the file
     /// edit's diff on request (TAL-331, TAL-448).

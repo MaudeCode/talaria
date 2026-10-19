@@ -127,19 +127,21 @@ public struct PendingClarification: Decodable, Equatable, Identifiable {
     }
 }
 
-/// The Agent asks for a password manager's master password, a login to save, or a one-time code (TAL-887). The server
-/// owns every field; the answers go back once, keyed by field, and are never kept.
+/// The Agent asks for a password manager's master password, a login to save, a one-time code (TAL-887), or a skill's
+/// missing environment secret (TAL-1046). The server owns every field; the answers go back once, keyed by field, and
+/// are never kept. An unknown kind or field fails the whole prompt's decode, so it renders nothing.
 public struct VaultPrompt: Decodable, Equatable {
     public enum Kind: String, Decodable {
         case unlock = "vault_unlock"
         case saveLogin = "vault_save_login"
         case code = "vault_code"
+        case skillSecret = "skill_secret"
     }
 
     public struct Field: Decodable, Equatable, Identifiable {
         public enum Key: String, Decodable {
             case masterPassword = "master_password"
-            case identifier, password, code
+            case identifier, password, code, secret
         }
 
         public let key: Key
@@ -152,11 +154,27 @@ public struct VaultPrompt: Decodable, Equatable {
     public let displayName: String?
     public let site: String?
     public let hint: String?
+    /// The skill setup a `skill_secret` prompt is for.
+    public let skill: Skill?
     public let fields: [Field]
     public let timeoutAt: Double
 
+    public struct Skill: Decodable, Equatable {
+        public let envVar: String
+        public let skillName: String
+        public let help: String?
+        public let requiredFor: String?
+
+        enum CodingKeys: String, CodingKey {
+            case help
+            case envVar = "env_var"
+            case skillName = "skill_name"
+            case requiredFor = "required_for"
+        }
+    }
+
     enum CodingKeys: String, CodingKey {
-        case kind, backend, site, hint, fields
+        case kind, backend, site, hint, skill, fields
         case displayName = "display_name"
         case timeoutAt = "timeout_at"
     }

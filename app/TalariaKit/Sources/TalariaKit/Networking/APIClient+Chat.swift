@@ -209,6 +209,8 @@ private struct ChatStartRequest: Encodable {
     let voiceTurn: Bool?
     /// An owner chat's admission identity (TAL-1043); nil for a chat Talaria runs itself.
     let submissionId: String?
+    /// The App renders the masked `skill_secret` prompt, so a skill's missing secret is asked for there (TAL-1046).
+    let skillSecret = true
 }
 
 private struct OwnerActionRequest: Encodable {

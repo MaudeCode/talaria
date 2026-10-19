@@ -105,7 +105,7 @@ struct UITestFixtureEnvironment {
         let chatScenario = UITestChatScenario.current
         var initialDrafts: [ChatDraftKey: ChatDraft] = [:]
         let fixtureSessionDraft = ChatDraftKey.session(server: serverURL, sessionID: UITestFixtureURLProtocol.sessionID)
-        if chatScenario == .clarification || chatScenario == .batchClarification {
+        if chatScenario == .clarification || chatScenario == .batchClarification || chatScenario == .skillSecret {
             UITestChatFixtureState.shared.startChat()
             initialDrafts[fixtureSessionDraft] = ChatDraft(text: "Ordinary fixture draft")
         }
@@ -272,6 +272,8 @@ private enum UITestChatScenario: String, CaseIterable {
     case controls = "--ui-test-chat-controls"
     /// TAL-426: a pending steer from another device, with the server's Send now, Edit and Cancel.
     case pendingSteers = "--ui-test-chat-pending-steers"
+    /// TAL-1046: a running turn whose skill asks for its missing secret through the masked vault prompt.
+    case skillSecret = "--ui-test-chat-skill-secret"
 
     static var current: Self? {
         let arguments = ProcessInfo.processInfo.arguments
@@ -1449,6 +1451,29 @@ final class UITestFixtureURLProtocol: URLProtocol, @unchecked Sendable {
             }
             send(events: [
                 ("token", ["text": "Agent received: \(answer)"]),
+                ("done", [:]), ("stream_end", [:])
+            ])
+            finish()
+        case .skillSecret:
+            send(events: [("clarify", [
+                "clarify_id": "ui-fixture-skill-secret",
+                "session_id": Self.sessionID,
+                "steps": [],
+                "vault": [
+                    "kind": "skill_secret",
+                    "hint": "Enter the test key",
+                    "skill": ["env_var": "EXAMPLE_API_KEY", "skill_name": "example", "help": "https://example.com/keys", "required_for": "example setup"],
+                    "fields": [["key": "secret", "secure": true]],
+                    "timeout_at": Date().timeIntervalSince1970 + 300
+                ]
+            ])])
+            wait { $0.clarificationWasAnswered }
+            guard !isStopped else { return }
+            Self.chatState.settle()
+            // The Agent reports the outcome; the answer itself never comes back.
+            let saved = Self.chatState.receivedClarificationAnswers().isEmpty ? "Skipped" : "Saved"
+            send(events: [
+                ("token", ["text": "Agent setup: \(saved) EXAMPLE_API_KEY"]),
                 ("done", [:]), ("stream_end", [:])
             ])
             finish()
