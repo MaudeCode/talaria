@@ -326,6 +326,7 @@
 		C107L0000000000000000022 /* ProjectRenameSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107L0000000000000000122 /* ProjectRenameSheet.swift */; };
 		C107L0000000000000000023 /* ProjectFormSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107L0000000000000000123 /* ProjectFormSheet.swift */; };
 		C107L0000000000000000024 /* PendingNewChatView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107L0000000000000000124 /* PendingNewChatView.swift */; };
+		C107L0000000000000001045 /* NewChatModeMenu.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107L0000000000000001145 /* NewChatModeMenu.swift */; };
 		C107L0000000000000000025 /* OnboardingFeatureRow.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107L0000000000000000125 /* OnboardingFeatureRow.swift */; };
 		C107L0000000000000000026 /* KanbanCardDetailContent.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107L0000000000000000126 /* KanbanCardDetailContent.swift */; };
 		C06900000000000000000001 /* UITestFixture.swift in Sources */ = {isa = PBXBuildFile; fileRef = C06900000000000000000002 /* UITestFixture.swift */; };
@@ -751,6 +752,7 @@
 		C107L0000000000000000122 /* ProjectRenameSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProjectRenameSheet.swift; sourceTree = "<group>"; };
 		C107L0000000000000000123 /* ProjectFormSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProjectFormSheet.swift; sourceTree = "<group>"; };
 		C107L0000000000000000124 /* PendingNewChatView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PendingNewChatView.swift; sourceTree = "<group>"; };
+		C107L0000000000000001145 /* NewChatModeMenu.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NewChatModeMenu.swift; sourceTree = "<group>"; };
 		C107L0000000000000000125 /* OnboardingFeatureRow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OnboardingFeatureRow.swift; sourceTree = "<group>"; };
 		C107L0000000000000000126 /* KanbanCardDetailContent.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KanbanCardDetailContent.swift; sourceTree = "<group>"; };
 		C06900000000000000000002 /* UITestFixture.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UITestFixture.swift; sourceTree = "<group>"; };
@@ -1097,6 +1099,7 @@
 				C107L0000000000000000122 /* ProjectRenameSheet.swift */,
 				C107L0000000000000000123 /* ProjectFormSheet.swift */,
 				C107L0000000000000000124 /* PendingNewChatView.swift */,
+				C107L0000000000000001145 /* NewChatModeMenu.swift */,
 				A04300000000000000000011 /* SessionListComponents.swift */,
 				C107K0000000000000000101 /* NavigationBarLeadingMarginObserver.swift */,
 				C107K0000000000000000102 /* SessionFilterControls.swift */,
@@ -1851,6 +1854,7 @@
 				C107L0000000000000000022 /* ProjectRenameSheet.swift in Sources */,
 				C107L0000000000000000023 /* ProjectFormSheet.swift in Sources */,
 				C107L0000000000000000024 /* PendingNewChatView.swift in Sources */,
+				C107L0000000000000001045 /* NewChatModeMenu.swift in Sources */,
 				C107L0000000000000000025 /* OnboardingFeatureRow.swift in Sources */,
 				C107L0000000000000000026 /* KanbanCardDetailContent.swift in Sources */,
 				C06900000000000000000001 /* UITestFixture.swift in Sources */,

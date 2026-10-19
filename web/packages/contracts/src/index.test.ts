@@ -1,6 +1,6 @@
 import { ModelConfirmationRequiredSchema, sessionsContract } from './routes/sessions.js'
 import { MessageSchema, SessionSchema } from './views.js'
-import { OwnerAttachmentSchema, OwnerActionRequestSchema } from './gateway-session.js'
+import { ExecutionModesSchema, OwnerAttachmentSchema, OwnerActionRequestSchema } from './gateway-session.js'
 import { describe, expect, it } from 'vitest'
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
@@ -176,4 +176,16 @@ it('parses both shared automation blueprint route fixtures', () => {
   const fixture = shared('fixtures/cron-blueprints.json') as { catalog: unknown; fill: unknown }
   expect(CronBlueprintsSchema.parse(fixture.catalog).blueprints.some((b) => b.key === 'morning-brief')).toBe(true)
   expect(CronBlueprintFillSchema.parse(fixture.fill).draft.schedule).toBe('30 8 * * *')
+})
+
+it('parses the shared diagnostic execution mode fixtures the App renders (TAL-1045)', () => {
+  const fixture = shared('fixtures/execution-modes.json') as Record<'available' | 'unavailable' | 'create_request' | 'created' | 'existing' | 'refusal', unknown>
+  expect(ExecutionModesSchema.parse(fixture.available).modes.map((m) => [m.mode, m.available])).toEqual([['normal', true], ['ignore_config', true], ['safe', true]])
+  expect(ExecutionModesSchema.parse(fixture.unavailable).modes.filter((m) => !m.available).map((m) => m.reason)).toEqual(['gateway_stopped', 'gateway_stopped'])
+  expect(sessionsContract.session.new['~orpc'].inputSchema!.parse(fixture.create_request)).toMatchObject({ execution_mode: 'safe', request_id: 'fixture-creation-1' })
+  // The fixture keeps the fields the App reads; the server test matches it against the full envelope.
+  const owned = SessionSchema.pick({ session_id: true, execution_mode: true, read_only: true, owner_attachment: true })
+  expect(owned.parse((fixture.created as { session: unknown }).session)).toMatchObject({ execution_mode: 'safe', read_only: true, owner_attachment: { state: 'attached' } })
+  expect(owned.parse((fixture.existing as { session: unknown }).session).execution_mode).toBe('ignore_config')
+  expect(ErrorBodySchema.parse(fixture.refusal)).toMatchObject({ code: 'execution_mode_unavailable', reason: 'gateway_stopped' })
 })

@@ -68,6 +68,8 @@ public final class CachedSession {
     var runStatusData: Data?
     /// The detail's `owner_attachment` (TAL-1043), which list rows never carry, retained for offline display.
     var ownerAttachmentData: Data?
+    /// The detail's `execution_mode` (TAL-1045), retained for offline display.
+    var executionModeData: Data?
     /// The complete recent server page, stored atomically with its message rows. Nil marks a legacy/incomplete cache.
     var recentMessagesOffset: Int?
     var recentMessagesTruncated: Bool?

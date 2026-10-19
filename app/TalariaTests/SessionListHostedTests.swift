@@ -278,6 +278,34 @@ final class SessionListHostedTests: XCTestCase {
         try await assertFirstSendDuringCreation(withImportedFile: false)
     }
 
+    /// TAL-1045: a chat New Chat started in Safe Mode takes on the server's created session: its header leads with the
+    /// frozen mode, and its attached owner takes the first message.
+    func testANewSafeModeChatShowsItsServerModeAndTakesInput() async throws {
+        let fixture = try FixtureApp([], for: self)
+        let decoder = JSONDecoder()
+        decoder.keyDecodingStrategy = .convertFromSnakeCase
+        let created = try decoder.decode(SessionResponse.self, from: Data(try executionModesFixture("created").utf8))
+        let detail = try XCTUnwrap(created.session)
+        let window = try hostWindow(NavigationStack {
+            ChatView(
+                session: SessionSummary(title: "New Chat"),
+                server: UITestFixtureEnvironment.serverURL,
+                onAPIError: { _ in },
+                loadsInitialMessages: false,
+                draftStore: fixture.environment.draftStore,
+                startSession: { .started(SessionSummary(from: detail), detail: detail) }
+            )
+        }.environment(\.scenePhase, .active).modelContainer(fixture.cache))
+
+        let header = await awaitElement(in: window) { ($0.accessibilityLabel ?? "").contains("Safe Mode") }
+        XCTAssertNotNil(header, "The header shows the mode the server froze")
+        let started = await awaitNoElement(in: window) { $0.accessibilityLabel == "Starting chat…" }
+        XCTAssertTrue(started)
+        XCTAssertNil(HostedAccessibility.element(in: window, label: "This session is read-only."), "The attached owner takes input")
+        settle(0.3)
+        attachHostedScreenshot(window, name: "safe-mode-new-chat-phone")
+    }
+
     func testFirstSendKeepsImportedFilesDurableUntilTheServerAccepts() async throws {
         try await assertFirstSendDuringCreation(withImportedFile: true)
     }

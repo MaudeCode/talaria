@@ -329,6 +329,10 @@ struct SessionListView: View {
                 guard immediateRefreshID != nil else { return }
                 await refreshSessionsAndActiveProfile()
             }
+            .task(id: executionModesTaskID) {
+                guard scenePhase == .active else { return }
+                await viewModel.loadExecutionModes()
+            }
             .task(id: sessionEventsTaskID) {
                 guard scenePhase == .active else { return }
                 // The app's one subscription to server-announced changes (TAL-434): the list
@@ -647,6 +651,7 @@ struct SessionListView: View {
                     }
                     .disabled(isNewChatDisabled)
                     .accessibilityLabel("New Chat")
+                    .newChatModeMenu(viewModel.newChatExecutionModes, isDisabled: isNewChatDisabled, onSelect: openNewChat(in:))
                 }
             }
 
@@ -712,6 +717,7 @@ struct SessionListView: View {
             } actions: {
                 Button("New Chat", action: openNewChat)
                     .buttonStyle(.borderedProminent)
+                    .newChatModeMenu(viewModel.newChatExecutionModes, isDisabled: isNewChatDisabled, onSelect: openNewChat(in:))
             }
         }
     }
@@ -742,6 +748,7 @@ struct SessionListView: View {
                 profileName: route.profileName,
                 providerID: route.providerID,
                 projectID: route.projectID,
+                executionMode: route.executionMode,
                 server: server,
                 viewModel: viewModel,
                 onAPIError: { authManager.handleAPIError($0, server: server) },
@@ -1240,6 +1247,11 @@ struct SessionListView: View {
         )
     }
 
+    /// Rereads New Chat's modes for each profile, and when the app returns, so a started or stopped gateway shows.
+    private var executionModesTaskID: String {
+        "\(server.absoluteString)|\(viewModel.activeProfileName ?? "")|\(scenePhase == .active)"
+    }
+
     /// Restarts the session-change subscription when the scene's activity or the server changes.
     private var sessionEventsTaskID: String {
         "\(server.absoluteString)|\(scenePhase == .active)"
@@ -1270,6 +1282,7 @@ struct SessionListView: View {
         .disabled(isNewChatDisabled)
         .opacity(viewModel.isViewingCachedData ? 0.45 : 1)
         .accessibilityLabel("New Chat")
+        .newChatModeMenu(viewModel.newChatExecutionModes, isDisabled: isNewChatDisabled, onSelect: openNewChat(in:))
     }
 
     @available(iOS 26, *)
@@ -1285,6 +1298,7 @@ struct SessionListView: View {
         .disabled(isNewChatDisabled)
         .opacity(viewModel.isViewingCachedData ? 0.45 : 1)
         .accessibilityLabel("New Chat")
+        .newChatModeMenu(viewModel.newChatExecutionModes, isDisabled: isNewChatDisabled, onSelect: openNewChat(in:))
     }
 
     private var visibleSessions: [SessionSummary] {
@@ -1862,6 +1876,11 @@ struct SessionListView: View {
     /// A chat started under a project filter joins that project (TAL-455).
     private func openNewChat() {
         navigationState.select(PendingNewChatRoute(projectID: selectedProjectID))
+    }
+
+    /// The server creates the chat in `mode` as it opens (TAL-1045).
+    private func openNewChat(in mode: ExecutionMode) {
+        navigationState.select(viewModel.diagnosticChatRoute(mode, projectID: selectedProjectID))
     }
 
     private func openSession(_ session: SessionSummary, in list: AppSection = .chats) async {

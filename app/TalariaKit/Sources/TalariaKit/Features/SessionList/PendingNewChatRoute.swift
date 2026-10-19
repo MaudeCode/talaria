@@ -2,7 +2,8 @@ import Foundation
 
 /// One creation request's outcome, kept with its own error and retry safety across navigation.
 public enum ChatSessionStartResult {
-    case started(SessionSummary)
+    /// `detail` is the server's created session, which carries what a list row lacks (TAL-1045).
+    case started(SessionSummary, detail: SessionDetail? = nil)
     case failed(String, canRetry: Bool = true, error: Error? = nil)
 }
 
@@ -17,6 +18,8 @@ public struct PendingNewChatRoute: Identifiable, Hashable {
     public let providerID: String?
     /// The project the Chats list was filtered to when New Chat opened (TAL-455).
     public let projectID: String?
+    /// The diagnostic mode the server creates the chat in (TAL-1045); nil starts a normal chat.
+    public let executionMode: ExecutionMode?
 
     public init(
         initialDraft: String = "",
@@ -24,7 +27,8 @@ public struct PendingNewChatRoute: Identifiable, Hashable {
         autoStartsVoiceInput: Bool = false,
         profileName: String? = nil,
         providerID: String? = nil,
-        projectID: String? = nil
+        projectID: String? = nil,
+        executionMode: ExecutionMode? = nil
     ) {
         self.initialDraft = initialDraft
         self.initialAttachments = initialAttachments
@@ -32,6 +36,7 @@ public struct PendingNewChatRoute: Identifiable, Hashable {
         self.profileName = profileName
         self.providerID = providerID
         self.projectID = projectID
+        self.executionMode = executionMode
     }
 
     public static func == (lhs: PendingNewChatRoute, rhs: PendingNewChatRoute) -> Bool {

@@ -1635,7 +1635,8 @@ struct ChatView: View {
         if let pending = viewModel.pendingResourceChange { return pending.status }
         return ChatToolbarSubtitleResolver.subtitle(
             workspaceName: viewModel.selectedWorkspaceName,
-            profileTitle: viewModel.selectedProfileTitle
+            profileTitle: viewModel.selectedProfileTitle,
+            executionMode: viewModel.executionMode
         )
     }
 
@@ -1708,13 +1709,13 @@ struct ChatView: View {
             let result = viewModel.hasSession ? ChatSessionStartResult.started(session) : await startSession()
             guard !Task.isCancelled, generation == sessionStartGeneration else { return false }
             switch result {
-            case .started(let created):
+            case .started(let created, let detail):
                 if !viewModel.hasSession {
                     let newChatKey = ChatDraftKey.newChat(server: server)
                     persistComposerDraft()
                     let moved = draftStore.moveDraft(from: newChatKey, to: .session(server: server, session: created))
                     if pendingFirstDraft == nil, moved.text != draftMessage { draftMessage = moved.text }
-                    viewModel.adoptCreatedSession(created)
+                    viewModel.adoptCreatedSession(created, detail: detail)
                     session = created
                 }
                 // The first send joins this task, including restored configuration and file imports.

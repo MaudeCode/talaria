@@ -624,6 +624,8 @@ final class UITestFixtureURLProtocol: URLProtocol, @unchecked Sendable {
         case "/api/sessions/bulk":
             let ids = requestJSON(request)["session_ids"] as? [String] ?? []
             return json(["results": ids.map { ["session_id": $0, "ok": true] }])
+        case "/api/session/execution-modes" where servesExecutionModes:
+            return executionModesResponse()
         case "/api/session" where servesOwnerChat:
             return ownerSessionResponse()
         case "/api/chat/owner-action":
@@ -662,6 +664,9 @@ final class UITestFixtureURLProtocol: URLProtocol, @unchecked Sendable {
                 id: newSessionID,
                 title: requestedProfile.map { "New Fixture Chat (\($0))" } ?? "New Fixture Chat"
             )
+            if let mode = body["execution_mode"] as? String {
+                return json(["session": diagnosticSession(created, mode: mode)])
+            }
             return json(["session": created])
         case "/api/upload":
             if ProcessInfo.processInfo.arguments.contains(UITestFixtureEnvironment.failAttachmentUploadsArgument) {

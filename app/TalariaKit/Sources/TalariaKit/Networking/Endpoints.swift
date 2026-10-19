@@ -19,6 +19,8 @@ public enum Endpoint {
     case anchorScene(sessionID: String, messageRef: String?, messageIndex: Int, before: Int, limit: Int)
     case toolResult(sessionID: String, toolCallID: String)
     case newSession
+    /// TAL-1045: the modes a new chat in the active profile can start in now.
+    case executionModes
     case renameSession
     case deleteSession
     case pinSession
@@ -198,6 +200,8 @@ public enum Endpoint {
             return "/api/session/tool-result"
         case .newSession:
             return "/api/session/new"
+        case .executionModes:
+            return "/api/session/execution-modes"
         case .renameSession:
             return "/api/session/rename"
         case .deleteSession:

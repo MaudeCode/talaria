@@ -426,3 +426,9 @@ func sharedContractFixture(_ name: String) throws -> Data {
     for _ in 0..<6 { root.deleteLastPathComponent() }
     return try Data(contentsOf: root.appendingPathComponent("contracts/fixtures/\(name).json"))
 }
+
+/// One recorded server body from `contracts/fixtures/execution-modes.json` (TAL-1045), as JSON.
+func executionModesFixture(_ key: String) throws -> String {
+    let fixture = try XCTUnwrap(JSONSerialization.jsonObject(with: sharedContractFixture("execution-modes")) as? [String: Any])
+    return String(decoding: try JSONSerialization.data(withJSONObject: try XCTUnwrap(fixture[key])), as: UTF8.self)
+}

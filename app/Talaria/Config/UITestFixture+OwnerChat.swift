@@ -47,6 +47,36 @@ extension UITestFixtureURLProtocol {
         return detail
     }
 
+    /// TAL-1045: `--ui-test-execution-modes` offers both diagnostic modes for a new chat, and
+    /// `--ui-test-execution-modes-stopped` lists them unavailable while the gateway is stopped. A chat created in a
+    /// mode is an attached owner chat with that frozen `execution_mode`.
+    static let executionModesArgument = "--ui-test-execution-modes"
+    static let executionModesStoppedArgument = "--ui-test-execution-modes-stopped"
+
+    static var servesExecutionModes: Bool {
+        let arguments = ProcessInfo.processInfo.arguments
+        return arguments.contains(executionModesArgument) || arguments.contains(executionModesStoppedArgument)
+    }
+
+    static func executionModesResponse() -> Data {
+        let stopped = ProcessInfo.processInfo.arguments.contains(executionModesStoppedArgument)
+        let diagnostic: (String) -> [String: Any] = { mode in
+            ["mode": mode, "available": !stopped, "reason": stopped ? "gateway_stopped" : NSNull(), "can_attach": false]
+        }
+        return json(["modes": [["mode": "normal", "available": true, "reason": NSNull(), "can_attach": true], diagnostic("ignore_config"), diagnostic("safe")]])
+    }
+
+    static func diagnosticSession(_ created: [String: Any], mode: String) -> [String: Any] {
+        var detail = created
+        detail["execution_mode"] = mode
+        detail["message_count"] = 0
+        detail["read_only"] = true
+        detail["read_only_reason"] = "This session is owned by the Agent gateway and is display-only in Talaria."
+        detail["owner_attachment"] = ["state": "attached", "reason": NSNull(), "can_submit": true, "can_interrupt": false, "can_attach": false,
+                                      "revision": 1, "execution_generation": 0, "active_admission": NSNull(), "admissions": []]
+        return detail
+    }
+
     private static func ownerAttachment() -> [String: Any] {
         if ProcessInfo.processInfo.arguments.contains(ownerChatBatchArgument) {
             return ["state": "incompatible", "reason": "native_clarify_batch_unavailable", "can_submit": false, "can_interrupt": false,
