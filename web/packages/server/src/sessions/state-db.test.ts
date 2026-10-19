@@ -782,10 +782,19 @@ describe('Kanban worker sessions (TAL-793)', () => {
     // A worker transcript compressed into a continuation the Agent created as `cli`: the lineage stays Kanban-owned.
     insert({ id: 'kanban-root', source: 'cli', started_at: 1200, title: 'Rotated worker run', ended_at: 1300, end_reason: 'compression', messages: turns(1200) }, 'kanban')
     insert({ id: 'kanban-tip', source: 'cli', started_at: 1300.5, title: 'Rotated worker run', parent: 'kanban-root', messages: turns(1300) }, 'cli')
-    // A long-running worker rotated past the transcript stitch's 20 hops: only its root still says Kanban.
-    for (let i = 0; i <= 30; i += 1) {
-      insert({ id: `kanban-long-${String(i)}`, source: 'cli', started_at: 2000 + i * 10, title: 'Long worker run', parent: i ? `kanban-long-${String(i - 1)}` : null, ...(i < 30 ? { ended_at: 2000 + i * 10 + 5, end_reason: 'compression' } : {}), messages: turns(2000 + i * 10) }, i ? 'cli' : 'kanban')
+    /** A `length`-segment compression chain `<prefix>-0` (root, created by Kanban) .. tip, one segment every `step` s from `start`. */
+    const chain = (prefix: string, length: number, start: number, step: number, rootSource: string): void => {
+      for (let i = 0; i < length; i += 1) {
+        const t = start + i * step
+        insert({ id: `${prefix}-${String(i)}`, source: i ? 'cli' : rootSource, started_at: t, title: 'Long worker run', parent: i ? `${prefix}-${String(i - 1)}` : null, ...(i < length - 1 ? { ended_at: t + step / 2, end_reason: 'compression' } : {}), messages: turns(t) }, i ? 'cli' : 'kanban')
+      }
     }
+    // A long-running worker rotated past the transcript stitch's 20 hops: only its root still says Kanban.
+    chain('kanban-long', 31, 2000, 10, 'cli')
+    // TAL-995: the Agent's `_resume_lineage_ids` reads at most 100 ids, so a Kanban root 100 segments back is out of reach.
+    // Older than every other row, so the sidebar's CLI cap drops these segments rather than the rows the list checks read.
+    chain('kanban-100', 100, 0, 4, 'kanban')
+    chain('kanban-101', 101, 400, 4, 'kanban')
     // The Agent's compression edge needs neither a matching source nor a prompt start: a later CLI continuation is owned,
     // while a branch or reset fork of the same worker is its own conversation.
     insert({ id: 'kanban-gap-root', source: 'kanban', started_at: 3000, title: 'Worker run', ended_at: 3005, end_reason: 'compression', messages: turns(3000) }, 'kanban')
@@ -815,6 +824,13 @@ describe('Kanban worker sessions (TAL-793)', () => {
     await s.deps.sessionStore.save(new Session({ session_id: 'kanban-retagged', title: 'Retagged worker run', source_tag: 'cli', raw_source: 'cli', is_cli_session: true, messages: [{ role: 'user', content: 'hi', timestamp: 1101 }] }, { workspace: s.state, model: null }))
     expect(((await json(await s.get('/api/session?session_id=kanban-retagged'))).session as Json).read_only).toBe(true)
     expect((await post('/api/chat/start', { session_id: 'kanban-retagged', message: 'carry on' })).status).toBe(403)
+  })
+
+  it('keeps a lineage whose Kanban root is past the Agent\'s 100 resume ids claimable (TAL-995)', async () => {
+    expect(((await json(await s.get('/api/session?session_id=kanban-100-99'))).session as Json).read_only).toBe(true)
+    expect((await post('/api/session/rename', { session_id: 'kanban-100-99', title: 'Claimed' })).status).toBe(403)
+    expect(((await json(await s.get('/api/session?session_id=kanban-101-100'))).session as Json).read_only).toBe(false)
+    expect((await post('/api/session/rename', { session_id: 'kanban-101-100', title: 'Claimed' })).status).toBe(200)
   })
 
   it('keeps a branch or reset fork of a Kanban worker claimable', async () => {
