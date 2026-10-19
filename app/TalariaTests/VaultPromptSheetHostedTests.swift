@@ -57,6 +57,33 @@ final class VaultPromptSheetHostedTests: XCTestCase {
         XCTAssertEqual(responses, [nil])
     }
 
+    /// TAL-1046: a skill's missing secret uses the same sheet: masked, labeled by its variable, with the server's
+    /// help and required-for wording, Save or Skip, and nothing kept once it is sent.
+    func testSkillSecretMasksTheValueShowsServerWordingAndClearsOnSave() async throws {
+        var responses: [[String: String]?] = []
+        let window = try hostWindow(VaultPromptSheet(vault: try vault("skill_secret"), isResponding: false, errorMessage: nil) { responses.append($0) })
+        for label in ["Set Up example", "Enter the test key", "https://example.com/keys", "Required for example setup", "Skip"] {
+            XCTAssertNotNil(HostedAccessibility.element(in: window, label: label), "\(label): \(HostedAccessibility.labels(in: window))")
+        }
+        let fields = textFields(in: window)
+        XCTAssertEqual(fields.map(\.isSecureTextEntry), [true])
+        XCTAssertEqual(fields.map(\.textContentType), [nil])
+        // VoiceOver names the masked field by the variable it sets.
+        XCTAssertNotNil(HostedAccessibility.element(in: window, label: "EXAMPLE_API_KEY"), "\(HostedAccessibility.labels(in: window))")
+
+        type("synthetic-skill-secret", into: try XCTUnwrap(fields.first))
+        let save = await awaitElement(in: window) {
+            HostedAccessibility.identifier(of: $0) == "vault-prompt-submit" && !$0.accessibilityTraits.contains(.notEnabled)
+        }
+        HostedAccessibility.activate(try XCTUnwrap(save, "Save never enabled after typing"))
+        settle()
+        XCTAssertEqual(responses, [["secret": "synthetic-skill-secret"]])
+        XCTAssertEqual(textFields(in: window).map { $0.text ?? "" }, [""], "The sent secret is not kept in the sheet")
+
+        HostedAccessibility.activate(try XCTUnwrap(HostedAccessibility.element(in: window, label: "Skip")))
+        XCTAssertEqual(responses, [["secret": "synthetic-skill-secret"], nil])
+    }
+
     private func vault(_ name: String) throws -> VaultPrompt {
         // app/TalariaTests/<file> -> repository root
         let root = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()

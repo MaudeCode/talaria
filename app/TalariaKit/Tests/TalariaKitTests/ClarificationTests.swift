@@ -813,10 +813,6 @@ final class ClarificationTests: APIClientTestCase {
     /// clarification), and answer with keyed values or a decline.
     @MainActor
     func testVaultPromptsRenderFromContractFieldsAndAnswerOrDecline() async throws {
-        let root = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent()
-            .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
-        let fixture = try JSONSerialization.jsonObject(with: Data(contentsOf: root.appendingPathComponent("contracts/fixtures/vault-prompts.json"))) as? [String: Any]
-        let envelope = { (name: String) throws -> Data in try JSONSerialization.data(withJSONObject: XCTUnwrap(fixture?[name])) }
         var bodies: [[String: Any]] = []
         let model = try makeViewModel { request in
             switch request.url?.path {
@@ -833,7 +829,7 @@ final class ClarificationTests: APIClientTestCase {
         }
         _ = await model.sendMessage("Log in")
 
-        let unlock = try JSONDecoder().decode(ClarificationPendingResponse.self, from: envelope("unlock"))
+        let unlock = try vaultFixture("unlock")
         model.applyClarificationUpdate(unlock, sessionID: "session-abc")
         XCTAssertNil(model.clarificationPrompt)
         var prompt = try XCTUnwrap(model.vaultPrompt)
@@ -846,7 +842,7 @@ final class ClarificationTests: APIClientTestCase {
         XCTAssertTrue(unlocked)
         XCTAssertNil(model.vaultPrompt)
 
-        let login = try JSONDecoder().decode(ClarificationPendingResponse.self, from: envelope("save_login"))
+        let login = try vaultFixture("save_login")
         model.applyClarificationUpdate(login, sessionID: "session-abc")
         prompt = try XCTUnwrap(model.vaultPrompt)
         XCTAssertEqual(prompt.pending.vault?.site, "login.example.com")
@@ -861,6 +857,163 @@ final class ClarificationTests: APIClientTestCase {
         XCTAssertNil(bodies[0]["decline"])
         XCTAssertNil(bodies[1]["answers"])
         XCTAssertEqual(bodies[1]["decline"] as? Bool, true)
+    }
+
+    /// TAL-1046: the App advertises the masked skill-secret prompt on every chat it starts, so the server binds the
+    /// Agent's turn-local secret capture instead of returning a setup-needed result.
+    @MainActor
+    func testChatStartAdvertisesTheSkillSecretPrompt() async throws {
+        var startBody: [String: Any] = [:]
+        let model = try makeViewModel { request in
+            XCTAssertEqual(request.url?.path, "/api/chat/start")
+            startBody = try apiTestJSONBody(from: request)
+            return apiTestJSONResponse(#"{"session_id":"session-abc","stream_id":"stream-123"}"#, for: request)
+        }
+        _ = await model.sendMessage("Set up the example skill")
+        XCTAssertEqual(startBody["skill_secret"] as? Bool, true)
+    }
+
+    /// TAL-1046: the shared `skill_secret` fixture renders as the vault prompt and answers only its exact pending
+    /// identity: submit, Skip, a stale 409, a replaced prompt, a foreign session, the queue moving on (timeout), Stop,
+    /// and a session switch. The typed secret goes to the respond endpoint alone.
+    @MainActor
+    func testSkillSecretPromptAnswersOnlyItsExactPendingIdentity() async throws {
+        var bodies: [[String: Any]] = []
+        var respondStatus = 200
+        let client = makeClient { request in
+            XCTAssertEqual(request.url?.path, "/api/clarify/respond")
+            bodies.append(try apiTestJSONBody(from: request))
+            return respondStatus == 200
+                ? apiTestJSONResponse(#"{"ok":true}"#, for: request)
+                : apiTestJSONResponse(#"{"ok":false,"stale":true}"#, statusCode: respondStatus, for: request)
+        }
+        let delegate = ClarificationTestDelegate()
+        delegate.pendingActionHasActiveStream = false // no post-answer pending reads
+        let coordinator = ChatPendingActionCoordinator(
+            client: client,
+            approvalStreamClient: ClarificationSpySSEStreamingClient(),
+            clarifyStreamClient: ClarificationSpySSEStreamingClient(),
+            pollingIntervals: .standard
+        )
+        coordinator.delegate = delegate
+        let fixture = try vaultFixture("skill_secret")
+        let show = { (sessionID: String) in
+            delegate.pendingActionHasActiveStream = true
+            coordinator.applyClarificationUpdate(fixture, sessionID: sessionID)
+            delegate.pendingActionHasActiveStream = false
+        }
+
+        // A foreign session's prompt never renders over this chat.
+        show("other-session")
+        XCTAssertNil(coordinator.vaultPrompt)
+
+        // Submit sends the typed secret under the exact pending identity.
+        show("session-abc")
+        XCTAssertNil(coordinator.clarificationPrompt, "Never the composer's clarification")
+        var prompt = try XCTUnwrap(coordinator.vaultPrompt)
+        XCTAssertEqual(prompt.pending.vault?.kind.rawValue, "skill_secret")
+        XCTAssertEqual(prompt.pending.vault?.fields.map(\.key.rawValue), ["secret"])
+        XCTAssertEqual(prompt.pending.vault?.fields.map(\.secure), [true])
+        let submitted = await coordinator.respondToVaultPrompt(["secret": "synthetic-skill-secret"], promptID: prompt.id)
+        XCTAssertTrue(submitted)
+        XCTAssertNil(coordinator.vaultPrompt)
+
+        // Skip declines with no answer.
+        show("session-abc")
+        prompt = try XCTUnwrap(coordinator.vaultPrompt)
+        let skipped = await coordinator.respondToVaultPrompt(nil, promptID: prompt.id)
+        XCTAssertTrue(skipped)
+
+        // A stale 409 dismisses the prompt.
+        show("session-abc")
+        prompt = try XCTUnwrap(coordinator.vaultPrompt)
+        respondStatus = 409
+        let stale = await coordinator.respondToVaultPrompt(["secret": "synthetic-stale-secret"], promptID: prompt.id)
+        XCTAssertFalse(stale)
+        XCTAssertNil(coordinator.vaultPrompt)
+        respondStatus = 200
+
+        // A replaced prompt refuses the old identity without a request.
+        show("session-abc")
+        let oldID = try XCTUnwrap(coordinator.vaultPrompt?.id)
+        var replacement = try XCTUnwrap(JSONSerialization.jsonObject(with: vaultFixtureData("skill_secret")) as? [String: Any])
+        var pending = try XCTUnwrap(replacement["pending"] as? [String: Any])
+        pending["clarify_id"] = "contract-skill-secret-2"
+        replacement["pending"] = pending
+        delegate.pendingActionHasActiveStream = true
+        coordinator.applyClarificationUpdate(
+            try JSONDecoder().decode(ClarificationPendingResponse.self, from: JSONSerialization.data(withJSONObject: replacement)),
+            sessionID: "session-abc"
+        )
+        delegate.pendingActionHasActiveStream = false
+        let replaced = await coordinator.respondToVaultPrompt(["secret": "synthetic-replaced-secret"], promptID: oldID)
+        XCTAssertFalse(replaced)
+        XCTAssertEqual(coordinator.vaultPrompt?.pending.clarifyId, "contract-skill-secret-2")
+
+        // The queue moving on (the Agent stopped waiting) closes it.
+        delegate.pendingActionHasActiveStream = true
+        coordinator.applyClarificationUpdate(ClarificationPendingResponse(pending: nil, pendingCount: 0), sessionID: "session-abc")
+        XCTAssertNil(coordinator.vaultPrompt)
+
+        // Stop clears it.
+        show("session-abc")
+        XCTAssertNotNil(coordinator.vaultPrompt)
+        coordinator.stopMonitoring(clearPrompt: true)
+        XCTAssertNil(coordinator.vaultPrompt)
+
+        // After a session switch the old prompt cannot be answered.
+        show("session-abc")
+        prompt = try XCTUnwrap(coordinator.vaultPrompt)
+        delegate.pendingActionSessionID = "other-session"
+        let foreign = await coordinator.respondToVaultPrompt(["secret": "synthetic-foreign-secret"], promptID: prompt.id)
+        XCTAssertFalse(foreign)
+
+        XCTAssertEqual(bodies.map { $0["clarify_id"] as? String }, Array(repeating: "contract-skill-secret", count: 3))
+        XCTAssertEqual(bodies.map { $0["session_id"] as? String }, Array(repeating: "session-abc", count: 3))
+        XCTAssertEqual(bodies[0]["answers"] as? [String: String], ["secret": "synthetic-skill-secret"])
+        XCTAssertNil(bodies[1]["answers"])
+        XCTAssertEqual(bodies[1]["decline"] as? Bool, true)
+    }
+
+    /// TAL-1046: a vault variant or field this App does not know renders no prompt rather than a blank or wrong one.
+    @MainActor
+    func testUnknownVaultVariantRendersNoPrompt() throws {
+        let delegate = ClarificationTestDelegate()
+        let coordinator = ChatPendingActionCoordinator(
+            client: makeClient { request in
+                XCTFail("An unknown prompt is never answered: \(request.url?.path ?? "")")
+                throw URLError(.badURL)
+            },
+            approvalStreamClient: ClarificationSpySSEStreamingClient(),
+            clarifyStreamClient: ClarificationSpySSEStreamingClient(),
+            pollingIntervals: .standard
+        )
+        coordinator.delegate = delegate
+        for (kind, key) in [("future_secret", "secret"), ("skill_secret", "future_field")] {
+            var envelope = try XCTUnwrap(JSONSerialization.jsonObject(with: vaultFixtureData("skill_secret")) as? [String: Any])
+            var pending = try XCTUnwrap(envelope["pending"] as? [String: Any])
+            var vault = try XCTUnwrap(pending["vault"] as? [String: Any])
+            vault["kind"] = kind
+            vault["fields"] = [["key": key, "secure": true]]
+            pending["vault"] = vault
+            envelope["pending"] = pending
+            let update = try JSONDecoder().decode(ClarificationPendingResponse.self, from: JSONSerialization.data(withJSONObject: envelope))
+            coordinator.applyClarificationUpdate(update, sessionID: "session-abc")
+            XCTAssertNil(coordinator.vaultPrompt, kind)
+            XCTAssertNil(coordinator.clarificationPrompt, kind)
+        }
+    }
+
+    /// One shared contract example from `contracts/fixtures/vault-prompts.json`.
+    private func vaultFixtureData(_ name: String) throws -> Data {
+        let root = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent()
+            .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+        let fixture = try JSONSerialization.jsonObject(with: Data(contentsOf: root.appendingPathComponent("contracts/fixtures/vault-prompts.json"))) as? [String: Any]
+        return try JSONSerialization.data(withJSONObject: XCTUnwrap(fixture?[name]))
+    }
+
+    private func vaultFixture(_ name: String) throws -> ClarificationPendingResponse {
+        try JSONDecoder().decode(ClarificationPendingResponse.self, from: vaultFixtureData(name))
     }
 
     @MainActor
