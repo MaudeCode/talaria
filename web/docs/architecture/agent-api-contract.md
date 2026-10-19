@@ -554,4 +554,3 @@ reports the modes unavailable. On v0.22.1 the owner binds `DEFAULT_CONFIG`'s
 it refuses that session's next turn with `launch_credentials_unavailable` before any worker
 starts, and the admission is held as unknown for the user's Discard. The frozen mode is never
 weakened; this is Agent behavior that Talaria does not patch.
-
