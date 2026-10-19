@@ -4,8 +4,10 @@ from __future__ import annotations
 
 import contextlib
 import pathlib
+import sys
 import threading
 import time
+import types
 
 import pytest
 
@@ -237,20 +239,61 @@ def test_an_unknown_provider_and_a_failed_start_are_errors(provider, tmp_path):
     assert oauth._FLOWS == {}
 
 
-# ── TAL-985: the real Nous begin step against stub Agent modules of either release shape ──
+# ── TAL-985 / TAL-991: the real Nous steps against stub Agent modules of either release shape ──
 
 
-def stub_agent(monkeypatch, *, guest: bool, shape: str) -> list[tuple]:
-    """Installs ``hermes_cli.anon_auth`` shaped like v0.22.0 (``guest_allowed``, ``UPGRADE_HINT``) or v0.21.x
-    (``guest_enabled`` only) and a ``hermes_cli.auth`` whose device-code request is recorded instead of sent."""
-    import sys
-    import types
+def state(kind: str, *, ok: bool = False, precondition: bool = False, copy: str = "", **fields) -> types.SimpleNamespace:
+    """A stand-in for one ``anon_auth.SignInState``."""
+    return types.SimpleNamespace(kind=kind, ok=ok, precondition=precondition, copy=copy, copy_terminal=f"{copy} (terminal)", **fields)
 
+
+CODE = state("code", link="https://portal.example.test/claim/GUEST-42", code="GUEST-42", expires_in=600, interval=2)
+
+
+class SignIn:
+    """A scripted ``anon_auth.run_sign_in``: yields ``first``, waits for the user's answer, then yields ``ending`` or
+    persists through the caller's guard and yields ``completed``. Cancels reach it only through that guard and the
+    ``cancelled`` callable it was handed, as after a connector transfer."""
+
+    def __init__(self, first=CODE, ending=None):
+        self.first, self.ending = first, ending
+        self.answer = threading.Event()
+        self.kwargs: dict = {}
+        self.persisted: list = []
+        self.closed = False
+
+    def __call__(self, **kwargs):
+        self.kwargs = kwargs
+        return self.run(**kwargs)
+
+    def run(self, *, cancelled, cancel_wins_after_promotion, persist_guard, scope):
+        try:
+            with scope():
+                pass
+            yield self.first
+            if self.first.kind != "code":
+                return
+            yield state("waiting")
+            assert self.answer.wait(5)
+            if self.ending is not None:
+                yield self.ending
+                return
+            with scope() as home, persist_guard() as may_persist:
+                if may_persist:
+                    self.persisted.append(home)
+            yield state("completed", ok=True) if may_persist else state("superseded", copy="A newer sign-in code replaced this one.")
+        finally:
+            self.closed = True
+
+
+def stub_agent(monkeypatch, *, guest: bool, shape: str, sign_in: SignIn | None = None) -> list[tuple]:
+    """Installs ``hermes_cli.anon_auth`` shaped like v0.22.0 (``guest_allowed``, ``run_sign_in``) or v0.21.x
+    (``guest_enabled`` only) and a ``hermes_cli.auth`` whose device-code request and plain save are recorded."""
     anon_auth = types.ModuleType("hermes_cli.anon_auth")
     anon_auth.has_guest = lambda: guest
     if shape == "0.22":
         anon_auth.guest_allowed = lambda: True
-        anon_auth.UPGRADE_HINT = "Run `hermes auth upgrade` to sign in with a Nous account, or /login inside a chat."
+        anon_auth.run_sign_in = sign_in or SignIn()
     else:
         anon_auth.guest_enabled = lambda: True
     requests: list[tuple] = []
@@ -262,6 +305,9 @@ def stub_agent(monkeypatch, *, guest: bool, shape: str) -> list[tuple]:
     auth = types.ModuleType("hermes_cli.auth")
     auth.PROVIDER_REGISTRY = {"nous": types.SimpleNamespace(portal_base_url="https://portal.example.test/", client_id="synthetic-client", scope="inference")}
     auth._request_device_code = request_device_code
+    auth.refresh_nous_oauth_from_state = lambda auth_state, **kwargs: auth_state
+    auth.persist_nous_credentials = lambda full_state: requests.append(("plain save", full_state))
+    anon_auth.settle_after_upgrade = lambda full_state: None
     package = types.ModuleType("hermes_cli")
     package.anon_auth, package.auth = anon_auth, auth
     monkeypatch.setitem(sys.modules, "hermes_cli", package)
@@ -282,11 +328,59 @@ def test_nous_without_a_guest_requests_a_device_code(monkeypatch, shape):
     assert state["device_code"] == "synthetic-device"
 
 
-@pytest.mark.parametrize(("shape", "hint"), [("0.22", "Run `hermes auth upgrade` to sign in with a Nous account, or /login inside a chat."), ("0.21", "`hermes auth upgrade`")])
-def test_nous_over_a_guest_is_refused_with_the_upgrade_hint(monkeypatch, shape, hint):
-    requests = stub_agent(monkeypatch, guest=True, shape=shape)
+def test_nous_over_a_guest_signs_in_through_the_agent_and_keeps_its_connected_apps(provider, monkeypatch, tmp_path):
+    sign_in = SignIn()
+    requests = stub_agent(monkeypatch, guest=True, shape="0.22", sign_in=sign_in)
+    flow = oauth.start(tmp_path, "nous")
+    assert flow == {"flow_id": flow["flow_id"], "provider": "nous", "status": "pending", "user_code": "GUEST-42", "verification_url": "https://portal.example.test/claim/GUEST-42", "expires_in": 600, "interval": 2}
+    assert sign_in.kwargs["cancel_wins_after_promotion"] is True
+    sign_in.answer.set()
+    assert settle(tmp_path, flow["flow_id"]) == {"flow_id": flow["flow_id"], "provider": "nous", "status": "approved", "error": None}
+    assert sign_in.persisted == [tmp_path]  # under the flow's own home
+    assert requests == []  # neither a plain device code nor the plain save
+    assert sign_in.closed
+
+
+@pytest.mark.parametrize(("ending", "status", "error"), [
+    (state("failed", copy="Something's still finishing up on your account."), "error", "Something's still finishing up on your account."),
+    (state("declined", copy="No problem, you're still on the free Nous service."), "denied", "Sign-in was declined."),
+    (state("timed_out", copy="That sign-in link has expired."), "expired", "The sign-in code expired before it was approved."),
+])
+def test_a_guest_sign_in_that_ends_without_an_account_is_the_flows_ending(provider, monkeypatch, tmp_path, ending, status, error):
+    sign_in = SignIn(ending=ending)
+    requests = stub_agent(monkeypatch, guest=True, shape="0.22", sign_in=sign_in)
+    flow = oauth.start(tmp_path, "nous")
+    sign_in.answer.set()
+    assert settle(tmp_path, flow["flow_id"]) == {"flow_id": flow["flow_id"], "provider": "nous", "status": status, "error": error}
+    assert sign_in.persisted == [] and requests == []
+
+
+def test_a_cancelled_guest_sign_in_persists_nothing(provider, monkeypatch, tmp_path):
+    sign_in = SignIn()
+    requests = stub_agent(monkeypatch, guest=True, shape="0.22", sign_in=sign_in)
+    flow = oauth.start(tmp_path, "nous")
+    time.sleep(0.1)  # the worker is draining the sign-in
+    assert sign_in.kwargs["cancelled"]() is False
+    assert oauth.cancel(tmp_path, flow["flow_id"])["status"] == "cancelled"
+    assert sign_in.kwargs["cancelled"]() is True
+    sign_in.answer.set()  # the transfer completes in the browser after the cancel
+    deadline = time.monotonic() + 5
+    while not sign_in.closed and time.monotonic() < deadline:
+        time.sleep(0.01)
+    assert sign_in.closed
+    assert oauth.poll(tmp_path, flow["flow_id"])["status"] == "cancelled"
+    assert sign_in.persisted == [] and requests == []
+
+
+@pytest.mark.parametrize(("first", "condition"), [
+    (state("already_signed_in", ok=True, precondition=True, copy="Already signed in."), "oauth_unsupported"),
+    (state("failed", copy="The Nous service couldn't be reached."), "oauth_failed"),
+])
+def test_a_guest_sign_in_that_cannot_start_is_refused(provider, monkeypatch, tmp_path, first, condition):
+    sign_in = SignIn(first=first)
+    stub_agent(monkeypatch, guest=True, shape="0.22", sign_in=sign_in)
     with pytest.raises(RpcError) as refused:
-        oauth._nous_begin()
-    assert refused.value.data["condition"] == "oauth_unsupported"
-    assert hint in str(refused.value)
-    assert requests == []
+        oauth.start(tmp_path, "nous")
+    assert refused.value.data["condition"] == condition
+    assert str(refused.value) == first.copy_terminal
+    assert sign_in.closed and oauth._FLOWS == {}
