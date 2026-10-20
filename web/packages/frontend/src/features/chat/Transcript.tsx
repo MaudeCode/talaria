@@ -18,6 +18,8 @@ import { onScrollRequest, requestComposerRest } from './sendMotion'
 import { useAutoRead } from './useAutoRead'
 
 const VIRTUALIZE_AT = 200
+/** How long after a wheel or touch move a scroll still counts as the reader's own. */
+const HAND_SCROLL_MS = 250
 
 export interface TranscriptProps {
   rows: VisibleMessage[]
@@ -111,16 +113,20 @@ export function Transcript(props: TranscriptProps) {
     readerAnchor.current = row && key ? { key, top: row.getBoundingClientRect().top - bounds.top } : null
   }, [])
 
-  // A hand scroll (wheel or touch) of a transcript taller than its pane asks the composer to rest; programmatic
-  // follow and entry jumps never do. Overflow comes from the resize observer below, so a wheel tick reads no layout.
-  const overflowsRef = useRef(false)
+  // A hand scroll (wheel or touch) that moves the transcript asks the composer to rest; a gesture against an edge
+  // moves nothing, and programmatic follow and entry jumps record their own position, so neither does.
+  const handAtRef = useRef(-Infinity)
   const onReaderInput = useCallback(() => { prependRef.current = null }, [])
-  const onReaderScroll = useCallback(() => { onReaderInput(); if (overflowsRef.current) requestComposerRest() }, [onReaderInput])
+  const onReaderScroll = useCallback(() => { onReaderInput(); handAtRef.current = performance.now() }, [onReaderInput])
 
   const onScroll = useCallback(() => {
     const el = scrollRef.current
     if (!el) return
-    const distance = el.scrollHeight - el.scrollTop - el.clientHeight
+    const max = el.scrollHeight - el.clientHeight
+    const distance = max - el.scrollTop
+    // Clamped, so rubber-band overscroll past either edge reads as no movement.
+    const clamp = (top: number) => Math.min(Math.max(top, 0), max)
+    if (performance.now() - handAtRef.current < HAND_SCROLL_MS && clamp(el.scrollTop) !== clamp(lastTopRef.current)) requestComposerRest()
     // While following, only the reader moving up leaves the bottom; layout that lands between a jump and its scroll event does not.
     if (distance < 80) pin(true)
     else if (!followsRef.current() || el.scrollTop < lastTopRef.current) { pin(false); settlingRef.current = false }
@@ -162,11 +168,10 @@ export function Transcript(props: TranscriptProps) {
     }
     follow()
     if (typeof ResizeObserver === 'undefined') return
-    // Layout is settled inside the observer callback, so reading the pane's overflow here costs nothing extra.
-    const observer = new ResizeObserver(() => { overflowsRef.current = pane.scrollHeight > pane.clientHeight + 1; follow() })
+    const observer = new ResizeObserver(follow)
     observer.observe(inner)
     observer.observe(pane)
-    return () => { observer.disconnect(); overflowsRef.current = false }
+    return () => observer.disconnect()
   }, [empty, scope, scrollToBottom, virtualize, rememberReaderAnchor])
 
   // A submit returns to the end wherever the reader was, and the next layout follows it there (T3 Code's scrollToEnd).
