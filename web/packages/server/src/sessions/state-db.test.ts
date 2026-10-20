@@ -12,7 +12,8 @@ import { SessionSchema } from '@maudecode/talaria-web-contracts'
 import { str } from '../util.js'
 import { Session } from './session.js'
 import { recordBackgroundUpdate } from './background-updates.js'
-import { agentSessionRowsExisting, cheapChangeFingerprint, latestCronSessionInfo, isCliSessionRowVisible, normalizeAgentSessionSource, projectAgentSessionRows, readImportableAgentSessionRows, stateDbCompressionLineage, stateDbHasSession, stateDbLineageReport, stateDbSessionRead, stateDbSessionSources } from './state-db.js'
+import { agentSessionRowsExisting, cheapChangeFingerprint, latestCronSessionInfo, isCliSessionRowVisible, normalizeAgentSessionSource, projectAgentSessionRows, readImportableAgentSessionRows, stateDbCompressionLineage, stateDbHasSession, stateDbLineageReport, stateDbSessionRead, stateDbSessionSources, type ReadRowsOptions } from './state-db.js'
+import agentSchema from '../test/fixtures/canonical-ownership.json' with { type: 'json' }
 import { MESSAGING_SOURCES } from './source-kind.js'
 import { GatewayWatcher, snapshotHash } from './gateway-watcher.js'
 import { capRecentCliSessions, keepLatestMessagingSessionPerSource, mergeCliSidebarMetadata, withOwnerLocks, type GatewayIdentity } from './list.js'
@@ -864,6 +865,77 @@ describe('Kanban worker sessions (TAL-793)', () => {
     insertSession(old, { id: 'old-cli', source: 'cli', started_at: 1, messages: [['user', 2]] })
     old.close()
     expect(stateDbSessionSources(path, ['old-kanban', 'old-cli'])).toEqual(new Map([['old-kanban', 'kanban'], ['old-cli', 'cli']]))
+  })
+})
+
+describe('indexed sidebar window (TAL-1163)', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'tal-1163-'))
+  afterAll(() => { rmSync(dir, { recursive: true, force: true }) })
+  const interactive: ReadRowsOptions = { limit: 5, excludeSources: ['cron', 'webhook', 'kanban'] }
+  const cron: ReadRowsOptions = { limit: 5, excludeSources: null, includeSources: ['cron'] }
+  /** Every fourth session is cron; each heartbeat lags its latest message by up to 60 s, so heartbeat order differs from message order. */
+  const agentDb = (name: string, ddl = ''): string => {
+    mkdirSync(join(dir, name))
+    const path = join(dir, name, 'state.db')
+    const db = new DatabaseSync(path)
+    db.exec(agentSchema.schema.join('\n'))
+    const session = db.prepare('INSERT INTO sessions (id, source, title, started_at, last_activity_at, message_count) VALUES (?, ?, ?, ?, ?, 2)')
+    const message = db.prepare('INSERT INTO messages (session_id, role, content, timestamp) VALUES (?, ?, ?, ?)')
+    for (let i = 0; i < 64; i += 1) {
+      const id = `s-${i}`, latest = 10_000 + i * 10
+      session.run(id, i % 4 === 0 ? 'cron' : 'cli', `Session ${i}`, latest - 1000, latest - (i * 37) % 61)
+      message.run(id, 'user', 'hi', latest - 999)
+      message.run(id, 'assistant', 'hello', latest)
+    }
+    db.exec(ddl)
+    db.close()
+    return path
+  }
+  const read = (path: string, opts: ReadRowsOptions): { ids: unknown[]; rows: Json[]; sql: string } => {
+    const prepare = vi.spyOn(DatabaseSync.prototype, 'prepare')
+    try {
+      const rows = readImportableAgentSessionRows(path, opts)
+      return { ids: rows.map((r) => r.id), rows, sql: prepare.mock.calls.map(([sql]) => sql).find((sql) => sql.includes('candidates AS'))! }
+    } finally { prepare.mockRestore() }
+  }
+  /** The `EXPLAIN QUERY PLAN` details nested under the `candidates` CTE. */
+  const candidatePlan = (path: string, sql: string): string[] => {
+    const db = new DatabaseSync(path, { readOnly: true })
+    try {
+      const plan = db.prepare(`EXPLAIN QUERY PLAN ${sql}`).all(...Array<null>(sql.split('?').length - 1).fill(null)) as { id: number; parent: number; detail: string }[]
+      const inside = new Set([plan.find((r) => r.detail.includes('candidates'))!.id])
+      for (const r of plan) if (inside.has(r.parent)) inside.add(r.id)
+      return plan.filter((r) => inside.has(r.parent)).map((r) => r.detail)
+    } finally { db.close() }
+  }
+  const indexed = agentDb('indexed')
+  const expected = { interactive: ['s-63', 's-62', 's-61', 's-59', 's-58'], cron: ['s-60', 's-56', 's-52', 's-48', 's-44'] }
+
+  it.each([['interactive', interactive], ['cron', cron]] as const)('walks idx_sessions_effective_activity for the %s pass', (pass, opts) => {
+    const { ids, sql } = read(indexed, opts)
+    expect(ids).toEqual(expected[pass])
+    const plan = candidatePlan(indexed, sql)
+    expect(plan).toContain('SCAN s USING INDEX idx_sessions_effective_activity')
+    expect(plan).not.toContain('SCAN s')
+    expect(plan.filter((detail) => detail.includes('TEMP B-TREE FOR ORDER BY'))).toEqual([])
+  })
+
+  it('ranks the indexed window exactly without idx_messages_session', () => {
+    const path = agentDb('no-messages-index', 'DROP INDEX idx_messages_session')
+    for (const opts of [interactive, cron]) expect(read(path, opts).rows).toEqual(read(indexed, opts).rows)
+  })
+
+  it.each([
+    ['without the activity index', 'DROP INDEX idx_sessions_effective_activity'],
+    ['without last_activity_at', 'DROP INDEX idx_sessions_effective_activity; ALTER TABLE sessions DROP COLUMN last_activity_at'],
+  ])('keeps the exact message-recency window and its rows %s', (name, ddl) => {
+    const legacy = agentDb(name.replaceAll(' ', '-'), ddl)
+    for (const [pass, opts] of [['interactive', interactive], ['cron', cron]] as const) {
+      const before = read(legacy, opts)
+      expect(before.sql).toContain('ORDER BY COALESCE((SELECT MAX(mx.timestamp) FROM messages mx WHERE mx.session_id = s.id), s.started_at) DESC')
+      expect(before.ids).toEqual(expected[pass])
+      expect(read(indexed, opts).rows).toEqual(before.rows)
+    }
   })
 })
 
