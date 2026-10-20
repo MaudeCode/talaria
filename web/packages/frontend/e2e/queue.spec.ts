@@ -42,10 +42,16 @@ async function runningSession(page: Page, sid: string) {
   return { state, streams, stale, starts, settle, close }
 }
 
-async function queue(page: Page, text: string) {
+// TAL-1078: the queue is a count chip over the composer; its rows open in a dialog.
+const chip = (page: Page) => page.locator('[data-notice="queue"]')
+async function queue(page: Page, text: string, count: number) {
   await page.locator('#msg').fill(`/queue ${text}`)
   await page.locator('#btnSend').click()
-  await expect(rows(page).last()).toContainText(text)
+  await expect(chip(page)).toHaveText(`${String(count)} queued`)
+}
+async function openQueue(page: Page) {
+  await chip(page).getByRole('button').click()
+  await expect(page.getByRole('dialog')).toBeVisible()
 }
 
 const rows = (page: Page) => page.locator('.queue-card-list > *')
@@ -57,14 +63,18 @@ test('queued messages can be edited, deleted and reordered, and drain in the sho
   try {
     await page.goto(`/session/${sid}`)
     await expect.poll(() => run.streams.has(`${sid}-run`)).toBe(true)
-    await queue(page, 'First')
-    await queue(page, 'Second')
-    await queue(page, 'Third')
+    await queue(page, 'First', 1)
+    await queue(page, 'Second', 2)
+    await queue(page, 'Third', 3)
+    await expect(rows(page)).toHaveCount(0)
+    await openQueue(page)
+    await expect(page.getByRole('dialog', { name: '3 queued' })).toBeVisible()
 
     const cancel = row(page, 'Second').getByRole('button', { name: 'Cancel queued message' })
     await expect(cancel).toBeVisible()
     await cancel.click()
     await expect(rows(page)).toHaveText(['First', 'Third'])
+    await expect(chip(page)).toHaveText('2 queued')
 
     await row(page, 'Third').getByRole('button', { name: 'Edit queued message' }).click()
     const editor = page.getByRole('textbox', { name: 'Edit queued message' })
@@ -74,6 +84,16 @@ test('queued messages can be edited, deleted and reordered, and drain in the sho
 
     await row(page, 'Third, edited').getByRole('button', { name: 'Reorder queued message' }).dragTo(row(page, 'First'))
     await expect(rows(page)).toHaveText(['Third, edited', 'First'])
+    // The keyboard moves a row too, and Escape closes the dialog onto its chip without sending anything.
+    await row(page, 'First').getByRole('button', { name: 'Reorder queued message' }).focus()
+    await page.keyboard.press('ArrowUp')
+    await expect(rows(page)).toHaveText(['First', 'Third, edited'])
+    await page.keyboard.press('ArrowDown')
+    await expect(rows(page)).toHaveText(['Third, edited', 'First'])
+    await page.keyboard.press('Escape')
+    await expect(page.getByRole('dialog')).toHaveCount(0)
+    await expect(chip(page).getByRole('button')).toBeFocused()
+    expect(run.starts).toEqual([])
 
     // The reloaded tab reattaches on a new connection; the run settles on that one. Ending the old one here would
     // settle the turn before the reload.
@@ -81,12 +101,16 @@ test('queued messages can be edited, deleted and reordered, and drain in the sho
     run.streams.delete(`${sid}-run`)
     await page.reload()
     await expect.poll(() => run.streams.has(`${sid}-run`)).toBe(true)
+    await openQueue(page)
     await expect(rows(page)).toHaveText(['Third, edited', 'First'])
     expect(run.starts).toEqual([])
 
+    // Draining empties the open dialog: it closes, the chip goes, and focus returns to the composer.
     run.settle()
     await expect.poll(() => run.starts).toEqual(['Third, edited', 'First'])
-    await expect(page.locator('.queue-card')).toHaveCount(0)
+    await expect(page.getByRole('dialog')).toHaveCount(0)
+    await expect(chip(page)).toHaveCount(0)
+    await expect(page.locator('#msg')).toBeFocused()
   } finally {
     await run.close()
   }
@@ -98,13 +122,13 @@ test('a queue restored on a session whose run ended meanwhile drains at once', a
   try {
     await page.goto(`/session/${sid}`)
     await expect.poll(() => run.streams.has(`${sid}-run`)).toBe(true)
-    await queue(page, 'After the run')
+    await queue(page, 'After the run', 1)
     // The run ends while this tab is gone, so no live turn settles to start the drain.
     await page.goto('about:blank')
     run.state.running = false
     await page.goto(`/session/${sid}`)
     await expect.poll(() => run.starts).toEqual(['After the run'])
-    await expect(page.locator('.queue-card')).toHaveCount(0)
+    await expect(chip(page)).toHaveCount(0)
   } finally {
     await run.close()
   }

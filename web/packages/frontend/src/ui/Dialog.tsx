@@ -10,16 +10,18 @@ export interface DialogProps {
   description?: string | undefined
   children?: ReactNode
   className?: string | undefined
+  /** Where focus goes on close; by default the element focused before it opened. */
+  finalFocus?: BaseDialog.Popup.Props['finalFocus']
 }
 
 /** Modal dialog: focus trap, escape, backdrop click, and aria wiring via Base UI. */
-export function Dialog({ open, onOpenChange, title, description, children, className }: DialogProps) {
+export function Dialog({ open, onOpenChange, title, description, children, className, finalFocus }: DialogProps) {
   return (
     <BaseDialog.Root open={open} onOpenChange={onOpenChange}>
       <BaseDialog.Portal>
         <BaseDialog.Backdrop className="fixed inset-0 z-[1300] bg-black/50" />
-        <BaseDialog.Popup className={cn('fixed left-1/2 top-1/2 z-[1301] w-[min(92vw,520px)] -translate-x-1/2 -translate-y-1/2 rounded-xl border border-border bg-surface p-5 text-text shadow-md outline-none', className)}>
-          <BaseDialog.Title className="text-base font-semibold text-strong">{title}</BaseDialog.Title>
+        <BaseDialog.Popup finalFocus={finalFocus} className={cn('fixed left-1/2 top-1/2 z-[1301] w-[min(92vw,520px)] -translate-x-1/2 -translate-y-1/2 rounded-xl border border-border bg-surface p-5 text-text shadow-md outline-none', className)}>
+          <BaseDialog.Title className="text-base font-semibold text-strong [overflow-wrap:anywhere]">{title}</BaseDialog.Title>
           {description && <BaseDialog.Description className="mt-1 text-sm text-muted [overflow-wrap:anywhere]">{description}</BaseDialog.Description>}
           <div className="mt-4">{children}</div>
         </BaseDialog.Popup>

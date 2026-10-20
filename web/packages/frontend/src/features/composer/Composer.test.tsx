@@ -356,7 +356,8 @@ describe('Composer', () => {
     await waitFor(() => expect(api.startBackground).toHaveBeenCalledWith('s1', 'summarize repo'))
     expect(api.startChat).not.toHaveBeenCalled()
     expect(screen.getByRole('textbox')).toHaveValue('')
-    expect(await screen.findByRole('region', { name: 'Background work' })).toHaveTextContent('summarize repo')
+    await userEvent.click(await screen.findByRole('button', { name: 'Background work · 1' }))
+    expect(within(await screen.findByRole('dialog', { name: 'Background work' })).getByRole('region', { name: 'Background work' })).toHaveTextContent('summarize repo')
   })
 
   // TAL-314: the server catalog resolves a typed alias and says which client runs each command.
@@ -432,14 +433,18 @@ describe('Composer', () => {
     const box = screen.getByRole('textbox')
     await userEvent.type(box, '/reload_skills {Enter}')
     await waitFor(() => expect(api.execCommand).toHaveBeenCalledWith('/reload_skills', 's1'))
-    expect(await screen.findByRole('region', { name: 'Command output' })).toHaveTextContent('Total skills: 5')
+    const openOutput = async () => { await userEvent.click(await screen.findByRole('button', { name: /^Command output: \/reload/ })); return screen.findByRole('region', { name: 'Command output' }) }
+    await waitFor(() => expect(screen.getByRole('button', { name: /^Command output:/ })).not.toHaveTextContent('Running'))
+    expect(await openOutput()).toHaveTextContent('Total skills: 5')
+    await userEvent.keyboard('{Escape}')
     expect(box).toHaveValue('')
     expect(onLocalCommand).not.toHaveBeenCalled()
     expect(api.startChat).not.toHaveBeenCalled()
 
     vi.mocked(api.execCommand).mockRejectedValue(new Error('Hermes Agent sidecar is not running'))
     await userEvent.type(box, '/reload-skills {Enter}')
-    await waitFor(() => expect(screen.getByRole('region', { name: 'Command output' })).toHaveTextContent('Command failed: Hermes Agent sidecar is not running'))
+    await waitFor(() => expect(document.querySelector('[data-notice="command"]')).toHaveAttribute('data-tone', 'error'))
+    expect(await openOutput()).toHaveTextContent('Command failed: Hermes Agent sidecar is not running')
     expect(api.startChat).not.toHaveBeenCalled()
   })
 
@@ -458,6 +463,7 @@ describe('Composer', () => {
     expect(api.startChat).not.toHaveBeenCalled()
     expect(api.askBtw).toHaveBeenCalledWith('s1', 'how big is it?')
     expect(screen.getByRole('textbox')).toHaveValue('')
+    await userEvent.click(await screen.findByRole('button', { name: 'Side question — not in history: how big is it?' }))
     const panel = await screen.findByRole('region', { name: 'Side question — not in history' })
     expect(panel).toHaveTextContent('how big is it?')
     await waitFor(() => expect(side).not.toBeNull())
@@ -466,6 +472,7 @@ describe('Composer', () => {
     act(() => { side!.onEvent({ event: 'done', data: { ephemeral: true, answer: 'Three nodes.', terminal_state: 'completed' } }, 'side:2') })
     expect(panel).toHaveTextContent('Three nodes.')
     expect(closed).toHaveBeenCalled()
+    await userEvent.keyboard('{Escape}')
     await userEvent.click(screen.getByRole('button', { name: 'Dismiss' }))
     await waitFor(() => expect(screen.queryByRole('region', { name: 'Side question — not in history' })).toBeNull())
   }
@@ -606,15 +613,38 @@ describe('Composer', () => {
     await waitFor(() => expect(box).toHaveValue('Plan the release'))
     expect(getFirstSend()).toBeNull()
   })
-  it('shows the running turn in the top tab and slides it out when the turn ends (TAL-429)', async () => {
+  it('shows the running turn as a floating chip and fades it out when the turn ends (TAL-1078)', async () => {
     const { container, rerenderWith } = renderComposer(writable, running())
-    expect(container.querySelector('.composer-tab .live-run-status')).toHaveTextContent('Working')
+    expect(container.querySelector('.composer-notices .live-run-status')).toHaveTextContent('Working')
     dispatch({ type: 'event', sessionId: 's1', streamId: 'run', event: { event: 'done', data: {} }, lastEventId: 'run:1', now: 1 })
     rerenderWith(getStreamState().turns.s1!)
-    // The ended row stays for its exit slide, with the tab leaving alongside it, then both are gone.
+    // The ended chip stays inert for its exit fade, then the row is gone and leaves no space.
     expect(container.querySelector('[data-notice="live"]')).toHaveClass('is-leaving')
-    expect(container.querySelector('.composer-tab')).toHaveClass('is-leaving')
-    await waitFor(() => expect(container.querySelector('.composer-tab')).toBeNull())
+    expect(container.querySelector('[data-notice="live"]')).toHaveAttribute('inert')
+    await waitFor(() => expect(container.querySelector('.composer-notices')).toBeNull())
+  })
+  it('floats the run status beside a separate queued-count chip that opens the queue in a dialog (TAL-1078)', async () => {
+    const queued: QueuedTurn[] = [{ id: 'q1', text: 'Queued one', attachments: [], request: { profile: 'default' } }, { id: 'q2', text: 'Queued two', attachments: [], request: { profile: 'default' } }]
+    const onQueueChange = vi.fn()
+    renderComposer(writable, running(), noop, undefined, undefined, undefined, { queued, onQueueChange })
+    await userEvent.type(screen.getByRole('textbox'), 'Draft kept')
+    expect(document.querySelector('.composer-tab')).toBeNull()
+    const run = document.querySelector<HTMLElement>('[data-notice="live"]')!
+    expect(run).toHaveTextContent('Working')
+    // The run status is not a control, and the queue's rows stay out of the composer until asked for.
+    expect(within(run).queryByRole('button')).toBeNull()
+    expect(screen.queryByText('Queued one')).toBeNull()
+    const chip = screen.getByRole('button', { name: '2 queued' })
+    await userEvent.click(chip)
+    const dialog = await screen.findByRole('dialog', { name: '2 queued' })
+    expect(within(dialog).getByText('Queued one')).toBeVisible()
+    expect(within(dialog).getByText('Queued two')).toBeVisible()
+    await userEvent.keyboard('{Escape}')
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+    expect(chip).toHaveFocus()
+    expect(onQueueChange).not.toHaveBeenCalled()
+    expect(api.startChat).not.toHaveBeenCalled()
+    expect(screen.getByRole('textbox')).toHaveValue('Draft kept')
   })
   it('hands the text back when the chat start fails after the session exists (TAL-274)', async () => {
     endFirstSend()

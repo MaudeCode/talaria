@@ -132,7 +132,7 @@ test(`live tool batches settle once: ${limited ? 'tool limit' : 'completed'}`, a
   await expect(spinner.locator('svg.live-laurel')).toBeVisible()
   await expect(spinner.locator('svg.live-laurel')).toHaveCSS('width', '18px')
   // The status is the first row of the composer's top tab (TAL-429), not a pill over the transcript.
-  await expect(page.locator('.composer-tab .live-run-status')).toHaveCount(1)
+  await expect(page.locator('.composer-notices .live-run-status')).toHaveCount(1)
   const group = page.locator('[data-activity-sequence-group]')
   const groupLabel = group.locator(':scope > button .tool-worklog-label')
   await expect(group).toHaveCount(1)

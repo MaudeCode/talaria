@@ -2503,6 +2503,7 @@
 	"auxiliary_models_not_in_catalog": "Not in catalog",
 	"auxiliary_models_custom_label": "Custom model ID (use @provider:model to pin a provider)",
 	"bg_card_title": "Background work",
+	"bg_card_count": "Background work · {n}",
 	"bg_status_running": "Running",
 	"bg_status_attention": "Needs attention",
 	"bg_status_completed": "Done",

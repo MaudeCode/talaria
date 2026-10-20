@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, type ClipboardEvent, type DragEvent, type KeyboardEvent } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
-import { Mic, Paperclip, Square, ArrowUp, TerminalSquare, SlidersHorizontal } from 'lucide-react'
+import { Mic, Paperclip, Square, ArrowUp, TerminalSquare, SlidersHorizontal, ListPlus, Layers } from 'lucide-react'
 import { m } from '../../paraglide/messages.js'
 import * as api from '../../api/endpoints'
 import { keys } from '../../api/queryKeys'
@@ -27,7 +27,7 @@ import { setTheme } from '../../app/appearance'
 import { ThemeSchema } from '../../contracts/persisted'
 import type { Clarify } from '../chat/useClarify'
 import { LiveStatusPill } from '../chat/LiveTurnView'
-import { ComposerTab, type ComposerNotice } from './ComposerTab'
+import { ComposerNotices, type ComposerNotice } from './ComposerNotices'
 import { useBtw } from './useBtw'
 import { useCommandOutput } from './useCommandOutput'
 import { BackgroundWorkCard, useBackgroundTasks } from '../background/BackgroundWork'
@@ -76,7 +76,7 @@ export interface ComposerProps {
   locked?: boolean | undefined
   /** A pending clarification: the box becomes its answer input and the chat draft and attachments wait untouched. */
   clarify?: Clarify | null | undefined
-  /** Entries for the top tab from outside the composer (connection and runtime state); they lead the tab. */
+  /** Status chips from outside the composer (connection and runtime state); they follow the running turn's chip. */
   notices?: ComposerNotice[] | undefined
 }
 
@@ -453,7 +453,7 @@ export function Composer(props: ComposerProps) {
       // TAL-314: a typed alias resolves to its server catalog entry; one Web cannot run shows the server's message.
       const entry = parsed ? resolveCommand(parsed.name, catalog) : undefined
       if (entry && !entry.clients.includes('web')) { showToast(entry.unsupported_message ?? m.cmd_unsupported(), 3000); return }
-      // TAL-561: an entry the server runs shows its output in the composer tab; it never reaches the model.
+      // TAL-561: an entry the server runs shows its output behind a composer chip; it never reaches the model.
       if (entry && runsOnServer(entry)) { setText(''); void runCommand(value); return }
       const cmd = parsed && { ...parsed, name: entry?.name ?? parsed.name }
       if (cmd) {
@@ -468,7 +468,7 @@ export function Composer(props: ComposerProps) {
         if (commandScope !== getStreamContext()) return
         if (handled === 'refused') { restore(); return }
         if (handled) { if (!consumed) setText((current) => current === text ? '' : current); return }
-        // TAL-372: `/background` runs the prompt in a hidden session; its record and result show in the background card.
+        // TAL-372: `/background` runs the prompt in a hidden session; its record and result show behind the background chip.
         if (cmd.name === 'background') {
           if (!cmd.args) { showToast(m.bg_usage(), 2000); return }
           try {
@@ -479,7 +479,7 @@ export function Composer(props: ComposerProps) {
           } catch (e) { showToast(e instanceof Error ? e.message : String(e), 4000, 'error') }
           return
         }
-        // TAL-518: a side question never steers or sends; its answer shows in the composer tab, running or idle.
+        // TAL-518: a side question never steers or sends; its answer shows behind a composer chip, running or idle.
         if (cmd.name === 'btw') {
           if (!cmd.args) { showToast(m.cmd_btw_usage(), 2000); return }
           if (!sessionId) { showToast(m.btw_needs_chat(), 2000); return }
@@ -656,8 +656,12 @@ export function Composer(props: ComposerProps) {
   }, [resting])
   const showYolo = yolo && !hide('hide_composer_yolo')
   const backgroundTasks = useBackgroundTasks(session && !session.owner_attachment ? sessionId : null).data?.tasks ?? []
-  // The top tab (T3 Code's attached banner): the running turn first, then runtime notices and this message's state.
-  const tabNotices: ComposerNotice[] = [
+  const admissions = session?.owner_attachment?.admissions ?? []
+  // TAL-1043: an owner input with an unknown outcome blocks sending until it is retried or discarded, so its chip says so.
+  const outcomeUnknown = admissions.some((a) => a.status === 'unknown')
+  const pinnedTasks = backgroundTasks.filter((t) => t.pinned)
+  // The chips over the card: the running turn first, then runtime notices and this message's state.
+  const chipNotices: ComposerNotice[] = [
     ...(busy && live ? [{ id: 'live', content: <LiveStatusPill turn={live} background={session?.active_turn_origin === 'background' && session.active_stream_id === live.streamId} /> }] : []),
     ...notices,
     ...(intent.send ? [{ id: 'send', tone: intent.send.error ? 'error' as const : 'neutral' as const, content: <span role="status">{intent.send.uncertain ? m.composer_send_uncertain() : intent.send.error ?? m.composer_sending()}</span>, ...(intent.send.error && !intent.send.uncertain && !intent.send.files && sessionId ? { action: { label: m.retry(), run: () => { void retryPendingTurn(sessionId)?.catch(() => undefined) } } } : {}) }] : []),
@@ -666,8 +670,8 @@ export function Composer(props: ComposerProps) {
     ...(commandNotice ? [commandNotice] : []),
     ...(dictating ? [{ id: 'dictation', content: <span className="inline-flex items-center gap-1.5" role="status"><span className="mic-dot" aria-hidden="true" />{m.voice_listening()}</span> }] : []),
     ...(showYolo ? [{ id: 'yolo', tone: 'warning' as const, content: <><span aria-hidden="true">⚡</span><span className="truncate">{m.yolo_tab_active()}</span></>, action: { label: m.yolo_turn_off(), run: onToggleYolo } }] : []),
-    ...(sessionId && backgroundTasks.some((t) => t.pinned) ? [{ id: 'background', content: <BackgroundWorkCard sessionId={sessionId} tasks={backgroundTasks} /> }] : []),
-    ...(sessionId && (queued.length > 0 || session?.owner_attachment?.admissions.length) ? [{ id: 'queue', content: <QueueCard sessionId={sessionId} queued={queued} onChange={onQueueChange} pendingId={intent.send?.queueId} admissions={session?.owner_attachment?.admissions} onAdmissionAction={props.onOwnerAction} /> }] : []),
+    ...(sessionId && pinnedTasks.length ? [{ id: 'background', content: <><Layers size={13} className="shrink-0" aria-hidden="true" /><span className="truncate">{m.bg_card_count({ n: pinnedTasks.length })}</span></>, detail: { title: m.bg_card_title(), content: <BackgroundWorkCard sessionId={sessionId} tasks={backgroundTasks} /> } }] : []),
+    ...(sessionId && (queued.length > 0 || admissions.length) ? [{ id: 'queue', tone: outcomeUnknown ? 'warning' as const : undefined, content: <><ListPlus size={13} className="shrink-0" aria-hidden="true" /><span className="truncate">{outcomeUnknown ? m.owner_outcome_unknown() : m.queued_count({ n: queued.length + admissions.length })}</span></>, detail: { title: admissions.length ? m.owner_inputs() : m.queued_count({ n: queued.length }), content: <QueueCard sessionId={sessionId} queued={queued} onChange={onQueueChange} pendingId={intent.send?.queueId} admissions={admissions} onAdmissionAction={props.onOwnerAction} /> } }] : []),
   ]
   // A `/btw` draft asks beside the turn instead of steering, queueing or interrupting it (TAL-518).
   const busyLabel = nativeOwner ? m.composer_send() : intent.stop ? m.composer_queue() : parseCommand(text)?.name === 'btw' ? m.composer_send() : busyMode === 'queue' ? m.composer_queue() : busyMode === 'interrupt' ? m.composer_interrupt() : m.composer_steer()
@@ -681,7 +685,7 @@ export function Composer(props: ComposerProps) {
 
   return (
     <div className="composer-wrap" id="composerWrap">
-      <ComposerTab notices={tabNotices} />
+      <ComposerNotices key={sessionId ?? ''} notices={chipNotices} fallbackFocus={textarea} />
       <div
         className={cn('composer-box relative z-[2] flex flex-col mx-auto max-w-(--msg-max) border-(length:--composer-border-width) border-(--composer-border-color) rounded-(--composer-radius) shadow-(--composer-shadow) transition-[border-color,box-shadow] duration-(--dur) ease-(--ease) focus-within:border-(--composer-focus-border) focus-within:shadow-(--composer-focus-shadow) focus-within:outline-none max-[641px]:rounded-(--composer-radius-phone)', dragOver && 'drag-over', clarify && 'clarify-active', resting && 'is-resting')}
         id="composerBox"
