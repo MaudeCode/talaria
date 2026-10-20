@@ -37,6 +37,11 @@ export interface CliLoadOptions {
   sessionIds?: readonly string[]
   /** TAL-1040: keep the looked-up rows that have no visible turn yet (receipt-proven Web diagnostic chats). */
   keepEmpty?: boolean
+  /**
+   * With `sessionIds`: the rows the sidebar would list for those ids, whatever their source and recency: Web-born rows
+   * included and compression chains collapsed, as its listing passes do (TAL-923).
+   */
+  sidebarRows?: boolean
 }
 
 export interface CliSessionRead {
@@ -50,7 +55,7 @@ function dbStamp(path: string): string {
   try { const st = statSync(path, { bigint: true }); return `${st.size.toString()}:${st.mtimeNs.toString()}:${st.ino.toString()}` } catch { return 'missing' }
 }
 
-interface CacheSlot { cacheKey: string; key: string; dbPath: string; sourceFilter: string | null; sessionIds: readonly string[] | null; keepEmpty: boolean }
+interface CacheSlot { cacheKey: string; key: string; dbPath: string; sourceFilter: string | null; sessionIds: readonly string[] | null; keepEmpty: boolean; sidebarRows: boolean }
 /** One sidebar build's state.db reads: the interactive window (`kind` null), then each background kind when unfiltered. */
 interface ListingQuery { kind: string | null; opts: ReadRowsOptions }
 /** A query's rows, or the error a background kind's read failed with. */
@@ -102,7 +107,7 @@ export class CliSessionSource {
     const dbPath = this.dbPath(profile)
     const sourceFilter = str(opts.sourceFilter).trim().toLowerCase() || null
     const sessionIds = opts.sessionIds ?? null
-    return { cacheKey: `${profile}\n${sourceFilter ?? ''}`, key: `${dbPath}\n${dbStamp(dbPath)}\n${dbStamp(`${dbPath}-wal`)}\n${await this.deps.store.index().then((index) => index.revision, () => '')}`, dbPath, sourceFilter, sessionIds, keepEmpty: opts.keepEmpty === true }
+    return { cacheKey: `${profile}\n${sourceFilter ?? ''}`, key: `${dbPath}\n${dbStamp(dbPath)}\n${dbStamp(`${dbPath}-wal`)}\n${await this.deps.store.index().then((index) => index.revision, () => '')}`, dbPath, sourceFilter, sessionIds, keepEmpty: opts.keepEmpty === true, sidebarRows: opts.sidebarRows === true }
   }
 
   private cached(slot: CacheSlot): CliSessionRead | null {
@@ -137,7 +142,7 @@ export class CliSessionSource {
   private queries(slot: CacheSlot): ListingQuery[] {
     const { sourceFilter } = slot
     const log = this.deps.log
-    if (slot.sessionIds !== null) return [{ kind: null, opts: { sessionIds: slot.sessionIds, limit: null, excludeSources: ['webui'], keepEmpty: slot.keepEmpty, log } }]
+    if (slot.sessionIds !== null) return [{ kind: null, opts: { sessionIds: slot.sessionIds, limit: null, excludeSources: slot.sidebarRows ? null : ['webui'], compressionChains: slot.sidebarRows, keepEmpty: slot.keepEmpty, log } }]
     const interactiveLimit = sourceFilter === null ? CLI_VISIBLE_SESSION_LIMIT : BACKGROUND_PROJECT_CHIP_LIMIT
     // A filtered read takes one row past its window too, so a single-source list knows more exist (TAL-482).
     const out: ListingQuery[] = [{ kind: null, opts: { limit: sourceFilter === null ? interactiveLimit : interactiveLimit + 1, excludeSources: sourceFilter === null ? [...BACKGROUND_KINDS] : null, includeSources: sourceFilter === null ? null : [sourceFilter], log } }]

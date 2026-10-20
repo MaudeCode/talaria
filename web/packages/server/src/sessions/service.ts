@@ -169,7 +169,7 @@ export interface SessionServiceDeps {
   yolo: { isEnabled: (sid: string) => boolean; set: (sid: string, enabled: boolean) => void }
   /** state.db sidebar rows for a profile (Python `get_cli_sessions`); null when the projection is unavailable. */
   /** `truncated`: source kinds whose rows stopped at the per-kind window on this read (TAL-482). */
-  cliSessions: (profile: string, opts: { sourceFilter: string | null; sessionIds?: readonly string[]; keepEmpty?: boolean }) => Promise<{ rows: Row[]; truncated: ReadonlySet<string>; storage: AgentStorage }>
+  cliSessions: (profile: string, opts: { sourceFilter: string | null; sessionIds?: readonly string[]; keepEmpty?: boolean; sidebarRows?: boolean }) => Promise<{ rows: Row[]; truncated: ReadonlySet<string>; storage: AgentStorage }>
   /** TAL-551: read-only Claude Code transcripts, listed with the CLI rows when both toggles are on. */
   claudeCode?: ClaudeCodeSessionSource
   profileHome: (profile: string) => string
@@ -644,12 +644,16 @@ export class SessionService {
     return meta !== null && isMessagingSessionRecord(meta)
   }
 
-  /** Python `_lookup_cli_session_metadata`: the sidebar row for a state.db session in the active profile. */
+  /**
+   * Python `_lookup_cli_session_metadata`: the sidebar row for a state.db session in the active profile, else its plain
+   * row (a segment its chain's row does not name). Both are read by id: the sidebar listing would scan every session to
+   * rank its window (TAL-923).
+   */
   private async lookupCliMeta(sid: string): Promise<Row | null> {
     try {
       if (isClaudeCodeSessionId(sid)) return (await this.claudeCodeRows()).find((r) => str(r.session_id) === sid) ?? null
       const profile = this.deps.activeProfile()
-      return (await this.deps.cliSessions(profile, { sourceFilter: null })).rows.find((r) => str(r.session_id) === sid)
+      return (await this.deps.cliSessions(profile, { sourceFilter: null, sessionIds: [sid], sidebarRows: true })).rows.find((r) => str(r.session_id) === sid)
         ?? (await this.deps.cliSessions(profile, { sourceFilter: null, sessionIds: [sid] })).rows[0] ?? null
     } catch {
       return null

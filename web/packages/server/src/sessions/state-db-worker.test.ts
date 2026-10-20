@@ -237,6 +237,36 @@ describe('single-session state.db lookups off the event loop (TAL-923)', () => {
     expect(await s.deps.sessionStore.loadMetadataOnly('web-d')).toBeNull()
   })
 
+  it('looks one session up by id instead of building the sidebar listing', async () => {
+    const reads = vi.spyOn(s.deps.cliSessions, 'read')
+    try {
+      await s.deps.sessionStore.save(new Session({ session_id: 'web-e', title: 'Delete me too', source_tag: 'webui', messages: [{ role: 'user', content: 'x', timestamp: 1 }] }, { workspace: s.state, model: null }))
+      s.deps.cliSessions.invalidate()
+      expect((await subagentStart()).status).toBe(403)
+      expect((await s.get('/api/session?session_id=cli-d')).status).toBe(200)
+      for (const pinned of [true, false]) expect((await post('/api/session/pin', { session_id: 'web-p', pinned })).status).toBe(200)
+      expect((await post('/api/session/delete', { session_id: 'web-e' })).status).toBe(200)
+      expect(reads.mock.calls.length).toBeGreaterThan(0)
+      expect(reads.mock.calls.filter(([, opts]) => !opts?.sessionIds?.length).map(([, opts]) => opts), 'an unwindowed sidebar read').toEqual([])
+    } finally {
+      reads.mockRestore()
+    }
+    // The targeted row is the one the sidebar lists, Web-born state.db rows included.
+    seedStateDb(dbPath, [{ id: 'cron_job9_1', source: 'cron', at: 1030 }, { id: 'chain-root', source: 'cli', at: 1040 }, { id: 'chain-tip', source: 'cli', at: 1050 }])
+    const db = new DatabaseSync(dbPath)
+    db.exec("UPDATE sessions SET end_reason = 'compression', ended_at = 1050 WHERE id = 'chain-root'; UPDATE sessions SET parent_session_id = 'chain-root' WHERE id = 'chain-tip'")
+    db.close()
+    s.deps.cliSessions.invalidate()
+    const listed = new Map((await s.deps.cliSessions.read('default')).rows.map((r) => [String(r.session_id), r]))
+    const lookup = (s.deps.sessions as unknown as { lookupCliMeta: (sid: string) => Promise<Json | null> }).lookupCliMeta.bind(s.deps.sessions)
+    // A compression chain lists as one row: the root's lineage under its tip's id.
+    expect(listed.get('chain-tip')).toMatchObject({ _lineage_root_id: 'chain-root', parent_session_id: null })
+    for (const sid of ['cli-d', 'sub-a', 'web-p', 'cron_job9_1', 'chain-tip']) {
+      expect(listed.get(sid), sid).toBeDefined()
+      expect(await lookup(sid), sid).toEqual(listed.get(sid))
+    }
+  })
+
   it.each([
     ['a chat start on a state.db-only subagent session', async () => { const res = await subagentStart(); return [res.status, ((await res.json()) as Json).error] }, SUBAGENT_REFUSAL],
     ['a pin', async () => { const res = await post('/api/session/pin', { session_id: 'web-p', pinned: true }); return [res.status, ((await res.json()) as { session: Json }).session.pinned] }, [200, true]],
