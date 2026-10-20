@@ -30,11 +30,11 @@ describe('session finalize (TAL-937)', () => {
     expect(sidecar.calls.filter((c) => c.method === task)).toHaveLength(1)
     expect(rows.every((m) => m.role === 'local_notice')).toBe(true)
     expect(rows.map((m) => [m.content, m._notice_kind])).toEqual([['bye', 'session_finalize'], ['summary exported', 'session_finalize']])
-    expect(sanitizeMessagesForApi(server.deps.sessions.modelContext(session))).toEqual([])
+    expect(sanitizeMessagesForApi((await server.deps.sessions.readModelContext(session)))).toEqual([])
     server.deps.sessionStore.sessions.delete(session.session_id)
     const reloaded = await server.deps.sessionStore.get(session.session_id)
     expect(reloaded.messages.map((m) => m.content)).toEqual(['bye', 'summary exported'])
-    expect(sanitizeMessagesForApi(server.deps.sessions.modelContext(reloaded))).toEqual([])
+    expect(sanitizeMessagesForApi((await server.deps.sessions.readModelContext(reloaded)))).toEqual([])
     let history: unknown = null
     sidecar.respond('chat.start', (params) => {
       history = params.conversation_history

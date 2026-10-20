@@ -976,8 +976,11 @@ export async function agentSessionRowsExistingAsync(dbPath: string, sessionIds: 
   try { return (await callListingWorker({ op: 'existing', dbPath, ids })).value as Set<string> } catch { return new Set(ids.map((s) => s.trim()).filter(Boolean)) }
 }
 
-/** TAL-923: the single-session readers behind chat start, session detail, and the mutation gates, run on the worker. */
-export const SESSION_READS = { stateDbLocalTargetRead, stateDbSessionRow, stateDbSessionMessages, stateDbCompressionLineage }
+/**
+ * TAL-923: the single-session readers behind chat start, session detail, and the mutation gates, run on the worker.
+ * TAL-1162: and the transcript reads behind turn history, settlement, and the detail's page tail.
+ */
+export const SESSION_READS = { stateDbLocalTargetRead, stateDbSessionRow, stateDbSessionMessages, stateDbCompressionLineage, stateDbSessionRead, stateDbSessionTailRead, stateDbSettlementRead }
 type SessionReadName = keyof typeof SESSION_READS
 
 /**
@@ -1148,6 +1151,20 @@ export function stateDbSessionMessages(dbPath: string, sid: string, opts: { stit
  */
 export function stateDbSessionRead(dbPath: string, sid: string, opts: { stitch?: boolean; lineage?: string[] | null } = {}): StateDbRead {
   return readStateDbSession(dbPath, sid, opts)
+}
+
+/** What a turn's settlement reads: the transcript, the compression lineage now, and, when that moved, the transcript it names. */
+export interface StateDbSettlementRead extends StateDbRead { lineage: string[]; rotated: StateDbRead | null }
+
+/**
+ * A settlement's reads in one request: the transcript under `recorded` (the session's `state_db_lineage`), the lineage
+ * the Agent's compression rotations give it now, and, when that differs from `recorded`, the transcript under it.
+ */
+export function stateDbSettlementRead(dbPath: string, sid: string, recorded: string[] | null): StateDbSettlementRead {
+  const read = stateDbSessionRead(dbPath, sid, { stitch: false, lineage: recorded?.[0] === sid ? recorded : null })
+  const lineage = stateDbCompressionLineage(dbPath, sid)
+  const moved = JSON.stringify(lineage) !== JSON.stringify(recorded ?? [sid])
+  return { ...read, lineage, rotated: moved ? stateDbSessionRead(dbPath, sid, { stitch: false, lineage: lineage.length > 1 && lineage[0] === sid ? lineage : null }) : null }
 }
 
 /** The same snapshot and provenance projection, restricted to physical rows past the seen marker. */

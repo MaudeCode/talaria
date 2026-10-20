@@ -22,7 +22,7 @@ import { SessionBusy, SessionNotFound, type SessionStore } from './store.js'
 import { UNSETTLED_TODO_KEY, attachTodoSnapshot, attachTodoState } from './todo.js'
 import { isClaudeCodeSessionId, type ClaudeCodeSessionSource } from './claude-code.js'
 import { auditSessionRecovery, repairSafeSessionRecovery, type RecoveryDeps } from './recovery.js'
-import { stateDbWebDiagnosticIdsAsync, agentSessionRowsExistingAsync, CANONICAL_READ_ONLY_REASON, OWNERSHIP_UNAVAILABLE_REASON, CONVERSATION_ROUND_THRESHOLD, countConversationRounds, stateDbCompressionLineage, stateDbTailToolContent, stateDbLineageReport, stateDbSessionMessages, stateDbSessionRead, stateDbSessionReadAsync, stateDbSessionTailRead, stateDbSessionRow, stateDbSessionSourcesAsync, stateDbTimestampSeconds, type StateDbRead, type StateDbSessionSource } from './state-db.js'
+import { stateDbWebDiagnosticIdsAsync, agentSessionRowsExistingAsync, CANONICAL_READ_ONLY_REASON, OWNERSHIP_UNAVAILABLE_REASON, CONVERSATION_ROUND_THRESHOLD, countConversationRounds, stateDbTailToolContent, stateDbLineageReport, stateDbSessionMessages, stateDbSessionReadAsync, stateDbSessionRow, stateDbSessionSourcesAsync, stateDbTimestampSeconds, type StateDbRead, type StateDbSessionSource, type StateDbSettlementRead } from './state-db.js'
 import { completionIncomplete, fallbackHandoffSummary, HANDOFF_SYSTEM_PROMPT, handoffMarker, handoffPayload, handoffTranscript, messageHandoffPayload, sameHandoff } from './handoff.js'
 import { anchorMessageKey, anchorSummary, CompressionJobs, compressionReference, visibleMessagesForAnchor, type CompressionJob } from './compress.js'
 import { chatReadiness, runtimeFailureDetails, SidecarError, type SidecarLike } from '../sidecar/client.js'
@@ -469,20 +469,36 @@ export class SessionService {
   }
 
   /** The Agent's state.db rows for this session (empty for subagent views, which never merge). */
-  stateDbRows(s: Session): Message[] {
-    return this.stateDbRead(s).rows
+  async stateDbRows(s: Session): Promise<Message[]> {
+    return (await this.stateDbRead(s)).rows
   }
 
-  /** `stateDbRows` and whether the read succeeded on a state.db whose messages carry ids (TAL-493). */
-  stateDbRead(s: Session): StateDbRead {
-    if (str(s.source_tag || s.raw_source || s.session_source).trim().toLowerCase() === 'subagent') return { rows: [], idCapable: false, ok: false, reason: null, generation: null }
-    // TAL-529: after a compression rotation the Agent writes to the continuation, so the read follows the recorded lineage.
-    const lineage = s.state_db_lineage?.[0] === s.session_id ? s.state_db_lineage : null
-    return stateDbSessionRead(this.stateDbPath(s.profile), s.session_id, { stitch: false, lineage })
+  /**
+   * `stateDbRows` and whether the read succeeded on a state.db whose messages carry ids (TAL-493). TAL-1162: read on the
+   * state.db worker; a worker failure is a failed read.
+   */
+  stateDbRead(s: Session): Promise<StateDbRead> {
+    if (isSubagentView(s)) return Promise.resolve(failedStateDbRead())
+    return stateDbSessionReadAsync(failedStateDbRead(), 'stateDbSessionRead', this.stateDbPath(s.profile), s.session_id, { stitch: false, lineage: stateDbReadLineage(s) })
   }
 
-  /** Preserve existing transcript provenance before a turn adds Agent rows from its starting database read. */
-  beginStateDbTurn(s: Session): StateDbRead {
+  /** `stateDbRead`'s projection of the rows past `afterId` alone (the detail's page tail), on the state.db worker. */
+  stateDbTailRead(s: Session, afterId: number, unidentified: readonly ReadonlyMap<string, number>[]): Promise<StateDbRead & { anchor?: Message; requiresFullRead?: boolean }> {
+    return stateDbSessionReadAsync(failedStateDbRead(), 'stateDbSessionTailRead', this.stateDbPath(s.profile), s.session_id, afterId, { lineage: stateDbReadLineage(s), unidentified })
+  }
+
+  /** The one read a turn's settlement builds its context from and settles with (`stateDbSettlementRead`). */
+  settlementRead(s: Session): Promise<StateDbSettlementRead> {
+    const unchanged: StateDbSettlementRead = { ...failedStateDbRead(), lineage: s.state_db_lineage ?? [s.session_id], rotated: null }
+    if (isSubagentView(s)) return Promise.resolve(unchanged)
+    return stateDbSessionReadAsync(unchanged, 'stateDbSettlementRead', this.stateDbPath(s.profile), s.session_id, s.state_db_lineage)
+  }
+
+  /**
+   * Preserve existing transcript provenance before a turn adds Agent rows from its starting database read. The stamp
+   * lands before this returns; the read follows.
+   */
+  beginStateDbTurn(s: Session): Promise<StateDbRead> {
     stampStateDbGeneration([...s.messages, ...s.context_messages], markedStateDbGeneration(s))
     return this.stateDbRead(s)
   }
@@ -496,7 +512,7 @@ export class SessionService {
    * rows (a WebUI conversation continued from the CLI shows the CLI turns). This is the coordinate space `GET
    * /api/session` exposes, so branching and the next model history slice/extend the same list.
    */
-  mergedTranscript(s: Session, local: Message[] = s.messages, stateRows: Message[] = this.stateDbRows(s)): Message[] {
+  mergedTranscript(s: Session, local: Message[], stateRows: Message[]): Message[] {
     if (!stateRows.length) return local
     return mergeSessionMessagesAppendOnly(local, stateRows, { truncationWatermark: s.truncation_watermark, compressedWatermark: s.truncation_watermark_compressed, stateDbSeenId: currentStateDbSeenId(s, stateRows), stateDbGeneration: markedStateDbGeneration(s) })
   }
@@ -506,7 +522,7 @@ export class SessionService {
    * so the merge never replays a covered row and appends every row committed after the read. Call it after the boundary
    * fields are set: the marker holds only while they and the row it names stay as recorded.
    */
-  markStateDbSeen(s: Session, read: StateDbRead = this.stateDbRead(s), opts: { boundary?: boolean } = {}): void {
+  markStateDbSeen(s: Session, read: StateDbRead, opts: { boundary?: boolean } = {}): void {
     // Freeze numeric provenance before replacing the marker, including after a database replacement.
     const priorGeneration = markedStateDbGeneration(s)
     if (priorGeneration !== null) stampStateDbGeneration([...s.messages, ...s.context_messages], priorGeneration)
@@ -530,8 +546,8 @@ export class SessionService {
    * `startId` (the highest id the turn read when it started) are its own unreported work: covered, never shown. Rows the
    * turn started from but the transcript lacks (a CLI continuation read into its context) are kept before the turn.
    */
-  settleStateDb(s: Session, turn: { turnId: string; previousContext: Message[]; agentRows?: Message[] | null; startId?: number | null; startGeneration?: string | null; read?: StateDbRead }): void {
-    const read = turn.read ?? this.stateDbRead(s)
+  settleStateDb(s: Session, turn: { turnId: string; previousContext: Message[]; agentRows?: Message[] | null; startId?: number | null; startGeneration?: string | null; read: StateDbSettlementRead }): void {
+    const read = turn.read
     const agentAdded = withoutRows(turn.agentRows ?? [], turn.previousContext)
     const contextAdded = withoutRows(s.context_messages, turn.previousContext)
     if (typeof turn.startGeneration === 'string') {
@@ -588,10 +604,10 @@ export class SessionService {
     // The read follows the new lineage from here, and everything it holds now is covered.
     // ponytail: a CLI row committed to the continuation before this settlement is covered with them; telling them apart
     // needs the Agent to mark the rows it writes at rotation.
-    const lineage = stateDbCompressionLineage(this.stateDbPath(s.profile), s.session_id)
+    const lineage = read.lineage
     if (JSON.stringify(lineage) !== JSON.stringify(s.state_db_lineage ?? [s.session_id])) {
       s.state_db_lineage = lineage.length > 1 ? lineage : null
-      this.markStateDbSeen(s)
+      this.markStateDbSeen(s, read.rotated ?? failedStateDbRead())
     }
   }
 
@@ -622,17 +638,22 @@ export class SessionService {
    * extended append-only with the Agent's state.db rows (a CLI continuation of this session reaches the model), except
    * for a compressed context whose anchor cannot be verified — that stays context-only.
    */
-  modelContext(s: Session, stateRows?: Message[]): Message[] {
+  modelContext(s: Session, stateRows: Message[]): Message[] {
     const local: Message[] = s.context_messages.length ? s.context_messages : s.messages.filter((m) => !m._error && !m._partial)
-    return local.some((m) => isContextCompressionMarker(m)) ? local : this.mergedTranscript(s, local, stateRows ?? this.stateDbRows(s))
+    return local.some((m) => isContextCompressionMarker(m)) ? local : this.mergedTranscript(s, local, stateRows)
+  }
+
+  /** `modelContext` over a state.db read taken now. */
+  async readModelContext(s: Session): Promise<Message[]> {
+    return this.modelContext(s, await this.stateDbRows(s))
   }
 
   /**
    * TAL-518: the model context a `/btw` clone inherits: the chat's history plus its running turn's prompt, which
    * deferred save keeps out of `messages` and `context_messages` until settlement.
    */
-  sideQuestionContext(s: Session): Message[] {
-    const context = structuredClone(this.modelContext(s))
+  async sideQuestionContext(s: Session): Promise<Message[]> {
+    const context = structuredClone(await this.readModelContext(s))
     const pending = this.pendingTurn(s)
     return pending ? withPendingUserTurn(context, pending) : context
   }
@@ -829,7 +850,7 @@ export class SessionService {
     return (await this.backgroundLinked(s, hydrateAnchorActivityScenes(withToolCallOutcomes((await this.backgroundUpdates(s, withMarkerKinds(withTurnIds(withAttachmentObjects(rows), baseIndex, initialTurn), s), reviewRows)), calls, s.active_stream_id, baseIndex), s.anchor_activity_scenes, { activeTurnId: s.active_stream_id, runningScene: !journaled, clipToolResults: true, baseIndex, refCounts: refs }))) as Message[]
   }
 
-  private async limitedDetail(s: Session, index: SessionPrefixIndex, limit: number, before: number | null, pending: ReturnType<SessionService['pendingTurn']>, journaled: Awaited<ReturnType<SessionService['journaledActiveTurn']>>) {
+  private async limitedDetail(s: Session, index: SessionPrefixIndex, limit: number, before: number | null, pending: ReturnType<SessionService['pendingTurn']>, journaled: Awaited<ReturnType<SessionService['journaledActiveTurn']>>, retried = false): Promise<{ messages: Message[]; offset: number; newestReply: number | null | undefined; total: number; last: number; todo: Record<string, unknown> | null; compression: ReturnType<SessionPrefixIndex['compressionReference']>; enoughContext: boolean; sources: SessionService['stateDbSources'] }> {
     let prefixEnd = s.messages.length
     const turnId = pending?.turnId ?? journaled?.turnId
     if (turnId) prefixEnd = Math.min(prefixEnd, index.turns.get(turnId)?.first ?? prefixEnd)
@@ -852,8 +873,14 @@ export class SessionService {
       let effectiveSeenId: number | null = null
       let cacheable = true
       let appended: Message[] | null = null
-      if (typeof s.state_db_seen_id === 'number' && str(s.source_tag || s.raw_source || s.session_source).trim().toLowerCase() !== 'subagent') {
-        const read = stateDbSessionTailRead(dbPath, s.session_id, s.state_db_seen_id, { lineage: s.state_db_lineage?.[0] === s.session_id ? s.state_db_lineage : null, unidentified: [...index.unidentified, ...context.unidentified] })
+      // TAL-1162: the transcript reads run on the state.db worker. A session that changed meanwhile no longer matches this
+      // index: it is read once more against a fresh one, and a second change is answered as read, uncached.
+      const [localRows, localCount, updatedAt, seenId] = [s.messages, s.messages.length, s.updated_at, s.state_db_seen_id]
+      const changed = (): boolean => s.messages !== localRows || s.messages.length !== localCount || s.updated_at !== updatedAt || s.state_db_seen_id !== seenId
+      const reread = async () => retried ? null : this.limitedDetail(s, this.prefixIndex(s, await this.loadRevision(s)), limit, before, this.pendingTurn(s), journaled, true)
+      if (typeof seenId === 'number' && !isSubagentView(s)) {
+        const read = await this.stateDbTailRead(s, seenId, [...index.unidentified, ...context.unidentified])
+        if (changed()) { const fresh = await reread(); if (fresh) return fresh; cacheable = false }
         if (!read.ok) cacheable = false
         const markerRows = read.anchor ? [read.anchor, ...read.rows] : read.rows
         if (read.ok && read.idCapable && currentStateDbSeenId(s, markerRows) !== null) {
@@ -862,14 +889,15 @@ export class SessionService {
           if (!ambiguous) {
             const includeUids = read.rows.some((m) => stateDbIdentityKeys(m).some((id) => id.startsWith('uid:')))
             const mode = includeUids ? 1 : 0
-            appended = appendStateDbIdentityRows(read.rows, s.state_db_seen_id, index.identities[mode], index.unidentified[mode], index.generation, includeUids)
+            appended = appendStateDbIdentityRows(read.rows, seenId, index.identities[mode], index.unidentified[mode], index.generation, includeUids)
             stateRows = read.rows
-            effectiveSeenId = s.state_db_seen_id
+            effectiveSeenId = seenId
           }
         }
       }
       if (appended === null) {
-        stateRows = this.stateDbRows(s)
+        stateRows = await this.stateDbRows(s)
+        if (changed()) { const fresh = await reread(); if (fresh) return fresh; cacheable = false }
         effectiveSeenId = currentStateDbSeenId(s, stateRows)
         appended = this.mergedTranscript(s, s.messages, stateRows).slice(s.messages.length)
       }
@@ -978,7 +1006,7 @@ export class SessionService {
     const pending = loadMessages ? this.pendingTurn(s) : null
     const prefix = loadMessages && msgLimit !== null ? this.prefixIndex(s, revisionBefore) : null
     const limited = prefix && msgLimit !== null ? (await this.limitedDetail(s, prefix, msgLimit, msgBefore, pending, journaled)) : null
-    const stateRows = loadMessages && !limited ? this.stateDbRows(s) : []
+    const stateRows = loadMessages && !limited ? await this.stateDbRows(s) : []
     let transcript = loadMessages && !limited ? this.mergedTranscript(s, s.messages, stateRows) : []
     if (pending && !limited) transcript = withPendingUserTurn(transcript, pending)
     if (journaled && !limited)transcript = withoutRunningTurnOutput(transcript, { ...journaled, localCount: s.messages.length })
@@ -1182,7 +1210,7 @@ export class SessionService {
     const attachments = [...target.pending_attachments]
     // The run's starting read died with its worker: the state.db rows from before it started stand in for it. Its own
     // rows open with its prompt and run to the next prompt; anything else another client wrote meanwhile stays.
-    const read = this.stateDbRead(target)
+    const read = await this.settlementRead(target)
     const runStart = target.pending_started_at || events[0]?.created_at || this.deps.now()
     const before = read.rows.filter((m) => Number(m.timestamp) < runStart)
     const runRows = read.rows.filter((m) => Number(m.timestamp) >= runStart)
@@ -1521,10 +1549,11 @@ export class SessionService {
   private readonly modelConfirmationKey = randomUUID()
 
   private async confirmModelSwitch(s: Session, model: string, provider: string | null, token: unknown, retry = false): Promise<void> {
+    const stateRows = await this.stateDbRows(s)
     const profile = s.profile ?? this.deps.activeProfile()
     const home = this.deps.profileHome(profile)
     const context = contextUsage(s).context_used_tokens
-    const messages = this.modelContext(s)
+    const messages = this.modelContext(s, stateRows)
     const before = JSON.stringify([s.model, s.model_provider, context, s.context_length, messages])
     let decision: SidecarResult<'models.selection_warnings'>
     try {
@@ -1534,7 +1563,8 @@ export class SessionService {
     } catch (error) {
       throw new HttpFailure(503, `Cannot check model selection warnings: ${(error as Error).message}`)
     }
-    if (before !== JSON.stringify([s.model, s.model_provider, contextUsage(s).context_used_tokens, s.context_length, this.modelContext(s)])) {
+    const stateRowsAfter = await this.stateDbRows(s)
+    if (before !== JSON.stringify([s.model, s.model_provider, contextUsage(s).context_used_tokens, s.context_length, this.modelContext(s, stateRowsAfter)])) {
       if (retry) throw new HttpFailure(503, 'The session changed while checking model warnings. Try the selection again.')
       return this.confirmModelSwitch(s, model, provider, null, true)
     }
@@ -1624,7 +1654,7 @@ export class SessionService {
     if (keep < 0) throw new HttpFailure(400, 'keep_count must be non-negative')
     const refused = await this.withMutationLock(sid, async () => {
       // One state.db read decides and marks the boundary, so a row committed meanwhile is neither counted nor hidden.
-      const read = this.stateDbRead(s)
+      const read = await this.stateDbRead(s)
       if (hold) {
         // A failed read cannot say whether a CLI continuation would go too: fail closed. The Agent keeps a state.db for every
         // profile it has run in, so a missing one is never evidence of a session without state.db rows.
@@ -1735,7 +1765,7 @@ export class SessionService {
     const before = s.post_compression_context_tokens_estimate
     if (before === null || s.active_stream_id || !sidecar) return false
     let tokens: number
-    try { tokens = (await sidecar.call('models.estimate_tokens', { messages: this.modelContext(s) })).tokens } catch { return false }
+    try { tokens = (await sidecar.call('models.estimate_tokens', { messages: await this.readModelContext(s) })).tokens } catch { return false }
     return this.store.withLock(sid, async () => {
       let live: Session
       try { live = (await this.store.get(sid)) } catch { return false }
@@ -1764,7 +1794,7 @@ export class SessionService {
   private async compressionTarget(sid: string): Promise<{ s: Session; history: Message[]; context: Message[]; stateRows: Message[] }> {
     await this.rejectViewOnly(sid, 'compressed')
     const s = (await this.mutationTarget(sid, 'compressed'))
-    const stateRows = this.stateDbRows(s)
+    const stateRows = await this.stateDbRows(s)
     const context = this.compressionContext(s, stateRows)
     return { s, history: sanitizeMessagesForApi(context), context, stateRows }
   }
@@ -1773,7 +1803,7 @@ export class SessionService {
    * The loaded session's own compression guards: no running turn and enough model history. TAL-1005: a turn waiting on
    * the compression has not read its history yet, so it does not block; the context leaves out its rows, as it does.
    */
-  private compressionContext(s: Session, stateRows?: Message[]): Message[] {
+  private compressionContext(s: Session, stateRows: Message[]): Message[] {
     const turn = s.active_stream_id
     if (turn && !this.compactionWaiters.has(turn)) throw new HttpFailure(409, 'Session is still streaming; wait for the current turn to finish.')
     const context = this.modelContext(s, stateRows).filter((m) => !turn || m._turn_id !== turn)
@@ -1945,10 +1975,10 @@ export class SessionService {
       const current = await this.withMutationLock(sid, async () => {
         let live: Session
         try { live = (await this.store.get(sid)) } catch { throw new HttpFailure(404, 'Session not found') }
+        // One state.db read serves the check, the kept display rows, and the boundary; every gate below decides after it.
+        const read = await this.stateDbRead(live)
         const turn = live.active_stream_id
         if (turn && !waited(turn)) throw new HttpFailure(409, 'Session stream state changed during compression; please retry.')
-        // One state.db read serves the check, the kept display rows, and the boundary.
-        const read = this.stateDbRead(live)
         const stateRows = read.rows
         const tail = turnTail(this.modelContext(live, stateRows).filter((m) => !turn || m._turn_id !== turn), context)
         if (!tail || !turnTail(live.messages, s.messages)) throw new HttpFailure(409, 'Session was modified during compression; please retry.')
@@ -2032,6 +2062,8 @@ export class SessionService {
     const s = (await this.mutationTarget(sid, 'modified'))
     await this.withMutationLock(sid, async () => {
       const messages = await this.finalizeSession(sid, s.profile, 'clear')
+      // The boundary covers every row this read saw, the session's finalization rows included.
+      const read = await this.stateDbRead(s)
       const hadMessages = s.messages.length > 0
       truncateSessionAtKeep(s, 0)
       s.messages = messages.map((content) => ({ role: 'local_notice', content, _notice_kind: 'session_finalize', timestamp: this.deps.now() }))
@@ -2052,7 +2084,7 @@ export class SessionService {
       s.pending_user_source = null
       s.clear_generation = hadMessages ? randomUUID().replace(/-/g, '') : null
       applySessionTitleRename(s, 'Untitled')
-      this.markStateDbSeen(s, undefined, { boundary: true })
+      this.markStateDbSeen(s, read, { boundary: true })
       await this.store.save(s)
       if (hadMessages) { try { await this.store.shrinkBackup.discard(sid) } catch { /* ignore */ } }
     })
@@ -2064,6 +2096,7 @@ export class SessionService {
     await this.rejectViewOnly(sid, 'modified')
     return this.withMutationLock(sid, async () => {
       const s = (await this.mutationTarget(sid, 'modified'))
+      const read = await this.stateDbRead(s)
       const history = s.messages
       const lastUser = findLastUserIndex(history)
       if (lastUser === null) return { error: 'No previous message to retry.' }
@@ -2077,7 +2110,7 @@ export class SessionService {
       if (!lastUserPrompt && !lastUserAttachments.length) return { error: 'The last message has nothing to resend.' }
       const removed = history.length - lastUser
       shrinkTo(s, lastUser)
-      this.markStateDbSeen(s, undefined, { boundary: true })
+      this.markStateDbSeen(s, read, { boundary: true })
       await this.store.save(s)
       return { ok: true, last_user_text: lastUserText, last_user_prompt: lastUserPrompt, last_user_attachments: lastUserAttachments, removed_count: removed }
     })
@@ -2087,13 +2120,14 @@ export class SessionService {
     await this.rejectViewOnly(sid, 'modified')
     return this.withMutationLock(sid, async () => {
       const s = (await this.mutationTarget(sid, 'modified'))
+      const read = await this.stateDbRead(s)
       const history = s.messages
       const lastUser = findLastUserIndex(history)
       if (lastUser === null) return { error: 'Nothing to undo.' }
       const removedText = extractText(history[lastUser]?.content)
       const removed = history.length - lastUser
       shrinkTo(s, lastUser)
-      this.markStateDbSeen(s, undefined, { boundary: true })
+      this.markStateDbSeen(s, read, { boundary: true })
       await this.store.save(s)
       const preview = removedText.length > 40 ? `${removedText.slice(0, 40)}...` : removedText
       return { ok: true, removed_count: removed, removed_preview: preview }
@@ -2142,14 +2176,14 @@ export class SessionService {
     const customTitle = body.title ? str(body.title).trim().slice(0, 80) || null : null
     if (!source.branchSourceReadonly) { try { (await this.store.save(source)) } catch { /* ignore */ } }
     // Python: `keep_count` indexes the merged display transcript, never the raw sidecar array.
-    const sourceMessages = this.mergedTranscript(source)
+    const stateRows = await this.stateDbRows(source)
+    const sourceMessages = this.mergedTranscript(source, source.messages, stateRows)
     const forked = keepCount !== null ? sourceMessages.slice(0, keepCount) : [...sourceMessages]
     const title = customTitle ?? `${source.title || 'Untitled'} (fork)`
     const forkKeep = keepCount ?? sourceMessages.length
     // The branch's model context must carry the retained state.db rows too: the new id has no state.db rows of its
     // own, and the runner prefers a non-empty context over the displayed messages.
-    const stateRows = this.stateDbRows(source)
-    const sourceContext = stateRows.length ? this.mergedTranscript(source, source.context_messages.length ? source.context_messages : source.messages) : source.context_messages
+    const sourceContext = stateRows.length ? this.mergedTranscript(source, source.context_messages.length ? source.context_messages : source.messages, stateRows) : source.context_messages
     const forkedContext = copyJson(truncateContextForDisplayKeep(sourceContext, sourceMessages, forkKeep))
     const branch = new Session(
       {
@@ -2507,7 +2541,7 @@ export class SessionService {
       let session = (await this.store.get(sid))
       if (session.loadedMetadataOnly) session = (await this.store.load(sid)) ?? session
       if (!this.visibleToActiveProfile(session.profile)) throw new HttpFailure(404, 'Session not found')
-      return { session, transcript: this.mergedTranscript(session), stored: true }
+      return { session, transcript: this.mergedTranscript(session, session.messages, await this.stateDbRows(session)), stored: true }
     } catch (error) {
       if (error instanceof HttpFailure) throw error
       const session = (await this.foreignSession(sid)).synth
@@ -2633,6 +2667,21 @@ function findLastUserIndex(history: unknown[]): number | null {
 /** Python `_sanitize_error`: absolute paths in an error message never reach the client. */
 export function sanitizePaths(error: unknown): string {
   return str((error as Error)?.message ?? error).replace(/(?:(?:\/[a-zA-Z0-9_.-]+)+|(?:[A-Z]:\\[^\s]+))/g, '<path>')
+}
+
+/** A failed state.db read says nothing (TAL-493). */
+function failedStateDbRead(): StateDbRead {
+  return { rows: [], idCapable: false, ok: false, reason: null, generation: null }
+}
+
+/** TAL-529: after a compression rotation the Agent writes to the continuation, so a read follows the recorded lineage. */
+function stateDbReadLineage(s: Session): string[] | null {
+  return s.state_db_lineage?.[0] === s.session_id ? s.state_db_lineage : null
+}
+
+/** A delegated child's view, which never merges state.db rows. */
+function isSubagentView(s: Session): boolean {
+  return str(s.source_tag || s.raw_source || s.session_source).trim().toLowerCase() === 'subagent'
 }
 
 /** TAL-536: a dead run's own state.db rows: from its prompt to the next prompt (tool results and applied steers stay in it). */

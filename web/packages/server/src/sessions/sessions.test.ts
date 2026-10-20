@@ -1110,7 +1110,7 @@ describe('a truncate that discards more than one user turn waits for confirmatio
     // The CLI commits a turn just after the confirmed request first reads state.db.
     const sessions = s.deps.sessions
     const read = sessions.stateDbRead.bind(sessions)
-    const spy = vi.spyOn(sessions, 'stateDbRead').mockImplementationOnce((session) => { const result = read(session); insert('user', 'from the CLI meanwhile', 200); return result })
+    const spy = vi.spyOn(sessions, 'stateDbRead').mockImplementationOnce(async (session) => { const result = await read(session); insert('user', 'from the CLI meanwhile', 200); return result })
     try {
       expect((await post(s, '/api/session/truncate', { session_id: sid, keep_count: 2, confirm_deep_truncate: true, confirm_token: held.confirm_token })).status).toBe(200)
     } finally { spy.mockRestore() }
@@ -1136,7 +1136,7 @@ describe('a truncate that discards more than one user turn waits for confirmatio
     expect((await post(s, '/api/session/truncate', { session_id: sid, keep_count: 4, confirm_deep_truncate: false })).status).toBe(200)
     const served = ((await json(await s.get(`/api/session?session_id=${sid}&messages=1`))).session as Json).messages as Json[]
     expect(served.map((m) => m.content)).toEqual(['u1', 'a1', 'u2', 'a2'])
-    expect(s.deps.sessions.modelContext((await s.deps.sessionStore.get(sid))).map((m) => m.content)).toEqual(['u1', 'a1', 'u2', 'a2'])
+    expect((await s.deps.sessions.readModelContext((await s.deps.sessionStore.get(sid)))).map((m) => m.content)).toEqual(['u1', 'a1', 'u2', 'a2'])
   })
 
   it('cuts at once for a released App, which asks on the device and sends no confirm_deep_truncate', async () => {
@@ -1183,7 +1183,7 @@ describe('truncation keeps deleted state.db turns deleted (TAL-504)', () => {
     expect((await post(s, '/api/session/truncate', { session_id: sid, keep_count: 2 })).status).toBe(200)
     const served = ((await json(await s.get(`/api/session?session_id=${sid}&messages=1`))).session as Json).messages as Json[]
     expect(served.map((m) => m.content)).toEqual(['u1', 'a1'])
-    expect(s.deps.sessions.modelContext((await s.deps.sessionStore.get(sid))).map((m) => m.content)).toEqual(['u1', 'a1'])
+    expect((await s.deps.sessions.readModelContext((await s.deps.sessionStore.get(sid)))).map((m) => m.content)).toEqual(['u1', 'a1'])
   })
 
   it('does not carry the cut to a duplicate, whose state.db has no deleted suffix', async () => {
@@ -1227,7 +1227,7 @@ describe('state.db rows past the last read merge by row id (TAL-493)', () => {
   async function served(sid: string): Promise<unknown[]> {
     return (((await json(await s.get(`/api/session?session_id=${sid}&messages=1`))).session as Json).messages as Json[]).map((m) => m.content)
   }
-  const sent = async (sid: string): Promise<unknown[]> => s.deps.sessions.modelContext((await s.deps.sessionStore.get(sid))).map((m) => m.content)
+  const sent = async (sid: string): Promise<unknown[]> => (await s.deps.sessions.readModelContext((await s.deps.sessionStore.get(sid)))).map((m) => m.content)
   async function seeded(list: Row[]): Promise<string> {
     const sid = String((await newSession(s)).session_id)
     await writeMessages(s, sid, rows(list))
@@ -1272,7 +1272,7 @@ describe('state.db rows past the last read merge by row id (TAL-493)', () => {
         fresh.deps.sessionStore.sessions.delete(sid)
         const detail = (await json(await fresh.get(`/api/session?session_id=${sid}`))).session as Json
         const shown = detail.messages as Json[]
-        const context = fresh.deps.sessions.modelContext((await fresh.deps.sessionStore.get(sid)))
+        const context = (await fresh.deps.sessions.readModelContext((await fresh.deps.sessionStore.get(sid))))
         if (mode === 'failed-replaced') {
           expect(shown).toHaveLength(3)
           expect(shown[0]?.content).toBe('continue')
@@ -1783,11 +1783,11 @@ describe('state.db rows past the last read merge by row id (TAL-493)', () => {
     const sid = await seeded([['user', 'u1', 100], ['assistant', 'a1', 101]])
     await turn(sid, 'first')
     const service = s.deps.sessions
-    const read = service.stateDbRead.bind(service)
+    const read = service.settlementRead.bind(service)
     // The CLI commits right after the settlement's first state.db read.
     let armed = false
-    const spy = vi.spyOn(service, 'stateDbRead').mockImplementation((session) => {
-      const rows = read(session)
+    const spy = vi.spyOn(service, 'settlementRead').mockImplementation(async (session) => {
+      const rows = await read(session)
       if (armed) { armed = false; commit(sid, [['user', 'CLI meanwhile', 300]]) }
       return rows
     })
@@ -1862,7 +1862,7 @@ describe('state.db rows past the last read merge by row id (TAL-493)', () => {
       insert('other', Array.from({ length: 10 }, (_, i): Row => ['user', `other ${String(i)}`, i]))
       insert(sid, FOUR)
       const session = (await fresh.deps.sessionStore.get(sid))
-      fresh.deps.sessions.markStateDbSeen(session)
+      fresh.deps.sessions.markStateDbSeen(session, await fresh.deps.sessions.stateDbRead(session))
       await fresh.deps.sessionStore.save(session)
       expect(session.state_db_seen_id).toBe(14)
       // The profile is deleted and recreated: a new state.db, ids from 1, and the CLI continues the chat.
@@ -1887,7 +1887,7 @@ describe('state.db rows past the last read merge by row id (TAL-493)', () => {
       }
       build(path, FOUR)
       const session = (await fresh.deps.sessionStore.get(sid))
-      fresh.deps.sessions.markStateDbSeen(session)
+      fresh.deps.sessions.markStateDbSeen(session, await fresh.deps.sessions.stateDbRead(session))
       await fresh.deps.sessionStore.save(session)
       expect(session.state_db_seen_id).toBe(4)
       // A rebuilt database whose id 4 is again an assistant row at 103, after three new CLI rows.

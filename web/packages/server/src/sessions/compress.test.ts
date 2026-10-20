@@ -123,7 +123,7 @@ describe('manual session compression', () => {
     const sid = await seeded()
     const cli = { role: 'user', content: 'continued from the CLI', timestamp: 4.5 }
     const cliAnswer = { role: 'assistant', content: 'CLI answer', timestamp: 4.6 }
-    const spy = vi.spyOn(s.deps.sessions, 'stateDbRead').mockImplementation(() => ({ rows: [...structuredClone(ORIGINAL), structuredClone(cli), structuredClone(cliAnswer)], idCapable: false, ok: true, reason: null, generation: null }))
+    const spy = vi.spyOn(s.deps.sessions, 'stateDbRead').mockImplementation(() => Promise.resolve({ rows: [...structuredClone(ORIGINAL), structuredClone(cli), structuredClone(cliAnswer)], idCapable: false, ok: true, reason: null, generation: null }))
     try {
       let sent: Json[] = []
       sidecar.respond('chat.compress', (params) => { sent = params.conversation_history; return compressed(params) })
@@ -143,14 +143,14 @@ describe('manual session compression', () => {
     const late = { role: 'user', content: 'late CLI row', timestamp: 4.9 }
     // Reads 1-2 are the admission and worker guards, read 3 is the commit's; the row exists only after that read.
     let reads = 0
-    const spy = vi.spyOn(s.deps.sessions, 'stateDbRead').mockImplementation(() => ({ rows: ++reads > 3 ? [...structuredClone(ORIGINAL), structuredClone(late)] : structuredClone(ORIGINAL), idCapable: false, ok: true, reason: null, generation: null }))
+    const spy = vi.spyOn(s.deps.sessions, 'stateDbRead').mockImplementation(() => Promise.resolve({ rows: ++reads > 3 ? [...structuredClone(ORIGINAL), structuredClone(late)] : structuredClone(ORIGINAL), idCapable: false, ok: true, reason: null, generation: null }))
     try {
       expect((await post(s, '/api/session/compress', { session_id: sid })).status).toBe(200)
       const stored = (await s.deps.sessionStore.get(sid))
       // Not absorbed into the transcript the compressed context was built against...
       expect(stored.messages.map((m) => m.content)).toEqual(['one', 'two', 'three', 'four'])
       // ...and still reaching the next model request, after the compressed rows.
-      expect(s.deps.sessions.modelContext(stored).map((m) => m.content)).toEqual(['one', 'four', 'late CLI row'])
+      expect((await s.deps.sessions.readModelContext(stored)).map((m) => m.content)).toEqual(['one', 'four', 'late CLI row'])
     } finally { spy.mockRestore() }
   })
 
@@ -335,7 +335,7 @@ describe('manual session compression', () => {
     const merged = service.mergedTranscript.bind(service)
     // Reads 1-2 are the admission and worker guards (the second is the history sent); the CLI row exists from read 3 on.
     let reads = 0
-    const spy = vi.spyOn(service, 'mergedTranscript').mockImplementation((session, local) => (++reads > 2 ? [...merged(session, local), { role: 'user', content: 'from the CLI', timestamp: 9 }] : merged(session, local)))
+    const spy = vi.spyOn(service, 'mergedTranscript').mockImplementation((session, local, stateRows) => (++reads > 2 ? [...merged(session, local, stateRows), { role: 'user', content: 'from the CLI', timestamp: 9 }] : merged(session, local, stateRows)))
     try {
       const res = await post(s, '/api/session/compress', { session_id: sid })
       expect([res.status, (await json(res)).error]).toEqual([409, 'Session was modified during compression; please retry.'])

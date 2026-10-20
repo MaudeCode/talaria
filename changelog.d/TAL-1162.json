@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Talaria Web no longer freezes while it reads a chat's history to send a message, finish or stop a reply, or open the chat.",
+      "highlight": false,
+      "components": ["web"]
+    }
+  ]
+}
