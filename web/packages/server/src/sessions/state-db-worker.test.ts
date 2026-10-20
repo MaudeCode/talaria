@@ -442,4 +442,33 @@ describe('transcript state.db reads off the event loop (TAL-1162)', () => {
     expect(rows(await contents('/api/session?session_id=web-stop'))).toEqual(expected)
     expect((await s.deps.sessionStore.get('web-stop')).state_db_seen_id).toBe(maxId('web-stop'))
   }, 30_000)
+
+  it('lets a Stop that lands during the settlement read take the cancel path', async () => {
+    await seeded('web-late-stop', 1600)
+    sidecar.respond('chat.start', (params) => {
+      commit('web-late-stop', [['user', 'late', 9000], ['assistant', 'late answered', 9001]])
+      return completedTurn([...params.conversation_history, { role: 'user', content: str(params.user_message) }, { role: 'assistant', content: 'late answered' }])
+    })
+    const settlementRead = s.deps.sessions.settlementRead.bind(s.deps.sessions)
+    let release = (): void => undefined
+    const held = new Promise<void>((resolve) => { release = resolve })
+    let holding = false
+    // The turn's settlement read is held until the Stop has settled.
+    const read = vi.spyOn(s.deps.sessions, 'settlementRead').mockImplementationOnce(async (session) => { holding = true; await held; return settlementRead(session) })
+    try {
+      const streamId = String(((await (await post('/api/chat/start', { session_id: 'web-late-stop', message: 'late' })).json()) as Json).stream_id)
+      const deadline = Date.now() + 10_000
+      while (!holding && Date.now() < deadline) await new Promise((resolve) => setTimeout(resolve, 10))
+      await s.get(`/api/chat/cancel?stream_id=${streamId}`)
+      release()
+      const frames = await s.sse(`/api/chat/stream?stream_id=${streamId}&after_event_id=${streamId}:0`, (f) => f.event === 'stream_end')
+      expect(frames.map((f) => f.event)).not.toContain('done')
+    } finally {
+      release()
+      read.mockRestore()
+    }
+    const stored = await s.deps.sessionStore.get('web-late-stop')
+    expect(stored.messages.filter((m) => m.content === 'late answered')).toEqual([])
+    expect(stored.messages.at(-1)?._terminal_state).toBe('cancelled')
+  }, 30_000)
 })

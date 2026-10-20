@@ -905,6 +905,9 @@ export class TurnRunner {
       const withImages = <T extends Record<string, unknown>>(rows: T[]): T[] => withNativeImagesRestored(rows, conversationHistory, apiHistory)
       result.messages = withImages(result.messages)
       if (result.context_messages) result.context_messages = withImages(result.context_messages)
+      // TAL-1162: the settlement's one state.db read runs on the worker before the gates below decide, so a Stop that
+      // lands during it takes the cancel path instead of racing this writeback.
+      const settlement = await deps.service().settlementRead(s)
       if (this.registry.cancelled.has(streamId) || result.status === 'cancelled') {
         // The Stop's pre-interrupt snapshot is the boundary, even when its reply lands after this result (the sidecar
         // answers each request on its own thread); without one, the Agent's interrupted result is its canonical transcript.
@@ -949,7 +952,7 @@ export class TurnRunner {
         await this.steerRewrites.get(streamId)
         const { events: steerEvents, leftovers } = this.finalizeSteers(streamId, str(result.pending_steer), 'followup')
         followUp = leftovers
-        await this.persistError(s, streamId, classification.label, payload, activeTurnToken, resultMessages, result.provider)
+        await this.persistError(s, settlement, streamId, classification.label, payload, activeTurnToken, resultMessages, result.provider)
         // TAL-512: a btw error carries no session: its journaled frame must not keep a copy of the parent conversation.
         if (!opts.ephemeral) payload.session = (await this.publicTerminalSession(s))
         payload.session_id = s.session_id
@@ -988,8 +991,6 @@ export class TurnRunner {
       }
       // The Agent's last pending-steer text settles the remaining steers before the turn is written back.
       await this.steerRewrites.get(streamId)
-      // TAL-1162: the settlement's one state.db read, taken on the worker before the turn is written back.
-      const settlement = await deps.service().settlementRead(s)
       const { events: steerEvents, leftovers } = this.finalizeSteers(streamId, result.pending_steer, 'followup')
       s.messages = withoutToolImages(mergeDisplayMessagesAfterAgentResult(previousMessages, previousContext, resultMessages, msgText, { source: opts.source ?? 'webui', activeTurnToken, now: deps.now(), turnId: streamId, attachments: opts.attachments ?? [] }))
       s.context_messages = dedupeContext(context)
@@ -1142,6 +1143,8 @@ export class TurnRunner {
       if (settledAt.value && !(error instanceof SidecarError)) {
         deps.log(`[webui] ERROR settling turn ${streamId}\n${error instanceof Error ? (error.stack ?? error.message) : String(error)}`)
       }
+      // TAL-1162: the error's settlement read runs on the worker before the gates below decide.
+      const settlement = await deps.service().settlementRead(s)
       if (this.registry.cancelled.has(streamId)) {
         await this.finalizeCancelled(s, streamId, opts.ephemeral)
         await put('cancel', (await this.cancelFrame(sessionId)))
@@ -1159,7 +1162,7 @@ export class TurnRunner {
         try { current = (await deps.store.get(sessionId)) } catch { current = s }
         if (current.active_stream_id === streamId) {
           for (const [event, data] of this.takeSteerEventsBefore(streamId, 'apperror')) (await put(event, data))
-          await this.persistError(current, streamId, classification.label, payload, activeTurnToken)
+          await this.persistError(current, settlement, streamId, classification.label, payload, activeTurnToken)
           if (!opts.ephemeral) payload.session = (await this.publicTerminalSession(current))
         }
       } catch (persistError) {
@@ -1288,9 +1291,8 @@ export class TurnRunner {
 
   /** Python `_materialize_pending_user_turn_before_error` + error message append + save. */
   /** `runtimeProvider`: the provider the Agent resolved for the turn, when it reported one. */
-  private async persistError(s: Session, streamId: string, label: string, payload: Record<string, unknown>, activeTurnToken: string | null, agentRows: Message[] = [], runtimeProvider = ''): Promise<void> {
-    // TAL-1162: the settlement's one state.db read, taken on the worker before anything below changes the session.
-    const read = await this.deps.service().settlementRead(s)
+  /** `read`: the settlement's one state.db read, taken before the caller's gates decided (TAL-1162). */
+  private async persistError(s: Session, read: StateDbSettlementRead, streamId: string, label: string, payload: Record<string, unknown>, activeTurnToken: string | null, agentRows: Message[] = [], runtimeProvider = ''): Promise<void> {
     const startedAt = s.pending_started_at
     // TAL-576: an automatic wakeup with no usable credentials pauses the next ones instead of failing each.
     if (s.pending_user_source === 'process_wakeup' && payload.type === 'credential_pool_empty') {
