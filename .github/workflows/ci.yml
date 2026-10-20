@@ -37,6 +37,7 @@ jobs:
       app_tooling: ${{ steps.filter.outputs.app_tooling }}
       web_server: ${{ steps.filter.outputs.web_server }}
       web_frontend: ${{ steps.filter.outputs.web_frontend }}
+      web_sidecar: ${{ steps.filter.outputs.web_sidecar }}
       docker: ${{ steps.filter.outputs.docker }}
       relay: ${{ steps.filter.outputs.relay }}
       contracts: ${{ steps.filter.outputs.contracts }}
@@ -106,11 +107,14 @@ jobs:
 
   web:
     needs: changes
-    if: ${{ !cancelled() && (needs.changes.result != 'success' || needs.changes.outputs.web_server != 'false' || needs.changes.outputs.web_frontend != 'false') }}
+    if: ${{ !cancelled() && (needs.changes.result != 'success' || needs.changes.outputs.web_server != 'false' || needs.changes.outputs.web_frontend != 'false' || needs.changes.outputs.web_sidecar != 'false') }}
     uses: ./.github/workflows/web-verify.yml
     with:
       server: ${{ needs.changes.result != 'success' || needs.changes.outputs.web_server != 'false' }}
       frontend: ${{ needs.changes.result != 'success' || needs.changes.outputs.web_frontend != 'false' }}
+      # Pull requests run the sidecar matrix only for its own inputs. A main push with any server change runs it too, so
+      # a transitive break in the server the recovery proof loads fails main and reaches the repair handoff (TAL-1161).
+      sidecar: ${{ needs.changes.result != 'success' || needs.changes.outputs.web_sidecar != 'false' || (github.event_name == 'push' && needs.changes.outputs.web_server != 'false') }}
 
   web-docker:
     needs: changes

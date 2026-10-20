@@ -10,16 +10,24 @@ import subprocess
 import sys
 
 
-SUITES = {"app", "app_tooling", "web_server", "web_frontend", "docker", "relay", "contracts", "tooling"}
-CONSUMERS = {"app", "web_server", "web_frontend", "relay", "contracts"}
-WEB_BUILD = {"web_server", "web_frontend", "docker", "contracts"}
-JOBS = {"app": {"app", "contracts"}, "app-tooling": {"app_tooling"}, "web": {"web_server", "web_frontend"},
+SUITES = {"app", "app_tooling", "web_server", "web_frontend", "web_sidecar", "docker", "relay", "contracts", "tooling"}
+CONSUMERS = {"app", "web_server", "web_frontend", "web_sidecar", "relay", "contracts"}
+# The sidecar job builds the server too, so the workspace build inputs select it (TAL-1161).
+WEB_BUILD = {"web_server", "web_frontend", "web_sidecar", "docker", "contracts"}
+# web_sidecar is the Agent-release pytest matrix. It loads the built server only through the recovery proof's entry
+# points and reads one server fixture; every other server file skips it on a pull request. A main push with any server
+# change still runs it (ci.yml), which catches a transitive break in those entry points right after merge.
+SIDECAR_SERVER_INPUTS = ("packages/server/src/sidecar/", "packages/server/src/runtime.ts", "packages/server/src/app.ts",
+                         "packages/server/src/tools/updates.ts", "packages/server/src/test/fixtures/local-reset.json",
+                         "packages/server/package.json", "packages/server/tsconfig.json",
+                         "packages/server/tsconfig.build.json")
+JOBS = {"app": {"app", "contracts"}, "app-tooling": {"app_tooling"}, "web": {"web_server", "web_frontend", "web_sidecar"},
         "web-docker": {"docker"}, "relay": {"relay"}, "contracts": {"contracts"}}
 WORKFLOWS = {
     # CI owns the App jobs and the Web contract probe's fixture handoff.
-    "ci.yml": {"app", "contracts", "tooling"},
+    "ci.yml": {"app", "web_sidecar", "contracts", "tooling"},
     "app-tests.yml": {"app", "contracts", "tooling"},
-    "web-verify.yml": {"web_server", "web_frontend", "tooling"},
+    "web-verify.yml": {"web_server", "web_frontend", "web_sidecar", "tooling"},
     "web-docker-smoke.yml": {"docker", "tooling"},
     "relay-verify.yml": {"relay", "tooling"},
     "repository-tooling.yml": {"tooling"},
@@ -41,7 +49,7 @@ SCRIPTS = {
     "check-relay-local.py": {"relay", "tooling"},
     "stamp-release.py": {"tooling"},
     "test-stamp-release.py": {"tooling"},
-    "check-agent-compatibility.py": {"web_server", "docker", "tooling"},
+    "check-agent-compatibility.py": {"web_server", "web_sidecar", "docker", "tooling"},
     "test-check-agent-compatibility.py": {"tooling"},
     "critical-markdown-check.py": {"tooling"},
     "test-critical-markdown-check.py": {"tooling"},
@@ -81,8 +89,11 @@ def path_suites(path):
                                                           "TalariaKit/Sources/TalariaKit/LiveActivities/",
                                                           "TalariaKit/Tests/TalariaKitTests/APIClientSessionListTests.swift",
                                                           "TalariaKit/Tests/TalariaKitTests/Support/")) else {"app"}
+    # Server tests read these fixtures, and the server job regenerates schemas.json from the contracts.
+    if path.startswith("web/sidecar/tests/fixtures/"):
+        return {"web_server", "web_sidecar"}
     if path.startswith("web/sidecar/tests/"):
-        return {"web_server"}
+        return {"web_sidecar"}
     if path.startswith("relay/tests/"):
         return {"relay"}
     docs_directory = path.startswith(("docs/", "app/docs/", "web/docs/", "relay/docs/"))
@@ -94,7 +105,7 @@ def path_suites(path):
     if path.startswith("contracts/") or path in ("web/contract_versions.json", "relay/convex/releaseInfo.json"):
         return CONSUMERS
     if path == "releases/agent_probe.py":
-        return {"web_server", "docker", "tooling"}
+        return {"web_server", "web_sidecar", "docker", "tooling"}
     if path.startswith(".github/workflows/"):
         return WORKFLOWS.get(local.removeprefix("workflows/"), SUITES)
     if path == ".github/actions/docker-plugins/action.yml":
@@ -119,14 +130,17 @@ def path_suites(path):
     if component == "web":
         if local.startswith(("packages/frontend/", "static/dist/")):
             return {"web_frontend"}
+        # The sidecar's result schemas are generated from the contracts.
         if local.startswith("packages/contracts/"):
-            return {"web_server", "web_frontend", "contracts"}
+            return {"web_server", "web_frontend", "web_sidecar", "contracts"}
         # The Agent pin is baked into the container images and extended by the Compose files: it needs the smoke too.
         if local == "sidecar/agent_dependency.json":
-            return {"web_server", "contracts", "docker"}
+            return {"web_server", "web_sidecar", "contracts", "docker"}
         # The sidecar RPC surface and the server are one consumer of the shared contracts; the Playwright suite drives
         # the real Node server from the frontend job, so server changes run it too.
-        if local.startswith(("packages/server/", "sidecar/")):
+        if local.startswith(("sidecar/", *SIDECAR_SERVER_INPUTS)):
+            return {"web_server", "web_frontend", "web_sidecar", "contracts"}
+        if local.startswith("packages/server/"):
             return {"web_server", "web_frontend", "contracts"}
         # The lockfile and Node version feed both the workspace builds and the container image.
         if local in ("package.json", "package-lock.json", ".nvmrc"):
