@@ -112,7 +112,7 @@ describe('stale-stream cleanup with a run journal', () => {
     const turn = ['summarize the repo', 'Checking the tree.', 'It is a mono', MARKER]
     expect(detail.session.messages.map((m) => m.content)).toEqual(['hi', 'hello', 'from the CLI', 'CLI answer', ...turn])
     // The Agent's own rows, then the prose that streamed past them.
-    expect(said(s.deps.sessions.modelContext((await s.deps.sessionStore.get(sid))))).toEqual([['user', 'hi'], ['assistant', 'hello'], ['user', 'from the CLI'], ['assistant', 'CLI answer'], ['user', 'summarize the repo'], ['assistant', 'Checking the tree.'], ['tool', 'README.md'], ['assistant', 'It is a mono']])
+    expect(said((await s.deps.sessions.readModelContext((await s.deps.sessionStore.get(sid)))))).toEqual([['user', 'hi'], ['assistant', 'hello'], ['user', 'from the CLI'], ['assistant', 'CLI answer'], ['user', 'summarize the repo'], ['assistant', 'Checking the tree.'], ['tool', 'README.md'], ['assistant', 'It is a mono']])
   })
 
   /** A state.db holding `rows` for `sid`, as the Agent and other clients committed them. */
@@ -136,7 +136,7 @@ describe('stale-stream cleanup with a run journal', () => {
     await recovered(sid)
     const detail = (await (await s.get(`/api/session?session_id=${sid}`)).json()) as { session: { messages: Json[] } }
     expect(detail.session.messages.map((m) => m.content)).toEqual(['hi', 'hello', 'summarize the repo', 'Checking the tree.', 'It is a mono', MARKER, 'asked in the CLI meanwhile', 'CLI answer'])
-    expect(said(s.deps.sessions.modelContext((await s.deps.sessionStore.get(sid)))).slice(-2)).toEqual([['user', 'asked in the CLI meanwhile'], ['assistant', 'CLI answer']])
+    expect(said((await s.deps.sessions.readModelContext((await s.deps.sessionStore.get(sid))))).slice(-2)).toEqual([['user', 'asked in the CLI meanwhile'], ['assistant', 'CLI answer']])
   })
 
   it('an attachment-only prompt the Agent never committed keeps its files in the model context', async () => {

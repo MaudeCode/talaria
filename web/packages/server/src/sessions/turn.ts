@@ -13,7 +13,7 @@ import type { SidecarLike } from '../sidecar/client.js'
 import { runtimeFailureDetails, SidecarError } from '../sidecar/client.js'
 import type { SessionStore } from './store.js'
 import type { SessionService } from './service.js'
-import type { StateDbRead } from './state-db.js'
+import type { StateDbRead, StateDbSettlementRead } from './state-db.js'
 import { HttpFailure, markSessionTitleGenerated } from './service.js'
 import type { SessionEventBus } from './events.js'
 import { StreamRegistry, SessionChannels, type StreamChannel } from './streams.js'
@@ -326,10 +326,11 @@ export class TurnRunner {
   /**
    * TAL-364: what a Stop needs to write the turn's model context: its starting context, the prompt the Agent got, and
    * whether a settlement already used a canonical checkpoint (which marks the stop boundary; later work never replaces it).
+   * TAL-1162: `startReadPending` while the turn's starting state.db read is still in flight.
    */
   /** TAL-364: a Stop's in-flight `chat.interrupt` reply (null when it failed), so a worker that settles first can use its checkpoint. */
   private readonly interrupts = new Map<string, Promise<{ pending_steer?: string | undefined; checkpoint?: Record<string, unknown>[] | undefined } | null>>()
-  private readonly stopContexts = new Map<string, { previousContext: Message[]; historyLength: number; prompt: string | Record<string, unknown>[]; msgText: string; checkpointed: boolean; stateDbStartId: number | null; stateDbStartGeneration: string | null }>()
+  private readonly stopContexts = new Map<string, { previousContext: Message[]; historyLength: number; prompt: string | Record<string, unknown>[]; msgText: string; checkpointed: boolean; stateDbStartId: number | null; stateDbStartGeneration: string | null; startReadPending: boolean }>()
   /** Each turn's worker, so a stopped background turn can be awaited before the user's turn takes the session. */
   private readonly workers = new Map<string, Promise<void>>()
   /** TAL-899: sessions whose user pressed Stop; no automatic turn starts in them until the user's next turn is admitted. */
@@ -610,29 +611,30 @@ export class TurnRunner {
       return
     }
     const msgText = opts.msg
-    const history = (): { previousMessages: Message[]; previousContext: Message[]; apiHistory: Message[] } => {
+    const history = async (): Promise<{ previousMessages: Message[]; previousContext: Message[]; apiHistory: Message[] }> => {
       // TAL-493: one state.db read builds the history and marks where this turn's own rows begin.
-      const startRead = deps.service().beginStateDbTurn(s)
+      const reading = deps.service().beginStateDbTurn(s)
+      // TAL-1162: the read runs on the state.db worker. Until it lands, a Stop settles from the local history with no
+      // starting id, as a turn whose starting read failed does.
+      const local = this.turnHistory(s, streamId, [])
+      this.stopContexts.set(streamId, { previousContext: local.previousContext, historyLength: local.apiHistory.length, prompt: msgText, msgText, checkpointed: false, stateDbStartId: null, stateDbStartGeneration: null, startReadPending: true })
+      const startRead = await reading
       const previousMessages = structuredClone(s.messages)
-      // TAL-578: an eager save already put this turn's prompt in the transcript; `user_message` carries it, so the history
-      // leaves it out.
-      const previousContext = structuredClone(deps.service().modelContext(s, startRead.rows)).filter((m) => m._turn_id !== streamId)
-      // Python `_sanitize_messages_for_agent`: the model never sees display-only rows or a replayed cancelled prompt, and
-      // the Agent gets back the exact bytes it sent (TAL-541).
-      const apiHistory = sanitizeMessagesForApi(previousContext, { preserveApiContent: true, issuedReasoningSince: s.reasoning_replay_from })
-      this.stopContexts.set(streamId, { previousContext, historyLength: apiHistory.length, prompt: msgText, msgText, checkpointed: false, stateDbStartId: startRead.ok ? stateDbSeenId(startRead.rows) ?? 0 : null, stateDbStartGeneration: startRead.generation })
+      const { previousContext, apiHistory } = this.turnHistory(s, streamId, startRead.rows)
+      // A Stop that landed during the read already took the local entry.
+      if (!this.registry.cancelled.has(streamId)) this.stopContexts.set(streamId, { previousContext, historyLength: apiHistory.length, prompt: msgText, msgText, checkpointed: false, stateDbStartId: startRead.ok ? stateDbSeenId(startRead.rows) ?? 0 : null, stateDbStartGeneration: startRead.generation, startReadPending: false })
       return { previousMessages, previousContext, apiHistory }
     }
     // Before the first await: a Stop can land at any point after admission.
-    let { previousMessages, previousContext, apiHistory } = history()
     const controller = new AbortController()
     this.abortControllers.set(streamId, controller)
+    let { previousMessages, previousContext, apiHistory } = await history()
     // TAL-1005: an over-threshold session compacts in its joinable compression job before the turn reads its history, so
     // a Stop ends only this wait and a resend joins the same job. The turn then reads the compacted session afresh.
     const compacted = await deps.service().ensureCompacted(sessionId, { turn: streamId, signal: controller.signal, due: compactionDue, onWait: async () => { (await put('compressing', { session_id: sessionId, message: 'Compressing context' })) } })
     if (compacted) {
       try { s = (await deps.store.get(sessionId)) } catch { /* the cancel or error path below reports a deleted session */ }
-      ;({ previousMessages, previousContext, apiHistory } = history())
+      ;({ previousMessages, previousContext, apiHistory } = await history())
       await put('compressed', this.compressedFrame(s))
     }
     const activeTurnToken = buildActiveTurnToken(streamId, s.pending_started_at)
@@ -903,6 +905,9 @@ export class TurnRunner {
       const withImages = <T extends Record<string, unknown>>(rows: T[]): T[] => withNativeImagesRestored(rows, conversationHistory, apiHistory)
       result.messages = withImages(result.messages)
       if (result.context_messages) result.context_messages = withImages(result.context_messages)
+      // TAL-1162: the settlement's one state.db read runs on the worker before the gates below decide, so a Stop that
+      // lands during it takes the cancel path instead of racing this writeback.
+      const settlement = await deps.service().settlementRead(s)
       if (this.registry.cancelled.has(streamId) || result.status === 'cancelled') {
         // The Stop's pre-interrupt snapshot is the boundary, even when its reply lands after this result (the sidecar
         // answers each request on its own thread); without one, the Agent's interrupted result is its canonical transcript.
@@ -947,7 +952,7 @@ export class TurnRunner {
         await this.steerRewrites.get(streamId)
         const { events: steerEvents, leftovers } = this.finalizeSteers(streamId, str(result.pending_steer), 'followup')
         followUp = leftovers
-        await this.persistError(s, streamId, classification.label, payload, activeTurnToken, resultMessages, result.provider)
+        await this.persistError(s, settlement, streamId, classification.label, payload, activeTurnToken, resultMessages, result.provider)
         // TAL-512: a btw error carries no session: its journaled frame must not keep a copy of the parent conversation.
         if (!opts.ephemeral) payload.session = (await this.publicTerminalSession(s))
         payload.session_id = s.session_id
@@ -1061,7 +1066,7 @@ export class TurnRunner {
       this.persistConsumedSteers(s, streamId, previousStartedAt(s, activeRun), now)
       // TAL-493: the rows this turn's Agent wrote to state.db are now in the transcript, so the merge must not replay them
       // (all of them, the dropped summary request too).
-      this.settleStateDb(s, streamId, agentRows, { previousContext })
+      this.settleStateDb(s, streamId, agentRows, { previousContext, read: settlement })
       recordBackgroundReview(s, streamId)
       await deps.store.save(s)
       deps.pending.clearApprovals(sessionId)
@@ -1138,6 +1143,8 @@ export class TurnRunner {
       if (settledAt.value && !(error instanceof SidecarError)) {
         deps.log(`[webui] ERROR settling turn ${streamId}\n${error instanceof Error ? (error.stack ?? error.message) : String(error)}`)
       }
+      // TAL-1162: the error's settlement read runs on the worker before the gates below decide.
+      const settlement = await deps.service().settlementRead(s)
       if (this.registry.cancelled.has(streamId)) {
         await this.finalizeCancelled(s, streamId, opts.ephemeral)
         await put('cancel', (await this.cancelFrame(sessionId)))
@@ -1155,7 +1162,7 @@ export class TurnRunner {
         try { current = (await deps.store.get(sessionId)) } catch { current = s }
         if (current.active_stream_id === streamId) {
           for (const [event, data] of this.takeSteerEventsBefore(streamId, 'apperror')) (await put(event, data))
-          await this.persistError(current, streamId, classification.label, payload, activeTurnToken)
+          await this.persistError(current, settlement, streamId, classification.label, payload, activeTurnToken)
           if (!opts.ephemeral) payload.session = (await this.publicTerminalSession(current))
         }
       } catch (persistError) {
@@ -1284,7 +1291,8 @@ export class TurnRunner {
 
   /** Python `_materialize_pending_user_turn_before_error` + error message append + save. */
   /** `runtimeProvider`: the provider the Agent resolved for the turn, when it reported one. */
-  private async persistError(s: Session, streamId: string, label: string, payload: Record<string, unknown>, activeTurnToken: string | null, agentRows: Message[] = [], runtimeProvider = ''): Promise<void> {
+  /** `read`: the settlement's one state.db read, taken before the caller's gates decided (TAL-1162). */
+  private async persistError(s: Session, read: StateDbSettlementRead, streamId: string, label: string, payload: Record<string, unknown>, activeTurnToken: string | null, agentRows: Message[] = [], runtimeProvider = ''): Promise<void> {
     const startedAt = s.pending_started_at
     // TAL-576: an automatic wakeup with no usable credentials pauses the next ones instead of failing each.
     if (s.pending_user_source === 'process_wakeup' && payload.type === 'credential_pool_empty') {
@@ -1317,7 +1325,6 @@ export class TurnRunner {
     this.persistConsumedSteers(s, streamId, startedAt, this.deps.now())
     // TAL-921: the next prompt remembers the turn's work; an exhausted compression's work would only overflow again. One
     // read builds the context and settles, so a row committed in between is never covered without reaching either.
-    const read = this.deps.service().stateDbRead(s)
     const context = payload.type === 'compression_exhausted' ? null : this.unsettledContext(streamId, agentRows, read)
     if (context) s.context_messages = context
     this.settleStateDb(s, streamId, agentRows, { read })
@@ -1329,11 +1336,20 @@ export class TurnRunner {
     this.deps.events.publish('session_error', { profile: s.profile, sessionId: s.session_id })
   }
 
+  /** The model history a turn starts from: the session's context merged with `stateRows`, without the turn's own rows. */
+  private turnHistory(s: Session, streamId: string, stateRows: Message[]): { previousContext: Message[]; apiHistory: Message[] } {
+    // TAL-578: an eager save already put this turn's prompt in the transcript; `user_message` carries it, so the history
+    // leaves it out.
+    const previousContext = structuredClone(this.deps.service().modelContext(s, stateRows)).filter((m) => m._turn_id !== streamId)
+    // Python `_sanitize_messages_for_agent`: the model never sees display-only rows or a replayed cancelled prompt, and
+    // the Agent gets back the exact bytes it sent (TAL-541).
+    return { previousContext, apiHistory: sanitizeMessagesForApi(previousContext, { preserveApiContent: true, issuedReasoningSince: s.reasoning_replay_from }) }
+  }
+
   /** Every terminal path carries the same starting read's id and generation into settlement. */
-  private settleStateDb(s: Session, streamId: string, agentRows: Message[] | null, opts: { previousContext?: Message[]; read?: StateDbRead } = {}): void {
+  private settleStateDb(s: Session, streamId: string, agentRows: Message[] | null, opts: { previousContext?: Message[]; read: StateDbSettlementRead }): void {
     const stop = this.stopContexts.get(streamId)
-    const service = this.deps.service()
-    service.settleStateDb(s, { turnId: streamId, previousContext: stop?.previousContext ?? opts.previousContext ?? [], agentRows, startId: stop?.stateDbStartId ?? null, startGeneration: stop?.stateDbStartGeneration ?? null, read: opts.read ?? service.stateDbRead(s) })
+    this.deps.service().settleStateDb(s, { turnId: streamId, previousContext: stop?.previousContext ?? opts.previousContext ?? [], agentRows, startId: stop?.stateDbStartId ?? null, startGeneration: stop?.stateDbStartGeneration ?? null, read: opts.read })
   }
 
   /**
@@ -1402,7 +1418,18 @@ export class TurnRunner {
     if (this.registry.writebackOwners.get(s.session_id) !== streamId) return false
     let current: Session = s
     try { current = (await this.deps.store.get(s.session_id)) } catch { return false }
+    // TAL-921: one state.db read builds the context and settles the turn. TAL-1162: it runs on the state.db worker, before
+    // any gate below decides.
+    const read = await this.deps.service().settlementRead(current)
+    if (this.registry.writebackOwners.get(s.session_id) !== streamId) return false
     if (current.active_stream_id !== null && current.active_stream_id !== streamId) return false
+    const stop = this.stopContexts.get(streamId)
+    if (stop?.startReadPending) {
+      // TAL-1162: the Stop landed before the turn's starting read did, so the Agent never ran: every row this later read
+      // holds predates the turn, and the context the turn would have started from keeps them. No row is its own work.
+      const { previousContext, apiHistory } = this.turnHistory(current, streamId, read.rows)
+      Object.assign(stop, { previousContext, historyLength: apiHistory.length, startReadPending: false })
+    }
     if (ephemeral) {
       try { await this.deps.store.delete(current.session_id, { tombstone: false }) } catch { /* ignore */ }
       this.deps.store.sessions.delete(current.session_id)
@@ -1414,15 +1441,13 @@ export class TurnRunner {
     if (quiet && current.active_stream_id === null) {
       // TAL-493: rows its worker committed while unwinding are covered by what it reports; others are kept.
       if (checkpoint) {
-        this.settleStateDb(current, streamId, checkpoint as Message[])
+        this.settleStateDb(current, streamId, checkpoint as Message[], { read })
         try { (await this.deps.store.save(current)) } catch { return false }
       }
       return true
     }
-    const stop = this.stopContexts.get(streamId)
     const canonical = stop !== undefined && checkpoint !== null && checkpointTurnStart(checkpoint, stop.msgText, stop.historyLength) !== null
-    // TAL-921: one state.db read builds the context and settles the turn.
-    const settle = (read: StateDbRead): Message[] | null => {
+    const settle = (): Message[] | null => {
       if (!stop) return null
       if (canonical) stop.checkpointed = true
       return this.unsettledContext(streamId, checkpoint as Message[] | null, read)
@@ -1434,8 +1459,7 @@ export class TurnRunner {
       const ownStop = current.messages.some((m) => isCancelMarker(m) && m._turn_id === streamId)
       // TAL-493: the worker's rows committed after the first settlement are covered by what it reports; others are kept.
       if (ownStop && checkpoint) {
-        const read = this.deps.service().stateDbRead(current)
-        const late = canonical && !stop.checkpointed ? settle(read) : null
+        const late = canonical && !stop.checkpointed ? settle() : null
         if (late) current.context_messages = dedupeContext(late)
         this.settleStateDb(current, streamId, checkpoint as Message[], { read })
         try { (await this.deps.store.save(current)) } catch { return false }
@@ -1444,8 +1468,7 @@ export class TurnRunner {
     }
     const startedAt = current.pending_started_at
     this.materializePendingUserTurn(current, buildActiveTurnToken(streamId, current.pending_started_at), streamId)
-    const read = this.deps.service().stateDbRead(current)
-    const context = settle(read)
+    const context = settle()
     if (context) current.context_messages = dedupeContext(context)
     this.clearPendingTurn(current)
     if (!quiet) {
@@ -1549,8 +1572,9 @@ export class TurnRunner {
    */
   async refine(s: Session | null, focus: string): Promise<string> {
     if (!s) return 'Nothing to refine yet — send a message first.'
+    const context = await this.deps.service().readModelContext(s)
     if (s.active_stream_id) return 'Agent is running — wait for the turn to finish, then /refine.'
-    const messages = sanitizeMessagesForApi(this.deps.service().modelContext(s), { preserveApiContent: true, issuedReasoningSince: s.reasoning_replay_from })
+    const messages = sanitizeMessagesForApi(context, { preserveApiContent: true, issuedReasoningSince: s.reasoning_replay_from })
     if (!messages.length) return 'Nothing to refine yet — the conversation is empty.'
     // Like a turn: no agent is built in a profile whose home is going away.
     if (this.deps.profileDeleting?.(s.profile ?? null)) throw new HttpFailure(409, `Profile '${str(s.profile)}' is being deleted.`)

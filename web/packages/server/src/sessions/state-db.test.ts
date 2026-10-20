@@ -59,8 +59,8 @@ describe('absorbed durable identity (TAL-1019)', () => {
       insert.run(sid, 'assistant', 'Verified the result.', 201, 'reply', null, 1, 0)
       insert.run(sid, 'user', 'continue', 202, 'independent', null, 1, 0)
       const expected = [carrier.content, 'Verified the result.', 'continue']
-      expect(s.deps.sessions.mergedTranscript(session).map((m) => m.content)).toEqual(expected)
-      expect(s.deps.sessions.modelContext(session).map((m) => m.content)).toEqual(expected)
+      expect(s.deps.sessions.mergedTranscript(session, session.messages, await s.deps.sessions.stateDbRows(session)).map((m) => m.content)).toEqual(expected)
+      expect((await s.deps.sessions.readModelContext(session)).map((m) => m.content)).toEqual(expected)
       expect(carrier._absorbed_message_uids).toEqual(['absorbed'])
       if (edited) expect(carrier._state_db_authored_change).toBe(true)
       await s.deps.sessionStore.save(session)
@@ -96,11 +96,11 @@ describe('absorbed durable identity (TAL-1019)', () => {
       insert('independent', prompt.content, 202)
       insert('cli', 'Unrelated CLI work', 203)
       const expected = [prompt.content, reply.content, prompt.content, 'Unrelated CLI work']
-      s.deps.sessions.settleStateDb(session, { turnId: 'turn', previousContext: [], agentRows: [prompt, reply], startId: identity === 'legacy-uid' ? null : 0, startGeneration: startRead.generation })
+      s.deps.sessions.settleStateDb(session, { turnId: 'turn', previousContext: [], agentRows: [prompt, reply], startId: identity === 'legacy-uid' ? null : 0, startGeneration: startRead.generation, read: await s.deps.sessions.settlementRead(session) })
       expect(session.messages.map((m) => m.content)).toEqual(expected)
       expect(session.context_messages.map((m) => m.content)).toEqual(expected)
-      expect(s.deps.sessions.mergedTranscript(session).map((m) => m.content)).toEqual(expected)
-      expect(s.deps.sessions.modelContext(session).map((m) => m.content)).toEqual(expected)
+      expect(s.deps.sessions.mergedTranscript(session, session.messages, await s.deps.sessions.stateDbRows(session)).map((m) => m.content)).toEqual(expected)
+      expect((await s.deps.sessions.readModelContext(session)).map((m) => m.content)).toEqual(expected)
       await s.deps.sessionStore.save(session)
       s.deps.sessionStore.sessions.delete(sid)
       for (let reopen = 0; reopen < 2; reopen += 1) {
@@ -139,8 +139,8 @@ describe('absorbed durable identity (TAL-1019)', () => {
       const prompt = { role: 'user', content: 'Merged old prompt', timestamp: 90, _absorbed_row_ids: [1] }
       const reply = { role: 'assistant', content: 'Old answer', timestamp: 101 }
       const session = new Session({ session_id: sid, messages: [prompt, reply], context_messages: [prompt, reply] }, { workspace: s.state, model: null })
-      s.deps.sessions.markStateDbSeen(session)
-      s.deps.sessions.markStateDbSeen(session)
+      s.deps.sessions.markStateDbSeen(session, await s.deps.sessions.stateDbRead(session))
+      s.deps.sessions.markStateDbSeen(session, await s.deps.sessions.stateDbRead(session))
       await s.deps.sessionStore.save(session)
       if (failedBoundary) s.deps.sessions.markStateDbSeen(session, { rows: [], ok: false, idCapable: false, reason: 'synthetic failed read', generation: null }, { boundary: true })
       create(null, 0, `${path}.new`)
@@ -152,12 +152,12 @@ describe('absorbed durable identity (TAL-1019)', () => {
       const concurrent = new DatabaseSync(path)
       try { concurrent.prepare('INSERT INTO messages (session_id, role, content, timestamp) VALUES (?, ?, ?, ?)').run(sid, 'user', 'New CLI request', 200) } finally { concurrent.close() }
       const expected = [prompt.content, reply.content, 'New CLI request']
-      expect(s.deps.sessions.mergedTranscript(session).map((m) => m.content)).toEqual(expected)
-      expect(s.deps.sessions.modelContext(session).map((m) => m.content)).toEqual(expected)
+      expect(s.deps.sessions.mergedTranscript(session, session.messages, await s.deps.sessions.stateDbRows(session)).map((m) => m.content)).toEqual(expected)
+      expect((await s.deps.sessions.readModelContext(session)).map((m) => m.content)).toEqual(expected)
       // Settlement must not rebind the persisted carrier to the replacement's generation.
-      s.deps.sessions.settleStateDb(session, { turnId: 'later', previousContext, agentRows: rawHistory, startId: 0, startGeneration: startRead.generation })
+      s.deps.sessions.settleStateDb(session, { turnId: 'later', previousContext, agentRows: rawHistory, startId: 0, startGeneration: startRead.generation, read: await s.deps.sessions.settlementRead(session) })
       expect(session.messages.map((m) => m.content)).toEqual(expected)
-      expect(s.deps.sessions.modelContext(session).map((m) => m.content)).toEqual(expected)
+      expect((await s.deps.sessions.readModelContext(session)).map((m) => m.content)).toEqual(expected)
       await s.deps.sessionStore.save(session)
       s.deps.sessionStore.sessions.delete(sid)
       for (let reopen = 0; reopen < 2; reopen += 1) {
