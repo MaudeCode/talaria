@@ -25,6 +25,7 @@ contracts, the workspace build files, the Agent compatibility tooling, the CI wo
 server files the sidecar suite loads (`src/sidecar/`, `src/app.ts`, `src/runtime.ts`,
 `src/tools/updates.ts`, the `local-reset.json` fixture, and the server's package and TypeScript
 configuration). Other server changes skip them on a pull request and run them on the push to `main`.
+Sidecar test changes skip the server job, except `sidecar/tests/fixtures/`, which server tests read.
 Each Agent job first runs the synthetic runner checks so isolation and cleanup failures surface
 before the longer real-Agent suite.
 

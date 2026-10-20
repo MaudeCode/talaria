@@ -89,8 +89,9 @@ def path_suites(path):
                                                           "TalariaKit/Sources/TalariaKit/LiveActivities/",
                                                           "TalariaKit/Tests/TalariaKitTests/APIClientSessionListTests.swift",
                                                           "TalariaKit/Tests/TalariaKitTests/Support/")) else {"app"}
-    if path == "web/sidecar/tests/fixtures/schemas.json":
-        return {"web_server", "web_sidecar"}  # The server job regenerates it from the contracts and fails on drift.
+    # Server tests read these fixtures, and the server job regenerates schemas.json from the contracts.
+    if path.startswith("web/sidecar/tests/fixtures/"):
+        return {"web_server", "web_sidecar"}
     if path.startswith("web/sidecar/tests/"):
         return {"web_sidecar"}
     if path.startswith("relay/tests/"):
