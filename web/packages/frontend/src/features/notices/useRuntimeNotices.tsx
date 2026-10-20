@@ -8,7 +8,7 @@ import { keys } from '../../api/queryKeys'
 import { isApiError } from '../../contracts/common'
 import type { SessionGoal, SessionNotice } from '@maudecode/talaria-web-contracts'
 import type { LiveTurn } from '../../stream/reducer'
-import type { ComposerNotice } from '../composer/ComposerTab'
+import type { ComposerNotice } from '../composer/ComposerNotices'
 import { RunElapsed } from '../chat/LiveTurnView'
 
 type AgentHealth = Awaited<ReturnType<typeof api.fetchAgentHealth>>
@@ -111,7 +111,7 @@ export function recheckServer(qc: QueryClient): void {
 }
 
 /**
- * Connection and runtime state as composer top-tab entries (legacy HWEB-11, moved into the tab by TAL-429): thread
+ * Connection and runtime state as composer status chips (legacy HWEB-11, chips since TAL-1078): thread
  * error, unreachable Talaria server, offline, agent unavailable, provider failure, the session's Agent notices (TAL-803),
  * compression (TAL-1006: the manual job from `compressingSince`, its start in ms, or the live turn's open span), the
  * standing goal (TAL-808). A live turn's reconnect is the live row's own label.
@@ -148,6 +148,8 @@ export function useRuntimeNotices({ live, onRetry, compressingSince, agentNotice
         {n.status && <span className="ms-auto shrink-0 ps-2 opacity-80">{n.status}</span>}
       </>
     ),
+    // A notice that may not fit its chip opens whole in a dialog.
+    detail: n.oneLine && !n.detail ? undefined : { title: n.title, content: n.detail ? <p className="whitespace-pre-wrap text-sm [overflow-wrap:anywhere]">{n.detail}</p> : null },
     action: n.action,
     onDismiss: n.dismissible ? () => setDismissed((d) => new Set([...d, `${n.kind}:${n.title}`])) : undefined,
   }))

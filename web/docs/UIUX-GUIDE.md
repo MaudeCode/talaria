@@ -25,10 +25,10 @@ The primary layout is three-panel:
 The composer is a floating glass card over the transcript, after T3 Code's
 composer (TAL-429). Its footer carries only what the next message needs: model
 and reasoning effort on the left; attachments, dictation, context usage, and
-Stop/Send on the right. Two attached extensions share the card's edges: a top
-tab for status (connection and runtime notices, manual compression, the
-running turn, dictation, the YOLO warning, queued messages) and a bottom context strip for where it runs (workspace,
-toolsets, profile). The terminal toggle lives in the chat header; phones reach
+Stop/Send on the right. Status floats above the card as separate chips
+(connection and runtime notices, compression, the running turn, dictation, the
+YOLO warning, background work, the queued count), and an attached bottom context
+strip shows where it runs (workspace, toolsets, profile). The terminal toggle lives in the chat header; phones reach
 it from the composer's overflow menu (`#composerMobileConfigBtn` /
 `#composerMobileConfigPanel`), which also takes model and reasoning when the
 footer runs out of width. Settings and session-level tools live in the Control
@@ -240,20 +240,27 @@ Interrupt stages its replacement in the existing queue immediately. Stop shows S
 confirms worker release, including after a terminal event; a failed Stop keeps the queue held and can be
 retried. Accepted queue mutations persist before their view renders, so an admission that finishes after
 navigation cannot be resent on return. Refused history commands return after any newer composer text.
-Edit, Retry, Undo and Clear show their intent in the existing composer notice tab. Edit returns
+Edit, Retry, Undo and Clear show their intent in a composer status chip. Edit returns
 text only after the server accepts the cut, retaining deep-discard confirmation, and uses a returned full
 snapshot without waiting for another detail request. Every send, steer,
 or queue returns the transcript to its end.
 
-The top tab is a list of `ComposerNotice` entries (`ComposerTab.tsx`): an id,
-a tone (`neutral`, `info`, `warning`, `error`), content, and an optional action
-or dismiss. New transient status is a new entry, not new composer
-chrome; `useRuntimeNotices` supplies the connection and runtime ones (offline,
+The status chips are a list of `ComposerNotice` entries (`ComposerNotices.tsx`,
+TAL-1078, after the App's `StatusChip`): an id, a tone (`neutral`, `info`,
+`warning`, `error`), a compact label, an optional action or dismiss, and an
+optional detail. A notice with detail makes its label a button that opens the
+detail in the shared `Dialog`: the queue editor behind the queued count, a
+`/btw` answer, command output, background work, and the full text of a long
+runtime notice. The dialog closes when its notice ends and focus returns to the
+chip, or to the composer once the chip is gone; a chat switch closes it. Chips
+wrap within the card's width with a gap between them, which passes pointers
+through to the transcript. New transient status is a new entry, not new
+composer chrome; `useRuntimeNotices` supplies the connection and runtime ones (offline,
 Talaria server unreachable, agent unavailable, provider failure, turn error with
 Retry, compressing); an unreachable server is probed with exponential backoff
-and shows its countdown and a Retry action. Entries slide up from behind the card and sink back on exit;
-every height change of the composer re-pins a following transcript in the same
-frame, so streamed lines never hide behind a growing tab.
+and shows its countdown and a Retry action. Chips fade in and out on their own (instant under reduced motion); the dock's
+measured height includes them, and every height change re-pins a following
+transcript in the same frame, so streamed lines never hide behind a new chip.
 
 ### Composer sizing
 

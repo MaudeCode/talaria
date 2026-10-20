@@ -1,5 +1,5 @@
 /**
- * TAL-372: the session's background work, as the server records it. The composer's tab shows what the server pins:
+ * TAL-372: the session's background work, as the server records it. The composer's chip opens what the server pins:
  * running work, and a finished `/background` result until someone dismisses it. Every client reads the same records.
  */
 import { useState } from 'react'
@@ -66,8 +66,8 @@ function TaskRow({ sessionId, task }: { sessionId: string; task: BackgroundTask 
         <StatusIcon status={task.status} />
         <span className="min-w-0 flex-1 truncate" title={task.title}><span className="text-muted">{kindLabel(task.kind)}</span> {task.title}</span>
         <span className="shrink-0 text-[11px] text-muted">{task.agents && task.agents.total > 1 ? agentsSummary(task.agents) : statusLabel(task.status)}</span>
-        {task.result_available && <button type="button" className="composer-tab-action" aria-expanded={open} onClick={() => setOpen((o) => !o)}>{open ? m.bg_hide_result() : m.bg_show_result()}</button>}
-        {task.dismissible && <button type="button" className="composer-tab-action" disabled={dismiss.isPending} onClick={() => dismiss.mutate()}>{m.notice_dismiss()}</button>}
+        {task.result_available && <button type="button" className="composer-notice-action" aria-expanded={open} onClick={() => setOpen((o) => !o)}>{open ? m.bg_hide_result() : m.bg_show_result()}</button>}
+        {task.dismissible && <button type="button" className="composer-notice-action" disabled={dismiss.isPending} onClick={() => dismiss.mutate()}>{m.notice_dismiss()}</button>}
       </div>
       {open && (
         <div className="bg-work-result max-h-72 overflow-auto rounded-md bg-surface-subtle px-2 py-1 text-[13px]">
@@ -78,13 +78,12 @@ function TaskRow({ sessionId, task }: { sessionId: string; task: BackgroundTask 
   )
 }
 
-/** The tab card listing the work the server pins for this session; nothing when there is none. */
+/** The list behind the composer's background chip: the work the server pins for this session; nothing when there is none. */
 export function BackgroundWorkCard({ sessionId, tasks }: { sessionId: string; tasks: BackgroundTask[] }) {
   const pinned = tasks.filter((t) => t.pinned)
   if (!pinned.length) return null
   return (
     <span className="bg-work-card flex min-w-0 flex-1 flex-col gap-1" role="region" aria-label={m.bg_card_title()} aria-live="polite">
-      <span className="queue-card-title">{m.bg_card_title()}</span>
       <ul className="flex min-w-0 flex-col gap-1">{pinned.map((t) => <TaskRow key={t.task_id} sessionId={sessionId} task={t} />)}</ul>
     </span>
   )

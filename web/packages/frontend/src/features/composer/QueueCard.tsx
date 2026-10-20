@@ -17,7 +17,7 @@ function moveItem<T>(list: readonly T[], from: number, to: number): T[] {
 const keepFocus = (e: PointerEvent) => { e.preventDefault() }
 
 /**
- * TAL-562: the queued messages in the composer tab, sent top to bottom when the turn ends. A row is edited in place,
+ * TAL-562: the queued messages behind the composer's queue chip (TAL-1078), sent top to bottom when the turn ends. A row is edited in place,
  * removed, or moved by dragging its handle (Arrow Up/Down on the focused handle moves it too).
  */
 export function QueueCard({ sessionId, queued, onChange, pendingId, admissions = [], onAdmissionAction }: { sessionId: string; queued: QueuedTurn[]; onChange: (queued: QueuedTurn[]) => void; pendingId?: string | undefined; admissions?: OwnerAttachment['admissions'] | undefined; onAdmissionAction?: ((id: string, action: 'cancel' | 'retry' | 'discard', generation: number | null) => void) | undefined }) {
@@ -64,7 +64,6 @@ export function QueueCard({ sessionId, queued, onChange, pendingId, admissions =
 
   return (
     <div className="queue-card flex min-w-0 flex-1 flex-col gap-0.5" role="region" aria-label={label}>
-      <span className="queue-card-title" aria-live="polite">{label}</span>
       <ol className="queue-card-list flex flex-col">
         {admissions.map((q) => (
           <li key={q.admission_id} className="queue-card-row">

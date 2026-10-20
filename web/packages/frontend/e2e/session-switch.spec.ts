@@ -24,7 +24,7 @@ function hold() {
   return { gate, release }
 }
 
-const yoloTab = '.composer-tab [data-notice="yolo"]'
+const yoloTab = '.composer-notices [data-notice="yolo"]'
 
 test('a message queued in one session never sends into the next', async ({ page }) => {
   const streams = new Map<string, ServerResponse>()
@@ -53,7 +53,7 @@ test('a message queued in one session never sends into the next', async ({ page 
     await expect.poll(() => streams.has('switch-queue-a-run')).toBe(true)
     await page.locator('#msg').fill('/queue Follow up in A')
     await page.locator('#btnSend').click()
-    await expect(page.locator('.queue-card')).toContainText('Follow up in A')
+    await expect(page.locator('[data-notice="queue"]')).toHaveText('1 queued')
 
     await enter(page, 'switch-queue-b')
     await expect.poll(() => streams.has('switch-queue-b-run')).toBe(true)
@@ -63,7 +63,7 @@ test('a message queued in one session never sends into the next', async ({ page 
     await expect(page.locator('.live-turn')).toHaveCount(0)
     await page.waitForTimeout(500)
     expect(starts).toEqual([])
-    await expect(page.locator('.queue-card')).toHaveCount(0)
+    await expect(page.locator('[data-notice="queue"]')).toHaveCount(0)
   } finally {
     for (const response of streams.values()) response.end()
     await new Promise<void>((resolve) => server.close(() => { resolve() }))
@@ -132,11 +132,11 @@ test('leaving a session mid-compression stops it: the next session stays unlocke
   await page.goto('/session/switch-compress-a')
   await page.locator('#msg').fill('/compress')
   await page.locator('#btnSend').click()
-  await expect(page.locator('.composer-tab [data-notice="runtime:compressing"]')).toBeVisible()
+  await expect(page.locator('.composer-notices [data-notice="runtime:compressing"]')).toBeVisible()
   await expect.poll(() => polls).toBeGreaterThan(0)
 
   await enter(page, 'switch-compress-b')
-  await expect(page.locator('.composer-tab [data-notice="runtime:compressing"]')).toHaveCount(0)
+  await expect(page.locator('.composer-notices [data-notice="runtime:compressing"]')).toHaveCount(0)
   // A's compression finishes into a fork; B is not navigated to it, and A's job is no longer polled.
   finished = true
   const seen = polls

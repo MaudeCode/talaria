@@ -154,14 +154,14 @@ test('opening a session paints every frame at its end', async ({ page }) => {
   expect(Math.max(...frames)).toBeLessThan(2)
 })
 
-test('the top tab reports a Talaria server it cannot reach, the stopped overlay takes over, and both clear when it answers again', async ({ page, errors }) => {
+test('a status chip reports a Talaria server it cannot reach, the stopped overlay takes over, and both clear when it answers again', async ({ page, errors }) => {
   let down = false
   await page.route('**/api/health/agent', (route) => (down ? route.abort('connectionrefused') : route.fulfill({ json: { alive: true, chat: { available: true, condition: null } } })))
   await page.route('**/api/session?**', (route) => route.fulfill({ json: { session: { session_id: 'reach', title: 'Reach', messages: transcript('reach', 2) } } }))
   await page.goto('/session/reach')
   await expect(page.locator('#msg')).toBeVisible()
   down = true
-  const row = page.locator('.composer-tab [data-notice="runtime:server_unreachable"]')
+  const row = page.locator('.composer-notices [data-notice="runtime:server_unreachable"]')
   await expect(row).toContainText("Can't reach the Talaria server", { timeout: 15_000 })
   // Probes back off exponentially (1 s, 2 s, 4 s, …); the third unanswered one covers the page and counts down to the next.
   const overlay = page.getByRole('alertdialog', { name: 'Server stopped' })
@@ -175,7 +175,7 @@ test('the top tab reports a Talaria server it cannot reach, the stopped overlay 
   errors.splice(0, errors.length, ...errors.filter((e) => !/health\/agent|ERR_CONNECTION_REFUSED|Failed to load resource/.test(e)))
 })
 
-test('a manual compression shows in the top tab while it runs', async ({ page }) => {
+test('a manual compression shows as a status chip while it runs', async ({ page }) => {
   await page.route('**/api/session?**', (route) => route.fulfill({ json: { session: { session_id: 'squeeze', title: 'Squeeze', messages: transcript('squeeze', 2) } } }))
   await page.route('**/api/session/compress/start', (route) => route.fulfill({ json: { status: 'running' } }))
   await page.route('**/api/session/compress/status?**', (route) => route.fulfill({ json: { status: 'running' } }))
@@ -183,7 +183,7 @@ test('a manual compression shows in the top tab while it runs', async ({ page })
   await page.goto('/session/squeeze')
   await page.locator('#msg').fill('/compress')
   await page.locator('#btnSend').click()
-  await expect(page.locator('.composer-tab [data-notice="runtime:compressing"]')).toContainText('Compressing context')
+  await expect(page.locator('.composer-notices [data-notice="runtime:compressing"]')).toContainText('Compressing context')
 })
 
 /** TAL-1006: coming back to a session whose manual compression still runs shows it from the server's start and follows it. */
@@ -196,15 +196,15 @@ test('a manual compression still running when the session opens shows and clears
   await page.route('**/api/session/compress/status?**', (route) => route.fulfill({ json: done ? { status: 'done', session_id: 'rejoin' } : { status: 'running', started_at: startedAt } }))
   await page.route('**/api/session/draft', (route) => route.fulfill({ json: { ok: true } }))
   await page.goto('/session/rejoin')
-  const chip = page.locator('.composer-tab [data-notice="runtime:compressing"]')
+  const chip = page.locator('.composer-notices [data-notice="runtime:compressing"]')
   await expect(chip).toHaveText('Compressing context1m')
   done = true
   await expect(chip).toHaveCount(0)
   expect(starts).toBe(0)
 })
 
-/** TAL-1006: the Agent's automatic compression shows in the docked tab with its time since the server's start, never in the transcript. */
-test('an automatic compression shows in the top tab until the server closes it', async ({ page }, testInfo) => {
+/** TAL-1006: the Agent's automatic compression shows as a status chip with its time since the server's start, never in the transcript. */
+test('an automatic compression shows as a status chip until the server closes it', async ({ page }, testInfo) => {
   const sid = 'auto-compress'
   const streamId = `${sid}-run`
   const attaching = hold()
@@ -228,12 +228,12 @@ test('an automatic compression shows in the top tab until the server closes it',
   await page.route('**/api/session/draft', (route) => route.fulfill({ json: { ok: true } }))
   try {
     await page.goto(`/session/${sid}`)
-    await expect(page.locator('.composer-tab .live-run-status')).toContainText('Working')
+    await expect(page.locator('.composer-notices .live-run-status')).toContainText('Working')
     expect(stream).toBeNull()
     attaching.release()
     // Working can render while EventSource is still connecting.
     await expect.poll(() => stream).not.toBeNull()
-    const chip = page.locator('.composer-tab [data-notice="runtime:compressing"]')
+    const chip = page.locator('.composer-notices [data-notice="runtime:compressing"]')
     const startedAt = Date.now() / 1000 - 75
     expect(() => send('compressing', { session_id: sid, message: 'Compressing context', started_at: startedAt })).not.toThrow()
     await expect(chip).toHaveText('Compressing context1m')
@@ -241,12 +241,12 @@ test('an automatic compression shows in the top tab until the server closes it',
     send('compressing', { session_id: sid, message: 'Compressing context', started_at: startedAt })
     await expect(chip).toHaveText('Compressing context1m')
     await expect(page.locator('#messages .compression-card')).toHaveCount(0)
-    const row = await chip.locator('.composer-tab-row').boundingBox()
-    expect(row!.height).toBeLessThan(40)
+    // One line: a chip, not a stacked panel.
+    expect((await chip.boundingBox())!.height).toBeLessThan(48)
     if (process.env.TAL1006_SHOTS) await page.screenshot({ path: `${process.env.TAL1006_SHOTS}/compressing-${testInfo.project.name}.png` })
     send('compressed', { session_id: sid, message: 'Compression finished' })
     await expect(chip).toHaveCount(0)
-    await expect(page.locator('.composer-tab .live-run-status')).toContainText('Working')
+    await expect(page.locator('.composer-notices .live-run-status')).toContainText('Working')
     await expect(page.locator('#messages .compression-card')).toHaveCount(0)
   } finally {
     attaching.release()
@@ -278,7 +278,7 @@ test('the context ring opens the usage figures and Compress now starts compressi
   await expect(details).toContainText('Cache: 72% hit (300,000 read / 12,000 write)')
   await page.screenshot({ path: testInfo.outputPath('context-details.png') })
   await details.getByRole('button', { name: 'Compress now' }).click()
-  await expect(page.locator('.composer-tab [data-notice="runtime:compressing"]')).toContainText('Compressing context')
+  await expect(page.locator('.composer-notices [data-notice="runtime:compressing"]')).toContainText('Compressing context')
   await expect.poll(() => started).toBe(1)
   if (!phone) await expect(page.locator('#ctxPopup')).toHaveCount(0)
 })
@@ -570,3 +570,94 @@ test('slash suggestions show the server catalog above the composer, aliases incl
   await page.locator('#msg').pressSequentially('i')
   await expect(palette.getByRole('option', { name: /\/terminal/ })).toBeVisible()
 })
+
+/** TAL-1078: a running turn and its queue float as separate chips a gap above the card, inside the measured dock. */
+for (const size of ['default', 'xlarge'] as const) {
+  test(`the run status and the queue float as separate chips over the composer: ${size} text (TAL-1078)`, async ({ page }, testInfo) => {
+    const sid = `chips-${size}`
+    const streamId = `${sid}-run`
+    const running = true
+    const starts: string[] = []
+    let stream = null as ServerResponse | null
+    const server = createServer((_request, response) => {
+      response.writeHead(200, { 'Content-Type': 'text/event-stream', 'Access-Control-Allow-Origin': process.env.HERMES_E2E_BASE_URL!, 'Access-Control-Allow-Credentials': 'true' })
+      response.write(`id: ${streamId}:1\nevent: token\ndata: ${JSON.stringify({ text: 'Working.' })}\n\n`)
+      stream = response
+    })
+    await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve))
+    const address = server.address()
+    if (!address || typeof address === 'string') throw new Error('Missing fixture port')
+    const queued = ['Check the backup logs too', 'Then summarize what changed'].map((text, i) => ({ id: `q${String(i)}`, text, attachments: [], request: { profile: 'default' } }))
+    await page.addInitScript(({ id, entries, font }) => {
+      localStorage.setItem(`hermes-queue:${id}`, JSON.stringify(entries))
+      if (font !== 'default') localStorage.setItem('hermes-font-size', font)
+    }, { id: sid, entries: queued, font: size })
+    const session = () => ({ session_id: sid, title: 'Chips', messages: transcript(sid, 12), ...(running ? { active_stream_id: streamId, is_streaming: true } : {}) })
+    await page.route('**/api/session?**', (route) => route.fulfill({ json: { session: session() } }))
+    await page.route('**/api/chat/stream/status?**', (route) => route.fulfill({ json: { active: running, stream_id: streamId, replay_available: false } }))
+    await page.route('**/api/chat/stream?**', (route) => route.continue({ url: `http://127.0.0.1:${String(address.port)}${new URL(route.request().url()).search}` }))
+    await page.route('**/api/chat/start', async (route) => { starts.push((route.request().postDataJSON() as { message: string }).message); await route.fulfill({ json: { status: 'suppressed' } }) })
+    await page.route('**/api/session/draft', (route) => route.fulfill({ json: { ok: true } }))
+    try {
+      await page.goto(`/session/${sid}`)
+      const live = page.locator('.composer-notices [data-notice="live"]')
+      const queue = page.locator('.composer-notices [data-notice="queue"]')
+      await expect(live).toContainText('Working')
+      await expect(queue).toHaveText('2 queued')
+      await expect(page.locator('.queue-card')).toHaveCount(0)
+      await page.locator('#msg').fill('Draft kept')
+
+      // Separate chips, a visible gap above the card, inside its width and the viewport; the dock's measured height
+      // (the transcript's bottom inset) covers them, and a following transcript still shows its end.
+      const card = await box(page, '#composerBox')
+      const chips = [await live.boundingBox(), await queue.boundingBox()].map((b) => b!)
+      const [a, b] = chips as [NonNullable<typeof chips[0]>, NonNullable<typeof chips[0]>]
+      expect(a.x + a.width <= b.x || b.y + b.height <= a.y).toBe(true)
+      const viewport = page.viewportSize()!
+      for (const chip of chips) {
+        expect(card.y - (chip.y + chip.height)).toBeGreaterThanOrEqual(4)
+        expect(chip.x).toBeGreaterThanOrEqual(card.x - 1)
+        expect(chip.x + chip.width).toBeLessThanOrEqual(Math.min(card.x + card.width, viewport.width) + 1)
+      }
+      const dock = await box(page, '.composer-dock')
+      expect(dock.y).toBeLessThanOrEqual(Math.min(a.y, b.y))
+      await expect.poll(() => page.locator('.chat-stage').evaluate((el) => el.style.getPropertyValue('--composer-h'))).toBe(`${String(Math.round(dock.height))}px`)
+      await expect.poll(() => distance(page)).toBeLessThan(2)
+      if (process.env.TAL1078_SHOTS) await page.screenshot({ path: `${process.env.TAL1078_SHOTS}/chips-${size}-${testInfo.project.name}.png` })
+
+      // The run status opens nothing; the queue chip opens its editor in a dialog and Escape returns to the chip.
+      await expect(live.getByRole('button')).toHaveCount(0)
+      await queue.getByRole('button', { name: '2 queued' }).click()
+      const dialog = page.getByRole('dialog', { name: '2 queued' })
+      await expect(dialog.locator('.queue-card-list > *')).toHaveText(['Check the backup logs too', 'Then summarize what changed'])
+      if (process.env.TAL1078_SHOTS) await page.screenshot({ path: `${process.env.TAL1078_SHOTS}/queue-dialog-${size}-${testInfo.project.name}.png` })
+      await page.keyboard.press('Escape')
+      await expect(dialog).toHaveCount(0)
+      await expect(queue.getByRole('button')).toBeFocused()
+      expect(starts).toEqual([])
+      await expect(page.locator('#msg')).toHaveValue('Draft kept')
+
+      // A reader in the history keeps their place while the queue empties from its dialog, which then closes onto the
+      // composer since its chip is gone.
+      await page.locator('#messages').evaluate((el) => { el.scrollTop = 200 })
+      await expect.poll(() => distance(page)).toBeGreaterThan(100)
+      // Rows measured on the way up resize the transcript once; record the place after that settles.
+      let last = -1
+      await expect.poll(async () => { const now = await page.locator('#messages').evaluate((el) => el.scrollHeight); const stable = now === last; last = now; return stable }, { intervals: [300] }).toBe(true)
+      const top = await page.locator('#messages').evaluate((el) => el.scrollTop)
+      await queue.getByRole('button').click()
+      for (const text of ['Check the backup logs too', 'Then summarize what changed']) await page.getByRole('dialog').locator('li', { hasText: text }).getByRole('button', { name: 'Cancel queued message' }).click()
+      await expect(page.getByRole('dialog')).toHaveCount(0)
+      await expect(queue).toHaveCount(0)
+      await expect(page.locator('#msg')).toBeFocused()
+      await expect(page.locator('#msg')).toHaveValue('Draft kept')
+      await expect(live).toContainText('Working')
+      expect(Math.abs(await page.locator('#messages').evaluate((el) => el.scrollTop) - top)).toBeLessThan(2)
+      expect(starts).toEqual([])
+    } finally {
+      stream?.end()
+      server.closeAllConnections()
+      await new Promise<void>((resolve) => server.close(() => { resolve() }))
+    }
+  })
+}

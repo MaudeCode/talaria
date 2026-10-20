@@ -46,7 +46,7 @@ Use almost no shadows in the transcript. Shadows are reserved for popovers, drop
 
 ### Tool/thinking activity group
 
-Compact Worklog keeps live prose inline without a turn-level disclosure. Consecutive reasoning and tool rows share one quiet activity summary until prose breaks the sequence; a single supporting row stays inline. The current activity summary tracks the latest action and shimmers while active, with a static label for reduced-motion users. The live status (laurel, "Responding…", tokens per second) is the first row of the composer's attached top tab rather than a pill over the transcript. The pinned transcript follows every size change, so streamed lines never hide below the fold. Once the turn settles, the work visibly folds into the "Worked" summary above the final answer rather than snapping. Explicit choices on settled disclosures persist per profile, chat, and turn. Settled turns keep the same consecutive activity groups and prose boundaries. Individual arguments and results remain behind their own disclosure. Error-family turns retain readable partial work. These defaults follow the accepted disclosure addenda in `docs/rfcs/live-to-final-assistant-replies.md`.
+Compact Worklog keeps live prose inline without a turn-level disclosure. Consecutive reasoning and tool rows share one quiet activity summary until prose breaks the sequence; a single supporting row stays inline. The current activity summary tracks the latest action and shimmers while active, with a static label for reduced-motion users. The live status (laurel, "Responding…", tokens per second) is the first status chip floating above the composer rather than a pill over the transcript. The pinned transcript follows every size change, so streamed lines never hide below the fold. Once the turn settles, the work visibly folds into the "Worked" summary above the final answer rather than snapping. Explicit choices on settled disclosures persist per profile, chat, and turn. Settled turns keep the same consecutive activity groups and prose boundaries. Individual arguments and results remain behind their own disclosure. Error-family turns retain readable partial work. These defaults follow the accepted disclosure addenda in `docs/rfcs/live-to-final-assistant-replies.md`.
 
 ### Tool card
 
@@ -66,7 +66,7 @@ needed to explain a visible recovery or error state.
 
 ### Composer
 
-The composer is the command surface: a floating glass card (24 px radius in the default skin) with borderless, muted controls, a status tab attached above it and a context strip below. Keep it legible and focused: transparent inactive controls, circular primary actions, no theatrical hover scaling.
+The composer is the command surface: a floating glass card (24 px radius in the default skin) with borderless, muted controls, separate status chips floating a gap above it and a context strip attached below. Keep it legible and focused: transparent inactive controls, circular primary actions, no theatrical hover scaling.
 
 ## Do's and Don'ts
 

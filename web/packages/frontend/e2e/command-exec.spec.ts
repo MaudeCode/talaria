@@ -25,15 +25,19 @@ test('/reload-skills runs on the server and shows its output above the composer;
   await expect.poll(() => executed.length + sent.length).toBeGreaterThan(0)
   expect(sent).toEqual([])
   expect(executed).toEqual([{ command: '/reload_skills', session_id: sid }])
-  const panel = page.getByRole('region', { name: 'Command output' })
+  // TAL-1078: the command is a chip over the composer; its output opens in a dialog.
+  await page.locator('[data-notice="command"]').getByRole('button', { name: 'Command output: /reload_skills' }).click()
+  const panel = page.getByRole('dialog', { name: 'Command output' }).getByRole('region', { name: 'Command output' })
   await expect(panel).toContainText('/reload_skills')
   await expect(panel).toContainText('Total skills: 5')
   await expect(page.locator('#msg')).toHaveValue('')
   await expect(page.locator('#messages')).not.toContainText('reload')
   if (process.env.TAL561_SHOTS) await page.screenshot({ path: `${process.env.TAL561_SHOTS}/command-output-${testInfo.project.name}.png` })
 
+  await page.keyboard.press('Escape')
   await page.locator('[data-notice="command"]').getByRole('button', { name: 'Dismiss' }).click()
   await expect(panel).toHaveCount(0)
+  await expect(page.locator('[data-notice="command"]')).toHaveCount(0)
 })
 
 test('a plugin command from a server that sends no exec field still runs on the server; its Markdown output renders (TAL-561)', async ({ page }, testInfo) => {
@@ -52,7 +56,8 @@ test('a plugin command from a server that sends no exec field still runs on the 
   await expect.poll(() => executed.length + sent.length).toBeGreaterThan(0)
   expect(sent).toEqual([])
   expect(executed).toEqual([{ command: '/standup today' }])
-  const panel = page.getByRole('region', { name: 'Command output' })
+  await page.locator('[data-notice="command"]').getByRole('button', { name: 'Command output: /standup today' }).click()
+  const panel = page.getByRole('dialog', { name: 'Command output' }).getByRole('region', { name: 'Command output' })
   await expect(panel.locator('[data-streamdown="strong"]')).toHaveText('Standup posted')
   await expect(panel).toContainText('Channel: #team')
   await expect(panel).not.toContainText('**')

@@ -48,7 +48,11 @@ for (const running of [true, false]) {
       await page.locator('#msg').fill('/btw how many nodes?')
       await expect(page.locator('#btnSend')).toHaveAccessibleName('Send message')
       await page.locator('#btnSend').click()
-      const panel = page.getByRole('region', { name: 'Side question — not in history' })
+      // TAL-1078: the question is a chip over the composer; its answer opens in a dialog.
+      const chip = page.locator('[data-notice="btw"]')
+      await expect(chip).toContainText('how many nodes?')
+      await chip.getByRole('button', { name: 'Side question — not in history: how many nodes?' }).click()
+      const panel = page.getByRole('dialog', { name: 'Side question — not in history' }).getByRole('region', { name: 'Side question — not in history' })
       await expect(panel).toContainText('how many nodes?')
       await expect(panel).toContainText('Three nodes.')
       expect(chat.asked).toEqual([{ session_id: sid, question: 'how many nodes?' }])
@@ -57,8 +61,11 @@ for (const running of [true, false]) {
       await expect(page.locator('#messages')).not.toContainText('how many nodes?')
       if (process.env.TAL518_SHOTS) await page.screenshot({ path: `${process.env.TAL518_SHOTS}/btw-${running ? 'running' : 'idle'}-${testInfo.project.name}.png` })
 
-      await page.locator('[data-notice="btw"]').getByRole('button', { name: 'Dismiss' }).click()
+      await page.keyboard.press('Escape')
       await expect(panel).toHaveCount(0)
+      await expect(chip.getByRole('button', { name: /^Side question/ })).toBeFocused()
+      await chip.getByRole('button', { name: 'Dismiss' }).click()
+      await expect(chip).toHaveCount(0)
     } finally {
       await chat.close()
     }

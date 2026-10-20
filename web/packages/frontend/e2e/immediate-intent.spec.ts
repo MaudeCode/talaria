@@ -83,7 +83,7 @@ test('interrupt queues immediately and waits for confirmed worker release', asyn
       cancel.resolve()
       return
     }
-    await expect(page.locator('.queue-card')).toContainText('Replace the running request')
+    await expect(page.locator('[data-notice="queue"]')).toHaveText('1 queued')
     await expect(page.locator('#msg')).toHaveValue('')
     await expect(page.locator('#btnStop')).toHaveAccessibleName('Stopping')
     await expect(page.locator('#btnStop')).toBeDisabled()
@@ -97,7 +97,7 @@ test('interrupt queues immediately and waits for confirmed worker release', asyn
     await expect(page.locator('#btnStop')).toBeDisabled()
     blocked = false
     await expect.poll(() => starts).toBe(1)
-    await expect(page.locator('.queue-card')).toHaveCount(0)
+    await expect(page.locator('[data-notice="queue"]')).toHaveCount(0)
   } finally {
     cancel.resolve()
     stream?.end()
@@ -203,10 +203,13 @@ test('a refused queued send waits for an explicit retry instead of draining repe
   await page.route('**/api/chat/start', async (route) => { requests++; await route.fulfill({ json: requests === 1 ? { ok: false, reason: 'Admission refused' } : { status: 'suppressed' } }) })
   await page.goto(`/session/${sid}`)
   await expect(page.locator('[data-notice="queue-failed"]')).toContainText('Queued message was not sent')
-  await expect(page.locator('.queue-card')).toContainText('Queued prompt')
+  await expect(page.locator('[data-notice="queue"]')).toHaveText('1 queued')
+  await page.locator('[data-notice="queue"]').getByRole('button').click()
+  await expect(page.getByRole('dialog', { name: '1 queued' })).toContainText('Queued prompt')
+  await page.keyboard.press('Escape')
   expect(requests).toBe(1)
   await page.locator('[data-notice="queue-failed"]').getByRole('button', { name: 'Retry' }).click()
-  await expect(page.locator('.queue-card')).toHaveCount(0)
+  await expect(page.locator('[data-notice="queue"]')).toHaveCount(0)
   expect(requests).toBe(2)
 })
 
@@ -229,7 +232,7 @@ test('queue admission completing after navigation is acknowledged before the ses
   await expect.poll(() => page.evaluate((id) => localStorage.getItem(`hermes-queue:${id}`), sid)).toBeNull()
   await page.evaluate((id) => { history.pushState({}, '', `/session/${id}`); dispatchEvent(new PopStateEvent('popstate')) }, sid)
   await expect(page.locator('#messages').getByText('Send once while leaving', { exact: true })).toHaveCount(1)
-  await expect(page.locator('.queue-card')).toHaveCount(0)
+  await expect(page.locator('[data-notice="queue"]')).toHaveCount(0)
   expect(starts).toBe(1)
 })
 

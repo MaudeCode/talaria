@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Changed",
+      "summary": "Run status and other notices float as separate chips above the composer, and queued messages show as a count that opens the queue.",
+      "highlight": false,
+      "components": ["web"]
+    }
+  ]
+}

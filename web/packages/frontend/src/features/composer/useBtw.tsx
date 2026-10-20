@@ -1,10 +1,10 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { Loader2 } from 'lucide-react'
+import { Loader2, MessageCircleQuestionMark } from 'lucide-react'
 import { m } from '../../paraglide/messages.js'
 import * as api from '../../api/endpoints'
 import { openChatStream, SSE_CLOSED, type SseHandle } from '../../api/sse'
 import { Markdown } from '../chat/render/Markdown'
-import type { ComposerNotice } from './ComposerTab'
+import type { ComposerNotice } from './ComposerNotices'
 
 interface Side { sessionId: string; question: string; text: string; state: 'asking' | 'answered' | 'failed' }
 
@@ -59,15 +59,26 @@ export function useBtw(sessionId: string | null): { ask: (question: string) => P
     id: 'btw',
     tone: side.state === 'failed' ? 'error' : undefined,
     content: (
-      <span className="flex min-w-0 flex-1 flex-col gap-1" role="region" aria-label={m.btw_label()} aria-live="polite" aria-busy={side.state === 'asking'}>
-        <span className="truncate" title={side.question}><span className="queue-card-title">{m.btw_label()}</span> {side.question}</span>
-        <span className="max-h-72 overflow-auto rounded-md bg-surface-subtle px-2 py-1 text-[13px]">
-          {side.text
-            ? <Markdown text={side.text} streaming={side.state === 'asking'} />
-            : <span className="inline-flex items-center gap-1.5 text-muted"><Loader2 size={12} className="animate-spin" aria-hidden="true" />{m.btw_asking()}</span>}
-        </span>
-      </span>
+      <>
+        {side.state === 'asking' ? <Loader2 size={13} className="shrink-0 animate-spin motion-reduce:animate-none" aria-hidden="true" /> : <MessageCircleQuestionMark size={13} className="shrink-0" aria-hidden="true" />}
+        <span className="truncate"><span className="sr-only">{m.btw_label()}:</span> {side.question}</span>
+      </>
     ),
+    detail: {
+      title: m.btw_label(),
+      content: (
+        <span className="flex min-w-0 flex-col gap-2" role="region" aria-label={m.btw_label()} aria-live="polite" aria-busy={side.state === 'asking'}>
+          <span className="font-medium [overflow-wrap:anywhere]">{side.question}</span>
+          <span className="rounded-md bg-surface-subtle px-2 py-1 text-[13px]">
+            {side.text
+              ? <Markdown text={side.text} streaming={side.state === 'asking'} />
+              : <span className="inline-flex items-center gap-1.5 text-muted"><Loader2 size={12} className="animate-spin" aria-hidden="true" />{m.btw_asking()}</span>}
+          </span>
+        </span>
+      ),
+    },
+    // The answer once it settles, not every streamed token.
+    announcement: side.state === 'asking' ? m.btw_asking() : side.text,
     onDismiss: () => { stop(); setSide(null) },
   } : null
   return { ask, notice }

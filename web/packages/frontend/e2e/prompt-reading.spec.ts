@@ -41,7 +41,7 @@ test('prompt-reading progress uses the existing status and survives a cold attac
   }
   try {
     await page.goto(`/session/${sid}`)
-    const pill = page.locator('.composer-tab .live-run-status')
+    const pill = page.locator('.composer-notices .live-run-status')
     await expect(pill).toContainText('Working')
     await expect.poll(() => stream !== null).toBe(true)
     await shot('before')
