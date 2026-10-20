@@ -850,7 +850,7 @@ export class SessionService {
     return (await this.backgroundLinked(s, hydrateAnchorActivityScenes(withToolCallOutcomes((await this.backgroundUpdates(s, withMarkerKinds(withTurnIds(withAttachmentObjects(rows), baseIndex, initialTurn), s), reviewRows)), calls, s.active_stream_id, baseIndex), s.anchor_activity_scenes, { activeTurnId: s.active_stream_id, runningScene: !journaled, clipToolResults: true, baseIndex, refCounts: refs }))) as Message[]
   }
 
-  private async limitedDetail(s: Session, index: SessionPrefixIndex, limit: number, before: number | null, pending: ReturnType<SessionService['pendingTurn']>, journaled: Awaited<ReturnType<SessionService['journaledActiveTurn']>>, retried = false): Promise<{ messages: Message[]; offset: number; newestReply: number | null | undefined; total: number; last: number; todo: Record<string, unknown> | null; compression: ReturnType<SessionPrefixIndex['compressionReference']>; enoughContext: boolean; sources: SessionService['stateDbSources'] }> {
+  private async limitedDetail(s: Session, index: SessionPrefixIndex, limit: number, before: number | null, pending: ReturnType<SessionService['pendingTurn']>, journaled: Awaited<ReturnType<SessionService['journaledActiveTurn']>>, retried = false) {
     let prefixEnd = s.messages.length
     const turnId = pending?.turnId ?? journaled?.turnId
     if (turnId) prefixEnd = Math.min(prefixEnd, index.turns.get(turnId)?.first ?? prefixEnd)
@@ -874,13 +874,13 @@ export class SessionService {
       let cacheable = true
       let appended: Message[] | null = null
       // TAL-1162: the transcript reads run on the state.db worker. A session that changed meanwhile no longer matches this
-      // index: it is read once more against a fresh one, and a second change is answered as read, uncached.
+      // index or the lifecycle snapshots: null asks the caller to take them again, and a second change is answered as
+      // read, uncached.
       const [localRows, localCount, updatedAt, seenId] = [s.messages, s.messages.length, s.updated_at, s.state_db_seen_id]
       const changed = (): boolean => s.messages !== localRows || s.messages.length !== localCount || s.updated_at !== updatedAt || s.state_db_seen_id !== seenId
-      const reread = async () => retried ? null : this.limitedDetail(s, this.prefixIndex(s, await this.loadRevision(s)), limit, before, this.pendingTurn(s), journaled, true)
       if (typeof seenId === 'number' && !isSubagentView(s)) {
         const read = await this.stateDbTailRead(s, seenId, [...index.unidentified, ...context.unidentified])
-        if (changed()) { const fresh = await reread(); if (fresh) return fresh; cacheable = false }
+        if (changed()) { if (!retried) return null; cacheable = false }
         if (!read.ok) cacheable = false
         const markerRows = read.anchor ? [read.anchor, ...read.rows] : read.rows
         if (read.ok && read.idCapable && currentStateDbSeenId(s, markerRows) !== null) {
@@ -897,7 +897,7 @@ export class SessionService {
       }
       if (appended === null) {
         stateRows = await this.stateDbRows(s)
-        if (changed()) { const fresh = await reread(); if (fresh) return fresh; cacheable = false }
+        if (changed()) { if (!retried) return null; cacheable = false }
         effectiveSeenId = currentStateDbSeenId(s, stateRows)
         appended = this.mergedTranscript(s, s.messages, stateRows).slice(s.messages.length)
       }
@@ -996,17 +996,27 @@ export class SessionService {
     } catch {
       return (await this.foreignSessionDetail(sid, loadMessages, msgLimit, msgBefore))
     }
-    const revisionBefore = (await this.loadRevision(s))
+    let revisionBefore = (await this.loadRevision(s))
     if (!this.visibleToActiveProfile(s.profile)) {
       if (s.profile) throw new HttpFailure(409, 'Session belongs to a different profile', { code: 'session_profile_mismatch', session_id: sid, profile: s.profile })
       throw new HttpFailure(404, 'Session not found')
     }
     await this.clearStaleStreamState(s)
-    const journaled = loadMessages ? (await this.journaledActiveTurn(s)) : null
-    const pending = loadMessages ? this.pendingTurn(s) : null
-    const prefix = loadMessages && msgLimit !== null ? this.prefixIndex(s, revisionBefore) : null
-    const limited = prefix && msgLimit !== null ? (await this.limitedDetail(s, prefix, msgLimit, msgBefore, pending, journaled)) : null
-    const stateRows = loadMessages && !limited ? await this.stateDbRows(s) : []
+    // TAL-1162: the full transcript read runs on the state.db worker before the lifecycle snapshots are taken, so they
+    // describe the session the payload is built from.
+    const stateRows = loadMessages && msgLimit === null ? await this.stateDbRows(s) : []
+    let journaled = loadMessages ? (await this.journaledActiveTurn(s)) : null
+    let pending = loadMessages ? this.pendingTurn(s) : null
+    let prefix = loadMessages && msgLimit !== null ? this.prefixIndex(s, revisionBefore) : null
+    let limited = prefix && msgLimit !== null ? (await this.limitedDetail(s, prefix, msgLimit, msgBefore, pending, journaled)) : null
+    if (prefix && msgLimit !== null && !limited) {
+      // The session changed during the page's transcript read: every snapshot is taken again, once.
+      revisionBefore = await this.loadRevision(s)
+      journaled = await this.journaledActiveTurn(s)
+      pending = this.pendingTurn(s)
+      prefix = this.prefixIndex(s, revisionBefore)
+      limited = await this.limitedDetail(s, prefix, msgLimit, msgBefore, pending, journaled, true)
+    }
     let transcript = loadMessages && !limited ? this.mergedTranscript(s, s.messages, stateRows) : []
     if (pending && !limited) transcript = withPendingUserTurn(transcript, pending)
     if (journaled && !limited)transcript = withoutRunningTurnOutput(transcript, { ...journaled, localCount: s.messages.length })

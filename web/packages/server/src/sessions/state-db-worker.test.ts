@@ -471,4 +471,37 @@ describe('transcript state.db reads off the event loop (TAL-1162)', () => {
     expect(stored.messages.filter((m) => m.content === 'late answered')).toEqual([])
     expect(stored.messages.at(-1)?._terminal_state).toBe('cancelled')
   }, 30_000)
+
+  it.each(['', '&msg_limit=50'])('builds a detail%s from the session as it is after its transcript read', async (query) => {
+    const sid = `web-settling${query ? '-paged' : ''}`
+    await seeded(sid, 1700)
+    let finish = (): void => undefined
+    sidecar.respond('chat.start', (params, emit) => new Promise((resolve) => {
+      emit({ event: 'token', data: { text: 'settling answered' } })
+      finish = () => {
+        commit(sid, [['user', 'settle', 9000], ['assistant', 'settling answered', 9001]])
+        resolve(completedTurn([...params.conversation_history, { role: 'user', content: str(params.user_message) }, { role: 'assistant', content: 'settling answered' }]))
+      }
+    }))
+    const streamId = String(((await (await post('/api/chat/start', { session_id: sid, message: 'settle' })).json()) as Json).stream_id)
+    await s.sse(`/api/chat/stream?stream_id=${streamId}`, (f) => f.event === 'token')
+    const stateDbRows = s.deps.sessions.stateDbRows.bind(s.deps.sessions)
+    let release = (): void => undefined
+    const held = new Promise<void>((resolve) => { release = resolve })
+    let holding = false
+    // The detail's transcript read is held while the turn settles.
+    const read = vi.spyOn(s.deps.sessions, 'stateDbRows').mockImplementationOnce(async (session) => { holding = true; await held; return stateDbRows(session) })
+    try {
+      const detail = contents(`/api/session?session_id=${sid}${query}`)
+      const deadline = Date.now() + 10_000
+      while (!holding && Date.now() < deadline) await new Promise((resolve) => setTimeout(resolve, 10))
+      finish()
+      await s.sse(`/api/chat/stream?stream_id=${streamId}&after_event_id=${streamId}:0`, (f) => f.event === 'stream_end')
+      release()
+      expect((await detail).filter((c) => c === 'settle' || c === 'settling answered')).toEqual(['settle', 'settling answered'])
+    } finally {
+      release()
+      read.mockRestore()
+    }
+  }, 30_000)
 })
