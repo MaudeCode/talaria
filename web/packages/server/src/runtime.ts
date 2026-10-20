@@ -305,7 +305,6 @@ export async function createDeps(opts: CreateDepsOptions): Promise<AppDeps> {
     clearRelayCompletions: async (sid, profile) => { (await relay.clearDeleted(sid, profile)) },
     store,
     cliSessions: async (profile, o) => (await cliSessions.read(profile, o)),
-    cliSessionsSync: async (profile, o) => (await cliSessions.readSync(profile, o)),
     claudeCode: new ClaudeCodeSessionSource(() => claudeCodeProjectsDir(env, home)),
     profileHome,
     // The commit runs detached from the request, so it is registered as profile activity until it settles: profile
@@ -386,7 +385,7 @@ export async function createDeps(opts: CreateDepsOptions): Promise<AppDeps> {
       // Awaited by callers: the rename/regenerate response and the title stream's teardown follow the state.db write.
       try {
         const targetProfile = session.profile ?? activeProfile()
-        sessions.assertWritable(session, targetProfile)
+        await sessions.assertWritable(session, targetProfile)
         await sidecar.call('state_db.sync_title', { profile_home: profileHome(targetProfile), session_id: session.session_id, title: session.title, manual: manual === true })
       } catch (error) {
         log(`[webui] state.db title sync failed for ${session.session_id}: ${(error as Error).message}`)
@@ -471,7 +470,7 @@ export async function createDeps(opts: CreateDepsOptions): Promise<AppDeps> {
       if (!sidecar || !pyBool(settings.peek().sync_to_insights)) return
       try {
         const targetProfile = session.profile ?? activeProfile()
-        sessions.assertWritable(session, targetProfile)
+        await sessions.assertWritable(session, targetProfile)
         await sidecar.call('state_db.sync_usage', {
           profile_home: profileHome(targetProfile), session_id: session.session_id,
           input_tokens: session.input_tokens || 0, output_tokens: session.output_tokens || 0, estimated_cost: typeof session.estimated_cost === 'number' ? session.estimated_cost : null,

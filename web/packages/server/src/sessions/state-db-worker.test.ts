@@ -13,12 +13,19 @@ type Json = Record<string, unknown>
 
 /** Read-only `state.db` opens made on this (the server's) thread; the listing worker loads the real `node:sqlite`. */
 const mainThreadOpens = vi.hoisted(() => [] as string[])
+/** Each main-thread open's stack, so a failure names its caller. */
+const mainThreadStacks = vi.hoisted(() => [] as string[])
+/** A main-thread open blocks the thread this long, as a slow state.db does under memory pressure. */
+const mainThreadOpenDelay = vi.hoisted(() => ({ ms: 0 }))
 vi.mock('node:sqlite', async (importOriginal) => {
   const real = await importOriginal<typeof import('node:sqlite')>()
   class CountingDatabaseSync extends real.DatabaseSync {
     constructor(...args: ConstructorParameters<typeof real.DatabaseSync>) {
       super(...args)
-      if (args[1]?.readOnly) mainThreadOpens.push(String(args[0]))
+      if (!args[1]?.readOnly) return
+      mainThreadOpens.push(String(args[0]))
+      mainThreadStacks.push(new Error().stack ?? '')
+      if (mainThreadOpenDelay.ms) Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, mainThreadOpenDelay.ms)
     }
   }
   return { ...real, DatabaseSync: CountingDatabaseSync }
@@ -185,4 +192,124 @@ describe('session list state.db reads off the event loop (TAL-920)', () => {
     expect((await readImportableAgentSessionRowsAsync(dbPath)).map((r) => r.id)).toContain('tg-a')
     await stopStateDbWorker()
   })
+})
+
+describe('single-session state.db lookups off the event loop (TAL-923)', () => {
+  let s: TestServer
+  let dbPath: string
+  const post = (path: string, body: Json): Promise<Response> => s.get(path, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) })
+  /** The stacks of this thread's state.db opens while `run` handles one request. */
+  const opensDuring = async (run: () => Promise<void>): Promise<string[]> => {
+    s.deps.cliSessions.invalidate()
+    mainThreadOpens.length = 0
+    mainThreadStacks.length = 0
+    await run()
+    return mainThreadStacks.filter((_, i) => mainThreadOpens[i] === dbPath)
+  }
+  const subagentStart = (): Promise<Response> => post('/api/chat/start', { session_id: 'sub-a', message: 'hi' })
+  const SUBAGENT_REFUSAL = [403, 'session is read-only in its foreign store; cannot be claimed writeable in WebUI']
+  beforeAll(async () => {
+    s = await bootTestServer()
+    dbPath = join(s.state, 'state.db')
+    seedStateDb(dbPath, [{ id: 'sub-a', source: 'subagent', at: 1000 }, { id: 'cli-d', source: 'cli', at: 1010 }, { id: 'web-p', source: 'webui', at: 1020 }])
+    for (const [sid, title] of [['web-p', 'Pin me'], ['web-d', 'Delete me']] as const) {
+      await s.deps.sessionStore.save(new Session({ session_id: sid, title, source_tag: 'webui', messages: [{ role: 'user', content: 'x', timestamp: 1 }] }, { workspace: s.state, model: null }))
+    }
+  })
+  afterAll(async () => { setStateDbReadDelayForTests(0); mainThreadOpenDelay.ms = 0; await s.close() })
+
+  it('never opens state.db on the main thread for chat start, a state.db-only detail, pin, unpin, or delete', async () => {
+    expect(await opensDuring(async () => {
+      const res = await subagentStart()
+      expect([res.status, ((await res.json()) as Json).error]).toEqual(SUBAGENT_REFUSAL)
+    })).toEqual([])
+    expect(await opensDuring(async () => {
+      const res = await s.get('/api/session?session_id=cli-d')
+      expect(((await res.json()) as { session: Json }).session).toMatchObject({ session_id: 'cli-d', title: 'cli-d title', read_only: false })
+    })).toEqual([])
+    for (const pinned of [true, false]) {
+      expect(await opensDuring(async () => {
+        const res = await post('/api/session/pin', { session_id: 'web-p', pinned })
+        expect(((await res.json()) as { session: Json }).session.pinned).toBe(pinned)
+      })).toEqual([])
+    }
+    expect(await opensDuring(async () => { expect((await post('/api/session/delete', { session_id: 'web-d' })).status).toBe(200) })).toEqual([])
+    expect(await s.deps.sessionStore.loadMetadataOnly('web-d')).toBeNull()
+  })
+
+  it('looks one session up by id instead of building the sidebar listing', async () => {
+    const reads = vi.spyOn(s.deps.cliSessions, 'read')
+    try {
+      await s.deps.sessionStore.save(new Session({ session_id: 'web-e', title: 'Delete me too', source_tag: 'webui', messages: [{ role: 'user', content: 'x', timestamp: 1 }] }, { workspace: s.state, model: null }))
+      s.deps.cliSessions.invalidate()
+      expect((await subagentStart()).status).toBe(403)
+      expect((await s.get('/api/session?session_id=cli-d')).status).toBe(200)
+      for (const pinned of [true, false]) expect((await post('/api/session/pin', { session_id: 'web-p', pinned })).status).toBe(200)
+      expect((await post('/api/session/delete', { session_id: 'web-e' })).status).toBe(200)
+      expect(reads.mock.calls.length).toBeGreaterThan(0)
+      expect(reads.mock.calls.filter(([, opts]) => !opts?.sessionIds?.length).map(([, opts]) => opts), 'an unwindowed sidebar read').toEqual([])
+    } finally {
+      reads.mockRestore()
+    }
+    // The targeted row is the one the sidebar lists, Web-born state.db rows included.
+    seedStateDb(dbPath, [{ id: 'cron_job9_1', source: 'cron', at: 1030 }, { id: 'chain-root', source: 'cli', at: 1040 }, { id: 'chain-tip', source: 'cli', at: 1050 }])
+    const db = new DatabaseSync(dbPath)
+    db.exec("UPDATE sessions SET end_reason = 'compression', ended_at = 1050 WHERE id = 'chain-root'; UPDATE sessions SET parent_session_id = 'chain-root' WHERE id = 'chain-tip'")
+    db.close()
+    s.deps.cliSessions.invalidate()
+    const listed = new Map((await s.deps.cliSessions.read('default')).rows.map((r) => [String(r.session_id), r]))
+    const lookup = (s.deps.sessions as unknown as { lookupCliMeta: (sid: string) => Promise<Json | null> }).lookupCliMeta.bind(s.deps.sessions)
+    // A compression chain lists as one row: the root's lineage under its tip's id.
+    expect(listed.get('chain-tip')).toMatchObject({ _lineage_root_id: 'chain-root', parent_session_id: null })
+    for (const sid of ['cli-d', 'sub-a', 'web-p', 'cron_job9_1', 'chain-tip']) {
+      expect(listed.get(sid), sid).toBeDefined()
+      expect(await lookup(sid), sid).toEqual(listed.get(sid))
+    }
+  })
+
+  it('follows only compression continuations when it reads a chain, however many other children hang off it', async () => {
+    const forks = Array.from({ length: 1000 }, (_, i) => ({ id: `fan-fork-${String(i)}`, source: 'telegram', at: 3000 + i }))
+    seedStateDb(dbPath, [{ id: 'fan-tip1', source: 'cli', at: 2000 }, { id: 'fan-tip2', source: 'cli', at: 2100 }, { id: 'fan-tip3', source: 'cli', at: 2200 }, ...forks])
+    const db = new DatabaseSync(dbPath)
+    db.exec(`UPDATE sessions SET end_reason = 'compression', ended_at = 2100 WHERE id = 'fan-tip1';
+      UPDATE sessions SET parent_session_id = 'fan-tip1', end_reason = 'compression', ended_at = 2200 WHERE id = 'fan-tip2';
+      UPDATE sessions SET parent_session_id = 'fan-tip2' WHERE id = 'fan-tip3';
+      UPDATE sessions SET parent_session_id = 'fan-tip1' WHERE id LIKE 'fan-fork-%'`)
+    db.close()
+    const { rows } = await s.deps.cliSessions.read('default', { sourceFilter: null, sessionIds: ['fan-tip1'], sidebarRows: true })
+    expect(rows.map((r) => [r.session_id, r._lineage_root_id])).toEqual([['fan-tip3', 'fan-tip1']])
+  })
+
+  it.each([
+    ['a chat start on a state.db-only subagent session', async () => { const res = await subagentStart(); return [res.status, ((await res.json()) as Json).error] }, SUBAGENT_REFUSAL],
+    ['a pin', async () => { const res = await post('/api/session/pin', { session_id: 'web-p', pinned: true }); return [res.status, ((await res.json()) as { session: Json }).session.pinned] }, [200, true]],
+  ])('answers /health while a slow state.db holds %s', async (_, request, outcome) => {
+    s.deps.cliSessions.invalidate()
+    setStateDbReadDelayForTests(2000)
+    mainThreadOpenDelay.ms = 500
+    let doneAt = Number.POSITIVE_INFINITY
+    // The test client shares the server's thread, so the longest event-loop stall is what a watchdog probe would wait.
+    let last = performance.now()
+    let maxGap = 0
+    const ticker = setInterval(() => { const now = performance.now(); maxGap = Math.max(maxGap, now - last); last = now }, 10)
+    try {
+      const pending = request().then((result) => { doneAt = performance.now(); return result })
+      await new Promise((resolve) => setTimeout(resolve, 100))
+      const healthStart = performance.now()
+      const health = await s.get('/health')
+      const healthAt = performance.now()
+      clearInterval(ticker)
+      setStateDbReadDelayForTests(0)
+      mainThreadOpenDelay.ms = 0
+      expect(maxGap).toBeLessThan(200)
+      expect(health.status).toBe(200)
+      expect(healthAt - healthStart).toBeLessThan(200)
+      expect(healthAt).toBeLessThan(doneAt)
+      expect(await pending).toEqual(outcome)
+    } finally {
+      clearInterval(ticker)
+      setStateDbReadDelayForTests(0)
+      mainThreadOpenDelay.ms = 0
+    }
+  }, 60_000)
 })

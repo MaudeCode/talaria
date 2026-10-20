@@ -372,7 +372,7 @@ export interface ListParams {
   /** TAL-1040: owner sessions Web created as diagnostic chats; listed even when external Agent sessions are hidden. */
   webDiagnosticIds?: ReadonlySet<string>
   /** TAL-358: batched active-profile state.db owner lookup (`stateDbSessionSources`) for the sidecar owner lock and the `cliRows` claim gate. */
-  stateDbSources?: (ids: string[], profile?: string) => Map<string, StateDbSessionSource> | null
+  stateDbSources?: OwnerSources
   /** TAL-482: background kinds whose state.db rows stopped at the per-kind cap, so more exist than `cliRows` holds. */
   truncatedSources?: ReadonlySet<string>
   /** TAL-785: the state.db storage health `cliRows` came from; omitted when no Agent source is shown. */
@@ -450,7 +450,10 @@ export function isClaimableCliSource(meta: Row, stateDbSource: StateDbSessionSou
  * for legacy source tags, but cannot override a canonical receipt or ledger. Owners are batched per profile; an
  * unreadable state.db (null) locks every candidate, since an unknown owner is not a released one.
  */
-export function withOwnerLocks(rows: Row[], stateDbSources: (ids: string[], profile?: string) => Map<string, StateDbSessionSource> | null): Row[] {
+/** A synchronous batched owner lookup: `stateDbSessionSources` answers read before the build that consults them. */
+export type OwnerSources = (ids: string[], profile?: string) => Map<string, StateDbSessionSource> | null
+
+export function withOwnerLocks(rows: Row[], stateDbSources: OwnerSources): Row[] {
   const byProfile = ownerLockCandidates(rows)
   const ownersByProfile = new Map([...byProfile].map(([profile, ids]) => [profile, stateDbSources([...ids], profile)]))
   return rows.map((r) => {

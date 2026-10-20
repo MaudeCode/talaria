@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Talaria Web no longer freezes while it checks who owns a chat before sending a message, pinning, or deleting it, or while it opens a session that exists only in the Agent.",
+      "highlight": false,
+      "components": ["web"]
+    }
+  ]
+}

@@ -119,6 +119,29 @@ function isContinuationSession(parent: Dict | undefined, child: Dict | undefined
   return Number.isFinite(started) && Number.isFinite(ended) && started + 1.0 >= ended
 }
 
+/**
+ * `ids` plus every session a compression continuation (`isContinuationSession`) joins to one of them, up and down, at
+ * most `COMPRESSION_CHAIN_CAP` in all: the rows `projectAgentSessionRows` needs to collapse their chains as the sidebar
+ * listing does. Forks and other children are never followed, so they cannot crowd a continuation out of the cap.
+ */
+function compressionChainIds(db: DatabaseSync, cols: Set<string>, ids: string[]): string[] {
+  if (!['parent_session_id', 'end_reason'].every((c) => cols.has(c))) return ids
+  const fields = ['id', 'source', 'session_source', 'model_config', 'started_at', 'parent_session_id', 'end_reason', 'ended_at'].map((c) => cols.has(c) ? c : `NULL AS ${c}`).join(', ')
+  const row = db.prepare(`SELECT ${fields} FROM sessions WHERE id = ?`)
+  const children = db.prepare(`SELECT ${fields} FROM sessions WHERE parent_session_id = ?`)
+  const seen = new Set(ids)
+  const pending = [...ids]
+  const visit = (next: string): void => { if (next && !seen.has(next) && seen.size < COMPRESSION_CHAIN_CAP) { seen.add(next); pending.push(next) } }
+  while (pending.length) {
+    const current = row.get(pending.pop()!) as Dict | undefined
+    if (!current) continue
+    const parentId = str(current.parent_session_id)
+    if (parentId && isContinuationSession(row.get(parentId), current)) visit(parentId)
+    if (['compression', 'cli_close'].includes(str(current.end_reason))) for (const child of children.all(str(current.id)) as Dict[]) if (isContinuationSession(current, child)) visit(str(child.id))
+  }
+  return [...seen]
+}
+
 function continuationRootId(rowsById: Map<string, Dict>, sessionId: string | null): string | null {
   if (!sessionId) return null
   let rootId = sessionId
@@ -313,6 +336,13 @@ export function stateDbLocalTarget(dbPath: string, sid: string, opts: { onRead?:
   } catch { return sid } finally { db.close() }
 }
 
+/** `stateDbLocalTarget` plus whether state.db answered (a missing one does), so only a real answer seeds a routing cache. */
+function stateDbLocalTargetRead(dbPath: string, sid: string): { target: string; read: boolean } {
+  let read = false
+  const target = stateDbLocalTarget(dbPath, sid, { onRead: () => { read = true } })
+  return { target, read }
+}
+
 export const AGENT_STORAGE_OK: AgentStorage = Object.freeze({ state: 'ok', reason: null })
 
 /**
@@ -361,6 +391,8 @@ export interface ReadRowsOptions {
   sessionIds?: readonly string[]
   /** With `sessionIds`: keep those rows even without a visible turn (TAL-1040's receipt-proven Web diagnostic chats). */
   keepEmpty?: boolean
+  /** With `sessionIds`: also read each id's compression chain, so the projection collapses it into the sidebar's row (TAL-923). */
+  compressionChains?: boolean
   excludeSources?: readonly string[] | null
   includeSources?: readonly string[] | null
   log?: (line: string) => void
@@ -445,7 +477,8 @@ export function readImportableAgentSessionRows(dbPath: string, opts: ReadRowsOpt
     const params: string[] = []
     if (opts.sessionIds !== undefined) {
       where.push('s.id IN (SELECT value FROM json_each(?))')
-      params.push(JSON.stringify(opts.sessionIds.map((id) => local.get(id)?.ids.at(-1) ?? id)))
+      const ids = opts.sessionIds.map((id) => local.get(id)?.ids.at(-1) ?? id)
+      params.push(JSON.stringify(opts.compressionChains ? compressionChainIds(db, sessionCols, ids) : ids))
     }
     const superseded = [...local].filter(([id, lineage]) => id !== lineage.ids.at(-1)).map(([id]) => id)
     if (superseded.length) { where.push('s.id NOT IN (SELECT value FROM json_each(?))'); params.push(JSON.stringify(superseded)) }
@@ -834,6 +867,7 @@ type ListingCall =
   | { op: 'fingerprint'; dbPath: string }
   | { op: 'storage' | 'webDiagnostic'; dbPath: string }
   | { op: 'sources' | 'existing'; dbPath: string; ids: string[] }
+  | { [K in SessionReadName]: { op: 'session'; read: K; args: Parameters<typeof SESSION_READS[K]> } }[SessionReadName]
   | { op: 'crash' }
 /** A request to the listing worker; `delayMs` carries the test read delay across the thread boundary. */
 export type StateDbWorkerRequest = ListingCall & { id: number; delayMs: number }
@@ -915,8 +949,9 @@ export async function stateDbStorageAsync(dbPath: string): Promise<AgentStorage>
   try { return (await callListingWorker({ op: 'storage', dbPath })).value as AgentStorage } catch (error) { return stateDbReadFailure(error) }
 }
 
-/** `stateDbSessionSources` on the listing worker; a worker failure is an unreadable state.db (null), so owners stay locked. */
+/** `stateDbSessionSources` on the listing worker; a worker failure is an unreadable state.db (null), so owners stay locked. Without a state.db it answers here, opening nothing. */
 export async function stateDbSessionSourcesAsync(dbPath: string, sessionIds: Iterable<string>): Promise<Map<string, StateDbSessionSource> | null> {
+  if (!existsSync(dbPath)) return stateDbSessionSources(dbPath, sessionIds)
   try { return (await callListingWorker({ op: 'sources', dbPath, ids: [...sessionIds] })).value as Map<string, StateDbSessionSource> | null } catch { return null }
 }
 
@@ -929,6 +964,25 @@ export async function stateDbWebDiagnosticIdsAsync(dbPath: string): Promise<stri
 export async function agentSessionRowsExistingAsync(dbPath: string, sessionIds: Iterable<string>): Promise<Set<string>> {
   const ids = [...sessionIds]
   try { return (await callListingWorker({ op: 'existing', dbPath, ids })).value as Set<string> } catch { return new Set(ids.map((s) => s.trim()).filter(Boolean)) }
+}
+
+/** TAL-923: the single-session readers behind chat start, session detail, and the mutation gates, run on the worker. */
+export const SESSION_READS = { stateDbLocalTargetRead, stateDbSessionRow, stateDbSessionMessages, stateDbCompressionLineage }
+type SessionReadName = keyof typeof SESSION_READS
+
+/**
+ * A `SESSION_READS` reader on the listing worker, so one session's lookup never blocks the event loop. Each reader
+ * already answers a failed read with `fallback`'s value; a worker failure answers it too. Without a state.db the reader
+ * answers here, as it opens nothing then.
+ */
+export async function stateDbSessionReadAsync<K extends SessionReadName>(fallback: ReturnType<typeof SESSION_READS[K]>, read: K, ...args: Parameters<typeof SESSION_READS[K]>): Promise<ReturnType<typeof SESSION_READS[K]>> {
+  if (!existsSync(args[0])) return (SESSION_READS[read] as (...a: unknown[]) => ReturnType<typeof SESSION_READS[K]>)(...args)
+  try {
+    const reply = await callListingWorker({ op: 'session', read, args } as ListingCall)
+    return reply.error === undefined ? reply.value as ReturnType<typeof SESSION_READS[K]> : fallback
+  } catch {
+    return fallback
+  }
 }
 
 /** Test hook: the listing worker exits abruptly while this call is in flight. */

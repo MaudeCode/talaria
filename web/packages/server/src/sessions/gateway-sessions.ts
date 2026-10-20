@@ -47,16 +47,16 @@ export class GatewaySessions {
     activeProfile: () => string; redactEnabled: () => boolean; now: () => number; log: (line: string) => void;
   }) {}
 
-  private target(sid: string, profile = this.deps.activeProfile()): Target | null {
+  private async target(sid: string, profile = this.deps.activeProfile()): Promise<Target | null> {
     if (sid.length === 0 || sid !== sid.trim()) return null
-    const owner = this.deps.service.stateDbSources([sid], profile)?.get(sid)
+    const owner = (await this.deps.service.stateDbSources([sid], profile))?.get(sid)
     if (typeof owner !== 'object') return null
     if (owner.reason) return null
     const home = this.deps.profileHome(profile)
     return { sid, profile, home, key: JSON.stringify([home, sid]) }
   }
 
-  isOwned(sid: string): boolean { return this.target(sid) !== null }
+  async isOwned(sid: string): Promise<boolean> { return (await this.target(sid)) !== null }
 
   private async createCall(params: GatewayCreateParams): Promise<GatewaySessionResult> {
     const sidecar = this.deps.sidecar()
@@ -147,7 +147,7 @@ export class GatewaySessions {
   async project(base: Row, limit: number | null = 120, before: number | null = null, withMessages = true): Promise<Row> {
     // The wire's existing owner lock already classified ordinary sessions, including cached pages.
     if (base.read_only_reason !== CANONICAL_READ_ONLY_REASON) return base
-    const target = this.target(str(base.session_id), str(base.profile) || this.deps.activeProfile())
+    const target = await this.target(str(base.session_id), str(base.profile) || this.deps.activeProfile())
     if (!target) return base
     const result = await this.call(target, { action: 'snapshot' })
     let watch = this.watches.get(target.key)
@@ -158,7 +158,7 @@ export class GatewaySessions {
 
   /** Called before the direct-chat admission path, including for an already materialized foreign session. */
   async submit(sid: string, body: Row): Promise<Row | null> {
-    const target = this.target(sid)
+    const target = await this.target(sid)
     if (!target) return null
     const text = str(body.message).trim()
     if (!text) throw new HttpFailure(400, 'message is required')
@@ -179,7 +179,7 @@ export class GatewaySessions {
   }
 
   async action(sid: string, params: Omit<GatewaySessionParams, 'session_id' | 'profile_home'>): Promise<GatewaySessionResult> {
-    const target = this.target(sid)
+    const target = await this.target(sid)
     if (!target) throw new HttpFailure(403, 'This session has no canonical owner')
     if (params.action === 'mutate' && params.operation === 'workspace') {
       try { await this.deps.service.deps.workspaces.resolveTrusted(str(params.payload?.cwd), target.profile) }
@@ -193,7 +193,7 @@ export class GatewaySessions {
 
   /** The display preview is redacted; an explicit retry returns the original text for review, like direct-chat retry. */
   async retry(sid: string, admissionId: string, generation: number): Promise<string> {
-    const target = this.target(sid)
+    const target = await this.target(sid)
     if (!target) throw new HttpFailure(403, 'This session has no canonical owner')
     const current = await this.call(target, { action: 'snapshot' })
     const admission = current.snapshot?.pending.find((p) => p.admission_id === admissionId && p.status === 'unknown' && p.execution_generation === generation)
@@ -215,7 +215,7 @@ export class GatewaySessions {
   }
 
   async pending(sid: string, kind: 'approval' | 'clarify'): Promise<{ pending: Row | null; pending_count: number }> {
-    const target = this.target(sid)
+    const target = await this.target(sid)
     if (!target) throw new HttpFailure(404, 'Session not found')
     const result = await this.call(target, { action: 'snapshot' })
     const pending = this.prompts(result.snapshot, sid)
@@ -224,7 +224,7 @@ export class GatewaySessions {
   }
 
   async respond(sid: string, kind: 'approval' | 'clarify', id: string, value: unknown): Promise<boolean> {
-    const target = this.target(sid)
+    const target = await this.target(sid)
     if (!target) return false
     const current = await this.call(target, { action: 'snapshot' })
     const pending = this.prompts(current.snapshot, sid)

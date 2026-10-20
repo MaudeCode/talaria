@@ -30,7 +30,7 @@ export interface RecoveryDeps {
   stateDbPath: string
   profile: string
   stampingSince: number
-  isReadOnly: (sid: string, profile: string) => boolean
+  isReadOnly: (sid: string, profile: string) => boolean | Promise<boolean>
   log: (line: string) => void
 }
 
@@ -189,7 +189,7 @@ async function readOnlyRecovery(deps: RecoveryDeps, sid: string, profile?: strin
   if (profile === undefined) {
     try { profile = (await deps.store.loadMetadataOnly(sid))?.profile ?? deps.profile } catch { profile = deps.profile }
   }
-  return deps.isReadOnly(sid, profile)
+  return await deps.isReadOnly(sid, profile)
 }
 
 export async function auditSessionRecovery(deps: RecoveryDeps): Promise<RecoveryAudit> {

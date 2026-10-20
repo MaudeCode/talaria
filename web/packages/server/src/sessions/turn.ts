@@ -718,8 +718,8 @@ export class TurnRunner {
       // context frame always reports the not-configured shape.
       const persistentBefore = persistentStateSnapshot(deps.profileHome(s.profile))
       await put('context_status', { session_id: sessionId, prefill: { status: 'not_configured', source: 'none', label: '', message_count: 0 } })
-      // Setup awaits can outlive a gateway adoption; no await separates this read from dispatch.
-      deps.service().assertWritable(s)
+      // Setup awaits can outlive a gateway adoption, so the owner is rechecked right before dispatch.
+      await deps.service().assertWritable(s)
       agentDispatched = true
       const result = await sidecar.call('chat.start', {
         profile_home: deps.profileHome(s.profile), session_id: sessionId, stream_id: streamId, ...this.agentWorkspace(s, opts.workspace), model: opts.model ?? '', model_provider: opts.modelProvider,
@@ -1558,7 +1558,7 @@ export class TurnRunner {
     if (!sidecar) throw new SidecarError('The Agent sidecar is not running; /refine is unavailable until it starts.', { condition: 'sidecar_unavailable' })
     const [model, provider] = this.deps.service().turnModel(s)
     const cfg = (await this.deps.profileConfig?.(s.profile ?? null)) ?? {}
-    this.deps.service().assertWritable(s)
+    await this.deps.service().assertWritable(s)
     return (await sidecar.call('chat.refine', {
       profile_home: this.deps.profileHome(s.profile), session_id: s.session_id, messages, focus, model: model ?? '', model_provider: provider,
       enabled_toolsets: this.deps.toolsetsFor(s), ...agentBuildParams(cfg, 'webui', provider, this.deps.env ?? {}),
@@ -1586,7 +1586,7 @@ export class TurnRunner {
     let llmStatus = 'empty_assistant_message'
     let rawPreview = ''
     if (assistantText) ({ title: next, status: llmStatus, rawPreview } = await this.llmTitle(s, userText, assistantText))
-    this.deps.service().assertWritable(s)
+    await this.deps.service().assertWritable(s)
     if (next) return { title: next, status: llmStatus, rawPreview }
     const fallback = fallbackTitleFromExchange(userText, assistantText)
     if (fallback && !isGenericFallbackTitle(fallback)) return { title: fallback, status: `local_summary:${llmStatus}`, rawPreview }
@@ -1997,7 +1997,7 @@ export class TurnRunner {
     let decision: SidecarResult<'goals.evaluate'>
     try {
       // The workspace the turn ran in, unrecovered: the Agent pauses the goal rather than run its gates anywhere else.
-      this.deps.service().assertWritable(s)
+      await this.deps.service().assertWritable(s)
       decision = await sidecar.call('goals.evaluate', { session_id: sessionId, profile_home: this.deps.profileHome(s.profile), last_response: lastResponse, user_initiated: true, workspace: str(s.workspace) || undefined })
     } catch (error) {
       this.deps.log(`[webui] WARNING: goal evaluation failed for ${sessionId}: ${(error as Error).message}`)
@@ -2145,7 +2145,7 @@ export class TurnRunner {
   // ── approvals / clarify ──────────────────────────────────────────────────
 
   async respondApproval(sessionId: string, choice: string, approvalId: string, enableYolo: boolean): Promise<Record<string, unknown>> {
-    if (this.deps.service().owner?.isOwned(sessionId)) {
+    if (await this.deps.service().owner?.isOwned(sessionId)) {
       if (enableYolo) throw new HttpFailure(403, 'Change approval policy through the owning Agent')
       await this.deps.service().owner!.respond(sessionId, 'approval', approvalId, choice)
       return { ok: true, choice }
@@ -2253,7 +2253,7 @@ export class TurnRunner {
    * did not acknowledge (prompt retained).
    */
   async respondClarify(sessionId: string, clarifyId: string, reply: string | ClarifyAnswers | null): Promise<{ ok: boolean; response?: string; stale?: boolean; invalid?: boolean; error?: string }> {
-    if (this.deps.service().owner?.isOwned(sessionId)) {
+    if (await this.deps.service().owner?.isOwned(sessionId)) {
       await this.deps.service().owner!.respond(sessionId, 'clarify', clarifyId, reply)
       return { ok: true }
     }

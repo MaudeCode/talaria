@@ -126,9 +126,10 @@ async function startChat(ctx: RequestContext, body: Record<string, unknown>, set
   // Python `_agent_runtime_barrier_response`: a stale local Agent checkout is refused with a typed 409 before any
   // session state is materialised, claimed, or mutated.
   await ensureAgentRuntimeCurrent(ctx.deps.sidecar())
-  if (ctx.deps.sessions.owner?.isOwned(sid)) {
+  const owner = ctx.deps.sessions.owner
+  if (owner && (await owner.isOwned(sid))) {
     if (!(await ctx.deps.sessions.sessionIdVisible(sid))) throw new HttpError(404, 'Session not found')
-    return (await ctx.deps.sessions.owner.submit(sid, body))!
+    return (await owner.submit(sid, body))!
   }
   // TAL-542: the stale-model check reads this catalog; it is built before the session is read so no await follows that read.
   await ctx.deps.sessions.deps.warmSessionModelRepair?.()
@@ -179,7 +180,7 @@ async function startChat(ctx: RequestContext, body: Record<string, unknown>, set
  * failed after streaming text, answers `partial` with that text; any other failure answers with its error frame.
  */
 async function syncChat(ctx: RequestContext, body: Record<string, unknown>): Promise<Record<string, unknown>> {
-  if (ctx.deps.sessions.owner?.isOwned(str(body.session_id))) throw new HttpError(409, 'This owner requires the asynchronous chat stream', { code: 'owner_requires_streaming' })
+  if (await ctx.deps.sessions.owner?.isOwned(str(body.session_id))) throw new HttpError(409, 'This owner requires the asynchronous chat stream', { code: 'owner_requires_streaming' })
   if ((await ctx.deps.sessions.isSubagentViewOnly(str(body.session_id)))) throw new HttpError(400, 'Subagent sessions are view-only and cannot be written from WebUI')
   if (!str(body.message).trim()) throw new HttpError(400, 'empty message')
   let outcome: { answer: string } | TurnFailure | null = null
@@ -276,7 +277,7 @@ export const chatRouter = os.router({
     })),
   },
   approval: {
-    pending: os.approval.pending.handler(({ input, context: { ctx } }) => run(() => ctx.deps.sessions.owner?.isOwned(str(input.session_id)) ? ctx.deps.sessions.owner.pending(str(input.session_id), 'approval') : ctx.deps.pending.approvalPending(str(input.session_id)))),
+    pending: os.approval.pending.handler(({ input, context: { ctx } }) => run(async () => (await ctx.deps.sessions.owner?.isOwned(str(input.session_id))) ? ctx.deps.sessions.owner!.pending(str(input.session_id), 'approval') : ctx.deps.pending.approvalPending(str(input.session_id)))),
     respond: os.approval.respond.handler(({ input, context: { ctx } }) => run(async () => {
       const sid = str(input.session_id)
       if (!sid) throw new HttpError(400, 'session_id is required')
@@ -291,7 +292,7 @@ export const chatRouter = os.router({
     })),
   },
   clarify: {
-    pending: os.clarify.pending.handler(({ input, context: { ctx } }) => run(() => ctx.deps.sessions.owner?.isOwned(str(input.session_id)) ? ctx.deps.sessions.owner.pending(str(input.session_id), 'clarify') : ctx.deps.pending.clarifyPending(str(input.session_id)))),
+    pending: os.clarify.pending.handler(({ input, context: { ctx } }) => run(async () => (await ctx.deps.sessions.owner?.isOwned(str(input.session_id))) ? ctx.deps.sessions.owner!.pending(str(input.session_id), 'clarify') : ctx.deps.pending.clarifyPending(str(input.session_id)))),
     respond: os.clarify.respond.handler(({ input, context: { ctx } }) => run(async () => {
       const sid = str(input.session_id)
       if (!sid) throw new HttpError(400, 'session_id is required')
@@ -332,7 +333,7 @@ export const chatRouter = os.router({
     let defaultMaxTurns = 20
     try { const cfg = await ctx.deps.agentConfig.read(profileHome); const goals = cfg.goals; const raw = goals && typeof goals === 'object' && !Array.isArray(goals) ? (goals as Record<string, unknown>).max_turns : undefined; const n = Number.parseInt(str(raw ?? 20), 10); if (Number.isFinite(n)) defaultMaxTurns = Math.max(1, n || 20) } catch { defaultMaxTurns = 20 }
     const snapshot = await sidecar.call('goals.snapshot', { session_id: sid, profile_home: profileHome, default_max_turns: defaultMaxTurns })
-    ctx.deps.sessions.assertWritable(s)
+    await ctx.deps.sessions.assertWritable(s)
     const payload = await sidecar.call('goals.command', { session_id: sid, profile_home: profileHome, args, stream_running: streamRunning, default_max_turns: defaultMaxTurns, workspace: str(s.workspace) || undefined }) as Record<string, unknown>
     // TAL-808: the session `goal` follows the command before the client reloads the session.
     await ctx.deps.turns.refreshGoal(s)
@@ -349,7 +350,7 @@ export const chatRouter = os.router({
       const [model, provider, normalized] = ctx.deps.sessions.turnModel(s, body)
       const started = (await ctx.deps.turns.start(s, { msg: kickoff, attachments: [], workspace, model, modelProvider: provider, normalizedModel: normalized, source: 'webui', goalRelated: true }))
       if (started._status !== undefined && started._status >= 400) {
-        try { (ctx.deps.sessions.assertWritable(s)); await sidecar.call('goals.restore', { session_id: sid, profile_home: profileHome, snapshot: snapshot.snapshot }) } catch { /* best effort */ }
+        try { await ctx.deps.sessions.assertWritable(s); await sidecar.call('goals.restore', { session_id: sid, profile_home: profileHome, snapshot: snapshot.snapshot }) } catch { /* best effort */ }
         await ctx.deps.turns.refreshGoal(s)
         throw new HttpError(started._status, started.error ?? 'goal kickoff failed', { ...payload, ok: false })
       }
