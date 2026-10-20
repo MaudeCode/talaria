@@ -251,6 +251,15 @@ function tableColumns(db: DatabaseSync, table: string): Set<string> {
   return new Set((db.prepare(`PRAGMA table_info(${table})`).all() as { name: string }[]).map((r) => r.name))
 }
 
+function tableIndexes(db: DatabaseSync, table: string): Set<string> {
+  try { return new Set((db.prepare(`PRAGMA index_list(${table})`).all() as { name: string }[]).map((r) => r.name)) } catch { return new Set() }
+}
+
+/** Agent `_sql_freshest_of`: the `last_activity_at` heartbeat can lag a newer message, so it never ranks alone. */
+function freshestActivity(lastActivityAt: string, lastMessage: string): string {
+  return `MAX(COALESCE(${lastActivityAt}, 0), COALESCE(${lastMessage}, 0), COALESCE(s.started_at, 0))`
+}
+
 interface LocalLineage { owner: string; ids: string[]; context: string[]; rows: Dict[]; title: unknown }
 const LOCAL_POLICY_PREFIX = 'gateway.local_policy.v1:'
 
@@ -264,7 +273,7 @@ function localLineages(db: DatabaseSync, sid?: string): Map<string, LocalLineage
   const fetch = db.prepare('SELECT * FROM sessions WHERE id IN (SELECT value FROM json_each(?))')
   const messageCols = tableColumns(db, 'messages')
   const lastMessage = ['session_id', 'timestamp'].every((c) => messageCols.has(c)) ? '(SELECT MAX(m.timestamp) FROM messages m WHERE m.session_id = s.id)' : 'NULL'
-  const activity = `MAX(COALESCE(${cols.has('last_activity_at') ? 's.last_activity_at' : 'NULL'}, 0), COALESCE(${lastMessage}, 0), COALESCE(s.started_at, 0))`
+  const activity = freshestActivity(cols.has('last_activity_at') ? 's.last_activity_at' : 'NULL', lastMessage)
   // Agent _CHAIN_STEP_SQL prefers a compression child, then a live child, then recency and id.
   const children = db.prepare(`SELECT s.* FROM sessions s WHERE s.parent_session_id = ? ORDER BY CASE WHEN s.end_reason = 'compression' THEN 0 WHEN s.ended_at IS NULL THEN 1 ELSE 2 END, ${activity} DESC, s.started_at DESC, s.id DESC`)
   const explicitChild = (child: Dict, includeReset: boolean): boolean => {
@@ -435,15 +444,9 @@ export function readImportableAgentSessionRows(dbPath: string, opts: ReadRowsOpt
     const messagesHasSessionId = messageCols.has('session_id')
     const messagesHasTimestamp = messageCols.has('timestamp')
     const countCol = messageCols.has('id') ? 'id' : 'session_id'
-    let messagesIndexPresent = false
-    let userMessagesIndexPresent = false
-    if (messagesHasSessionId && messagesHasTimestamp) {
-      try {
-        const indexes = new Set((db.prepare('PRAGMA index_list(messages)').all() as { name: string }[]).map((r) => r.name))
-        messagesIndexPresent = indexes.has('idx_messages_session')
-        userMessagesIndexPresent = indexes.has('idx_messages_session_user')
-      } catch { messagesIndexPresent = false }
-    }
+    const messageIndexes = messagesHasSessionId && messagesHasTimestamp ? tableIndexes(db, 'messages') : new Set<string>()
+    const messagesIndexPresent = messageIndexes.has('idx_messages_session')
+    const userMessagesIndexPresent = messageIndexes.has('idx_messages_session_user')
     let actualCountExpr: string
     let userCountExpr: string
     let lastActivityExpr: string
@@ -490,7 +493,14 @@ export function readImportableAgentSessionRows(dbPath: string, opts: ReadRowsOpt
     const excluded = (exclude ?? []).map(String).filter(Boolean)
     if (excluded.length) { where.push(`${sourceSql} NOT IN (${excluded.map(() => '?').join(', ')})`); params.push(...excluded) }
     const preaggregated = messagesHasSessionId && messagesHasTimestamp && included.length === 1 && included[0] === 'cron' && !messagesIndexPresent
-    if (preaggregated) {
+    // TAL-1163: the Agent's activity index preselects the window; exact recency is computed for those candidates only.
+    const activityIndexed = limit !== null && messagesHasSessionId && messagesHasTimestamp && sessionCols.has('last_activity_at')
+      && tableIndexes(db, 'sessions').has('idx_sessions_effective_activity')
+    if (activityIndexed) {
+      lastActivityExpr = freshestActivity('s.last_activity_at', lastActivityExpr)
+      orderBy = 'ORDER BY last_activity DESC'
+      candidateOrder = 'ORDER BY COALESCE(s.last_activity_at, s.started_at) DESC, s.started_at DESC, s.id DESC'
+    } else if (preaggregated) {
       orderBy = 'ORDER BY COALESCE(MAX(m.timestamp), s.started_at) DESC'
       latestMessagesCte = 'latest_messages AS (SELECT mx.session_id AS session_id, MAX(mx.timestamp) AS last_message_at FROM messages mx GROUP BY mx.session_id)'
       candidateOrder = 'ORDER BY COALESCE(lm.last_message_at, s.started_at) DESC, s.started_at DESC'
@@ -1387,8 +1397,7 @@ export function insightsSessionRows(dbPath: string, cutoff: number): Dict[] {
     const col = (name: string): string => (cols.has(name) ? `s.${name}` : 'NULL')
     const messageCols = tableColumns(db, 'messages')
     const hasMessages = messageCols.has('session_id') && messageCols.has('timestamp')
-    let indexed = false
-    try { indexed = hasMessages && (db.prepare('PRAGMA index_list(messages)').all() as { name: string }[]).some((r) => r.name === 'idx_messages_session') } catch { indexed = false }
+    const indexed = hasMessages && tableIndexes(db, 'messages').has('idx_messages_session')
     // Without the index a per-session lookup scans messages once per session; one grouped scan replaces it.
     const lastMessage = !hasMessages ? 'NULL' : indexed ? '(SELECT MAX(m.timestamp) FROM messages m WHERE m.session_id = s.id)' : 'lm.last_message_at'
     const join = hasMessages && !indexed ? 'LEFT JOIN (SELECT session_id, MAX(timestamp) AS last_message_at FROM messages GROUP BY session_id) lm ON lm.session_id = s.id' : ''

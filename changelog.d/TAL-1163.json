@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "The session list loads faster on large Agent histories.",
+      "highlight": false,
+      "components": ["web"]
+    }
+  ]
+}
