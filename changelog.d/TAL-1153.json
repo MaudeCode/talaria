@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Scrolling down at the end of a chat no longer flattens the composer when nothing moves.",
+      "highlight": false,
+      "components": ["web"]
+    }
+  ]
+}

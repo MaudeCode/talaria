@@ -294,6 +294,10 @@ for (const { name, settings } of [{ name: 'auto-follow on', settings: {} }, { na
     const card = page.locator('#composerBox')
     const expanded = (await box(page, '#composerBox')).height
     await page.locator('#messages').hover()
+    // A scroll against the end moves nothing, so the composer stays up.
+    await page.mouse.wheel(0, 400)
+    await page.waitForTimeout(300)
+    await expect(card).not.toHaveClass(/is-resting/)
     await page.mouse.wheel(0, -400)
     await expect(card).toHaveClass(/is-resting/)
     await expect.poll(async () => (await box(page, '#composerBox')).height).toBeLessThan(expanded - 30)
