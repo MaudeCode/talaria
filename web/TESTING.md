@@ -20,7 +20,11 @@ provider, or the network. Run commands from `web/` unless noted.
 CI (`.github/workflows/web-verify.yml`) runs the server, sidecar (one job per supported Agent release
 in `sidecar/agent_support.json`, each provisioned with
 `scripts/check-agent-compatibility.py --skip-docker --release TAG`), and frontend jobs selected by
-`scripts/changed-components.py`.
+`scripts/changed-components.py`. Its `web_sidecar` suite selects the sidecar jobs for `sidecar/`, the
+contracts, the workspace build files, the Agent compatibility tooling, the CI workflows, and only the
+server files the sidecar suite loads (`src/sidecar/`, `src/app.ts`, `src/runtime.ts`,
+`src/tools/updates.ts`, the `local-reset.json` fixture, and the server's package and TypeScript
+configuration). Other server changes skip them on a pull request and run them on the push to `main`.
 Each Agent job first runs the synthetic runner checks so isolation and cleanup failures surface
 before the longer real-Agent suite.
 

@@ -9,6 +9,10 @@ on:
       server:
         type: boolean
         default: true
+      # The Agent-release sidecar matrix; ci.yml selects it apart from the server checks (TAL-1161).
+      sidecar:
+        type: boolean
+        default: true
 
 permissions:
   contents: read
@@ -62,7 +66,7 @@ jobs:
           git diff --exit-code -- sidecar/tests/fixtures/schemas.json
 
   agent-releases:
-    if: inputs.server
+    if: inputs.sidecar
     name: Supported Agent releases
     runs-on: ubuntu-latest
     timeout-minutes: 5

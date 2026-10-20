@@ -13,8 +13,8 @@ SCRIPT = Path(__file__).with_name("changed-components.py")
 spec = importlib.util.spec_from_file_location("routing", SCRIPT)
 routing = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(routing)
-ALL = {"app", "app_tooling", "web_server", "web_frontend", "docker", "relay", "contracts", "tooling"}
-CONSUMERS = {"app", "web_server", "web_frontend", "relay", "contracts"}
+ALL = {"app", "app_tooling", "web_server", "web_frontend", "web_sidecar", "docker", "relay", "contracts", "tooling"}
+CONSUMERS = {"app", "web_server", "web_frontend", "web_sidecar", "relay", "contracts"}
 
 
 class RoutingTests(unittest.TestCase):
@@ -38,17 +38,34 @@ class RoutingTests(unittest.TestCase):
             (["app/changelog.d/TAL-123.json"], set()),
             (["README.md", "docs/guide.md", "app/DEVELOPMENT.md", "web/docs/guide.md", "relay/README.md"], set()),
             (["web/packages/frontend/src/main.tsx", "web/static/dist/app.js", "changelog.d/TAL-123.json"], {"web_frontend"}),
-            (["web/packages/contracts/src/router.ts"], {"web_server", "web_frontend", "contracts"}),
-            (["web/packages/server/src/index.ts", "web/sidecar/talaria_sidecar/__main__.py"], {"web_server", "web_frontend", "contracts"}),
+            (["web/packages/contracts/src/router.ts"], {"web_server", "web_frontend", "web_sidecar", "contracts"}),
+            (["web/packages/contracts/src/x.ts"], {"web_server", "web_frontend", "web_sidecar", "contracts"}),
+            (["web/packages/server/src/index.ts", "web/sidecar/talaria_sidecar/__main__.py"],
+             {"web_server", "web_frontend", "web_sidecar", "contracts"}),
+            # Server-only changes skip the sidecar matrix (TAL-1161); only the server files the suite loads select it.
+            (["web/packages/server/src/sessions/service.ts"], {"web_server", "web_frontend", "contracts"}),
+            (["web/packages/server/src/sidecar/client.ts"], {"web_server", "web_frontend", "web_sidecar", "contracts"}),
+            (["web/packages/server/src/runtime.ts"], {"web_server", "web_frontend", "web_sidecar", "contracts"}),
+            (["web/packages/server/src/app.ts"], {"web_server", "web_frontend", "web_sidecar", "contracts"}),
+            (["web/packages/server/src/tools/updates.ts"], {"web_server", "web_frontend", "web_sidecar", "contracts"}),
+            (["web/packages/server/src/test/fixtures/local-reset.json"],
+             {"web_server", "web_frontend", "web_sidecar", "contracts"}),
+            (["web/packages/server/package.json"], {"web_server", "web_frontend", "web_sidecar", "contracts"}),
+            (["web/packages/server/tsconfig.build.json"], {"web_server", "web_frontend", "web_sidecar", "contracts"}),
+            (["web/sidecar/talaria_sidecar/x.py"], {"web_server", "web_frontend", "web_sidecar", "contracts"}),
+            (["web/sidecar/tests/test_x.py"], {"web_sidecar"}),
+            # The server job regenerates this fixture from the contracts and fails on drift.
+            (["web/sidecar/tests/fixtures/schemas.json"], {"web_server", "web_sidecar"}),
             (["web/packages/frontend/package.json"], {"web_frontend"}),
             (["web/static/brand/favicon.ico"], {"web_frontend", "web_server"}),
-            (["web/sidecar/tests/test_runtime.py", "web/sidecar/scripts/replay_sidecar.py"], {"web_server", "web_frontend", "contracts"}),
-            (["web/sidecar/agent_dependency.json"], {"web_server", "contracts", "docker"}),
-            (["web/sidecar/talaria_sidecar/rpc.py"], {"web_server", "web_frontend", "contracts"}),
+            (["web/sidecar/tests/test_runtime.py", "web/sidecar/scripts/replay_sidecar.py"],
+             {"web_server", "web_frontend", "web_sidecar", "contracts"}),
+            (["web/sidecar/agent_dependency.json"], {"web_server", "web_sidecar", "contracts", "docker"}),
+            (["web/sidecar/talaria_sidecar/rpc.py"], {"web_server", "web_frontend", "web_sidecar", "contracts"}),
             (["web/packages/server/src/api/auth.ts"], {"web_server", "web_frontend", "contracts"}),
             (["web/packages/server/src/port/auth.port.test.ts"], {"web_server", "web_frontend", "contracts"}),
-            (["web/package-lock.json"], {"web_server", "web_frontend", "docker", "contracts"}),
-            (["web/skills/runtime/SKILL.md"], {"web_server", "web_frontend", "docker", "contracts"}),
+            (["web/package-lock.json"], {"web_server", "web_frontend", "web_sidecar", "docker", "contracts"}),
+            (["web/skills/runtime/SKILL.md"], {"web_server", "web_frontend", "web_sidecar", "docker", "contracts"}),
             (["web/packages/frontend/src/guide.md"], {"web_frontend"}),
             (["web/Dockerfile", "web/docker-compose.yml", "web/scripts/lib/health_probe.sh"], {"docker", "web_server"}),
             (["web/.env.example"], {"web_server"}),
@@ -71,17 +88,17 @@ class RoutingTests(unittest.TestCase):
             (["scripts/check-web-browser"], {"web_frontend", "tooling"}),
             (["scripts/check-docker.py"], {"docker", "tooling"}),
             (["scripts/stamp-release.py", "scripts/test-stamp-release.py"], {"tooling"}),
-            (["scripts/check-agent-compatibility.py"], {"web_server", "docker", "tooling"}),
-            (["releases/agent_probe.py"], {"web_server", "docker", "tooling"}),
+            (["scripts/check-agent-compatibility.py"], {"web_server", "web_sidecar", "docker", "tooling"}),
+            (["releases/agent_probe.py"], {"web_server", "web_sidecar", "docker", "tooling"}),
             (["scripts/check-release-agent.py"], {"tooling"}),
             (["scripts/test-check-agent-compatibility.py"], {"tooling"}),
             # The support record selects the sidecar suite on every supported Agent release.
-            (["web/sidecar/agent_support.json"], {"web_server", "web_frontend", "contracts"}),
+            (["web/sidecar/agent_support.json"], {"web_server", "web_frontend", "web_sidecar", "contracts"}),
             (["releases/publish.py"], {"tooling"}),
             ([".github/workflows/release-set.yml"], {"tooling"}),
-            ([".github/workflows/web-verify.yml"], {"web_server", "web_frontend", "tooling"}),
+            ([".github/workflows/web-verify.yml"], {"web_server", "web_frontend", "web_sidecar", "tooling"}),
             ([".github/workflows/relay-verify.yml"], {"relay", "tooling"}),
-            ([".github/workflows/ci.yml"], {"app", "contracts", "tooling"}),
+            ([".github/workflows/ci.yml"], {"app", "web_sidecar", "contracts", "tooling"}),
             ([".github/workflows/app-tests.yml"], {"app", "contracts", "tooling"}),
             ([".github/actions/setup-xcode/action.yml"], {"app", "tooling"}),
             (["app/ci/build-for-testing", "app/ci/package-coverage"], {"app", "tooling"}),
@@ -104,7 +121,7 @@ class RoutingTests(unittest.TestCase):
 
     def test_documentation_image_selects_no_suites(self):
         self.assertEqual(routing.affected(["web/docs/pr-media/tal-346/after-desktop.png"]), set())
-        self.assertEqual(routing.affected(["web/icon.png"]), {"web_server", "web_frontend", "docker", "contracts"})
+        self.assertEqual(routing.affected(["web/icon.png"]), {"web_server", "web_frontend", "web_sidecar", "docker", "contracts"})
 
     def test_real_diffs_include_renames_and_full_push_range(self):
         with tempfile.TemporaryDirectory(prefix="talaria-ci-routing-") as temporary:
@@ -135,12 +152,12 @@ class RoutingTests(unittest.TestCase):
             (root / "web/packages/frontend").mkdir(parents=True)
             git("mv", "web/sidecar/tests/test_synthetic.py", "web/packages/frontend/moved.py")
             moved = commit("move backend file into frontend")
-            self.assertEqual(classify(base, moved), {"web_server", "web_frontend"})
+            self.assertEqual(classify(base, moved), {"web_sidecar", "web_frontend"})
             odd = root / "web/packages/frontend/name\napp=false\n.tsx"
             odd.write_text("synthetic")
             head = commit("frontend change")
             self.assertEqual(classify(moved, head), {"web_frontend"})
-            self.assertEqual(classify(base, head), {"web_server", "web_frontend"})
+            self.assertEqual(classify(base, head), {"web_sidecar", "web_frontend"})
             git("update-ref", "refs/remotes/origin/main", moved)
             # A parent change merged since the event's base SHA must not make
             # the child PR rerun the parent's component checks.
@@ -149,7 +166,7 @@ class RoutingTests(unittest.TestCase):
             (root / "app").mkdir()
             (root / "app/README.md").write_text("docs")
             other = commit("base branch advanced")
-            self.assertEqual(classify(other, head, "--merge-base"), {"web_server", "web_frontend"})
+            self.assertEqual(classify(other, head, "--merge-base"), {"web_sidecar", "web_frontend"})
             self.assertEqual(classify(head, head), ALL)
             self.assertEqual(classify("0" * 40, head), ALL)
             self.assertEqual(classify("--output=should-not-exist", head), ALL)
@@ -180,9 +197,9 @@ class RoutingTests(unittest.TestCase):
 
     def test_gate_rejects_missing_or_skipped_required_checks(self):
         job_suites = {"app": {"app", "contracts"}, "app-tooling": {"app_tooling"},
-                      "web": {"web_server", "web_frontend"}, "web-docker": {"docker"},
+                      "web": {"web_server", "web_frontend", "web_sidecar"}, "web-docker": {"docker"},
                       "relay": {"relay"}, "contracts": {"contracts"}}
-        for selected in (set(), {"web_frontend"}, {"web_server"}, {"app"}, {"tooling"}, ALL):
+        for selected in (set(), {"web_frontend"}, {"web_server"}, {"web_sidecar"}, {"app"}, {"tooling"}, ALL):
             needs = {"changes": {"result": "success", "outputs": {key: str(key in selected).lower() for key in ALL}},
                      "tooling": {"result": "success"}}
             needs.update({job: {"result": "success" if suites & selected else "skipped"} for job, suites in job_suites.items()})
