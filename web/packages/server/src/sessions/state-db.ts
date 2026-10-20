@@ -120,23 +120,24 @@ function isContinuationSession(parent: Dict | undefined, child: Dict | undefined
 }
 
 /**
- * `ids` plus every session a compression edge (a parent that ended in compression or a CLI close) joins to one of them,
- * up and down: the rows `projectAgentSessionRows` needs to collapse their chains as the sidebar listing does.
+ * `ids` plus every session a compression continuation (`isContinuationSession`) joins to one of them, up and down, at
+ * most `COMPRESSION_CHAIN_CAP` in all: the rows `projectAgentSessionRows` needs to collapse their chains as the sidebar
+ * listing does. Forks and other children are never followed, so they cannot crowd a continuation out of the cap.
  */
 function compressionChainIds(db: DatabaseSync, cols: Set<string>, ids: string[]): string[] {
   if (!['parent_session_id', 'end_reason'].every((c) => cols.has(c))) return ids
-  const row = db.prepare('SELECT parent_session_id, end_reason FROM sessions WHERE id = ?')
-  const children = db.prepare('SELECT id FROM sessions WHERE parent_session_id = ?')
-  const continues = (r: Dict | undefined): boolean => ['compression', 'cli_close'].includes(str(r?.end_reason))
+  const fields = ['id', 'source', 'session_source', 'model_config', 'started_at', 'parent_session_id', 'end_reason', 'ended_at'].map((c) => cols.has(c) ? c : `NULL AS ${c}`).join(', ')
+  const row = db.prepare(`SELECT ${fields} FROM sessions WHERE id = ?`)
+  const children = db.prepare(`SELECT ${fields} FROM sessions WHERE parent_session_id = ?`)
   const seen = new Set(ids)
   const pending = [...ids]
-  while (pending.length && seen.size < COMPRESSION_CHAIN_CAP) {
-    const id = pending.pop()!
-    const current = row.get(id) as Dict | undefined
-    const parentId = str(current?.parent_session_id)
-    const linked = parentId && continues(row.get(parentId)) ? [parentId] : []
-    if (continues(current)) for (const child of children.all(id) as Dict[]) linked.push(str(child.id))
-    for (const next of linked) if (next && !seen.has(next)) { seen.add(next); pending.push(next) }
+  const visit = (next: string): void => { if (next && !seen.has(next) && seen.size < COMPRESSION_CHAIN_CAP) { seen.add(next); pending.push(next) } }
+  while (pending.length) {
+    const current = row.get(pending.pop()!) as Dict | undefined
+    if (!current) continue
+    const parentId = str(current.parent_session_id)
+    if (parentId && isContinuationSession(row.get(parentId), current)) visit(parentId)
+    if (['compression', 'cli_close'].includes(str(current.end_reason))) for (const child of children.all(str(current.id)) as Dict[]) if (isContinuationSession(current, child)) visit(str(child.id))
   }
   return [...seen]
 }

@@ -267,6 +267,19 @@ describe('single-session state.db lookups off the event loop (TAL-923)', () => {
     }
   })
 
+  it('follows only compression continuations when it reads a chain, however many other children hang off it', async () => {
+    const forks = Array.from({ length: 1000 }, (_, i) => ({ id: `fan-fork-${String(i)}`, source: 'telegram', at: 3000 + i }))
+    seedStateDb(dbPath, [{ id: 'fan-tip1', source: 'cli', at: 2000 }, { id: 'fan-tip2', source: 'cli', at: 2100 }, { id: 'fan-tip3', source: 'cli', at: 2200 }, ...forks])
+    const db = new DatabaseSync(dbPath)
+    db.exec(`UPDATE sessions SET end_reason = 'compression', ended_at = 2100 WHERE id = 'fan-tip1';
+      UPDATE sessions SET parent_session_id = 'fan-tip1', end_reason = 'compression', ended_at = 2200 WHERE id = 'fan-tip2';
+      UPDATE sessions SET parent_session_id = 'fan-tip2' WHERE id = 'fan-tip3';
+      UPDATE sessions SET parent_session_id = 'fan-tip1' WHERE id LIKE 'fan-fork-%'`)
+    db.close()
+    const { rows } = await s.deps.cliSessions.read('default', { sourceFilter: null, sessionIds: ['fan-tip1'], sidebarRows: true })
+    expect(rows.map((r) => [r.session_id, r._lineage_root_id])).toEqual([['fan-tip3', 'fan-tip1']])
+  })
+
   it.each([
     ['a chat start on a state.db-only subagent session', async () => { const res = await subagentStart(); return [res.status, ((await res.json()) as Json).error] }, SUBAGENT_REFUSAL],
     ['a pin', async () => { const res = await post('/api/session/pin', { session_id: 'web-p', pinned: true }); return [res.status, ((await res.json()) as { session: Json }).session.pinned] }, [200, true]],
