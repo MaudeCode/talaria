@@ -15,6 +15,8 @@ export interface ComposerNotice {
   content: ReactNode
   /** Rich or long content behind the chip: the label becomes a button that opens it in a dialog. */
   detail?: { title: string; content: ReactNode } | undefined
+  /** Read out as it changes, so progress behind a closed detail still reaches screen readers. */
+  announcement?: string | undefined
   action?: { label: string; run: () => void } | undefined
   onDismiss?: (() => void) | undefined
 }
@@ -60,7 +62,9 @@ export function ComposerNotices({ notices, fallbackFocus }: { notices: ComposerN
   const trigger = useRef<HTMLElement | null>(null)
 
   const rows = notices.map((notice) => ({ notice, out: false }))
-  for (const { notice, index } of leaving) rows.splice(Math.min(index, rows.length), 0, { notice, out: true })
+  // A notice back before its exit ends shows once, as itself: the exit list catches up in the effect above.
+  const present = new Set(notices.map((n) => n.id))
+  for (const { notice, index } of leaving) if (!present.has(notice.id)) rows.splice(Math.min(index, rows.length), 0, { notice, out: true })
   return (
     <>
       {rows.length > 0 && (
@@ -72,6 +76,7 @@ export function ComposerNotices({ notices, fallbackFocus }: { notices: ComposerN
                 : <div className="composer-notice-content">{n.content}</div>}
               {n.action && <button type="button" className="composer-notice-action" onClick={n.action.run}>{n.action.label}</button>}
               {n.onDismiss && <button type="button" className="composer-notice-action" onClick={n.onDismiss}>{m.notice_dismiss()}</button>}
+              {n.announcement !== undefined && <span className="sr-only" role="status">{n.announcement}</span>}
             </div>
           ))}
         </div>

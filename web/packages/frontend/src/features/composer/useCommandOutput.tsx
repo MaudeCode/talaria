@@ -51,6 +51,7 @@ export function useCommandOutput(sessionId: string | null): { run: (command: str
         </span>
       ),
     },
+    announcement: current.state === 'running' ? m.command_running() : current.output,
     onDismiss: () => { generation.current += 1; setCurrent(null) },
   } : null
   return { run, notice }

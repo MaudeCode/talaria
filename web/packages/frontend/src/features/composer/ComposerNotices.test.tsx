@@ -57,11 +57,24 @@ describe('ComposerNotices (TAL-1078)', () => {
     expect(screen.queryByRole('dialog')).toBeNull()
   })
 
+  it('announces a notice\'s status outside its closed disclosure', () => {
+    const { container, update } = setup([{ ...detailed('Answer'), announcement: 'Asking' }])
+    const status = within(container.querySelector<HTMLElement>('[data-notice="rich"]')!).getByRole('status')
+    expect(status).toHaveTextContent('Asking')
+    expect(screen.queryByRole('dialog')).toBeNull()
+    update([{ ...detailed('Answer'), announcement: 'Three nodes.' }])
+    expect(status).toHaveTextContent('Three nodes.')
+  })
+
   it('never duplicates or revives a chip re-added during its exit', async () => {
     const { container, update } = setup([{ id: 'x', content: 'Old' }])
     update([])
     expect(container.querySelector('[data-notice="x"]')).toHaveClass('is-leaving')
+    // Not even for the one commit before the exit list is pruned: React reports the duplicate key it would render.
+    const errors = vi.spyOn(console, 'error').mockImplementation(() => undefined)
     update([{ id: 'x', content: 'New' }])
+    expect(errors.mock.calls.flat().join(' ')).not.toMatch(/same key/)
+    errors.mockRestore()
     expect(container.querySelectorAll('[data-notice="x"]')).toHaveLength(1)
     expect(container.querySelector('[data-notice="x"]')).toHaveTextContent('New')
     expect(container.querySelector('[data-notice="x"]')).not.toHaveClass('is-leaving')

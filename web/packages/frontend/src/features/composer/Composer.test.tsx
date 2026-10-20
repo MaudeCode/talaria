@@ -435,6 +435,8 @@ describe('Composer', () => {
     await waitFor(() => expect(api.execCommand).toHaveBeenCalledWith('/reload_skills', 's1'))
     const openOutput = async () => { await userEvent.click(await screen.findByRole('button', { name: /^Command output: \/reload/ })); return screen.findByRole('region', { name: 'Command output' }) }
     await waitFor(() => expect(screen.getByRole('button', { name: /^Command output:/ })).not.toHaveTextContent('Running'))
+    // Screen readers hear the output without opening it.
+    expect(within(document.querySelector<HTMLElement>('[data-notice="command"]')!).getByRole('status')).toHaveTextContent('Total skills: 5')
     expect(await openOutput()).toHaveTextContent('Total skills: 5')
     await userEvent.keyboard('{Escape}')
     expect(box).toHaveValue('')

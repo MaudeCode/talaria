@@ -77,6 +77,8 @@ export function useBtw(sessionId: string | null): { ask: (question: string) => P
         </span>
       ),
     },
+    // The answer once it settles, not every streamed token.
+    announcement: side.state === 'asking' ? m.btw_asking() : side.text,
     onDismiss: () => { stop(); setSide(null) },
   } : null
   return { ask, notice }
