@@ -21,7 +21,7 @@ export async function sessionIdVisibleToRequest(ctx: RequestContext, sid: unknow
 export async function guardQuerySessionId(ctx: RequestContext): Promise<boolean> {
   const sid = ctx.query.get('session_id')
   if ((await sessionIdVisibleToRequest(ctx, sid))) {
-    if (sid) ctx.query.set('session_id', ctx.deps.sessions.resolveSessionId(sid))
+    if (sid) ctx.query.set('session_id', await ctx.deps.sessions.resolveSessionId(sid))
     return true
   }
   if (ctx.method === 'GET' && ctx.path === '/api/session') return true
@@ -37,7 +37,7 @@ export const requestSessionIdGuard = orpcBase.$context<ApiContext>().middleware(
   if (!EXEMPT_PROCEDURES.has(path.join('.')) && !visible) throw new HttpError(404, 'Session not found')
   // Normalize once before handlers choose locks, runtime keys or files; an imported document keeps its own IDs.
   if (body && typeof sid === 'string' && visible && path.join('.') !== 'session.import') {
-    body.session_id = ctx.deps.sessions.resolveSessionId(sid)
+    body.session_id = await ctx.deps.sessions.resolveSessionId(sid)
   }
   return next()
 })

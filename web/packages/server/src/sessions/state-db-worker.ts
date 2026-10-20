@@ -1,14 +1,15 @@
 /**
  * The listing worker behind the `state-db.ts` `…Async` readers (TAL-920): runs
- * the synchronous `state.db` reads of the session list and the gateway watcher
- * off the server's event loop, one request at a time.
+ * the synchronous `state.db` reads of the session list, the gateway watcher, and
+ * the single-session lookups (TAL-923) off the server's event loop, one request
+ * at a time.
  */
 import { parentPort } from 'node:worker_threads'
 import type { StateDbWorkerReply, StateDbWorkerRequest } from './state-db.js'
 
 // Source runs (vitest) start this file as TypeScript; map its `.js` imports back to the sources first.
 if (import.meta.url.endsWith('.ts')) await import(new URL('../test/ts-worker-hooks.ts', import.meta.url).href)
-const { agentSessionRowsExisting, cheapChangeFingerprint, readImportableAgentSessionRows, stateDbSessionSources, stateDbStorage, stateDbWebDiagnosticIds } = await import('./state-db.js')
+const { SESSION_READS, agentSessionRowsExisting, cheapChangeFingerprint, readImportableAgentSessionRows, stateDbSessionSources, stateDbStorage, stateDbWebDiagnosticIds } = await import('./state-db.js')
 
 parentPort?.on('message', (request: StateDbWorkerRequest) => {
   const reply: StateDbWorkerReply = { id: request.id, logs: [], failures: [] }
@@ -22,6 +23,7 @@ parentPort?.on('message', (request: StateDbWorkerRequest) => {
     else if (request.op === 'webDiagnostic') reply.value = stateDbWebDiagnosticIds(request.dbPath)
     else if (request.op === 'sources') reply.value = stateDbSessionSources(request.dbPath, request.ids)
     else if (request.op === 'existing') reply.value = agentSessionRowsExisting(request.dbPath, request.ids)
+    else if (request.op === 'session') reply.value = (SESSION_READS[request.read] as (...args: unknown[]) => unknown)(...request.args)
   } catch (error) {
     reply.error = (error as Error).message
   }

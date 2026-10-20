@@ -15,14 +15,14 @@ import { buildActiveTurnToken, copyJson, redactSessionData, redactValue, stripPu
 import type { DraftStore } from './drafts.js'
 import { DraftVersionConflict, normalizeDraftVersion } from './drafts.js'
 import type { SessionEventBus } from './events.js'
-import { allSessions, buildSessionListPayload, reconcileLocalSessionRows, sessionLineageIds, CLI_IDENTITY_FIELDS, isClaimableCliSource, isMessagingSessionRecord, ownerLockCandidates, withOwnerLocks, withSessionWireFlags, lineageRootId, mergeCliSidebarMetadata, sessionListResponse, sessionSearchMatches, sessionSearchPreview, sessionSearchTerms, type ListParams, type ListResponse, type Row, type RuntimeOverlay } from './list.js'
+import { allSessions, buildSessionListPayload, reconcileLocalSessionRows, sessionLineageIds, CLI_IDENTITY_FIELDS, isClaimableCliSource, isMessagingSessionRecord, ownerLockCandidates, withOwnerLocks, withSessionWireFlags, lineageRootId, type OwnerSources, mergeCliSidebarMetadata, sessionListResponse, sessionSearchMatches, sessionSearchPreview, sessionSearchTerms, type ListParams, type ListResponse, type Row, type RuntimeOverlay } from './list.js'
 import { anchorSceneIntOrNull, fullToolResult, hydrateAnchorActivityScenes, normalizeAnchorSceneMessageRef, readAnchorSceneRows, storeAnchorScene, withTurnIds } from './anchor.js'
 import { contextUsage, COMPRESSION_RECOVERY_ACTION_START_FOCUSED, compressionRecoveryPayload, forgetContextFigures, isSafeSessionId, lastMessageTimestamp, Session, sharePath, stripAttachedFilesMarker, titleFrom, type Message } from './session.js'
 import { SessionBusy, SessionNotFound, type SessionStore } from './store.js'
 import { UNSETTLED_TODO_KEY, attachTodoSnapshot, attachTodoState } from './todo.js'
 import { isClaudeCodeSessionId, type ClaudeCodeSessionSource } from './claude-code.js'
 import { auditSessionRecovery, repairSafeSessionRecovery, type RecoveryDeps } from './recovery.js'
-import { stateDbWebDiagnosticIdsAsync, agentSessionRowsExisting, agentSessionRowsExistingAsync, CANONICAL_READ_ONLY_REASON, OWNERSHIP_UNAVAILABLE_REASON, CONVERSATION_ROUND_THRESHOLD, countConversationRounds, stateDbCompressionLineage, stateDbTailToolContent, stateDbLineageReport, stateDbLocalTarget, stateDbSessionMessages, stateDbSessionRead, stateDbSessionTailRead, stateDbSessionRow, stateDbSessionSources, stateDbSessionSourcesAsync, stateDbTimestampSeconds, type StateDbRead, type StateDbSessionSource } from './state-db.js'
+import { stateDbWebDiagnosticIdsAsync, agentSessionRowsExistingAsync, CANONICAL_READ_ONLY_REASON, OWNERSHIP_UNAVAILABLE_REASON, CONVERSATION_ROUND_THRESHOLD, countConversationRounds, stateDbCompressionLineage, stateDbTailToolContent, stateDbLineageReport, stateDbSessionMessages, stateDbSessionRead, stateDbSessionReadAsync, stateDbSessionTailRead, stateDbSessionRow, stateDbSessionSourcesAsync, stateDbTimestampSeconds, type StateDbRead, type StateDbSessionSource } from './state-db.js'
 import { completionIncomplete, fallbackHandoffSummary, HANDOFF_SYSTEM_PROMPT, handoffMarker, handoffPayload, handoffTranscript, messageHandoffPayload, sameHandoff } from './handoff.js'
 import { anchorMessageKey, anchorSummary, CompressionJobs, compressionReference, visibleMessagesForAnchor, type CompressionJob } from './compress.js'
 import { chatReadiness, runtimeFailureDetails, SidecarError, type SidecarLike } from '../sidecar/client.js'
@@ -170,8 +170,6 @@ export interface SessionServiceDeps {
   /** state.db sidebar rows for a profile (Python `get_cli_sessions`); null when the projection is unavailable. */
   /** `truncated`: source kinds whose rows stopped at the per-kind window on this read (TAL-482). */
   cliSessions: (profile: string, opts: { sourceFilter: string | null; sessionIds?: readonly string[]; keepEmpty?: boolean }) => Promise<{ rows: Row[]; truncated: ReadonlySet<string>; storage: AgentStorage }>
-  /** `cliSessions` read on this thread, for the synchronous single-session lookups. */
-  cliSessionsSync: (profile: string, opts: { sourceFilter: string | null; sessionIds?: readonly string[] }) => Promise<{ rows: Row[]; truncated: ReadonlySet<string> }>
   /** TAL-551: read-only Claude Code transcripts, listed with the CLI rows when both toggles are on. */
   claudeCode?: ClaudeCodeSessionSource
   profileHome: (profile: string) => string
@@ -283,20 +281,23 @@ export class SessionService {
 
   private localTargets: { key: string; ids: Map<string, string> } | null = null
 
-  /** One receipt-backed physical target for every operation on a local conversation alias. */
-  resolveSessionId(sid: string): string {
+  /** One receipt-backed physical target for every operation on a local conversation alias, read on the state.db worker. */
+  async resolveSessionId(sid: string): Promise<string> {
     try {
       const path = this.stateDbPath(null)
-      const key = JSON.stringify([statSignature(path), statSignature(`${path}-wal`), path])
+      const stamp = (): string => JSON.stringify([statSignature(path), statSignature(`${path}-wal`), path])
+      const key = stamp()
       if (this.localTargets?.key !== key) this.localTargets = { key, ids: new Map() }
       const cached = this.localTargets.ids.get(sid)
       if (cached) return cached
-      return stateDbLocalTarget(path, sid, { onRead: (target) => {
-        // A failed or changing read cannot seed a routing cache.
-        if (key !== JSON.stringify([statSignature(path), statSignature(`${path}-wal`), path])) return
-        if (this.localTargets!.ids.size >= 500) this.localTargets!.ids.clear()
-        this.localTargets!.ids.set(sid, target)
-      } })
+      const { target, read } = await stateDbSessionReadAsync({ target: sid, read: false }, 'stateDbLocalTargetRead', path, sid)
+      // A failed or changing read cannot seed a routing cache.
+      const targets = this.localTargets
+      if (read && targets.key === key && stamp() === key) {
+        if (targets.ids.size >= 500) targets.ids.clear()
+        targets.ids.set(sid, target)
+      }
+      return target
     } catch { return sid }
   }
 
@@ -324,9 +325,21 @@ export class SessionService {
     return meta !== null && str(meta.source_tag || meta.raw_source || meta.source).trim().toLowerCase() === 'subagent'
   }
 
-  /** TAL-358: batched `sessions.source` owners from the active profile's state.db. */
-  readonly stateDbSources = (ids: string[], profile = this.deps.activeProfile()): Map<string, StateDbSessionSource> | null => {
-    try { return stateDbSessionSources(this.stateDbPath(profile), ids) } catch { return null }
+  /** TAL-358: batched `sessions.source` owners from the active profile's state.db, read on the state.db worker (TAL-923). */
+  readonly stateDbSources = async (ids: string[], profile = this.deps.activeProfile()): Promise<Map<string, StateDbSessionSource> | null> => {
+    try { return await stateDbSessionSourcesAsync(this.stateDbPath(profile), ids) } catch { return null }
+  }
+
+  /** The owners of `byProfile`'s ids, read up front, as the synchronous lookup `withOwnerLocks` takes. */
+  private async ownerSources(byProfile: Map<string, Set<string>>, read: SessionService['stateDbSources'] = this.stateDbSources): Promise<OwnerSources> {
+    const owners = new Map(await Promise.all([...byProfile].map(async ([profile, ids]) =>
+      [profile, ids.size ? await read([...ids], profile) : new Map<string, StateDbSessionSource>()] as const)))
+    return (_ids, profile = this.deps.activeProfile()) => owners.get(profile) ?? null
+  }
+
+  /** `withOwnerLocks` with the owners read on the state.db worker, so a gate or payload never opens state.db on this thread. */
+  private async ownerLocked(rows: Row[], read?: SessionService['stateDbSources']): Promise<Row[]> {
+    return withOwnerLocks(rows, await this.ownerSources(ownerLockCandidates(rows), read))
   }
 
   /**
@@ -338,8 +351,8 @@ export class SessionService {
   private async orphanedImports(rows: Row[], existing?: Set<string>, owners?: Map<string, StateDbSessionSource> | null): Promise<Set<string>> {
     const candidates = (await this.orphanCandidates(rows))
     if (!candidates.length) return new Set()
-    existing ??= agentSessionRowsExisting(this.stateDbPath(null), candidates)
-    if (owners === undefined) owners = this.stateDbSources(candidates)
+    existing ??= await agentSessionRowsExistingAsync(this.stateDbPath(null), candidates)
+    if (owners === undefined) owners = await this.stateDbSources(candidates)
     return new Set(candidates.filter((sid) => !existing.has(sid) && owners !== null && typeof owners.get(sid) !== 'object'))
   }
 
@@ -363,15 +376,14 @@ export class SessionService {
     const activeIds = byProfile.get(activeProfile) ?? new Set<string>()
     for (const id of cliRowIds) activeIds.add(id)
     byProfile.set(activeProfile, activeIds)
-    const owners = new Map(await Promise.all([...byProfile].map(async ([profile, ids]) =>
-      [profile, ids.size ? await stateDbSessionSourcesAsync(this.stateDbPath(profile), ids) : new Map<string, StateDbSessionSource>()] as const)))
+    const owners = await this.ownerSources(byProfile)
     const checked = new Set((await this.orphanCandidates(rows)))
     const existing = checked.size ? await agentSessionRowsExistingAsync(dbPath, checked) : new Set<string>()
     return {
-      stateDbSources: (_ids, profile = activeProfile) => owners.get(profile) ?? null,
+      stateDbSources: owners,
       pruneOrphanedImports: async (current) => {
         // Only an id the worker checked can be an orphan; a row that became a candidate meanwhile waits for the next list.
-        const orphans = (await this.orphanedImports(current.filter((r) => checked.has(str(r.session_id))), existing, owners.get(activeProfile) ?? null))
+        const orphans = (await this.orphanedImports(current.filter((r) => checked.has(str(r.session_id))), existing, owners([], activeProfile)))
         for (const sid of orphans) (await this.store.delete(sid))
         return orphans
       },
@@ -385,24 +397,25 @@ export class SessionService {
         if (!(error instanceof SessionNotFound)) return OWNERSHIP_UNAVAILABLE_REASON
       }
     }
-    return this.loadedReadOnlyReason(s, profile)
+    return await this.loadedReadOnlyReason(s, profile)
   }
 
-  private loadedReadOnlyReason(s: Session | string, profile?: string): string | null {
+  private async loadedReadOnlyReason(s: Session | string, profile?: string): Promise<string | null> {
     let raw: Row = typeof s === 'string' ? { session_id: s, profile: this.deps.activeProfile() }
       : { session_id: s.session_id, profile: s.profile, source_tag: s.source_tag, raw_source: s.raw_source, session_source: s.session_source, read_only: s.read_only }
     if (profile !== undefined) raw = this.deps.profilesMatch(str(raw.profile) || null, profile) ? { ...raw, profile } : { session_id: raw.session_id, profile }
-    const row = withOwnerLocks([raw], this.stateDbSources)[0]!
+    const row = (await this.ownerLocked([raw]))[0]!
     return row.read_only ? str(row.read_only_reason) || 'Read-only imported sessions cannot be modified from WebUI' : null
   }
 
-  /** A loaded session's final owner check stays synchronous with the protected sidecar dispatch. */
-  assertWritable(session: Session, profile?: string): void
-  assertWritable(session: string, profile?: string): Promise<void>
-  assertWritable(session: Session | string, profile?: string): void | Promise<void> {
-    const check = (reason: string | null): void => { if (reason) throw new HttpFailure(403, reason) }
-    if (typeof session === 'string') return this.readOnlyReason(session, profile).then(check)
-    check(this.loadedReadOnlyReason(session, profile))
+  /**
+   * The final owner check before a protected sidecar dispatch or write: callers dispatch as soon as it resolves. The
+   * owner is the Agent's, which can change at any moment, so reading it on the state.db worker (TAL-923) widens no
+   * window Web could close; the session lock, where one is held, still serializes Web's own writes.
+   */
+  async assertWritable(session: Session | string, profile?: string): Promise<void> {
+    const reason = await this.readOnlyReason(session, profile)
+    if (reason) throw new HttpFailure(403, reason)
   }
 
   /** Controls can exist without a local session file; use the same id the sidecar will address. */
@@ -428,13 +441,13 @@ export class SessionService {
   async getForMutation(sid: string): Promise<Session> {
     let s = (await this.get404(sid))
     s = (await this.store.ensureFull(sid, s))
-    this.assertWritable(s)
+    await this.assertWritable(s)
     if (str(s.source_tag || s.raw_source).trim().toLowerCase() === 'subagent') throw new HttpFailure(403, 'Read-only subagent child session')
     return s
   }
 
   private async get404(sid: string, opts: { metadataOnly?: boolean } = {}): Promise<Session> {
-    sid = this.resolveSessionId(sid)
+    sid = await this.resolveSessionId(sid)
     try {
       return (await this.store.get(sid, opts))
     } catch (error) {
@@ -636,8 +649,8 @@ export class SessionService {
     try {
       if (isClaudeCodeSessionId(sid)) return (await this.claudeCodeRows()).find((r) => str(r.session_id) === sid) ?? null
       const profile = this.deps.activeProfile()
-      return (await this.deps.cliSessionsSync(profile, { sourceFilter: null })).rows.find((r) => str(r.session_id) === sid)
-        ?? (await this.deps.cliSessionsSync(profile, { sourceFilter: null, sessionIds: [sid] })).rows[0] ?? null
+      return (await this.deps.cliSessions(profile, { sourceFilter: null })).rows.find((r) => str(r.session_id) === sid)
+        ?? (await this.deps.cliSessions(profile, { sourceFilter: null, sessionIds: [sid] })).rows[0] ?? null
     } catch {
       return null
     }
@@ -670,14 +683,13 @@ export class SessionService {
     if (!isSafeSessionId(sid)) return { session: null, reason: 'invalid_sid' }
     const profile = this.deps.activeProfile()
     const dbPath = join(this.deps.profileHome(profile), 'state.db')
-    sid = this.resolveSessionId(sid)
-    const row = stateDbSessionRow(dbPath, sid)
+    sid = await this.resolveSessionId(sid)
+    const [row, owners] = await Promise.all([stateDbSessionReadAsync(null, 'stateDbSessionRow', dbPath, sid), this.stateDbSources([sid])])
     const stateDbSource = str(row?.source).trim().toLowerCase()
     const subagentChild = stateDbSource === 'subagent'
-    const owners = this.stateDbSources([sid])
     const canonical = typeof owners?.get(sid) === 'object'
     if (((await this.indexMarksWasWebui(sid)) || ((await this.store.wasDeleted(sid)) && ['', 'webui', 'fork'].includes(stateDbSource))) && !subagentChild && !canonical) return { session: null, reason: 'was_webui' }
-    const msgs = isClaudeCodeSessionId(sid) ? this.deps.claudeCode?.messages(sid) ?? [] : stateDbSessionMessages(dbPath, sid, { stitch: true })
+    const msgs = isClaudeCodeSessionId(sid) ? this.deps.claudeCode?.messages(sid) ?? [] : await stateDbSessionReadAsync([], 'stateDbSessionMessages', dbPath, sid, { stitch: true })
     const meta: Row = { ...(metaIn ?? (await this.lookupCliMeta(sid)) ?? {}) }
     // An owner receipt proves a session before its first turn (a fresh diagnostic chat, TAL-1040); a bare row does not.
     if (!msgs.length && !(meta._lineage_root_id && meta._lineage_tip_id) && !canonical) return { session: null, reason: 'no_foreign_state' }
@@ -694,7 +706,7 @@ export class SessionService {
     const claimable = owners !== null && isClaimableCliSource(meta, owners.get(sid) || stateDbSource)
     const workspace = str(meta.workspace || meta.cwd).trim() || (await this.deps.workspaces.lastWorkspace(profile))
     const defaults = (await this.store.deps.defaults(profile))
-    const context = Array.isArray(meta._lineage_ids) ? stateDbSessionMessages(dbPath, sid, { stitch: false }) : null
+    const context = Array.isArray(meta._lineage_ids) ? await stateDbSessionReadAsync([], 'stateDbSessionMessages', dbPath, sid, { stitch: false }) : null
     const session = new Session({
       session_id: sid, title: str(meta.title) || 'CLI Session', workspace, model: str(meta.model) || 'unknown', model_provider: str(meta.model_provider) || null,
       messages: msgs, created_at: Number(meta.created_at) || 0, updated_at: Number(meta.updated_at) || 0, profile: str(meta.profile) || null,
@@ -733,7 +745,7 @@ export class SessionService {
     this.rejectClaudeCode(sid, verb)
     let profile = this.deps.activeProfile()
     try { profile = (await this.store.get(sid, { metadataOnly: true, cacheOnMiss: false, promote: false })).profile || 'default' } catch { /* foreign row */ }
-    const owners = this.stateDbSources([sid], profile)
+    const owners = await this.stateDbSources([sid], profile)
     const owner = owners?.get(sid)
     if (!owners || typeof owner === 'object') throw new HttpFailure(403, typeof owner === 'object' ? owner.reason ?? CANONICAL_READ_ONLY_REASON : OWNERSHIP_UNAVAILABLE_REASON)
     if ((await this.isSubagentViewOnly(sid))) throw new HttpFailure(400, `Subagent sessions are view-only and cannot be ${verb} from WebUI`)
@@ -763,7 +775,7 @@ export class SessionService {
 
   /** `compact()` with the wire streaming/read-only flags (TAL-312), for replies that return the session row. */
   async wireRow(s: Session): Promise<Record<string, unknown>> {
-    return withSessionWireFlags(withOwnerLocks([{ ...s.compact({ contextLengthFor: this.deps.contextLengthFor, modelOptionFor: this.deps.modelOptionFor }), assistant_name: this.assistantName(s), workspace_name: (await this.workspaceNames([s]))(s) }], this.stateDbSources)[0]!, this.deps.runtime.activeStreamIds)
+    return withSessionWireFlags((await this.ownerLocked([{ ...s.compact({ contextLengthFor: this.deps.contextLengthFor, modelOptionFor: this.deps.modelOptionFor }), assistant_name: this.assistantName(s), workspace_name: (await this.workspaceNames([s]))(s) }]))[0]!, this.deps.runtime.activeStreamIds)
   }
 
   /**
@@ -862,12 +874,12 @@ export class SessionService {
       if (journaled) tail = withoutRunningTurnOutput(tail, { ...journaled, localCount: s.messages.length - prefixEnd })
       const tailIndex = new SessionPrefixIndex(tail, index.revision, index.generation, { toolCalls: index.toolCalls(prefixEnd, tail.length), baseIndex: prefixEnd, initialTurn: prefixEnd ? index.turnId(prefixEnd - 1) : 'legacy:start', timestampFloor: index.summary(prefixEnd).maxTimestamp, todoFloor: index.summary(prefixEnd).maxTodoTimestamp, parent: { index, end: prefixEnd } })
       const enoughContext = !streaming && (context.enough || sanitizeMessagesForApi(context.marker ? context.local : mergeSessionMessagesAppendOnly(context.local, stateRows!, { truncationWatermark: s.truncation_watermark, compressedWatermark: s.truncation_watermark_compressed, stateDbSeenId: effectiveSeenId, stateDbGeneration: index.generation }).filter((m) => !s.active_stream_id || m._turn_id !== s.active_stream_id), { maxMessages: 4 }).length >= 4)
-      const owners = new Map<string, ReturnType<SessionService['stateDbSources']>>()
-      const sources: SessionService['stateDbSources'] = (ids, profile) => {
+      const owners = new Map<string, Map<string, StateDbSessionSource>>()
+      const sources: SessionService['stateDbSources'] = async (ids, profile) => {
         const ownerKey = JSON.stringify([ids, profile])
         const existing = owners.get(ownerKey)
         if (existing) return existing
-        const result = this.stateDbSources(ids, profile)
+        const result = await this.stateDbSources(ids, profile)
         if (result) owners.set(ownerKey, result)
         return result
       }
@@ -941,7 +953,7 @@ export class SessionService {
   /** Python `_handle_session_get` on the WebUI sidecar (state.db merge pending). */
   async detail(sid: string, query: { messages?: string | null | undefined; msg_limit?: string | null | undefined; msg_before?: string | null | undefined; resolve_model?: string | null | undefined }): Promise<Record<string, unknown>> {
     if (!sid) throw new HttpFailure(400, 'session_id is required')
-    sid = this.resolveSessionId(sid)
+    sid = await this.resolveSessionId(sid)
     const loadMessages = (query.messages ?? '1') !== '0'
     const msgLimit = parseMsgLimit(query.msg_limit ?? null)
     const msgBeforeRaw = query.msg_before
@@ -1025,7 +1037,7 @@ export class SessionService {
     raw._msg_limit_max = MAX_MSG_LIMIT
     const revisionAfter = (await this.loadRevision(s))
     raw._load_revision = revisionBefore !== null && revisionBefore === revisionAfter ? hashRevision(revisionBefore) : `unstable-${randomUUID().replace(/-/g, '')}`
-    Object.assign(raw, withOwnerLocks([raw], limited?.sources ?? this.stateDbSources)[0])
+    Object.assign(raw, (await this.ownerLocked([raw], limited?.sources))[0])
     raw.assistant_name = this.assistantName(s)
     raw.workspace_name = (await this.workspaceNames([s]))(s)
     raw.branched_from = (await this.branchedFrom(s))
@@ -1094,7 +1106,7 @@ export class SessionService {
 
   /** A session without a sidecar, synthesized from state.db for this profile; 404/409 like the detail. */
   private async foreignSession(sid: string): Promise<{ synth: Session; meta: Row | null }> {
-    sid = this.resolveSessionId(sid)
+    sid = await this.resolveSessionId(sid)
     const meta = (await this.lookupCliMeta(sid))
     const profile = str(meta?.profile) || null
     const profileAgnostic = str(meta?.source_tag || meta?.raw_source).trim().toLowerCase() === 'claude_code'
@@ -1126,7 +1138,7 @@ export class SessionService {
       assistant_name: this.assistantName(synth), workspace_name: (await this.workspaceNames([synth]))(synth), confirms_deep_truncate: true,
     }
     attachTodoState(sess, msgs)
-    const merged = withSessionWireFlags(withOwnerLocks([meta ? mergeCliSidebarMetadata(sess, meta) : sess], this.stateDbSources)[0]!, this.deps.runtime.activeStreamIds)
+    const merged = withSessionWireFlags((await this.ownerLocked([meta ? mergeCliSidebarMetadata(sess, meta) : sess]))[0]!, this.deps.runtime.activeStreamIds)
     const publicRow = redactSessionData(merged, this.deps.redactEnabled())
     return this.owner ? await this.owner.project(publicRow, msgLimit, msgBefore, loadMessages) : publicRow
   }
@@ -1253,7 +1265,7 @@ export class SessionService {
     if (!opts.allProfiles) sessions = sessions.filter((r) => this.deps.profilesMatch(str(r.profile) || null, activeProfile))
     const metadata = await this.persistedAliasMetadata(sessions)
     sessions = reconcileLocalSessionRows(sessions, metadata.rows, this.deps.profilesMatch)
-    sessions = withOwnerLocks(sessions, this.stateDbSources)
+    sessions = await this.ownerLocked(sessions)
     const redact = this.deps.redactEnabled()
     const workspaceName = await this.workspaceNames(sessions)
     const redactRow = (item: Row) => {
@@ -1548,7 +1560,7 @@ export class SessionService {
       const changed = hasModel && (str(oldModel) !== str(nextModel) || str(oldProvider) !== str(provider))
       const contextLength = changed ? (this.deps.resolveContextLength ? await this.deps.resolveContextLength(nextModel, provider, s.profile) : this.deps.contextLengthFor(nextModel, provider)) : s.context_length
       if (changed) await this.confirmModelSwitch(s, nextModel ?? '', provider, body.confirm_token)
-      this.assertWritable(s)
+      await this.assertWritable(s)
       s.workspace = newWs
       if (hasModel) {
         s.model = nextModel
@@ -2159,7 +2171,7 @@ export class SessionService {
 
   /** TAL-259: recovery reads the active profile's state.db, and a recovered sidecar joins that profile. */
   private async recoveryDeps(): Promise<RecoveryDeps> {
-    return { store: this.store, stateDbPath: this.stateDbPath(null), profile: this.deps.activeProfile(), stampingSince: await this.deps.recoveryStampingSince(), isReadOnly: (sid, profile) => Boolean(withOwnerLocks([{ session_id: sid, profile }], this.stateDbSources)[0]?.read_only), log: this.deps.log }
+    return { store: this.store, stateDbPath: this.stateDbPath(null), profile: this.deps.activeProfile(), stampingSince: await this.deps.recoveryStampingSince(), isReadOnly: async (sid, profile) => Boolean((await this.ownerLocked([{ session_id: sid, profile }]))[0]?.read_only), log: this.deps.log }
   }
 
   async recoveryAudit(): Promise<RecoveryAudit> {
@@ -2256,7 +2268,7 @@ export class SessionService {
     try { eventProfile = (await this.store.get(sid, { metadataOnly: true })).profile } catch { eventProfile = null }
     // Python `_is_messaging_session_id`: decided before the JSON is gone, from WebUI metadata or the Agent's row.
     const isMessaging = (await this.isMessagingSession(sid))
-    const knownIds = !isMessaging && !orphaned ? stateDbCompressionLineage(this.stateDbPath(eventProfile), sid) : [sid]
+    const knownIds = !isMessaging && !orphaned ? await stateDbSessionReadAsync([sid], 'stateDbCompressionLineage', this.stateDbPath(eventProfile), sid) : [sid]
     const assertIdle = async () => { for (const id of knownIds) if (await this.activeRunBlocking(id)) throw new HttpFailure(409, 'Session has an active run; stop it before deleting') }
     await assertIdle()
     let stateDbCleanupFailed = false

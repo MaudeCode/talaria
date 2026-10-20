@@ -5,11 +5,11 @@
  * archived state from any WebUI sidecar file and the deleted-session tombstone
  * honoured. Results are cached for 5 s per profile keyed on the database stamp.
  * `read` queries `state.db` on the listing worker so the event loop stays free
- * (TAL-920); `readSync` serves single-session lookups that are still synchronous.
+ * (TAL-920), for the list and the single-session lookups alike (TAL-923).
  */
 import { existsSync, readFileSync, statSync } from 'node:fs'
 import { join } from 'node:path'
-import { AGENT_STORAGE_OK, isCliSessionRow, normalizeAgentSessionSource, readImportableAgentSessionRows, readImportableAgentSessionRowsAsync, stateDbReadFailure, stateDbStorage, stateDbStorageAsync, type Dict, type ReadRowsOptions } from './state-db.js'
+import { AGENT_STORAGE_OK, isCliSessionRow, normalizeAgentSessionSource, readImportableAgentSessionRowsAsync, stateDbReadFailure, stateDbStorageAsync, type Dict, type ReadRowsOptions } from './state-db.js'
 import type { AgentStorage } from '@maudecode/talaria-web-contracts'
 import { latestLineageSidecar, sanitizeSessionRow, type ListParams } from './list.js'
 import type { SessionStore } from './store.js'
@@ -92,22 +92,6 @@ export class CliSessionSource {
         results = settled
         storage = await stateDbStorageAsync(slot.dbPath)
       }
-    } catch (error) {
-      results = error as Error
-    }
-    return (await this.store(slot, now, profile, results, storage))
-  }
-
-  /** `read` with the state.db queries on this thread, for single-session lookups whose callers are synchronous. */
-  async readSync(profile: string, opts: CliLoadOptions = {}): Promise<CliSessionRead> {
-    const slot = await this.slot(profile, opts)
-    const hit = this.cached(slot)
-    if (hit) return hit
-    const now = this.deps.now()
-    const storage = stateDbStorage(slot.dbPath)
-    let results: QueryResults
-    try {
-      results = existsSync(slot.dbPath) ? this.queries(slot).map((query) => { try { return readImportableAgentSessionRows(slot.dbPath, query.opts) } catch (error) { return backgroundFailure(query, error) } }) : null
     } catch (error) {
       results = error as Error
     }

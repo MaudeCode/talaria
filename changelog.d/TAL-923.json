@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Sending a message, opening an Agent session, pinning, or deleting a chat on a busy host no longer freezes Talaria Web, so a slow Agent history read can no longer get the server restarted mid-reply.",
+      "highlight": false,
+      "components": ["web"]
+    }
+  ]
+}

@@ -313,6 +313,13 @@ export function stateDbLocalTarget(dbPath: string, sid: string, opts: { onRead?:
   } catch { return sid } finally { db.close() }
 }
 
+/** `stateDbLocalTarget` plus whether state.db answered (a missing one does), so only a real answer seeds a routing cache. */
+function stateDbLocalTargetRead(dbPath: string, sid: string): { target: string; read: boolean } {
+  let read = false
+  const target = stateDbLocalTarget(dbPath, sid, { onRead: () => { read = true } })
+  return { target, read }
+}
+
 export const AGENT_STORAGE_OK: AgentStorage = Object.freeze({ state: 'ok', reason: null })
 
 /**
@@ -834,6 +841,7 @@ type ListingCall =
   | { op: 'fingerprint'; dbPath: string }
   | { op: 'storage' | 'webDiagnostic'; dbPath: string }
   | { op: 'sources' | 'existing'; dbPath: string; ids: string[] }
+  | { [K in SessionReadName]: { op: 'session'; read: K; args: Parameters<typeof SESSION_READS[K]> } }[SessionReadName]
   | { op: 'crash' }
 /** A request to the listing worker; `delayMs` carries the test read delay across the thread boundary. */
 export type StateDbWorkerRequest = ListingCall & { id: number; delayMs: number }
@@ -915,8 +923,9 @@ export async function stateDbStorageAsync(dbPath: string): Promise<AgentStorage>
   try { return (await callListingWorker({ op: 'storage', dbPath })).value as AgentStorage } catch (error) { return stateDbReadFailure(error) }
 }
 
-/** `stateDbSessionSources` on the listing worker; a worker failure is an unreadable state.db (null), so owners stay locked. */
+/** `stateDbSessionSources` on the listing worker; a worker failure is an unreadable state.db (null), so owners stay locked. Without a state.db it answers here, opening nothing. */
 export async function stateDbSessionSourcesAsync(dbPath: string, sessionIds: Iterable<string>): Promise<Map<string, StateDbSessionSource> | null> {
+  if (!existsSync(dbPath)) return stateDbSessionSources(dbPath, sessionIds)
   try { return (await callListingWorker({ op: 'sources', dbPath, ids: [...sessionIds] })).value as Map<string, StateDbSessionSource> | null } catch { return null }
 }
 
@@ -929,6 +938,25 @@ export async function stateDbWebDiagnosticIdsAsync(dbPath: string): Promise<stri
 export async function agentSessionRowsExistingAsync(dbPath: string, sessionIds: Iterable<string>): Promise<Set<string>> {
   const ids = [...sessionIds]
   try { return (await callListingWorker({ op: 'existing', dbPath, ids })).value as Set<string> } catch { return new Set(ids.map((s) => s.trim()).filter(Boolean)) }
+}
+
+/** TAL-923: the single-session readers behind chat start, session detail, and the mutation gates, run on the worker. */
+export const SESSION_READS = { stateDbLocalTargetRead, stateDbSessionRow, stateDbSessionMessages, stateDbCompressionLineage }
+type SessionReadName = keyof typeof SESSION_READS
+
+/**
+ * A `SESSION_READS` reader on the listing worker, so one session's lookup never blocks the event loop. Each reader
+ * already answers a failed read with `fallback`'s value; a worker failure answers it too. Without a state.db the reader
+ * answers here, as it opens nothing then.
+ */
+export async function stateDbSessionReadAsync<K extends SessionReadName>(fallback: ReturnType<typeof SESSION_READS[K]>, read: K, ...args: Parameters<typeof SESSION_READS[K]>): Promise<ReturnType<typeof SESSION_READS[K]>> {
+  if (!existsSync(args[0])) return (SESSION_READS[read] as (...a: unknown[]) => ReturnType<typeof SESSION_READS[K]>)(...args)
+  try {
+    const reply = await callListingWorker({ op: 'session', read, args } as ListingCall)
+    return reply.error === undefined ? reply.value as ReturnType<typeof SESSION_READS[K]> : fallback
+  } catch {
+    return fallback
+  }
 }
 
 /** Test hook: the listing worker exits abruptly while this call is in flight. */
