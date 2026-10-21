@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Changed",
+      "summary": "Status chips above the Web composer are centered and, like the App, share one pill when they fit and stack when they do not.",
+      "highlight": false,
+      "components": ["web"]
+    }
+  ]
+}

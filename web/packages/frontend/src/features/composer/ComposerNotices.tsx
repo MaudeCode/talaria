@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type ReactNode, type RefObject } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState, type ReactNode, type RefObject } from 'react'
 import { m } from '../../paraglide/messages.js'
 import { cn } from '../../ui/cn'
 import { Dialog } from '../../ui/Dialog'
@@ -22,6 +22,33 @@ export interface ComposerNotice {
 }
 
 const LEAVE_MS = 220
+
+/**
+ * TAL-1300, after the App's StatusChipGroup: two or more chips that fit on one row share one pill (`is-grouped`);
+ * otherwise each stacks as its own capsule (`is-stacked`). Measured like the composer footer's fit, outside React.
+ */
+function useChipFit(row: RefObject<HTMLDivElement | null>, shown: boolean) {
+  useLayoutEffect(() => {
+    const el = row.current
+    const parent = el?.parentElement
+    if (!el || !parent) return
+    const fit = () => {
+      // Unclassed, the chips sit unshrunk in one row, so an overflow means they do not fit.
+      el.classList.remove('is-grouped', 'is-stacked')
+      const grouped = el.children.length > 1 && el.scrollWidth <= el.clientWidth + 0.5
+      el.classList.add(grouped ? 'is-grouped' : 'is-stacked')
+    }
+    fit()
+    const mo = new MutationObserver(fit)
+    mo.observe(el, { childList: true, subtree: true, characterData: true })
+    if (typeof ResizeObserver === 'undefined') return () => mo.disconnect()
+    // Deferred a frame: refitting changes the row's height, which the observed parent would report back in-loop.
+    let frame = 0
+    const ro = new ResizeObserver(() => { cancelAnimationFrame(frame); frame = requestAnimationFrame(fit) })
+    ro.observe(parent)
+    return () => { mo.disconnect(); ro.disconnect(); cancelAnimationFrame(frame) }
+  }, [row, shown])
+}
 
 /**
  * The chips over the composer card: each one fades in and out on its own. Mount one per chat (keyed by session) so a
@@ -60,15 +87,17 @@ export function ComposerNotices({ notices, fallbackFocus }: { notices: ComposerN
   // Forgotten at once, so a notice that later returns under the same id does not reopen by itself.
   if (openId !== null && !open) setOpenId(null)
   const trigger = useRef<HTMLElement | null>(null)
+  const rowRef = useRef<HTMLDivElement>(null)
 
   const rows = notices.map((notice) => ({ notice, out: false }))
   // A notice back before its exit ends shows once, as itself: the exit list catches up in the effect above.
   const present = new Set(notices.map((n) => n.id))
   for (const { notice, index } of leaving) if (!present.has(notice.id)) rows.splice(Math.min(index, rows.length), 0, { notice, out: true })
+  useChipFit(rowRef, rows.length > 0)
   return (
     <>
       {rows.length > 0 && (
-        <div className="composer-notices">
+        <div className="composer-notices" ref={rowRef}>
           {rows.map(({ notice: n, out }) => (
             <div key={n.id} className={cn('composer-notice', out && 'is-leaving')} data-notice={n.id} data-tone={n.tone ?? 'neutral'} inert={out}>
               {n.detail

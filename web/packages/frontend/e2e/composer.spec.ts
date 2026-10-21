@@ -12,6 +12,14 @@ const transcript = (sid: string, turns: number, question = (i: number) => `${sid
 ]).flat()
 
 const box = async (page: Page, selector: string) => (await page.locator(selector).boundingBox())!
+/** TAL-1300: the chips, as one group, sit centred over the composer card. */
+async function expectChipsCentred(page: Page) {
+  const card = await box(page, '#composerBox')
+  const chips = await page.locator('.composer-notice').evaluateAll((els) => els.map((el) => el.getBoundingClientRect()).map((r) => ({ left: r.left, right: r.right })))
+  const left = Math.min(...chips.map((c) => c.left))
+  const right = Math.max(...chips.map((c) => c.right))
+  expect(Math.abs((left + right) / 2 - (card.x + card.width / 2))).toBeLessThanOrEqual(1)
+}
 const distance = (page: Page) => page.locator('#messages').evaluate((el) => el.scrollHeight - el.scrollTop - el.clientHeight)
 
 /** A request held until the test releases it, so the page can be inspected while it is in flight. */
@@ -229,6 +237,7 @@ test('an automatic compression shows as a status chip until the server closes it
   try {
     await page.goto(`/session/${sid}`)
     await expect(page.locator('.composer-notices .live-run-status')).toContainText('Working')
+    await expectChipsCentred(page)
     expect(stream).toBeNull()
     attaching.release()
     // Working can render while EventSource is still connecting.
@@ -607,18 +616,24 @@ for (const size of ['default', 'xlarge'] as const) {
       await expect(page.locator('.queue-card')).toHaveCount(0)
       await page.locator('#msg').fill('Draft kept')
 
-      // Separate chips, a visible gap above the card, inside its width and the viewport; the dock's measured height
-      // (the transcript's bottom inset) covers them, and a following transcript still shows its end.
+      // One shared pill (TAL-1300, after the App's StatusChipGroup): adjacent segments on one row, a visible gap above
+      // the card, inside its width and the viewport; the dock's measured height (the transcript's bottom inset) covers
+      // them, and a following transcript still shows its end.
       const card = await box(page, '#composerBox')
       const chips = [await live.boundingBox(), await queue.boundingBox()].map((b) => b!)
       const [a, b] = chips as [NonNullable<typeof chips[0]>, NonNullable<typeof chips[0]>]
-      expect(a.x + a.width <= b.x || b.y + b.height <= a.y).toBe(true)
+      expect(Math.abs(b.x - (a.x + a.width))).toBeLessThan(1)
+      expect(Math.abs(b.y - a.y)).toBeLessThan(1)
+      await expect(page.locator('.composer-notices')).toHaveClass(/\bis-grouped\b/)
+      await expect(live).toHaveCSS('border-top-color', 'rgba(0, 0, 0, 0)')
+      await expect(page.locator('.composer-notices')).not.toHaveCSS('border-top-color', 'rgba(0, 0, 0, 0)')
       const viewport = page.viewportSize()!
       for (const chip of chips) {
         expect(card.y - (chip.y + chip.height)).toBeGreaterThanOrEqual(4)
         expect(chip.x).toBeGreaterThanOrEqual(card.x - 1)
         expect(chip.x + chip.width).toBeLessThanOrEqual(Math.min(card.x + card.width, viewport.width) + 1)
       }
+      await expectChipsCentred(page)
       const dock = await box(page, '.composer-dock')
       expect(dock.y).toBeLessThanOrEqual(Math.min(a.y, b.y))
       await expect.poll(() => page.locator('.chat-stage').evaluate((el) => el.style.getPropertyValue('--composer-h'))).toBe(`${String(Math.round(dock.height))}px`)
@@ -661,3 +676,27 @@ for (const size of ['default', 'xlarge'] as const) {
     }
   })
 }
+
+/** TAL-1300: chips that cannot share one row stack, each centred over the card as its own capsule. */
+test('status chips that do not fit on one row stack as separate capsules over the composer (TAL-1300)', async ({ page }, testInfo) => {
+  const sid = 'chips-stacked'
+  const notice = { key: 'long', level: 'info', text: 'The Agent reloaded its tools after a configuration change. '.repeat(4), expires_at: null }
+  const goal = { text: 'Ship the release', status: 'active', turns_used: 2, max_turns: 10, reason: null, parked_until: null }
+  await page.route('**/api/session?**', (route) => route.fulfill({ json: { session: { session_id: sid, title: 'Stacked', messages: transcript(sid, 2), notices: [notice], goal } } }))
+  await page.route('**/api/session/draft', (route) => route.fulfill({ json: { ok: true } }))
+  await page.goto(`/session/${sid}`)
+  const row = page.locator('.composer-notices')
+  await expect(row.locator('.composer-notice')).toHaveCount(2)
+  const card = await box(page, '#composerBox')
+  const [a, b] = await row.locator('.composer-notice').evaluateAll((els) => els.map((el) => el.getBoundingClientRect().toJSON() as DOMRect))
+  expect(b!.y).toBeGreaterThanOrEqual(a!.y + a!.height)
+  for (const chip of [a!, b!]) {
+    expect(Math.abs(chip.x + chip.width / 2 - (card.x + card.width / 2))).toBeLessThanOrEqual(1)
+    expect(chip.x).toBeGreaterThanOrEqual(card.x - 1)
+    expect(chip.x + chip.width).toBeLessThanOrEqual(card.x + card.width + 1)
+  }
+  await expect(row).toHaveClass(/\bis-stacked\b/)
+  for (const chip of await row.locator('.composer-notice').all()) await expect(chip).not.toHaveCSS('border-top-color', 'rgba(0, 0, 0, 0)')
+  await expect(row).toHaveCSS('border-top-width', '0px')
+  if (process.env.TAL1300_SHOTS) await page.screenshot({ path: `${process.env.TAL1300_SHOTS}/stacked-${testInfo.project.name}.png` })
+})
