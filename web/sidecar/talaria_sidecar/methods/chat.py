@@ -89,7 +89,8 @@ _AGENT_CACHE_LOCK = threading.Lock()
 # Running release thread -> the profile home it runs under.
 _RELEASES: dict[threading.Thread, Any] = {}
 _RELEASES_LOCK = threading.Lock()
-# Agents inside ``chat.commit_memory`` or ``chat.refine`` (guarded by ``_AGENT_CACHE_LOCK``): like a turn, each defers their release.
+# ``(agent, home)`` inside ``chat.commit_memory`` or ``chat.refine`` (guarded by ``_AGENT_CACHE_LOCK``): like a turn, each
+# defers the agent's release, and deleting ``home`` waits for it.
 _COMMITTING: list = []
 # Set (under ``_RUNS_LOCK``) when shutdown drains: no turn is admitted after the drain's snapshot of ``_RUNS``.
 _DRAINING = threading.Event()
@@ -979,7 +980,7 @@ def _release_agents_locked(entries) -> list[threading.Thread]:
     """Release cache entries that just left the cache (caller holds ``_AGENT_CACHE_LOCK``). An agent a turn still holds
     keeps its memory provider and clients; that turn releases it when it ends."""
     with _RUNS_LOCK:
-        held = [run.agent for run in _RUNS.values()] + _COMMITTING
+        held = [run.agent for run in _RUNS.values()] + [agent for agent, _home in _COMMITTING]
     return [_release_agent(agent, home) for agent, _signature, home in entries if not any(agent is other for other in held)]
 
 
@@ -1128,14 +1129,23 @@ def release_profile_agents(home) -> None:
         entries = [_AGENT_CACHE.pop(sid) for sid, entry in list(_AGENT_CACHE.items()) if os.path.realpath(entry[2]) == target]
         started = _release_agents_locked(entries)
     started += _cancel_background_reviews([(entry[0], entry[2]) for entry in entries], "profile deleted")
+    deadline = time.monotonic() + _PROFILE_RELEASE_TIMEOUT
+    # A commit or refine under the home holds its agent past the cache; the agent's release starts when it lets go.
+    while (holding := _holding_home(target)) and time.monotonic() < deadline:
+        time.sleep(0.05)
     # The threads started here count even once they left ``_RELEASES``: a fast failure must still block the delete.
     with _RELEASES_LOCK:
         threads = list(dict.fromkeys(started + [thread for thread, owner in _RELEASES.items() if owner is not None and os.path.realpath(owner) == target]))
-    _join(threads, time.monotonic() + _PROFILE_RELEASE_TIMEOUT)
-    if any(thread.is_alive() for thread in threads):
+    _join(threads, deadline)
+    if holding or any(thread.is_alive() for thread in threads):
         raise RpcError("The profile is still saving memory from its chats. Retry in a moment.")
     if any(thread.failed for thread in threads):
         raise RpcError("Memory from the profile's chats could not be saved; see the sidecar log. Retry to delete the profile anyway.")
+
+
+def _holding_home(target: str) -> bool:
+    with _AGENT_CACHE_LOCK:
+        return any(os.path.realpath(home) == target for _agent, home in _COMMITTING)
 
 
 def _acquire_session_db(home):
@@ -1987,7 +1997,7 @@ def _refine_agent(params: dict, session_id: str, home):
                 return None
         cached = _AGENT_CACHE.get(session_id)
         if cached is not None:
-            _COMMITTING.append(cached[0])
+            _COMMITTING.append((cached[0], home))
             return cached[0]
     model = str(params.get("model") or "").strip()
     provider = str(params.get("model_provider") or "").strip() or None
@@ -2012,7 +2022,7 @@ def _refine_agent(params: dict, session_id: str, home):
         cached = _AGENT_CACHE.get(session_id)
         agent = None if running else cached[0] if cached else built
         if agent is not None:
-            _COMMITTING.append(agent)
+            _COMMITTING.append((agent, home))
         if agent is built:
             built._talaria_unannounced = True  # its first turn announces it (``start``)
             _AGENT_CACHE[session_id] = (built, signature, home)
@@ -2049,7 +2059,7 @@ def refine(params: dict) -> str:
         return f"/refine failed to start: {exc}"
     finally:
         with _AGENT_CACHE_LOCK:
-            _COMMITTING.remove(agent)
+            _COMMITTING.remove((agent, home))
             _release_if_dropped_locked(agent, home)
     tail = f" (focus: {focus})" if focus else ""
     return f"⚗ Reviewing this conversation in the background{tail} — any memory/skill updates will be reported when done."
@@ -2233,7 +2243,7 @@ def register(registry) -> None:
             commit = getattr(agent, "commit_memory_session", None) if agent is not None else None
             if commit is None or busy:
                 return {"committed": False}
-            _COMMITTING.append(agent)
+            _COMMITTING.append((agent, cached[2]))
         try:
             with scoped_home(cached[2]):
                 commit(list(getattr(agent, "_session_messages", None) or []))
@@ -2242,7 +2252,7 @@ def register(registry) -> None:
             return {"committed": False}
         finally:
             with _AGENT_CACHE_LOCK:
-                _COMMITTING.remove(agent)
+                _COMMITTING.remove((agent, cached[2]))
                 _release_if_dropped_locked(agent, cached[2])
         return {"committed": True}
 
