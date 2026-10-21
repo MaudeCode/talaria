@@ -1577,13 +1577,19 @@ export class SessionService {
   /**
    * Every persisted worktree chat, read from its own file: the index only narrows the files to read, since a crash
    * between a save and its index update can leave a session out of the index or with a stale `archived`. A file that
-   * cannot be read now falls back to its index row (`_unread`, so its flag is left alone) and counts in `unread`, which
-   * keeps retention retrying until every file has been read.
+   * cannot be read now, or a session directory that cannot be listed, falls back to the index rows (`_unread`, so their
+   * flags are left alone) and counts in `unread`, which keeps retention retrying until every file has been read.
    */
   private async worktreeSessionRows(): Promise<{ rows: Record<string, unknown>[]; unread: number }> {
     let indexed: Map<string, Record<string, unknown>>
     try { indexed = new Map((await this.store.readIndexEntries()).map((row) => [str(row.session_id), row])) } catch { indexed = new Map() }
-    const candidates = [...(await this.store.persistedIds())].filter((sid) => !indexed.has(sid) || indexed.get(sid)?.worktree_path)
+    let persisted: Set<string>
+    try { persisted = await this.store.persistedIds({ strict: true }) } catch {
+      // The session directory cannot be listed now: retain what the index names and retry until it can.
+      const rows = [...indexed.values()].filter((row) => row.worktree_path).map((row) => ({ ...row, archived: false, _unread: true }))
+      return { rows, unread: Math.max(1, rows.length) }
+    }
+    const candidates = [...persisted].filter((sid) => !indexed.has(sid) || indexed.get(sid)?.worktree_path)
     let unread = 0
     const rows = await Promise.all(candidates.map(async (sid) => {
       try { return (await this.store.get(sid, { metadataOnly: true })).compact() } catch (error) {

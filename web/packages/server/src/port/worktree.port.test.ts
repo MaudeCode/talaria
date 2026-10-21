@@ -365,6 +365,23 @@ describe('TAL-1254: a restarted sidecar retains the worktree chats before it is 
     }
   })
 
+  it('keeps retrying while the session directory cannot be listed', async () => {
+    const listed = await create()
+    const dir = join(s.state, 'sessions')
+    chmodSync(dir, 0)
+    vi.useFakeTimers({ toFake: ['setTimeout'] })
+    try {
+      retained.length = 0
+      await sidecar.restart()
+      chmodSync(dir, 0o755)
+      await vi.advanceTimersByTimeAsync(WORKTREE_RETAIN_RETRY_MS)
+      await vi.waitFor(() => { expect(retained.flatMap((call) => call.paths)).toContain(String(listed.worktree_path)) })
+    } finally {
+      chmodSync(dir, 0o755)
+      vi.useRealTimers()
+    }
+  })
+
   it('retries a worktree the sidecar could not lock until it confirms it', async () => {
     const pending = await create()
     unconfirmed = new Set([String(pending.worktree_path)])

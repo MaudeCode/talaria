@@ -39,7 +39,8 @@ export interface SessionBackend {
   searchMessages(sids: readonly string[], terms: readonly string[], depth: number): Promise<Map<string, MessageMatch>>
   write(sid: string, change: SessionChange, expected: string | null): Promise<string>
   delete(sid: string, opts: { tombstone: boolean }): Promise<boolean>
-  ids(): Promise<Set<string>>
+  /** `strict` rethrows a directory read failure instead of answering with no sessions. */
+  ids(opts?: { strict?: boolean }): Promise<Set<string>>
   index(): Promise<{ entries: SessionIndexEntry[]; revision: string }>
   writeIndex(entries: SessionIndexEntry[]): Promise<void>
   hasIndex(): Promise<boolean>

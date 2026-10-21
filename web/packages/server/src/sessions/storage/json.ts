@@ -161,10 +161,13 @@ class JsonSessions implements SessionBackend {
     if (opts.tombstone) this.addTombstone(sid)
     return true
   }
-  async ids(): Promise<Set<string>> {
+  async ids(opts: { strict?: boolean } = {}): Promise<Set<string>> {
     this.check()
     try { return new Set(readdirSync(this.options.directory).filter((n) => n.endsWith('.json') && !n.startsWith('_')).map((n) => n.slice(0, -5))) }
-    catch { return new Set() }
+    catch (error) {
+      if (opts.strict && (error as NodeJS.ErrnoException).code !== 'ENOENT') throw error
+      return new Set()
+    }
   }
   async hasIndex(): Promise<boolean> { return existsSync(this.indexPath) }
   async index(): Promise<{ entries: SessionIndexEntry[]; revision: string }> {
