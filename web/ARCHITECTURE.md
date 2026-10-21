@@ -181,7 +181,8 @@ server shows it as one clarify card, locks each answer, and clears it on the own
 Older Agents keep batch turns locked without answering or cancelling them. Ordinary native secure-input
 requests are declined. During a restart's after-turn wait (`restart_wait`), the sidecar still attaches
 for snapshots, watches, receipts, approvals, clarify answers and interrupts, refuses other actions with
-`gateway_restarting`, and the server ships `owner_attachment.restarting` so clients stop sending.
+`gateway_restarting`, and the server ships `owner_attachment.restarting` so clients stop sending. A
+watch opened before the wait polls discovery, never its own socket, and emits `restarting` when the wait begins.
 
 Diagnostic fresh chats (`execution_mode` `ignore_config` or `safe` on `POST /api/session/new`) are
 minted by the same owner through `gateway.create`, which requests `session.create` with the Agent's

@@ -4,6 +4,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import json
 import os
 from pathlib import Path
+import queue
 import sys
 import threading
 import time
@@ -322,6 +323,17 @@ async def probe_restart(home, peer, desc, proc):
         while (found := discover_gateway_endpoint(home)).reason_code != "restart_wait":
             assert time.monotonic() < deadline, found
             await asyncio.sleep(.05)
+        # The watch learns the transition itself, so the server can stop sending without another read.
+        seen = []
+        while True:
+            try:
+                frame = await asyncio.to_thread(viewer.next_message, 10)
+            except queue.Empty:
+                raise AssertionError(f"the open watch never reported the restart wait: {seen}") from None
+            assert frame.get("id") != watch_id, frame
+            if frame["params"]["event"] == "restarting":
+                break
+            seen.append(frame["params"]["data"].get("type"))
         attached = await asyncio.to_thread(sidecar.result, "gateway.session", {**params, "action": "snapshot"})
         assert attached["state"] == "attached" and attached["restarting"] is True, attached
         assert attached["snapshot"]["prompts"][0]["prompt_id"] == prompt["prompt_id"], attached
@@ -338,7 +350,6 @@ async def probe_restart(home, peer, desc, proc):
         # The restart waited only for that turn: the owner now exits on its own.
         await asyncio.to_thread(proc.wait, 60)
         # The watch opened before the wait observed the settlement and the turn's end until the owner exited.
-        seen = []
         while (frame := await asyncio.to_thread(viewer.next_message, 20)).get("id") != watch_id:
             seen.append(frame["params"]["data"].get("type"))
         assert seen.index("approval.settled") < seen.index("message.complete"), seen

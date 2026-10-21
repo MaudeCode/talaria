@@ -321,6 +321,25 @@ describe('canonical owner attachment', () => {
     expect(after.session.owner_attachment).toMatchObject({ restarting: false, can_submit: true })
   })
 
+  it('pushes the restart wait an open watch observes, so clients stop sending without another read', async () => {
+    const snap = snapshot({ running: true, pending: [admission()] })
+    let emit: ((frame: Omit<StreamFrame, 'seq'>) => void) | undefined
+    sidecar.respond('gateway.session', (params, send, opts) => {
+      if (params.action !== 'watch') return attached(snap)
+      emit = send
+      send({ event: 'snapshot', data: attached(snap) })
+      return new Promise((resolve) => { opts.signal!.addEventListener('abort', () => { resolve(attached(snap)) }, { once: true }) })
+    })
+    const row = SessionEnvelopeSchema.parse(await (await s.get(`/api/session?session_id=${sid}`)).json())
+    expect(row.session.owner_attachment).toMatchObject({ restarting: false, can_submit: true })
+    const stream = row.session.active_stream_id!
+    const read = s.sse(`/api/chat/stream?stream_id=${stream}`, (frame) => frame.event === 'session_snapshot' && (frame.data as { session: { owner_attachment?: { restarting?: boolean } } }).session.owner_attachment?.restarting === true)
+    await vi.waitFor(() => { expect(s.deps.registry.peek(stream)?.subscriberCount).toBe(1) })
+    emit!({ event: 'restarting', data: { restarting: true } })
+    const pushed = (await read).at(-1)?.data as { session: { owner_attachment: unknown } }
+    expect(pushed.session.owner_attachment).toMatchObject({ state: 'attached', restarting: true, can_submit: false, can_interrupt: true })
+  })
+
   it('streams owner events, replaces a replay gap, and settles from its authoritative snapshot', async () => {
     let snap = snapshot({ running: true, pending: [admission()] })
     let emit: ((frame: Omit<StreamFrame, 'seq'>) => void) | undefined

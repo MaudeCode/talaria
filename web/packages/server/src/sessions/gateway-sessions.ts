@@ -20,7 +20,7 @@ type Row = Record<string, unknown>
 interface Target { sid: string; profile: string; home: string; key: string }
 /** An owner clarify batch and the question ids the owner still waits on, from its last `clarify.lock` reply. */
 type Batch = GatewayClarifyBatch & { remaining: string[] }
-interface Watch { stream: string; controller: AbortController; snapshot: GatewaySnapshot; batch: Batch | null; worker?: Promise<void> }
+interface Watch { stream: string; controller: AbortController; snapshot: GatewaySnapshot; batch: Batch | null; restarting: boolean; worker?: Promise<void> }
 
 const ownerStreamPrefix = (home: string): string => `owner-${createHash('sha256').update(home).digest('hex').slice(0, 16)}-`
 const ownerStateId = (identity: string): string => `owner-${createHash('sha256').update(identity).digest('hex')}`
@@ -307,7 +307,7 @@ export class GatewaySessions {
   }
 
   private watch(target: Target, base: Row, snapshot: GatewaySnapshot): Watch {
-    const watch: Watch = { stream: `${ownerStreamPrefix(target.home)}${randomUUID()}`, controller: new AbortController(), snapshot, batch: null }
+    const watch: Watch = { stream: `${ownerStreamPrefix(target.home)}${randomUUID()}`, controller: new AbortController(), snapshot, batch: null, restarting: false }
     this.watches.set(target.key, watch)
     const registry = this.deps.registry
     const channel = registry.create(watch.stream, target.sid)
@@ -371,6 +371,12 @@ export class GatewaySessions {
         onStream: (frame) => {
           chain = chain.then(async () => {
             if (terminal || streamError) return
+            if (frame.event === 'restarting') {
+              // The owner entered a restart's after-turn wait after this watch attached: clients stop sending.
+              watch.restarting = true
+              await put('session_snapshot', { session: await this.view(base, { state: 'attached', reason: null, snapshot: watch.snapshot, receipt: null, restarting: true }, watch.stream, target) })
+              return
+            }
             if (frame.event === 'clarify_batch') {
               const batch = GatewayClarifyBatchSchema.parse(frame.data)
               watch.batch = { ...batch, remaining: batch.questions.map((q) => q.qid) }
@@ -406,7 +412,7 @@ export class GatewaySessions {
               const claimed = runningAdmission(watch.snapshot)
               if (firstClaim && claimed) activeAdmission = claimed.admission_id
               ran ||= data.running === true
-              if (firstClaim) await put('session_snapshot', { session: await this.view(base, { state: 'attached', reason: null, snapshot: watch.snapshot, receipt: null }, watch.stream, target) })
+              if (firstClaim) await put('session_snapshot', { session: await this.view(base, { state: 'attached', reason: null, snapshot: watch.snapshot, receipt: null, restarting: watch.restarting }, watch.stream, target) })
               if (data.running === false && (ran || !watch.snapshot.pending.some((p) => p.status === 'queued' || p.status === 'started'))) await finish()
               return
             }

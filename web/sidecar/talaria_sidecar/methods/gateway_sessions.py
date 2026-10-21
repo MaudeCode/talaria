@@ -30,6 +30,19 @@ def _batch_locks() -> bool:
     return find_spec("gateway.session_clarify_lock") is not None
 
 
+def _restart_wait(home: Path) -> bool:
+    """Whether the owner has entered a restart's after-turn wait since a watch attached. The owner announces
+    it on no socket, and the watch must not send on its own: a socket opened before the wait is cut when it does."""
+    from hermes_cli import gateway_runtime
+    if not hasattr(gateway_runtime, "attachable"):
+        return False
+    try:
+        found = gateway_runtime.discover_gateway_endpoint(home)
+    except Exception:  # noqa: BLE001 - a failed probe leaves the watch as it was; every action rediscovers anyway
+        return False
+    return found.state != "ready" and gateway_runtime.attachable(found)
+
+
 def _control_refusal(home: Path, sid: str) -> str | None:
     """Only canonical PendingControls can be recovered before v0.22.3. Never infer a missing batch.
 
@@ -201,10 +214,18 @@ async def _run(ctx, params: dict, home: Path, discovery) -> dict:
                             or event.get("type") == "session.info" and event.get("payload", {}).get("execution_generation") == snap["execution_generation"]):
                         ctx.emit("event", event)
                 sequence = replay["last_sequence"]
+            checked = asyncio.get_running_loop().time()
             while not ctx.cancelled:
                 try:
                     frame = await asyncio.wait_for(events.get(), .25)
                 except TimeoutError:
+                    now = asyncio.get_running_loop().time()
+                    if not restarting and now - checked >= 2:
+                        checked = now
+                        # One-way for this owner: its next state is exit, which ends the watch.
+                        if restarting := await asyncio.to_thread(_restart_wait, home):
+                            result["restarting"] = True
+                            ctx.emit("restarting", {"restarting": True})
                     continue
                 if isinstance(frame, Exception):
                     raise frame
