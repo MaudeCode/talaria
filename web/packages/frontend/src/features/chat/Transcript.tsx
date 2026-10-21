@@ -105,22 +105,26 @@ export function Transcript(props: TranscriptProps) {
   const lastTopRef = useRef(0)
 
   const readerAnchor = useRef<{ key: string; top: number } | null>(null)
+  const anchorFrame = useRef<number | null>(null)
   const rememberReaderAnchor = useCallback(() => {
     // Following owns the scroll position; a reader anchor is only used away from the bottom.
-    if (followsRef.current()) return
-    const pane = scrollRef.current
-    if (!pane) return
-    const bounds = pane.getBoundingClientRect()
-    const visible = [...pane.querySelectorAll<HTMLElement>('[data-message-key]')].filter((row) => {
-      const rect = row.getBoundingClientRect()
-      return rect.bottom > bounds.top && rect.top < bounds.bottom
+    if (followsRef.current() || anchorFrame.current !== null) return
+    anchorFrame.current = requestAnimationFrame(() => {
+      anchorFrame.current = null
+      if (followsRef.current()) return
+      const pane = scrollRef.current
+      if (!pane) return
+      const bounds = pane.getBoundingClientRect()
+      const visible = [...pane.querySelectorAll<HTMLElement>('[data-message-key]')].filter((row) => {
+        const rect = row.getBoundingClientRect()
+        return rect.bottom > bounds.top && rect.top < bounds.bottom
+      })
+      const row = visible.find((row) => row.getBoundingClientRect().top >= bounds.top) ?? visible[0]
+      const key = row?.dataset.messageKey
+      readerAnchor.current = row && key ? { key, top: row.getBoundingClientRect().top - bounds.top } : null
     })
-    const row = visible.find((row) => row.getBoundingClientRect().top >= bounds.top) ?? visible[0]
-    const key = row?.dataset.messageKey
-    readerAnchor.current = row && key ? { key, top: row.getBoundingClientRect().top - bounds.top } : null
   }, [])
 
-  const anchorFrame = useRef<number | null>(null)
   useLayoutEffect(() => () => {
     if (anchorFrame.current !== null) cancelAnimationFrame(anchorFrame.current)
     anchorFrame.current = null
@@ -146,12 +150,7 @@ export function Transcript(props: TranscriptProps) {
     // A scroll invalidates the previous viewport anchor immediately, before a resize can restore it.
     if (lastTopRef.current !== el.scrollTop) readerAnchor.current = null
     lastTopRef.current = el.scrollTop
-    if (anchorFrame.current === null && !followsRef.current()) {
-      anchorFrame.current = requestAnimationFrame(() => {
-        anchorFrame.current = null
-        rememberReaderAnchor()
-      })
-    }
+    rememberReaderAnchor()
     setAtTop(el.scrollTop < 40)
   }, [pin, rememberReaderAnchor])
 
@@ -187,7 +186,7 @@ export function Transcript(props: TranscriptProps) {
           lastTopRef.current = pane.scrollTop
         }
       }
-      // Restoring the same offset keeps this anchor valid; only reader scrolling needs a new scan.
+      rememberReaderAnchor()
     }
     follow()
     if (typeof ResizeObserver === 'undefined') return
@@ -198,7 +197,7 @@ export function Transcript(props: TranscriptProps) {
     const mutations = new MutationObserver(follow)
     mutations.observe(inner, { childList: true, subtree: true, characterData: true })
     return () => { observer.disconnect(); mutations.disconnect() }
-  }, [empty, scope, scrollToBottom, virtualize, onScroll])
+  }, [empty, scope, scrollToBottom, virtualize, rememberReaderAnchor, onScroll])
 
   // A submit returns to the end wherever the reader was, and the next layout follows it there (T3 Code's scrollToEnd).
   useEffect(() => onScrollRequest('end', () => { settlingRef.current = true; scrollToBottom(false) }), [scrollToBottom])

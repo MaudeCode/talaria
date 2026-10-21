@@ -135,6 +135,35 @@ it('coalesces reader anchor scans into one frame while content grows and cancels
   expect(scan).toHaveBeenCalledTimes(2)
 })
 
+it('captures a reader anchor when streaming starts with auto-follow off (TAL-1203)', () => {
+  vi.stubGlobal('CSS', { escape: (key: string) => key })
+  const flush = animationFrames()
+  let resize: ResizeObserverCallback = () => undefined
+  vi.stubGlobal('ResizeObserver', class {
+    constructor(private callback: ResizeObserverCallback) {}
+    observe = (element: Element) => { if (element.id === 'msgInner') resize = this.callback }
+    disconnect = vi.fn(); unobserve = vi.fn()
+  })
+  const input = { ...props(), truncated: false }
+  const view = render(<Transcript {...input} />)
+  const pane = view.container.querySelector<HTMLElement>('#messages')!
+  Object.defineProperty(pane, 'scrollHeight', { configurable: true, value: 2600 })
+  vi.spyOn(pane, 'scrollTo').mockImplementation(() => { pane.scrollTop = 2000 })
+  pane.getBoundingClientRect = () => ({ top: 0, bottom: 600 } as DOMRect)
+  let rowY = 100
+  const row = view.container.querySelector<HTMLElement>('[data-message-key]')!
+  row.getBoundingClientRect = () => ({ top: rowY, bottom: rowY + 100 } as DOMRect)
+  act(() => requestScroll('end'))
+  dispatch({ type: 'start', sessionId: 'history', streamId: 'run', turnId: null, userMessageId: null, userText: '', now: 0 })
+  view.rerender(<Transcript {...input} live={getStreamState().turns.history!} />)
+  // Streaming turns off entry settling, without the reader scrolling.
+  act(() => resize([], {} as ResizeObserver))
+  flush()
+  rowY -= 300
+  act(() => resize([], {} as ResizeObserver))
+  expect(pane.scrollTop).toBe(1700)
+})
+
 it.each([false, true])('preserves an upward reader scroll before its scroll event when content arrives: autoFollow=%s', async (autoFollow) => {
   const view = render(<Transcript {...props()} autoFollow={autoFollow} />)
   const pane = view.container.querySelector<HTMLElement>('#messages')
