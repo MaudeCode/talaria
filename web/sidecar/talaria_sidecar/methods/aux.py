@@ -294,16 +294,31 @@ def _effort_word(task_cfg: dict) -> str:
     return "none" if raw is False else str(raw or "").strip().lower()
 
 
+def _delegation_row() -> dict | None:
+    """TAL-1273: the picker's subagent (``delegate_task``) row, listed after the auxiliary slots. Its route is the
+    top-level ``delegation`` section, not ``auxiliary.delegation``; None on an Agent whose picker has no such row."""
+    try:
+        from hermes_cli.main_provider_setup import _DELEGATION_TASK_DESC, _DELEGATION_TASK_KEY, _DELEGATION_TASK_NAME, _delegation_cfg_as_task
+    except ImportError:
+        return None
+    from hermes_cli.config import load_config
+
+    return {"key": _DELEGATION_TASK_KEY, "label": _DELEGATION_TASK_NAME, "description": _DELEGATION_TASK_DESC, "inherit_from": None,
+            "reasoning_effort": _effort_word(_delegation_cfg_as_task(load_config())), "effective": None}
+
+
 def aux_tasks() -> dict:
-    """TAL-800: the home's auxiliary slots in Agent order, the ``hermes model`` picker's built-ins then the home's plugin
-    tasks, each with its resolved reasoning effort and, for a task that inherits another slot, its effective route.
+    """TAL-800: the home's auxiliary slots in Agent order, the ``hermes model`` picker's built-ins, the home's plugin
+    tasks, then the picker's delegation row (TAL-1273), each with its resolved reasoning effort and, for a task that
+    inherits another slot, its effective route.
     ``reserved`` names the Agent's other ``auxiliary.*`` keys (settings and unlisted routes), which are never slots."""
     from agent.auxiliary_client import _get_auxiliary_task_config
     from hermes_cli.config import DEFAULT_CONFIG
     from hermes_cli.main_provider_setup import _AUX_TASKS
 
     rows = [{"key": key, "label": label, "description": description, "inherit_from": None} for key, label, description in _AUX_TASKS]
-    builtin = {row["key"] for row in rows}
+    delegation = _delegation_row()
+    builtin = {row["key"] for row in rows} | ({delegation["key"]} if delegation else set())
     try:
         from hermes_cli.plugins import get_plugin_auxiliary_tasks
 
@@ -317,6 +332,8 @@ def aux_tasks() -> dict:
         resolved = _get_auxiliary_task_config(row["key"])
         row["reasoning_effort"] = _effort_word(resolved)
         row["effective"] = {field: str(resolved.get(field) or "") for field in ("provider", "model", "base_url")} if row["inherit_from"] else None
+    if delegation:
+        rows.append(delegation)
     listed = {row["key"] for row in rows}
     return {"tasks": rows, "reserved": sorted(key for key in (DEFAULT_CONFIG.get("auxiliary") or {}) if key not in listed)}
 

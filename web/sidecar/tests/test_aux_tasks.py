@@ -49,8 +49,8 @@ def test_slots_follow_the_agent_with_plugin_tasks_per_profile(tmp_path: pathlib.
     try:
         rows = _rows(sidecar, home)
         keys = list(rows)
-        # The Agent's built-ins in its order, then this profile's plugin tasks.
-        assert keys[:4] == ["vision", "compression", "approval", "mcp"] and keys[-2:] == ["alpha_task", "side_task"], keys
+        # The Agent's built-ins in its order, then this profile's plugin tasks, then the delegation row (TAL-1273).
+        assert keys[:4] == ["vision", "compression", "approval", "mcp"] and keys[-3:] == ["alpha_task", "side_task", "delegation"], keys
         assert rows["voice_chat"] == {"key": "voice_chat", "label": "Voice chat", "description": "spoken voice-mode replies", "inherit_from": None, "reasoning_effort": "none", "effective": None}
         assert rows["compression"]["reasoning_effort"] == ""
         assert rows["alpha_task"] == {"key": "alpha_task", "label": "Alpha model", "description": "alpha scoring", "inherit_from": None, "reasoning_effort": "", "effective": None}
@@ -71,5 +71,22 @@ def test_slots_follow_the_agent_with_plugin_tasks_per_profile(tmp_path: pathlib.
         rows = _rows(sidecar, home)
         assert rows["side_task"]["effective"] == {"provider": "openrouter", "model": "vendor/model-a", "base_url": ""}
         assert rows["voice_chat"]["reasoning_effort"] == "high"
+    finally:
+        sidecar.close()
+
+
+@requires_agent
+@pytest.mark.skipif(AGENT_DIR is None or "_DELEGATION_TASK_KEY" not in (AGENT_DIR / "hermes_cli/main_provider_setup.py").read_text(), reason="the picker's delegation row requires Agent v0.22.0")
+def test_delegation_row_follows_the_top_level_section(tmp_path: pathlib.Path) -> None:
+    """TAL-1273: the ``hermes model`` picker's subagent row comes last and reads top-level ``delegation``, never ``auxiliary.delegation``."""
+    home = tmp_path / "home" / ".hermes"
+    home.mkdir(parents=True)
+    config = {"delegation": {"provider": "openrouter", "model": "x/model", "reasoning_effort": "low"}, "auxiliary": {"delegation": {"reasoning_effort": "high"}}}
+    (home / "config.yaml").write_text(json.dumps(config))
+    sidecar = SidecarProcess(home)
+    try:
+        rows = _rows(sidecar, home)
+        assert list(rows)[-1] == "delegation"
+        assert rows["delegation"] == {"key": "delegation", "label": "Delegation", "description": "subagent model (delegate_task)", "inherit_from": None, "reasoning_effort": "low", "effective": None}
     finally:
         sidecar.close()

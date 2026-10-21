@@ -7,7 +7,7 @@ import XCTest
 final class AuxiliaryModelsTests: APIClientTestCase {
     private static let taskIDs = [
         "vision", "web_extract", "compression", "approval", "mcp", "title_generation",
-        "skills_hub", "curator", "kanban_decomposer", "profile_describer", "triage_specifier",
+        "skills_hub", "curator", "kanban_decomposer", "profile_describer", "triage_specifier", "delegation",
     ]
 
     private static func taskJSON(_ id: String, override: String? = nil) -> String {
@@ -105,7 +105,7 @@ final class AuxiliaryModelsTests: APIClientTestCase {
         XCTAssertEqual(model.task(id: "title_generation")?.isAuto, true)
         XCTAssertNil(model.task(id: "title_generation")?.selectedOptionID)
         XCTAssertEqual(model.task(id: "vision")?.inCatalog, false)
-        XCTAssertEqual(model.tasks.count, 11)
+        XCTAssertEqual(model.tasks.count, Self.taskIDs.count)
         XCTAssertFalse(model.isUnavailable)
     }
 
