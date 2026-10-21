@@ -16,6 +16,7 @@ import { agentSessionRowsExisting, cheapChangeFingerprint, latestCronSessionInfo
 import agentSchema from '../test/fixtures/canonical-ownership.json' with { type: 'json' }
 import cronSchema from '../test/fixtures/cron-sessions.json' with { type: 'json' }
 import { MESSAGING_SOURCES } from './source-kind.js'
+import type { CliSessionRead } from './cli-sessions.js'
 import { GatewayWatcher, snapshotHash } from './gateway-watcher.js'
 import { capRecentCliSessions, keepLatestMessagingSessionPerSource, mergeCliSidebarMetadata, withOwnerLocks, type GatewayIdentity } from './list.js'
 
@@ -418,7 +419,7 @@ describe('state.db projection', () => {
     const before = cheapChangeFingerprint(dbPath)
     expect(before).not.toBeNull()
     expect(cheapChangeFingerprint(dbPath)).toBe(before)
-    const watcher = new GatewayWatcher('default', s.state, { now: () => Date.now() / 1000, log: () => undefined, pollIntervalMs: 50 })
+    const watcher = new GatewayWatcher('default', s.state, { rows: (profile) => s.deps.cliSessions.read(profile), now: () => Date.now() / 1000, log: () => undefined, pollIntervalMs: 50 })
     const sub = watcher.subscribe()
     expect(await watcher.pollOnce()).toBe(true)
     const first = await sub.next(AbortSignal.timeout(500))
@@ -438,6 +439,63 @@ describe('state.db projection', () => {
     expect(sub.ended).toBe(true)
     expect(await watcher.subscribe().next()).toBeNull()
     expect(snapshotHash([{ session_id: 'b', updated_at: 1 }, { session_id: 'a', updated_at: 2 }])).toBe(snapshotHash([{ session_id: 'a', updated_at: 2 }, { session_id: 'b', updated_at: 1 }]))
+  })
+
+  it('keeps parity reads, failed-read retries and slow-consumer drops with shared rows', async () => {
+    let now = 100
+    const read: CliSessionRead = { rows: [{ session_id: 'shared', title: 'Shared', source_tag: 'cli', message_count: 1, created_at: 1, updated_at: 2 }], truncated: new Set(), buildSucceeded: true, storage: { state: 'ok', reason: null } }
+    const rows = vi.fn(() => Promise.resolve(read))
+    const watcher = new GatewayWatcher('default', s.state, { rows, now: () => now, log: () => undefined })
+    const sub = watcher.subscribe()
+    try {
+      expect(await watcher.pollOnce()).toBe(true)
+      expect((await sub.next())?.sessions).toEqual([{ session_id: 'shared', title: 'Shared', model: null, message_count: 1, created_at: 1, updated_at: 2, source: 'cli', raw_source: null, session_source: null, source_label: null }])
+      now += 299
+      expect(await watcher.pollOnce()).toBe(false)
+      expect(rows).toHaveBeenCalledTimes(1)
+      now += 1
+      expect(await watcher.pollOnce()).toBe(true)
+      expect(rows).toHaveBeenCalledTimes(2)
+      expect(await sub.next(AbortSignal.timeout(20))).toBeNull()
+      expect(sub.ended).toBe(false)
+      now += 300
+      rows.mockRejectedValueOnce(new Error('synthetic read failure'))
+      expect(await watcher.pollOnce()).toBe(false)
+      rows.mockResolvedValueOnce({ ...read, rows: [], storage: { state: 'unavailable', reason: 'read_failed' } })
+      expect(await watcher.pollOnce()).toBe(false)
+      expect(await watcher.pollOnce()).toBe(true)
+      expect(rows).toHaveBeenCalledTimes(5)
+      now += 300
+      rows.mockResolvedValueOnce({ ...read, rows: [], storage: { state: 'outdated', reason: 'missing_source_column' } })
+      expect(await watcher.pollOnce()).toBe(true)
+      expect((await sub.next())?.sessions).toEqual([])
+      for (let count = 2; count <= 12; count++) {
+        now += 300
+        rows.mockResolvedValueOnce({ ...read, rows: [{ ...read.rows[0], message_count: count }] })
+        expect(await watcher.pollOnce()).toBe(true)
+      }
+      expect(watcher.hasSubscribers()).toBe(false)
+      expect(await sub.next()).toBeNull()
+      expect(sub.ended).toBe(true)
+    } finally { sub.close(); watcher.stop() }
+  })
+
+  it('publishes no shared rows after stopping an in-flight poll', async () => {
+    let release!: (read: CliSessionRead) => void
+    const rows = vi.fn(() => new Promise<CliSessionRead>((resolve) => { release = resolve }))
+    const watcher = new GatewayWatcher('default', s.state, { rows, now: () => 100, log: () => undefined })
+    const sub = watcher.subscribe()
+    const poll = watcher.pollOnce()
+    try {
+      await vi.waitFor(() => { expect(rows).toHaveBeenCalledTimes(1) })
+      expect(await watcher.pollOnce()).toBe(false)
+      watcher.stop()
+      expect(await sub.next()).toBeNull()
+      release({ rows: [{ session_id: 'late', message_count: 1 }], truncated: new Set(), buildSucceeded: true, storage: { state: 'ok', reason: null } })
+      expect(await poll).toBe(false)
+      expect(await sub.next(AbortSignal.timeout(20))).toBeNull()
+      expect(await watcher.subscribe().next()).toBeNull()
+    } finally { sub.close(); watcher.stop() }
   })
 
   it('serves the standalone gateway stream and its probe, never with Connection: close', async () => {

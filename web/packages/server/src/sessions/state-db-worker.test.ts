@@ -116,7 +116,7 @@ describe('session list state.db reads off the event loop (TAL-920)', () => {
     expect(listed).toEqual(expect.arrayContaining(['cli-a', 'tg-a', 'cron_job1_1', 'hook-a']))
     // The orphan prune still ran: the read-only import with no state.db row is gone.
     expect(listed).not.toContain('cli-gone')
-    const watcher = new GatewayWatcher('default', s.state, { now: () => Date.now() / 1000, log: () => undefined })
+    const watcher = new GatewayWatcher('default', s.state, { rows: (profile) => s.deps.cliSessions.read(profile), now: () => Date.now() / 1000, log: () => undefined })
     const sub = watcher.subscribe()
     expect(await watcher.pollOnce()).toBe(true)
     expect((await sub.next(AbortSignal.timeout(2000)))?.sessions.map((r) => r.session_id)).toContain('tg-a')
@@ -201,7 +201,7 @@ describe('session list state.db reads off the event loop (TAL-920)', () => {
   })
 
   it('never stacks gateway polls', async () => {
-    const watcher = new GatewayWatcher('default', s.state, { now: () => Date.now() / 1000, log: () => undefined })
+    const watcher = new GatewayWatcher('default', s.state, { rows: (profile) => s.deps.cliSessions.read(profile), now: () => Date.now() / 1000, log: () => undefined })
     setStateDbReadDelayForTests(300)
     try {
       const first = watcher.pollOnce()
@@ -214,7 +214,8 @@ describe('session list state.db reads off the event loop (TAL-920)', () => {
   })
 
   it('lets no read interrupted by shutdown restart the worker while it stops', async () => {
-    const watcher = new GatewayWatcher('default', s.state, { now: () => Date.now() / 1000, log: () => undefined })
+    s.deps.cliSessions.invalidate()
+    const watcher = new GatewayWatcher('default', s.state, { rows: (profile) => s.deps.cliSessions.read(profile), now: () => Date.now() / 1000, log: () => undefined })
     setStateDbReadDelayForTests(1500)
     // The fingerprint read is held when the stop lands; its caller then goes on to the projection read.
     const poll = watcher.pollOnce()
