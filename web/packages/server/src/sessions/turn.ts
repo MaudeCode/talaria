@@ -44,6 +44,7 @@ import { CHECKPOINT_STORE_BUSY_MESSAGE } from '../workspace/rollback.js'
 import type { WorkspaceRegistry } from '../workspace/workspaces.js'
 import { str } from '../util.js'
 import { toolEditDiff } from './tool-display.js'
+import { startsBackgroundWork } from './background-tasks.js'
 import { recordWakeupPause } from './wakeup-pause.js'
 import { displayName } from '../providers/catalog.js'
 
@@ -89,6 +90,8 @@ export interface TurnRunnerDeps {
   workspaceBusy?: (workspace: string) => boolean
   /** TAL-913: a checkpoint diff or restore holds the profile's checkpoint store, which a turn's capture would collide with. */
   checkpointStoreBusy?: (profile: string | null) => boolean
+  /** TAL-1305: a tool call started background work (`startsBackgroundWork`); the session's records refresh now. */
+  onBackgroundWork?: (sessionId: string, profile: string | null) => void
   /** Runs after the run is retired (Python teardown idle hook: deferred process wakeups). */
   onTurnEnd?: (sessionId: string) => void
   /** TAL-576: the profile's authoritative config file (`AgentConfig.path`); `<home>/config.yaml` when absent. */
@@ -845,6 +848,7 @@ export class TurnRunner {
                   // TAL-315: the decided view too, so a failed or cancelled turn's snapshot keeps the sections shown live.
                   Object.assign(tc, { done: true, progress: null, snippet: data.preview, is_error: complete.is_error, duration: complete.duration ?? null, ...(complete.result_view ? { result_view: complete.result_view } : {}), ...(editDiff ? { edit_diff: editDiff } : {}) })
                 }
+                if (startsBackgroundWork(data.name, rawResult)) deps.onBackgroundWork?.(sessionId, s.profile ?? null)
                 const id = (tc && toolIds.get(tc)) || str(data.tid) || mintToolId()
                 this.lastCompletedTool.set(streamId, id)
                 const redacted = deps.redactEnabled()

@@ -11,6 +11,7 @@ import { updateDocument } from './storage/document.js'
 import type { SidecarLike } from '../sidecar/client.js'
 import { str } from '../util.js'
 import { isDict, stripToolCallXml } from './merge.js'
+import { toolKind } from './tool-display.js'
 import { isSafeSessionId } from './session.js'
 import { backgroundEventKind } from './background-events.js'
 
@@ -254,6 +255,17 @@ export function dispatchedDelegationIds(result: unknown): string[] {
   return [...new Set([...text.matchAll(/"delegation_id"\s*:\s*"([^"]+)"/g)].map((m) => m[1]!))]
 }
 
+/**
+ * TAL-1305: whether a finished tool call started work the Agent's background list may report: a dispatched delegation,
+ * or a shell call whose result names a registry process (`proc_…`), however it was started (notify, heartbeat, a
+ * handed-off foreground run). The list itself keeps only the processes someone is notified about.
+ */
+export function startsBackgroundWork(name: unknown, result: unknown): boolean {
+  const kind = toolKind(name)
+  if (kind === 'delegate') return dispatchedDelegationIds(result).length > 0
+  return kind === 'shell' && isDict(result) && str(result.session_id).startsWith('proc_')
+}
+
 /** The link a delegation tool row shows: its units' records, one combined status, and summed subagent counts. */
 export function backgroundLink(ids: string[], receipts: Receipt[]): BackgroundLink | null {
   const linked = receipts.filter((r) => r.kind === 'delegation' && ids.some((id) => r.task_id === id || r.task_id.startsWith(`${id}-`)))
@@ -320,8 +332,27 @@ export class BackgroundActivity {
     if (receipt) (await this.deps.store.update(sid, [receipt]))
   }
 
+  private readonly refreshing = new Set<string>()
+  private readonly refreshAgain = new Set<string>()
+  /**
+   * TAL-1305: work the Agent started mid-turn. Re-reads the session's records so a change reaches every client now
+   * (the store announces it). One read per session at a time; asking during one reads once more after it.
+   */
+  refresh(sid: string, profile: string | null): void {
+    if (this.refreshing.has(sid)) { this.refreshAgain.add(sid); return }
+    this.refreshing.add(sid)
+    void (async () => {
+      try {
+        do {
+          this.refreshAgain.delete(sid)
+          try { await this.snapshot(sid, profile, { agentOnly: true }) } catch (error) { this.deps.log(`[webui] WARNING: background refresh for ${sid} failed: ${(error as Error).message}`) }
+        } while (this.refreshAgain.has(sid))
+      } finally { this.refreshing.delete(sid) }
+    })()
+  }
+
   /** The session's records, refreshed from the Agent; work it cannot confirm right now shows `unknown`. */
-  async snapshot(sid: string, profile: string | null): Promise<{ tasks: BackgroundTask[]; agent_available: boolean; agents_working: boolean }> {
+  async snapshot(sid: string, profile: string | null, opts: { agentOnly?: boolean } = {}): Promise<{ tasks: BackgroundTask[]; agent_available: boolean; agents_working: boolean }> {
     const sidecar = this.deps.sidecar()
     let agent: { delegations: DelegationRow[]; processes: ProcessRow[] } | null = null
     if (sidecar) {
@@ -341,9 +372,9 @@ export class BackgroundActivity {
       const lost = (await this.deps.store.list(sid)).filter((r) => LIVE.has(r.status) && r.status !== 'unknown' && !confirmed(r)).map((r) => ({ task_id: r.task_id, kind: r.kind, status: 'unknown' as const }))
       const reportedIds = new Set(reported.map((r) => r.task_id))
       await this.deps.store.update(sid, [...reported.map((r) => (confirmed(r as Receipt) || !RUNNING_LIKE.has(r.status ?? 'running') ? r : { ...r, status: 'unknown' as const })), ...lost.filter((r) => !reportedIds.has(r.task_id))])
-    } else {
+    } else if (!opts.agentOnly) {
       // The Agent cannot be asked: a running delegation's record says unknown too, so its transcript row matches the
-      // card; it returns to running once the Agent reports it again.
+      // card; it returns to running once the Agent reports it again. A refresh (`agentOnly`) leaves the records as they are.
       await this.deps.store.update(sid, (await this.deps.store.list(sid)).filter((r) => r.kind === 'delegation' && RUNNING_LIKE.has(r.status)).map((r) => ({ task_id: r.task_id, kind: r.kind, status: 'unknown' as const })))
     }
     const tasks = (await this.deps.store.list(sid)).map((r) => taskView(r, { unconfirmed: !agent && !confirmed(r) }))

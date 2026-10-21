@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Subagents and background processes the Agent starts during a reply show in the background chip right away, not only after the reply ends.",
+      "highlight": false,
+      "components": ["web"]
+    }
+  ]
+}

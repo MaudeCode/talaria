@@ -3,7 +3,8 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
-import { BackgroundActivity, BackgroundTaskStore, backgroundLink, dispatchedDelegationIds, eventReceipt, taskView } from './background-tasks.js'
+import { BackgroundActivity, BackgroundTaskStore, backgroundLink, dispatchedDelegationIds, eventReceipt, startsBackgroundWork, taskView } from './background-tasks.js'
+import type { SidecarLike } from '../sidecar/client.js'
 
 const dirs: string[] = []
 const tempDir = (): string => { const d = mkdtempSync(join(tmpdir(), 'bg-tasks-')); dirs.push(d); return d }
@@ -106,5 +107,47 @@ describe('background task records (TAL-372)', () => {
     expect(taskView((await restarted.get('s', 'call-1-2'))!).child_sessions).toEqual([{ goal: 'Write tests', session_id: 'child-1' }, { goal: 'Run tests', session_id: 'child-2' }])
     await restarted.update('s', [{ task_id: 'bad', kind: 'delegation', status: 'running', children: [{ goal: 'x', session_id: '../etc' }] }])
     expect(taskView((await restarted.get('s', 'bad'))!).child_sessions).toEqual([])
+  })
+
+  it('refresh only for a dispatched delegation or a shell call that started a registry process (TAL-1305)', () => {
+    // The tool results as the sidecar forwards them (`raw_result`): the Agent's own result objects.
+    expect(startsBackgroundWork('delegate_task', { status: 'dispatched', delegation_id: 'call_d' })).toBe(true)
+    expect(startsBackgroundWork('delegate_task', { status: 'completed', results: [{ status: 'completed', summary: 'ok' }] })).toBe(false)
+    expect(startsBackgroundWork('terminal', { output: 'Background process started', session_id: 'proc_0123456789ab', pid: 7, exit_code: 0, notify_on_complete: true })).toBe(true)
+    expect(startsBackgroundWork('terminal', { status: 'yielded_to_background', session_id: 'proc_0123456789ab', pid: 7, notify_on_complete: true })).toBe(true)
+    expect(startsBackgroundWork('terminal', { output: 'done', exit_code: 0, error: null })).toBe(false)
+    expect(startsBackgroundWork('terminal', 'plain text output')).toBe(false)
+    expect(startsBackgroundWork('read_file', { session_id: 'proc_0123456789ab' })).toBe(false)
+  })
+
+  it('refresh a session one Agent read at a time, reading once more after a burst (TAL-1305)', async () => {
+    const dir = tempDir()
+    const gates: (() => void)[] = []
+    const sidecar = { call: () => new Promise((resolve) => { gates.push(() => { resolve({ delegations: [], processes: [] }) }) }) } as unknown as SidecarLike
+    const activity = new BackgroundActivity({ store: new BackgroundTaskStore(testSessionDocuments(dir), () => 200), sidecar: () => sidecar, profileHome: () => dir, liveStream: () => false, now: () => 200, log: () => undefined })
+    for (let i = 0; i < 5; i++) activity.refresh('s', null)
+    activity.refresh('other', null)
+    await expect.poll(() => gates.length).toBe(2)
+    gates.shift()!()
+    await expect.poll(() => gates.length).toBe(2)
+    gates.splice(0).forEach((open) => { open() })
+    await new Promise((r) => setTimeout(r, 20))
+    expect(gates).toHaveLength(0)
+  })
+
+  it('leave the records as they are when a refresh cannot reach the Agent (TAL-1305)', async () => {
+    const dir = tempDir()
+    let changes = 0
+    const store = new BackgroundTaskStore(testSessionDocuments(dir), () => 200, () => { changes += 1 })
+    await store.update('s', [{ task_id: 'd1', kind: 'delegation', status: 'running', title: 'Check logs' }])
+    changes = 0
+    const sidecar = { call: () => Promise.reject(new Error('agent down')) } as unknown as SidecarLike
+    const logged: string[] = []
+    const activity = new BackgroundActivity({ store, sidecar: () => sidecar, profileHome: () => dir, liveStream: () => false, now: () => 200, log: (line) => { logged.push(line) } })
+    activity.refresh('s', null)
+    await expect.poll(() => logged.length).toBe(1)
+    await new Promise((r) => setTimeout(r, 20))
+    expect((await store.get('s', 'd1'))?.status).toBe('running')
+    expect(changes).toBe(0)
   })
 })
