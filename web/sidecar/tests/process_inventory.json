@@ -496,6 +496,13 @@
         ""
       ]
     },
+    "tests/test_chat_provider_routing.py::test_turns_carry_the_profile_provider_routing_and_rebuild_when_it_changes": {
+      "layer": "compatibility",
+      "reason": "Supported-Agent API compatibility: turns carry the profile OpenRouter provider routing and rebuild when it changes. Uses the real installed release, not a fabricated API response.",
+      "cases": [
+        ""
+      ]
+    },
     "tests/test_chat_refine.py::test_refine_reviews_the_conversation_on_the_session_agent_in_its_profile": {
       "layer": "compatibility",
       "reason": "Supported-Agent API compatibility: refine reviews the conversation on the session agent in its profile. Uses the real installed release, not a fabricated API response.",

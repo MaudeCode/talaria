@@ -824,6 +824,30 @@ def _request_overrides(model: str, provider, runtime: dict) -> dict | None:
     return merged or None
 
 
+def _provider_routing_kwargs() -> dict:
+    """The profile's OpenRouter ``provider_routing`` and ``openrouter.min_coding_score`` as ``AIAgent`` kwargs, with the
+    Agent's own mapping (``gateway/session_worker_construct.routing_agent_kwargs``). The score is coerced like the CLI's
+    (``cli_init_mixin``), so a quoted number counts and a value outside 0..1 stays unset. Runs under ``scoped_home``."""
+    from hermes_cli.config import load_config
+
+    cfg = load_config() or {}
+    routing = cfg.get("provider_routing")
+    routing = routing if isinstance(routing, dict) else {}
+    openrouter = cfg.get("openrouter")
+    raw_score = openrouter.get("min_coding_score") if isinstance(openrouter, dict) else None
+    try:
+        score = float(raw_score) if raw_score not in (None, "") else None
+    except (TypeError, ValueError):
+        score = None
+    return {
+        "providers_allowed": routing.get("only"), "providers_ignored": routing.get("ignore"),
+        "providers_order": routing.get("order"), "provider_sort": routing.get("sort"),
+        "provider_require_parameters": routing.get("require_parameters", False),
+        "provider_data_collection": routing.get("data_collection"),
+        "openrouter_min_coding_score": score if score is not None and 0.0 <= score <= 1.0 else None,
+    }
+
+
 def _agent_signature(model: str, provider, runtime: dict, toolsets, home: str, kwargs: dict) -> str:
     """Cache identity of an ``AIAgent``: everything its constructor bound from the resolved runtime, so a rotated key,
     a different API mode, ACP command, or credential pool never reuses an agent built for the old bundle. The key
@@ -841,6 +865,9 @@ def _agent_signature(model: str, provider, runtime: dict, toolsets, home: str, k
         # Bound at construction too: a reasoning-effort change from the composer must build a fresh agent.
         "reasoning_config": kwargs.get("reasoning_config"),
         "request_overrides": kwargs.get("request_overrides"),
+        "provider_routing": [kwargs.get(name) for name in (
+            "providers_allowed", "providers_ignored", "providers_order", "provider_sort", "provider_require_parameters",
+            "provider_data_collection", "openrouter_min_coding_score")],
         "checkpoints": [kwargs.get(name) for name in ("checkpoints_enabled", "checkpoint_max_snapshots", "checkpoint_max_total_size_mb", "checkpoint_max_file_size_mb")],
         # Entries may carry their own ``api_key``.
         "fallback_model": hashlib.sha256(json.dumps(kwargs.get("fallback_model"), sort_keys=True, default=str).encode("utf-8")).hexdigest()[:16],
@@ -895,6 +922,10 @@ def _agent_kwargs(AIAgent, params: dict, session_id: str, model: str, provider, 
     prefill_messages = _profile_prefill_messages()
     if prefill_messages and _supported(AIAgent, "prefill_messages"):
         kwargs["prefill_messages"] = prefill_messages
+    # TAL-976: the profile's OpenRouter provider routing, as the Agent's own CLI and gateway turns read it.
+    for name, value in _provider_routing_kwargs().items():
+        if _supported(AIAgent, name):
+            kwargs[name] = value
     # TAL-913: the profile's ``checkpoints`` section, as the Agent's own CLI and gateway turns read it.
     for name, value in checkpoint_kwargs().items():
         if _supported(AIAgent, name):

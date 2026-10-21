@@ -59,6 +59,7 @@ def _patch(monkeypatch):
     monkeypatch.setattr(chat, "_profile_fallback_chain", lambda: None)
     monkeypatch.setattr(chat, "_profile_prefill_messages", lambda: None)
     monkeypatch.setattr(chat, "_main_model_request_overrides", lambda model, provider, base_url="": None)
+    monkeypatch.setattr(chat, "_provider_routing_kwargs", lambda: {})
     monkeypatch.setattr(chat, "checkpoint_kwargs", lambda: {})
     monkeypatch.setattr(chat, "scoped_home", lambda home: contextlib.nullcontext(home))
 
