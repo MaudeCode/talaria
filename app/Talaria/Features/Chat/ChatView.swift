@@ -64,7 +64,7 @@ struct ChatView: View {
     private let transcriptBlockSpacing: CGFloat = 6
     private let composerAccessoryVerticalSpacing: CGFloat = 8
 
-    @State private var showsModelSwitchConfirmation = false
+    @State private var modelSwitchAlert: ModelSwitchConfirmation?
     @State private var completionAcknowledgementTask: Task<Void, Never>?
     @State private var completionAcknowledgementGeneration = 0
     @State private var viewedCompletionsThrough: Date?
@@ -822,20 +822,14 @@ struct ChatView: View {
                     }
                 )
             }
-            .onChange(of: viewModel.modelSwitchConfirmation?.id) { _, id in
-                showsModelSwitchConfirmation = id != nil
+            .onChange(of: viewModel.modelSwitchConfirmation?.id, initial: true) {
+                modelSwitchAlert = viewModel.modelSwitchConfirmation
             }
-            .alert(
-                "Change Model?",
-                isPresented: $showsModelSwitchConfirmation,
-                presenting: viewModel.modelSwitchConfirmation
-            ) { confirmation in
-                Button("Cancel", role: .cancel) { viewModel.cancelModelSwitch() }
-                Button("Change Model") {
-                    Task { await viewModel.confirmModelSwitch(confirmation) }
-                }
-            } message: { confirmation in
-                Text(confirmation.message ?? confirmation.warnings.map { "\($0.title)\n\n\($0.message)" }.joined(separator: "\n\n"))
+            .background {
+                // A warning's identity can change during dismissal. Keep its item presenter separate from Git's.
+                Color.clear
+                    .frame(width: 0, height: 0)
+                    .alert(item: $modelSwitchAlert, content: modelSwitchAlertPresentation)
             }
             .alert(
                 "Discard Later Messages?",
@@ -1123,6 +1117,17 @@ struct ChatView: View {
                 gitAlert = .error(message)
             }
         }
+    }
+
+    private func modelSwitchAlertPresentation(_ confirmation: ModelSwitchConfirmation) -> Alert {
+        Alert(
+            title: Text("Change Model?"),
+            message: Text(confirmation.message ?? confirmation.warnings.map { "\($0.title)\n\n\($0.message)" }.joined(separator: "\n\n")),
+            primaryButton: .default(Text("Change Model")) {
+                Task { await viewModel.confirmModelSwitch(confirmation) }
+            },
+            secondaryButton: .cancel(Text("Cancel")) { viewModel.cancelModelSwitch() }
+        )
     }
 
     private func gitAlertPresentation(_ alert: GitChatAlert) -> Alert {

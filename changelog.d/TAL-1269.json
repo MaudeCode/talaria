@@ -5,6 +5,12 @@
       "summary": "See live progress and status messages while MCP tools run in chat.",
       "highlight": false,
       "components": ["app"]
+    },
+    {
+      "category": "Fixed",
+      "summary": "Model changes show each refreshed confirmation warning.",
+      "highlight": false,
+      "components": ["app"]
     }
   ]
 }
