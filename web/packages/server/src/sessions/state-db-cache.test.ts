@@ -5,7 +5,7 @@ import { DatabaseSync } from 'node:sqlite'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { agentSessionRowsExisting, cheapChangeFingerprint, countConversationRounds, insightsSessionRows, latestCronSessionInfo, readImportableAgentSessionRows, stateDbCompressionLineage, stateDbCronJobIds, stateDbHasSession, stateDbLineageReport, stateDbLocalTarget, stateDbSessionRow, stateDbSessionSources, stateDbSessionRead, stateDbStorage, stateDbTailToolContent, stateDbWebDiagnosticIds, stopStateDbWorker } from './state-db.js'
 
-const observed = vi.hoisted(() => ({ handles: [] as import('node:sqlite').DatabaseSync[], probes: [] as string[], executions: [] as string[] }))
+const observed = vi.hoisted(() => ({ handles: [] as import('node:sqlite').DatabaseSync[], probes: [] as string[], executions: [] as string[], rowCounts: new Map<string, number>() }))
 vi.mock('node:sqlite', async (importOriginal) => {
   const real = await importOriginal<typeof import('node:sqlite')>()
   class ObservedDatabase extends real.DatabaseSync {
@@ -21,7 +21,13 @@ vi.mock('node:sqlite', async (importOriginal) => {
           if (typeof value !== 'function') return value
           return (...args: unknown[]) => {
             if (['get', 'all', 'iterate'].includes(String(key))) observed.executions.push(sql)
-            return Reflect.apply(value, target, args) as unknown
+            const result: unknown = Reflect.apply(value, target, args)
+            const countRows = (count: number): void => { observed.rowCounts.set(sql, (observed.rowCounts.get(sql) ?? 0) + count) }
+            if (Array.isArray(result)) countRows(result.length)
+            if (key !== 'iterate') return result
+            return (function* () {
+              for (const row of result as Iterable<unknown>) { countRows(1); yield row }
+            })()
           }
         },
       })
@@ -204,21 +210,28 @@ describe('state.db handle and schema reuse', () => {
     expect(meta.length, 'three keys per candidate, in batches of 400').toBeLessThanOrEqual(Math.ceil(600 * 3 / 400))
   })
 
-  it.each(['session_admissions', 'worker_executions'] as const)('scans %s lineages once across candidate chunks', (table) => {
+  it.each([
+    ['session_admissions', 200], ['session_admissions', 801],
+    ['worker_executions', 200], ['worker_executions', 801],
+  ] as const)('scans %s lineages once across %i candidates without returning unrelated history', (table, count) => {
     const db = new DatabaseSync(path)
-    const ids = Array.from({ length: 801 }, (_, i) => `candidate-${String(i)}`)
+    const ids = Array.from({ length: count }, (_, i) => `candidate-${String(i)}`)
     const column = table === 'session_admissions' ? 'target_session_id' : 'session_id'
     try {
       db.exec(`CREATE TABLE ${table} (${column} TEXT, lineage_json TEXT); CREATE INDEX ledger_target ON ${table} (${column})`)
       const insert = db.prepare(`INSERT INTO ${table} VALUES (?, ?)`)
       insert.run(ids[0]!, null)
       insert.run('pruned-owner', JSON.stringify(ids.slice(1)))
-      insert.run('unrelated-owner', JSON.stringify(['unrelated-segment']))
+      db.exec('BEGIN')
+      for (let i = 0; i < 10_000; i += 1) insert.run(`unrelated-owner-${String(i)}`, JSON.stringify([`unrelated-segment-${String(i)}`]))
+      db.exec('COMMIT')
     } finally { db.close() }
     observed.executions.length = 0
+    observed.rowCounts.clear()
     expect(stateDbSessionSources(path, ids)).toEqual(new Map(ids.map((id) => [id, { source: '', canonical: true }])))
     const scans = observed.executions.filter((sql) => sql.includes(`FROM ${table}`) && (sql.includes('lineage_json') || sql.includes('json_each')))
     expect(scans, 'one lineage scan regardless of candidate chunk count').toHaveLength(1)
+    expect(observed.rowCounts.get(scans[0]!), 'only matching lineage rows cross into JavaScript').toBe(1)
   })
 
   it('keeps receipt alias precedence in candidate order across metadata batches', () => {

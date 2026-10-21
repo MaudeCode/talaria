@@ -817,6 +817,7 @@ function sessionSources(db: DatabaseSync, cols: Set<string>, ids: string[]): Map
     }
   }
   const ledgerIds = new Set<string>()
+  const ledgerCandidates = JSON.stringify(candidates)
   for (const [table, column] of [['session_admissions', 'target_session_id'], ['worker_executions', 'session_id']] as const) {
     if (!tables.has(table) || !candidates.length) continue
     const hasLineage = tableColumns(db, table).has('lineage_json')
@@ -826,12 +827,12 @@ function sessionSources(db: DatabaseSync, cols: Set<string>, ids: string[]): Map
       for (const row of db.prepare(`SELECT ${column} AS id FROM ${table} WHERE ${column} IN (${marks})`).all(...chunk) as { id: string }[]) ledgerIds.add(row.id)
     }
     if (hasLineage) {
-      for (const row of db.prepare(`SELECT ${column} AS id, lineage_json FROM ${table} WHERE lineage_json IS NOT NULL`).iterate() as Iterable<{ id: string; lineage_json: string }>) {
+      // Bind the complete set once so unrelated history never crosses into JavaScript, even across candidate chunks.
+      const scan = db.prepare(`SELECT ${column} AS id, lineage_json FROM ${table} WHERE lineage_json IS NOT NULL AND
+        (${column} IN (SELECT value FROM json_each(?)) OR EXISTS
+          (SELECT 1 FROM json_each(lineage_json) WHERE value IN (SELECT value FROM json_each(?))))`)
+      for (const row of scan.iterate(ledgerCandidates, ledgerCandidates) as Iterable<{ id: string; lineage_json: string }>) {
         const lineage: unknown = JSON.parse(row.lineage_json)
-        // json_each also visits non-array values; a matching malformed lineage must still fail closed.
-        const values = lineage && typeof lineage === 'object' ? Object.values(lineage) : [lineage]
-        const linked = values.some((value: unknown) => (typeof value === 'string' || (value !== null && typeof value === 'object')) && candidateSet.has(str(value)))
-        if (!candidateSet.has(row.id) && !linked) continue
         if (!Array.isArray(lineage) || !lineage.every((v) => typeof v === 'string')) throw new Error('Unreadable Agent admission lineage')
         ledgerIds.add(row.id)
         for (const sid of lineage) ledgerIds.add(sid)
