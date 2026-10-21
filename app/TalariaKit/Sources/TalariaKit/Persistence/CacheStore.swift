@@ -2,6 +2,11 @@ import Foundation
 import SwiftData
 
 public enum CacheStore {
+    // Weak keys avoid retaining discarded contexts or confusing a new context with a reused address.
+    @MainActor private static let maintenanceDates = NSMapTable<ModelContext, NSDate>(
+        keyOptions: [.weakMemory, .objectPointerPersonality], valueOptions: .strongMemory
+    )
+
     @MainActor
     public static func cachedSessions(
         serverURL: URL,
@@ -169,7 +174,9 @@ public enum CacheStore {
             let cacheKey = CachedSession.cacheKey(serverURLString: serverURLString, sessionID: sessionID)
             if let cachedSession = existingByKey[cacheKey] {
                 cachedSession.apply(session, cachedAt: cachedAt)
-                cachedSession.listPosition = position
+                if cachedSession.listPosition != position {
+                    cachedSession.listPosition = position
+                }
             } else {
                 let cachedSession = CachedSession(
                     serverURLString: serverURLString,
@@ -186,8 +193,7 @@ public enum CacheStore {
             removeFromCachedList(staleSession, in: context, now: cachedAt)
         }
 
-        try performMaintenance(in: context, now: cachedAt)
-        try context.save()
+        try saveChanges(in: context, now: cachedAt)
     }
 
     @MainActor
@@ -212,8 +218,7 @@ public enum CacheStore {
             context.insert(CachedSession(serverURLString: serverURLString, session: session, cachedAt: cachedAt))
         }
 
-        try performMaintenance(in: context, now: cachedAt)
-        try context.save()
+        try saveChanges(in: context, now: cachedAt)
     }
 
     /// Records a session's `branched_from` from its detail (TAL-454). A chat the list has not cached yet (one opened
@@ -325,8 +330,7 @@ public enum CacheStore {
         session?.recentMessagesCount = messagesOffset.map { _ in messages.count }
         session?.recentMessagesExpiresAt = messagesOffset.map { _ in cachedAt.addingTimeInterval(CachePolicy.ttl) }
 
-        try performMaintenance(in: context, now: cachedAt)
-        try context.save()
+        try saveChanges(in: context, now: cachedAt)
     }
 
     @MainActor
@@ -377,9 +381,35 @@ public enum CacheStore {
     @MainActor
     private static func removeFromCachedList(_ session: CachedSession, in context: ModelContext, now: Date) {
         if (session.recentMessagesExpiresAt ?? .distantPast) > now {
-            session.transcriptOnly = true
+            if session.transcriptOnly != true {
+                session.transcriptOnly = true
+            }
         } else {
             context.delete(session)
+        }
+    }
+
+    /// Foreground entry bypasses the write-path throttle, even when no server refresh succeeds.
+    @MainActor
+    public static func maintainCache(in context: ModelContext, now: Date = Date()) throws {
+        try saveChanges(in: context, now: now, forceMaintenance: true)
+    }
+
+    @MainActor
+    private static func saveChanges(in context: ModelContext, now: Date, forceMaintenance: Bool = false) throws {
+        let lastMaintenance = maintenanceDates.object(forKey: context) as Date?
+        let needsMaintenance = forceMaintenance || lastMaintenance.map {
+            now.timeIntervalSince($0) >= CachePolicy.maintenanceInterval || now < $0
+        } ?? true
+        if needsMaintenance {
+            try performMaintenance(in: context, now: now)
+        }
+        if context.hasChanges {
+            try context.save()
+        }
+        // A failed maintenance/save must remain eligible for retry.
+        if needsMaintenance {
+            maintenanceDates.setObject(now as NSDate, forKey: context)
         }
     }
 

@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Session list refreshes avoid rewriting unchanged offline data.",
+      "highlight": false,
+      "components": ["app"]
+    }
+  ]
+}

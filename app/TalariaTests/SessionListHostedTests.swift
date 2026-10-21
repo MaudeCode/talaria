@@ -108,12 +108,20 @@ final class SessionListHostedTests: XCTestCase {
         let first = try hostWindow(fixture.sessionList())
         let cached = await awaitElement(in: first, where: isFixtureRow)
         XCTAssertNotNil(cached, "Missing deterministic session fixture")
+        attachHostedScreenshot(first, name: "session-cache-before-repeat-refresh")
+        // Exercise the incremental writer and foreground cleanup in the real build before
+        // reopening offline. Neither may lose the last server-selected rows or their order.
+        let sessions = try await fixture.client.sessions().sessions ?? []
+        try CacheStore.cacheSessions(sessions, serverURL: UITestFixtureEnvironment.serverURL,
+            in: fixture.cache.mainContext)
+        try CacheStore.maintainCache(in: fixture.cache.mainContext)
         first.isHidden = true
 
         FixtureLaunchArguments.scenario.append(UITestFixtureEnvironment.holdSessionListArgument)
         let relaunched = try hostWindow(fixture.sessionList())
         let painted = await awaitElement(in: relaunched, where: isFixtureRow)
         XCTAssertNotNil(painted, "The relaunch did not show the last chats before /api/sessions answered")
+        attachHostedScreenshot(relaunched, name: "session-cache-after-repeat-refresh-offline")
         fixture.releaseHeldLoads()
     }
 
