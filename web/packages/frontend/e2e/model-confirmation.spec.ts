@@ -61,10 +61,12 @@ test('native model outcomes keep the committed selection and require the owner c
   })
   const actions: Record<string, unknown>[] = []
   await page.route('**/api/chat/owner-action', async (route) => {
-    const body = route.request().postDataJSON() as { payload: Record<string, unknown> }
+    const body = route.request().postDataJSON() as { operation: string; payload: Record<string, unknown> }
     actions.push(body)
-    if (body.payload.confirm === 'native-token') { committed = 'picked'; change = { state: 'applied' } }
-    else change = { state: 'confirmation_required', message: 'This model may train on your conversation.', confirm: 'native-token', model: 'picked', provider: 'custom' }
+    if (body.operation === 'model') {
+      if (body.payload.confirm === 'native-token') { committed = 'picked'; change = { state: 'applied' } }
+      else change = { state: 'confirmation_required', message: 'This model may train on your conversation.', confirm: 'native-token', model: 'picked', provider: 'custom' }
+    }
     const response = await request.get(`/api/session?session_id=${session.session_id}`)
     const current = await response.json() as { session: Record<string, unknown> }
     await route.fulfill({ json: { ok: true, model_change: change, session: { ...current.session, model: committed, read_only: true, owner_attachment: owner() } } })
@@ -83,6 +85,13 @@ test('native model outcomes keep the committed selection and require the owner c
   await dialog.getByRole('button', { name: 'Cancel', exact: true }).click()
   await expect(page.locator('#composerModelChip')).toContainText('old-model')
   await expect(dialog).toHaveCount(0)
+  await composer.fill('/workspace /synthetic/workspace')
+  await page.getByRole('button', { name: 'Send message', exact: true }).click()
+  await expect.poll(() => actions.length).toBe(2)
+  await page.screenshot({ path: info.outputPath('native-workspace.png') })
+  await expect(dialog).toHaveCount(0)
+  expect(actions.at(-1)).toMatchObject({ operation: 'workspace', payload: { cwd: '/synthetic/workspace' } })
+  await expect(page.locator('#composerModelChip')).toContainText('old-model')
   change = { state: 'deferred', model: 'picked' }
   await page.reload(); await settle(page)
   await expect(page.locator('[data-notice="model-change"] .composer-notice-content')).toBeVisible()

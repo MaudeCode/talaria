@@ -121,3 +121,18 @@ it('asks again for an intentional native pick after cancelling the same owner to
   await userEvent.click(screen.getByText('Pick model'))
   expect(await screen.findByRole('alertdialog')).toHaveTextContent('Guard warning')
 })
+
+it('keeps a cancelled native confirmation closed when a workspace response repeats it', async () => {
+  const owner: OwnerAttachment = { state: 'attached', reason: null, can_submit: true, can_interrupt: false, can_attach: false, revision: 8, execution_generation: 3, admissions: [] }
+  const change: NonNullable<OwnerAttachment['model_change']> = { state: 'confirmation_required', confirm: 'cached-token', message: 'Guard warning', model: 'contributor', provider: 'custom' }
+  vi.mocked(api.ownerAction).mockResolvedValue({ ok: true, model_change: change, session: sessionFixture({ session_id: 's1', owner_attachment: { ...owner, model_change: change } }) })
+  const view = render(<Chat owner={owner} />)
+  await userEvent.click(screen.getByText('Pick model'))
+  await userEvent.click(within(await screen.findByRole('alertdialog')).getByText('Cancel'))
+  view.rerender(<Chat owner={{ ...owner, model_change: change }} change={{ workspace: '/trusted-workspace' }} />)
+  await userEvent.click(screen.getByText('Pick model'))
+  await waitFor(() => expect(refresh).toHaveBeenCalledTimes(2))
+  expect(screen.queryByRole('alertdialog')).toBeNull()
+  expect(api.ownerAction).toHaveBeenLastCalledWith(expect.objectContaining({ operation: 'workspace', payload: { cwd: '/trusted-workspace' } }))
+  expect(api.ownerAction).toHaveBeenCalledTimes(2)
+})

@@ -47,11 +47,12 @@ export function useSessionUpdate(sessionId: string | null, refresh: (session?: S
     try {
       if (nativeOwner) {
         if (nativeOwner.revision === null || nativeOwner.execution_generation === null) return
+        const modelPick = body.workspace === undefined
         const result = await api.ownerAction({ session_id: sessionId, action: 'mutate', request_id: randomHex(),
           expected_revision: nativeOwner.revision, execution_generation: nativeOwner.execution_generation,
-          operation: body.workspace === undefined ? 'model' : 'workspace',
-          payload: body.workspace === undefined ? { model: body.model, ...(body.model_provider !== undefined ? { provider: body.model_provider } : {}), ...(body.confirm_token ? { confirm: body.confirm_token } : {}) } : { cwd: body.workspace } })
-        if (current()) { presentNative(result.model_change, true); await refresh(result.session) }
+          operation: modelPick ? 'model' : 'workspace',
+          payload: modelPick ? { model: body.model, ...(body.model_provider !== undefined ? { provider: body.model_provider } : {}), ...(body.confirm_token ? { confirm: body.confirm_token } : {}) } : { cwd: body.workspace } })
+        if (current()) { presentNative(result.model_change, modelPick); await refresh(result.session) }
         return
       } else await api.updateSession(sessionId, body)
       if (current()) { setPending(null); await refresh() }
