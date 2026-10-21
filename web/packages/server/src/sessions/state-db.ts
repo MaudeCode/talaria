@@ -9,6 +9,7 @@ import { existsSync, openSync, readSync, closeSync, statSync } from 'node:fs'
 import { DatabaseSync } from 'node:sqlite'
 import { createHash } from 'node:crypto'
 import { Worker } from 'node:worker_threads'
+import { AsyncLocalStorage } from 'node:async_hooks'
 import type { AgentStorage, ExecutionMode } from '@maudecode/talaria-web-contracts'
 import { str } from '../util.js'
 import { stateDbMessageFingerprint, stateDbMessageKey } from './state-db-identity.js'
@@ -1034,6 +1035,11 @@ interface ListingWorker { worker: Worker; pending: Map<number, PendingCall> }
 
 type StateDbWorkerLane = 'listing' | 'session'
 const listingWorkers = new Map<StateDbWorkerLane, ListingWorker>()
+const listingReadScope = new AsyncLocalStorage<'listing'>()
+
+/** Keep a sidebar phase's nested reads on its lane without changing interactive callers' defaults. */
+export function withStateDbListingReads<T>(read: () => T): T { return listingReadScope.run('listing', read) }
+
 let nextCallId = 0
 /** Set until both workers exit during shutdown; calls then reject instead of starting another worker. */
 let stoppingWorker = false
@@ -1066,10 +1072,11 @@ function startedListingWorker(lane: StateDbWorkerLane): ListingWorker {
   return current
 }
 
-function callListingWorker(call: ListingCall, lane: StateDbWorkerLane = call.op === 'session' || call.op === 'sources' || call.op === 'existing' ? 'session' : 'listing'): Promise<StateDbWorkerReply> {
+function callListingWorker(call: ListingCall, lane?: StateDbWorkerLane): Promise<StateDbWorkerReply> {
   // A multi-read caller the stop interrupted goes on to its next read; that read must not restart the worker.
   if (stoppingWorker) return Promise.reject(new Error('state.db worker stopped'))
-  const current = startedListingWorker(lane)
+  const target = lane ?? listingReadScope.getStore() ?? (call.op === 'session' || call.op === 'sources' || call.op === 'existing' ? 'session' : 'listing')
+  const current = startedListingWorker(target)
   const id = ++nextCallId
   return new Promise((resolve, reject) => {
     current.pending.set(id, { resolve, reject })

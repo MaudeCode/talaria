@@ -22,7 +22,7 @@ import { SessionBusy, SessionNotFound, type SessionStore } from './store.js'
 import { UNSETTLED_TODO_KEY, attachTodoSnapshot, attachTodoState } from './todo.js'
 import { isClaudeCodeSessionId, type ClaudeCodeSessionSource } from './claude-code.js'
 import { auditSessionRecovery, repairSafeSessionRecovery, type RecoveryDeps } from './recovery.js'
-import { stateDbWebDiagnosticIdsAsync, agentSessionRowsExistingAsync, CANONICAL_READ_ONLY_REASON, OWNERSHIP_UNAVAILABLE_REASON, CONVERSATION_ROUND_THRESHOLD, countConversationRounds, stateDbTailToolContent, stateDbLineageReport, stateDbSessionMessages, stateDbSessionReadAsync, stateDbSessionRow, stateDbSessionSourcesAsync, stateDbTimestampSeconds, type StateDbRead, type StateDbSessionSource, type StateDbSettlementRead } from './state-db.js'
+import { stateDbWebDiagnosticIdsAsync, agentSessionRowsExistingAsync, CANONICAL_READ_ONLY_REASON, OWNERSHIP_UNAVAILABLE_REASON, CONVERSATION_ROUND_THRESHOLD, countConversationRounds, stateDbTailToolContent, stateDbLineageReport, stateDbSessionMessages, stateDbSessionReadAsync, stateDbSessionRow, stateDbSessionSourcesAsync, stateDbTimestampSeconds, withStateDbListingReads, type StateDbRead, type StateDbSessionSource, type StateDbSettlementRead } from './state-db.js'
 import { completionIncomplete, fallbackHandoffSummary, HANDOFF_SYSTEM_PROMPT, handoffMarker, handoffPayload, handoffTranscript, messageHandoffPayload, sameHandoff } from './handoff.js'
 import { anchorMessageKey, anchorSummary, CompressionJobs, compressionReference, visibleMessagesForAnchor, type CompressionJob } from './compress.js'
 import { chatReadiness, runtimeFailureDetails, SidecarError, type SidecarLike } from '../sidecar/client.js'
@@ -1302,7 +1302,7 @@ export class SessionService {
       cliRows = expanded.rows
       if (expanded.storage && (expanded.storage.state === 'corrupt' || agentStorage?.state === 'ok')) agentStorage = expanded.storage
     }
-    const lookups = await this.listStateDbLookups(webuiRows, (cliRows ?? []).map((r) => str(r.session_id)))
+    const lookups = await withStateDbListingReads(() => this.listStateDbLookups(webuiRows, (cliRows ?? []).map((r) => str(r.session_id))))
     const payload = (await buildSessionListPayload(this.store, { ...params, ...(cliRows ? { cliRows } : {}), ...(truncatedSources ? { truncatedSources } : {}), ...(agentStorage ? { agentStorage } : {}), gatewayIdentity, ...lookups, webuiRows, webDiagnosticIds, activeProfile, isolatedProfileMode: this.deps.isolatedProfileMode(), profilesMatch: this.deps.profilesMatch }))
     return sessionListResponse(payload, this.deps.runtime, this.deps.redactEnabled(), this.deps.now(), await this.workspaceNames([...payload.sessions, ...payload.sidebar_reference_sessions]))
   }

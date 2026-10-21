@@ -12,7 +12,7 @@ import { str } from '../util.js'
 import { CliSessionSource } from './cli-sessions.js'
 import { GatewayWatcher } from './gateway-watcher.js'
 import { Session } from './session.js'
-import { agentSessionRowsExistingAsync, crashStateDbWorkerForTests, readImportableAgentSessionRowsAsync, setStateDbReadDelayForTests, stateDbSessionReadAsync, stateDbSessionSourcesAsync, stopStateDbWorker } from './state-db.js'
+import { agentSessionRowsExistingAsync, crashStateDbWorkerForTests, readImportableAgentSessionRowsAsync, setStateDbReadDelayForTests, stateDbSessionReadAsync, stateDbSessionSourcesAsync, stopStateDbWorker, type StateDbWorkerReply, type StateDbWorkerRequest } from './state-db.js'
 
 type Json = Record<string, unknown>
 
@@ -149,6 +149,67 @@ describe('independent state.db worker lanes (TAL-1189)', () => {
     }
     expect((await readImportableAgentSessionRowsAsync(dbPath))[0]?.id).toBe('lane-session')
     expect(await sessionRow()).toMatchObject({ id: 'lane-session' })
+  })
+})
+
+describe('sidebar probe lane isolation (TAL-1189)', () => {
+  let s: TestServer
+  let dbPath: string
+  beforeAll(async () => {
+    s = await bootTestServer()
+    dbPath = join(s.state, 'state.db')
+    seedStateDb(dbPath, [{ id: 'sidebar-cli', source: 'cli', at: 1000 }, { id: 'cron_job1_1', source: 'cron', at: 1010 }])
+    const db = new DatabaseSync(dbPath)
+    try { db.exec("UPDATE sessions SET title = NULL WHERE source = 'cron'") } finally { db.close() }
+    await s.deps.sessionStore.save(new Session({ session_id: 'sidebar-cli', title: 'Imported', source_tag: 'cli', raw_source: 'cli', read_only: true, messages: [{ role: 'user', content: 'hi', timestamp: 1 }] }, { workspace: s.state, model: null }))
+  })
+  afterAll(async () => { await s.close() })
+
+  it.each(['sources', 'existing', 'cron admissions'] as const)('serves interactive reads before a held sidebar %s probe', async (phase) => {
+    s.deps.cliSessions.invalidate()
+    await Promise.all([readImportableAgentSessionRowsAsync(dbPath), stateDbSessionReadAsync(null, 'stateDbSessionRow', dbPath, 'sidebar-cli')])
+    let dispatched!: () => void
+    let completed!: () => void
+    const started = new Promise<void>((resolve) => { dispatched = resolve })
+    const held = new Promise<void>((resolve) => { completed = resolve })
+    // eslint-disable-next-line @typescript-eslint/unbound-method -- Forward with the original Worker receiver below.
+    const post = Worker.prototype.postMessage
+    const calls = vi.spyOn(Worker.prototype, 'postMessage')
+    let heldRequest = false
+    let cleanup = (): void => undefined
+    calls.mockImplementation(function (this: Worker, value, transferList) {
+      const request = value as StateDbWorkerRequest
+      const matches = phase === 'cron admissions' ? request.op === 'session' && request.read === 'stateDbCronJobIds' : request.op === phase
+      if (!heldRequest && matches) {
+        heldRequest = true
+        const onReply = (reply: StateDbWorkerReply): void => { if (reply.id === request.id) completed() }
+        this.on('message', onReply)
+        cleanup = () => { this.off('message', onReply) }
+        post.call(this, { ...request, delayMs: 1500 }, transferList)
+        dispatched()
+      } else post.call(this, value, transferList)
+    })
+    const listing = s.get(ALL_SOURCES).then(async (res) => { expect(res.status).toBe(200); return ids(await res.json() as Json) })
+    try {
+      await Promise.race([started, listing.then(() => { throw new Error(`sidebar never dispatched ${phase}`) })])
+      const interactive = Promise.all([
+        stateDbSessionReadAsync(null, 'stateDbSessionRow', dbPath, 'sidebar-cli'),
+        stateDbSessionSourcesAsync(dbPath, ['sidebar-cli']),
+        agentSessionRowsExistingAsync(dbPath, ['sidebar-cli']),
+      ]).then(([row, sources, existing]) => {
+        expect(row?.id).toBe('sidebar-cli')
+        expect(sources?.get('sidebar-cli')).toBe('cli')
+        expect(existing).toEqual(new Set(['sidebar-cli']))
+        return 'interactive'
+      })
+      expect(await Promise.race([held.then(() => 'sidebar'), interactive])).toBe('interactive')
+      expect(await listing).toEqual(expect.arrayContaining(['sidebar-cli', 'cron_job1_1']))
+    } finally {
+      try { await listing } finally {
+        calls.mockRestore()
+        cleanup()
+      }
+    }
   })
 })
 

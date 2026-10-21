@@ -90,7 +90,10 @@ on every response. Catalog invalidation or changed credentials discard that snap
 
 The `state.db` dispatcher keeps two independent FIFO lanes. The listing lane handles
 rows and row batches, fingerprints, storage health and Web diagnostic IDs. The session
-lane handles all `SESSION_READS`, source ownership and existence probes. A lane crash
+lane handles interactive `SESSION_READS`, source ownership and existence probes.
+Sidebar row enrichment and owner/orphan lookups carry an async listing context, so
+their nested source, existence and cron-admission reads stay on the listing lane
+without changing concurrent interactive or mutation-gate reads. A lane crash
 rejects only its pending reads; shutdown stops both lanes and prevents restarts until
 both exit. Each worker retains its own read-only handle per database path and file identity.
 Each read gets a fresh transaction and checks its schema version before reusing column

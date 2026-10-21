@@ -9,7 +9,7 @@
  */
 import { existsSync, readFileSync, statSync } from 'node:fs'
 import { join } from 'node:path'
-import { AGENT_STORAGE_OK, cronSessionJobId, isCliSessionRow, normalizeAgentSessionSource, readImportableAgentSessionRowBatchesAsync, stateDbReadFailure, stateDbSessionReadAsync, type Dict, type ReadRowsOptions } from './state-db.js'
+import { AGENT_STORAGE_OK, cronSessionJobId, isCliSessionRow, normalizeAgentSessionSource, readImportableAgentSessionRowBatchesAsync, stateDbReadFailure, stateDbSessionReadAsync, withStateDbListingReads, type Dict, type ReadRowsOptions } from './state-db.js'
 import type { AgentStorage } from '@maudecode/talaria-web-contracts'
 import { latestLineageSidecar, sanitizeSessionRow, type ListParams } from './list.js'
 import type { SessionStore } from './store.js'
@@ -93,7 +93,7 @@ export class CliSessionSource {
     } catch (error) {
       results = error as Error
     }
-    return (await this.store(slot, now, profile, results, storage))
+    return (await withStateDbListingReads(() => this.store(slot, now, profile, results, storage)))
   }
 
   private async slot(profile: string, opts: CliLoadOptions): Promise<CacheSlot> {
