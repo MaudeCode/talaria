@@ -1185,6 +1185,30 @@ describe('chat turns through the sidecar', () => {
     }
   })
 
+  it.each(['top-level', 'persisted', 'state.db'])('carries %s session privacy requirements into a derived title prompt', async (source) => {
+    const sid = await newSession(s)
+    const session = await s.deps.sessionStore.get(sid)
+    session.messages = [
+      { role: 'user', content: 'summarize my mail' },
+      { role: 'tool', content: 'private mail', tool_call_id: 'mail', ...(source === 'top-level' ? { data_use: ['no_training'] } : { display_metadata: { data_use: ['no_training'], diff: 'display only' } }) },
+      { role: 'tool', content: 'private calendar', tool_call_id: 'calendar', data_use: ['zero_retention'] },
+      { role: 'assistant', content: 'Private meeting details from the mail and calendar.' },
+    ]
+    // The model context may already be compacted; the transcript still owns the requirements.
+    session.context_messages = [{ role: 'user', content: '[CONTEXT COMPACTION] private meeting details' }]
+    const stateRows = source === 'state.db' ? session.messages.filter((m) => m.role === 'tool') : null
+    if (stateRows) session.messages = session.messages.filter((m) => m.role !== 'tool')
+    const stateRead = stateRows ? vi.spyOn(s.deps.sessions, 'stateDbRows').mockResolvedValue(stateRows) : null
+    await s.deps.sessionStore.save(session)
+    let sent: Json[] = []
+    sidecar.respond('aux.complete', (params) => { sent = params.messages; return { model: 'test-model', text: 'Private meeting details', usage: null } })
+    try {
+      expect((await post(s, '/api/session/title/regenerate', { session_id: sid })).status).toBe(200)
+      expect(sent.find((m) => m.role === 'user')).toMatchObject({ data_use: ['no_training', 'zero_retention'] })
+      expect(JSON.stringify(sent)).not.toContain('display_metadata')
+    } finally { stateRead?.mockRestore() }
+  })
+
   it('skips background titling when the profile turns auxiliary.title_generation.enabled off; manual regenerate still titles (TAL-531)', async () => {
     const turns = s.deps.turns as unknown as { deps: { profileConfig: ((profile: string | null) => Promise<Record<string, unknown> | null>) | undefined } }
     const original = turns.deps.profileConfig

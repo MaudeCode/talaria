@@ -15,6 +15,15 @@ An older Agent without connector privacy routing cannot continue, compress or re
 history carrying those requirements. The sidecar refuses it before provider
 resolution or Agent construction and asks the operator to update the Agent.
 
+Title and handoff prompts inherit the union of requirements from the source
+session, including rows outside a summary window or compacted model context.
+Protected auxiliary calls use the Agent's provider profile to verify deny/ZDR
+policy, then pin its resolved provider, endpoint and credential for dispatch.
+They use the Agent's streamed call path, which does not take its implicit
+provider fallback ladder. A main-model fallback retains the message metadata
+and checks that model's policy again; unverified routes are refused. Existing
+local title and handoff fallbacks remain available.
+
 ## Tested identity
 
 `sidecar/agent_dependency.json` records the tested external Agent: a stable

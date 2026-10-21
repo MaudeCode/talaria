@@ -2,7 +2,7 @@
   "entries": [
     {
       "category": "Fixed",
-      "summary": "Keep connector privacy requirements when continuing or compressing a chat.",
+      "summary": "Keep connector privacy requirements in continued chats, summaries and generated titles.",
       "highlight": false,
       "components": ["web"]
     }

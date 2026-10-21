@@ -1264,6 +1264,23 @@ function toolCallId(tc: unknown): string {
 }
 
 const API_SAFE_MSG_KEYS = new Set(['role', 'content', 'tool_calls', 'tool_call_id', 'tool_use_id', 'name', 'refusal', 'reasoning_content'])
+
+function messageDataUse(msg: Message): unknown {
+  return msg.data_use ?? (isDict(msg.display_metadata) ? msg.display_metadata.data_use : undefined)
+}
+
+/** Derived prompts inherit the source session's requirements even when tool rows are outside the selected window. */
+export function withDataUseRequirements(prompt: Message[], source: Message[]): Message[] {
+  const requirements = new Set<string>()
+  for (const msg of source) {
+    const value = messageDataUse(msg)
+    if (value == null) continue
+    if (!Array.isArray(value) || value.some((item) => typeof item !== 'string')) throw new Error('Invalid connector privacy requirements')
+    for (const requirement of value as string[]) requirements.add(requirement)
+  }
+  const dataUse = [...requirements].sort()
+  return dataUse.length ? prompt.map((msg) => msg.role === 'user' ? { ...msg, data_use: dataUse } : msg) : prompt
+}
 // TAL-927: the Agent's reload projection (`_rows_to_conversation`) restores these on assistant rows so prior reasoning
 // replays and keeps its signatures; turn history keeps them too. Persistence-only: the Agent strips them per route.
 const AGENT_ASSISTANT_REPLAY_KEYS = new Set(['reasoning', 'reasoning_details', 'codex_reasoning_items', 'codex_message_items', 'finish_reason'])
@@ -1339,7 +1356,7 @@ export function sanitizeMessagesForApi(messages: Message[], { preserveApiContent
     const sanitized = Object.fromEntries(Object.entries(msg).filter(([k]) => API_SAFE_MSG_KEYS.has(k) || replayKey(k)))
     // Agent routing metadata survives both turn and compression history; the Agent strips it before provider calls.
     if (msg.role === 'tool') {
-      const dataUse = msg.data_use ?? (isDict(msg.display_metadata) ? msg.display_metadata.data_use : undefined)
+      const dataUse = messageDataUse(msg)
       if (dataUse !== undefined) sanitized.data_use = dataUse
     }
     if (Array.isArray(sanitized.tool_calls) && !sanitized.tool_calls.length) Reflect.deleteProperty(sanitized, 'tool_calls')

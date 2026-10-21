@@ -34,7 +34,7 @@ import { SessionGoals } from './goals.js'
 import { hydrateAnchorActivityScenes, turnTerminalState, withTurnIds } from './anchor.js'
 import { persistentStateChanges, persistentStateSnapshot } from './state-saved.js'
 import { agentBuildParams, webuiEphemeralSystemPrompt, workspaceSystemMessage } from './turn-context.js'
-import { agentSteerText, assistantReplyAddedAfterCurrentTurn, attachedFilesPrompt, buildPartialMessage, dedupeContext, checkpointTurnStart, extractToolCallsFromMessages, hasNativeImages, injectMaxIterationSummaryFallback, isDict, mergeDisplayMessagesAfterAgentResult, messageIdentity, messageText, pendingUserRow, sanitizeMessagesForApi, sessionLacksFinalAssistantAnswer, splitDisplayText, stateDbSeenId, joinReasoning, reasoningFieldsText, toolOutcome, withAttachmentObjects, newestSettledReply, withBodyExcerpts, withDisplayMedia, withMarkerKinds, withToolCallOutcomes, withoutMaxIterationSummaryRequest, withNativeImagesRestored, withoutNativeImages, withoutToolImages } from './merge.js'
+import { agentSteerText, assistantReplyAddedAfterCurrentTurn, attachedFilesPrompt, buildPartialMessage, dedupeContext, checkpointTurnStart, extractToolCallsFromMessages, hasNativeImages, injectMaxIterationSummaryFallback, isDict, mergeDisplayMessagesAfterAgentResult, messageIdentity, messageText, pendingUserRow, sanitizeMessagesForApi, withDataUseRequirements, sessionLacksFinalAssistantAnswer, splitDisplayText, stateDbSeenId, joinReasoning, reasoningFieldsText, toolOutcome, withAttachmentObjects, newestSettledReply, withBodyExcerpts, withDisplayMedia, withMarkerKinds, withToolCallOutcomes, withoutMaxIterationSummaryRequest, withNativeImagesRestored, withoutNativeImages, withoutToolImages } from './merge.js'
 import { mayBecomeSilentReply, turnOrigin, recordBackgroundReview, recordBackgroundUpdate, type BackgroundUpdate } from './background-updates.js'
 import { countExchanges, fallbackTitleFromExchange, firstExchangeSnippets, isGenericFallbackTitle, latestExchangeSnippets, looksInvalidGeneratedTitle, looksLikeDefaultCliTitle, sanitizeGeneratedTitle, titleLanguageMismatch, titlePrompts } from './titles.js'
 import { WORKSPACE_BUSY_MESSAGE } from '../workspace/git.js'
@@ -1540,6 +1540,7 @@ export class TurnRunner {
     await service.deps.warmSessionModelRepair?.(s.profile)
     const [model, provider] = service.turnModel(s)
     const [qa, prompts] = titlePrompts(userText, assistantText)
+    const source = [...s.messages, ...s.context_messages, ...await service.stateDbRows(s)]
     let status = 'llm_error_aux'
     for (const [idx, prompt] of prompts.entries()) {
       if ((await this.deps.service().isReadOnly(s))) return { title: '', status: 'read_only', rawPreview: '' }
@@ -1547,7 +1548,7 @@ export class TurnRunner {
       try {
         const result = await sidecar.call('aux.complete', {
           profile_home: this.deps.profileHome(s.profile), task: 'title_generation',
-          messages: [{ role: 'system', content: prompt }, { role: 'user', content: qa }], max_tokens: 64,
+          messages: withDataUseRequirements([{ role: 'system', content: prompt }, { role: 'user', content: qa }], source), max_tokens: 64,
           main_runtime: { model: model ?? '', provider }, main_fallback: true,
         })
         raw = str(result.text)

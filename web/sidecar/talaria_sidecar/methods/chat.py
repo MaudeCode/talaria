@@ -1187,17 +1187,17 @@ def _agent_class():
     return AIAgent
 
 
-def _require_data_use_support(history: list) -> None:
+def _require_data_use_support(history: list) -> frozenset[str]:
     """A downgraded Agent must never send history whose connector privacy requirements it cannot enforce."""
     if not any(isinstance(row, dict) and row.get("data_use") for row in history):
-        return
+        return frozenset()
     try:
         from agent.message_metadata import DATA_USE, data_use_requirement
     except ImportError:
         pass
     else:
         if DATA_USE == "data_use" and callable(data_use_requirement):
-            return
+            return data_use_requirement(history)
     raise RpcError("This Agent release cannot enforce connector privacy requirements. Update Hermes Agent before continuing, compressing or refining this chat.", condition="agent_incompatible")
 
 
