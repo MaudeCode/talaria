@@ -779,6 +779,7 @@ def _apply_plugin_mcp_settings(plugins_cmd, plugin_dir, key: str) -> str:
             return "restart_required"
         # Also exclude the explicit Reload MCP path. The native helper serializes settings-driven reconnects.
         with _RELOAD_MCP_LOCK:
+            live = {row["name"] for row in discovery.get_mcp_status() if row["name"] in names and row.get("connected")}
             restarted = reconnect(names)
             if restarted:
                 from hermes_constants import get_hermes_home
@@ -789,7 +790,7 @@ def _apply_plugin_mcp_settings(plugins_cmd, plugin_dir, key: str) -> str:
             statuses = {row["name"]: row["status"] for row in discovery.get_mcp_status() if row["name"] in names}
             if any(status == "failed" for status in statuses.values()):
                 return "restart_required"
-            if any(status == "connecting" for status in statuses.values()) or any(name not in statuses for name in names):
+            if any(status == "connecting" for status in statuses.values()) or any(name not in statuses for name in live | set(restarted)):
                 return "unknown"
         return "applied"
     except ImportError:

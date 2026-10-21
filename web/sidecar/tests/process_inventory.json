@@ -1,6 +1,13 @@
 {
   "schemaVersion": 1,
   "families": {
+    "tests/test_plugin_settings_mcp.py::test_plugin_save_reconciles_live_mcp_inputs": {
+      "layer": "compatibility",
+      "reason": "Real Agent portable-package settings and native reconnect API must replace a live stdio child launch environment while preserving profile borrowers; fakes cannot prove supported-Agent connection ownership.",
+      "cases": [
+        ""
+      ]
+    },
     "tests/test_plugin_updates.py::test_plugin_cached_update_and_scan_consent": {
       "layer": "compatibility",
       "reason": "Real Agent cached updates, local Git staging and scan APIs; controlled scanner verdicts retain Agent policy, and only final PM publication uses disposable trees.",
@@ -2634,13 +2641,6 @@
     "tests/test_command_approval_persistence.py::test_always_preserves_revocation_and_profile_scoped_grants": {
       "layer": "compatibility",
       "reason": "Actual retained-Agent allowlist reconciliation, baseline refresh and profile-scoped approval APIs; config IO is fake, but these private native contracts cannot be proven by a stand-in.",
-      "cases": [
-        ""
-      ]
-    },
-    "tests/test_plugin_settings_mcp.py::test_plugin_save_reconciles_live_mcp_inputs": {
-      "layer": "compatibility",
-      "reason": "Real Agent portable-package settings and native reconnect API must replace a live stdio child launch environment while preserving profile borrowers; fakes cannot prove supported-Agent connection ownership.",
       "cases": [
         ""
       ]

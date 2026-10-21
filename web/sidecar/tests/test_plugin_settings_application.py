@@ -86,3 +86,24 @@ def test_unreadable_mcp_declaration_does_not_claim_runtime_application(settings_
                         lambda *args: NS(mcp_servers={}, diagnostics=[NS(scope="mcp")]))
     assert commands.save_plugin_settings("demo", {"endpoint": "saved"})["runtime_application"] == "unknown"
     assert saved == {"endpoint": "saved"} and not calls
+
+
+@pytest.mark.parametrize("live", [False, True])
+def test_dormant_declared_servers_do_not_make_a_confirmed_save_unknown(settings_runtime, monkeypatch, live):
+    _, calls, discovery, manager, _, _ = settings_runtime
+    monkeypatch.setattr(sys.modules["hermes_cli.agent_plugins"], "load_agent_plugin",
+                        lambda *args: NS(mcp_servers={"echo": {}, "dormant": {}}, diagnostics=[]))
+    manager._portable_mcp_server_plugins["dormant"] = "demo"
+    discovery.get_mcp_status = lambda: [{"name": "echo", "status": "connected", "connected": True}] if live else []
+    discovery.restart_mcp_servers_with_new_inputs = lambda names: calls.append(names) or []
+    result = commands.save_plugin_settings("demo", {"endpoint": "saved"})
+    assert result["runtime_application"] == "applied", "dormant server was confused with an uncertain reconnect"
+    assert calls == [{"echo", "dormant"}]
+
+
+def test_a_previously_live_connection_missing_after_reconciliation_remains_unknown(settings_runtime):
+    _, _, discovery, _, _, _ = settings_runtime
+    statuses = iter([[{"name": "echo", "status": "connected", "connected": True}], []])
+    discovery.get_mcp_status = lambda: next(statuses)
+    discovery.restart_mcp_servers_with_new_inputs = lambda names: []
+    assert commands.save_plugin_settings("demo", {})["runtime_application"] == "unknown"

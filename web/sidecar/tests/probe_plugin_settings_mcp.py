@@ -3,6 +3,7 @@ import json
 import os
 from pathlib import Path
 import sys
+from unittest.mock import patch
 
 sys.path.insert(0, sys.argv[1])
 from talaria_sidecar.home import scoped_home
@@ -86,6 +87,23 @@ try:
             assert result["runtime_application"] == "applied", result
             assert value in read(), "repeated saves did not converge on the latest launch value"
             assert "first" in read(other), "a later save disturbed the other profile"
+        with scoped_home(home):
+            config.env_write(home, {"DEMO_KEY": "unconfirmed"})
+        reconnect = discovery.restart_mcp_servers_with_new_inputs
+        def lose_ack(names):
+            reconnect(names)
+            raise TimeoutError("synthetic reconnect acknowledgment lost")
+        with patch.object(discovery, "restart_mcp_servers_with_new_inputs", lose_ack), scoped_home(home):
+            unknown = commands.save_plugin_settings("envecho", {"label": "persisted"}, {"api_key": "DEMO_KEY"})
+        assert unknown["runtime_application"] == "unknown", unknown
+        assert "unconfirmed:changed" in read(), "unknown acknowledgment must preserve the applied secret"
+        current = connection()
+        with scoped_home(home):
+            confirmed = commands.save_plugin_settings("envecho", {"label": "persisted"}, {"api_key": "DEMO_KEY"})
+        assert confirmed["runtime_application"] == "applied", confirmed
+        assert connection() is current, "an explicit retry duplicated the child after a lost acknowledgment"
+        assert "first" in read(other), "an explicit retry disturbed the other profile"
+        assert "unconfirmed" not in json.dumps([unknown, confirmed]), "unknown/retry payload leaked the secret"
     else:
         assert saved["runtime_application"] == "restart_required", saved
     assert "second" not in json.dumps(saved), "secret leaked into ordinary save payload"
