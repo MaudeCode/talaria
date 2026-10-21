@@ -229,6 +229,9 @@ export class McpService {
         if (body.args) server.args = Array.isArray(body.args) ? body.args : [body.args]
         if (body.env) server.env = stripMasked(body.env, existing.env ?? {})
       } else throw new HttpFailure(400, 'url or command is required')
+      for (const key of ['headers', 'args', 'env', 'timeout']) {
+        if (body[key] === null) Reflect.deleteProperty(server, key)
+      }
       if (body.timeout !== undefined && body.timeout !== null) {
         const t = Number.parseInt(str(body.timeout), 10)
         if (Number.isFinite(t)) server.timeout = t

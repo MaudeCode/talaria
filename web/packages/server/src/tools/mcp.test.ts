@@ -27,6 +27,19 @@ describe('MCP config updates', () => {
     expect(result.server).toMatchObject({ enabled: false, status: 'disabled', timeout: expected.timeout ?? retained.timeout })
     expect(JSON.stringify(result)).not.toContain('synthetic-secret')
   })
+
+  it.each<{ field: string; existing: Dict; body: Dict; expected: Dict }>([
+    { field: 'headers', existing: http, body: { url: http.url, headers: null }, expected: { url: http.url } },
+    { field: 'args', existing: stdio, body: { command: stdio.command, args: null }, expected: { command: stdio.command, env: stdio.env } },
+    { field: 'env', existing: stdio, body: { command: stdio.command, env: null }, expected: { command: stdio.command, args: stdio.args } },
+    { field: 'timeout', existing: { ...http, timeout: 30 }, body: { url: http.url, timeout: null }, expected: http },
+  ])('clears explicitly null $field without clearing omitted fields', async ({ field, existing, body, expected }) => {
+    const cfg = { mcp_servers: { paid: { ...existing, enabled: false, spend_limit: 5 } } }
+    const config = { update: (_home: string, fn: (c: typeof cfg) => void) => { fn(cfg); return Promise.resolve() } } as unknown as AgentConfig
+    await new McpService({ sidecar: () => null, config }).update('/profiles/test', 'paid', body)
+    expect(cfg.mcp_servers.paid).toEqual({ ...expected, enabled: false, spend_limit: 5 })
+    expect(cfg.mcp_servers.paid).not.toHaveProperty(field)
+  })
 })
 
 describe('MCP tool inventory', () => {
