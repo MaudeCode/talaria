@@ -5,6 +5,141 @@ import XCTest
 // The members of LiveActivityTests that need the App host; the rest run in TalariaKitTests (TAL-399).
 @MainActor
 final class LiveActivityTests: XCTestCase {
+    func testFullExcerptSkipsNormalizationAndActivityUpdatesForTwoThousandTokens() async throws {
+        try await assertFullExcerptSkipsFurtherTokens(
+            initialToken: String(repeating: "a", count: 141), tailToken: " more",
+            expectedExcerpt: String(repeating: "a", count: 137) + "..."
+        )
+    }
+
+    func testCombiningMarkExcerptSkipsNormalizationAndActivityUpdates() async throws {
+        try await assertFullExcerptSkipsFurtherTokens(
+            initialToken: "e" + String(repeating: "\u{301}", count: 20_000), tailToken: "\u{301}"
+        )
+    }
+
+    private func assertFullExcerptSkipsFurtherTokens(
+        initialToken: String, tailToken: String, expectedExcerpt: String? = nil
+    ) async throws {
+        var normalizationRequests = 0
+        var updates: [AgentRunActivityAttributes.ContentState] = []
+        let excerptDelivered = expectation(description: "Full excerpt delivered")
+        let manager = AgentLiveActivityManager(
+            minimumUpdateInterval: 0,
+            updateActivity: {
+                updates.append($0)
+                if updates.count == 2 { excerptDelivered.fulfill() }
+            },
+            setInterimAssistant: { text, state in
+                normalizationRequests += 1
+                return AgentRunActivityStateReducer.settingInterimAssistant(text, on: state)
+            }
+        )
+        manager.start(
+            sessionID: "prefix-fixture", sessionTitle: "Prefix fixture", streamID: "prefix-stream",
+            publisherURL: URL(string: "https://fixture.example")!
+        )
+        manager.update(.token(initialToken))
+        await fulfillment(of: [excerptDelivered], timeout: 5)
+        let fullState = try XCTUnwrap(manager.currentState)
+        if let expectedExcerpt { XCTAssertEqual(fullState.responseExcerpt, expectedExcerpt) }
+        XCTAssertTrue(fullState.responseExcerpt.hasSuffix("..."))
+        XCTAssertLessThanOrEqual(fullState.responseExcerpt.unicodeScalars.count, 1_024)
+        let initialNormalizations = normalizationRequests
+        let initialUpdates = updates.count
+
+        for _ in 0..<2_000 {
+            manager.update(.token(tailToken))
+            await Task.yield()
+        }
+        for _ in 0..<10 { await Task.yield() }
+
+        // Each reducer request executes normalizedSingleLine; none should reach it after the cut.
+        XCTAssertEqual(normalizationRequests - initialNormalizations, 0, "Full excerpts must skip normalization")
+        XCTAssertEqual(updates.count - initialUpdates, 0, "Full excerpts must not request ActivityKit updates")
+        XCTAssertEqual(manager.currentState, fullState)
+    }
+
+    func testUnchangedContentOnlyRefreshesAtStaleInterval() async throws {
+        var clock = Date(timeIntervalSince1970: 1_800_000_000)
+        var updates: [AgentRunActivityAttributes.ContentState] = []
+        let refreshed = expectation(description: "Stale-content heartbeat")
+        let manager = AgentLiveActivityManager(
+            minimumUpdateInterval: 0, now: { clock },
+            updateActivity: {
+                updates.append($0)
+                if updates.count == 2 { refreshed.fulfill() }
+            }
+        )
+        manager.start(
+            sessionID: "heartbeat-fixture", sessionTitle: "Heartbeat", streamID: "heartbeat-stream",
+            publisherURL: URL(string: "https://fixture.example")!
+        )
+        clock += AgentLiveActivityManager.staleContentInterval - 1
+        manager.update(.sessionTitle("Heartbeat"))
+        for _ in 0..<10 { await Task.yield() }
+        XCTAssertEqual(updates.count, 1, "A timestamp-only change must not push an update")
+        clock += 1
+        manager.update(.sessionTitle("Heartbeat"))
+        await fulfillment(of: [refreshed], timeout: 5)
+        XCTAssertEqual(updates.count, 2)
+        XCTAssertEqual(updates.last?.updatedAt, clock)
+    }
+
+    func testFullExcerptPreservesPhaseChangesAndResets() async throws {
+        var updates: [AgentRunActivityAttributes.ContentState] = []
+        let resumed = expectation(description: "Token resumes the writing phase")
+        var waitingForResume = false
+        let manager = AgentLiveActivityManager(
+            minimumUpdateInterval: 0,
+            updateActivity: {
+                updates.append($0)
+                if waitingForResume && $0.status == .responding { resumed.fulfill() }
+            }
+        )
+        let publisher = URL(string: "https://fixture.example")!
+        manager.start(sessionID: "phase-fixture", sessionTitle: "Phases", streamID: "phase-stream", publisherURL: publisher)
+        manager.update(.token(String(repeating: "x", count: 141)))
+        let excerpt = manager.currentState?.responseExcerpt
+        manager.update(.toolStarted(kind: .shell, name: "fixture"))
+        XCTAssertEqual(manager.currentState?.status, .runningCommand)
+        manager.update(.toolCompleted)
+        XCTAssertEqual(manager.currentState?.currentActivity, "Processing result")
+        waitingForResume = true
+        manager.update(.token(" invisible tail"))
+        await fulfillment(of: [resumed], timeout: 5)
+        waitingForResume = false
+        XCTAssertEqual(manager.currentState?.currentActivity, "Writing response")
+        XCTAssertEqual(updates.last?.responseExcerpt, excerpt)
+        manager.markStale()
+        manager.update(.token(" resumes freshness"))
+        XCTAssertEqual(manager.currentState?.isStale, false)
+
+        manager.update(.clearResponseExcerpt)
+        manager.update(.token("New reply"))
+        XCTAssertEqual(manager.currentState?.responseExcerpt, "New reply")
+        manager.start(sessionID: "phase-fixture", sessionTitle: "Phases", streamID: "next-stream", publisherURL: publisher)
+        manager.update(.interimAssistant("Interim"))
+        manager.update(.token(" reply"))
+        XCTAssertEqual(manager.currentState?.responseExcerpt, "Interim reply")
+    }
+
+    func testStreamingPrefixPreservesWhitespaceAndExactLimit() {
+        let manager = AgentLiveActivityManager(updateActivity: { _ in })
+        manager.start(
+            sessionID: "spacing-fixture", sessionTitle: "Spacing", streamID: "spacing-stream",
+            publisherURL: URL(string: "https://fixture.example")!
+        )
+        for token in ["  hello", "\n\t", "world"] { manager.update(.token(token)) }
+        XCTAssertEqual(manager.currentState?.responseExcerpt, "hello world")
+        manager.update(.clearResponseExcerpt)
+        manager.update(.token(String(repeating: "a", count: 140)))
+        manager.update(.token("   "))
+        XCTAssertEqual(manager.currentState?.responseExcerpt, String(repeating: "a", count: 140))
+        manager.update(.token("b"))
+        XCTAssertEqual(manager.currentState?.responseExcerpt, String(repeating: "a", count: 137) + "...")
+    }
+
     func testAggregateStaleWindowLeavesPriorityFiveDeliveryMargin() {
         XCTAssertEqual(TalariaAggregateLiveActivityManager.staleInterval, 10 * 60)
     }

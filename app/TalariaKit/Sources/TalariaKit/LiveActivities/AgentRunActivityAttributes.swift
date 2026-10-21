@@ -16,6 +16,12 @@ public struct AgentRunActivityAttributes: Codable {
         public var isFinal: Bool
         public var errorSummary: String?
 
+        public func hasSameContent(as other: Self) -> Bool {
+            var comparison = other
+            comparison.updatedAt = updatedAt
+            return self == comparison
+        }
+
         public init(
             sessionID: String,
             sessionTitle: String,
@@ -332,6 +338,7 @@ public enum AgentRunActivitySanitizer {
     static let maximumSessionTitleCharacters = 42
     static let maximumActivityCharacters = 64
     static let maximumExcerptCharacters = 140
+    static let maximumResponsePrefixScalars = 1_024
     static let maximumToolLabelCharacters = 28
 
     public static func sessionTitle(_ rawValue: String) -> String {
@@ -341,6 +348,26 @@ public enum AgentRunActivitySanitizer {
 
     static func activityLine(_ rawValue: String) -> String {
         trimmed(normalizedSingleLine(rawValue), limit: maximumActivityCharacters)
+    }
+
+    public static func responsePrefix(_ rawValue: String) -> (text: String, isFull: Bool) {
+        let normalized = normalizedSingleLine(rawValue)
+        // Grapheme clusters can contain unbounded combining marks; reserve room for the ellipsis.
+        let scalarLimit = maximumResponsePrefixScalars - 3
+        let scalars = normalized.unicodeScalars.prefix(scalarLimit + 1)
+        let bounded = String(String.UnicodeScalarView(scalars.prefix(scalarLimit)))
+        if scalars.count > scalarLimit {
+            return (String(bounded.prefix(maximumExcerptCharacters - 3)) + "...", true)
+        }
+        let isFull = bounded.count > maximumExcerptCharacters
+        // One extra non-whitespace character must survive trimming at the cutoff.
+        var prefix = String(bounded.prefix(maximumExcerptCharacters + 2))
+        // Keep a separator split across tokens, without retaining the whitespace itself.
+        if !isFull, !prefix.isEmpty,
+           rawValue.unicodeScalars.last.map({ CharacterSet.whitespacesAndNewlines.contains($0) }) == true {
+            prefix += " "
+        }
+        return (prefix, isFull)
     }
 
     static func responseExcerpt(_ rawValue: String) -> String {
@@ -502,15 +529,27 @@ public enum AgentRunActivityStateReducer {
     ) -> AgentRunActivityAttributes.ContentState {
         let excerpt = AgentRunActivitySanitizer.responseExcerpt(text)
         guard !excerpt.isEmpty else { return state }
-        return AgentRunActivityAttributes.ContentState(
-            sessionID: state.sessionID,
-            sessionTitle: state.sessionTitle,
-            status: .responding,
-            currentActivity: String(localized: "Writing response"),
-            responseExcerpt: excerpt,
-            startedAt: state.startedAt,
-            updatedAt: now
-        )
+        var result = continuingAssistant(on: state, now: now)
+        result.responseExcerpt = excerpt
+        result.updatedAt = now
+        return result
+    }
+
+    public static func continuingAssistant(
+        on state: AgentRunActivityAttributes.ContentState,
+        now: Date = Date()
+    ) -> AgentRunActivityAttributes.ContentState {
+        let activity = String(localized: "Writing response")
+        guard state.status != .responding || state.currentActivity != activity
+                || state.isStale || state.isFinal || state.errorSummary != nil else { return state }
+        var result = state
+        result.status = .responding
+        result.currentActivity = activity
+        result.updatedAt = now
+        result.isStale = false
+        result.isFinal = false
+        result.errorSummary = nil
+        return result
     }
 
     public static func clearingResponseExcerpt(
