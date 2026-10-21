@@ -697,6 +697,6 @@ test('status chips that do not fit on one row stack as separate capsules over th
   }
   await expect(row).toHaveClass(/\bis-stacked\b/)
   for (const chip of await row.locator('.composer-notice').all()) await expect(chip).not.toHaveCSS('border-top-color', 'rgba(0, 0, 0, 0)')
-  await expect(row).toHaveCSS('border-top-width', '0px')
+  await expect(row).toHaveCSS('border-top-color', 'rgba(0, 0, 0, 0)')
   if (process.env.TAL1300_SHOTS) await page.screenshot({ path: `${process.env.TAL1300_SHOTS}/stacked-${testInfo.project.name}.png` })
 })

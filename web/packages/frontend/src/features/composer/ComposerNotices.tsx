@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useRef, useState, type ReactNode, type RefObject } from 'react'
+import { useEffect, useRef, useState, type ReactNode, type RefObject } from 'react'
 import { m } from '../../paraglide/messages.js'
 import { cn } from '../../ui/cn'
 import { Dialog } from '../../ui/Dialog'
@@ -25,29 +25,30 @@ const LEAVE_MS = 220
 
 /**
  * TAL-1300, after the App's StatusChipGroup: two or more chips that fit on one row share one pill (`is-grouped`);
- * otherwise each stacks as its own capsule (`is-stacked`). Measured like the composer footer's fit, outside React.
+ * otherwise each is its own capsule in a stack (`is-stacked`). A ref callback, so the first fit lands before the row
+ * paints. React owns only the row's constant `composer-notices` class, so a render never clears these two.
  */
-function useChipFit(row: RefObject<HTMLDivElement | null>, shown: boolean) {
-  useLayoutEffect(() => {
-    const el = row.current
-    const parent = el?.parentElement
-    if (!el || !parent) return
-    const fit = () => {
-      // Unclassed, the chips sit unshrunk in one row, so an overflow means they do not fit.
-      el.classList.remove('is-grouped', 'is-stacked')
-      const grouped = el.children.length > 1 && el.scrollWidth <= el.clientWidth + 0.5
-      el.classList.add(grouped ? 'is-grouped' : 'is-stacked')
-    }
-    fit()
-    const mo = new MutationObserver(fit)
-    mo.observe(el, { childList: true, subtree: true, characterData: true })
-    if (typeof ResizeObserver === 'undefined') return () => mo.disconnect()
-    // Deferred a frame: refitting changes the row's height, which the observed parent would report back in-loop.
-    let frame = 0
-    const ro = new ResizeObserver(() => { cancelAnimationFrame(frame); frame = requestAnimationFrame(fit) })
-    ro.observe(parent)
-    return () => { mo.disconnect(); ro.disconnect(); cancelAnimationFrame(frame) }
-  }, [row, shown])
+function fitChips(el: HTMLDivElement) {
+  const fit = () => {
+    // Unclassed, the chips sit unshrunk in one row inside the pill's border, so their widths add up to what it needs.
+    el.classList.remove('is-grouped', 'is-stacked')
+    const chips = [...el.children]
+    const width = chips.reduce((sum, chip) => sum + chip.getBoundingClientRect().width, 0)
+    // A leaving chip keeps its place but not the pill, so a set that fades out together fades as separate capsules.
+    const staying = chips.filter((chip) => !chip.classList.contains('is-leaving')).length
+    el.classList.add(staying > 1 && width <= el.clientWidth + 0.5 ? 'is-grouped' : 'is-stacked')
+  }
+  // Ticking text (elapsed, tok/s) refits at most once a frame, before it paints. A resize refits a frame later: done
+  // inside the observer, the row's new height would be reported back to it in the same loop.
+  let frame = 0
+  const schedule = () => { if (!frame) frame = requestAnimationFrame(() => { frame = 0; fit() }) }
+  fit()
+  // The row's own class changes are this fit's output, so they never start another.
+  const mo = new MutationObserver((records) => { if (records.some((r) => r.type !== 'attributes' || r.target !== el)) schedule() })
+  mo.observe(el, { childList: true, subtree: true, characterData: true, attributes: true, attributeFilter: ['class'] })
+  const ro = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(schedule)
+  if (el.parentElement) ro?.observe(el.parentElement)
+  return () => { mo.disconnect(); ro?.disconnect(); cancelAnimationFrame(frame) }
 }
 
 /**
@@ -87,17 +88,15 @@ export function ComposerNotices({ notices, fallbackFocus }: { notices: ComposerN
   // Forgotten at once, so a notice that later returns under the same id does not reopen by itself.
   if (openId !== null && !open) setOpenId(null)
   const trigger = useRef<HTMLElement | null>(null)
-  const rowRef = useRef<HTMLDivElement>(null)
 
   const rows = notices.map((notice) => ({ notice, out: false }))
   // A notice back before its exit ends shows once, as itself: the exit list catches up in the effect above.
   const present = new Set(notices.map((n) => n.id))
   for (const { notice, index } of leaving) if (!present.has(notice.id)) rows.splice(Math.min(index, rows.length), 0, { notice, out: true })
-  useChipFit(rowRef, rows.length > 0)
   return (
     <>
       {rows.length > 0 && (
-        <div className="composer-notices" ref={rowRef}>
+        <div className="composer-notices" ref={fitChips}>
           {rows.map(({ notice: n, out }) => (
             <div key={n.id} className={cn('composer-notice', out && 'is-leaving')} data-notice={n.id} data-tone={n.tone ?? 'neutral'} inert={out}>
               {n.detail
