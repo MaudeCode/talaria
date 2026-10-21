@@ -174,6 +174,7 @@ its snapshots and events through the existing foreign-history, pending-prompt, c
 components. It never materializes a writable Talaria session or settles the owner's transcript locally.
 The Agent owns admission, execution, recovery, and revision/generation-fenced mutations. Talaria's
 observational journals and stream scope include the complete profile home and session identity.
+Watches negotiate the profile's Web reasoning display preference with the owner and map reasoning, subagent lifecycle and usage events into the existing chat frames. Unsupported display negotiation leaves older owners observable.
 Unknown admissions require an explicit recovery decision. Unsupported native CLI batch controls remain
 locked without answering or cancelling them; ordinary native secure-input requests are declined.
 

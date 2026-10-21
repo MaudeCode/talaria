@@ -53,7 +53,7 @@ import { TurnRunner } from './sessions/turn.js'
 import { SessionChannels, StreamRegistry } from './sessions/streams.js'
 import { PendingPrompts } from './sessions/pending.js'
 import { StreamSlots } from './api/sse-routes.js'
-import { AgentConfig, coerceProviderCostBudgetValue, dict as asDict, modelBaseUrl, parseProviderQualifiedModel } from './config/agent-config.js'
+import { AgentConfig, showReasoning, coerceProviderCostBudgetValue, dict as asDict, modelBaseUrl, parseProviderQualifiedModel } from './config/agent-config.js'
 import { ProviderCatalog } from './providers/catalog.js'
 import { containedProfileHome, escapedProfileMessage, ProfileError, ProfileService } from './profiles/profiles.js'
 import { Onboarding } from './onboarding.js'
@@ -614,7 +614,7 @@ export async function createDeps(opts: CreateDepsOptions): Promise<AppDeps> {
   }
   const extensionsEnabled = (): boolean => { try { return deps.extensions.enabledSync() } catch { return false } }
   sessions.owner = new GatewaySessions({ service: sessions, sidecar: () => sidecar, registry, journal, events,
-    profileHome, activeProfile, redactEnabled: sessions.deps.redactEnabled, now, log })
+    profileHome, activeProfile, showReasoning: async (home) => showReasoning(await agentConfig.read(home)), redactEnabled: sessions.deps.redactEnabled, now, log })
   const deps: AppDeps = {
     config,
     settings,

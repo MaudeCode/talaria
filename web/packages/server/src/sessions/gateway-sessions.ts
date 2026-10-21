@@ -13,6 +13,7 @@ import type { RunJournal, RunJournalWriter } from './journal.js'
 import { SessionEventBus } from './events.js'
 import { messageWindowForDisplay, messagesForLimitedPayload } from './window.js'
 import { pendingUserRow } from './merge.js'
+import { ReasoningTitleTracker, reasoningEventPayload } from './reasoning-titles.js'
 import { CANONICAL_READ_ONLY_REASON, WEB_DIAGNOSTIC_REQUEST_PREFIX } from './state-db.js'
 
 type Row = Record<string, unknown>
@@ -42,12 +43,28 @@ function retryText(admission: GatewaySnapshot['pending'][number]): string | null
 /** Steering belongs to the current turn; it must never replace that turn's transcript anchor. */
 const runningAdmission = (snapshot: GatewaySnapshot) => snapshot.pending.find((p) => p.status === 'started' && !p.steering)
 
+/** Native counters and the owner's compact turn-end usage share one existing Web usage shape. */
+function ownerUsage(data: Row): Row {
+  const fields: Record<string, string[]> = {
+    input_tokens: ['prompt_tokens', 'prompt', 'input_tokens', 'input'], output_tokens: ['completion_tokens', 'completion', 'output_tokens', 'output'],
+    cache_read_tokens: ['cache_read_tokens'], cache_write_tokens: ['cache_write_tokens'],
+    estimated_cost: ['estimated_cost_usd'], last_prompt_tokens: ['last_prompt_tokens', 'context_used'],
+    context_length: ['context_length', 'context_max'], cache_hit_percent: ['cache_hit_pct'], tps: ['tokens_per_s', 'avg_tps'],
+  }
+  const usage: Row = {}
+  for (const [field, keys] of Object.entries(fields)) {
+    const value = keys.map((key) => data[key]).find((value) => typeof value === 'number' && Number.isFinite(value) && value >= 0)
+    if (value !== undefined) usage[field] = value
+  }
+  return usage
+}
+
 export class GatewaySessions {
   private readonly watches = new Map<string, Watch>()
   constructor(private readonly deps: {
     service: SessionService; sidecar: () => SidecarLike | null; registry: StreamRegistry;
     journal: RunJournal; events: SessionEventBus; profileHome: (profile: string) => string;
-    activeProfile: () => string; redactEnabled: () => boolean; now: () => number; log: (line: string) => void;
+    activeProfile: () => string; showReasoning: (home: string) => Promise<boolean>; redactEnabled: () => boolean; now: () => number; log: (line: string) => void;
   }) {}
 
   private async target(sid: string, profile = this.deps.activeProfile()): Promise<Target | null> {
@@ -276,10 +293,19 @@ export class GatewaySessions {
       const journalSession = ownerStateId(target.key)
       const writer = await this.deps.journal.writer(journalSession, watch.stream)
       closeWriter = writer
+      const showReasoning = await this.deps.showReasoning(target.home).catch(() => false)
+      let usage: Row = {}
+      let reasoning = ''
+      let titles = new ReasoningTitleTracker()
+      const resetProjection = () => { reasoning = ''; usage = {}; titles = new ReasoningTitleTracker() }
       const put = async (event: string, data: Row) => {
         const safe = event === 'tool' || event === 'tool_complete' ? publicToolFrame(data, this.deps.redactEnabled()) : redactNestedMessageContainers(data, this.deps.redactEnabled()) as Row
         const record = await writer.appendSseEvent(event, safe)
         channel.put([event, safe, record.event_id])
+      }
+      const meter = async (data: Row) => {
+        usage = { ...usage, ...ownerUsage(data) }
+        if (['input_tokens', 'output_tokens', 'cache_read_tokens', 'cache_write_tokens'].every((key) => typeof usage[key] === 'number')) await put('metering', { session_id: target.sid, usage: { ...usage, estimated_cost: usage.estimated_cost ?? null }, tps: usage.tps ?? null, tps_available: usage.tps !== undefined, estimated: false })
       }
       const finish = async () => {
         if (terminal) return
@@ -291,7 +317,8 @@ export class GatewaySessions {
         await put(cancelled ? 'cancel' : failed ? 'apperror' : 'done', { session_id: target.sid,
           terminal_state: cancelled ? 'cancelled' : failed ? 'error' : 'completed',
           ...(failed ? { message: 'The owning Agent could not complete this turn', type: current.reason ?? 'owner_turn_failed' } : {}),
-          session: await this.view(base, current, null, target) })
+          ...(Object.keys(usage).length ? { usage } : {}),
+          session: { ...await this.view(base, current, null, target), ...usage } })
         await put('stream_end', { session_id: target.sid })
         watch.controller.abort()
       }
@@ -309,7 +336,7 @@ export class GatewaySessions {
       const sidecar = this.deps.sidecar()
       if (!sidecar) throw new Error('sidecar_unavailable')
       if (watch.controller.signal.aborted) return
-      const result = await sidecar.call('gateway.session', { profile_home: target.home, session_id: target.sid, action: 'watch' }, {
+      const result = await sidecar.call('gateway.session', { profile_home: target.home, session_id: target.sid, action: 'watch', show_reasoning: showReasoning }, {
         signal: watch.controller.signal, timeoutMs: 0,
         onStream: (frame) => {
           chain = chain.then(async () => {
@@ -317,6 +344,7 @@ export class GatewaySessions {
             if (frame.event === 'snapshot') {
               const result = GatewaySessionResultSchema.parse(frame.data)
               if (!result.snapshot) return
+              if (result.replay_gap || result.snapshot.execution_generation > watch.snapshot.execution_generation) resetProjection()
               await put('session_snapshot', { session: await this.view(base, result, watch.stream, target), replay_gap: result.replay_gap === true })
               await prompts(result.snapshot)
               if (!result.snapshot.running && !result.snapshot.pending.some((p) => p.status === 'queued' || p.status === 'started')) await finish()
@@ -329,6 +357,7 @@ export class GatewaySessions {
               if (data.authority_epoch !== watch.snapshot.authority_epoch) return
               if (Number(data.execution_generation) < watch.snapshot.execution_generation) return
               const firstClaim = !ran && data.running === true
+              if (Number(data.execution_generation) > watch.snapshot.execution_generation) resetProjection()
               watch.snapshot = { ...watch.snapshot, ...data }
               const claimed = runningAdmission(watch.snapshot)
               if (firstClaim && claimed) activeAdmission = claimed.admission_id
@@ -338,7 +367,25 @@ export class GatewaySessions {
               return
             }
             if (event.authority_epoch !== watch.snapshot.authority_epoch || event.execution_generation !== watch.snapshot.execution_generation) return
-            if (kind === 'message.delta') await put('token', { text: str(data.text || data.delta || data.content) })
+            if (kind === 'message.delta') {
+              const stable = titles.stableSnapshot(reasoning)
+              if (stable !== null) await put('reasoning', { text: '', titles: stable })
+              await put('token', { text: str(data.text || data.delta || data.content) })
+            }
+            else if (kind === 'reasoning.delta' && showReasoning) {
+              reasoning += str(data.text)
+              await put('reasoning', titles.prepare(reasoningEventPayload(data.text, reasoning)))
+            }
+            else if (kind.startsWith('subagent.') && str(data.subagent_id)) {
+              // Reuse the delegate activity row; each child keeps one identity through progress and completion.
+              const complete = kind === 'subagent.complete'
+              const preview = kind === 'subagent.thinking' && !showReasoning ? '' : str(data.summary || data.tool_preview || data.text)
+              await put(complete ? 'tool_complete' : 'tool', { id: `owner-subagent-${str(data.subagent_id)}`, name: 'subagent_progress',
+                args: { task: str(data.goal) }, preview: preview || null,
+                ...(complete ? { is_error: data.status !== 'completed', duration: data.duration_seconds } : {}) })
+            }
+            else if (kind === 'session.usage') await meter(data)
+            else if (kind === 'message.complete' && data.usage && typeof data.usage === 'object') await meter(data.usage as Row)
             else if (kind === 'tool.start') await put('tool', { ...data, id: data.tool_id || data.tool_call_id, name: data.name || data.tool_name })
             else if (kind === 'tool.complete') await put('tool_complete', { ...data, id: data.tool_id || data.tool_call_id, name: data.name || data.tool_name })
             else if (kind === 'approval.request' || kind === 'clarify.request') await prompts({ ...watch.snapshot, prompts: [...watch.snapshot.prompts.filter((p) => p.prompt_id !== data.prompt_id), { ...data, kind: kind.split('.')[0] }] })

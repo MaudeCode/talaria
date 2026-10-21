@@ -24,10 +24,12 @@ def test_stopped_owner_is_an_explicit_refusal_without_starting(tmp_path):
 
 
 @requires_agent
-@pytest.mark.parametrize("mode", ["shared", "batch", "approval", "clarify", "recovery", "secure", "profiles", "dedicated", "replay"])
+@pytest.mark.parametrize("mode", ["shared", "batch", "approval", "clarify", "recovery", "secure", "profiles", "dedicated", "replay", "detail"])
 def test_real_native_owner_shared_admission_and_detach(tmp_path, mode):
     if not (AGENT_DIR / "hermes_cli/gateway_client.py").exists():
         pytest.skip("this supported Agent does not expose native sessions")
+    if mode == "detail" and "def _publish_subagent" not in (AGENT_DIR / "gateway/local_viewer_events.py").read_text():
+        pytest.skip("this supported Agent does not forward native subagent lifecycle events")
     home = tmp_path / "hermes"
     env = isolated_env(home, HERMES_WEBUI_AGENT_DIR=str(AGENT_DIR), HERMES_WEBUI_PYTHON=str(AGENT_PYTHON),
                        PYTHONPATH=f"{SIDECAR_ROOT}:{Path(pytest.__file__).parent.parent}")
@@ -119,3 +121,60 @@ def test_real_owner_queued_controls(tmp_path):
     result = subprocess.run([AGENT_PYTHON, str(Path(__file__).parent / "fixtures/gateway_session_peer.py"), "queued-controls"],
                             env=env, capture_output=True, text=True, timeout=200, check=False)
     assert result.returncode == 0, result.stdout + result.stderr
+
+
+@pytest.mark.parametrize("shown,failure", [(True, None), (False, None), (True, "refused"), (True, "timeout")])
+def test_watch_negotiates_display_without_breaking_older_owners(tmp_path, monkeypatch, shown, failure):
+    import asyncio
+    from contextlib import asynccontextmanager
+    from types import ModuleType, SimpleNamespace
+    import sys
+    from talaria_sidecar.methods import gateway_sessions
+
+    class GatewayRPCError(Exception):
+        pass
+
+    client_module = ModuleType("hermes_cli.gateway_client")
+    client_module.GatewayRPCError = GatewayRPCError
+    monkeypatch.setitem(sys.modules, "hermes_cli.gateway_client", client_module)
+    calls, frames = [], []
+    endpoint = SimpleNamespace(control_home=None, instance_id="owner", profile_id="profile", authority_epoch=1)
+    snap = {"session_id": "native", "subscription_id": "viewer", "messages": [], "info": {},
+            "replay_epoch": "epoch", "last_sequence": 0, "execution_generation": 1}
+
+    async def rpc(method, **params):
+        calls.append((method, params))
+        if method == "runtime.describe":
+            return {"instance_id": "owner", "profile_id": "profile", "authority_epoch": 1,
+                    "capabilities": ["durable-admission-v1", "event-replay-v1"]}
+        if method == "session.resume":
+            return snap
+        if method == "config.set":
+            if failure == "refused":
+                raise GatewayRPCError("unsupported_setting")
+            if failure == "timeout":
+                raise TimeoutError()
+        if method == "session.events.since":
+            return {"events": [], "last_sequence": 0}
+        return {}
+
+    @asynccontextmanager
+    async def connect(home, selected):
+        assert home == tmp_path and selected is endpoint
+        yield SimpleNamespace(rpc=rpc), asyncio.Queue()
+
+    ctx = SimpleNamespace(cancelled=False)
+
+    def emit(kind, data):
+        frames.append((kind, data))
+        ctx.cancelled = True
+
+    ctx.emit = emit
+    monkeypatch.setattr(gateway_sessions, "_connect", connect)
+    monkeypatch.setattr(gateway_sessions, "_control_refusal", lambda *_: None)
+    result = asyncio.run(gateway_sessions._run(ctx, {"session_id": "native", "action": "watch", "show_reasoning": shown},
+                                               tmp_path, SimpleNamespace(endpoint=endpoint)))
+    assert result["state"] == "attached"
+    assert frames[0][0] == "snapshot"
+    assert ("config.set", {"session_id": "native", "key": "show_reasoning", "value": "1" if shown else "0", "_timeout": 10}) in calls
+    assert calls[-1] == ("session.detach", {"session_id": "native", "subscription_id": "viewer"})
