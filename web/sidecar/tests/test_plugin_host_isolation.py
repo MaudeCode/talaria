@@ -135,10 +135,15 @@ def test_plugin_command_runs_under_the_invoking_chats_session_binding(tmp_path: 
 CONTEXT_PLUGIN = """
 import json
 
+from agent.runtime_cwd import scoped_session_cwd
+from gateway.session_context import get_session_env
+
 
 def _observe(**kwargs):
+    # What a session-aware observer reads from the Agent's ambient context, beside its arguments.
+    ambient = {{"ambient_session": get_session_env("HERMES_SESSION_ID"), "ambient_cwd": scoped_session_cwd()}}
     with open({log!r}, "a") as handle:
-        handle.write(json.dumps(kwargs) + "\\n")
+        handle.write(json.dumps({{**kwargs, **ambient}}) + "\\n")
 
 
 def register(ctx):
@@ -152,7 +157,7 @@ def register(ctx):
 @requires_agent
 def test_web_commands_pass_session_context_to_plugins_and_fire_pre_command(tmp_path: pathlib.Path) -> None:
     """TAL-1267: like the Agent's CLI, TUI and gateway, a Web command passes its session to a plugin handler that declares
-    it (v0.22.3+ ``invoke_plugin_command``) and fires ``pre_command`` once per recognised command."""
+    it (v0.22.3+ ``invoke_plugin_command``) and fires ``pre_command`` once per recognised command, prompt built-ins included."""
     home = tmp_path / "home" / ".hermes"
     log = tmp_path / "pre_command.jsonl"
     path = home / "plugins" / "probe-context"
@@ -163,23 +168,40 @@ def test_web_commands_pass_session_context_to_plugins_and_fire_pre_command(tmp_p
     sidecar = SidecarProcess(home)
     try:
         params = {"profile_home": str(home)}
+        workspace = tmp_path / "workspace"
+        workspace.mkdir()
         context = sidecar.result("commands.exec", {**params, "command": "/probe-context hi", "session_id": "chat-1267"})
         # Agents before v0.22.3 have no context-aware dispatch: the handler keeps its one-argument call.
         dispatch = AGENT_DIR is not None and (AGENT_DIR / "hermes_cli/plugin_command_dispatch.py").is_file()
         assert context["output"] == ("hi|chat-1267|webui" if dispatch else "hi||")
         assert sidecar.result("commands.exec", {**params, "command": "/probe-legacy there"})["output"] == "legacy|there"
-        assert sidecar.result("commands.exec", {**params, "command": "/reload_skills", "session_id": "chat-1267"})["source"] == "agent"
+        reload = {**params, "command": "/reload_skills", "session_id": "chat-1267", "workspace": str(workspace)}
+        assert sidecar.result("commands.exec", reload)["source"] == "agent"
         error, _ = sidecar.call("commands.exec", {**params, "command": "/definitely-not-a-command"})
         assert error.get("error", {}).get("data", {}).get("condition") == "command_not_found", error
+        # TAL-1279: a prompt built-in fires it too, by canonical name, even one this Agent cannot expand; other text does not.
+        expand = {**params, "workspace": "", "enabled_toolsets": None}
+        plan = {**expand, "command": "/plan x", "session_id": "chat-1279", "workspace": str(workspace)}
+        assert sidecar.result("commands.expand_prompt", plan)["message"]
+        assert sidecar.result("commands.expand_prompt", {**expand, "command": "/bp daily"}) == {"name": "blueprint", "message": None}
+        for text in ("/probe-context hi", "/etc/hosts looks wrong"):
+            assert sidecar.result("commands.expand_prompt", {**expand, "command": text, "session_id": "chat-1279"})["name"] is None
 
-        # The Agent stamps its own telemetry fields beside the hook arguments.
-        arguments = ("surface", "command", "alias_used", "args_raw", "session_key", "platform")
+        # The Agent stamps its own telemetry fields beside the hook arguments. A chat's command runs its observers under
+        # that chat's session and workspace, as its plugin command and turns do.
+        arguments = ("surface", "command", "alias_used", "args_raw", "session_key", "platform", "ambient_session", "ambient_cwd")
         observed = [{key: row[key] for key in arguments} for row in map(json.loads, log.read_text().splitlines())] if log.exists() else []
         webui = {"surface": "webui", "platform": "webui"}
+        unbound = {"ambient_session": "", "ambient_cwd": ""}
         assert observed == [
-            {**webui, "command": "probe-context", "alias_used": "probe-context", "args_raw": "hi", "session_key": "chat-1267"},
-            {**webui, "command": "probe-legacy", "alias_used": "probe-legacy", "args_raw": "there", "session_key": None},
-            {**webui, "command": "reload-skills", "alias_used": "reload_skills", "args_raw": "", "session_key": "chat-1267"},
+            {**webui, "command": "probe-context", "alias_used": "probe-context", "args_raw": "hi", "session_key": "chat-1267",
+             "ambient_session": "chat-1267", "ambient_cwd": ""},
+            {**webui, "command": "probe-legacy", "alias_used": "probe-legacy", "args_raw": "there", "session_key": None, **unbound},
+            {**webui, "command": "reload-skills", "alias_used": "reload_skills", "args_raw": "", "session_key": "chat-1267",
+             "ambient_session": "chat-1267", "ambient_cwd": str(workspace)},
+            {**webui, "command": "plan", "alias_used": "plan", "args_raw": "x", "session_key": "chat-1279",
+             "ambient_session": "chat-1279", "ambient_cwd": str(workspace)},
+            {**webui, "command": "blueprint", "alias_used": "bp", "args_raw": "daily", "session_key": None, **unbound},
         ]
     finally:
         sidecar.close()

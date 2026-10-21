@@ -124,7 +124,7 @@ def _prompt_mode(name: str) -> str | None:
     return "expand" if _prompt_expander(name) else "unsupported"
 
 
-def expand_prompt(command: str, workspace: str, enabled_toolsets) -> dict[str, Any]:
+def expand_prompt(command: str, workspace: str, enabled_toolsets, session_id: str = "") -> dict[str, Any]:
     """``/<prompt built-in> [args]`` as the turn text the Agent's own builder writes. ``name`` is the built-in's (None
     when the command is not one) and ``message`` None when this Agent has no builder for it."""
     try:
@@ -135,6 +135,8 @@ def expand_prompt(command: str, workspace: str, enabled_toolsets) -> dict[str, A
     cmd = resolve_command(name)
     if cmd is None or cmd.name not in _PROMPT_BUILTINS:
         return {"name": None, "message": None}
+    # TAL-1279: as the CLI does, before it expands or refuses the built-in.
+    _fire_pre_command(command, session_id, cmd.name, workspace)
     expander = _prompt_expander(cmd.name)
     if expander is None:
         return {"name": cmd.name, "message": None}
@@ -336,13 +338,17 @@ def _credits() -> str:
     return "\n".join(lines)
 
 
-def _fire_pre_command(command: str, session_id: str) -> None:
-    """The Agent's observer-only ``pre_command`` hook, which every local surface fires before a recognised command runs."""
+def _fire_pre_command(command: str, session_id: str, canonical: str | None = None, workspace: str = "") -> None:
+    """The Agent's observer-only ``pre_command`` hook, which every local surface fires before a recognised command runs.
+    A chat's observers run under that chat's session and workspace, as its plugin commands and turns do."""
     from hermes_cli.plugins import fire_pre_command_hook
 
+    from .chat import _turn_identity
+
     typed, arg = _split_slash_command(command)
-    fire_pre_command_hook(surface="webui", command=_ALIASES.get(typed, typed), alias_used=typed, args_raw=arg,
-                          session_key=session_id or None, platform="webui")
+    with _turn_identity(session_id, workspace) if session_id else contextlib.nullcontext():
+        fire_pre_command_hook(surface="webui", command=canonical or _ALIASES.get(typed, typed), alias_used=typed, args_raw=arg,
+                              session_key=session_id or None, platform="webui")
 
 
 def _registry_executor(name: str):
@@ -356,7 +362,7 @@ def _registry_executor(name: str):
     return resolve_executor(cmd) if cmd is not None else None
 
 
-def execute_agent_command(command: str, session_id: str = "") -> str | None:
+def execute_agent_command(command: str, session_id: str = "", workspace: str = "") -> str | None:
     """Run one of the allowlisted agent-side runtime commands; None when not one."""
     canonical, arg_string = parse_slash_command(command)
     if canonical not in _ALLOWED:
@@ -364,7 +370,7 @@ def execute_agent_command(command: str, session_id: str = "") -> str | None:
     executor = _registry_executor(canonical) if canonical in _REGISTRY_EXECUTED else None
     if canonical in _REGISTRY_EXECUTED and executor is None:
         return None
-    _fire_pre_command(command, session_id)
+    _fire_pre_command(command, session_id, workspace=workspace)
     if executor is not None:
         from hermes_cli.slash_exec import CommandContext
 
@@ -646,14 +652,15 @@ def register(registry) -> None:
     def exec_(ctx: CallContext, params: dict) -> dict:
         command = str(params.get("command") or "")
         session_id = str(params.get("session_id") or "").strip()
+        workspace = str(params.get("workspace") or "")
         with scoped_home(profile_home_param(params)):
-            output = execute_agent_command(command, session_id)
+            output = execute_agent_command(command, session_id, workspace)
             source = "agent"
             if output is None:
                 from .chat import _turn_identity
 
                 # TAL-904: a chat's plugin command runs under that chat's session and workspace, as its turns do.
-                with _turn_identity(session_id, str(params.get("workspace") or "")) if session_id else contextlib.nullcontext():
+                with _turn_identity(session_id, workspace) if session_id else contextlib.nullcontext():
                     output = execute_plugin_command(command, session_id)
                 source = "plugin"
         if output is None:
@@ -663,7 +670,8 @@ def register(registry) -> None:
     @registry.method("commands.expand_prompt")
     def expand_prompt_(ctx: CallContext, params: dict) -> dict:
         with scoped_home(profile_home_param(params)):
-            return expand_prompt(str(params.get("command") or ""), str(params.get("workspace") or ""), params.get("enabled_toolsets"))
+            return expand_prompt(str(params.get("command") or ""), str(params.get("workspace") or ""), params.get("enabled_toolsets"),
+                                 str(params.get("session_id") or "").strip())
 
     @registry.method("commands.bundles")
     def bundles(ctx: CallContext, params: dict) -> dict:

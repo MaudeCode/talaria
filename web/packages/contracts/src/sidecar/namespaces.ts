@@ -92,9 +92,9 @@ export const COMMANDS_METHODS = {
   /**
    * `/<prompt built-in> [args]` as the turn text (`message`) the Agent's builder writes for the session's profile, workspace and toolsets.
    * `name` is the built-in's canonical name, null when the command is not one; `message` is null when this Agent has no builder for it.
-   * A failing builder errors `prompt_expand_failed`.
+   * A failing builder errors `prompt_expand_failed`. Every built-in fires the Agent's `pre_command` hook with `session_id` (TAL-1279).
    */
-  'commands.expand_prompt': { params: ProfileHomeParams.extend({ command: z.string().min(1), workspace: z.string(), enabled_toolsets: z.array(z.string()).nullable() }), result: z.object({ name: z.string().nullable(), message: z.string().nullable() }) },
+  'commands.expand_prompt': { params: ProfileHomeParams.extend({ command: z.string().min(1), session_id: z.string().min(1).optional(), workspace: z.string(), enabled_toolsets: z.array(z.string()).nullable() }), result: z.object({ name: z.string().nullable(), message: z.string().nullable() }) },
   'commands.bundles': { params: ProfileHomeParams, result: z.object({ bundles: z.array(CommandBundleSchema) }) },
   'commands.bundle_resolve': { params: ProfileHomeParams.extend({ command: z.string().min(1) }), result: CommandBundleInvocationSchema },
   'commands.moa_preset': { params: ProfileHomeParams.extend({ preset: z.string().nullable().optional() }), result: z.object({ moa: Loose }) },

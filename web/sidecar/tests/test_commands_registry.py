@@ -75,10 +75,14 @@ def test_an_agent_without_the_builder_takes_the_unsupported_path(monkeypatch) ->
 
     monkeypatch.setitem(sys.modules, "hermes_cli", sys.modules.get("hermes_cli") or types.ModuleType("hermes_cli"))
     monkeypatch.setitem(sys.modules, "hermes_cli.commands", types.SimpleNamespace(resolve_command=lambda name: types.SimpleNamespace(name="initiate-setup") if name in {"initiate-setup", "initiate_setup"} else None))
+    fired: list[dict] = []
+    monkeypatch.setitem(sys.modules, "hermes_cli.plugins", types.SimpleNamespace(fire_pre_command_hook=lambda **hook: fired.append(hook)))
     real = commands.importlib.util.find_spec
     monkeypatch.setattr(commands.importlib.util, "find_spec", lambda name, *a: None if name == "agent.initiate_setup_prompt" else real(name, *a))
     assert commands._prompt_mode("initiate-setup") == "unsupported"
     assert commands.expand_prompt("/initiate_setup", "", None) == {"name": "initiate-setup", "message": None}
+    # TAL-1279: the CLI fires pre_command before it refuses a built-in it cannot expand.
+    assert [(hook["command"], hook["alias_used"]) for hook in fired] == [("initiate-setup", "initiate_setup")]
 
 
 def test_the_setup_prompt_lists_the_tools_after_mcp_discovery(monkeypatch) -> None:

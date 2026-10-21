@@ -106,7 +106,8 @@ async function expandPromptBuiltin(ctx: RequestContext, s: Session, msg: string,
   let expanded: SidecarResult<'commands.expand_prompt'>
   try {
     expanded = await sidecar.call('commands.expand_prompt', {
-      profile_home: ctx.deps.profileHome(s.profile ?? activeProfileName(ctx)), command: msg, workspace: cwd, enabled_toolsets: s.enabled_toolsets,
+      profile_home: ctx.deps.profileHome(s.profile ?? activeProfileName(ctx)), command: msg, session_id: s.session_id, workspace: cwd,
+      enabled_toolsets: s.enabled_toolsets,
     }, { timeoutMs: 120_000 })
   } catch (error) {
     if (!(error instanceof SidecarError)) throw error
