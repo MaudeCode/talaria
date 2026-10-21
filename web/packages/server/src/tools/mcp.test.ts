@@ -1,7 +1,33 @@
 import { describe, expect, it } from 'vitest'
 import { JoplinError, joplinSearch, McpService } from './mcp.js'
 import { FakeSidecar } from '../sidecar/fake.js'
-import type { AgentConfig } from '../config/agent-config.js'
+import type { AgentConfig, Dict } from '../config/agent-config.js'
+
+describe('MCP config updates', () => {
+  const http = { url: 'https://old.example/mcp', headers: { Authorization: 'Bearer synthetic-secret' } }
+  const stdio = { command: 'old-mcp', args: ['--old'], env: { API_KEY: 'synthetic-secret' } }
+
+  it.each<{ name: string; existing: Dict; body: Dict; expected: Dict }>([
+    { name: 'URL-only edit', existing: http, body: { url: 'https://new.example/mcp' }, expected: { ...http, url: 'https://new.example/mcp' } },
+    { name: 'command-only edit', existing: stdio, body: { command: 'new-mcp' }, expected: { ...stdio, command: 'new-mcp' } },
+    { name: 'HTTP to stdio switch', existing: http, body: { command: 'new-mcp', args: ['--new'], env: { MODE: 'test' } }, expected: { command: 'new-mcp', args: ['--new'], env: { MODE: 'test' } } },
+    { name: 'stdio to HTTP switch', existing: stdio, body: { url: 'https://new.example/mcp', headers: {} }, expected: { url: 'https://new.example/mcp', headers: {} } },
+    { name: 'masked HTTP secret', existing: http, body: { url: http.url, headers: { Authorization: '••••••' }, timeout: '45' }, expected: { ...http, timeout: 45 } },
+    { name: 'masked stdio secret', existing: stdio, body: { command: stdio.command, args: [], env: { API_KEY: '••••••' } }, expected: { ...stdio, args: [] } },
+  ])('preserves unrelated config after $name', async ({ existing, body, expected }) => {
+    const retained = {
+      spend_limit: 5, tool_costs: { search: 0.2 }, cost_unit: 'USD', trust: false,
+      enabled: false, tools: { include: ['search'], exclude: ['delete'] },
+      timeout: 30, connect_timeout: 10, future_option: { nested: ['keep'] },
+    }
+    const cfg = { mcp_servers: { paid: { ...existing, ...retained }, sibling: { command: 'untouched' } } }
+    const config = { update: (_home: string, fn: (c: typeof cfg) => void) => { fn(cfg); return Promise.resolve() } } as unknown as AgentConfig
+    const result = await new McpService({ sidecar: () => null, config }).update('/profiles/test', 'paid', body)
+    expect(cfg.mcp_servers).toEqual({ paid: { ...retained, ...expected }, sibling: { command: 'untouched' } })
+    expect(result.server).toMatchObject({ enabled: false, status: 'disabled', timeout: expected.timeout ?? retained.timeout })
+    expect(JSON.stringify(result)).not.toContain('synthetic-secret')
+  })
+})
 
 describe('MCP tool inventory', () => {
   it('lists registry tools only for servers in the profile\'s effective MCP config', async () => {

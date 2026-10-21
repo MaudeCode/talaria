@@ -218,11 +218,13 @@ export class McpService {
     await this.deps.config.update(profileHome, (c) => {
       const servers = dict(c.mcp_servers)
       const existing = dict(servers[name])
-      const server: Dict = {}
+      const server: Dict = { ...existing }
       if (body.url) {
+        for (const key of ['command', 'args', 'env']) Reflect.deleteProperty(server, key)
         server.url = str(body.url).trim()
         if (body.headers) server.headers = stripMasked(body.headers, existing.headers ?? {})
       } else if (body.command) {
+        for (const key of ['url', 'headers']) Reflect.deleteProperty(server, key)
         server.command = str(body.command).trim()
         if (body.args) server.args = Array.isArray(body.args) ? body.args : [body.args]
         if (body.env) server.env = stripMasked(body.env, existing.env ?? {})
