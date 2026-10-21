@@ -271,6 +271,11 @@ export function ChatView({ sessionId }: { sessionId: string | null }) {
     await navigate({ to: '/session/$sessionId', params: { sessionId: r.session_id } })
   }, [sessionId, navigate, qc])
 
+  const actions = useMemo(() => ({
+    ...(session?.read_only ? {} : { onEdit: (row: VisibleMessage, text: string) => { void onEdit(row, text) }, onRegenerate: () => { void onRegenerate() } }),
+    ...(session?.can_branch ? { onBranch: (row: VisibleMessage) => { void onBranch(row) } } : {}),
+  }), [session?.read_only, session?.can_branch, onEdit, onRegenerate, onBranch])
+
   const mode = (settings.data?.chat_activity_display_mode as ActivityMode | undefined) ?? 'compact_worklog'
   const assistantName = session?.assistant_name ?? bootstrap.assistant_name
   const resourceIntent = useResourceIntents()[`session:${sessionId}`]
@@ -373,7 +378,7 @@ export function ChatView({ sessionId }: { sessionId: string | null }) {
             autoFollow={settings.data?.auto_scroll_follow !== false}
             sessionId={sessionId ?? undefined}
             focusKey={focusKey}
-            actions={{ ...(session?.read_only ? {} : { onEdit: (row: VisibleMessage, text: string) => { void onEdit(row, text) }, onRegenerate: () => { void onRegenerate() } }), ...(session?.can_branch ? { onBranch: (row: VisibleMessage) => { void onBranch(row) } } : {}) }}
+            actions={actions}
             tts={!!(settings.data as Record<string, unknown> | undefined)?.tts_enabled}
             autoRead={(settings.data as Record<string, unknown> | undefined)?.tts_auto_read === true}
             truncated={truncated}
