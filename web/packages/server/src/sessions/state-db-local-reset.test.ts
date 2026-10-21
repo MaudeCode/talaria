@@ -5,7 +5,7 @@ import { join } from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
 import { afterEach, beforeEach, describe, expect, it, onTestFinished, vi } from 'vitest'
 import fixture from '../test/fixtures/local-reset.json' with { type: 'json' }
-import { readImportableAgentSessionRows, stateDbCompressionLineage, stateDbLineageReport, stateDbLocalTarget, stateDbSessionMessages, stateDbSessionRead } from './state-db.js'
+import { readImportableAgentSessionRowBatches, readImportableAgentSessionRows, stateDbCompressionLineage, stateDbLineageReport, stateDbLocalTarget, stateDbSessionMessages, stateDbSessionRead } from './state-db.js'
 import { bootTestServer } from '../test/harness.js'
 import { Session } from './session.js'
 import { FakeSidecar } from '../sidecar/fake.js'
@@ -37,6 +37,40 @@ describe('Agent v0.22.1 receipt-backed local reset', () => {
     expect(rows.map((r) => r.id)).toEqual(fixture.snapshots[stage].listedIds)
     expect(rows[0]).toMatchObject({ title: 'Reset conversation', source: 'cli', _lineage_root_id: fixture.owner, _lineage_tip_id: fixture.snapshots[stage].listedIds[0] })
     expect(rows[0]?.relationship_type).not.toBe('child_session')
+  })
+
+  it('shares one receipt scan and schema probe set across sidebar windows', () => {
+    load('multiple')
+    for (let i = 0; i < 3; i += 1) {
+      const owner = `unrelated-${String(i)}`
+      db.prepare('INSERT INTO state_meta VALUES (?, ?)').run(`gateway.local_policy.v1:${owner}`, JSON.stringify({ session_id: owner, entry: { session_id: owner }, lineage: [owner] }))
+    }
+    const queries = [
+      { excludeSources: ['cron', 'webhook', 'kanban'], limit: 20 },
+      ...['cron', 'webhook', 'kanban'].map((kind) => ({ excludeSources: null, includeSources: [kind], limit: 201 })),
+    ]
+    const prepare = vi.spyOn(DatabaseSync.prototype, 'prepare')
+    const exec = vi.spyOn(DatabaseSync.prototype, 'exec')
+    try {
+      const result = readImportableAgentSessionRowBatches(path, queries)
+      expect(result.rows[0]).toHaveLength(1)
+      expect(result.rows[0]).toMatchObject([{ id: 'reset-empty', _lineage_root_id: fixture.owner }])
+      const sql = prepare.mock.calls.map(([sql]) => sql)
+      expect(sql.filter((sql) => sql.includes('state_meta WHERE key GLOB'))).toHaveLength(1)
+      for (const table of ['sessions', 'messages']) {
+        expect(sql.filter((sql) => sql === `PRAGMA table_info(${table})`)).toHaveLength(1)
+        expect(sql.filter((sql) => sql === `PRAGMA index_list(${table})`)).toHaveLength(1)
+      }
+      expect(sql.filter((sql) => sql === "SELECT name FROM sqlite_master WHERE type = 'table'")).toHaveLength(1)
+      expect(exec.mock.calls.filter(([sql]) => sql === 'BEGIN')).toHaveLength(1)
+      expect(result).toEqual({ rows: queries.map((opts) => readImportableAgentSessionRows(path, opts)), storage: { state: 'ok', reason: null } })
+    } finally { prepare.mockRestore(); exec.mockRestore() }
+  })
+
+  it('keeps each query projection independent when bounded and unbounded activity queries mix', () => {
+    db.exec('CREATE INDEX idx_sessions_effective_activity ON sessions(COALESCE(last_activity_at, started_at))')
+    const queries = [{ limit: 20 }, { limit: null }, { limit: 0 }, { sessionIds: [fixture.owner], compressionChains: true, keepEmpty: true, limit: null }]
+    expect(readImportableAgentSessionRowBatches(path, queries).rows).toEqual(queries.map((opts) => readImportableAgentSessionRows(path, opts)))
   })
 
   it('resolves every physical segment to the complete deletion lineage', () => {
