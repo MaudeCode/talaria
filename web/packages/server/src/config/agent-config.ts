@@ -353,8 +353,15 @@ export function coerceReasoningEffort(effort: string, supported: string[], provi
   return raw
 }
 
-export async function reasoningStatus(config: Config, resolve: EffortsResolver, opts: { model?: string | null; provider?: string | null; baseUrl?: string | null } = {}): Promise<ReasoningStatus> {
+/** The Web display preference, shared by the settings response and native-owner watches. */
+export function showReasoning(config: Config): boolean {
   const display = dict(config.display)
+  const webui = dict(dict(display.platforms).webui).show_reasoning
+  const raw = typeof webui === 'boolean' ? webui : display.show_reasoning
+  return typeof raw === 'boolean' ? raw : true
+}
+
+export async function reasoningStatus(config: Config, resolve: EffortsResolver, opts: { model?: string | null; provider?: string | null; baseUrl?: string | null } = {}): Promise<ReasoningStatus> {
   const agent = dict(config.agent)
   let model = str(opts.model).trim()
   let provider = str(opts.provider).trim()
@@ -366,10 +373,8 @@ export async function reasoningStatus(config: Config, resolve: EffortsResolver, 
     if (!baseUrl && m.base_url) baseUrl = str(m.base_url).trim()
   }
   const supported = model ? await resolve(model, provider, baseUrl) : []
-  const webui = dict(dict(display.platforms).webui).show_reasoning
-  const showRaw = typeof webui === 'boolean' ? webui : display.show_reasoning
   return {
-    show_reasoning: typeof showRaw === 'boolean' ? showRaw : true,
+    show_reasoning: showReasoning(config),
     reasoning_effort: coerceReasoningEffort(str(agent.reasoning_effort), supported, provider),
     supported_efforts: supported,
     supports_reasoning_effort: supported.length > 0,

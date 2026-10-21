@@ -163,6 +163,11 @@ async def _run(ctx, params: dict, home: Path, discovery) -> dict:
             result = {"state": "attached", "reason": None, "snapshot": snap, "receipt": receipt}
             if action != "watch":
                 return result
+            # Display negotiation is best effort on older owners. It changes no persisted config.
+            if isinstance(params.get("show_reasoning"), bool):
+                with suppress(GatewayRPCError, TimeoutError):
+                    await client.rpc("config.set", **common, key="show_reasoning",
+                                     value="1" if params["show_reasoning"] else "0", _timeout=10)
             ctx.emit("snapshot", result)
             epoch, sequence = snap["replay_epoch"], snap["last_sequence"]
             # Rebuild the active turn's display from retained events, even when its initial

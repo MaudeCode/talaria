@@ -430,13 +430,89 @@ def probe_recovery(home, peer, env):
         assert texts.count(text) == 1, texts
 
 
+class DetailModel(Model):
+    """A loopback model that reasons, delegates one child, then answers."""
+    def do_POST(self):
+        body = json.loads(self.rfile.read(int(self.headers['Content-Length'])))
+        self.server.requests.append(body)
+        messages = body.get('messages', [])
+        prompt = next((m.get('content', '') for m in reversed(messages) if m['role'] == 'user'), '')
+        delegate = prompt == 'NATIVE_DETAIL' and not any(m['role'] == 'tool' for m in messages)
+        message = {'role': 'assistant', 'content': None if delegate else 'Owner detail complete.',
+                   'reasoning_content': '**Inspecting the task**\nCheck the supplied facts.'}
+        if delegate:
+            message['tool_calls'] = [{'id': 'detail-delegate', 'type': 'function', 'function': {
+                'name': 'delegate_task', 'arguments': json.dumps({'goal': 'Inspect the supplied facts', 'toolsets': []})}}]
+        self.send_response(200)
+        self.send_header('Content-Type', 'text/event-stream' if body.get('stream') else 'application/json')
+        self.end_headers()
+        if body.get('stream'):
+            deltas = [{'role': 'assistant', 'reasoning_content': message['reasoning_content']}]
+            if delegate:
+                call = message['tool_calls'][0]
+                deltas.append({'tool_calls': [{'index': 0, **call}]})
+            else:
+                deltas.append({'content': message['content']})
+            for delta in deltas:
+                self.wfile.write(('data: ' + json.dumps({'id': 'detail', 'choices': [{'index': 0, 'delta': delta, 'finish_reason': None}]}) + '\n\n').encode())
+                self.wfile.flush()
+            payload = 'data: ' + json.dumps({'id': 'detail', 'choices': [{'index': 0, 'delta': {}, 'finish_reason': 'tool_calls' if delegate else 'stop'}],
+                'usage': {'prompt_tokens': 20, 'completion_tokens': 10, 'total_tokens': 30}}) + '\n\ndata: [DONE]\n\n'
+        else:
+            payload = json.dumps({'id': 'detail', 'choices': [{'index': 0, 'message': message, 'finish_reason': 'tool_calls' if delegate else 'stop'}],
+                'usage': {'prompt_tokens': 20, 'completion_tokens': 10, 'total_tokens': 30}})
+        self.wfile.write(payload.encode())
+        self.wfile.flush()
+
+
+async def probe_detail(home, peer, desc):
+    viewer = SidecarProcess(home)
+    try:
+        async with websocket(home, desc) as native:
+            created = await rpc(native, 'session.create', request_id='detail-create', source='cli', toolsets=['delegation'])
+            sid = created['result']['session_id']
+            # Recording can enable the native flag independently of Talaria's pre-fix adapter.
+            if os.environ.get('TALARIA_RECORD_OWNER_EVENTS'):
+                assert 'result' in await rpc(native, 'config.set', session_id=sid, key='show_reasoning', value='1')
+            watch = viewer.request('gateway.session', {'profile_home': str(home), 'session_id': sid, 'action': 'watch', 'show_reasoning': True})
+            first = await asyncio.to_thread(viewer.next_message, 20)
+            assert first['params']['event'] == 'snapshot', first
+            submitted = await rpc(native, 'prompt.submit', session_id=sid, submission_id='detail-input', text='NATIVE_DETAIL')
+            assert 'result' in submitted, submitted
+            events = []
+            ran = False
+            async with asyncio.timeout(75):
+                while True:
+                    frame = await asyncio.to_thread(viewer.next_message, 20)
+                    assert frame.get('method') == 'stream', frame
+                    event = frame['params'].get('data', {})
+                    if frame['params']['event'] != 'event':
+                        continue
+                    events.append(event)
+                    ran = ran or event.get('payload', {}).get('running') is True
+                    if ran and event.get('type') == 'session.info' and event.get('payload', {}).get('running') is False:
+                        break
+            kinds = [e['type'] for e in events]
+            if os.environ.get('TALARIA_RECORD_OWNER_EVENTS'):
+                Path(os.environ['TALARIA_RECORD_OWNER_EVENTS']).write_text(json.dumps({'release': 'v0.22.3',
+                    'revision': '5b147ab036d6d19131bff8d20701b5001eab844a', 'events': events}, indent=2) + '\n')
+            assert 'reasoning.delta' in kinds, kinds
+            assert kinds.index('reasoning.delta') < kinds.index('message.delta'), kinds
+            assert 'subagent.start' in kinds and 'subagent.complete' in kinds, kinds
+            assert 'session.usage' in kinds and 'message.complete' in kinds, kinds
+            viewer.request('rpc.cancel', {'id': watch})
+            print(json.dumps({'live_reasoning': True, 'subagent_progress': True, 'usage': True, 'events': kinds}))
+    finally:
+        viewer.close()
+
+
 def main():
     home = Path(os.environ["HERMES_HOME"])
     home.mkdir(mode=0o700, exist_ok=True)
     mode = sys.argv[1] if len(sys.argv) > 1 else "shared"
     from authority_clarify_peer import ModelPeer as ClarifyPeer
     from authority_controls_peer import ModelPeer as ApprovalPeer
-    handler = ApprovalPeer if mode == "approval" else ClarifyPeer if mode in {"batch", "clarify"} else Model
+    handler = DetailModel if mode == "detail" else ApprovalPeer if mode == "approval" else ClarifyPeer if mode in {"batch", "clarify"} else Model
     if mode == "profiles":
         class ProfileModel(Model):
             def do_POST(self):
@@ -485,6 +561,8 @@ def main():
         with daemon(agent, home, env, barrier=mode == "replay", fixture=str(Path(__file__).with_name("gateway_replay_daemon.py"))) as (_, desc):
             if mode == "queued-controls":
                 asyncio.run(probe_queued_controls(home, peer, desc))
+            elif mode == "detail":
+                asyncio.run(probe_detail(home, peer, desc))
             elif mode == "profiles":
                 asyncio.run(probe_profiles(home, peer, desc))
             elif mode in {"approval", "clarify"}:

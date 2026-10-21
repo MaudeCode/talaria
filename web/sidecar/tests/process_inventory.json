@@ -1103,7 +1103,7 @@
     },
     "tests/test_gateway_sessions.py::test_real_native_owner_shared_admission_and_detach": {
       "layer": "compatibility",
-      "reason": "Supported-Agent API compatibility: real native owner shared admission and detach. Uses the real installed release, not a fabricated API response.",
+      "reason": "Supported-Agent API compatibility: native admission, detach and display negotiation. The detail case proves actual reasoning callback installation, child lifecycle forwarding and turn-end usage on the owner WebSocket with a loopback model.",
       "cases": [
         "[shared]",
         "[batch]",
@@ -1113,7 +1113,8 @@
         "[secure]",
         "[profiles]",
         "[dedicated]",
-        "[replay]"
+        "[replay]",
+        "[detail]"
       ]
     },
     "tests/test_gateway_sessions.py::test_diagnostic_creation_refuses_without_starting": {

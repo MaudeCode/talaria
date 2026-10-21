@@ -22,6 +22,7 @@ export const GatewaySessionParamsSchema = z.object({
   action: z.enum(['snapshot', 'watch', 'submit', 'receipt', 'cancel', 'steer_queued', 'replace_queued', 'interrupt', 'approval', 'clarify', 'discard', 'mutate']),
   request_id: z.string().min(1).max(128).optional(), text: z.string().optional(),
   submission_id: z.string().min(1).max(128).optional(),
+  show_reasoning: z.boolean().optional().describe('The profile display preference negotiated for an owner watch.'),
   admission_id: z.string().optional(), execution_generation: z.number().int().nonnegative().optional(),
   prompt_id: z.string().optional(), choice: z.enum(['once', 'session', 'always', 'deny']).optional(),
   expected_revision: z.number().int().nonnegative().optional(),

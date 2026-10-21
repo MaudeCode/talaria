@@ -2,13 +2,14 @@ import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { SessionEnvelopeSchema, ClarifyPendingEnvelopeSchema, type GatewaySnapshot, type GatewaySessionResult } from '@maudecode/talaria-web-contracts'
+import { SessionEnvelopeSchema, ClarifyPendingEnvelopeSchema, ChatEventSchema, type GatewaySnapshot, type GatewaySessionResult } from '@maudecode/talaria-web-contracts'
 import type { StreamFrame } from '../sidecar/client.js'
 import { bootTestServer, type TestServer } from '../test/harness.js'
 import { FakeSidecar } from '../sidecar/fake.js'
 import { CANONICAL_READ_ONLY_REASON } from './state-db.js'
 
 const fixture = JSON.parse(readFileSync(new URL('../test/fixtures/canonical-ownership.json', import.meta.url), 'utf8')) as { sessions: Record<string, string>; diagnostic: Record<'safe' | 'ignore_config' | 'fresh', string>; schema: string[]; inserts: string[] }
+const ownerEvents = JSON.parse(readFileSync(new URL('../test/fixtures/gateway-owner-events.json', import.meta.url), 'utf8')) as { events: Record<string, unknown>[] }
 const sid = fixture.sessions.cli!
 const snapshot = (extra: Partial<GatewaySnapshot> = {}): GatewaySnapshot => ({ session_id: sid, stored_session_id: sid,
   messages: [{ role: 'user', content: 'native question' }, { role: 'assistant', content: 'owner answer' }], message_count: 2,
@@ -220,6 +221,44 @@ describe('canonical owner attachment', () => {
     expect(done?.session.messages.some((message) => message.content === 'owner answer')).toBe(true)
     expect(await s.deps.sessionStore.exists(sid)).toBe(false)
     expect(sidecar.calls.some((c) => c.method === 'chat.start')).toBe(false)
+  })
+
+  it.each([true, false])('projects recorded v0.22.3 reasoning, subagent activity and usage through existing chat frames (reasoning=%s)', async (show) => {
+    writeFileSync(join(s.state, 'config.yaml'), '# synthetic display preference')
+    sidecar.respond('config.get', () => ({ path: join(s.state, 'config.yaml'), exists: true, config: { display: { show_reasoning: !show, platforms: { webui: { show_reasoning: show } } } } }))
+    let snap = snapshot({ running: true, pending: [admission()] })
+    let emit: ((frame: Omit<StreamFrame, 'seq'>) => void) | undefined
+    sidecar.respond('gateway.session', (params, send, opts) => {
+      if (params.action !== 'watch') return { ...attached(snap), receipt: params.action === 'receipt' ? { ...admission('terminal'), outcome: 'completed' } : null }
+      emit = send
+      send({ event: 'snapshot', data: attached(snap) })
+      return new Promise((resolve) => { opts.signal!.addEventListener('abort', () => { resolve(attached(snap)) }, { once: true }) })
+    })
+    const row = SessionEnvelopeSchema.parse(await (await s.get(`/api/session?session_id=${sid}`)).json())
+    const stream = row.session.active_stream_id!
+    const read = s.sse(`/api/chat/stream?stream_id=${stream}&replay=1&after_seq=0`, (frame) => frame.event === 'stream_end')
+    await vi.waitFor(() => { expect(s.deps.registry.peek(stream)?.subscriberCount).toBe(1) })
+    for (const recorded of ownerEvents.events) {
+      // Old executions never contaminate the current turn's reasoning, progress or counters.
+      emit!({ event: 'event', data: { ...recorded, session_id: sid, execution_generation: 0 } })
+      emit!({ event: 'event', data: { ...recorded, session_id: sid, authority_epoch: 1, execution_generation: 1 } })
+    }
+    emit!({ event: 'event', data: { type: 'session.usage', authority_epoch: 1, execution_generation: 1, payload: { prompt_tokens: 100, input_tokens: 20, completion_tokens: 20, cache_read_tokens: 80, cache_write_tokens: 0 } } })
+    snap = snapshot()
+    emit!({ event: 'event', data: { type: 'session.info', payload: { authority_epoch: 1, execution_generation: 1, running: false, pending: [] } } })
+    const frames = await read
+    const reasoning = frames.filter((f) => f.event === 'reasoning').map((f) => (f.data as { text: string }).text).join('')
+    expect.soft(reasoning).toBe(show ? ownerEvents.events.filter((e) => e.type === 'reasoning.delta').map((e) => (e.payload as { text: string }).text).join('') : '')
+    expect.soft(sidecar.calls.find((c) => c.method === 'gateway.session' && (c.params as { action: string }).action === 'watch')?.params).toMatchObject({ show_reasoning: show })
+    for (const frame of frames.filter((f) => ['reasoning', 'tool', 'tool_complete', 'metering', 'done'].includes(f.event))) expect.soft(ChatEventSchema.safeParse(frame).success, JSON.stringify(frame)).toBe(true)
+    const progress = frames.filter((f) => f.event === 'tool' || f.event === 'tool_complete')
+    expect.soft(progress).toHaveLength(ownerEvents.events.filter((e) => String(e.type).startsWith('subagent.')).length)
+    expect.soft(progress[0]?.data).toMatchObject({ id: 'owner-subagent-detail-child', name: 'subagent_progress', kind: 'delegate', target: 'Inspect the supplied facts' })
+    expect.soft(progress.at(-1)?.data).toMatchObject({ id: 'owner-subagent-detail-child', is_error: false, preview: 'Owner detail complete.' })
+    const usage = { input_tokens: 100, output_tokens: 20, cache_read_tokens: 80, cache_write_tokens: 0, context_length: 256000, last_prompt_tokens: 20 }
+    expect.soft(frames.findLast((f) => f.event === 'metering')?.data).toMatchObject({ usage, estimated: false })
+    expect.soft(frames.find((f) => f.event === 'done')?.data).toMatchObject({ usage, session: usage })
+    expect.soft(await s.deps.sessionStore.exists(sid)).toBe(false)
   })
 
   it('uses the selected home for same-id attachments and redacts pending text', async () => {
