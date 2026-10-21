@@ -202,6 +202,33 @@ it.each([
   if (notFollowing) expect(measured).toHaveBeenCalled()
 })
 
+it.each([
+  { name: 'fully visible first row', top: 20, height: 100, reads: 1 },
+  { name: 'partly visible first row', top: -40, height: 100, reads: 2 },
+  { name: 'one tall intersecting row', top: -40, height: 800, reads: 2 },
+])('captures the reader anchor without measuring later rows: $name', ({ top: firstTop, height, reads }) => {
+  const flush = animationFrames()
+  const input = { ...props(), truncated: false, rows: projectMessages(Array.from({ length: 10 }, (_, i) => ({ id: i + 1, role: 'user' as const, content: `Row ${i + 1}` }))) }
+  const view = render(<Transcript {...input} />), pane = view.container.querySelector<HTMLElement>('#messages')!
+  Object.defineProperty(pane, 'scrollHeight', { configurable: true, value: 2600 })
+  vi.spyOn(pane, 'scrollTo').mockImplementation(() => { pane.scrollTop = 2000 })
+  pane.getBoundingClientRect = () => ({ top: 0, bottom: 600 } as DOMRect)
+  let shift = 0
+  const measured = [...pane.querySelectorAll<HTMLElement>('[data-message-key]')].map((row, index) => vi.spyOn(row, 'getBoundingClientRect').mockImplementation(() => {
+    const top = index * height + firstTop + shift
+    return { top, bottom: top + height } as DOMRect
+  }))
+  act(() => requestScroll('end'))
+  fireEvent.wheel(pane, { deltaY: -1 }); pane.scrollTop = 500; fireEvent.scroll(pane)
+  flush()
+  for (let index = 0; index < reads; index++) expect(measured[index]).toHaveBeenCalledTimes(1)
+  for (const later of measured.slice(reads)) expect(later).not.toHaveBeenCalled()
+  // The saved fully visible row still compensates for a late layout change above it.
+  shift = 120
+  act(() => resized([], {} as ResizeObserver))
+  expect(pane.scrollTop).toBe(620)
+})
+
 it('prefetches from a sentinel one viewport before the top, with no load button', () => {
   const input = props()
   const view = render(<Transcript {...input} />)

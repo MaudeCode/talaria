@@ -116,13 +116,17 @@ export function Transcript(props: TranscriptProps) {
       const pane = scrollRef.current
       if (!pane) return
       const bounds = pane.getBoundingClientRect()
-      const visible = [...pane.querySelectorAll<HTMLElement>('[data-message-key]')].filter((row) => {
+      readerAnchor.current = null
+      // Rows are in visual order; leave later contained history unmeasured once the anchor is known.
+      for (const row of pane.querySelectorAll<HTMLElement>('[data-message-key]')) {
         const rect = row.getBoundingClientRect()
-        return rect.bottom > bounds.top && rect.top < bounds.bottom
-      })
-      const row = visible.find((row) => row.getBoundingClientRect().top >= bounds.top) ?? visible[0]
-      const key = row?.dataset.messageKey
-      readerAnchor.current = row && key ? { key, top: row.getBoundingClientRect().top - bounds.top } : null
+        if (rect.top >= bounds.bottom) break
+        if (rect.bottom <= bounds.top) continue
+        const key = row.dataset.messageKey
+        if (!key) continue
+        if (!readerAnchor.current || rect.top >= bounds.top) readerAnchor.current = { key, top: rect.top - bounds.top }
+        if (rect.top >= bounds.top) break
+      }
     })
   }, [])
 
@@ -338,7 +342,7 @@ export function Transcript(props: TranscriptProps) {
       ? <DeliveryRow key={row.key} row={row} />
       : row.message.role === 'user'
       ? <UserMessageRow key={row.key} row={row} renderMarkdown={renderUserMarkdown} sessionId={sessionId} actions={actions} />
-      : <AssistantMessageRow sessionId={sessionId} scope={props.disclosureScope} key={row.key} row={row} name={assistantName} mode={mode} actions={actions} tts={tts} isLast={i === lastAssistantIndex && !showLive} continuation={row === continued ? live ?? undefined : undefined} />
+      : <AssistantMessageRow sessionId={sessionId} scope={props.disclosureScope} key={row.key} row={row} name={assistantName} mode={mode} actions={actions} tts={tts} isLast={i === lastAssistantIndex && !showLive} retainHeight={i === lastAssistantIndex} continuation={row === continued ? live ?? undefined : undefined} />
   )
 
   return (

@@ -72,13 +72,7 @@ test('off-screen history halves long tasks during a 200-token stream', async ({ 
     const samples: number[] = []
     const timings: Record<string, number>[] = []
     // Fixed paired repetitions keep one scheduling outlier from deciding a threshold-count benchmark.
-    for (let trial = 0; trial < 4; trial++) {
-      const diagnostic = trial === 3
-      // Profile a fresh pair only after the original three-pair benchmark has failed.
-      if (diagnostic) {
-        const median = (offset: number) => samples.filter((_, i) => i % 2 === offset).toSorted((a, b) => a - b)[1]!
-        if (median(0) > 0 && median(1) <= median(0) / 2) break
-      }
+    for (let trial = 0; trial < 3; trial++) {
       for (const baseline of [true, false]) {
         stream?.end()
         stream = undefined
@@ -96,7 +90,6 @@ test('off-screen history halves long tasks during a 200-token stream', async ({ 
         await expect.poll(() => distance(page)).toBeLessThan(2)
         await expect(page.locator('.scroll-to-bottom-btn')).toHaveCount(0)
         await cpu.send('Emulation.setCPUThrottlingRate', { rate: 6 })
-        if (diagnostic) { await cpu.send('Profiler.enable'); await cpu.send('Profiler.start') }
         const before = await readTimings()
         await page.evaluate(() => {
           const w = window as unknown as { longTasks: number; observer: PerformanceObserver }
@@ -111,28 +104,14 @@ test('off-screen history halves long tasks during a 200-token stream', async ({ 
         await expect(page.locator('.live-turn .msg-body')).toContainText('word '.repeat(200).trim())
         await expect.poll(() => distance(page)).toBeLessThan(2)
         await page.waitForTimeout(100)
-        const count = await page.evaluate(() => {
+        samples.push(await page.evaluate(() => {
           const w = window as unknown as { longTasks: number; observer: PerformanceObserver }
           w.longTasks += w.observer.takeRecords().length
           w.observer.disconnect()
           return w.longTasks
-        })
+        }))
         const after = await readTimings()
-        const timing = Object.fromEntries(['TaskDuration', 'ScriptDuration', 'LayoutDuration', 'RecalcStyleDuration', 'LayoutCount', 'RecalcStyleCount'].map((name) => [name, (after[name] ?? 0) - (before[name] ?? 0)]))
-        if (diagnostic) {
-          const { profile } = await cpu.send('Profiler.stop') as { profile: { nodes: { id: number; callFrame: { functionName: string; url: string; lineNumber: number; columnNumber: number }; children?: number[] }[]; samples: number[] } }
-          const nodes = new Map(profile.nodes.map((node) => [node.id, node]))
-          const parents = new Map(profile.nodes.flatMap((node) => (node.children ?? []).map((id) => [id, node.id] as const)))
-          const self = new Map<number, number>(), total = new Map<number, number>()
-          for (const id of profile.samples) {
-            self.set(id, (self.get(id) ?? 0) + 1)
-            let ancestor: number | undefined = id
-            while (ancestor !== undefined) { total.set(ancestor, (total.get(ancestor) ?? 0) + 1); ancestor = parents.get(ancestor) }
-          }
-          const hottest = (counts: Map<number, number>) => [...counts].toSorted((a, b) => b[1] - a[1]).slice(0, 30).map(([id, samples]) => ({ samples, ...nodes.get(id)?.callFrame }))
-          console.info('[DEBUG-tal1204-profile]', JSON.stringify({ baseline, count, timing, self: hottest(self), total: hottest(total) }))
-          await cpu.send('Profiler.disable')
-        } else { samples.push(count); timings.push(timing) }
+        timings.push(Object.fromEntries(['TaskDuration', 'ScriptDuration', 'LayoutDuration', 'RecalcStyleDuration'].map((name) => [name, (after[name] ?? 0) - (before[name] ?? 0)])))
         await cpu.send('Emulation.setCPUThrottlingRate', { rate: 1 })
       }
     }
@@ -327,65 +306,7 @@ for (const virtualize of [false, true]) {
     await expect(page.getByRole('button', { name: 'Load older messages' })).toHaveCount(0)
     await expect(page.locator('[data-history-sentinel]')).toHaveCount(0)
     await page.locator('#messages').evaluate((el) => { el.dispatchEvent(new WheelEvent('wheel', { deltaY: -1, bubbles: true })); el.scrollTop = 0 })
-    const firstMessage = page.getByText('history question 1', { exact: true })
-    try {
-      await expect(firstMessage).toBeInViewport()
-    } catch (error) {
-      // Temporary failure-only diagnostics for the Linux containment failure.
-      const inspect = () => firstMessage.evaluate((text) => {
-        const pane = document.getElementById('messages')!
-        const top = pane.scrollTop
-        const nodes = [pane, document.getElementById('msgInner'), text.closest('[data-message-key]'), text.parentElement, text]
-        return {
-          top, left: pane.scrollLeft, max: pane.scrollHeight - pane.clientHeight,
-          documentTop: document.scrollingElement?.scrollTop, windowY: window.scrollY,
-          viewport: { width: innerWidth, height: innerHeight, offsetTop: visualViewport?.offsetTop, scale: visualViewport?.scale },
-          active: `${document.activeElement?.tagName ?? ''}:${document.activeElement?.id ?? ''}`,
-          virtualized: !!pane.querySelector('[data-virtual-history]'),
-          firstKeys: [...pane.querySelectorAll<HTMLElement>('[data-message-key]')].slice(0, 3).map((row) => row.dataset.messageKey),
-          nodes: nodes.map((node) => {
-            if (!node) return null
-            const style = getComputedStyle(node)
-            return { tag: node.tagName, id: node.id, class: node.getAttribute('class'), rect: node.getBoundingClientRect().toJSON(),
-              client: [node.clientWidth, node.clientHeight], scroll: [node.scrollWidth, node.scrollHeight],
-              visible: node.checkVisibility({ contentVisibilityAuto: true }), display: style.display, visibility: style.visibility,
-              contentVisibility: style.contentVisibility, contain: style.contain, intrinsic: style.containIntrinsicSize,
-              overflow: [style.overflowX, style.overflowY], scrollBehavior: style.scrollBehavior, overflowAnchor: style.overflowAnchor }
-          }),
-          afterTop: pane.scrollTop, writes: Reflect.get(window, 'tal1204ScrollWrites') as unknown,
-        }
-      })
-      try {
-        console.info('[DEBUG-tal1204-start]', JSON.stringify({ phase: 'failed', state: await inspect() }))
-        console.info('[DEBUG-tal1204-start]', JSON.stringify({ phase: 'intersection', state: await firstMessage.evaluate((text) => new Promise((resolve) => {
-          const observer = new IntersectionObserver((entries) => {
-            const entry = entries[0]
-            if (!entry) return
-            clearTimeout(timer); observer.disconnect()
-            resolve({ rect: entry.boundingClientRect.toJSON(), intersection: entry.intersectionRect.toJSON(), root: entry.rootBounds?.toJSON(), ratio: entry.intersectionRatio, intersects: entry.isIntersecting })
-          })
-          const timer = window.setTimeout(() => { observer.disconnect(); resolve({ timeout: true }) }, 1000)
-          observer.observe(text)
-        })) }))
-        await page.locator('#messages').evaluate((pane) => {
-          const writes: unknown[] = []
-          Reflect.set(window, 'tal1204ScrollWrites', writes)
-          const descriptor = Object.getOwnPropertyDescriptor(Element.prototype, 'scrollTop')
-          if (descriptor?.get && descriptor.set) Object.defineProperty(pane, 'scrollTop', { configurable: true,
-            get: () => descriptor.get!.call(pane), set: (value: number) => { writes.push({ value, stack: new Error().stack }); descriptor.set!.call(pane, value) } })
-          const scrollTo = pane.scrollTo.bind(pane)
-          pane.scrollTo = (...args: unknown[]) => { writes.push({ method: 'scrollTo', args, stack: new Error().stack }); Reflect.apply(scrollTo, pane, args) }
-          pane.dispatchEvent(new WheelEvent('wheel', { deltaY: -1, bubbles: true })); pane.scrollTop = 0
-        })
-        await page.waitForTimeout(250)
-        console.info('[DEBUG-tal1204-start]', JSON.stringify({ phase: 'retry', state: await inspect() }))
-        await page.addStyleTag({ content: withoutContainment })
-        await page.evaluate(() => document.documentElement.classList.add('without-containment'))
-        await page.waitForTimeout(250)
-        console.info('[DEBUG-tal1204-start]', JSON.stringify({ phase: 'visible', state: await inspect() }))
-      } catch (diagnosticError) { console.info('[DEBUG-tal1204-start]', String(diagnosticError)) }
-      throw error
-    }
+    await expect(page.getByText('history question 1', { exact: true })).toBeInViewport()
     if (!virtualize) {
       const path = testInfo.outputPath(`history-start-${testInfo.project.name}.png`)
       await page.screenshot({ path })
