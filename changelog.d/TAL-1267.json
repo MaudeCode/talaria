@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Added",
+      "summary": "Plugin slash commands run from a Web chat receive that chat's session, and plugins observing commands see Web commands, as they do from the CLI and messaging.",
+      "highlight": false,
+      "components": ["web"]
+    }
+  ]
+}
