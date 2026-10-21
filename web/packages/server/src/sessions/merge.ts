@@ -143,13 +143,14 @@ const FAILED_TURN_NOTICES = new Set([
 /**
  * TAL-815: rows the Agent writes outside the conversation, by its `display_kind` and its own read-side rules.
  * `failed_turn`: the assistant boundary closing a turn that failed, never the model's reply. `hidden`: a row the Agent
- * never renders, such as the empty interrupt placeholder or an untyped `[System:` scaffold notice in a user row.
+ * never renders, such as the empty interrupt placeholder or an untyped `[System:` scaffold notice in a user row, or the
+ * late language-server `[System note:` (TAL-1261, `agent/turn_stop_gates.py`).
  */
 export function agentRowKind(msg: unknown): 'failed_turn' | 'hidden' | null {
   if (!isDict(msg)) return null
   if (msg.display_kind === 'hidden') return 'hidden'
   if (msg.role === 'assistant' && (msg.display_kind === 'failed_turn' || (!msg.display_kind && typeof msg.content === 'string' && FAILED_TURN_NOTICES.has(msg.content.trim())))) return 'failed_turn'
-  return msg.role === 'user' && !msg.display_kind && typeof msg.content === 'string' && msg.content.trimStart().startsWith('[System:') ? 'hidden' : null
+  return msg.role === 'user' && !msg.display_kind && typeof msg.content === 'string' && /^\[System( note)?:/.test(msg.content.trimStart()) ? 'hidden' : null
 }
 
 export interface DeliveryNotice { kind: 'webhook' | 'cron'; name: string; body: string }
@@ -516,18 +517,29 @@ export function decidedResultView(value: Record<string, unknown>): ToolResultVie
   return view
 }
 
+// Agent v0.22.3 `agent/tool_result_classification.py` `shape_failure_error`: a failed status, or a non-empty `results`
+// batch of objects that all carry an error (`delegate_task` with every child interrupted).
+const FAILED_STATUSES = new Set(['failed', 'error'])
+const failedByShape = (data: Record<string, unknown>): boolean => FAILED_STATUSES.has(str(data.status).toLowerCase())
+  || (Array.isArray(data.results) && data.results.length > 0 && data.results.every((item) => isDict(item) && presentError(item.error)))
+
 /**
  * The server's one tool outcome rule (TAL-313), for a live `raw_result` and a persisted tool-role content alike: a result
- * is an error when it parses to an object with a non-empty `error`, a non-zero numeric `exit_code` / `exitCode`, or
- * `success: false`. `result_text` is the result's display snippet; `result_view` its display sections (TAL-315).
+ * is an error when it parses to an object with a non-empty `error`, a non-zero numeric `exit_code` / `exitCode`,
+ * `success: false`, a failed shape (TAL-1261), or `flagged` by its provider. A `skill_manage` refusal is the Agent's own
+ * retry loop and never an error unless its `error` reports `ROLLBACK FAILED` (Agent `agent/display.py`
+ * `is_neutral_failure`). `result_text` is the result's display snippet; `result_view` its display sections (TAL-315).
  */
-export function toolOutcome(raw: unknown): { is_error: boolean; result_text: string; result_view: ToolResultView } {
+export function toolOutcome(raw: unknown, toolName?: unknown, flagged = false): { is_error: boolean; result_text: string; result_view: ToolResultView } {
   const value = Array.isArray(raw) ? messageText(raw) : raw
   let data: unknown = value
   if (typeof value === 'string') { try { data = JSON.parse(value) } catch { data = null } }
   const exit = isDict(data) ? data.exit_code ?? data.exitCode : undefined
-  const isError = isDict(data) && (presentError(data.error) || (typeof exit === 'number' && exit !== 0) || data.success === false)
-  return { is_error: isError, result_text: toolResultSnippet(value), result_view: toolResultView(raw) }
+  const failed = flagged || isDict(data) && (presentError(data.error) || (typeof exit === 'number' && exit !== 0) || data.success === false || failedByShape(data))
+  // Only the error text: a refused patch also returns a preview of the skill, whose prose may mention the marker.
+  const error = isDict(data) ? data.error : value
+  const neutral = toolName === 'skill_manage' && !(typeof error === 'string' ? error : JSON.stringify(error ?? '')).includes('ROLLBACK FAILED')
+  return { is_error: failed && !neutral, result_text: toolResultSnippet(value), result_view: toolResultView(raw) }
 }
 
 const finiteOrNull = (v: unknown): number | null => (typeof v === 'number' && Number.isFinite(v) ? v : null)
@@ -549,7 +561,7 @@ export function extractToolCallsFromMessages(messages: unknown[], liveToolCalls:
   for (const tc of recorded) if (isDict(tc) && str(tc.tid)) earlier.set(`${String(tc.assistant_msg_idx)}\0${str(tc.tid)}`, finiteOrNull(tc.duration))
   const liveDurations = new Map<string, (number | null)[]>()
   for (const tc of liveToolCalls) if (isDict(tc) && str(tc.tid)) liveDurations.set(str(tc.tid), [...(liveDurations.get(str(tc.tid)) ?? []), finiteOrNull(tc.duration)])
-  const outcome = (raw: unknown) => ({ is_error: toolOutcome(raw).is_error })
+  const outcome = (raw: unknown, name: string, flagged = false) => ({ is_error: toolOutcome(raw, name, flagged).is_error })
   const toolCalls: Record<string, unknown>[] = []
   const pendingNames = new Map<string, string>()
   const pendingArgs = new Map<string, unknown>()
@@ -586,7 +598,7 @@ export function extractToolCallsFromMessages(messages: unknown[], liveToolCalls:
       if (tid) {
         const name = pendingNames.get(tid) ?? ''
         if (name && name !== 'tool') {
-          toolCalls.push({ name, snippet: toolResultSnippet(m.content), tid, assistant_msg_idx: pendingAsst.get(tid) ?? -1, args: truncateToolArgs(pendingArgs.get(tid) ?? {}), ...outcome(m.content) })
+          toolCalls.push({ name, snippet: toolResultSnippet(m.content), tid, assistant_msg_idx: pendingAsst.get(tid) ?? -1, args: truncateToolArgs(pendingArgs.get(tid) ?? {}), ...outcome(m.content, name) })
           seq.resolved = true
         }
       }
@@ -598,8 +610,7 @@ export function extractToolCallsFromMessages(messages: unknown[], liveToolCalls:
         const name = pendingNames.get(tid) ?? ''
         if (!tid || !name || name === 'tool' || !isDict(part)) continue
         const raw = part.content ?? ''
-        const resolved = outcome(raw)
-        toolCalls.push({ name, snippet: toolResultSnippet(raw), tid, assistant_msg_idx: pendingAsst.get(tid) ?? -1, args: truncateToolArgs(pendingArgs.get(tid) ?? {}), ...resolved, is_error: resolved.is_error || part.is_error === true })
+        toolCalls.push({ name, snippet: toolResultSnippet(raw), tid, assistant_msg_idx: pendingAsst.get(tid) ?? -1, args: truncateToolArgs(pendingArgs.get(tid) ?? {}), ...outcome(raw, name, part.is_error === true) })
       }
     }
   })
@@ -608,7 +619,7 @@ export function extractToolCallsFromMessages(messages: unknown[], liveToolCalls:
     toolSeq.forEach((seq, i) => {
       if (seq.resolved || i >= live.length) return
       const tc = live[i]!
-      toolCalls.push({ name: str(tc.name) || 'tool', snippet: toolResultSnippet(seq.raw), tid: str(tc.tid), assistant_msg_idx: nearestAssistantIdx(messages, seq.msgIdx), args: truncateToolArgs(tc.args ?? {}, 4), ...outcome(seq.raw) })
+      toolCalls.push({ name: str(tc.name) || 'tool', snippet: toolResultSnippet(seq.raw), tid: str(tc.tid), assistant_msg_idx: nearestAssistantIdx(messages, seq.msgIdx), args: truncateToolArgs(tc.args ?? {}, 4), ...outcome(seq.raw, str(tc.name)) })
     })
   }
   for (let i = toolCalls.length - 1; i >= 0; i -= 1) {
@@ -683,12 +694,12 @@ export function withToolCallOutcomes<T>(messages: T[], sessionToolCalls: unknown
     const running = Boolean(activeTurnId) && m._turn_id === activeTurnId
     const resolve = (id: string, name: unknown, rec: Record<string, unknown> | undefined, answered: boolean) => {
       const reply = id ? replies.get(key(index, id)) : undefined
-      const outcome = reply ? { ...toolOutcome(reply.content), flagged: reply.is_error } : null
+      const outcome = reply ? toolOutcome(reply.content, name, reply.is_error) : null
       // TAL-448: a file edit's change, from its full reply, else the one its live record decided.
       const editDiff = reply ? toolEditDiff(name, reply.content, reply.display_metadata) : decidedEditDiff(rec?.edit_diff)
       return {
         ...(editDiff ? { edit_diff: editDiff } : {}),
-        done: Boolean(reply) || answered || !running, is_error: outcome ? outcome.flagged || outcome.is_error : rec?.is_error === true,
+        done: Boolean(reply) || answered || !running, is_error: outcome ? outcome.is_error : rec?.is_error === true,
         duration: finiteOrNull(rec?.duration), result: outcome ? outcome.result_text : typeof rec?.snippet === 'string' ? rec.snippet : null,
         result_view: outcome ? outcome.result_view : isDict(rec?.result_view) ? decidedResultView(rec.result_view) : typeof rec?.snippet === 'string' ? toolResultView(rec.snippet) : null,
       }

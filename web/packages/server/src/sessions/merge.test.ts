@@ -15,6 +15,51 @@ describe('toolOutcome (TAL-313)', () => {
     for (const raw of succeeded) expect(toolOutcome(raw).is_error, JSON.stringify(raw)).toBe(false)
   })
 
+  it('renders a skill_manage refusal neutrally unless its rollback failed, as Agent v0.22.3 does (TAL-1261)', () => {
+    // The Agent's own retry loop; the marker counts only in the error text.
+    const refusal = { success: false, error: 'Skill body exceeds the 20000 character limit.', file_preview: 'ROLLBACK FAILED is only data here' }
+    expect(toolOutcome(refusal, 'skill_manage').is_error).toBe(false)
+    expect(toolOutcome(JSON.stringify(refusal), 'skill_manage').is_error).toBe(false)
+    expect(toolOutcome({ success: false, error: 'ROLLBACK FAILED: 2 files left changed' }, 'skill_manage').is_error).toBe(true)
+    expect(toolOutcome(refusal, 'terminal').is_error).toBe(true)
+    expect(toolOutcome(refusal).is_error).toBe(true)
+    // Neutral beats the provider's flag, as the Agent's own renderer does.
+    expect(toolOutcome(refusal, 'skill_manage', true).is_error).toBe(false)
+    expect(toolOutcome('', 'terminal', true).is_error).toBe(true)
+  })
+
+  it('fails a failed status and a batch where every item errored, as Agent v0.22.3 does (TAL-1261)', () => {
+    const failed: unknown[] = [
+      '{"status": "failed"}', { status: 'error' }, { status: 'FAILED' },
+      { results: [{ error: 'interrupted' }, { error: { message: 'interrupted' } }] },
+    ]
+    for (const raw of failed) expect(toolOutcome(raw, 'delegate_task').is_error, JSON.stringify(raw)).toBe(true)
+    const succeeded: unknown[] = [
+      { status: 'completed' }, { status: 'degraded' }, { results: [] }, { results: [{ error: 'interrupted' }, { summary: 'done' }] },
+      { results: [{ error: 'interrupted' }, 'text'] }, { results: [{ error: '' }] },
+    ]
+    for (const raw of succeeded) expect(toolOutcome(raw, 'delegate_task').is_error, JSON.stringify(raw)).toBe(false)
+  })
+
+  it('judges every persisted and live call by its own tool name (TAL-1261)', () => {
+    const refusal = JSON.stringify({ success: false, error: 'Skill body exceeds the 20000 character limit.' })
+    const messages = [
+      { role: 'assistant', content: '', tool_calls: [{ id: 's1', function: { name: 'skill_manage', arguments: '{}' } }, { id: 'f1', function: { name: 'patch', arguments: '{}' } }] },
+      { role: 'tool', tool_call_id: 's1', content: refusal },
+      { role: 'tool', tool_call_id: 'f1', content: refusal },
+    ]
+    expect(extractToolCallsFromMessages(messages).map((tc) => [tc.tid, tc.is_error])).toEqual([['s1', false], ['f1', true]])
+    const projected = withToolCallOutcomes(messages, [], null)[0] as { tool_calls: Record<string, unknown>[] }
+    expect(projected.tool_calls.map((tc) => [tc.id, tc.is_error])).toEqual([['s1', false], ['f1', true]])
+    const anthropic = [
+      { role: 'assistant', content: [{ type: 'tool_use', id: 's1', name: 'skill_manage', input: {} }, { type: 'tool_use', id: 'f1', name: 'patch', input: {} }] },
+      { role: 'user', content: [{ type: 'tool_result', tool_use_id: 's1', content: refusal, is_error: true }, { type: 'tool_result', tool_use_id: 'f1', content: 'ok', is_error: true }] },
+    ]
+    expect(extractToolCallsFromMessages(anthropic).map((tc) => [tc.tid, tc.is_error])).toEqual([['s1', false], ['f1', true]])
+    const flagged = withToolCallOutcomes(anthropic, [], null)[0] as unknown as { tool_calls: Record<string, unknown>[] }
+    expect(flagged.tool_calls.map((tc) => [tc.id, tc.is_error])).toEqual([['s1', false], ['f1', true]])
+  })
+
   it('reports the result snippet', () => {
     expect(toolOutcome('plain').result_text).toBe('plain')
     expect(toolOutcome({ output: 'x' }).result_text).toBe('{"output":"x"}')
@@ -362,6 +407,8 @@ describe('compaction markers (TAL-305)', () => {
       { role: 'assistant', content: `Quoting: ${partial}`, _turn_id: 'cli' },
       // A typed `[System:` row is the Agent's timeline entry, not scaffolding.
       { role: 'user', content: '[System: The active model changed.]', display_kind: 'model_switch', _turn_id: 'cli' },
+      // TAL-1261: the Agent's late language-server note (`agent/turn_stop_gates.py`), untyped like `[System:`.
+      { role: 'user', content: '[System note: the language server reported problems in files you edited this turn, after those tool results had returned. Fix them if they are real, then give your final answer.]\n\nsrc/a.ts: 1 error', _turn_id: 'cli' },
     ]
     const out = withMarkerKinds(rows, {}) as Record<string, unknown>[]
     // Web's own error row already reports the web turn, so the Agent's copy is hidden there.
@@ -369,6 +416,7 @@ describe('compaction markers (TAL-305)', () => {
     expect(out[2]).not.toHaveProperty('_notice_kind')
     expect(out[4]).toEqual({ ...rows[4], display_kind: 'hidden' })
     expect(out[5]).toEqual({ ...rows[5], _notice_kind: 'failed_turn' })
+    expect(out[8]).toEqual({ ...rows[8], display_kind: 'hidden' })
     for (const i of [0, 1, 3, 6, 7]) expect(out[i]).toBe(rows[i])
   })
 

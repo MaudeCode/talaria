@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Chats hide the Agent's late language-server note, show a refused skill edit without a failure mark, and mark a failed status or an all-failed batch as a failure, matching the Agent.",
+      "highlight": false,
+      "components": ["web"]
+    }
+  ]
+}
