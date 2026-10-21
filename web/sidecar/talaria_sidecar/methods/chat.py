@@ -113,9 +113,15 @@ def _snippet(raw: Any, limit: int = _TOOL_RESULT_SNIPPET_MAX) -> str:
 _RAW_RESULT_MAX_KEYS = 64
 _RAW_RESULT_OUTCOME_KEYS = ("error", "exit_code", "exitCode", "success", "status", "results")
 # TAL-1261: a ``results`` batch keeps up to 64 items, each projected like the result with 16 fields of 400 characters.
-# ponytail: a batch past 64 items is judged on its first 64; ship per-item errors if larger batches appear.
 _RAW_RESULT_ITEM_KEYS = 16
 _RAW_RESULT_ITEM_MAX = 400
+
+
+def _without_error(item: Any) -> bool:
+    """An item the server's ``presentError`` reads as error-free: not an object, or its ``error`` is blank text, ``false``,
+    ``null``, a number, or an empty object or list."""
+    error = item.get("error") if isinstance(item, dict) else None
+    return not (error is True or (isinstance(error, str) and error.strip()) or (isinstance(error, (dict, list)) and error))
 
 
 def _result_diff(raw: Any) -> str | None:
@@ -169,9 +175,11 @@ def _raw_result(raw: Any, limit: int = _TOOL_RESULT_SNIPPET_MAX, max_keys: int =
     kept = list(data.items())[:max_keys] + [(k, data[k]) for k in _RAW_RESULT_OUTCOME_KEYS if k in data]
     for key, value in kept:
         if items and key == "results" and isinstance(value, list) and value:
+            # Past the cap, the first item without an error rides along, so a long batch is judged like the whole one.
+            batch = value[:_RAW_RESULT_MAX_KEYS] + [item for item in value[_RAW_RESULT_MAX_KEYS:] if _without_error(item)][:1]
             # A non-object item stays text, even JSON-object text: only object items count toward the batch's outcome.
             out[key] = [_raw_result(item, _RAW_RESULT_ITEM_MAX, _RAW_RESULT_ITEM_KEYS, False) if isinstance(item, dict)
-                        else (item if isinstance(item, str) else json.dumps(item, default=str))[:_RAW_RESULT_ITEM_MAX] for item in value[:_RAW_RESULT_MAX_KEYS]]
+                        else (item if isinstance(item, str) else json.dumps(item, default=str))[:_RAW_RESULT_ITEM_MAX] for item in batch]
         elif value is None or isinstance(value, (bool, int)) or (isinstance(value, float) and value == value and abs(value) != float("inf")):
             out[str(key)] = value
         elif isinstance(value, (dict, list)) and not value:

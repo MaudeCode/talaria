@@ -476,6 +476,7 @@ def test_raw_result_keeps_the_fields_the_shape_rule_reads(monkeypatch) -> None:
     results = [
         json.dumps({"results": [{"task_index": 0, "error": "interrupted", "summary": "s" * 5000}, {"task_index": 1, "error": {"message": "interrupted"}}, '{"error": "as text"}', 7]}),
         {**{f"k{i}": i for i in range(100)}, "status": "failed", "results": [{**{f"f{i}": i for i in range(40)}, "error": "x"}] * 100},
+        {"results": [{"error": "x"}] * 80 + [{"error": " "}, {"summary": "done"}, {"error": "x"}]},
     ]
 
     class BatchAgent(FakeAgent):
@@ -498,6 +499,8 @@ def test_raw_result_keeps_the_fields_the_shape_rule_reads(monkeypatch) -> None:
     assert batch["status"] == "failed"
     # Bounded: at most 64 items of at most 16 fields each, plus the item's own outcome fields.
     assert len(batch["results"]) == 64 and all(len(item) == 17 and item["error"] == "x" for item in batch["results"])
+    # Past the cap, the first item without an error still rides along, so a long batch is judged like the whole one.
+    assert frames[2]["raw_result"] == {"results": [{"error": "x"}] * 64 + [{"error": " "}]}
 
 
 def test_a_result_diff_reaches_the_server_whole(monkeypatch) -> None:
