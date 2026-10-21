@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Model settings save correctly when configuration sections share YAML anchors.",
+      "highlight": false,
+      "components": ["web"]
+    }
+  ]
+}

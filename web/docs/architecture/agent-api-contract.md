@@ -416,6 +416,13 @@ Adding a dependency means adding a sidecar method with its Zod schema in
 `packages/contracts/src/sidecar/namespaces.ts`, a recorded fixture, and a
 pytest case; the server side consumes the typed result only.
 
+`config.set` writes the complete requested state. Before the Agent's comment-preserving
+writer merges it, the sidecar separates YAML aliases whose requested values differ.
+It decodes and checks the staged document before replacing the target; a mismatched
+or invalid staged value fails with `config_invalid` and leaves the original file intact.
+The import-failure fallback uses the same value check. Target permissions and symlink
+retarget protection apply to both paths.
+
 ## state.db message content encoding
 
 The server projects `state.db` read-only (`packages/server/src/sessions/state-db.ts`)
