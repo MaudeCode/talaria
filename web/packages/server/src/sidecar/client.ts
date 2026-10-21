@@ -75,7 +75,12 @@ export interface SidecarLike {
   recycle(reason: string): void
   /** Observe future validated handshakes, including import-failed runtimes that recovery can repair. */
   onHandshake?: (listener: (runtime: RuntimeDescribe) => void) => () => void
+  /** Run `gate` now when ready, then after every compatible handshake before the sidecar reports ready again. */
+  addReadyGate?: (gate: ReadyGate) => Promise<void>
 }
+
+/** Work a (re)started sidecar finishes before any caller sees it ready; a failure is logged and readiness proceeds. */
+export type ReadyGate = (call: SidecarLike['call']) => Promise<void>
 
 export type SidecarStatus = 'stopped' | 'starting' | 'ready' | 'incompatible' | 'restarting'
 
@@ -117,6 +122,8 @@ export function chatReadiness(sidecar: Pick<SidecarLike, 'status' | 'describe'> 
 }
 
 const DEFAULT_BACKOFF = [1_000, 2_000, 4_000, 8_000, 16_000, 30_000]
+// A ready gate holds readiness back, so a hung gate call gives way.
+const READY_GATE_TIMEOUT_MS = 30_000
 
 /** Web's own keys (login password, OIDC secret, release token) stay out of the sidecar and its tool processes; only these reach it. */
 const SIDECAR_WEB_KEYS = new Set(['HERMES_WEBUI_AGENT_DIR', 'HERMES_WEBUI_PYTHON'])
@@ -148,6 +155,7 @@ export class SidecarClient implements SidecarLike {
   private nextId = 1
   private runtimeStatusSequence = 0
   private readonly handshakeListeners = new Set<(runtime: RuntimeDescribe) => void>()
+  private readonly readyGates = new Set<ReadyGate>()
   private readonly pending = new Map<number, Pending>()
   private restartAttempt = 0
   private restartTimer: ReturnType<typeof setTimeout> | null = null
@@ -161,6 +169,15 @@ export class SidecarClient implements SidecarLike {
   onHandshake(listener: (runtime: RuntimeDescribe) => void): () => void {
     this.handshakeListeners.add(listener)
     return () => { this.handshakeListeners.delete(listener) }
+  }
+
+  async addReadyGate(gate: ReadyGate): Promise<void> {
+    this.readyGates.add(gate)
+    if (this.status === 'ready') await this.runReadyGate(gate, (method, params, opts) => this.call(method, params, opts))
+  }
+
+  private async runReadyGate(gate: ReadyGate, call: SidecarLike['call']): Promise<void> {
+    try { await gate(call) } catch (error) { this.log(`[sidecar] ready gate failed: ${String(error)}`) }
   }
 
   /** Spawn and handshake. Resolves with the handshake payload; rejects only on spawn failure. */
@@ -195,6 +212,10 @@ export class SidecarClient implements SidecarLike {
       const describe = await this.rawCall('runtime.handshake', { rpc_version: SIDECAR_RPC_VERSION }, { timeoutMs: this.opts.handshakeTimeoutMs ?? 60_000 })
       if (this.child !== child || this.closed) throw new SidecarError('sidecar handshake was superseded', { condition: 'sidecar_unavailable' })
       if (describe.rpc_version !== SIDECAR_RPC_VERSION) throw new SidecarError('sidecar RPC version mismatch', { condition: 'sidecar_rpc_version_mismatch' })
+      if (describe.compatible && !describe.stale) {
+        for (const gate of [...this.readyGates]) await this.runReadyGate(gate, (method, params, opts) => this.rawCall(method, params, { timeoutMs: READY_GATE_TIMEOUT_MS, ...opts }))
+        if (this.child !== child || this.closed) throw new SidecarError('sidecar handshake was superseded', { condition: 'sidecar_unavailable' })
+      }
       this.describe = describe
       this.status = describe.compatible && !describe.stale ? 'ready' : 'incompatible'
       const tested = describe.agent_revision !== null ? describe.agent_revision === describe.pinned_revision : describe.agent_version === describe.pinned_version

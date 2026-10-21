@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Worktree chats keep their worktree after Talaria Web restarts, so Hermes Agent's idle-worktree cleanup no longer archives and deletes it.",
+      "highlight": false,
+      "components": ["web"]
+    }
+  ]
+}

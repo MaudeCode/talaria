@@ -7021,6 +7021,30 @@
     ],
     "additionalProperties": false
   },
+  "worktree.retain": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "properties": {
+      "results": {
+        "type": "object",
+        "propertyNames": {
+          "type": "string"
+        },
+        "additionalProperties": {
+          "type": "string",
+          "enum": [
+            "retained",
+            "missing",
+            "foreign_lock"
+          ]
+        }
+      }
+    },
+    "required": [
+      "results"
+    ],
+    "additionalProperties": false
+  },
   "memory.check": {
     "$schema": "https://json-schema.org/draft/2020-12/schema",
     "type": "object",

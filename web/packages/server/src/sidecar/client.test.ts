@@ -125,6 +125,24 @@ describe('SidecarClient version mismatch', () => {
     expect(listener).toHaveBeenCalledTimes(2)
   })
 
+  it('runs every ready gate after a compatible handshake and before readiness, and a failing gate does not block it', async () => {
+    const dir = mkdtempSync(resolve(tmpdir(), 'talaria-sidecar-ready-gate-'))
+    const fixture = resolve(import.meta.dirname, '../../../contracts/fixtures/sidecar/runtime.json')
+    const script = `const fs=require('fs');const value=JSON.parse(fs.readFileSync(process.argv[1],'utf8'))['runtime.handshake'][0].result;require('readline').createInterface({input:process.stdin}).on('line',line=>{const req=JSON.parse(line);const send=result=>process.stdout.write(JSON.stringify({jsonrpc:'2.0',id:req.id,result})+'\\n');if(req.method==='runtime.handshake')send(value);if(req.method==='worktree.retain')send({results:Object.fromEntries(req.params.paths.map(p=>[p,'retained']))})})`
+    client = new SidecarClient({ python: process.execPath, command: [process.execPath, '-e', script, fixture], agentDir: '', sidecarDir: dir, hermesHome: dir, log: () => undefined, backoffMs: [10] })
+    const seen: string[] = []
+    await client.addReadyGate(() => Promise.reject(new Error('synthetic gate failure')))
+    await client.addReadyGate(async (call) => { seen.push(`${client!.status} ${JSON.stringify((await call('worktree.retain', { paths: ['/wt'] })).results)}`) })
+    await client.start()
+    expect(seen).toEqual(['starting {"/wt":"retained"}'])
+    expect(client.status).toBe('ready')
+    client.recycle('synthetic restart')
+    await vi.waitFor(() => { expect(seen).toHaveLength(2); expect(client?.status).toBe('ready') })
+    expect(seen[1]).toBe('starting {"/wt":"retained"}')
+    await client.addReadyGate(async (call) => { seen.push(`${client!.status} ${JSON.stringify((await call('worktree.retain', { paths: [] })).results)}`) })
+    expect(seen[2]).toBe('ready {}')
+  })
+
   it('a closed client cannot publish a late handshake or notify recovery', async () => {
     const dir = mkdtempSync(resolve(tmpdir(), 'talaria-sidecar-closed-handshake-'))
     const fixture = resolve(import.meta.dirname, '../../../contracts/fixtures/sidecar/runtime.json')

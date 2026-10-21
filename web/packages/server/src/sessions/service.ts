@@ -17,7 +17,7 @@ import { DraftVersionConflict, normalizeDraftVersion } from './drafts.js'
 import type { SessionEventBus } from './events.js'
 import { allSessions, buildSessionListPayload, reconcileLocalSessionRows, sessionLineageIds, CLI_IDENTITY_FIELDS, isClaimableCliSource, isMessagingSessionRecord, ownerLockCandidates, withOwnerLocks, withSessionWireFlags, lineageRootId, type OwnerSources, mergeCliSidebarMetadata, sessionListResponse, sessionSearchMatches, sessionSearchPreview, sessionSearchTerms, type ListParams, type ListResponse, type Row, type RuntimeOverlay } from './list.js'
 import { anchorSceneIntOrNull, fullToolResult, hydrateAnchorActivityScenes, normalizeAnchorSceneMessageRef, readAnchorSceneRows, storeAnchorScene, withTurnIds } from './anchor.js'
-import { contextUsage, COMPRESSION_RECOVERY_ACTION_START_FOCUSED, compressionRecoveryPayload, forgetContextFigures, isSafeSessionId, lastMessageTimestamp, Session, sharePath, stripAttachedFilesMarker, titleFrom, type Message } from './session.js'
+import { contextUsage, COMPRESSION_RECOVERY_ACTION_START_FOCUSED, compressionRecoveryPayload, forgetContextFigures, isSafeSessionId, lastMessageTimestamp, Session, sharePath, stripAttachedFilesMarker, titleFrom, WORKTREE_RETAINED_KEY, type Message } from './session.js'
 import { SessionBusy, SessionNotFound, type SessionStore } from './store.js'
 import { UNSETTLED_TODO_KEY, attachTodoSnapshot, attachTodoState } from './todo.js'
 import { isClaudeCodeSessionId, type ClaudeCodeSessionSource } from './claude-code.js'
@@ -1523,6 +1523,33 @@ export class SessionService {
     return { ok: true, session: (await this.wireRow(s)) }
   }
 
+  /**
+   * TAL-1254: relock the worktrees of every unarchived worktree chat (or just `only`) for the running sidecar, so the
+   * Agent's worktree sweep reads them as live, and flag each one git no longer has as retained. Runs before a
+   * (re)started sidecar reports ready and when a chat is unarchived; a tree whose state is unknown keeps its flag.
+   */
+  async retainWorktrees(call: SidecarLike['call'], only?: Session): Promise<void> {
+    const rows = only ? [only.compact()] : await this.store.readIndexEntries().catch(async () =>
+      (await Promise.all([...(await this.store.persistedIds())].map(async (sid) => (await this.store.loadMetadataOnly(sid))?.compact()))).filter((row) => row !== undefined))
+    const targets = rows.filter((row) => !row.archived && typeof row.worktree_path === 'string' && row.worktree_path && typeof row.session_id === 'string')
+    if (!targets.length) return
+    const { results } = await call('worktree.retain', { paths: [...new Set(targets.map((row) => String(row.worktree_path)))] })
+    for (const row of targets) {
+      const state = results[String(row.worktree_path)]
+      if (!state || (state === 'missing') === (row[WORKTREE_RETAINED_KEY] === true)) continue
+      const sid = String(row.session_id)
+      try {
+        const s = await this.store.ensureFull(sid, await this.store.get(sid))
+        await this.withMutationLock(sid, async () => {
+          s.extra = Object.fromEntries(Object.entries(s.extra).filter(([key]) => key !== WORKTREE_RETAINED_KEY))
+          if (state === 'missing') s.extra[WORKTREE_RETAINED_KEY] = true
+          await this.store.save(s, { touchUpdatedAt: false })
+        }, { allowReadOnly: true })
+        this.publish('session_worktree', s.profile, sid)
+      } catch (error) { if (!(error instanceof SessionNotFound)) throw error }
+    }
+  }
+
   async archive(sid: string, archived: boolean): Promise<Record<string, unknown>> {
     await this.rejectViewOnly(sid, 'archived')
     let s = (await this.get404(sid))
@@ -1532,6 +1559,8 @@ export class SessionService {
       if (archived) s.pinned = false
       await this.store.save(s, { touchUpdatedAt: false })
     }, { allowReadOnly: true })
+    const sidecar = this.deps.sidecar?.()
+    if (!archived && sidecar) await this.retainWorktrees((method, params, opts) => sidecar.call(method, params, opts), s).catch(() => undefined)
     this.publish('session_archive', s.profile, s.session_id)
     return { ok: true, session: (await this.wireRow(s)), ...worktreeRetainedPayload(s) }
   }
@@ -2253,6 +2282,7 @@ export class SessionService {
           project_id: source.project_id, profile: source.profile, session_source: 'fork', personality: source.personality, enabled_toolsets: copyJson(source.enabled_toolsets),
           context_length: source.context_length, threshold_tokens: source.threshold_tokens, gateway_routing: copyJson(source.gateway_routing), gateway_routing_history: copyJson(source.gateway_routing_history),
           parent_session_id: source.session_id, worktree_path: source.worktree_path, worktree_branch: source.worktree_branch, worktree_repo_root: source.worktree_repo_root, worktree_created_at: source.worktree_created_at,
+          ...(source.extra[WORKTREE_RETAINED_KEY] === true ? { [WORKTREE_RETAINED_KEY]: true } : {}),
           compression_recovery_source_session_id: sid, compression_recovery_action: action,
           // An empty model-facing transcript: the focused follow-up must not replay the exhausted context.
           messages: [], context_messages: [], composer_draft: { text: '', files: [] },

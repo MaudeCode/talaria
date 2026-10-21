@@ -1,9 +1,11 @@
-"""``worktree.*``: Hermes Agent git worktree creation (``hermes_cli.worktree_ops._setup_worktree``)."""
+"""``worktree.*``: Hermes Agent git worktree creation (``hermes_cli.worktree_ops._setup_worktree``) and lock retention."""
 
 from __future__ import annotations
 
 import io
 import logging
+import os
+import re
 import subprocess
 from contextlib import redirect_stderr, redirect_stdout
 from pathlib import Path
@@ -41,6 +43,80 @@ def _refuse_unneutralized_repo_filters(repo_root: str) -> None:
                        condition="worktree_unsafe_repo")
 
 
+# The Agent's own lock contract (``worktree_ops._worktree_lock_is_live``): its sweep keeps a tree whose ``hermes pid=`` owner runs.
+_HERMES_PID_LOCK = re.compile(r"hermes pid=(\d+)(?: db=.+)?", re.DOTALL)
+
+
+def _pid_alive(pid: int) -> bool:
+    try:
+        os.kill(pid, 0)
+    except (ProcessLookupError, OverflowError):  # gone, or a pid no process can have
+        return False
+    except OSError:
+        return True  # exists, owned by someone else
+    return True
+
+
+def _admin_dir(tree: Path) -> Path | None:
+    """The tree's ``<common-dir>/worktrees/<name>`` entry when git still registers it as a linked worktree."""
+    try:
+        link = (tree / ".git").read_text(encoding="utf-8-sig")
+    except OSError:
+        return None
+    if not link.startswith("gitdir:"):
+        return None
+    admin = (tree / link[len("gitdir:"):].strip()).resolve()
+    try:
+        registered = Path((admin / "gitdir").read_text(encoding="utf-8-sig").strip()).resolve()
+    except OSError:
+        return None
+    return admin if admin.parent.name == "worktrees" and registered == (tree / ".git").resolve() else None
+
+
+def retain(path: str) -> str:
+    """Lock a Talaria worktree for this process, so the Agent's sweep reads its lock live (TAL-1254).
+
+    ``missing`` when the tree is gone or git no longer registers it; ``foreign_lock`` when a lock that is not a ``hermes
+    pid=`` lock (a user's own) holds it, which stays untouched. A ``hermes pid=`` lock of a live other process is left
+    alone too; one of an exited process is replaced.
+    """
+    tree = Path(path)
+    admin = _admin_dir(tree)
+    if admin is None:
+        return "missing"
+    ours = f"hermes pid={os.getpid()}"
+    try:
+        reason = (admin / "locked").read_text(encoding="utf-8-sig", errors="replace").strip(" \t\n\v\f\r")
+    except FileNotFoundError:
+        reason = None
+    if reason == ours:
+        return "retained"
+    if reason is not None:
+        lock = _HERMES_PID_LOCK.fullmatch(reason)
+        if lock is None:
+            return "foreign_lock"
+        if int(lock.group(1)) != os.getpid() and _pid_alive(int(lock.group(1))):
+            return "retained"
+    git = ["git", "-C", str(tree), "worktree"]
+    if reason is not None:
+        subprocess.run([*git, "unlock", str(tree)], capture_output=True, timeout=10, check=False, stdin=subprocess.DEVNULL)
+    locked = subprocess.run([*git, "lock", "--reason", ours, str(tree)], capture_output=True, timeout=10, check=False, stdin=subprocess.DEVNULL)
+    if locked.returncode != 0:
+        raise OSError(locked.stderr.decode(errors="replace").strip() or "git worktree lock failed")
+    return "retained"
+
+
+def retain_all(paths: list[str]) -> dict[str, str]:
+    """``retain`` per path; a tree git cannot lock now is left out (unknown), never reported missing."""
+    results = {}
+    for path in dict.fromkeys(paths):
+        try:
+            results[path] = retain(path)
+        except (OSError, subprocess.SubprocessError) as exc:
+            log.warning("Could not retain worktree %s: %s", path, exc)
+    return results
+
+
 def create(repo_root: str) -> dict:
     root = Path(repo_root).expanduser()
     if not root.is_dir():
@@ -60,8 +136,10 @@ def create(repo_root: str) -> dict:
         log.debug("Hermes Agent worktree helper output: %s", emitted)
     if not info or not info.get("path") or not info.get("branch"):
         raise RpcError("Hermes Agent failed to create a git worktree", condition="worktree_failed")
+    path = str(Path(info["path"]).expanduser().resolve())
+    retain_all([path])  # one owner for Talaria's lock text
     return {
-        "path": str(Path(info["path"]).expanduser().resolve()),
+        "path": path,
         "branch": str(info["branch"]),
         "repo_root": str(Path(info.get("repo_root") or probe.stdout.strip()).expanduser().resolve()),
         "base": str(info["base"]) if info.get("base") else None,
@@ -76,3 +154,10 @@ def register(registry) -> None:
             raise InvalidParams("repo_root is required")
         with scoped_home(profile_home_param(params)):
             return create(repo_root)
+
+    @registry.method("worktree.retain")
+    def retain_(ctx: CallContext, params: dict) -> dict:
+        paths = params.get("paths")
+        if not isinstance(paths, list) or not all(isinstance(p, str) and p for p in paths):
+            raise InvalidParams("paths must be a list of worktree paths")
+        return {"results": retain_all(paths)}

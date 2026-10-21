@@ -282,3 +282,51 @@ describe('worktree status against a real git worktree', () => {
     expect(await status()).toMatchObject({ locked_by_stream: false, removable: true })
   })
 })
+
+describe('TAL-1254: a restarted sidecar retains the worktree chats before it is ready', () => {
+  let s: TestServer
+  let sidecar: FakeSidecar
+  let ws: string
+  const retained: { status: string; paths: string[] }[] = []
+  let missing = new Set<string>()
+  beforeAll(async () => {
+    sidecar = new FakeSidecar()
+    let created = 0
+    sidecar.respond('worktree.create', (params) => {
+      const path = join(params.repo_root, '.worktrees', `hermes-${++created}`)
+      mkdirSync(path, { recursive: true })
+      return { path, branch: `hermes/${created}`, repo_root: params.repo_root, base: null }
+    })
+    sidecar.respond('worktree.retain', (params) => {
+      retained.push({ status: sidecar.status, paths: [...params.paths].sort() })
+      return { results: Object.fromEntries(params.paths.map((p) => [p, missing.has(p) ? 'missing' as const : 'retained' as const])) }
+    })
+    s = await bootTestServer({ sidecar })
+    ws = realpathSync(join(s.state, 'workspace'))
+    mkdirSync(join(ws, '.git'), { recursive: true })
+  })
+  afterAll(() => s.close())
+  const create = async (body: Json = { workspace: ws, worktree: true }): Promise<Json> => (await json(await post(s, '/api/session/new', body))).session as Json
+  const detail = async (sid: unknown): Promise<Json> => (await json(await s.get(`/api/session?session_id=${String(sid)}`))).session as Json
+
+  it('retains exactly the unarchived worktree paths and flags a missing one as retained', async () => {
+    const [kept, gone, archived] = [await create(), await create(), await create()]
+    await create({ workspace: ws })
+    await post(s, '/api/session/archive', { session_id: archived.session_id, archived: true })
+    missing = new Set([String(gone.worktree_path)])
+    retained.length = 0
+
+    await sidecar.restart()
+
+    expect(retained).toEqual([{ status: 'starting', paths: [String(kept.worktree_path), String(gone.worktree_path)].sort() }])
+    expect(await detail(gone.session_id)).toMatchObject({ worktree_retained: true, worktree_path: gone.worktree_path, worktree_branch: gone.worktree_branch })
+    expect((await detail(kept.session_id)).worktree_retained).toBeUndefined()
+
+    missing = new Set()
+    retained.length = 0
+    await post(s, '/api/session/archive', { session_id: archived.session_id, archived: false })
+    await sidecar.restart()
+    expect(retained).toEqual([{ status: 'ready', paths: [String(archived.worktree_path)] }, { status: 'starting', paths: [String(kept.worktree_path), String(gone.worktree_path), String(archived.worktree_path)].sort() }])
+    expect((await detail(gone.session_id)).worktree_retained).toBeUndefined()
+  })
+})

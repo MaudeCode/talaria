@@ -163,6 +163,7 @@
           "usage.pool",
           "usage.pool_providers",
           "worktree.create",
+          "worktree.retain",
           "write_approval.approve",
           "write_approval.pending",
           "write_approval.reject"

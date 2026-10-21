@@ -7,7 +7,7 @@
 import { readdirSync, readFileSync } from 'node:fs'
 import { join, resolve } from 'node:path'
 import { RPC_ERROR_CODES, SIDECAR_METHODS, SIDECAR_RPC_VERSION, type RuntimeDescribe, type SidecarMethodName, type SidecarParams, type SidecarResult, type SidecarResultInput } from '@maudecode/talaria-web-contracts'
-import { SidecarError, type CallOptions, type SidecarLike, type SidecarStatus, type StreamFrame } from './client.js'
+import { SidecarError, type CallOptions, type ReadyGate, type SidecarLike, type SidecarStatus, type StreamFrame } from './client.js'
 import { writeEnvFile } from '../test/env-file.js'
 
 type Responder<M extends SidecarMethodName> = (params: SidecarParams<M>, emit: (frame: Omit<StreamFrame, 'seq'>) => void, opts: CallOptions) => SidecarResultInput<M> | Promise<SidecarResultInput<M>>
@@ -36,6 +36,7 @@ export class FakeSidecar implements SidecarLike {
   readonly calls: { method: SidecarMethodName; params: unknown }[] = []
   private readonly responders = new Map<SidecarMethodName, Responder<SidecarMethodName>>()
   private readonly fixtures = new Map<string, FixtureEntry[]>()
+  private readonly readyGates = new Set<ReadyGate>()
 
   constructor(opts: FakeSidecarOptions = {}) {
     this.status = opts.status ?? 'ready'
@@ -72,12 +73,24 @@ export class FakeSidecar implements SidecarLike {
     else this.responders.delete(method)
   }
 
-  async call<M extends SidecarMethodName>(method: M, params: SidecarParams<M>, opts: CallOptions = {}): Promise<SidecarResult<M>> {
+  async addReadyGate(gate: ReadyGate): Promise<void> {
+    this.readyGates.add(gate)
+    if (this.status === 'ready') await gate((method, params, opts) => this.call(method, params, opts))
+  }
+
+  /** A sidecar restart as `SidecarClient` runs it: every ready gate completes before the status turns ready again. */
+  async restart(): Promise<void> {
+    this.status = 'starting'
+    for (const gate of this.readyGates) await gate((method, params, opts) => this.call(method, params, opts, true))
+    this.status = 'ready'
+  }
+
+  async call<M extends SidecarMethodName>(method: M, params: SidecarParams<M>, opts: CallOptions = {}, starting = false): Promise<SidecarResult<M>> {
     const schema = SIDECAR_METHODS[method]
     const parsedParams = schema.params.parse(params) as SidecarParams<M>
     this.calls.push({ method, params: parsedParams })
     const configAccess = (method === 'config.get' || method === 'config.set') && this.status === 'incompatible' && this.describe?.rpc_version === SIDECAR_RPC_VERSION
-    if (this.status !== 'ready' && !configAccess && !method.startsWith('runtime.')) {
+    if (this.status !== 'ready' && !configAccess && !method.startsWith('runtime.') && !starting) {
       throw new SidecarError(`sidecar not ready (${this.status})`, { condition: 'sidecar_unavailable' })
     }
     let seq = 0
