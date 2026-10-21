@@ -6,6 +6,7 @@ struct ContentView: View {
     @Bindable var authManager: AuthManager
     private let draftStore: ChatDraftStore
     @Environment(\.scenePhase) private var scenePhase
+    @Environment(\.modelContext) private var modelContext
     @AppStorage(ResponseCompletionNotifications.isEnabledKey) private var isResponseCompletionNotificationsEnabled = false
     @State private var sharedImports = SharedImportRouter()
     @State private var foregroundReturn = ForegroundReturnDetector()
@@ -30,6 +31,7 @@ struct ContentView: View {
             .task {
                 guard !didCheckInitialPendingShare else { return }
                 didCheckInitialPendingShare = true
+                try? CacheStore.maintainCache(in: modelContext)
                 await sharedImports.importIfAvailable()
                 // Cold launch: an App Intent may have queued a deep link before this
                 // view appeared (e.g. Action button "New Chat"). Drain it now (#337).
@@ -63,6 +65,7 @@ struct ContentView: View {
                     return
                 }
                 guard scenePhase == .active else { return }
+                try? CacheStore.maintainCache(in: modelContext)
                 Task { await sharedImports.importIfAvailable() }
                 // #248: the foreground pass stays silent — the in-session completion
                 // paths own notifications while the app is alive.

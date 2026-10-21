@@ -4,6 +4,7 @@ import SwiftData
 enum CachePolicy {
     static let ttl: TimeInterval = 7 * 24 * 60 * 60
     static let maxMessages = 5_000
+    static let maintenanceInterval: TimeInterval = 60
 }
 
 @Model
@@ -93,45 +94,56 @@ public final class CachedSession {
     }
 
     func apply(_ session: SessionSummary, cachedAt: Date = Date()) {
-        transcriptOnly = false
-        title = session.title
-        workspace = session.workspace
-        workspaceName = session.workspaceName
-        model = session.model
-        modelProvider = session.modelProvider
-        messageCount = session.messageCount
-        createdAt = session.createdAt
-        updatedAt = session.updatedAt
-        lastMessageAt = session.lastMessageAt
-        sortTs = session.sortTs
-        pinned = session.pinned
-        archived = session.archived
-        projectId = session.projectId
-        profile = session.profile
-        inputTokens = session.inputTokens
-        outputTokens = session.outputTokens
-        estimatedCost = session.estimatedCost
-        activeStreamId = session.activeStreamId
-        isStreaming = session.isStreaming
-        isCliSession = session.isCliSession
-        userMessageCount = session.userMessageCount
-        hasPendingUserMessage = session.hasPendingUserMessage
-        pendingStartedAt = session.pendingStartedAt
-        worktreePath = session.worktreePath
-        sourceTag = session.sourceTag
-        rawSource = session.rawSource
-        sessionSource = session.sessionSource
-        sourceLabel = session.sourceLabel
-        sourceKind = session.sourceKind?.rawValue
-        parentSessionId = session.parentSessionId
-        relationshipType = session.relationshipType
-        readOnly = session.readOnly
-        canPin = session.canPin
-        canArchive = session.canArchive
-        canDelete = session.canDelete
-        canDuplicate = session.canDuplicate
-        canBranch = session.canBranch
-        self.cachedAt = cachedAt
-        expiresAt = cachedAt.addingTimeInterval(CachePolicy.ttl)
+        var changed = false
+        func update<Value: Equatable>(_ field: ReferenceWritableKeyPath<CachedSession, Value>, _ value: Value) {
+            guard self[keyPath: field] != value else { return }
+            self[keyPath: field] = value
+            changed = true
+        }
+
+        update(\.transcriptOnly, false)
+        update(\.title, session.title)
+        update(\.workspace, session.workspace)
+        update(\.workspaceName, session.workspaceName)
+        update(\.model, session.model)
+        update(\.modelProvider, session.modelProvider)
+        update(\.messageCount, session.messageCount)
+        update(\.createdAt, session.createdAt)
+        update(\.updatedAt, session.updatedAt)
+        update(\.lastMessageAt, session.lastMessageAt)
+        update(\.sortTs, session.sortTs)
+        update(\.pinned, session.pinned)
+        update(\.archived, session.archived)
+        update(\.projectId, session.projectId)
+        update(\.profile, session.profile)
+        update(\.inputTokens, session.inputTokens)
+        update(\.outputTokens, session.outputTokens)
+        update(\.estimatedCost, session.estimatedCost)
+        update(\.activeStreamId, session.activeStreamId)
+        update(\.isStreaming, session.isStreaming)
+        update(\.isCliSession, session.isCliSession)
+        update(\.userMessageCount, session.userMessageCount)
+        update(\.hasPendingUserMessage, session.hasPendingUserMessage)
+        update(\.pendingStartedAt, session.pendingStartedAt)
+        update(\.worktreePath, session.worktreePath)
+        update(\.sourceTag, session.sourceTag)
+        update(\.rawSource, session.rawSource)
+        update(\.sessionSource, session.sessionSource)
+        update(\.sourceLabel, session.sourceLabel)
+        update(\.sourceKind, session.sourceKind?.rawValue)
+        update(\.parentSessionId, session.parentSessionId)
+        update(\.relationshipType, session.relationshipType)
+        update(\.readOnly, session.readOnly)
+        update(\.canPin, session.canPin)
+        update(\.canArchive, session.canArchive)
+        update(\.canDelete, session.canDelete)
+        update(\.canDuplicate, session.canDuplicate)
+        update(\.canBranch, session.canBranch)
+        // Renew unchanged rows halfway through their TTL, rather than rewriting the whole
+        // list on every maintenance pass. Continuously listed sessions must not expire offline.
+        if changed || cachedAt.timeIntervalSince(self.cachedAt) >= CachePolicy.ttl / 2 || expiresAt <= cachedAt {
+            update(\.cachedAt, cachedAt)
+            update(\.expiresAt, cachedAt.addingTimeInterval(CachePolicy.ttl))
+        }
     }
 }
