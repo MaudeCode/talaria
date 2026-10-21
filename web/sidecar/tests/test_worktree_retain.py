@@ -68,3 +68,18 @@ def test_a_lock_replaced_after_it_was_read_is_kept(tmp_path: pathlib.Path) -> No
     assert not _take_lock(admin, "hermes pid=1")
     assert _lock_reason(repo, tree) == "on my external drive"
     assert [p.name for p in admin.iterdir() if p.name.startswith("locked.")] == []
+
+
+def test_an_unreadable_worktree_is_unconfirmed_not_missing(tmp_path: pathlib.Path) -> None:
+    repo = (tmp_path / "repo").resolve()
+    repo.mkdir()
+    _git("init", "--quiet", "-b", "main", cwd=repo)
+    _git("commit", "--quiet", "--allow-empty", "-m", "init", cwd=repo)
+    tree = repo / ".worktrees" / "tree"
+    _git("worktree", "add", "--quiet", "-b", "tree", str(tree), cwd=repo)
+    (tree / ".git").chmod(0)
+    try:
+        assert retain_all([str(tree)]) == {}
+    finally:
+        (tree / ".git").chmod(0o644)
+    assert retain_all([str(tree)]) == {str(tree): "retained"}

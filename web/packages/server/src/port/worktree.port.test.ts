@@ -345,6 +345,26 @@ describe('TAL-1254: a restarted sidecar retains the worktree chats before it is 
     expect(retained.flatMap((call) => call.paths)).toEqual(expect.arrayContaining([String(lost.worktree_path), String(unarchived.worktree_path)]))
   })
 
+  it('retains an unreadable worktree chat from its index row and retries until its file reads', async () => {
+    const unreadable = await create()
+    const file = join(s.state, 'sessions', `${String(unreadable.session_id)}.json`)
+    s.deps.sessionStore.sessions.delete(String(unreadable.session_id))
+    chmodSync(file, 0)
+    vi.useFakeTimers({ toFake: ['setTimeout'] })
+    try {
+      retained.length = 0
+      await sidecar.restart()
+      expect(retained.flatMap((call) => call.paths)).toContain(String(unreadable.worktree_path))
+      chmodSync(file, 0o644)
+      retained.length = 0
+      await vi.advanceTimersByTimeAsync(WORKTREE_RETAIN_RETRY_MS)
+      await vi.waitFor(() => { expect(retained.flatMap((call) => call.paths)).toContain(String(unreadable.worktree_path)) })
+    } finally {
+      chmodSync(file, 0o644)
+      vi.useRealTimers()
+    }
+  })
+
   it('retries a worktree the sidecar could not lock until it confirms it', async () => {
     const pending = await create()
     unconfirmed = new Set([String(pending.worktree_path)])

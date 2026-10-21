@@ -2382,6 +2382,13 @@
         ""
       ]
     },
+    "tests/test_worktree_retain.py::test_an_unreadable_worktree_is_unconfirmed_not_missing": {
+      "layer": "process",
+      "reason": "Actual file permissions on a git worktree link: an unreadable tree is left unconfirmed, never reported missing.",
+      "cases": [
+        ""
+      ]
+    },
     "tests/test_write_approval.py::test_staged_writes_list_with_diffs_and_approve_applies_them": {
       "layer": "compatibility",
       "reason": "Supported-Agent API compatibility: staged writes list with diffs and approve applies them. Uses the real installed release, not a fabricated API response.",

@@ -58,18 +58,22 @@ def _pid_alive(pid: int) -> bool:
     return True
 
 
+# Only these say the tree or its registration is gone; any other read failure leaves the tree unconfirmed (raised).
+_GONE = (FileNotFoundError, NotADirectoryError, IsADirectoryError)
+
+
 def _admin_dir(tree: Path) -> Path | None:
     """The tree's ``<common-dir>/worktrees/<name>`` entry when git still registers it as a linked worktree."""
     try:
         link = (tree / ".git").read_text(encoding="utf-8-sig")
-    except OSError:
+    except _GONE:
         return None
     if not link.startswith("gitdir:"):
         return None
     admin = (tree / link[len("gitdir:"):].strip()).resolve()
     try:
         registered = Path((admin / "gitdir").read_text(encoding="utf-8-sig").strip()).resolve()
-    except OSError:
+    except _GONE:
         return None
     return admin if admin.parent.name == "worktrees" and registered == (tree / ".git").resolve() else None
 
