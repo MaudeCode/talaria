@@ -1,0 +1,12 @@
+{
+  "entries": [
+    {
+      "category": "Changed",
+      "summary": "Chats start without waiting for unrelated model discovery.",
+      "highlight": false,
+      "components": [
+        "web"
+      ]
+    }
+  ]
+}

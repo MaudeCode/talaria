@@ -166,6 +166,11 @@ because that runtime does not preserve the verified native launch policy through
 
 To use an external OpenAI-compatible endpoint as a model, add it in **Settings → Providers**.
 
+Ordinary sends use fresh, confirmed model-catalog evidence for automatic model repair. A cold, stale,
+or unavailable catalog keeps the selected model and provider while discovery refreshes in the
+background. Concurrent picker and repair refreshes share discovery for the same profile and source
+generation. Explicit model configuration changes retain their validation.
+
 Settings → Preferences → **Speed** lists the tiers the installed Agent supports
 for the default model and its endpoint. Fast and Ultrafast may cost more. The
 setting applies only to turns on that default model; unsupported routes show no

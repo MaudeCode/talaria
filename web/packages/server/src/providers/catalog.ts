@@ -520,6 +520,8 @@ interface KeyProbe { authoritative: boolean; hasKey: boolean; keySource: string;
 export class ProviderCatalog {
   private readonly scopedKeyRevisions = new Map<string, string>()
   private readonly scopedKeyAuthority = new Map<string, boolean>()
+  private readonly modelGenerations = new Map<string, number>()
+  private readonly modelReads = new Map<string, Promise<ModelsCatalog>>()
   private readonly credentialReads = new Map<string, Promise<CatalogLookup<SidecarResult<'usage.pool_providers'>>>>()
   /** Failed live lookups by home, provider, and the `sourceFingerprint` they ran under (TAL-542). */
   private readonly liveFailed = new Set<string>()
@@ -544,6 +546,9 @@ export class ProviderCatalog {
   }
 
   invalidate(profileHome?: string, provider?: string, opts: { preserveConfirmed?: boolean } = {}): void {
+    // Explicit refresh retires builds without changing the credential identity of confirmed live ids.
+    if (profileHome) this.modelGenerations.set(profileHome, (this.modelGenerations.get(profileHome) ?? 0) + 1)
+    else for (const [home, generation] of this.modelGenerations) this.modelGenerations.set(home, generation + 1)
     for (const key of [...this.liveIds.keys()]) {
       if (profileHome && !key.startsWith(`${profileHome}\0`)) continue
       if (provider && !key.endsWith(`\0${provider}`)) continue
@@ -607,13 +612,15 @@ export class ProviderCatalog {
    */
   sessionModelRepair(profileHome: string, model: string, provider: string | null): [string, string] | null {
     const catalog = this.currentModels(profileHome, PROVIDERS_TTL_S)
-    if (!catalog) { void this.warmSessionModelRepair(profileHome); return null }
+    const pid = canonicaliseProviderId(provider) || canonicaliseProviderId(catalog?.active_provider)
+    if (!catalog || this.lastModelsMeta.get(profileHome)?.unconfirmed.has(pid)) void this.models(profileHome).catch(() => undefined)
+    if (!catalog) return null
     return repairSessionModel(catalog, model, provider, this.lastModelsMeta.get(profileHome)?.unconfirmed)
   }
 
   /**
-   * Builds the catalog `sessionModelRepair` reads unless a fresh enough one exists; call it after the request's last
-   * await. A source that changed while the build awaited makes that build stale, so it is rebuilt once.
+   * Explicitly await discovery, or start it in the background from `sessionModelRepair`. Admission never awaits it.
+   * A source that changed while the build awaited makes that build stale, so it is rebuilt once.
    */
   async warmSessionModelRepair(profileHome: string): Promise<void> {
     await this.poolProviders(profileHome)
@@ -911,8 +918,24 @@ export class ProviderCatalog {
 
   /** Python `get_available_models` (static catalog + live ids for keyed providers). */
   async models(profileHome: string, attempt = 0): Promise<ModelsCatalog> {
+    const generation = this.modelGenerations.get(profileHome) ?? 0
+    this.modelGenerations.set(profileHome, generation)
+    const inputSource = this.sourceFingerprint(profileHome, false)
     const pool = await this.poolProviders(profileHome)
+    if (generation !== this.modelGenerations.get(profileHome) || inputSource !== this.sourceFingerprint(profileHome, false)) {
+      if (attempt === 0) return this.models(profileHome, 1)
+      throw new Error('Provider configuration changed during catalog lookup. Try again.')
+    }
     const source = this.sourceFingerprint(profileHome)
+    const key = `${source}\0${generation}`
+    const pending = this.modelReads.get(key)
+    if (pending) return structuredClone(await pending)
+    const read = this.buildModels(profileHome, pool, source, generation, attempt).finally(() => { this.modelReads.delete(key) })
+    this.modelReads.set(key, read)
+    return structuredClone(await read)
+  }
+
+  private async buildModels(profileHome: string, pool: CatalogLookup<SidecarResult<'usage.pool_providers'>>, source: string, generation: number, attempt: number): Promise<ModelsCatalog> {
     const providerState = (await this.providerRows(profileHome, pool)).payload
     const unconfirmed = new Set<string>()
     const config = await this.deps.config.read(profileHome)
@@ -1071,10 +1094,10 @@ export class ProviderCatalog {
     const defaults = { availability, active_provider: active, default_model: defaultModel, default_provider_id: defaultProvider, default_bare_id: defaultBare }
     if (!kept.length && pickerDefault) {
       const providerId = active ?? 'default'
-      return this.remember(profileHome, { source, unconfirmed, attempt }, { ...defaults, groups: [{ provider: 'Default', provider_id: providerId, models: stampModelEntries([{ id: defaultModel, label: labelForModel(defaultModel, []) }], providerId) }], aliases: {}, configured_model_badges: {} })
+      return this.remember(profileHome, { source, generation, unconfirmed, attempt }, { ...defaults, groups: [{ provider: 'Default', provider_id: providerId, models: stampModelEntries([{ id: defaultModel, label: labelForModel(defaultModel, []) }], providerId) }], aliases: {}, configured_model_badges: {} })
     }
     const stamped = kept.map((g) => ({ ...g, models: stampModelEntries(g.models, g.provider_id), ...(g.extra_models ? { extra_models: stampModelEntries(g.extra_models, g.provider_id) } : {}) }))
-    return this.remember(profileHome, { source, unconfirmed, attempt }, { ...defaults, groups: stamped, aliases, configured_model_badges: this.badges(kept, active, defaultModel, fallbackCfg) })
+    return this.remember(profileHome, { source, generation, unconfirmed, attempt }, { ...defaults, groups: stamped, aliases, configured_model_badges: this.badges(kept, active, defaultModel, fallbackCfg) })
   }
 
   private readonly pickerLimitsCache = new Map<string, { source: string; at?: number; limits: SidecarResult<'usage.limits'>['limits']; read?: Promise<void> }>()
@@ -1168,10 +1191,10 @@ export class ProviderCatalog {
   }
 
   /** Stamps the default's entry id and keeps the catalog for `modelOptionFor`. */
-  private async remember(profileHome: string, meta: { source: string; unconfirmed: ReadonlySet<string>; attempt: number }, catalog: ModelsCatalog): Promise<ModelsCatalog> {
+  private async remember(profileHome: string, meta: { source: string; generation: number; unconfirmed: ReadonlySet<string>; attempt: number }, catalog: ModelsCatalog): Promise<ModelsCatalog> {
     if (catalog.availability) for (const group of catalog.groups) group.availability ??= catalog.availability
     await this.stampSpeedTiers(profileHome, catalog.groups.flatMap((g) => [...g.models, ...(g.extra_models ?? [])]))
-    if (meta.source !== this.sourceFingerprint(profileHome)) {
+    if (meta.generation !== this.modelGenerations.get(profileHome) || meta.source !== this.sourceFingerprint(profileHome)) {
       if (meta.attempt === 0) return this.models(profileHome, 1)
       throw new Error('Provider configuration changed during catalog lookup. Try again.')
     }

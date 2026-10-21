@@ -132,8 +132,6 @@ async function startChat(ctx: RequestContext, body: Record<string, unknown>, set
     if (!(await ctx.deps.sessions.sessionIdVisible(sid))) throw new HttpError(404, 'Session not found')
     return (await owner.submit(sid, body))!
   }
-  // TAL-542: the stale-model check reads this catalog; it is built before the session is read so no await follows that read.
-  await ctx.deps.sessions.deps.warmSessionModelRepair?.()
   let s: Session
   try {
     s = (await ctx.deps.sessionStore.get(sid))
@@ -160,7 +158,6 @@ async function startChat(ctx: RequestContext, body: Record<string, unknown>, set
   // TAL-460: the user's message never joins a background turn; that turn stops quietly and this one takes its place.
   const yielded = await ctx.deps.turns.yieldBackgroundTurn(sid)
   if (prompt !== null || yielded) {
-    await ctx.deps.sessions.deps.warmSessionModelRepair?.()
     s = (await ctx.deps.sessionStore.get(sid))
     visibleOrRetag(ctx, s, requestedProfile)
   }
@@ -345,8 +342,6 @@ export const chatRouter = os.router({
     }
     const kickoff = str(payload.kickoff_prompt).trim()
     if (kickoff) {
-      // TAL-542: after the goal RPCs, so the stale-model check reads a catalog for the profile the session now runs under.
-      await ctx.deps.sessions.deps.warmSessionModelRepair?.(s.profile)
       const workspace = (await ctx.deps.sessions.turnWorkspace(s, body.workspace))
       const [model, provider, normalized] = ctx.deps.sessions.turnModel(s, body)
       const started = (await ctx.deps.turns.start(s, { msg: kickoff, attachments: [], workspace, model, modelProvider: provider, normalizedModel: normalized, source: 'webui', goalRelated: true }))
@@ -365,8 +360,6 @@ export const chatRouter = os.router({
       requireField(body, 'session_id', 'prompt')
       // A subagent child's profile/workspace/context must never seed a runnable background session.
       if ((await ctx.deps.sessions.isSubagentViewOnly(str(body.session_id)))) throw new HttpError(400, 'Subagent sessions are view-only and cannot run background tasks from WebUI')
-      // TAL-542: the background turn starts on the parent's repaired pair; the catalog is built before the parent is read.
-      await ctx.deps.sessions.deps.warmSessionModelRepair?.()
       const parent = (await getSession(ctx, str(body.session_id)))
       if ((await ctx.deps.sessions.isReadOnly(parent)) || parent.branchSourceReadonly) throw new HttpError(403, 'Read-only imported sessions cannot be continued from WebUI')
       const prompt = str(body.prompt).trim()
@@ -431,8 +424,6 @@ export const chatRouter = os.router({
     if (!isSafeSessionId(sid)) throw new HttpError(404, 'Session not found')
     // Python: a subagent child's context must not be cloned into a runnable ephemeral session.
     if ((await ctx.deps.sessions.isSubagentViewOnly(sid))) throw new HttpError(400, 'Subagent sessions are view-only and cannot be used for /btw from WebUI')
-    // TAL-542: the side question starts on the chat's repaired pair; the catalog is built before the chat is read.
-    await ctx.deps.sessions.deps.warmSessionModelRepair?.()
     const s = (await getSession(ctx, sid))
     if ((await ctx.deps.sessions.isReadOnly(s)) || s.branchSourceReadonly) throw new HttpError(403, 'Read-only imported sessions cannot be continued from WebUI')
     const question = str(body.question).trim()
