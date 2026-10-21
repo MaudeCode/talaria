@@ -66,7 +66,7 @@ function PluginOAuthClientRow({ pluginKey, client, editable }: { pluginKey: stri
       <div className="flex items-center gap-3">
         <span className="min-w-0 flex-1 truncate font-medium text-text">{client.id}</span>
         <span className={state.tone}>{state.label()}</span>
-        {editable && client.can_sign_out ? <Button variant="ghost" className="px-2 py-1 text-xs" disabled={signOut.isPending} onClick={() => signOut.mutate()}>{m.sign_out()}</Button> : null}
+        {editable && client.can_sign_out ? <Button variant="ghost" className="px-2 py-1 text-xs" disabled={signOut.isPending} onClick={() => signOut.mutate()}>{m.plugins_oauth_sign_out()}</Button> : null}
       </div>
       {editable && (
         <OAuthSignIn provider={`plugin:${pluginKey}:${client.id}`} label={client.id} signedIn={client.state === 'signed_in'} onApproved={refresh} idPrefix={`pluginOauth-${pluginKey}-${client.id}-`} compact>

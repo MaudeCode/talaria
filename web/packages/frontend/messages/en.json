@@ -2244,6 +2244,7 @@
 	"plugins_oauth_sign_in_needed": "Sign-in needed",
 	"plugins_oauth_revoked": "Revoked",
 	"plugins_oauth_logged_out": "Signed out",
+	"plugins_oauth_sign_out": "Sign out",
 	"oauth_plugin_hosts": "You approve at {authorize_host}; the sign-in code goes to {token_host}.",
 	"oauth_plugin_paste": "If the page after approval does not load, paste its address here.",
 	"oauth_plugin_paste_submit": "Continue",

@@ -34,13 +34,13 @@ describe('PluginsSection OAuth clients', () => {
     renderPlugins()
     const google = await clientRow('google')
     expect(within(google).getByText('Signed out')).toBeInTheDocument()
-    expect(within(google).queryByRole('button', { name: 'Sign Out' })).not.toBeInTheDocument()
+    expect(within(google).queryByRole('button', { name: 'Sign out' })).not.toBeInTheDocument()
     const drive = await clientRow('drive')
     expect(within(drive).getByText('Revoked')).toBeInTheDocument()
-    await userEvent.click(within(drive).getByRole('button', { name: 'Sign Out' }))
+    await userEvent.click(within(drive).getByRole('button', { name: 'Sign out' }))
     expect(api.pluginOauthLogout).toHaveBeenCalledWith('calendar', 'drive')
     await waitFor(() => expect(within(drive).getByText('Signed out')).toBeInTheDocument())
-    expect(within(drive).queryByRole('button', { name: 'Sign Out' })).not.toBeInTheDocument()
+    expect(within(drive).queryByRole('button', { name: 'Sign out' })).not.toBeInTheDocument()
   })
 
   it('a sign-in names the server\'s two hosts, links the authorize page, and sends the pasted address', async () => {
