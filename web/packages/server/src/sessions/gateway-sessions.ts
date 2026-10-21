@@ -4,7 +4,7 @@ import type { StartupTiming } from '../startup-timing.js'
 import { createHash, randomUUID } from 'node:crypto'
 import { OWNER_EXPORT_MAX_BYTES, SessionNoticeSchema, GatewayClarifyBatchSchema, GatewaySessionResultSchema, type ClarifyAnswers, type ClarifyStep, type ExecutionModes, type GatewayClarifyBatch, type GatewayCreateParams, type GatewaySessionParams, type GatewaySessionResult, type GatewaySnapshot, type OwnerAttachment, type ModelChange } from '@maudecode/talaria-web-contracts'
 import type { SidecarLike, StreamFrame } from '../sidecar/client.js'
-import { redactNestedMessageContainers, redactText, publicToolFrame, redactString } from '../redact.js'
+import { redactNestedMessageContainers, publicToolFrame, redactString } from '../redact.js'
 import { str } from '../util.js'
 import { PendingPrompts } from './pending.js'
 import { wrapExportHtml } from './export.js'
@@ -260,7 +260,7 @@ export class GatewaySessions {
       // The owner redacts HTML's structured transcript before rendering. A shell/text redactor corrupts its markup.
       content = format === 'html' ? wrapExportHtml(value.content) : format === 'json'
         ? JSON.stringify(redactNestedMessageContainers(JSON.parse(value.content) as unknown, redact), null, 2)
-        : str(redactText(value.content, redact))
+        : redactString(value.content, redact)
     } catch {
       throw new HttpFailure(409, 'The Agent owner returned an invalid transcript export', { code: 'owner_export_invalid' })
     }
