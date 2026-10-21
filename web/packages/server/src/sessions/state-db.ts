@@ -616,13 +616,21 @@ export function readImportableAgentSessionRowBatches(dbPath: string, queries: Re
       try { return candidates(opts) } catch (error) { return error as Error }
     })
     const ids = [...new Set(batches.flatMap((rows) => rows instanceof Error ? [] : rows.map((r) => str(r.id))))]
-    const owners = sessionSources(db, sessionCols, ids)
+    let owners: Map<string, StateDbSessionSource> | undefined
+    try { owners = sessionSources(db, sessionCols, ids) } catch (error) {
+      if (queries.length === 1) throw error
+      // Retry ownership per window only on damage, so a background failure cannot hide healthy interactive rows.
+    }
     const rows = batches.map((batch, i) => {
       if (batch instanceof Error) return batch
+      let batchOwners = owners
+      if (batchOwners === undefined) {
+        try { batchOwners = sessionSources(db, sessionCols, batch.map((row) => str(row.id))) } catch (error) { return error as Error }
+      }
       let raw = batch
       const opts = queries[i]!
       const limit = opts.limit === undefined ? 200 : opts.limit
-      raw = raw.map((r) => { const owner = owners.get(str(r.id)); return { ...r, source: typeof owner === 'object' ? owner.source : owner || r.source } })
+      raw = raw.map((r) => { const owner = batchOwners.get(str(r.id)); return { ...r, source: typeof owner === 'object' ? owner.source : owner || r.source } })
       const keepEmpty = opts.keepEmpty === true && opts.sessionIds !== undefined
       let projected = projectAgentSessionRows(raw.map((r) => {
         const lineage = local.get(str(r.id))

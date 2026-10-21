@@ -86,6 +86,18 @@ describe('batched sidebar reads and targeted lookup cache', () => {
     expect(ops()).toEqual(['rowBatches'])
   })
 
+  it('isolates malformed background ownership metadata from healthy sidebar windows', async () => {
+    const db = new DatabaseSync(path)
+    try {
+      db.exec('CREATE TABLE worker_executions (session_id TEXT, lineage_json TEXT)')
+      db.prepare('INSERT INTO worker_executions VALUES (?, ?)').run('cron', JSON.stringify({ broken: true }))
+    } finally { db.close() }
+    const read = await source.read('default')
+    expect(read.rows.map((row) => row.session_id)).toEqual(['webui', 'cli', 'webhook', 'kanban'])
+    expect(read.storage.state).toBe('unavailable')
+    expect(ops()).toEqual(['rowBatches'])
+  })
+
   it('separates lookup flags, IDs, profile and source filter from a cached listing', async () => {
     expect((await source.read('default', { sessionIds: ['webui'] })).rows).toEqual([])
     expect((await source.read('default', { sessionIds: ['webui'], sidebarRows: true })).rows).toHaveLength(1)

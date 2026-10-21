@@ -67,7 +67,9 @@ hand-written endpoint schemas.
 A sidebar cache miss sends its interactive and background windows in one worker
 request. The windows share a read-only SQLite snapshot, schema probes, validated
 local lineages and one ownership lookup over their combined candidates. Storage
-health comes from the same handle. Sidebar and targeted metadata results share
+health comes from the same handle. If shared ownership metadata is damaged, the
+reader retries ownership per window within that snapshot so healthy windows remain
+available. Sidebar and targeted metadata results share
 the five-second cache, scoped by profile, source filter, sorted session IDs and
 lookup flags, and invalidated by database/WAL stamps or the session-index revision.
 The cache retains at most 200 snapshots.
