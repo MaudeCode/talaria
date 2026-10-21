@@ -5,6 +5,7 @@ import { projectMessages } from './useTranscript'
 import { dispatch, getStreamState, resetStreamStoreForTests } from '../../stream/store'
 import { sessionFixture } from '../../test/fixtures'
 import { requestScroll } from './sendMotion'
+import * as turnActivity from './turnActivity'
 
 let intersect: IntersectionObserverCallback
 const observe = vi.fn()
@@ -28,6 +29,44 @@ const props = (): TranscriptProps => ({
   autoFollow: false, sessionId: 'history', actions: {}, tts: false, truncated: true,
   loadedFrom: 120, onLoadOlder: vi.fn(), loadingOlder: false, emptyState: null,
   showJumpButtons: false, virtualizeLongTranscripts: false,
+})
+
+it('keeps the row filter and user scans cached across ten streamed tokens', () => {
+  const input = { ...props(), truncated: false, rows: projectMessages([
+    { id: 1, role: 'user', content: 'Question', _turn_id: 'turn' },
+    { id: 2, role: 'assistant', content: 'Persisted reply', _turn_id: 'turn' },
+    { id: 3, role: 'assistant', content: 'Earlier reply', _turn_id: 'old' },
+  ]) }
+  const grouped = turnActivity.groupAssistantTurns(input.rows)
+  vi.spyOn(turnActivity, 'groupAssistantTurns').mockReturnValue(grouped)
+  const filter = vi.spyOn(grouped, 'filter')
+  dispatch({ type: 'start', sessionId: 'history', streamId: 'run', turnId: 'turn', userMessageId: '1', userText: 'Question', now: 0 })
+  const view = render(<Transcript {...input} live={getStreamState().turns.history!} />)
+  const scans = vi.spyOn(filter.mock.results[0]!.value as typeof grouped, 'some')
+  for (let token = 1; token <= 10; token++) {
+    dispatch({ type: 'event', sessionId: 'history', streamId: 'run', event: { event: 'token', data: { text: 'word ' } }, lastEventId: `run:${token}`, now: token })
+    view.rerender(<Transcript {...input} live={getStreamState().turns.history!} />)
+  }
+  expect(filter).toHaveBeenCalledTimes(1)
+  expect(scans).not.toHaveBeenCalled()
+  expect(view.container.querySelector('[data-message-key="2"]')).toBeNull()
+  expect(view.container.querySelector('[data-message-key="3"]')).toBeInTheDocument()
+  expect(view.container.querySelector('[data-live-user]')).toBeNull()
+  expect(view.container.querySelector('[data-live]')).toHaveAttribute('data-status', 'streaming')
+  const live = getStreamState().turns.history!
+  view.rerender(<Transcript {...input} live={{ ...live, turnId: 'old' }} />)
+  expect(view.container.querySelector('[data-message-key="2"]')).toBeInTheDocument()
+  expect(view.container.querySelector('[data-message-key="3"]')).toBeNull()
+  view.rerender(<Transcript {...input} live={{ ...live, streamId: 'old', turnId: null }} />)
+  expect(view.container.querySelector('[data-message-key="3"]')).toBeNull()
+  view.rerender(<Transcript {...input} live={{ ...live, claimsPersistedRows: false }} />)
+  expect(view.container.querySelector('[data-message-key="2"]')).toBeInTheDocument()
+  view.rerender(<Transcript {...input} live={{ ...live, userMessageId: 'new-user' }} />)
+  expect(view.container.querySelector('[data-live-user]')).toHaveTextContent('Question')
+  view.rerender(<Transcript {...input} live={{ ...live, status: 'done', doneSession: sessionFixture({ session_id: 'history' }) }} />)
+  expect(view.container.querySelector('[data-message-key="2"]')).toBeInTheDocument()
+  expect(view.container.querySelector('[data-message-key="3"]')).toBeInTheDocument()
+  expect(view.container.querySelector('[data-live]')).toBeNull()
 })
 
 it.each([false, true])('preserves an upward reader scroll before its scroll event when content arrives: autoFollow=%s', async (autoFollow) => {

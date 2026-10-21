@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Reduce repeated transcript work while replies stream.",
+      "highlight": false,
+      "components": ["web"]
+    }
+  ]
+}
