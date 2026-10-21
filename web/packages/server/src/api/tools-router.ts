@@ -168,10 +168,11 @@ async function gatewayAction(ctx: RequestContext, action: 'start' | 'stop' | 're
   if (!sidecar) throw new HttpError(500, 'Hermes Agent sidecar is not running', { ok: false, action })
   let outcome
   try {
-    outcome = await sidecar.call('gateway.control', { profile_home: home(ctx), action, background_wait_seconds: GATEWAY_ACTION_TIMEOUT_S }, { timeoutMs: 300_000 })
+    outcome = await sidecar.call('gateway.control', { profile_home: home(ctx), action, interrupt: true, background_wait_seconds: GATEWAY_ACTION_TIMEOUT_S }, { timeoutMs: 300_000 })
   } catch (error) {
     throw new HttpError(500, sanitizeError(error), { ok: false, action })
   }
+  if (outcome.status === 'busy_live_work') throw new HttpError(409, outcome.reason || 'The gateway still has live work.', { ok: false, action })
   if (outcome.status === 'busy') throw new HttpError(409, 'Another gateway action is already in progress; try again shortly.', { ok: false, action })
   if (outcome.timed_out) throw new HttpError(504, `Gateway ${action} timed out after ${String(GATEWAY_ACTION_TIMEOUT_S)} seconds`, { ok: false, action })
   if (outcome.status === 'failed' && outcome.returncode !== undefined) {
@@ -520,7 +521,7 @@ export const toolsRouter = os.router({
     restart: os.ops.restart.handler(({ context: { ctx } }) => run(async () => {
       const sidecar = ctx.deps.sidecar()
       if (!sidecar) throw new HttpError(500, 'Hermes Agent sidecar is not running')
-      const outcome = await restartGateway(sidecar, home(ctx))
+      const outcome = await restartGateway(sidecar, home(ctx), true)
       if (outcome.status === 'completed') return { ok: true as const, message: 'Gateway service restarted successfully' }
       if (outcome.status === 'busy') throw new HttpError(429, outcome.message || 'Restart already in progress. Please wait a moment and try again.')
       throw new HttpError(500, outcome.message || 'Internal error running restart')

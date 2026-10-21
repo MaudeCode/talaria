@@ -2415,6 +2415,13 @@
       "cases": [
         ""
       ]
+    },
+    "tests/test_gateway_restart.py::test_live_work_consent_matches_the_installed_gateway_cli": {
+      "layer": "compatibility",
+      "reason": "The installed Agent release owns lifecycle guard availability and refusal formatting; a disposable CLI stub proves sidecar flags and RPC outcomes without touching a gateway.",
+      "cases": [
+        ""
+      ]
     }
   }
 }

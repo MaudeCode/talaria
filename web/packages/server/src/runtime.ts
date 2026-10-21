@@ -852,9 +852,9 @@ export async function createDeps(opts: CreateDepsOptions): Promise<AppDeps> {
     notifications: updateNotifications,
     blockers: (profile) => gatewayRestartBlockers(config.hermesHome, profileHome(profile), now()),
     updating: () => deps.updates.blocksNewWork(),
-    restart: async (profile) => {
+    restart: async (profile, interrupt) => {
       if (!sidecar) throw new Error('Hermes Agent sidecar is unavailable')
-      return restartGateway(sidecar, profileHome(profile))
+      return restartGateway(sidecar, profileHome(profile), interrupt)
     },
     gateways: (profile) => liveGateways(config.hermesHome, profileHome(profile), now()),
     runtimeReady: async () => {

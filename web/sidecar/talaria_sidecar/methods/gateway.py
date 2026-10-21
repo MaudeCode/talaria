@@ -80,7 +80,7 @@ def _host_serves(home: Path, budget_deadline: float) -> bool:
         time.sleep(0.5)
 
 
-def control(action: str, home: Path, cli_profile: str | None, ctx: CallContext, *, quick_timeout: float, background_wait: float) -> dict:
+def control(action: str, home: Path, cli_profile: str | None, ctx: CallContext, *, quick_timeout: float, background_wait: float, interrupt: bool = False) -> dict:
     if action not in ACTIONS:
         raise InvalidParams("unsupported gateway action")
     if not _ACTION_LOCK.acquire(blocking=False):
@@ -94,7 +94,7 @@ def control(action: str, home: Path, cli_profile: str | None, ctx: CallContext, 
             if left <= 0:
                 return {"status": "failed", "message": f"Gateway {action} ran out of time before it could start", "timed_out": True}
             quick = min(quick_timeout, left)
-            return _run(action, home, cli_profile, ctx, quick_timeout=quick, background_wait=left - quick)
+            return _run(action, home, cli_profile, ctx, quick_timeout=quick, background_wait=left - quick, interrupt=interrupt)
 
         result = run(action, home, cli_profile)
         root = _host_root(home)
@@ -164,7 +164,7 @@ def _restart_wait(home: Path, cli_profile: str | None = None) -> float:
         return _RESTART_FALLBACK_SECONDS
 
 
-def _run(action: str, home: Path, cli_profile: str | None, ctx: CallContext, *, quick_timeout: float, background_wait: float) -> dict:
+def _run(action: str, home: Path, cli_profile: str | None, ctx: CallContext, *, quick_timeout: float, background_wait: float, interrupt: bool = False) -> dict:
     """One ``hermes --profile <name> gateway <action>`` subprocess for ``home``; the caller holds ``_ACTION_LOCK``."""
     try:
         profile = cli_profile or _profile_selector(home)
@@ -180,6 +180,15 @@ def _run(action: str, home: Path, cli_profile: str | None, ctx: CallContext, *, 
     if profile:
         cmd.extend(["--profile", profile])
     cmd.extend(["gateway", action])
+    try:
+        from hermes_cli import gateway_lifecycle_guards  # noqa: F401 - installed CLI capability
+    except ImportError:
+        pass
+    else:
+        if interrupt and action in ("stop", "restart"):
+            cmd.append("--yes")
+        if action == "restart":
+            cmd.append("--detach")
     log.info("Running gateway %s via %s (HERMES_HOME=%s)", action, " ".join(cmd), home)
     try:
         proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, env=env)
@@ -203,6 +212,8 @@ def _run(action: str, home: Path, cli_profile: str | None, ctx: CallContext, *, 
             return {"status": "completed", "message": f"Gateway service {_DONE[action]} successfully", "detail": stdout or stderr}
         failed = {"status": "failed", "message": f"{action.capitalize()} failed: {stderr or stdout}", "detail": stdout or stderr, "returncode": proc.returncode}
         reason = _reason(stdout, stderr)
+        if proc.returncode == 1 and action in ("stop", "restart") and reason and re.fullmatch(rf"Refusing to {action} the gateway: \d+ live session\(s\) would be interrupted\.", reason):
+            return {**failed, "status": "busy_live_work", "reason": reason, "message": reason}
         return {**failed, "reason": reason} if reason else failed
 
     ctx.emit("progress", {"phase": "started"})
@@ -249,9 +260,12 @@ def register(registry) -> None:
         cli_profile = params.get("cli_profile")
         if cli_profile is not None and not isinstance(cli_profile, str):
             raise InvalidParams("cli_profile must be a string")
+        interrupt = params.get("interrupt", False)
+        if not isinstance(interrupt, bool):
+            raise InvalidParams("interrupt must be a boolean")
         # A restart drains the old gateway first, for as long as the CLI's own budget allows (infinite: no deadline).
         wait = params.get("background_wait_seconds") or (_restart_wait(home, cli_profile or None) if action == "restart" else 60.0)
-        return control(action, home, cli_profile or None, ctx, quick_timeout=float(params.get("quick_timeout_seconds") or 2.0), background_wait=float(wait))
+        return control(action, home, cli_profile or None, ctx, quick_timeout=float(params.get("quick_timeout_seconds") or 2.0), background_wait=float(wait), interrupt=interrupt)
 
     @registry.method("gateway.control", requires_agent=False)
     def control_(ctx: CallContext, params: dict) -> dict:

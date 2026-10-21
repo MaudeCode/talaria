@@ -674,14 +674,15 @@ export const CHAT_METHODS = {
   'approval.set_yolo': { params: z.object({ session_id: z.string().min(1), enabled: z.boolean() }), result: z.object({ yolo_enabled: z.boolean(), released: z.number().int() }) },
   'clarify.respond': { params: z.object({ stream_id: z.string().optional(), session_id: z.string().optional(), clarify_id: z.string().optional(), response: z.string() }), result: z.object({ ok: z.boolean(), clarify_id: z.string().optional() }) },
 } as const
-const GatewayActionParams = ProfileHomeParams.extend({ cli_profile: z.string().nullable().optional(), quick_timeout_seconds: z.number().optional(), background_wait_seconds: z.number().optional() })
+const GatewayActionParams = ProfileHomeParams.extend({ interrupt: z.boolean().optional(), cli_profile: z.string().nullable().optional(), quick_timeout_seconds: z.number().optional(), background_wait_seconds: z.number().optional() })
 /**
  * A lifecycle run of `hermes --profile <name> gateway <action>` for the profile at `profile_home` (TAL-894). `busy` means another
- * action holds the lock; `timed_out` marks a child killed after `background_wait_seconds` (a restart defaults to the Agent CLI's own
+ * action holds the lock; `busy_live_work` is an Agent live-work refusal. `interrupt` explicitly consents to interruption.
+ * `timed_out` marks a child killed after `background_wait_seconds` (a restart defaults to the Agent CLI's own
  * restart budget plus 30 s) or cancelled. `detail` is CLI output, never shown to a browser; `reason` is the Agent's first error line of a
  * failed run (TAL-884), the one line the server shows.
  */
-const GatewayActionResult = z.object({ status: z.enum(['completed', 'failed', 'busy']), message: z.string(), detail: z.string().optional(), returncode: z.number().int().optional(), reason: z.string().optional(), timed_out: z.boolean().optional() })
+const GatewayActionResult = z.object({ status: z.enum(['completed', 'failed', 'busy', 'busy_live_work']), message: z.string(), detail: z.string().optional(), returncode: z.number().int().optional(), reason: z.string().optional(), timed_out: z.boolean().optional() })
 const GatewayActionStream = z.discriminatedUnion('event', [z.object({ event: z.literal('progress'), data: z.object({ phase: z.enum(['started', 'draining']) }) })])
 export const GATEWAY_ACTIONS = ['start', 'stop', 'restart'] as const
 export const GATEWAY_METHODS = {
