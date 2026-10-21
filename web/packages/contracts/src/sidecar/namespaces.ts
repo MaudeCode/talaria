@@ -83,7 +83,7 @@ export const PluginOAuthClientSchema = z.object({ id: z.string(), state: PluginO
 export type PluginOAuthClient = z.infer<typeof PluginOAuthClientSchema>
 export const PluginUpdateResultSchema = z.discriminatedUnion('status', [
   z.object({ key: z.string(), status: z.literal('updated') }),
-  z.object({ key: z.string(), status: z.literal('needs_consent'), verdict: z.literal('caution'), findings: z.string() }),
+  z.object({ key: z.string(), status: z.literal('needs_consent'), verdict: z.literal('caution'), findings: z.string(), consent_token: z.string().min(1) }),
   z.object({ key: z.string(), status: z.literal('blocked'), verdict: z.string(), findings: z.string() }),
 ])
 export type PluginUpdateResult = z.infer<typeof PluginUpdateResultSchema>
@@ -110,7 +110,7 @@ export const COMMANDS_METHODS = {
   'commands.moa_preset': { params: ProfileHomeParams.extend({ preset: z.string().nullable().optional() }), result: z.object({ moa: Loose }) },
   'plugins.providers': { params: ProfileHomeParams, result: z.object({ providers: z.array(PluginProviderSchema) }) },
   'plugins.list': { params: ProfileHomeParams.extend({ selected_providers: z.record(z.string(), z.string()).optional() }), result: z.object({ plugins: z.array(z.object({ name: z.string(), key: z.string(), version: z.string(), description: z.string(), enabled: z.boolean(), kind: z.string(), activation: z.string(), hooks: z.array(z.string()), is_active_provider: z.boolean().optional(), update_available: z.boolean().optional(), latest_revision: z.string().optional() })), supported_hooks: z.array(z.string()) }) },
-  'plugins.update': { params: ProfileHomeParams.extend({ key: z.string().min(1), accept_caution: z.boolean().optional() }), result: PluginUpdateResultSchema },
+  'plugins.update': { params: ProfileHomeParams.extend({ key: z.string().min(1), accept_caution: z.boolean().optional(), consent_token: z.string().min(1).max(128).optional() }), result: PluginUpdateResultSchema },
   /** TAL-820: each profile's `plugins.isolation` and installed third-party plugin count, read without loading a plugin. */
   'plugins.isolation': { params: BaseHomeParams, result: z.object({ profiles: z.array(z.object({ name: z.string(), isolation: z.enum(['in_process', 'host']), third_party_plugins: z.number().int() })) }) },
   /** TAL-806: plugins whose manifest declares settings; `supported` is false on an Agent without `hermes_cli.plugins_settings`. */

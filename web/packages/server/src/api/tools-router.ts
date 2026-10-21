@@ -652,10 +652,10 @@ export const toolsRouter = os.router({
   })),
   pluginUpdate: os.pluginUpdate.handler(({ input, context: { ctx } }) => run(async () => {
     try {
-      return await runningSidecar(ctx).call('plugins.update', { profile_home: home(ctx), key: input.key, accept_caution: input.accept_caution }, { timeoutMs: 0 })
+      return await runningSidecar(ctx).call('plugins.update', { profile_home: home(ctx), key: input.key, accept_caution: input.accept_caution, ...(input.consent_token ? { consent_token: input.consent_token } : {}) }, { timeoutMs: 0 })
     } catch (error) {
       if (error instanceof SidecarError && error.condition === 'plugin_not_found') throw new HttpError(404, error.message)
-      if (error instanceof SidecarError && error.condition === 'plugin_update_refused') throw new HttpError(409, error.message, { condition: error.condition })
+      if (error instanceof SidecarError && ['plugin_update_refused', 'plugin_update_consent_changed'].includes(error.condition)) throw new HttpError(409, error.message, { condition: error.condition })
       throw error
     }
   })),

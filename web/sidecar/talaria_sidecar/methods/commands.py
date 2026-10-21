@@ -3,11 +3,15 @@
 from __future__ import annotations
 
 import contextlib
+import hashlib
 import importlib.util
+import json
 import logging
 import os
 import pathlib
+import secrets
 import threading
+import time
 from typing import Any
 
 from ..errors import InvalidParams, RpcError
@@ -35,6 +39,8 @@ _RELOAD_SKILLS_LOCK = threading.Lock()
 _CODEX_RUNTIME_LOCK = threading.Lock()
 _MCP_DISCOVERED_HOMES: set[str] = set()
 _MCP_DISCOVERED_LOCK = threading.Lock()
+_PLUGIN_UPDATE_CONSENTS: dict[str, dict] = {}
+_PLUGIN_UPDATE_CONSENT_LOCK = threading.Lock()
 
 
 def _split_slash_command(command: str) -> tuple[str, str]:
@@ -556,9 +562,9 @@ def _plugin_update_modules():
     return plugins_cmd, plugins_transaction, cached_git_updates
 
 
-def update_plugin(key: str, accept_caution: bool) -> dict:
+def update_plugin(key: str, accept_caution: bool, consent_token: str | None = None) -> dict:
     """The Agent owns Git staging, scan consent and publication, under the caller's profile scope."""
-    if not key or not isinstance(accept_caution, bool):
+    if not key or not isinstance(accept_caution, bool) or (consent_token is not None and not isinstance(consent_token, str)):
         raise InvalidParams("plugins.update requires a key and boolean accept_caution")
     modules = _plugin_update_modules()
     if modules is None:
@@ -572,15 +578,59 @@ def update_plugin(key: str, accept_caution: bool) -> dict:
     # Only profile-owned installs, never bundled, project or entrypoint plugins.
     if target.parent != (get_hermes_home() / "plugins").resolve():
         raise InvalidParams("Only profile-installed Git plugins can be updated")
+    from pm.store import tree_digest
+    from tools.plugin_guard import format_scan_report
+    identity = (str(get_hermes_home().resolve()), str(target), found[5], tree_digest(target),
+                json.dumps(pc._read_install_metadata().get(target.name, {}), sort_keys=True))
+    with _PLUGIN_UPDATE_CONSENT_LOCK:
+        now = time.monotonic()
+        for token, receipt in list(_PLUGIN_UPDATE_CONSENTS.items()):
+            if receipt["expires"] <= now:
+                _PLUGIN_UPDATE_CONSENTS.pop(token)
+        consent = _PLUGIN_UPDATE_CONSENTS.pop(consent_token, None) if accept_caution and consent_token else None
+    if accept_caution and consent_token and (consent is None or consent["identity"] != identity):
+        raise RpcError("Plugin update confirmation expired or the installation changed; update again to review its scan",
+                       condition="plugin_update_consent_changed")
+
+    revision = ""
+    revision_changed = False
+
+    # The Agent staging hook exposes the candidate commit before its scan and publication gates.
+    def capture_revision(staged):
+        nonlocal revision, revision_changed
+        revision = pc._git_head_revision(staged, pc._resolve_git_executable())
+        if consent and consent["revision"] != revision:
+            revision_changed = True
+            raise pc.PluginOperationError("The plugin revision changed; update again to review its scan")
+        return []
+
+    def scan_binding(scan):
+        payload = json.dumps([format_scan_report(scan), getattr(scan, "scan_provenance", {}),
+                              [vars(finding) for finding in getattr(scan, "findings", [])]], sort_keys=True)
+        return hashlib.sha256(payload.encode()).hexdigest()
+
+    def accept_scan(scan):
+        return consent is not None and consent["revision"] == revision and consent["scan"] == scan_binding(scan)
+
     try:
-        transaction.update_plugin(target, force=accept_caution, scan_decision_cb=lambda _scan: False)
+        # A blanket force would bypass the callback: only the exact scanned identity can accept caution.
+        transaction.update_plugin(target, force=False, scan_decision_cb=accept_scan, carry_user_files=capture_revision)
     except pc.PluginScanBlocked as exc:
         scan = exc.scan_result
         verdict = getattr(scan, "verdict", "dangerous")
-        return {"key": found[5], "status": "needs_consent" if verdict == "caution" and not accept_caution else "blocked",
-                "verdict": verdict, "findings": str(exc)}
+        result = {"key": found[5], "status": "needs_consent" if verdict == "caution" else "blocked",
+                  "verdict": verdict, "findings": str(exc)}
+        if verdict == "caution":
+            token = secrets.token_urlsafe(32)
+            with _PLUGIN_UPDATE_CONSENT_LOCK:
+                if len(_PLUGIN_UPDATE_CONSENTS) >= 64:
+                    _PLUGIN_UPDATE_CONSENTS.pop(next(iter(_PLUGIN_UPDATE_CONSENTS)))
+                _PLUGIN_UPDATE_CONSENTS[token] = {"identity": identity, "revision": revision, "scan": scan_binding(scan),
+                                                 "expires": time.monotonic() + 300}
+            result["consent_token"] = token
+        return result
     except pc.PluginOperationError as exc:
-        raise RpcError(str(exc), condition="plugin_update_refused") from exc
+        raise RpcError(str(exc), condition="plugin_update_consent_changed" if revision_changed else "plugin_update_refused") from exc
     from hermes_cli.plugins import discover_plugins
     discover_plugins(force=True)
     return {"key": found[5], "status": "updated"}
@@ -770,7 +820,7 @@ def register(registry) -> None:
     @registry.method("plugins.update")
     def update(ctx: CallContext, params: dict) -> dict:
         with scoped_home(profile_home_param(params)):
-            return update_plugin(str(params.get("key") or "").strip(), params.get("accept_caution", False))
+            return update_plugin(str(params.get("key") or "").strip(), params.get("accept_caution", False), params.get("consent_token"))
 
     @registry.method("plugins.isolation")
     def isolation(ctx: CallContext, params: dict) -> dict:

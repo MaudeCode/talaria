@@ -564,18 +564,20 @@ describe('skills, memory, prompts, commands, mcp, health, updates, diagnostics',
     sidecar.respond('plugins.list', () => ({ plugins: [{ ...row, update_available: true, latest_revision: 'new-sha' }, { ...row, key: 'legacy' }], supported_hooks: [] }))
     sidecar.respond('plugins.update', (params) => {
       calls.push(params)
-      return params.accept_caution ? { status: 'updated', key: params.key } : { status: 'needs_consent', key: params.key, verdict: 'caution', findings: 'Review this revision' }
+      return params.accept_caution ? { status: 'updated', key: params.key } : { status: 'needs_consent', key: params.key, verdict: 'caution', findings: 'Review this revision', consent_token: 'synthetic-consent' }
     })
     try {
       const body = await json(await s.get('/api/plugins'))
       const plugins = body.plugins as Json[]
       expect(plugins[0]?.update).toEqual({ available: true, latest_revision: 'new-sha' })
       expect(plugins[1]?.update).toBeUndefined()
-      expect(await json(await post(s, '/api/plugins/update', { key: 'probe' }))).toMatchObject({ status: 'needs_consent', verdict: 'caution', findings: 'Review this revision' })
-      expect(await json(await post(s, '/api/plugins/update', { key: 'probe', accept_caution: true }))).toMatchObject({ status: 'updated', key: 'probe' })
-      expect(calls).toEqual([{ profile_home: s.deps.profileHome('default'), key: 'probe', accept_caution: false }, { profile_home: s.deps.profileHome('default'), key: 'probe', accept_caution: true }])
+      expect(await json(await post(s, '/api/plugins/update', { key: 'probe' }))).toMatchObject({ status: 'needs_consent', verdict: 'caution', findings: 'Review this revision', consent_token: 'synthetic-consent' })
+      expect(await json(await post(s, '/api/plugins/update', { key: 'probe', accept_caution: true, consent_token: 'synthetic-consent' }))).toMatchObject({ status: 'updated', key: 'probe' })
+      expect(calls).toEqual([{ profile_home: s.deps.profileHome('default'), key: 'probe', accept_caution: false }, { profile_home: s.deps.profileHome('default'), key: 'probe', accept_caution: true, consent_token: 'synthetic-consent' }])
       sidecar.respond('plugins.update', (params) => ({ status: 'blocked', key: params.key, verdict: 'dangerous', findings: 'Dangerous revision' }))
       expect(await json(await post(s, '/api/plugins/update', { key: 'probe', accept_caution: true }))).toMatchObject({ status: 'blocked', verdict: 'dangerous' })
+      sidecar.respond('plugins.update', () => { throw new SidecarError('Confirmation changed; review again', { condition: 'plugin_update_consent_changed' }) })
+      expect((await post(s, '/api/plugins/update', { key: 'probe', accept_caution: true, consent_token: 'stale-consent' })).status).toBe(409)
       expect((await post(s, '/api/plugins/update', { key: 'probe', accept_caution: 'yes' })).status).toBe(400)
     } finally {
       sidecar.respond('plugins.list', undefined)

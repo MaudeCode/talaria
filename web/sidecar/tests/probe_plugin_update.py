@@ -40,6 +40,11 @@ target = home / 'plugins' / 'update-probe'
 target.parent.mkdir()
 git(home, 'clone', '-q', str(repo), str(target))
 metadata = {'update-probe': {'source': str(repo), 'revision': old, 'pinned': False}}
+other_home = home / 'profiles' / 'other'
+other_target = other_home / 'plugins' / 'update-probe'
+other_target.parent.mkdir(parents=True)
+git(home, 'clone', '-q', str(repo), str(other_target))
+(other_target.parent / '.install-metadata.json').write_text(json.dumps(metadata))
 (target.parent / '.install-metadata.json').write_text(json.dumps(metadata))
 (repo / 'plugin.yaml').write_text('name: update-probe\nversion: 2.0.0\n')
 git(repo, 'add', '.')
@@ -84,7 +89,26 @@ with scoped_home(home):
         assert not publications
 
     with patch.object(plugin_guard, 'scan_plugin', return_value=scan('caution')), patch.object(transaction, 'publish_plugin', side_effect=publish):
-        result = call('plugins.update', key='update-probe', accept_caution=True)
+        review = call('plugins.update', key='update-probe', accept_caution=False)
+        try:
+            call('plugins.update', profile_home=str(other_home), key='update-probe', accept_caution=True,
+                 consent_token=review.get('consent_token', 'pre-fix-missing-token'))
+        except RpcError as exc:
+            assert exc.data['condition'] == 'plugin_update_consent_changed', exc.to_json()
+        assert not publications, 'Caution consent crossed into another profile installation'
+        assert git(other_target, 'rev-parse', 'HEAD') == old
+        review = call('plugins.update', key='update-probe', accept_caution=False)
+        (repo / 'plugin.yaml').write_text('name: update-probe\nversion: 3.0.0\n')
+        git(repo, 'add', '.')
+        git(repo, 'commit', '-qm', 'revision changed during consent')
+        try:
+            call('plugins.update', key='update-probe', accept_caution=True, consent_token=review['consent_token'])
+        except RpcError as exc:
+            assert exc.data['condition'] == 'plugin_update_consent_changed', exc.to_json()
+        assert not publications and git(target, 'rev-parse', 'HEAD') == old
+        git(repo, 'reset', '--hard', latest)
+        review = call('plugins.update', key='update-probe', accept_caution=False)
+        result = call('plugins.update', key='update-probe', accept_caution=True, consent_token=review['consent_token'])
     assert result['status'] == 'updated', result
     assert git(target, 'rev-parse', 'HEAD') == latest
     assert len(publications) == 1

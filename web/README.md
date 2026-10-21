@@ -187,7 +187,8 @@ The composer shows a notice while that turn is waiting for more tools.
 
 Settings → Plugins shows available updates from the Agent's last stored plugin check, without
 fetching on each visit. Update applies the revision through the Agent's security scan. A caution
-verdict requires confirmation; a dangerous verdict blocks the update. New dependency consent
+verdict requires confirmation for that profile, installation, revision and scan result. Changed or
+expired confirmation requires a fresh review; a dangerous verdict blocks the update. New dependency consent
 continues in `hermes plugins update` in a terminal. Older Agents without cached update support
 show no update controls.
 

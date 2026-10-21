@@ -774,14 +774,16 @@
         "key": "update-probe",
         "status": "needs_consent",
         "verdict": "caution",
-        "findings": "Review this revision"
+        "findings": "Review this revision",
+        "consent_token": "synthetic-consent"
       }
     },
     {
       "params": {
         "profile_home": "<home>",
         "key": "update-probe",
-        "accept_caution": true
+        "accept_caution": true,
+        "consent_token": "synthetic-consent"
       },
       "result": {
         "key": "update-probe",
@@ -792,7 +794,8 @@
       "params": {
         "profile_home": "<home>",
         "key": "update-probe",
-        "accept_caution": true
+        "accept_caution": true,
+        "consent_token": "synthetic-consent"
       },
       "result": {
         "key": "update-probe",

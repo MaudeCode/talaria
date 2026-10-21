@@ -17,7 +17,7 @@ export function PluginsSection() {
   const updating = useRef(false)
   const [scan, setScan] = useState<Exclude<PluginUpdateResult, { status: 'updated' }> | null>(null)
   const update = useMutation({
-    mutationFn: ({ key, accept }: { key: string; accept: boolean }) => api.updatePlugin(key, accept),
+    mutationFn: ({ key, accept, token }: { key: string; accept: boolean; token?: string }) => api.updatePlugin(key, accept, token),
     onSuccess: (result) => {
       if (result.status === 'updated') {
         setScan(null)
@@ -31,11 +31,11 @@ export function PluginsSection() {
     },
     onSettled: () => { updating.current = false },
   })
-  const requestUpdate = (key: string, accept = false) => {
+  const requestUpdate = (key: string, accept = false, token?: string) => {
     if (updating.current) return
     updating.current = true
     setScan(null)
-    update.mutate({ key, accept })
+    update.mutate({ key, accept, ...(token ? { token } : {}) })
   }
   const plugins = useQuery({ queryKey: keys.plugins, queryFn: api.fetchPlugins, staleTime: 30_000 })
   const [open, setOpen] = useState<string | null>(null)
@@ -68,9 +68,9 @@ export function PluginsSection() {
           </li>
         ))}
       </ul>
-      <ConfirmDialog open={scan?.status === 'needs_consent'} onOpenChange={(isOpen) => { if (!isOpen) setScan((current) => current?.status === 'needs_consent' ? null : current) }}
+      <ConfirmDialog open={scan?.status === 'needs_consent'} onOpenChange={(isOpen) => { if (!isOpen) setScan((current) => current === scan && current?.status === 'needs_consent' ? null : current) }}
         title={m.plugins_update_consent()} description={scan?.findings} confirmLabel={m.plugins_update()} cancelLabel={m.cancel()} danger
-        onConfirm={() => { if (scan?.status === 'needs_consent') requestUpdate(scan.key, true) }} />
+        onConfirm={() => { if (scan?.status === 'needs_consent') requestUpdate(scan.key, true, scan.consent_token) }} />
     </div>
   )
 }

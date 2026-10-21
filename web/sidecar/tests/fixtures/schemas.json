@@ -1111,13 +1111,18 @@
           },
           "findings": {
             "type": "string"
+          },
+          "consent_token": {
+            "type": "string",
+            "minLength": 1
           }
         },
         "required": [
           "key",
           "status",
           "verdict",
-          "findings"
+          "findings",
+          "consent_token"
         ],
         "additionalProperties": false
       },

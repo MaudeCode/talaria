@@ -5,6 +5,7 @@ test.use({ serviceWorkers: 'block' })
 test('plugin updates show Agent scan consent and block dangerous revisions', async ({ page }, testInfo) => {
   let updated = false
   let dangerous = false
+  let renewedConsent = false
   const calls: unknown[] = []
   await page.route('**/api/plugins', (route) => route.fulfill({ json: {
     read_only: false,
@@ -14,10 +15,15 @@ test('plugin updates show Agent scan consent and block dangerous revisions', asy
     ],
   } }))
   await page.route('**/api/plugins/update', (route) => {
-    const body = route.request().postDataJSON() as { key: string; accept_caution: boolean }
+    const body = route.request().postDataJSON() as { key: string; accept_caution: boolean; consent_token?: string }
     calls.push(body)
     if (dangerous) return route.fulfill({ json: { key: body.key, status: 'blocked', verdict: 'dangerous', findings: 'Security scan blocked this revision. Credential exfiltration in plugin.py:14.' } })
-    if (!body.accept_caution) return route.fulfill({ json: { key: body.key, status: 'needs_consent', verdict: 'caution', findings: 'Security scan verdict: caution.\nReview outbound network access in plugin.py:14 before updating.' } })
+    if (!body.accept_caution) return route.fulfill({ json: { key: body.key, status: 'needs_consent', verdict: 'caution', findings: 'Security scan verdict: caution.\nReview outbound network access in plugin.py:14 before updating.', consent_token: 'synthetic-consent' } })
+    expect(body.consent_token).toBe(renewedConsent ? 'renewed-consent' : 'synthetic-consent')
+    if (!renewedConsent) {
+      renewedConsent = true
+      return route.fulfill({ json: { key: body.key, status: 'needs_consent', verdict: 'caution', findings: 'The scan findings changed. Review this revision again.', consent_token: 'renewed-consent' } })
+    }
     updated = true
     return route.fulfill({ json: { key: body.key, status: 'updated' } })
   })
@@ -41,9 +47,11 @@ test('plugin updates show Agent scan consent and block dangerous revisions', asy
   expect(calls).toEqual([{ key: 'weather', accept_caution: false }])
   await section.getByRole('button', { name: 'Update', exact: true }).click()
   await consent.getByRole('button', { name: 'Update', exact: true }).click()
+  await expect(consent).toContainText('The scan findings changed')
+  await consent.getByRole('button', { name: 'Update', exact: true }).click()
   await expect(section.getByText('v2.0.0', { exact: true })).toBeVisible()
   await expect(section.getByText('Update available', { exact: true })).toHaveCount(0)
-  expect(calls).toEqual([{ key: 'weather', accept_caution: false }, { key: 'weather', accept_caution: false }, { key: 'weather', accept_caution: true }])
+  expect(calls).toEqual([{ key: 'weather', accept_caution: false }, { key: 'weather', accept_caution: false }, { key: 'weather', accept_caution: true, consent_token: 'synthetic-consent' }, { key: 'weather', accept_caution: true, consent_token: 'renewed-consent' }])
 
   updated = false
   dangerous = true

@@ -68667,7 +68667,7 @@
     "/api/plugins/update": {
       "post": {
         "operationId": "pluginUpdate",
-        "summary": "Operator only: update a profile-installed Git plugin through the Agent scan transaction. Caution requires accept_caution; dangerous always blocks.",
+        "summary": "Operator only: update a profile-installed Git plugin through the Agent scan transaction. Caution requires accept_caution plus the single-use consent_token bound to the profile, installation and scanned revision; changed or expired consent returns 409. Dangerous always blocks.",
         "tags": [
           "tools"
         ],
@@ -68685,6 +68685,11 @@
                   "accept_caution": {
                     "type": "boolean",
                     "default": false
+                  },
+                  "consent_token": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 128
                   }
                 },
                 "required": [
@@ -68730,13 +68735,18 @@
                         },
                         "findings": {
                           "type": "string"
+                        },
+                        "consent_token": {
+                          "type": "string",
+                          "minLength": 1
                         }
                       },
                       "required": [
                         "key",
                         "status",
                         "verdict",
-                        "findings"
+                        "findings",
+                        "consent_token"
                       ]
                     },
                     {
