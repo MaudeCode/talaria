@@ -8,8 +8,9 @@
 import { createHash } from 'node:crypto'
 import { existsSync } from 'node:fs'
 import { join } from 'node:path'
-import { cheapChangeFingerprintAsync, readImportableAgentSessionRowsAsync, type Dict } from './state-db.js'
+import { cheapChangeFingerprintAsync, type Dict } from './state-db.js'
 import { str } from '../util.js'
+import type { CliSessionRead } from './cli-sessions.js'
 
 export const GATEWAY_POLL_INTERVAL_S = 5
 const PROJECTION_PARITY_INTERVAL_S = 300
@@ -33,20 +34,21 @@ export function snapshotHash(sessions: Dict[]): string {
   return createHash('md5').update(key).digest('hex')
 }
 
-/** Python `_get_agent_sessions_from_db`: the watcher's lightweight projection (null when the read failed). */
-export async function agentSessionsFromDb(dbPath: string, onError?: (reason: string, error: unknown) => void): Promise<Dict[] | null> {
-  if (!existsSync(dbPath)) return []
-  try {
-    return (await readImportableAgentSessionRowsAsync(dbPath, { limit: 200 })).map((row) => ({
-      session_id: row.id, title: row.title || 'Agent Session', model: row.model || null,
-      message_count: Number(row.message_count) || Number(row.actual_message_count) || 0,
-      created_at: row.started_at, updated_at: row.last_activity ?? row.started_at, source: row.source || 'cli',
-      raw_source: row.raw_source ?? null, session_source: row.session_source ?? null, source_label: row.source_label ?? null,
-    }))
-  } catch (error) {
-    onError?.('session projection failed', error)
-    return null
-  }
+/** Keep the gateway event's compact row shape while sharing the sidebar's projection. */
+function agentSessionsFromRows(rows: Dict[]): Dict[] {
+  return rows.map((row) => ({
+    session_id: row.session_id, title: row.title || 'Agent Session', model: row.model || null,
+    message_count: row.message_count,
+    created_at: row.created_at, updated_at: row.updated_at, source: row.source_tag || 'cli',
+    raw_source: row.raw_source ?? null, session_source: row.session_source ?? null, source_label: row.source_label ?? null,
+  }))
+}
+
+interface GatewayWatcherDeps {
+  rows: (profile: string) => Promise<CliSessionRead>
+  now: () => number
+  log: (line: string) => void
+  pollIntervalMs?: number
 }
 
 export class GatewayWatcher {
@@ -61,7 +63,7 @@ export class GatewayWatcher {
   private lastErrorLogAt = Number.NEGATIVE_INFINITY
   private polling: Promise<boolean> | null = null
 
-  constructor(readonly profileName: string, readonly hermesHome: string, private readonly opts: { now: () => number; log: (line: string) => void; pollIntervalMs?: number }) {
+  constructor(readonly profileName: string, readonly hermesHome: string, private readonly opts: GatewayWatcherDeps) {
     this.stateDbPath = join(hermesHome, 'state.db')
   }
 
@@ -157,9 +159,17 @@ export class GatewayWatcher {
     const cheapFp = exists ? await cheapChangeFingerprintAsync(this.stateDbPath, (reason, error) => { this.warnFailure(reason, error) }) : ''
     const parityDue = this.lastFullProjectionAt === null || now - this.lastFullProjectionAt >= PROJECTION_PARITY_INTERVAL_S
     if (cheapFp !== null && cheapFp === this.lastCheapFp && !parityDue) return false
-    const sessions = await agentSessionsFromDb(this.stateDbPath, (reason, error) => { this.warnFailure(reason, error) })
+    let read: CliSessionRead
+    try {
+      read = await this.opts.rows(this.profileName)
+      if (read.storage.state === 'corrupt' || read.storage.state === 'unavailable') throw new Error(read.storage.reason ?? read.storage.state)
+    } catch (error) {
+      this.warnFailure('session projection failed', error)
+      return false
+    }
+    const sessions = agentSessionsFromRows(read.rows)
     // A watcher stopped mid-pass has already sent its subscribers the end sentinel.
-    if (sessions === null || this.stopping) return false
+    if (this.stopping) return false
     const hash = snapshotHash(sessions)
     if (cheapFp !== null) this.lastCheapFp = cheapFp
     this.lastFullProjectionAt = now
@@ -174,14 +184,14 @@ export class GatewayWatcher {
 /** Python module-level watcher registry keyed by profile home. */
 export class GatewayWatcherRegistry {
   private readonly watchers = new Map<string, GatewayWatcher>()
-  constructor(private readonly deps: { profileHome: (profile: string) => string; now: () => number; log: (line: string) => void; pollIntervalMs?: number }) {}
+  constructor(private readonly deps: GatewayWatcherDeps & { profileHome: (profile: string) => string }) {}
 
   get(profile: string): GatewayWatcher {
     const home = this.deps.profileHome(profile)
     let watcher = this.watchers.get(home)
     if (!watcher?.isAlive()) {
       watcher?.stop()
-      watcher = new GatewayWatcher(profile, home, { now: this.deps.now, log: this.deps.log, ...(this.deps.pollIntervalMs !== undefined ? { pollIntervalMs: this.deps.pollIntervalMs } : {}) })
+      watcher = new GatewayWatcher(profile, home, this.deps)
       watcher.start()
       this.watchers.set(home, watcher)
     }
@@ -191,7 +201,7 @@ export class GatewayWatcherRegistry {
   /** Python `restart_watcher_for_profile`: swap atomically; idle watchers for other homes are reaped. */
   restartForProfile(profile: string): GatewayWatcher {
     const home = this.deps.profileHome(profile)
-    const fresh = new GatewayWatcher(profile, home, { now: this.deps.now, log: this.deps.log, ...(this.deps.pollIntervalMs !== undefined ? { pollIntervalMs: this.deps.pollIntervalMs } : {}) })
+    const fresh = new GatewayWatcher(profile, home, this.deps)
     fresh.start()
     const existing = this.watchers.get(home)
     const stale: GatewayWatcher[] = existing ? [existing] : [...this.watchers.entries()].filter(([k, w]) => k !== home && !w.hasSubscribers()).map(([k, w]) => { this.watchers.delete(k); return w })

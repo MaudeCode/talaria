@@ -105,10 +105,13 @@ Each tick reads an O(1) invalidation signal (`_cheap_change_fingerprint`):
   in-place UPDATEs (a title rename, an `archived` flag, a `role` retag) and the
   mid-table DELETEs that `MAX(rowid)` cannot see are caught too.
 
-The expensive projection (`read_importable_agent_session_rows`) runs only when
-that signal moved, or when it could not be read at all — an unreadable signal
-fails closed and projects rather than risking a missed change. An idle server
-therefore does no projection work at all.
+When that signal moves or cannot be read, the watcher reads `CliSessionSource`
+for the profile. This shares the sidebar's bounded windows and five-second cache,
+keyed by the database, WAL and session-index revisions, rather than projecting a
+separate 200-row window. The event retains its compact `sessions` row shape.
+An idle tick skips the shared read until the parity pass is due. A failed read
+leaves the last successful fingerprint and snapshot unchanged so the next tick
+retries.
 
 Two consequences worth knowing before changing this:
 

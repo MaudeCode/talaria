@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Changed",
+      "summary": "Reduce repeated session reads while chats are streaming in Talaria Web.",
+      "highlight": false,
+      "components": ["web"]
+    }
+  ]
+}
