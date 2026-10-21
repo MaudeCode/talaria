@@ -37,24 +37,28 @@ const props = (): TranscriptProps => ({
   showJumpButtons: false, virtualizeLongTranscripts: false,
 })
 
-it('keeps the row filter and user scans cached across ten streamed tokens', () => {
+it('keeps row filtering and element creation cached across ten streamed tokens', () => {
   const input = { ...props(), truncated: false, rows: projectMessages([
     { id: 1, role: 'user', content: 'Question', _turn_id: 'turn' },
     { id: 2, role: 'assistant', content: 'Persisted reply', _turn_id: 'turn' },
     { id: 3, role: 'assistant', content: 'Earlier reply', _turn_id: 'old' },
   ]) }
+  const elementInputs = vi.fn()
+  Object.defineProperty(input.rows[0]!.message, '_background_update', { configurable: true, get: elementInputs })
   const grouped = turnActivity.groupAssistantTurns(input.rows)
   vi.spyOn(turnActivity, 'groupAssistantTurns').mockReturnValue(grouped)
   const filter = vi.spyOn(grouped, 'filter')
   dispatch({ type: 'start', sessionId: 'history', streamId: 'run', turnId: 'turn', userMessageId: '1', userText: 'Question', now: 0 })
   const view = render(<Transcript {...input} live={getStreamState().turns.history!} />)
   const scans = vi.spyOn(filter.mock.results[0]!.value as typeof grouped, 'some')
+  elementInputs.mockClear()
   for (let token = 1; token <= 10; token++) {
     dispatch({ type: 'event', sessionId: 'history', streamId: 'run', event: { event: 'token', data: { text: 'word ' } }, lastEventId: `run:${token}`, now: token })
     view.rerender(<Transcript {...input} live={getStreamState().turns.history!} />)
   }
   expect(filter).toHaveBeenCalledTimes(1)
   expect(scans).not.toHaveBeenCalled()
+  expect(elementInputs).not.toHaveBeenCalled()
   expect(view.container.querySelector('[data-message-key="2"]')).toBeNull()
   expect(view.container.querySelector('[data-message-key="3"]')).toBeInTheDocument()
   expect(view.container.querySelector('[data-live-user]')).toBeNull()
@@ -194,8 +198,10 @@ it.each([
   const measured = vi.spyOn(history, 'getBoundingClientRect')
   if (scrollTop < 2000) fireEvent.wheel(pane, { deltaY: -1 })
   pane.scrollTop = scrollTop
+  const positionRead = vi.spyOn(pane, 'scrollTop', 'get')
   // DOM insertion can precede the queued browser scroll event, as a deferred renderer reveals.
   await act(async () => { inner.append(document.createTextNode('Deferred content')); await Promise.resolve() })
+  if (scrollTop === 2000 && autoFollow) expect(positionRead).not.toHaveBeenCalled()
   expect(pane.scrollTop).toBe(scrollTop)
   flush()
   if (scrollTop === 2000 && autoFollow) expect(measured).not.toHaveBeenCalled()

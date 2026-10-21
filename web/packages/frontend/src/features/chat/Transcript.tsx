@@ -179,7 +179,9 @@ export function Transcript(props: TranscriptProps) {
     const inner = innerRef.current
     const pane = scrollRef.current
     if (!inner || !pane) return
-    const follow = () => {
+    const follow = (fromMutation = false) => {
+      // Resize observes tail growth after layout; text mutations alone need no synchronous geometry.
+      if (fromMutation && followsRef.current() && performance.now() - handAtRef.current >= HAND_SCROLL_MS) return
       // A reader scroll can precede its browser event; reconcile it before following a DOM mutation.
       if (pane.scrollTop !== lastTopRef.current) onScroll()
       if (followsRef.current()) scrollToBottom(false)
@@ -195,11 +197,11 @@ export function Transcript(props: TranscriptProps) {
     }
     follow()
     if (typeof ResizeObserver === 'undefined') return
-    const observer = new ResizeObserver(follow)
+    const observer = new ResizeObserver(() => follow())
     observer.observe(inner)
     observer.observe(pane)
-    // Suspense can reveal descendants without rerendering this pane; follow insertion before the next frame.
-    const mutations = new MutationObserver(follow)
+    // Suspense can move a reader's anchor without changing the total content height.
+    const mutations = new MutationObserver(() => follow(true))
     mutations.observe(inner, { childList: true, subtree: true, characterData: true })
     return () => { observer.disconnect(); mutations.disconnect() }
   }, [empty, scope, scrollToBottom, virtualize, rememberReaderAnchor, onScroll])
@@ -331,7 +333,8 @@ export function Transcript(props: TranscriptProps) {
     return () => observer.disconnect()
   }, [scope, truncated, loadingOlder, olderError, requestOlder])
 
-  const renderRow = (row: VisibleMessage, i: number) => (
+  const continuedTurn = continued ? live ?? undefined : undefined
+  const renderRow = useCallback((row: VisibleMessage, i: number) => (
     row.message._background_update
       ? <BackgroundUpdateRow key={row.key} row={row} />
       : row.message._marker_kind
@@ -342,8 +345,10 @@ export function Transcript(props: TranscriptProps) {
       ? <DeliveryRow key={row.key} row={row} />
       : row.message.role === 'user'
       ? <UserMessageRow key={row.key} row={row} renderMarkdown={renderUserMarkdown} sessionId={sessionId} actions={actions} />
-      : <AssistantMessageRow sessionId={sessionId} scope={props.disclosureScope} key={row.key} row={row} name={assistantName} mode={mode} actions={actions} tts={tts} isLast={i === lastAssistantIndex && !showLive} retainHeight={i === lastAssistantIndex} continuation={row === continued ? live ?? undefined : undefined} />
-  )
+      : <AssistantMessageRow sessionId={sessionId} scope={props.disclosureScope} key={row.key} row={row} name={assistantName} mode={mode} actions={actions} tts={tts} isLast={i === lastAssistantIndex && !showLive} retainHeight={i === lastAssistantIndex} continuation={row === continued ? continuedTurn : undefined} />
+  ), [renderUserMarkdown, sessionId, actions, props.disclosureScope, assistantName, mode, tts, lastAssistantIndex, showLive, continued, continuedTurn])
+  // Reuse mounted history; the opt-in virtualizer still creates only its visible window.
+  const renderedRows = useMemo(() => virtualize ? null : rows.map(renderRow), [virtualize, rows, renderRow])
 
   return (
     <WorklogDisclosureProvider key={scope} scope={scope ?? ""}>
@@ -368,7 +373,7 @@ export function Transcript(props: TranscriptProps) {
                   )
                 })}
               </div>
-            ) : rows.map((row, i) => renderRow(row, i))}
+            ) : renderedRows}
             {(pending || showLiveUser) && <UserMessageRow row={{ index: -1, key: 'pending-user', message: { role: 'user', content: liveUserText, attachments: pending ? props.pendingAttachments ?? [] : live?.userAttachments ?? [] } }} renderMarkdown={renderUserMarkdown} sessionId={sessionId} actions={{}} pending />}
             {showLive && live && <LiveTurnView turn={live} name={assistantName} mode={mode} userVisible omitToolIds={continuedTools} />}
             {/* The settled error row carries the message; only the frame's continuation link lives outside the session. */}

@@ -112,7 +112,7 @@ test('off-screen history halves long tasks during a 200-token stream', async ({ 
           return w.longTasks
         }))
         const after = await readTimings()
-        timings.push(Object.fromEntries(['TaskDuration', 'ScriptDuration', 'LayoutDuration', 'RecalcStyleDuration'].map((name) => [name, (after[name] ?? 0) - (before[name] ?? 0)])))
+        timings.push(Object.fromEntries(['TaskDuration', 'ScriptDuration', 'LayoutDuration', 'RecalcStyleDuration', 'LayoutCount', 'RecalcStyleCount'].map((name) => [name, (after[name] ?? 0) - (before[name] ?? 0)])))
         await cpu.send('Emulation.setCPUThrottlingRate', { rate: 1 })
       }
     }
