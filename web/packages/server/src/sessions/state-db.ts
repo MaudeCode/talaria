@@ -801,30 +801,40 @@ function sessionSources(db: DatabaseSync, cols: Set<string>, ids: string[]): Map
     for (const id of aliases) if (typeof id === 'string' && wanted.has(id) && !receiptOwners.has(id)) receiptOwners.set(id, owner)
   }
   if (tables.has('state_meta')) {
-    const read = db.prepare('SELECT value FROM state_meta WHERE key = ?')
+    const prefixes = [LOCAL_POLICY_PREFIX, 'gateway.retired_session.v1.', 'gateway.api.binding.v1.']
+    const keys = candidates.flatMap((owner) => prefixes.map((prefix) => `${prefix}${owner}`))
+    const metadata = new Map<string, string>()
+    const read = db.prepare('SELECT key, value FROM state_meta WHERE key IN (SELECT value FROM json_each(?))')
+    for (let i = 0; i < keys.length; i += 400) {
+      for (const row of read.all(JSON.stringify(keys.slice(i, i + 400))) as { key: string; value: string }[]) metadata.set(row.key, row.value)
+    }
+    // Keep receipt precedence in candidate order, independent of SQLite's key ordering.
     for (const owner of candidates) {
-      const raw = read.get(`${LOCAL_POLICY_PREFIX}${owner}`) as { value: string } | undefined
-      if (raw) rememberPolicy(owner, policyValue(raw.value))
-      if (read.get(`gateway.retired_session.v1.${owner}`)) retired.add(owner)
-      if (read.get(`gateway.api.binding.v1.${owner}`)) bindings.add(owner)
+      const key = `${LOCAL_POLICY_PREFIX}${owner}`
+      if (metadata.has(key)) rememberPolicy(owner, policyValue(metadata.get(key)))
+      if (metadata.has(`gateway.retired_session.v1.${owner}`)) retired.add(owner)
+      if (metadata.has(`gateway.api.binding.v1.${owner}`)) bindings.add(owner)
     }
   }
   const ledgerIds = new Set<string>()
   for (const [table, column] of [['session_admissions', 'target_session_id'], ['worker_executions', 'session_id']] as const) {
-    if (!tables.has(table)) continue
+    if (!tables.has(table) || !candidates.length) continue
     const hasLineage = tableColumns(db, table).has('lineage_json')
     for (let i = 0; i < candidates.length; i += 400) {
       const chunk = candidates.slice(i, i + 400)
       const marks = chunk.map(() => '?').join(',')
-      const linked = hasLineage ? ` OR EXISTS (SELECT 1 FROM json_each(lineage_json) WHERE value IN (${marks}))` : ''
-      const found = db.prepare(`SELECT ${column} AS id, ${hasLineage ? 'lineage_json' : 'NULL AS lineage_json'} FROM ${table} WHERE ${column} IN (${marks})${linked}`).all(...chunk, ...(hasLineage ? chunk : [])) as { id: string; lineage_json: string | null }[]
-      for (const row of found) {
+      for (const row of db.prepare(`SELECT ${column} AS id FROM ${table} WHERE ${column} IN (${marks})`).all(...chunk) as { id: string }[]) ledgerIds.add(row.id)
+    }
+    if (hasLineage) {
+      for (const row of db.prepare(`SELECT ${column} AS id, lineage_json FROM ${table} WHERE lineage_json IS NOT NULL`).iterate() as Iterable<{ id: string; lineage_json: string }>) {
+        const lineage: unknown = JSON.parse(row.lineage_json)
+        // json_each also visits non-array values; a matching malformed lineage must still fail closed.
+        const values = lineage && typeof lineage === 'object' ? Object.values(lineage) : [lineage]
+        const linked = values.some((value: unknown) => (typeof value === 'string' || (value !== null && typeof value === 'object')) && candidateSet.has(str(value)))
+        if (!candidateSet.has(row.id) && !linked) continue
+        if (!Array.isArray(lineage) || !lineage.every((v) => typeof v === 'string')) throw new Error('Unreadable Agent admission lineage')
         ledgerIds.add(row.id)
-        if (row.lineage_json !== null) {
-          const lineage: unknown = JSON.parse(row.lineage_json)
-          if (!Array.isArray(lineage) || !lineage.every((v) => typeof v === 'string')) throw new Error('Unreadable Agent admission lineage')
-          for (const sid of lineage) ledgerIds.add(sid)
-        }
+        for (const sid of lineage) ledgerIds.add(sid)
       }
     }
   }
@@ -840,7 +850,7 @@ function sessionSources(db: DatabaseSync, cols: Set<string>, ids: string[]): Map
       rememberPolicy(owner, policy)
     }
   }
-  const kanban = new Set(kanbanOwnedIds(db, cols, ids.filter((id) => rows.has(id))))
+  const kanban = new Set(kanbanOwnedIds(db, cols, new Map([...lineages].filter(([id]) => rows.has(id)))))
   for (const id of ids) {
     const row = rows.get(id)
     let source = kanban.has(id) ? 'kanban' : str(row?.source)
@@ -950,18 +960,16 @@ function resumeLineageWalker(db: DatabaseSync, cols: Set<string>): (sid: string)
  * TAL-793 (Agent `is_kanban_owned_session`): the `ids` whose compression lineage has a `kanban` `source` or
  * `created_source` (schema v31; `source` alone decides before it), a Kanban worker's transcript only its dispatcher continues.
  */
-function kanbanOwnedIds(db: DatabaseSync, cols: Set<string>, ids: string[]): string[] {
-  if (!ids.length) return []
-  const walk = resumeLineageWalker(db, cols)
-  const lineages = ids.map(walk)
-  const segments = [...new Set(lineages.flat())]
+function kanbanOwnedIds(db: DatabaseSync, cols: Set<string>, lineages: Map<string, string[]>): string[] {
+  if (!lineages.size) return []
+  const segments = [...new Set([...lineages.values()].flat())]
   const match = cols.has('created_source') ? "(source = 'kanban' OR created_source = 'kanban')" : "source = 'kanban'"
   const kanban = new Set<string>()
   for (let i = 0; i < segments.length; i += 500) {
     const chunk = segments.slice(i, i + 500)
     for (const row of db.prepare(`SELECT id FROM sessions WHERE id IN (${chunk.map(() => '?').join(',')}) AND ${match}`).all(...chunk) as { id: string }[]) kanban.add(row.id)
   }
-  return ids.filter((_, i) => lineages[i]!.some((sid) => kanban.has(sid)))
+  return [...lineages].filter(([, lineage]) => lineage.some((sid) => kanban.has(sid))).map(([id]) => id)
 }
 
 /** Python `state_db_has_session`: true only when `sid` is a row of the sessions table; a missing or unreadable db is false. */

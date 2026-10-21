@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Changed",
+      "summary": "Session ownership checks use fewer database queries when loading the conversation list.",
+      "highlight": false,
+      "components": ["web"]
+    }
+  ]
+}
