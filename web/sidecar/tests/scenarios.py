@@ -135,6 +135,7 @@ SCENARIOS: list[tuple[str, dict]] = [
     ("memory.write", {"profile_home": "{home}", "section": "user", "base": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855", "content": "Stale save"}),
     ("process.drain", {"profile_home": "{home}"}),
     ("process.list", {"profile_home": "{home}"}),
+    ("process.stop", {"profile_home": "{home}", "session_id": "webui-fixture", "process_id": "proc_fixture_missing"}),
     ("process.format_notification", {"event": {"type": "completion", "session_id": "proc_1", "command": "ls", "exit_code": 0, "output": "ok"}}),
     ("process.format_notification", {"event": {"type": "heartbeat", "session_id": "proc_1", "command": "npm test", "seq": 1, "interval": 60, "elapsed": 61, "output": "test passed", "started_at": 10}}),
     ("process.recover", {"base_home": "{home}"}),
