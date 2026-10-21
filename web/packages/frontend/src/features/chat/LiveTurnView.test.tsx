@@ -1,7 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { act, cleanup, fireEvent, render, waitFor } from '@testing-library/react'
 import { Transcript } from './Transcript'
-import { LiveStatusPill } from './LiveTurnView'
+import { LiveStatusPill, LiveTurnView } from './LiveTurnView'
+import * as activityProjection from './turnActivity'
 import { dispatch as storeDispatch, getStreamState, resetStreamStoreForTests } from '../../stream/store'
 import type { StreamAction } from '../../stream/reducer'
 import type { ChatEvent } from '../../contracts/sse'
@@ -38,6 +39,41 @@ function View({ run, mode = 'compact_worklog' }: { run: ReturnType<typeof liveRu
 }
 
 const pills = (container: HTMLElement) => [...container.querySelectorAll('.live-run-status')]
+
+describe('live activity memoization', () => {
+  it('reuses activity on metadata renders and updates every projection input', async () => {
+    const run = liveRun()
+    run.emit({ event: 'token', data: { text: 'Answer' } })
+    const project = vi.spyOn(activityProjection, 'liveActivity')
+    try {
+      const draw = (omitToolIds?: ReadonlySet<string>) => <LiveTurnView turn={run.turn} name="Assistant" mode="transparent_stream" userVisible omitToolIds={omitToolIds} />
+      const view = render(draw())
+      expect(project).toHaveBeenCalledTimes(1)
+      run.emit({ event: 'warning', data: { message: 'Notice' } })
+      view.rerender(draw())
+      expect(view.getByRole('status')).toHaveTextContent('Notice')
+      expect(project).toHaveBeenCalledTimes(1)
+      run.emit({ event: 'server_turn_started', data: { turn_id: 'assigned' } })
+      view.rerender(draw())
+      expect(project).toHaveLastReturnedWith(expect.objectContaining({ key: 'assigned' }))
+      run.emit({ event: 'token', data: { text: ' updated' } })
+      view.rerender(draw())
+      expect(await view.findByText('Answer updated')).toBeInTheDocument()
+      run.emit({ event: 'tool', data: { id: 'call', name: 'read_file', kind: 'read', target: 'sample.txt' } })
+      view.rerender(draw())
+      expect(view.container.querySelector('[data-tool-id="call"]')).not.toBeNull()
+      const omitted = new Set(['call'])
+      view.rerender(draw(omitted))
+      expect(view.container.querySelector('[data-tool-id="call"]')).toBeNull()
+      run.emit({ event: 'tool_complete', data: { id: 'call', name: 'read_file' } })
+      view.rerender(draw(omitted))
+      expect(project).toHaveBeenCalledTimes(6)
+      run.emit({ event: 'done', data: { terminal_state: 'tool_limit_reached' } })
+      view.rerender(draw(omitted))
+      expect(project).toHaveLastReturnedWith(expect.objectContaining({ status: 'tool_limit_reached' }))
+    } finally { project.mockRestore() }
+  })
+})
 
 describe('live status', () => {
   it("stays out of the transcript: the composer's top tab carries it (TAL-429)", () => {

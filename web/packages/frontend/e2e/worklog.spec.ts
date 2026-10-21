@@ -172,11 +172,15 @@ test(`live tool batches settle once: ${limited ? 'tool limit' : 'completed'}`, a
   const composerTop = (await page.locator('#composerBox').boundingBox())!.y
   expect(spinnerBox.y + spinnerBox.height).toBeLessThanOrEqual(composerTop)
   expect(spinnerBox.y + spinnerBox.height).toBeGreaterThan(composerTop - 40)
-  if (!limited && testInfo.project.name === 'desktop') {
-    await page.screenshot({ path: testInfo.outputPath('live-worklog-desktop.png'), fullPage: true })
-    await page.setViewportSize({ width: 800, height: 800 })
-    await page.screenshot({ path: testInfo.outputPath('live-worklog-narrow.png'), fullPage: true })
-    await page.setViewportSize({ width: 1280, height: 800 })
+  if (!limited) {
+    await expect(page.getByText('First pass', { exact: true })).toBeVisible()
+    await expect(page.getByText('Second pass', { exact: true })).toBeVisible()
+    await page.screenshot({ path: testInfo.outputPath(`live-worklog-${testInfo.project.name}.png`), fullPage: true })
+    if (testInfo.project.name === 'desktop') {
+      await page.setViewportSize({ width: 800, height: 800 })
+      await page.screenshot({ path: testInfo.outputPath('live-worklog-narrow.png'), fullPage: true })
+      await page.setViewportSize({ width: 1280, height: 800 })
+    }
   }
   await group.locator(':scope > button').click()
   for (const id of ['b', 'c']) await expect(page.locator(`[data-tool-id="${id}"] > button`)).toBeVisible()

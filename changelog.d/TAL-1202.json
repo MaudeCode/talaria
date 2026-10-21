@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Keep long streaming replies responsive by reusing completed text processing.",
+      "highlight": false,
+      "components": ["web"]
+    }
+  ]
+}
