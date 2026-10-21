@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Talaria Web chats now follow the profile's OpenRouter provider routing (allowed, ignored and ordered providers, sort, required parameters, data collection and minimum coding score), like the Agent's CLI and gateway.",
+      "highlight": false,
+      "components": ["web"]
+    }
+  ]
+}
