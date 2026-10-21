@@ -1,7 +1,8 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { cleanup, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { LinkCheckContext, Markdown, type LinkCheck } from './Markdown'
+import Markdown from './MarkdownRenderer'
+import { LinkCheckContext, type LinkCheck } from './LinkCheckContext'
 
 afterEach(() => { cleanup(); vi.restoreAllMocks() })
 

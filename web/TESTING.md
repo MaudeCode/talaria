@@ -129,6 +129,15 @@ this policy changes test boundaries rather than worker count.
 
 ## Frontend tests
 
+Both frontend build commands run `npm run check:bundle` after Vite emits
+`packages/frontend/dist/client/.vite/manifest.json`. The check follows the `_app`
+route's static imports and CSS, counts shared files once, and enforces the measured
+1,497,999-byte baseline plus 10% headroom. Its build-output Vitest checks keep the
+Markdown renderer, Mermaid runtime, and KaTeX runtime and stylesheet out of that
+graph. Dynamic imports are excluded from the layout budget. The Markdown browser
+test holds plugin requests to verify readable fallback code, then releases them
+and checks diagram and formula rendering on desktop and mobile.
+
 `packages/frontend/src/**/*.test.ts(x)` run in jsdom against the in-memory contract server; `e2e/*.spec.ts`
 run Playwright against the built assets and the Node server started by `e2e/server.ts`
 (`HERMES_E2E_PORT`, `HERMES_WEBUI_AGENT_DIR`, `HERMES_WEBUI_SIDECAR_COMMAND` are honoured; without an Agent dir or

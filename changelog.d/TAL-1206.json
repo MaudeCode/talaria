@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Changed",
+      "summary": "Web pages load less chat rendering code, with diagrams and formulas loaded only when needed.",
+      "highlight": false,
+      "components": ["web"]
+    }
+  ]
+}

@@ -7,6 +7,42 @@ import { redactSessionData } from '../../server/dist/redact.js'
 
 test.use({ serviceWorkers: 'block' })
 
+test('Markdown renders diagrams and math after lazy loading', async ({ page }, testInfo) => {
+  const manifest = JSON.parse(readFileSync(join(import.meta.dirname, '../dist/client/.vite/manifest.json'), 'utf8')) as Record<string, { file: string }>
+  const pluginFiles = Object.entries(manifest).filter(([key]) => /@streamdown\/(?:mermaid|math)\/dist\/index\.js|katex\/dist\/katex\.min\.css/.test(key)).map(([, chunk]) => chunk.file)
+  expect(pluginFiles).toHaveLength(3)
+  const requested: string[] = []
+  let release!: () => void
+  const gate = new Promise<void>((resolve) => { release = resolve })
+  await page.route('**/assets/**', async (route) => {
+    const file = new URL(route.request().url()).pathname.slice(1)
+    if (pluginFiles.includes(file)) { requested.push(file); await gate }
+    await route.continue()
+  })
+  let content = 'A plain Markdown answer.'
+  await page.route('**/api/session?**', (route) => {
+    const messages = [{ role: 'user', id: 1, content: 'Show a diagram and a formula' }, { role: 'assistant', id: 2, content }]
+    return route.fulfill({ json: { session: {
+      session_id: 'markdown-plugins', title: 'Diagram and formula', messages: redactSessionData({ messages: hydrateAnchorActivityScenes(withTurnIds(messages), {}) }, true).messages,
+    } } })
+  })
+  await page.goto('/session/markdown-plugins')
+  const answer = page.locator('[data-final-answer="1"]')
+  await expect(answer).toContainText('A plain Markdown answer.')
+  expect(requested).toEqual([])
+  content = '```mermaid\ngraph TD\n  A[Start] --> B[Finish]\n```\n\n$$\nx^2 + y^2 = z^2\n$$'
+  try {
+    await page.reload({ waitUntil: 'domcontentloaded' })
+    await expect.poll(() => requested.length).toBe(3)
+    await expect(answer.locator('code').first()).toContainText('graph TD')
+    await expect(answer.locator('.katex')).toHaveCount(0)
+  } finally { release() }
+  await expect(answer.locator('svg').filter({ hasText: 'Finish' })).toBeVisible()
+  await expect(answer.locator('.katex')).toBeVisible()
+  await expect(answer.locator('.katex')).toHaveCSS('font-family', /KaTeX_Main/)
+  await page.screenshot({ path: testInfo.outputPath(`markdown-plugins-${testInfo.project.name}.png`), fullPage: true })
+})
+
 test('Markdown lists keep their numbers and bullets', async ({ page }, testInfo) => {
   const messages = [
     { role: 'user', id: 1, content: 'List the steps' },

@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { cleanup, fireEvent, render, screen } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { AssistantMessageRow, BackgroundUpdateRow, NoticeRow, UserMessageRow } from './MessageRow'
 import { Transcript } from './Transcript'
 import { readFileSync } from 'node:fs'
@@ -48,12 +48,12 @@ describe('server-collapsed bodies (TAL-456)', () => {
     expect(screen.queryByRole('button', { name: 'Show full message' })).toBeNull()
   })
 
-  it('shows a long final answer as the scene excerpt until expanded', () => {
+  it('shows a long final answer as the scene excerpt until expanded', async () => {
     const scene = { version: 'activity_scene_v1' as const, activity_rows: [], final_answer: full, final_answer_excerpt: 'Opening line.', terminal_state: 'completed' }
     const row = groupAssistantTurns(projectMessages([{ role: 'assistant', id: 1, content: full, _anchor_activity_scene: scene }]))[0]!
     const view = render(<AssistantMessageRow row={row} name="Assistant" mode="compact_worklog" actions={{}} tts={false} isLast />)
     const answer = () => view.container.querySelector('[data-final-answer="1"]')?.textContent?.trim()
-    expect(answer()).toBe('Opening line.')
+    await waitFor(() => { expect(answer()).toBe('Opening line.') }, { timeout: 5000 })
     fireEvent.click(screen.getByRole('button', { name: 'Show full message' }))
     expect(answer()).toContain('tail tail')
   })
