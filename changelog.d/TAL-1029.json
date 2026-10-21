@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Changed",
+      "summary": "Reduce unnecessary processing when masking sensitive chat text.",
+      "highlight": false,
+      "components": ["web"]
+    }
+  ]
+}
