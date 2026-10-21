@@ -333,13 +333,12 @@ def _credits() -> str:
     return "\n".join(lines)
 
 
-def _fire_pre_command(command: str, canonical: str, arg: str, session_id: str) -> None:
+def _fire_pre_command(command: str, session_id: str) -> None:
     """The Agent's observer-only ``pre_command`` hook, which every local surface fires before a recognised command runs."""
-    try:
-        from hermes_cli.plugins import fire_pre_command_hook
-    except ImportError:
-        return
-    fire_pre_command_hook(surface="webui", command=canonical, alias_used=_split_slash_command(command)[0], args_raw=arg,
+    from hermes_cli.plugins import fire_pre_command_hook
+
+    typed, arg = _split_slash_command(command)
+    fire_pre_command_hook(surface="webui", command=_ALIASES.get(typed, typed), alias_used=typed, args_raw=arg,
                           session_key=session_id or None, platform="webui")
 
 
@@ -348,7 +347,7 @@ def execute_agent_command(command: str, session_id: str = "") -> str | None:
     canonical, arg_string = parse_slash_command(command)
     if canonical not in _ALLOWED:
         return None
-    _fire_pre_command(command, canonical, arg_string, session_id)
+    _fire_pre_command(command, session_id)
     if canonical == "reload-mcp":
         return _reload_mcp()
     if canonical == "reload-skills":
@@ -362,7 +361,7 @@ def _invoke_plugin_handler(handler, arg: str, session_id: str):
     """``handler(arg)`` plus the session context it declares, as every Agent surface calls it (v0.22.3+)."""
     try:
         from hermes_cli.plugin_command_dispatch import invoke_plugin_command
-    except ImportError:
+    except ImportError:  # Delete this fallback once v0.22.3 is the oldest supported Agent.
         return handler(arg)
     return invoke_plugin_command(handler, arg, source=None, session_id=session_id, session_key=session_id, platform="webui")
 
@@ -380,7 +379,7 @@ def execute_plugin_command(command: str, session_id: str = "") -> str | None:
         raise RpcError("plugin command lookup failed", condition="plugins_unavailable") from exc
     if not handler:
         return None
-    _fire_pre_command(command, base, arg, session_id)
+    _fire_pre_command(command, session_id)
     try:
         return str(resolve_plugin_command_result(_invoke_plugin_handler(handler, arg, session_id)) or "(no output)")
     except Exception as exc:  # noqa: BLE001 - user-facing text, never a transport error
