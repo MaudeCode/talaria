@@ -67,20 +67,25 @@ export function Transcript(props: TranscriptProps) {
   // The live turn gives way to the server's scene as soon as a terminal frame brings the settled session.
   const showLive = !!live && (!isTerminal(live.status) || live.doneSession === null)
   const grouped = useMemo(() => groupAssistantTurns(rawRows), [rawRows])
-  const rows = useMemo(() => {
+  const streamId = live?.streamId, turnId = live?.turnId, claimsPersistedRows = live?.claimsPersistedRows, userMessageId = live?.userMessageId
+  const { rows, hasLiveUser, hasPersistedPending } = useMemo(() => {
     // A live turn attached without replay cannot restore the rows the server already persisted, so it leaves them visible.
-    if (!showLive || !live?.claimsPersistedRows) return grouped
     // The live turn owns rows the server already stamped with its turn id.
-    return grouped.filter((row) => row.message.role !== 'assistant' || (row.turnKey !== live.streamId && row.turnKey !== live.turnId))
-  }, [grouped, live, showLive])
+    const rows = showLive && claimsPersistedRows ? grouped.filter((row) => row.message.role !== 'assistant' || (row.turnKey !== streamId && row.turnKey !== turnId)) : grouped
+    return {
+      rows,
+      hasLiveUser: rows.some((row) => row.message.role === 'user' && messageKey(row.message) === userMessageId),
+      hasPersistedPending: streamId !== undefined && rows.some((row) => row.message.role === 'user' && ((userMessageId !== null && messageKey(row.message) === userMessageId) || row.message._turn_id === streamId || (turnId !== null && row.message._turn_id === turnId))),
+    }
+  }, [grouped, showLive, claimsPersistedRows, streamId, turnId, userMessageId])
   // A live turn attached without replay continues the running scene the server shipped for its persisted rows (TAL-374).
-  const continued = useMemo(() => (showLive && live && !live.claimsPersistedRows ? rows.find((row) => isReplyRow(row.message) && (row.turnKey === live.streamId || row.turnKey === live.turnId)) : undefined), [rows, live, showLive])
+  const continued = useMemo(() => (showLive && streamId !== undefined && !claimsPersistedRows ? rows.find((row) => isReplyRow(row.message) && (row.turnKey === streamId || row.turnKey === turnId)) : undefined), [rows, streamId, turnId, claimsPersistedRows, showLive])
   const continuedTools = useMemo(() => (continued ? toolIdsOf(persistedActivity(continued)) : undefined), [continued])
   const lastRowIsUser = rows.length > 0 && rows[rows.length - 1]?.message.role === 'user' && !rows[rows.length - 1]?.message._marker_kind && !rows[rows.length - 1]?.message._delivery
-  const showLiveUser = !!live && !isTerminal(live.status) && (live.userText.trim() !== '' || live.userAttachments.length > 0) && (live.userMessageId !== null || !lastRowIsUser) && !rows.some((r) => r.message.role === 'user' && messageKey(r.message) === live.userMessageId)
+  const showLiveUser = !!live && !isTerminal(live.status) && (live.userText.trim() !== '' || live.userAttachments.length > 0) && (live.userMessageId !== null || !lastRowIsUser) && !hasLiveUser
   // The submitted occurrence uses one slot until the server's identified row takes over.
   // Reconcile a newly observed turn by server identity, including a terminal snapshot that beats the POST response.
-  const persistedPending = !!live && live.streamId !== props.pendingPreviousStreamId && rows.some((row) => row.message.role === 'user' && ((live.userMessageId !== null && messageKey(row.message) === live.userMessageId) || row.message._turn_id === live.streamId || (live.turnId !== null && row.message._turn_id === live.turnId)))
+  const persistedPending = !!live && live.streamId !== props.pendingPreviousStreamId && hasPersistedPending
   const pending = pendingUserText !== undefined && !persistedPending
   const liveUserText = pending ? pendingUserText : showLiveUser ? (live?.userText ?? '') : ''
   useAutoRead(props.autoRead === true, rows, live, !showLive)
