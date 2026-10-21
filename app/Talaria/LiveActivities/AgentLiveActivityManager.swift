@@ -7,6 +7,9 @@ final class AgentLiveActivityManager: AgentLiveActivityManaging {
     static let shared = AgentLiveActivityManager()
 
     private let minimumUpdateInterval: TimeInterval
+    private let now: () -> Date
+    private let updateActivity: ((AgentRunActivityAttributes.ContentState) -> Void)?
+    private let setInterimAssistant: (String, AgentRunActivityAttributes.ContentState) -> AgentRunActivityAttributes.ContentState
     private var activity: Activity<AgentRunActivityAttributes>?
     private(set) var currentState: AgentRunActivityAttributes.ContentState?
     private var currentSessionID: String?
@@ -20,15 +23,27 @@ final class AgentLiveActivityManager: AgentLiveActivityManaging {
     // the foreground coordinator still owns. A terminated run starts from a fresh
     // singleton (nothing tracked), so the #246 orphan fix is unaffected. (PR #266 #3)
     private(set) var activeConnectedStreamID: String?
-    private var rawResponseText = ""
+    private var responsePrefix = (text: "", isFull: false)
     private var lastSentUpdateAt: Date?
+    private var lastSentState: AgentRunActivityAttributes.ContentState?
+    static let staleContentInterval: TimeInterval = 300
     private var pendingUpdateTask: Task<Void, Never>?
     private var updateGeneration = 0
     private var lifecycleGeneration = 0
     private let relayRegistration = PerSessionRelayActivityRegistration()
 
-    init(minimumUpdateInterval: TimeInterval = 1.5) {
+    init(
+        minimumUpdateInterval: TimeInterval = 1.5,
+        now: @escaping () -> Date = Date.init,
+        updateActivity: ((AgentRunActivityAttributes.ContentState) -> Void)? = nil,
+        setInterimAssistant: @escaping (String, AgentRunActivityAttributes.ContentState) -> AgentRunActivityAttributes.ContentState = {
+            AgentRunActivityStateReducer.settingInterimAssistant($0, on: $1)
+        }
+    ) {
         self.minimumUpdateInterval = minimumUpdateInterval
+        self.now = now
+        self.updateActivity = updateActivity
+        self.setInterimAssistant = setInterimAssistant
     }
 
     func armAggregateForLocalWork(sessionID: String, sessionTitle: String, publisherURL: URL) {
@@ -73,7 +88,7 @@ final class AgentLiveActivityManager: AgentLiveActivityManaging {
         pendingUpdateTask?.cancel()
         pendingUpdateTask = nil
         relayRegistration.cancelObservation()
-        rawResponseText = ""
+        responsePrefix = (text: "", isFull: false)
         currentSessionID = normalizedSessionID
         currentStreamID = normalizedStreamID
         let state = AgentRunActivityStateReducer.initialState(
@@ -84,8 +99,15 @@ final class AgentLiveActivityManager: AgentLiveActivityManaging {
         )
         currentState = state
         lastSentUpdateAt = nil
+        lastSentState = nil
         let lifecycle = nextLifecycleGeneration()
         _ = nextUpdateGeneration()
+
+        if let updateActivity {
+            updateActivity(state)
+            recordSentUpdate(state)
+            return
+        }
 
         guard TalariaLiveActivityMode.current == .perSession else {
             activity = nil
@@ -168,19 +190,27 @@ final class AgentLiveActivityManager: AgentLiveActivityManaging {
             }
         case .token(let text):
             guard !text.isEmpty else { return }
-            rawResponseText += text
+            guard !responsePrefix.isFull else {
+                updateCurrentState(immediate: false) { state in
+                    AgentRunActivityStateReducer.continuingAssistant(on: state)
+                }
+                return
+            }
+            responsePrefix = AgentRunActivitySanitizer.responsePrefix(responsePrefix.text + text)
             updateCurrentState(immediate: false) { state in
-                AgentRunActivityStateReducer.settingInterimAssistant(rawResponseText, on: state)
+                setInterimAssistant(responsePrefix.text, state)
             }
         case .interimAssistant(let text):
             let excerpt = text.trimmingCharacters(in: .whitespacesAndNewlines)
             guard !excerpt.isEmpty else { return }
-            rawResponseText = rawResponseText.isEmpty ? excerpt : rawResponseText
+            if responsePrefix.text.isEmpty {
+                responsePrefix = AgentRunActivitySanitizer.responsePrefix(excerpt)
+            }
             updateCurrentState { state in
-                AgentRunActivityStateReducer.settingInterimAssistant(excerpt, on: state)
+                setInterimAssistant(excerpt, state)
             }
         case .clearResponseExcerpt:
-            rawResponseText = ""
+            responsePrefix = (text: "", isFull: false)
             updateCurrentState { state in
                 AgentRunActivityStateReducer.clearingResponseExcerpt(state: state)
             }
@@ -421,10 +451,10 @@ private extension AgentLiveActivityManager {
                     )
                 }
                 let latestState = currentState ?? state
+                recordSentUpdate(latestState)
                 await existing.update(
                     ActivityContent(state: latestState, staleDate: staleDate(for: latestState))
                 )
-                lastSentUpdateAt = Date()
                 return
             }
 
@@ -449,12 +479,13 @@ private extension AgentLiveActivityManager {
                     sessionID: sessionID
                 )
             }
+            recordSentUpdate(state)
             if let latestState = currentState, latestState != state {
+                recordSentUpdate(latestState)
                 await requestedActivity.update(
                     ActivityContent(state: latestState, staleDate: staleDate(for: latestState))
                 )
             }
-            lastSentUpdateAt = Date()
         } catch {
             activity = nil
         }
@@ -466,10 +497,16 @@ private extension AgentLiveActivityManager {
     ) {
         guard let currentState else { return }
 
-        let updatedState = transform(currentState)
+        var updatedState = transform(currentState)
+        let changed = !updatedState.hasSameContent(as: currentState)
         self.currentState = updatedState
 
-        guard activity != nil else { return }
+        guard activity != nil || updateActivity != nil else { return }
+        guard changed || heartbeatIsDue(for: updatedState) else { return }
+        if !changed {
+            updatedState.updatedAt = now()
+            self.currentState = updatedState
+        }
         scheduleUpdate(updatedState, immediate: immediate)
     }
 
@@ -477,7 +514,7 @@ private extension AgentLiveActivityManager {
         _ state: AgentRunActivityAttributes.ContentState,
         immediate: Bool
     ) {
-        let now = Date()
+        let now = now()
         if immediate || lastSentUpdateAt == nil || now.timeIntervalSince(lastSentUpdateAt!) >= minimumUpdateInterval {
             pendingUpdateTask?.cancel()
             pendingUpdateTask = nil
@@ -514,10 +551,29 @@ private extension AgentLiveActivityManager {
         generation: Int
     ) async {
         guard generation == updateGeneration else { return }
-        guard let activity else { return }
+        if let lastSentState, state.hasSameContent(as: lastSentState), !heartbeatIsDue(for: state) { return }
+        guard activity != nil || updateActivity != nil else { return }
+        recordSentUpdate(state)
+        if let updateActivity {
+            updateActivity(state)
+        } else if let activity {
+            await activity.update(ActivityContent(state: state, staleDate: staleDate))
+        }
+    }
 
-        await activity.update(ActivityContent(state: state, staleDate: staleDate))
-        lastSentUpdateAt = Date()
+    private func recordSentUpdate(_ state: AgentRunActivityAttributes.ContentState) {
+        lastSentState = state
+        lastSentUpdateAt = now()
+    }
+
+    private func heartbeatIsDue(for state: AgentRunActivityAttributes.ContentState) -> Bool {
+        guard !state.isFinal else { return false }
+        guard let lastSentUpdateAt else { return true }
+        return now().timeIntervalSince(lastSentUpdateAt) >= staleInterval(for: state)
+    }
+
+    private func staleInterval(for state: AgentRunActivityAttributes.ContentState) -> TimeInterval {
+        state.isStale ? 90 : Self.staleContentInterval
     }
 
     private func endActivity(
@@ -589,7 +645,7 @@ private extension AgentLiveActivityManager {
         // #246: keep the widget looking current longer so a suspended run doesn't
         // get the dimmed "stale" treatment within seconds. The system-rendered
         // elapsed timer keeps ticking regardless of this window.
-        state.isFinal ? nil : Date().addingTimeInterval(state.isStale ? 90 : 300)
+        state.isFinal ? nil : now().addingTimeInterval(staleInterval(for: state))
     }
 
     private func reset() {
@@ -599,8 +655,9 @@ private extension AgentLiveActivityManager {
         currentStreamID = nil
         currentPublisherURL = nil
         activeConnectedStreamID = nil
-        rawResponseText = ""
+        responsePrefix = (text: "", isFull: false)
         lastSentUpdateAt = nil
+        lastSentState = nil
         pendingUpdateTask?.cancel()
         pendingUpdateTask = nil
         relayRegistration.reset()

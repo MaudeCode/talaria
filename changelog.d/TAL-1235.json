@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Live Activities use less processing and battery during long responses.",
+      "highlight": false,
+      "components": ["app"]
+    }
+  ]
+}

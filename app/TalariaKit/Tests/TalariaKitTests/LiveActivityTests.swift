@@ -745,6 +745,43 @@ final class LiveActivityTests: XCTestCase {
         XCTAssertTrue(TalariaRelayClient(credentials: credentials, session: injected).session === injected)
     }
 
+    func testResponsePrefixIsBoundedAndPreservesSplitUnicodeAndWhitespace() {
+        var prefix = (text: "", isFull: false)
+        let tokens = [" ", "Cafe", "\u{301}", "\n", "  ", "👨‍👩‍👧‍👦", "\t", String(repeating: "x", count: 200)]
+        var raw = ""
+        for token in tokens {
+            raw += token
+            prefix = AgentRunActivitySanitizer.responsePrefix(prefix.text + token)
+            XCTAssertEqual(
+                AgentRunActivitySanitizer.responseExcerpt(prefix.text),
+                AgentRunActivitySanitizer.responseExcerpt(raw)
+            )
+            XCTAssertLessThanOrEqual(prefix.text.count, 142)
+        }
+        XCTAssertTrue(prefix.isFull)
+        let whitespace = AgentRunActivitySanitizer.responsePrefix(String(repeating: " ", count: 10_000))
+        XCTAssertEqual(whitespace.text, "")
+        XCTAssertFalse(whitespace.isFull)
+    }
+
+    func testContentComparisonIgnoresOnlyUpdatedAt() {
+        let state = AgentRunActivityStateReducer.initialState(sessionID: "comparison", sessionTitle: "Comparison")
+        var other = state
+        other.updatedAt += 300
+        XCTAssertTrue(state.hasSameContent(as: other))
+        let changes: [(inout AgentRunActivityAttributes.ContentState) -> Void] = [
+            { $0.sessionID = "another" }, { $0.sessionTitle = "Another" },
+            { $0.status = .thinking }, { $0.currentActivity = "Thinking" },
+            { $0.responseExcerpt = "Reply" }, { $0.startedAt -= 1 },
+            { $0.isStale = true }, { $0.isFinal = true }, { $0.errorSummary = "Failed" }
+        ]
+        for change in changes {
+            other = state
+            change(&other)
+            XCTAssertFalse(state.hasSameContent(as: other))
+        }
+    }
+
     func testSanitizesLiveActivityText() {
         let title = AgentRunActivitySanitizer.sessionTitle("  A very long Hermes session title with\nmultiple lines and extra words  ")
         let activity = AgentRunActivitySanitizer.activityLine("Reading /Users/example/project/Secrets.swift\nwith details")
