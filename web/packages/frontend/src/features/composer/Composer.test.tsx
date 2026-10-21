@@ -8,7 +8,7 @@ import { DEFAULT_BOOTSTRAP } from '../../contracts/adapters/memory'
 import type { Session, Settings } from '../../contracts'
 import * as api from '../../api/endpoints'
 import { dispatch, getStreamState, resetStreamStoreForTests, getTurnIntent } from '../../stream/store'
-import type { LiveTurn } from '../../stream/reducer'
+import { isTerminal, type LiveTurn } from '../../stream/reducer'
 import type { QueuedTurn } from './queue'
 import { deferred } from '../../test/fixtures'
 import { resetConnectionsForTests } from '../../stream/connection'
@@ -32,7 +32,7 @@ function renderComposer(session: Session | null, live: LiveTurn | null = null, o
     <QueryClientProvider client={qc}>
       <BootstrapContext.Provider value={DEFAULT_BOOTSTRAP}>
         <Composer
-          sessionId={record?.session_id ?? null} session={record} live={turn} settings={settings} onEnsureSession={onEnsureSession} onLocalCommand={onLocalCommand}
+          sessionId={record?.session_id ?? null} session={record} busy={!!turn && !isTerminal(turn.status)} streamId={turn?.streamId ?? null} settings={settings} onEnsureSession={onEnsureSession} onLocalCommand={onLocalCommand}
           terminalOpen={false} onToggleTerminal={noop} onModelChange={noop} onWorkspaceChange={noop} onToolsetsChange={noop} onReasoningChange={noop} reasoning={null}
           yolo={false} onToggleYolo={noop} queued={[]} onQueue={onQueue} onQueueChange={noop} {...overrides}
         />

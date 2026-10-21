@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useLayoutEffect, useRef, useState, type ClipboardEvent, type DragEvent, type KeyboardEvent } from 'react'
+import { memo, useCallback, useEffect, useLayoutEffect, useRef, useState, type ClipboardEvent, type DragEvent, type KeyboardEvent } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
 import { Mic, Paperclip, Square, ArrowUp, TerminalSquare, SlidersHorizontal, ListPlus, Layers } from 'lucide-react'
 import { m } from '../../paraglide/messages.js'
@@ -6,8 +6,6 @@ import * as api from '../../api/endpoints'
 import { keys } from '../../api/queryKeys'
 import type { Session, Settings } from '../../contracts'
 import type { ExecutionMode, OwnerActionRequest } from '@maudecode/talaria-web-contracts'
-import type { LiveTurn } from '../../stream/reducer'
-import { isTerminal } from '../../stream/reducer'
 import { adoptTurn, cancelTurn, getStreamContext, retryPendingTurn, startTurn } from '../../stream/connection'
 import { forgetOwnSteer, onReturnToComposer, rememberOwnSteer, returnToComposer } from './composerReturn'
 import { dispatch, getTurnIntent, setTurnIntent, useTurnIntent } from '../../stream/store'
@@ -46,7 +44,8 @@ export interface ComposerProps {
   session: Session | null
   /** Choices made on the unsaved chat, shown by the chips until the session exists. */
   pendingChoices?: { model?: string; model_provider?: string | null; workspace?: string; enabled_toolsets?: string[] | null; execution_mode?: ExecutionMode } | undefined
-  live: LiveTurn | null
+  busy: boolean
+  streamId: string | null
   settings: Settings | undefined
   /** Creates the unsaved chat's session; `onCreated` hears its id before the route changes to it. */
   onEnsureSession: (onCreated?: (sessionId: string) => void) => Promise<Session>
@@ -129,8 +128,8 @@ function fileKey(f: File): string {
  */
 let handoff: { draft: { readonly current: string }; files: File[]; sessionId: string | null } | null = null
 
-export function Composer(props: ComposerProps) {
-  const { sessionId, session, live, settings, onEnsureSession, onLocalCommand, terminalOpen, onToggleTerminal, onModelChange, onWorkspaceChange, onNewWorktreeChat, onRemoveWorktree, onToolsetsChange, onExecutionModeChange, onReasoningChange, reasoning, reasoningLevels, reasoningSupported = true, pendingChoices, locked = false, yolo, onToggleYolo, queued, onQueue, onQueueChange, clarify, notices = [] } = props
+export const Composer = memo(function Composer(props: ComposerProps) {
+  const { sessionId, session, busy, streamId, settings, onEnsureSession, onLocalCommand, terminalOpen, onToggleTerminal, onModelChange, onWorkspaceChange, onNewWorktreeChat, onRemoveWorktree, onToolsetsChange, onExecutionModeChange, onReasoningChange, reasoning, reasoningLevels, reasoningSupported = true, pendingChoices, locked = false, yolo, onToggleYolo, queued, onQueue, onQueueChange, clarify, notices = [] } = props
   const bootstrap = useBootstrap()
   const qc = useQueryClient()
   const localStateId = composerStateId(session)
@@ -221,7 +220,6 @@ export function Composer(props: ComposerProps) {
     r.stop()
   }, [answering])
   useEffect(() => () => { liveDictation.current?.cancel() }, [])
-  const busy = !!live && !isTerminal(live.status)
   const busyMode: BusyMode = (settings?.default_message_mode as BusyMode | undefined) ?? 'steer'
   const sendKey = settings?.send_key ?? 'enter'
   // While a clarification is pending the box edits its answer; the chat draft keeps its own state.
@@ -662,7 +660,7 @@ export function Composer(props: ComposerProps) {
   const pinnedTasks = backgroundTasks.filter((t) => t.pinned)
   // The chips over the card: the running turn first, then runtime notices and this message's state.
   const chipNotices: ComposerNotice[] = [
-    ...(busy && live ? [{ id: 'live', content: <LiveStatusPill turn={live} background={session?.active_turn_origin === 'background' && session.active_stream_id === live.streamId} /> }] : []),
+    ...(busy ? [{ id: 'live', content: <LiveStatusPill sessionId={sessionId} background={session?.active_turn_origin === 'background' && session.active_stream_id === streamId} /> }] : []),
     ...notices,
     ...(intent.send ? [{ id: 'send', tone: intent.send.error ? 'error' as const : 'neutral' as const, content: <span role="status">{intent.send.uncertain ? m.composer_send_uncertain() : intent.send.error ?? m.composer_sending()}</span>, ...(intent.send.error && !intent.send.uncertain && !intent.send.files && sessionId ? { action: { label: m.retry(), run: () => { void retryPendingTurn(sessionId)?.catch(() => undefined) } } } : {}) }] : []),
     ...(intent.stop ? [{ id: 'stop', tone: intent.stop.failed ? 'error' as const : 'neutral' as const, content: <span role="status">{intent.stop.failed ? m.composer_stop_failed() : m.composer_stopping()}</span> }] : []),
@@ -779,4 +777,4 @@ export function Composer(props: ComposerProps) {
       )}
     </div>
   )
-}
+})

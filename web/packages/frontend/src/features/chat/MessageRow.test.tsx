@@ -8,7 +8,7 @@ import type { Message } from '../../contracts'
 import { groupAssistantTurns } from './turnActivity'
 import { projectMessages } from './useTranscript'
 import { LiveStatusPill } from './LiveTurnView'
-import type { LiveTurn } from '../../stream/reducer'
+import { dispatch, resetStreamStoreForTests } from '../../stream/store'
 
 afterEach(cleanup)
 
@@ -129,10 +129,11 @@ describe('background updates (TAL-460)', () => {
   })
 
   it('says the run is working on background results only while the server says a background result started it', () => {
-    const turn = { status: 'streaming', startedAt: Date.now(), tps: null } as unknown as LiveTurn
-    const { rerender } = render(<LiveStatusPill turn={turn} background />)
+    resetStreamStoreForTests()
+    dispatch({ type: 'start', sessionId: 'background-status', streamId: 'run', turnId: null, userMessageId: null, userText: '', now: Date.now() })
+    const { rerender } = render(<LiveStatusPill sessionId="background-status" background />)
     expect(screen.getByRole('status')).toHaveTextContent('Working on background results')
-    rerender(<LiveStatusPill turn={turn} />)
+    rerender(<LiveStatusPill sessionId="background-status" />)
     expect(screen.getByRole('status')).toHaveTextContent('Working')
   })
 })

@@ -5,6 +5,7 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } fr
 import { useNavigate, useSearch } from '@tanstack/react-router'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { m } from '../../paraglide/messages.js'
+import { useLocale } from '../../i18n/useLocale'
 import { cn } from '../../ui/cn'
 import { MAIN_VIEW } from '../../shell/AppShell'
 import { PanelRight, TerminalSquare } from 'lucide-react'
@@ -23,7 +24,7 @@ import { useEditMessage } from './useEditMessage'
 import { Transcript } from './Transcript'
 import { TranscriptSkeleton } from './TranscriptSkeleton'
 import { Composer, turnRequest } from '../composer/Composer'
-import { composerStateId, useQueuedTurns } from '../composer/queue'
+import { composerStateId, useQueuedTurns, type QueuedTurn } from '../composer/queue'
 import { returnToComposer } from '../composer/composerReturn'
 import { ApprovalCard } from './ApprovalCard'
 import { ClarifyCard } from './ClarifyCard'
@@ -48,6 +49,7 @@ import { bindFirstSend, ownsFirstSend, useFirstSend } from './firstSend'
 
 export function ChatView({ sessionId }: { sessionId: string | null }) {
   const bootstrap = useBootstrap()
+  const locale = useLocale()
   const qc = useQueryClient()
   const { mutateAsync: renameSession } = useResourceMutation({ resource: () => `session:${sessionId}`, intent: (title: string) => ({ title, label: m.rename() }), mutationFn: (title) => { if (!sessionId) throw new Error(m.error_generic()); return api.renameSession(sessionId, title) } })
 
@@ -60,8 +62,10 @@ export function ChatView({ sessionId }: { sessionId: string | null }) {
   const vaultPrompt = useVaultPrompt(sessionId, live)
   useMarkViewed(sessionId, !session?.owner_attachment && (query.isFetchedAfterMount || (query.isSuccess && !query.isStale)), live && isTerminal(live.status) ? live.streamId : null)
   const [terminalOpen, setTerminalOpen] = useState(false)
+  const onToggleTerminal = useCallback(() => setTerminalOpen((t) => !t), [])
   const { sidePanelOpen } = useShellState()
   const [queued, setQueued] = useQueuedTurns(composerStateId(session))
+  const onQueue = useCallback((entry: QueuedTurn) => setQueued((q) => [...q, entry]), [setQueued])
   const draining = useRef(false)
   const [failedQueued, setFailedQueued] = useState<string | null>(null)
   const [yolo, setYolo] = useState(false)
@@ -114,6 +118,7 @@ export function ChatView({ sessionId }: { sessionId: string | null }) {
   }, [session, settings.data, bootstrap.profile, qc, navigate, pending, creation])
 
   const [removingWorktree, setRemovingWorktree] = useState(false)
+  const onRemoveWorktree = useCallback(() => setRemovingWorktree(true), [])
   // TAL-605: a new conversation in its own git worktree of the chosen workspace; the server creates the worktree.
   const newWorktreeChat = useCallback(async (workspace: string | undefined) => {
     try {
@@ -126,6 +131,7 @@ export function ChatView({ sessionId }: { sessionId: string | null }) {
       showToast(m.workspace_worktree_failed() + (e instanceof Error ? e.message : String(e)), 4000, 'error')
     }
   }, [pending, bootstrap.profile, qc, navigate])
+  const onNewWorktreeChat = useCallback((workspace: string | undefined) => { void newWorktreeChat(workspace) }, [newWorktreeChat])
 
   // Reasoning effort is server state shared with the CLI (config.yaml), keyed on the session's model.
   const reasoningKey = ['reasoning', session?.model ?? null, session?.model_provider ?? null] as const
@@ -309,7 +315,15 @@ export function ChatView({ sessionId }: { sessionId: string | null }) {
     else if (readPersisted('hermes-webui-session-empty') === sessionId) removePersisted('hermes-webui-session-empty')
   }, [sessionId, query.isSuccess, rows.length])
 
-  const runtime = useRuntimeNotices({ live, onRetry: () => { void onRegenerate() }, compressingSince, agentNotices: session?.notices, goal: session?.goal })
+  const onRetry = useCallback(() => { void onRegenerate() }, [onRegenerate])
+  const runtime = useRuntimeNotices({ live, onRetry, compressingSince, agentNotices: session?.notices, goal: session?.goal })
+  const notices = useMemo(() => [
+    ...runtime.notices,
+    ...(operation ? [{ id: 'history', content: <span role="status">{operation}</span> }] : []),
+    ...(session?.owner_attachment?.restarting ? [{ id: 'owner-restarting', content: <span role="status">{m.owner_restarting()}</span> }] : []),
+    ...(failedQueued && queued.some((q) => q.id === failedQueued) ? [{ id: 'queue-failed', tone: 'error' as const, content: m.composer_queue_failed(), action: { label: m.retry(), run: () => setFailedQueued(null) } }] : []),
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- Paraglide messages read the active locale implicitly.
+  ], [runtime.notices, operation, session?.owner_attachment?.restarting, failedQueued, queued, locale])
   const notFound = query.isError && isApiError(query.error) && query.error.status === 404
   const otherProfile = query.isError && isApiError(query.error) && query.error.status === 409
 
@@ -412,17 +426,18 @@ export function ChatView({ sessionId }: { sessionId: string | null }) {
           sessionId={sessionId}
           session={session}
           pendingChoices={sessionId ? undefined : pending}
-          live={live}
+          busy={!!live && !isTerminal(live.status)}
+          streamId={live?.streamId ?? null}
           settings={settings.data}
           onEnsureSession={ensureSession}
           onLocalCommand={onLocalCommand}
           terminalOpen={terminalOpen}
-          onToggleTerminal={() => setTerminalOpen((t) => !t)}
+          onToggleTerminal={onToggleTerminal}
           onModelChange={onModelChange}
           onWorkspaceChange={onWorkspaceChange}
           // The server refuses worktrees for a profile without local I/O (a remote terminal backend), so none is offered.
-          onNewWorktreeChat={bootstrap.features.terminal_remote_backend ? undefined : (ws) => { void newWorktreeChat(ws) }}
-          onRemoveWorktree={sessionId && session?.worktree_branch ? () => setRemovingWorktree(true) : undefined}
+          onNewWorktreeChat={bootstrap.features.terminal_remote_backend ? undefined : onNewWorktreeChat}
+          onRemoveWorktree={sessionId && session?.worktree_branch ? onRemoveWorktree : undefined}
           onToolsetsChange={onToolsetsChange}
           onExecutionModeChange={onExecutionModeChange}
           onReasoningChange={setReasoning}
@@ -433,11 +448,11 @@ export function ChatView({ sessionId }: { sessionId: string | null }) {
           onToggleYolo={onToggleYolo}
           queued={queued}
           locked={compressingSince !== null || operation !== null || session?.owner_attachment?.can_submit === false}
-          onQueue={(entry) => setQueued((q) => [...q, entry])}
+          onQueue={onQueue}
           onQueueChange={setQueued}
           onOwnerAction={onOwnerAction}
           clarify={clarify}
-          notices={[...runtime.notices, ...(operation ? [{ id: 'history', content: <span role="status">{operation}</span> }] : []), ...(session?.owner_attachment?.restarting ? [{ id: 'owner-restarting', content: <span role="status">{m.owner_restarting()}</span> }] : []), ...(failedQueued && queued.some((q) => q.id === failedQueued) ? [{ id: 'queue-failed', tone: 'error' as const, content: m.composer_queue_failed(), action: { label: m.retry(), run: () => setFailedQueued(null) } }] : [])]}
+          notices={notices}
         />
         </div>
         </div>

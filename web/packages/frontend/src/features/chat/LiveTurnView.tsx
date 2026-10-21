@@ -5,6 +5,7 @@ import { useLocale } from '../../i18n/useLocale'
 import { formatDurationUnits, resetTime } from '../../i18n/units'
 import { ArrowUp, Pencil, X } from 'lucide-react'
 import type { LiveTurn, PendingSteerRow } from '../../stream/reducer'
+import { useLiveTurn } from '../../stream/store'
 import { sendSteerNow, withdrawSteer } from '../../api/endpoints'
 import type { RateLimitWait, SteerWithdrawRequest } from '@maudecode/talaria-web-contracts'
 import { showToast } from '../toast/toast'
@@ -93,8 +94,10 @@ function PendingSteerMessage({ sessionId, steer }: { sessionId: string; steer: P
  * TAL-821: while the Agent sits out a rate limit, the server's provider and reset time replace "Working"; the composer's
  * Stop stays the way out.
  */
-export function LiveStatusPill({ turn, background = false }: { turn: LiveTurn; background?: boolean }) {
+export function LiveStatusPill({ sessionId, background = false }: { sessionId: string | null; background?: boolean }) {
+  const turn = useLiveTurn(sessionId)
   const locale = useLocale()
+  if (!turn) return null
   const reconnecting = turn.status === 'reconnecting'
   const status = reconnecting ? null : turn.runStatus
   // Old servers omit run_status; retain their rate-limit presentation until that contract is retired.
