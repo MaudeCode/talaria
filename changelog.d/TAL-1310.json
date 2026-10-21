@@ -1,0 +1,12 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Plugin settings reconnect affected MCP servers when launch inputs change and report when a restart is still needed.",
+      "highlight": false,
+      "components": [
+        "web"
+      ]
+    }
+  ]
+}

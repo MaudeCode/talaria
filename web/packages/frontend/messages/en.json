@@ -2244,6 +2244,8 @@
 	"plugins_empty": "No plugins found.",
 	"plugins_read_only": "Plugin settings are read-only on this instance.",
 	"plugins_isolation_advisory": "Profiles share one plugin process. Set plugins.isolation: host.",
+	"plugins_settings_restart_required": "Settings saved. Restart the affected MCP server to apply them.",
+	"plugins_settings_runtime_unknown": "Settings saved. Live MCP application is unconfirmed. Check MCP status before retrying.",
 	"plugins_secret_locked": "Set by the server's environment ({env}); change it there.",
 	"plugins_oauth_signed_in": "Signed in",
 	"plugins_oauth_sign_in_needed": "Sign-in needed",

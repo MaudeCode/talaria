@@ -617,3 +617,23 @@ model mutations fence idle settlement before dispatch; every result releases tha
 and rechecks settlement through the ordered owner-event queue. Outcomes
 are observations in server memory, scoped by profile home, session, authority and replay
 epoch. They never write a second session or change the owner's canonical transcript.
+
+### Plugin settings and live MCP application
+
+`plugins.settings_save` persists declared settings before reconciling live MCP
+launch inputs on its RPC worker under the saved profile's scope. It uses the
+Agent package reader, server-name normalizer, ownership map, and native serialized
+reconnect helper. Native-config name collisions and servers owned by another
+plugin are excluded. Unchanged inputs keep their connection; borrower detachment
+and reconnection remain Agent-owned. Changed connections refresh the saved
+profile's cached Agent tool schemas through the existing MCP refresh path.
+
+The result's `runtime_application` is separate from persistence: `applied`,
+`restart_required` when the installed Agent lacks the helper or reports a failed
+connection, and `unknown` when reconnect completion cannot be confirmed. Runtime
+failures retain confirmed saved settings and secrets, never trigger an automatic
+reconnect retry, and expose no exception or launch environment. The HTTP save
+result always includes this field; an older sidecar without it projects
+`restart_required`. A lost save response remains HTTP 503
+`plugin_settings_unconfirmed`, preserving secrets for readback rather than
+rolling back an operation that may already have persisted.

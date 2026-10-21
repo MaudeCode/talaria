@@ -619,6 +619,17 @@ describe('skills, memory, prompts, commands, mcp, health, updates, diagnostics',
     return { state, fields, save, envText, restore }
   }
 
+  it.each(['applied', 'restart_required', 'unknown', undefined] as const)('keeps confirmed secrets and projects runtime application %s', async (runtime_application) => {
+    const f = fakePlugin()
+    try {
+      sidecar.respond('plugins.settings_save', (params) => ({ ...f.save(params), runtime_application }))
+      const result = await json(await post(s, '/api/plugins/settings', { key: 'fake-settings', values: { limit: '7' }, secrets: { api_key: 'synthetic-new-secret' } }))
+      expect(result).toMatchObject({ ok: true, runtime_application: runtime_application ?? 'restart_required', written: ['limit', 'api_key'] })
+      expect(f.envText()).toContain('synthetic-new-secret')
+      expect(JSON.stringify(result)).not.toContain('synthetic-new-secret')
+    } finally { f.restore() }
+  })
+
   it('TAL-819: staged writes list with diffs and a panel flag, and approve and reject forward their ids', async () => {
     const calls: Json[] = []
     const restore = sidecar.responderFor('write_approval.pending')

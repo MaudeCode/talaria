@@ -69827,7 +69827,7 @@
     "/api/plugins/settings": {
       "post": {
         "operationId": "pluginSettings",
-        "summary": "TAL-806 (operator only): save a plugin's manifest-declared settings. `values` holds non-secret fields as the form entered them (numbers and JSON as text); the server checks each against the field list, writes the changed ones to `plugins.entries.<key>.settings`, and writes `secrets` to the profile `.env` under each field's `env` name (an empty one removes it). Secrets are written first; when a later write is refused, the ones already written are restored. 400 for an undeclared key, a bad value or a `locked` secret; 409 when the manifest changed; 503 when the Agent sidecar stopped before confirming (secrets stay written); 403 on a managed install, 404 for an unknown plugin.",
+        "summary": "TAL-806 (operator only): save a plugin's manifest-declared settings. `values` holds non-secret fields as the form entered them (numbers and JSON as text); the server checks each against the field list, writes the changed ones to `plugins.entries.<key>.settings`, and writes `secrets` to the profile `.env` under each field's `env` name (an empty one removes it). Secrets are written first; when a later write is refused, the ones already written are restored. 400 for an undeclared key, a bad value or a `locked` secret; 409 when the manifest changed; 503 when the Agent sidecar stopped before confirming (secrets stay written); 403 on a managed install, 404 for an unknown plugin. After persistence, runtime_application separately reports applied, restart_required, or unknown; runtime reconnect failures never roll saved secrets back.",
         "tags": [
           "tools"
         ],
@@ -69940,13 +69940,22 @@
                           "required"
                         ]
                       }
+                    },
+                    "runtime_application": {
+                      "enum": [
+                        "applied",
+                        "restart_required",
+                        "unknown"
+                      ],
+                      "type": "string"
                     }
                   },
                   "required": [
                     "ok",
                     "key",
                     "written",
-                    "settings"
+                    "settings",
+                    "runtime_application"
                   ]
                 }
               }
