@@ -1041,6 +1041,12 @@
             },
             "is_active_provider": {
               "type": "boolean"
+            },
+            "update_available": {
+              "type": "boolean"
+            },
+            "latest_revision": {
+              "type": "string"
             }
           },
           "required": [
@@ -1068,6 +1074,79 @@
       "supported_hooks"
     ],
     "additionalProperties": false
+  },
+  "plugins.update": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "oneOf": [
+      {
+        "type": "object",
+        "properties": {
+          "key": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string",
+            "const": "updated"
+          }
+        },
+        "required": [
+          "key",
+          "status"
+        ],
+        "additionalProperties": false
+      },
+      {
+        "type": "object",
+        "properties": {
+          "key": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string",
+            "const": "needs_consent"
+          },
+          "verdict": {
+            "type": "string",
+            "const": "caution"
+          },
+          "findings": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "key",
+          "status",
+          "verdict",
+          "findings"
+        ],
+        "additionalProperties": false
+      },
+      {
+        "type": "object",
+        "properties": {
+          "key": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string",
+            "const": "blocked"
+          },
+          "verdict": {
+            "type": "string"
+          },
+          "findings": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "key",
+          "status",
+          "verdict",
+          "findings"
+        ],
+        "additionalProperties": false
+      }
+    ]
   },
   "plugins.isolation": {
     "$schema": "https://json-schema.org/draft/2020-12/schema",

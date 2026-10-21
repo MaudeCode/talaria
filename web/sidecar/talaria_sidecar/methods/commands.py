@@ -547,6 +547,45 @@ def _clean_text(value, limit: int = 240) -> str:
     return text[: limit - 1].rstrip() + "…" if len(text) > limit else text
 
 
+def _plugin_update_modules():
+    try:
+        from hermes_cli import plugins_cmd, plugins_transaction
+        from hermes_cli.plugins_cadence import cached_git_updates
+    except ImportError:
+        return None
+    return plugins_cmd, plugins_transaction, cached_git_updates
+
+
+def update_plugin(key: str, accept_caution: bool) -> dict:
+    """The Agent owns Git staging, scan consent and publication, under the caller's profile scope."""
+    if not key or not isinstance(accept_caution, bool):
+        raise InvalidParams("plugins.update requires a key and boolean accept_caution")
+    modules = _plugin_update_modules()
+    if modules is None:
+        raise RpcError("This Hermes Agent cannot update plugins from Web", condition="plugin_update_unsupported")
+    pc, transaction, _cached = modules
+    found = pc._find_plugin_entry(key)
+    if found is None or not found[4]:
+        raise RpcError(f"plugin {key!r} not found", condition="plugin_not_found")
+    from hermes_constants import get_hermes_home
+    target = pathlib.Path(str(found[4])).resolve()
+    # Only profile-owned installs, never bundled, project or entrypoint plugins.
+    if target.parent != (get_hermes_home() / "plugins").resolve():
+        raise InvalidParams("Only profile-installed Git plugins can be updated")
+    try:
+        transaction.update_plugin(target, force=accept_caution, scan_decision_cb=lambda _scan: False)
+    except pc.PluginScanBlocked as exc:
+        scan = exc.scan_result
+        verdict = getattr(scan, "verdict", "dangerous")
+        return {"key": found[5], "status": "needs_consent" if verdict == "caution" and not accept_caution else "blocked",
+                "verdict": verdict, "findings": str(exc)}
+    except pc.PluginOperationError as exc:
+        raise RpcError(str(exc), condition="plugin_update_refused") from exc
+    from hermes_cli.plugins import discover_plugins
+    discover_plugins(force=True)
+    return {"key": found[5], "status": "updated"}
+
+
 def plugin_visibility(selected_providers: dict) -> dict:
     """Sanitized plugin/hook rows for Settings (Python ``_plugin_visibility_payload``); no paths or callbacks."""
     try:
@@ -556,6 +595,12 @@ def plugin_visibility(selected_providers: dict) -> dict:
         manager.discover_and_load(force=False)
     except Exception as exc:  # noqa: BLE001
         raise RpcError(f"plugin manager unavailable: {exc}", condition="plugins_unavailable") from exc
+    modules = _plugin_update_modules()
+    updates = None
+    if modules:
+        from hermes_cli.plugins_provenance import read_sidecar_rows
+        from hermes_constants import get_hermes_home
+        updates = modules[2](read_sidecar_rows(get_hermes_home() / "plugins"))
     rows = []
     for key, loaded in sorted((getattr(manager, "_plugins", {}) or {}).items(), key=lambda item: str(item[0])):
         manifest = getattr(loaded, "manifest", None)
@@ -587,6 +632,13 @@ def plugin_visibility(selected_providers: dict) -> dict:
                 row["is_active_provider"] = bool(selected) and slug == selected
         else:
             row["is_active_provider"] = kind == "model-provider" and enabled
+        if updates is not None:
+            installed = pathlib.Path(str(getattr(manifest, "path", "") or "")).resolve()
+            owned = installed.parent == (get_hermes_home() / "plugins").resolve() and (installed / ".git").is_dir()
+            revision = updates.get(installed.name) if owned else None
+            row["update_available"] = bool(revision)
+            if revision:
+                row["latest_revision"] = revision
         rows.append(row)
     return {"plugins": rows, "supported_hooks": list(PLUGIN_VISIBILITY_HOOKS)}
 
@@ -714,6 +766,11 @@ def register(registry) -> None:
     def list_(ctx: CallContext, params: dict) -> dict:
         with scoped_home(profile_home_param(params)):
             return plugin_visibility(params.get("selected_providers") if isinstance(params.get("selected_providers"), dict) else {})
+
+    @registry.method("plugins.update")
+    def update(ctx: CallContext, params: dict) -> dict:
+        with scoped_home(profile_home_param(params)):
+            return update_plugin(str(params.get("key") or "").strip(), params.get("accept_caution", False))
 
     @registry.method("plugins.isolation")
     def isolation(ctx: CallContext, params: dict) -> dict:

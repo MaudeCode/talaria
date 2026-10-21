@@ -2550,5 +2550,9 @@
 	"catalog_last_confirmed": "Last-confirmed data",
 	"catalog_unavailable": "Temporarily unavailable",
   "cron_blueprint_start": "Start from a blueprint",
-  "cron_blueprint_use": "Use blueprint"
+  "cron_blueprint_use": "Use blueprint",
+  "plugins_update": "Update",
+  "plugins_update_available": "Update available",
+  "plugins_update_consent": "Update this plugin?",
+  "plugins_updated": "Plugin updated"
 }

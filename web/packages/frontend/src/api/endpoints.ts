@@ -288,6 +288,7 @@ export const dismissUpdateNotification = (id: string) => orpc().updateNotificati
 export const clearUpdateNotifications = () => orpc().updateNotifications.clear({ clear: true, tab_id: tabId, loaded_build: loadedBuild })
 export const cancelUpdateNotification = (id: string) => orpc().updateNotifications.cancel({ id, cancel: true })
 export const performUpdateNotificationAction = (id: string, action_id: string) => orpc().updateNotifications.action({ id, action_id, perform: true, tab_id: tabId })
+export const updatePlugin = (key: string, accept_caution = false) => orpc().pluginUpdate({ key, accept_caution }, { signal: new AbortController().signal })
 export const fetchPlugins = () => orpc().plugins()
 export const savePluginSettings = (key: string, values: Record<string, unknown>, secrets: Record<string, string>) => orpc().pluginSettings({ key, values, secrets })
 export const pluginOauthRedirect = (flowId: string, url: string) => orpc().pluginOAuthRedirect({ flow_id: flowId, url })

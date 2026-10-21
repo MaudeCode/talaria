@@ -558,6 +558,31 @@ describe('skills, memory, prompts, commands, mcp, health, updates, diagnostics',
     }
   })
 
+  it('TAL-1275: exposes cached plugin updates and forwards consent under the selected profile', async () => {
+    const row = { name: 'probe', key: 'probe', version: '1', description: '', enabled: false, kind: 'standalone', activation: 'disabled', hooks: [] }
+    const calls: unknown[] = []
+    sidecar.respond('plugins.list', () => ({ plugins: [{ ...row, update_available: true, latest_revision: 'new-sha' }, { ...row, key: 'legacy' }], supported_hooks: [] }))
+    sidecar.respond('plugins.update', (params) => {
+      calls.push(params)
+      return params.accept_caution ? { status: 'updated', key: params.key } : { status: 'needs_consent', key: params.key, verdict: 'caution', findings: 'Review this revision' }
+    })
+    try {
+      const body = await json(await s.get('/api/plugins'))
+      const plugins = body.plugins as Json[]
+      expect(plugins[0]?.update).toEqual({ available: true, latest_revision: 'new-sha' })
+      expect(plugins[1]?.update).toBeUndefined()
+      expect(await json(await post(s, '/api/plugins/update', { key: 'probe' }))).toMatchObject({ status: 'needs_consent', verdict: 'caution', findings: 'Review this revision' })
+      expect(await json(await post(s, '/api/plugins/update', { key: 'probe', accept_caution: true }))).toMatchObject({ status: 'updated', key: 'probe' })
+      expect(calls).toEqual([{ profile_home: s.deps.profileHome('default'), key: 'probe', accept_caution: false }, { profile_home: s.deps.profileHome('default'), key: 'probe', accept_caution: true }])
+      sidecar.respond('plugins.update', (params) => ({ status: 'blocked', key: params.key, verdict: 'dangerous', findings: 'Dangerous revision' }))
+      expect(await json(await post(s, '/api/plugins/update', { key: 'probe', accept_caution: true }))).toMatchObject({ status: 'blocked', verdict: 'dangerous' })
+      expect((await post(s, '/api/plugins/update', { key: 'probe', accept_caution: 'yes' })).status).toBe(400)
+    } finally {
+      sidecar.respond('plugins.list', undefined)
+      sidecar.respond('plugins.update', undefined)
+    }
+  })
+
   /** TAL-806: one synthetic plugin whose settings the fake sidecar keeps in memory; `.env` writes go through the fake's real file writer. */
   const fakePlugin = () => {
     const state = { home: '', saves: [] as Json[], secretEnvs: [] as Json[], current: { endpoint: 'https://example.invalid', limit: 5, verbose: null, mode: 'fast', rules: null } as Json }

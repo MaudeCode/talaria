@@ -1,10 +1,11 @@
-import { useCallback, useState } from 'react'
+import { useCallback, useRef, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import type { PluginOAuthClientView, PluginSettingView } from '@maudecode/talaria-web-contracts'
+import type { PluginOAuthClientView, PluginSettingView, PluginUpdateResult } from '@maudecode/talaria-web-contracts'
 import { m } from '../../paraglide/messages.js'
 import * as api from '../../api/endpoints'
 import { keys } from '../../api/queryKeys'
 import { Button } from '../../ui/Button'
+import { ConfirmDialog } from '../../ui/Dialog'
 import { FieldRow, Switch, TextInput } from '../../ui/Field'
 import { Select } from '../../ui/Select'
 import { EmptyState, ErrorState, LoadingState } from '../../ui/States'
@@ -12,6 +13,30 @@ import { showToast } from '../toast/toast'
 import { OAuthSignIn } from '../onboarding/OAuthSignIn'
 
 export function PluginsSection() {
+  const qc = useQueryClient()
+  const updating = useRef(false)
+  const [scan, setScan] = useState<Exclude<PluginUpdateResult, { status: 'updated' }> | null>(null)
+  const update = useMutation({
+    mutationFn: ({ key, accept }: { key: string; accept: boolean }) => api.updatePlugin(key, accept),
+    onSuccess: (result) => {
+      if (result.status === 'updated') {
+        setScan(null)
+        showToast(m.plugins_updated())
+        void qc.invalidateQueries({ queryKey: keys.plugins })
+      } else setScan(result)
+    },
+    onError: (error) => {
+      showToast(error instanceof Error ? error.message : String(error), 5000, 'error')
+      void qc.invalidateQueries({ queryKey: keys.plugins })
+    },
+    onSettled: () => { updating.current = false },
+  })
+  const requestUpdate = (key: string, accept = false) => {
+    if (updating.current) return
+    updating.current = true
+    setScan(null)
+    update.mutate({ key, accept })
+  }
   const plugins = useQuery({ queryKey: keys.plugins, queryFn: api.fetchPlugins, staleTime: 30_000 })
   const [open, setOpen] = useState<string | null>(null)
   if (plugins.isPending) return <LoadingState />
@@ -26,20 +51,26 @@ export function PluginsSection() {
       <ul className="flex flex-col divide-y divide-border-subtle">
         {list.map((p) => (
           <li key={p.key} className="py-2">
-            <div className="flex items-center gap-3">
-              <div className="min-w-0 flex-1">
+            <div className="flex flex-wrap items-center gap-3">
+              <div className="min-w-0 flex-1 basis-40">
                 <div className="text-sm font-medium text-text">{p.name ?? p.key}{p.version ? <span className="ml-1 text-[11px] text-muted">v{p.version}</span> : null}</div>
                 <div className="truncate text-[11px] text-muted">{p.kind ? `${p.kind} · ` : ''}{p.description ?? ''}</div>
               </div>
+              {p.update?.available && <span className="text-[11px] text-warning">{m.plugins_update_available()}</span>}
+              {editable && p.update?.available && <Button variant="ghost" className="min-h-11 min-w-11 px-2 py-1 text-xs" disabled={update.isPending} aria-busy={update.isPending && update.variables.key === p.key} onClick={() => requestUpdate(p.key)}>{m.plugins_update()}</Button>}
               {p.is_active_provider && <span className="rounded-full bg-accent-bg px-2 py-0.5 text-[10px] uppercase tracking-wider text-accent-text">{m.providers_active()}</span>}
               <span className={p.enabled !== false ? 'text-[11px] text-success' : 'text-[11px] text-muted'}>{p.enabled !== false ? m.plugins_enabled() : m.plugins_disabled()}{p.activation ? ` · ${p.activation}` : ''}</span>
               {editable && p.settings?.length ? <Button variant="ghost" className="px-2 py-1 text-xs" aria-expanded={open === p.key} onClick={() => setOpen(open === p.key ? null : p.key)}>{m.settings_title()}</Button> : null}
             </div>
             {p.oauth_clients?.length ? <ul className="mt-2 flex flex-col gap-2">{p.oauth_clients.map((c) => <PluginOAuthClientRow key={c.id} pluginKey={p.key} client={c} editable={editable} />)}</ul> : null}
+            {scan?.key === p.key && scan.status === 'blocked' && <div role="alert" className="mt-2 whitespace-pre-line text-xs text-error [overflow-wrap:anywhere]">{scan.findings}</div>}
             {editable && open === p.key && p.settings ? <PluginSettingsForm pluginKey={p.key} fields={p.settings} onSaved={() => setOpen(null)} /> : null}
           </li>
         ))}
       </ul>
+      <ConfirmDialog open={scan?.status === 'needs_consent'} onOpenChange={(isOpen) => { if (!isOpen) setScan((current) => current?.status === 'needs_consent' ? null : current) }}
+        title={m.plugins_update_consent()} description={scan?.findings} confirmLabel={m.plugins_update()} cancelLabel={m.cancel()} danger
+        onConfirm={() => { if (scan?.status === 'needs_consent') requestUpdate(scan.key, true) }} />
     </div>
   )
 }

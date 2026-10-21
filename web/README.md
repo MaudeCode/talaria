@@ -185,6 +185,12 @@ The first MCP discovery for a profile waits for its tools before chat starts. La
 two seconds for discovery, then use the registered tools while connections finish in the background.
 The composer shows a notice while that turn is waiting for more tools.
 
+Settings → Plugins shows available updates from the Agent's last stored plugin check, without
+fetching on each visit. Update applies the revision through the Agent's security scan. A caution
+verdict requires confirmation; a dangerous verdict blocks the update. New dependency consent
+continues in `hermes plugins update` in a terminal. Older Agents without cached update support
+show no update controls.
+
 ### Remote access
 
 Bind to loopback and use an SSH tunnel or Tailscale, or set `HERMES_WEBUI_HOST=0.0.0.0` with

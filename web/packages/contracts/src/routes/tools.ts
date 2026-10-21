@@ -1,7 +1,7 @@
 import { oc } from '@orpc/contract'
 import { z } from 'zod'
 import { SkillsSchema, SkillContentSchema, SkillsUsageSchema, MemorySchema, PromptSchema, PromptsSchema, CommandsSchema, LogsSchema, InsightsSchema, AgentHealthSchema, SystemHealthSchema, McpServerSchema, McpServersSchema, McpToolsSchema, ConnectorsPageSchema, ConnectorToolsViewSchema, ConnectorOperationViewSchema, PluginsSchema, UpdatesCheckSchema, UpdatesSummarySchema, UpdateApplySchema, UpdateNotificationsSchema, UpdateNotificationSchema, TabIdSchema, FrontendBuildIdSchema, NotesSourcesSchema, NotesSearchSchema, NoteItemSchema, WikiStatusSchema, WikiBrowseSchema, WikiPageSchema, DashboardStatusSchema, DashboardConfigSchema, GatewayStatusSchema, GatewayActionSchema, ProjectOsDashboardSchema, TranscribeCapabilitySchema, SpeechPrepareSchema, PluginSettingViewSchema, OnboardingOAuthSchema } from '../views.js'
-import { ToolsetsCatalogSchema, CommandBundleInvocationSchema, CommandBundleSchema, PendingWriteSchema, PendingWriteRefSchema } from '../sidecar/namespaces.js'
+import { PluginUpdateResultSchema, ToolsetsCatalogSchema, CommandBundleInvocationSchema, CommandBundleSchema, PendingWriteSchema, PendingWriteRefSchema } from '../sidecar/namespaces.js'
 
 /** Skills, memory, prompts, commands, notes, insights, logs, health, MCP, plugins, updates, and diagnostics. */
 
@@ -129,6 +129,9 @@ export const toolsContract = {
     respond: oc.route({ method: 'POST', path: '/api/connectors/operations/{op_id}', tags, summary: '`skip`, `retry` or `approve` (with `env`) one `target`, as its `actions` allow, or `continue` the card without the rest.' }).input(z.object({ op_id: z.string().min(1), action: z.enum(['skip', 'retry', 'approve', 'continue']), target: z.string().optional(), env: z.record(z.string(), z.string()).optional() })).output(ConnectorOperationViewSchema),
   },
   plugins: oc.route({ method: 'GET', path: '/api/plugins', tags }).output(PluginsSchema),
+  pluginUpdate: oc.route({ method: 'POST', path: '/api/plugins/update', tags, summary: 'Operator only: update a profile-installed Git plugin through the Agent scan transaction. Caution requires accept_caution; dangerous always blocks.' })
+    .input(z.object({ key: z.string().trim().min(1), accept_caution: z.boolean().default(false) }))
+    .output(PluginUpdateResultSchema),
   pluginSettings: oc.route({ method: 'POST', path: '/api/plugins/settings', tags, summary: 'TAL-806 (operator only): save a plugin\'s manifest-declared settings. `values` holds non-secret fields as the form entered them (numbers and JSON as text); the server checks each against the field list, writes the changed ones to `plugins.entries.<key>.settings`, and writes `secrets` to the profile `.env` under each field\'s `env` name (an empty one removes it). Secrets are written first; when a later write is refused, the ones already written are restored. 400 for an undeclared key, a bad value or a `locked` secret; 409 when the manifest changed; 503 when the Agent sidecar stopped before confirming (secrets stay written); 403 on a managed install, 404 for an unknown plugin.' })
     .input(z.object({ key: z.string().min(1), values: z.record(z.string(), Json).optional(), secrets: z.record(z.string(), z.string()).optional() }))
     .output(z.object({ ok: z.literal(true), key: z.string(), written: z.array(z.string()), settings: z.array(PluginSettingViewSchema) })),

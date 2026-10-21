@@ -68522,6 +68522,20 @@
                               ]
                             }
                           },
+                          "update": {
+                            "type": "object",
+                            "properties": {
+                              "available": {
+                                "type": "boolean"
+                              },
+                              "latest_revision": {
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "available"
+                            ]
+                          },
                           "settings": {
                             "type": "array",
                             "items": {
@@ -68643,6 +68657,112 @@
                     "plugins"
                   ],
                   "additionalProperties": {}
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/plugins/update": {
+      "post": {
+        "operationId": "pluginUpdate",
+        "summary": "Operator only: update a profile-installed Git plugin through the Agent scan transaction. Caution requires accept_caution; dangerous always blocks.",
+        "tags": [
+          "tools"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "key": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "accept_caution": {
+                    "type": "boolean",
+                    "default": false
+                  }
+                },
+                "required": [
+                  "key"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "anyOf": [
+                    {
+                      "type": "object",
+                      "properties": {
+                        "key": {
+                          "type": "string"
+                        },
+                        "status": {
+                          "const": "updated"
+                        }
+                      },
+                      "required": [
+                        "key",
+                        "status"
+                      ]
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "key": {
+                          "type": "string"
+                        },
+                        "status": {
+                          "const": "needs_consent"
+                        },
+                        "verdict": {
+                          "const": "caution"
+                        },
+                        "findings": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "key",
+                        "status",
+                        "verdict",
+                        "findings"
+                      ]
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "key": {
+                          "type": "string"
+                        },
+                        "status": {
+                          "const": "blocked"
+                        },
+                        "verdict": {
+                          "type": "string"
+                        },
+                        "findings": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "key",
+                        "status",
+                        "verdict",
+                        "findings"
+                      ]
+                    }
+                  ]
                 }
               }
             }

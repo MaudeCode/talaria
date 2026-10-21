@@ -1,0 +1,12 @@
+{
+  "entries": [
+    {
+      "category": "Added",
+      "summary": "Update Git-installed plugins from Settings, with security scan consent before applying flagged revisions.",
+      "highlight": false,
+      "components": [
+        "web"
+      ]
+    }
+  ]
+}
