@@ -4,12 +4,15 @@ from __future__ import annotations
 
 import contextlib
 import json
+import sys
 import threading
 import time
+import types
 
 import pytest
 
 from talaria_sidecar.methods import chat
+from talaria_sidecar.errors import RpcError
 
 
 class FakeAgent:
@@ -61,6 +64,27 @@ def _patch(monkeypatch):
     monkeypatch.setattr(chat, "_main_model_request_overrides", lambda model, provider, base_url="": None)
     monkeypatch.setattr(chat, "checkpoint_kwargs", lambda: {})
     monkeypatch.setattr(chat, "scoped_home", lambda home: contextlib.nullcontext(home))
+
+
+@pytest.mark.parametrize("method", ["start", "compress"])
+@pytest.mark.parametrize("requirement", ["no_training", "zero_retention"])
+def test_connector_privacy_requires_capable_agent_before_provider_or_agent_use(monkeypatch, method, requirement) -> None:
+    _patch(monkeypatch)
+    legacy = types.ModuleType("agent.message_metadata")
+    monkeypatch.setitem(sys.modules, "agent.message_metadata", legacy)
+    reached_runtime = []
+    def resolve(*args):
+        reached_runtime.append(args)
+        raise RpcError("provider resolution reached", condition="unsafe")
+    monkeypatch.setattr(chat, "_resolve_runtime", resolve)
+    params = {**_params("privacy-guard"), "conversation_history": [{"role": "tool", "tool_call_id": "c1", "content": "private", "data_use": [requirement]}]}
+    with pytest.raises(RpcError) as denied:
+        getattr(chat, method)(Ctx(), params)
+    assert not reached_runtime, "private history reached provider resolution"
+    assert "cannot enforce connector privacy" in str(denied.value)
+    assert denied.value.data["condition"] == "agent_incompatible"
+    assert not FakeAgent.instances
+    assert "privacy-guard" not in chat._RUNS
 
 
 def test_a_finished_turn_never_interrupts_the_cached_agent(monkeypatch) -> None:

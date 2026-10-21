@@ -3,7 +3,7 @@
   "families": {
     "tests/test_chat_request_overrides.py::test_second_turn_connector_data_use_reaches_nous_request": {
       "layer": "compatibility",
-      "reason": "Real Agent request builder and Nous provider profile must turn second-turn sidecar history requirements into routing policy while stripping message metadata. Requires the installed Agent interpreter; execution and HTTP clients are faked.",
+      "reason": "Real Agent API compatibility: legacy releases refuse private history before execution; capable releases build Nous deny/ZDR routing while stripping message metadata. Requires the installed Agent interpreter; execution and HTTP clients are faked.",
       "cases": [""]
     },
     "tests/test_agent_gateway_identity.py::test_native_inline_successor_readiness": {

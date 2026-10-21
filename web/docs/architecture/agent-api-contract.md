@@ -11,6 +11,9 @@ Turn and compression history preserve tool-result `data_use` requirements, inclu
 the durable copy in `display_metadata`. Other display metadata stays out of both
 histories. The Agent uses these requirements for provider routing and strips them
 from model request messages.
+An older Agent without connector privacy routing cannot continue or compress a
+history carrying those requirements. The sidecar refuses it before provider
+resolution or Agent construction and asks the operator to update the Agent.
 
 ## Tested identity
 

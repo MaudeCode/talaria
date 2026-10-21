@@ -154,10 +154,14 @@ from pathlib import Path
 from unittest.mock import patch
 sys.path.append(sys.argv[1])
 from run_agent import AIAgent
+from agent import message_metadata
+from talaria_sidecar.errors import RpcError
 from talaria_sidecar.home import scoped_home
 from talaria_sidecar.methods import chat
 
 seen = []
+refusals = []
+capable = callable(getattr(message_metadata, "data_use_requirement", None))
 
 class RecordingAgent(AIAgent):
     def __init__(self, **kwargs):
@@ -194,20 +198,35 @@ with patch("agent.process_bootstrap.OpenAI", Client), scoped_home(home):
                    {"role": "assistant", "content": "", "tool_calls": [{"id": "c1", "type": "function", "function": {"name": "connector", "arguments": "{}"}}]},
                    {"role": "tool", "tool_call_id": "c1", "content": "private result", "data_use": [requirement]},
                    {"role": "assistant", "content": "done"}]
-        result = chat.start(Ctx(), {**params, "stream_id": requirement, "user_message": "follow up", "conversation_history": history})
-        assert result["status"] == "completed", result
-print(json.dumps(seen))
+        turn = {**params, "stream_id": requirement, "user_message": "follow up", "conversation_history": history}
+        if capable:
+            result = chat.start(Ctx(), turn)
+            assert result["status"] == "completed", result
+        else:
+            for method in (chat.start, chat.compress):
+                try:
+                    method(Ctx(), turn)
+                except RpcError as exc:
+                    refusals.append(exc.data["condition"])
+                else:
+                    raise AssertionError("legacy Agent admitted private history")
+print(json.dumps({"capable": capable, "requests": seen, "refusals": refusals}))
 """
 
 
 @requires_agent
-@pytest.mark.skipif(AGENT_DIR is None or 'DATA_USE = "data_use"' not in (AGENT_DIR / "agent/message_metadata.py").read_text(), reason="Connector privacy routing requires Agent v0.22.3")
 def test_second_turn_connector_data_use_reaches_nous_request(tmp_path) -> None:
     root = tmp_path / ".hermes"
     root.mkdir()
     run = subprocess.run([AGENT_PYTHON, "-c", DATA_USE_PROBE, str(AGENT_DIR)], env=isolated_env(root), capture_output=True, text=True, timeout=120)
     assert run.returncode == 0, run.stderr[-4000:]
-    requests = json.loads(run.stdout.strip().splitlines()[-1])
+    observed = json.loads(run.stdout.strip().splitlines()[-1])
+    requests = observed["requests"]
+    if not observed["capable"]:
+        assert len(requests) == 1
+        assert observed["refusals"] == ["agent_incompatible"] * 4
+        return
+    assert observed["refusals"] == []
     assert [request["extra_body"].get("provider") for request in requests] == [None, {"data_collection": "deny"}, {"data_collection": "deny", "zdr": True}]
     for request in requests[1:]:
         assert next(row for row in request["messages"] if row["role"] == "tool") == {"role": "tool", "tool_call_id": "c1", "content": "private result"}
