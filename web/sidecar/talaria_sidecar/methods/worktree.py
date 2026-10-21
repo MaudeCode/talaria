@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import contextlib
 import io
 import logging
 import os
@@ -87,15 +88,21 @@ def _take_lock(admin: Path, expected: str) -> bool:
     except FileNotFoundError:
         return True
     try:
-        if aside.read_text(encoding="utf-8-sig", errors="replace").strip(" \t\n\v\f\r") == expected:
-            return True
+        stale = aside.read_text(encoding="utf-8-sig", errors="replace").strip(" \t\n\v\f\r") == expected
+    except OSError:
+        stale = False
+    if not stale:
         try:
             os.link(aside, lock)
         except FileExistsError:
-            pass
-        return False
-    finally:
-        aside.unlink(missing_ok=True)
+            pass  # a newer lock holds the tree
+        except OSError:
+            # No hard link here: move it back whole, never leave the tree unlocked by dropping it.
+            with contextlib.suppress(OSError):
+                os.rename(aside, lock)
+            return False
+    aside.unlink(missing_ok=True)
+    return stale
 
 
 def retain(path: str) -> str:

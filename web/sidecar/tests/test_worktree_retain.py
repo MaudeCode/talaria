@@ -7,6 +7,9 @@ import os
 import pathlib
 import subprocess
 
+import pytest
+
+from talaria_sidecar.methods import worktree
 from talaria_sidecar.methods.worktree import _admin_dir, _take_lock, retain_all
 
 _ENV = {"PATH": "/usr/bin:/bin:/opt/homebrew/bin:/usr/local/bin", "GIT_CONFIG_GLOBAL": "/dev/null", "GIT_CONFIG_NOSYSTEM": "1",
@@ -54,7 +57,7 @@ def test_retain_relocks_only_hermes_pid_locks_and_reports_missing_trees(tmp_path
         "unlocked": ours, "exited": ours, "impossible": ours, "running": locks["running"], "user": locks["user"], "bare": ""}
 
 
-def test_a_lock_replaced_after_it_was_read_is_kept(tmp_path: pathlib.Path) -> None:
+def test_a_lock_replaced_after_it_was_read_is_kept(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
     repo = (tmp_path / "repo").resolve()
     repo.mkdir()
     _git("init", "--quiet", "-b", "main", cwd=repo)
@@ -65,6 +68,12 @@ def test_a_lock_replaced_after_it_was_read_is_kept(tmp_path: pathlib.Path) -> No
     admin = _admin_dir(tree)
     assert admin is not None
 
+    assert not _take_lock(admin, "hermes pid=1")
+    assert _lock_reason(repo, tree) == "on my external drive"
+    assert [p.name for p in admin.iterdir() if p.name.startswith("locked.")] == []
+
+    # A filesystem without hard links still gets the lock back.
+    monkeypatch.setattr(worktree.os, "link", lambda *_: (_ for _ in ()).throw(PermissionError("no hard links")))
     assert not _take_lock(admin, "hermes pid=1")
     assert _lock_reason(repo, tree) == "on my external drive"
     assert [p.name for p in admin.iterdir() if p.name.startswith("locked.")] == []
