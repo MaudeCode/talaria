@@ -11,7 +11,9 @@ gateway, CLI and plugins also take, so concurrent writers never drop a key.
 from __future__ import annotations
 
 import contextlib
+import copy
 import importlib
+import io
 import logging
 import os
 import re
@@ -73,6 +75,64 @@ def _write_target(path: Path) -> Path:
     return target
 
 
+def _same_config_value(left, right) -> bool:
+    """Compare decoded JSON values without treating booleans as numbers."""
+    if type(left) is not type(right):
+        return False
+    if isinstance(left, dict):
+        return left.keys() == right.keys() and all(_same_config_value(left[key], right[key]) for key in left)
+    if isinstance(left, list):
+        return len(left) == len(right) and all(_same_config_value(a, b) for a, b in zip(left, right))
+    return left == right
+
+
+def _split_config_aliases(text: str, desired: dict) -> str:
+    """Keep the Agent's round-trip document, separating aliases with different requested values."""
+    roundtrip = getattr(yaml_parser(), "roundtrip_yaml", None)
+    if roundtrip is None:
+        return text
+    parser = roundtrip()
+    document = parser.load(text)
+    seen = {}
+    changed = False
+
+    def split(node, value):
+        nonlocal changed
+        if not (isinstance(node, dict) and isinstance(value, dict) or isinstance(node, list) and isinstance(value, list)):
+            return node
+        previous = seen.get(id(node))
+        if previous is not None:
+            if _same_config_value(previous[1], value):
+                return node
+            node = copy.deepcopy(node)
+            # Copied explicit anchor names must not collide with the original subtree.
+            pending, cleared = [node], set()
+            while pending:
+                child = pending.pop()
+                if id(child) in cleared:
+                    continue
+                cleared.add(id(child))
+                if hasattr(child, "yaml_set_anchor"):
+                    child.yaml_set_anchor(None)
+                if isinstance(child, dict):
+                    pending.extend(child.values())
+                elif isinstance(child, list):
+                    pending.extend(child)
+            changed = True
+        seen[id(node)] = (node, value)
+        for key in value if isinstance(value, dict) else range(min(len(node), len(value))):
+            if not isinstance(node, dict) or key in node:
+                node[key] = split(node[key], value[key])
+        return node
+
+    split(document, desired)
+    if not changed:
+        return text
+    output = io.StringIO()
+    parser.dump(document, output)
+    return output.getvalue()
+
+
 def write_config(path: Path, config: dict) -> dict:
     if not isinstance(config, dict):
         raise InvalidParams("config must be an object")
@@ -94,7 +154,7 @@ def write_config(path: Path, config: dict) -> dict:
             if replace is not None:
                 # Stage the original document so the Agent retains comments; check the real link before committing.
                 try:
-                    handle.write(target.read_text(encoding="utf-8"))
+                    handle.write(_split_config_aliases(target.read_text(encoding="utf-8"), config))
                 except FileNotFoundError:
                     pass
             else:
@@ -107,6 +167,8 @@ def write_config(path: Path, config: dict) -> dict:
             replace(Path(tmp), config)
         if mode is not None:
             os.chmod(tmp, mode)
+        if not _same_config_value(read_config(Path(tmp))["config"], config):
+            raise RpcError("Staged config.yaml does not match the requested values", condition="config_invalid")
         # A link retargeted while the temp file was being written would otherwise send the write to the wrong file.
         if _write_target(path) != target:
             raise RpcError(f"{path} was retargeted while config.yaml was being written; retry", condition="config_changed")

@@ -20,6 +20,53 @@ def agent_script(home: pathlib.Path, code: str) -> None:
 
 
 @requires_agent
+@pytest.mark.parametrize("fallback", [False, True])
+def test_config_set_preserves_divergent_alias_values(hermes_home: pathlib.Path, fallback: bool) -> None:
+    agent_script(hermes_home, r'''
+import json, os
+from pathlib import Path
+from unittest.mock import patch
+from talaria_sidecar.methods import config
+
+path = Path(os.environ["HERMES_HOME"]) / "config.yaml"
+original_import = config.importlib.import_module
+def import_module(name):
+    if FALLBACK and name == "hermes_cli.config":
+        raise ImportError("Agent config writer unavailable")
+    return original_import(name)
+
+source = '# routing notes\nmodel: &route\n  default: "old-model" # pinned route\n  options: &options\n    limits: &limits [10, 20]\nauxiliary:\n  vision: *route\n  options: *options\n  limits: *limits\n'
+for case in ("model", "unchanged", "remove_anchor", "remove_alias", "nested", "sequence", "boolean"):
+    path.write_text(source)
+    path.chmod(0o640)
+    desired = json.loads(json.dumps(config.read_config(path)["config"]))
+    if case == "model":
+        desired["model"]["default"] = "new-model"
+    elif case == "remove_anchor":
+        del desired["model"]
+    elif case == "remove_alias":
+        del desired["auxiliary"]["vision"]
+    elif case == "nested":
+        desired["model"]["options"]["limits"][0] = 30
+    elif case == "sequence":
+        desired["auxiliary"]["limits"].append(30)
+    elif case == "boolean":
+        desired["auxiliary"]["limits"][0] = True
+    with patch.object(config.importlib, "import_module", side_effect=import_module):
+        assert config.write_config(path, desired)["ok"] is True
+    assert config.read_config(path)["config"] == desired, case
+    assert path.stat().st_mode & 0o777 == 0o640
+    assert not list(path.parent.glob(".config_*.tmp"))
+    if not FALLBACK:
+        text = path.read_text()
+        assert "# routing notes" in text
+        assert "# pinned route" in text
+        if case == "unchanged":
+            assert "*route" in text
+'''.replace("FALLBACK", repr(fallback)))
+
+
+@requires_agent
 def test_config_set_preserves_comments_quotes_order_and_removals(handshaken: SidecarProcess, hermes_home: pathlib.Path) -> None:
     capability = subprocess.check_output(
         [AGENT_PYTHON, "-c", "import sys; sys.path.insert(0, sys.argv[1]); from hermes_cli import config; print(hasattr(config, 'atomic_config_replace'))", str(AGENT_DIR)],
@@ -106,7 +153,7 @@ def test_config_retarget_during_serialization_leaves_both_targets_untouched(tmp_
 
     module = SimpleNamespace(atomic_config_replace=retarget) if modern else SimpleNamespace()
     monkeypatch.setattr(config.importlib, "import_module", lambda name: module)
-    monkeypatch.setattr(config, "yaml_parser", lambda: SimpleNamespace(safe_dump=retarget))
+    monkeypatch.setattr(config, "yaml_parser", lambda: SimpleNamespace(safe_dump=retarget, safe_load=lambda text: {"value": "changed"}))
     with pytest.raises(RpcError) as error:
         config.write_config(link, {"value": "changed"})
     assert error.value.data["condition"] == "config_changed"
@@ -132,4 +179,27 @@ def test_agent_writer_failure_does_not_fall_back_or_modify_target(tmp_path: path
     with pytest.raises(OSError, match="writer failed"):
         config.write_config(path, {"value": "changed"})
     assert path.read_text() == "value: original\n"
+    assert not list(tmp_path.glob(".config_*.tmp"))
+
+
+@pytest.mark.parametrize("modern", [False, True])
+@pytest.mark.parametrize("staged", ['{"value": "wrong"}', '{"value": true}', 'invalid'])
+def test_config_staged_value_mismatch_leaves_original_untouched(tmp_path: pathlib.Path, monkeypatch, modern, staged) -> None:
+    from types import SimpleNamespace
+
+    from talaria_sidecar.errors import RpcError
+    from talaria_sidecar.methods import config
+
+    path = tmp_path / "config.yaml"
+    original = '{"value": "original"}'
+    path.write_text(original)
+    path.chmod(0o640)
+    module = SimpleNamespace(atomic_config_replace=lambda path, desired: path.write_text(staged)) if modern else SimpleNamespace()
+    monkeypatch.setattr(config.importlib, "import_module", lambda name: module)
+    monkeypatch.setattr(config, "yaml_parser", lambda: SimpleNamespace(safe_load=json.loads, safe_dump=lambda *a, **kw: staged))
+    with pytest.raises(RpcError) as error:
+        config.write_config(path, {"value": 1})
+    assert error.value.data["condition"] == "config_invalid"
+    assert path.read_text() == original
+    assert path.stat().st_mode & 0o777 == 0o640
     assert not list(tmp_path.glob(".config_*.tmp"))

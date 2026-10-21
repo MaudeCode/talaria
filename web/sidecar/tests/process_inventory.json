@@ -766,6 +766,14 @@
         ""
       ]
     },
+    "tests/test_config_write.py::test_config_set_preserves_divergent_alias_values": {
+      "layer": "compatibility",
+      "reason": "Supported-Agent YAML identity and writer behavior: JSON full-state saves split divergent mapping and sequence aliases, retain unchanged aliases and comments, and preserve values when Agent writer imports fail. Requires the installed Agent parser and writer.",
+      "cases": [
+        "[False]",
+        "[True]"
+      ]
+    },
     "tests/test_config_write.py::test_config_set_preserves_comments_quotes_order_and_removals": {
       "layer": "compatibility",
       "reason": "Supported-Agent API compatibility: config set preserves comments quotes order and removals. Uses the real installed release, not a fabricated API response.",
