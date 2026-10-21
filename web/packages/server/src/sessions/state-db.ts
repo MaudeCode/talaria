@@ -249,15 +249,20 @@ interface ReadonlyStateDb {
   indexes: Map<string, Set<string>>
 }
 
+/** Bound descriptors and page caches even when deleted profiles are never read again. */
+const STATE_DB_HANDLE_CACHE_MAX = 16
 const readonlyStateDbs = new Map<string, ReadonlyStateDb>()
 const schemaCaches = new WeakMap<DatabaseSync, ReadonlyStateDb>()
 
 /** Cache ownership ends at shutdown; worker termination also disposes its native SQLite resources. */
-function closeStateDbs(): void {
-  for (const { db } of readonlyStateDbs.values()) if (db.isOpen) db.close()
-  readonlyStateDbs.clear()
+function closeStateDbs(paths: Iterable<string> = readonlyStateDbs.keys()): void {
+  for (const path of paths) {
+    const cached = readonlyStateDbs.get(path)
+    if (cached?.db.isOpen) cached.db.close()
+    readonlyStateDbs.delete(path)
+  }
 }
-process.once('exit', closeStateDbs)
+process.once('exit', () => { closeStateDbs() })
 
 /** One handle per file identity. The caller ends the read snapshot in finally, leaving closure to the cache. */
 function openStateDbReadonly(dbPath: string, busyTimeoutMs = STATE_DB_BUSY_TIMEOUT_MS): DatabaseSync {
@@ -265,16 +270,17 @@ function openStateDbReadonly(dbPath: string, busyTimeoutMs = STATE_DB_BUSY_TIMEO
   let cached = readonlyStateDbs.get(dbPath)
   // Raw writes need not advance SQLite's change counter; revalidate the main file after any such change.
   if (cached && (cached.ino !== ino || cached.dev !== dev || cached.mtimeNs !== mtimeNs || !cached.db.isOpen)) {
-    if (cached.db.isOpen) cached.db.close()
-    readonlyStateDbs.delete(dbPath)
+    closeStateDbs([dbPath])
     cached = undefined
   }
   if (!cached) {
+    if (readonlyStateDbs.size >= STATE_DB_HANDLE_CACHE_MAX) closeStateDbs([readonlyStateDbs.keys().next().value!])
     const db = new DatabaseSync(dbPath, { readOnly: true, timeout: busyTimeoutMs })
     cached = { db, ino, dev, mtimeNs, schemaVersion: null, columns: new Map(), indexes: new Map() }
-    readonlyStateDbs.set(dbPath, cached)
     schemaCaches.set(db, cached)
   }
+  readonlyStateDbs.delete(dbPath)
+  readonlyStateDbs.set(dbPath, cached)
   const { db } = cached
   try {
     db.exec(`PRAGMA busy_timeout = ${Math.max(0, Math.trunc(busyTimeoutMs))}`)
@@ -288,8 +294,7 @@ function openStateDbReadonly(dbPath: string, busyTimeoutMs = STATE_DB_BUSY_TIMEO
     }
     return db
   } catch (error) {
-    readonlyStateDbs.delete(dbPath)
-    db.close()
+    closeStateDbs([dbPath])
     throw error
   }
 }

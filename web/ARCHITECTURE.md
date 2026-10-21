@@ -75,6 +75,8 @@ and index probes. Every reader commits its snapshot in `finally`; shutdown and f
 replacement release the cached handles. Main-file modifications also reopen the handle
 so in-place damage cannot hide behind cached pages; ordinary WAL commits reuse it.
 Recovery keeps its own short-lived handle.
+Each thread retains at most 16 handles, closing the least recently used path on
+eviction so deleted profiles cannot accumulate unbounded descriptors or page caches.
 
 Worktree lifecycle status probes use private Git metadata and copied indexes. Only non-executable
 status settings enter that view; live repository filter definitions and configuration includes cannot

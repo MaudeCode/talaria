@@ -138,6 +138,24 @@ describe('state.db handle and schema reuse', () => {
     expect(observed.handles.length).toBe(2)
   })
 
+  it('bounds open handles while deleted profile paths accumulate and keeps active paths warm', async () => {
+    readImportableAgentSessionRows(path)
+    const active = observed.handles[0]!
+    for (let i = 0; i < 32; i += 1) {
+      const retired = join(dir, `retired-${String(i)}.db`)
+      seed(retired)
+      readImportableAgentSessionRows(retired)
+      rmSync(retired)
+      readImportableAgentSessionRows(path)
+      expect(observed.handles.filter((db) => db.isOpen).length).toBeLessThanOrEqual(16)
+      expect(active.isOpen).toBe(true)
+    }
+    expect(observed.handles.length).toBe(33)
+    expect(observed.handles[1]!.isOpen).toBe(false)
+    await stopStateDbWorker()
+    expect(observed.handles.filter((db) => db.isOpen).length).toBe(0)
+  })
+
   it('closes direct-reader handles at shutdown and can reopen afterward', async () => {
     readImportableAgentSessionRows(path)
     const db = observed.handles[0]!
