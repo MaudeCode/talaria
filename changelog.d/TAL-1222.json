@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "The model picker opens promptly when account limit checks are slow.",
+      "highlight": false,
+      "components": ["web"]
+    }
+  ]
+}

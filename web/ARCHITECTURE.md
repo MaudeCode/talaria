@@ -64,6 +64,11 @@ hand-written endpoint schemas.
 | Sidecar | `sidecar/client.ts`, `discover.ts`, `fake.ts` | newline-delimited JSON-RPC 2.0 over stdio with streamed frames and cancellation; restart with backoff; Agent discovery; the Vitest fake |
 | CLI | `cli/launcher.ts`, `ctl.ts`, `dotenv.ts`, `supervise.ts`, `bin/*` | `talaria-web` bootstrap, `ctl`, `.env` precedence, the serve supervisor, `talaria-web-mcp` |
 
+The model picker shares one pool-limit read per profile and catalog source. Its
+sidecar deadline is three seconds; successes and failures are cached for 45 seconds.
+A warm cache answers immediately during refresh, and expired cooldowns are omitted
+on every response. Catalog invalidation or changed credentials discard that snapshot.
+
 Worktree lifecycle status probes use private Git metadata and copied indexes. Only non-executable
 status settings enter that view; live repository filter definitions and configuration includes cannot
 be loaded by its status command. Initialized submodules use the same boundary, preserving their
