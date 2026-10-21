@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Changed",
+      "summary": "Finished turns sync their usage and title to the Agent with less database work, keeping its session database open between writes.",
+      "highlight": false,
+      "components": ["web"]
+    }
+  ]
+}

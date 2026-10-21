@@ -52,30 +52,107 @@ def _session_id(params: dict) -> str:
     return sid
 
 
-def sync_session_start(home: Path, session_id: str, model=None) -> bool:
-    db = _session_db(home)
-    if not db:
+# TAL-1191: write RPCs borrow the Agent's shared registry handle for the home's state.db (the one cached chat agents
+# hold) instead of a full writer open and close-time checkpoint per call. One extra reference per home stays pinned for
+# _IDLE_RELEASE_S after its last write; the registry hands out a fresh generation once the file is replaced.
+_IDLE_RELEASE_S = 60.0
+_pins_lock = threading.Lock()
+_pins: dict[str, tuple[object, threading.Timer]] = {}
+
+
+def release_session_db(db) -> None:
+    """Give back a registry reference (a cached agent's or a write pin); the final one closes the handle."""
+    if db is None:
+        return
+    try:
+        from hermes_state_registry import release_or_close
+
+        release_or_close(db)
+    except Exception:  # noqa: BLE001
+        log.warning("releasing a state.db handle failed", exc_info=True)
+
+
+def _write(home: Path, what: str, op, *, level: int = logging.DEBUG) -> bool:
+    """Run ``op(db)`` on the shared handle; False without a state.db or when it fails. A failed write unpins the handle,
+    so the next one reopens it unless another holder keeps it."""
+    try:
+        from hermes_state_registry import acquire
+    except ImportError as exc:
+        raise RpcError("hermes_state unavailable", condition="state_db_unavailable") from exc
+    db_path = home / "state.db"
+    if not db_path.exists():
         return False
     try:
-        db.ensure_session(session_id=session_id, source="webui", model=model)
-        return True
-    except Exception:  # noqa: BLE001
-        log.debug("Failed to sync session start", exc_info=True)
+        db = acquire(db_path)
+    except Exception as exc:  # noqa: BLE001
+        log.debug("Failed to open state.db at %s: %s", db_path, exc)
         return False
-    finally:
-        _close(db)
+    key = os.path.realpath(home)
+    # This call's reference keeps the same generation open; a retired one (replaced file) closes before its replacement
+    # is written, so its close-time checkpoint cannot carry the new rows into the old inode.
+    _pin(key, None)
+    ok = False
+    try:
+        op(db)
+        ok = True
+    except Exception:  # noqa: BLE001
+        log.log(level, "Failed to %s", what, exc_info=True)
+    if ok and db_path.exists():
+        _pin(key, db)
+    else:
+        release_session_db(db)
+    return ok
+
+
+def _pin(key: str, db) -> None:
+    """Make ``db`` (this call's reference) the home's pin with a fresh idle timer, giving back the previous pin."""
+    with _pins_lock:
+        previous = _pins.pop(key, None)
+        if previous is not None:
+            previous[1].cancel()
+        if db is not None:
+            timer = threading.Timer(_IDLE_RELEASE_S, lambda: _expire(key, timer))
+            timer.daemon = True
+            _pins[key] = (db, timer)
+            timer.start()
+    if previous is not None:  # outside the lock: a final release checkpoints
+        release_session_db(previous[0])
+
+
+def _expire(key: str, timer: threading.Timer) -> None:
+    with _pins_lock:
+        pinned = _pins.get(key)
+        if pinned is None or pinned[1] is not timer:
+            return
+        del _pins[key]
+    release_session_db(pinned[0])
+
+
+def release_home(home) -> None:
+    """Give back the pinned handle for ``home`` before its profile is deleted."""
+    _pin(os.path.realpath(home), None)
+
+
+def release_all() -> None:
+    """Shutdown: give back every pinned handle, so the final release still checkpoints once per process."""
+    with _pins_lock:
+        keys = list(_pins)
+    for key in keys:
+        _pin(key, None)
+
+
+def sync_session_start(home: Path, session_id: str, model=None) -> bool:
+    return _write(home, "sync session start", lambda db: db.ensure_session(session_id=session_id, source="webui", model=model))
 
 
 def sync_session_usage(home: Path, session_id: str, *, input_tokens=0, output_tokens=0, estimated_cost=None, model=None, title=None,
                        message_count=None, cache_read_tokens=0, cache_write_tokens=0, api_call_count=None) -> bool:
-    db = _session_db(home)
-    if not db:
-        return False
-    try:
-        db.ensure_session(session_id=session_id, source="webui", model=model)
+    def op(db) -> None:
+        # The token update's own row guard creates the session with this source, like ``ensure_session``.
         db.update_token_counts(
             session_id=session_id, input_tokens=input_tokens, output_tokens=output_tokens, cache_read_tokens=cache_read_tokens,
             cache_write_tokens=cache_write_tokens, api_call_count=api_call_count or 0, estimated_cost_usd=estimated_cost, model=model, absolute=True,
+            source="webui",
         )
         if title:
             try:
@@ -87,22 +164,16 @@ def sync_session_usage(home: Path, session_id: str, *, input_tokens=0, output_to
                 db._execute_write(lambda conn: conn.execute("UPDATE sessions SET message_count = ? WHERE id = ?", (message_count, session_id)))
             except Exception:  # noqa: BLE001
                 log.debug("Failed to sync message count", exc_info=True)
-        return True
-    except Exception:  # noqa: BLE001
-        log.debug("Failed to sync session usage", exc_info=True)
-        return False
-    finally:
-        _close(db)
+
+    return _write(home, "sync session usage", op)
 
 
 def sync_session_title(home: Path, session_id: str, title: str, *, manual: bool = False) -> bool:
     """A manual (user-requested) title lands with ``user`` provenance; an auto title is ``llm`` and never replaces a user name."""
     if not title:
         return False
-    db = _session_db(home)
-    if not db:
-        return False
-    try:
+
+    def op(db) -> None:
         db.ensure_session(session_id=session_id, source="webui")
         source = getattr(db, "TITLE_SOURCE_LLM", "llm")
 
@@ -118,28 +189,16 @@ def sync_session_title(home: Path, session_id: str, title: str, *, manual: bool 
             alt = db.get_next_title_in_lineage(title)
             if alt and alt != title:
                 write(alt)
-        return True
-    except Exception:  # noqa: BLE001
-        log.debug("Failed to sync session title", exc_info=True)
-        return False
-    finally:
-        _close(db)
+
+    return _write(home, "sync session title", op)
 
 
 def append_message(home: Path, session_id: str, *, role: str, content: str, tool_name=None, timestamp=None) -> bool:
     """TAL-258 (predecessor ``_persist_handoff_summary_to_state_db``): one row through ``SessionDB.append_message``,
     which also bumps the session's ``message_count``. False without a state.db or when the write fails."""
-    db = _session_db(home)
-    if not db:
-        return False
-    try:
-        db.append_message(session_id, role, content=content, tool_name=tool_name or None, timestamp=timestamp)
-        return True
-    except Exception:  # noqa: BLE001
-        log.warning("Failed to append a %s row to state.db for %s", role, session_id, exc_info=True)
-        return False
-    finally:
-        _close(db)
+    return _write(home, f"append a {role} row to state.db for {session_id}",
+                  lambda db: db.append_message(session_id, role, content=content, tool_name=tool_name or None, timestamp=timestamp),
+                  level=logging.WARNING)
 
 
 def _close(db) -> None:
