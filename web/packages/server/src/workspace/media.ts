@@ -2,8 +2,8 @@
  * Byte-serving helpers and the `/api/media` allow/deny model (Python
  * `_serve_file_bytes`, `_media_deny_reason`, and `_session_media_token_allows_path`).
  */
-import { closeSync, createReadStream, fstatSync, openSync, readdirSync, readSync, realpathSync, statSync } from 'node:fs'
-import { constants as fsConstants } from 'node:fs'
+import { closeSync, createReadStream, fstatSync, openSync, readdirSync, read, realpathSync, statSync } from 'node:fs'
+import { constants as fsConstants, type BigIntStats } from 'node:fs'
 import { basename, dirname, extname, join, resolve } from 'node:path'
 import { tmpdir, userInfo } from 'node:os'
 import { createHash } from 'node:crypto'
@@ -85,19 +85,32 @@ export function ifNoneMatchMatches(header: string | undefined, etag: string): bo
   return header.split(',').map((c) => c.trim()).filter(Boolean).some((c) => strip(c) === current)
 }
 
-function readAll(fd: number, size: number): Buffer {
+async function readAll(fd: number, size: number, start = 0): Promise<Buffer> {
   const chunks: Buffer[] = []
   let remaining = size
   const buf = Buffer.alloc(Math.min(1024 * 1024, Math.max(1, size)))
-  let position = 0
+  let position = start
   while (remaining > 0) {
-    const n = readSync(fd, buf, 0, Math.min(buf.length, remaining), position)
+    const n = await new Promise<number>((resolve, reject) => {
+      read(fd, buf, 0, Math.min(buf.length, remaining), position, (error, bytesRead) => {
+        if (error) reject(error)
+        else resolve(bytesRead)
+      })
+    })
     if (n <= 0) break
     chunks.push(Buffer.from(buf.subarray(0, n)))
     remaining -= n
     position += n
   }
   return Buffer.concat(chunks)
+}
+
+// Validators only: never retain bytes or descriptors, and never authorize from a pathname.
+const validators = new Map<string, string>()
+const VALIDATOR_CACHE_LIMIT = 256
+
+function fileSignature(st: BigIntStats): string {
+  return `${st.dev}:${st.ino}:${st.size}:${st.mtimeNs}:${st.ctimeNs}`
 }
 
 export interface ServeFileOptions {
@@ -115,12 +128,14 @@ export interface ServeFileOptions {
 export async function serveFileBytes(ctx: RequestContext, target: string, opts: ServeFileOptions): Promise<void> {
   let fd: number | null = null
   let fileSize: number
+  let signature: string
   try {
     fd = opts.anchorRoot ? openAnchoredFd(opts.anchorRoot, resolvePathLikePython(target), { wantDir: false }) : openSync(target, fsConstants.O_RDONLY)
-    const st = fstatSync(fd)
+    const st = fstatSync(fd, { bigint: true })
     if (!st.isFile()) throw Object.assign(new Error('not a file'), { code: 'EISDIR' })
-    if (opts.denyHardLinks && st.nlink > 1) { closeSync(fd); (await ctx.json({ error: 'Path not in allowed location' }, { status: 403 })); return }
-    fileSize = st.size
+    if (opts.denyHardLinks && st.nlink > 1n) { closeSync(fd); fd = null; (await ctx.json({ error: 'Path not in allowed location' }, { status: 403 })); return }
+    fileSize = Number(st.size)
+    signature = fileSignature(st)
   } catch (error) {
     if (fd !== null) closeSync(fd)
     const code = (error as NodeJS.ErrnoException).code
@@ -131,19 +146,35 @@ export async function serveFileBytes(ctx: RequestContext, target: string, opts: 
     return
   }
   try {
-    let etag: string | null = null
-    let snapshot: Buffer | null = null
-    if (!opts.cacheControl.includes('no-store') && fileSize <= ETAG_SIZE_CAP) {
-      snapshot = readAll(fd, fileSize)
-      if (snapshot.length === fileSize && fileSize > 0) etag = `W/"${createHash('sha256').update(snapshot).digest('hex')}"`
-      fileSize = snapshot.length
-    }
+    const cacheable = !opts.cacheControl.includes('no-store') && fileSize <= ETAG_SIZE_CAP
+    let etag = cacheable ? validators.get(signature) ?? null : null
+    const rangeHeader = ctx.header('range')
+    const conditional = ctx.header('if-none-match')
     const baseHeaders: Record<string, string> = { 'Cache-Control': opts.cacheControl }
-    if (etag && ifNoneMatchMatches(ctx.header('if-none-match'), etag)) {
-      await ctx.send({ status: 304, headers: { ...baseHeaders, ETag: etag } })
+    const notModified = async (): Promise<void> => {
+      await ctx.send({ status: 304, headers: { ...baseHeaders, ETag: etag! } })
+    }
+    if (etag && ifNoneMatchMatches(conditional, etag)) {
+      await notModified()
       return
     }
-    const rangeHeader = ctx.header('range')
+    let snapshot: Buffer | null = null
+    let snapshotStart = 0
+    if (cacheable && (!rangeHeader || (conditional && !etag))) {
+      snapshot = await readAll(fd, fileSize)
+      // A writer may change an inode while IO yields. Never cache a validator for a mixed snapshot.
+      if (snapshot.length === fileSize && fileSize > 0 && fileSignature(fstatSync(fd, { bigint: true })) === signature) {
+        etag ??= `W/"${createHash('sha256').update(snapshot).digest('hex')}"`
+        validators.delete(signature)
+        validators.set(signature, etag)
+        if (validators.size > VALIDATOR_CACHE_LIMIT) validators.delete(validators.keys().next().value!)
+      } else etag = null
+      fileSize = snapshot.length
+      if (etag && ifNoneMatchMatches(conditional, etag)) {
+        await notModified()
+        return
+      }
+    }
     const byteRange = parseRangeHeader(rangeHeader, fileSize)
     if (rangeHeader && !byteRange) {
       await ctx.send({ status: 416, headers: { 'Content-Range': `bytes */${String(fileSize)}`, 'Accept-Ranges': 'bytes' } })
@@ -151,6 +182,12 @@ export async function serveFileBytes(ctx: RequestContext, target: string, opts: 
     }
     const [start, end] = byteRange ?? [0, Math.max(0, fileSize - 1)]
     const contentLength = fileSize ? end - start + 1 : 0
+    if (cacheable && byteRange && !snapshot) {
+      snapshot = await readAll(fd, contentLength, start)
+      snapshotStart = start
+      if (snapshot.length !== contentLength) throw new Error('File changed while reading range')
+      if (fileSignature(fstatSync(fd, { bigint: true })) !== signature) etag = null
+    }
     const headers: Record<string, string> = {
       ...baseHeaders,
       'Content-Type': opts.mime,
@@ -161,13 +198,19 @@ export async function serveFileBytes(ctx: RequestContext, target: string, opts: 
     if (byteRange) headers['Content-Range'] = `bytes ${String(start)}-${String(end)}/${String(fileSize)}`
     if (opts.csp) Object.assign(headers, previewHeaders(opts.csp))
     if (!contentLength || snapshot) {
-      await ctx.send({ status: byteRange ? 206 : 200, headers, body: snapshot ? snapshot.subarray(start, start + contentLength) : Buffer.alloc(0), security: !opts.csp })
+      await ctx.send({ status: byteRange ? 206 : 200, headers, body: snapshot ? snapshot.subarray(start - snapshotStart, start - snapshotStart + contentLength) : Buffer.alloc(0), security: !opts.csp })
       return
     }
     // Large files stream the selected span from the descriptor with backpressure (Python copied bounded chunks); the
     // stream owns the descriptor from here.
-    await ctx.sendStream({ status: byteRange ? 206 : 200, headers: { ...headers, 'Content-Length': String(contentLength) }, security: !opts.csp }, createReadStream('', { fd, start, end: start + contentLength - 1, autoClose: true, highWaterMark: 256 * 1024 }))
+    const stream = createReadStream('', { fd, start, end: start + contentLength - 1, autoClose: true, highWaterMark: 256 * 1024 })
     fd = -1
+    try {
+      await ctx.sendStream({ status: byteRange ? 206 : 200, headers: { ...headers, 'Content-Length': String(contentLength) }, security: !opts.csp }, stream)
+    } catch (error) {
+      stream.destroy()
+      throw error
+    }
   } finally {
     if (fd !== -1) closeSync(fd)
   }
@@ -199,7 +242,7 @@ export async function serveInlineHtmlPreview(ctx: RequestContext, target: string
       const st = fstatSync(fd)
       if (!st.isFile()) throw Object.assign(new Error('not a file'), { code: 'EISDIR' })
       // The preview is rewritten in memory; anything past the buffering cap is served as a download instead.
-      if (st.size <= ETAG_SIZE_CAP) body = htmlPreviewWithBlankBase(readAll(fd, st.size))
+      if (st.size <= ETAG_SIZE_CAP) body = htmlPreviewWithBlankBase(await readAll(fd, st.size))
     } finally {
       closeSync(fd)
     }

@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Media previews avoid rereading entire files for small ranges and unchanged content.",
+      "highlight": false,
+      "components": ["web"]
+    }
+  ]
+}
