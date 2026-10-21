@@ -826,21 +826,25 @@ def _request_overrides(model: str, provider, runtime: dict) -> dict | None:
 
 def _provider_routing_kwargs() -> dict:
     """The profile's OpenRouter ``provider_routing`` and ``openrouter.min_coding_score`` as ``AIAgent`` kwargs, with the
-    Agent's own mapping (``gateway/session_worker_construct.routing_agent_kwargs``); a score outside 0..1 stays unset.
-    Runs under the call's ``scoped_home``."""
+    Agent's own mapping (``gateway/session_worker_construct.routing_agent_kwargs``). The score is coerced like the CLI's
+    (``cli_init_mixin``), so a quoted number counts and a value outside 0..1 stays unset. Runs under ``scoped_home``."""
     from hermes_cli.config import load_config
 
     cfg = load_config() or {}
     routing = cfg.get("provider_routing")
     routing = routing if isinstance(routing, dict) else {}
     openrouter = cfg.get("openrouter")
-    score = openrouter.get("min_coding_score") if isinstance(openrouter, dict) else None
+    raw_score = openrouter.get("min_coding_score") if isinstance(openrouter, dict) else None
+    try:
+        score = float(raw_score) if raw_score not in (None, "") else None
+    except (TypeError, ValueError):
+        score = None
     return {
         "providers_allowed": routing.get("only"), "providers_ignored": routing.get("ignore"),
         "providers_order": routing.get("order"), "provider_sort": routing.get("sort"),
         "provider_require_parameters": routing.get("require_parameters", False),
         "provider_data_collection": routing.get("data_collection"),
-        "openrouter_min_coding_score": score if isinstance(score, (int, float)) and not isinstance(score, bool) and 0 <= score <= 1 else None,
+        "openrouter_min_coding_score": score if score is not None and 0.0 <= score <= 1.0 else None,
     }
 
 

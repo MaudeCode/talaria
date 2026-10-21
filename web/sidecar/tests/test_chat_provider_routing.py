@@ -63,7 +63,7 @@ provider_routing:
   require_parameters: true
   data_collection: deny
 openrouter:
-  min_coding_score: 0.8
+  min_coding_score: "0.8"
 """
 
 
@@ -86,5 +86,6 @@ def test_turns_carry_the_profile_provider_routing_and_rebuild_when_it_changes(tm
     # The unchanged block reuses the cached agent; the edited one builds a new agent on the next turn.
     assert len(seen) == 3, seen
     assert seen[1]["provider_sort"] == "throughput" and seen[1]["providers_allowed"] is None, seen
-    # A profile without ``provider_routing`` gets the Agent defaults, and an out-of-range score stays unset.
+    # A quoted score counts, as in the Agent CLI. A profile without ``provider_routing`` gets the Agent defaults, and an
+    # out-of-range score stays unset.
     assert seen[2] == {name: False if name == "provider_require_parameters" else None for name in ROUTING}, seen
