@@ -5817,6 +5817,24 @@
     ],
     "additionalProperties": false
   },
+  "process.stop": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "properties": {
+      "outcome": {
+        "type": "string",
+        "enum": [
+          "stopped",
+          "not_running",
+          "not_found"
+        ]
+      }
+    },
+    "required": [
+      "outcome"
+    ],
+    "additionalProperties": false
+  },
   "process.list": {
     "$schema": "https://json-schema.org/draft/2020-12/schema",
     "type": "object",

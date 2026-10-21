@@ -197,5 +197,37 @@
         "text": ""
       }
     }
+  ],
+  "process.stop": [
+    {
+      "params": {
+        "profile_home": "<home>",
+        "session_id": "web-1",
+        "process_id": "proc_1"
+      },
+      "result": {
+        "outcome": "stopped"
+      }
+    },
+    {
+      "params": {
+        "profile_home": "<home>",
+        "session_id": "web-1",
+        "process_id": "proc_1"
+      },
+      "result": {
+        "outcome": "not_running"
+      }
+    },
+    {
+      "params": {
+        "profile_home": "<home>",
+        "session_id": "web-1",
+        "process_id": "proc_1"
+      },
+      "result": {
+        "outcome": "not_found"
+      }
+    }
   ]
 }

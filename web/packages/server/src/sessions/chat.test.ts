@@ -2344,6 +2344,39 @@ describe('chat turns through the sidecar', () => {
     expect(await json(await post(s, '/api/bg-task-complete-ack', { session_id: sid, task_id: 't1' }))).toEqual({ ok: true, session_id: sid, task_id: 't1', noop: true })
   })
 
+  it('stops only owned running background work and preserves sidecar outcomes (TAL-1172)', async () => {
+    const sid = await newSession(s)
+    const other = await newSession(s)
+    sidecar.respond('process.background_list', (params) => ({ delegations: [], processes: [
+      { process_id: 'proc_stop', session_key: String(params.session_ids[0]), command: 'make test', started_at: 12, exited: false, exited_at: null, exit_code: null, completion_reason: '', watched: false },
+    ] }))
+    const listed = await json(await s.get(`/api/background/tasks?session_id=${sid}`))
+    expect((listed.tasks as Json[])[0]).toMatchObject({ task_id: 'proc_stop', can_stop: true })
+    for (const outcome of ['stopped', 'not_running', 'not_found'] as const) {
+      sidecar.respond('process.stop', (params) => {
+        expect(params).toMatchObject({ session_id: sid, process_id: 'proc_stop', profile_home: s.deps.profileHome('default') })
+        return { outcome }
+      })
+      expect(await json(await post(s, '/api/background/stop', { session_id: sid, task_id: 'proc_stop' }))).toEqual({ outcome })
+    }
+    const readonly = await s.deps.sessionStore.get(sid)
+    readonly.read_only = true
+    await s.deps.sessionStore.save(readonly)
+    expect(((await json(await s.get(`/api/background/tasks?session_id=${sid}`))).tasks as Json[])[0]).toMatchObject({ can_stop: false })
+    expect((await post(s, '/api/background/stop', { session_id: sid, task_id: 'proc_stop' })).status).toBe(403)
+    readonly.read_only = false
+    await s.deps.sessionStore.save(readonly)
+    const before = sidecar.calls.filter((c) => c.method === 'process.stop').length
+    expect(await json(await post(s, '/api/background/stop', { session_id: other, task_id: 'missing' }))).toEqual({ outcome: 'not_found' })
+    expect(sidecar.calls.filter((c) => c.method === 'process.stop')).toHaveLength(before)
+    expect((await s.deps.background.snapshot(sid, null)).tasks[0]).toMatchObject({ status: 'running' })
+    sidecar.respond('process.background_list', () => ({ delegations: [], processes: [] }))
+    expect((await s.deps.background.snapshot(sid, null)).tasks[0]).toMatchObject({ status: 'unknown', can_stop: false })
+    sidecar.respond('process.background_list', () => { throw new SidecarError('offline', { condition: 'sidecar_unavailable' }) })
+    expect((await post(s, '/api/background/stop', { session_id: sid, task_id: 'proc_stop' })).status).toBe(503)
+    sidecar.respond('process.background_list', () => ({ delegations: [], processes: [] }))
+  })
+
   it('keeps every piece of background work as one durable record that every client reads (TAL-372)', async () => {
     const sid = await newSession(s)
     sidecar.respond('chat.start', (params) => completed([{ role: 'user', content: str(params.user_message) }, { role: 'assistant', content: 'answer to it' }]))

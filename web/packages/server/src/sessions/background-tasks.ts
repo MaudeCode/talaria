@@ -5,10 +5,10 @@
  * `sessions/_background/<sid>.json`, so reloads, restarts and every client read the same history, and reading never
  * consumes anything. The Agent stays authoritative for its own work: a receipt only fills in what it no longer reports.
  */
-import type { BackgroundLink, BackgroundTask } from '@maudecode/talaria-web-contracts'
+import type { BackgroundLink, BackgroundTask, SidecarResult } from '@maudecode/talaria-web-contracts'
 import type { DocumentBackend } from './storage/backend.js'
 import { updateDocument } from './storage/document.js'
-import type { SidecarLike } from '../sidecar/client.js'
+import { SidecarError, type SidecarLike } from '../sidecar/client.js'
 import { str } from '../util.js'
 import { isDict, stripToolCallXml } from './merge.js'
 import { toolKind } from './tool-display.js'
@@ -157,7 +157,7 @@ function dismissible(r: Receipt, status: Status): boolean {
 }
 
 /** The record every client sees; `unconfirmed` shows running work the Agent did not confirm as `unknown`. */
-export function taskView(r: Receipt, opts: { unconfirmed?: boolean } = {}): BackgroundTask {
+export function taskView(r: Receipt, opts: { unconfirmed?: boolean; canStop?: boolean } = {}): BackgroundTask {
   const status: Status = opts.unconfirmed && LIVE.has(r.status) ? 'unknown' : r.status
   return {
     task_id: r.task_id, kind: r.kind, status, title: r.title, started_at: r.started_at, updated_at: r.updated_at, completed_at: r.completed_at,
@@ -167,6 +167,7 @@ export function taskView(r: Receipt, opts: { unconfirmed?: boolean } = {}): Back
     pinned: status === 'running' || status === 'attention' || (dismissible(r, status) && r.dismissed_at === null),
     // Dismissed work nobody can confirm will not settle on its own; clients stop refreshing for it.
     active: LIVE.has(status) && !(status === 'unknown' && r.dismissed_at !== null),
+    can_stop: Boolean(opts.canStop) && (status === 'running' || status === 'attention') && r.kind !== 'background_command',
     dismissible: dismissible(r, status) && r.dismissed_at === null,
   }
 }
@@ -359,12 +360,13 @@ export class BackgroundActivity {
   }
 
   /** The session's records, refreshed from the Agent; work it cannot confirm right now shows `unknown`. */
-  async snapshot(sid: string, profile: string | null, opts: { agentOnly?: boolean } = {}): Promise<{ tasks: BackgroundTask[]; agent_available: boolean; agents_working: boolean }> {
+  async snapshot(sid: string, profile: string | null, opts: { agentOnly?: boolean; canStop?: boolean } = {}): Promise<{ tasks: BackgroundTask[]; agent_available: boolean; agents_working: boolean }> {
     const sidecar = this.deps.sidecar()
-    let agent: { delegations: DelegationRow[]; processes: ProcessRow[] } | null = null
+    let agent: SidecarResult<'process.background_list'> | null = null
     if (sidecar) {
       try { agent = await sidecar.call('process.background_list', { profile_home: this.deps.profileHome(profile), session_ids: [sid] }) } catch (error) { this.deps.log(`[webui] WARNING: background tasks for ${sid} unavailable from the Agent: ${(error as Error).message}`) }
     }
+    if (agent) agent = { delegations: agent.delegations.filter((r) => r.origin_ui_session_id === sid), processes: agent.processes.filter((p) => p.session_key === sid) }
     const now = this.deps.now()
     // A ledger row alone confirms only a settled unit: a running one must still be in the Agent's live registry, else it
     // was lost in an Agent restart.
@@ -384,7 +386,7 @@ export class BackgroundActivity {
       // card; it returns to running once the Agent reports it again. A refresh (`agentOnly`) leaves the records as they are.
       await this.deps.store.update(sid, (await this.deps.store.list(sid)).filter((r) => r.kind === 'delegation' && RUNNING_LIKE.has(r.status)).map((r) => ({ task_id: r.task_id, kind: r.kind, status: 'unknown' as const })))
     }
-    const tasks = (await this.deps.store.list(sid)).map((r) => taskView(r, { unconfirmed: !agent && !confirmed(r) }))
+    const tasks = (await this.deps.store.list(sid)).map((r) => taskView(r, { unconfirmed: !agent && !confirmed(r), canStop: opts.canStop !== false && agent !== null && confirmed(r) }))
     tasks.sort((a, b) => (b.started_at ?? b.updated_at) - (a.started_at ?? a.updated_at))
     return { tasks, agent_available: agent !== null, agents_working: tasks.some((t) => t.kind === 'delegation' && (t.status === 'running' || t.status === 'attention')) }
   }
@@ -400,6 +402,20 @@ export class BackgroundActivity {
     const sidecar = this.deps.sidecar()
     if (receipt.kind !== 'delegation' || !receipt.agent_result || !sidecar) return null
     try { return stripToolCallXml((await sidecar.call('process.delegation_result', { profile_home: this.deps.profileHome(profile), session_id: sid, delegation_id: taskId })).text) || null } catch { return null }
+  }
+
+  /** Recheck the session's authoritative snapshot before routing a stop; the sidecar checks ownership again. */
+  async stop(sid: string, profile: string | null, taskId: string): Promise<SidecarResult<'process.stop'>> {
+    const snapshot = await this.snapshot(sid, profile)
+    if (!snapshot.agent_available) throw new SidecarError('Background work is unavailable from the Agent', { condition: 'sidecar_unavailable' })
+    const task = snapshot.tasks.find((t) => t.task_id === taskId)
+    if (!task) return { outcome: 'not_found' }
+    if (!task.can_stop) return { outcome: 'not_running' }
+    const sidecar = this.deps.sidecar()
+    if (!sidecar) throw new SidecarError('Agent unavailable', { condition: 'sidecar_unavailable' })
+    const result = await sidecar.call('process.stop', { profile_home: this.deps.profileHome(profile), session_id: sid, process_id: taskId })
+    this.refresh(sid, profile)
+    return result
   }
 
   /** Dismissal is read state, separate from the task: the record stays in the history and leaves the tray. */

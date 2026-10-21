@@ -9,7 +9,7 @@ import { keys } from '../../api/queryKeys'
 import { ErrorState, LoadingState } from '../../ui/States'
 import { relativeTime } from '../sessions/SessionListPanel'
 import { m } from '../../paraglide/messages.js'
-import { agentsSummary, StatusIcon, statusLabel } from './BackgroundWork'
+import { BackgroundTaskAction, agentsSummary, StatusIcon, statusLabel } from './BackgroundWork'
 
 const LIVE_REFRESH_MS = 10_000
 
@@ -51,6 +51,7 @@ export function AgentsPage({ sessionId, active }: { sessionId: string; active: b
                 <StatusIcon status={t.status} />
                 <span className="min-w-0 flex-1 truncate text-[13px] text-text" title={t.title}>{t.title}</span>
                 <span className="shrink-0 text-[11px] text-muted">{statusLabel(t.status)}</span>
+                <BackgroundTaskAction sessionId={sessionId} task={t} />
               </div>
               <div className="flex min-w-0 items-center gap-2 pl-5 text-[11px] text-muted">
                 {t.agents && <span>{agentsSummary(t.agents)}</span>}

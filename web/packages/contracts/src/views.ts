@@ -562,6 +562,8 @@ export const BackgroundTaskSchema = z.object({
   agents: BackgroundLinkSchema.shape.agents.nullable(),
   pinned: z.boolean(),
   dismissible: z.boolean(),
+  /** TAL-1172: confirmed running work this session may stop. */
+  can_stop: z.boolean().optional(),
   active: z.boolean(),
 })
 export type BackgroundTask = z.infer<typeof BackgroundTaskSchema>
@@ -573,6 +575,7 @@ export type BackgroundTask = z.infer<typeof BackgroundTaskSchema>
 export const BackgroundTasksResponseSchema = z.object({ session_id: z.string(), tasks: z.array(BackgroundTaskSchema), agent_available: z.boolean(), agents_working: z.boolean().optional() })
 export const BackgroundTaskResultSchema = z.object({ task_id: z.string(), text: z.string() })
 export const BackgroundDismissRequestSchema = z.object({ session_id: SessionIdSchema, task_id: z.string().min(1) })
+export const BackgroundStopResponseSchema = z.object({ outcome: z.enum(['stopped', 'not_running', 'not_found']) })
 export const BackgroundDismissResponseSchema = z.object({ ok: z.literal(true), task: BackgroundTaskSchema })
 export const ShareCreateResponseSchema = z.looseObject({ ok: z.literal(true), share: z.looseObject({ token: z.string(), url: z.string(), title: z.string(), message_count: z.number().int(), created_at: z.number(), updated_at: z.number() }), session: SessionRowSchema })
 export const ShareMessageSchema = z.looseObject({ role: z.string(), content: z.union([z.string(), z.null(), z.array(Json)]).optional() })

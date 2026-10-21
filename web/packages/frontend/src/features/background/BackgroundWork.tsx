@@ -55,11 +55,27 @@ export function StatusIcon({ status }: { status: BackgroundTask['status'] | Back
   return <AlertTriangle size={13} className="shrink-0 text-warning" aria-hidden="true" />
 }
 
+/** One action slot for a background row in the composer and Agents page. */
+export function BackgroundTaskAction({ sessionId, task }: { sessionId: string; task: BackgroundTask }) {
+  const qc = useQueryClient()
+  const stopping = Boolean(task.can_stop)
+  const action = useMutation({
+    mutationFn: async () => {
+      if (stopping) await api.stopBackgroundTask(sessionId, task.task_id)
+      else await api.dismissBackgroundTask(sessionId, task.task_id)
+    },
+    onSuccess: () => qc.invalidateQueries({ queryKey: keys.background(sessionId) }),
+  })
+  if (!stopping && !task.dismissible) return null
+  return <>
+    <button type="button" className="composer-notice-action" disabled={action.isPending} onClick={() => action.mutate()}>{stopping ? m.bg_stop() : m.notice_dismiss()}</button>
+    {action.isError && <span role="alert" className="text-warning">{action.error.message}</span>}
+  </>
+}
+
 function TaskRow({ sessionId, task }: { sessionId: string; task: BackgroundTask }) {
   const [open, setOpen] = useState(false)
-  const qc = useQueryClient()
   const result = useQuery({ queryKey: keys.backgroundResult(sessionId, task.task_id), queryFn: () => api.fetchBackgroundResult(sessionId, task.task_id), enabled: open && task.result_available })
-  const dismiss = useMutation({ mutationFn: () => api.dismissBackgroundTask(sessionId, task.task_id), onSuccess: () => qc.invalidateQueries({ queryKey: keys.background(sessionId) }) })
   return (
     <li className="bg-work-task flex min-w-0 flex-col gap-1" data-task-id={task.task_id} data-status={task.status}>
       <div className="flex min-w-0 items-center gap-1.5">
@@ -67,7 +83,7 @@ function TaskRow({ sessionId, task }: { sessionId: string; task: BackgroundTask 
         <span className="min-w-0 flex-1 truncate" title={task.title}><span className="text-muted">{kindLabel(task.kind)}</span> {task.title}</span>
         <span className="shrink-0 text-[11px] text-muted">{task.agents && task.agents.total > 1 ? agentsSummary(task.agents) : statusLabel(task.status)}</span>
         {task.result_available && <button type="button" className="composer-notice-action" aria-expanded={open} onClick={() => setOpen((o) => !o)}>{open ? m.bg_hide_result() : m.bg_show_result()}</button>}
-        {task.dismissible && <button type="button" className="composer-notice-action" disabled={dismiss.isPending} onClick={() => dismiss.mutate()}>{m.notice_dismiss()}</button>}
+        <BackgroundTaskAction sessionId={sessionId} task={task} />
       </div>
       {open && (
         <div className="bg-work-result max-h-72 overflow-auto rounded-md bg-surface-subtle px-2 py-1 text-[13px]">
