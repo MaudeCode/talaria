@@ -256,7 +256,9 @@ export class GatewaySessions {
     if (Buffer.byteLength(value.content, 'utf8') > OWNER_EXPORT_MAX_BYTES) throw new HttpFailure(413, 'The owner transcript exceeds the export limit')
     let content: string
     try {
-      content = format === 'json' ? JSON.stringify(redactNestedMessageContainers(JSON.parse(value.content) as unknown, redact), null, 2)
+      // The owner redacts HTML's structured transcript before rendering. A shell/text redactor corrupts its markup.
+      content = format === 'html' ? value.content : format === 'json'
+        ? JSON.stringify(redactNestedMessageContainers(JSON.parse(value.content) as unknown, redact), null, 2)
         : str(redactText(value.content, redact))
     } catch {
       throw new HttpFailure(409, 'The Agent owner returned an invalid transcript export', { code: 'owner_export_invalid' })

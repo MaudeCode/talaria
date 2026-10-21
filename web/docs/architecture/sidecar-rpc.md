@@ -43,8 +43,10 @@ profile owner's read-only `session.export` once, translating Markdown to native
 No resume, subscription, local session, Agent-host file or gateway launch is
 created. The native request has a 25-second RPC deadline and a 30-second outer
 deadline; content is capped at 4 MiB UTF-8 at both sidecar and HTTP boundaries.
-Talaria reapplies its redaction policy and owns the download filename and MIME
-type. Older/unavailable owners refuse export with an actionable HTTP 409; size
+The server supplies Talaria's redaction policy to the owner, which redacts before
+rendering. JSON and Markdown also receive Talaria's text redaction; rendered HTML
+stays intact. Talaria owns the download filename and MIME type.
+Older/unavailable owners refuse export with an actionable HTTP 409; size
 refusals return 413. Direct session exports retain their existing renderer.
 
 ## Pending steer delivery

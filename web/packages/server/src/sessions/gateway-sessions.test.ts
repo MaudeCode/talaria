@@ -357,7 +357,7 @@ describe('canonical owner attachment', () => {
     const content = format === 'json' ? JSON.stringify({ messages: [{ role: 'user', content: raw }], api_key: secret })
       : format === 'html' ? `<p>${raw}</p>` : raw
     sidecar.respond('gateway.session', (params) => ({ state: 'attached', reason: null, snapshot: null, receipt: null,
-      export: { format, filename: 'owner', content: params.redact ? content : format === 'json' ? JSON.stringify({ title: 'policy disabled' }) : 'policy disabled' } }))
+      export: { format, filename: 'owner', content: params.redact ? (format === 'html' ? content.replace(secret, '***') : content) : format === 'json' ? JSON.stringify({ title: 'policy disabled' }) : 'policy disabled' } }))
     const res = await s.get(`/api/session/export?session_id=${sid}&format=${format}&redact=false`)
     expect(res.status).toBe(200)
     expect(await res.text()).not.toContain(secret)
@@ -365,6 +365,17 @@ describe('canonical owner attachment', () => {
     const unredacted = await s.get(`/api/session/export?session_id=${sid}&format=${format}`)
     expect(unredacted.status).toBe(200)
     expect(await unredacted.text()).toContain('policy disabled')
+  })
+
+  it('preserves owner HTML already redacted before rendering', async () => {
+    const content = '<!DOCTYPE html><html><body><div class="layout"><div class="message">OPENAI_API_KEY=***</div></div></body></html>'
+    sidecar.respond('gateway.session', (params) => {
+      expect(params.redact).toBe(true)
+      return { state: 'attached', reason: null, snapshot: null, receipt: null, export: { format: 'html', filename: 'owner.html', content } }
+    })
+    const response = await s.get(`/api/session/export?session_id=${sid}&format=html`)
+    expect(response.status).toBe(200)
+    expect(await response.text()).toBe(content)
   })
 
   it.each(['unsupported', 'timeout', 'missing', 'format', 'oversize', 'malformed'] as const)('refuses an owner export on %s without a local fallback', async (failure) => {
