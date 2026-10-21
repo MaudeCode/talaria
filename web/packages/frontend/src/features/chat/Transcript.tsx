@@ -105,20 +105,31 @@ export function Transcript(props: TranscriptProps) {
   const lastTopRef = useRef(0)
 
   const readerAnchor = useRef<{ key: string; top: number } | null>(null)
+  const anchorFrame = useRef<number | null>(null)
   const rememberReaderAnchor = useCallback(() => {
-    // Following owns the tail position; no history anchor is used until the reader leaves it.
+    // Following owns the scroll position; a reader anchor is only used away from the bottom.
     if (followsRef.current()) { readerAnchor.current = null; return }
-    const pane = scrollRef.current
-    if (!pane) return
-    const bounds = pane.getBoundingClientRect()
-    const visible = [...pane.querySelectorAll<HTMLElement>('[data-message-key]')].filter((row) => {
-      const rect = row.getBoundingClientRect()
-      return rect.bottom > bounds.top && rect.top < bounds.bottom
+    if (anchorFrame.current !== null) return
+    anchorFrame.current = requestAnimationFrame(() => {
+      anchorFrame.current = null
+      if (followsRef.current()) return
+      const pane = scrollRef.current
+      if (!pane) return
+      const bounds = pane.getBoundingClientRect()
+      const visible = [...pane.querySelectorAll<HTMLElement>('[data-message-key]')].filter((row) => {
+        const rect = row.getBoundingClientRect()
+        return rect.bottom > bounds.top && rect.top < bounds.bottom
+      })
+      const row = visible.find((row) => row.getBoundingClientRect().top >= bounds.top) ?? visible[0]
+      const key = row?.dataset.messageKey
+      readerAnchor.current = row && key ? { key, top: row.getBoundingClientRect().top - bounds.top } : null
     })
-    const row = visible.find((row) => row.getBoundingClientRect().top >= bounds.top) ?? visible[0]
-    const key = row?.dataset.messageKey
-    readerAnchor.current = row && key ? { key, top: row.getBoundingClientRect().top - bounds.top } : null
   }, [])
+
+  useLayoutEffect(() => () => {
+    if (anchorFrame.current !== null) cancelAnimationFrame(anchorFrame.current)
+    anchorFrame.current = null
+  }, [props.disclosureScope, sessionId, focusKey])
 
   // A hand scroll (wheel or touch) that moves the transcript asks the composer to rest; a gesture against an edge
   // moves nothing, and programmatic follow and entry jumps record their own position, so neither does.
@@ -137,6 +148,8 @@ export function Transcript(props: TranscriptProps) {
     // While following, only the reader moving up leaves the bottom; layout that lands between a jump and its scroll event does not.
     if (distance < 80) pin(true)
     else if (!followsRef.current() || el.scrollTop < lastTopRef.current) { pin(false); settlingRef.current = false }
+    // A scroll invalidates the previous viewport anchor immediately, before a resize can restore it.
+    if (lastTopRef.current !== el.scrollTop) readerAnchor.current = null
     lastTopRef.current = el.scrollTop
     rememberReaderAnchor()
     setAtTop(el.scrollTop < 40)
@@ -148,6 +161,7 @@ export function Transcript(props: TranscriptProps) {
     el.scrollTo({ top: el.scrollHeight, behavior: smooth ? 'smooth' : 'auto' })
     // Record our own jump now: a reader scroll merged into the same scroll event must still read as upward.
     if (!smooth) lastTopRef.current = el.scrollTop
+    readerAnchor.current = null
     pin(true)
   }, [pin])
 

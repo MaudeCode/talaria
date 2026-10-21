@@ -38,6 +38,26 @@ function View({ run, mode = 'compact_worklog' }: { run: ReturnType<typeof liveRu
   return <Transcript rows={[]} live={run.turn} assistantName="Assistant" mode={mode} renderUserMarkdown={false} autoFollow={false} sessionId="s" actions={{}} tts={false} truncated={false} loadedFrom={0} onLoadOlder={() => undefined} loadingOlder={false} emptyState={null} showJumpButtons={false} virtualizeLongTranscripts={false} />
 }
 
+it('measures live height at segment and status boundaries rather than each token (TAL-1203)', () => {
+  const run = liveRun()
+  run.emit({ event: 'token', data: { text: 'First line' } })
+  const view = render(<LiveTurnView turn={run.turn} name="Assistant" mode="compact_worklog" userVisible />)
+  const row = view.container.querySelector<HTMLElement>('.live-turn')!
+  const measure = vi.spyOn(row, 'getBoundingClientRect')
+  for (let line = 0; line < 20; line++) {
+    run.emit({ event: 'token', data: { text: `Line ${line}\n` } })
+    view.rerender(<LiveTurnView turn={run.turn} name="Assistant" mode="compact_worklog" userVisible />)
+  }
+  expect(measure).not.toHaveBeenCalled()
+  run.emit({ event: 'tool', data: { id: 'a', name: 'read_file', args: { path: 'a.txt' } } })
+  view.rerender(<LiveTurnView turn={run.turn} name="Assistant" mode="compact_worklog" userVisible />)
+  expect(measure).toHaveBeenCalledTimes(1)
+  run.emit({ event: 'done', data: {} })
+  view.rerender(<LiveTurnView turn={run.turn} name="Assistant" mode="compact_worklog" userVisible />)
+  expect(measure).toHaveBeenCalledTimes(2)
+  measure.mockRestore()
+})
+
 const pills = (container: HTMLElement) => [...container.querySelectorAll('.live-run-status')]
 
 describe('live activity memoization', () => {
