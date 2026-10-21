@@ -1015,6 +1015,32 @@ describe('remaining indexed readers (TAL-1188)', () => {
     } finally { db.close() }
   })
 
+  it.each(['indexed', 'no-message-index', 'legacy'])('keeps activity beyond a stale heartbeat on %s schemas', (schema) => {
+    const path = join(dir, `insights-stale-${schema}.db`)
+    const db = new DatabaseSync(path)
+    db.exec(agentSchema.schema.join('\n'))
+    for (const [id, source, started_at, messageAt, heartbeat, endedAt] of [
+      ['heartbeat', 'cli', 1, 950, 1000, null],
+      ['message', 'telegram', 1, 1000, 800, null],
+      ['end', 'cron', 1, 2, 800, 1100],
+      ['null-heartbeat', 'cli', 1, 1000, null, null],
+      ['start', 'cli', 1000, 1001, 800, null],
+      ['old', 'cli', 1, 2, 800, 850],
+      ['webui', 'webui', 1, 1000, 1000, null],
+    ] as const) {
+      insertSession(db, { id, source, started_at, messages: [['user', messageAt]] })
+      db.prepare('UPDATE sessions SET last_activity_at = ?, ended_at = ? WHERE id = ?').run(heartbeat, endedAt, id)
+    }
+    if (schema === 'no-message-index') db.exec('DROP INDEX idx_messages_session')
+    if (schema === 'legacy') db.exec('DROP INDEX idx_sessions_effective_activity; ALTER TABLE sessions DROP COLUMN last_activity_at')
+    db.close()
+    const rows = insightsSessionRows(path, 900)
+    expect(new Map(rows.map((row) => [row.session_id, row.updated_at]))).toEqual(new Map([
+      ['heartbeat', schema === 'legacy' ? 950 : 1000], ['message', 1000], ['end', 1100], ['null-heartbeat', 1000], ['start', 1001],
+    ]))
+    expect(rows).toHaveLength(5)
+  })
+
   it('range-scans the activity index before checking message freshness', () => {
     const path = join(dir, 'insights.db')
     const db = new DatabaseSync(path)
@@ -1031,6 +1057,7 @@ describe('remaining indexed readers (TAL-1188)', () => {
     try {
       const plan = db.prepare(`EXPLAIN QUERY PLAN ${sql}`).all(...Array<number>(sql.split('?').length - 1).fill(900)) as { detail: string }[]
       expect(plan.map((r) => r.detail).join('\n')).toContain('SEARCH s USING INDEX idx_sessions_effective_activity')
+      expect(plan.some((r) => /^SCAN s(?: |$)/.test(r.detail))).toBe(false)
     } finally { db.close() }
   })
 })

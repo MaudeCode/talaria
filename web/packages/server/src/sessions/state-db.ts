@@ -1630,17 +1630,28 @@ export function insightsSessionRows(dbPath: string, cutoff: number): Dict[] {
     const indexed = hasMessages && tableIndexes(db, 'messages').has('idx_messages_session')
     // Without the index a per-session lookup scans messages once per session; one grouped scan replaces it.
     const lastMessage = !hasMessages ? 'NULL' : indexed ? lastMessageTimestamp(indexed) : 'lm.last_message_at'
-    const join = hasMessages && !indexed ? 'LEFT JOIN (SELECT session_id, MAX(timestamp) AS last_message_at FROM messages GROUP BY session_id) lm ON lm.session_id = s.id' : ''
+    const messageCte = hasMessages && !indexed ? 'latest_messages AS MATERIALIZED (SELECT session_id, MAX(timestamp) AS last_message_at FROM messages GROUP BY session_id)' : ''
+    const join = messageCte ? 'LEFT JOIN latest_messages lm ON lm.session_id = s.id' : ''
     const source = cols.has('source') ? "LOWER(COALESCE(s.source, '')) != 'webui'" : '1'
     const activityIndexed = cols.has('last_activity_at') && tableIndexes(db, 'sessions').has('idx_sessions_effective_activity')
     const activity = activityIndexed ? freshestActivity('s.last_activity_at', `MAX(COALESCE(${col('ended_at')}, 0), COALESCE(${lastMessage}, 0))`)
       : `MAX(COALESCE(s.started_at, 0), COALESCE(${col('ended_at')}, 0), COALESCE(${lastMessage}, 0))`
-    const window = activityIndexed ? ' AND COALESCE(s.last_activity_at, s.started_at) >= ?' : ''
+    // The heartbeat can lag a message or end time; union their candidates before the exact activity check.
+    const candidates = activityIndexed ? [
+      'SELECT s.id FROM sessions s INDEXED BY idx_sessions_effective_activity WHERE COALESCE(s.last_activity_at, s.started_at) >= ?',
+      'SELECT id FROM sessions WHERE started_at >= ?',
+      ...(cols.has('ended_at') ? ['SELECT id FROM sessions WHERE ended_at >= ?'] : []),
+      ...(hasMessages ? [indexed ? 'SELECT DISTINCT session_id AS id FROM messages WHERE timestamp >= ?' : 'SELECT session_id AS id FROM latest_messages WHERE last_message_at >= ?'] : []),
+    ] : []
+    const ctes = [messageCte, ...(activityIndexed ? [`candidates AS MATERIALIZED (SELECT DISTINCT id FROM (${candidates.join(' UNION ALL ')}))`] : [])].filter(Boolean)
+    const withClause = ctes.length ? `WITH ${ctes.join(', ')} ` : ''
+    // CROSS JOIN keeps the candidate IDs ahead of the expensive per-session freshness projection.
+    const from = activityIndexed ? 'candidates c CROSS JOIN sessions s ON s.id = c.id' : 'sessions s'
     const ordering = activityIndexed ? ' ORDER BY COALESCE(s.last_activity_at, s.started_at) DESC' : ''
-    const rows = db.prepare(`SELECT * FROM (SELECT s.id AS id, ${col('model')} AS model, ${col('message_count')} AS message_count, ${col('input_tokens')} AS input_tokens,
+    const rows = db.prepare(`${withClause}SELECT * FROM (SELECT s.id AS id, ${col('model')} AS model, ${col('message_count')} AS message_count, ${col('input_tokens')} AS input_tokens,
       ${col('output_tokens')} AS output_tokens, ${col('cache_read_tokens')} AS cache_read_tokens, ${col('estimated_cost_usd')} AS estimated_cost_usd, s.started_at AS started_at,
       ${activity} AS last_activity
-      FROM sessions s ${join} WHERE ${source}${window}${ordering}) WHERE last_activity >= ?`).all(...(activityIndexed ? [cutoff, cutoff] : [cutoff])) as Dict[]
+      FROM ${from} ${join} WHERE ${source}${ordering}) WHERE last_activity >= ?`).all(...Array<number>(candidates.length + 1).fill(cutoff)) as Dict[]
     return rows.map((r) => ({
       session_id: str(r.id), model: r.model, message_count: r.message_count, input_tokens: r.input_tokens, output_tokens: r.output_tokens,
       cache_read_tokens: r.cache_read_tokens, estimated_cost: r.estimated_cost_usd, created_at: r.started_at, updated_at: r.last_activity,

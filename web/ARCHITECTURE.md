@@ -97,10 +97,13 @@ File-operation existence checks, cron completion links, insights, fork-parent pr
 handoff reads and lineage reports use the same worker dispatcher. Fork-parent checks
 probe one active message instead of loading a transcript. Cron completion results are
 read from a bounded recent window, streaming older rows only when requested jobs remain.
-Insights use the Agent's effective-activity index to select their window when available,
-then check exact message freshness for those candidates; older schemas retain the full
-message-activity fallback. Handoff round counts inspect physical role/timestamp rows,
-while summaries read the stitched active transcript once; those distinct projections
+Insights union the Agent's indexed effective-activity window with sessions that started,
+ended or received messages within the window, then check exact freshness. A stale
+heartbeat never drops recent activity; older schemas retain the full message-activity
+fallback. Without a global message-time index, the recent-message candidates require
+one covering-index scan; schemas without the session/message index aggregate messages
+once for both candidate selection and freshness. Handoff round counts inspect physical
+role/timestamp rows, while summaries read the stitched active transcript once; those distinct projections
 stay on the worker without changing their compaction semantics.
 Recovery keeps its own short-lived handle.
 Each thread retains at most 16 handles, closing the least recently used path on
