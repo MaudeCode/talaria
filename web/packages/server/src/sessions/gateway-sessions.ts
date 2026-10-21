@@ -293,10 +293,11 @@ export class GatewaySessions {
       const journalSession = ownerStateId(target.key)
       const writer = await this.deps.journal.writer(journalSession, watch.stream)
       closeWriter = writer
-      const showReasoning = await this.deps.showReasoning(target.home)
+      const showReasoning = await this.deps.showReasoning(target.home).catch(() => false)
       let usage: Row = {}
       let reasoning = ''
-      const titles = new ReasoningTitleTracker()
+      let titles = new ReasoningTitleTracker()
+      const resetProjection = () => { reasoning = ''; usage = {}; titles = new ReasoningTitleTracker() }
       const put = async (event: string, data: Row) => {
         const safe = event === 'tool' || event === 'tool_complete' ? publicToolFrame(data, this.deps.redactEnabled()) : redactNestedMessageContainers(data, this.deps.redactEnabled()) as Row
         const record = await writer.appendSseEvent(event, safe)
@@ -343,7 +344,7 @@ export class GatewaySessions {
             if (frame.event === 'snapshot') {
               const result = GatewaySessionResultSchema.parse(frame.data)
               if (!result.snapshot) return
-              if (result.replay_gap) { reasoning = ''; titles.resetSegment(); usage = {} }
+              if (result.replay_gap || result.snapshot.execution_generation > watch.snapshot.execution_generation) resetProjection()
               await put('session_snapshot', { session: await this.view(base, result, watch.stream, target), replay_gap: result.replay_gap === true })
               await prompts(result.snapshot)
               if (!result.snapshot.running && !result.snapshot.pending.some((p) => p.status === 'queued' || p.status === 'started')) await finish()
@@ -356,6 +357,7 @@ export class GatewaySessions {
               if (data.authority_epoch !== watch.snapshot.authority_epoch) return
               if (Number(data.execution_generation) < watch.snapshot.execution_generation) return
               const firstClaim = !ran && data.running === true
+              if (Number(data.execution_generation) > watch.snapshot.execution_generation) resetProjection()
               watch.snapshot = { ...watch.snapshot, ...data }
               const claimed = runningAdmission(watch.snapshot)
               if (firstClaim && claimed) activeAdmission = claimed.admission_id
