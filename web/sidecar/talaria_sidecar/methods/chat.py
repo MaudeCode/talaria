@@ -1955,11 +1955,6 @@ def start(ctx: CallContext, params: dict) -> dict:  # noqa: PLR0915 - one turn, 
         def _watch_cancel():
             nonlocal pending_mcp
             while not run.cancel.wait(0.25):
-                if run.finished.is_set():
-                    return
-                if ctx.cancelled:
-                    run.cancel.set()
-                    break
                 if pending_mcp and mcp_discovery.is_set():
                     # Discovery can finish while this agent is being built, after the worker's cache refresh.
                     try:
@@ -1968,9 +1963,14 @@ def start(ctx: CallContext, params: dict) -> dict:  # noqa: PLR0915 - one turn, 
                     except Exception:  # noqa: BLE001 - refresh failure must not disable Stop
                         log.warning("Late MCP refresh failed", exc_info=True)
                     with run.lock:
-                        if pending_mcp and not run.finished.is_set():
+                        if pending_mcp:
                             emit("notice_clear", {"key": _MCP_PENDING_KEY})
                             pending_mcp = False
+                if run.finished.is_set():
+                    return
+                if ctx.cancelled:
+                    run.cancel.set()
+                    break
             if run.finished.is_set() and not run.cancel.is_set():
                 return
             try:

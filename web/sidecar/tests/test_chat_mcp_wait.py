@@ -254,3 +254,30 @@ def test_profile_delete_fences_new_discovery_until_home_is_removed(discovery, pr
             chat.start(Ctx(), {**_params("during-delete"), "profile_home": str(home)})
     monkeypatch.setattr(profiles, "delete_profile", remove)
     assert delete() == {"ok": True}
+
+
+def test_fast_turn_refreshes_tools_when_discovery_finishes_during_agent_build(discovery, monkeypatch):
+    home, release, entered, calls = discovery
+    release.set()
+    commands.discover_profile_mcp_tools()
+    release.clear()
+
+    class BuildingAgent(FakeAgent):
+        def __init__(self, **kwargs):
+            super().__init__(**kwargs)
+            self.tools = ["old-tool"]
+            # Discovery's first cache refresh runs after this snapshot, before the Agent enters the cache.
+            release.set()
+            assert chat._MCP_DISCOVERIES[str(home.resolve())].wait(1)
+
+    def refresh(target):
+        with chat._AGENT_CACHE_LOCK:
+            for agent, _, cached_home in chat._AGENT_CACHE.values():
+                if cached_home == target:
+                    agent.tools = ["old-tool", "connected-tool"]
+
+    monkeypatch.setattr(chat, "_agent_class", lambda: BuildingAgent)
+    monkeypatch.setattr(chat, "refresh_profile_agents_mcp_tools", refresh)
+    result = chat.start(Ctx(), {**_params("fast-build"), "profile_home": str(home)})
+    assert result["status"] == "completed"
+    assert chat._AGENT_CACHE["s1"][0].tools == ["old-tool", "connected-tool"], "fast completed turn cached an Agent without the newly connected tools"
