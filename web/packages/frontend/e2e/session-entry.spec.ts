@@ -89,7 +89,8 @@ test('off-screen history halves long tasks during a 200-token stream', async ({ 
         await page.locator('#messages').evaluate((el) => { el.scrollTop = el.scrollHeight; el.dispatchEvent(new Event('scroll', { bubbles: true })) })
         await expect.poll(() => distance(page)).toBeLessThan(2)
         await expect(page.locator('.scroll-to-bottom-btn')).toHaveCount(0)
-        await cpu.send('Emulation.setCPUThrottlingRate', { rate: 6 })
+        // Keep the disabled-containment baseline above the long-task threshold on fast hosts.
+        await cpu.send('Emulation.setCPUThrottlingRate', { rate: 10 })
         const before = await readTimings()
         await page.evaluate(() => {
           const w = window as unknown as { longTasks: number; observer: PerformanceObserver }
