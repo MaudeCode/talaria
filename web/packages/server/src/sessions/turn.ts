@@ -787,7 +787,7 @@ export class TurnRunner {
                 // TAL-313: the server decides failure from the sidecar's raw result, which never leaves the server; TAL-315: so
                 // are its display sections, which keep the stderr and exit code the flat preview drops.
                 const { raw_result: rawResult, todo_result: todoResult, result_diff: resultDiff, display_metadata: displayMetadata, ...complete } = data
-                const outcome = toolOutcome(rawResult)
+                const outcome = toolOutcome(rawResult, data.name)
                 complete.is_error = outcome.is_error
                 if (rawResult !== undefined) complete.result_view = outcome.result_view
                 // TAL-448: a file edit's change, counted over the whole diff the sidecar forwards; redacted with the frame. TAL-909:

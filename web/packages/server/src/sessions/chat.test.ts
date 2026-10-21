@@ -3834,6 +3834,24 @@ describe('live tool outcomes (TAL-313)', () => {
     expect((scene.activity_rows as Json[]).filter((r) => r.role === 'tool').map((r) => { const t = r.tool as Json; return [t.id, t.is_error, t.duration, t.result_view] })).toEqual([['call-make', true, 4, view]])
   })
 
+  it('judges live tool results by the Agent v0.22.3 shape and neutral rules, through a failed turn\'s reload (TAL-1261)', async () => {
+    const sid = await newSession(s)
+    sidecar.respond('chat.start', (_params, emit) => {
+      emit({ event: 'tool', data: { event_type: 'tool.started', name: 'delegate_task', args: {}, tid: 'call-fan' } })
+      // The sidecar's bounded `raw_result` keeps a `results` batch as a list of items.
+      emit({ event: 'tool_complete', data: { event_type: 'tool.completed', name: 'delegate_task', preview: 'interrupted', args: {}, tid: 'call-fan', raw_result: { results: [{ task_index: 0, error: 'interrupted' }, { task_index: 1, error: 'interrupted' }] } } })
+      emit({ event: 'tool', data: { event_type: 'tool.started', name: 'skill_manage', args: {}, tid: 'call-skill' } })
+      emit({ event: 'tool_complete', data: { event_type: 'tool.completed', name: 'skill_manage', preview: 'refused', args: {}, tid: 'call-skill', raw_result: { success: false, error: 'Skill body exceeds the 20000 character limit.' } } })
+      throw new SidecarError('provider exploded', { condition: 'sidecar_error' })
+    })
+    const streamId = String((await json(await post(s, '/api/chat/start', { session_id: sid, message: 'fan out' }))).stream_id)
+    const frames = await s.sse(`/api/chat/stream?stream_id=${streamId}`, (f) => f.event === 'apperror')
+    expect(frames.filter((f) => f.event === 'tool_complete').map((f) => [(f.data as Json).name, (f.data as Json).is_error])).toEqual([['delegate_task', true], ['skill_manage', false]])
+    const detail = (await json(await s.get(`/api/session?session_id=${sid}`))).session as Json
+    const partial = (detail.messages as Json[]).find((m) => m._partial === true)
+    expect((partial?.tool_calls as Json[]).map((c) => [c.id, c.is_error])).toEqual([['call-fan', true], ['call-skill', false]])
+  })
+
   it('keeps an Anthropic tool_result call\'s live duration after reload', async () => {
     const sid = await newSession(s)
     sidecar.respond('chat.start', (params, emit) => {
