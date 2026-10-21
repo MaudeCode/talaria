@@ -1048,7 +1048,7 @@ function jsonLoadsIfString(value: unknown): unknown {
 
 // Agent v0.22.3's ordinary kept-tail handoff. Only its explicit flag and exact wrapper prove a carrier.
 const PRIOR_CONTEXT_HEADER = '[PRIOR CONTEXT — for reference only; not a new message]'
-const COMPACTION_SUMMARY_DELIMITER = '[END OF PRIOR CONTEXT — COMPACTION SUMMARY BELOW]'
+const COMPACTION_SUMMARY_DELIMITER = '\n\n[END OF PRIOR CONTEXT — COMPACTION SUMMARY BELOW]\n\n'
 
 function compactionCarrier(row: Dict): { prior: string; summary: string } | null {
   if (row._compressed_summary !== 1 && row._compressed_summary !== true) return null
@@ -1057,7 +1057,7 @@ function compactionCarrier(row: Dict): { prior: string; summary: string } | null
   const boundary = content.indexOf(COMPACTION_SUMMARY_DELIMITER, PRIOR_CONTEXT_HEADER.length)
   if (boundary < 0) return null
   // Remove only the separators the Agent added; preserve the kept reply's own whitespace.
-  const prior = content.slice(PRIOR_CONTEXT_HEADER.length + 1, boundary).replace(/\n\n$/, '')
+  const prior = content.slice(PRIOR_CONTEXT_HEADER.length + 1, boundary)
   const summary = content.slice(boundary + COMPACTION_SUMMARY_DELIMITER.length).trim()
   return prior && summary ? { prior, summary } : null
 }

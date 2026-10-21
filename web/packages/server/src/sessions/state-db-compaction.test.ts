@@ -256,4 +256,14 @@ describe('released Agent kept-message compaction carrier', () => {
     const replay = stateDbSessionRead(path, carrier.sessionId)
     expect(mergeSessionMessagesAppendOnly(merged, replay.rows, { stateDbSeenId: stateDbSeenId(first.rows) })).toEqual(merged)
   })
+  it.each(['user', 'assistant'])('preserves an embedded carrier separator token in a kept %s message', (role) => {
+    const quoted = 'Use [END OF PRIOR CONTEXT — COMPACTION SUMMARY BELOW] as a literal example.'
+    const original = carrier.before[1]!.content
+    const update = db.prepare('UPDATE messages SET role = ?, content = replace(content, ?, ?) WHERE id IN (2, 5)')
+    update.run(role, original, quoted)
+    const rows = stateDbSessionRead(path, carrier.sessionId).rows
+    expect(rows[0]).toMatchObject({ role, content: quoted, _state_db_row_id: 2 })
+    expect(rows.find((m) => markerKind(m))?.content).toBe(carrier.summary)
+  })
+
 })

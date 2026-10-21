@@ -994,7 +994,7 @@ export function mergeSessionMessagesAppendOnly(sidecar: Message[], state: Messag
     if (seen.has(k)) continue
     const t = ts(m)
     // A kept-message compaction summary inherits the reply's old timestamp, but is new history.
-    if (maxSidecar !== null && t !== null && t <= maxSidecar && !isContextCompressionMarker(m)) continue
+    if (maxSidecar !== null && t !== null && t <= maxSidecar && m._context_compression_marker !== true) continue
     if (hasWatermark && t !== null && (t <= watermark || !advanced)) continue
     seen.add(k)
     merged.push(m)
