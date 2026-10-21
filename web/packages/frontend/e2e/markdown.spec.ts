@@ -12,14 +12,15 @@ test('Markdown renders diagrams and math after lazy loading', async ({ page }, t
   const pluginFiles = Object.entries(manifest).filter(([key]) => /@streamdown\/(?:mermaid|math)\/dist\/index\.js|katex\/dist\/katex\.min\.css/.test(key)).map(([, chunk]) => chunk.file)
   expect(pluginFiles).toHaveLength(3)
   const requested: string[] = []
+  let holdPlugins = false
   let release!: () => void
   const gate = new Promise<void>((resolve) => { release = resolve })
   await page.route('**/assets/**', async (route) => {
     const file = new URL(route.request().url()).pathname.slice(1)
-    if (pluginFiles.includes(file)) { requested.push(file); await gate }
+    if (pluginFiles.includes(file)) { requested.push(file); if (holdPlugins) await gate }
     await route.continue()
   })
-  let content = 'A plain Markdown answer.'
+  let content = 'Tickets cost $5 and meals cost $10.'
   await page.route('**/api/session?**', (route) => {
     const messages = [{ role: 'user', id: 1, content: 'Show a diagram and a formula' }, { role: 'assistant', id: 2, content }]
     return route.fulfill({ json: { session: {
@@ -28,8 +29,10 @@ test('Markdown renders diagrams and math after lazy loading', async ({ page }, t
   })
   await page.goto('/session/markdown-plugins')
   const answer = page.locator('[data-final-answer="1"]')
-  await expect(answer).toContainText('A plain Markdown answer.')
+  await expect(answer).toContainText('Tickets cost $5 and meals cost $10.')
+  await page.waitForLoadState('networkidle')
   expect(requested).toEqual([])
+  holdPlugins = true
   content = '```mermaid\ngraph TD\n  A[Start] --> B[Finish]\n```\n\n$$\nx^2 + y^2 = z^2\n$$'
   try {
     await page.reload({ waitUntil: 'domcontentloaded' })

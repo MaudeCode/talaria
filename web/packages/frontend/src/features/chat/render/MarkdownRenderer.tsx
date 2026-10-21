@@ -66,7 +66,8 @@ export default memo(function MarkdownRenderer({ text, streaming = false, classNa
   const check = use(LinkCheckContext)
   // Syntax detection selects display assets only; transcript state and link decisions remain server-owned.
   const mermaid = useLazyPlugin(/(?:`{3,}|~{3,})mermaid\b/.test(text), loadMermaid)
-  const math = useLazyPlugin(/\$[^$]+\$|\$\$/.test(text), loadMath)
+  // The existing plugin parses double-dollar math; ordinary prices must not load KaTeX.
+  const math = useLazyPlugin(text.includes('$$'), loadMath)
   const plugins = useMemo(() => ({ ...PLUGINS, ...(mermaid ? { mermaid } : {}), ...(math ? { math } : {}) }), [mermaid, math])
   // Streamdown opens the dialog only after onLinkCheck settles, so the host is recorded before the dialog renders.
   const hosts = useRef(new Map<string, string | null>())
