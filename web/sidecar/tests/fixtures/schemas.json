@@ -6398,6 +6398,33 @@
             "type": "null"
           }
         ]
+      },
+      "restarting": {
+        "description": "The owner is in a restart's after-turn wait: parked prompts stay answerable, new work is refused.",
+        "type": "boolean"
+      },
+      "lock": {
+        "description": "`clarify_lock`: the batch question ids the owner still waits on; `expired` when the batch already ended.",
+        "type": "object",
+        "properties": {
+          "status": {
+            "type": "string",
+            "enum": [
+              "ok",
+              "expired"
+            ]
+          },
+          "remaining": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "required": [
+          "status"
+        ],
+        "additionalProperties": false
       }
     },
     "required": [
@@ -6674,6 +6701,33 @@
             "type": "null"
           }
         ]
+      },
+      "restarting": {
+        "description": "The owner is in a restart's after-turn wait: parked prompts stay answerable, new work is refused.",
+        "type": "boolean"
+      },
+      "lock": {
+        "description": "`clarify_lock`: the batch question ids the owner still waits on; `expired` when the batch already ended.",
+        "type": "object",
+        "properties": {
+          "status": {
+            "type": "string",
+            "enum": [
+              "ok",
+              "expired"
+            ]
+          },
+          "remaining": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "required": [
+          "status"
+        ],
+        "additionalProperties": false
       }
     },
     "required": [
