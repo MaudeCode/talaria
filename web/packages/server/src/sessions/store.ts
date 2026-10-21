@@ -39,12 +39,20 @@ export class SessionStore {
   private indexWriter: Promise<void> = Promise.resolve()
   private readonly indexPending = new Map<string, Record<string, unknown>>()
   private indexFlush: Promise<void> | null = null
+  private indexFailure: Error | null = null
   constructor(readonly deps: SessionStoreDeps) {}
   private get backend() { return this.deps.storage.sessions }
   async exists(sid: string): Promise<boolean> { return this.backend.exists(sid) }
   async revision(sid: string): Promise<string | null> { return this.backend.revision(sid) }
   readMessages(sid: string, range: { start: number; end: number }): Promise<Message[]> { return this.backend.readMessages(sid, range) }
-  async index() { await this.indexFlush; return this.backend.index() }
+  /** Readers retry rows a failed batch left queued; a still-failing index reads as unreadable, never as current. */
+  async index() {
+    await this.queueIndexUpdate([])
+    // The joined flush may itself have failed; retry what it left queued once.
+    if (this.indexPending.size) await this.queueIndexUpdate([])
+    if (this.indexFailure && this.indexPending.size) throw this.indexFailure
+    return this.backend.index()
+  }
   async hasIndex(): Promise<boolean> { return this.backend.hasIndex() }
   get shrinkBackup() { return this.backend.shrinkBackup }
   async diagnose(): Promise<StorageIssue[]> { return this.backend.diagnose() }
@@ -292,7 +300,6 @@ export class SessionStore {
 
   async persistedIds(): Promise<Set<string>> { return this.backend.ids() }
   async hasPersistedSessionFiles(): Promise<boolean> { return (await this.persistedIds()).size > 0 }
-  /** Readers see every committed save: they wait for the queued index flush. */
   async readIndexEntries(): Promise<Record<string, unknown>[]> { return (await this.index()).entries }
   async indexMessageCounts(entries?: Record<string, unknown>[]): Promise<Map<string, number>> {
     let rows = entries
@@ -363,11 +370,12 @@ export class SessionStore {
         while (this.indexPending.size) {
           const batch = new Map(this.indexPending)
           this.indexPending.clear()
-          try { await this.writeIndex([...batch.values()]) }
+          try { await this.writeIndex([...batch.values()]); this.indexFailure = null }
           catch (error) {
-            // Nobody awaits the flush, so a failed batch stays queued for the next save instead of being lost.
+            // Nobody awaits the flush, so a failed batch stays queued for the next save or index read instead of being lost.
             for (const [sid, row] of batch) if (!this.indexPending.has(sid)) this.indexPending.set(sid, row)
-            this.deps.log(`[webui] WARNING: session index update failed: ${(error as Error).message}`)
+            this.indexFailure = error instanceof Error ? error : new Error(String(error))
+            this.deps.log(`[webui] WARNING: session index update failed: ${this.indexFailure.message}`)
             break
           }
         }

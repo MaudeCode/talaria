@@ -23,16 +23,20 @@ it('batches concurrent session saves into one index flush', async () => {
     writeIndex.mockRejectedValueOnce(new Error('synthetic index failure'))
     // The session files are committed; a failed index batch neither fails the saves nor drops their rows.
     await Promise.all([store.save(first), store.save(second)])
-    expect((await store.readIndexEntries()).map((row) => row.message_count)).toEqual([1, 1])
-    await store.queueIndexUpdate([])
+    // An index read retries the queued rows instead of serving the stale file.
+    expect((await store.readIndexEntries()).map((row) => row.message_count)).toEqual([2, 2])
     expect(writeIndex).toHaveBeenCalledTimes(3)
     expect((await store.readIndexEntries()).map((row) => row.message_count)).toEqual([2, 2])
+    // While the retry keeps failing, readers see an unreadable index, never a stale one.
+    second.messages.push({ role: 'user', content: 'again' })
+    writeIndex.mockRejectedValueOnce(new Error('synthetic index failure')).mockRejectedValueOnce(new Error('synthetic index failure'))
+    await store.save(second)
+    await expect(store.readIndexEntries()).rejects.toThrow('synthetic index failure')
     first.messages.push({ role: 'user', content: 'again' })
     writeIndex.mockRejectedValueOnce(new Error('synthetic index failure'))
     await store.save(first)
     await store.delete(first.session_id)
-    await store.queueIndexUpdate([])
-    expect((await store.readIndexEntries()).map((row) => row.session_id)).toEqual([second.session_id])
+    expect((await store.readIndexEntries()).map((row) => [row.session_id, row.message_count])).toEqual([[second.session_id, 3]])
   } finally { vi.restoreAllMocks(); await server.close() }
 })
 
