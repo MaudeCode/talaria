@@ -504,3 +504,48 @@ def test_terminal_worker_receipts_keep_only_the_closing_result(hermes_home) -> N
         assert closing == {"status": "terminal"}
         assert db._read_one("SELECT COUNT(*) FROM worker_receipts")[0] == 0
     """)
+
+
+@pytest.mark.skipif(AGENT_DIR is None or "def emit_session_deleted" not in (AGENT_DIR / "hermes_state_common.py").read_text(),
+                    reason="Agent predates the on_session_delete plugin hook")
+@pytest.mark.parametrize("mode", ["record", "raises"])
+def test_the_delete_fires_the_profile_on_session_delete_hook_once(hermes_home, mode) -> None:
+    """TAL-1262: a profile plugin hears one ``on_session_delete`` for the whole compression chain, after the commit; a
+    raising hook never fails the delete."""
+    profile = hermes_home / "profiles" / "deleting"
+    plugin = profile / "plugins" / "delete-test"
+    plugin.mkdir(parents=True)
+    (plugin / "plugin.yaml").write_text("name: delete-test\nversion: 0.0.1\n")
+    action = "raise RuntimeError('synthetic plugin failure')" if mode == "raises" else "pass"
+    (plugin / "__init__.py").write_text(f"""import json, sqlite3
+from hermes_constants import get_hermes_home
+
+def register(ctx):
+    def deleted(**kwargs):
+        home = get_hermes_home()
+        remaining = sqlite3.connect(home / 'state.db').execute('SELECT COUNT(*) FROM sessions').fetchone()[0]
+        with open(home / 'deleted.jsonl', 'a') as events:
+            fields = ('session_id', 'reason', 'profile', 'deleted_ids', 'sessions_dir')
+            events.write(json.dumps({{**{{key: kwargs.get(key) for key in fields}}, 'remaining': remaining}}) + '\\n')
+        {action}
+    ctx.register_hook('on_session_delete', deleted)
+""")
+    (profile / "config.yaml").write_text("plugins:\n  isolation: in_process\n  enabled: [delete-test]\n")
+    _seed(profile, "cli-root")
+    _agent(profile, """
+        db.end_session("cli-root", "compression")
+        db.create_session(session_id="cli-tip", source="cli", parent_session_id="cli-root")
+        db.append_message("cli-tip", "user", "continued")
+    """)
+    proc = SidecarProcess(hermes_home)
+    try:
+        assert _delete(proc, profile, "cli-root", lineage=True) == {"ok": True}
+    finally:
+        proc.close()
+    assert _rows(profile, "SELECT id FROM sessions") == []
+    log = profile / "deleted.jsonl"
+    events = [json.loads(line) for line in log.read_text().splitlines()] if log.exists() else []
+    sessions_dirs = [Path(event.pop("sessions_dir") or "").resolve() for event in events]
+    assert events == [{"session_id": "cli-root", "reason": "delete", "profile": "deleting", "deleted_ids": ["cli-root", "cli-tip"], "remaining": 0}]
+    assert sessions_dirs == [(profile / "sessions").resolve()]
+    assert not (hermes_home / "deleted.jsonl").exists()
