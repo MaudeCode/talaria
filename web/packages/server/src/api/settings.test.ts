@@ -675,7 +675,7 @@ describe('settings, profiles, models, providers, reasoning, onboarding', () => {
     const body = await json(res)
     const tasks = body.tasks as { task: string; provider: string; model: string }[]
     expect(tasks.find((t) => t.task === 'vision')).toMatchObject({ provider: 'openai', model: 'gpt-4o' })
-    expect(tasks).toHaveLength(14)
+    expect(tasks).toHaveLength(15)
     expect(body.main).toMatchObject({ provider: 'openrouter', model: 'anthropic/claude-opus-4.7', api_key_set: false })
     res = await post(s, '/api/model/set', { scope: 'main', provider: 'anthropic', model: 'claude-sonnet-4-6' })
     expect(await json(res)).toEqual({ ok: true, model: 'claude-sonnet-4-6', provider: 'anthropic' })
@@ -723,7 +723,7 @@ describe('settings, profiles, models, providers, reasoning, onboarding', () => {
 
       // Read: server order, Auto, and a saved model the catalog no longer lists stay explicit.
       let tasks = await read()
-      expect(tasks.map((t) => t.task)).toEqual(['vision', 'compression', 'approval', 'mcp', 'title_generation', 'review', 'memory_query_rewrite', 'tts_audio_tags', 'voice_chat', 'skills_hub', 'triage_specifier', 'kanban_decomposer', 'profile_describer', 'curator'])
+      expect(tasks.map((t) => t.task)).toEqual(['vision', 'compression', 'approval', 'mcp', 'title_generation', 'review', 'memory_query_rewrite', 'tts_audio_tags', 'voice_chat', 'skills_hub', 'triage_specifier', 'kanban_decomposer', 'profile_describer', 'curator', 'delegation'])
       expect(tasks.find((t) => t.task === 'title_generation')).toMatchObject({ label: 'Title generation', provider: 'auto', model: '', is_auto: true, value_label: mainOption.label, provider_label: 'Anthropic', selected_option_id: null, in_catalog: true })
       expect(tasks.find((t) => t.task === 'vision')).toMatchObject({ is_auto: false, value_label: 'legacy/gone-model', provider_label: 'OpenRouter', selected_option_id: null, in_catalog: false })
       // Auto names the effective main model, including an environment override the config section does not hold.
@@ -853,6 +853,44 @@ describe('settings, profiles, models, providers, reasoning, onboarding', () => {
       sidecar.respond('profiles.list', () => ({ profiles: [{ name: 'default', path: s.state, is_default: true, gateway_running: false, model: null, provider: null, has_env: false, visible: true, skill_count: 0, enabled_skills: 0, total_skills: 0 }] }))
       s.deps.profiles.invalidate()
       configs.delete(profileHome)
+      if (saved) reset(saved)
+    }
+  })
+
+  it('the delegation slot reads and writes the top-level delegation section, never auxiliary.delegation (TAL-1273)', async () => {
+    const saved = configs.get(s.state)
+    const reset = (config: Json): void => { configs.set(s.state, config); s.deps.agentConfig.invalidate(); s.deps.catalog.invalidate() }
+    const { tasks: builtins, reserved } = loadSidecarFixtures().get('aux.tasks')![0]!.result as SidecarResult<'aux.tasks'>
+    const row = { key: 'delegation', label: 'Delegation', description: 'subagent model (delegate_task)', inherit_from: null, reasoning_effort: '', effective: null }
+    sidecar.respond('aux.tasks', () => ({ tasks: [...builtins.filter((t) => t.key !== 'delegation'), row], reserved }))
+    const set = (provider: string, model: string): Promise<Response> => post(s, '/api/model/set', { scope: 'auxiliary', task: 'delegation', provider, model })
+    const delegation = (): Json => dictOf(configs.get(s.state)?.delegation)
+    reset({ model: { default: 'claude-sonnet-4-6', provider: 'anthropic' }, delegation: { max_iterations: 50 } })
+    try {
+      const tasks = (await json(await s.get('/api/model/auxiliary'))).tasks as { task: string; label: string; is_auto: boolean; provider: string }[]
+      expect(tasks.at(-1)).toMatchObject({ task: 'delegation', label: 'Delegation', is_auto: true, provider: 'auto' })
+
+      const res = await set('openrouter', 'x/model')
+      expect(res.status).toBe(200)
+      expect(delegation()).toMatchObject({ provider: 'openrouter', model: 'x/model', max_iterations: 50 })
+      expect(configs.get(s.state)?.auxiliary).toBeUndefined()
+      expect(((dictOf((await json(res)).auxiliary).tasks ?? []) as { task: string; is_auto: boolean; model: string }[]).find((t) => t.task === 'delegation')).toMatchObject({ is_auto: false, model: 'x/model' })
+
+      // Inherit (Auto) stores empty strings, never the literal "auto" the Agent would resolve as a provider name.
+      expect((await set('auto', '')).status).toBe(200)
+      expect(delegation()).toMatchObject({ provider: '', model: '', base_url: '', max_iterations: 50 })
+
+      // base_url outranks provider in the Agent's resolver, so a provider pick leaves the direct endpoint entirely.
+      reset({ ...configs.get(s.state), delegation: { provider: 'custom', model: 'local-model', base_url: 'http://127.0.0.1:8000/v1', api_mode: 'chat_completions', max_iterations: 50 } })
+      expect((await set('openrouter', 'x/model')).status).toBe(200)
+      expect(delegation()).toEqual({ provider: 'openrouter', model: 'x/model', base_url: '', api_mode: '', max_iterations: 50 })
+
+      // Reset All returns the subagent to inheriting the parent, as the Agent's picker does.
+      expect((await post(s, '/api/model/set', { scope: 'auxiliary', task: '__reset__', provider: 'auto', model: '' })).status).toBe(200)
+      expect(delegation()).toMatchObject({ provider: '', model: '', base_url: '', api_mode: '' })
+      expect(dictOf(configs.get(s.state)?.auxiliary).delegation).toBeUndefined()
+    } finally {
+      sidecar.respond('aux.tasks', undefined)
       if (saved) reset(saved)
     }
   })
@@ -1692,7 +1730,7 @@ describe('Agent speed tiers (TAL-788)', () => {
       expect(read.status).toBe(200)
       const auxiliary = await json(read)
       expect(auxiliary.main).toMatchObject({ model: 'gpt-6-astra', supported_speed_tiers: [] })
-      expect(auxiliary.tasks).toHaveLength(14)
+      expect(auxiliary.tasks).toHaveLength(15)
       const res = await post(server, '/api/model/set', { scope: 'main', model: 'gpt-6-astra', provider: 'openai-codex' })
       expect(res.status).toBe(503)
       expect(saved.get(server.state)).toEqual(before)

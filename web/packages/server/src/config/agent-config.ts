@@ -506,7 +506,7 @@ export function auxiliaryModels(config: Config, tiers: SpeedTier[], slots: AuxSl
   const mainProvider = str(modelCfg.provider).trim()
   const mainModel = str(modelCfg.default ?? modelCfg.name).trim()
   return {
-    tasks: slots.map((slot) => auxTaskPayload(slot, aux[slot.key])),
+    tasks: slots.map((slot) => auxTaskPayload(slot, slot.key === DELEGATION_TASK ? config.delegation : aux[slot.key])),
     main: {
       provider: mainProvider,
       model: mainModel,
@@ -532,6 +532,22 @@ function auxiliarySelection(providerRaw: string, modelRaw: string): [string, str
 
 const isCustomProvider = (provider: unknown): boolean => { const p = str(provider).trim(); return p === 'custom' || p.startsWith('custom:') }
 
+/**
+ * TAL-1273: the Agent's subagent slot. `delegate_task` reads top-level `delegation`, where Auto (inherit the parent) is
+ * stored as empty strings, and a `base_url` outranks `provider`. Only `custom` keeps a direct endpoint; any other pick
+ * clears its `base_url` and `api_mode` so the child really runs on the picked provider.
+ */
+const DELEGATION_TASK = 'delegation'
+function delegationRoute(entry: unknown, provider: string, model: string, advanced: unknown): Dict {
+  const route: Dict = { ...dict(entry), provider: provider === 'auto' ? '' : provider, model }
+  if (provider !== 'custom') Object.assign(route, { base_url: '', api_mode: '' })
+  if (isDict(advanced)) {
+    // The section has no timeout, concurrency, extra_body, or speed keys; only the endpoint and its key apply.
+    applyAdvancedModelOptions(route, Object.fromEntries(['base_url', 'api_key', 'api_key_clear'].filter((k) => k in advanced).map((k) => [k, advanced[k]])))
+  }
+  return route
+}
+
 export async function setAuxiliaryModel(store: AgentConfig, home: string, task: string, providerRaw: string, modelRaw: string, advanced: unknown): Promise<{ ok: true; task: string; provider: string; model: string }> {
   const listing = await store.auxiliarySlots(home)
   const slots = listing.slots.map((slot) => slot.key)
@@ -547,8 +563,13 @@ export async function setAuxiliaryModel(store: AgentConfig, home: string, task: 
       // re-enabling the plugin does not bring back a pin the user reset. Unknown ownership (no listing) leaves it alone.
       const { reserved } = listing
       const orphans = reserved ? Object.keys(aux).filter((key) => isDict(aux[key]) && !slots.includes(key) && !reserved.includes(key)) : []
-      for (const slot of [...slots, ...orphans]) aux[slot] = autoSlot(aux[slot])
+      for (const slot of [...slots, ...orphans]) if (slot !== DELEGATION_TASK) aux[slot] = autoSlot(aux[slot])
       config.auxiliary = aux
+      if (slots.includes(DELEGATION_TASK)) config.delegation = delegationRoute(config.delegation, 'auto', '', null)
+      return
+    }
+    if (task === DELEGATION_TASK) {
+      config.delegation = delegationRoute(config.delegation, provider, model, advanced)
       return
     }
     const slot = provider === 'auto' && !model ? autoSlot(aux[task]) : dict(aux[task])

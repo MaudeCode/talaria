@@ -1,0 +1,12 @@
+{
+  "entries": [
+    {
+      "category": "Added",
+      "summary": "Choose which model subagents use, or let them inherit the main model, from Auxiliary Models settings.",
+      "highlight": false,
+      "components": [
+        "web"
+      ]
+    }
+  ]
+}

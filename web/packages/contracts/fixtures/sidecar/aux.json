@@ -129,6 +129,14 @@
             "inherit_from": null,
             "reasoning_effort": "",
             "effective": null
+          },
+          {
+            "key": "delegation",
+            "label": "Delegation",
+            "description": "subagent model (delegate_task)",
+            "inherit_from": null,
+            "reasoning_effort": "",
+            "effective": null
           }
         ],
         "reserved": [
