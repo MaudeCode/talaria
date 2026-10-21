@@ -1,7 +1,57 @@
 import { describe, expect, it } from 'vitest'
 import { JoplinError, joplinSearch, McpService } from './mcp.js'
 import { FakeSidecar } from '../sidecar/fake.js'
-import type { AgentConfig } from '../config/agent-config.js'
+import type { AgentConfig, Dict } from '../config/agent-config.js'
+
+describe('MCP config updates', () => {
+  const http = { url: 'https://old.example/mcp', headers: { Authorization: 'Bearer synthetic-secret' } }
+  const stdio = { command: 'old-mcp', args: ['--old'], env: { API_KEY: 'synthetic-secret' } }
+  const httpOptions = {
+    auth: 'oauth', oauth: { client_id: 'test-client', client_secret: 'synthetic-secret' },
+    ssl_verify: false, client_cert: '/test/cert.pem', client_key: '/test/key.pem',
+    skip_preflight: true, transport: 'sse', identity_header: { name: 'X-Identity' }, strict_redirect_headers: true,
+  }
+  const stdioOptions = { cwd: '/test/workspace', idle_timeout_seconds: 60, max_lifetime_seconds: 120, lifecycle: { idle_timeout_seconds: 30, max_lifetime_seconds: 90 } }
+
+  it.each<{ name: string; existing: Dict; body: Dict; expected: Dict }>([
+    { name: 'URL-only edit', existing: http, body: { url: 'https://new.example/mcp' }, expected: { ...http, url: 'https://new.example/mcp' } },
+    { name: 'command-only edit', existing: stdio, body: { command: 'new-mcp' }, expected: { ...stdio, command: 'new-mcp' } },
+    { name: 'HTTP to stdio switch', existing: http, body: { command: 'new-mcp', args: ['--new'], env: { MODE: 'test' } }, expected: { command: 'new-mcp', args: ['--new'], env: { MODE: 'test' } } },
+    { name: 'stdio to HTTP switch', existing: stdio, body: { url: 'https://new.example/mcp', headers: {} }, expected: { url: 'https://new.example/mcp', headers: {} } },
+    { name: 'masked HTTP secret', existing: http, body: { url: http.url, headers: { Authorization: '••••••' }, timeout: '45' }, expected: { ...http, timeout: 45 } },
+    { name: 'masked stdio secret', existing: stdio, body: { command: stdio.command, args: [], env: { API_KEY: '••••••' } }, expected: { ...stdio, args: [] } },
+    { name: 'HTTP edit with transport options', existing: { ...http, ...httpOptions }, body: { url: 'https://new.example/mcp' }, expected: { ...http, ...httpOptions, url: 'https://new.example/mcp' } },
+    { name: 'stdio edit with lifecycle options', existing: { ...stdio, ...stdioOptions }, body: { command: 'new-mcp' }, expected: { ...stdio, ...stdioOptions, command: 'new-mcp' } },
+    { name: 'HTTP to stdio switch with authentication and TLS', existing: { ...http, ...httpOptions }, body: { command: 'new-mcp' }, expected: { command: 'new-mcp' } },
+    { name: 'stdio to HTTP switch with lifecycle options', existing: { ...stdio, ...stdioOptions }, body: { url: 'https://new.example/mcp' }, expected: { url: 'https://new.example/mcp' } },
+    { name: 'stdio to HTTP switch with unknown lifecycle options', existing: { ...stdio, ...stdioOptions, lifecycle: { ...stdioOptions.lifecycle, future_option: 'keep' } }, body: { url: 'https://new.example/mcp' }, expected: { url: 'https://new.example/mcp', lifecycle: { future_option: 'keep' } } },
+  ])('preserves unrelated config after $name', async ({ existing, body, expected }) => {
+    const retained = {
+      spend_limit: 5, tool_costs: { search: 0.2 }, cost_unit: 'USD', trust: false,
+      enabled: false, tools: { include: ['search'], exclude: ['delete'] },
+      timeout: 30, connect_timeout: 10, future_option: { nested: ['keep'] },
+    }
+    const cfg = { mcp_servers: { paid: { ...existing, ...retained }, sibling: { command: 'untouched' } } }
+    const config = { update: (_home: string, fn: (c: typeof cfg) => void) => { fn(cfg); return Promise.resolve() } } as unknown as AgentConfig
+    const result = await new McpService({ sidecar: () => null, config }).update('/profiles/test', 'paid', body)
+    expect(cfg.mcp_servers).toEqual({ paid: { ...retained, ...expected }, sibling: { command: 'untouched' } })
+    expect(result.server).toMatchObject({ enabled: false, status: 'disabled', timeout: expected.timeout ?? retained.timeout })
+    expect(JSON.stringify(result)).not.toContain('synthetic-secret')
+  })
+
+  it.each<{ field: string; existing: Dict; body: Dict; expected: Dict }>([
+    { field: 'headers', existing: http, body: { url: http.url, headers: null }, expected: { url: http.url } },
+    { field: 'args', existing: stdio, body: { command: stdio.command, args: null }, expected: { command: stdio.command, env: stdio.env } },
+    { field: 'env', existing: stdio, body: { command: stdio.command, env: null }, expected: { command: stdio.command, args: stdio.args } },
+    { field: 'timeout', existing: { ...http, timeout: 30 }, body: { url: http.url, timeout: null }, expected: http },
+  ])('clears explicitly null $field without clearing omitted fields', async ({ field, existing, body, expected }) => {
+    const cfg = { mcp_servers: { paid: { ...existing, enabled: false, spend_limit: 5 } } }
+    const config = { update: (_home: string, fn: (c: typeof cfg) => void) => { fn(cfg); return Promise.resolve() } } as unknown as AgentConfig
+    await new McpService({ sidecar: () => null, config }).update('/profiles/test', 'paid', body)
+    expect(cfg.mcp_servers.paid).toEqual({ ...expected, enabled: false, spend_limit: 5 })
+    expect(cfg.mcp_servers.paid).not.toHaveProperty(field)
+  })
+})
 
 describe('MCP tool inventory', () => {
   it('lists registry tools only for servers in the profile\'s effective MCP config', async () => {

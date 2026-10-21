@@ -9,6 +9,7 @@ import type { McpHealthProber } from './mcp-health.js'
 
 const MASK = '••••••'
 const SENSITIVE = ['auth', 'token', 'key', 'secret', 'password', 'credential']
+const STDIO_LIFECYCLE_KEYS = ['idle_timeout_seconds', 'max_lifetime_seconds']
 
 export function maskSecrets(obj: unknown): unknown {
   if (!isDict(obj)) return obj
@@ -218,15 +219,26 @@ export class McpService {
     await this.deps.config.update(profileHome, (c) => {
       const servers = dict(c.mcp_servers)
       const existing = dict(servers[name])
-      const server: Dict = {}
+      const server: Dict = { ...existing }
       if (body.url) {
+        for (const key of ['command', 'args', 'env', 'cwd', ...STDIO_LIFECYCLE_KEYS]) Reflect.deleteProperty(server, key)
+        if (isDict(server.lifecycle)) {
+          const lifecycle = { ...server.lifecycle }
+          for (const key of STDIO_LIFECYCLE_KEYS) Reflect.deleteProperty(lifecycle, key)
+          if (Object.keys(lifecycle).length) server.lifecycle = lifecycle
+          else Reflect.deleteProperty(server, 'lifecycle')
+        }
         server.url = str(body.url).trim()
         if (body.headers) server.headers = stripMasked(body.headers, existing.headers ?? {})
       } else if (body.command) {
+        for (const key of ['url', 'headers', 'auth', 'oauth', 'ssl_verify', 'client_cert', 'client_key', 'skip_preflight', 'transport', 'identity_header', 'strict_redirect_headers']) Reflect.deleteProperty(server, key)
         server.command = str(body.command).trim()
         if (body.args) server.args = Array.isArray(body.args) ? body.args : [body.args]
         if (body.env) server.env = stripMasked(body.env, existing.env ?? {})
       } else throw new HttpFailure(400, 'url or command is required')
+      for (const key of ['headers', 'args', 'env', 'timeout']) {
+        if (body[key] === null) Reflect.deleteProperty(server, key)
+      }
       if (body.timeout !== undefined && body.timeout !== null) {
         const t = Number.parseInt(str(body.timeout), 10)
         if (Number.isFinite(t)) server.timeout = t

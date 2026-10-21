@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Editing an MCP server preserves its spend limits, tool settings, and disabled state.",
+      "highlight": false,
+      "components": ["web"]
+    }
+  ]
+}
