@@ -77,6 +77,9 @@ export const PluginSettingFieldSchema = z.object({
   choices: z.array(z.string()).optional(), default: Json.optional(), value: Json.optional(), env: z.string().optional(), has_value: z.boolean().optional(),
 })
 export type PluginSettingField = z.infer<typeof PluginSettingFieldSchema>
+/** Persistence succeeded; this separately describes application to live plugin MCP connections. */
+export const PluginRuntimeApplicationSchema = z.enum(['applied', 'restart_required', 'unknown'])
+
 /** TAL-1276: one OAuth client a plugin manifest declares, its grant's state as `hermes auth status` maps it, and the hosts the code is approved at and exchanged at. */
 export const PluginOAuthStateSchema = z.enum(['signed_in', 'sign_in_needed', 'revoked', 'logged_out'])
 export const PluginOAuthClientSchema = z.object({ id: z.string(), state: PluginOAuthStateSchema, authorize_host: z.string(), token_host: z.string() })
@@ -129,7 +132,7 @@ export const COMMANDS_METHODS = {
    * `secret_envs` (secret key → `.env` name the caller wrote) is checked against the current manifest before anything is
    * written; a key that is no longer a secret stored under that name errors `plugin_settings_changed`.
    */
-  'plugins.settings_save': { params: ProfileHomeParams.extend({ key: z.string().min(1), values: z.record(z.string(), Json), secret_envs: z.record(z.string(), z.string()).optional() }), result: z.object({ key: z.string(), written: z.array(z.string()), fields: z.array(PluginSettingFieldSchema) }) },
+  'plugins.settings_save': { params: ProfileHomeParams.extend({ key: z.string().min(1), values: z.record(z.string(), Json), secret_envs: z.record(z.string(), z.string()).optional() }), result: z.object({ key: z.string(), written: z.array(z.string()), fields: z.array(PluginSettingFieldSchema), runtime_application: PluginRuntimeApplicationSchema.optional() }) },
 } as const
 
 // ── kanban ─────────────────────────────────────────────────────────────

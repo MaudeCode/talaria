@@ -1424,6 +1424,14 @@
           ],
           "additionalProperties": false
         }
+      },
+      "runtime_application": {
+        "type": "string",
+        "enum": [
+          "applied",
+          "restart_required",
+          "unknown"
+        ]
       }
     },
     "required": [
@@ -6629,6 +6637,9 @@
                   },
                   "input_id": {
                     "type": "string"
+                  },
+                  "voice_stopped": {
+                    "not": {}
                   }
                 },
                 "required": [
@@ -6649,12 +6660,28 @@
                   },
                   "status": {
                     "type": "string"
+                  },
+                  "voice_stopped": {
+                    "not": {}
                   }
                 },
                 "required": [
                   "operation"
                 ],
                 "additionalProperties": {}
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "voice_stopped": {
+                    "type": "boolean",
+                    "const": true
+                  }
+                },
+                "required": [
+                  "voice_stopped"
+                ],
+                "additionalProperties": false
               }
             ]
           },
@@ -6984,6 +7011,9 @@
                   },
                   "input_id": {
                     "type": "string"
+                  },
+                  "voice_stopped": {
+                    "not": {}
                   }
                 },
                 "required": [
@@ -7004,12 +7034,28 @@
                   },
                   "status": {
                     "type": "string"
+                  },
+                  "voice_stopped": {
+                    "not": {}
                   }
                 },
                 "required": [
                   "operation"
                 ],
                 "additionalProperties": {}
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "voice_stopped": {
+                    "type": "boolean",
+                    "const": true
+                  }
+                },
+                "required": [
+                  "voice_stopped"
+                ],
+                "additionalProperties": false
               }
             ]
           },

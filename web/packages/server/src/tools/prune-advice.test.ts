@@ -144,6 +144,34 @@ describe('auto-prune question (TAL-1274)', () => {
     expect(await t.questions()).toMatchObject([{ id: question?.id, phase: 'succeeded', message: REPLY }])
   })
 
+  it('deletes open and dismissed Agent warnings with their profile (TAL-1018)', async () => {
+    const t = await boot()
+    const work = join(t.s.state, 'profiles', 'work')
+    mkdirSync(work, { recursive: true })
+    writeFileSync(join(work, 'config.yaml'), '{}\n')
+    t.sidecar.respond('profiles.delete', (params) => { rmSync(join(params.base_home, 'profiles', params.name), { recursive: true, force: true }); return { ok: true } })
+    const notifications = t.s.deps.updateNotifications
+    const alice = { owner: 'oidc:alice', profile: 'work', serverOwner: true }
+    const bob = { ...alice, owner: 'oidc:bob' }
+    const other = { ...alice, profile: 'personal' }
+    const warning = { text: 'Synthetic warning from a deleted profile.', level: 'warn' }
+    for (const scope of [alice, bob, other]) await notifications.agentWarning(scope, 'startup-warning.deleted', warning)
+    const dismissed = (await notifications.list(bob)).notifications[0]!
+    await notifications.dismiss(bob, dismissed.id)
+    const update = await notifications.begin(alice, 'agent')
+    await t.s.deps.profiles.delete('work', 'default')
+    await notifications.initialize()
+    for (const scope of [alice, bob]) expect((await notifications.list(scope)).notifications.filter((row) => row.kind === 'agent_warning')).toEqual([])
+    expect((await notifications.list(other)).notifications.map((row) => row.kind)).toContain('agent_warning')
+    expect((await notifications.list(alice)).notifications.map((row) => row.id)).toContain(update.id)
+    // Recreating the same profile name cannot inherit the old warning's dismissal.
+    mkdirSync(work, { recursive: true })
+    await notifications.agentWarning(bob, 'startup-warning.deleted', warning)
+    const recreated = (await notifications.list(bob)).notifications[0]!
+    expect(recreated).toMatchObject({ kind: 'agent_warning', unread: true })
+    expect(recreated.id).not.toBe(dismissed.id)
+  })
+
   it('forgets a deleted profile, so a profile recreated with its name is checked afresh with no old question', async () => {
     const t = await boot()
     const work = join(t.s.state, 'profiles', 'work')

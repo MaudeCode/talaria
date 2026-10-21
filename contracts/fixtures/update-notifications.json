@@ -207,6 +207,34 @@
       ],
       "presents_dialog": false,
       "dialog_close": "restart_later"
+    },
+    {
+      "id": "00000000-0000-4000-8000-000000000005",
+      "kind": "agent_warning",
+      "target": "agent",
+      "phase": "active",
+      "severity": "warning",
+      "persistent": true,
+      "requires_acknowledgement": false,
+      "actions": [],
+      "destination": null,
+      "title": "Agent warning",
+      "message": "Home Assistant moved out of core and its 'homeassistant' plugin is not installed.",
+      "created_at": "2026-09-26T11:00:00Z",
+      "updated_at": "2026-09-26T11:01:00Z",
+      "read_at": null,
+      "acknowledged_at": null,
+      "acknowledged_action_id": null,
+      "verified_revision": null,
+      "verified_version": null,
+      "detail": null,
+      "unread": true,
+      "active": false,
+      "requires_interaction": false,
+      "can_dismiss": true,
+      "steps": [],
+      "presents_dialog": false,
+      "dialog_close": "close"
     }
   ],
   "tab_update": {
@@ -262,7 +290,7 @@
     "dialog_close": "none"
   },
   "tab_joined_at": "2026-09-26T12:10:00Z",
-  "unread_count": 3,
-  "clearable_count": 1,
+  "unread_count": 4,
+  "clearable_count": 2,
   "can_clear": true
 }

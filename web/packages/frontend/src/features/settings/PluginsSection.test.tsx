@@ -21,6 +21,7 @@ vi.mock('../../api/endpoints', () => ({
 vi.mock('../toast/toast', () => ({ showToast: vi.fn() }))
 import * as api from '../../api/endpoints'
 import { PluginsSection } from './PluginsSection'
+import { showToast } from '../toast/toast'
 
 function renderPlugins() {
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } })
@@ -28,6 +29,22 @@ function renderPlugins() {
 }
 
 const clientRow = async (id: string) => (await screen.findByText(id)).closest('li')!
+
+it.each([
+  ['applied', 'Saved'],
+  ['restart_required', 'Settings saved. Restart the affected MCP server to apply them.'],
+  ['unknown', 'Settings saved. Live MCP application is unconfirmed. Check MCP status before retrying.'],
+] as const)('renders the server runtime application result %s after saving', async (runtime_application, message) => {
+  const settings = [{ key: 'endpoint', type: 'string' as const, label: 'Endpoint', description: '', required: false, value: 'one' }]
+  vi.mocked(api.fetchPlugins).mockResolvedValueOnce({ plugins: [{ key: 'demo', name: 'Demo', settings }], empty: false, supported_hooks: [], read_only: false })
+  vi.mocked(api.savePluginSettings).mockResolvedValueOnce({ ok: true, key: 'demo', written: ['endpoint'], settings, runtime_application })
+  renderPlugins()
+  await userEvent.click(await screen.findByRole('button', { name: 'Settings' }))
+  await userEvent.type(screen.getByRole('textbox', { name: 'Endpoint' }), 'two')
+  await userEvent.click(screen.getByRole('button', { name: 'Save' }))
+  await waitFor(() => expect(showToast).toHaveBeenLastCalledWith(message, runtime_application === 'applied' ? 3000 : 10000))
+  await waitFor(() => expect(screen.queryByRole('textbox', { name: 'Endpoint' })).not.toBeInTheDocument())
+})
 
 describe('PluginsSection OAuth clients', () => {
   it('shows each client\'s state, and only a stored grant offers Sign out', async () => {

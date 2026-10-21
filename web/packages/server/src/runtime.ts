@@ -139,7 +139,7 @@ export async function createDeps(opts: CreateDepsOptions): Promise<AppDeps> {
   // Python `init_profile_state` + `switch_profile(process_wide=False)`: the sticky `~/.hermes/active_profile` is
   // the process default; a request's profile cookie or bound session overrides it for that request only, and
   // `activeProfile()` reads the request scope so every domain (sessions, workspaces, drains) sees the same answer.
-  const requestScope = new AsyncLocalStorage<{ requestProfile: string | null }>()
+  const requestScope = new AsyncLocalStorage<{ requestProfile: string | null; notificationOwner?: string }>()
   // Python `_is_isolated_profile_mode`: the explicit startup opt-in AND a `.../profiles/<name>` shaped HERMES_HOME pin
   // the process to that one profile (no switching, listing, creating, deleting, or cross-profile reads).
   const isolatedProfile = truthy(env.HERMES_WEBUI_ISOLATED_PROFILE) && basename(dirname(config.hermesHome)) === 'profiles' && existsSync(dirname(dirname(config.hermesHome))) ? basename(config.hermesHome) : null
@@ -469,6 +469,11 @@ export async function createDeps(opts: CreateDepsOptions): Promise<AppDeps> {
     documents: storage.documents, env, canonicalProfile: (p) => (isRootProfile(p) ? 'default' : p), addListener: (listener) => events.addListener(listener),
   })
   const turns = new TurnRunner({
+    notifications: updateNotifications,
+    notificationOwner: () => {
+      const request = requestScope.getStore()
+      return request ? request.notificationOwner ?? 'local-owner' : null
+    },
     store,
     service: () => sessions,
     events,

@@ -416,6 +416,13 @@ Adding a dependency means adding a sidecar method with its Zod schema in
 `packages/contracts/src/sidecar/namespaces.ts`, a recorded fixture, and a
 pytest case; the server side consumes the typed result only.
 
+`config.set` writes the complete requested state. Before the Agent's comment-preserving
+writer merges it, the sidecar separates YAML aliases whose requested values differ.
+It decodes and checks the staged document before replacing the target; a mismatched
+or invalid staged value fails with `config_invalid` and leaves the original file intact.
+The import-failure fallback uses the same value check. Target permissions and symlink
+retarget protection apply to both paths.
+
 ## state.db message content encoding
 
 The server projects `state.db` read-only (`packages/server/src/sessions/state-db.ts`)
@@ -592,6 +599,13 @@ weakened; this is Agent behavior that Talaria does not patch.
 
 
 ## Native queued controls
+
+An owner can consume a typed voice-stop phrase without admitting a prompt. The private
+`voice_stopped: true` receipt becomes the existing successful suppressed response,
+with refreshed owner attachment and session fields. No admission or stream is invented,
+and an existing owner watch continues. Clients retire only the submitted optimistic
+text through their existing no-stream settlement path. Malformed or mixed receipts
+retain the unknown-outcome refusal.
 
 On owners that publish queued-row `controls`, Talaria maps `steer` to the Steer
 control and `replace` to Edit, alongside Cancel. Missing controls retain Cancel

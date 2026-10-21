@@ -13,6 +13,61 @@ const alice: UpdateNotificationScope = { owner: 'oidc:alice', profile: 'work', s
 afterEach(() => { for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true }) })
 
 describe('UpdateNotificationStore', () => {
+  it.each([['error', 'critical'], ['warn', 'warning'], ['info', 'info'], ['success', 'info']])('persists startup %s warnings with %s severity and scoped dismissal', async (level, severity) => {
+    const root = temp()
+    let now = new Date('2026-10-14T12:00:00Z')
+    const store = await initializeStore(new UpdateNotificationStore(new JsonDocuments(root), () => now))
+    const key = 'startup-warning.1234'
+    const text = 'Synthetic Agent startup warning.'
+    await Promise.all([store.agentWarning(alice, key, { text, level }), store.agentWarning(alice, key, { text, level })])
+    const original = (await store.list(alice)).notifications[0]!
+    expect((await store.list(alice)).notifications).toHaveLength(1)
+    expect(original).toMatchObject({ kind: 'agent_warning', severity, persistent: true, actions: [], destination: null })
+    expect(original).not.toHaveProperty('notice_key')
+    expect(original).not.toHaveProperty('notice_text_hash')
+    await store.read(alice, original.id)
+    now = new Date('2026-10-14T12:01:00Z')
+    await store.agentWarning(alice, key, { text, level: 'error' })
+    expect((await store.list(alice)).notifications[0]).toMatchObject({ ...original, updated_at: now.toISOString(), read_at: '2026-10-14T12:00:00.000Z', unread: false })
+    await store.dismiss(alice, original.id)
+    const restarted = await initializeStore(new UpdateNotificationStore(new JsonDocuments(root), () => now))
+    await restarted.agentWarning(alice, key, { text, level })
+    expect((await restarted.list(alice)).notifications).toEqual([])
+    const bob = { ...alice, owner: 'oidc:bob' }
+    const personal = { ...alice, profile: 'personal' }
+    for (const scope of [bob, personal]) await restarted.agentWarning(scope, key, { text, level })
+    await restarted.agentWarning(alice, key, { text: text + ' Changed.', level })
+    expect((await restarted.list(alice)).notifications).toMatchObject([{ id: original.id, unread: true, read_at: null, message: text + ' Changed.' }])
+    await restarted.agentWarning(alice, key, null)
+    await restarted.agentWarning(alice, key, null)
+    expect((await restarted.list(alice)).notifications).toEqual([])
+    for (const scope of [bob, personal]) expect((await restarted.list(scope)).notifications).toHaveLength(1)
+  })
+
+  it('keeps a dismissed startup warning identity when ordinary history is pruned', async () => {
+    const root = temp()
+    const store = await initializeStore(new UpdateNotificationStore(new JsonDocuments(root)))
+    const key = 'startup-warning.retained'
+    const warning = { text: 'Retain this warning identity.', level: 'warn' }
+    await store.agentWarning(alice, key, warning)
+    const original = (await store.list(alice)).notifications[0]!
+    await store.dismiss(alice, original.id)
+    for (let i = 0; i < 55; i++) await store.create(alice, { kind: 'system', phase: 'notice', title: 'Synthetic notice', message: String(i) })
+    const restarted = await initializeStore(new UpdateNotificationStore(new JsonDocuments(root)))
+    await restarted.agentWarning(alice, key, warning)
+    expect((await restarted.list(alice)).notifications.some((row) => row.kind === 'agent_warning')).toBe(false)
+  })
+
+  it('reopens a warning when text beyond the display limit changes', async () => {
+    const store = await initializeStore(new UpdateNotificationStore(new JsonDocuments(temp())))
+    const key = 'startup-warning.long'
+    await store.agentWarning(alice, key, { text: 'x'.repeat(501), level: 'warn' })
+    const original = (await store.list(alice)).notifications[0]!
+    await store.dismiss(alice, original.id)
+    await store.agentWarning(alice, key, { text: 'x'.repeat(500) + 'y', level: 'warn' })
+    expect((await store.list(alice)).notifications).toMatchObject([{ id: original.id, unread: true }])
+  })
+
   it('reconciles an interrupted recovery notice without changing the failed update history', async () => {
     const root = temp()
     const store = await initializeStore(new UpdateNotificationStore(new JsonDocuments(root)))

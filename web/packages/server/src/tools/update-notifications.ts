@@ -2,7 +2,22 @@ import type { AgentRecoveryState } from '@maudecode/talaria-web-contracts'
 import { createHash, randomUUID } from 'node:crypto'
 import { readDocument } from '../sessions/storage/document.js'
 import type { DocumentBackend } from '../sessions/storage/backend.js'
+import type { SessionInfo } from '../auth/store.js'
+import { str } from '../util.js'
 import type { GatewayProcess } from './health.js'
+
+export function updateNotificationOwner(session: SessionInfo | null): string {
+  const authType = str(session?.auth_type).trim()
+  if (authType === 'oidc') {
+    const issuer = str(session?.oidc_issuer).trim()
+    const subject = typeof session?.oidc_subject === 'string' ? session.oidc_subject : ''
+    if (issuer && subject.trim()) return `oidc:${createHash('sha256').update(JSON.stringify([issuer, subject]), 'utf8').digest('hex')}`
+    const token = str(session?.token).trim()
+    if (token) return `oidc-session:${createHash('sha256').update(JSON.stringify([token]), 'utf8').digest('hex')}`
+  }
+  const username = str(session?.username).trim()
+  return username ? `${authType || 'auth'}:${username}` : 'local-owner'
+}
 
 export type UpdateNotificationTarget = 'webui' | 'agent'
 /** `verifying`: the gateway restarted; the server is checking that the new gateway process and the Agent runtime answer (TAL-1138). */
@@ -11,6 +26,9 @@ export type UpdateNotificationPhase = 'applying' | 'awaiting_confirmation' | 'wa
 export interface UpdateNotificationScope { owner: string; profile: string; serverOwner?: boolean; tab?: string | null; rootProfile?: boolean }
 
 interface StoredUpdateNotification {
+  /** Agent startup identity and full-text digest stay internal, including after dismissal. */
+  notice_key?: string
+  notice_text_hash?: string
   id: string
   owner: string
   profile: string
@@ -59,7 +77,7 @@ export type UpdateStepId = 'install' | 'web_restart' | 'ready' | 'gateway_wait' 
 export interface UpdateStep { id: UpdateStepId; label: string; state: 'done' | 'active' | 'pending' | 'failed' }
 /** How an Updating dialog showing this record may close: not at all, with Close, with Restart later, or by itself. */
 export type UpdateDialogClose = 'none' | 'close' | 'restart_later' | 'auto'
-export type PublicUpdateNotification = Omit<StoredUpdateNotification, 'owner' | 'profile' | 'visibility' | 'dismissed_at' | 'expected_identity' | 'performed_action_ids' | 'tab_id' | 'watchers' | 'web_restart_boot' | 'gateway_tasks' | 'gateway_baseline' | 'failed_step'> & {
+export type PublicUpdateNotification = Omit<StoredUpdateNotification, 'notice_key' | 'notice_text_hash' | 'owner' | 'profile' | 'visibility' | 'dismissed_at' | 'expected_identity' | 'performed_action_ids' | 'tab_id' | 'watchers' | 'web_restart_boot' | 'gateway_tasks' | 'gateway_baseline' | 'failed_step'> & {
   unread: boolean
   active: boolean
   requires_interaction: boolean
@@ -182,6 +200,33 @@ export class UpdateNotificationStore {
   }
 
   async initialize(): Promise<void> { this.rows = await this.load() }
+
+  /** Startup warnings outlive any chat or Agent. Repeats retain read/dismissal state until the full text changes. */
+  async agentWarning(scope: UpdateNotificationScope, key: string, notice: { text: string; level: unknown } | null): Promise<void> {
+    const row = this.rows.find((entry) => entry.kind === 'agent_warning' && entry.notice_key === key && entry.owner === scope.owner && entry.profile === scope.profile)
+    if (!notice) {
+      if (!row) return
+      this.rows = this.rows.filter((entry) => entry !== row)
+      return this.save()
+    }
+    const message = safeText(notice.text, '', 500)
+    if (!message) return
+    const textHash = createHash('sha256').update(notice.text).digest('hex')
+    const severity = notice.level === 'error' ? 'critical' : notice.level === 'warn' ? 'warning' : 'info'
+    if (!row) {
+      await this.createRow(scope, { kind: 'agent_warning', target: 'agent', phase: 'active', severity, persistent: true, title: 'Agent warning', message }, { notice_key: key, notice_text_hash: textHash })
+      return
+    }
+    row.updated_at = this.now().toISOString()
+    if (row.notice_text_hash !== textHash) {
+      row.message = message
+      row.severity = severity
+      row.notice_text_hash = textHash
+      row.read_at = null
+      row.dismissed_at = null
+    }
+    await this.save()
+  }
 
   /**
    * Compare the frontend build a tab loaded with the build this server now serves. A mismatch keeps one
@@ -314,9 +359,9 @@ export class UpdateNotificationStore {
     await this.save()
   }
 
-  /** Drop every server-asked question about a deleted profile, open or answered, so a profile recreated with its name starts clean. */
-  async forgetProfileQuestions(profile: string): Promise<void> {
-    const kept = this.rows.filter((row) => !(row.owner === '*' && row.visibility === 'profile' && row.profile === profile))
+  /** Drop all profile-scoped state, including dismissed warning identities, when a profile is deleted. */
+  async forgetProfile(profile: string): Promise<void> {
+    const kept = this.rows.filter((row) => !(row.visibility === 'profile' && row.profile === profile))
     if (kept.length === this.rows.length) return
     this.rows = kept
     await this.save()
@@ -352,6 +397,10 @@ export class UpdateNotificationStore {
   }
 
   async create(scope: UpdateNotificationScope, input: CreateUpdateNotificationInput): Promise<PublicUpdateNotification> {
+    return this.publish(await this.createRow(scope, input))
+  }
+
+  private async createRow(scope: UpdateNotificationScope, input: CreateUpdateNotificationInput, notice: Pick<StoredUpdateNotification, 'notice_key' | 'notice_text_hash'> = {}): Promise<StoredUpdateNotification> {
     const kind = safeToken(input.kind, '')
     const phase = safeToken(input.phase, '')
     const title = safeText(input.title, '', 160)
@@ -362,7 +411,7 @@ export class UpdateNotificationStore {
     const stamp = this.now().toISOString()
     const row: StoredUpdateNotification = {
       id: randomUUID(), owner: scope.owner.slice(0, 256), profile: scope.profile.slice(0, 64), visibility: input.visibility ?? 'profile',
-      kind, target: input.target ?? null, phase, severity: input.severity ?? 'info',
+      ...notice, kind, target: input.target ?? null, phase, severity: input.severity ?? 'info',
       persistent: input.requiresAcknowledgement === true || input.persistent === true,
       requires_acknowledgement: input.requiresAcknowledgement === true, actions,
       destination: safeDestination(input.destination), title, message,
@@ -374,7 +423,7 @@ export class UpdateNotificationStore {
     if (!this.hasProtectedCapacity(row)) throw new Error('Update notification protected capacity reached')
     this.rows.push(row)
     await this.save()
-    return this.publish(row)
+    return row
   }
 
   activeUpdate(scope: UpdateNotificationScope, target: UpdateNotificationTarget): PublicUpdateNotification | null {
@@ -638,6 +687,7 @@ export class UpdateNotificationStore {
         const phase = row.phase === 'restarting' && row.verifying === true ? 'verifying' : safeToken(row.phase, 'unknown')
         const fallback = target && PHASES.has(phase as UpdateNotificationPhase) ? wording(target, phase as UpdateNotificationPhase) : { title: 'Server notification', message: 'This server needs your attention.' }
         return [{
+          ...(typeof row.notice_key === 'string' ? { notice_key: row.notice_key, notice_text_hash: typeof row.notice_text_hash === 'string' ? row.notice_text_hash : '' } : {}),
           id: row.id, owner: row.owner.slice(0, 256), profile: row.profile.slice(0, 64), visibility: row.visibility === 'profile' ? 'profile' : 'server', kind, target, phase,
           severity: row.severity === 'critical' || row.severity === 'warning' ? row.severity : 'info',
           persistent: row.persistent === true,
@@ -727,6 +777,7 @@ const isTabNotice = (row: StoredUpdateNotification): boolean => row.tab_id !== n
 /** A waiting gateway restart carries its Restart now action, so it stays until the restart runs. */
 const isWaitingGatewayRestart = (row: StoredUpdateNotification): boolean => row.kind === 'update' && row.phase === 'waiting_for_idle'
 const isDismissible = (row: StoredUpdateNotification): boolean => (!row.requires_acknowledgement || row.acknowledged_at !== null) && !isWaitingGatewayRestart(row)
-const isProtected = (row: StoredUpdateNotification): boolean => (row.requires_acknowledgement && row.acknowledged_at === null) || (row.kind === 'update' && ['applying', 'awaiting_confirmation', 'waiting_for_idle', 'restarting', 'verifying'].includes(row.phase))
+/** Warning identities, including dismissed rows, must survive ordinary history pruning. */
+const isProtected = (row: StoredUpdateNotification): boolean => row.kind === 'agent_warning' || (row.requires_acknowledgement && row.acknowledged_at === null) || (row.kind === 'update' && ['applying', 'awaiting_confirmation', 'waiting_for_idle', 'restarting', 'verifying'].includes(row.phase))
 const retentionBucket = (row: StoredUpdateNotification): string => `${row.owner}\u0000${row.visibility === 'server' ? '*' : row.profile}`
 export const updateNotificationScopeId = (scope: UpdateNotificationScope): string => createHash('sha256').update(`${scope.owner}\u0000${scope.profile}\u0000${scope.serverOwner === true ? 'owner' : 'member'}`).digest('hex').slice(0, 24)

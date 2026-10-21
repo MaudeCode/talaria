@@ -241,9 +241,9 @@ export function startTurn(input: StartTurnInput): Promise<ChatStartResponse> {
       if (res.ok === false) throw new Error(res.reason ?? m.composer_send_refused())
       admitted = true
       if (!current()) return res
-      if (res.owner_attachment && res.session) {
+      if (res.owner_attachment && res.session && res.stream_id) {
         client?.setQueryData(keys.sessions.detail(input.sessionId), { session: res.session })
-        if (res.stream_id) await attachToStream(input.sessionId, res.stream_id, res.session)
+        await attachToStream(input.sessionId, res.stream_id, res.session)
         return res
       }
       if (res.stream_id && owners.get(input.sessionId) === owner) {

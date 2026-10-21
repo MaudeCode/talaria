@@ -35,8 +35,7 @@ import { normalizeChannel, updatesCheckView } from '../tools/updates.js'
 import { pyBool } from '../settings.js'
 import { str } from '../util.js'
 import { redactString } from '../redact.js'
-import { GATEWAY_RESTART_NOW, type UpdateNotificationScope } from '../tools/update-notifications.js'
-import type { SessionInfo } from '../auth/store.js'
+import { GATEWAY_RESTART_NOW, updateNotificationOwner, type UpdateNotificationScope } from '../tools/update-notifications.js'
 
 const os = implement(toolsContract).$context<ApiContext>().use(requestSessionIdGuard)
 
@@ -192,19 +191,6 @@ async function gatewayAction(ctx: RequestContext, action: 'start' | 'stop' | 're
 }
 
 const principalHash = (...parts: string[]): string => createHash('sha256').update(JSON.stringify(parts), 'utf8').digest('hex')
-
-export function updateNotificationOwner(session: SessionInfo | null): string {
-  const authType = str(session?.auth_type).trim()
-  if (authType === 'oidc') {
-    const issuer = str(session?.oidc_issuer).trim()
-    const subject = typeof session?.oidc_subject === 'string' ? session.oidc_subject : ''
-    if (issuer && subject.trim()) return `oidc:${principalHash(issuer, subject)}`
-    const token = str(session?.token).trim()
-    if (token) return `oidc-session:${principalHash(token)}`
-  }
-  const username = str(session?.username).trim()
-  return username ? `${authType || 'auth'}:${username}` : 'local-owner'
-}
 
 async function updateNotificationScope(ctx: RequestContext, tab?: string): Promise<UpdateNotificationScope> {
   const session = await ensureTrustedAuthSession(ctx)
@@ -699,7 +685,7 @@ export const toolsRouter = os.router({
       if (error instanceof EnvWriteError) throw new HttpError(error.status, `Failed to save a secret: ${error.message}`, { condition: error.condition })
       throw error
     }
-    return { ok: true as const, key: result.key, written: [...result.written, ...secretFields.map((field) => field.key)], settings: pluginSettingsFieldsView(ctx, result.fields) }
+    return { ok: true as const, key: result.key, runtime_application: result.runtime_application ?? 'restart_required', written: [...result.written, ...secretFields.map((field) => field.key)], settings: pluginSettingsFieldsView(ctx, result.fields) }
   }))),
   pluginOAuthRedirect: os.pluginOAuthRedirect.handler(({ input, context: { ctx } }) => run(async () => {
     // Only this flow's own answer reaches the sidecar: its loopback address and its `state`.

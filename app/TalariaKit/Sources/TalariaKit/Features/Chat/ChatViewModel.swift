@@ -3035,7 +3035,9 @@ public final class ChatViewModel {
             guard let streamID = Self.nonEmpty(response.streamId) else {
                 guard ownership == sendOwnershipGeneration, !Task.isCancelled else { return ChatSendOutcome(didStart: false) }
                 if response.ownerAttachment != nil {
-                    // Admitted with no run to follow: the transcript converges on the owner's.
+                    // An owner response with no run converges on its transcript.
+                    rollbackOptimisticMessage(id: localMessageID)
+                    cacheCurrentMessages(sessionID: sessionID, modelContext: modelContext)
                     await loadMessages(modelContext: modelContext, waitsForPendingMessageSend: false)
                     return ChatSendOutcome(didStart: true)
                 }
