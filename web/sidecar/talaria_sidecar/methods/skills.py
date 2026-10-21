@@ -19,6 +19,17 @@ from .profiles import disabled_skill_names
 log = logging.getLogger("talaria_sidecar.skills")
 
 
+def _skill_helper(name: str):
+    from tools import skills_tool
+
+    return getattr(skills_tool, name, None) or getattr(skills_tool, "_" + name, None)
+
+
+def _sort_skills(rows: list[dict]) -> list[dict]:
+    sort = _skill_helper("sort_skills")
+    return sort(rows) if sort else sorted(rows, key=lambda row: (row.get("category") or "", row["name"]))
+
+
 def _within(base: Path, candidate: Path) -> bool:
     try:
         candidate.resolve().relative_to(base.resolve())
@@ -56,7 +67,7 @@ def _category(skill_md: Path, dirs: list[Path], local: Path) -> str | None:
 def list_skills(profile_home: Path, category: str | None = None) -> dict:
     try:
         from agent.skill_utils import get_disabled_skill_names, is_disabled_entry
-        from tools.skills_tool import _skill_catalog, _sort_skills
+        from tools.skills_tool import _skill_catalog
     except ImportError:
         return _legacy_list_skills(profile_home, category)
     disabled = get_disabled_skill_names("webui")
@@ -76,7 +87,7 @@ def _legacy_list_skills(profile_home: Path, category: str | None = None) -> dict
     skills_dir = profile_home / "skills"
     try:
         from agent.skill_utils import iter_skill_index_files
-        from tools.skills_tool import MAX_DESCRIPTION_LENGTH, _EXCLUDED_SKILL_DIRS, _parse_frontmatter, _sort_skills, skill_matches_platform
+        from tools.skills_tool import MAX_DESCRIPTION_LENGTH, _EXCLUDED_SKILL_DIRS, _parse_frontmatter, skill_matches_platform
     except ImportError:
         return {"skills": [], "categories": [], "count": 0}
     if not skills_dir.exists():
@@ -120,16 +131,20 @@ def _legacy_list_skills(profile_home: Path, category: str | None = None) -> dict
 def find_skill(name: str, dirs: list[Path]) -> tuple[Path | None, Path | None]:
     try:
         from agent.skill_utils import resolve_skill_catalog  # noqa: F401 - capability gate for the matching lookup API
-        from tools.skills_tool import _locate_skill, _skill_lookup_path_error, _skill_search_dirs
+        locate_skill = _skill_helper("locate_skill")
+        skill_lookup_path_error = _skill_helper("skill_lookup_path_error")
+        skill_search_dirs = _skill_helper("skill_search_dirs")
     except ImportError:
         return _legacy_find_skill(name, dirs)
-    if error := _skill_lookup_path_error(name):
+    if not all((locate_skill, skill_lookup_path_error, skill_search_dirs)):
+        return _legacy_find_skill(name, dirs)
+    if error := skill_lookup_path_error(name):
         raise InvalidParams(error)
     local_name = name.replace(":", "/", 1) if ":" in name else None
-    if local_name and (error := _skill_lookup_path_error(local_name)):
+    if local_name and (error := skill_lookup_path_error(local_name)):
         raise InvalidParams(error)
-    roots, _ = _skill_search_dirs()
-    error, skill_dir, skill_md = _locate_skill(name, local_name, roots)
+    roots, _ = skill_search_dirs()
+    error, skill_dir, skill_md = locate_skill(name, local_name, roots)
     if error:
         result = json.loads(error)
         if result.get("matches"):

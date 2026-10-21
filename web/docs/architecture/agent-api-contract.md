@@ -467,6 +467,8 @@ legacy flat-file skills are read-only. Save and Delete resolve the selected
 local file through the same lookup and retain anchored filesystem protections;
 they never mutate a shadowed local copy in place of a project skill.
 Older Agents without these helpers retain the legacy list and lookup shapes.
+Discovery and lookup accept both public and private Agent helper names, preferring
+the public names. Without either sorting helper, rows sort by category then name.
 
 ## Session titles
 

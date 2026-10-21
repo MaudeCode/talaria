@@ -1,10 +1,102 @@
 """Resolved identities must agree across listing, inspection and config toggles."""
 
+import json
 import subprocess
+import sys
+import types
 
 import pytest
 
 from conftest import AGENT_DIR, AGENT_PYTHON, isolated_env, requires_agent, load_schema, validate
+from talaria_sidecar.errors import InvalidParams
+from talaria_sidecar.methods import skills
+
+
+@pytest.fixture
+def skill_helpers(monkeypatch):
+    tool = types.ModuleType("tools.skills_tool")
+    utils = types.ModuleType("agent.skill_utils")
+    utils.get_disabled_skill_names = lambda platform: set()
+    utils.is_disabled_entry = lambda entry, disabled: False
+    utils.resolve_skill_catalog = lambda: []
+    utils.iter_skill_index_files = lambda root, filename: sorted(root.rglob(filename))
+    tool.MAX_DESCRIPTION_LENGTH = 1000
+    tool._EXCLUDED_SKILL_DIRS = set()
+    tool._parse_frontmatter = lambda text: ({}, text)
+    tool.skill_matches_platform = lambda frontmatter: True
+    for name, module in (("tools.skills_tool", tool), ("agent.skill_utils", utils)):
+        package = name.split(".")[0]
+        monkeypatch.setitem(sys.modules, package, types.ModuleType(package))
+        monkeypatch.setitem(sys.modules, name, module)
+    return tool
+
+
+@pytest.mark.parametrize("catalog", [True, False], ids=["catalog", "legacy"])
+@pytest.mark.parametrize("spelling", ["public", "private", "both", "missing"])
+def test_skill_listing_helper_spellings(tmp_path, skill_helpers, catalog, spelling):
+    rows = [("zebra", None), ("beta", "z"), ("alpha", None)]
+    for name, category in rows:
+        folder = tmp_path / "skills" / (category or "") / name
+        folder.mkdir(parents=True)
+        (folder / "SKILL.md").write_text(name)
+    if catalog:
+        skill_helpers._skill_catalog = lambda **kwargs: [
+            {"load_name": name, "name": name, "category": category, "status": "unique", "tier": 0}
+            for name, category in rows
+        ]
+    expected = ["zebra", "beta", "alpha"] if spelling != "missing" else ["alpha", "zebra", "beta"]
+    sort = lambda items: sorted(items, key=lambda item: item["name"], reverse=True)
+    if spelling in ("public", "both"):
+        skill_helpers.sort_skills = sort
+    if spelling in ("private", "both"):
+        skill_helpers._sort_skills = sort if spelling == "private" else lambda _: pytest.fail("public helper must win")
+    result = skills.list_skills(tmp_path)
+    assert [row["name"] for row in result["skills"]] == expected
+    assert result["count"] == 3
+    if catalog:
+        assert result["categories"] == ["z"]
+        assert [row["name"] for row in skills.list_skills(tmp_path, "z")["skills"]] == ["beta"]
+
+
+@pytest.mark.parametrize("spelling", ["public", "private", "both", "mixed"])
+def test_canonical_skill_lookup_helper_spellings(tmp_path, skill_helpers, spelling):
+    folder = tmp_path / "canonical"
+    roots = [tmp_path]
+    seen = []
+
+    def locate(name, local_name, search_roots):
+        seen.append((name, local_name, search_roots))
+        if name == "ambiguous":
+            return json.dumps({"error": "Ambiguous skill name", "matches": ["a/one", "b/two"]}), None, None
+        if name == "absent":
+            return json.dumps({"error": "not found"}), None, None
+        return None, folder, folder / "SKILL.md"
+
+    helpers = {"locate_skill": locate, "skill_lookup_path_error": lambda name: "unsafe path" if ".." in name else None,
+               "skill_search_dirs": lambda: (roots, [])}
+    for index, (name, helper) in enumerate(helpers.items()):
+        public = spelling != "private" and (spelling != "mixed" or index == 0)
+        setattr(skill_helpers, name if public else "_" + name, helper)
+        if spelling == "both":
+            setattr(skill_helpers, "_" + name, lambda *args: pytest.fail("public helper must win"))
+    assert skills.find_skill("pack:one", []) == (folder, folder / "SKILL.md")
+    assert seen == [("pack:one", "pack/one", roots)]
+    with pytest.raises(InvalidParams, match="Ambiguous skill name"):
+        skills.find_skill("ambiguous", [])
+    with pytest.raises(InvalidParams, match="unsafe path"):
+        skills.find_skill("../outside", [])
+    assert skills.find_skill("absent", []) == (None, None)
+
+
+@pytest.mark.parametrize("missing", ["locate_skill", "skill_lookup_path_error", "skill_search_dirs"])
+def test_incomplete_skill_lookup_helpers_keep_legacy_lookup(tmp_path, skill_helpers, missing):
+    folder = tmp_path / "legacy"
+    folder.mkdir()
+    (folder / "SKILL.md").write_text("legacy")
+    for name in ("locate_skill", "skill_lookup_path_error", "skill_search_dirs"):
+        if name != missing:
+            setattr(skill_helpers, name, lambda *args: pytest.fail("incomplete canonical API must not run"))
+    assert skills.find_skill("legacy", [tmp_path]) == (folder, folder / "SKILL.md")
 
 
 @requires_agent
