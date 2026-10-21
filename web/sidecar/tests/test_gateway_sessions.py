@@ -111,60 +111,20 @@ def test_real_owner_queued_controls(tmp_path):
 
 
 @pytest.mark.parametrize("shown,failure", [(True, None), (False, None), (True, "refused"), (True, "timeout")])
-def test_watch_negotiates_display_without_breaking_older_owners(tmp_path, monkeypatch, shown, failure):
-    import asyncio
-    from contextlib import asynccontextmanager
-    from types import ModuleType, SimpleNamespace
-    import sys
-    from talaria_sidecar.methods import gateway_sessions
-
-    class GatewayRPCError(Exception):
-        pass
-
-    client_module = ModuleType("hermes_cli.gateway_client")
-    client_module.GatewayRPCError = GatewayRPCError
-    monkeypatch.setitem(sys.modules, "hermes_cli.gateway_client", client_module)
-    calls, frames = [], []
-    endpoint = SimpleNamespace(control_home=None, instance_id="owner", profile_id="profile", authority_epoch=1)
-    snap = {"session_id": "native", "subscription_id": "viewer", "messages": [], "info": {},
-            "replay_epoch": "epoch", "last_sequence": 0, "execution_generation": 1}
-
-    async def rpc(method, **params):
-        calls.append((method, params))
-        if method == "runtime.describe":
-            return {"instance_id": "owner", "profile_id": "profile", "authority_epoch": 1,
-                    "capabilities": ["durable-admission-v1", "event-replay-v1"]}
-        if method == "session.resume":
-            return snap
-        if method == "config.set":
-            if failure == "refused":
-                raise GatewayRPCError("unsupported_setting")
-            if failure == "timeout":
-                raise TimeoutError()
-        if method == "session.events.since":
-            return {"events": [], "last_sequence": 0}
-        return {}
-
-    @asynccontextmanager
-    async def connect(home, selected):
-        assert home == tmp_path and selected is endpoint
-        yield SimpleNamespace(rpc=rpc), asyncio.Queue()
-
+def test_watch_negotiates_display_without_breaking_older_owners(native_owner_stub, shown, failure):
+    from types import SimpleNamespace
+    native_owner_stub.config_failure = failure
+    frames = []
     ctx = SimpleNamespace(cancelled=False)
-
     def emit(kind, data):
         frames.append((kind, data))
         ctx.cancelled = True
-
     ctx.emit = emit
-    monkeypatch.setattr(gateway_sessions, "_connect", connect)
-    monkeypatch.setattr(gateway_sessions, "_control_refusal", lambda *_: None)
-    result = asyncio.run(gateway_sessions._run(ctx, {"session_id": "native", "action": "watch", "show_reasoning": shown},
-                                               tmp_path, SimpleNamespace(endpoint=endpoint, state="ready")))
+    result = native_owner_stub.run(ctx, {"session_id": "native", "action": "watch", "show_reasoning": shown})
     assert result["state"] == "attached"
     assert frames[0][0] == "snapshot"
-    assert ("config.set", {"session_id": "native", "key": "show_reasoning", "value": "1" if shown else "0", "_timeout": 10}) in calls
-    assert calls[-1] == ("session.detach", {"session_id": "native", "subscription_id": "viewer"})
+    assert ("config.set", {"session_id": "native", "key": "show_reasoning", "value": "1" if shown else "0", "_timeout": 10}) in native_owner_stub.calls
+    assert native_owner_stub.calls[-1] == ("session.detach", {"session_id": "native", "subscription_id": "viewer"})
 
 
 @pytest.fixture
@@ -175,7 +135,7 @@ def native_owner_stub(tmp_path, monkeypatch):
     from types import SimpleNamespace
     from talaria_sidecar.methods import gateway_sessions as adapter
 
-    owner = SimpleNamespace(receipt=None, replay=[], payload=None, calls=[])
+    owner = SimpleNamespace(receipt=None, replay=[], payload=None, calls=[], config_failure=None)
     async def rpc(method, **params):
         owner.calls.append((method, params))
         if method == "runtime.describe":
@@ -187,18 +147,25 @@ def native_owner_stub(tmp_path, monkeypatch):
         if method in {"session.mutate", "prompt.steer_queued", "prompt.replace_queued"}:
             owner.payload = params.get("payload")
             return owner.receipt
+        if method == "config.set":
+            if owner.config_failure == "refused":
+                raise RuntimeError("unsupported_setting")
+            if owner.config_failure == "timeout":
+                raise TimeoutError()
         if method == "session.events.since":
             return {"events": owner.replay, "last_sequence": 4}
     @asynccontextmanager
-    async def connect(*args):
+    async def connect(home, selected):
+        assert home == tmp_path and selected is endpoint
         yield SimpleNamespace(rpc=rpc), asyncio.Queue()
     monkeypatch.setitem(sys.modules, "hermes_cli.gateway_client", SimpleNamespace(GatewayRPCError=RuntimeError))
     monkeypatch.setattr(adapter, "_connect", connect)
     monkeypatch.setattr(adapter, "_control_refusal", lambda *args: None)
     endpoint = SimpleNamespace(control_home=None, instance_id="owner", profile_id="profile", authority_epoch=1)
-    monkeypatch.setattr(adapter, "_with_owner", lambda home, run: asyncio.run(run(SimpleNamespace(endpoint=endpoint))))
+    found = SimpleNamespace(endpoint=endpoint, state="ready")
+    monkeypatch.setattr(adapter, "_with_owner", lambda home, run: asyncio.run(run(found)))
     owner.session = adapter.session
-    owner.run = lambda ctx, params: asyncio.run(adapter._run(ctx, params, tmp_path, SimpleNamespace(endpoint=endpoint)))
+    owner.run = lambda ctx, params: asyncio.run(adapter._run(ctx, params, tmp_path, found))
     return owner
 
 

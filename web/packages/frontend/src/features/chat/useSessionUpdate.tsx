@@ -1,5 +1,5 @@
 import { randomHex } from '../../lib/randomHex'
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { ModelConfirmationRequiredSchema, type ModelChange, type OwnerAttachment, type Session } from '@maudecode/talaria-web-contracts'
 import * as api from '../../api/endpoints'
 import { ApiError } from '../../contracts/common'
@@ -68,10 +68,11 @@ export function useSessionUpdate(sessionId: string | null, refresh: (session?: S
     title={m.dialog_confirm_title()} description={shown?.decision.error} confirmLabel={m.dialog_confirm_btn()} cancelLabel={m.cancel()}
     onConfirm={() => shown ? updateSession({ ...shown.body, confirm_token: shown.decision.confirm_token }) : undefined} />
   const change = nativeOwner?.model_change
-  const notice: ComposerNotice | null = change?.state === 'deferred'
-    ? { id: 'model-change', tone: 'info', content: m.model_change_deferred(), announcement: m.model_change_deferred() }
+  const deferredMessage = m.model_change_deferred()
+  const notice = useMemo<ComposerNotice | null>(() => change?.state === 'deferred'
+    ? { id: 'model-change', tone: 'info', content: deferredMessage, announcement: deferredMessage }
     : change?.state === 'refused'
       ? { id: 'model-change', tone: 'error', content: change.message, announcement: change.message }
-      : null
+      : null, [change, deferredMessage])
   return { updateSession, dialog, notice }
 }

@@ -174,6 +174,7 @@ async def probe_model(home, peer, desc):
                 frame = await asyncio.to_thread(viewer.next_message, 20)
                 data = frame.get("params", {}).get("data", {})
                 if data.get("type") == "session.updated" and data.get("payload", {}).get("operation") == "model":
+                    assert data.get("execution_generation") is None, data
                     assert data["payload"].get("status") is None, data
                     assert data["payload"]["model"] == "owner-fixture-picked", data
                     break
