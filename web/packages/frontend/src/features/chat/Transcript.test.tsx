@@ -4,6 +4,7 @@ import { Transcript, type TranscriptProps } from './Transcript'
 import { projectMessages } from './useTranscript'
 import { dispatch, getStreamState, resetStreamStoreForTests } from '../../stream/store'
 import { sessionFixture } from '../../test/fixtures'
+import { requestScroll } from './sendMotion'
 
 let intersect: IntersectionObserverCallback
 const observe = vi.fn()
@@ -27,6 +28,24 @@ const props = (): TranscriptProps => ({
   autoFollow: false, sessionId: 'history', actions: {}, tts: false, truncated: true,
   loadedFrom: 120, onLoadOlder: vi.fn(), loadingOlder: false, emptyState: null,
   showJumpButtons: false, virtualizeLongTranscripts: false,
+})
+
+it.each([false, true])('preserves an upward reader scroll before its scroll event when content arrives: autoFollow=%s', async (autoFollow) => {
+  const view = render(<Transcript {...props()} autoFollow={autoFollow} />)
+  const pane = view.container.querySelector<HTMLElement>('#messages')
+  const inner = view.container.querySelector<HTMLElement>('#msgInner')
+  if (!pane || !inner) throw new Error('Missing transcript')
+  Object.defineProperties(pane, { scrollHeight: { configurable: true, value: 2600 }, clientHeight: { configurable: true, value: 600 } })
+  vi.spyOn(pane, 'scrollTo').mockImplementation((options: ScrollToOptions | number) => {
+    pane.scrollTop = Math.min(typeof options === 'number' ? options : options.top ?? 0, 2000)
+  })
+  act(() => requestScroll('end'))
+  expect(pane.scrollTop).toBe(2000)
+  fireEvent.wheel(pane, { deltaY: -1 })
+  pane.scrollTop = 300
+  // DOM insertion can precede the queued browser scroll event, as a deferred renderer reveals.
+  await act(async () => { inner.append(document.createTextNode('Deferred content')); await Promise.resolve() })
+  expect(pane.scrollTop).toBe(300)
 })
 
 it('prefetches from a sentinel one viewport before the top, with no load button', () => {
