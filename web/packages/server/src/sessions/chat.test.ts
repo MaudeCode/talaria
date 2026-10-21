@@ -3745,7 +3745,7 @@ describe('turn context from config.yaml (Python streaming worker)', () => {
       const ephemeral = String(seen.ephemeral_system_prompt)
       expect(ephemeral).toContain(`- Workspace: ${ws}`)
       expect(ephemeral.split('\n\nWebUI session context:')[0]).toBe('You review code tersely.')
-      expect(ephemeral).toContain(`- Session ID: ${sid}`)
+      expect(ephemeral).not.toContain('Session ID')
       expect(ephemeral).toContain('WebUI progress guidance:')
       expect(ephemeral).toContain('**Connected Platforms:** local (files on this machine)')
       expect(ephemeral).toContain('  - telegram: ops')

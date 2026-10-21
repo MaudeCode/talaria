@@ -166,6 +166,11 @@ because that runtime does not preserve the verified native launch policy through
 
 To use an external OpenAI-compatible endpoint as a model, add it in **Settings → Providers**.
 
+Chat prompts omit the session ID by default so new chats can share the provider's prompt cache.
+If a skill needs its own session ID, set `webui.pass_session_id: true` in the profile's `config.yaml`.
+The ID is then appended after the shared prompt, including on background turns. Values `true`,
+`yes`, `on`, and `1` enable it, case-insensitively; other or missing values leave it off.
+
 Ordinary sends use fresh, confirmed model-catalog evidence for automatic model repair. A cold, stale,
 or unavailable catalog keeps the selected model and provider while discovery refreshes in the
 background. Concurrent picker and repair refreshes share discovery for the same profile and source
