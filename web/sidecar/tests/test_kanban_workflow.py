@@ -4,8 +4,64 @@ from __future__ import annotations
 
 import pathlib
 import sqlite3
+import subprocess
 
-from conftest import AGENT_DIR, SidecarProcess, requires_agent
+from conftest import AGENT_DIR, AGENT_PYTHON, SidecarProcess, isolated_env, requires_agent
+
+
+@requires_agent
+def test_repeated_board_reads_skip_schema_and_open_one_connection_per_switcher_board(hermes_home: pathlib.Path) -> None:
+    # The Agent owns initialization caching, so a fake cannot prove the native SQL boundary.
+    probe = r'''
+import sqlite3, sys
+sys.path.insert(0, sys.argv[1])
+from talaria_sidecar.methods import kanban
+
+statements, opens = [], []
+connect = sqlite3.connect
+def traced_connect(*args, **kwargs):
+    conn = connect(*args, **kwargs)
+    opens.append(str(args[0]))
+    conn.set_trace_callback(statements.append)
+    return conn
+sqlite3.connect = traced_connect
+
+def schema_statements():
+    return [s for s in statements if s.lstrip().upper().startswith(("CREATE TABLE", "CREATE INDEX", "ALTER TABLE"))]
+
+# The actual task-list RPC is kanban.board. A fresh default board must still initialize itself.
+kanban.METHODS["kanban.board"]({})
+assert schema_statements(), "cold board did not initialize its schema"
+kanban.create_board_payload({"board_spec": {"slug": "work"}})
+for board, title in (("default", "Personal"), ("work", "Release")):
+    kanban.create_task_payload({"board": board, "task": {"title": title}})
+
+statements.clear()
+opens.clear()
+for board in ("default", "work"):
+    result = kanban.METHODS["kanban.board"]({"board": board})
+    assert sum(len(c["tasks"]) for c in result["columns"]) == 1, result
+ddl = schema_statements()
+print(f"warm task lists: {len(opens)} connections, {len(ddl)} schema statements", flush=True)
+assert not ddl, f"warm task-list RPC reran schema migration: {ddl}"
+assert len(opens) == 2, opens
+
+statements.clear()
+opens.clear()
+result = kanban.METHODS["kanban.boards"]({})
+boards = result["boards"]
+# The switcher shows every total. Metadata listing opens no DB; each board's counts need one.
+assert {b["slug"]: b["total"] for b in boards} == {"default": 1, "work": 1}, result
+assert all(sum(b["counts"].values()) == b["total"] for b in boards), result
+assert len(opens) == len(boards) == 2, opens
+assert not schema_statements(), schema_statements()
+print(f"switcher: {len(opens)} connections for {len(boards)} boards, 0 schema statements", flush=True)
+'''
+    result = subprocess.run(
+        [AGENT_PYTHON, "-c", probe, str(AGENT_DIR)],
+        env=isolated_env(hermes_home), capture_output=True, text=True, timeout=60,
+    )
+    assert result.returncode == 0, result.stdout + result.stderr
 
 
 @requires_agent

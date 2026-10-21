@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Changed",
+      "summary": "Boards reuse initialized databases for faster refreshes.",
+      "highlight": false,
+      "components": ["web"]
+    }
+  ]
+}
