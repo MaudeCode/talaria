@@ -33,6 +33,7 @@ from ..home import profile_home_param, scoped_home, session_workspace
 from ..rpc import CallContext
 from .checkpoints import checkpoint_kwargs
 from .providers import runtime_failure
+from .state_db import release_all, release_home, release_session_db
 from .toolsets import disabled_toolsets
 
 log = logging.getLogger("talaria_sidecar.chat")
@@ -1104,7 +1105,7 @@ def _build_agent(AIAgent, kwargs: dict, home, session_id: str, state_db: bool = 
     try:
         agent = AIAgent(**kwargs)
     except BaseException:
-        _release_session_db(session_db)
+        release_session_db(session_db)
         raise
     agent._talaria_session_db = session_db  # released with the agent (``_release_agent``)
     return agent
@@ -1156,7 +1157,7 @@ def _release_agent(agent, home) -> threading.Thread:
             if not released:
                 # The memory flush needs the profile; the LLM clients and the Codex child close regardless.
                 call("release_clients")
-            _release_session_db(getattr(agent, "_talaria_session_db", None))
+            release_session_db(getattr(agent, "_talaria_session_db", None))
             with _RELEASES_LOCK:
                 _RELEASES.pop(thread, None)
 
@@ -1289,6 +1290,8 @@ def drain_agents(timeout: float = _AGENT_RELEASE_TIMEOUT) -> None:
     with _RELEASES_LOCK:
         threads = list(_RELEASES)
     _join(threads, deadline)
+    # TAL-1191: the state.db handles state_db writes keep between turns; each final release checkpoints once.
+    release_all()
 
 
 def refresh_profile_agents_mcp_tools(home) -> None:
@@ -1342,6 +1345,7 @@ def release_profile_agents(home):
             raise RpcError("The profile is still saving memory from its chats. Retry in a moment.")
         if any(thread.failed for thread in threads):
             raise RpcError("Memory from the profile's chats could not be saved; see the sidecar log. Retry to delete the profile anyway.")
+        release_home(target)
         yield
         # The old generation has no worker left that could restore its readiness after deletion.
         forget_profile_mcp_tools(target)
@@ -1368,17 +1372,6 @@ def _acquire_session_db(home):
     except Exception:  # noqa: BLE001
         log.warning("state.db unavailable under %s; this agent's turns will not reach it", home, exc_info=True)
         return None
-
-
-def _release_session_db(db) -> None:
-    if db is None:
-        return
-    try:
-        from hermes_state_registry import release_or_close
-
-        release_or_close(db)
-    except Exception:  # noqa: BLE001
-        log.warning("releasing an agent's state.db handle failed", exc_info=True)
 
 
 def _execution_session_id(db, session_id: str) -> str:

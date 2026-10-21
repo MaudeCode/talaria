@@ -2084,6 +2084,13 @@
         ""
       ]
     },
+    "tests/test_state_db_shared_handle.py::test_sync_usage_reuses_one_handle_until_the_file_is_replaced": {
+      "layer": "compatibility",
+      "reason": "Supported-Agent API compatibility: state_db writes reuse the Agent's shared SessionDB registry handle and reopen after a file replace. Counts the real release's SessionDB opens and write transactions, which a fake cannot establish.",
+      "cases": [
+        ""
+      ]
+    },
     "tests/test_status_events.py::test_pinned_stream_diagnostics_reach_warning_frames": {
       "layer": "compatibility",
       "reason": "Supported-Agent API compatibility: pinned stream diagnostics reach warning frames. Uses the real installed release, not a fabricated API response.",
