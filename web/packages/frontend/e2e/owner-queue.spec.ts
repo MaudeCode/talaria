@@ -1,6 +1,34 @@
 import { expect, test } from './fixtures'
+import ownerFixture from '../../../../contracts/fixtures/gateway-owner.json' with { type: 'json' }
 
 test.use({ video: 'on' })
+
+test('an owner-consumed voice stop clears its optimistic row without a new stream', async ({ page }, info) => {
+  const response = ownerFixture.voice_stop_response
+  const calls: Record<string, unknown>[] = []
+  let confirm!: () => void
+  const confirmed = new Promise<void>((resolve) => { confirm = resolve })
+  await page.route('**/api/session?**', (route) => route.fulfill({ json: { session: response.session } }))
+  await page.route('**/api/chat/stream/status?**', (route) => route.fulfill({ json: { active: false, stream_id: null, replay_available: false } }))
+  await page.route('**/api/chat/start', async (route) => {
+    calls.push(route.request().postDataJSON() as Record<string, unknown>)
+    await confirmed
+    await route.fulfill({ json: response })
+  })
+  await page.goto(`/session/${response.session_id}`)
+  await page.locator('#msg').fill('stop')
+  await page.locator('#btnSend').click()
+  const pending = page.locator('[data-live-user="1"]')
+  await expect(pending).toContainText('stop')
+  if (process.env.TAL1311_SHOTS) await page.screenshot({ path: `${process.env.TAL1311_SHOTS}/before-${info.project.name}.png` })
+  confirm()
+  await expect(pending).toHaveCount(0)
+  await expect(page.locator('[data-role="user"]')).toHaveText(['Started in the CLI'])
+  await expect(page.locator('#msg')).toHaveValue('')
+  expect(calls).toHaveLength(1)
+  expect(calls[0]).toMatchObject({ message: 'stop', submission_id: expect.any(String) })
+  if (process.env.TAL1311_SHOTS) await page.screenshot({ path: `${process.env.TAL1311_SHOTS}/after-${info.project.name}.png` })
+})
 
 /** The built chat renders the server's native-owner projection, never a second local queue. */
 test('native queued prompts use owner controls and confirmed snapshots', async ({ page }, info) => {

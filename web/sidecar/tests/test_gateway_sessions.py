@@ -97,6 +97,18 @@ def test_queued_controls_use_owner_verbs_and_caller_ids(tmp_path, native_owner_s
 
 
 @requires_agent
+def test_real_owner_voice_stop_succeeds_without_admission(tmp_path):
+    controls = AGENT_DIR / "gateway/session_controls.py"
+    if not controls.exists() or "voice_stopped" not in controls.read_text():
+        pytest.skip("this supported Agent does not consume typed voice stops")
+    env = isolated_env(tmp_path / "hermes", HERMES_WEBUI_AGENT_DIR=str(AGENT_DIR), HERMES_WEBUI_PYTHON=str(AGENT_PYTHON),
+                       PYTHONPATH=f"{SIDECAR_ROOT}:{Path(pytest.__file__).parent.parent}")
+    result = subprocess.run([AGENT_PYTHON, str(Path(__file__).parent / "fixtures/gateway_session_peer.py"), "voice-stop"],
+                            env=env, capture_output=True, text=True, timeout=90, check=False)
+    assert result.returncode == 0, result.stdout + result.stderr
+
+
+@requires_agent
 def test_real_owner_queued_controls(tmp_path):
     protocol = AGENT_DIR / "hermes_cli/gateway_client.py"
     # Only releases publishing these verbs can establish their execution semantics.

@@ -1,6 +1,8 @@
 import { deferred, sessionFixture } from '../test/fixtures'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { QueryClient, QueryObserver } from '@tanstack/react-query'
+import ownerFixture from '../../../../../contracts/fixtures/gateway-owner.json'
+import { ChatStartResponseSchema } from '@maudecode/talaria-web-contracts'
 import { keys } from '../api/queryKeys'
 import { ApiError } from '../contracts/common'
 import type { ChatEvent } from '../contracts/sse'
@@ -397,6 +399,32 @@ describe('pending admission and cancellation intent (TAL-1079)', () => {
     expect(qc.getQueryData<{ session: typeof session }>(keys.sessions.detail(SID))?.session.messages).toEqual(session.messages)
     expect(opened).toHaveLength(0)
     off()
+    qc.clear()
+  })
+
+  it.each([false, true])('settles an owner voice stop without a new stream or retry, running=%s', async (running) => {
+    const response = ChatStartResponseSchema.parse(ownerFixture.voice_stop_response)
+    const sessionId = response.session_id!
+    const qc = new QueryClient()
+    configureStream({ queryClient: qc })
+    if (running) {
+      await attachToStream(sessionId, 'run-a')
+      opened[0]!.onEvent(token('Existing answer'), 'run-a:1')
+    }
+    beginFirstSend('stop')
+    bindFirstSend(sessionId)
+    vi.mocked(api.startChat).mockResolvedValue(response)
+    await startTurn({ sessionId, message: 'stop', request: { submission_id: 'voice-stop-once' } })
+    expect(getTurnIntent(sessionId).send).toBeUndefined()
+    expect(getFirstSend()).toBeNull()
+    expect(api.startChat).toHaveBeenCalledOnce()
+    expect(api.fetchSession).not.toHaveBeenCalled()
+    expect(opened).toHaveLength(running ? 1 : 0)
+    if (running) {
+      expect(opened[0]!.close).not.toHaveBeenCalled()
+      expect(liveText(getStreamState().turns[sessionId]!)).toBe('Existing answer')
+    }
+    expect(showToast).not.toHaveBeenCalled()
     qc.clear()
   })
 

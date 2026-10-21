@@ -593,6 +593,13 @@ weakened; this is Agent behavior that Talaria does not patch.
 
 ## Native queued controls
 
+An owner can consume a typed voice-stop phrase without admitting a prompt. The private
+`voice_stopped: true` receipt becomes the existing successful suppressed response,
+with refreshed owner attachment and session fields. No admission or stream is invented,
+and an existing owner watch continues. Clients retire only the submitted optimistic
+text through their existing no-stream settlement path. Malformed or mixed receipts
+retain the unknown-outcome refusal.
+
 On owners that publish queued-row `controls`, Talaria maps `steer` to the Steer
 control and `replace` to Edit, alongside Cancel. Missing controls retain Cancel
 only. The server carries the optional `steering` flag and excludes steering

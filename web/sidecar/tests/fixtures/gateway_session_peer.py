@@ -187,6 +187,58 @@ async def probe_model(home, peer, desc):
         viewer.close()
 
 
+async def probe_voice_stop(home, peer, desc):
+    import subprocess
+    web = Path(__file__).resolve().parents[3]
+    server = web / 'packages/server/dist'
+    assert (server / 'runtime.js').exists(), 'voice-stop HTTP proof needs the built Web server'
+    async with websocket(home, desc) as native:
+        created = await rpc(native, 'session.create', request_id='voice-create', source='cli', toolsets=[])
+        sid = created['result']['session_id']
+        enabled = await rpc(native, 'slash.exec', session_id=sid, command='/voice on')
+        assert 'error' not in enabled, enabled
+        voice = await rpc(native, 'config.get', session_id=sid, key='voice')
+        assert voice['result']['value'] == 'voice_only', voice
+        script = home / 'voice-stop.mjs'
+        imports = '\n'.join(f'import {{{name}}} from {json.dumps((server / path).as_uri())};'
+            for name, path in [('createApp', 'app.js'), ('createDeps', 'runtime.js'),
+                               ('startServer', 'server.js'), ('SidecarClient', 'sidecar/client.js')])
+        args = dict(home=str(home), web=str(web), agent=str(agent), python=sys.executable, sid=sid)
+        script.write_text(imports + '\nconst a=' + json.dumps(args) + ';\n' + r'''
+const logs=[];
+const env={...process.env,PYTHONPATH:a.web+'/sidecar',HERMES_HOME:a.home,HERMES_WEBUI_STATE_DIR:a.home+'/webui',
+  HERMES_WEBUI_DEFAULT_WORKSPACE:a.home,HERMES_WEBUI_CLAUDE_PROJECTS_DIR:a.home+'/claude',
+  HERMES_WEBUI_HOST:'127.0.0.1',HERMES_WEBUI_PORT:'0'};
+const client=new SidecarClient({python:a.python,agentDir:a.agent,sidecarDir:a.web+'/sidecar',hermesHome:a.home,env,log:l=>logs.push(l)});
+let running;
+try {
+ await client.start();
+ const deps=await createDeps({webRoot:a.web,env,sidecar:client,pty:null,log:l=>logs.push(l),fetch:async()=>{throw Error('external network forbidden')}});
+ running=await startServer(createApp(deps),deps.config,{signals:false,log:l=>logs.push(l)});
+ const response=await fetch('http://127.0.0.1:'+running.port+'/api/chat/start',{
+   method:'POST',headers:{'content-type':'application/json'},
+   body:JSON.stringify({session_id:a.sid,message:'stop',submission_id:'voice-stop-once'})});
+ console.log(JSON.stringify({status:response.status,body:await response.json()}));
+} finally {
+ await running?.close(); await client.close();
+}
+''')
+        result = await asyncio.to_thread(subprocess.run, ['node', str(script)], env=os.environ.copy(),
+                                         capture_output=True, text=True, timeout=60)
+        assert result.returncode == 0, result.stdout + result.stderr
+        response = json.loads(result.stdout.splitlines()[-1])
+        voice = await rpc(native, 'config.get', session_id=sid, key='voice')
+        assert voice['result']['value'] == 'off', (voice, response)
+        import sqlite3
+        with sqlite3.connect(home / 'state.db') as db:
+            assert db.execute('SELECT COUNT(*) FROM session_admissions WHERE target_session_id=?', (sid,)).fetchone()[0] == 0
+        assert peer.requests == [], 'a consumed voice stop must never reach a provider'
+        assert response['status'] == 200, response
+        assert response['body']['status'] == 'suppressed' and response['body']['reason'] == 'voice_stopped', response
+        assert 'stream_id' not in response['body'] and 'admission_id' not in response['body'], response
+        print(json.dumps({'voice_stopped': True, 'admissions': 0, 'http_status': response['status']}))
+
+
 async def probe_control(home, peer, desc, kind):
     sidecar = SidecarProcess(home)
     try:
@@ -766,6 +818,8 @@ def main():
                 asyncio.run(probe_restart(home, peer, desc, proc))
             elif mode == "model":
                 asyncio.run(probe_model(home, peer, desc))
+            elif mode == "voice-stop":
+                asyncio.run(probe_voice_stop(home, peer, desc))
             elif mode == "profiles":
                 asyncio.run(probe_profiles(home, peer, desc))
             elif mode in {"approval", "clarify"}:

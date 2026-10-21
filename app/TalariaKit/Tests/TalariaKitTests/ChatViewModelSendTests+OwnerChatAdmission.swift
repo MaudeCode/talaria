@@ -110,4 +110,38 @@ extension ChatViewModelSendTests {
         stream.emit(.token("Next words"))
         XCTAssertEqual(viewModel.messages.compactMap(\.content), ["Started in the CLI", "Persisted answer so far", "Next words"], "Later output starts a fresh reply row")
     }
+
+    func testAnOwnerVoiceStopSettlesWithoutAStreamOrRetry() async throws {
+        let fixture = try XCTUnwrap(JSONSerialization.jsonObject(with: sharedContractFixture("gateway-owner")) as? [String: Any])
+        let recorded = try XCTUnwrap(fixture["voice_stop_response"] as? [String: Any])
+        let normal = try Self.ownerAttachmentJSON("normal")
+        for (running, cached) in [(false, false), (false, true), (true, false), (true, true)] {
+            let context = cached ? try makeContext() : nil
+            let log = OwnerRequestLog()
+            let stream = SpySSEStreamingClient()
+            let activeStreamID = running ? "owner-stream" : nil
+            var response = recorded
+            response["session"] = try JSONSerialization.jsonObject(with: Data(Self.ownerSessionObject(attachment: normal, activeStreamID: activeStreamID).utf8))
+            let body = String(decoding: try JSONSerialization.data(withJSONObject: response), as: UTF8.self)
+            let viewModel = try ownerViewModel(log, streamClient: stream, session: { Self.ownerSessionObject(attachment: normal, activeStreamID: activeStreamID) }) { path, request in
+                path == "/api/chat/start" ? apiTestJSONResponse(body, for: request) : nil
+            }
+            await viewModel.loadMessages(modelContext: context)
+            if running { await viewModel.reconnectStreamIfNeeded() }
+            let streamStarts = stream.startedURLs.count
+
+            let sent = await viewModel.sendMessage("stop", modelContext: context)
+
+            XCTAssertTrue(sent)
+            XCTAssertEqual(log.bodies["/api/chat/start"]?.count, 1)
+            XCTAssertEqual(viewModel.messages.compactMap(\.content), ["Started in the CLI"])
+            XCTAssertEqual(viewModel.activeStreamID, activeStreamID)
+            XCTAssertEqual(stream.startedURLs.count, streamStarts)
+            XCTAssertNil(viewModel.lastError)
+            XCTAssertNil(viewModel.sendErrorMessage)
+            if let context {
+                XCTAssertEqual(try CacheStore.cachedMessages(serverURL: URL(string: "https://example.test")!, sessionID: "session-abc", in: context).compactMap(\.content), ["Started in the CLI"])
+            }
+        }
+    }
 }

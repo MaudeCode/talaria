@@ -73,5 +73,63 @@
     "execution_generation": 1,
     "active_admission": null,
     "admissions": []
+  },
+  "voice_stop_receipt": {
+    "voice_stopped": true
+  },
+  "voice_stop_response": {
+    "ok": true,
+    "status": "suppressed",
+    "reason": "voice_stopped",
+    "session_id": "session-abc",
+    "owner_attachment": {
+      "state": "attached",
+      "reason": null,
+      "restarting": false,
+      "can_submit": true,
+      "can_interrupt": false,
+      "can_attach": false,
+      "revision": 2,
+      "execution_generation": 1,
+      "active_admission": null,
+      "admissions": []
+    },
+    "session": {
+      "session_id": "session-abc",
+      "read_only": true,
+      "read_only_reason": "This session is owned by the Agent gateway and is display-only in Talaria.",
+      "owner_attachment": {
+        "state": "attached",
+        "reason": null,
+        "restarting": false,
+        "can_submit": true,
+        "can_interrupt": false,
+        "can_attach": false,
+        "revision": 2,
+        "execution_generation": 1,
+        "active_admission": null,
+        "admissions": []
+      },
+      "messages": [
+        {
+          "role": "user",
+          "content": "Started in the CLI",
+          "message_id": "cli-1"
+        }
+      ],
+      "title": "Native chat",
+      "active_stream_id": null,
+      "is_streaming": false,
+      "active_turn_origin": null,
+      "source_kind": "cli",
+      "is_messaging_session": false,
+      "sort_ts": 1,
+      "can_branch": false,
+      "can_pin": false,
+      "can_archive": false,
+      "can_delete": false,
+      "can_duplicate": false,
+      "workspace_name": "Home"
+    }
   }
 }

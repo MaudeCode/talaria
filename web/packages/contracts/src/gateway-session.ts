@@ -26,7 +26,11 @@ export const ModelChangeSchema = z.object({
 export type ModelChange = z.infer<typeof ModelChangeSchema>
 export const GatewaySessionResultSchema = z.object({
   state: z.enum(['attached', 'stopped', 'unavailable', 'incompatible', 'refused']), reason: z.string().nullable(),
-  replay_gap: z.boolean().optional(), snapshot: GatewaySnapshotSchema.nullable(), receipt: z.union([GatewayAdmissionSchema, GatewayMutationReceiptSchema]).nullable(),
+  replay_gap: z.boolean().optional(), snapshot: GatewaySnapshotSchema.nullable(), receipt: z.union([
+    GatewayAdmissionSchema.extend({ voice_stopped: z.never().optional() }),
+    GatewayMutationReceiptSchema.extend({ voice_stopped: z.never().optional() }),
+    z.strictObject({ voice_stopped: z.literal(true) }),
+  ]).nullable(),
   model_change: ModelChangeSchema.optional(),
   restarting: z.boolean().optional().describe("The owner is in a restart's after-turn wait: parked prompts stay answerable, new work is refused."),
   lock: z.object({ status: z.enum(['ok', 'expired']), remaining: z.array(z.string()).optional() }).optional()

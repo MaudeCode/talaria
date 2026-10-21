@@ -1,7 +1,7 @@
 import { RpcRequestSchema } from './sidecar/rpc.js'
 import { ModelConfirmationRequiredSchema, sessionsContract } from './routes/sessions.js'
-import { MessageSchema, SessionSchema, ToolCallSchema } from './views.js'
-import { ExecutionModesSchema, OwnerAttachmentSchema, OwnerActionRequestSchema } from './gateway-session.js'
+import { ChatStartResponseSchema, MessageSchema, SessionSchema, ToolCallSchema } from './views.js'
+import { ExecutionModesSchema, OwnerAttachmentSchema, OwnerActionRequestSchema, GatewaySessionResultSchema } from './gateway-session.js'
 import { describe, expect, it } from 'vitest'
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
@@ -11,6 +11,17 @@ import { CronBlueprintsSchema, CronBlueprintFillSchema, AgentHealthSchema, Error
 const shared = (path: string): unknown => JSON.parse(readFileSync(resolve(import.meta.dirname, '../../../../contracts', path), 'utf8'))
 
 describe('contracts package', () => {
+  it('accepts the shared closed voice-stop receipt and existing suppressed response', () => {
+    const fixture = shared('fixtures/gateway-owner.json') as { voice_stop_receipt: unknown; voice_stop_response: unknown }
+    const result = { state: 'attached', reason: null, snapshot: null, receipt: fixture.voice_stop_receipt }
+    expect(GatewaySessionResultSchema.parse(result).receipt).toEqual({ voice_stopped: true })
+    const response = ChatStartResponseSchema.parse(fixture.voice_stop_response)
+    expect(response).toMatchObject({ ok: true, status: 'suppressed', reason: 'voice_stopped' })
+    expect(response).not.toHaveProperty('stream_id')
+    for (const receipt of [{ voice_stopped: false }, { voice_stopped: 'true' }, { voice_stopped: true, operation: 'model' }]) {
+      expect(GatewaySessionResultSchema.safeParse({ ...result, receipt }).success).toBe(false)
+    }
+  })
   it('shares live MCP progress between SSE and the running tool view', () => {
     const fixture = shared('fixtures/tool-progress.json') as { running: unknown; completed: unknown; tool: unknown }
     expect(ChatEventSchema.parse(fixture.running)).toEqual(fixture.running)
