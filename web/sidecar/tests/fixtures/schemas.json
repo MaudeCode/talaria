@@ -6255,6 +6255,15 @@
                         }
                       ]
                     },
+                    "controls": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    },
+                    "steering": {
+                      "type": "boolean"
+                    },
                     "text": {
                       "type": "string"
                     },
@@ -6358,6 +6367,15 @@
                     "type": "null"
                   }
                 ]
+              },
+              "controls": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "steering": {
+                "type": "boolean"
               },
               "text": {
                 "type": "string"
@@ -6513,6 +6531,15 @@
                         }
                       ]
                     },
+                    "controls": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    },
+                    "steering": {
+                      "type": "boolean"
+                    },
                     "text": {
                       "type": "string"
                     },
@@ -6616,6 +6643,15 @@
                     "type": "null"
                   }
                 ]
+              },
+              "controls": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "steering": {
+                "type": "boolean"
               },
               "text": {
                 "type": "string"
