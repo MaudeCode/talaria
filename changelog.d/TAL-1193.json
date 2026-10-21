@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Changed",
+      "summary": "Background task updates read less session history on profiles with many past subagents.",
+      "highlight": false,
+      "components": ["web"]
+    }
+  ]
+}
