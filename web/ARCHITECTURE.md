@@ -175,8 +175,13 @@ components. It never materializes a writable Talaria session or settles the owne
 The Agent owns admission, execution, recovery, and revision/generation-fenced mutations. Talaria's
 observational journals and stream scope include the complete profile home and session identity.
 Watches negotiate the profile's Web reasoning display preference with the owner and map reasoning, subagent lifecycle and usage events into the existing chat frames. Unsupported display negotiation leaves older owners observable.
-Unknown admissions require an explicit recovery decision. Unsupported native CLI batch controls remain
-locked without answering or cancelling them; ordinary native secure-input requests are declined.
+Unknown admissions require an explicit recovery decision. On Agents with `clarify.lock` (v0.22.3+), the
+owner's native CLI clarify batch reaches the attached watch once, as a `clarify_batch` stream event; the
+server shows it as one clarify card, locks each answer, and clears it on the owner's `request.cancel`.
+Older Agents keep batch turns locked without answering or cancelling them. Ordinary native secure-input
+requests are declined. During a restart's after-turn wait (`restart_wait`), the sidecar still attaches
+for snapshots, watches, receipts, approvals, clarify answers and interrupts, refuses other actions with
+`gateway_restarting`, and the server ships `owner_attachment.restarting` so clients stop sending.
 
 Diagnostic fresh chats (`execution_mode` `ignore_config` or `safe` on `POST /api/session/new`) are
 minted by the same owner through `gateway.create`, which requests `session.create` with the Agent's

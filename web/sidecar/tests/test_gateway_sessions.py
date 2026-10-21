@@ -24,12 +24,14 @@ def test_stopped_owner_is_an_explicit_refusal_without_starting(tmp_path):
 
 
 @requires_agent
-@pytest.mark.parametrize("mode", ["shared", "batch", "approval", "clarify", "recovery", "secure", "profiles", "dedicated", "replay", "detail"])
+@pytest.mark.parametrize("mode", ["shared", "batch", "approval", "clarify", "recovery", "secure", "profiles", "dedicated", "replay", "detail", "restart"])
 def test_real_native_owner_shared_admission_and_detach(tmp_path, mode):
     if not (AGENT_DIR / "hermes_cli/gateway_client.py").exists():
         pytest.skip("this supported Agent does not expose native sessions")
     if mode == "detail" and "def _publish_subagent" not in (AGENT_DIR / "gateway/local_viewer_events.py").read_text():
         pytest.skip("this supported Agent does not forward native subagent lifecycle events")
+    if mode == "restart" and "def attachable(" not in (AGENT_DIR / "hermes_cli/gateway_runtime.py").read_text():
+        pytest.skip("this supported Agent refuses every client during a restart's after-turn wait")
     home = tmp_path / "hermes"
     env = isolated_env(home, HERMES_WEBUI_AGENT_DIR=str(AGENT_DIR), HERMES_WEBUI_PYTHON=str(AGENT_PYTHON),
                        PYTHONPATH=f"{SIDECAR_ROOT}:{Path(pytest.__file__).parent.parent}")
@@ -101,9 +103,9 @@ def test_queued_controls_use_owner_verbs_and_caller_ids(tmp_path, monkeypatch, a
         yield Client(), asyncio.Queue()
     monkeypatch.setattr(gateway, "_connect", connect)
     monkeypatch.setattr(gateway, "_control_refusal", lambda *_: None)
-    monkeypatch.setattr(gateway, "_with_owner", lambda home, run: asyncio.run(run(SimpleNamespace(endpoint=endpoint))))
+    monkeypatch.setattr(gateway, "_with_owner", lambda home, run: asyncio.run(run(SimpleNamespace(endpoint=endpoint, state="ready"))))
     # _run exercises dispatch independently of public input validation.
-    result = asyncio.run(gateway._run(None, {"session_id": "native", "action": action, "admission_id": "queued", **extra}, tmp_path, SimpleNamespace(endpoint=endpoint)))
+    result = asyncio.run(gateway._run(None, {"session_id": "native", "action": action, "admission_id": "queued", **extra}, tmp_path, SimpleNamespace(endpoint=endpoint, state="ready")))
     assert (method, {"session_id": "native", "admission_id": "queued", **extra}) in calls
     assert result["receipt"] == {"admission_id": "queued"}
     assert gateway.session(None, {"profile_home": str(tmp_path), "session_id": "native", "action": action, "admission_id": "queued", **extra})["receipt"] == result["receipt"]

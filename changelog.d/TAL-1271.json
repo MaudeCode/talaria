@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Added",
+      "summary": "On Hermes Agent 0.22.3, Web can answer a gateway-owned chat's multi-question clarification, and the approvals and questions a turn is waiting on while the gateway restarts. Sending stays paused until the restart finishes.",
+      "highlight": false,
+      "components": ["web"]
+    }
+  ]
+}

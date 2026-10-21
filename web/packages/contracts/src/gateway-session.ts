@@ -16,15 +16,25 @@ export const GatewaySnapshotSchema = z.object({
 export const GatewaySessionResultSchema = z.object({
   state: z.enum(['attached', 'stopped', 'unavailable', 'incompatible', 'refused']), reason: z.string().nullable(),
   replay_gap: z.boolean().optional(), snapshot: GatewaySnapshotSchema.nullable(), receipt: GatewayAdmissionSchema.nullable(),
+  restarting: z.boolean().optional().describe("The owner is in a restart's after-turn wait: parked prompts stay answerable, new work is refused."),
+  lock: z.object({ status: z.enum(['ok', 'expired']), remaining: z.array(z.string()).optional() }).optional()
+    .describe('`clarify_lock`: the batch question ids the owner still waits on; `expired` when the batch already ended.'),
 })
+/** TAL-1271: the owner's multi-question clarify, asked once of the viewers attached when it parks (watch stream `clarify_batch`). */
+export const GatewayClarifyBatchSchema = z.object({
+  request_id: z.string().min(1),
+  questions: z.array(z.object({ qid: z.string().min(1), question: z.string(), choices: z.array(z.string()).optional(), multi_select: z.boolean().optional() })).min(1),
+})
+export type GatewayClarifyBatch = z.infer<typeof GatewayClarifyBatchSchema>
 export const GatewaySessionParamsSchema = z.object({
   profile_home: z.string().min(1), session_id: z.string().min(1),
-  action: z.enum(['snapshot', 'watch', 'submit', 'receipt', 'cancel', 'steer_queued', 'replace_queued', 'interrupt', 'approval', 'clarify', 'discard', 'mutate']),
+  action: z.enum(['snapshot', 'watch', 'submit', 'receipt', 'cancel', 'steer_queued', 'replace_queued', 'interrupt', 'approval', 'clarify', 'clarify_lock', 'discard', 'mutate']),
   request_id: z.string().min(1).max(128).optional(), text: z.string().optional(),
   submission_id: z.string().min(1).max(128).optional(),
   show_reasoning: z.boolean().optional().describe('The profile display preference negotiated for an owner watch.'),
   admission_id: z.string().optional(), execution_generation: z.number().int().nonnegative().optional(),
   prompt_id: z.string().optional(), choice: z.enum(['once', 'session', 'always', 'deny']).optional(),
+  question_id: z.string().min(1).optional(), answer: z.string().optional(),
   expected_revision: z.number().int().nonnegative().optional(),
   operation: z.enum(['rename', 'archive', 'sidebar', 'branch', 'delete', 'rewind', 'reset', 'model', 'workspace', 'compress']).optional(),
   payload: ObjectSchema.optional(),
@@ -69,6 +79,7 @@ export type OwnerActionRequest = z.infer<typeof OwnerActionRequestSchema>
 export const OwnerAttachmentSchema = z.object({
   state: GatewaySessionResultSchema.shape.state, reason: z.string().nullable(),
   can_submit: z.boolean(), can_interrupt: z.boolean(), can_attach: z.boolean(),
+  restarting: z.boolean().describe('The owning gateway is restarting once this turn ends; sending waits until it is back.'),
   revision: z.number().int().nullable(), execution_generation: z.number().int().nullable(),
   active_admission: GatewayAdmissionSchema.nullable().optional(),
   admissions: z.array(GatewayAdmissionSchema.extend({ actions: z.array(z.enum(['cancel', 'steer', 'edit', 'retry', 'discard'])) })),

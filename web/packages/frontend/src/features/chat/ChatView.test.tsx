@@ -8,7 +8,7 @@ import { sessionFixture } from '../../test/fixtures'
 import { dispatch, resetStreamStoreForTests } from '../../stream/store'
 import { resetConnectionsForTests } from '../../stream/connection'
 
-const { renders, navigate } = vi.hoisted(() => ({ renders: vi.fn(), navigate: vi.fn() }))
+const { renders, navigate, composer } = vi.hoisted(() => ({ renders: vi.fn(), navigate: vi.fn(), composer: vi.fn() }))
 vi.mock('@tanstack/react-router', async (original) => ({ ...await original<object>(), useNavigate: () => navigate, useSearch: () => ({}) }))
 vi.mock('../../shell/AppShell', () => ({ MAIN_VIEW: '' }))
 vi.mock('../../app/bootstrap', () => {
@@ -16,7 +16,7 @@ vi.mock('../../app/bootstrap', () => {
   return { useBootstrap: () => bootstrap }
 })
 vi.mock('../../app/queries', () => ({ useSettingsQuery: () => ({ data: { auto_scroll_follow: false } }), useWorkspacesQuery: () => ({ data: { workspaces: [] } }) }))
-vi.mock('../composer/Composer', () => ({ Composer: () => null }))
+vi.mock('../composer/Composer', () => ({ Composer: (props: unknown) => { composer(props); return null } }))
 vi.mock('./ChatSidePanel', () => ({ ChatSidePanel: () => null }))
 vi.mock('./useMarkViewed', () => ({ useMarkViewed: () => undefined }))
 vi.mock('../../api/endpoints', async (original) => ({
@@ -72,6 +72,19 @@ it('renders each persisted message once while three token frames update the live
     await screen.findByText(['First', 'First second', 'First second third'][index]!)
   }
   expect(Object.fromEntries(persistedKeys.map((key) => [key, renders.mock.calls.filter(([rendered]) => rendered === key).length]))).toEqual(Object.fromEntries(persistedKeys.map((key) => [key, 1])))
+})
+
+it('locks sending and shows the server restart state on a gateway-owned session', async () => {
+  const owner = { state: 'attached' as const, reason: null, restarting: true, can_submit: false, can_interrupt: true, can_attach: false, revision: 1, execution_generation: 1, admissions: [] }
+  const session = sessionFixture({ session_id: 'owner-chat', read_only: true, owner_attachment: owner })
+  const qc = new QueryClient({ defaultOptions: { queries: { retry: false, staleTime: Infinity } } })
+  vi.mocked(api.fetchSession).mockResolvedValue({ session })
+  qc.setQueryData(keys.sessions.detail(session.session_id), { session })
+  render(<QueryClientProvider client={qc}><ChatView sessionId={session.session_id} /></QueryClientProvider>)
+  await waitFor(() => { expect(composer).toHaveBeenLastCalledWith(expect.objectContaining({ locked: true, notices: expect.arrayContaining([expect.objectContaining({ id: 'owner-restarting' })]) })) })
+  act(() => { qc.setQueryData(keys.sessions.detail(session.session_id), { session: { ...session, owner_attachment: { ...owner, restarting: false, can_submit: true } } }) })
+  await waitFor(() => { expect(composer).toHaveBeenLastCalledWith(expect.objectContaining({ locked: false })) })
+  expect((composer.mock.lastCall?.[0] as { notices: { id: string }[] }).notices.some((notice) => notice.id === 'owner-restarting')).toBe(false)
 })
 
 it('updates row controls when the server changes read-only and branching capabilities', async () => {

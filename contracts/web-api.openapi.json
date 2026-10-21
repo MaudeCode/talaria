@@ -1545,6 +1545,10 @@
                               "can_attach": {
                                 "type": "boolean"
                               },
+                              "restarting": {
+                                "type": "boolean",
+                                "description": "The owning gateway is restarting once this turn ends; sending waits until it is back."
+                              },
                               "revision": {
                                 "anyOf": [
                                   {
@@ -1744,6 +1748,7 @@
                               "can_submit",
                               "can_interrupt",
                               "can_attach",
+                              "restarting",
                               "revision",
                               "execution_generation",
                               "admissions"
@@ -2127,6 +2132,10 @@
                               "can_attach": {
                                 "type": "boolean"
                               },
+                              "restarting": {
+                                "type": "boolean",
+                                "description": "The owning gateway is restarting once this turn ends; sending waits until it is back."
+                              },
                               "revision": {
                                 "anyOf": [
                                   {
@@ -2326,6 +2335,7 @@
                               "can_submit",
                               "can_interrupt",
                               "can_attach",
+                              "restarting",
                               "revision",
                               "execution_generation",
                               "admissions"
@@ -2984,6 +2994,10 @@
                               "can_attach": {
                                 "type": "boolean"
                               },
+                              "restarting": {
+                                "type": "boolean",
+                                "description": "The owning gateway is restarting once this turn ends; sending waits until it is back."
+                              },
                               "revision": {
                                 "anyOf": [
                                   {
@@ -3183,6 +3197,7 @@
                               "can_submit",
                               "can_interrupt",
                               "can_attach",
+                              "restarting",
                               "revision",
                               "execution_generation",
                               "admissions"
@@ -5795,6 +5810,10 @@
                             "can_attach": {
                               "type": "boolean"
                             },
+                            "restarting": {
+                              "type": "boolean",
+                              "description": "The owning gateway is restarting once this turn ends; sending waits until it is back."
+                            },
                             "revision": {
                               "anyOf": [
                                 {
@@ -5994,6 +6013,7 @@
                             "can_submit",
                             "can_interrupt",
                             "can_attach",
+                            "restarting",
                             "revision",
                             "execution_generation",
                             "admissions"
@@ -6436,6 +6456,10 @@
                         "can_attach": {
                           "type": "boolean"
                         },
+                        "restarting": {
+                          "type": "boolean",
+                          "description": "The owning gateway is restarting once this turn ends; sending waits until it is back."
+                        },
                         "revision": {
                           "anyOf": [
                             {
@@ -6635,6 +6659,7 @@
                         "can_submit",
                         "can_interrupt",
                         "can_attach",
+                        "restarting",
                         "revision",
                         "execution_generation",
                         "admissions"
@@ -8964,6 +8989,10 @@
                             "can_attach": {
                               "type": "boolean"
                             },
+                            "restarting": {
+                              "type": "boolean",
+                              "description": "The owning gateway is restarting once this turn ends; sending waits until it is back."
+                            },
                             "revision": {
                               "anyOf": [
                                 {
@@ -9163,6 +9192,7 @@
                             "can_submit",
                             "can_interrupt",
                             "can_attach",
+                            "restarting",
                             "revision",
                             "execution_generation",
                             "admissions"
@@ -11690,6 +11720,10 @@
                             "can_attach": {
                               "type": "boolean"
                             },
+                            "restarting": {
+                              "type": "boolean",
+                              "description": "The owning gateway is restarting once this turn ends; sending waits until it is back."
+                            },
                             "revision": {
                               "anyOf": [
                                 {
@@ -11889,6 +11923,7 @@
                             "can_submit",
                             "can_interrupt",
                             "can_attach",
+                            "restarting",
                             "revision",
                             "execution_generation",
                             "admissions"
@@ -12456,6 +12491,10 @@
                             "can_attach": {
                               "type": "boolean"
                             },
+                            "restarting": {
+                              "type": "boolean",
+                              "description": "The owning gateway is restarting once this turn ends; sending waits until it is back."
+                            },
                             "revision": {
                               "anyOf": [
                                 {
@@ -12655,6 +12694,7 @@
                             "can_submit",
                             "can_interrupt",
                             "can_attach",
+                            "restarting",
                             "revision",
                             "execution_generation",
                             "admissions"
@@ -13086,6 +13126,10 @@
                             "can_attach": {
                               "type": "boolean"
                             },
+                            "restarting": {
+                              "type": "boolean",
+                              "description": "The owning gateway is restarting once this turn ends; sending waits until it is back."
+                            },
                             "revision": {
                               "anyOf": [
                                 {
@@ -13285,6 +13329,7 @@
                             "can_submit",
                             "can_interrupt",
                             "can_attach",
+                            "restarting",
                             "revision",
                             "execution_generation",
                             "admissions"
@@ -13723,6 +13768,10 @@
                             "can_attach": {
                               "type": "boolean"
                             },
+                            "restarting": {
+                              "type": "boolean",
+                              "description": "The owning gateway is restarting once this turn ends; sending waits until it is back."
+                            },
                             "revision": {
                               "anyOf": [
                                 {
@@ -13922,6 +13971,7 @@
                             "can_submit",
                             "can_interrupt",
                             "can_attach",
+                            "restarting",
                             "revision",
                             "execution_generation",
                             "admissions"
@@ -16284,6 +16334,10 @@
                             "can_attach": {
                               "type": "boolean"
                             },
+                            "restarting": {
+                              "type": "boolean",
+                              "description": "The owning gateway is restarting once this turn ends; sending waits until it is back."
+                            },
                             "revision": {
                               "anyOf": [
                                 {
@@ -16483,6 +16537,7 @@
                             "can_submit",
                             "can_interrupt",
                             "can_attach",
+                            "restarting",
                             "revision",
                             "execution_generation",
                             "admissions"
@@ -17083,6 +17138,10 @@
                                 "can_attach": {
                                   "type": "boolean"
                                 },
+                                "restarting": {
+                                  "type": "boolean",
+                                  "description": "The owning gateway is restarting once this turn ends; sending waits until it is back."
+                                },
                                 "revision": {
                                   "anyOf": [
                                     {
@@ -17282,6 +17341,7 @@
                                 "can_submit",
                                 "can_interrupt",
                                 "can_attach",
+                                "restarting",
                                 "revision",
                                 "execution_generation",
                                 "admissions"
@@ -17743,6 +17803,10 @@
                             "can_attach": {
                               "type": "boolean"
                             },
+                            "restarting": {
+                              "type": "boolean",
+                              "description": "The owning gateway is restarting once this turn ends; sending waits until it is back."
+                            },
                             "revision": {
                               "anyOf": [
                                 {
@@ -17942,6 +18006,7 @@
                             "can_submit",
                             "can_interrupt",
                             "can_attach",
+                            "restarting",
                             "revision",
                             "execution_generation",
                             "admissions"
@@ -20509,6 +20574,10 @@
                             "can_attach": {
                               "type": "boolean"
                             },
+                            "restarting": {
+                              "type": "boolean",
+                              "description": "The owning gateway is restarting once this turn ends; sending waits until it is back."
+                            },
                             "revision": {
                               "anyOf": [
                                 {
@@ -20708,6 +20777,7 @@
                             "can_submit",
                             "can_interrupt",
                             "can_attach",
+                            "restarting",
                             "revision",
                             "execution_generation",
                             "admissions"
@@ -21486,6 +21556,10 @@
                             "can_attach": {
                               "type": "boolean"
                             },
+                            "restarting": {
+                              "type": "boolean",
+                              "description": "The owning gateway is restarting once this turn ends; sending waits until it is back."
+                            },
                             "revision": {
                               "anyOf": [
                                 {
@@ -21685,6 +21759,7 @@
                             "can_submit",
                             "can_interrupt",
                             "can_attach",
+                            "restarting",
                             "revision",
                             "execution_generation",
                             "admissions"
@@ -22114,6 +22189,10 @@
                             "can_attach": {
                               "type": "boolean"
                             },
+                            "restarting": {
+                              "type": "boolean",
+                              "description": "The owning gateway is restarting once this turn ends; sending waits until it is back."
+                            },
                             "revision": {
                               "anyOf": [
                                 {
@@ -22313,6 +22392,7 @@
                             "can_submit",
                             "can_interrupt",
                             "can_attach",
+                            "restarting",
                             "revision",
                             "execution_generation",
                             "admissions"
@@ -25457,6 +25537,10 @@
                             "can_attach": {
                               "type": "boolean"
                             },
+                            "restarting": {
+                              "type": "boolean",
+                              "description": "The owning gateway is restarting once this turn ends; sending waits until it is back."
+                            },
                             "revision": {
                               "anyOf": [
                                 {
@@ -25656,6 +25740,7 @@
                             "can_submit",
                             "can_interrupt",
                             "can_attach",
+                            "restarting",
                             "revision",
                             "execution_generation",
                             "admissions"
@@ -28136,6 +28221,10 @@
                             "can_attach": {
                               "type": "boolean"
                             },
+                            "restarting": {
+                              "type": "boolean",
+                              "description": "The owning gateway is restarting once this turn ends; sending waits until it is back."
+                            },
                             "revision": {
                               "anyOf": [
                                 {
@@ -28335,6 +28424,7 @@
                             "can_submit",
                             "can_interrupt",
                             "can_attach",
+                            "restarting",
                             "revision",
                             "execution_generation",
                             "admissions"
@@ -30877,6 +30967,10 @@
                             "can_attach": {
                               "type": "boolean"
                             },
+                            "restarting": {
+                              "type": "boolean",
+                              "description": "The owning gateway is restarting once this turn ends; sending waits until it is back."
+                            },
                             "revision": {
                               "anyOf": [
                                 {
@@ -31076,6 +31170,7 @@
                             "can_submit",
                             "can_interrupt",
                             "can_attach",
+                            "restarting",
                             "revision",
                             "execution_generation",
                             "admissions"
@@ -33616,6 +33711,10 @@
                             "can_attach": {
                               "type": "boolean"
                             },
+                            "restarting": {
+                              "type": "boolean",
+                              "description": "The owning gateway is restarting once this turn ends; sending waits until it is back."
+                            },
                             "revision": {
                               "anyOf": [
                                 {
@@ -33815,6 +33914,7 @@
                             "can_submit",
                             "can_interrupt",
                             "can_attach",
+                            "restarting",
                             "revision",
                             "execution_generation",
                             "admissions"
@@ -35755,6 +35855,10 @@
                             "can_attach": {
                               "type": "boolean"
                             },
+                            "restarting": {
+                              "type": "boolean",
+                              "description": "The owning gateway is restarting once this turn ends; sending waits until it is back."
+                            },
                             "revision": {
                               "anyOf": [
                                 {
@@ -35954,6 +36058,7 @@
                             "can_submit",
                             "can_interrupt",
                             "can_attach",
+                            "restarting",
                             "revision",
                             "execution_generation",
                             "admissions"
@@ -36382,6 +36487,10 @@
                             "can_attach": {
                               "type": "boolean"
                             },
+                            "restarting": {
+                              "type": "boolean",
+                              "description": "The owning gateway is restarting once this turn ends; sending waits until it is back."
+                            },
                             "revision": {
                               "anyOf": [
                                 {
@@ -36581,6 +36690,7 @@
                             "can_submit",
                             "can_interrupt",
                             "can_attach",
+                            "restarting",
                             "revision",
                             "execution_generation",
                             "admissions"
@@ -44792,6 +44902,10 @@
                             "can_attach": {
                               "type": "boolean"
                             },
+                            "restarting": {
+                              "type": "boolean",
+                              "description": "The owning gateway is restarting once this turn ends; sending waits until it is back."
+                            },
                             "revision": {
                               "anyOf": [
                                 {
@@ -44991,6 +45105,7 @@
                             "can_submit",
                             "can_interrupt",
                             "can_attach",
+                            "restarting",
                             "revision",
                             "execution_generation",
                             "admissions"
@@ -47483,6 +47598,10 @@
                             "can_attach": {
                               "type": "boolean"
                             },
+                            "restarting": {
+                              "type": "boolean",
+                              "description": "The owning gateway is restarting once this turn ends; sending waits until it is back."
+                            },
                             "revision": {
                               "anyOf": [
                                 {
@@ -47682,6 +47801,7 @@
                             "can_submit",
                             "can_interrupt",
                             "can_attach",
+                            "restarting",
                             "revision",
                             "execution_generation",
                             "admissions"
@@ -48205,6 +48325,10 @@
                         "can_attach": {
                           "type": "boolean"
                         },
+                        "restarting": {
+                          "type": "boolean",
+                          "description": "The owning gateway is restarting once this turn ends; sending waits until it is back."
+                        },
                         "revision": {
                           "anyOf": [
                             {
@@ -48404,6 +48528,7 @@
                         "can_submit",
                         "can_interrupt",
                         "can_attach",
+                        "restarting",
                         "revision",
                         "execution_generation",
                         "admissions"
@@ -50557,6 +50682,10 @@
                             "can_attach": {
                               "type": "boolean"
                             },
+                            "restarting": {
+                              "type": "boolean",
+                              "description": "The owning gateway is restarting once this turn ends; sending waits until it is back."
+                            },
                             "revision": {
                               "anyOf": [
                                 {
@@ -50756,6 +50885,7 @@
                             "can_submit",
                             "can_interrupt",
                             "can_attach",
+                            "restarting",
                             "revision",
                             "execution_generation",
                             "admissions"
@@ -51181,6 +51311,10 @@
                             "can_attach": {
                               "type": "boolean"
                             },
+                            "restarting": {
+                              "type": "boolean",
+                              "description": "The owning gateway is restarting once this turn ends; sending waits until it is back."
+                            },
                             "revision": {
                               "anyOf": [
                                 {
@@ -51380,6 +51514,7 @@
                             "can_submit",
                             "can_interrupt",
                             "can_attach",
+                            "restarting",
                             "revision",
                             "execution_generation",
                             "admissions"
@@ -53511,6 +53646,10 @@
                                 "can_attach": {
                                   "type": "boolean"
                                 },
+                                "restarting": {
+                                  "type": "boolean",
+                                  "description": "The owning gateway is restarting once this turn ends; sending waits until it is back."
+                                },
                                 "revision": {
                                   "anyOf": [
                                     {
@@ -53710,6 +53849,7 @@
                                 "can_submit",
                                 "can_interrupt",
                                 "can_attach",
+                                "restarting",
                                 "revision",
                                 "execution_generation",
                                 "admissions"
@@ -54550,6 +54690,10 @@
                                   },
                                   "multi_select": {
                                     "type": "boolean"
+                                  },
+                                  "answered": {
+                                    "type": "boolean",
+                                    "description": "TAL-1271: a gateway-owned batch question the owner already holds an answer for; it stays editable until the last answer."
                                   }
                                 },
                                 "required": [

@@ -1,6 +1,6 @@
 """Two real viewers and an ordinary disposable daemon on a held loopback provider."""
 import asyncio
-from http.server import ThreadingHTTPServer
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import json
 import os
 from pathlib import Path
@@ -190,6 +190,70 @@ async def probe_control(home, peer, desc, kind):
 
 
 async def probe_batch(home, peer, desc):
+    from importlib.util import find_spec
+    if find_spec("gateway.session_clarify_lock") is None:
+        return await probe_batch_unavailable(home, peer, desc)
+    sidecar = SidecarProcess(home)
+    viewer = SidecarProcess(home)
+    try:
+        async with websocket(home, desc) as native:
+            created = await rpc(native, "session.create", request_id="batch-create", source="cli", toolsets=["clarify"])
+            sid = created["result"]["session_id"]
+            params = {"profile_home": str(home), "session_id": sid}
+            # The Web viewer is attached before the owner asks, as the server's watch is while a turn runs.
+            watch_id = viewer.request("gateway.session", {**params, "action": "watch"})
+            frame = await asyncio.to_thread(viewer.next_message, 20)
+            assert frame["method"] == "stream" and frame["params"]["event"] == "snapshot", frame
+            admitted = await rpc(native, "prompt.submit", session_id=sid, submission_id="native-batch",
+                                 text="Ask for a color and a size", clarify_batch=True)
+            assert "result" in admitted, admitted
+            async with asyncio.timeout(30):
+                while True:
+                    frame = await asyncio.to_thread(viewer.next_message, 20)
+                    assert frame.get("id") != watch_id, f"the watch ended before Web received the batch: {frame}"
+                    if frame.get("method") == "stream" and frame["params"]["event"] == "clarify_batch":
+                        batch = frame["params"]["data"]
+                        break
+            assert [q["qid"] for q in batch["questions"]] == ["q0", "q1"], batch
+            assert batch["questions"][0]["question"] == "Pick a color" and "green" in batch["questions"][0]["choices"], batch
+            # The batch turn no longer makes the session incompatible for Web.
+            attached = await asyncio.to_thread(sidecar.result, "gateway.session", {**params, "action": "snapshot"})
+            assert attached["state"] == "attached" and attached["snapshot"]["running"], attached
+            before_requests = len(peer.requests)
+            first = await asyncio.to_thread(sidecar.result, "gateway.session", {**params, "action": "clarify_lock",
+                "request_id": batch["request_id"], "question_id": "q0", "answer": "green"})
+            assert first["state"] == "attached" and first["lock"] == {"status": "ok", "remaining": ["q1"]}, first
+            assert len(peer.requests) == before_requests, "one lock must not release the batch"
+            last = await asyncio.to_thread(sidecar.result, "gateway.session", {**params, "action": "clarify_lock",
+                "request_id": batch["request_id"], "question_id": "q1", "answer": "large"})
+            assert last["state"] == "attached" and last["lock"] == {"status": "ok", "remaining": []}, last
+            # The owner withdraws the settled request from every viewer; the server clears its card on that event.
+            async with asyncio.timeout(30):
+                while True:
+                    frame = await asyncio.to_thread(viewer.next_message, 20)
+                    event = frame.get("params", {}).get("data", {}) if frame.get("method") == "stream" else {}
+                    if event.get("type") == "request.cancel":
+                        assert event["payload"]["id"] == batch["request_id"], event
+                        assert event["payload"]["reason"] == "resolved", event
+                        break
+            deadline = time.monotonic() + 30
+            while True:
+                final = await asyncio.to_thread(sidecar.result, "gateway.session", {**params, "action": "snapshot"})
+                if not final["snapshot"]["pending"]:
+                    break
+                assert time.monotonic() < deadline, final
+                await asyncio.sleep(.05)
+            tool = json.dumps([m for messages in peer.requests for m in messages if m["role"] == "tool"])
+            assert "green" in tool and "large" in tool, tool
+            assert "CLARIFY_FINISHED" in json.dumps(final["snapshot"]["messages"]), final
+            viewer.request("rpc.cancel", {"id": watch_id})
+    finally:
+        sidecar.close()
+        viewer.close()
+
+
+async def probe_batch_unavailable(home, peer, desc):
+    """Agents without ``clarify.lock`` keep the explicit refusal and never release the parked batch."""
     sidecar = SidecarProcess(home)
     try:
         async with websocket(home, desc) as native:
@@ -217,7 +281,7 @@ async def probe_batch(home, peer, desc):
                 "running": after["result"]["running"], "before_requests": before_requests,
                 "after_requests": len(peer.requests), "pending": after["result"]["pending"]}
             await resumed.send(json.dumps({"jsonrpc": "2.0", "id": frame["id"],
-                "result": {"answers": {"q0": "green"}, "outcome": "submitted"}}))
+                "result": {"answers": {"q0": "green", "q1": "large"}, "outcome": "submitted"}}))
             deadline = time.monotonic() + 30
             while True:
                 done = await rpc(resumed, "session.resume", session_id=sid)
@@ -227,6 +291,67 @@ async def probe_batch(home, peer, desc):
                 await asyncio.sleep(.05)
     finally:
         sidecar.close()
+
+
+async def probe_restart(home, peer, desc, proc):
+    """``hermes gateway restart`` waits for a turn parked on an approval; Web answers it, then the restart completes."""
+    import signal
+    from hermes_cli.gateway_runtime import discover_gateway_endpoint
+    sidecar = SidecarProcess(home)
+    viewer = SidecarProcess(home)
+    try:
+        async with websocket(home, desc) as native:
+            created = await rpc(native, "session.create", request_id="restart-create", source="cli", toolsets=["terminal"])
+            sid = created["result"]["session_id"]
+            await rpc(native, "prompt.submit", session_id=sid, submission_id="restart-input", text="Run fixture control")
+            deadline = time.monotonic() + 30
+            while True:
+                pending = await rpc(native, "session.resume", session_id=sid)
+                if pending["result"]["prompts"]:
+                    break
+                assert time.monotonic() < deadline, pending
+                await asyncio.sleep(.03)
+            prompt = pending["result"]["prompts"][0]
+        params = {"profile_home": str(home), "session_id": sid}
+        # Web's watch was opened before the wait, as the server's is while the turn runs.
+        watch_id = viewer.request("gateway.session", {**params, "action": "watch"})
+        frame = await asyncio.to_thread(viewer.next_message, 20)
+        assert frame["method"] == "stream" and frame["params"]["event"] == "snapshot", frame
+        proc.send_signal(signal.SIGUSR1)  # the service restart path `hermes gateway restart` takes
+        deadline = time.monotonic() + 30
+        while (found := discover_gateway_endpoint(home)).reason_code != "restart_wait":
+            assert time.monotonic() < deadline, found
+            await asyncio.sleep(.05)
+        attached = await asyncio.to_thread(sidecar.result, "gateway.session", {**params, "action": "snapshot"})
+        assert attached["state"] == "attached" and attached["restarting"] is True, attached
+        assert attached["snapshot"]["prompts"][0]["prompt_id"] == prompt["prompt_id"], attached
+        count = len(peer.requests)
+        for action, extra in (("submit", {"request_id": "restart-submit", "text": "MUST_NOT_RUN"}),
+                              ("mutate", {"request_id": "restart-mutate", "expected_revision": attached["snapshot"]["revision"],
+                                          "execution_generation": attached["snapshot"]["execution_generation"],
+                                          "operation": "rename", "payload": {"title": "never"}})):
+            refused = await asyncio.to_thread(sidecar.result, "gateway.session", {**params, "action": action, **extra})
+            assert (refused["state"], refused["reason"]) == ("refused", "gateway_restarting"), refused
+        answered = await asyncio.to_thread(sidecar.result, "gateway.session", {**params, "action": "approval",
+            "prompt_id": prompt["prompt_id"], "execution_generation": prompt["execution_generation"], "choice": "once"})
+        assert answered["state"] == "attached", answered
+        # The restart waited only for that turn: the owner now exits on its own.
+        await asyncio.to_thread(proc.wait, 60)
+        # The watch opened before the wait observed the settlement and the turn's end until the owner exited.
+        seen = []
+        while (frame := await asyncio.to_thread(viewer.next_message, 20)).get("id") != watch_id:
+            seen.append(frame["params"]["data"].get("type"))
+        assert seen.index("approval.settled") < seen.index("message.complete"), seen
+        import sqlite3
+        from contextlib import closing
+        with closing(sqlite3.connect((home / "state.db").as_uri() + "?mode=ro", uri=True)) as db:
+            contents = [row[0] for row in db.execute("SELECT content FROM messages WHERE session_id=?", (sid,))]
+        assert "APPROVAL_FINISHED" in contents, contents
+        assert not (home / "owned-removal").exists()
+        assert "MUST_NOT_RUN" not in json.dumps(peer.requests[count:]), peer.requests[count:]
+    finally:
+        sidecar.close()
+        viewer.close()
 
 
 async def probe_profiles(home, peer, desc):
@@ -323,7 +448,7 @@ async def probe_secure(home):
             endpoint = SimpleNamespace(api_origin=f"http://127.0.0.1:{server.sockets[0].getsockname()[1]}", control_home=None,
                 instance_id="fixture", profile_id=str(home), authority_epoch=1)
             result = await _run(SimpleNamespace(), {"session_id": "fixture", "action": "snapshot"}, home,
-                                SimpleNamespace(endpoint=endpoint))
+                                SimpleNamespace(endpoint=endpoint, state="ready"))
             assert result["state"] == "incompatible" and result["reason"] == "owner_capabilities", result
             assert seen == ["runtime.describe"], seen
 
@@ -350,7 +475,7 @@ async def probe_secure(home):
             endpoint = SimpleNamespace(api_origin=f"http://127.0.0.1:{server.sockets[0].getsockname()[1]}", control_home=None,
                 instance_id="fixture", profile_id=str(home), authority_epoch=1)
             result = await _run(SimpleNamespace(), {"session_id": "fixture", "action": "submit", "request_id": "stable", "text": "once"},
-                                home, SimpleNamespace(endpoint=endpoint))
+                                home, SimpleNamespace(endpoint=endpoint, state="ready"))
             assert result["state"] == "unavailable" and result["receipt"] == receipt, result
 
 
@@ -506,13 +631,39 @@ async def probe_detail(home, peer, desc):
         viewer.close()
 
 
+class BatchPeer(BaseHTTPRequestHandler):
+    """The clarify tool's two-question batch, then a final answer once both were answered."""
+    def log_message(self, *args):
+        pass
+
+    def do_POST(self):
+        body = json.loads(self.rfile.read(int(self.headers["Content-Length"])))
+        messages = body.get("messages", [])
+        self.server.requests.append(messages)
+        asking = bool(messages) and not any(m["role"] == "tool" for m in messages)
+        message = {"role": "assistant", "content": "CLARIFY_FINISHED"}
+        if asking:
+            message = {"role": "assistant", "content": None, "tool_calls": [{"index": 0, "id": "owned-batch", "type": "function",
+                "function": {"name": "clarify", "arguments": json.dumps({"questions": [
+                    {"question": "Pick a color", "choices": ["blue", "green"]}, {"question": "Pick a size"}]})}}]}
+        self.send_response(200)
+        self.send_header("Content-Type", "text/event-stream")
+        self.end_headers()
+        for delta, finish in [(message, None), ({}, "tool_calls" if asking else "stop")]:
+            frame = {"id": "batch", "object": "chat.completion.chunk", "created": 1, "model": "batch",
+                     "choices": [{"index": 0, "delta": delta, "finish_reason": finish}]}
+            self.wfile.write(("data: " + json.dumps(frame) + "\n\n").encode())
+        self.wfile.write(b"data: [DONE]\n\n")
+        self.wfile.flush()
+
+
 def main():
     home = Path(os.environ["HERMES_HOME"])
     home.mkdir(mode=0o700, exist_ok=True)
     mode = sys.argv[1] if len(sys.argv) > 1 else "shared"
     from authority_clarify_peer import ModelPeer as ClarifyPeer
     from authority_controls_peer import ModelPeer as ApprovalPeer
-    handler = DetailModel if mode == "detail" else ApprovalPeer if mode == "approval" else ClarifyPeer if mode in {"batch", "clarify"} else Model
+    handler = {"detail": DetailModel, "approval": ApprovalPeer, "restart": ApprovalPeer, "batch": BatchPeer, "clarify": ClarifyPeer}.get(mode, Model)
     if mode == "profiles":
         class ProfileModel(Model):
             def do_POST(self):
@@ -521,7 +672,7 @@ def main():
         handler = ProfileModel
     peer = ThreadingHTTPServer(("127.0.0.1", 0), handler)
     peer.authorization = []
-    if mode == "approval":
+    if mode in {"approval", "restart"}:
         import shlex
         target = home / "owned-removal"
         target.mkdir()
@@ -558,11 +709,13 @@ def main():
         if mode == "recovery":
             probe_recovery(home, peer, env)
             return
-        with daemon(agent, home, env, barrier=mode == "replay", fixture=str(Path(__file__).with_name("gateway_replay_daemon.py"))) as (_, desc):
+        with daemon(agent, home, env, barrier=mode == "replay", fixture=str(Path(__file__).with_name("gateway_replay_daemon.py"))) as (proc, desc):
             if mode == "queued-controls":
                 asyncio.run(probe_queued_controls(home, peer, desc))
             elif mode == "detail":
                 asyncio.run(probe_detail(home, peer, desc))
+            elif mode == "restart":
+                asyncio.run(probe_restart(home, peer, desc, proc))
             elif mode == "profiles":
                 asyncio.run(probe_profiles(home, peer, desc))
             elif mode in {"approval", "clarify"}:

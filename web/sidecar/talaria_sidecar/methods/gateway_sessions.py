@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import asyncio
 from contextlib import asynccontextmanager, closing, suppress
+from importlib.util import find_spec
 import json
 from pathlib import Path
 import sqlite3
@@ -14,14 +15,23 @@ import sqlite3
 from ..errors import InvalidParams
 from ..home import profile_home_param, scoped_home
 
-_ACTIONS = {"snapshot", "watch", "submit", "receipt", "cancel", "steer_queued", "replace_queued", "interrupt", "approval", "clarify", "discard", "mutate"}
+_ACTIONS = {"snapshot", "watch", "submit", "receipt", "cancel", "steer_queued", "replace_queued", "interrupt", "approval", "clarify",
+            "clarify_lock", "discard", "mutate"}
+# A restart's after-turn wait keeps the owner reachable only to finish its parked turn (the owner's
+# RESTART_WAIT_WS_METHODS); new work waits for the next owner.
+_RESTART_ACTIONS = {"snapshot", "watch", "receipt", "approval", "clarify", "clarify_lock", "interrupt"}
 _CAPABILITIES = {"durable-admission-v1", "event-replay-v1"}
 _CONTROL_REFUSALS = {"native_clarify_batch_unavailable", "owner_controls_unverified"}
 _CREATE_FIELDS = {"request_id", "source", "cwd", "model", "provider", "base_url", "toolsets", "safe_mode", "ignore_user_config"}
 
 
+def _batch_locks() -> bool:
+    """v0.22.3 owners serve ``clarify.lock``, so an attached viewer can answer a clarify batch per question."""
+    return find_spec("gateway.session_clarify_lock") is not None
+
+
 def _control_refusal(home: Path, sid: str) -> str | None:
-    """Only canonical PendingControls can be recovered on v0.22.1. Never infer a missing batch.
+    """Only canonical PendingControls can be recovered before v0.22.3. Never infer a missing batch.
 
     Read the owner's committed admission in a read-only connection; opening SessionDB here
     would run its schema writer alongside the owner. Compression keeps the logical target.
@@ -37,7 +47,7 @@ def _control_refusal(home: Path, sid: str) -> str | None:
                     return "owner_controls_unverified"
                 if "clarify_batch" in policy and not isinstance(policy["clarify_batch"], bool):
                     return "owner_controls_unverified"
-                if policy.get("clarify_batch") is True:
+                if policy.get("clarify_batch") is True and not _batch_locks():
                     return "native_clarify_batch_unavailable"
     except (sqlite3.Error, OSError, ValueError, TypeError, AttributeError):
         return "owner_controls_unverified"
@@ -112,6 +122,9 @@ async def _run(ctx, params: dict, home: Path, discovery) -> dict:
     endpoint = discovery.endpoint
     if _served(home, endpoint):
         return _refused("incompatible", "served_profile_sessions_unavailable")
+    restarting = discovery.state != "ready"
+    if restarting and params["action"] not in _RESTART_ACTIONS:
+        return _refused("refused", "gateway_restarting")
     subscription = None
     async with _connect(home, endpoint) as (client, events):
         described = await client.rpc("runtime.describe")
@@ -130,7 +143,7 @@ async def _run(ctx, params: dict, home: Path, discovery) -> dict:
                 raise GatewayRPCError(reason)
             return _snapshot(value)
 
-        receipt = None
+        receipt = lock = None
         try:
             snap = await snapshot()
             action = params["action"]
@@ -150,6 +163,10 @@ async def _run(ctx, params: dict, home: Path, discovery) -> dict:
                     **({"submission_id": params["submission_id"], "text": params["text"]} if action == "replace_queued" else {}))
             elif action == "interrupt":
                 await client.rpc("session.interrupt", **common, execution_generation=params["execution_generation"])
+            elif action == "clarify_lock":
+                # The lock that answers the last question settles the batch with every locked answer.
+                lock = await client.rpc("clarify.lock", request_id=params["request_id"],
+                                        question_id=params["question_id"], answer=params["answer"])
             elif action in {"approval", "clarify"}:
                 await client.rpc(action + ".respond", **common, prompt_id=params["prompt_id"],
                     execution_generation=params["execution_generation"],
@@ -160,7 +177,8 @@ async def _run(ctx, params: dict, home: Path, discovery) -> dict:
                     operation=params["operation"], payload=params["payload"], _timeout=660)
             if action not in {"snapshot", "watch"}:
                 snap = await snapshot()
-            result = {"state": "attached", "reason": None, "snapshot": snap, "receipt": receipt}
+            result = {"state": "attached", "reason": None, "snapshot": snap, "receipt": receipt, "restarting": restarting,
+                      **({"lock": lock} if action == "clarify_lock" else {})}
             if action != "watch":
                 return result
             # Display negotiation is best effort on older owners. It changes no persisted config.
@@ -191,7 +209,13 @@ async def _run(ctx, params: dict, home: Path, discovery) -> dict:
                 if isinstance(frame, Exception):
                     raise frame
                 if frame.get("method") == "clarify" and "id" in frame:
-                    raise GatewayRPCError("native_clarify_batch_unavailable")
+                    if not _batch_locks():
+                        raise GatewayRPCError("native_clarify_batch_unavailable")
+                    # The owner asks attached viewers only, once; its later request.cancel event settles it.
+                    request = frame.get("params", {})
+                    if request.get("session_id") == sid:
+                        ctx.emit("clarify_batch", {"request_id": frame["id"], "questions": request.get("questions", [])})
+                    continue
                 event = frame.get("params", {})
                 if event.get("session_id") != sid:
                     continue
@@ -232,7 +256,7 @@ def session(ctx, params: dict) -> dict:
         "submit": ("request_id", "text"), "receipt": ("admission_id",), "cancel": ("admission_id",),
         "steer_queued": ("admission_id",), "replace_queued": ("admission_id", "submission_id", "text"),
         "interrupt": ("execution_generation",), "approval": ("execution_generation", "prompt_id", "choice"),
-        "clarify": ("execution_generation", "prompt_id", "text"), "discard": ("execution_generation", "admission_id"),
+        "clarify": ("execution_generation", "prompt_id", "text"), "clarify_lock": ("request_id", "question_id", "answer"), "discard": ("execution_generation", "admission_id"),
         "mutate": ("request_id", "expected_revision", "execution_generation", "operation", "payload"),
     }.get(action, ())
     if any(key not in params for key in required):
@@ -243,13 +267,15 @@ def session(ctx, params: dict) -> dict:
 def _with_owner(home: Path, run) -> dict:
     try:
         from hermes_constants import set_hermes_home_override, reset_hermes_home_override  # noqa: F401
-        from hermes_cli.gateway_runtime import discover_gateway_endpoint
+        from hermes_cli import gateway_runtime
         from hermes_cli.gateway_client import connect_gateway  # noqa: F401
     except ImportError:
         return _refused("incompatible", "native_sessions_unavailable")
+    # v0.22.3 also admits a restart's after-turn wait, so a parked approval or clarify can still be answered.
+    attachable = getattr(gateway_runtime, "attachable", lambda found: found.state == "ready")
     with scoped_home(home):
-        discovery = discover_gateway_endpoint(home)
-        if discovery.state != "ready" or discovery.endpoint is None:
+        discovery = gateway_runtime.discover_gateway_endpoint(home)
+        if discovery.endpoint is None or not attachable(discovery):
             return _refused("stopped" if discovery.state in {"stopped", "absent"} else "unavailable", discovery.reason_code or discovery.state)
         try:
             return asyncio.run(run(discovery))
@@ -267,6 +293,8 @@ async def _create(params: dict, home: Path, discovery) -> dict:
     endpoint = discovery.endpoint
     if _served(home, endpoint):
         return _refused("incompatible", "served_profile_sessions_unavailable")
+    if discovery.state != "ready":
+        return _refused("unavailable", "gateway_restarting")
     async with _connect(home, endpoint) as (client, _):
         described = await client.rpc("runtime.describe")
         if refusal := _owner_refusal(described, endpoint):

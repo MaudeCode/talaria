@@ -282,6 +282,7 @@
 	"owner_retry_help": "Acknowledge the unknown turn and return its text to the composer. Review it and reattach any files before sending.",
 	"owner_outcome_unknown": "Outcome unknown",
 	"owner_batch_unavailable": "This Agent has a native CLI turn whose clarifications cannot be reattached here. Continue in its native client.",
+	"owner_restarting": "Sending paused while the gateway restarts",
 	"owner_replay_gap": "Live history was truncated. The final answer will refresh from the owning Agent.",
 	"queued_label": "Sends after response",
 	"queued_count": "{n} queued",

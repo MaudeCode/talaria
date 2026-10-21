@@ -67,7 +67,7 @@ it('does not restore an old prompt when navigating away and back', async () => {
 
 it('routes native model changes through the existing update flow with the owner fences', async () => {
   vi.mocked(api.ownerAction).mockResolvedValue({ ok: true, session: sessionFixture({ session_id: 's1' }) })
-  render(<Chat owner={{ state: 'attached', reason: null, can_submit: true, can_interrupt: false, can_attach: false,
+  render(<Chat owner={{ state: 'attached', reason: null, can_submit: true, can_interrupt: false, can_attach: false, restarting: false,
     revision: 8, execution_generation: 3, admissions: [] }} />)
   await userEvent.click(screen.getByText('Pick model'))
   await waitFor(() => expect(refresh).toHaveBeenCalledOnce())
@@ -79,7 +79,7 @@ it('routes native model changes through the existing update flow with the owner 
 it('preserves an explicit null provider in a native model selection', async () => {
   vi.mocked(api.ownerAction).mockResolvedValue({ ok: true, session: sessionFixture({ session_id: 's1' }) })
   render(<Chat change={{ model: 'automatic', model_provider: null }} owner={{ state: 'attached', reason: null,
-    can_submit: true, can_interrupt: false, can_attach: false, revision: 8, execution_generation: 3, admissions: [] }} />)
+    can_submit: true, can_interrupt: false, can_attach: false, restarting: false, revision: 8, execution_generation: 3, admissions: [] }} />)
   await userEvent.click(screen.getByText('Pick model'))
   await waitFor(() => expect(refresh).toHaveBeenCalledOnce())
   expect(api.ownerAction).toHaveBeenLastCalledWith(expect.objectContaining({ operation: 'model', payload: { model: 'automatic', provider: null } }))

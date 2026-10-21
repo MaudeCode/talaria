@@ -257,6 +257,70 @@ describe('canonical owner attachment', () => {
     expect((await post('/api/approval/respond', { session_id: sid, approval_id: 'expired-native', choice: 'once' })).status).toBe(409)
   })
 
+  it('projects an owner clarify batch as one card and locks each answer, keeping the owner-reported progress', async () => {
+    const snap = snapshot({ running: true, pending: [admission()] })
+    const questions = [{ qid: 'q0', question: 'Pick a color', choices: ['blue (Recommended)', 'green'], multi_select: false },
+      { qid: 'q1', question: 'Pick sizes', choices: ['s', 'm'], multi_select: true }]
+    let emit: ((frame: Omit<StreamFrame, 'seq'>) => void) | undefined
+    let remaining = ['q0', 'q1']
+    let failed = false
+    sidecar.respond('gateway.session', (params, send, opts) => {
+      if (params.action === 'clarify_lock') {
+        // The second answer fails once, so the first stays locked on the owner.
+        if (params.question_id === 'q1' && !failed) { failed = true; return { state: 'unavailable', reason: 'owner_connection_lost', snapshot: null, receipt: null } }
+        remaining = remaining.filter((qid) => qid !== params.question_id)
+        return { ...attached(snap), lock: { status: 'ok', remaining } }
+      }
+      if (params.action !== 'watch') return attached(snap)
+      emit = send
+      send({ event: 'snapshot', data: attached(snap) })
+      return new Promise((resolve) => { opts.signal!.addEventListener('abort', () => { resolve(attached(snap)) }, { once: true }) })
+    })
+    const row = SessionEnvelopeSchema.parse(await (await s.get(`/api/session?session_id=${sid}`)).json())
+    const stream = row.session.active_stream_id!
+    const read = s.sse(`/api/chat/stream?stream_id=${stream}`, (frame) => frame.event === 'clarify' && (frame.data as { status?: string }).status === 'resolved')
+    await vi.waitFor(() => { expect(s.deps.registry.peek(stream)?.subscriberCount).toBe(1) })
+    emit!({ event: 'clarify_batch', data: { request_id: 'srq-batch', questions } })
+    const pendingSteps = async () => ClarifyPendingEnvelopeSchema.parse(await (await s.get(`/api/clarify/pending?session_id=${sid}`)).json()).pending?.steps?.map((step) => [step.qid, step.answered]) ?? null
+    await vi.waitFor(async () => { expect(await pendingSteps()).toEqual([['q0', false], ['q1', false]]) })
+    const respond = () => post('/api/clarify/respond', { session_id: sid, clarify_id: 'srq-batch', answers: { q0: 'green', q1: ['s', 'm'] } })
+    // An unconfirmed lock keeps the card for a retry, with q0 answered as the owner reported.
+    expect((await respond()).status).toBe(503)
+    expect(await pendingSteps()).toEqual([['q0', true], ['q1', false]])
+    expect((await respond()).status).toBe(200)
+    expect(await pendingSteps()).toBeNull()
+    const locks = sidecar.calls.filter((c) => (c.params as { action?: string }).action === 'clarify_lock').map((c) => c.params)
+    expect(locks).toEqual([
+      expect.objectContaining({ request_id: 'srq-batch', question_id: 'q0', answer: 'green' }),
+      expect.objectContaining({ request_id: 'srq-batch', question_id: 'q1', answer: '["s","m"]' }),
+      expect.objectContaining({ request_id: 'srq-batch', question_id: 'q0', answer: 'green' }),
+      expect.objectContaining({ request_id: 'srq-batch', question_id: 'q1', answer: '["s","m"]' }),
+    ])
+    expect(sidecar.calls.some((c) => (c.params as { action?: string }).action === 'clarify')).toBe(false)
+    // A batch settled elsewhere clears from the owner's own withdrawal event.
+    emit!({ event: 'clarify_batch', data: { request_id: 'srq-other', questions: questions.slice(0, 1) } })
+    await vi.waitFor(async () => { expect(await pendingSteps()).toEqual([['q0', false]]) })
+    emit!({ event: 'event', data: { type: 'request.cancel', session_id: sid, payload: { id: 'srq-other', method: 'clarify', reason: 'resolved' } } })
+    await vi.waitFor(async () => { expect(await pendingSteps()).toBeNull() })
+    const frames = await read
+    expect(frames.find((f) => f.event === 'clarify')?.data).toMatchObject({ clarify_id: 'srq-batch', steps: [{ qid: 'q0' }, { qid: 'q1', multi_select: true }] })
+  })
+
+  it('ships the restart wait so clients stop sending while the parked approval stays answerable', async () => {
+    const prompts = [{ kind: 'approval', prompt_id: 'approval-native', execution_generation: 1, command: 'echo fixture', description: 'Approve fixture?', choices: ['once', 'deny'] }]
+    sidecar.respond('gateway.session', (params) => params.action === 'submit'
+      ? { state: 'refused', reason: 'gateway_restarting', snapshot: null, receipt: null }
+      : { ...attached(snapshot({ prompts })), restarting: true })
+    const row = SessionEnvelopeSchema.parse(await (await s.get(`/api/session?session_id=${sid}`)).json())
+    expect(row.session.owner_attachment).toMatchObject({ state: 'attached', restarting: true, can_submit: false })
+    expect((await post('/api/chat/start', { session_id: sid, message: 'follow up', submission_id: 'during-restart' })).status).toBe(409)
+    expect(sidecar.calls.some((c) => (c.params as { action?: string }).action === 'submit')).toBe(false)
+    expect((await post('/api/approval/respond', { session_id: sid, approval_id: 'approval-native', choice: 'once' })).status).toBe(200)
+    sidecar.respond('gateway.session', () => attached(snapshot()))
+    const after = SessionEnvelopeSchema.parse(await (await s.get(`/api/session?session_id=${sid}`)).json())
+    expect(after.session.owner_attachment).toMatchObject({ restarting: false, can_submit: true })
+  })
+
   it('streams owner events, replaces a replay gap, and settles from its authoritative snapshot', async () => {
     let snap = snapshot({ running: true, pending: [admission()] })
     let emit: ((frame: Omit<StreamFrame, 'seq'>) => void) | undefined
