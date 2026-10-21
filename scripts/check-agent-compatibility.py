@@ -190,7 +190,6 @@ def verify_image(identity, sha, observations, compression, *, retained_cron):
             "--tmpfs", "/tmp", "--tmpfs", "/opt/data", "--entrypoint", "/opt/hermes/.venv/bin/python",
             "-e", "HOME=/tmp/home", "-e", "HERMES_HOME=/tmp/home/hermes", "-e", "PYTHONPATH=/web/sidecar:/opt/hermes",
             "-e", "HERMES_WEBUI_AGENT_DIR=/opt/hermes",
-            "-e", f"TALARIA_AGENT_PROBE_REVISION={sha}",
             "-e", "TALARIA_AGENT_UPGRADE_PROBE=" + ("1" if retained_cron else "0"),
             "-e", "TALARIA_AGENT_SSH_EXPECTED=" + json.dumps(observations),
             "-e", "TALARIA_AGENT_COMPRESSION_EXPECTED=" + json.dumps(compression),
@@ -335,7 +334,7 @@ def probe_agent(agent, identity, env, receipt):
         report = state / "agent-probe.json"
         probe_env = {**env, "HOME": str(state), "HERMES_HOME": str(state / "hermes"),
                      "TALARIA_AGENT_PROBE_REPORT": str(report), "PYTHONPATH": str(ROOT / "web/sidecar"),
-                     "HERMES_WEBUI_AGENT_DIR": str(agent), "TALARIA_AGENT_PROBE_REVISION": identity["sourceRevision"]}
+                     "HERMES_WEBUI_AGENT_DIR": str(agent)}
         try:
             subprocess.run([str(agent / ".venv/bin/python"), str(ROOT / "releases/agent_probe.py"),
                             *([identity["version"]] if "version" in identity else [])], cwd=agent, env=probe_env, check=True)

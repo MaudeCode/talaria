@@ -62,7 +62,6 @@ class FakeTools:
         self.compression_reports = {}
         self.probe_findings = {}
         self.probe_failures = set()
-        self.probe_revisions = []
         self.published = {"draft": False, "prerelease": False}
         self.image_revision = None  # defaults to the tested source
         self.tag_digest = None  # defaults to the recorded image digest
@@ -86,7 +85,6 @@ class FakeTools:
         report = kwargs.get("env", {}).get("TALARIA_AGENT_PROBE_REPORT")
         if report and str(self.root / "releases/agent_probe.py") in command:
             version = command[-1]
-            self.probe_revisions.append(kwargs["env"].get("TALARIA_AGENT_PROBE_REVISION"))
             findings = self.probe_findings.get(version, [])
             Path(report).write_text(json.dumps({"sshConfigApproval": self.approval_reports.get(version, approval_report()),
                                                "compressionBackoff": self.compression_reports.get(version, compression_report()),
@@ -270,9 +268,6 @@ class CheckerTests(unittest.TestCase):
         self.assertTrue(probe)
         self.assertIn(["uv", "sync", "--frozen", "--no-dev", "--extra", "mcp", "--python", "3.13"], self.tools.commands)
         self.assertEqual(len([command for command in self.tools.commands if command[:2] == ["docker", "run"]]), 1)
-        self.assertEqual(self.tools.probe_revisions, [RELEASES[0]["sourceRevision"]])
-        container = next(command for command in self.tools.commands if command[:2] == ["docker", "run"])
-        self.assertIn(f"TALARIA_AGENT_PROBE_REVISION={RELEASES[0]['sourceRevision']}", container)
 
     def test_active_pin_is_the_default_selection(self):
         self.assertEqual(self.receipt("--skip-docker")["releaseTag"], "v2026.9.21")
@@ -391,7 +386,6 @@ class CheckerTests(unittest.TestCase):
         self.assertEqual(receipt["sshConfigApproval"]["observations"], approval_report(relative_gate=False))
         self.assertEqual(receipt["compressionBackoff"]["observations"], compression_report(growth=False))
         self.assertEqual(receipt["agentProbe"]["findings"], findings)
-        self.assertEqual(self.tools.probe_revisions, [CANDIDATE["sourceRevision"]])
 
     def test_upstream_observations_survive_a_real_probe_failure(self):
         self.tools.compression_reports[CANDIDATE["version"]] = compression_report(growth=False)
