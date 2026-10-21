@@ -782,6 +782,15 @@ export class TurnRunner {
             const publish = put
             const emitFrame = (event: string, data: Record<string, unknown>, meta: JournalEventMeta = {}) => publish(event, data, { ...meta, createdAt: receivedAt })
             const data = isDict(frame.data) ? frame.data : {}
+            if ((frame.event === 'notice' || frame.event === 'notice_clear') && str(data.key).startsWith('startup-warning.')) {
+              try {
+                await deps.notifications.agentWarning(notificationScope, str(data.key), frame.event === 'notice' ? { text: str(data.text), level: data.level } : null)
+              } catch (error) {
+                // Notification storage must not turn a successful Agent result into a failed chat.
+                deps.log(`[webui] startup warning persistence failed for ${sessionId}: ${String(error)}`)
+              }
+              return
+            }
             switch (frame.event) {
               case 'token': {
                 tokenSent = true
@@ -928,10 +937,6 @@ export class TurnRunner {
                 return
               // TAL-803: the session's notice list changed; every client replaces its copy.
               case 'notice': {
-                if (str(data.key).startsWith('startup-warning.')) {
-                  await deps.notifications.agentWarning(notificationScope, str(data.key), { text: str(data.text), level: data.level })
-                  return
-                }
                 const notice = this.notices.add(sessionId, data)
                 if (!notice) return
                 await emitFrame('notices', { session_id: sessionId, notices: this.sessionNotices(sessionId) })
@@ -949,10 +954,6 @@ export class TurnRunner {
               }
               case 'notice_clear':
               case 'notices_reset':
-                if (frame.event === 'notice_clear' && str(data.key).startsWith('startup-warning.')) {
-                  await deps.notifications.agentWarning(notificationScope, str(data.key), null)
-                  return
-                }
                 if (frame.event === 'notice_clear' ? this.notices.clear(sessionId, str(data.key)) : this.notices.reset(sessionId)) (await emitFrame('notices', { session_id: sessionId, notices: this.sessionNotices(sessionId) }))
                 return
               default:

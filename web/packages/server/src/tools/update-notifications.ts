@@ -359,9 +359,9 @@ export class UpdateNotificationStore {
     await this.save()
   }
 
-  /** Drop every server-asked question about a deleted profile, open or answered, so a profile recreated with its name starts clean. */
-  async forgetProfileQuestions(profile: string): Promise<void> {
-    const kept = this.rows.filter((row) => !(row.owner === '*' && row.visibility === 'profile' && row.profile === profile))
+  /** Drop all profile-scoped state, including dismissed warning identities, when a profile is deleted. */
+  async forgetProfile(profile: string): Promise<void> {
+    const kept = this.rows.filter((row) => !(row.visibility === 'profile' && row.profile === profile))
     if (kept.length === this.rows.length) return
     this.rows = kept
     await this.save()

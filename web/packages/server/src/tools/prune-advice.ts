@@ -82,11 +82,11 @@ export class PruneAdvice {
     }
   }
 
-  /** A deleted profile: its next check is due at once, and its questions are gone. */
+  /** A deleted profile: its next check is due at once, and its profile notifications are gone. */
   async forget(name: string): Promise<void> {
     this.checked.delete(name)
-    // The profile is already gone: a question that could not be dropped must not fail its deletion.
-    try { await this.deps.notifications.forgetProfileQuestions(name) } catch (error) { this.deps.log(`[webui] WARNING: auto-prune questions for deleted profile ${name} were kept: ${(error as Error).message}`) }
+    // The profile is already gone: notifications that could not be dropped must not fail its deletion.
+    try { await this.deps.notifications.forgetProfile(name) } catch (error) { this.deps.log(`[webui] WARNING: notifications for deleted profile ${name} were kept: ${(error as Error).message}`) }
   }
 
   /** Ask or withdraw one profile's question now; also run after `/autoprune` from the composer, outside the window. False when the Agent did not answer. */

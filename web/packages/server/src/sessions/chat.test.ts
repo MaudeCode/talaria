@@ -160,6 +160,34 @@ describe('chat turns through the sidecar', () => {
     expect(await rows()).toEqual([])
   })
 
+  it.each(['capacity', 'notice write', 'notice_clear write'])('keeps successful chat turns successful after startup-warning %s failure (TAL-1018)', async (failure) => {
+    const fake = new FakeSidecar()
+    const server = await bootTestServer({ sidecar: fake })
+    try {
+      const scope = { owner: 'local-owner', profile: 'default' }
+      if (failure === 'capacity') {
+        for (let i = 0; i < 50; i++) await server.deps.updateNotifications.create(scope, { kind: 'system', phase: 'attention', title: 'Protected fixture', message: String(i), requiresAcknowledgement: true, actions: [{ id: 'ack', label: 'Acknowledge', style: 'primary', acknowledges: true }] })
+      } else vi.spyOn(server.deps.updateNotifications, 'agentWarning').mockRejectedValue(new Error('synthetic notification write failed'))
+      const sid = await newSession(server)
+      fake.respond('chat.start', (_params, emit) => {
+        emit({ event: failure === 'notice_clear write' ? 'notice_clear' : 'notice', data: { key: 'startup-warning.full', text: 'Synthetic warning.', level: 'warn' } })
+        emit({ event: 'notice', data: { key: 'credits.usage_band', text: 'Usage at 90%', level: 'info' } })
+        emit({ event: 'token', data: { text: 'Successful reply.' } })
+        return completed([{ role: 'user', content: 'go' }, { role: 'assistant', content: 'Successful reply.' }])
+      })
+      for (let i = 0; i < 2; i++) {
+        const start = await json(await post(server, '/api/chat/start', { session_id: sid, message: 'go' }))
+        const frames = await server.sse(`/api/chat/stream?stream_id=${String(start.stream_id)}`, (f) => f.event === 'stream_end' || f.event === 'apperror')
+        const terminal = frames.find((f) => f.event === 'done' || f.event === 'apperror')
+        expect(terminal?.event).toBe('done')
+        expect(((terminal!.data as Json).session as Json).notices).toMatchObject([{ key: 'credits.usage_band' }])
+        expect(frames.some((f) => f.event === 'token')).toBe(true)
+      }
+      expect(server.logs.filter((line) => line.includes('startup warning persistence failed'))).toHaveLength(2)
+      expect((await server.deps.updateNotifications.list(scope)).notifications.some((row) => row.kind === 'agent_warning')).toBe(false)
+    } finally { await server.close() }
+  })
+
   it('retains the authenticated warning owner for server-initiated turns (TAL-1018)', async () => {
     const ownedSidecar = new FakeSidecar()
     const owned = await bootTestServer({ sidecar: ownedSidecar, env: { HERMES_WEBUI_PASSWORD: 'synthetic-password' } })
