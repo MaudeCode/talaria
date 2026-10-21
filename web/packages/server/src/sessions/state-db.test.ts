@@ -194,7 +194,7 @@ describe('latestCronSessionInfo', () => {
     ]))
   })
 
-  it.each(['completion', 'listing'])('links a v0.22.3 local cron run in its %s', async (surface) => {
+  it.each([['completion', null], ['listing', null], ['completion', 'queued'], ['completion', 'started'], ['completion', 'unknown']] as const)('links a v0.22.3 local cron run in its %s with next admission %s', async (surface, nextStatus) => {
     const sidecar = new FakeSidecar()
     const s = await bootTestServer({ sidecar })
     try {
@@ -202,6 +202,10 @@ describe('latestCronSessionInfo', () => {
       db.exec(cronSchema.schema.join('\n'))
       insertSession(db, { id: 'local-cron-job1', source: 'cron', started_at: 100, messages: [['user', 100], ['assistant', 101]] })
       db.exec("INSERT INTO session_admissions (admission_id, request_id, principal_id, target_session_id, lineage_json, payload_json, payload_digest, intent, status) VALUES ('fire1', 'cron:job1:exec1', 'cron-owner', 'local-cron-job1', '[]', '{}', 'synthetic', 'queue', 'terminal')")
+      if (nextStatus) {
+        insertSession(db, { id: 'local-next-run', source: 'cron', started_at: 200 })
+        db.prepare("INSERT INTO session_admissions (admission_id, request_id, principal_id, target_session_id, lineage_json, payload_json, payload_digest, intent, status, owner_epoch, generation) VALUES ('fire2', 'cron:job1:exec2', 'cron-owner', 'local-next-run', '[]', '{}', 'synthetic', 'queue', ?, 1, 1)").run(nextStatus)
+      }
       db.close()
       const jobs = [{ id: 'job1', name: 'Morning digest', profile: null, monitor: '', continuity: false, last_run_at: 102, last_status: 'ok', toast_notifications: true }]
       mkdirSync(join(s.state, 'cron'), { recursive: true })
@@ -212,6 +216,10 @@ describe('latestCronSessionInfo', () => {
       } else {
         const listed = await json(await s.get('/api/sessions?show_cron_sessions=1'))
         expect((listed.sessions as Json[]).find((row) => row.session_id === 'local-cron-job1')).toMatchObject({ title: 'Morning digest', source_tag: 'cron' })
+      }
+      if (nextStatus) {
+        const listed = await s.deps.cliSessions.load('default', { sessionIds: ['local-next-run'], keepEmpty: true })
+        expect(listed.find((row) => row.session_id === 'local-next-run')).toMatchObject({ title: 'Morning digest', source_tag: 'cron' })
       }
     } finally { await s.close() }
   })

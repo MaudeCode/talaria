@@ -582,12 +582,12 @@ export function agentSessionRowsExisting(dbPath: string, sessionIds: Iterable<st
 }
 
 /** Scheduler admissions are the identity of gateway-fired cron runs, whose session ids stay local-*. */
-function cronAdmissionJobIds(db: DatabaseSync): Map<string, string> {
+function cronAdmissionJobIds(db: DatabaseSync, terminalOnly = false): Map<string, string> {
   const found = new Map<string, string>()
   const cols = tableColumns(db, 'session_admissions')
-  if (!['request_id', 'target_session_id', 'principal_id'].every((col) => cols.has(col))) return found
+  if (!['request_id', 'target_session_id', 'principal_id'].every((col) => cols.has(col)) || (terminalOnly && !cols.has('status'))) return found
   // The principal predicate selects the Agent's partial covering index, excluding interactive admissions.
-  const rows = db.prepare("SELECT target_session_id, request_id FROM session_admissions WHERE principal_id = 'cron-owner' AND request_id LIKE 'cron:%'").all() as { target_session_id: string; request_id: string }[]
+  const rows = db.prepare(`SELECT target_session_id, request_id FROM session_admissions WHERE principal_id = 'cron-owner' AND request_id LIKE 'cron:%'${terminalOnly ? " AND status = 'terminal'" : ''}`).all() as { target_session_id: string; request_id: string }[]
   for (const row of rows) {
     const match = /^cron:([^:]+):([^:]+)$/.exec(row.request_id)
     if (match) found.set(row.target_session_id, match[1]!)
@@ -616,7 +616,8 @@ export function cronSessionJobId(sid: string, jobIds: Iterable<string>, admissio
 export interface CronSessionInfo { session_id: string; message_count: number | null }
 
 /**
- * Python `_latest_cron_session_info_for_jobs`: the newest-started cron session for each completed job. A session id
+ * Python `_latest_cron_session_info_for_jobs`: the newest-started cron session for each completed job, excluding
+ * non-terminal gateway admissions so the next run cannot steal the completion link. A session id
  * belongs to its scheduler admission's job or its legacy timestamp identity. Non-timestamp ids retain the longest
  * matching job prefix, so `a` never claims a known `a_b`'s sessions. A
  * missing, locked, or unrecognized state.db answers an empty map; callers send no enrichment.
@@ -631,7 +632,7 @@ export function latestCronSessionInfo(dbPath: string, jobIds: Iterable<string>, 
   try {
     const cols = tableColumns(db, 'sessions')
     if (!cols.has('id') || !cols.has('source')) return found
-    const admissions = cronAdmissionJobIds(db)
+    const admissions = cronAdmissionJobIds(db, true)
     const count = cols.has('message_count') ? 's.message_count' : 'NULL'
     const order = cols.has('started_at') ? 'COALESCE(s.started_at, 0) DESC, s.id DESC' : 's.id DESC'
     const rows = db.prepare(`SELECT s.id AS id, ${count} AS message_count FROM sessions s WHERE LOWER(COALESCE(s.source, '')) = 'cron' ORDER BY ${order}`).all() as { id: unknown; message_count: unknown }[]
