@@ -66246,13 +66246,17 @@
                                 },
                                 "token_host": {
                                   "type": "string"
+                                },
+                                "can_sign_out": {
+                                  "type": "boolean"
                                 }
                               },
                               "required": [
                                 "id",
                                 "state",
                                 "authorize_host",
-                                "token_host"
+                                "token_host",
+                                "can_sign_out"
                               ]
                             }
                           }
