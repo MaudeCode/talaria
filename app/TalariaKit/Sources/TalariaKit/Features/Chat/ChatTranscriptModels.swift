@@ -434,6 +434,15 @@ public struct AssistantActivityTimeline: Equatable {
         return false
     }
 
+    mutating func clearToolProgress() {
+        for rowIndex in rows.indices {
+            guard case .tools(var calls) = rows[rowIndex].content,
+                  calls.contains(where: { $0.progress != nil }) else { continue }
+            for index in calls.indices { calls[index].progress = nil }
+            rows[rowIndex].content = .tools(calls)
+        }
+    }
+
     static func persisted(
         message: ChatMessage,
         reasoningGroups: [ReasoningGroup],

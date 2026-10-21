@@ -1,4 +1,7 @@
 import XCTest
+import SwiftData
+import SwiftUI
+import UIKit
 @testable import Talaria
 @testable import TalariaKit
 
@@ -12,6 +15,39 @@ final class ChatViewModelSendTests: XCTestCase {
 
 // Asserts the English plural wording from the App's string catalog, which only the App bundle carries.
 extension ChatViewModelSendTests {
+    @MainActor
+    func testReloadedToolProgressDisappearsWhenStreamEnds() async throws {
+        for (size, name) in [(CGSize(width: 320, height: 844), "phone"), (HostedSize.padLandscape, "pad")] {
+            let fixture = try FixtureApp(for: self)
+            let stream = SpySSEStreamingClient()
+            let model = try makeReloadedToolProgressModel(stream: stream)
+            defer {
+                model.suspendStreamForNavigation()
+                model.cleanupPollingTasks()
+                stream.stop()
+            }
+            await model.loadMessages()
+            await model.reconnectStreamIfNeeded()
+            await model.loadComposerConfiguration()
+            XCTAssertNil(model.lastError, "The progress fixture must start without an API error")
+            let window = try hostWindow(NavigationStack {
+                ChatView(session: SessionSummary(sessionId: "session-abc", title: "Reloaded tool progress"),
+                    server: URL(string: "https://example.test")!, onAPIError: { _ in },
+                    loadsInitialMessages: false, viewModel: model)
+            }.modelContainer(fixture.cache), size: size)
+            let hasProgress = { (element: NSObject) in element.accessibilityLabel?.contains("42% · indexing") == true }
+            _ = try await requireElement(in: window, where: hasProgress)
+            attachHostedScreenshot(window, name: "reloaded-progress-before-end-\(name)")
+            stream.emit(.streamEnd)
+            let cleared = await awaitNoElement(in: window, where: hasProgress)
+            attachHostedScreenshot(window, name: "reloaded-progress-after-end-\(name)")
+            XCTAssertTrue(cleared, "\(name) kept persisted tool progress after stream_end")
+            _ = try await requireElement(in: window, where: { $0.accessibilityLabel?.contains("Calling a tool") == true })
+            window.isHidden = true
+            window.rootViewController = nil
+        }
+    }
+
     @MainActor
     func testCompletedStreamSessionKeepsActivityFromMessageToolCalls() async throws {
         let streamClient = SpySSEStreamingClient()

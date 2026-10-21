@@ -5925,12 +5925,24 @@ public final class ChatViewModel {
     }
 
     private func clearLiveToolProgress() {
-        for index in liveToolCalls.indices where liveToolCalls[index].progress != nil {
-            _ = liveAssistantActivity.updateTool(at: index) { call in
-                var call = call
-                call.progress = nil
-                return call
+        // A reloaded scene may end before another tool frame arrives. Keep the server snapshot intact and
+        // supply cleared tool overlays through the same archive the transcript reads after the stream ends.
+        for (index, message) in messages.enumerated() where message.activityScene?.terminalState == "running" {
+            guard let scene = AssistantActivityTimeline.authoritativeScene(message: message),
+                  scene.toolCalls.contains(where: { $0.progress != nil }) else { continue }
+            let anchor = TranscriptTurnClassifier.anchorID(for: message, at: index, messageOffset: messagesOffset)
+            var archive = AssistantActivityTimeline(rows: archivedAssistantActivity[anchor] ?? [])
+            let existingIDs = Set(archive.toolCalls.map(\.id))
+            for call in scene.toolCalls where call.progress != nil && !existingIDs.contains(call.id) {
+                archive.appendTool(call)
             }
+            archivedAssistantActivity[anchor] = archive.rows
+        }
+        liveAssistantActivity.clearToolProgress()
+        for anchor in Array(archivedAssistantActivity.keys) {
+            var archive = AssistantActivityTimeline(rows: archivedAssistantActivity[anchor] ?? [])
+            archive.clearToolProgress()
+            archivedAssistantActivity[anchor] = archive.rows
         }
     }
 

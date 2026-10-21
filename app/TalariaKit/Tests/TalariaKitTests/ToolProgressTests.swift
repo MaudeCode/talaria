@@ -46,12 +46,7 @@ final class ToolProgressTests: XCTestCase {
 extension ChatViewModelSendTests {
     func testToolProgressUpdatesReloadedRunningSceneAndClearsWithoutDuplicates() async throws {
         let stream = SpySSEStreamingClient()
-        let model = try makeViewModel(streamClient: stream) { request in
-            if request.url?.path == "/api/session" {
-                return apiTestJSONResponse(#"{"session":{"session_id":"session-abc","active_stream_id":"run-tools","messages":[{"role":"user","content":"Index files","message_id":"prompt"},{"role":"assistant","content":"","message_id":"reply","_anchor_activity_scene":{"version":"activity_scene_v1","terminal_state":"running","activity_rows":[{"row_id":"row","role":"tool","tool":{"id":"call-index","name":"mcp__index","done":false,"progress":{"percent":42,"message":"indexing"}}}]}}]}}"#, for: request)
-            }
-            return apiTestJSONResponse(#"{"active":true}"#, for: request)
-        }
+        let model = try makeReloadedToolProgressModel(stream: stream)
         await model.loadMessages()
         await model.reconnectStreamIfNeeded()
         let message = try XCTUnwrap(model.messages.last)
@@ -80,5 +75,32 @@ extension ChatViewModelSendTests {
         XCTAssertEqual(model.liveToolCalls.last?.progress?.percent, 10)
         stream.emit(.streamEnd)
         XCTAssertNil(model.liveToolCalls.last?.progress)
+    }
+
+    func testTerminationClearsReloadedSceneProgressWithoutAnotherToolFrame() async throws {
+        for (name, terminal) in [("stream_end", SSEEvent.streamEnd), ("cancelled", .cancelled), ("error", .error("synthetic failure"))] {
+            let stream = SpySSEStreamingClient()
+            let model = try makeReloadedToolProgressModel(stream: stream)
+            await model.loadMessages()
+            await model.reconnectStreamIfNeeded()
+            let originalScene = try XCTUnwrap(model.messages.last?.activityScene)
+            func calls() -> [ToolCall] {
+                guard let message = model.messages.first(where: { $0.messageId == "reply" }) else { return [] }
+                let liveAnchors = [model.streamingAssistantMessageID, model.toolCallAnchorMessageID, model.reasoningAnchorMessageID]
+                return AssistantTurnLayout(
+                    message: message,
+                    liveRows: liveAnchors.contains("reply") ? model.liveActivityRows : [],
+                    archivedRows: model.archivedActivityRowsForAnchor("reply")
+                ).rows.flatMap(\.toolCalls)
+            }
+            XCTAssertTrue(model.liveToolCalls.isEmpty)
+            XCTAssertEqual(calls().first?.progress?.percent, 42)
+            stream.emit(terminal)
+            XCTAssertNil(model.activeStreamID)
+            XCTAssertEqual(calls().count, 1, name)
+            let call = try XCTUnwrap(calls().first)
+            XCTAssertNil(ToolCallStatusDisplay(toolCall: call).progressText, "\(name) retained the persisted scene's progress")
+            XCTAssertEqual(model.messages.first(where: { $0.messageId == "reply" })?.activityScene, originalScene)
+        }
     }
 }
