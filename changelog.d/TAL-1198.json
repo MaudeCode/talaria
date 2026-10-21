@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Reduce chat rendering work while a response streams.",
+      "highlight": false,
+      "components": ["web"]
+    }
+  ]
+}
