@@ -120,8 +120,10 @@
 /* Status chips (TAL-1078; TAL-1300, after the App's StatusChipGroup): glass capsules floating a gap above the card,
    centered over it. ComposerNotices measures the row: chips that fit share one pill with a divider between them
    (is-grouped); otherwise they stack, each its own capsule (is-stacked). Unclassed, they sit unshrunk in one row inside
-   the pill's border for that measurement. The row lets pointers through to the transcript; only the chips take them. */
-.composer-notices{box-sizing:border-box;display:flex;align-items:center;width:fit-content;max-width:min(100%,var(--msg-max));margin:0 auto var(--space-2);border:1px solid transparent;font-size:var(--font-size-sm);color:var(--muted);pointer-events:none}
+   the pill's border for that measurement. The track is the card's width, which the fit compares them with; it lets
+   pointers through to the transcript, and only the chips take them. */
+.composer-notices-track{display:flex;justify-content:center;max-width:var(--msg-max);margin:0 auto var(--space-2);pointer-events:none}
+.composer-notices{box-sizing:border-box;display:flex;align-items:center;max-width:100%;border:1px solid transparent;font-size:var(--font-size-sm);color:var(--muted)}
 .composer-notices.is-stacked{flex-direction:column;gap:var(--space-2)}
 /* One glass surface for a chip and for the pill; a tone tints its own chip or segment. */
 .composer-notice,.composer-notices.is-grouped{border:1px solid var(--composer-border-color);border-radius:calc(var(--r-lg) + var(--space-1));background:linear-gradient(var(--notice-tint,transparent),var(--notice-tint,transparent)),color-mix(in srgb,var(--composer-bg) var(--composer-glass-mix),transparent);-webkit-backdrop-filter:var(--composer-backdrop);backdrop-filter:var(--composer-backdrop);box-shadow:var(--composer-shadow)}

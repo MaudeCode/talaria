@@ -31,15 +31,17 @@ const LEAVE_MS = 220
 function fitChips(el: HTMLDivElement) {
   const fit = () => {
     // Unclassed, the chips sit unshrunk in one row inside the pill's border, so their widths add up to what it needs.
+    // Layout widths, not the entrance animation's scaled-down boxes; the room is the track less that border.
     el.classList.remove('is-grouped', 'is-stacked')
-    const chips = [...el.children]
-    const width = chips.reduce((sum, chip) => sum + chip.getBoundingClientRect().width, 0)
+    const chips = [...el.children] as HTMLElement[]
+    const width = chips.reduce((sum, chip) => sum + chip.offsetWidth, 0)
+    const room = (el.parentElement?.clientWidth ?? 0) - (el.offsetWidth - el.clientWidth)
     // A leaving chip keeps its place but not the pill, so a set that fades out together fades as separate capsules.
     const staying = chips.filter((chip) => !chip.classList.contains('is-leaving')).length
-    el.classList.add(staying > 1 && width <= el.clientWidth + 0.5 ? 'is-grouped' : 'is-stacked')
+    el.classList.add(staying > 1 && width <= room ? 'is-grouped' : 'is-stacked')
   }
-  // Ticking text (elapsed, tok/s) refits at most once a frame, before it paints. A resize refits a frame later: done
-  // inside the observer, the row's new height would be reported back to it in the same loop.
+  // Ticking text (elapsed, tok/s) refits at most once a frame, before it paints. A resize of the track (the window or
+  // the chat-width cap) refits a frame later: done inside the observer, the row's new height would come back to it.
   let frame = 0
   const schedule = () => { if (!frame) frame = requestAnimationFrame(() => { frame = 0; fit() }) }
   fit()
@@ -96,17 +98,19 @@ export function ComposerNotices({ notices, fallbackFocus }: { notices: ComposerN
   return (
     <>
       {rows.length > 0 && (
-        <div className="composer-notices" ref={fitChips}>
-          {rows.map(({ notice: n, out }) => (
-            <div key={n.id} className={cn('composer-notice', out && 'is-leaving')} data-notice={n.id} data-tone={n.tone ?? 'neutral'} inert={out}>
-              {n.detail
-                ? <button type="button" className="composer-notice-content composer-notice-open" aria-haspopup="dialog" aria-expanded={openId === n.id} onClick={(e) => { trigger.current = e.currentTarget; setOpenId(n.id) }}>{n.content}</button>
-                : <div className="composer-notice-content">{n.content}</div>}
-              {n.action && <button type="button" className="composer-notice-action" onClick={n.action.run}>{n.action.label}</button>}
-              {n.onDismiss && <button type="button" className="composer-notice-action" onClick={n.onDismiss}>{m.notice_dismiss()}</button>}
-              {n.announcement !== undefined && <span className="sr-only" role="status">{n.announcement}</span>}
-            </div>
-          ))}
+        <div className="composer-notices-track">
+          <div className="composer-notices" ref={fitChips}>
+            {rows.map(({ notice: n, out }) => (
+              <div key={n.id} className={cn('composer-notice', out && 'is-leaving')} data-notice={n.id} data-tone={n.tone ?? 'neutral'} inert={out}>
+                {n.detail
+                  ? <button type="button" className="composer-notice-content composer-notice-open" aria-haspopup="dialog" aria-expanded={openId === n.id} onClick={(e) => { trigger.current = e.currentTarget; setOpenId(n.id) }}>{n.content}</button>
+                  : <div className="composer-notice-content">{n.content}</div>}
+                {n.action && <button type="button" className="composer-notice-action" onClick={n.action.run}>{n.action.label}</button>}
+                {n.onDismiss && <button type="button" className="composer-notice-action" onClick={n.onDismiss}>{m.notice_dismiss()}</button>}
+                {n.announcement !== undefined && <span className="sr-only" role="status">{n.announcement}</span>}
+              </div>
+            ))}
+          </div>
         </div>
       )}
       {/* Focus returns to the chip that opened it, or to the composer once that chip is gone. */}

@@ -700,3 +700,38 @@ test('status chips that do not fit on one row stack as separate capsules over th
   await expect(row).toHaveCSS('border-top-color', 'rgba(0, 0, 0, 0)')
   if (process.env.TAL1300_SHOTS) await page.screenshot({ path: `${process.env.TAL1300_SHOTS}/stacked-${testInfo.project.name}.png` })
 })
+
+/** TAL-1300: the fit uses the chips' resting widths and follows the chat-width cap, not only the viewport. */
+test('status chips measure their resting width and refit when the chat width changes (TAL-1300)', async ({ page }, testInfo) => {
+  test.skip(testInfo.project.name === 'mobile', 'A phone is narrower than every chat-width cap.')
+  const sid = 'chips-refit'
+  const notice = { key: 'short', level: 'info', text: 'Tools reloaded', expires_at: null }
+  const goal = { text: 'Ship the release', status: 'active', turns_used: 2, max_turns: 10, reason: null, parked_until: null }
+  await page.route('**/api/session?**', (route) => route.fulfill({ json: { session: { session_id: sid, title: 'Refit', messages: transcript(sid, 2), notices: [notice], goal } } }))
+  await page.route('**/api/session/draft', (route) => route.fulfill({ json: { ok: true } }))
+  await page.goto(`/session/${sid}`)
+  const row = page.locator('.composer-notices')
+  await expect(row.locator('.composer-notice')).toHaveCount(2)
+  await expect(row).toHaveClass(/\bis-grouped\b/)
+  // The two chips' resting widths; the pill's border takes 2 px more.
+  const needed = await row.locator('.composer-notice').evaluateAll((els) => els.reduce((sum, el) => sum + (el as HTMLElement).offsetWidth, 0))
+  const cap = (px: number) => page.evaluate((v) => { document.documentElement.style.setProperty('--msg-max', `${String(v)}px`) }, px)
+  // A narrower chat width, with the window unchanged, stacks them; room again groups them.
+  await cap(needed + 1)
+  await expect(row).toHaveClass(/\bis-stacked\b/)
+  await cap(needed + 12)
+  await expect(row).toHaveClass(/\bis-grouped\b/)
+  // A refit during the entrance, whose first frame scales the chips down, still uses their resting widths.
+  await page.emulateMedia({ reducedMotion: 'no-preference' })
+  await row.locator('.composer-notice').evaluateAll((els) => {
+    for (const el of els as HTMLElement[]) {
+      el.style.animation = 'none'
+      void el.offsetWidth
+      el.style.animation = ''
+      for (const a of el.getAnimations()) { a.pause(); a.currentTime = 0 }
+    }
+  })
+  await cap(needed + 1)
+  await expect(row).toHaveClass(/\bis-stacked\b/)
+})
+
