@@ -120,6 +120,30 @@ describe('auto-prune question (TAL-1274)', () => {
     expect(await t.questions()).toMatchObject([{ phase: 'succeeded', acknowledged_action_id: 'autoprune_off' }])
   })
 
+  it('lets a check that overlaps an answer for the same profile run only after the answer is recorded', async () => {
+    const t = await boot()
+    t.low.add(t.s.state)
+    await t.s.deps.pruneAdvice.sweep()
+    const [question] = await t.questions()
+    // The Agent saves the answer before its reply returns, so a check in between would already see it answered.
+    let finish: () => void = () => undefined
+    t.sidecar.respond('commands.exec', async (params) => {
+      t.commands.push({ home: params.profile_home, command: params.command })
+      t.low.delete(params.profile_home)
+      await new Promise<void>((resolve) => { finish = resolve })
+      return { output: REPLY, source: 'agent' as const }
+    })
+    const answer = t.post(`/api/update-notifications/${String(question?.id)}/actions/autoprune_off`, { perform: true })
+    await expect.poll(() => t.commands.length).toBe(1)
+    t.tick(AUTO_PRUNE_WINDOW_S)
+    const sweep = t.s.deps.pruneAdvice.sweep()
+    finish()
+    const res = await answer
+    await sweep
+    expect(res.status).toBe(200)
+    expect(await t.questions()).toMatchObject([{ id: question?.id, phase: 'succeeded', message: REPLY }])
+  })
+
   it('forgets a deleted profile, so a profile recreated with its name is checked afresh with no old question', async () => {
     const t = await boot()
     const work = join(t.s.state, 'profiles', 'work')

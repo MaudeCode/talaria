@@ -35,7 +35,18 @@ export class PruneAdvice {
   private readonly checked = new Map<string, number>()
   /** Questions an answer is running for; a second answer is refused until the first settles. */
   private readonly answering = new Set<string>()
+  /** The tail of each profile's checks and answers, which run one at a time. */
+  private readonly queues = new Map<string, Promise<unknown>>()
   constructor(private readonly deps: PruneAdviceDeps) {}
+
+  /** Run after every earlier check or answer for `name` settles, so neither changes a question under the other. */
+  private serialized<T>(name: string, run: () => Promise<T>): Promise<T> {
+    const next = (this.queues.get(name) ?? Promise.resolve()).then(run, run)
+    const tail = next.catch(() => undefined)
+    this.queues.set(name, tail)
+    void tail.then(() => { if (this.queues.get(name) === tail) this.queues.delete(name) })
+    return next
+  }
 
   /** A hygiene sweep: each profile is checked once per process start and once per window; a failed check retries next sweep. */
   async sweep(): Promise<void> {
@@ -57,11 +68,15 @@ export class PruneAdvice {
     if (this.answering.has(id)) return { refused: 'This question is already being answered.' }
     this.answering.add(id)
     try {
-      const { output } = await sidecar.call('commands.exec', { profile_home: home, command: `/autoprune ${choice}` }, { timeoutMs: 120_000 })
-      // The Agent stops asking only once it saved the answer; a config it could not write keeps it asking.
-      if ((await sidecar.call('state_db.prune_advice', { profile_home: home }, { timeoutMs: 120_000 })).advice) return { refused: output }
-      const notification = await this.deps.notifications.answerQuestion(scope, id, AUTO_PRUNE_KIND, actionId, output)
-      return notification ? { notification } : null
+      return await this.serialized(scope.rootProfile ? 'default' : scope.profile, async () => {
+        // A check that ran first may have withdrawn the question (answered elsewhere): nothing is left to answer.
+        if (!this.deps.notifications.openQuestion(scope, id, AUTO_PRUNE_KIND)) return null
+        const { output } = await sidecar.call('commands.exec', { profile_home: home, command: `/autoprune ${choice}` }, { timeoutMs: 120_000 })
+        // The Agent stops asking only once it saved the answer; a config it could not write keeps it asking.
+        if ((await sidecar.call('state_db.prune_advice', { profile_home: home }, { timeoutMs: 120_000 })).advice) return { refused: output }
+        const notification = await this.deps.notifications.answerQuestion(scope, id, AUTO_PRUNE_KIND, actionId, output)
+        return notification ? { notification } : null
+      })
     } finally {
       this.answering.delete(id)
     }
@@ -75,7 +90,11 @@ export class PruneAdvice {
   }
 
   /** Ask or withdraw one profile's question now; also run after `/autoprune` from the composer, outside the window. False when the Agent did not answer. */
-  async check(name: string, home: string): Promise<boolean> {
+  check(name: string, home: string): Promise<boolean> {
+    return this.serialized(name, () => this.checkNow(name, home))
+  }
+
+  private async checkNow(name: string, home: string): Promise<boolean> {
     const sidecar = this.deps.sidecar()
     if (sidecar?.status !== 'ready') return false
     // Held across the Agent read and the question it records, so a deleted profile never gets one.
