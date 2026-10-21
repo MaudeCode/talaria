@@ -47,6 +47,28 @@ describe('chat turns through the sidecar', () => {
   })
   afterAll(() => s.close())
 
+  it.each(['top-level', 'persisted'])('keeps %s connector data-use requirements in the next turn history', async (source) => {
+    const sid = await newSession(s)
+    const tool = { role: 'tool', tool_call_id: 'connector', content: 'private result',
+      ...(source === 'top-level' ? { data_use: ['no_training'] } : {}),
+      display_metadata: { ...(source === 'persisted' ? { data_use: ['no_training'] } : {}), diff: 'display only' } }
+    const histories: Json[][] = []
+    sidecar.respond('chat.start', (params) => {
+      histories.push(params.conversation_history)
+      return completed([...params.conversation_history, { role: 'user', content: str(params.user_message) },
+        ...(histories.length === 1 ? [{ role: 'assistant', content: '', tool_calls: [{ id: 'connector', type: 'function', function: { name: 'connector', arguments: '{}' } }] }, tool] : []),
+        { role: 'assistant', content: 'done' }])
+    })
+    for (const message of ['read connector', 'follow up']) {
+      const start = await json(await post(s, '/api/chat/start', { session_id: sid, message }))
+      expect(start.stream_id).toBeTypeOf('string')
+      await s.sse(`/api/chat/stream?stream_id=${String(start.stream_id)}`, (f) => f.event === 'stream_end')
+    }
+    expect(histories).toHaveLength(2)
+    expect(histories[1]?.find((m) => m.role === 'tool')).toMatchObject({ role: 'tool', tool_call_id: 'connector', content: 'private result', data_use: ['no_training'] })
+    expect(histories[1]?.every((m) => !('display_metadata' in m))).toBe(true)
+  })
+
   it('refuses new chat admission during a Web update without recording a pending turn', async () => {
     const sid = await newSession(s)
     const guard = vi.spyOn(s.deps.updates, 'blocksNewWork').mockReturnValue(true)

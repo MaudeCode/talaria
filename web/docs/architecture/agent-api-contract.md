@@ -7,6 +7,11 @@ formats (`config.yaml`, `.env`, profiles, skills, memories, `state.db` read-only
 projection). Every Agent module import lives in the sidecar's `methods/`
 package, on the Agent's own venv interpreter.
 
+Turn and compression history preserve tool-result `data_use` requirements, including
+the durable copy in `display_metadata`. Other display metadata stays out of both
+histories. The Agent uses these requirements for provider routing and strips them
+from model request messages.
+
 ## Tested identity
 
 `sidecar/agent_dependency.json` records the tested external Agent: a stable

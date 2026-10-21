@@ -1308,7 +1308,8 @@ function stripOobBlocks(content: unknown): unknown {
  * otherwise the neighbours fuse cleanly or the prompt is stale, and replaying it would answer it again.
  * `preserveApiContent` (Python `_sanitize_messages_for_agent`) keeps the Agent's `api_content` replay sidecar on
  * user/assistant rows, every row's `timestamp`, and the assistant reasoning carriers the Agent replays (TAL-927) for
- * turn history; compression and other projections strip them all. Provider-issued carriers stay only on rows stamped at
+ * turn history; compression and other projections strip those replay fields. Tool `data_use` routing requirements stay
+ * in both histories, lifted from durable `display_metadata` when needed. Provider-issued carriers stay only on rows stamped at
  * or after `issuedReasoningSince`, the turn provider's start; without one they stay home too.
  */
 export function sanitizeMessagesForApi(messages: Message[], { preserveApiContent = false, issuedReasoningSince = null, maxMessages = Infinity }: { preserveApiContent?: boolean; issuedReasoningSince?: number | null; maxMessages?: number } = {}): Message[] {
@@ -1336,6 +1337,11 @@ export function sanitizeMessagesForApi(messages: Message[], { preserveApiContent
     const issuedHere = issuedReasoningSince !== null && Number(msg.timestamp) >= issuedReasoningSince
     const replayKey = (k: string): boolean => replayCarriers && AGENT_ASSISTANT_REPLAY_KEYS.has(k) && (issuedHere || !PROVIDER_ISSUED_REASONING_KEYS.has(k))
     const sanitized = Object.fromEntries(Object.entries(msg).filter(([k]) => API_SAFE_MSG_KEYS.has(k) || replayKey(k)))
+    // Agent routing metadata survives both turn and compression history; the Agent strips it before provider calls.
+    if (msg.role === 'tool') {
+      const dataUse = msg.data_use ?? (isDict(msg.display_metadata) ? msg.display_metadata.data_use : undefined)
+      if (dataUse !== undefined) sanitized.data_use = dataUse
+    }
     if (Array.isArray(sanitized.tool_calls) && !sanitized.tool_calls.length) Reflect.deleteProperty(sanitized, 'tool_calls')
     if (replay) sanitized.api_content = replay
     // TAL-681: the Agent re-inserts turn history when it prunes and keys display dedupe on the row timestamp, so turn

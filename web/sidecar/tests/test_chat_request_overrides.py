@@ -145,3 +145,70 @@ def test_custom_provider_extra_body_reaches_chat_and_compress(tmp_path) -> None:
         {"extra_body": {"user": "edited-user", "metadata": "talaria"}},
         {"extra_body": {"user": "main-user", "metadata": "talaria", "store": False}},
     ], seen
+
+
+# Keep the real Agent constructor, provider profile and request builder; replace only execution with a recorder.
+DATA_USE_PROBE = """
+import json, os, sys
+from pathlib import Path
+from unittest.mock import patch
+sys.path.append(sys.argv[1])
+from run_agent import AIAgent
+from talaria_sidecar.home import scoped_home
+from talaria_sidecar.methods import chat
+
+seen = []
+
+class RecordingAgent(AIAgent):
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs, skip_memory=True, skip_context_files=True)
+
+    def run_conversation(self, user_message, conversation_history, **kwargs):
+        messages = [*conversation_history, {"role": "user", "content": user_message}]
+        seen.append(self._build_api_kwargs(messages))
+        return {"final_response": "ok", "messages": [*messages, {"role": "assistant", "content": "ok"}]}
+
+class Client:
+    def __init__(self, **kwargs):
+        self.api_key = kwargs.get("api_key")
+        self.base_url = kwargs.get("base_url")
+
+    def close(self):
+        pass
+
+class Ctx:
+    cancelled = False
+
+    def emit(self, event, data=None):
+        pass
+
+home = Path(os.environ["HERMES_HOME"])
+chat._agent_class = lambda: RecordingAgent
+chat._resolve_runtime = lambda provider, model: {"model": model, "provider": provider, "api_key": "test-key", "api_mode": "chat_completions", "base_url": "https://inference-api.nousresearch.com/v1"}
+params = {"profile_home": str(home), "session_id": "privacy", "model": "gpt-5", "model_provider": "nous", "enabled_toolsets": []}
+with patch("agent.process_bootstrap.OpenAI", Client), scoped_home(home):
+    first = chat.start(Ctx(), {**params, "stream_id": "first", "user_message": "read connector", "conversation_history": []})
+    assert first["status"] == "completed", first
+    for requirement in ("no_training", "zero_retention"):
+        history = [{"role": "user", "content": "read connector"},
+                   {"role": "assistant", "content": "", "tool_calls": [{"id": "c1", "type": "function", "function": {"name": "connector", "arguments": "{}"}}]},
+                   {"role": "tool", "tool_call_id": "c1", "content": "private result", "data_use": [requirement]},
+                   {"role": "assistant", "content": "done"}]
+        result = chat.start(Ctx(), {**params, "stream_id": requirement, "user_message": "follow up", "conversation_history": history})
+        assert result["status"] == "completed", result
+print(json.dumps(seen))
+"""
+
+
+@requires_agent
+@pytest.mark.skipif(AGENT_DIR is None or 'DATA_USE = "data_use"' not in (AGENT_DIR / "agent/message_metadata.py").read_text(), reason="Connector privacy routing requires Agent v0.22.3")
+def test_second_turn_connector_data_use_reaches_nous_request(tmp_path) -> None:
+    root = tmp_path / ".hermes"
+    root.mkdir()
+    run = subprocess.run([AGENT_PYTHON, "-c", DATA_USE_PROBE, str(AGENT_DIR)], env=isolated_env(root), capture_output=True, text=True, timeout=120)
+    assert run.returncode == 0, run.stderr[-4000:]
+    requests = json.loads(run.stdout.strip().splitlines()[-1])
+    assert [request["extra_body"].get("provider") for request in requests] == [None, {"data_collection": "deny"}, {"data_collection": "deny", "zdr": True}]
+    for request in requests[1:]:
+        assert next(row for row in request["messages"] if row["role"] == "tool") == {"role": "tool", "tool_call_id": "c1", "content": "private result"}
+        assert all("data_use" not in row and "display_metadata" not in row for row in request["messages"])

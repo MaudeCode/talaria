@@ -73,6 +73,22 @@ describe('manual session compression', () => {
     sidecar.respond('runtime.ensure_current', () => { throw new SidecarError('restart required', { condition: 'agent_runtime_stale' }) })
   }
 
+  it.each(['top-level', 'persisted'])('keeps %s connector data-use requirements in compression history', async (source) => {
+    const sid = await seeded({ messages: [
+      { role: 'user', content: 'read connector' },
+      { role: 'assistant', content: '', tool_calls: [{ id: 'connector', type: 'function', function: { name: 'connector', arguments: '{}' } }] },
+      { role: 'tool', tool_call_id: 'connector', content: 'private result',
+        ...(source === 'top-level' ? { data_use: ['no_training', 'zero_retention'] } : {}),
+        display_metadata: { ...(source === 'persisted' ? { data_use: ['no_training', 'zero_retention'] } : {}), diff: 'display only' } },
+      { role: 'assistant', content: 'done' },
+    ] })
+    let sent: Json[] = []
+    sidecar.respond('chat.compress', (params) => { sent = params.conversation_history; return compressed(params) })
+    expect((await post(s, '/api/session/compress', { session_id: sid })).status).toBe(200)
+    expect(sent.find((m) => m.role === 'tool')).toEqual({ role: 'tool', tool_call_id: 'connector', content: 'private result', data_use: ['no_training', 'zero_retention'] })
+    expect(sent.every((m) => !('display_metadata' in m))).toBe(true)
+  })
+
   it('requires session_id', async () => {
     const res = await post(s, '/api/session/compress', {})
     expect(res.status).toBe(400)
