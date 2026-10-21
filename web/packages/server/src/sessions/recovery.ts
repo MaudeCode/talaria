@@ -10,14 +10,14 @@
  * review instead.
  */
 import { existsSync } from 'node:fs'
-import type { DatabaseSync } from 'node:sqlite'
+import { DatabaseSync } from 'node:sqlite'
 import type { RecoveryAudit, RecoveryAuditItem, RecoveryRepair } from '@maudecode/talaria-web-contracts'
 import type { DocumentBackend } from './storage/backend.js'
 import { updateDocument } from './storage/document.js'
 import { str } from '../util.js'
 import type { StorageIssue } from './storage/backend.js'
 import { isSafeSessionId, Session, type Message } from './session.js'
-import { normalizeAgentSessionSource, openStateDbReadonly } from './state-db.js'
+import { normalizeAgentSessionSource } from './state-db.js'
 import type { SessionStore } from './store.js'
 
 type Dict = Record<string, unknown>
@@ -77,7 +77,7 @@ function readStateDb(path: string, persisted: Set<string>): StateDbView {
   const absent: StateDbView = { has: () => true, missing: [], unreadable: false }
   if (!existsSync(path)) return absent
   let db: DatabaseSync
-  try { db = openStateDbReadonly(path, STATE_DB_RECOVERY_BUSY_TIMEOUT_MS) } catch { return { ...absent, unreadable: true } }
+  try { db = new DatabaseSync(path, { readOnly: true, timeout: STATE_DB_RECOVERY_BUSY_TIMEOUT_MS }) } catch { return { ...absent, unreadable: true } }
   try {
     const cols = columns(db, 'sessions')
     if (!cols.has('id')) return absent

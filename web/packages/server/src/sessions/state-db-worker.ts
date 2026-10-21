@@ -12,6 +12,7 @@ if (import.meta.url.endsWith('.ts')) await import(new URL('../test/ts-worker-hoo
 const { SESSION_READS, agentSessionRowsExisting, cheapChangeFingerprint, readImportableAgentSessionRows, stateDbSessionSources, stateDbStorage, stateDbWebDiagnosticIds } = await import('./state-db.js')
 
 parentPort?.on('message', (request: StateDbWorkerRequest) => {
+  if (request.op === 'stop') process.exit(0)
   const reply: StateDbWorkerReply = { id: request.id, logs: [], failures: [] }
   // The test read delay holds every request here, standing in for a slow state.db.
   if (request.delayMs > 0) Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, request.delayMs)
