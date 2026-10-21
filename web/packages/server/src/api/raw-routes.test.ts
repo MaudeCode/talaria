@@ -105,6 +105,38 @@ describe('raw byte routes', () => {
     expect(res.headers.get('content-length')).toBe(String(big.length))
   })
 
+  it('serves cold media ranges and revalidates the subsequent full response', async () => {
+    const path = join(ws, 'range-cache.png')
+    const bytes = Buffer.from([10, 20, 30, 40])
+    writeFileSync(path, bytes)
+    const url = `/api/media?path=${encodeURIComponent(path)}`
+    let res = await s.get(url, { headers: { range: 'bytes=1-2' } })
+    expect(res.status).toBe(206)
+    expect(res.headers.get('content-range')).toBe('bytes 1-2/4')
+    expect(res.headers.get('etag')).toBeNull()
+    expect(Buffer.from(await res.arrayBuffer())).toEqual(bytes.subarray(1, 3))
+    res = await s.get(url)
+    const etag = res.headers.get('etag')!
+    expect(res.status).toBe(200)
+    expect(etag).toMatch(/^W\/"/)
+    expect(Buffer.from(await res.arrayBuffer())).toEqual(bytes)
+    res = await s.get(url, { headers: { 'if-none-match': etag, range: 'bytes=0-0' } })
+    expect(res.status).toBe(304)
+    expect(await res.text()).toBe('')
+    writeFileSync(path, Buffer.from([50, 60, 70, 80]))
+    res = await s.get(url, { headers: { 'if-none-match': etag } })
+    expect(res.status).toBe(200)
+    expect(res.headers.get('etag')).not.toBe(etag)
+    expect(Buffer.from(await res.arrayBuffer())).toEqual(Buffer.from([50, 60, 70, 80]))
+    res = await s.get(url, { headers: { range: 'bytes=4-' } })
+    expect(res.status).toBe(416)
+    expect(res.headers.get('content-range')).toBe('bytes */4')
+    writeFileSync(path, '')
+    res = await s.get(url)
+    expect(res.status).toBe(200)
+    expect(await res.text()).toBe('')
+  })
+
   it('streams a folder as a zip and enforces the caps', async () => {
     let res = await s.get(`/api/folder/download?session_id=${sid}&path=docs`)
     expect(res.status).toBe(200)

@@ -64,6 +64,15 @@ hand-written endpoint schemas.
 | Sidecar | `sidecar/client.ts`, `discover.ts`, `fake.ts` | newline-delimited JSON-RPC 2.0 over stdio with streamed frames and cancellation; restart with backoff; Agent discovery; the Vitest fake |
 | CLI | `cli/launcher.ts`, `ctl.ts`, `dotenv.ts`, `supervise.ts`, `bin/*` | `talaria-web` bootstrap, `ctl`, `.env` precedence, the serve supervisor, `talaria-web-mcp` |
 
+Media byte responses keep the anchored descriptor and hard-link checks on every
+request. Buffered reads yield through asynchronous descriptor IO. A range reads
+only its selected span unless an uncached conditional request needs a content
+validator. The server retains at most 256 validators, keyed by device, inode,
+size, and nanosecond modification/change timestamps, and never caches media
+bytes or open descriptors. Uncached ranges may omit an ETag. Buffered reads
+recheck the descriptor signature before publishing a validator; streamed bodies
+own their descriptors through completion or cancellation.
+
 A sidebar cache miss sends its interactive and background windows in one worker
 request. The windows share a read-only SQLite snapshot, schema probes, validated
 local lineages and one ownership lookup over their combined candidates. Storage
