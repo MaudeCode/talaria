@@ -45,6 +45,12 @@ it('content search parses at most depth messages per file and a repeated search 
     expect(await storage.sessions.searchMessages(sids, ['needle'], 5)).toEqual(expected)
     expect(parse).not.toHaveBeenCalled()
     for (const read of reads) expect(read).not.toHaveBeenCalled()
+    for (const depth of [0, 21, Infinity]) {
+      await storage.sessions.searchMessages(sids.slice(0, 1), ['needle'], depth)
+      vi.mocked(fsp.open).mockClear()
+      await storage.sessions.searchMessages(sids.slice(0, 1), ['needle'], depth)
+      expect(fsp.open, `depth ${depth} is not kept resident`).toHaveBeenCalledTimes(1)
+    }
   } finally {
     vi.restoreAllMocks()
     await storage.close()

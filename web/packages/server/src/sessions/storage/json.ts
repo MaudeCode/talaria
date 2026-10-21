@@ -33,6 +33,8 @@ export class JsonStorage implements StorageBackend {
 
 // ponytail: fixed entry cap without eviction, so a larger library keeps its first sessions warm; add LRU if hit rates matter.
 const SEARCH_TEXT_CACHE_MAX = 5000
+/** Clients search 5 leading messages; a deeper (or whole-transcript, depth 0) search is read but never kept resident. */
+const SEARCH_TEXT_CACHE_DEPTH_MAX = 20
 
 class JsonSessions implements SessionBackend {
   closed = false
@@ -113,8 +115,7 @@ class JsonSessions implements SessionBackend {
     if (cached?.revision === revision && cached.depth === depth) return cached.texts
     const prefix = await this.readMessagePrefix(sid, depth)
     const texts = prefix.rows.map(sessionSearchMessageText)
-    // A whole transcript (depth 0) is too large to keep resident.
-    if (depth && (cached || this.searchTexts.size < SEARCH_TEXT_CACHE_MAX)) this.searchTexts.set(sid, { revision: prefix.revision, depth, texts })
+    if (depth > 0 && depth <= SEARCH_TEXT_CACHE_DEPTH_MAX && (cached || this.searchTexts.size < SEARCH_TEXT_CACHE_MAX)) this.searchTexts.set(sid, { revision: prefix.revision, depth, texts })
     return texts
   }
   async write(sid: string, change: SessionChange, expected: string | null): Promise<string> {
