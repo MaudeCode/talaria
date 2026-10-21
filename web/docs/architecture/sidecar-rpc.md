@@ -644,7 +644,9 @@ rolling back an operation that may already have persisted.
 RPC v49 adds `process.stop`. It receives the profile home, owning session id and process/delegation id.
 It rechecks ownership before killing a process with `consume_output: false` or
 requesting cooperative interruption of a delegation's active subagents. Split units
-select only their task indexes within the call's shared subagent roster. It returns
+select only their task indexes within the call's shared subagent roster. Child
+ownership matches the unit's captured execution parent, so compression rotations
+do not lose control of work still owned by the original Web session. It returns
 `stopped`, `not_running` or `not_found`; failed kills/interruptions remain errors.
 A stop request never fabricates a terminal receipt. The Agent's existing completion
 path settles the row. The HTTP server publishes `can_stop` only for confirmed running

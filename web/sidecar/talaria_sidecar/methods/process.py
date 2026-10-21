@@ -667,9 +667,11 @@ def stop(home: Path, session_id: str, process_id: str) -> str:
     if indexes is not None and split is None:
         raise RpcError("Delegation unit identity could not be confirmed")
     call_id = split[1] if split else process_id
+    # The dispatch parent is the Agent execution id; compression can rotate it away from the stable Web id.
+    owner_id = live.get("parent_session_id") or session_id
 
     def belongs(child: dict) -> bool:
-        if child.get("delegation_id") != call_id or child.get("owner_agent_session_id") != session_id:
+        if child.get("delegation_id") != call_id or child.get("owner_agent_session_id") != owner_id:
             return False
         # Split units share a call id; Agent subagent ids encode their original task index.
         index = re.fullmatch(r"sa-(\d+)-[a-zA-Z0-9]+", str(child.get("subagent_id") or ""))

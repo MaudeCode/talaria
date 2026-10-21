@@ -99,3 +99,26 @@ def test_partial_interrupt_is_an_error_and_attempts_every_child(monkeypatch, sto
     monkeypatch.setitem(sys.modules, 'tools.delegate_tool_registry', api)
     assert 'error' in stop_rpc('d1')
     assert interrupted == ['sa1', 'sa2']
+
+
+@pytest.mark.parametrize('split', [False, True])
+def test_stop_compressed_session_uses_the_dispatch_parent(monkeypatch, stop_rpc, split):
+    # Web retains 'owner', while the Agent and its children execute on a compression continuation.
+    unit_id, call_id = ('call-1', 'call') if split else ('d1', 'd1')
+    monkeypatch.setattr(process, '_registry', lambda: None)
+    monkeypatch.setattr(process, '_ledger_rows', lambda home, ids: [{'delegation_id': unit_id, 'state': 'running'}] if ids == ['owner'] else [])
+    monkeypatch.setattr(process, '_live_delegations', lambda: {unit_id: {
+        'origin_ui_session_id': 'owner', 'parent_session_id': 'compression-tip-at-dispatch',
+        **({'task_indexes': [1]} if split else {}),
+    }})
+    api = ModuleType('tools.delegate_tool_registry')
+    api.list_active_subagents = lambda: [
+        {'subagent_id': 'sa-1-abcd', 'delegation_id': call_id, 'owner_agent_session_id': 'compression-tip-at-dispatch'},
+        {'subagent_id': 'sa-2-abcd', 'delegation_id': call_id, 'owner_agent_session_id': 'foreign'},
+        {'subagent_id': 'sa-3-abcd', 'delegation_id': 'another-call', 'owner_agent_session_id': 'compression-tip-at-dispatch'},
+    ]
+    interrupted = []
+    api.interrupt_subagent = lambda sid: interrupted.append(sid) or True
+    monkeypatch.setitem(sys.modules, 'tools.delegate_tool_registry', api)
+    assert stop_rpc(unit_id).get('result') == {'outcome': 'stopped'}
+    assert interrupted == ['sa-1-abcd']
