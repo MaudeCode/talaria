@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Compacted chats show the summary separately without repeating an earlier reply.",
+      "highlight": false,
+      "components": ["web"]
+    }
+  ]
+}

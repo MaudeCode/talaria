@@ -100,6 +100,16 @@ Tool results retain their existing tool-call/timestamp compaction rule; tables
 without UIDs retain the legacy timestamp rule. This requires no Agent changes,
 new database fields, release pins or server-side database writes.
 
+The read-only projection also splits the Agent's flagged, delimited kept-message
+compaction carrier into its original reply and a separate summary marker. The
+reply retains its archive-proven identity; the summary uses its first carrier's
+physical row ID and carries no reply UID. An unchanged summary keeps that identity
+when a later compaction copies the carrier. Its inherited timestamp does not hide a new
+summary behind a newer local reply, while explicit truncation gates still apply.
+Unknown wrappers remain unchanged. Both full and bounded tail reads use this
+projection, including the boundary anchor. The existing marker renderer displays
+the summary without client-side parsing.
+
 ## State layers
 
 | Layer | Purpose | Source-of-truth expectation | Must not do |
