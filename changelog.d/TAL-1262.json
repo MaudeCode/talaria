@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Deleting a conversation in Talaria tells Hermes Agent 0.22.3 plugins, so memory providers and other plugins drop their copy too.",
+      "highlight": false,
+      "components": ["web"]
+    }
+  ]
+}

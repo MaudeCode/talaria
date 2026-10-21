@@ -495,7 +495,10 @@ with recovery wording before revoking shares, removing Web metadata/attachments 
 journals, evicting runtimes, closing terminals, or clearing relay completions.
 Recovery requires an Agent capable of retiring that history, or an explicitly
 chosen pre-upgrade backup. No ledger/trigger edits or partial reset-tip deletion
-are used to bypass retirement.
+are used to bypass retirement. After the canonical transaction commits, Agents that
+provide `hermes_state_common.emit_session_deleted` (v0.22.3+) fire the profile's
+`on_session_delete` plugin hook once with the requested ID, `reason: "delete"` and
+every deleted ID; the hook is fail-open and never fails the delete.
 
 Talaria writes its transcript cleanup manifest inside the same database transaction,
 before commit. A manifest failure rolls back deletion and retirement. File cleanup

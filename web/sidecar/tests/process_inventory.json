@@ -2005,6 +2005,14 @@
         ""
       ]
     },
+    "tests/test_state_db_delete_guard.py::test_the_delete_fires_the_profile_on_session_delete_hook_once": {
+      "layer": "compatibility",
+      "reason": "Supported-Agent API compatibility: the delete fires the profile's on_session_delete plugin hook once. Uses the real installed release and a real profile plugin, not a fabricated API response.",
+      "cases": [
+        "[record]",
+        "[raises]"
+      ]
+    },
     "tests/test_state_db_local_lineage.py::test_reset_target_plan_matches_server_fixture": {
       "layer": "compatibility",
       "reason": "Supported-Agent API compatibility: reset target plan matches server fixture. Uses the real installed release, not a fabricated API response.",

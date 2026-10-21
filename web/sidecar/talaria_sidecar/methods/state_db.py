@@ -437,6 +437,11 @@ def _delete_runtime_rows(requested: str, home: Path, agent_db, guarded, delete_i
         return result["deleted_ids"]
 
     deleted_ids = agent_db._execute_write(write)
+    # Agent v0.22.3+ tells the profile's plugins after the commit, like its own deletes; the emitter is fail-open.
+    import hermes_state_common
+    emit_session_deleted = getattr(hermes_state_common, "emit_session_deleted", None)
+    if emit_session_deleted is not None:
+        emit_session_deleted(agent_db, deleted_ids, reason="delete", primary=requested, sessions_dir=home / "sessions")
     try:
         collect_retired_media(agent_db)
     except Exception:  # noqa: BLE001 - retirement committed; retain its targets for caller cleanup and manifest retry
