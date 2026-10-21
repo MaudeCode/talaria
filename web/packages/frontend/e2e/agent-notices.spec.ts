@@ -4,6 +4,7 @@ import { expect, test } from './fixtures'
 test.use({ serviceWorkers: 'block' })
 
 const memory = { key: 'startup-warning.1a2b3c4d', level: 'warn', text: "⚠ Memory provider 'honcho' could not be loaded; memory is off for this session.", expires_at: null }
+const pending = { key: 'mcp_discovery_pending', level: 'info', text: 'Some tools are still connecting. Using available tools for this turn.', expires_at: null }
 const credits = { key: 'credits.usage_band', level: 'info', text: "You've used 90% of your Nous credits.", expires_at: null }
 
 /** TAL-803: the session's Agent notices sit in the composer's status tab; the server's `notices` event replaces them live. */
@@ -33,7 +34,14 @@ test('shows the session\'s Agent notices and follows the server\'s live list', a
     await expect(tab(memory.text)).toBeVisible()
     if (process.env.TAL803_SHOTS) await page.screenshot({ path: `${process.env.TAL803_SHOTS}/notice-${testInfo.project.name}.png` })
     await expect.poll(() => streams.length).toBeGreaterThan(0)
+    send('notices', { session_id: sid, notices: [] })
+    await expect(tab(memory.text)).toHaveCount(0)
+    if (process.env.TAL1227_SHOTS) await page.screenshot({ path: `${process.env.TAL1227_SHOTS}/before-${testInfo.project.name}.png` })
+    send('notices', { session_id: sid, notices: [pending] })
+    await expect(tab(pending.text)).toBeVisible()
+    if (process.env.TAL1227_SHOTS) await page.screenshot({ path: `${process.env.TAL1227_SHOTS}/pending-${testInfo.project.name}.png` })
     send('notices', { session_id: sid, notices: [credits] })
+    await expect(tab(pending.text)).toHaveCount(0)
     await expect(tab(credits.text)).toBeVisible()
     await expect(tab(memory.text)).toHaveCount(0)
     send('notices', { session_id: sid, notices: [] })

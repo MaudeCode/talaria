@@ -384,7 +384,8 @@ def test_clarify_prompts_advertise_the_agent_timeout(monkeypatch) -> None:
 
     monkeypatch.setattr(chat, "_agent_class", lambda: ClarifyingAgent)
     ctx = Ctx()
-    threading.Thread(target=lambda: chat.start(ctx, _params("st-clarify")), daemon=True).start()
+    worker = threading.Thread(target=lambda: chat.start(ctx, _params("st-clarify")), daemon=True)
+    worker.start()
     deadline = time.monotonic() + 5
     while time.monotonic() < deadline and not any(e == "clarify" for e, _ in ctx.frames):
         time.sleep(0.02)
@@ -396,6 +397,8 @@ def test_clarify_prompts_advertise_the_agent_timeout(monkeypatch) -> None:
         entry = run.clarify_entries[frame["clarify_id"]]
     entry.result = "dev"
     entry.event.set()
+    worker.join(5)
+    assert not worker.is_alive()
 
 
 def test_batch_clarify_relays_questions_and_returns_the_answers_envelope(monkeypatch) -> None:
@@ -416,7 +419,8 @@ def test_batch_clarify_relays_questions_and_returns_the_answers_envelope(monkeyp
 
     monkeypatch.setattr(chat, "_agent_class", lambda: BatchAgent)
     ctx = Ctx()
-    threading.Thread(target=lambda: chat.start(ctx, _params("st-batch")), daemon=True).start()
+    worker = threading.Thread(target=lambda: chat.start(ctx, _params("st-batch")), daemon=True)
+    worker.start()
 
     def answer(n: int, response: str) -> dict:
         deadline = time.monotonic() + 5
@@ -440,6 +444,8 @@ def test_batch_clarify_relays_questions_and_returns_the_answers_envelope(monkeyp
     while time.monotonic() < deadline and len(replies) < 2:
         time.sleep(0.02)
     assert replies == [envelope, '["prod"]']
+    worker.join(5)
+    assert not worker.is_alive()
 
 
 def test_tool_frames_keep_content_args_long_and_extract_result_previews(monkeypatch) -> None:

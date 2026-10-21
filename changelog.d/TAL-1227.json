@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Chats keep responding with available tools when an MCP server is slow to reconnect, and show when tools are still connecting.",
+      "highlight": false,
+      "components": ["web"]
+    }
+  ]
+}

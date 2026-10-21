@@ -94,6 +94,10 @@ _RELEASES_LOCK = threading.Lock()
 _COMMITTING: list = []
 # Set (under ``_RUNS_LOCK``) when shutdown drains: no turn is admitted after the drain's snapshot of ``_RUNS``.
 _DRAINING = threading.Event()
+_MCP_DISCOVERIES: dict[str, threading.Event] = {}
+_MCP_DISCOVERY_LOCK = threading.Lock()
+_MCP_REDISCOVERY_WAIT = 2.0
+_MCP_PENDING_KEY = "mcp_discovery_pending"
 
 
 def _snippet(raw: Any, limit: int = _TOOL_RESULT_SNIPPET_MAX) -> str:
@@ -760,28 +764,41 @@ def _profile_toolsets() -> list[str]:
     return list(dict.fromkeys(name for raw in resolved for name in _LEGACY_TOOLSET_ALIASES.get(raw, (raw,))))
 
 
-def _discover_mcp_tools(run: _Run) -> None:
-    """Connect the profile's MCP servers before the turn's agent snapshots its tools, like the predecessor's turn start.
-    The Agent keys connections by profile scope and skips live ones, so later turns are cheap. Runs under the call's
-    ``scoped_home``; a failure leaves the turn without MCP tools rather than failing it. A Stop does not wait for a slow
-    server: the turn moves on to its cancelled end while the connect finishes in the background."""
-    from .commands import discover_profile_mcp_tools
+def _discover_mcp_tools(run: _Run) -> threading.Event | None:
+    """Wait for the profile's first discovery; later turns give a shared background retry at most two seconds."""
+    from .commands import discover_profile_mcp_tools, profile_mcp_tools_discovered
 
-    done = threading.Event()
+    profile_home = run.home
+    home = os.path.realpath(profile_home)
+    deadline = time.monotonic() + _MCP_REDISCOVERY_WAIT if profile_mcp_tools_discovered(home) else None
 
     def discover() -> None:
         try:
             discover_profile_mcp_tools()
+            refresh_profile_agents_mcp_tools(profile_home)
         except Exception:  # noqa: BLE001
             log.warning("MCP discovery failed", exc_info=True)
         finally:
             done.set()
 
-    # The copied context carries the turn's home override and secret scope into the worker.
-    threading.Thread(target=contextvars.copy_context().run, args=(discover,), daemon=True, name=f"chat-mcp-{run.stream_id[:8]}").start()
-    while not done.wait(0.25):
+    with _MCP_DISCOVERY_LOCK:
+        done = _MCP_DISCOVERIES.get(home)
+        if done is None or done.is_set():
+            done = threading.Event()
+            _MCP_DISCOVERIES[home] = done
+            # The copied context carries the turn's home override and secret scope into the worker.
+            threading.Thread(target=contextvars.copy_context().run, args=(discover,), daemon=True, name=f"chat-mcp-{run.stream_id[:8]}").start()
+    while not done.is_set():
         if run.cancel.is_set() or run.ctx.cancelled:
-            return
+            return None
+        remaining = None if deadline is None else deadline - time.monotonic()
+        if remaining is not None and remaining <= 0:
+            run.ctx.emit("notice", {"key": _MCP_PENDING_KEY, "level": "info", "kind": "sticky",
+                                    "text": "Some tools are still connecting. Using available tools for this turn.",
+                                    "lapses_with_agent": False})
+            return done
+        done.wait(0.25 if remaining is None else min(0.25, remaining))
+    return None
 
 
 # Serializes every hook change the sidecar makes, so two turns or a turn and a profile deletion never interleave a
@@ -1530,6 +1547,7 @@ def start(ctx: CallContext, params: dict) -> dict:  # noqa: PLR0915 - one turn, 
     raw_emit = ctx.emit
     steer_state = {"last": None}
     usage_state = {"last": None}
+    pending_mcp = False
 
     def emit(event, data=None):
         """Predecessor ``_webui_steer_events_before``: before content frames, report the Agent's pending steer text
@@ -1546,7 +1564,8 @@ def start(ctx: CallContext, params: dict) -> dict:  # noqa: PLR0915 - one turn, 
                 raw_emit("usage", usage)
         raw_emit(event, data)
     try:
-        _discover_mcp_tools(run)
+        mcp_discovery = _discover_mcp_tools(run)
+        pending_mcp = mcp_discovery is not None
         runtime = _resolve_runtime(provider, model)
         resolved_model = model or str(runtime.get("model") or "")
         resolved_provider = provider or runtime.get("provider")
@@ -1899,12 +1918,24 @@ def start(ctx: CallContext, params: dict) -> dict:  # noqa: PLR0915 - one turn, 
                 log.debug("agent.clear_interrupt failed", exc_info=True)
 
         def _watch_cancel():
+            nonlocal pending_mcp
             while not run.cancel.wait(0.25):
                 if run.finished.is_set():
                     return
                 if ctx.cancelled:
                     run.cancel.set()
                     break
+                if pending_mcp and mcp_discovery.is_set():
+                    # Discovery can finish while this agent is being built, after the worker's cache refresh.
+                    try:
+                        with scoped_home(home):
+                            refresh_profile_agents_mcp_tools(home)
+                    except Exception:  # noqa: BLE001 - refresh failure must not disable Stop
+                        log.warning("Late MCP refresh failed", exc_info=True)
+                    with run.lock:
+                        if pending_mcp and not run.finished.is_set():
+                            emit("notice_clear", {"key": _MCP_PENDING_KEY})
+                            pending_mcp = False
             if run.finished.is_set() and not run.cancel.is_set():
                 return
             try:
@@ -2009,6 +2040,10 @@ def start(ctx: CallContext, params: dict) -> dict:  # noqa: PLR0915 - one turn, 
             "live_tool_calls": live_tool_calls,
         }
     finally:
+        with run.lock:
+            if pending_mcp:
+                emit("notice_clear", {"key": _MCP_PENDING_KEY})
+                pending_mcp = False
         with _AGENT_CACHE_LOCK:
             with _RUNS_LOCK:
                 _RUNS.pop(stream_id, None)
