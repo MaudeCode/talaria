@@ -79,7 +79,7 @@ export function workspaceSystemMessage(frozenWorkspace: string): string {
 }
 
 /** Python `_webui_surface_context_prompt`. */
-function surfaceContextPrompt(ctx: { source: string; session_id: string; profile: string | null; workspace: string }): string {
+function surfaceContextPrompt(ctx: { source: string; profile: string | null; workspace: string }): string {
   const lines = [
     'WebUI session context:',
     '- This browser session is not the same live transcript as Telegram, Discord, Slack, or other messaging surfaces.',
@@ -88,7 +88,7 @@ function surfaceContextPrompt(ctx: { source: string; session_id: string; profile
     '- Write to external notes or durable memory only for explicit captures, durable user preferences, decisions, blockers/open issues, runbook-worthy workflows, or other clearly reusable signals; otherwise leave notes unchanged.',
     '- When you do write or update a durable note, briefly tell the user what note/section changed so the write is reviewable.',
   ]
-  for (const [key, label] of [['source', 'Source'], ['session_id', 'Session ID'], ['profile', 'Profile'], ['workspace', 'Workspace']] as const) {
+  for (const [key, label] of [['source', 'Source'], ['profile', 'Profile'], ['workspace', 'Workspace']] as const) {
     const value = str(ctx[key]).trim()
     if (value) lines.push(`- ${label}: ${contextValue(value)}`)
   }
@@ -131,9 +131,13 @@ export function deliveryContextPrompt(config: Config, hermesHome: string, homeDi
 export function webuiEphemeralSystemPrompt(opts: { config: Config; personalityPrompt: string | null; sessionId: string; profile: string | null; workspace: string; hermesHome: string; homeDisplay: string; background?: boolean }): string {
   const parts: string[] = []
   if (opts.personalityPrompt) parts.push(opts.personalityPrompt.trim())
-  parts.push(surfaceContextPrompt({ source: 'webui', session_id: opts.sessionId, profile: opts.profile, workspace: opts.workspace }))
+  parts.push(surfaceContextPrompt({ source: 'webui', profile: opts.profile, workspace: opts.workspace }))
   parts.push(WEBUI_PROGRESS_PROMPT)
   parts.push(deliveryContextPrompt(opts.config, opts.hermesHome, opts.homeDisplay))
   if (opts.background) parts.push(BACKGROUND_TURN_PROMPT)
+  // Keep per-chat identity last so opt-in users still share the preceding prompt cache prefix.
+  if (['true', 'yes', 'on', '1'].includes(str(dict(opts.config.webui).pass_session_id).trim().toLowerCase())) {
+    parts.push(`WebUI session:\n- Session ID: ${contextValue(opts.sessionId)}`)
+  }
   return parts.filter(Boolean).join('\n\n')
 }

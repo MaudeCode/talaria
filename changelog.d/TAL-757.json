@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "New chats can share cached prompts for faster first responses.",
+      "highlight": false,
+      "components": ["web"]
+    }
+  ]
+}
