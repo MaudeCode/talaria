@@ -352,9 +352,10 @@ def register(registry) -> None:
         base_home, name = profile_home_param(params, "base_home"), str(params.get("name") or "").strip()
         validate_name(name)
         # Idle cached agents end their memory sessions while the profile's home still exists.
-        from .chat import release_profile_agents
+        from .chat import forget_profile_hooks, release_profile_agents
 
         release_profile_agents(base_home / "profiles" / name)
+        forget_profile_hooks(base_home / "profiles" / name)
         delete_profile(base_home, name)
         return {"ok": True}
 

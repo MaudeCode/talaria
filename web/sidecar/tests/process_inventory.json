@@ -2497,6 +2497,55 @@
       "cases": [
         ""
       ]
+    },
+    "tests/test_chat_shell_hooks.py::test_a_consented_fail_closed_hook_blocks_web_tool_calls_until_revoked": {
+      "layer": "compatibility",
+      "reason": "Supported-Agent API compatibility: a consented fail_closed shell hook blocks Web tool calls until revoked. Runs the real installed release's shell-hook registry and pre_tool_call dispatch, not a fabricated hook.",
+      "cases": [
+        ""
+      ]
+    },
+    "tests/test_chat_shell_hooks.py::test_a_hook_without_consent_never_runs": {
+      "layer": "compatibility",
+      "reason": "Supported-Agent API compatibility: a shell hook without consent never runs. Runs the real installed release's consent check, not a fabricated allowlist.",
+      "cases": [
+        ""
+      ]
+    },
+    "tests/test_chat_shell_hooks.py::test_a_recreated_profile_inherits_none_of_the_deleted_profiles_hooks": {
+      "layer": "compatibility",
+      "reason": "Supported-Agent API compatibility: a recreated profile inherits none of the deleted profile's hooks. Runs the real installed release's per-home hook and webhook registries, not fabricated ones.",
+      "cases": [
+        ""
+      ]
+    },
+    "tests/test_chat_shell_hooks.py::test_a_replaced_outbound_webhook_stops_on_the_next_turn": {
+      "layer": "compatibility",
+      "reason": "Supported-Agent API compatibility: a replaced outbound webhook stops on the next turn. Runs the real installed release's webhook registry and delivery worker, not a fabricated target.",
+      "cases": [
+        ""
+      ]
+    },
+    "tests/test_chat_shell_hooks.py::test_a_refine_that_is_the_first_agent_work_runs_the_profiles_guard": {
+      "layer": "compatibility",
+      "reason": "Supported-Agent API compatibility: a refine that is the first Agent work runs the profile's guard. Runs the real installed release's background review and pre_tool_call dispatch, not a fabricated fork.",
+      "cases": [
+        ""
+      ]
+    },
+    "tests/test_chat_shell_hooks.py::test_a_hook_approved_after_the_first_turn_guards_the_next": {
+      "layer": "compatibility",
+      "reason": "Supported-Agent API compatibility: a hook approved after the first turn guards the next. Runs the real installed release's allowlist check and add-only registration, not a fabricated consent.",
+      "cases": [
+        ""
+      ]
+    },
+    "tests/test_chat_shell_hooks.py::test_an_unreadable_allowlist_never_disarms_a_registered_guard": {
+      "layer": "compatibility",
+      "reason": "Supported-Agent API compatibility: an unreadable allowlist never disarms a registered guard. Runs the real installed release's allowlist reader and hook registry, not a fabricated file check.",
+      "cases": [
+        ""
+      ]
     }
   }
 }

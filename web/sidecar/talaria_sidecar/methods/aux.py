@@ -348,7 +348,9 @@ def register(registry) -> None:
         if not isinstance(messages, list) or not messages:
             raise InvalidParams("messages must be a non-empty list")
         main_runtime = params.get("main_runtime") if isinstance(params.get("main_runtime"), dict) else None
-        with scoped_home(profile_home_param(params)):
+        from .chat import agent_scope
+
+        with agent_scope(profile_home_param(params)):
             model = params.get("model")
             return complete(task, messages, main_runtime=main_runtime, max_tokens=params.get("max_tokens"), temperature=params.get("temperature"), ctx=ctx, main_fallback=bool(params.get("main_fallback")),
                             model=str(model).strip() if isinstance(model, str) else None, provider=str(params.get("provider") or "").strip() or None)
