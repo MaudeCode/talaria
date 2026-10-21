@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Recovered background task results reach their parent chat after an Agent restart.",
+      "highlight": false,
+      "components": ["web"]
+    }
+  ]
+}

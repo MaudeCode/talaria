@@ -319,7 +319,7 @@ def claim_delivery(evt: dict, consumer: str) -> str | None:
         home = Path(get_hermes_home()).resolve()
         if evt.get("reconciliation_profile_home", str(home)) == str(home):
             # A live queue copy can race the transcript-only consumer too. Recheck the same proof here.
-            transport = {"process_id", "consumed", "child_process", "restored", "reconciliation_profile_home"}
+            transport = {"process_id", "consumed", "child_process", "restored", "startup_replay", "reconciliation_profile_home"}
             for candidate in _delivered_notifications(home, str(evt.get("delegation_id") or ""))[0]:
                 if {k: v for k, v in candidate.items() if k not in transport} == {k: v for k, v in evt.items() if k not in transport}:
                     return ""  # Web's session receipt acknowledges this admission, not the Agent ledger.
