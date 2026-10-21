@@ -2,7 +2,7 @@ import sceneCases from './__fixtures__/activity-scene-boundaries.json'
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { cleanup, fireEvent, render, screen } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { Transcript } from './Transcript'
 import { AssistantMessageRow } from './MessageRow'
 import { TurnActivityView } from './TurnActivityView'
@@ -92,7 +92,7 @@ describe('turn worklog presentation', () => {
     expect(remount.container.querySelector('.tool-worklog-summary')).toHaveAttribute('aria-expanded', 'false')
   })
 
-  it('hides inline thinking and tool-call XML in live tokens, and renders a settled turn\'s fields as shipped (TAL-302)', () => {
+  it('hides inline thinking and tool-call XML in live tokens, and renders a settled turn\'s fields as shipped (TAL-302)', async () => {
     const run = liveRun()
     run.emit({ event: 'token', data: { text: '<think>Still planning' } })
     let view = render(<View activity={liveActivity(run.turn)} />)
@@ -100,7 +100,7 @@ describe('turn worklog presentation', () => {
     expect(view.container.textContent).not.toContain('<think>')
     run.emit({ event: 'token', data: { text: '</think>Answer <function_calls><invoke' } })
     view.rerender(<View activity={liveActivity(run.turn)} />)
-    expect(view.container.querySelector('.msg-body')).toHaveTextContent(/^Answer$/)
+    await waitFor(() => { expect(view.container.querySelector('.msg-body')).toHaveTextContent(/^Answer$/) }, { timeout: 5000 })
     view.unmount()
     // A settled answer that talks about these tags keeps them: the server already split the row.
     view = render(<View activity={settled({ final_answer: 'Use `<think>` and `<function_calls>` tags.', activity_rows: rows({ row_id: 'r', role: 'reasoning', text: 'About <tool_call> tags' }) })} />)

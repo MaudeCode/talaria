@@ -437,7 +437,8 @@ describe('Composer', () => {
     await waitFor(() => expect(screen.getByRole('button', { name: /^Command output:/ })).not.toHaveTextContent('Running'))
     // Screen readers hear the output without opening it.
     expect(within(document.querySelector<HTMLElement>('[data-notice="command"]')!).getByRole('status')).toHaveTextContent('Total skills: 5')
-    expect(await openOutput()).toHaveTextContent('Total skills: 5')
+    const output = await openOutput()
+    await waitFor(() => { expect(output).toHaveTextContent('Total skills: 5') }, { timeout: 5000 })
     await userEvent.keyboard('{Escape}')
     expect(box).toHaveValue('')
     expect(onLocalCommand).not.toHaveBeenCalled()

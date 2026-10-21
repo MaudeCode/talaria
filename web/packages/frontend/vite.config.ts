@@ -59,6 +59,7 @@ export default defineConfig({
     viteReact(),
   ],
   build: {
+    chunkSizeWarningLimit: 500,
     sourcemap: process.env.HERMES_WEBUI_SOURCEMAP === '1',
     // The bundle's dependency notices ship beside it, since minification strips their headers (TAL-389).
     license: { fileName: 'THIRD_PARTY_LICENSES.md' },

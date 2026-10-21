@@ -1,4 +1,6 @@
 import { createServer, type ServerResponse } from 'node:http'
+import { readFileSync } from 'node:fs'
+import { join } from 'node:path'
 import type { Page, Route } from '@playwright/test'
 import { expect, test } from './fixtures'
 
@@ -128,13 +130,18 @@ test('sending from a session scrolled up returns the transcript to its end', asy
 })
 
 test('opening a session paints every frame at its end', async ({ page }) => {
+  const manifest = JSON.parse(readFileSync(join(import.meta.dirname, '../dist/client/.vite/manifest.json'), 'utf8')) as Record<string, { file: string }>
+  const renderer = manifest['src/features/chat/render/MarkdownRenderer.tsx']
+  expect(renderer).toBeDefined()
+  const loading = hold()
+  await page.route(`**/${renderer!.file}`, async (route) => { await loading.gate; await route.continue() })
   await page.route('**/api/session?**', async (route) => {
     await new Promise((r) => setTimeout(r, 200))
     await route.fulfill({ json: { session: { session_id: 'entry', title: 'Entry', messages: transcript('entry', 25) } } })
   })
   await page.goto('/')
   await expect(page.locator('#msg')).toBeVisible()
-  const frames = await page.evaluate(async () => {
+  const sampling = page.evaluate(async () => {
     const seen: number[] = []
     history.pushState({}, '', '/session/entry')
     dispatchEvent(new PopStateEvent('popstate'))
@@ -150,6 +157,12 @@ test('opening a session paints every frame at its end', async ({ page }) => {
     })
     return seen
   })
+  try {
+    await expect(page.locator('[data-message-key]')).toHaveCount(50)
+    await expect(page.locator('.hermes-prose')).toHaveCount(0)
+  } finally { loading.release() }
+  await expect(page.locator('.hermes-prose').last()).toContainText('entry answer 25.')
+  const frames = await sampling
   expect(frames.length).toBeGreaterThan(10)
   expect(Math.max(...frames)).toBeLessThan(2)
 })

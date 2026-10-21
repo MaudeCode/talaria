@@ -155,6 +155,8 @@ export function Transcript(props: TranscriptProps) {
     const pane = scrollRef.current
     if (!inner || !pane) return
     const follow = () => {
+      // A reader scroll can precede its browser event; reconcile it before following a DOM mutation.
+      if (pane.scrollTop !== lastTopRef.current) onScroll()
       if (followsRef.current()) scrollToBottom(false)
       else if (!virtualize && readerAnchor.current) {
         const anchor = readerAnchor.current
@@ -171,8 +173,11 @@ export function Transcript(props: TranscriptProps) {
     const observer = new ResizeObserver(follow)
     observer.observe(inner)
     observer.observe(pane)
-    return () => observer.disconnect()
-  }, [empty, scope, scrollToBottom, virtualize, rememberReaderAnchor])
+    // Suspense can reveal descendants without rerendering this pane; follow insertion before the next frame.
+    const mutations = new MutationObserver(follow)
+    mutations.observe(inner, { childList: true, subtree: true, characterData: true })
+    return () => { observer.disconnect(); mutations.disconnect() }
+  }, [empty, scope, scrollToBottom, virtualize, rememberReaderAnchor, onScroll])
 
   // A submit returns to the end wherever the reader was, and the next layout follows it there (T3 Code's scrollToEnd).
   useEffect(() => onScrollRequest('end', () => { settlingRef.current = true; scrollToBottom(false) }), [scrollToBottom])

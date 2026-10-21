@@ -4,7 +4,7 @@ import { startPresence } from '../features/presence/presence'
 import { isAuthenticated } from '../contracts/bootstrap'
 import { legacyHashRoute } from '../contracts/url'
 import { checkExternalLink } from '../api/endpoints'
-import { LinkCheckContext } from '../features/chat/render/Markdown'
+import { LinkCheckContext } from '../features/chat/render/LinkCheckContext'
 import { ExtensionTtsHosts } from '../features/extensions/ExtensionRoute'
 
 /**
