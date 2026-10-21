@@ -2,7 +2,7 @@
 import { timingOutcome } from '../startup-timing.js'
 import { GATEWAY_APPROVAL_RELAY_UNAVAILABLE, isGenericContinuationIntent } from '../sessions/turn.js'
 import { implement } from '@orpc/server'
-import { chatContract, MAX_CHAT_ATTACHMENTS, RPC_ERROR_CODES, type SidecarResult } from '@maudecode/talaria-web-contracts'
+import { chatContract, MAX_CHAT_ATTACHMENTS, RPC_ERROR_CODES, type SidecarResult, type OwnerAttachment } from '@maudecode/talaria-web-contracts'
 import { randomUUID } from 'node:crypto'
 import { HttpError, type ApiContext } from './router.js'
 import { requestSessionIdGuard, streamOwnerSessionId, streamVisibleToRequest } from './session-visibility.js'
@@ -241,7 +241,9 @@ export const chatRouter = os.router({
       if (input.action === 'retry') {
         draft = await owner.retry(input.session_id, input.admission_id, input.execution_generation)
       } else await owner.action(input.session_id, input)
-      return { ok: true as const, session: await ctx.deps.sessions.detail(input.session_id, {}) as never, ...(draft === undefined ? {} : { draft }) }
+      const session = await ctx.deps.sessions.detail(input.session_id, {})
+      const model_change = (session.owner_attachment as OwnerAttachment | undefined)?.model_change
+      return { ok: true as const, session: session as never, ...(draft === undefined ? {} : { draft }), ...(model_change ? { model_change } : {}) }
     })),
     sync: os.chat.sync.handler(({ input, context: { ctx } }) => run(async () => (await syncChat(ctx, input as Record<string, unknown>)))),
     start: os.chat.start.handler(({ input, context: { ctx } }) => run(async () => (await startChat(ctx, input as Record<string, unknown>)))),

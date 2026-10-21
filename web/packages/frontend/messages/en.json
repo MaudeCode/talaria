@@ -377,6 +377,7 @@
 	"theme_usage": "Usage: /theme ",
 	"theme_set": "Theme: ",
 	"no_active_session": "No active session",
+	"model_change_deferred": "Applies after this turn",
 	"cmd_queue": "Queue a message for the next turn",
 	"cmd_goal": "Set or inspect a persistent goal",
 	"goal_evaluating_progress": "Evaluating goal progress…",

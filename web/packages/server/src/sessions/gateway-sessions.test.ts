@@ -255,6 +255,46 @@ describe('canonical owner attachment', () => {
     expect(sidecar.calls.some((c) => c.method === 'chat.start')).toBe(false)
   })
 
+  it.each([
+    [{ operation: 'model', model: 'picked', revision: 3, execution_generation: 1 }, { state: 'applied' }],
+    [{ operation: 'model', status: 'deferred', model: 'picked' }, { state: 'deferred', model: 'picked' }],
+    [{ operation: 'model', status: 'confirmation_required', confirm: 'owner-token', confirm_message: 'Guard warning' }, { state: 'confirmation_required', confirm: 'owner-token', message: 'Guard warning', model: 'picked' }],
+    [{ operation: 'model', status: 'refused', reason: 'model_resolution_failed' }, { state: 'refused', message: 'model_resolution_failed' }],
+  ])('projects a model mutation receipt to its response and subsequent view (%j)', async (receipt, change) => {
+    sidecar.respond('gateway.session', (params) => ({ ...attached(snapshot()), receipt: params.action === 'mutate' ? receipt : null }))
+    const response = await post('/api/chat/owner-action', { session_id: sid, action: 'mutate', operation: 'model', payload: { model: 'picked', provider: null }, request_id: 'pick', expected_revision: 2, execution_generation: 1 })
+    expect(response.status, await response.clone().text()).toBe(200)
+    expect(await response.json()).toMatchObject({ model_change: change, session: { owner_attachment: { model_change: change } } })
+    const row = SessionEnvelopeSchema.parse(await (await s.get(`/api/session?session_id=${sid}`)).json())
+    expect(row.session.owner_attachment).toMatchObject({ model_change: change })
+  })
+
+  it.each([
+    { operation: 'model', status: 'refused', reason: 'model_resolution_failed' },
+    { operation: 'model', status: 'confirmation_required', confirm: 'later-token', confirm_message: 'Later guard', payload: { model: 'picked', provider: null } },
+  ])('keeps observing a deferred pick past idle until its unstamped outcome arrives (%j)', async (outcome) => {
+    let snap = snapshot({ running: true, pending: [admission()] })
+    let emit: ((frame: Omit<StreamFrame, 'seq'>) => void) | undefined
+    sidecar.respond('gateway.session', (params, send, opts) => {
+      if (params.action !== 'watch') return { ...attached(snap), receipt: params.action === 'mutate' ? { operation: 'model', status: 'deferred', model: 'picked' } : params.action === 'receipt' ? { ...admission('terminal'), outcome: 'completed' } : null }
+      emit = send
+      send({ event: 'snapshot', data: attached(snap) })
+      return new Promise((resolve) => { opts.signal!.addEventListener('abort', () => { resolve(attached(snap)) }, { once: true }) })
+    })
+    const row = SessionEnvelopeSchema.parse(await (await s.get(`/api/session?session_id=${sid}`)).json())
+    const stream = row.session.active_stream_id!
+    await post('/api/chat/owner-action', { session_id: sid, action: 'mutate', operation: 'model', payload: { model: 'picked' }, request_id: 'pick', expected_revision: 2, execution_generation: 1 })
+    const read = s.sse(`/api/chat/stream?stream_id=${stream}`, (frame) => frame.event === 'stream_end')
+    await vi.waitFor(() => { expect(s.deps.registry.peek(stream)?.subscriberCount).toBe(1) })
+    snap = snapshot()
+    emit!({ event: 'event', data: { type: 'session.info', session_id: sid, payload: { authority_epoch: 1, execution_generation: 1, running: false, pending: [] } } })
+    emit!({ event: 'event', data: { type: 'session.updated', session_id: sid, payload: outcome } })
+    const frames = await read
+    const change = outcome.status === 'refused' ? { state: 'refused', message: 'model_resolution_failed' } : { state: 'confirmation_required', confirm: 'later-token', model: 'picked' }
+    expect(frames.find((f) => f.event === 'done')?.data).toMatchObject({ session: { owner_attachment: { model_change: change } } })
+    expect(await (await s.get(`/api/session?session_id=${sid}`)).json()).toMatchObject({ session: { owner_attachment: { model_change: change } } })
+  })
+
   it('normalizes approval and clarify through their owner with the prompt generation', async () => {
     const prompts = [
       { kind: 'approval', prompt_id: 'approval-native', execution_generation: 7, command: 'echo fixture', description: 'Approve fixture?', choices: ['once', 'deny'] },
@@ -410,6 +450,98 @@ describe('canonical owner attachment', () => {
     expect.soft(frames.findLast((f) => f.event === 'metering')?.data).toMatchObject({ usage, estimated: false })
     expect.soft(frames.find((f) => f.event === 'done')?.data).toMatchObject({ usage, session: usage })
     expect.soft(await s.deps.sessionStore.exists(sid)).toBe(false)
+  })
+
+  it('keeps a later model event when a deferred HTTP receipt arrives after it', async () => {
+    let snap = snapshot({ running: true, pending: [admission()] })
+    let emit: ((frame: Omit<StreamFrame, 'seq'>) => void) | undefined
+    let acknowledge!: (result: GatewaySessionResult) => void
+    sidecar.respond('gateway.session', (params, send, opts) => {
+      if (params.action === 'mutate') return new Promise((resolve) => { acknowledge = resolve })
+      if (params.action !== 'watch') return attached(snap)
+      emit = send
+      send({ event: 'snapshot', data: attached(snap) })
+      return new Promise((resolve) => { opts.signal!.addEventListener('abort', () => { resolve(attached(snap)) }, { once: true }) })
+    })
+    await s.get(`/api/session?session_id=${sid}`)
+    const action = post('/api/chat/owner-action', { session_id: sid, action: 'mutate', operation: 'model', payload: { model: 'picked' }, request_id: 'racing-pick', expected_revision: 2, execution_generation: 1 })
+    await vi.waitFor(() => { expect(acknowledge).toBeDefined(); expect(emit).toBeDefined() })
+    snap = { ...snap, revision: 3, info: { model: 'picked' } }
+    emit!({ event: 'event', data: { type: 'session.updated', session_id: sid, payload: { operation: 'model', model: 'picked', revision: 3 } } })
+    await vi.waitFor(async () => { expect(await (await s.get(`/api/session?session_id=${sid}`)).json()).toMatchObject({ session: { owner_attachment: { model_change: { state: 'applied' } } } }) })
+    acknowledge({ ...attached(snap), receipt: { operation: 'model', status: 'deferred', model: 'picked' } })
+    expect(await (await action).json()).toMatchObject({ model_change: { state: 'applied' } })
+  })
+
+  it.each([
+    [{ operation: 'model', model: 'picked', revision: 3 }, { state: 'applied' }],
+    [{ operation: 'model', status: 'refused', reason: 'model_resolution_failed' }, { state: 'refused', message: 'model_resolution_failed' }],
+    [{ operation: 'model', status: 'confirmation_required', confirm: 'racing-token', confirm_message: 'Guard warning', payload: { model: 'picked' } }, { state: 'confirmation_required', confirm: 'racing-token' }],
+  ])('retains the owner outcome when idle precedes the mutation ACK (%j)', async (outcome, change) => {
+    let snap = snapshot({ running: true, pending: [admission()] })
+    let emit: ((frame: Omit<StreamFrame, 'seq'>) => void) | undefined
+    let acknowledge!: (result: GatewaySessionResult) => void
+    sidecar.respond('gateway.session', (params, send, opts) => {
+      if (params.action === 'mutate') return new Promise((resolve) => { acknowledge = resolve })
+      if (params.action !== 'watch') return { ...attached(snap), receipt: params.action === 'receipt' ? { ...admission('terminal'), outcome: 'completed' } : null }
+      emit = send
+      send({ event: 'snapshot', data: attached(snap) })
+      return new Promise((resolve) => { opts.signal!.addEventListener('abort', () => { resolve(attached(snap)) }, { once: true }) })
+    })
+    const row = SessionEnvelopeSchema.parse(await (await s.get(`/api/session?session_id=${sid}`)).json())
+    const stream = row.session.active_stream_id!
+    const read = s.sse(`/api/chat/stream?stream_id=${stream}`, (frame) => frame.event === 'stream_end')
+    const action = post('/api/chat/owner-action', { session_id: sid, action: 'mutate', operation: 'model', payload: { model: 'picked' }, request_id: 'idle-before-ack', expected_revision: 2, execution_generation: 1 })
+    await vi.waitFor(() => { expect(acknowledge).toBeDefined(); expect(emit).toBeDefined(); expect(s.deps.registry.peek(stream)?.subscriberCount).toBe(1) })
+    snap = snapshot()
+    emit!({ event: 'event', data: { type: 'session.info', session_id: sid, payload: { authority_epoch: 1, execution_generation: 1, running: false, pending: [] } } })
+    emit!({ event: 'event', data: { type: 'session.updated', session_id: sid, payload: outcome } })
+    let response!: Response
+    try {
+      await vi.waitFor(async () => { expect(await (await s.get(`/api/session?session_id=${sid}`)).json()).toMatchObject({ session: { owner_attachment: { model_change: change } } }) })
+    } finally {
+      acknowledge({ ...attached(snap), receipt: { operation: 'model', status: 'deferred', model: 'picked' } })
+      response = await action
+    }
+    expect(await response.json()).toMatchObject({ model_change: change })
+    expect((await read).find((f) => f.event === 'done')?.data).toMatchObject({ session: { owner_attachment: { model_change: change } } })
+    await vi.waitFor(() => { expect(s.deps.registry.activeRunStreamForSession(sid)).toBeNull() })
+  })
+
+  it.each(['applied', 'refused', 'disconnect'])('releases the in-flight model fence after an idle snapshot and %s ACK', async (outcome) => {
+    let snap = snapshot({ running: true, pending: [admission()] })
+    let emit: ((frame: Omit<StreamFrame, 'seq'>) => void) | undefined
+    let acknowledge!: () => void
+    sidecar.respond('gateway.session', (params, send, opts) => {
+      if (params.action === 'mutate') return new Promise((resolve, reject) => {
+        acknowledge = () => {
+          if (outcome === 'disconnect') reject(new Error('synthetic owner disconnect'))
+          else resolve(outcome === 'refused' ? { state: 'refused', reason: 'revision_conflict', snapshot: null, receipt: null }
+            : { ...attached(snap), receipt: { operation: 'model', model: 'picked', revision: 3 } })
+        }
+      })
+      if (params.action !== 'watch') return { ...attached(snap), receipt: params.action === 'receipt' ? { ...admission('terminal'), outcome: 'completed' } : null }
+      emit = send
+      send({ event: 'snapshot', data: attached(snap) })
+      return new Promise((resolve) => { opts.signal!.addEventListener('abort', () => { resolve(attached(snap)) }, { once: true }) })
+    })
+    const row = SessionEnvelopeSchema.parse(await (await s.get(`/api/session?session_id=${sid}`)).json())
+    const stream = row.session.active_stream_id!
+    let seenIdle!: () => void
+    const idle = new Promise<void>((resolve) => { seenIdle = resolve })
+    const read = s.sse(`/api/chat/stream?stream_id=${stream}`, (frame) => {
+      if (frame.event === 'session_snapshot' && !(frame.data as { session: { owner_attachment: { can_interrupt: boolean } } }).session.owner_attachment.can_interrupt) seenIdle()
+      return frame.event === 'stream_end'
+    })
+    const action = post('/api/chat/owner-action', { session_id: sid, action: 'mutate', operation: 'model', payload: { model: 'picked' }, request_id: 'release-fence', expected_revision: 2, execution_generation: 1 })
+    await vi.waitFor(() => { expect(acknowledge).toBeDefined(); expect(emit).toBeDefined(); expect(s.deps.registry.peek(stream)?.subscriberCount).toBe(1) })
+    snap = snapshot()
+    emit!({ event: 'snapshot', data: attached(snap) })
+    await idle
+    acknowledge()
+    expect((await action).status).toBe(outcome === 'applied' ? 200 : 409)
+    expect((await read).some((f) => f.event === 'done')).toBe(true)
+    await vi.waitFor(() => { expect(s.deps.registry.activeRunStreamForSession(sid)).toBeNull() })
   })
 
   it('uses the selected home for same-id attachments and redacts pending text', async () => {

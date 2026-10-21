@@ -1573,6 +1573,42 @@
                                   }
                                 ]
                               },
+                              "model_change": {
+                                "type": "object",
+                                "properties": {
+                                  "state": {
+                                    "enum": [
+                                      "applied",
+                                      "deferred",
+                                      "confirmation_required",
+                                      "refused"
+                                    ],
+                                    "type": "string"
+                                  },
+                                  "message": {
+                                    "type": "string"
+                                  },
+                                  "confirm": {
+                                    "type": "string"
+                                  },
+                                  "model": {
+                                    "type": "string"
+                                  },
+                                  "provider": {
+                                    "anyOf": [
+                                      {
+                                        "type": "string"
+                                      },
+                                      {
+                                        "type": "null"
+                                      }
+                                    ]
+                                  }
+                                },
+                                "required": [
+                                  "state"
+                                ]
+                              },
                               "active_admission": {
                                 "anyOf": [
                                   {
@@ -2158,6 +2194,42 @@
                                   {
                                     "type": "null"
                                   }
+                                ]
+                              },
+                              "model_change": {
+                                "type": "object",
+                                "properties": {
+                                  "state": {
+                                    "enum": [
+                                      "applied",
+                                      "deferred",
+                                      "confirmation_required",
+                                      "refused"
+                                    ],
+                                    "type": "string"
+                                  },
+                                  "message": {
+                                    "type": "string"
+                                  },
+                                  "confirm": {
+                                    "type": "string"
+                                  },
+                                  "model": {
+                                    "type": "string"
+                                  },
+                                  "provider": {
+                                    "anyOf": [
+                                      {
+                                        "type": "string"
+                                      },
+                                      {
+                                        "type": "null"
+                                      }
+                                    ]
+                                  }
+                                },
+                                "required": [
+                                  "state"
                                 ]
                               },
                               "active_admission": {
@@ -3020,6 +3092,42 @@
                                   {
                                     "type": "null"
                                   }
+                                ]
+                              },
+                              "model_change": {
+                                "type": "object",
+                                "properties": {
+                                  "state": {
+                                    "enum": [
+                                      "applied",
+                                      "deferred",
+                                      "confirmation_required",
+                                      "refused"
+                                    ],
+                                    "type": "string"
+                                  },
+                                  "message": {
+                                    "type": "string"
+                                  },
+                                  "confirm": {
+                                    "type": "string"
+                                  },
+                                  "model": {
+                                    "type": "string"
+                                  },
+                                  "provider": {
+                                    "anyOf": [
+                                      {
+                                        "type": "string"
+                                      },
+                                      {
+                                        "type": "null"
+                                      }
+                                    ]
+                                  }
+                                },
+                                "required": [
+                                  "state"
                                 ]
                               },
                               "active_admission": {
@@ -5952,6 +6060,42 @@
                                 }
                               ]
                             },
+                            "model_change": {
+                              "type": "object",
+                              "properties": {
+                                "state": {
+                                  "enum": [
+                                    "applied",
+                                    "deferred",
+                                    "confirmation_required",
+                                    "refused"
+                                  ],
+                                  "type": "string"
+                                },
+                                "message": {
+                                  "type": "string"
+                                },
+                                "confirm": {
+                                  "type": "string"
+                                },
+                                "model": {
+                                  "type": "string"
+                                },
+                                "provider": {
+                                  "anyOf": [
+                                    {
+                                      "type": "string"
+                                    },
+                                    {
+                                      "type": "null"
+                                    }
+                                  ]
+                                }
+                              },
+                              "required": [
+                                "state"
+                              ]
+                            },
                             "active_admission": {
                               "anyOf": [
                                 {
@@ -6600,6 +6744,42 @@
                             {
                               "type": "null"
                             }
+                          ]
+                        },
+                        "model_change": {
+                          "type": "object",
+                          "properties": {
+                            "state": {
+                              "enum": [
+                                "applied",
+                                "deferred",
+                                "confirmation_required",
+                                "refused"
+                              ],
+                              "type": "string"
+                            },
+                            "message": {
+                              "type": "string"
+                            },
+                            "confirm": {
+                              "type": "string"
+                            },
+                            "model": {
+                              "type": "string"
+                            },
+                            "provider": {
+                              "anyOf": [
+                                {
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            }
+                          },
+                          "required": [
+                            "state"
                           ]
                         },
                         "active_admission": {
@@ -9247,6 +9427,42 @@
                                 {
                                   "type": "null"
                                 }
+                              ]
+                            },
+                            "model_change": {
+                              "type": "object",
+                              "properties": {
+                                "state": {
+                                  "enum": [
+                                    "applied",
+                                    "deferred",
+                                    "confirmation_required",
+                                    "refused"
+                                  ],
+                                  "type": "string"
+                                },
+                                "message": {
+                                  "type": "string"
+                                },
+                                "confirm": {
+                                  "type": "string"
+                                },
+                                "model": {
+                                  "type": "string"
+                                },
+                                "provider": {
+                                  "anyOf": [
+                                    {
+                                      "type": "string"
+                                    },
+                                    {
+                                      "type": "null"
+                                    }
+                                  ]
+                                }
+                              },
+                              "required": [
+                                "state"
                               ]
                             },
                             "active_admission": {
@@ -12098,6 +12314,42 @@
                                 }
                               ]
                             },
+                            "model_change": {
+                              "type": "object",
+                              "properties": {
+                                "state": {
+                                  "enum": [
+                                    "applied",
+                                    "deferred",
+                                    "confirmation_required",
+                                    "refused"
+                                  ],
+                                  "type": "string"
+                                },
+                                "message": {
+                                  "type": "string"
+                                },
+                                "confirm": {
+                                  "type": "string"
+                                },
+                                "model": {
+                                  "type": "string"
+                                },
+                                "provider": {
+                                  "anyOf": [
+                                    {
+                                      "type": "string"
+                                    },
+                                    {
+                                      "type": "null"
+                                    }
+                                  ]
+                                }
+                              },
+                              "required": [
+                                "state"
+                              ]
+                            },
                             "active_admission": {
                               "anyOf": [
                                 {
@@ -12873,6 +13125,42 @@
                                 }
                               ]
                             },
+                            "model_change": {
+                              "type": "object",
+                              "properties": {
+                                "state": {
+                                  "enum": [
+                                    "applied",
+                                    "deferred",
+                                    "confirmation_required",
+                                    "refused"
+                                  ],
+                                  "type": "string"
+                                },
+                                "message": {
+                                  "type": "string"
+                                },
+                                "confirm": {
+                                  "type": "string"
+                                },
+                                "model": {
+                                  "type": "string"
+                                },
+                                "provider": {
+                                  "anyOf": [
+                                    {
+                                      "type": "string"
+                                    },
+                                    {
+                                      "type": "null"
+                                    }
+                                  ]
+                                }
+                              },
+                              "required": [
+                                "state"
+                              ]
+                            },
                             "active_admission": {
                               "anyOf": [
                                 {
@@ -13506,6 +13794,42 @@
                                 {
                                   "type": "null"
                                 }
+                              ]
+                            },
+                            "model_change": {
+                              "type": "object",
+                              "properties": {
+                                "state": {
+                                  "enum": [
+                                    "applied",
+                                    "deferred",
+                                    "confirmation_required",
+                                    "refused"
+                                  ],
+                                  "type": "string"
+                                },
+                                "message": {
+                                  "type": "string"
+                                },
+                                "confirm": {
+                                  "type": "string"
+                                },
+                                "model": {
+                                  "type": "string"
+                                },
+                                "provider": {
+                                  "anyOf": [
+                                    {
+                                      "type": "string"
+                                    },
+                                    {
+                                      "type": "null"
+                                    }
+                                  ]
+                                }
+                              },
+                              "required": [
+                                "state"
                               ]
                             },
                             "active_admission": {
@@ -14148,6 +14472,42 @@
                                 {
                                   "type": "null"
                                 }
+                              ]
+                            },
+                            "model_change": {
+                              "type": "object",
+                              "properties": {
+                                "state": {
+                                  "enum": [
+                                    "applied",
+                                    "deferred",
+                                    "confirmation_required",
+                                    "refused"
+                                  ],
+                                  "type": "string"
+                                },
+                                "message": {
+                                  "type": "string"
+                                },
+                                "confirm": {
+                                  "type": "string"
+                                },
+                                "model": {
+                                  "type": "string"
+                                },
+                                "provider": {
+                                  "anyOf": [
+                                    {
+                                      "type": "string"
+                                    },
+                                    {
+                                      "type": "null"
+                                    }
+                                  ]
+                                }
+                              },
+                              "required": [
+                                "state"
                               ]
                             },
                             "active_admission": {
@@ -16830,6 +17190,42 @@
                                 }
                               ]
                             },
+                            "model_change": {
+                              "type": "object",
+                              "properties": {
+                                "state": {
+                                  "enum": [
+                                    "applied",
+                                    "deferred",
+                                    "confirmation_required",
+                                    "refused"
+                                  ],
+                                  "type": "string"
+                                },
+                                "message": {
+                                  "type": "string"
+                                },
+                                "confirm": {
+                                  "type": "string"
+                                },
+                                "model": {
+                                  "type": "string"
+                                },
+                                "provider": {
+                                  "anyOf": [
+                                    {
+                                      "type": "string"
+                                    },
+                                    {
+                                      "type": "null"
+                                    }
+                                  ]
+                                }
+                              },
+                              "required": [
+                                "state"
+                              ]
+                            },
                             "active_admission": {
                               "anyOf": [
                                 {
@@ -17638,6 +18034,42 @@
                                     }
                                   ]
                                 },
+                                "model_change": {
+                                  "type": "object",
+                                  "properties": {
+                                    "state": {
+                                      "enum": [
+                                        "applied",
+                                        "deferred",
+                                        "confirmation_required",
+                                        "refused"
+                                      ],
+                                      "type": "string"
+                                    },
+                                    "message": {
+                                      "type": "string"
+                                    },
+                                    "confirm": {
+                                      "type": "string"
+                                    },
+                                    "model": {
+                                      "type": "string"
+                                    },
+                                    "provider": {
+                                      "anyOf": [
+                                        {
+                                          "type": "string"
+                                        },
+                                        {
+                                          "type": "null"
+                                        }
+                                      ]
+                                    }
+                                  },
+                                  "required": [
+                                    "state"
+                                  ]
+                                },
                                 "active_admission": {
                                   "anyOf": [
                                     {
@@ -18301,6 +18733,42 @@
                                 {
                                   "type": "null"
                                 }
+                              ]
+                            },
+                            "model_change": {
+                              "type": "object",
+                              "properties": {
+                                "state": {
+                                  "enum": [
+                                    "applied",
+                                    "deferred",
+                                    "confirmation_required",
+                                    "refused"
+                                  ],
+                                  "type": "string"
+                                },
+                                "message": {
+                                  "type": "string"
+                                },
+                                "confirm": {
+                                  "type": "string"
+                                },
+                                "model": {
+                                  "type": "string"
+                                },
+                                "provider": {
+                                  "anyOf": [
+                                    {
+                                      "type": "string"
+                                    },
+                                    {
+                                      "type": "null"
+                                    }
+                                  ]
+                                }
+                              },
+                              "required": [
+                                "state"
                               ]
                             },
                             "active_admission": {
@@ -21188,6 +21656,42 @@
                                 }
                               ]
                             },
+                            "model_change": {
+                              "type": "object",
+                              "properties": {
+                                "state": {
+                                  "enum": [
+                                    "applied",
+                                    "deferred",
+                                    "confirmation_required",
+                                    "refused"
+                                  ],
+                                  "type": "string"
+                                },
+                                "message": {
+                                  "type": "string"
+                                },
+                                "confirm": {
+                                  "type": "string"
+                                },
+                                "model": {
+                                  "type": "string"
+                                },
+                                "provider": {
+                                  "anyOf": [
+                                    {
+                                      "type": "string"
+                                    },
+                                    {
+                                      "type": "null"
+                                    }
+                                  ]
+                                }
+                              },
+                              "required": [
+                                "state"
+                              ]
+                            },
                             "active_admission": {
                               "anyOf": [
                                 {
@@ -22174,6 +22678,42 @@
                                 }
                               ]
                             },
+                            "model_change": {
+                              "type": "object",
+                              "properties": {
+                                "state": {
+                                  "enum": [
+                                    "applied",
+                                    "deferred",
+                                    "confirmation_required",
+                                    "refused"
+                                  ],
+                                  "type": "string"
+                                },
+                                "message": {
+                                  "type": "string"
+                                },
+                                "confirm": {
+                                  "type": "string"
+                                },
+                                "model": {
+                                  "type": "string"
+                                },
+                                "provider": {
+                                  "anyOf": [
+                                    {
+                                      "type": "string"
+                                    },
+                                    {
+                                      "type": "null"
+                                    }
+                                  ]
+                                }
+                              },
+                              "required": [
+                                "state"
+                              ]
+                            },
                             "active_admission": {
                               "anyOf": [
                                 {
@@ -22805,6 +23345,42 @@
                                 {
                                   "type": "null"
                                 }
+                              ]
+                            },
+                            "model_change": {
+                              "type": "object",
+                              "properties": {
+                                "state": {
+                                  "enum": [
+                                    "applied",
+                                    "deferred",
+                                    "confirmation_required",
+                                    "refused"
+                                  ],
+                                  "type": "string"
+                                },
+                                "message": {
+                                  "type": "string"
+                                },
+                                "confirm": {
+                                  "type": "string"
+                                },
+                                "model": {
+                                  "type": "string"
+                                },
+                                "provider": {
+                                  "anyOf": [
+                                    {
+                                      "type": "string"
+                                    },
+                                    {
+                                      "type": "null"
+                                    }
+                                  ]
+                                }
+                              },
+                              "required": [
+                                "state"
                               ]
                             },
                             "active_admission": {
@@ -26269,6 +26845,42 @@
                                 }
                               ]
                             },
+                            "model_change": {
+                              "type": "object",
+                              "properties": {
+                                "state": {
+                                  "enum": [
+                                    "applied",
+                                    "deferred",
+                                    "confirmation_required",
+                                    "refused"
+                                  ],
+                                  "type": "string"
+                                },
+                                "message": {
+                                  "type": "string"
+                                },
+                                "confirm": {
+                                  "type": "string"
+                                },
+                                "model": {
+                                  "type": "string"
+                                },
+                                "provider": {
+                                  "anyOf": [
+                                    {
+                                      "type": "string"
+                                    },
+                                    {
+                                      "type": "null"
+                                    }
+                                  ]
+                                }
+                              },
+                              "required": [
+                                "state"
+                              ]
+                            },
                             "active_admission": {
                               "anyOf": [
                                 {
@@ -29069,6 +29681,42 @@
                                 {
                                   "type": "null"
                                 }
+                              ]
+                            },
+                            "model_change": {
+                              "type": "object",
+                              "properties": {
+                                "state": {
+                                  "enum": [
+                                    "applied",
+                                    "deferred",
+                                    "confirmation_required",
+                                    "refused"
+                                  ],
+                                  "type": "string"
+                                },
+                                "message": {
+                                  "type": "string"
+                                },
+                                "confirm": {
+                                  "type": "string"
+                                },
+                                "model": {
+                                  "type": "string"
+                                },
+                                "provider": {
+                                  "anyOf": [
+                                    {
+                                      "type": "string"
+                                    },
+                                    {
+                                      "type": "null"
+                                    }
+                                  ]
+                                }
+                              },
+                              "required": [
+                                "state"
                               ]
                             },
                             "active_admission": {
@@ -31935,6 +32583,42 @@
                                 }
                               ]
                             },
+                            "model_change": {
+                              "type": "object",
+                              "properties": {
+                                "state": {
+                                  "enum": [
+                                    "applied",
+                                    "deferred",
+                                    "confirmation_required",
+                                    "refused"
+                                  ],
+                                  "type": "string"
+                                },
+                                "message": {
+                                  "type": "string"
+                                },
+                                "confirm": {
+                                  "type": "string"
+                                },
+                                "model": {
+                                  "type": "string"
+                                },
+                                "provider": {
+                                  "anyOf": [
+                                    {
+                                      "type": "string"
+                                    },
+                                    {
+                                      "type": "null"
+                                    }
+                                  ]
+                                }
+                              },
+                              "required": [
+                                "state"
+                              ]
+                            },
                             "active_admission": {
                               "anyOf": [
                                 {
@@ -34797,6 +35481,42 @@
                                 }
                               ]
                             },
+                            "model_change": {
+                              "type": "object",
+                              "properties": {
+                                "state": {
+                                  "enum": [
+                                    "applied",
+                                    "deferred",
+                                    "confirmation_required",
+                                    "refused"
+                                  ],
+                                  "type": "string"
+                                },
+                                "message": {
+                                  "type": "string"
+                                },
+                                "confirm": {
+                                  "type": "string"
+                                },
+                                "model": {
+                                  "type": "string"
+                                },
+                                "provider": {
+                                  "anyOf": [
+                                    {
+                                      "type": "string"
+                                    },
+                                    {
+                                      "type": "null"
+                                    }
+                                  ]
+                                }
+                              },
+                              "required": [
+                                "state"
+                              ]
+                            },
                             "active_admission": {
                               "anyOf": [
                                 {
@@ -36983,6 +37703,42 @@
                                 }
                               ]
                             },
+                            "model_change": {
+                              "type": "object",
+                              "properties": {
+                                "state": {
+                                  "enum": [
+                                    "applied",
+                                    "deferred",
+                                    "confirmation_required",
+                                    "refused"
+                                  ],
+                                  "type": "string"
+                                },
+                                "message": {
+                                  "type": "string"
+                                },
+                                "confirm": {
+                                  "type": "string"
+                                },
+                                "model": {
+                                  "type": "string"
+                                },
+                                "provider": {
+                                  "anyOf": [
+                                    {
+                                      "type": "string"
+                                    },
+                                    {
+                                      "type": "null"
+                                    }
+                                  ]
+                                }
+                              },
+                              "required": [
+                                "state"
+                              ]
+                            },
                             "active_admission": {
                               "anyOf": [
                                 {
@@ -37613,6 +38369,42 @@
                                 {
                                   "type": "null"
                                 }
+                              ]
+                            },
+                            "model_change": {
+                              "type": "object",
+                              "properties": {
+                                "state": {
+                                  "enum": [
+                                    "applied",
+                                    "deferred",
+                                    "confirmation_required",
+                                    "refused"
+                                  ],
+                                  "type": "string"
+                                },
+                                "message": {
+                                  "type": "string"
+                                },
+                                "confirm": {
+                                  "type": "string"
+                                },
+                                "model": {
+                                  "type": "string"
+                                },
+                                "provider": {
+                                  "anyOf": [
+                                    {
+                                      "type": "string"
+                                    },
+                                    {
+                                      "type": "null"
+                                    }
+                                  ]
+                                }
+                              },
+                              "required": [
+                                "state"
                               ]
                             },
                             "active_admission": {
@@ -46144,6 +46936,42 @@
                                 }
                               ]
                             },
+                            "model_change": {
+                              "type": "object",
+                              "properties": {
+                                "state": {
+                                  "enum": [
+                                    "applied",
+                                    "deferred",
+                                    "confirmation_required",
+                                    "refused"
+                                  ],
+                                  "type": "string"
+                                },
+                                "message": {
+                                  "type": "string"
+                                },
+                                "confirm": {
+                                  "type": "string"
+                                },
+                                "model": {
+                                  "type": "string"
+                                },
+                                "provider": {
+                                  "anyOf": [
+                                    {
+                                      "type": "string"
+                                    },
+                                    {
+                                      "type": "null"
+                                    }
+                                  ]
+                                }
+                              },
+                              "required": [
+                                "state"
+                              ]
+                            },
                             "active_admission": {
                               "anyOf": [
                                 {
@@ -46639,6 +47467,42 @@
                         "can_duplicate"
                       ],
                       "additionalProperties": {}
+                    },
+                    "model_change": {
+                      "type": "object",
+                      "properties": {
+                        "state": {
+                          "enum": [
+                            "applied",
+                            "deferred",
+                            "confirmation_required",
+                            "refused"
+                          ],
+                          "type": "string"
+                        },
+                        "message": {
+                          "type": "string"
+                        },
+                        "confirm": {
+                          "type": "string"
+                        },
+                        "model": {
+                          "type": "string"
+                        },
+                        "provider": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        }
+                      },
+                      "required": [
+                        "state"
+                      ]
                     },
                     "draft": {
                       "type": "string"
@@ -48958,6 +49822,42 @@
                                 }
                               ]
                             },
+                            "model_change": {
+                              "type": "object",
+                              "properties": {
+                                "state": {
+                                  "enum": [
+                                    "applied",
+                                    "deferred",
+                                    "confirmation_required",
+                                    "refused"
+                                  ],
+                                  "type": "string"
+                                },
+                                "message": {
+                                  "type": "string"
+                                },
+                                "confirm": {
+                                  "type": "string"
+                                },
+                                "model": {
+                                  "type": "string"
+                                },
+                                "provider": {
+                                  "anyOf": [
+                                    {
+                                      "type": "string"
+                                    },
+                                    {
+                                      "type": "null"
+                                    }
+                                  ]
+                                }
+                              },
+                              "required": [
+                                "state"
+                              ]
+                            },
                             "active_admission": {
                               "anyOf": [
                                 {
@@ -49687,6 +50587,42 @@
                             {
                               "type": "null"
                             }
+                          ]
+                        },
+                        "model_change": {
+                          "type": "object",
+                          "properties": {
+                            "state": {
+                              "enum": [
+                                "applied",
+                                "deferred",
+                                "confirmation_required",
+                                "refused"
+                              ],
+                              "type": "string"
+                            },
+                            "message": {
+                              "type": "string"
+                            },
+                            "confirm": {
+                              "type": "string"
+                            },
+                            "model": {
+                              "type": "string"
+                            },
+                            "provider": {
+                              "anyOf": [
+                                {
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            }
+                          },
+                          "required": [
+                            "state"
                           ]
                         },
                         "active_admission": {
@@ -52160,6 +53096,42 @@
                                 }
                               ]
                             },
+                            "model_change": {
+                              "type": "object",
+                              "properties": {
+                                "state": {
+                                  "enum": [
+                                    "applied",
+                                    "deferred",
+                                    "confirmation_required",
+                                    "refused"
+                                  ],
+                                  "type": "string"
+                                },
+                                "message": {
+                                  "type": "string"
+                                },
+                                "confirm": {
+                                  "type": "string"
+                                },
+                                "model": {
+                                  "type": "string"
+                                },
+                                "provider": {
+                                  "anyOf": [
+                                    {
+                                      "type": "string"
+                                    },
+                                    {
+                                      "type": "null"
+                                    }
+                                  ]
+                                }
+                              },
+                              "required": [
+                                "state"
+                              ]
+                            },
                             "active_admission": {
                               "anyOf": [
                                 {
@@ -52791,6 +53763,42 @@
                                 {
                                   "type": "null"
                                 }
+                              ]
+                            },
+                            "model_change": {
+                              "type": "object",
+                              "properties": {
+                                "state": {
+                                  "enum": [
+                                    "applied",
+                                    "deferred",
+                                    "confirmation_required",
+                                    "refused"
+                                  ],
+                                  "type": "string"
+                                },
+                                "message": {
+                                  "type": "string"
+                                },
+                                "confirm": {
+                                  "type": "string"
+                                },
+                                "model": {
+                                  "type": "string"
+                                },
+                                "provider": {
+                                  "anyOf": [
+                                    {
+                                      "type": "string"
+                                    },
+                                    {
+                                      "type": "null"
+                                    }
+                                  ]
+                                }
+                              },
+                              "required": [
+                                "state"
                               ]
                             },
                             "active_admission": {
@@ -55240,6 +56248,42 @@
                                     {
                                       "type": "null"
                                     }
+                                  ]
+                                },
+                                "model_change": {
+                                  "type": "object",
+                                  "properties": {
+                                    "state": {
+                                      "enum": [
+                                        "applied",
+                                        "deferred",
+                                        "confirmation_required",
+                                        "refused"
+                                      ],
+                                      "type": "string"
+                                    },
+                                    "message": {
+                                      "type": "string"
+                                    },
+                                    "confirm": {
+                                      "type": "string"
+                                    },
+                                    "model": {
+                                      "type": "string"
+                                    },
+                                    "provider": {
+                                      "anyOf": [
+                                        {
+                                          "type": "string"
+                                        },
+                                        {
+                                          "type": "null"
+                                        }
+                                      ]
+                                    }
+                                  },
+                                  "required": [
+                                    "state"
                                   ]
                                 },
                                 "active_admission": {

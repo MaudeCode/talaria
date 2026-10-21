@@ -2546,6 +2546,13 @@
         ""
       ]
     },
+    "tests/test_gateway_sessions.py::test_real_native_owner_model_outcomes": {
+      "layer": "compatibility",
+      "reason": "Supported-Agent API compatibility: the real native owner must preserve a running-turn model mutation receipt and publish its unstamped idle session.updated outcome. Fakes cover Talaria mapping; only the installed release proves this owner protocol.",
+      "cases": [
+        ""
+      ]
+    },
     "tests/test_prune_advice.py::test_a_low_disk_asks_the_agents_question_until_web_answers_it": {
       "layer": "compatibility",
       "reason": "Supported-Agent API compatibility: the Agent's own low-disk auto-prune advisor and /autoprune executor answer through the real sidecar in a disposable home with a patched disk report, not a fabricated API response.",

@@ -146,7 +146,7 @@ export function ChatView({ sessionId }: { sessionId: string | null }) {
   // eslint-disable-next-line react-hooks/exhaustive-deps -- reasoningKey is derived from session model/provider
   }, [qc, session?.model, session?.model_provider])
 
-  const { updateSession, dialog: modelDialog } = useSessionUpdate(sessionId, refresh, session?.owner_attachment)
+  const { updateSession, dialog: modelDialog, notice: modelNotice } = useSessionUpdate(sessionId, refresh, session?.owner_attachment)
 
   const onOwnerAction = useCallback(async (request: OwnerActionRequest) => {
     if (!sessionId || request.session_id !== sessionId) return
@@ -319,11 +319,12 @@ export function ChatView({ sessionId }: { sessionId: string | null }) {
   const runtime = useRuntimeNotices({ live, onRetry, compressingSince, agentNotices: session?.notices, goal: session?.goal })
   const notices = useMemo(() => [
     ...runtime.notices,
+    ...(modelNotice ? [modelNotice] : []),
     ...(operation ? [{ id: 'history', content: <span role="status">{operation}</span> }] : []),
     ...(session?.owner_attachment?.restarting ? [{ id: 'owner-restarting', content: <span role="status">{m.owner_restarting()}</span> }] : []),
     ...(failedQueued && queued.some((q) => q.id === failedQueued) ? [{ id: 'queue-failed', tone: 'error' as const, content: m.composer_queue_failed(), action: { label: m.retry(), run: () => setFailedQueued(null) } }] : []),
   // eslint-disable-next-line react-hooks/exhaustive-deps -- Paraglide messages read the active locale implicitly.
-  ], [runtime.notices, operation, session?.owner_attachment?.restarting, failedQueued, queued, locale])
+  ], [runtime.notices, modelNotice, operation, session?.owner_attachment?.restarting, failedQueued, queued, locale])
   const notFound = query.isError && isApiError(query.error) && query.error.status === 404
   const otherProfile = query.isError && isApiError(query.error) && query.error.status === 409
 

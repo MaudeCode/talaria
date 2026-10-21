@@ -1,7 +1,7 @@
 /** One native-owner seam. Talaria observes its history and never settles it into a local Session. */
 import type { StartupTiming } from '../startup-timing.js'
 import { createHash, randomUUID } from 'node:crypto'
-import { GatewayClarifyBatchSchema, GatewaySessionResultSchema, type ClarifyAnswers, type ClarifyStep, type ExecutionModes, type GatewayClarifyBatch, type GatewayCreateParams, type GatewaySessionParams, type GatewaySessionResult, type GatewaySnapshot, type OwnerAttachment } from '@maudecode/talaria-web-contracts'
+import { GatewayClarifyBatchSchema, GatewaySessionResultSchema, type ClarifyAnswers, type ClarifyStep, type ExecutionModes, type GatewayClarifyBatch, type GatewayCreateParams, type GatewaySessionParams, type GatewaySessionResult, type GatewaySnapshot, type OwnerAttachment, type ModelChange } from '@maudecode/talaria-web-contracts'
 import type { SidecarLike } from '../sidecar/client.js'
 import { redactNestedMessageContainers, publicToolFrame } from '../redact.js'
 import { str } from '../util.js'
@@ -21,7 +21,7 @@ type Row = Record<string, unknown>
 interface Target { sid: string; profile: string; home: string; key: string }
 /** An owner clarify batch and the question ids the owner still waits on, from its last `clarify.lock` reply. */
 type Batch = GatewayClarifyBatch & { remaining: string[] }
-interface Watch { stream: string; controller: AbortController; snapshot: GatewaySnapshot; batch: Batch | null; restarting: boolean; worker?: Promise<void> }
+interface Watch { stream: string; controller: AbortController; snapshot: GatewaySnapshot; batch: Batch | null; restarting: boolean; worker?: Promise<void>; reconcile?: () => void }
 
 const ownerStreamPrefix = (home: string): string => `owner-${createHash('sha256').update(home).digest('hex').slice(0, 16)}-`
 const ownerStateId = (identity: string): string => `owner-${createHash('sha256').update(identity).digest('hex')}`
@@ -62,8 +62,36 @@ function ownerUsage(data: Row): Row {
   return usage
 }
 
+/** Translate only owner-confirmed outcomes; an unknown receipt never means applied. */
+function modelChange(receipt: Row, selection: Row = {}): ModelChange {
+  const payload = receipt.payload && typeof receipt.payload === 'object' ? receipt.payload as Row : selection
+  const model = str(receipt.target_model) || str(payload.model) || str(receipt.model)
+  const provider = Object.hasOwn(receipt, 'target_provider') ? receipt.target_provider : payload.provider
+  const target = { ...(model ? { model } : {}), ...(provider === null || typeof provider === 'string' ? { provider } : {}) }
+  if (receipt.operation !== 'model') return { state: 'refused', message: 'The owner did not confirm the model change' }
+  if (receipt.status === 'deferred') return { state: 'deferred', ...target }
+  if (receipt.status === 'confirmation_required' && typeof receipt.confirm === 'string' && receipt.confirm && model)
+    return { state: 'confirmation_required', message: str(receipt.confirm_message), confirm: receipt.confirm, ...target }
+  if (receipt.status === undefined && Number.isInteger(receipt.revision)) return { state: 'applied' }
+  return { state: 'refused', message: str(receipt.reason || receipt.message) || 'The owner did not confirm the model change' }
+}
+
 export class GatewaySessions {
   private readonly watches = new Map<string, Watch>()
+  private readonly modelMutations = new Map<string, number>()
+  private readonly modelChanges = new Map<string, { epoch: number; replay: string; change: ModelChange }>()
+
+  private rememberModelChange(target: Target, snapshot: GatewaySnapshot, change: ModelChange): void {
+    this.modelChanges.set(target.key, { epoch: snapshot.authority_epoch, replay: snapshot.replay_epoch, change })
+  }
+
+  private currentModelChange(target: Target, snapshot: GatewaySnapshot | null): ModelChange | undefined {
+    const saved = this.modelChanges.get(target.key)
+    if (!saved || !snapshot) return undefined
+    if (saved.epoch === snapshot.authority_epoch && saved.replay === snapshot.replay_epoch) return saved.change
+    this.modelChanges.delete(target.key)
+    return undefined
+  }
   constructor(private readonly deps: {
     service: SessionService; sidecar: () => SidecarLike | null; registry: StreamRegistry;
     journal: RunJournal; events: SessionEventBus; profileHome: (profile: string) => string;
@@ -115,10 +143,30 @@ export class GatewaySessions {
   private async call(target: Target, params: Omit<GatewaySessionParams, 'session_id' | 'profile_home'>): Promise<GatewaySessionResult> {
     const sidecar = this.deps.sidecar()
     if (!sidecar) return { state: 'unavailable', reason: 'sidecar_unavailable', snapshot: null, receipt: null }
+    const before = this.modelChanges.get(target.key)
+    const modelMutation = params.action === 'mutate' && params.operation === 'model'
+    if (modelMutation) this.modelMutations.set(target.key, (this.modelMutations.get(target.key) ?? 0) + 1)
     try {
-      return await sidecar.call('gateway.session', { ...params, profile_home: target.home, session_id: target.sid }, { timeoutMs: params.action === 'mutate' ? 675_000 : 35_000 })
+      const result = await sidecar.call('gateway.session', { ...params, profile_home: target.home, session_id: target.sid }, { timeoutMs: params.action === 'mutate' ? 675_000 : 35_000 })
+      if (params.action === 'mutate' && params.operation === 'model' && result.snapshot) {
+        const change = modelChange(result.receipt ?? {}, params.payload)
+        // The stream can resolve a deferred pick before its HTTP ACK returns. Keep the later observation.
+        if (change.state !== 'deferred' || this.modelChanges.get(target.key) === before
+            || !this.currentModelChange(target, result.snapshot)) this.rememberModelChange(target, result.snapshot, change)
+      }
+      const change = this.currentModelChange(target, result.snapshot)
+      return { ...result, ...(change ? { model_change: change } : {}) }
     } catch {
       return { state: 'unavailable', reason: 'owner_connection_lost', snapshot: null, receipt: null }
+    } finally {
+      if (modelMutation) {
+        const remaining = (this.modelMutations.get(target.key) ?? 1) - 1
+        if (remaining) this.modelMutations.set(target.key, remaining)
+        else {
+          this.modelMutations.delete(target.key)
+          this.watches.get(target.key)?.reconcile?.()
+        }
+      }
     }
   }
 
@@ -130,6 +178,7 @@ export class GatewaySessions {
       state: result.state, reason: result.reason, restarting, can_submit: result.state === 'attached' && snapshot !== null && !unknown && !restarting,
       can_interrupt: result.state === 'attached' && snapshot?.running === true, can_attach: false,
       revision: snapshot?.revision ?? null, execution_generation: snapshot?.execution_generation ?? null,
+      ...(result.model_change ? { model_change: result.model_change } : {}),
       active_admission: snapshot ? runningAdmission(snapshot) ?? null : null,
       admissions: (snapshot?.pending ?? []).filter((p) => p.status === 'queued' || p.status === 'unknown').map((p) => ({ ...p,
         actions: p.status === 'queued' ? ['cancel', ...(p.controls?.includes('steer') ? ['steer' as const] : []), ...(p.controls?.includes('replace') ? ['edit' as const] : [])]
@@ -142,7 +191,7 @@ export class GatewaySessions {
 
   private async view(base: Row, result: GatewaySessionResult, stream: string | null, target: Target, limit: number | null = 120, before: number | null = null, withMessages = true): Promise<Row> {
     const snapshot = result.snapshot
-    const fields: Row = { ...base, owner_attachment: this.attachment(result), composer_state_key: ownerStateId(target.key), active_stream_id: stream, is_streaming: Boolean(stream) }
+    const fields: Row = { ...base, owner_attachment: this.attachment({ ...result, model_change: this.currentModelChange(target, snapshot) }), composer_state_key: ownerStateId(target.key), active_stream_id: stream, is_streaming: Boolean(stream) }
     if (snapshot) {
       const nativeRows = [...snapshot.messages]
       const active = stream ? runningAdmission(snapshot) : null
@@ -199,7 +248,7 @@ export class GatewaySessions {
     const closeSubmit = timing?.begin('owner_submit')
     const result = await this.call(target, { action: 'submit', request_id: body.submission_id, text })
     closeSubmit?.(result.receipt ? 'ok' : result.state === 'unavailable' ? 'unknown' : 'refused')
-    if (!result.receipt) throw new HttpFailure(409, 'The owner did not confirm this admission. Reconcile it before resending.', { owner_attachment: this.attachment(result), outcome_unknown: result.state === 'unavailable' })
+    if (!result.receipt || !('admission_id' in result.receipt)) throw new HttpFailure(409, 'The owner did not confirm this admission. Reconcile it before resending.', { owner_attachment: this.attachment(result), outcome_unknown: result.state === 'unavailable' })
     const snapshot = result.snapshot
     const watch = snapshot && (snapshot.running || snapshot.pending.some((p) => p.status === 'queued' || p.status === 'started')) ? this.watches.get(target.key) ?? this.watch(target, base, snapshot) : null
     this.deps.events.publish('owner_admission', { profile: target.profile, sessionId: sid })
@@ -322,6 +371,10 @@ export class GatewaySessions {
     let streamError: unknown = null
     let closeWriter: RunJournalWriter | null = null
     let activeAdmission = runningAdmission(snapshot)?.admission_id ?? snapshot.pending.find((p) => !p.steering)?.admission_id
+    const enqueue = (work: () => Promise<void>) => {
+      chain = chain.then(async () => { if (!terminal && !streamError) await work() })
+        .catch((error: unknown) => { streamError = error; watch.controller.abort() })
+    }
     const worker = async () => {
       // Same persisted IDs can exist in separate homes. Native observation journals must not
       // join the sid-only direct-chat journal; the owner retains the canonical transcript.
@@ -343,10 +396,12 @@ export class GatewaySessions {
         if (['input_tokens', 'output_tokens', 'cache_read_tokens', 'cache_write_tokens'].every((key) => typeof usage[key] === 'number')) await put('metering', { session_id: target.sid, usage: { ...usage, estimated_cost: usage.estimated_cost ?? null }, tps: usage.tps ?? null, tps_available: usage.tps !== undefined, estimated: false })
       }
       const finish = async () => {
-        if (terminal) return
+        // A model pick resolves at the owner's next claim boundary, after the turn becomes idle.
+        if (terminal || this.modelMutations.has(target.key) || this.currentModelChange(target, watch.snapshot)?.state === 'deferred') return
         terminal = true
         const current = await this.call(target, { action: 'snapshot' })
-        const receipt = activeAdmission ? (await this.call(target, { action: 'receipt', admission_id: activeAdmission })).receipt : null
+        const rawReceipt = activeAdmission ? (await this.call(target, { action: 'receipt', admission_id: activeAdmission })).receipt : null
+        const receipt = rawReceipt && 'admission_id' in rawReceipt ? rawReceipt : null
         const cancelled = receipt?.outcome === 'interrupted' || receipt?.outcome === 'cancelled'
         const failed = current.state !== 'attached' || receipt?.status !== 'terminal' || receipt.outcome !== 'completed' && !cancelled
         await put(cancelled ? 'cancel' : failed ? 'apperror' : 'done', { session_id: target.sid,
@@ -356,6 +411,12 @@ export class GatewaySessions {
           session: { ...await this.view(base, current, null, target), ...usage } })
         await put('stream_end', { session_id: target.sid })
         watch.controller.abort()
+      }
+      // Reconcile after the last in-flight mutation releases its fence, in the same order as owner frames.
+      watch.reconcile = () => {
+        enqueue(async () => {
+          if (!watch.snapshot.running && !watch.snapshot.pending.some((p) => p.status === 'queued' || p.status === 'started')) await finish()
+        })
       }
       let pending = this.prompts(snapshot, target.sid, watch.batch)
       let ran = snapshot.running
@@ -374,8 +435,7 @@ export class GatewaySessions {
       const result = await sidecar.call('gateway.session', { profile_home: target.home, session_id: target.sid, action: 'watch', show_reasoning: showReasoning }, {
         signal: watch.controller.signal, timeoutMs: 0,
         onStream: (frame) => {
-          chain = chain.then(async () => {
-            if (terminal || streamError) return
+          enqueue(async () => {
             if (frame.event === 'restarting') {
               // The owner entered a restart's after-turn wait after this watch attached: clients stop sending.
               watch.restarting = true
@@ -406,6 +466,19 @@ export class GatewaySessions {
               watch.batch = null
               await prompts(watch.snapshot)
               if (!pending.clarifyHeadFrame(target.sid)) await put('clarify', { status: 'resolved', clarify_id: data.id })
+              return
+            }
+            if (kind === 'session.updated') {
+              // Idle owner mutations carry no execution stamp. The sidecar scopes their subscription and replay.
+              if (event.session_id !== target.sid
+                  || event.authority_epoch !== undefined && event.authority_epoch !== watch.snapshot.authority_epoch
+                  || event.execution_generation !== undefined && event.execution_generation !== watch.snapshot.execution_generation) return
+              if (data.operation !== 'model') return
+              this.rememberModelChange(target, watch.snapshot, modelChange(data))
+              const current = await this.call(target, { action: 'snapshot' })
+              if (current.snapshot) watch.snapshot = current.snapshot
+              await put('session_snapshot', { session: await this.view(base, current, watch.stream, target) })
+              if (!watch.snapshot.running && !watch.snapshot.pending.some((p) => p.status === 'queued' || p.status === 'started')) await finish()
               return
             }
             if (kind === 'session.info') {
@@ -450,7 +523,7 @@ export class GatewaySessions {
               if (kind === 'clarify.settled' && !pending.clarifyHeadFrame(target.sid)) await put('clarify', { status: 'resolved', clarify_id: data.prompt_id })
             }
 
-          }).catch((error: unknown) => { streamError = error; watch.controller.abort() })
+          })
         },
       })
       await chain
@@ -479,5 +552,6 @@ export class GatewaySessions {
     const watches = [...this.watches.values()]
     for (const watch of watches) watch.controller.abort()
     await Promise.allSettled(watches.flatMap((watch) => watch.worker ? [watch.worker] : []))
+    this.modelChanges.clear()
   }
 }
