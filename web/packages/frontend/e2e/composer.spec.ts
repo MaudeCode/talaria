@@ -726,7 +726,7 @@ test('status chips measure their resting width and refit when the chat width cha
   await row.locator('.composer-notice').evaluateAll((els) => {
     for (const el of els as HTMLElement[]) {
       el.style.animation = 'none'
-      void el.offsetWidth
+      void el.getBoundingClientRect()
       el.style.animation = ''
       for (const a of el.getAnimations()) { a.pause(); a.currentTime = 0 }
     }
