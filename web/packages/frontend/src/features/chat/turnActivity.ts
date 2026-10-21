@@ -1,5 +1,5 @@
 import type { Message } from '../../contracts'
-import type { LiveTurn } from '../../stream/reducer'
+import type { LiveTurn, Segment } from '../../stream/reducer'
 import { isTerminal } from '../../stream/reducer'
 import type { ToolCardData } from './blocks/ToolCard'
 import { BackgroundLinkSchema, DisplayMediaSchema, ToolKindSchema, ToolProgressSchema, ToolResultViewSchema, type DisplayMedia, type ToolKind, type ToolResultView } from '@maudecode/talaria-web-contracts'
@@ -81,12 +81,16 @@ export function groupAssistantTurns(rows: VisibleMessage[]): VisibleMessage[] {
   return out
 }
 
-/** Live tokens only, before the server has a value: settled rows arrive with their prose and reasoning already split. */
-function appendProse(items: ActivityItem[], key: string, raw: string) {
-  const split = extractInlineThinking(raw)
-  if (split.reasoning) items.push({ key: `${key}:thinking`, kind: 'reasoning', text: stripToolCallXml(split.reasoning) })
-  const content = stripToolCallXml(split.content)
-  if (content.trim()) items.push({ key, kind: 'text', text: content })
+const processedSegments = new WeakMap<Segment, { content: string; reasoning: string | null }>()
+
+/** Reducer segments are immutable; only the trailing segment is still growing. Keys stay outside the cache because steers can shift positions. */
+function processedSegment(segment: Extract<Segment, { kind: 'text' | 'reasoning' }>, sealed: boolean) {
+  const cached = processedSegments.get(segment)
+  if (cached) return cached
+  const split = segment.kind === 'text' ? extractInlineThinking(segment.text) : { content: segment.text, reasoning: '' }
+  const processed = { content: stripToolCallXml(split.content), reasoning: split.reasoning ? stripToolCallXml(split.reasoning) : null }
+  if (sealed) processedSegments.set(segment, processed)
+  return processed
 }
 
 /** Server-normalized scene rows map one-to-one onto activity items; the server owns order, roles, and states. */
@@ -135,12 +139,18 @@ export function activityText(activity: TurnActivity): string {
 }
 
 /** `omitToolIds`: tools a running scene already shows (TAL-374); their live state updates that card (`continuedActivity`). */
-export function liveActivity(turn: LiveTurn, omitToolIds?: ReadonlySet<string>): TurnActivity {
+export function liveActivity(turn: Pick<LiveTurn, 'segments' | 'tools' | 'status' | 'terminalState' | 'turnId' | 'streamId'>, omitToolIds?: ReadonlySet<string>): TurnActivity {
   const items: ActivityItem[] = []
   const seen = new Set<string>()
   turn.segments.forEach((segment, i) => {
-    if (segment.kind === 'text') appendProse(items, `text:${i}`, segment.text)
-    else if (segment.kind === 'reasoning') items.push({ key: `reasoning:${i}`, ...segment, text: stripToolCallXml(segment.text) })
+    if (segment.kind === 'text' || segment.kind === 'reasoning') {
+      const processed = processedSegment(segment, i < turn.segments.length - 1)
+      if (segment.kind === 'reasoning') items.push({ key: `reasoning:${i}`, ...segment, text: processed.content })
+      else {
+        if (processed.reasoning !== null) items.push({ key: `text:${i}:thinking`, kind: 'reasoning', text: processed.reasoning })
+        if (processed.content.trim()) items.push({ key: `text:${i}`, kind: 'text', text: processed.content })
+      }
+    }
     else if (segment.kind === 'steering') items.push({ key: `steering:${segment.steerId}`, kind: 'steering', text: segment.text, consumed: true })
     else if (!seen.has(segment.toolId) && !omitToolIds?.has(segment.toolId)) {
       seen.add(segment.toolId)
