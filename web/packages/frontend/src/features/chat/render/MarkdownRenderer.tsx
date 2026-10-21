@@ -38,6 +38,7 @@ function useLazyPlugin<T>(enabled: boolean, load: () => Promise<T>): T | null {
  */
 const urlTransform = (url: string): string => (/^\.?\/api\//.test(url) ? appUrl(url.replace(/^\./, '')).href : url)
 const SHIKI_THEMES: [string, string] = ['github-light', 'github-dark']
+const CONTROLS = { code: { copy: true, download: true }, table: { copy: true, download: true }, mermaid: { copy: true, download: true, fullscreen: true, panZoom: true } }
 
 // ponytail: fixed budget so a direct open stays inside the click's user activation (popup blockers); slower answers warn.
 const LINK_CHECK_TIMEOUT_MS = 700
@@ -91,7 +92,7 @@ export default memo(function MarkdownRenderer({ text, streaming = false, classNa
       plugins={plugins}
       shikiTheme={SHIKI_THEMES}
       dir={dir}
-      controls={{ code: { copy: true, download: true }, table: { copy: true, download: true }, mermaid: { copy: true, download: true, fullscreen: true, panZoom: true } }}
+      controls={CONTROLS}
       linkSafety={linkSafety}
       urlTransform={urlTransform}
     >

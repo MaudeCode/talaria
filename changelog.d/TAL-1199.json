@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Code block controls avoid unnecessary updates while chat responses stream.",
+      "highlight": false,
+      "components": ["web"]
+    }
+  ]
+}
