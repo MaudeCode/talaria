@@ -200,9 +200,9 @@ async def unsupported(home: Path):
                                        instance_id="fixture", profile_id=str(home), authority_epoch=1)
             params = {"request_id": "old", "execution_mode": "safe", "cwd": str(home), "model": "fixture"}
             for probe_only in (True, False):
-                result = await _create({**params, "probe": probe_only}, home, SimpleNamespace(endpoint=endpoint))
+                result = await _create({**params, "probe": probe_only}, home, SimpleNamespace(endpoint=endpoint, state="ready"))
                 assert result == {"state": "incompatible", "reason": "execution_mode_unavailable", "snapshot": None, "receipt": None}, result
-            served = SimpleNamespace(endpoint=SimpleNamespace(**{**vars(endpoint), "control_home": str(home.parent)}))
+            served = SimpleNamespace(state="ready", endpoint=SimpleNamespace(**{**vars(endpoint), "control_home": str(home.parent)}))
             result = await _create(params, home, served)
             assert result["reason"] == "served_profile_sessions_unavailable", result
     assert seen == ["runtime.describe", "runtime.describe"], seen

@@ -2,6 +2,7 @@
   "normal": {
     "state": "attached",
     "reason": null,
+    "restarting": false,
     "can_submit": true,
     "can_interrupt": false,
     "can_attach": false,
@@ -13,6 +14,7 @@
   "unknown": {
     "state": "attached",
     "reason": null,
+    "restarting": false,
     "can_submit": false,
     "can_interrupt": false,
     "can_attach": false,
@@ -39,6 +41,7 @@
   "batch": {
     "state": "incompatible",
     "reason": "native_clarify_batch_unavailable",
+    "restarting": false,
     "can_submit": false,
     "can_interrupt": false,
     "can_attach": false,
@@ -50,11 +53,24 @@
   "served": {
     "state": "incompatible",
     "reason": "served_profile_sessions_unavailable",
+    "restarting": false,
     "can_submit": false,
     "can_interrupt": false,
     "can_attach": false,
     "revision": null,
     "execution_generation": null,
+    "active_admission": null,
+    "admissions": []
+  },
+  "restarting": {
+    "state": "attached",
+    "reason": null,
+    "restarting": true,
+    "can_submit": false,
+    "can_interrupt": false,
+    "can_attach": false,
+    "revision": 2,
+    "execution_generation": 1,
     "active_admission": null,
     "admissions": []
   }

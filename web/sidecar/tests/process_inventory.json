@@ -1124,7 +1124,7 @@
     },
     "tests/test_gateway_sessions.py::test_real_native_owner_shared_admission_and_detach": {
       "layer": "compatibility",
-      "reason": "Supported-Agent API compatibility: native admission, detach and display negotiation. The detail case proves actual reasoning callback installation, child lifecycle forwarding and turn-end usage on the owner WebSocket with a loopback model.",
+      "reason": "Supported-Agent API compatibility: native admission, detach and display negotiation. The detail case proves actual reasoning callback installation, child lifecycle forwarding and turn-end usage on the owner WebSocket with a loopback model. [restart] delivers a real SIGUSR1 so the owner's own after-turn restart wait admits Web, then exits once the parked approval is answered.",
       "cases": [
         "[shared]",
         "[batch]",
@@ -1135,7 +1135,8 @@
         "[profiles]",
         "[dedicated]",
         "[replay]",
-        "[detail]"
+        "[detail]",
+        "[restart]"
       ]
     },
     "tests/test_gateway_sessions.py::test_diagnostic_creation_refuses_without_starting": {

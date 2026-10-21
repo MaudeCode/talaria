@@ -1,6 +1,6 @@
 /** One native-owner seam. Talaria observes its history and never settles it into a local Session. */
 import { createHash, randomUUID } from 'node:crypto'
-import { GatewaySessionResultSchema, type ExecutionModes, type GatewayCreateParams, type GatewaySessionParams, type GatewaySessionResult, type GatewaySnapshot, type OwnerAttachment } from '@maudecode/talaria-web-contracts'
+import { GatewayClarifyBatchSchema, GatewaySessionResultSchema, type ClarifyAnswers, type ClarifyStep, type ExecutionModes, type GatewayClarifyBatch, type GatewayCreateParams, type GatewaySessionParams, type GatewaySessionResult, type GatewaySnapshot, type OwnerAttachment } from '@maudecode/talaria-web-contracts'
 import type { SidecarLike } from '../sidecar/client.js'
 import { redactNestedMessageContainers, publicToolFrame } from '../redact.js'
 import { str } from '../util.js'
@@ -18,7 +18,9 @@ import { CANONICAL_READ_ONLY_REASON, WEB_DIAGNOSTIC_REQUEST_PREFIX } from './sta
 
 type Row = Record<string, unknown>
 interface Target { sid: string; profile: string; home: string; key: string }
-interface Watch { stream: string; controller: AbortController; snapshot: GatewaySnapshot; worker?: Promise<void> }
+/** An owner clarify batch and the question ids the owner still waits on, from its last `clarify.lock` reply. */
+type Batch = GatewayClarifyBatch & { remaining: string[] }
+interface Watch { stream: string; controller: AbortController; snapshot: GatewaySnapshot; batch: Batch | null; restarting: boolean; worker?: Promise<void> }
 
 const ownerStreamPrefix = (home: string): string => `owner-${createHash('sha256').update(home).digest('hex').slice(0, 16)}-`
 const ownerStateId = (identity: string): string => `owner-${createHash('sha256').update(identity).digest('hex')}`
@@ -122,8 +124,9 @@ export class GatewaySessions {
   private attachment(result: GatewaySessionResult): OwnerAttachment {
     const snapshot = result.snapshot
     const unknown = snapshot?.pending.some((p) => p.status === 'unknown') ?? false
+    const restarting = result.restarting === true
     const value: OwnerAttachment = {
-      state: result.state, reason: result.reason, can_submit: result.state === 'attached' && snapshot !== null && !unknown,
+      state: result.state, reason: result.reason, restarting, can_submit: result.state === 'attached' && snapshot !== null && !unknown && !restarting,
       can_interrupt: result.state === 'attached' && snapshot?.running === true, can_attach: false,
       revision: snapshot?.revision ?? null, execution_generation: snapshot?.execution_generation ?? null,
       active_admission: snapshot ? runningAdmission(snapshot) ?? null : null,
@@ -224,21 +227,40 @@ export class GatewaySessions {
     return text
   }
 
-  private prompts(snapshot: GatewaySnapshot | null, sid: string): PendingPrompts {
+  private prompts(snapshot: GatewaySnapshot | null, sid: string, batch: Batch | null): PendingPrompts {
     const pending = new PendingPrompts(new SessionEventBus(), this.deps.now)
     for (const prompt of snapshot?.prompts ?? []) {
       const data = { ...prompt, session_id: sid, request_id: prompt.prompt_id, timeout_seconds: 0, allowed_choices: prompt.choices, can_enable_yolo: false }
       if (prompt.kind === 'approval') pending.submitApproval(sid, { ...data, approval_id: prompt.prompt_id })
       else if (prompt.kind === 'clarify') pending.submitClarify(sid, { ...data, clarify_id: prompt.prompt_id })
     }
+    // A fully locked batch waits only for the owner's withdrawal; nothing is left to ask.
+    if (batch?.remaining.length) {
+      const entry = pending.submitClarify(sid, { session_id: sid, clarify_id: batch.request_id, request_id: batch.request_id, timeout_seconds: 0, questions: batch.questions })
+      for (const step of entry.steps as ClarifyStep[]) step.answered = !batch.remaining.includes(step.qid)
+    }
     return pending
+  }
+
+  /** The batch the target's live watch received; the owner asks it once, of the viewers attached when it parks. */
+  private batch(target: Target): Batch | null { return this.watches.get(target.key)?.batch ?? null }
+
+  /** Locks each answer; the owner settles the batch on the lock that leaves nothing open. */
+  private async lockBatch(target: Target, batch: Batch, answers: ClarifyAnswers): Promise<void> {
+    for (const [qid, answer] of Object.entries(answers)) {
+      const result = await this.call(target, { action: 'clarify_lock', request_id: batch.request_id, question_id: qid, answer: Array.isArray(answer) ? JSON.stringify(answer) : answer })
+      if (result.state === 'attached' && result.lock?.status === 'ok') { batch.remaining = result.lock.remaining ?? []; continue }
+      if (result.lock?.status === 'expired') batch.remaining = []
+      // An unconfirmed lock keeps the card and its answers for a retry; an ended batch or a refusal is stale.
+      throw new HttpFailure(result.state === 'unavailable' ? 503 : 409, 'The owning Agent did not accept this answer', { owner_attachment: this.attachment(result) })
+    }
   }
 
   async pending(sid: string, kind: 'approval' | 'clarify'): Promise<{ pending: Row | null; pending_count: number }> {
     const target = await this.target(sid)
     if (!target) throw new HttpFailure(404, 'Session not found')
     const result = await this.call(target, { action: 'snapshot' })
-    const pending = this.prompts(result.snapshot, sid)
+    const pending = this.prompts(result.snapshot, sid, this.batch(target))
     const envelope = kind === 'approval' ? pending.approvalPending(sid) : pending.clarifyPending(sid)
     return { pending: envelope.pending ? redactNestedMessageContainers(envelope.pending, this.deps.redactEnabled()) as Row : null, pending_count: envelope.pending_count }
   }
@@ -247,8 +269,16 @@ export class GatewaySessions {
     const target = await this.target(sid)
     if (!target) return false
     const current = await this.call(target, { action: 'snapshot' })
-    const pending = this.prompts(current.snapshot, sid)
+    const batch = this.batch(target)
+    const pending = this.prompts(current.snapshot, sid, batch)
     if (current.state !== 'attached') throw new HttpFailure(403, 'This canonical session is read-only while its owner is unavailable')
+    if (kind === 'clarify' && batch?.remaining.length && batch.request_id === id) {
+      const entry = pending.peekClarify(sid, id)
+      const reply = entry && value !== null ? clarifyReply(entry, value as never) : null
+      if (reply === null) throw new HttpFailure(400, 'Answer every question in the pending clarification')
+      await this.lockBatch(target, batch, (JSON.parse(reply) as { answers: ClarifyAnswers }).answers)
+      return true
+    }
     const prompt = current.snapshot?.prompts.find((p) => p.kind === kind && p.prompt_id === id)
     if (!prompt) throw new HttpFailure(409, 'The owner prompt is stale')
     let text = ''
@@ -277,7 +307,7 @@ export class GatewaySessions {
   }
 
   private watch(target: Target, base: Row, snapshot: GatewaySnapshot): Watch {
-    const watch: Watch = { stream: `${ownerStreamPrefix(target.home)}${randomUUID()}`, controller: new AbortController(), snapshot }
+    const watch: Watch = { stream: `${ownerStreamPrefix(target.home)}${randomUUID()}`, controller: new AbortController(), snapshot, batch: null, restarting: false }
     this.watches.set(target.key, watch)
     const registry = this.deps.registry
     const channel = registry.create(watch.stream, target.sid)
@@ -322,11 +352,11 @@ export class GatewaySessions {
         await put('stream_end', { session_id: target.sid })
         watch.controller.abort()
       }
-      let pending = this.prompts(snapshot, target.sid)
+      let pending = this.prompts(snapshot, target.sid, watch.batch)
       let ran = snapshot.running
       const prompts = async (snap: GatewaySnapshot) => {
         watch.snapshot = snap
-        pending = this.prompts(snap, target.sid)
+        pending = this.prompts(snap, target.sid, watch.batch)
         const approval = pending.approvalPending(target.sid)
         if (approval.pending) await put('approval', { ...approval.pending, pending_count: approval.pending_count })
         const clarify = pending.clarifyHeadFrame(target.sid)
@@ -341,6 +371,18 @@ export class GatewaySessions {
         onStream: (frame) => {
           chain = chain.then(async () => {
             if (terminal || streamError) return
+            if (frame.event === 'restarting') {
+              // The owner entered a restart's after-turn wait after this watch attached: clients stop sending.
+              watch.restarting = true
+              await put('session_snapshot', { session: await this.view(base, { state: 'attached', reason: null, snapshot: watch.snapshot, receipt: null, restarting: true }, watch.stream, target) })
+              return
+            }
+            if (frame.event === 'clarify_batch') {
+              const batch = GatewayClarifyBatchSchema.parse(frame.data)
+              watch.batch = { ...batch, remaining: batch.questions.map((q) => q.qid) }
+              await prompts(watch.snapshot)
+              return
+            }
             if (frame.event === 'snapshot') {
               const result = GatewaySessionResultSchema.parse(frame.data)
               if (!result.snapshot) return
@@ -353,6 +395,14 @@ export class GatewaySessions {
             const event = frame.data as Row
             const data = (event.payload ?? {}) as Row
             const kind = str(event.type)
+            if (kind === 'request.cancel') {
+              // The owner withdraws a settled, timed-out or interrupted batch from every viewer.
+              if (!watch.batch || watch.batch.request_id !== data.id) return
+              watch.batch = null
+              await prompts(watch.snapshot)
+              if (!pending.clarifyHeadFrame(target.sid)) await put('clarify', { status: 'resolved', clarify_id: data.id })
+              return
+            }
             if (kind === 'session.info') {
               if (data.authority_epoch !== watch.snapshot.authority_epoch) return
               if (Number(data.execution_generation) < watch.snapshot.execution_generation) return
@@ -362,7 +412,7 @@ export class GatewaySessions {
               const claimed = runningAdmission(watch.snapshot)
               if (firstClaim && claimed) activeAdmission = claimed.admission_id
               ran ||= data.running === true
-              if (firstClaim) await put('session_snapshot', { session: await this.view(base, { state: 'attached', reason: null, snapshot: watch.snapshot, receipt: null }, watch.stream, target) })
+              if (firstClaim) await put('session_snapshot', { session: await this.view(base, { state: 'attached', reason: null, snapshot: watch.snapshot, receipt: null, restarting: watch.restarting }, watch.stream, target) })
               if (data.running === false && (ran || !watch.snapshot.pending.some((p) => p.status === 'queued' || p.status === 'started'))) await finish()
               return
             }

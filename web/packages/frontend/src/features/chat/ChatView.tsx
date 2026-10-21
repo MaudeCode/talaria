@@ -437,7 +437,7 @@ export function ChatView({ sessionId }: { sessionId: string | null }) {
           onQueueChange={setQueued}
           onOwnerAction={onOwnerAction}
           clarify={clarify}
-          notices={[...runtime.notices, ...(operation ? [{ id: 'history', content: <span role="status">{operation}</span> }] : []), ...(failedQueued && queued.some((q) => q.id === failedQueued) ? [{ id: 'queue-failed', tone: 'error' as const, content: m.composer_queue_failed(), action: { label: m.retry(), run: () => setFailedQueued(null) } }] : [])]}
+          notices={[...runtime.notices, ...(operation ? [{ id: 'history', content: <span role="status">{operation}</span> }] : []), ...(session?.owner_attachment?.restarting ? [{ id: 'owner-restarting', content: <span role="status">{m.owner_restarting()}</span> }] : []), ...(failedQueued && queued.some((q) => q.id === failedQueued) ? [{ id: 'queue-failed', tone: 'error' as const, content: m.composer_queue_failed(), action: { label: m.retry(), run: () => setFailedQueued(null) } }] : [])]}
         />
         </div>
         </div>

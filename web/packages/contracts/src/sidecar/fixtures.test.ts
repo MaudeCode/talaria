@@ -2,6 +2,7 @@ import { readdirSync, readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import { SIDECAR_METHODS, type SidecarMethodName } from './methods.js'
+import { GATEWAY_METHODS } from './namespaces.js'
 import { SIDECAR_RPC_VERSION } from './version.js'
 
 const fixtureDir = resolve(import.meta.dirname, '../../fixtures/sidecar')
@@ -31,6 +32,12 @@ describe('sidecar method fixtures (recorded from the pinned Agent)', () => {
     expect(missing).toEqual([])
   })
 
+  it('declares every gateway.session watch frame the sidecar emits (TAL-1271)', () => {
+    const stream = GATEWAY_METHODS['gateway.session'].stream
+    expect(stream.parse({ event: 'clarify_batch', data: { request_id: 'srq-1', questions: [{ qid: 'q0', question: 'Pick a color', choices: ['green'], multi_select: false }] } }).event).toBe('clarify_batch')
+    expect(stream.parse({ event: 'restarting', data: { restarting: true } }).event).toBe('restarting')
+    expect(stream.safeParse({ event: 'clarify_batch', data: { request_id: 'srq-1', questions: [] } }).success).toBe(false)
+  })
   it('pins the RPC version the Python package declares', () => {
     const init = readFileSync(resolve(import.meta.dirname, '../../../../sidecar/talaria_sidecar/__init__.py'), 'utf8')
     expect(init).toMatch(new RegExp(`^SIDECAR_RPC_VERSION = ${SIDECAR_RPC_VERSION}$`, 'm'))

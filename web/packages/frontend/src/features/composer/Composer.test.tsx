@@ -116,7 +116,7 @@ describe('Composer', () => {
     await waitFor(() => expect(api.uploadFile).toHaveBeenCalled())
     if (completedBeforeReplacement) await act(async () => { upload.resolve(receipt); await upload.promise })
     view.rerenderSession({ ...writable, session_id: replacement === 'session' ? 'other' : 'loading', composer_state_key: replacement === 'capability refusal' ? 'original-owner' : 'replacement-owner',
-      ...(replacement.endsWith('refusal') ? { owner_attachment: { state: 'attached' as const, reason: null, can_submit: true, can_interrupt: false, can_attach: false, revision: 1, execution_generation: 1, admissions: [] } } : {}) })
+      ...(replacement.endsWith('refusal') ? { owner_attachment: { state: 'attached' as const, reason: null, can_submit: true, can_interrupt: false, can_attach: false, restarting: false, revision: 1, execution_generation: 1, admissions: [] } } : {}) })
     if (!completedBeforeReplacement) await act(async () => { upload.resolve(receipt); await upload.promise })
     expect(document.querySelector('.attach-tray')).toBeNull()
     expect(api.rollbackUpload).toHaveBeenCalledExactlyOnceWith('loading', ['obsolete-receipt'])
@@ -133,7 +133,7 @@ describe('Composer', () => {
     const view = renderComposer({ ...writable, session_id: 'loading', composer_state_key: 'same-owner' })
     fireEvent.change(document.querySelector<HTMLInputElement>('#fileInput')!, { target: { files: ['one.png', 'two.png', 'three.png'].map((name) => new File(['x'], name, { type: 'image/png', lastModified: 1 })) } })
     await waitFor(() => expect(document.querySelectorAll('.attach-tray [data-status="done"]')).toHaveLength(2))
-    view.rerenderSession({ ...writable, session_id: 'loading', composer_state_key: 'same-owner', owner_attachment: { state: 'attached', reason: null, can_submit: true, can_interrupt: false, can_attach: false, revision: 1, execution_generation: 1, admissions: [] } })
+    view.rerenderSession({ ...writable, session_id: 'loading', composer_state_key: 'same-owner', owner_attachment: { state: 'attached', reason: null, can_submit: true, can_interrupt: false, can_attach: false, restarting: false, revision: 1, execution_generation: 1, admissions: [] } })
     expect(api.rollbackUpload).toHaveBeenCalledExactlyOnceWith('loading', ['completed-one', 'completed-two'])
     await act(async () => { late.resolve({ filename: 'three.png', path: '/synthetic/three.png', size: 1, mime: 'image/png', rollback_token: 'late-three' }); await late.promise })
     expect(api.rollbackUpload).toHaveBeenNthCalledWith(2, 'loading', ['late-three'])
@@ -155,7 +155,7 @@ describe('Composer', () => {
     const view = renderComposer(null, null, noop, undefined, undefined, undefined, { sessionId: session_id })
     await userEvent.type(screen.getByRole('textbox'), 'Early typing')
     view.rerenderSession({ ...writable, session_id, composer_state_key: 'owner-complete-identity', owner_attachment: {
-      state: 'attached', reason: null, can_submit: true, can_interrupt: false, can_attach: false, revision: 1, execution_generation: 1, admissions: [] } })
+      state: 'attached', reason: null, can_submit: true, can_interrupt: false, can_attach: false, restarting: false, revision: 1, execution_generation: 1, admissions: [] } })
     expect(screen.getByRole('textbox')).toHaveValue('Early typing')
     fireEvent(window, new Event('pagehide'))
     expect(JSON.parse(localStorage.getItem('hermes-draft:owner-complete-identity')!).text).toBe('Early typing')
@@ -163,7 +163,7 @@ describe('Composer', () => {
   })
 
   it('continues an attached owner without offering unsupported local controls or file uploads', async () => {
-    const owner = { state: 'attached' as const, reason: null, can_submit: true, can_interrupt: false, can_attach: false, revision: 2, execution_generation: 1, admissions: [] }
+    const owner = { state: 'attached' as const, reason: null, can_submit: true, can_interrupt: false, can_attach: false, restarting: false, revision: 2, execution_generation: 1, admissions: [] }
     const native = { ...writable, read_only: true, owner_attachment: owner }
     vi.mocked(api.startChat).mockResolvedValue({ session: native, owner_attachment: owner })
     renderComposer(native)
@@ -173,7 +173,7 @@ describe('Composer', () => {
   })
 
   it('explains an unsupported native CLI batch without offering a send', () => {
-    renderComposer({ ...writable, read_only: true, owner_attachment: { state: 'incompatible', reason: 'native_clarify_batch_unavailable', can_submit: false, can_interrupt: false, can_attach: false, revision: null, execution_generation: null, admissions: [] } })
+    renderComposer({ ...writable, read_only: true, owner_attachment: { state: 'incompatible', reason: 'native_clarify_batch_unavailable', can_submit: false, can_interrupt: false, can_attach: false, restarting: false, revision: null, execution_generation: null, admissions: [] } })
     expect(screen.getByText(/Continue in its native client/)).toBeInTheDocument()
     expect(screen.queryByRole('textbox')).not.toBeInTheDocument()
   })

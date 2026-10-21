@@ -485,7 +485,8 @@ export const ApprovalRespondResponseSchema = z.looseObject({ ok: z.boolean(), ch
 
 export const ClarifyChoiceSchema = z.union([z.string(), z.looseObject({ label: z.string().optional(), value: z.string().optional(), text: z.string().optional() })])
 /** One question the client asks, in server order; answers are keyed by `qid`. A single-question prompt is one `q0` step. */
-export const ClarifyStepSchema = z.looseObject({ qid: z.string(), question: z.string(), choices: z.array(z.string()), multi_select: z.boolean() })
+export const ClarifyStepSchema = z.looseObject({ qid: z.string(), question: z.string(), choices: z.array(z.string()), multi_select: z.boolean(),
+  answered: z.boolean().optional().describe('TAL-1271: a gateway-owned batch question the owner already holds an answer for; it stays editable until the last answer.') })
 export type ClarifyStep = z.infer<typeof ClarifyStepSchema>
 /** Keyed step answers; a multi-select step takes a list. The server shapes them into the Agent's reply. */
 export const ClarifyAnswersSchema = z.record(z.string(), z.union([z.string(), z.array(z.string())]))
