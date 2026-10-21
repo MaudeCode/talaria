@@ -35,8 +35,12 @@ def plugin_update(monkeypatch, tmp_path):
 
     def transaction(target, *, force, scan_decision_cb, carry_user_files):
         assert force is False  # A blanket force must never bypass the identity check.
+        if state.get("replace_during_stage"):
+            state["digest"] = "concurrent replacement"
         carry_user_files(target)
         scan = SimpleNamespace(verdict=state["verdict"], report=state["report"], scan_provenance={"scanner_version": "1"}, findings=[SimpleNamespace(detail=state["detail"])])
+        if state.get("replace_during_scan"):
+            state["digest"] = "concurrent replacement"
         if scan.verdict == "dangerous" or scan.verdict == "caution" and not scan_decision_cb(scan):
             raise ScanBlocked(scan)
         effects.append(target)
@@ -125,3 +129,15 @@ def test_changed_full_scan_findings_require_fresh_consent(plugin_update):
     assert result["status"] == "needs_consent"
     assert result["consent_token"] != review["consent_token"]
     assert effects == []
+
+
+@pytest.mark.parametrize("phase", ["stage", "scan"])
+def test_replaced_install_during_staging_cannot_use_caution_consent(plugin_update, phase):
+    state, effects = plugin_update
+    review = commands.update_plugin("p", False)
+    state["replace_during_stage" if phase == "stage" else "replace_during_scan"] = True
+    try:
+        commands.update_plugin("p", True, review["consent_token"])
+    except RpcError as error:
+        assert error.data["condition"] == "plugin_update_consent_changed"
+    assert effects == [], "Consent published an installation replaced after preflight"

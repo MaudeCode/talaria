@@ -580,8 +580,12 @@ def update_plugin(key: str, accept_caution: bool, consent_token: str | None = No
         raise InvalidParams("Only profile-installed Git plugins can be updated")
     from pm.store import tree_digest
     from tools.plugin_guard import format_scan_report
-    identity = (str(get_hermes_home().resolve()), str(target), found[5], tree_digest(target),
+
+    def installed_identity():
+        return (str(get_hermes_home().resolve()), str(target.resolve()), found[5], tree_digest(target),
                 json.dumps(pc._read_install_metadata().get(target.name, {}), sort_keys=True))
+
+    identity = installed_identity()
     with _PLUGIN_UPDATE_CONSENT_LOCK:
         now = time.monotonic()
         for token, receipt in list(_PLUGIN_UPDATE_CONSENTS.items()):
@@ -593,15 +597,19 @@ def update_plugin(key: str, accept_caution: bool, consent_token: str | None = No
                        condition="plugin_update_consent_changed")
 
     revision = ""
-    revision_changed = False
+    consent_changed = False
+    changed_message = "The plugin installation or revision changed; update again to review its scan"
 
     # The Agent staging hook exposes the candidate commit before its scan and publication gates.
     def capture_revision(staged):
-        nonlocal revision, revision_changed
+        nonlocal revision, consent_changed
+        if not staged.resolve().is_relative_to(target.parent) or installed_identity() != identity:
+            consent_changed = True
+            raise pc.PluginOperationError(changed_message)
         revision = pc._git_head_revision(staged, pc._resolve_git_executable())
         if consent and consent["revision"] != revision:
-            revision_changed = True
-            raise pc.PluginOperationError("The plugin revision changed; update again to review its scan")
+            consent_changed = True
+            raise pc.PluginOperationError(changed_message)
         return []
 
     def scan_binding(scan):
@@ -610,12 +618,18 @@ def update_plugin(key: str, accept_caution: bool, consent_token: str | None = No
         return hashlib.sha256(payload.encode()).hexdigest()
 
     def accept_scan(scan):
+        nonlocal consent_changed
+        if installed_identity() != identity:
+            consent_changed = True
+            return False
         return consent is not None and consent["revision"] == revision and consent["scan"] == scan_binding(scan)
 
     try:
         # A blanket force would bypass the callback: only the exact scanned identity can accept caution.
         transaction.update_plugin(target, force=False, scan_decision_cb=accept_scan, carry_user_files=capture_revision)
     except pc.PluginScanBlocked as exc:
+        if consent_changed:
+            raise RpcError(changed_message, condition="plugin_update_consent_changed") from exc
         scan = exc.scan_result
         verdict = getattr(scan, "verdict", "dangerous")
         result = {"key": found[5], "status": "needs_consent" if verdict == "caution" else "blocked",
@@ -630,7 +644,7 @@ def update_plugin(key: str, accept_caution: bool, consent_token: str | None = No
             result["consent_token"] = token
         return result
     except pc.PluginOperationError as exc:
-        raise RpcError(str(exc), condition="plugin_update_consent_changed" if revision_changed else "plugin_update_refused") from exc
+        raise RpcError(str(exc), condition="plugin_update_consent_changed" if consent_changed else "plugin_update_refused") from exc
     from hermes_cli.plugins import discover_plugins
     discover_plugins(force=True)
     return {"key": found[5], "status": "updated"}
