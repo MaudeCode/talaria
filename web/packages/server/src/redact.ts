@@ -1769,6 +1769,7 @@ function redactShellText(text: string): string {
 
 function redactRules(text: string): string {
   if (!text) return text
+  const hasAssignment = text.includes('=')
   let out = maskSplitTokens(maskSpans(text, privateKeySpans(text), () => '[REDACTED PRIVATE KEY]')).replace(CRED_RE, (_, t: string) => mask(t))
   out = out.replace(EMBEDDED_AWS_RE, (t) => mask(t))
   out = redactHeaderCredentials(out, AUTH_HDR_RE)
@@ -1776,7 +1777,7 @@ function redactRules(text: string): string {
   out = redactHeaderCredentials(out, BEARER_RE)
   for (const re of [COOKIE_ANSI_RE, COOKIE_SQ_RE, COOKIE_DQ_RE, COOKIE_BARE_RE]) out = out.replace(re, (whole, head: string, value: string) => (/[A-Za-z0-9]/.test(value) ? `${head}***` : whole))
   out = redactCredentialParams(out)
-  out = out.replace(ENV_RE, (whole, key: string, quote: string, value: string) => (/[A-Za-z0-9]/.test(value) && isEnvCredential(key, value) ? `${key}=${quote}${mask(value)}${quote}` : whole))
+  if (hasAssignment) out = out.replace(ENV_RE, (whole, key: string, quote: string, value: string) => (/[A-Za-z0-9]/.test(value) && isEnvCredential(key, value) ? `${key}=${quote}${mask(value)}${quote}` : whole))
   out = redactEnvSuffixes(out)
   out = out.replace(LISTED_FLAG_RE, (whole, q: string, dash: string, key: string, gap: string, vq: string | undefined, quotedValue: string | undefined, bare: string | undefined) => {
     // An unquoted value (a number, `True`, a nested list) is masked whole.
@@ -1796,7 +1797,7 @@ function redactRules(text: string): string {
   out = redactCommandFlags(out)
   out = out.replace(QUERY_KEY_RE, (whole, head: string, value: string) => (/[A-Za-z0-9]/.test(value) ? head + mask(value) : whole))
   out = out.replace(PRIVKEY_RE, '[REDACTED PRIVATE KEY]')
-  return restoreCodeEnvKeyLiterals(text, out)
+  return hasAssignment ? restoreCodeEnvKeyLiterals(text, out) : out
 }
 
 const CASE_MARKERS = [

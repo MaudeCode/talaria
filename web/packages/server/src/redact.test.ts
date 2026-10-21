@@ -1,5 +1,5 @@
 import { crc32 } from 'node:zlib'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { mightContainSensitiveText, publicToolFrame, redactSensitive, redactSessionData, redactText } from './redact.js'
 import { MessageSchema } from '@maudecode/talaria-web-contracts'
 import { sanitizeShareMessage } from './sessions/shares.js'
@@ -537,6 +537,50 @@ describe('credential key length', () => {
 })
 
 describe('redactSensitive cost', () => {
+  it('preserves assignment boundaries and masks other credential families without equals (TAL-1029)', () => {
+    for (const [text, expected] of [
+      ['https://example.test/UPPERCASE_TOKEN_TEXT', 'https://example.test/UPPERCASE_TOKEN_TEXT'],
+      ['= https://bob:secret@example.test/', '= https://bob:***@example.test/'],
+      ['https://bob:secret@example.test/ =', 'https://bob:***@example.test/ ='],
+      ['API_KEY=secret PASSWORD="secret" TOKEN=\'secret\'', 'API_KEY=*** PASSWORD="***" TOKEN=\'***\''],
+      ['API_KEY=) API_KEY=secret API_KEY=) API_KEY=other', 'API_KEY=) API_KEY=*** API_KEY=) API_KEY=***'],
+      ['Authorization: Bearer secret', 'Authorization: Bearer ***'],
+      ['https://bob:secret@example.test/', 'https://bob:***@example.test/'],
+      ['ghp_abcdefghij0123456789', 'ghp_ab...6789'],
+      ['ghp_abc\x1b[1mdefghij0123456789', 'ghp_ab...6789'],
+      ['ghp_abc\ndefghij0123456789', 'ghp_ab...6789'],
+    ]) expect(redactSensitive(text!)).toBe(expected)
+  })
+
+  it('skips assignment-family scans when their required equals delimiter is absent (TAL-1029)', () => {
+    // eslint-disable-next-line @typescript-eslint/unbound-method -- Called with the scanned regex as this below.
+    const nativeExec = RegExp.prototype.exec
+    const scans = new Map<string, number>()
+    const spy = vi.spyOn(RegExp.prototype, 'exec').mockImplementation(function (this: RegExp, text: string) {
+      // Observe the two global assignment regexes, including matchAll's cloned regex.
+      if (this.global && this.source.startsWith('([A-Z0-9_]{0,50}(?:API_?KEY|TOKEN|SECRET|PASSWORD|PASSWD|CREDENTIAL|AUTH)')) {
+        scans.set(this.source, (scans.get(this.source) ?? 0) + 1)
+      }
+      return nativeExec.call(this, text)
+    })
+    let assignmentScans: number
+    let impossibleScans: number
+    try {
+      redactSensitive('API_KEY=secret API_KEY=)')
+      assignmentScans = scans.size
+      scans.clear()
+      for (const size of [64 * 1024, 256 * 1024]) {
+        const text = `https://example.test/${'UPPERCASE_TOKEN_TEXT/'.repeat(Math.ceil(size / 21))}`.slice(0, size)
+        expect(redactSensitive(text)).toBe(text)
+      }
+      impossibleScans = [...scans.values()].reduce((sum, count) => sum + count, 0)
+    } finally {
+      spy.mockRestore()
+    }
+    expect(assignmentScans).toBe(2)
+    expect(impossibleScans).toBe(0)
+  })
+
   it('stays linear on long runs of scheme and identifier characters', () => {
     // A quadratic scan takes seconds on these inputs; a linear one takes milliseconds.
     // Unquoted runs, and many credential keys inside one long quoted argument.
