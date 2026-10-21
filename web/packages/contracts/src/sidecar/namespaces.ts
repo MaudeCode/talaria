@@ -178,6 +178,12 @@ export const STATE_DB_METHODS = {
   'state_db.delete_cli_session': { params: Session.extend({ include_compression_lineage: z.boolean().optional() }), result: Ok.extend({ refused: SessionDeleteRefusedSchema.optional(), deleted_ids: z.array(z.string().min(1)).optional() }) },
   /** TAL-258: append one row through the Agent's `SessionDB.append_message` (bumps `message_count`); `ok` is false without a state.db. */
   'state_db.append_message': { params: Session.extend({ role: z.string().min(1), content: z.string(), tool_name: z.string().nullable().optional(), timestamp: z.number().nullable().optional() }), result: Ok },
+  /**
+   * TAL-1274: the Agent's low-disk session auto-prune question for the profile (Agent v0.22.3 `hermes_cli.prune_advisor`), as the
+   * Agent's own `lines` naming `/autoprune on|off|later`; null while the Agent would not ask (disk not low, `sessions.auto_prune`
+   * set, or snoozed) or has no advisor. May measure state.db, which takes seconds on a large store.
+   */
+  'state_db.prune_advice': { params: ProfileHomeParams, result: z.object({ advice: z.object({ lines: z.array(z.string()).min(1) }).nullable() }) },
 } as const
 
 // ── profiles ───────────────────────────────────────────────────────────

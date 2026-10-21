@@ -60,6 +60,8 @@ export interface ProfileDeps {
   profileRunsActive: (name: string) => boolean
   /** Deletion tombstones survive restarts here, so a still-valid cookie cannot recreate a deleted profile later. */
   documents: DocumentBackend
+  /** TAL-1274: drop server state kept for a deleted profile (its auto-prune check and questions) before its name is free again. */
+  forgetProfile?: (name: string) => Promise<void>
   log: (line: string) => void
 }
 
@@ -421,6 +423,7 @@ export class ProfileService {
           throw new ProfileError(message, /does not exist/i.test(message) ? 404 : 400)
         }
         await this.clearProfileDocuments(name)
+        await this.deps.forgetProfile?.(name)
       })
     } finally {
       this.deleting.delete(name)

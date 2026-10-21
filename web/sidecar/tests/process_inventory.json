@@ -2490,6 +2490,13 @@
       "cases": [
         ""
       ]
+    },
+    "tests/test_prune_advice.py::test_a_low_disk_asks_the_agents_question_until_web_answers_it": {
+      "layer": "compatibility",
+      "reason": "Supported-Agent API compatibility: the Agent's own low-disk auto-prune advisor and /autoprune executor answer through the real sidecar in a disposable home with a patched disk report, not a fabricated API response.",
+      "cases": [
+        ""
+      ]
     }
   }
 }

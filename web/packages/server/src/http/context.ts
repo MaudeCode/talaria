@@ -55,6 +55,7 @@ import type { RelayService } from '../sessions/relay.js'
 import type { CliSessionSource } from '../sessions/cli-sessions.js'
 import type { CompletionDrain } from '../sessions/completions.js'
 import type { HygieneTicker } from '../tools/hygiene.js'
+import type { PruneAdvice } from '../tools/prune-advice.js'
 import type { McpHealthProber } from '../tools/mcp-health.js'
 import type { GatewayWatcherRegistry } from '../sessions/gateway-watcher.js'
 import type { PasskeyStore } from '../auth/passkeys.js'
@@ -165,6 +166,8 @@ export interface AppDeps {
   requestRestart: () => void
   updates: UpdateService
   updateNotifications: UpdateNotificationStore
+  /** TAL-1274: the Agent's low-disk session auto-prune question, per profile. */
+  pruneAdvice: PruneAdvice
   /** TAL-953: the post-update gateway restart that waits for the gateway to go idle. */
   gatewayRestarts: GatewayRestartQueue
   cspLimiter: WindowLimiter

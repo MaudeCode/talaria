@@ -7,8 +7,8 @@ import type { GatewayProcess } from './health.js'
 export type UpdateNotificationTarget = 'webui' | 'agent'
 /** `verifying`: the gateway restarted; the server is checking that the new gateway process and the Agent runtime answer (TAL-1138). */
 export type UpdateNotificationPhase = 'applying' | 'awaiting_confirmation' | 'waiting_for_idle' | 'restarting' | 'verifying' | 'succeeded' | 'blocked' | 'failed' | 'unknown'
-/** `tab` names one open Talaria Web tab; rows stamped with a tab are visible only to that tab. */
-export interface UpdateNotificationScope { owner: string; profile: string; serverOwner?: boolean; tab?: string | null }
+/** `tab` names one open Talaria Web tab; rows stamped with a tab are visible only to that tab. `rootProfile`: `profile` names the root profile, which profile notices store as `default`. */
+export interface UpdateNotificationScope { owner: string; profile: string; serverOwner?: boolean; tab?: string | null; rootProfile?: boolean }
 
 interface StoredUpdateNotification {
   id: string
@@ -82,6 +82,7 @@ export interface CreateUpdateNotificationInput {
   destination?: UpdateNotificationDestination | null
   title: string
   message: string
+  detail?: string | null
   visibility?: 'server' | 'profile'
 }
 
@@ -288,6 +289,59 @@ export class UpdateNotificationStore {
     await this.save()
   }
 
+  /**
+   * A question the server asks about one profile (TAL-1274), seen by every server owner while that profile is active. Its
+   * open row is refreshed in place; null withdraws it once nothing asks it any more. An answered row stays as history.
+   */
+  async profileQuestion(profile: string, kind: string, input: CreateUpdateNotificationInput | null): Promise<void> {
+    const open = this.rows.find((row) => row.kind === kind && row.owner === '*' && row.profile === profile && row.acknowledged_at === null)
+    if (!input) {
+      if (!open) return
+      this.rows = this.rows.filter((row) => row !== open)
+      return this.save()
+    }
+    if (!open) {
+      await this.create({ owner: '*', profile, serverOwner: true }, { ...input, kind, requiresAcknowledgement: true })
+      return
+    }
+    const message = safeText(input.message, '', 500)
+    const detail = safeDetail(input.detail)
+    if (!message || (open.message === message && open.detail === detail)) return
+    open.message = message
+    open.detail = detail
+    open.updated_at = this.now().toISOString()
+    open.read_at = null
+    await this.save()
+  }
+
+  /** Drop every server-asked question about a deleted profile, open or answered, so a profile recreated with its name starts clean. */
+  async forgetProfileQuestions(profile: string): Promise<void> {
+    const kept = this.rows.filter((row) => !(row.owner === '*' && row.visibility === 'profile' && row.profile === profile))
+    if (kept.length === this.rows.length) return
+    this.rows = kept
+    await this.save()
+  }
+
+  /** The open question `id` of `kind` this scope sees, or null. */
+  openQuestion(scope: UpdateNotificationScope, id: string, kind: string): PublicUpdateNotification | null {
+    const row = this.visible(scope, id)
+    return row?.kind === kind && row.owner === '*' && row.acknowledged_at === null ? this.publish(row, scope.tab) : null
+  }
+
+  /** Record the answer to an open question: its outcome replaces the question, which then leaves only Dismiss. */
+  async answerQuestion(scope: UpdateNotificationScope, id: string, kind: string, actionId: string, outcome: string): Promise<PublicUpdateNotification | null> {
+    const row = this.visible(scope, id)
+    if (row?.kind !== kind || row.owner !== '*' || row.acknowledged_at !== null || !row.actions.some((action) => action.id === actionId)) return null
+    const stamp = this.now().toISOString()
+    Object.assign(row, {
+      phase: 'succeeded', severity: 'info', message: safeText(outcome, row.message, 500), detail: null, actions: [],
+      updated_at: stamp, read_at: row.read_at ?? stamp, acknowledged_at: stamp, acknowledged_action_id: actionId,
+      performed_action_ids: [...row.performed_action_ids, actionId],
+    })
+    await this.save()
+    return this.publish(row, scope.tab)
+  }
+
   /** Let the requesting tab follow an update operation it started or rejoined. Watchers live as long as the record; only a server owner's Update click adds one. */
   async watch(scope: UpdateNotificationScope, id: string): Promise<void> {
     const tab = scope.tab && TAB_ID.test(scope.tab) ? scope.tab : null
@@ -313,7 +367,7 @@ export class UpdateNotificationStore {
       requires_acknowledgement: input.requiresAcknowledgement === true, actions,
       destination: safeDestination(input.destination), title, message,
       created_at: stamp, updated_at: stamp, read_at: null, acknowledged_at: null,
-      acknowledged_action_id: null, verified_revision: null, verified_version: null, detail: null,
+      acknowledged_action_id: null, verified_revision: null, verified_version: null, detail: safeDetail(input.detail),
       performed_action_ids: [], dismissed_at: null, expected_identity: null, tab_id: null, watchers: [],
       web_restart_boot: null, gateway_tasks: null, gateway_baseline: null, failed_step: null,
     }
@@ -547,6 +601,7 @@ export class UpdateNotificationStore {
   private isVisible(row: StoredUpdateNotification, scope: UpdateNotificationScope): boolean {
     if (row.tab_id !== null) return row.tab_id === scope.tab && row.owner === scope.owner && row.profile === scope.profile
     if (row.visibility === 'server') return scope.serverOwner === true && (row.owner === scope.owner || row.owner === '*')
+    if (row.owner === '*') return scope.serverOwner === true && (row.profile === scope.profile || (row.profile === 'default' && scope.rootProfile === true))
     return row.owner === scope.owner && row.profile === scope.profile
   }
 

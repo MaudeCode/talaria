@@ -2425,6 +2425,39 @@
     ],
     "additionalProperties": false
   },
+  "state_db.prune_advice": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "properties": {
+      "advice": {
+        "anyOf": [
+          {
+            "type": "object",
+            "properties": {
+              "lines": {
+                "minItems": 1,
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              }
+            },
+            "required": [
+              "lines"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "type": "null"
+          }
+        ]
+      }
+    },
+    "required": [
+      "advice"
+    ],
+    "additionalProperties": false
+  },
   "profiles.list": {
     "$schema": "https://json-schema.org/draft/2020-12/schema",
     "type": "object",

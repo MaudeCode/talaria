@@ -200,11 +200,13 @@ export function updateNotificationOwner(session: SessionInfo | null): string {
 
 async function updateNotificationScope(ctx: RequestContext, tab?: string): Promise<UpdateNotificationScope> {
   const session = await ensureTrustedAuthSession(ctx)
+  const profile = activeProfileName(ctx)
   return {
     owner: updateNotificationOwner(session),
-    profile: activeProfileName(ctx),
+    profile,
     serverOwner: await sessionCanManageServer(ctx, session),
     tab: tab ?? null,
+    rootProfile: ctx.deps.isRootProfile(profile),
   }
 }
 
@@ -453,11 +455,18 @@ export const toolsRouter = os.router({
       // TAL-904: a chat's command runs under that chat's session and the workspace its next turn would use. An unknown
       // chat (404) or a workspace that turn would refuse (400) refuses the command rather than run it half-bound.
       const chat = sessionId ? { session_id: sessionId, workspace: (await ctx.deps.sessions.turnWorkspace((await ctx.deps.sessionStore.get(sessionId, { metadataOnly: true })))) } : {}
+      let output: string
       try {
-        return { output: (await runningSidecar(ctx).call('commands.exec', { profile_home: home(ctx), command, ...chat }, { timeoutMs: 120_000 })).output }
+        output = (await runningSidecar(ctx).call('commands.exec', { profile_home: home(ctx), command, ...chat }, { timeoutMs: 120_000 })).output
       } catch (error) {
         return commandFailure(error, 'command_not_found', 'Plugin command not found')
       }
+      // TAL-1274: an /autoprune answer typed in the composer withdraws the profile's open auto-prune question.
+      if (name.toLowerCase() === 'autoprune') {
+        const profile = activeProfileName(ctx)
+        await ctx.deps.pruneAdvice.check(ctx.deps.isRootProfile(profile) ? 'default' : profile, home(ctx))
+      }
+      return { output }
     })),
     bundles: os.commands.bundles.handler(({ context: { ctx } }) => run(async () => {
       const sidecar = ctx.deps.sidecar()
@@ -715,7 +724,12 @@ export const toolsRouter = os.router({
       return notification as never
     })),
     action: os.updateNotifications.action.handler(({ input, context: { ctx } }) => run(async () => {
-      const notification = (await ctx.deps.updateNotifications.action(await updateNotificationScope(ctx, input.tab_id), input.id, input.action_id))
+      const scope = await updateNotificationScope(ctx, input.tab_id)
+      // TAL-1274: an auto-prune answer runs the Agent's /autoprune for the profile before the question records it.
+      const answer = await ctx.deps.pruneAdvice.answer(scope, input.id, input.action_id, home(ctx))
+      if (answer && 'refused' in answer) throw new HttpError(409, answer.refused)
+      if (answer) return answer.notification as never
+      const notification = (await ctx.deps.updateNotifications.action(scope, input.id, input.action_id))
       if (!notification) throw new HttpError(404, 'Notification action not found')
       if (input.action_id === GATEWAY_RESTART_NOW) ctx.deps.gatewayRestarts.restartNow(notification.id)
       return notification as never

@@ -20,7 +20,7 @@ from contextlib import closing, contextmanager
 from pathlib import Path
 
 from ..errors import InvalidParams, RpcError
-from ..home import profile_home_param
+from ..home import profile_home_param, scoped_home
 from ..rpc import CallContext
 
 log = logging.getLogger("talaria_sidecar.state_db")
@@ -629,6 +629,22 @@ def delete_cli_session(home: Path, sid: str, include_lineage: bool = False) -> d
         return {"ok": False}
 
 
+def prune_advice(home: Path) -> dict | None:
+    """The Agent's low-disk session auto-prune question for ``home`` (v0.22.3 ``hermes_cli.prune_advisor``) in its own
+    words; None while the Agent would not ask (disk not low, ``sessions.auto_prune`` set, snoozed) or has no advisor."""
+    try:
+        from hermes_cli import prune_advisor
+    except ImportError:
+        return None
+    advice, stale = prune_advisor.cached_advice(home)
+    if advice is None and not stale:
+        return None
+    if advice is None or stale:
+        # Measures state.db (seconds on a large store), on this request's own worker thread.
+        advice = prune_advisor.advise(home)
+    return {"lines": prune_advisor.advice_lines(advice, command_prefix="/")} if advice else None
+
+
 def register(registry) -> None:
     @registry.method("state_db.sync_start")
     def start(ctx: CallContext, params: dict) -> dict:
@@ -662,3 +678,9 @@ def register(registry) -> None:
         if not _is_safe_session_id(sid):
             raise InvalidParams("unsafe session_id")
         return delete_cli_session(profile_home_param(params).resolve(), sid, params.get("include_compression_lineage") is True)
+
+    @registry.method("state_db.prune_advice")
+    def prune_advice_(ctx: CallContext, params: dict) -> dict:
+        home = profile_home_param(params)
+        with scoped_home(home):
+            return {"advice": prune_advice(home)}
