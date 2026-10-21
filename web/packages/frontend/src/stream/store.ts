@@ -2,6 +2,7 @@
 import { useSyncExternalStore } from 'react'
 import { initialStreamState, streamReducer, type LiveTurn, type StreamAction, type StreamState } from './reducer'
 import type { StartTurnInput } from './connection'
+import type { ChatEventName } from '../contracts/sse'
 import type { Attachment } from '../contracts'
 import type { PendingFile } from '../features/composer/Attachments'
 
@@ -16,11 +17,11 @@ export const getTurnIntent = (sessionId: string): TurnIntent => intents[sessionI
 export function setTurnIntent(sessionId: string, next: TurnIntent): void {
   intents = { ...intents, [sessionId]: next }
   if (!next.send && !next.stop) intents = Object.fromEntries(Object.entries(intents).filter(([sid]) => sid !== sessionId))
-  for (const l of listeners) l()
+  notifyNow()
 }
 export function clearTurnIntents(): void {
   intents = {}
-  for (const l of listeners) l()
+  notifyNow()
 }
 export function useTurnIntent(sessionId: string | null): TurnIntent {
   return useSyncExternalStore(subscribe, () => sessionId ? getTurnIntent(sessionId) : emptyIntent, () => emptyIntent)
@@ -28,12 +29,28 @@ export function useTurnIntent(sessionId: string | null): TurnIntent {
 
 let state: StreamState = initialStreamState
 const listeners = new Set<() => void>()
+let frame: number | null = null
+/** Frames that settle or end a turn; everything else a stream sends waits for the next animation frame. */
+const SETTLING_EVENTS: ReadonlySet<ChatEventName> = new Set(['done', 'error', 'apperror', 'cancel', 'compressed', 'stream_end'])
 
+/** Notifies every subscriber now and drops a notification already waiting for the next frame. */
+function notifyNow(): void {
+  if (frame !== null) cancelAnimationFrame(frame)
+  frame = null
+  for (const l of listeners) l()
+}
+
+/**
+ * Applies the action at once, so synchronous readers of `getStreamState` stay current, but streaming frames commit
+ * to React at most once per animation frame: several tokens can arrive within one frame. Settling frames and every
+ * non-stream action notify immediately.
+ */
 export function dispatch(action: StreamAction): void {
   const next = streamReducer(state, action)
   if (next === state) return
   state = next
-  for (const l of listeners) l()
+  if (action.type !== 'event' || SETTLING_EVENTS.has(action.event.event)) notifyNow()
+  else frame ??= requestAnimationFrame(() => { frame = null; for (const l of listeners) l() })
 }
 
 export function getStreamState(): StreamState {
@@ -45,16 +62,13 @@ export function subscribe(listener: () => void): () => void {
   return () => listeners.delete(listener)
 }
 
+/** Selects one session's turn, so a frame for another session leaves this snapshot equal and skips the render. */
 export function useLiveTurn(sessionId: string | null): LiveTurn | null {
-  const s = useSyncExternalStore(subscribe, getStreamState, getStreamState)
-  return sessionId ? s.turns[sessionId] ?? null : null
-}
-
-export function useAllLiveTurns(): Record<string, LiveTurn> {
-  return useSyncExternalStore(subscribe, getStreamState, getStreamState).turns
+  const turn = () => sessionId ? state.turns[sessionId] ?? null : null
+  return useSyncExternalStore(subscribe, turn, turn)
 }
 
 export function resetStreamStoreForTests(): void {
   state = initialStreamState
-  for (const l of listeners) l()
+  notifyNow()
 }
