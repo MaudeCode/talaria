@@ -3186,6 +3186,57 @@ describe('chat turns through the sidecar', () => {
   })
 })
 
+describe('opportunistic model repair at admission (TAL-1196)', () => {
+  const admitWhileHeld = async (method: 'usage.pool_providers' | 'providers.local_models', path = '/api/chat/start'): Promise<void> => {
+    const sidecar = new FakeSidecar()
+    const s = await bootTestServer({ sidecar })
+    let release!: () => void
+    let markEntered!: () => void
+    const gate = new Promise<void>((resolve) => { release = resolve })
+    const entered = new Promise<void>((resolve) => { markEntered = resolve })
+    let admitted = false
+    let released = false
+    let request: Promise<Response> | undefined
+    try {
+      const sid = await newSession(s)
+      const session = await s.deps.sessionStore.get(sid)
+      session.model = 'vendor/selected-model'
+      session.model_provider = 'custom:synthetic'
+      await s.deps.sessionStore.save(session)
+      s.deps.catalog.invalidate()
+      sidecar.respond(method, async () => {
+        markEntered()
+        await gate
+        return method === 'usage.pool_providers' ? { providers: [], keys: {} } : { provider_id: 'llama-cpp', models: [], current_endpoint: null }
+      })
+      sidecar.respond('chat.start', (params) => {
+        expect(released, 'admission must precede discovery release').toBe(false)
+        expect(params).toMatchObject({ model: 'vendor/selected-model', model_provider: 'custom:synthetic' })
+        admitted = true
+        return completed([{ role: 'assistant', content: 'ok' }])
+      })
+      sidecar.respond('goals.snapshot', () => ({ goal: null, snapshot: null }))
+      sidecar.respond('goals.command', () => ({ ok: true, action: 'set', message: 'Goal set', goal: null, kickoff_prompt: 'continue' }))
+      request = path === 'automatic'
+        ? s.deps.turns.startServerTurn(session, { msg: 'continue', source: 'process_wakeup' }).then((result) => new Response(JSON.stringify(result), { status: result._status ?? 200 }))
+        : post(s, path, { session_id: sid, message: 'continue', prompt: 'continue', question: 'continue', args: 'ship it' })
+      await entered
+      // The gate stays closed until admission is observed; no release timer competes with the request.
+      await vi.waitFor(() => { expect(admitted, 'chat admission must not await catalog discovery').toBe(true) })
+      expect((await request).status).toBe(200)
+      expect(await s.deps.sessionStore.get(sid)).toMatchObject({ model: 'vendor/selected-model', model_provider: 'custom:synthetic' })
+    } finally {
+      released = true
+      release()
+      await request
+      await s.deps.catalog.warmSessionModelRepair(s.state)
+      await s.close()
+    }
+  }
+  it.each(['usage.pool_providers', 'providers.local_models'] as const)('admits an existing selected pair while %s is held', async (method) => { await admitWhileHeld(method) })
+  it.each(['/api/goal', '/api/background', '/api/btw', 'automatic'])('admits %s while pool discovery is held', async (path) => { await admitWhileHeld('usage.pool_providers', path) })
+})
+
 describe('stale cross-provider session models at chat start (TAL-542)', () => {
   let s: TestServer
   let sidecar: FakeSidecar
@@ -3217,6 +3268,7 @@ describe('stale cross-provider session models at chat start (TAL-542)', () => {
     return sid
   }
   const start = async (body: Json): Promise<Json> => {
+    await s.deps.catalog.warmSessionModelRepair(s.state)
     const res = await post(s, '/api/chat/start', { message: 'continue', ...body })
     expect(res.status).toBe(200)
     const started = await json(res)
@@ -3301,7 +3353,7 @@ describe('stale cross-provider session models at chat start (TAL-542)', () => {
     expect(seen).toMatchObject({ model: 'claude-sonnet-4', model_provider: 'anthropic' })
   })
 
-  it('repairs a goal kickoff on a cold catalog', async () => {
+  it('keeps a goal kickoff on its existing pair while a cold catalog refreshes', async () => {
     useConfig('openai-codex', 'gpt-5.5')
     sidecar.respond('goals.snapshot', () => ({ goal: null, snapshot: null }))
     sidecar.respond('goals.command', (params) => ({ ok: true, action: 'set', message: `Goal set: ${params.args}`, goal: null, kickoff_prompt: params.args }))
@@ -3310,9 +3362,9 @@ describe('stale cross-provider session models at chat start (TAL-542)', () => {
     const res = await post(s, '/api/goal', { session_id: sid, args: 'ship it' })
     expect(res.status).toBe(200)
     const started = await json(res)
-    expect(started).toMatchObject({ effective_model: 'gpt-5.5', effective_model_provider: 'openai-codex' })
+    expect(started.effective_model).toBeUndefined()
     await s.sse(`/api/chat/stream?stream_id=${String(started.stream_id)}&replay=1`, (f) => f.event === 'done' || f.event === 'apperror')
-    expect((await s.deps.sessionStore.get(sid))).toMatchObject({ model: 'gpt-5.5', model_provider: 'openai-codex' })
+    expect((await s.deps.sessionStore.get(sid))).toMatchObject({ model: 'gemini-3.1-pro-preview', model_provider: null })
   })
 
   it('repairs against config.yaml as it is now, after an edit outside Web', async () => {
@@ -3350,7 +3402,7 @@ describe('stale cross-provider session models at chat start (TAL-542)', () => {
     }
   })
 
-  it('repairs a goal kickoff against the catalog of the profile the session is retagged to', async () => {
+  it('does not borrow the old profile catalog for a retagged goal kickoff', async () => {
     useConfig('openai-codex', 'gpt-5.5')
     mkdirSync(join(s.state, 'profiles', 'other'), { recursive: true })
     writeFileSync(join(s.state, 'profiles', 'other', 'config.yaml'), '# other\n')
@@ -3360,7 +3412,7 @@ describe('stale cross-provider session models at chat start (TAL-542)', () => {
     s.deps.catalog.invalidate()
     await s.deps.catalog.warmModelOptions(s.state)
     const started = await json(await post(s, '/api/goal', { session_id: sid, args: 'ship it', profile: 'other' }))
-    expect(started).toMatchObject({ effective_model: 'gpt-5.5', effective_model_provider: 'openai-codex' })
+    expect(started.effective_model).toBeUndefined()
     await vi.waitFor(() => { expect(s.deps.registry.liveIds.has(String(started.stream_id))).toBe(false) })
   })
 
@@ -3423,7 +3475,7 @@ describe('stale cross-provider session models at chat start (TAL-542)', () => {
     }
   })
 
-  it('repairs a goal kickoff against config.yaml as edited while the goal command ran', async () => {
+  it('does not repair from a catalog invalidated during the goal command', async () => {
     let config: Json = { model: { provider: 'anthropic', default: 'claude-sonnet-4' } }
     sidecar.respond('config.get', (p) => ({ path: join(p.profile_home, 'config.yaml'), exists: true, config }))
     s.deps.agentConfig.invalidate()
@@ -3439,7 +3491,7 @@ describe('stale cross-provider session models at chat start (TAL-542)', () => {
     })
     const sid = await sessionWith('gemini-3.1-pro-preview', null)
     const started = await json(await post(s, '/api/goal', { session_id: sid, args: 'ship it' }))
-    expect(started).toMatchObject({ effective_model: 'gpt-5.5', effective_model_provider: 'openai-codex' })
+    expect(started.effective_model).toBeUndefined()
     await s.sse(`/api/chat/stream?stream_id=${String(started.stream_id)}&replay=1`, (f) => f.event === 'done' || f.event === 'apperror')
   })
 
@@ -3577,6 +3629,8 @@ describe('stale session models after an Agent sign-in change (TAL-542)', () => {
       // Signed in to Copilot outside Web: no config.yaml or .env change, only the Agent's auth state.
       signedIn = true
       clock += 31
+      expect((await startWith('cp-model', 'ollama')).effective_model).toBeUndefined()
+      await s.deps.catalog.warmSessionModelRepair(s.state)
       expect(await startWith('cp-model', 'ollama')).toMatchObject({ effective_model: 'cp-model', effective_model_provider: 'copilot' })
     } finally {
       await s.close()

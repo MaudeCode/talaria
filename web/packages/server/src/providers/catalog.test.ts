@@ -1,4 +1,4 @@
-import { existsSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -12,6 +12,100 @@ import type { SidecarResult } from '@maudecode/talaria-web-contracts'
 type Json = Record<string, unknown>
 interface Entry { id: string; provider_id?: string; bare_id?: string }
 interface Group { provider_id: string; models: Entry[]; extra_models?: Entry[] }
+
+describe('shared admission catalog discovery (TAL-1196)', () => {
+  let home: string
+  let sidecar: FakeSidecar
+  let catalog: ProviderCatalog
+  let clock: number
+  beforeEach(() => {
+    home = mkdtempSync(join(tmpdir(), 'talaria-admission-catalog-'))
+    clock = 1_800_000_000
+    writeFileSync(join(home, 'config.yaml'), '# synthetic config\n')
+    sidecar = new FakeSidecar()
+    sidecar.respond('config.get', (p) => ({ path: join(p.profile_home, 'config.yaml'), exists: true, config: {
+      model: { provider: 'anthropic', default: 'claude-sonnet-4' },
+      providers: { anthropic: { models: ['claude-sonnet-4'] }, ollama: { base_url: 'http://ollama.test/v1', models: ['local-model'] }, deepseek: { api_key: 'sk-synthetic-discovery' } },
+    } }))
+    sidecar.respond('usage.pool_providers', () => ({ providers: [], keys: {} }))
+    sidecar.respond('plugins.providers', () => ({ providers: [] }))
+    sidecar.respond('providers.auth_status', () => ({ status: { logged_in: false } }))
+    sidecar.respond('providers.local_models', () => ({ provider_id: 'llamacpp', models: [], current_endpoint: null }))
+    sidecar.respond('providers.model_ids', (p) => ({ provider: p.provider, model_ids: p.provider === 'deepseek' ? ['ds-model'] : [] }))
+    catalog = new ProviderCatalog({ sidecar: () => sidecar, config: new AgentConfig({ sidecar: () => sidecar, env: {} }), env: {}, now: () => clock, log: () => undefined, costBudget: () => null, isRootProfileHome: () => true })
+  })
+  afterEach(() => { rmSync(home, { recursive: true, force: true }) })
+
+  it('shares a held build across concurrent repair, complete catalog and picker reads', async () => {
+    let release!: () => void
+    const held = new Promise<void>((resolve) => { release = resolve })
+    sidecar.respond('providers.local_models', async () => { await held; return { provider_id: 'llamacpp', models: [], current_endpoint: null } })
+    expect(catalog.sessionModelRepair(home, 'ds-model', 'ollama')).toBeNull()
+    expect(catalog.sessionModelRepair(home, 'ds-model', 'ollama')).toBeNull()
+    const full = catalog.models(home)
+    const picker = catalog.pickerModels(home, 'default')
+    try {
+      await vi.waitFor(() => { expect(sidecar.calls.filter((c) => c.method === 'providers.local_models')).toHaveLength(1) })
+      expect(catalog.sessionModelRepair(home, 'ds-model', 'ollama')).toBeNull()
+    } finally { release() }
+    const [first, second] = await Promise.all([full, picker])
+    expect(sidecar.calls.filter((c) => c.method === 'providers.local_models')).toHaveLength(1)
+    expect(catalog.sessionModelRepair(home, 'ds-model', 'ollama')).toEqual(['ds-model', 'deepseek'])
+    first.groups.length = 0
+    second.groups.length = 0
+    expect(catalog.sessionModelRepair(home, 'ds-model', 'ollama')).toEqual(['ds-model', 'deepseek'])
+  })
+
+  it.each(['stale', 'failed', 'unconfirmed'] as const)('keeps the pair for %s evidence until a shared background refresh confirms it', async (state) => {
+    await catalog.models(home)
+    if (state === 'stale') clock += 31
+    else {
+      clock += 100_000
+      if (state === 'failed') sidecar.respond('usage.pool_providers', () => { throw new Error('synthetic unavailable pool') })
+      else sidecar.respond('providers.model_ids', (p) => ({ provider: p.provider, model_ids: ['ds-model'], fallback: true }))
+      await catalog.models(home)
+    }
+    let release!: () => void
+    const held = new Promise<void>((resolve) => { release = resolve })
+    let entered!: () => void
+    const started = new Promise<void>((resolve) => { entered = resolve })
+    sidecar.respond('usage.pool_providers', async () => { entered(); await held; return { providers: [], keys: {} } })
+    try {
+      expect(catalog.sessionModelRepair(home, 'ds-model', state === 'unconfirmed' ? 'deepseek' : 'ollama')).toBeNull()
+      await started
+    } finally { release() }
+    sidecar.respond('providers.model_ids', (p) => ({ provider: p.provider, model_ids: p.provider === 'deepseek' ? ['ds-model'] : [] }))
+    clock += 100_000
+    await catalog.models(home)
+    expect(catalog.sessionModelRepair(home, 'ds-model', 'ollama')).toEqual(['ds-model', 'deepseek'])
+  })
+
+  it.each(['usage.pool_providers', 'providers.local_models'] as const)('cannot publish an old generation over a newer catalog or another profile after held %s', async (method) => {
+    const other = join(home, 'profiles', 'other')
+    mkdirSync(other, { recursive: true })
+    writeFileSync(join(other, 'config.yaml'), '# other profile\n')
+    let generation = 'old'
+    sidecar.respond('providers.model_ids', (p) => ({ provider: p.provider, model_ids: p.provider === 'deepseek' ? [p.profile_home === other ? 'other-model' : `${generation}-model`] : [] }))
+    let release!: () => void
+    let entered!: () => void
+    const held = new Promise<void>((resolve) => { release = resolve })
+    const started = new Promise<void>((resolve) => { entered = resolve })
+    sidecar.respond(method, async () => { entered(); await held; return method === 'usage.pool_providers' ? { providers: [], keys: {} } : { provider_id: 'llamacpp', models: [], current_endpoint: null } })
+    const old = catalog.models(home)
+    await started
+    generation = 'new'
+    writeFileSync(join(home, 'auth.json'), '{"synthetic_generation":2}')
+    sidecar.respond(method, () => method === 'usage.pool_providers' ? { providers: [], keys: {} } : { provider_id: 'llamacpp', models: [], current_endpoint: null })
+    try {
+      await Promise.all([catalog.models(home), catalog.models(other)])
+    } finally { release() }
+    expect((await old).availability?.authoritative).toBe(true)
+    expect(catalog.sessionModelRepair(home, 'new-model', 'ollama')).toEqual(['new-model', 'deepseek'])
+    expect(catalog.sessionModelRepair(home, 'old-model', 'ollama')).toBeNull()
+    expect(catalog.sessionModelRepair(home, 'other-model', 'ollama')).toBeNull()
+    expect(catalog.sessionModelRepair(other, 'other-model', 'ollama')).toEqual(['other-model', 'deepseek'])
+  })
+})
 
 describe('bounded picker pool limits (TAL-1222)', () => {
   let home: string

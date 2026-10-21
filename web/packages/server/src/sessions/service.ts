@@ -164,7 +164,7 @@ export interface SessionServiceDeps {
   profileLaunchRoute?: (profile: string, provider: string) => { provider: string; baseUrl: string | null }
   /** TAL-542: the pair a stale session model starts on, from the profile's catalog; `null` keeps it. */
   repairSessionModel?: (profile: string | null, model: string, provider: string | null) => [string, string] | null
-  /** TAL-542: builds the catalog `repairSessionModel` reads unless a fresh enough one exists. */
+  /** Explicit discovery for auxiliary title generation; ordinary turn admission uses only fresh cached repair evidence. */
   warmSessionModelRepair?: (profile?: string | null) => Promise<void>
   yolo: { isEnabled: (sid: string) => boolean; set: (sid: string, enabled: boolean) => void }
   /** state.db sidebar rows for a profile (Python `get_cli_sessions`); null when the projection is unavailable. */
@@ -215,7 +215,7 @@ export class SessionService {
     }
   }
 
-  /** A `@provider:` id is split; any other model an explicit pick did not just choose is checked against the catalog (TAL-542). */
+  /** Split qualified ids and opportunistically repair against fresh evidence; missing discovery never delays a turn. */
   turnModel(s: Session, body: Record<string, unknown> = {}): [string | null, string | null, boolean] {
     const requestedModel = str(body.model) || s.model
     const requestedProvider = 'model_provider' in body ? (body.model_provider as string | null) : s.model_provider

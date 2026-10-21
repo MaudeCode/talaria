@@ -520,6 +520,7 @@ interface KeyProbe { authoritative: boolean; hasKey: boolean; keySource: string;
 export class ProviderCatalog {
   private readonly scopedKeyRevisions = new Map<string, string>()
   private readonly scopedKeyAuthority = new Map<string, boolean>()
+  private readonly modelReads = new Map<string, Promise<ModelsCatalog>>()
   private readonly credentialReads = new Map<string, Promise<CatalogLookup<SidecarResult<'usage.pool_providers'>>>>()
   /** Failed live lookups by home, provider, and the `sourceFingerprint` they ran under (TAL-542). */
   private readonly liveFailed = new Set<string>()
@@ -607,13 +608,15 @@ export class ProviderCatalog {
    */
   sessionModelRepair(profileHome: string, model: string, provider: string | null): [string, string] | null {
     const catalog = this.currentModels(profileHome, PROVIDERS_TTL_S)
-    if (!catalog) { void this.warmSessionModelRepair(profileHome); return null }
+    const pid = canonicaliseProviderId(provider) || canonicaliseProviderId(catalog?.active_provider)
+    if (!catalog || this.lastModelsMeta.get(profileHome)?.unconfirmed.has(pid)) void this.models(profileHome).catch(() => undefined)
+    if (!catalog) return null
     return repairSessionModel(catalog, model, provider, this.lastModelsMeta.get(profileHome)?.unconfirmed)
   }
 
   /**
-   * Builds the catalog `sessionModelRepair` reads unless a fresh enough one exists; call it after the request's last
-   * await. A source that changed while the build awaited makes that build stale, so it is rebuilt once.
+   * Explicitly await discovery, or start it in the background from `sessionModelRepair`. Admission never awaits it.
+   * A source that changed while the build awaited makes that build stale, so it is rebuilt once.
    */
   async warmSessionModelRepair(profileHome: string): Promise<void> {
     await this.poolProviders(profileHome)
@@ -911,8 +914,21 @@ export class ProviderCatalog {
 
   /** Python `get_available_models` (static catalog + live ids for keyed providers). */
   async models(profileHome: string, attempt = 0): Promise<ModelsCatalog> {
+    const inputSource = this.sourceFingerprint(profileHome, false)
     const pool = await this.poolProviders(profileHome)
+    if (inputSource !== this.sourceFingerprint(profileHome, false)) {
+      if (attempt === 0) return this.models(profileHome, 1)
+      throw new Error('Provider configuration changed during catalog lookup. Try again.')
+    }
     const source = this.sourceFingerprint(profileHome)
+    const pending = this.modelReads.get(source)
+    if (pending) return structuredClone(await pending)
+    const read = this.buildModels(profileHome, pool, source, attempt).finally(() => { this.modelReads.delete(source) })
+    this.modelReads.set(source, read)
+    return structuredClone(await read)
+  }
+
+  private async buildModels(profileHome: string, pool: CatalogLookup<SidecarResult<'usage.pool_providers'>>, source: string, attempt: number): Promise<ModelsCatalog> {
     const providerState = (await this.providerRows(profileHome, pool)).payload
     const unconfirmed = new Set<string>()
     const config = await this.deps.config.read(profileHome)
