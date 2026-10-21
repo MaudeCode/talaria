@@ -3,12 +3,30 @@
 from __future__ import annotations
 
 import json
+import sys
+from types import SimpleNamespace
 
 import pytest
 
 from conftest import SidecarProcess, requires_agent
 from talaria_sidecar import SIDECAR_RPC_VERSION
 from test_process_delivery import _agent
+
+
+@pytest.mark.parametrize('different_field', [None, 'status', 'summary', 'delegation_id', 'origin_ui_session_id'])
+def test_startup_replay_matches_only_the_same_transcript_delivery(monkeypatch, tmp_path, different_field):
+    from talaria_sidecar.methods import process
+
+    transcript = {'type': 'async_delegation', 'delegation_id': 'deleg-replayed',
+                  'origin_ui_session_id': 'web-parent', 'status': 'completed', 'summary': 'Synthetic result'}
+    live = {**transcript, 'startup_replay': True, 'process_id': 'deleg-replayed', 'consumed': False}
+    if different_field:
+        live[different_field] = 'different'
+    monkeypatch.setattr(process, '_delivery_api', lambda: SimpleNamespace(claim_event_delivery=lambda event, consumer: None))
+    monkeypatch.setitem(sys.modules, 'hermes_constants', SimpleNamespace(get_hermes_home=lambda: tmp_path))
+    monkeypatch.setattr(process, '_delivered_notifications', lambda home, delegation_id: ([transcript], None))
+
+    assert process.claim_delivery(live, 'webui') == (None if different_field else '')
 
 
 @pytest.fixture
