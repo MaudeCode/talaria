@@ -1056,7 +1056,7 @@ export async function stopStateDbWorker(): Promise<void> {
 
 const STATE_DB_CONTENT_JSON_PREFIX = '\0json:'
 // `display_kind` / `display_metadata`: the Agent's own tag for rows it writes itself (steers, delivered notifications; TAL-371).
-const OPTIONAL_MESSAGE_COLUMNS = ['tool_call_id', 'tool_calls', 'tool_name', 'reasoning', 'reasoning_details', 'codex_reasoning_items', 'reasoning_content', 'codex_message_items', 'api_content', 'display_kind', 'display_metadata', 'absorbed_message_uids'] as const
+const OPTIONAL_MESSAGE_COLUMNS = ['tool_call_id', 'tool_calls', 'tool_name', 'reasoning', 'reasoning_details', 'codex_reasoning_items', 'reasoning_content', 'codex_message_items', 'api_content', 'display_kind', 'display_metadata', 'absorbed_message_uids', '_compressed_summary'] as const
 const JSON_MESSAGE_COLUMNS = new Set(['tool_calls', 'reasoning_details', 'codex_reasoning_items', 'codex_message_items', 'display_metadata', 'absorbed_message_uids'])
 
 /** Python `_decode_state_db_content`: the Agent's sentinel-prefixed structured content, left untouched otherwise. */
@@ -1082,11 +1082,27 @@ function jsonLoadsIfString(value: unknown): unknown {
   try { return JSON.parse(value) } catch { return value }
 }
 
+// Agent v0.22.3's ordinary kept-tail handoff. Only its explicit flag and exact wrapper prove a carrier.
+const PRIOR_CONTEXT_HEADER = '[PRIOR CONTEXT — for reference only; not a new message]'
+const COMPACTION_SUMMARY_DELIMITER = '\n\n[END OF PRIOR CONTEXT — COMPACTION SUMMARY BELOW]\n\n'
+
+function compactionCarrier(row: Dict): { prior: string; summary: string } | null {
+  if (row._compressed_summary !== 1 && row._compressed_summary !== true) return null
+  const content = decodeStateDbContent(row.content)
+  if ((row.role !== 'user' && row.role !== 'assistant') || typeof content !== 'string' || !content.startsWith(`${PRIOR_CONTEXT_HEADER}\n`)) return null
+  const boundary = content.indexOf(COMPACTION_SUMMARY_DELIMITER, PRIOR_CONTEXT_HEADER.length)
+  if (boundary < 0) return null
+  // Remove only the separators the Agent added; preserve the kept reply's own whitespace.
+  const prior = content.slice(PRIOR_CONTEXT_HEADER.length + 1, boundary)
+  const summary = content.slice(boundary + COMPACTION_SUMMARY_DELIMITER.length).trim()
+  return prior && summary ? { prior, summary } : null
+}
+
 /** Python `_project_state_db_message`: one row → WebUI message (`tool_name → name`, empty optionals omitted). */
 function projectStateDbMessage(row: Dict, hasId: boolean): Dict {
-  const msg: Dict = { role: row.role, content: decodeStateDbContent(row.content), timestamp: row.timestamp }
+  const msg: Dict = { role: row.role, content: compactionCarrier(row)?.prior ?? decodeStateDbContent(row.content), timestamp: row.timestamp }
   for (const col of OPTIONAL_MESSAGE_COLUMNS) {
-    if (!(col in row)) continue
+    if (col === '_compressed_summary' || !(col in row)) continue
     const value = row[col]
     if (value === null || value === undefined || value === '') continue
     msg[col === 'absorbed_message_uids' ? '_absorbed_message_uids' : col] = JSON_MESSAGE_COLUMNS.has(col) ? jsonLoadsIfString(value) : value
@@ -1110,8 +1126,8 @@ function stateDbGeneration(dbPath: string): string | null {
 // Agent v0.21.6's exact in-flight request wrapper. Unknown rewrites are not copy evidence.
 const INFLIGHT_REPLAY_HEADER = '[STILL IN PROGRESS — this is the active request, restated after the compaction boundary because it was not finished yet. Continue it; do not start over.]'
 
-/** The payload comparison ignores only the Agent's documented replay wrapper and dropped api_content. */
-function replayPayload(row: Dict): { copyKey: string; replayKey: string; replay: boolean } {
+/** Compare the kept payload after the Agent's exact request/carrier wrappers and stale api_content are removed. */
+function replayPayload(row: Dict): { copyKey: string; replayKey: string; replay: boolean; carrier: string | null } {
   const message = projectStateDbMessage(row, false)
   delete message.timestamp
   const copyKey = JSON.stringify(message)
@@ -1138,7 +1154,7 @@ function replayPayload(row: Dict): { copyKey: string; replayKey: string; replay:
   }
   message.content = content
   delete message.api_content // _reappend_inflight_user_task drops this stale model-facing sidecar.
-  return { copyKey, replayKey: JSON.stringify(message), replay }
+  return { copyKey, replayKey: JSON.stringify(message), replay, carrier: compactionCarrier(row)?.summary ?? null }
 }
 
 /**
@@ -1146,13 +1162,13 @@ function replayPayload(row: Dict): { copyKey: string; replayKey: string; replay:
  * authored payload changes even after active/compacted flags change. Only unchanged timestamp copies or
  * exact request restatements inherit identity; edits (including A -> B -> A) start at their own row ID.
  */
-function replayIdentities(db: DatabaseSync, chain: string[], rows: Dict[], available: Set<string>): Map<number, { id: number; changed: boolean; sourceKey: string }> {
-  const identities = new Map<number, { id: number; changed: boolean; sourceKey: string }>()
+function replayIdentities(db: DatabaseSync, chain: string[], rows: Dict[], available: Set<string>): Map<number, { id: number; changed: boolean; sourceKey: string; summaryId: number }> {
+  const identities = new Map<number, { id: number; changed: boolean; sourceKey: string; summaryId: number }>()
   // Tool-result text can be pruned without changing its tool-call identity; retain the existing rule.
   const uids = [...new Set(rows.filter((row) => row.role !== 'tool').map((row) => row.message_uid).filter((uid): uid is string => typeof uid === 'string' && uid.length > 0))]
   if (!uids.length) return identities
   const liveIds = new Set(rows.map((row) => row.id))
-  type Previous = ReturnType<typeof replayPayload> & { identity: number; changed: boolean; sourceKey: string; timestamp: unknown; active: unknown; compacted: unknown }
+  type Previous = ReturnType<typeof replayPayload> & { identity: number; changed: boolean; sourceKey: string; summaryId: number; timestamp: unknown; active: unknown; compacted: unknown }
   const previous = new Map<string, Previous>()
   const columns = ['id', 'message_uid', 'active', 'compacted', 'role', 'content', 'timestamp', ...OPTIONAL_MESSAGE_COLUMNS.filter((c) => available.has(c))]
   // One ordered scan of the selected sessions, filtering against a materialized UID set. Stream the rows;
@@ -1164,12 +1180,15 @@ function replayIdentities(db: DatabaseSync, chain: string[], rows: Dict[], avail
     const payload = replayPayload(row)
     const prior = previous.get(uid)
     const copy = payload.copyKey === prior?.copyKey && row.timestamp === prior.timestamp
-    const restatement = prior && payload.replay && payload.replayKey === prior.replayKey && (prior.active !== 0 || prior.compacted === 1)
+    const restatement = payload.replayKey === prior?.replayKey && (
+      (payload.replay && (prior.active !== 0 || prior.compacted === 1)) ||
+      (payload.carrier && row.timestamp === prior.timestamp))
     const identity = prior && (copy || restatement) ? prior.identity : Number(row.id)
     const changed = prior ? (copy || restatement ? prior.changed : true) : false
     const sourceKey = prior && (copy || restatement) ? prior.sourceKey : stateDbMessageFingerprint(projectStateDbMessage(row, false))
-    if (prior && row.role !== 'tool' && liveIds.has(row.id)) identities.set(Number(row.id), { id: identity, changed, sourceKey })
-    previous.set(uid, { ...payload, identity, changed, sourceKey, timestamp: row.timestamp, active: row.active, compacted: row.compacted })
+    const summaryId = payload.carrier && payload.carrier === prior?.carrier && row.timestamp === prior.timestamp ? prior.summaryId : Number(row.id)
+    if (prior && row.role !== 'tool' && liveIds.has(row.id)) identities.set(Number(row.id), { id: identity, changed, sourceKey, summaryId })
+    previous.set(uid, { ...payload, identity, changed, sourceKey, summaryId, timestamp: row.timestamp, active: row.active, compacted: row.compacted })
   }
   return identities
 }
@@ -1247,7 +1266,7 @@ function readStateDbSession(dbPath: string, sid: string, opts: { stitch?: boolea
     const rangeArgs = opts.afterId === undefined ? [] : [opts.afterId]
     const order = hasId ? 'id' : 'timestamp'
     const rows = db.prepare(`SELECT ${selected.join(', ')}, session_id FROM messages WHERE session_id IN (${chain.map(() => '?').join(', ')})${activeClause}${range} ORDER BY ${order} ASC`).all(...chain, ...rangeArgs) as Dict[]
-    const projected = rows.map((row) => projectStateDbMessage(row, hasId))
+    let projected = rows.map((row) => projectStateDbMessage(row, hasId))
     // TAL-709: an in-place compaction archives the live rows and re-inserts each as a copy that keeps its role and timestamp
     // (content may be pruned). A copy takes the id of the oldest archived row it copies, so the merge sees a row it has
     // already read instead of a new one. Only a compaction archive (`compacted = 1`) vouches for a changed copy: a rewound
@@ -1265,8 +1284,9 @@ function readStateDbSession(dbPath: string, sid: string, opts: { stitch?: boolea
         if (typeof twin === 'number') projected[i]!._state_db_row_id = twin
       }
     }
+    let identities: ReturnType<typeof replayIdentities> | undefined
     if (hasId && ['message_uid', 'active', 'compacted'].every((c) => available.has(c))) {
-      const identities = replayIdentities(db, local?.context ?? chain, rows, available)
+      identities = replayIdentities(db, local?.context ?? chain, rows, available)
       for (const [i, row] of rows.entries()) {
         const identity = identities.get(Number(row.id))
         // A known changed generation overrides even a coincidental legacy timestamp twin.
@@ -1277,6 +1297,13 @@ function readStateDbSession(dbPath: string, sid: string, opts: { stitch?: boolea
         }
       }
     }
+    // The kept reply and summary have independent archive identities; neither can consume the other's copy.
+    const withCarrierSummary = (row: Dict, message: Dict): Dict[] => {
+      const carrier = compactionCarrier(row)
+      return carrier ? [message, { role: 'assistant', content: carrier.summary, timestamp: row.timestamp,
+        _context_compression_marker: true, ...(hasId ? { _state_db_row_id: identities?.get(Number(row.id))?.summaryId ?? row.id } : {}) }] : [message]
+    }
+    projected = rows.flatMap((row, i) => withCarrierSummary(row, projected[i]!))
     // TAL-493: the database file's identity, so a marker taken in a replaced state.db is never applied to its successor.
     const generation = stateDbGeneration(dbPath)
     if (hasId) {
@@ -1287,7 +1314,7 @@ function readStateDbSession(dbPath: string, sid: string, opts: { stitch?: boolea
       anchor = projected.find((m) => m._state_db_row_id === opts.afterId)
       if (!anchor) {
         const row = db.prepare(`SELECT ${selected.join(', ')}, session_id FROM messages WHERE session_id IN (${chain.map(() => '?').join(', ')}) AND id = ?${activeClause} LIMIT 1`).get(...chain, opts.afterId) as Dict | undefined
-        if (row) anchor = { ...projectStateDbMessage(row, true), _state_db_generation: generation }
+        if (row) anchor = { ...withCarrierSummary(row, projectStateDbMessage(row, true)).at(-1)!, _state_db_generation: generation }
       }
     }
     let requiresFullRead = false

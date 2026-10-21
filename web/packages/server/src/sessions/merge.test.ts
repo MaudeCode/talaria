@@ -222,6 +222,12 @@ describe('mergeSessionMessagesAppendOnly truncation watermark (TAL-504)', () => 
   const contents = (rows: { content?: unknown }[]) => rows.map((m) => m.content)
   const state = [msg('user', 'u1', 100), msg('assistant', 'a1', 101), msg('user', 'u2', 102), msg('assistant', 'a2', 103), msg('user', 'u3', 104), msg('assistant', 'a3', 105)]
 
+  it.each(['user', 'assistant'])('keeps stale marker-like %s prose behind the legacy timestamp gate', (role) => {
+    const local = [msg('user', 'Latest request', 200), msg('assistant', 'Latest reply', 201)]
+    const old = msg(role, '[context compaction] is the literal syntax in this example.', 100)
+    expect(mergeSessionMessagesAppendOnly(local, [old])).toEqual(local)
+  })
+
   it('keeps the deleted tail out while the sidecar has not advanced past the watermark', () => {
     expect(contents(mergeSessionMessagesAppendOnly(state.slice(0, 2), state, { truncationWatermark: 101 }))).toEqual(['u1', 'a1'])
   })

@@ -1,6 +1,7 @@
-"""Generate synthetic lifecycle snapshots using the released, unmodified Agent v0.21.6.
+"""Generate synthetic lifecycle snapshots using the released, unmodified Agent v0.21.6 or v0.22.3.
 
-Usage: <agent-python> generate-compaction-replay.py <agent-checkout>
+Usage: <agent-python> generate-compaction-replay.py <agent-checkout> [--carrier]
+Use --carrier with v0.22.3 for the kept-message summary fixture.
 No model calls, account data or live store; fixed IDs and clock make the fixture reproducible.
 """
 from contextlib import closing
@@ -19,7 +20,8 @@ with tempfile.TemporaryDirectory(prefix="tal783-versions-") as home:
     os.environ["HERMES_HOME"] = home
     from hermes_state import SessionDB
     from hermes_state_common import SCHEMA_VERSION
-    assert SCHEMA_VERSION == 31, "Use the pinned v0.21.6 checkout, without Agent modifications"
+    carrier_mode = "--carrier" in sys.argv[2:]
+    assert SCHEMA_VERSION == (32 if carrier_mode else 31), "Use unmodified v0.22.3 for --carrier, otherwise v0.21.6"
     from agent.context_compressor import ContextCompressor, SUMMARY_PREFIX, _SUMMARY_END_MARKER
 
     path = Path(home) / "state.db"
@@ -50,6 +52,45 @@ with tempfile.TemporaryDirectory(prefix="tal783-versions-") as home:
 
     def unaddressed(msg):
         return {k: copy.deepcopy(v) for k, v in msg.items() if k not in ("_row_id", "_db_row_snapshot", "_canonical_row", "_db_persisted")}
+
+    if carrier_mode:
+        from agent.context_compressor import _MERGED_PRIOR_CONTEXT_HEADER, _MERGED_SUMMARY_DELIMITER
+        import subprocess
+        revision = subprocess.check_output(["git", "-C", str(agent), "rev-parse", "HEAD"], text=True).strip()
+        assert revision == "5b147ab036d6d19131bff8d20701b5001eab844a", "Use the v0.22.3 release"
+        sid = "compaction-carrier"
+        messages = [
+            {"role": "user", "content": "Inspect the parser."},
+            {"role": "assistant", "content": "I will inspect the parser."},
+            {"role": "user", "content": "Keep the public interface unchanged."},
+            {"role": "assistant", "content": "The parser interface is preserved."},
+        ]
+        for i, msg in enumerate(messages, 1):
+            msg.update(timestamp=999 + i, message_uid=f"carrier-{i}")
+        before = [{k: v for k, v in msg.items() if k != "message_uid"} for msg in messages]
+        summary = SUMMARY_PREFIX + "\nParser inspected; the public interface must stay unchanged."
+        compressor = ContextCompressor.__new__(ContextCompressor)
+        compressor._summary_has_user_turn = True
+        with closing(SessionDB(path)) as db:
+            with patch("hermes_state_sessions.time.time", return_value=1000):
+                db.create_session(sid, source="webui")
+            db.append_messages_batch(sid, messages)
+            snapshot("initial")
+            carrier = copy.deepcopy(messages[1])
+            compressor._merge_summary_into_tail_row(carrier, summary, "assistant", False)
+            assert carrier["content"].startswith(_MERGED_PRIOR_CONTEXT_HEADER)
+            assert _MERGED_SUMMARY_DELIMITER in carrier["content"]
+            with patch("hermes_state_messages.time.time", return_value=2000):
+                db.archive_and_compact(sid, [carrier, *copy.deepcopy(messages[2:])])
+            snapshot("compacted")
+            with patch("hermes_state_messages.time.time", return_value=2500):
+                db.archive_and_compact(sid, [copy.deepcopy(carrier), *copy.deepcopy(messages[2:])])
+            snapshot("replayed")
+        fixture = {"agentRevision": revision, "agentRelease": "v0.22.3", "sessionId": sid,
+                   "before": before, "summary": summary + "\n\n" + _SUMMARY_END_MARKER,
+                   "schema": schema, "snapshots": snapshots}
+        Path(__file__).with_name("compaction-carrier.json").write_text(json.dumps(fixture, indent=2) + "\n")
+        sys.exit(0)
 
     with closing(SessionDB(path)) as db:
         with patch("hermes_state_sessions.time.time", return_value=1000):

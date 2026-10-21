@@ -4,8 +4,11 @@ import { join } from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import fixture from '../test/fixtures/compaction-replay.json' with { type: 'json' }
-import { mergeSessionMessagesAppendOnly, stateDbSeenId } from './merge.js'
-import { stateDbSessionRead } from './state-db.js'
+import carrier from '../test/fixtures/compaction-carrier.json' with { type: 'json' }
+import { bootTestServer } from '../test/harness.js'
+import { Session } from './session.js'
+import { markerKind, mergeSessionMessagesAppendOnly, stateDbSeenId } from './merge.js'
+import { stateDbSessionRead, stateDbSessionTailRead } from './state-db.js'
 import { stripPublicInternalFields } from '../redact.js'
 
 describe('released Agent compaction replay identity (TAL-783)', () => {
@@ -171,4 +174,96 @@ describe('released Agent compaction replay identity (TAL-783)', () => {
     expect(read().at(-1)?._state_db_row_id).toBe(9)
     expect(stateDbSessionRead(path, sid, { lineage: ['parent', sid] }).rows.at(-1)?._state_db_row_id).toBe(1)
   })
+})
+
+// TAL-1259: recorded through v0.22.3's real carrier merge and archive_and_compact.
+describe('released Agent kept-message compaction carrier', () => {
+  let dir: string, path: string, db: DatabaseSync
+  beforeEach(() => {
+    dir = mkdtempSync(join(tmpdir(), 'compaction-carrier-'))
+    path = join(dir, 'state.db'); db = new DatabaseSync(path)
+    db.exec([...carrier.schema, ...carrier.snapshots.compacted].join('\n'))
+  })
+  afterEach(() => { db.close(); rmSync(dir, { recursive: true, force: true }) })
+  it.each([undefined, null, 4])('shows each reply once and one compaction card with seen ID %s', (seenId) => {
+    const read = stateDbSessionRead(path, carrier.sessionId)
+    expect(read.ok).toBe(true)
+    const options = seenId === undefined ? {} : { stateDbSeenId: seenId }
+    const merged = mergeSessionMessagesAppendOnly(carrier.before, read.rows, options)
+    expect(merged.filter((m) => !markerKind(m))).toEqual(carrier.before)
+    expect(merged.filter((m) => markerKind(m))).toHaveLength(1)
+    expect(merged.at(-1)?.content).toBe(carrier.summary)
+    expect(mergeSessionMessagesAppendOnly(merged, read.rows, options)).toEqual(merged)
+  })
+
+  it('keeps the carrier summary and anchor coherent in a bounded tail read', () => {
+    const full = stateDbSessionRead(path, carrier.sessionId)
+    const tail = stateDbSessionTailRead(path, carrier.sessionId, 4)
+    expect(tail.rows).toEqual(full.rows)
+    const summary = tail.rows.find((m) => markerKind(m))!
+    expect(summary).toMatchObject({ _state_db_row_id: 5, content: carrier.summary })
+    expect(tail.rows[0]).toMatchObject({ _state_db_row_id: 2, content: carrier.before[1]!.content })
+    expect(tail.rows[0]).not.toHaveProperty('_state_db_authored_change')
+    expect(stateDbSessionTailRead(path, carrier.sessionId, 5).anchor).toEqual(summary)
+    expect(mergeSessionMessagesAppendOnly(carrier.before, tail.rows, { stateDbSeenId: 4 })).toHaveLength(5)
+    const truncated = mergeSessionMessagesAppendOnly(carrier.before, full.rows, { truncationWatermark: 1003 })
+    expect(truncated).toEqual(carrier.before)
+  })
+
+  it.each(['unflagged', 'unknown-wrapper', 'changed-reply', 'whitespace'] as const)('preserves %s content rather than inferring a copy from the UID', (mode) => {
+    if (mode === 'unflagged') db.exec('UPDATE messages SET _compressed_summary = 0 WHERE id = 5')
+    if (mode === 'unknown-wrapper') db.exec("UPDATE messages SET content = 'Unknown compaction format' WHERE id = 5")
+    if (mode === 'changed-reply') db.exec("UPDATE messages SET content = replace(content, 'I will inspect the parser.', 'An authored change.') WHERE id = 5")
+    if (mode === 'whitespace') db.exec("UPDATE messages SET content = replace(content, 'I will inspect the parser.', '  Indented reply.  ') WHERE id IN (2, 5)")
+    const rows = stateDbSessionRead(path, carrier.sessionId).rows
+    const merged = mergeSessionMessagesAppendOnly(carrier.before, rows, { stateDbSeenId: 4 })
+    if (mode === 'whitespace') {
+      expect(rows[0]).toMatchObject({ content: '  Indented reply.  ', _state_db_row_id: 2 })
+      expect(merged).toHaveLength(5)
+    } else {
+      expect(rows[0]?._state_db_authored_change).toBe(true)
+      expect(merged.filter((m) => !markerKind(m))).toHaveLength(5)
+    }
+    expect(rows.filter((m) => markerKind(m))).toHaveLength(mode === 'unflagged' || mode === 'unknown-wrapper' ? 0 : 1)
+  })
+
+  it('exposes one marked summary on full and paginated detail after a durable seen boundary', async () => {
+    const server = await bootTestServer()
+    const store = new DatabaseSync(join(server.state, 'state.db'))
+    try {
+      store.exec([...carrier.schema, ...carrier.snapshots.initial].join('\n'))
+      const initial = stateDbSessionRead(join(server.state, 'state.db'), carrier.sessionId)
+      const session = new Session({ session_id: carrier.sessionId, messages: carrier.before, context_messages: carrier.before }, { workspace: server.state, model: null })
+      server.deps.sessions.markStateDbSeen(session, initial)
+      await server.deps.sessionStore.save(session)
+      store.exec('PRAGMA foreign_keys = OFF; DROP TABLE messages; DROP TABLE sessions; DROP TABLE system_prompts')
+      store.exec([...carrier.schema, ...carrier.snapshots.compacted].join('\n'))
+      for (const query of [{}, { msg_limit: '50' }, { msg_limit: '50' }]) {
+        const detail = await server.deps.sessions.detail(carrier.sessionId, query)
+        const messages = detail.messages as Record<string, unknown>[]
+        expect(messages.filter((m) => !m._marker_kind).map((m) => m.content)).toEqual(carrier.before.map((m) => m.content))
+        expect(messages.filter((m) => m._marker_kind)).toMatchObject([{ content: carrier.summary, _marker_kind: 'context_compaction' }])
+        expect(messages).toHaveLength(5)
+      }
+    } finally { store.close(); await server.close() }
+  })
+
+  it('does not duplicate a summary when a later compaction carries it unchanged', () => {
+    const first = stateDbSessionRead(path, carrier.sessionId)
+    const merged = mergeSessionMessagesAppendOnly(carrier.before, first.rows, { stateDbSeenId: 4 })
+    db.exec('PRAGMA foreign_keys = OFF; DROP TABLE messages; DROP TABLE sessions; DROP TABLE system_prompts')
+    db.exec([...carrier.schema, ...carrier.snapshots.replayed].join('\n'))
+    const replay = stateDbSessionRead(path, carrier.sessionId)
+    expect(mergeSessionMessagesAppendOnly(merged, replay.rows, { stateDbSeenId: stateDbSeenId(first.rows) })).toEqual(merged)
+  })
+  it.each(['user', 'assistant'])('preserves an embedded carrier separator token in a kept %s message', (role) => {
+    const quoted = 'Use [END OF PRIOR CONTEXT — COMPACTION SUMMARY BELOW] as a literal example.'
+    const original = carrier.before[1]!.content
+    const update = db.prepare('UPDATE messages SET role = ?, content = replace(content, ?, ?) WHERE id IN (2, 5)')
+    update.run(role, original, quoted)
+    const rows = stateDbSessionRead(path, carrier.sessionId).rows
+    expect(rows[0]).toMatchObject({ role, content: quoted, _state_db_row_id: 2 })
+    expect(rows.find((m) => markerKind(m))?.content).toBe(carrier.summary)
+  })
+
 })
