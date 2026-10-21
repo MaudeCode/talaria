@@ -3,7 +3,7 @@
  * module computes for live frames and the public projection of persisted calls (`redact.ts` stamps them). Callers pass
  * redacted args, so the target never shows more than the arguments it came from.
  */
-import type { ToolEditDiff, ToolKind } from '@maudecode/talaria-web-contracts'
+import type { ToolEditDiff, ToolKind, ToolProgress } from '@maudecode/talaria-web-contracts'
 import { str } from '../util.js'
 import { diffHunks, hunkTotals } from '../text/diff.js'
 import { isDict, messageText, TOOL_ARG_CONTENT_CAP, TOOL_ARG_CONTENT_KEYS } from './merge.js'
@@ -159,4 +159,11 @@ export function decidedEditDiff(value: unknown): ToolEditDiff | undefined {
 /** TAL-604: an `edit_diff` with its shown `diff` parsed, so clients never parse it. */
 function withHunks(edit: Omit<ToolEditDiff, 'hunks'>): ToolEditDiff {
   return { ...edit, hunks: diffHunks(edit.diff) }
+}
+
+/** MCP progress is untrusted; only finite percentages and a bounded message reach clients. */
+export function toolProgress(data: Record<string, unknown>): ToolProgress {
+  const finite = (v: unknown): v is number => typeof v === 'number' && Number.isFinite(v)
+  const percent = finite(data.percent) ? data.percent : finite(data.progress) && finite(data.total) && data.total > 0 ? (data.progress / data.total) * 100 : null
+  return { percent: percent === null ? null : Math.round(Math.max(0, Math.min(100, percent))), message: typeof data.message === 'string' ? data.message.trim().slice(0, 1000) || null : null }
 }

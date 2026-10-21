@@ -154,7 +154,7 @@ function resumeCursor(ctx: RequestContext, streamId: string): { afterSeq: number
  * stamped on the way out.
  */
 function publicFramePayload(ctx: RequestContext, event: string, payload: unknown, redacted: boolean | undefined): unknown {
-  const tool = (event === 'tool' || event === 'tool_complete') && redacted !== true && payload && typeof payload === 'object' && !Array.isArray(payload)
+  const tool = (event === 'tool' || event === 'tool_complete' || event === 'tool_progress') && redacted !== true && payload && typeof payload === 'object' && !Array.isArray(payload)
   return tool ? publicToolFrame(payload as Record<string, unknown>, ctx.deps.sessions.deps.redactEnabled()) : payload
 }
 

@@ -54,8 +54,11 @@ export type DiffHunk = z.infer<typeof DiffHunkSchema>
  */
 export const ToolEditDiffSchema = z.object({ added: z.number().int(), removed: z.number().int(), diff: z.string(), truncated: z.boolean(), hunks: z.array(DiffHunkSchema) })
 export type ToolEditDiff = z.infer<typeof ToolEditDiffSchema>
-/** Server-derived display fields every tool call carries: the kind, and the redacted first-line label of its main argument (`''` when none; omitted on a live frame with none, which keeps its start frame's target), and a file edit's `edit_diff`. */
-export const ToolDisplayFields = { kind: ToolKindSchema.optional(), target: z.string().optional(), edit_diff: ToolEditDiffSchema.optional() }
+/** The latest server-normalized MCP update; never stored with the transcript. */
+export const ToolProgressSchema = z.object({ percent: z.number().min(0).max(100).nullable(), message: z.string().nullable() })
+export type ToolProgress = z.infer<typeof ToolProgressSchema>
+/** Shared tool display fields. Progress is ephemeral, absent on older servers and null after completion. */
+export const ToolDisplayFields = { progress: ToolProgressSchema.nullable().optional(), kind: ToolKindSchema.optional(), target: z.string().optional(), edit_diff: ToolEditDiffSchema.optional() }
 
 /**
  * TAL-315: a tool result's display sections, decided by the server's one rule for live, replayed and persisted results

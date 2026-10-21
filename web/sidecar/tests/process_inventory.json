@@ -1387,6 +1387,13 @@
         ""
       ]
     },
+    "tests/test_mcp_progress.py::test_mcp_stdio_progress_reaches_the_sidecar_tool_row": {
+      "layer": "compatibility",
+      "reason": "Real supported-Agent MCP stdio progress-token round trip through the callback chat.start installs; boundary fakes cannot establish this API behavior.",
+      "cases": [
+        ""
+      ]
+    },
     "tests/test_memory_check.py::test_memory_check_counts_parsed_entries_against_the_profile_limits": {
       "layer": "compatibility",
       "reason": "Supported-Agent API compatibility: memory check counts parsed entries against the profile limits. Uses the real installed release, not a fabricated API response.",

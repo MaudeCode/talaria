@@ -24,6 +24,15 @@ const legacyRows = [
 ]
 
 describe('normalizeSceneRows', () => {
+  it('keeps progress only on running rows', () => {
+    const progress = { percent: 42, message: 'indexing files' }
+    const rows = normalizeSceneRows([
+      { role: 'tool', tool: { id: 'running', name: 'mcp__index', done: false, progress } },
+      { role: 'tool', tool: { id: 'complete', name: 'mcp__index', done: true, progress } },
+      { role: 'tool', status: 'completed', tool: { id: 'legacy', name: 'mcp__index', progress } },
+    ])
+    expect(rows.map((row) => row.tool?.progress)).toEqual([progress, null, null])
+  })
   it('orders rows and gives every role one explicit shape', () => {
     const rows = normalizeSceneRows(legacyRows)
     expect(rows.map((r) => [r.order_index, r.row_id, r.role])).toEqual([

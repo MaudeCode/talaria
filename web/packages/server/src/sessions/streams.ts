@@ -34,13 +34,14 @@ const OFFLINE_BUFFER_MAXLEN = 8192
 const SUBSCRIBER_QUEUE_MAXSIZE = OFFLINE_BUFFER_MAXLEN
 
 export class StreamChannel {
+  private readonly toolProgress = new Map<string, StreamItem>()
   private readonly subscribers = new Set<StreamSubscriber>()
   private readonly offline: StreamItem[] = []
   private offlineDropped = 0
   lastEventId: string | null = null
 
   subscribeWithSnapshot(): [StreamSubscriber, SubscribeSnapshot] {
-    const sub: StreamSubscriber = { queue: [...this.offline], wake: null, closed: false, gap: null }
+    const sub: StreamSubscriber = { queue: [...this.offline, ...this.toolProgress.values()], wake: null, closed: false, gap: null }
     const first = this.offline[0]
     const snapshot: SubscribeSnapshot = { offline_buffered_events: this.offline.length, offline_dropped_events: this.offlineDropped, offline_first_event_id: first?.[2] ?? null, last_event_id: this.lastEventId }
     this.subscribers.add(sub)
@@ -57,8 +58,13 @@ export class StreamChannel {
   }
 
   put(item: StreamItem): void {
+    const data = item[1] as { id?: string } | null
+    if (item[0] === 'tool_progress' && data?.id) this.toolProgress.set(data.id, item)
+    else if (item[0] === 'tool_complete' && data?.id) this.toolProgress.delete(data.id)
+    else if (['done', 'cancel', 'apperror', 'error', 'stream_end'].includes(item[0])) this.toolProgress.clear()
     if (item[2]) this.lastEventId = item[2]
     if (!this.subscribers.size) {
+      if (item[0] === 'tool_progress') return
       if (this.offline.length >= OFFLINE_BUFFER_MAXLEN) {
         this.offline.shift()
         this.offlineDropped += 1
@@ -75,7 +81,7 @@ export class StreamChannel {
         sub.gap.dropped += 1
         if (lost[2]) sub.gap.firstEventId ??= lost[2]
         else if (REFETCH_SIGNALS.has(lost[0])) sub.gap.signals.set(lost[0], lost[1])
-        else sub.gap.unjournaled = true
+        else if (lost[0] !== 'tool_progress') sub.gap.unjournaled = true
         this.subscriberDropped += 1
       }
       sub.queue.push(item)

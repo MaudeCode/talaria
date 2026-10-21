@@ -10,7 +10,7 @@ import { hasToolUseBlocks, finalAnswerOf, agentRowKind, agentSteerText, isReason
 import type { Session } from './session.js'
 import { toolMessageForLimitedPayload } from './window.js'
 import { decidedEditDiff, toolArgs, toolEditDiff } from './tool-display.js'
-import type { ToolEditDiff } from '@maudecode/talaria-web-contracts'
+import { ToolProgressSchema, type ToolProgress, type ToolEditDiff } from '@maudecode/talaria-web-contracts'
 import { turnFileChanges } from './file-changes.js'
 
 const isDict = (v: unknown): v is Record<string, unknown> => Boolean(v) && typeof v === 'object' && !Array.isArray(v)
@@ -169,7 +169,7 @@ export function anchorSceneRecords(session: Session): Record<string, unknown> {
 }
 
 /** `result_truncated`/`result_chars`: a limited response clipped `result`; `GET /api/session/tool-result` serves it whole. */
-export interface SceneTool { id: string; name: string; args: unknown; preview: string | null; result: unknown; result_view: ToolResultView | null; edit_diff?: ToolEditDiff; done: boolean; is_error: boolean; duration: number | null; cost_usd: number | null; result_truncated?: true; result_chars?: number | null }
+export interface SceneTool { progress?: ToolProgress | null; id: string; name: string; args: unknown; preview: string | null; result: unknown; result_view: ToolResultView | null; edit_diff?: ToolEditDiff; done: boolean; is_error: boolean; duration: number | null; cost_usd: number | null; result_truncated?: true; result_chars?: number | null }
 export interface SceneSteering { steer_id: string; consumed: boolean; submitted_at: number | null; consumed_at: number | null; phase_duration?: number | null }
 /** The one scene row shape both clients render: every decoding decision is made here. */
 export interface SceneRow {
@@ -229,6 +229,7 @@ export function normalizeSceneRows(value: unknown): SceneRow[] {
       put({ ...base, role: 'steering', text: str(row.text), steering: { steer_id: steerId || rowId, consumed, submitted_at: finite(payload.created_at) ?? finite(steering.submitted_at), consumed_at: consumed ? finite(payload.consumed_at) ?? finite(steering.consumed_at) ?? createdAt : null, phase_duration: finite(steering.phase_duration) } })
     } else if (row.role === 'tool') {
       const status = str(row.status).toLowerCase()
+      const done = typeof tool.done === 'boolean' ? tool.done : status !== 'running'
       const result = tool.result ?? tool.output ?? tool.snippet ?? null
       const editDiff = decidedEditDiff(tool.edit_diff)
       put({ ...base, role: 'tool', tool: {
@@ -236,8 +237,9 @@ export function normalizeSceneRows(value: unknown): SceneRow[] {
         // A built row keeps the view its full result decided (deciding twice would unescape text kept as written); a row
         // stored without one gets it from its own result.
         result, result_view: isDict(tool.result_view) ? decidedResultView(tool.result_view) : result === null ? null : toolResultView(result),
+        ...(tool.progress !== undefined ? { progress: done ? null : ToolProgressSchema.safeParse(tool.progress).data ?? null } : {}),
         ...(editDiff ? { edit_diff: editDiff } : {}),
-        done: typeof tool.done === 'boolean' ? tool.done : status !== 'running',
+        done,
         is_error: tool.is_error === true || tool.error === true || status === 'error' || status === 'failed',
         duration: finite(tool.duration), cost_usd: finite(tool.cost_usd),
         ...(tool.result_truncated === true ? { result_truncated: true as const, result_chars: finite(tool.result_chars) } : {}),
@@ -384,6 +386,7 @@ export function buildTurnScene(turn: [Record<string, unknown>, number][], opts: 
       const editDiff = reply ? toolEditDiff(name, reply.content, reply.display_metadata) : decidedEditDiff(call.edit_diff)
       push({ row_id: `tool:${id}`, role: 'tool', ...at, tool: {
         id, name, args: toolArgs(call),
+        ...(call.progress !== undefined ? { progress: call.done === false ? ToolProgressSchema.safeParse(call.progress).data ?? null : null } : {}),
         preview: str(call.preview) || null, result, result_view: resultView, ...(editDiff ? { edit_diff: editDiff } : {}), done: typeof call.done === 'boolean' ? call.done : true,
         is_error: call.is_error === true || reply?.is_error === true, duration: finite(call.duration), cost_usd: finite(call.cost_usd),
         ...(clipped && reply ? { result_truncated: true as const, result_chars: messageText(reply.content).length } : {}),

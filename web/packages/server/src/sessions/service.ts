@@ -124,6 +124,7 @@ export interface SessionServiceDeps {
     pendingSteers?: (streamId: string) => PendingSteer[]
     /** The live stream's server-selected presentation, else null. */
     runStatus?: (streamId: string) => RunStatus | null
+    liveToolProgress?: (streamId: string) => Record<string, unknown>[]
     /** TAL-1006: the live stream's open compression span start (epoch seconds), else null. */
     compressionStartedAt?: (streamId: string) => number | null
     /** TAL-899: whether a Stop holds the session's automatic turns until the user's next turn. */
@@ -1046,6 +1047,7 @@ export class SessionService {
     const windowed = loadMessages && msgLimit !== null && (msgBefore !== null || truncated.length < (limited?.total ?? all.length))
     let toolCalls: unknown[] = loadMessages ? s.tool_calls : []
     if (windowed) toolCalls = prefix ? prefix.toolCalls(offset, truncated.length, true) : toolCallsForMessageWindow(toolCalls, offset, truncated.length)
+    if (loadMessages && s.active_stream_id && msgBefore === null) toolCalls = [...toolCalls, ...(this.deps.runtime.liveToolProgress?.(s.active_stream_id) ?? [])]
     const mergedCount = summaryCount ?? all.length
     let mergedLast = summaryLast ?? 0
     if (summaryLast === null && all.length) {

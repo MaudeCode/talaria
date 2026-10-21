@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { withToolCallOutcomes } from './merge.js'
 import { diffHunks } from '../text/diff.js'
-import { decidedEditDiff, EDIT_DIFF_MAX_LINES, toolArgs, toolDisplay, toolEditDiff, toolKind } from './tool-display.js'
+import { decidedEditDiff, EDIT_DIFF_MAX_LINES, toolArgs, toolDisplay, toolEditDiff, toolKind, toolProgress } from './tool-display.js'
 
 describe('toolKind', () => {
   it.each([
@@ -120,5 +120,22 @@ describe('toolEditDiff (TAL-448)', () => {
     ])
     expect(toolEditDiff('write_file', '{}', { diff: '' })).toBeUndefined()
     expect(toolEditDiff('write_file', '{}', { diff: 3 })).toBeUndefined()
+  })
+})
+
+describe('MCP tool progress', () => {
+  it.each([
+    [{ progress: 21, total: 50 }, 42], [{ percent: 80, progress: 1, total: 2 }, 80],
+    [{ percent: -5 }, 0], [{ percent: 200 }, 100], [{ progress: 10, total: 0 }, null],
+    [{ percent: NaN, progress: 1, total: 4 }, 25], [{ percent: Infinity }, null],
+    [{ progress: Infinity, total: 3 }, null], [{ progress: 0, total: 100 }, 0],
+    [{ progress: 1, total: 3 }, 33], [{ percent: '42' }, null],
+  ])('normalizes %j to %s', (raw, percent) => {
+    expect(toolProgress({ ...raw, message: ' indexing files ' })).toEqual({ percent, message: 'indexing files' })
+  })
+  it('bounds messages and supports message-only or percentage-only updates', () => {
+    expect(toolProgress({ message: 'x'.repeat(2000) }).message).toHaveLength(1000)
+    expect(toolProgress({ message: 42 })).toEqual({ percent: null, message: null })
+    expect(toolProgress({ percent: 0, message: '  ' })).toEqual({ percent: 0, message: null })
   })
 })

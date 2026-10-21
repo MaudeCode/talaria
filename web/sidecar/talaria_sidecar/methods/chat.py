@@ -1685,7 +1685,12 @@ def start(ctx: CallContext, params: dict) -> dict:  # noqa: PLR0915 - one turn, 
             return metadata
 
         def on_tool(*cb_args, **cb_kwargs):
-            # Structured callbacks carry tool cards; the progress callback only feeds reasoning text on older builds.
+            # Structured callbacks carry tool cards; the Agent already throttles MCP progress.
+            if len(cb_args) >= 3 and cb_args[0] == "tool.progress":
+                emit("tool_progress", {"tool_call_id": str(cb_kwargs.get("tool_call_id") or ""), "message": cb_args[2],
+                                       "progress": cb_kwargs.get("progress"), "total": cb_kwargs.get("total"),
+                                       "percent": cb_kwargs.get("percent")})
+                return
             if len(cb_args) >= 3 and cb_args[0] in ("reasoning.available", "_thinking"):
                 text = cb_args[2] if cb_args[0] == "reasoning.available" else cb_args[1]
                 if text:

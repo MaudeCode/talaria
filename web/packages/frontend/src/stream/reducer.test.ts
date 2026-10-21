@@ -343,3 +343,27 @@ describe('stream reducer: every lifecycle exit', () => {
     expect(s.turns[SID]!.doneSession?.title).toBe('settled')
   })
 })
+
+it('projects MCP progress by call id and clears it on completion (TAL-1268)', () => {
+  let s = ev(started(), 'tool', { id: 'a', name: 'mcp__index' }, { id: `${STREAM}:1` })
+  s = ev(s, 'tool_progress', { id: 'a', progress: { percent: 42, message: 'indexing files' } }, { id: `${STREAM}:1` })
+  expect(s.turns[SID]!.tools.a).toMatchObject({ progress: { percent: 42, message: 'indexing files' } })
+  s = ev(s, 'tool_complete', { id: 'a', name: 'mcp__index', progress: null })
+  expect(s.turns[SID]!.tools.a).toMatchObject({ progress: null })
+})
+
+it.each(['done', 'cancel', 'error', 'apperror', 'stream_end'])('clears MCP progress on %s', (event) => {
+  let s = ev(started(), 'tool', { id: 'a', name: 'mcp__index' })
+  s = ev(s, 'tool_progress', { id: 'a', progress: { percent: 0, message: 'starting' } })
+  s = ev(s, event, {})
+  expect(s.turns[SID]!.tools.a).toMatchObject({ progress: null })
+  s = ev(s, 'tool_progress', { id: 'a', progress: { percent: 99, message: 'late' } })
+  expect(s.turns[SID]!.tools.a).toMatchObject({ progress: null })
+})
+
+it('clears MCP progress when server status reconciles a missing terminal frame', () => {
+  let s = ev(started(), 'tool', { id: 'a', name: 'mcp__index', progress: { percent: 42, message: 'indexing files' } })
+  expect(s.turns[SID]!.tools.a).toMatchObject({ progress: { percent: 42 } })
+  s = streamReducer(s, { type: 'settle', sessionId: SID, streamId: STREAM, session: null })
+  expect(s.turns[SID]!.tools.a).toMatchObject({ progress: null })
+})
