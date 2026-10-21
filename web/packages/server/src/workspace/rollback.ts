@@ -110,8 +110,8 @@ export class RollbackStore {
 
   /**
    * The Agent snapshots the workspace first, then reverts it. By default only files still as the Agent last wrote them
-   * (TAL-1260), and it names what it acted on; `all`, or a store with no agent-write history, checks the whole checkpoint
-   * out, rewriting every file the diff shows except one added since, which is left in place.
+   * (TAL-1260), and it names what it acted on; the sidecar refuses one where the Agent has no record of its writes. `all`
+   * checks the whole checkpoint out, rewriting every file the diff shows except one added since, which is left in place.
    */
   async restore(workspace: unknown, checkpoint: unknown, allowed: string[] = [], all = false): Promise<Record<string, unknown>> {
     const resolved = (await this.resolveWorkspace(workspace, allowed))

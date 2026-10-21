@@ -58,6 +58,15 @@ def _paths(result: dict, key: str) -> list[str]:
     return [str(f) for f in result.get(key) or []]
 
 
+def _has_agent_writes(manager, workspace: str) -> bool:
+    """Whether the Agent's agent-write ledger for ``workspace`` has entries: the same file and key its safe restore reads
+    (``_safe_restore_plan``), which takes the full-restore branch when it is empty. A write only adds an entry, so a ledger
+    seen here is not empty when the restore reads it."""
+    from tools.checkpoint_manager import _load_ledger, _normalize_path, _store_path
+
+    return bool(_load_ledger(_store_path(), manager._ledger_key(str(_normalize_path(workspace)))))
+
+
 def _owned(manager, workspace: str, checkpoint: str) -> str:
     """The full hash of ``checkpoint`` among ``workspace``'s own checkpoints. The store is shared by every project and the
     Agent's diff and restore accept any commit in it, so another workspace's hash would check that tree out here."""
@@ -87,12 +96,18 @@ def register(registry) -> None:
     @registry.method("checkpoints.restore")
     def restore(ctx: CallContext, params: dict) -> dict:
         """Safe by default, as the Agent's own ``rollback.restore`` (TAL-1260): only files whose content is still what the
-        Agent last wrote are reverted, and the hand-edited ones it kept are reported. ``all`` restores every file. Without an
-        agent-write ledger the Agent falls back to a full restore and ``restored_files`` is null."""
+        Agent last wrote are reverted, and the hand-edited ones it kept are reported. ``all`` restores every file, and only
+        then is ``restored_files`` null. Without an agent-write ledger the Agent would fall back to a full restore, so a
+        default restore is refused there instead: it cannot tell the user's edits apart."""
         workspace, checkpoint = _param(params, "workspace"), _param(params, "checkpoint")
+        safe = params.get("all") is not True
         with scoped_home(profile_home_param(params)):
             manager = _manager()
-            result = _agent_result(manager.restore(workspace, _owned(manager, workspace, checkpoint), safe=params.get("all") is not True))
+            owned = _owned(manager, workspace, checkpoint)
+            if safe and not _has_agent_writes(manager, workspace):
+                raise RpcError("The Agent has no record of the files it wrote here, so your own edits cannot be told apart. "
+                               "Use Restore everything to restore every file.", condition="checkpoint_failed")
+            result = _agent_result(manager.restore(workspace, owned, safe=safe))
         return {"restored_to": str(result.get("restored_to") or ""), "reason": str(result.get("reason") or ""),
                 "restored_files": _paths(result, "restored_files") if isinstance(result.get("restored_files"), list) else None,
                 "kept_user_edits": _paths(result, "skipped_user_edits"), "skipped_oversize": _paths(result, "skipped_oversize"),

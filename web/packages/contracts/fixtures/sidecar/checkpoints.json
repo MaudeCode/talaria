@@ -39,7 +39,8 @@
       "params": {
         "profile_home": "<home>",
         "workspace": "<user-home>/project",
-        "checkpoint": "4bd547a307128eaff534b6fce8abca75a442d546"
+        "checkpoint": "4bd547a307128eaff534b6fce8abca75a442d546",
+        "all": true
       },
       "result": {
         "restored_to": "4bd547a3",

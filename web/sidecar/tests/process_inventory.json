@@ -678,6 +678,13 @@
         ""
       ]
     },
+    "tests/test_checkpoints.py::test_a_default_restore_without_a_record_of_agent_writes_is_refused": {
+      "layer": "compatibility",
+      "reason": "Supported-Agent API compatibility: a default restore without the Agent's agent-write ledger is refused before the Agent falls back to a full restore. Uses the real installed release, not a fabricated API response.",
+      "cases": [
+        ""
+      ]
+    },
     "tests/test_checkpoints.py::test_an_unknown_checkpoint_is_the_agents_refusal": {
       "layer": "compatibility",
       "reason": "Supported-Agent API compatibility: an unknown checkpoint is the agents refusal. Uses the real installed release, not a fabricated API response.",
