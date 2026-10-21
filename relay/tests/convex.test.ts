@@ -5,6 +5,7 @@ import { describe, expect, it, vi } from "vitest";
 
 import { internal } from "../convex/_generated/api";
 import type { Id } from "../convex/_generated/dataModel";
+import { revokeDevicesForSession } from "../convex/auth";
 import { bytesToBase64Url, sha256 } from "../convex/lib/crypto";
 import { defaultNotificationPreferences } from "../convex/lib/model";
 import schema from "../convex/schema";
@@ -236,6 +237,8 @@ describe("Convex relay state", () => {
         bundleId: "dev.kil.talaria",
         apsEnvironment: "sandbox",
         pushToken: "push-token",
+        pushToStartToken: "start-token",
+        pushToStartIssuedAt: now,
         preferences: defaultNotificationPreferences,
         createdAt: now,
         updatedAt: now,
@@ -272,6 +275,8 @@ describe("Convex relay state", () => {
     }));
     expect(revokedOwnership.device?.revokedAt).toBe(now + 1);
     expect(revokedOwnership.device?.pushToken).toBeUndefined();
+    expect(revokedOwnership.device?.pushToStartToken).toBeUndefined();
+    expect(revokedOwnership.device?.pushToStartIssuedAt).toBeUndefined();
     expect(revokedOwnership.activity?.endedAt).toBe(now + 1);
 
     await backend.mutation(internal.pairing.createPublisherInvitation, {
@@ -1420,6 +1425,62 @@ describe("Convex relay state", () => {
     })).resolves.toMatchObject({ status: "ready", kind: "live_activity_update" });
   });
 
+  it("counts every matched session device and returns zero for an empty session", async () => {
+    const backend = testBackend();
+    const now = 1_800_000_000_000;
+    await backend.run(async (ctx) => {
+      for (const [deviceId, userId, sessionId, revokedAt] of [
+        ["device-1", "user-1", "session-1", undefined],
+        ["device-2", "user-1", "session-1", now - 1],
+        ["device-3", "user-1", "session-2", undefined],
+        ["device-4", "user-2", "session-1", undefined],
+      ] as const) {
+        await ctx.db.insert("devices", {
+          deviceId, userId, sessionId, revokedAt,
+          label: "iPhone",
+          pushToken: "push-token",
+          preferences: defaultNotificationPreferences,
+          createdAt: now - 100,
+          updatedAt: now - 100,
+        });
+      }
+      expect(await revokeDevicesForSession(ctx, "user-1", "session-1", now)).toBe(2);
+      expect(await revokeDevicesForSession(ctx, "user-1", "empty-session", now)).toBe(0);
+      const devices = await ctx.db.query("devices").collect();
+      for (const device of devices) {
+        const matched = device.userId === "user-1" && device.sessionId === "session-1";
+        expect(device.revokedAt).toBe(matched ? now : undefined);
+        expect(device.pushToken).toBe(matched ? undefined : "push-token");
+      }
+    });
+  });
+
+  it("sums revoked devices across expired sessions including empty sessions", async () => {
+    const backend = testBackend();
+    const now = Date.now();
+    await backend.run(async (ctx) => {
+      for (const [sessionId, deviceCount] of [["empty", 0], ["one", 1], ["two", 2]] as const) {
+        await ctx.db.insert("userSessions", {
+          userId: "user-1", sessionId, tokenHash: sessionId,
+          expiresAt: now - 1, createdAt: now - 100,
+        });
+        for (let index = 0; index < deviceCount; index += 1) {
+          await ctx.db.insert("devices", {
+            userId: "user-1", sessionId, deviceId: `${sessionId}-${index}`,
+            label: "iPhone", preferences: defaultNotificationPreferences,
+            createdAt: now - 100, updatedAt: now - 100,
+          });
+        }
+      }
+    });
+    await expect(backend.mutation(internal.cleanup.prune, {})).resolves.toEqual({
+      deleted: 3, revokedDevices: 3,
+    });
+    await expect(backend.mutation(internal.cleanup.prune, {})).resolves.toEqual({
+      deleted: 0, revokedDevices: 0,
+    });
+  });
+
   it("retires devices and activities when cleanup expires their relay session", async () => {
     const backend = testBackend();
     const now = 1_800_000_000_000;
@@ -1440,6 +1501,8 @@ describe("Convex relay state", () => {
         bundleId: "dev.kil.talaria",
         apsEnvironment: "sandbox",
         pushToken: "expired-push",
+        pushToStartToken: "expired-start",
+        pushToStartIssuedAt: now - 100,
         preferences: defaultNotificationPreferences,
         createdAt: now - 100,
         updatedAt: now - 100,
@@ -1489,6 +1552,10 @@ describe("Convex relay state", () => {
     expect(state.sessions).toHaveLength(0);
     expect(state.device?.revokedAt).toEqual(expect.any(Number));
     expect(state.device?.pushToken).toBeUndefined();
+    expect(state.device?.pushToStartToken).toBeUndefined();
+    expect(state.device?.pushToStartIssuedAt).toBeUndefined();
+    expect(state.device?.updatedAt).toBe(state.device?.revokedAt);
+    expect(state.activity?.updatedAt).toBe(state.device?.revokedAt);
     expect(state.activity?.endedAt).toBe(state.device?.revokedAt);
   });
 

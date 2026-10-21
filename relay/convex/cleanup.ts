@@ -3,6 +3,7 @@ import { v } from "convex/values";
 import { internal } from "./_generated/api";
 import type { Doc } from "./_generated/dataModel";
 import { internalMutation, type MutationCtx } from "./_generated/server";
+import { revokeDevicesForSession } from "./auth";
 import { grantMatches } from "./completions";
 
 /** Walks every completion 100 per run, returning rows whose grant is gone or now belongs to another enrollment. */
@@ -106,33 +107,7 @@ export const prune = internalMutation({
     ]);
     let revokedDevices = 0;
     for (const session of userSessions) {
-      const ownedDevices = await ctx.db
-        .query("devices")
-        .withIndex("by_user_id_and_session_id", (query) =>
-          query.eq("userId", session.userId).eq("sessionId", session.sessionId),
-        )
-        .collect();
-      for (const device of ownedDevices) {
-        revokedDevices += 1;
-        await ctx.db.patch(device._id, {
-          revokedAt: now,
-          pushToken: undefined,
-          pushToStartToken: undefined,
-          pushToStartIssuedAt: undefined,
-          updatedAt: now,
-        });
-        const ownedActivities = await ctx.db
-          .query("liveActivities")
-          .withIndex("by_user_id_and_device_id_and_mode_and_ended_at", (query) =>
-            query.eq("userId", session.userId).eq("deviceId", device.deviceId),
-          )
-          .collect();
-        for (const activity of ownedActivities) {
-          if (activity.endedAt === undefined) {
-            await ctx.db.patch(activity._id, { endedAt: now, updatedAt: now });
-          }
-        }
-      }
+      revokedDevices += await revokeDevicesForSession(ctx, session.userId, session.sessionId, now);
     }
     const documents = [
       ...nonces,
