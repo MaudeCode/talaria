@@ -1,0 +1,12 @@
+{
+  "entries": [
+    {
+      "category": "Added",
+      "summary": "Export Agent-owned chats as JSON, Markdown, or HTML without creating a local copy.",
+      "highlight": false,
+      "components": [
+        "web"
+      ]
+    }
+  ]
+}

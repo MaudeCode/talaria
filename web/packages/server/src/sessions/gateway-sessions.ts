@@ -2,9 +2,9 @@ import { unavailableContextDetail, type ContextDetail } from '@maudecode/talaria
 /** One native-owner seam. Talaria observes its history and never settles it into a local Session. */
 import type { StartupTiming } from '../startup-timing.js'
 import { createHash, randomUUID } from 'node:crypto'
-import { SessionNoticeSchema, GatewayClarifyBatchSchema, GatewaySessionResultSchema, type ClarifyAnswers, type ClarifyStep, type ExecutionModes, type GatewayClarifyBatch, type GatewayCreateParams, type GatewaySessionParams, type GatewaySessionResult, type GatewaySnapshot, type OwnerAttachment, type ModelChange } from '@maudecode/talaria-web-contracts'
+import { OWNER_EXPORT_MAX_BYTES, SessionNoticeSchema, GatewayClarifyBatchSchema, GatewaySessionResultSchema, type ClarifyAnswers, type ClarifyStep, type ExecutionModes, type GatewayClarifyBatch, type GatewayCreateParams, type GatewaySessionParams, type GatewaySessionResult, type GatewaySnapshot, type OwnerAttachment, type ModelChange } from '@maudecode/talaria-web-contracts'
 import type { SidecarLike, StreamFrame } from '../sidecar/client.js'
-import { redactNestedMessageContainers, publicToolFrame, redactString } from '../redact.js'
+import { redactNestedMessageContainers, redactText, publicToolFrame, redactString } from '../redact.js'
 import { str } from '../util.js'
 import { PendingPrompts } from './pending.js'
 import { clarifyReply } from './pending.js'
@@ -242,6 +242,28 @@ export class GatewaySessions {
   }
 
   async isOwned(sid: string): Promise<boolean> { return (await this.target(sid)) !== null }
+
+  async export(sid: string, format: NonNullable<GatewaySessionParams['format']>): Promise<NonNullable<GatewaySessionResult['export']> | null> {
+    const target = await this.target(sid)
+    if (!target) return null
+    const redact = this.deps.redactEnabled()
+    const result = await this.call(target, { action: 'export', format, redact })
+    const value = result.export
+    if (result.reason === 'export_too_large') throw new HttpFailure(413, 'The owner transcript exceeds the export limit')
+    if (result.state !== 'attached' || value?.format !== format) {
+      throw new HttpFailure(409, 'The Agent owner cannot export this chat. Check that its gateway is running and supports transcript export.', { code: 'owner_export_unavailable' })
+    }
+    if (Buffer.byteLength(value.content, 'utf8') > OWNER_EXPORT_MAX_BYTES) throw new HttpFailure(413, 'The owner transcript exceeds the export limit')
+    let content: string
+    try {
+      content = format === 'json' ? JSON.stringify(redactNestedMessageContainers(JSON.parse(value.content) as unknown, redact), null, 2)
+        : str(redactText(value.content, redact))
+    } catch {
+      throw new HttpFailure(409, 'The Agent owner returned an invalid transcript export', { code: 'owner_export_invalid' })
+    }
+    if (Buffer.byteLength(content, 'utf8') > OWNER_EXPORT_MAX_BYTES) throw new HttpFailure(413, 'The owner transcript exceeds the export limit')
+    return { ...value, content }
+  }
 
   private async createCall(params: GatewayCreateParams): Promise<GatewaySessionResult> {
     const sidecar = this.deps.sidecar()

@@ -83232,7 +83232,7 @@
             "name": "session_id",
             "in": "query",
             "required": true,
-            "description": "Session to export.",
+            "description": "Session to export, including a canonical chat owned by an already-running Agent gateway.",
             "schema": {
               "type": "string"
             }
@@ -83269,8 +83269,26 @@
           "200": {
             "description": "Attachment named `hermes-<session_id>.<ext>`."
           },
+          "400": {
+            "description": "Invalid export format.",
+            "content": {
+              "application/json": {}
+            }
+          },
           "404": {
-            "description": "Session not found.",
+            "description": "Session not found in the active profile.",
+            "content": {
+              "application/json": {}
+            }
+          },
+          "409": {
+            "description": "The canonical Agent owner is unavailable or does not support transcript export.",
+            "content": {
+              "application/json": {}
+            }
+          },
+          "413": {
+            "description": "The owner transcript exceeds the export limit.",
             "content": {
               "application/json": {}
             }

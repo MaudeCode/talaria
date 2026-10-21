@@ -17,7 +17,8 @@ from ..errors import InvalidParams
 from ..home import profile_home_param, scoped_home
 
 _ACTIONS = {"snapshot", "watch", "context_detail", "submit", "receipt", "cancel", "steer_queued", "replace_queued", "interrupt", "approval", "clarify",
-            "clarify_lock", "discard", "mutate"}
+            "clarify_lock", "discard", "mutate", "export"}
+_EXPORT_MAX_BYTES = 4 * 1024 * 1024
 # A restart's after-turn wait keeps the owner reachable only to finish its parked turn (the owner's
 # RESTART_WAIT_WS_METHODS); new work waits for the next owner.
 _RESTART_ACTIONS = {"snapshot", "watch", "receipt", "approval", "clarify", "clarify_lock", "interrupt"}
@@ -173,6 +174,19 @@ async def _run(ctx, params: dict, home: Path, discovery) -> dict:
 
         receipt = lock = None
         try:
+            if params["action"] == "export":
+                # No resume/subscription or mutation: the owner selects its current physical target.
+                fmt = "md" if params["format"] == "markdown" else params["format"]
+                value = await asyncio.wait_for(client.rpc("session.export", session_id=sid,
+                    format=fmt, redact=params["redact"], _timeout=25), timeout=30)
+                if (not isinstance(value, dict) or value.get("format") != fmt
+                        or not isinstance(value.get("filename"), str) or not 0 < len(value["filename"]) <= 255
+                        or not isinstance(value.get("content"), str)):
+                    return _refused("refused", "owner_export_invalid")
+                if len(value["content"]) > _EXPORT_MAX_BYTES or len(value["content"].encode("utf-8")) > _EXPORT_MAX_BYTES:
+                    return _refused("refused", "export_too_large")
+                return {"state": "attached", "reason": None, "snapshot": None, "receipt": None,
+                        "export": {"format": params["format"], "filename": value["filename"], "content": value["content"]}}
             snap = await snapshot()
             action = params["action"]
             common = {"session_id": sid}
@@ -296,6 +310,8 @@ async def _run(ctx, params: dict, home: Path, discovery) -> dict:
                 ctx.emit("event", event)
             return result
         except GatewayRPCError as exc:
+            if params["action"] == "export":
+                return _refused("refused", "export_too_large" if str(exc) == "export_too_large" else "owner_export_unsupported")
             return {**_refused("incompatible" if str(exc) in _CONTROL_REFUSALS else "refused", str(exc)), "receipt": receipt}
         except Exception:  # noqa: BLE001 - native transport/contract failures never authorize another writer
             # A received receipt remains admission proof even if the following observation
@@ -314,6 +330,9 @@ def session(ctx, params: dict) -> dict:
     if action not in _ACTIONS or not isinstance(sid, str) or not sid.strip() or sid != sid.strip():
         raise InvalidParams("session_id and supported action are required")
     params = {**params, "action": action}
+    if action == "export" and (params.get("format") not in ("json", "markdown", "html")
+                               or not isinstance(params.get("redact"), bool)):
+        raise InvalidParams("export requires an allowed format and redaction policy")
     required = {
         "submit": ("request_id", "text"), "receipt": ("admission_id",), "cancel": ("admission_id",),
         "steer_queued": ("admission_id",), "replace_queued": ("admission_id", "submission_id", "text"),

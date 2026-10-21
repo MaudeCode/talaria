@@ -151,6 +151,7 @@ def native_owner_stub(tmp_path, monkeypatch):
     from talaria_sidecar.methods import gateway_sessions as adapter
 
     owner = SimpleNamespace(receipt=None, replay=[], events=[], frames=[], info={}, payload=None, calls=[], config_failure=None,
+                            export=None, export_failure=None,
                             described={"instance_id": "owner", "profile_id": "profile", "authority_epoch": 1,
                                        "capabilities": ["durable-admission-v1", "event-replay-v1"]})
     async def rpc(method, **params):
@@ -160,6 +161,12 @@ def native_owner_stub(tmp_path, monkeypatch):
         if method == "session.resume":
             return {"session_id": params["session_id"], "subscription_id": "viewer", "messages": [], "info": owner.info,
                     "replay_epoch": "epoch", "last_sequence": 4, "execution_generation": 1, **getattr(owner, "snapshot_extra", {})}
+        if method == "session.export":
+            if owner.export_failure == "timeout":
+                raise TimeoutError()
+            if owner.export_failure:
+                raise RuntimeError(owner.export_failure)
+            return owner.export
         if method in {"session.mutate", "prompt.steer_queued", "prompt.replace_queued"}:
             owner.payload = params.get("payload")
             return owner.receipt
@@ -276,6 +283,40 @@ def test_verified_served_owner_keeps_restart_and_diagnostic_gates(tmp_path, nati
     assert owner.calls == []
     assert owner.run(None, {"session_id": "chat", "action": "snapshot"})["state"] == "attached"
     assert adapter._served(tmp_path, owner.endpoint), "diagnostic creation requires its own verified contract"
+
+
+@pytest.mark.parametrize("fmt", ["json", "markdown", "html"])
+@pytest.mark.parametrize("redact", [True, False])
+def test_export_uses_one_read_only_owner_call(native_owner_stub, tmp_path, fmt, redact):
+    native_fmt = "md" if fmt == "markdown" else fmt
+    native_owner_stub.export = {"format": native_fmt, "filename": "transcript." + native_fmt, "content": "current transcript"}
+    result = native_owner_stub.session(None, {"profile_home": str(tmp_path), "session_id": "logical-chat",
+                                            "action": "export", "format": fmt, "redact": redact})
+    assert result == {"state": "attached", "reason": None, "snapshot": None, "receipt": None,
+                      "export": {**native_owner_stub.export, "format": fmt}}
+    assert native_owner_stub.calls == [("runtime.describe", {}), ("session.export", {
+        "session_id": "logical-chat", "format": native_fmt, "redact": redact, "_timeout": 25})]
+    assert list(tmp_path.iterdir()) == []
+
+
+@pytest.mark.parametrize("failure,reason", [("method_not_found", "owner_export_unsupported"),
+    ("timeout", "owner_connection_lost"), ("export_too_large", "export_too_large"),
+    ("invalid", "owner_export_invalid"), ("bytes", "export_too_large")])
+def test_export_refuses_unsupported_timeout_and_invalid_content(native_owner_stub, failure, reason):
+    native_owner_stub.export_failure = failure if failure not in {"invalid", "bytes"} else None
+    native_owner_stub.export = {"format": "json", "filename": "owner.json", "content": "界" * 1_500_000} if failure == "bytes" else {}
+    result = native_owner_stub.run(None, {"session_id": "native", "action": "export", "format": "json", "redact": True})
+    assert result["reason"] == reason and result["snapshot"] is None
+    assert [method for method, _ in native_owner_stub.calls] == ["runtime.describe", "session.export"]
+
+
+@pytest.mark.parametrize("fmt,redact", [("pdf", True), ("json", "false"), (None, True)])
+def test_export_validates_closed_inputs_before_owner_discovery(native_owner_stub, tmp_path, fmt, redact):
+    from talaria_sidecar.errors import InvalidParams
+    with pytest.raises(InvalidParams):
+        native_owner_stub.session(None, {"profile_home": str(tmp_path), "session_id": "native", "action": "export",
+                                          "format": fmt, "redact": redact})
+    assert native_owner_stub.calls == []
 
 
 @pytest.mark.parametrize("receipt", [
