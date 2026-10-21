@@ -1618,6 +1618,15 @@
                                           }
                                         ]
                                       },
+                                      "controls": {
+                                        "type": "array",
+                                        "items": {
+                                          "type": "string"
+                                        }
+                                      },
+                                      "steering": {
+                                        "type": "boolean"
+                                      },
                                       "text": {
                                         "type": "string"
                                       },
@@ -1688,6 +1697,15 @@
                                         }
                                       ]
                                     },
+                                    "controls": {
+                                      "type": "array",
+                                      "items": {
+                                        "type": "string"
+                                      }
+                                    },
+                                    "steering": {
+                                      "type": "boolean"
+                                    },
                                     "text": {
                                       "type": "string"
                                     },
@@ -1699,6 +1717,8 @@
                                       "items": {
                                         "enum": [
                                           "cancel",
+                                          "steer",
+                                          "edit",
                                           "retry",
                                           "discard"
                                         ],
@@ -2180,6 +2200,15 @@
                                           }
                                         ]
                                       },
+                                      "controls": {
+                                        "type": "array",
+                                        "items": {
+                                          "type": "string"
+                                        }
+                                      },
+                                      "steering": {
+                                        "type": "boolean"
+                                      },
                                       "text": {
                                         "type": "string"
                                       },
@@ -2250,6 +2279,15 @@
                                         }
                                       ]
                                     },
+                                    "controls": {
+                                      "type": "array",
+                                      "items": {
+                                        "type": "string"
+                                      }
+                                    },
+                                    "steering": {
+                                      "type": "boolean"
+                                    },
                                     "text": {
                                       "type": "string"
                                     },
@@ -2261,6 +2299,8 @@
                                       "items": {
                                         "enum": [
                                           "cancel",
+                                          "steer",
+                                          "edit",
                                           "retry",
                                           "discard"
                                         ],
@@ -3017,6 +3057,15 @@
                                           }
                                         ]
                                       },
+                                      "controls": {
+                                        "type": "array",
+                                        "items": {
+                                          "type": "string"
+                                        }
+                                      },
+                                      "steering": {
+                                        "type": "boolean"
+                                      },
                                       "text": {
                                         "type": "string"
                                       },
@@ -3087,6 +3136,15 @@
                                         }
                                       ]
                                     },
+                                    "controls": {
+                                      "type": "array",
+                                      "items": {
+                                        "type": "string"
+                                      }
+                                    },
+                                    "steering": {
+                                      "type": "boolean"
+                                    },
                                     "text": {
                                       "type": "string"
                                     },
@@ -3098,6 +3156,8 @@
                                       "items": {
                                         "enum": [
                                           "cancel",
+                                          "steer",
+                                          "edit",
                                           "retry",
                                           "discard"
                                         ],
@@ -5808,6 +5868,15 @@
                                         }
                                       ]
                                     },
+                                    "controls": {
+                                      "type": "array",
+                                      "items": {
+                                        "type": "string"
+                                      }
+                                    },
+                                    "steering": {
+                                      "type": "boolean"
+                                    },
                                     "text": {
                                       "type": "string"
                                     },
@@ -5878,6 +5947,15 @@
                                       }
                                     ]
                                   },
+                                  "controls": {
+                                    "type": "array",
+                                    "items": {
+                                      "type": "string"
+                                    }
+                                  },
+                                  "steering": {
+                                    "type": "boolean"
+                                  },
                                   "text": {
                                     "type": "string"
                                   },
@@ -5889,6 +5967,8 @@
                                     "items": {
                                       "enum": [
                                         "cancel",
+                                        "steer",
+                                        "edit",
                                         "retry",
                                         "discard"
                                       ],
@@ -6429,6 +6509,15 @@
                                     }
                                   ]
                                 },
+                                "controls": {
+                                  "type": "array",
+                                  "items": {
+                                    "type": "string"
+                                  }
+                                },
+                                "steering": {
+                                  "type": "boolean"
+                                },
                                 "text": {
                                   "type": "string"
                                 },
@@ -6499,6 +6588,15 @@
                                   }
                                 ]
                               },
+                              "controls": {
+                                "type": "array",
+                                "items": {
+                                  "type": "string"
+                                }
+                              },
+                              "steering": {
+                                "type": "boolean"
+                              },
                               "text": {
                                 "type": "string"
                               },
@@ -6510,6 +6608,8 @@
                                 "items": {
                                   "enum": [
                                     "cancel",
+                                    "steer",
+                                    "edit",
                                     "retry",
                                     "discard"
                                   ],
@@ -8937,6 +9037,15 @@
                                         }
                                       ]
                                     },
+                                    "controls": {
+                                      "type": "array",
+                                      "items": {
+                                        "type": "string"
+                                      }
+                                    },
+                                    "steering": {
+                                      "type": "boolean"
+                                    },
                                     "text": {
                                       "type": "string"
                                     },
@@ -9007,6 +9116,15 @@
                                       }
                                     ]
                                   },
+                                  "controls": {
+                                    "type": "array",
+                                    "items": {
+                                      "type": "string"
+                                    }
+                                  },
+                                  "steering": {
+                                    "type": "boolean"
+                                  },
                                   "text": {
                                     "type": "string"
                                   },
@@ -9018,6 +9136,8 @@
                                     "items": {
                                       "enum": [
                                         "cancel",
+                                        "steer",
+                                        "edit",
                                         "retry",
                                         "discard"
                                       ],
@@ -11643,6 +11763,15 @@
                                         }
                                       ]
                                     },
+                                    "controls": {
+                                      "type": "array",
+                                      "items": {
+                                        "type": "string"
+                                      }
+                                    },
+                                    "steering": {
+                                      "type": "boolean"
+                                    },
                                     "text": {
                                       "type": "string"
                                     },
@@ -11713,6 +11842,15 @@
                                       }
                                     ]
                                   },
+                                  "controls": {
+                                    "type": "array",
+                                    "items": {
+                                      "type": "string"
+                                    }
+                                  },
+                                  "steering": {
+                                    "type": "boolean"
+                                  },
                                   "text": {
                                     "type": "string"
                                   },
@@ -11724,6 +11862,8 @@
                                     "items": {
                                       "enum": [
                                         "cancel",
+                                        "steer",
+                                        "edit",
                                         "retry",
                                         "discard"
                                       ],
@@ -12389,6 +12529,15 @@
                                         }
                                       ]
                                     },
+                                    "controls": {
+                                      "type": "array",
+                                      "items": {
+                                        "type": "string"
+                                      }
+                                    },
+                                    "steering": {
+                                      "type": "boolean"
+                                    },
                                     "text": {
                                       "type": "string"
                                     },
@@ -12459,6 +12608,15 @@
                                       }
                                     ]
                                   },
+                                  "controls": {
+                                    "type": "array",
+                                    "items": {
+                                      "type": "string"
+                                    }
+                                  },
+                                  "steering": {
+                                    "type": "boolean"
+                                  },
                                   "text": {
                                     "type": "string"
                                   },
@@ -12470,6 +12628,8 @@
                                     "items": {
                                       "enum": [
                                         "cancel",
+                                        "steer",
+                                        "edit",
                                         "retry",
                                         "discard"
                                       ],
@@ -12999,6 +13159,15 @@
                                         }
                                       ]
                                     },
+                                    "controls": {
+                                      "type": "array",
+                                      "items": {
+                                        "type": "string"
+                                      }
+                                    },
+                                    "steering": {
+                                      "type": "boolean"
+                                    },
                                     "text": {
                                       "type": "string"
                                     },
@@ -13069,6 +13238,15 @@
                                       }
                                     ]
                                   },
+                                  "controls": {
+                                    "type": "array",
+                                    "items": {
+                                      "type": "string"
+                                    }
+                                  },
+                                  "steering": {
+                                    "type": "boolean"
+                                  },
                                   "text": {
                                     "type": "string"
                                   },
@@ -13080,6 +13258,8 @@
                                     "items": {
                                       "enum": [
                                         "cancel",
+                                        "steer",
+                                        "edit",
                                         "retry",
                                         "discard"
                                       ],
@@ -13616,6 +13796,15 @@
                                         }
                                       ]
                                     },
+                                    "controls": {
+                                      "type": "array",
+                                      "items": {
+                                        "type": "string"
+                                      }
+                                    },
+                                    "steering": {
+                                      "type": "boolean"
+                                    },
                                     "text": {
                                       "type": "string"
                                     },
@@ -13686,6 +13875,15 @@
                                       }
                                     ]
                                   },
+                                  "controls": {
+                                    "type": "array",
+                                    "items": {
+                                      "type": "string"
+                                    }
+                                  },
+                                  "steering": {
+                                    "type": "boolean"
+                                  },
                                   "text": {
                                     "type": "string"
                                   },
@@ -13697,6 +13895,8 @@
                                     "items": {
                                       "enum": [
                                         "cancel",
+                                        "steer",
+                                        "edit",
                                         "retry",
                                         "discard"
                                       ],
@@ -16157,6 +16357,15 @@
                                         }
                                       ]
                                     },
+                                    "controls": {
+                                      "type": "array",
+                                      "items": {
+                                        "type": "string"
+                                      }
+                                    },
+                                    "steering": {
+                                      "type": "boolean"
+                                    },
                                     "text": {
                                       "type": "string"
                                     },
@@ -16227,6 +16436,15 @@
                                       }
                                     ]
                                   },
+                                  "controls": {
+                                    "type": "array",
+                                    "items": {
+                                      "type": "string"
+                                    }
+                                  },
+                                  "steering": {
+                                    "type": "boolean"
+                                  },
                                   "text": {
                                     "type": "string"
                                   },
@@ -16238,6 +16456,8 @@
                                     "items": {
                                       "enum": [
                                         "cancel",
+                                        "steer",
+                                        "edit",
                                         "retry",
                                         "discard"
                                       ],
@@ -16936,6 +17156,15 @@
                                             }
                                           ]
                                         },
+                                        "controls": {
+                                          "type": "array",
+                                          "items": {
+                                            "type": "string"
+                                          }
+                                        },
+                                        "steering": {
+                                          "type": "boolean"
+                                        },
                                         "text": {
                                           "type": "string"
                                         },
@@ -17006,6 +17235,15 @@
                                           }
                                         ]
                                       },
+                                      "controls": {
+                                        "type": "array",
+                                        "items": {
+                                          "type": "string"
+                                        }
+                                      },
+                                      "steering": {
+                                        "type": "boolean"
+                                      },
                                       "text": {
                                         "type": "string"
                                       },
@@ -17017,6 +17255,8 @@
                                         "items": {
                                           "enum": [
                                             "cancel",
+                                            "steer",
+                                            "edit",
                                             "retry",
                                             "discard"
                                           ],
@@ -17576,6 +17816,15 @@
                                         }
                                       ]
                                     },
+                                    "controls": {
+                                      "type": "array",
+                                      "items": {
+                                        "type": "string"
+                                      }
+                                    },
+                                    "steering": {
+                                      "type": "boolean"
+                                    },
                                     "text": {
                                       "type": "string"
                                     },
@@ -17646,6 +17895,15 @@
                                       }
                                     ]
                                   },
+                                  "controls": {
+                                    "type": "array",
+                                    "items": {
+                                      "type": "string"
+                                    }
+                                  },
+                                  "steering": {
+                                    "type": "boolean"
+                                  },
                                   "text": {
                                     "type": "string"
                                   },
@@ -17657,6 +17915,8 @@
                                     "items": {
                                       "enum": [
                                         "cancel",
+                                        "steer",
+                                        "edit",
                                         "retry",
                                         "discard"
                                       ],
@@ -20322,6 +20582,15 @@
                                         }
                                       ]
                                     },
+                                    "controls": {
+                                      "type": "array",
+                                      "items": {
+                                        "type": "string"
+                                      }
+                                    },
+                                    "steering": {
+                                      "type": "boolean"
+                                    },
                                     "text": {
                                       "type": "string"
                                     },
@@ -20392,6 +20661,15 @@
                                       }
                                     ]
                                   },
+                                  "controls": {
+                                    "type": "array",
+                                    "items": {
+                                      "type": "string"
+                                    }
+                                  },
+                                  "steering": {
+                                    "type": "boolean"
+                                  },
                                   "text": {
                                     "type": "string"
                                   },
@@ -20403,6 +20681,8 @@
                                     "items": {
                                       "enum": [
                                         "cancel",
+                                        "steer",
+                                        "edit",
                                         "retry",
                                         "discard"
                                       ],
@@ -21279,6 +21559,15 @@
                                         }
                                       ]
                                     },
+                                    "controls": {
+                                      "type": "array",
+                                      "items": {
+                                        "type": "string"
+                                      }
+                                    },
+                                    "steering": {
+                                      "type": "boolean"
+                                    },
                                     "text": {
                                       "type": "string"
                                     },
@@ -21349,6 +21638,15 @@
                                       }
                                     ]
                                   },
+                                  "controls": {
+                                    "type": "array",
+                                    "items": {
+                                      "type": "string"
+                                    }
+                                  },
+                                  "steering": {
+                                    "type": "boolean"
+                                  },
                                   "text": {
                                     "type": "string"
                                   },
@@ -21360,6 +21658,8 @@
                                     "items": {
                                       "enum": [
                                         "cancel",
+                                        "steer",
+                                        "edit",
                                         "retry",
                                         "discard"
                                       ],
@@ -21887,6 +22187,15 @@
                                         }
                                       ]
                                     },
+                                    "controls": {
+                                      "type": "array",
+                                      "items": {
+                                        "type": "string"
+                                      }
+                                    },
+                                    "steering": {
+                                      "type": "boolean"
+                                    },
                                     "text": {
                                       "type": "string"
                                     },
@@ -21957,6 +22266,15 @@
                                       }
                                     ]
                                   },
+                                  "controls": {
+                                    "type": "array",
+                                    "items": {
+                                      "type": "string"
+                                    }
+                                  },
+                                  "steering": {
+                                    "type": "boolean"
+                                  },
                                   "text": {
                                     "type": "string"
                                   },
@@ -21968,6 +22286,8 @@
                                     "items": {
                                       "enum": [
                                         "cancel",
+                                        "steer",
+                                        "edit",
                                         "retry",
                                         "discard"
                                       ],
@@ -25210,6 +25530,15 @@
                                         }
                                       ]
                                     },
+                                    "controls": {
+                                      "type": "array",
+                                      "items": {
+                                        "type": "string"
+                                      }
+                                    },
+                                    "steering": {
+                                      "type": "boolean"
+                                    },
                                     "text": {
                                       "type": "string"
                                     },
@@ -25280,6 +25609,15 @@
                                       }
                                     ]
                                   },
+                                  "controls": {
+                                    "type": "array",
+                                    "items": {
+                                      "type": "string"
+                                    }
+                                  },
+                                  "steering": {
+                                    "type": "boolean"
+                                  },
                                   "text": {
                                     "type": "string"
                                   },
@@ -25291,6 +25629,8 @@
                                     "items": {
                                       "enum": [
                                         "cancel",
+                                        "steer",
+                                        "edit",
                                         "retry",
                                         "discard"
                                       ],
@@ -27869,6 +28209,15 @@
                                         }
                                       ]
                                     },
+                                    "controls": {
+                                      "type": "array",
+                                      "items": {
+                                        "type": "string"
+                                      }
+                                    },
+                                    "steering": {
+                                      "type": "boolean"
+                                    },
                                     "text": {
                                       "type": "string"
                                     },
@@ -27939,6 +28288,15 @@
                                       }
                                     ]
                                   },
+                                  "controls": {
+                                    "type": "array",
+                                    "items": {
+                                      "type": "string"
+                                    }
+                                  },
+                                  "steering": {
+                                    "type": "boolean"
+                                  },
                                   "text": {
                                     "type": "string"
                                   },
@@ -27950,6 +28308,8 @@
                                     "items": {
                                       "enum": [
                                         "cancel",
+                                        "steer",
+                                        "edit",
                                         "retry",
                                         "discard"
                                       ],
@@ -30590,6 +30950,15 @@
                                         }
                                       ]
                                     },
+                                    "controls": {
+                                      "type": "array",
+                                      "items": {
+                                        "type": "string"
+                                      }
+                                    },
+                                    "steering": {
+                                      "type": "boolean"
+                                    },
                                     "text": {
                                       "type": "string"
                                     },
@@ -30660,6 +31029,15 @@
                                       }
                                     ]
                                   },
+                                  "controls": {
+                                    "type": "array",
+                                    "items": {
+                                      "type": "string"
+                                    }
+                                  },
+                                  "steering": {
+                                    "type": "boolean"
+                                  },
                                   "text": {
                                     "type": "string"
                                   },
@@ -30671,6 +31049,8 @@
                                     "items": {
                                       "enum": [
                                         "cancel",
+                                        "steer",
+                                        "edit",
                                         "retry",
                                         "discard"
                                       ],
@@ -33309,6 +33689,15 @@
                                         }
                                       ]
                                     },
+                                    "controls": {
+                                      "type": "array",
+                                      "items": {
+                                        "type": "string"
+                                      }
+                                    },
+                                    "steering": {
+                                      "type": "boolean"
+                                    },
                                     "text": {
                                       "type": "string"
                                     },
@@ -33379,6 +33768,15 @@
                                       }
                                     ]
                                   },
+                                  "controls": {
+                                    "type": "array",
+                                    "items": {
+                                      "type": "string"
+                                    }
+                                  },
+                                  "steering": {
+                                    "type": "boolean"
+                                  },
                                   "text": {
                                     "type": "string"
                                   },
@@ -33390,6 +33788,8 @@
                                     "items": {
                                       "enum": [
                                         "cancel",
+                                        "steer",
+                                        "edit",
                                         "retry",
                                         "discard"
                                       ],
@@ -35428,6 +35828,15 @@
                                         }
                                       ]
                                     },
+                                    "controls": {
+                                      "type": "array",
+                                      "items": {
+                                        "type": "string"
+                                      }
+                                    },
+                                    "steering": {
+                                      "type": "boolean"
+                                    },
                                     "text": {
                                       "type": "string"
                                     },
@@ -35498,6 +35907,15 @@
                                       }
                                     ]
                                   },
+                                  "controls": {
+                                    "type": "array",
+                                    "items": {
+                                      "type": "string"
+                                    }
+                                  },
+                                  "steering": {
+                                    "type": "boolean"
+                                  },
                                   "text": {
                                     "type": "string"
                                   },
@@ -35509,6 +35927,8 @@
                                     "items": {
                                       "enum": [
                                         "cancel",
+                                        "steer",
+                                        "edit",
                                         "retry",
                                         "discard"
                                       ],
@@ -36035,6 +36455,15 @@
                                         }
                                       ]
                                     },
+                                    "controls": {
+                                      "type": "array",
+                                      "items": {
+                                        "type": "string"
+                                      }
+                                    },
+                                    "steering": {
+                                      "type": "boolean"
+                                    },
                                     "text": {
                                       "type": "string"
                                     },
@@ -36105,6 +36534,15 @@
                                       }
                                     ]
                                   },
+                                  "controls": {
+                                    "type": "array",
+                                    "items": {
+                                      "type": "string"
+                                    }
+                                  },
+                                  "steering": {
+                                    "type": "boolean"
+                                  },
                                   "text": {
                                     "type": "string"
                                   },
@@ -36116,6 +36554,8 @@
                                     "items": {
                                       "enum": [
                                         "cancel",
+                                        "steer",
+                                        "edit",
                                         "retry",
                                         "discard"
                                       ],
@@ -42069,6 +42509,59 @@
                         "type": "string",
                         "minLength": 1
                       },
+                      "action": {
+                        "const": "steer_queued"
+                      },
+                      "admission_id": {
+                        "type": "string",
+                        "minLength": 1
+                      }
+                    },
+                    "required": [
+                      "session_id",
+                      "action",
+                      "admission_id"
+                    ]
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "session_id": {
+                        "type": "string",
+                        "minLength": 1
+                      },
+                      "action": {
+                        "const": "replace_queued"
+                      },
+                      "admission_id": {
+                        "type": "string",
+                        "minLength": 1
+                      },
+                      "submission_id": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 128
+                      },
+                      "text": {
+                        "type": "string",
+                        "minLength": 1
+                      }
+                    },
+                    "required": [
+                      "session_id",
+                      "action",
+                      "admission_id",
+                      "submission_id",
+                      "text"
+                    ]
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "session_id": {
+                        "type": "string",
+                        "minLength": 1
+                      },
                       "admission_id": {
                         "type": "string",
                         "minLength": 1
@@ -44348,6 +44841,15 @@
                                         }
                                       ]
                                     },
+                                    "controls": {
+                                      "type": "array",
+                                      "items": {
+                                        "type": "string"
+                                      }
+                                    },
+                                    "steering": {
+                                      "type": "boolean"
+                                    },
                                     "text": {
                                       "type": "string"
                                     },
@@ -44418,6 +44920,15 @@
                                       }
                                     ]
                                   },
+                                  "controls": {
+                                    "type": "array",
+                                    "items": {
+                                      "type": "string"
+                                    }
+                                  },
+                                  "steering": {
+                                    "type": "boolean"
+                                  },
                                   "text": {
                                     "type": "string"
                                   },
@@ -44429,6 +44940,8 @@
                                     "items": {
                                       "enum": [
                                         "cancel",
+                                        "steer",
+                                        "edit",
                                         "retry",
                                         "discard"
                                       ],
@@ -47019,6 +47532,15 @@
                                         }
                                       ]
                                     },
+                                    "controls": {
+                                      "type": "array",
+                                      "items": {
+                                        "type": "string"
+                                      }
+                                    },
+                                    "steering": {
+                                      "type": "boolean"
+                                    },
                                     "text": {
                                       "type": "string"
                                     },
@@ -47089,6 +47611,15 @@
                                       }
                                     ]
                                   },
+                                  "controls": {
+                                    "type": "array",
+                                    "items": {
+                                      "type": "string"
+                                    }
+                                  },
+                                  "steering": {
+                                    "type": "boolean"
+                                  },
                                   "text": {
                                     "type": "string"
                                   },
@@ -47100,6 +47631,8 @@
                                     "items": {
                                       "enum": [
                                         "cancel",
+                                        "steer",
+                                        "edit",
                                         "retry",
                                         "discard"
                                       ],
@@ -47721,6 +48254,15 @@
                                     }
                                   ]
                                 },
+                                "controls": {
+                                  "type": "array",
+                                  "items": {
+                                    "type": "string"
+                                  }
+                                },
+                                "steering": {
+                                  "type": "boolean"
+                                },
                                 "text": {
                                   "type": "string"
                                 },
@@ -47791,6 +48333,15 @@
                                   }
                                 ]
                               },
+                              "controls": {
+                                "type": "array",
+                                "items": {
+                                  "type": "string"
+                                }
+                              },
+                              "steering": {
+                                "type": "boolean"
+                              },
                               "text": {
                                 "type": "string"
                               },
@@ -47802,6 +48353,8 @@
                                 "items": {
                                   "enum": [
                                     "cancel",
+                                    "steer",
+                                    "edit",
                                     "retry",
                                     "discard"
                                   ],
@@ -50053,6 +50606,15 @@
                                         }
                                       ]
                                     },
+                                    "controls": {
+                                      "type": "array",
+                                      "items": {
+                                        "type": "string"
+                                      }
+                                    },
+                                    "steering": {
+                                      "type": "boolean"
+                                    },
                                     "text": {
                                       "type": "string"
                                     },
@@ -50123,6 +50685,15 @@
                                       }
                                     ]
                                   },
+                                  "controls": {
+                                    "type": "array",
+                                    "items": {
+                                      "type": "string"
+                                    }
+                                  },
+                                  "steering": {
+                                    "type": "boolean"
+                                  },
                                   "text": {
                                     "type": "string"
                                   },
@@ -50134,6 +50705,8 @@
                                     "items": {
                                       "enum": [
                                         "cancel",
+                                        "steer",
+                                        "edit",
                                         "retry",
                                         "discard"
                                       ],
@@ -50657,6 +51230,15 @@
                                         }
                                       ]
                                     },
+                                    "controls": {
+                                      "type": "array",
+                                      "items": {
+                                        "type": "string"
+                                      }
+                                    },
+                                    "steering": {
+                                      "type": "boolean"
+                                    },
                                     "text": {
                                       "type": "string"
                                     },
@@ -50727,6 +51309,15 @@
                                       }
                                     ]
                                   },
+                                  "controls": {
+                                    "type": "array",
+                                    "items": {
+                                      "type": "string"
+                                    }
+                                  },
+                                  "steering": {
+                                    "type": "boolean"
+                                  },
                                   "text": {
                                     "type": "string"
                                   },
@@ -50738,6 +51329,8 @@
                                     "items": {
                                       "enum": [
                                         "cancel",
+                                        "steer",
+                                        "edit",
                                         "retry",
                                         "discard"
                                       ],
@@ -52967,6 +53560,15 @@
                                             }
                                           ]
                                         },
+                                        "controls": {
+                                          "type": "array",
+                                          "items": {
+                                            "type": "string"
+                                          }
+                                        },
+                                        "steering": {
+                                          "type": "boolean"
+                                        },
                                         "text": {
                                           "type": "string"
                                         },
@@ -53037,6 +53639,15 @@
                                           }
                                         ]
                                       },
+                                      "controls": {
+                                        "type": "array",
+                                        "items": {
+                                          "type": "string"
+                                        }
+                                      },
+                                      "steering": {
+                                        "type": "boolean"
+                                      },
                                       "text": {
                                         "type": "string"
                                       },
@@ -53048,6 +53659,8 @@
                                         "items": {
                                           "enum": [
                                             "cancel",
+                                            "steer",
+                                            "edit",
                                             "retry",
                                             "discard"
                                           ],

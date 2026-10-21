@@ -578,3 +578,22 @@ reports the modes unavailable. On v0.22.1 the owner binds `DEFAULT_CONFIG`'s
 it refuses that session's next turn with `launch_credentials_unavailable` before any worker
 starts, and the admission is held as unknown for the user's Discard. The frozen mode is never
 weakened; this is Agent behavior that Talaria does not patch.
+
+
+## Native queued controls
+
+On owners that publish queued-row `controls`, Talaria maps `steer` to the Steer
+control and `replace` to Edit, alongside Cancel. Missing controls retain Cancel
+only. The server carries the optional `steering` flag and excludes steering
+admissions from the running turn's anchor. The owner remains the queue and
+execution authority; Web never moves these admissions into its local queue.
+
+`gateway.session` actions `steer_queued` and `replace_queued` forward
+`prompt.steer_queued` and `prompt.replace_queued`. Replacement carries the
+caller's stable `submission_id`, admission ID and text. An unconfirmed edit
+retains its draft and identity for an explicit retry. Owner refusals, including
+`steer_unavailable`, `admission_started` and `unsupported_control`, use the
+existing refused attachment response. Older owners expose no extra controls.
+The v0.22.3 compatibility fixture uses a disposable native owner and loopback
+provider to verify steering execution and queued replacement, including replay
+of the same replacement identity.

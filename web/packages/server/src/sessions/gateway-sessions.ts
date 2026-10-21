@@ -39,6 +39,9 @@ function retryText(admission: GatewaySnapshot['pending'][number]): string | null
   return typeof text === 'string' && text.trim() ? text : null
 }
 
+/** Steering belongs to the current turn; it must never replace that turn's transcript anchor. */
+const runningAdmission = (snapshot: GatewaySnapshot) => snapshot.pending.find((p) => p.status === 'started' && !p.steering)
+
 export class GatewaySessions {
   private readonly watches = new Map<string, Watch>()
   constructor(private readonly deps: {
@@ -106,9 +109,9 @@ export class GatewaySessions {
       state: result.state, reason: result.reason, can_submit: result.state === 'attached' && snapshot !== null && !unknown,
       can_interrupt: result.state === 'attached' && snapshot?.running === true, can_attach: false,
       revision: snapshot?.revision ?? null, execution_generation: snapshot?.execution_generation ?? null,
-      active_admission: snapshot?.pending.find((p) => p.status === 'started') ?? null,
+      active_admission: snapshot ? runningAdmission(snapshot) ?? null : null,
       admissions: (snapshot?.pending ?? []).filter((p) => p.status === 'queued' || p.status === 'unknown').map((p) => ({ ...p,
-        actions: p.status === 'queued' ? ['cancel']
+        actions: p.status === 'queued' ? ['cancel', ...(p.controls?.includes('steer') ? ['steer' as const] : []), ...(p.controls?.includes('replace') ? ['edit' as const] : [])]
           : p.execution_generation === null ? []
           : retryText(p) === null ? ['discard'] : ['retry', 'discard'],
       })),
@@ -121,7 +124,7 @@ export class GatewaySessions {
     const fields: Row = { ...base, owner_attachment: this.attachment(result), composer_state_key: ownerStateId(target.key), active_stream_id: stream, is_streaming: Boolean(stream) }
     if (snapshot) {
       const nativeRows = [...snapshot.messages]
-      const active = stream ? snapshot.pending.find((p) => p.status === 'started') : null
+      const active = stream ? runningAdmission(snapshot) : null
       let start = active ? nativeRows.findIndex((m) => m.role === 'user' && m.message_id === active.admission_id) : -1
       if (active && stream && start < 0) {
         start = nativeRows.length
@@ -266,7 +269,7 @@ export class GatewaySessions {
     let terminal = false
     let streamError: unknown = null
     let closeWriter: RunJournalWriter | null = null
-    let activeAdmission = snapshot.pending.find((p) => p.status === 'started')?.admission_id ?? snapshot.pending[0]?.admission_id
+    let activeAdmission = runningAdmission(snapshot)?.admission_id ?? snapshot.pending.find((p) => !p.steering)?.admission_id
     const worker = async () => {
       // Same persisted IDs can exist in separate homes. Native observation journals must not
       // join the sid-only direct-chat journal; the owner retains the canonical transcript.
@@ -327,7 +330,7 @@ export class GatewaySessions {
               if (Number(data.execution_generation) < watch.snapshot.execution_generation) return
               const firstClaim = !ran && data.running === true
               watch.snapshot = { ...watch.snapshot, ...data }
-              const claimed = watch.snapshot.pending.find((p) => p.status === 'started')
+              const claimed = runningAdmission(watch.snapshot)
               if (firstClaim && claimed) activeAdmission = claimed.admission_id
               ran ||= data.running === true
               if (firstClaim) await put('session_snapshot', { session: await this.view(base, { state: 'attached', reason: null, snapshot: watch.snapshot, receipt: null }, watch.stream, target) })

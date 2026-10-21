@@ -14,7 +14,7 @@ import sqlite3
 from ..errors import InvalidParams
 from ..home import profile_home_param, scoped_home
 
-_ACTIONS = {"snapshot", "watch", "submit", "receipt", "cancel", "interrupt", "approval", "clarify", "discard", "mutate"}
+_ACTIONS = {"snapshot", "watch", "submit", "receipt", "cancel", "steer_queued", "replace_queued", "interrupt", "approval", "clarify", "discard", "mutate"}
 _CAPABILITIES = {"durable-admission-v1", "event-replay-v1"}
 _CONTROL_REFUSALS = {"native_clarify_batch_unavailable", "owner_controls_unverified"}
 _CREATE_FIELDS = {"request_id", "source", "cwd", "model", "provider", "base_url", "toolsets", "safe_mode", "ignore_user_config"}
@@ -145,6 +145,9 @@ async def _run(ctx, params: dict, home: Path, discovery) -> dict:
                 method = "prompt.cancel" if action == "cancel" else "prompt.resolve_unknown"
                 receipt = await client.rpc(method, **common, admission_id=params["admission_id"],
                     **({"execution_generation": params["execution_generation"]} if action == "discard" else {}))
+            elif action in {"steer_queued", "replace_queued"}:
+                receipt = await client.rpc("prompt." + action, **common, admission_id=params["admission_id"],
+                    **({"submission_id": params["submission_id"], "text": params["text"]} if action == "replace_queued" else {}))
             elif action == "interrupt":
                 await client.rpc("session.interrupt", **common, execution_generation=params["execution_generation"])
             elif action in {"approval", "clarify"}:
@@ -222,6 +225,7 @@ def session(ctx, params: dict) -> dict:
     params = {**params, "action": action}
     required = {
         "submit": ("request_id", "text"), "receipt": ("admission_id",), "cancel": ("admission_id",),
+        "steer_queued": ("admission_id",), "replace_queued": ("admission_id", "submission_id", "text"),
         "interrupt": ("execution_generation",), "approval": ("execution_generation", "prompt_id", "choice"),
         "clarify": ("execution_generation", "prompt_id", "text"), "discard": ("execution_generation", "admission_id"),
         "mutate": ("request_id", "expected_revision", "execution_generation", "operation", "payload"),

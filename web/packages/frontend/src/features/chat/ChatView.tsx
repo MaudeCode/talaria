@@ -1,3 +1,4 @@
+import type { OwnerActionRequest } from '@maudecode/talaria-web-contracts'
 import { useResourceIntents, useResourceMutation } from '../sessions/useResourceMutation'
 import { ResourcePending } from '../sessions/ResourcePending'
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
@@ -141,14 +142,18 @@ export function ChatView({ sessionId }: { sessionId: string | null }) {
 
   const { updateSession, dialog: modelDialog } = useSessionUpdate(sessionId, refresh, session?.owner_attachment)
 
-  const onOwnerAction = useCallback((id: string, action: 'cancel' | 'retry' | 'discard', generation: number | null) => {
-    if (!sessionId) return
-    const request = action === 'cancel' ? { session_id: sessionId, action, admission_id: id } : generation !== null ? { session_id: sessionId, action, admission_id: id, execution_generation: generation } : null
-    if (!request) return
+  const onOwnerAction = useCallback(async (request: OwnerActionRequest) => {
+    if (!sessionId || request.session_id !== sessionId) return
     const scope = getStreamContext()
-    void api.ownerAction(request)
-      .then(async (result) => { if (scope !== getStreamContext()) return; await refresh(result.session); if (scope === getStreamContext() && result.draft !== undefined) returnToComposer(sessionId, result.draft) })
-      .catch((error: unknown) => { if (scope === getStreamContext()) showToast(error instanceof Error ? error.message : String(error), 4000, 'error') })
+    try {
+      const result = await api.ownerAction(request)
+      if (scope !== getStreamContext()) return
+      await refresh(result.session)
+      if (scope === getStreamContext() && result.draft !== undefined) returnToComposer(sessionId, result.draft)
+    } catch (error) {
+      if (scope === getStreamContext()) showToast(error instanceof Error ? error.message : String(error), 4000, 'error')
+      throw error
+    }
   }, [sessionId, refresh])
 
   const onModelChange = useCallback((model: string, provider: string | null) => { if (!sessionId) { setPending((p) => ({ ...p, model, model_provider: provider })); return } void updateSession({ model, model_provider: provider }) }, [sessionId, updateSession])

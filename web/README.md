@@ -155,7 +155,7 @@ starts, restarts, or stops that owner. An unavailable or incompatible owner keep
 read-only; Talaria never starts a second Agent for it.
 
 Owner conversations support text follow-ups, canonical approvals and clarifications, Stop, queued-input
-cancellation, and explicit recovery of an unknown execution. Retry returns unknown work to the composer
+cancellation, editing and steering when the owner allows them, and explicit recovery of an unknown execution. Retry returns unknown work to the composer
 for review; it does not execute it. Model and workspace changes use the owner's revision and generation
 fences. File uploads and direct-worker-only controls are unavailable on this connection. A native CLI
 turn using a whole clarification batch remains read-only because the owner cannot replay that pending
