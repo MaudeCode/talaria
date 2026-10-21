@@ -3,6 +3,7 @@
  * paths, trusted-header session reconciliation, owner-only routes, profile
  * binding, CSRF, and the login redirect with a safe `next`.
  */
+import { updateNotificationOwner } from '../tools/update-notifications.js'
 import { truthy } from '../config.js'
 import { formatSetCookie } from './cookies.js'
 import { COOKIE_NAME_RE } from './cookies.js'
@@ -180,6 +181,7 @@ function trustedAuthBoundProfile(ctx: RequestContext): string | null {
 }
 
 function remember(ctx: RequestContext, info: SessionInfo | null, cookieValue?: string | null): SessionInfo | null {
+  ctx.notificationOwner = updateNotificationOwner(info)
   ctx.trusted.reconciled = info
   if (info?.auth_type === 'trusted') {
     ctx.trusted.info = info

@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs'
 import type { UpdateNotification } from '../src/contracts'
 import { expect, settle, test } from './fixtures'
 
@@ -14,6 +15,34 @@ const row = (id: string, overrides: Partial<NotificationRow> = {}): Notification
   unread: true, active: false, requires_interaction: false, can_dismiss: true,
   steps: [], presents_dialog: false, dialog_close: 'close',
   ...overrides,
+})
+
+test('Agent startup warning appears in the notification center and can be dismissed (TAL-1018)', async ({ page }, testInfo) => {
+  const fixture = JSON.parse(readFileSync(new URL('../../../../contracts/fixtures/update-notifications.json', import.meta.url), 'utf8')) as { notifications: NotificationRow[] }
+  const warning = fixture.notifications.find((item) => item.kind === 'agent_warning')!
+  let records: NotificationRow[] = []
+  const envelope = () => ({ scope_id: 'startup-warning-scope', notifications: records, unread_count: records.filter((item) => item.unread).length, clearable_count: records.length, can_clear: records.length > 0 })
+  await page.route('**/api/update-notifications**', async (route) => {
+    if (route.request().method() === 'GET') return route.fulfill({ json: envelope() })
+    if (new URL(route.request().url()).pathname.endsWith('/dismiss')) {
+      records = []
+      return route.fulfill({ json: { ok: true } })
+    }
+    return route.fulfill({ json: records[0] ?? warning })
+  })
+  await page.goto('/')
+  await settle(page)
+  await page.getByRole('button', { name: 'Notifications', exact: true }).click()
+  const center = page.getByRole('dialog')
+  await expect(center).not.toContainText(warning.title)
+  await page.screenshot({ path: testInfo.outputPath('startup-warning-before.png'), fullPage: true })
+  records = [warning]
+  await expect(center).toContainText(warning.title)
+  await expect(center).toContainText(warning.message)
+  await page.screenshot({ path: testInfo.outputPath('startup-warning-after.png'), fullPage: true })
+  await center.getByRole('button', { name: 'Dismiss', exact: true }).click()
+  await expect(center).not.toContainText(warning.title)
+  expect(records).toEqual([])
 })
 
 test('Agent recovery preserves failed update history in the shared notification center', async ({ page }, testInfo) => {

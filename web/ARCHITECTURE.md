@@ -249,6 +249,12 @@ that receipt, so it survives reconnects and restarts. Talaria mints these reques
 the sidebar lists receipt-proven Web-created diagnostic chats even when external Agent sessions are hidden.
 Owner chats take no attachments, so the mode list carries `can_attach` for the unsaved composer.
 
+Agent-wide `startup-warning.*` notices are persisted as profile-scoped `agent_warning`
+notifications rather than session notices. The turn admission captures the notification
+owner for background continuations. Repeated keys keep their dismissal/read state until
+the full warning text changes; `notice_clear` removes the row and `notices_reset` leaves
+it alone. Credit, usage and other per-session notices keep their existing lifecycle.
+
 ## 5. Frontend
 
 `packages/frontend` keeps the TanStack Start structure documented in
