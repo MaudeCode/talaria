@@ -158,6 +158,9 @@ rollback artifacts remain filesystem resources.
 `journals` owns run append/replay, bounded tails, summaries, retention and legacy turn-journal recovery reads.
 It protects active writers during pruning. Sidecar frames are processed in order and published after append;
 arrival timestamps remain authoritative for event times, tool durations and metering even when storage is slow.
+The JSON journal keeps at most 1,000 recently used run-to-session resolutions per backend instance.
+Each lookup rechecks the resolved journal or pruned summary and reads its current contents; missing paths
+fall back to discovery and misses are never cached. Session deletion and backend close release cached owners.
 
 Concurrency: one event loop, no locks. Per-session serialization, stream slots, the coalesced index
 writer, and the update lock are promise-based; `docs/lock-ownership.md` lists the ordering rules that
