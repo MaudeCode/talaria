@@ -407,13 +407,21 @@ async def probe_restart(home, peer, desc, proc):
         watch_id = viewer.request("gateway.session", {**params, "action": "watch"})
         frame = await asyncio.to_thread(viewer.next_message, 20)
         assert frame["method"] == "stream" and frame["params"]["event"] == "snapshot", frame
+        # The initial snapshot precedes the replay RPC. Wait for its first event so this
+        # probe restarts an established watch, not a socket still sending its startup reads.
+        seen = []
+        while True:
+            frame = await asyncio.to_thread(viewer.next_message, 20)
+            assert frame.get("id") != watch_id, frame
+            if frame["params"]["event"] == "event":
+                seen.append(frame["params"]["data"].get("type"))
+                break
         proc.send_signal(signal.SIGUSR1)  # the service restart path `hermes gateway restart` takes
         deadline = time.monotonic() + 30
         while (found := discover_gateway_endpoint(home)).reason_code != "restart_wait":
             assert time.monotonic() < deadline, found
             await asyncio.sleep(.05)
         # The watch learns the transition itself, so the server can stop sending without another read.
-        seen = []
         while True:
             try:
                 frame = await asyncio.to_thread(viewer.next_message, 10)
