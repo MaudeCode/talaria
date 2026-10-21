@@ -1,3 +1,4 @@
+import { createServer, type ServerResponse } from 'node:http'
 import { expect, test } from './fixtures'
 
 test.use({ serviceWorkers: 'block' })
@@ -53,4 +54,40 @@ test('the background card shows the server\'s records with their result and Dism
   await expect(card).toContainText('Fix CI')
   await page.keyboard.press('Escape')
   await expect(chip).toHaveText('Background work · 1')
+})
+
+/** TAL-1305: work the Agent starts mid-turn reaches the chip through the server's announcement, while the turn runs. */
+test('background work the Agent starts during a turn shows on the chip when the server announces it', async ({ page }) => {
+  const sid = 'background-live'
+  const streamId = `${sid}-run`
+  let started = false
+  let sessions = null as ServerResponse | null
+  const server = createServer((request, response) => {
+    response.writeHead(200, { 'Content-Type': 'text/event-stream', 'Access-Control-Allow-Origin': process.env.HERMES_E2E_BASE_URL!, 'Access-Control-Allow-Credentials': 'true' })
+    if (request.url?.startsWith('/sessions')) { sessions = response; response.write(': open\n\n'); return }
+    response.write(`id: ${streamId}:1\nevent: token\ndata: ${JSON.stringify({ text: 'Delegating.' })}\n\n`)
+  })
+  await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve))
+  const address = server.address()
+  if (!address || typeof address === 'string') throw new Error('Missing fixture port')
+  const base = `http://127.0.0.1:${String(address.port)}`
+  await page.route('**/api/session?**', (route) => route.fulfill({ json: { session: { session_id: sid, title: 'Delegate', messages: [{ role: 'user', id: 1, content: 'Split it' }], active_stream_id: streamId, is_streaming: true } } }))
+  await page.route('**/api/chat/stream/status?**', (route) => route.fulfill({ json: { active: true, stream_id: streamId, replay_available: false } }))
+  await page.route('**/api/chat/stream?**', (route) => route.continue({ url: `${base}/chat${new URL(route.request().url()).search}` }))
+  await page.route('**/api/sessions/events', (route) => route.continue({ url: `${base}/sessions` }))
+  await page.route('**/api/session/draft', (route) => route.fulfill({ json: { ok: true } }))
+  await page.route('**/api/background/tasks?**', (route) => route.fulfill({ json: { session_id: sid, agent_available: true, tasks: started ? [task({ task_id: 'call_d', kind: 'delegation', title: 'Check logs' })] : [] } }))
+  try {
+    await page.goto(`/session/${sid}`)
+    await expect(page.locator('.composer-notices [data-notice="live"]')).toContainText('Working')
+    await expect.poll(() => sessions).not.toBeNull()
+    await expect(page.locator('[data-notice="background"]')).toHaveCount(0)
+    started = true
+    sessions!.write(`event: sessions_changed\ndata: ${JSON.stringify({ type: 'sessions_changed', version: 2, reason: 'background_task', session_id: sid })}\n\n`)
+    await expect(page.locator('[data-notice="background"]').getByRole('button')).toHaveText('Background work · 1')
+    await expect(page.locator('.composer-notices [data-notice="live"]')).toContainText('Working')
+  } finally {
+    server.closeAllConnections()
+    await new Promise<void>((resolve) => server.close(() => { resolve() }))
+  }
 })

@@ -474,6 +474,7 @@ export async function createDeps(opts: CreateDepsOptions): Promise<AppDeps> {
     events,
     onTerminal: (streamId, phase) => { relay.noteTerminal(streamId, phase) },
     onTurnEnd: (sessionId) => { void completions.drainDeferred(sessionId) },
+    onBackgroundWork: (sessionId, profile) => { background.refresh(sessionId, profile) },
     profileDeleting: (profile) => profiles.isDeleting(profile),
     updateInProgress: () => deps.updates.blocksNewWork(),
     workspaceBusy: (workspace) => deps.git.workspaceBusy(workspace),

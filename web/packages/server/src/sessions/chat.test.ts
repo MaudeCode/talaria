@@ -1424,6 +1424,57 @@ describe('chat turns through the sidecar', () => {
     await s.sse(`/api/chat/stream?stream_id=${String(second.stream_id)}`, (f) => f.event === 'done')
   })
 
+  it('announces background work the Agent starts mid-turn while the turn still runs, and only that work (TAL-1305)', async () => {
+    const sid = await newSession(s)
+    const unit: Json = { delegation_id: 'call_d', origin_ui_session_id: sid, state: 'running', dispatched_at: 10, completed_at: null, updated_at: 11, goals: ['Check logs'], child_statuses: [], has_result: false, live_status: 'running' }
+    const proc: Json = { process_id: 'proc_0123456789ab', session_key: sid, command: 'make watch', started_at: 12, exited: false, exited_at: null, exit_code: null, completion_reason: '', watched: false }
+    let agent: Json = { delegations: [], processes: [] }
+    sidecar.respond('process.background_list', () => agent as never)
+    const lists = () => sidecar.calls.filter((c) => c.method === 'process.background_list' && ((c.params as Json).session_ids as string[] | undefined)?.includes(sid)).length
+    const announced: string[] = []
+    const publish = s.deps.events.publish.bind(s.deps.events)
+    const spy = vi.spyOn(s.deps.events, 'publish').mockImplementation((reason, opts) => { if (opts?.sessionId === sid) announced.push(String(reason)); publish(reason, opts) })
+    // The fake Agent runs one tool per step and holds the turn open until the test lets it go on. Frames carry the
+    // sidecar's shapes: display-text args, and the tool's own result object as `raw_result`.
+    const gates: (() => void)[] = []
+    const gate = () => new Promise<void>((resolve) => { gates.push(resolve) })
+    const go = async () => { await expect.poll(() => gates.length).toBeGreaterThan(0); gates.shift()!() }
+    sidecar.respond('chat.start', async (params, emit) => {
+      emit({ event: 'tool', data: { event_type: 'tool.started', name: 'terminal', preview: null, args: { command: 'ls' }, tid: 'call_r' } })
+      emit({ event: 'tool_complete', data: { event_type: 'tool.completed', name: 'terminal', preview: 'a b', raw_result: { output: 'a b', exit_code: 0, error: null }, tid: 'call_r', is_error: false } })
+      await gate()
+      agent = { delegations: [unit], processes: [] }
+      emit({ event: 'tool', data: { event_type: 'tool.started', name: 'delegate_task', preview: null, args: { goal: 'Check logs' }, tid: 'call_d' } })
+      emit({ event: 'tool_complete', data: { event_type: 'tool.completed', name: 'delegate_task', preview: 'dispatched', raw_result: { status: 'dispatched', delegation_id: 'call_d' }, tid: 'call_d', is_error: false } })
+      await gate()
+      agent = { delegations: [unit], processes: [proc] }
+      emit({ event: 'tool', data: { event_type: 'tool.started', name: 'terminal', preview: null, args: { command: 'make watch', background: 'True', notify: 'True' }, tid: 'call_p' } })
+      emit({ event: 'tool_complete', data: { event_type: 'tool.completed', name: 'terminal', preview: 'Background process started', raw_result: { output: 'Background process started', session_id: 'proc_0123456789ab', pid: 4242, exit_code: 0, error: null, notify_on_complete: true }, tid: 'call_p', is_error: false } })
+      await gate()
+      return completed([{ role: 'user', content: str(params.user_message) }, { role: 'assistant', content: 'started' }])
+    })
+    try {
+      const start = await json(await post(s, '/api/chat/start', { session_id: sid, message: 'go' }))
+      await s.sse(`/api/chat/stream?stream_id=${String(start.stream_id)}&replay=1`, (f) => f.event === 'tool_complete')
+      // A tool that starts nothing in the background asks the Agent for nothing.
+      expect(lists()).toBe(0)
+      await go()
+      // The delegation is announced while the turn still runs (the Agent holds it at the next step).
+      await expect.poll(() => announced.filter((r) => r === 'background_task')).toHaveLength(1)
+      expect(lists()).toBe(1)
+      await go()
+      await expect.poll(() => announced.filter((r) => r === 'background_task')).toHaveLength(2)
+      expect(lists()).toBe(2)
+      // Still running: the Agent waits at its last step.
+      expect(gates).toHaveLength(1)
+      const tasks = Object.fromEntries(((await json(await s.get(`/api/background/tasks?session_id=${sid}`))).tasks as Json[]).map((t) => [str(t.task_id), t]))
+      expect(tasks.call_d).toMatchObject({ kind: 'delegation', status: 'running', pinned: true })
+      expect(tasks.proc_0123456789ab).toMatchObject({ kind: 'process', status: 'running', pinned: true })
+      await go()
+      await s.sse(`/api/chat/stream?stream_id=${String(start.stream_id)}&replay=1`, (f) => f.event === 'done')
+    } finally { spy.mockRestore() }
+  })
+
   it('a follow-up message is admitted as soon as the turn is done, while title generation is still running', async () => {
     const sid = await newSession(s)
     sidecar.respond('chat.start', (params) => completed([{ role: 'user', content: str(params.user_message) }, { role: 'assistant', content: 'first answer' }]))
