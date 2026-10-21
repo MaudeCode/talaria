@@ -55,7 +55,7 @@ hand-written endpoint schemas.
 | Routes | `api/router.ts`, `api/*-router.ts`, `api/*-raw.ts`, `api/sse-routes.ts` | oRPC handlers per contract namespace plus raw routes; `HttpError(status, message, extra)` envelopes |
 | Sessions | `sessions/store.ts`, `sessions/storage/`, `session.ts`, `list.ts`, `drafts.ts`, `shares.ts`, `journal.ts`, `titles.ts`, `export.ts` | Async `StorageBackend` ports for sessions, revisioned documents and run journals; the JSON adapter preserves the existing files and bytes. Domain stores retain validation and policy, with persistence behind these ports. |
 | Chat | `sessions/turn.ts`, `streams.ts`, `pending.ts`, `channels.ts`, `events.ts` | stream registry, SSE replay from journals, approvals/clarify/goals over the sidecar, cancel/steer, compression, titles, metering |
-| Agent sessions | `sessions/state-db.ts`, `state-db-worker.ts`, `cli-sessions.ts`, `gateway-watcher.ts`, `completions.ts` | read-only `state.db` projection through `node:sqlite`; the session list, gateway watcher, relay, and single-session lookups (request routing, owner locks, chat start, detail, and mutation gates), and the transcript reads (turn history, turn settlement, session detail, and transcript edits) read it on one long-lived `worker_threads` worker so a slow database never blocks the event loop; gateway watcher per profile home; background completion drain and wake-up turns |
+| Agent sessions | `sessions/state-db.ts`, `state-db-worker.ts`, `cli-sessions.ts`, `gateway-watcher.ts`, `completions.ts` | read-only `state.db` projection through `node:sqlite`; the session list, gateway watcher, relay, and single-session lookups (request routing, owner locks, chat start, detail, and mutation gates), and the transcript reads (turn history, turn settlement, session detail, and transcript edits) read it on two long-lived `worker_threads` workers so a slow database never blocks the event loop or queues session reads behind sidebar work; gateway watcher per profile home; background completion drain and wake-up turns |
 | Workspace | `workspace/*` | hardened git runner, worktrees, rollback checkpoints, uploads, media, zip |
 | Tools | `tools/*` | skills, memory, prompts, crons, kanban, extensions + sidecar proxy, MCP health, terminal (`node-pty`), insights, system health, self-update (`tools/updates.ts`), log hygiene |
 | Providers | `providers/*` | model catalogs, quotas, OAuth device flows, TTS |
@@ -88,7 +88,11 @@ sidecar deadline is three seconds; successes and failures are cached for 45 seco
 A warm cache answers immediately during refresh, and expired cooldowns are omitted
 on every response. Catalog invalidation or changed credentials discard that snapshot.
 
-The `state.db` readers retain one read-only handle per database path and file identity.
+The `state.db` dispatcher keeps two independent FIFO lanes. The listing lane handles
+rows and row batches, fingerprints, storage health and Web diagnostic IDs. The session
+lane handles all `SESSION_READS`, source ownership and existence probes. A lane crash
+rejects only its pending reads; shutdown stops both lanes and prevents restarts until
+both exit. Each worker retains its own read-only handle per database path and file identity.
 Each read gets a fresh transaction and checks its schema version before reusing column
 and index probes. Every reader commits its snapshot in `finally`; shutdown and file
 replacement release the cached handles. Main-file modifications also reopen the handle
