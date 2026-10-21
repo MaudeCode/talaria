@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Added",
+      "summary": "When disk space runs low, Talaria asks the Hermes Agent 0.22.3 session auto-prune question: turn it on, keep everything, or decide later. /autoprune also works from the composer.",
+      "highlight": false,
+      "components": ["web"]
+    }
+  ]
+}

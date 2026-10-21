@@ -524,6 +524,17 @@ after a sidecar restart. Cleanup checks surviving session IDs before removing fi
 The mutated state layers are the Agent database and its transcript artifacts; the
 HTTP server removes its session projection only after the sidecar's busy check.
 
+## Session auto-prune question
+
+Agents that ship `hermes_cli.prune_advisor` (v0.22.3+) ask once, on every surface, whether to turn on
+`sessions.auto_prune` when the disk holding a profile's `state.db` runs low and the profile has not decided.
+`state_db.prune_advice` returns the Agent's own `advice_lines` for that profile, or null while the Agent would not
+ask (or has no advisor). The server checks each profile once per process start and once per the Agent's 7-day snooze
+window, and keeps one `auto_prune` notification per profile, seen by server owners while that profile is active. Its
+actions run the Agent's `/autoprune on|off|later` through `commands.exec`, which reaches the Agent registry's shared
+executor; the notification records the Agent's reply only once the Agent stops asking. A `/autoprune` typed in the
+composer withdraws an answered question the same way.
+
 ## Toolset policy
 
 `toolsets.catalog` discovers the scoped profile's plugins and MCP servers before resolving its

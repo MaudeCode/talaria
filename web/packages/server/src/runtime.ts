@@ -19,6 +19,7 @@ import { readImportableAgentSessionRowsAsync } from './sessions/state-db.js'
 import { CompletionDrain } from './sessions/completions.js'
 import { BackgroundActivity, BackgroundTaskStore } from './sessions/background-tasks.js'
 import { HygieneTicker } from './tools/hygiene.js'
+import { PruneAdvice } from './tools/prune-advice.js'
 import { McpHealthProber } from './tools/mcp-health.js'
 import { loadConfig, truthy, type Env, type LoadConfigOptions } from './config.js'
 import type { AppDeps } from './http/context.js'
@@ -174,18 +175,30 @@ export async function createDeps(opts: CreateDepsOptions): Promise<AppDeps> {
     if (contained === null) throw new ProfileError(escapedProfileMessage(name), 400)
     return contained
   }
-  const agentHomes = (): string[] => {
-    if (isolatedProfileMode()) return [baseHome]
+  const profileNames = (): string[] => {
     let names: string[]
     try { names = readdirSync(join(baseHome, 'profiles')) }
     catch (error) { if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error; names = [] }
-    return [...new Set([baseHome, ...names.filter((name) => PROFILE_RE.test(name)).map(profileHome)])]
+    return names.filter((name) => PROFILE_RE.test(name))
+  }
+  const agentHomes = (): string[] => {
+    if (isolatedProfileMode()) return [baseHome]
+    return [...new Set([baseHome, ...profileNames().map(profileHome)])]
+  }
+  /** Every Agent profile with its home, the root as `default`; a named home outside the profiles root is left out. */
+  const agentProfiles = (): { name: string; home: string }[] => {
+    if (isolatedProfileMode()) return [{ name: isolatedProfileName(), home: baseHome }]
+    return [{ name: 'default', home: baseHome }, ...profileNames().flatMap((name) => {
+      const home = containedProfileHome(baseHome, name)
+      return home === null ? [] : [{ name, home }]
+    })]
   }
   const attachmentRoot = (): string => {
     const override = (env.HERMES_WEBUI_ATTACHMENT_DIR ?? '').trim()
     return resolvePathLikePython(override ? override.replace(/^~(?=$|\/)/, home) : join(config.stateDir, 'attachments'))
   }
   const sidecar = opts.sidecar ?? null
+  const pruneAdvice = new PruneAdvice({ sidecar: () => deps.sidecar(), profiles: agentProfiles, notifications: updateNotifications, now, log })
   const agentConfig = new AgentConfig({ sidecar: () => sidecar, env })
   /** A profile's config.yaml `model` as [model, provider] as written; '' / null when unset or not yet read. */
   const profileDefaultModel = (profile: string | null): [string, string | null] => {
@@ -682,7 +695,7 @@ export async function createDeps(opts: CreateDepsOptions): Promise<AppDeps> {
     skills: new SkillsService({ sidecar: () => sidecar, config: agentConfig, log }),
     mcp: new McpService({ sidecar: () => sidecar, config: agentConfig, health: mcpHealth }),
     completions,
-    hygiene: new HygieneTicker({ env, stateDir: config.stateDir, port: () => config.port, journal, now, log, sweeps: [() => { completions.sweep() }, async () => { (await turns.sweep()) }] }),
+    hygiene: new HygieneTicker({ env, stateDir: config.stateDir, port: () => config.port, journal, now, log, sweeps: [() => { completions.sweep() }, async () => { (await turns.sweep()) }, () => pruneAdvice.sweep()] }),
     mcpHealth,
     nowSeconds: now,
     // Python `_webui_runtime_payload`: the four owner sections with their `available` flags.
@@ -704,6 +717,7 @@ export async function createDeps(opts: CreateDepsOptions): Promise<AppDeps> {
     requestRestart: () => { void waitUntilRestartSafe(restartBlockers, { log }).then(() => deps.gatewayRestarts.quiesce()).then(() => deps.hygiene.stop()).then(() => auth.flushPersistence()).then(() => store.close()).then(() => { deps.terminals.closeAll({ immediate: true }); purgeAgentPycache(); process.exit(RESTART_EXIT_CODE) }) },
     updates: null as unknown as UpdateService,
     updateNotifications,
+    pruneAdvice,
     gatewayRestarts: null as unknown as GatewayRestartQueue,
     cspLimiter: new WindowLimiter(60, 100, now),
     clientEventLimiter: new WindowLimiter(60, 30, now),

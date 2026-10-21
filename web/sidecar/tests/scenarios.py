@@ -81,6 +81,7 @@ SCENARIOS: list[tuple[str, dict]] = [
     ("state_db.append_message", {"profile_home": "{home}", "session_id": "webui-1", "role": "tool", "content": "{\"_handoff_summary_card\": true, \"session_id\": \"webui-1\", \"summary\": \"- Ship it.\"}", "tool_name": "handoff_summary", "timestamp": 1.0}),
     ("state_db.delete_cli_session", {"profile_home": "{home}", "session_id": "cli-1"}),
     ("state_db.delete_cli_session", {"profile_home": "{home}", "session_id": "missing"}),
+    ("state_db.prune_advice", {"profile_home": "{home}"}),
     # mcp / stt / usage (a provider with no account-usage fetcher answers offline)
     ("mcp.status", {"profile_home": "{home}"}),
     ("mcp.registry_tools", {"profile_home": "{home}"}),

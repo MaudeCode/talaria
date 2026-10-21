@@ -89,5 +89,15 @@
         "refused": "runtime_history_unsupported"
       }
     }
+  ],
+  "state_db.prune_advice": [
+    {
+      "params": {
+        "profile_home": "<home>"
+      },
+      "result": {
+        "advice": null
+      }
+    }
   ]
 }

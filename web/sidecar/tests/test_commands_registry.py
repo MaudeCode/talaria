@@ -21,7 +21,9 @@ def test_registry_lists_every_runtime_command_once_as_exec(tmp_path: pathlib.Pat
         assert len(names) == len(set(names)), names
         executable = {row["name"] for row in result["commands"] if row["exec"]}
         # Every command exec runs is listed, including one the Agent registry lacks; no other built-in is marked.
-        assert executable == RUNTIME, executable
+        # /autoprune runs through the registry's own executor, so it is listed only by an Agent that ships it (v0.22.3+).
+        registry_executed = {"autoprune"} if "autoprune" in names else set()
+        assert executable == RUNTIME | registry_executed, executable
     finally:
         sidecar.close()
 

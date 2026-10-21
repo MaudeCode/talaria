@@ -26,7 +26,10 @@ _RUNTIME_COMMANDS = {
     "codex-runtime": ("Toggle codex app-server runtime for OpenAI/Codex models", "Configuration", "[auto|codex_app_server]"),
     "credits": ("Show your Nous credits", "Info", ""),
 }
-_ALLOWED = frozenset(_RUNTIME_COMMANDS)
+# Commands ``commands.exec`` runs through the Agent's registry executor (``hermes_cli.slash_exec``), so the reply is the
+# Agent's own; an Agent whose registry lacks one neither lists nor runs it.
+_REGISTRY_EXECUTED = frozenset({"autoprune"})
+_ALLOWED = frozenset(_RUNTIME_COMMANDS) | _REGISTRY_EXECUTED
 _RELOAD_MCP_LOCK = threading.Lock()
 _RELOAD_SKILLS_LOCK = threading.Lock()
 _CODEX_RUNTIME_LOCK = threading.Lock()
@@ -342,12 +345,30 @@ def _fire_pre_command(command: str, session_id: str) -> None:
                           session_key=session_id or None, platform="webui")
 
 
+def _registry_executor(name: str):
+    """The Agent registry's shared executor for ``name``; None when this Agent has none."""
+    try:
+        from hermes_cli.commands import resolve_command
+        from hermes_cli.slash_exec import resolve_executor
+    except ImportError:
+        return None
+    cmd = resolve_command(name)
+    return resolve_executor(cmd) if cmd is not None else None
+
+
 def execute_agent_command(command: str, session_id: str = "") -> str | None:
     """Run one of the allowlisted agent-side runtime commands; None when not one."""
     canonical, arg_string = parse_slash_command(command)
     if canonical not in _ALLOWED:
         return None
+    executor = _registry_executor(canonical) if canonical in _REGISTRY_EXECUTED else None
+    if canonical in _REGISTRY_EXECUTED and executor is None:
+        return None
     _fire_pre_command(command, session_id)
+    if executor is not None:
+        from hermes_cli.slash_exec import CommandContext
+
+        return str(executor(CommandContext(surface="webui", args=arg_string)).text or "(no output)")
     if canonical == "reload-mcp":
         return _reload_mcp()
     if canonical == "reload-skills":
