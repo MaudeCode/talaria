@@ -192,12 +192,12 @@ describe('chat side panel Checkpoints (TAL-571)', () => {
     await waitFor(() => { expect(showToast).toHaveBeenCalledWith('Checkpoint restored') })
   })
 
-  it('reports Agent-created files it could not delete as a failed restore (TAL-1260)', async () => {
-    vi.mocked(api.restoreCheckpoint).mockReset().mockResolvedValue(restored([], { failed_deletes: ['new.txt'], kept_user_edits: ['notes.txt'] }))
+  it('names the kept files beside the errors of a failed restore (TAL-1260)', async () => {
+    vi.mocked(api.restoreCheckpoint).mockReset().mockResolvedValue(restored([{ file: 'new.txt', error: 'could not be deleted' }], { failed_deletes: ['new.txt'], kept_user_edits: ['notes.txt'] }))
     render(<Panel />)
     await screen.findByRole('tab', { name: 'Checkpoints' })
     await restore()
-    await waitFor(() => { expect(showToast).toHaveBeenCalledWith('Restore: Could not delete: new.txt; Kept your edits: notes.txt', 6000, 'error') })
+    await waitFor(() => { expect(showToast).toHaveBeenCalledWith('Restore: new.txt: could not be deleted; Kept your edits: notes.txt', 6000, 'error') })
     expect(showRichToast).not.toHaveBeenCalled()
   })
 

@@ -1663,7 +1663,6 @@
 	"checkpoint_restore_everything": "Restaurar tudo",
 	"checkpoint_kept_user_edits": "Suas edições foram mantidas: {files}",
 	"checkpoint_skipped_oversize": "Grandes demais para restaurar: {files}",
-	"checkpoint_failed_deletes": "Não foi possível excluir: {files}",
 	"checkpoint_diff_title": "Alterações no checkpoint",
 	"checkpoint_diff_no_changes": "Nenhuma diferença encontrada entre este checkpoint e o espaço de trabalho atual.",
 	"checkpoint_diff_files_changed": [

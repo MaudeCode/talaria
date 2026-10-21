@@ -1798,7 +1798,6 @@
 	"checkpoint_restore_everything": "Alles wiederherstellen",
 	"checkpoint_kept_user_edits": "Deine Änderungen wurden beibehalten: {files}",
 	"checkpoint_skipped_oversize": "Zu groß zum Wiederherstellen: {files}",
-	"checkpoint_failed_deletes": "Konnte nicht gelöscht werden: {files}",
 	"checkpoint_diff_title": "Änderungen im Checkpoint",
 	"checkpoint_diff_no_changes": "Zwischen diesem Checkpoint und dem aktuellen Arbeitsbereich wurden keine Unterschiede gefunden.",
 	"checkpoint_diff_files_changed": [

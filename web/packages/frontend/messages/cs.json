@@ -1899,7 +1899,6 @@
 	"checkpoint_restore_everything": "Obnovit vše",
 	"checkpoint_kept_user_edits": "Vaše úpravy zůstaly zachovány: {files}",
 	"checkpoint_skipped_oversize": "Příliš velké k obnovení: {files}",
-	"checkpoint_failed_deletes": "Nelze smazat: {files}",
 	"checkpoint_diff_title": "Změny v kontrolním bodě",
 	"checkpoint_diff_no_changes": "Žádné rozdíly mezi tímto kontrolním bodem a aktuálním pracovním prostorem.",
 	"checkpoint_diff_files_changed": "{n} souborů změněno",

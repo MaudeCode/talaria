@@ -1862,7 +1862,6 @@
 	"checkpoint_restore_everything": "Ripristina tutto",
 	"checkpoint_kept_user_edits": "Modifiche mantenute: {files}",
 	"checkpoint_skipped_oversize": "Troppo grandi da ripristinare: {files}",
-	"checkpoint_failed_deletes": "Impossibile eliminare: {files}",
 	"checkpoint_diff_title": "Modifiche nel checkpoint",
 	"checkpoint_diff_no_changes": "Nessuna differenza trovata tra questo checkpoint e il workspace attuale.",
 	"checkpoint_diff_files_changed": [

@@ -1880,7 +1880,6 @@
 	"checkpoint_restore_everything": "Tout restaurer",
 	"checkpoint_kept_user_edits": "Vos modifications ont été conservées : {files}",
 	"checkpoint_skipped_oversize": "Trop volumineux pour être restaurés : {files}",
-	"checkpoint_failed_deletes": "Impossible de supprimer : {files}",
 	"checkpoint_diff_title": "Modifications dans le point de contrôle",
 	"checkpoint_diff_no_changes": "Aucune différence trouvée entre ce point de contrôle et l'espace de travail actuel.",
 	"checkpoint_diff_files_changed": [

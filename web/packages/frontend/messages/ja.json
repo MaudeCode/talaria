@@ -1802,7 +1802,6 @@
 	"checkpoint_restore_everything": "すべて復元",
 	"checkpoint_kept_user_edits": "編集を保持しました: {files}",
 	"checkpoint_skipped_oversize": "大きすぎて復元できません: {files}",
-	"checkpoint_failed_deletes": "削除できませんでした: {files}",
 	"checkpoint_diff_title": "チェックポイントの変更内容",
 	"checkpoint_diff_no_changes": "このチェックポイントと現在のワークスペースの間に差分はありません。",
 	"checkpoint_diff_files_changed": "{n} 件のファイルが変更されました",

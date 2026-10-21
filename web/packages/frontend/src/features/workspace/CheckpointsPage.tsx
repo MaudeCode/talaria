@@ -34,7 +34,7 @@ function WorkspaceCheckpoints({ workspace, sessionId, active, onRestored }: { wo
     mutationFn: ({ id, all }: { id: string; all: boolean }) => api.restoreCheckpoint(sessionId, id, all),
     onSuccess: (res) => {
       // The server answers 200 with per-file errors; any error makes this a failed restore, never a restored one.
-      const failed = [...res.errors.map((e) => `${e.file}: ${e.error}`), ...listed(res.failed_deletes, m.checkpoint_failed_deletes)]
+      const failed = res.errors.map((e) => `${e.file}: ${e.error}`)
       // The files the restore left as they are; the server names each list.
       const kept = [...listed(res.kept_user_edits, m.checkpoint_kept_user_edits), ...listed(res.skipped_oversize, m.checkpoint_skipped_oversize)]
       if (failed.length) showToast(`${m.checkpoint_restore()}: ${[...failed, ...kept].join('; ')}`, 6000, 'error')

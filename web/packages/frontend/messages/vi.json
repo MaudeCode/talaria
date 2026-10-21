@@ -1800,7 +1800,6 @@
 	"checkpoint_restore_everything": "Khôi phục tất cả",
 	"checkpoint_kept_user_edits": "Đã giữ các chỉnh sửa của bạn: {files}",
 	"checkpoint_skipped_oversize": "Quá lớn để khôi phục: {files}",
-	"checkpoint_failed_deletes": "Không thể xóa: {files}",
 	"checkpoint_diff_title": "Các thay đổi trong checkpoint",
 	"checkpoint_diff_no_changes": "Không tìm thấy khác biệt nào giữa checkpoint này và workspace hiện tại.",
 	"checkpoint_diff_files_changed": "{n} tệp đã thay đổi",

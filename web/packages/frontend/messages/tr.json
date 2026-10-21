@@ -1867,7 +1867,6 @@
 	"checkpoint_restore_everything": "Tümünü geri yükle",
 	"checkpoint_kept_user_edits": "Düzenlemeleriniz korundu: {files}",
 	"checkpoint_skipped_oversize": "Geri yüklemek için çok büyük: {files}",
-	"checkpoint_failed_deletes": "Silinemedi: {files}",
 	"checkpoint_diff_title": "Kontrol noktasındaki değişiklikler",
 	"checkpoint_diff_no_changes": "Bu kontrol noktası ile mevcut çalışma alanı arasında fark bulunamadı.",
 	"checkpoint_diff_files_changed": "{n} dosya değişti",

@@ -9,6 +9,7 @@ import { GitWorkspaceError } from './git.js'
 import { str } from '../util.js'
 
 const CHECKPOINT_ID_RE = /^[A-Za-z0-9_-][A-Za-z0-9_.-]{0,63}$/
+const CHECKPOINT_DELETE_FAILED = 'created by the Agent after the checkpoint, and could not be deleted'
 export const CHECKPOINT_STORE_BUSY_MESSAGE = 'Checkpoints are being restored or compared. Retry when that finishes.'
 
 export interface RollbackDeps {
@@ -123,8 +124,10 @@ export class RollbackStore {
       const restored = await sidecar.call('checkpoints.restore', { ...target, all })
       return { files: restored.restored_files ?? changed, result: restored }
     })
+    // A file the Agent created that it could not delete is a failed restore for every client, so it is an `error` too.
+    const errors = result.failed_deletes.map((file) => ({ file, error: CHECKPOINT_DELETE_FAILED }))
     return {
-      ok: true, checkpoint: cid, workspace: resolved, files_restored: files, files_restored_count: files.length, errors: [],
+      ok: true, checkpoint: cid, workspace: resolved, files_restored: files, files_restored_count: files.length, errors,
       kept_user_edits: result.kept_user_edits, skipped_oversize: result.skipped_oversize, failed_deletes: result.failed_deletes,
     }
   }

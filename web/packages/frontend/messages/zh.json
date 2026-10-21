@@ -1746,7 +1746,6 @@
 	"checkpoint_restore_everything": "全部恢复",
 	"checkpoint_kept_user_edits": "已保留你的编辑：{files}",
 	"checkpoint_skipped_oversize": "文件过大，无法恢复：{files}",
-	"checkpoint_failed_deletes": "无法删除：{files}",
 	"checkpoint_diff_title": "检查点变更",
 	"checkpoint_diff_no_changes": "此检查点与当前工作区之间无差异。",
 	"checkpoint_diff_files_changed": "{n} 个文件已更改",

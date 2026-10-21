@@ -1800,7 +1800,6 @@
 	"checkpoint_restore_everything": "全部還原",
 	"checkpoint_kept_user_edits": "已保留你的編輯：{files}",
 	"checkpoint_skipped_oversize": "檔案過大，無法還原：{files}",
-	"checkpoint_failed_deletes": "無法刪除：{files}",
 	"checkpoint_diff_title": "檢查點中的變更",
 	"checkpoint_diff_no_changes": "這個檢查點與目前工作區沒有差異。",
 	"checkpoint_diff_files_changed": "已變更 {n} 個檔案",

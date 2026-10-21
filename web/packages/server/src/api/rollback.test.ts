@@ -70,11 +70,11 @@ describe('workspace checkpoints through the Agent (TAL-913)', () => {
     expect(sidecar.calls.at(-1)?.params).toEqual({ profile_home: expect.any(String) as unknown, workspace: ws, checkpoint: HASH, all: false })
   })
 
-  it('keeps the hand-edits the Agent reports by default, and restores everything only with all (TAL-1260)', async () => {
+  it('keeps the hand-edits the Agent reports by default, reports a failed delete as an error, and restores everything only with all (TAL-1260)', async () => {
     sidecar.respond('checkpoints.restore', () => ({ restored_to: HASH.slice(0, 8), reason: 'before write_file', restored_files: ['docs/a.txt', 'new.txt'], kept_user_edits: ['café.txt'], skipped_oversize: ['logo.png'], failed_deletes: ['new.txt'] }))
     const res = await post(s, '/api/rollback/restore', { workspace: ws, checkpoint: HASH })
     expect(res.status).toBe(200)
-    expect(await json(res)).toEqual({ ok: true, checkpoint: HASH, workspace: ws, files_restored: ['docs/a.txt', 'new.txt'], files_restored_count: 2, errors: [], kept_user_edits: ['café.txt'], skipped_oversize: ['logo.png'], failed_deletes: ['new.txt'] })
+    expect(await json(res)).toEqual({ ok: true, checkpoint: HASH, workspace: ws, files_restored: ['docs/a.txt', 'new.txt'], files_restored_count: 2, errors: [{ file: 'new.txt', error: 'created by the Agent after the checkpoint, and could not be deleted' }], kept_user_edits: ['café.txt'], skipped_oversize: ['logo.png'], failed_deletes: ['new.txt'] })
     expect(sidecar.calls.at(-1)).toEqual({ method: 'checkpoints.restore', params: { profile_home: expect.any(String) as unknown, workspace: ws, checkpoint: HASH, all: false } })
     expect((await post(s, '/api/rollback/restore', { workspace: ws, checkpoint: HASH, all: true })).status).toBe(200)
     expect(sidecar.calls.at(-1)).toEqual({ method: 'checkpoints.restore', params: { profile_home: expect.any(String) as unknown, workspace: ws, checkpoint: HASH, all: true } })

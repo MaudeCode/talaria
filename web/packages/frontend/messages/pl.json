@@ -1896,7 +1896,6 @@
 	"checkpoint_restore_everything": "Przywróć wszystko",
 	"checkpoint_kept_user_edits": "Zachowano Twoje zmiany: {files}",
 	"checkpoint_skipped_oversize": "Zbyt duże, aby przywrócić: {files}",
-	"checkpoint_failed_deletes": "Nie można usunąć: {files}",
 	"checkpoint_diff_title": "Zmiany w punkcie kontrolnym",
 	"checkpoint_diff_no_changes": "Nie znaleziono różnic między tym punktem kontrolnym a obecnym obszarem roboczym.",
 	"checkpoint_diff_files_changed": [
