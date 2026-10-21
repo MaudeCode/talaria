@@ -603,7 +603,9 @@ confirmation dialog re-sends that token as `payload.confirm` with current owner 
 
 A native idle mutation has no execution stamp. Its session-scoped subscription and replay
 still carry it; turn-generation filtering must not discard it. Observation of a deferred
-pick stays attached past the idle notification until its outcome is projected. Outcomes
+pick stays attached past the idle notification until its outcome is projected. In-flight
+model mutations fence idle settlement before dispatch; every result releases that fence
+and rechecks settlement through the ordered owner-event queue. Outcomes
 are observations in server memory, scoped by profile home, session, authority and replay
 epoch. They never write a second session or change the owner's canonical transcript.
 

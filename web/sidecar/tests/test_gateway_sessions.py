@@ -88,38 +88,12 @@ def test_real_owner_diagnostic_execution_modes(tmp_path):
     ("steer_queued", "prompt.steer_queued", {}),
     ("replace_queued", "prompt.replace_queued", {"submission_id": "stable-edit", "text": "Edited"}),
 ])
-def test_queued_controls_use_owner_verbs_and_caller_ids(tmp_path, monkeypatch, action, method, extra):
-    import asyncio
-    from contextlib import asynccontextmanager
-    import sys
-    from types import SimpleNamespace
-    from talaria_sidecar.methods import gateway_sessions as gateway
-
-    class RPCError(Exception):
-        pass
-
-    monkeypatch.setitem(sys.modules, "hermes_cli.gateway_client", SimpleNamespace(GatewayRPCError=RPCError))
-    endpoint = SimpleNamespace(control_home=None, instance_id="owner", profile_id="profile", authority_epoch=1)
-    calls = []
-    class Client:
-        async def rpc(self, verb, **params):
-            calls.append((verb, params))
-            if verb == "runtime.describe":
-                return {"instance_id": "owner", "profile_id": "profile", "authority_epoch": 1, "capabilities": list(gateway._CAPABILITIES)}
-            if verb == "session.resume":
-                return {"session_id": "native", "subscription_id": "viewer", "messages": [], "info": {}}
-            return {"admission_id": "queued"}
-    @asynccontextmanager
-    async def connect(*_):
-        yield Client(), asyncio.Queue()
-    monkeypatch.setattr(gateway, "_connect", connect)
-    monkeypatch.setattr(gateway, "_control_refusal", lambda *_: None)
-    monkeypatch.setattr(gateway, "_with_owner", lambda home, run: asyncio.run(run(SimpleNamespace(endpoint=endpoint, state="ready"))))
-    # _run exercises dispatch independently of public input validation.
-    result = asyncio.run(gateway._run(None, {"session_id": "native", "action": action, "admission_id": "queued", **extra}, tmp_path, SimpleNamespace(endpoint=endpoint, state="ready")))
-    assert (method, {"session_id": "native", "admission_id": "queued", **extra}) in calls
+def test_queued_controls_use_owner_verbs_and_caller_ids(tmp_path, native_owner_stub, action, method, extra):
+    native_owner_stub.receipt = {"admission_id": "queued"}
+    result = native_owner_stub.run(None, {"session_id": "native", "action": action, "admission_id": "queued", **extra})
+    assert (method, {"session_id": "native", "admission_id": "queued", **extra}) in native_owner_stub.calls
     assert result["receipt"] == {"admission_id": "queued"}
-    assert gateway.session(None, {"profile_home": str(tmp_path), "session_id": "native", "action": action, "admission_id": "queued", **extra})["receipt"] == result["receipt"]
+    assert native_owner_stub.session(None, {"profile_home": str(tmp_path), "session_id": "native", "action": action, "admission_id": "queued", **extra})["receipt"] == result["receipt"]
 
 
 @requires_agent
@@ -201,16 +175,17 @@ def native_owner_stub(tmp_path, monkeypatch):
     from types import SimpleNamespace
     from talaria_sidecar.methods import gateway_sessions as adapter
 
-    owner = SimpleNamespace(receipt=None, replay=[], payload=None)
+    owner = SimpleNamespace(receipt=None, replay=[], payload=None, calls=[])
     async def rpc(method, **params):
+        owner.calls.append((method, params))
         if method == "runtime.describe":
             return {"instance_id": "owner", "profile_id": "profile", "authority_epoch": 1,
                     "capabilities": ["durable-admission-v1", "event-replay-v1"]}
         if method == "session.resume":
-            return {"session_id": "chat", "subscription_id": "viewer", "messages": [], "info": {},
+            return {"session_id": params["session_id"], "subscription_id": "viewer", "messages": [], "info": {},
                     "replay_epoch": "epoch", "last_sequence": 4, "execution_generation": 1}
-        if method == "session.mutate":
-            owner.payload = params["payload"]
+        if method in {"session.mutate", "prompt.steer_queued", "prompt.replace_queued"}:
+            owner.payload = params.get("payload")
             return owner.receipt
         if method == "session.events.since":
             return {"events": owner.replay, "last_sequence": 4}
@@ -221,6 +196,8 @@ def native_owner_stub(tmp_path, monkeypatch):
     monkeypatch.setattr(adapter, "_connect", connect)
     monkeypatch.setattr(adapter, "_control_refusal", lambda *args: None)
     endpoint = SimpleNamespace(control_home=None, instance_id="owner", profile_id="profile", authority_epoch=1)
+    monkeypatch.setattr(adapter, "_with_owner", lambda home, run: asyncio.run(run(SimpleNamespace(endpoint=endpoint))))
+    owner.session = adapter.session
     owner.run = lambda ctx, params: asyncio.run(adapter._run(ctx, params, tmp_path, SimpleNamespace(endpoint=endpoint)))
     return owner
 

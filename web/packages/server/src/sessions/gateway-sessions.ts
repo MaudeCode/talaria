@@ -21,7 +21,7 @@ type Row = Record<string, unknown>
 interface Target { sid: string; profile: string; home: string; key: string }
 /** An owner clarify batch and the question ids the owner still waits on, from its last `clarify.lock` reply. */
 type Batch = GatewayClarifyBatch & { remaining: string[] }
-interface Watch { stream: string; controller: AbortController; snapshot: GatewaySnapshot; batch: Batch | null; restarting: boolean; worker?: Promise<void> }
+interface Watch { stream: string; controller: AbortController; snapshot: GatewaySnapshot; batch: Batch | null; restarting: boolean; worker?: Promise<void>; reconcile?: () => void }
 
 const ownerStreamPrefix = (home: string): string => `owner-${createHash('sha256').update(home).digest('hex').slice(0, 16)}-`
 const ownerStateId = (identity: string): string => `owner-${createHash('sha256').update(identity).digest('hex')}`
@@ -78,6 +78,7 @@ function modelChange(receipt: Row, selection: Row = {}): ModelChange {
 
 export class GatewaySessions {
   private readonly watches = new Map<string, Watch>()
+  private readonly modelMutations = new Map<string, number>()
   private readonly modelChanges = new Map<string, { epoch: number; replay: string; change: ModelChange }>()
 
   private rememberModelChange(target: Target, snapshot: GatewaySnapshot, change: ModelChange): void {
@@ -143,6 +144,8 @@ export class GatewaySessions {
     const sidecar = this.deps.sidecar()
     if (!sidecar) return { state: 'unavailable', reason: 'sidecar_unavailable', snapshot: null, receipt: null }
     const before = this.modelChanges.get(target.key)
+    const modelMutation = params.action === 'mutate' && params.operation === 'model'
+    if (modelMutation) this.modelMutations.set(target.key, (this.modelMutations.get(target.key) ?? 0) + 1)
     try {
       const result = await sidecar.call('gateway.session', { ...params, profile_home: target.home, session_id: target.sid }, { timeoutMs: params.action === 'mutate' ? 675_000 : 35_000 })
       if (params.action === 'mutate' && params.operation === 'model' && result.snapshot) {
@@ -155,6 +158,15 @@ export class GatewaySessions {
       return { ...result, ...(change ? { model_change: change } : {}) }
     } catch {
       return { state: 'unavailable', reason: 'owner_connection_lost', snapshot: null, receipt: null }
+    } finally {
+      if (modelMutation) {
+        const remaining = (this.modelMutations.get(target.key) ?? 1) - 1
+        if (remaining) this.modelMutations.set(target.key, remaining)
+        else {
+          this.modelMutations.delete(target.key)
+          this.watches.get(target.key)?.reconcile?.()
+        }
+      }
     }
   }
 
@@ -359,6 +371,10 @@ export class GatewaySessions {
     let streamError: unknown = null
     let closeWriter: RunJournalWriter | null = null
     let activeAdmission = runningAdmission(snapshot)?.admission_id ?? snapshot.pending.find((p) => !p.steering)?.admission_id
+    const enqueue = (work: () => Promise<void>) => {
+      chain = chain.then(async () => { if (!terminal && !streamError) await work() })
+        .catch((error: unknown) => { streamError = error; watch.controller.abort() })
+    }
     const worker = async () => {
       // Same persisted IDs can exist in separate homes. Native observation journals must not
       // join the sid-only direct-chat journal; the owner retains the canonical transcript.
@@ -381,7 +397,7 @@ export class GatewaySessions {
       }
       const finish = async () => {
         // A model pick resolves at the owner's next claim boundary, after the turn becomes idle.
-        if (terminal || this.currentModelChange(target, watch.snapshot)?.state === 'deferred') return
+        if (terminal || this.modelMutations.has(target.key) || this.currentModelChange(target, watch.snapshot)?.state === 'deferred') return
         terminal = true
         const current = await this.call(target, { action: 'snapshot' })
         const rawReceipt = activeAdmission ? (await this.call(target, { action: 'receipt', admission_id: activeAdmission })).receipt : null
@@ -395,6 +411,12 @@ export class GatewaySessions {
           session: { ...await this.view(base, current, null, target), ...usage } })
         await put('stream_end', { session_id: target.sid })
         watch.controller.abort()
+      }
+      // Reconcile after the last in-flight mutation releases its fence, in the same order as owner frames.
+      watch.reconcile = () => {
+        enqueue(async () => {
+          if (!watch.snapshot.running && !watch.snapshot.pending.some((p) => p.status === 'queued' || p.status === 'started')) await finish()
+        })
       }
       let pending = this.prompts(snapshot, target.sid, watch.batch)
       let ran = snapshot.running
@@ -413,8 +435,7 @@ export class GatewaySessions {
       const result = await sidecar.call('gateway.session', { profile_home: target.home, session_id: target.sid, action: 'watch', show_reasoning: showReasoning }, {
         signal: watch.controller.signal, timeoutMs: 0,
         onStream: (frame) => {
-          chain = chain.then(async () => {
-            if (terminal || streamError) return
+          enqueue(async () => {
             if (frame.event === 'restarting') {
               // The owner entered a restart's after-turn wait after this watch attached: clients stop sending.
               watch.restarting = true
@@ -502,7 +523,7 @@ export class GatewaySessions {
               if (kind === 'clarify.settled' && !pending.clarifyHeadFrame(target.sid)) await put('clarify', { status: 'resolved', clarify_id: data.prompt_id })
             }
 
-          }).catch((error: unknown) => { streamError = error; watch.controller.abort() })
+          })
         },
       })
       await chain
