@@ -2,6 +2,7 @@ import { sessionDirectory } from '../test/storage.js'
 import { mkdirSync, utimesSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
+import { Worker } from 'node:worker_threads'
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
 import { bootTestServer, type TestServer } from '../test/harness.js'
 import type { SidecarResult } from '@maudecode/talaria-web-contracts'
@@ -131,6 +132,67 @@ describe('session list state.db reads off the event loop (TAL-920)', () => {
     expect(await stateDbSessionReadAsync(new Map(), 'stateDbCronJobIds', dbPath)).toEqual(new Map())
     expect(await stateDbSessionReadAsync(new Map(), 'latestCronSessionInfo', dbPath, ['job1'], ['job1'])).toEqual(new Map([['job1', { session_id: 'cron_job1_1', message_count: 2 }]]))
     expect(mainThreadOpens.filter((path) => path === dbPath)).toEqual([])
+  })
+
+  it.each(['files', 'insights', 'rounds', 'completions', 'lineage', 'handoff'])('keeps %s reads off the main thread (TAL-1188)', async (surface) => {
+    const sidecar = new FakeSidecar()
+    const server = await bootTestServer({ sidecar })
+    const path = join(server.state, 'state.db')
+    seedStateDb(path, [{ id: 'cli-probe', source: 'cli', at: server.deps.nowSeconds() }, { id: 'cron_job1_1', source: 'cron', at: 1020 }])
+    if (surface === 'handoff') {
+      const db = new DatabaseSync(path)
+      db.exec("WITH RECURSIVE n(x) AS (SELECT 1 UNION ALL SELECT x + 1 FROM n WHERE x < 20) INSERT INTO messages (session_id, role, content, timestamp) SELECT 'handoff-probe', CASE WHEN x % 2 = 1 THEN 'user' ELSE 'assistant' END, 'synthetic', 1000 + x FROM n")
+      db.close()
+      await server.deps.sessionStore.save(new Session({ session_id: 'handoff-probe', messages: [] }, { workspace: server.state, model: null }))
+      sidecar.respond('runtime.ensure_current', () => ({ current: true as const, agent_revision: null }))
+      sidecar.respond('aux.complete', () => ({ model: 'synthetic', text: 'Synthetic summary.', usage: null, finish_reason: 'stop' }))
+    }
+    try {
+      const opens = await opensDuring(server, path, async () => {
+        if (surface === 'completions') {
+          const jobs = [{ id: 'job1', name: 'Synthetic', profile: null, monitor: '', continuity: false, last_run_at: 1022, last_status: 'ok', toast_notifications: true }]
+          mkdirSync(join(server.state, 'cron'), { recursive: true })
+          writeFileSync(join(server.state, 'cron', 'jobs.json'), JSON.stringify({ jobs }))
+          sidecar.respond('cron.list', () => ({ jobs }))
+          expect(await server.deps.crons.recent(server.state, '0')).toMatchObject({ completions: [{ job_id: 'job1', session_id: 'cron_job1_1' }] })
+        } else if (surface === 'handoff') {
+          expect(await server.deps.sessions.handoffSummary('handoff-probe', null)).toMatchObject({ rounds: 10, summary: 'Synthetic summary.' })
+        } else if (surface === 'rounds') {
+          expect(await server.deps.sessions.conversationRounds('cli-probe', null)).toMatchObject({ rounds: 1 })
+        } else {
+          const url = surface === 'files' ? '/api/list?session_id=cli-probe' : surface === 'insights' ? '/api/insights?days=7' : '/api/session/lineage/report?session_id=cli-probe'
+          const response = await server.get(url)
+          expect(response.status).toBe(200)
+          const body = await response.json() as Json
+          if (surface === 'files') expect(body.entries).toBeInstanceOf(Array)
+          if (surface === 'insights') expect(body.total_sessions).toBe(1)
+          if (surface === 'lineage') expect(body.found).toBe(true)
+        }
+      })
+      expect(opens).toEqual([])
+    } finally { await server.close() }
+  })
+
+  it('probes a fork parent with 10,000 messages without loading its transcript (TAL-1188)', async () => {
+    const server = await bootTestServer()
+    const path = join(server.state, 'state.db')
+    seedStateDb(path, [{ id: 'cron-parent', source: 'cron', at: 1000 }])
+    const db = new DatabaseSync(path)
+    db.exec("WITH RECURSIVE n(x) AS (SELECT 1 UNION ALL SELECT x + 1 FROM n WHERE x < 9998) INSERT INTO messages (session_id, role, content, timestamp) SELECT 'cron-parent', 'user', 'synthetic', x + 1002 FROM n")
+    db.close()
+    await server.deps.sessionStore.save(new Session({ session_id: 'fork-probe', session_source: 'fork', parent_session_id: 'cron-parent', messages: [{ role: 'user', content: 'fork', timestamp: 1 }] }, { workspace: server.state, model: null }))
+    const requests = vi.spyOn(Worker.prototype, 'postMessage')
+    try {
+      const opens = await opensDuring(server, path, async () => {
+        const response = await server.get('/api/session?session_id=fork-probe')
+        expect(response.status).toBe(200)
+        expect((await response.json() as Json).session).toMatchObject({ branched_from: { session_id: 'cron-parent', title: 'cron-parent title' } })
+      })
+      const parentReads = requests.mock.calls.map(([request]) => request as { read?: string; args?: unknown[] }).filter((request) => request.args?.[1] === 'cron-parent').map((request) => request.read)
+      expect(parentReads).toContain('stateDbSessionHasMessages')
+      expect(parentReads).not.toContain('stateDbSessionMessages')
+      expect(opens).toEqual([])
+    } finally { requests.mockRestore(); await server.close() }
   })
 
   it('answers /health while a slow state.db read holds /api/sessions', async () => {

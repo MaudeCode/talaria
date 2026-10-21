@@ -750,13 +750,18 @@ export function latestCronSessionInfo(dbPath: string, jobIds: Iterable<string>, 
     const admissions = cronAdmissionJobIds(db, true)
     const count = cols.has('message_count') ? 's.message_count' : 'NULL'
     const order = cols.has('started_at') ? 'COALESCE(s.started_at, 0) DESC, s.id DESC' : 's.id DESC'
-    const rows = db.prepare(`SELECT s.id AS id, ${count} AS message_count FROM sessions s WHERE LOWER(COALESCE(s.source, '')) = 'cron' ORDER BY ${order}`).all() as { id: unknown; message_count: unknown }[]
-    for (const row of rows) {
-      const sid = typeof row.id === 'string' ? row.id : ''
-      const owner = cronSessionJobId(sid, ids, admissions)
-      if (owner === null || !wanted.has(owner) || found.has(owner)) continue
-      found.set(owner, { session_id: sid, message_count: Number.isFinite(Number(row.message_count)) && row.message_count !== null ? Math.trunc(Number(row.message_count)) : null })
-      if (found.size === wanted.size) break
+    const indexed = tableIndexes(db, 'sessions').has('idx_sessions_source_id') ? ' INDEXED BY idx_sessions_source_id' : ''
+    const query = db.prepare(`SELECT s.id AS id, ${count} AS message_count FROM sessions s${indexed} WHERE s.source = 'cron' ORDER BY ${order} LIMIT ? OFFSET ?`)
+    const batchSize = wanted.size * 8
+    // Stream older rows only if needed: a busy job must not hide another job's completion link.
+    for (const [limit, offset] of [[batchSize, 0], [-1, batchSize]] as const) {
+      for (const row of query.iterate(limit, offset) as Iterable<{ id: unknown; message_count: unknown }>) {
+        const sid = typeof row.id === 'string' ? row.id : ''
+        const owner = cronSessionJobId(sid, ids, admissions)
+        if (owner === null || !wanted.has(owner) || found.has(owner)) continue
+        found.set(owner, { session_id: sid, message_count: Number.isFinite(Number(row.message_count)) && row.message_count !== null ? Math.trunc(Number(row.message_count)) : null })
+        if (found.size === wanted.size) return found
+      }
     }
     return found
   } catch {
@@ -994,6 +999,24 @@ export function stateDbHasSession(dbPath: string, sid: string): boolean {
   }
 }
 
+/** True when a session has a live message; never materializes its transcript or compaction archive. */
+export function stateDbSessionHasMessages(dbPath: string, sid: string): boolean {
+  const id = sid.trim()
+  if (!id || !existsSync(dbPath)) return false
+  let db: DatabaseSync
+  try { db = openStateDbReadonly(dbPath) } catch { return false }
+  try {
+    const cols = tableColumns(db, 'messages')
+    if (!cols.has('session_id')) return false
+    const active = cols.has('active') ? ' AND (active IS NULL OR active != 0)' : ''
+    return db.prepare(`SELECT 1 FROM messages WHERE session_id = ?${active} LIMIT 1`).get(id) !== undefined
+  } catch {
+    return false
+  } finally {
+    finishStateDbRead(db)
+  }
+}
+
 /**
  * Python `_cheap_change_fingerprint`: `MAX(rowid)` of both tables, the file
  * stamps of the DB and its WAL, and the SQLite change counter (header bytes
@@ -1148,7 +1171,7 @@ export async function agentSessionRowsExistingAsync(dbPath: string, sessionIds: 
  * TAL-1162: and the transcript reads behind turn history, settlement, and the detail's page tail.
  * TAL-1256: shared cron admission identities and completion links use this same dispatcher.
  */
-export const SESSION_READS = { stateDbCronJobIds, latestCronSessionInfo, stateDbLocalTargetRead, stateDbSessionRow, stateDbSessionMessages, stateDbCompressionLineage, stateDbSessionRead, stateDbSessionTailRead, stateDbSettlementRead }
+export const SESSION_READS = { stateDbHasSession, stateDbSessionHasMessages, insightsSessionRows, countConversationRounds, stateDbTailToolContent, stateDbLineageReport, stateDbCronJobIds, latestCronSessionInfo, stateDbLocalTargetRead, stateDbSessionRow, stateDbSessionMessages, stateDbCompressionLineage, stateDbSessionRead, stateDbSessionTailRead, stateDbSettlementRead }
 type SessionReadName = keyof typeof SESSION_READS
 
 /**
@@ -1516,7 +1539,7 @@ function lineageReportRow(row: Dict, role: 'tip' | 'hidden_segment' | 'child_ses
   }
 }
 
-const emptyLineageReport = (sid: string): Dict => ({
+export const emptyLineageReport = (sid: string): Dict => ({
   mutation: false, found: false, session_id: sid, lineage_key: sid, tip_session_id: sid, total_segments: 0, materialized_segments: 0, segments: [], children: [], manual_review: false,
 })
 
@@ -1616,12 +1639,28 @@ export function insightsSessionRows(dbPath: string, cutoff: number): Dict[] {
     const indexed = hasMessages && tableIndexes(db, 'messages').has('idx_messages_session')
     // Without the index a per-session lookup scans messages once per session; one grouped scan replaces it.
     const lastMessage = !hasMessages ? 'NULL' : indexed ? lastMessageTimestamp(indexed) : 'lm.last_message_at'
-    const join = hasMessages && !indexed ? 'LEFT JOIN (SELECT session_id, MAX(timestamp) AS last_message_at FROM messages GROUP BY session_id) lm ON lm.session_id = s.id' : ''
+    const messageCte = hasMessages && !indexed ? 'latest_messages AS MATERIALIZED (SELECT session_id, MAX(timestamp) AS last_message_at FROM messages GROUP BY session_id)' : ''
+    const join = messageCte ? 'LEFT JOIN latest_messages lm ON lm.session_id = s.id' : ''
     const source = cols.has('source') ? "LOWER(COALESCE(s.source, '')) != 'webui'" : '1'
-    const rows = db.prepare(`SELECT * FROM (SELECT s.id AS id, ${col('model')} AS model, ${col('message_count')} AS message_count, ${col('input_tokens')} AS input_tokens,
+    const activityIndexed = cols.has('last_activity_at') && tableIndexes(db, 'sessions').has('idx_sessions_effective_activity')
+    const activity = activityIndexed ? freshestActivity('s.last_activity_at', `MAX(COALESCE(${col('ended_at')}, 0), COALESCE(${lastMessage}, 0))`)
+      : `MAX(COALESCE(s.started_at, 0), COALESCE(${col('ended_at')}, 0), COALESCE(${lastMessage}, 0))`
+    // The heartbeat can lag a message or end time; union their candidates before the exact activity check.
+    const candidates = activityIndexed ? [
+      'SELECT s.id FROM sessions s INDEXED BY idx_sessions_effective_activity WHERE COALESCE(s.last_activity_at, s.started_at) >= ?',
+      'SELECT id FROM sessions WHERE started_at >= ?',
+      ...(cols.has('ended_at') ? ['SELECT id FROM sessions WHERE ended_at >= ?'] : []),
+      ...(hasMessages ? [indexed ? 'SELECT DISTINCT session_id AS id FROM messages WHERE timestamp >= ?' : 'SELECT session_id AS id FROM latest_messages WHERE last_message_at >= ?'] : []),
+    ] : []
+    const ctes = [messageCte, ...(activityIndexed ? [`candidates AS MATERIALIZED (SELECT DISTINCT id FROM (${candidates.join(' UNION ALL ')}))`] : [])].filter(Boolean)
+    const withClause = ctes.length ? `WITH ${ctes.join(', ')} ` : ''
+    // CROSS JOIN keeps the candidate IDs ahead of the expensive per-session freshness projection.
+    const from = activityIndexed ? 'candidates c CROSS JOIN sessions s ON s.id = c.id' : 'sessions s'
+    const ordering = activityIndexed ? ' ORDER BY COALESCE(s.last_activity_at, s.started_at) DESC' : ''
+    const rows = db.prepare(`${withClause}SELECT * FROM (SELECT s.id AS id, ${col('model')} AS model, ${col('message_count')} AS message_count, ${col('input_tokens')} AS input_tokens,
       ${col('output_tokens')} AS output_tokens, ${col('cache_read_tokens')} AS cache_read_tokens, ${col('estimated_cost_usd')} AS estimated_cost_usd, s.started_at AS started_at,
-      MAX(COALESCE(s.started_at, 0), COALESCE(${col('ended_at')}, 0), COALESCE(${lastMessage}, 0)) AS last_activity
-      FROM sessions s ${join} WHERE ${source}) WHERE last_activity >= ?`).all(cutoff) as Dict[]
+      ${activity} AS last_activity
+      FROM ${from} ${join} WHERE ${source}${ordering}) WHERE last_activity >= ?`).all(...Array<number>(candidates.length + 1).fill(cutoff)) as Dict[]
     return rows.map((r) => ({
       session_id: str(r.id), model: r.model, message_count: r.message_count, input_tokens: r.input_tokens, output_tokens: r.output_tokens,
       cache_read_tokens: r.cache_read_tokens, estimated_cost: r.estimated_cost_usd, created_at: r.started_at, updated_at: r.last_activity,

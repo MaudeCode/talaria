@@ -24,13 +24,13 @@ const USAGE_FIELDS = ['message_count', 'input_tokens', 'output_tokens', 'cache_r
  * usage from before the claim and the Agent's later turns. The later activity time places it in the window, and the
  * snapshot with that activity names its model.
  */
-export function buildInsights(entries: Dict[], daysRaw: unknown, nowSeconds: number, stateRows: (cutoff: number) => Dict[] = () => []): Dict {
+export async function buildInsights(entries: Dict[], daysRaw: unknown, nowSeconds: number, stateRows: (cutoff: number) => Dict[] | Promise<Dict[]> = () => []): Promise<Dict> {
   const parsed = Number.parseInt(str(daysRaw ?? '30'), 10)
   const days = Number.isFinite(parsed) ? Math.min(Math.max(parsed, 1), 365) : 30
   const today = new Date(nowSeconds * 1000)
   const midnight = new Date(today.getFullYear(), today.getMonth(), today.getDate()).getTime() / 1000
   const cutoff = midnight - (days - 1) * 86_400
-  const state = new Map(stateRows(cutoff).map((r) => [str(r.session_id), r]))
+  const state = new Map((await stateRows(cutoff)).map((r) => [str(r.session_id), r]))
   const merged = entries.map((e) => {
     const row = state.get(str(e.session_id))
     if (!row) return e

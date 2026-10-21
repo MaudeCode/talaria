@@ -12,7 +12,7 @@ import { SessionSchema } from '@maudecode/talaria-web-contracts'
 import { str } from '../util.js'
 import { Session } from './session.js'
 import { recordBackgroundUpdate } from './background-updates.js'
-import { agentSessionRowsExisting, cheapChangeFingerprint, latestCronSessionInfo, isCliSessionRowVisible, normalizeAgentSessionSource, projectAgentSessionRows, readImportableAgentSessionRows, stateDbCompressionLineage, stateDbHasSession, stateDbLineageReport, stateDbSessionRead, stateDbSessionSources, type ReadRowsOptions } from './state-db.js'
+import { agentSessionRowsExisting, cheapChangeFingerprint, insightsSessionRows, latestCronSessionInfo, isCliSessionRowVisible, normalizeAgentSessionSource, projectAgentSessionRows, readImportableAgentSessionRows, stateDbCompressionLineage, stateDbHasSession, stateDbLineageReport, stateDbSessionRead, stateDbSessionSources, type ReadRowsOptions } from './state-db.js'
 import agentSchema from '../test/fixtures/canonical-ownership.json' with { type: 'json' }
 import cronSchema from '../test/fixtures/cron-sessions.json' with { type: 'json' }
 import { MESSAGING_SOURCES } from './source-kind.js'
@@ -1045,6 +1045,78 @@ describe('indexed sidebar window (TAL-1163)', () => {
       expect(before.ids).toEqual(expected[pass])
       expect(read(indexed, opts).rows).toEqual(before.rows)
     }
+  })
+})
+
+describe('remaining indexed readers (TAL-1188)', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'tal-1188-plans-'))
+  afterAll(() => { rmSync(dir, { recursive: true, force: true }) })
+
+  it('bounds cron result batches, uses the source index, and retains infrequent jobs', () => {
+    const path = join(dir, 'cron.db')
+    const db = new DatabaseSync(path)
+    db.exec(agentSchema.schema.join('\n'))
+    insertSession(db, { id: 'cron_rare_1', source: 'cron', started_at: 1 })
+    for (let i = 0; i < 100; i += 1) insertSession(db, { id: `cron_hot_${i}`, source: 'cron', started_at: i + 2 })
+    const prepare = vi.spyOn(DatabaseSync.prototype, 'prepare')
+    let sql: string
+    try {
+      expect(latestCronSessionInfo(path, ['hot', 'rare'], ['hot', 'rare'])).toEqual(new Map([
+        ['hot', { session_id: 'cron_hot_99', message_count: 0 }], ['rare', { session_id: 'cron_rare_1', message_count: 0 }],
+      ]))
+      sql = prepare.mock.calls.map(([sql]) => sql).find((sql) => sql.includes('AS message_count FROM sessions s'))!
+    } finally { prepare.mockRestore() }
+    try {
+      const plan = db.prepare(`EXPLAIN QUERY PLAN ${sql}`).all(...Array<null>(sql.split('?').length - 1).fill(null)) as { detail: string }[]
+      expect(plan.map((r) => r.detail).join('\n')).toMatch(/USING INDEX idx_sessions_source(_id)?/)
+      expect(sql).toContain('LIMIT')
+    } finally { db.close() }
+  })
+
+  it.each(['indexed', 'no-message-index', 'legacy'])('keeps activity beyond a stale heartbeat on %s schemas', (schema) => {
+    const path = join(dir, `insights-stale-${schema}.db`)
+    const db = new DatabaseSync(path)
+    db.exec(agentSchema.schema.join('\n'))
+    for (const [id, source, started_at, messageAt, heartbeat, endedAt] of [
+      ['heartbeat', 'cli', 1, 950, 1000, null],
+      ['message', 'telegram', 1, 1000, 800, null],
+      ['end', 'cron', 1, 2, 800, 1100],
+      ['null-heartbeat', 'cli', 1, 1000, null, null],
+      ['start', 'cli', 1000, 1001, 800, null],
+      ['old', 'cli', 1, 2, 800, 850],
+      ['webui', 'webui', 1, 1000, 1000, null],
+    ] as const) {
+      insertSession(db, { id, source, started_at, messages: [['user', messageAt]] })
+      db.prepare('UPDATE sessions SET last_activity_at = ?, ended_at = ? WHERE id = ?').run(heartbeat, endedAt, id)
+    }
+    if (schema === 'no-message-index') db.exec('DROP INDEX idx_messages_session')
+    if (schema === 'legacy') db.exec('DROP INDEX idx_sessions_effective_activity; ALTER TABLE sessions DROP COLUMN last_activity_at')
+    db.close()
+    const rows = insightsSessionRows(path, 900)
+    expect(new Map(rows.map((row) => [row.session_id, row.updated_at]))).toEqual(new Map([
+      ['heartbeat', schema === 'legacy' ? 950 : 1000], ['message', 1000], ['end', 1100], ['null-heartbeat', 1000], ['start', 1001],
+    ]))
+    expect(rows).toHaveLength(5)
+  })
+
+  it('range-scans the activity index before checking message freshness', () => {
+    const path = join(dir, 'insights.db')
+    const db = new DatabaseSync(path)
+    db.exec(agentSchema.schema.join('\n'))
+    insertSession(db, { id: 'recent', source: 'cli', started_at: 1, messages: [['user', 1050]] })
+    insertSession(db, { id: 'old', source: 'cli', started_at: 1, messages: [['user', 2]] })
+    db.exec("UPDATE sessions SET last_activity_at = 1000 WHERE id = 'recent'")
+    const prepare = vi.spyOn(DatabaseSync.prototype, 'prepare')
+    let sql: string
+    try {
+      expect(insightsSessionRows(path, 900)).toMatchObject([{ session_id: 'recent', updated_at: 1050 }])
+      sql = prepare.mock.calls.map(([sql]) => sql).find((sql) => sql.includes('AS last_activity') && sql.includes('AS estimated_cost_usd'))!
+    } finally { prepare.mockRestore() }
+    try {
+      const plan = db.prepare(`EXPLAIN QUERY PLAN ${sql}`).all(...Array<number>(sql.split('?').length - 1).fill(900)) as { detail: string }[]
+      expect(plan.map((r) => r.detail).join('\n')).toContain('SEARCH s USING INDEX idx_sessions_effective_activity')
+      expect(plan.some((r) => /^SCAN s(?: |$)/.test(r.detail))).toBe(false)
+    } finally { db.close() }
   })
 })
 

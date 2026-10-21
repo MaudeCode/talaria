@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { agentSessionRowsExisting, cheapChangeFingerprint, countConversationRounds, insightsSessionRows, latestCronSessionInfo, readImportableAgentSessionRows, stateDbCompressionLineage, stateDbCronJobIds, stateDbHasSession, stateDbLineageReport, stateDbLocalTarget, stateDbSessionRow, stateDbSessionSources, stateDbSessionRead, stateDbStorage, stateDbTailToolContent, stateDbWebDiagnosticIds, stopStateDbWorker } from './state-db.js'
+import { agentSessionRowsExisting, cheapChangeFingerprint, countConversationRounds, insightsSessionRows, latestCronSessionInfo, readImportableAgentSessionRows, stateDbCompressionLineage, stateDbCronJobIds, stateDbHasSession, stateDbSessionHasMessages, stateDbLineageReport, stateDbLocalTarget, stateDbSessionRow, stateDbSessionSources, stateDbSessionRead, stateDbStorage, stateDbTailToolContent, stateDbWebDiagnosticIds, stopStateDbWorker } from './state-db.js'
 
 const observed = vi.hoisted(() => ({ handles: [] as import('node:sqlite').DatabaseSync[], probes: [] as string[], executions: [] as string[], rowCounts: new Map<string, number>() }))
 vi.mock('node:sqlite', async (importOriginal) => {
@@ -90,6 +90,32 @@ describe('state.db handle and schema reuse', () => {
       expect(observed.probes).toEqual([...first, ...first])
       expect(observed.handles.length).toBe(1)
     } finally { writer.close() }
+  })
+
+  it('uses only a LIMIT 1 message probe and accepts the same active flags as transcript reads (TAL-1188)', () => {
+    const writer = new DatabaseSync(path)
+    writer.exec('ALTER TABLE messages ADD COLUMN active INTEGER; UPDATE messages SET active = 0')
+    const prepare = vi.spyOn(DatabaseSync.prototype, 'prepare')
+    try {
+      expect(stateDbSessionHasMessages(path, 'cli-a')).toBe(false)
+      for (const active of [null, 1, 2, -1]) {
+        writer.prepare('UPDATE messages SET active = ? WHERE id = 1').run(active)
+        expect(stateDbSessionHasMessages(path, 'cli-a')).toBe(true)
+      }
+      expect(stateDbSessionHasMessages(path, 'missing')).toBe(false)
+      const probes = prepare.mock.calls.map(([sql]) => sql).filter((sql) => sql.includes('FROM messages'))
+      expect(probes).toHaveLength(6)
+      expect(new Set(probes)).toEqual(new Set(['SELECT 1 FROM messages WHERE session_id = ? AND (active IS NULL OR active != 0) LIMIT 1']))
+    } finally { prepare.mockRestore(); writer.close() }
+  })
+
+  it('probes messages on a legacy schema and fails closed for absent or damaged databases (TAL-1188)', () => {
+    expect(stateDbSessionHasMessages(path, 'cli-a')).toBe(true)
+    expect(stateDbSessionHasMessages(path, ' ')).toBe(false)
+    expect(stateDbSessionHasMessages(join(dir, 'absent.db'), 'cli-a')).toBe(false)
+    const writer = new DatabaseSync(path)
+    try { writer.exec('DROP TABLE messages') } finally { writer.close() }
+    expect(stateDbSessionHasMessages(path, 'cli-a')).toBe(false)
   })
 
   it('ends each reader snapshot, including early returns and query errors', () => {
