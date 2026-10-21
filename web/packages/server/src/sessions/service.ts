@@ -90,6 +90,16 @@ function staleRuntimeFailure(error: SidecarError): HttpFailure {
   return new HttpFailure(409, message ?? error.message, details)
 }
 
+/** Lazy reads shared by one gate sequence, never across a lock wait or sidecar dispatch. */
+interface SessionGateReads {
+  sid: string
+  owners: (profile?: string) => Promise<Map<string, StateDbSessionSource> | null>
+  row: () => Promise<ReturnType<typeof stateDbSessionRow>>
+  meta: () => Promise<Row | null>
+  messages: (stitch: boolean) => Promise<Message[]>
+  existing: () => Promise<Set<string>>
+}
+
 export interface SessionServiceDeps {
   /** TAL-259: epoch seconds of the state directory's `recovery_stamping_since` marker. */
   recoveryStampingSince: () => Promise<number>
@@ -307,26 +317,26 @@ export class SessionService {
   }
 
   /** Python `_lookup_cli_session_metadata(...).get('read_only')` plus the persisted sidecar flag and a not-claimable foreign owner. */
-  private async isReadOnlyImport(sid: string): Promise<boolean> {
+  private async isReadOnlyImport(sid: string, reads = this.sessionGateReads(sid)): Promise<boolean> {
     try {
       const s = (await this.store.get(sid, { metadataOnly: true }))
-      if ((await this.isReadOnly(s))) return true
+      if (await this.loadedReadOnlyReason(s, undefined, reads)) return true
     } catch {
       // No sidecar: a foreign state.db transcript whose owner refuses claiming is read-only too.
-      const { session, reason } = (await this.claimOrSynthesizeCliSession(sid))
+      const { session, reason } = (await this.claimOrSynthesizeCliSession(sid, undefined, reads))
       if (session && reason === 'not_claimable') return true
     }
-    const meta = (await this.lookupCliMeta(sid))
+    const meta = await reads.meta()
     return meta !== null && Boolean(meta.read_only)
   }
 
   /** Python `_session_is_subagent_view_only`: a delegated child by any signal — the persisted sidecar or the state.db row. */
-  async isSubagentViewOnly(sid: string): Promise<boolean> {
+  async isSubagentViewOnly(sid: string, reads = this.sessionGateReads(sid)): Promise<boolean> {
     try {
       const s = (await this.store.get(sid, { metadataOnly: true, cacheOnMiss: false, promote: false }))
       if (str(s.source_tag || s.raw_source || s.session_source).trim().toLowerCase() === 'subagent') return true
     } catch { /* no sidecar */ }
-    const meta = (await this.lookupCliMeta(sid))
+    const meta = await reads.meta()
     return meta !== null && str(meta.source_tag || meta.raw_source || meta.source).trim().toLowerCase() === 'subagent'
   }
 
@@ -353,11 +363,11 @@ export class SessionService {
    * nothing (`agentSessionRowsExisting`); another profile's session or one with a run the runtime still holds is never
    * an orphan, while a stream id a crash left behind does not count as one.
    */
-  private async orphanedImports(rows: Row[], existing?: Set<string>, owners?: Map<string, StateDbSessionSource> | null): Promise<Set<string>> {
+  private async orphanedImports(rows: Row[], existing?: Set<string>, owners?: Map<string, StateDbSessionSource> | null, reads?: SessionGateReads): Promise<Set<string>> {
     const candidates = (await this.orphanCandidates(rows))
     if (!candidates.length) return new Set()
-    existing ??= await agentSessionRowsExistingAsync(this.stateDbPath(null), candidates)
-    if (owners === undefined) owners = await this.stateDbSources(candidates)
+    existing ??= await (reads ? reads.existing() : agentSessionRowsExistingAsync(this.stateDbPath(null), candidates))
+    if (owners === undefined) owners = await (reads ? reads.owners() : this.stateDbSources(candidates))
     return new Set(candidates.filter((sid) => !existing.has(sid) && owners !== null && typeof owners.get(sid) !== 'object'))
   }
 
@@ -366,8 +376,8 @@ export class SessionService {
       .map((r) => str(r.session_id))
   }
 
-  private async isOrphanedImport(sid: string): Promise<boolean> {
-    try { return (await this.orphanedImports([(await this.store.get(sid, { metadataOnly: true })).compact()])).size > 0 } catch { return false }
+  private async isOrphanedImport(sid: string, reads = this.sessionGateReads(sid)): Promise<boolean> {
+    try { return (await this.orphanedImports([(await this.store.get(sid, { metadataOnly: true })).compact()], undefined, undefined, reads)).size > 0 } catch { return false }
   }
 
   /**
@@ -396,20 +406,20 @@ export class SessionService {
   }
 
   /** The persisted flag folded with the state.db owner lock (TAL-358): the one read-only rule for mutation gates and the wire. */
-  async readOnlyReason(s: Session | string, profile?: string): Promise<string | null> {
+  async readOnlyReason(s: Session | string, profile?: string, reads?: SessionGateReads): Promise<string | null> {
     if (typeof s === 'string') {
       try { s = await this.store.get(s, { metadataOnly: true, cacheOnMiss: false, promote: false }) } catch (error) {
         if (!(error instanceof SessionNotFound)) return OWNERSHIP_UNAVAILABLE_REASON
       }
     }
-    return await this.loadedReadOnlyReason(s, profile)
+    return await this.loadedReadOnlyReason(s, profile, reads)
   }
 
-  private async loadedReadOnlyReason(s: Session | string, profile?: string): Promise<string | null> {
+  private async loadedReadOnlyReason(s: Session | string, profile?: string, reads?: SessionGateReads): Promise<string | null> {
     let raw: Row = typeof s === 'string' ? { session_id: s, profile: this.deps.activeProfile() }
       : { session_id: s.session_id, profile: s.profile, source_tag: s.source_tag, raw_source: s.raw_source, session_source: s.session_source, read_only: s.read_only }
     if (profile !== undefined) raw = this.deps.profilesMatch(str(raw.profile) || null, profile) ? { ...raw, profile } : { session_id: raw.session_id, profile }
-    const row = (await this.ownerLocked([raw]))[0]!
+    const row = (await this.ownerLocked([raw], reads ? (_ids, ownerProfile) => reads.owners(ownerProfile) : undefined))[0]!
     return row.read_only ? str(row.read_only_reason) || 'Read-only imported sessions cannot be modified from WebUI' : null
   }
 
@@ -418,8 +428,8 @@ export class SessionService {
    * owner is the Agent's, which can change at any moment, so reading it on the state.db worker (TAL-923) widens no
    * window Web could close; the session lock, where one is held, still serializes Web's own writes.
    */
-  async assertWritable(session: Session | string, profile?: string): Promise<void> {
-    const reason = await this.readOnlyReason(session, profile)
+  async assertWritable(session: Session | string, profile?: string, reads?: SessionGateReads): Promise<void> {
+    const reason = await this.readOnlyReason(session, profile, reads)
     if (reason) throw new HttpFailure(403, reason)
   }
 
@@ -443,15 +453,15 @@ export class SessionService {
   }
 
   /** Full session for mutation, refusing read-only imports (Python `_get_or_materialize_session`). */
-  async getForMutation(sid: string): Promise<Session> {
-    let s = (await this.get404(sid))
+  async getForMutation(sid: string, reads?: SessionGateReads): Promise<Session> {
+    let s = (await this.get404(sid, {}, reads))
     s = (await this.store.ensureFull(sid, s))
-    await this.assertWritable(s)
+    await this.assertWritable(s, undefined, reads?.sid === s.session_id ? reads : undefined)
     if (str(s.source_tag || s.raw_source).trim().toLowerCase() === 'subagent') throw new HttpFailure(403, 'Read-only subagent child session')
     return s
   }
 
-  private async get404(sid: string, opts: { metadataOnly?: boolean } = {}): Promise<Session> {
+  private async get404(sid: string, opts: { metadataOnly?: boolean } = {}, reads?: SessionGateReads): Promise<Session> {
     sid = await this.resolveSessionId(sid)
     try {
       return (await this.store.get(sid, opts))
@@ -459,7 +469,7 @@ export class SessionService {
       if (error instanceof SessionNotFound) {
         // Python `_get_or_materialize_session`: a claimable foreign (CLI/TUI/Desktop) session gains a WebUI sidecar
         // on its first mutation; a read-only foreign source answers 403 from `getForMutation`, a missing one 404.
-        const synth = (await this.claimOrSynthesizeCliSession(sid))
+        const synth = (await this.claimOrSynthesizeCliSession(sid, undefined, reads))
         if (synth.session && synth.reason === 'materialized') {
           await this.store.save(synth.session)
           await this.store.touch(synth.session)
@@ -664,10 +674,35 @@ export class SessionService {
   }
 
   /** Python `_is_messaging_session_id`: from the WebUI metadata or the Agent's row. */
-  private async isMessagingSession(sid: string): Promise<boolean> {
+  private async isMessagingSession(sid: string, reads = this.sessionGateReads(sid)): Promise<boolean> {
     try { if (isMessagingSessionRecord((await this.store.get(sid, { metadataOnly: true })).compact())) return true } catch { /* absent */ }
-    const meta = (await this.lookupCliMeta(sid))
+    const meta = await reads.meta()
     return meta !== null && isMessagingSessionRecord(meta)
+  }
+
+  private sessionGateReads(sid: string): SessionGateReads {
+    const profile = this.deps.activeProfile()
+    const dbPath = this.stateDbPath(profile)
+    const owners = new Map<string, Promise<Map<string, StateDbSessionSource> | null>>()
+    let row: Promise<ReturnType<typeof stateDbSessionRow>> | undefined
+    let meta: Promise<Row | null> | undefined
+    let transcript: Promise<Message[]> | undefined
+    let context: Promise<Message[]> | undefined
+    let existing: Promise<Set<string>> | undefined
+    return {
+      sid,
+      owners: (ownerProfile = profile) => {
+        let pending = owners.get(ownerProfile)
+        if (!pending) { pending = this.stateDbSources([sid], ownerProfile); owners.set(ownerProfile, pending) }
+        return pending
+      },
+      row: () => row ??= stateDbSessionReadAsync(null, 'stateDbSessionRow', dbPath, sid),
+      meta: () => meta ??= this.lookupCliMeta(sid),
+      messages: (stitch) => stitch
+        ? transcript ??= isClaudeCodeSessionId(sid) ? Promise.resolve(this.deps.claudeCode?.messages(sid) ?? []) : stateDbSessionReadAsync([], 'stateDbSessionMessages', dbPath, sid, { stitch: true })
+        : context ??= stateDbSessionReadAsync([], 'stateDbSessionMessages', dbPath, sid, { stitch: false }),
+      existing: () => existing ??= agentSessionRowsExistingAsync(dbPath, [sid]),
+    }
   }
 
   /**
@@ -709,18 +744,18 @@ export class SessionService {
    * a WebUI sidecar. `materialized` sessions are writeable (the caller persists the sidecar), `not_claimable` ones are
    * read-only stubs, `was_webui`/`no_foreign_state`/`invalid_sid` answer 404.
    */
-  async claimOrSynthesizeCliSession(sid: string, metaIn?: Row | null): Promise<{ session: Session | null; reason: 'materialized' | 'not_claimable' | 'was_webui' | 'no_foreign_state' | 'invalid_sid' }> {
+  async claimOrSynthesizeCliSession(sid: string, metaIn?: Row | null, reads?: SessionGateReads): Promise<{ session: Session | null; reason: 'materialized' | 'not_claimable' | 'was_webui' | 'no_foreign_state' | 'invalid_sid' }> {
     if (!isSafeSessionId(sid)) return { session: null, reason: 'invalid_sid' }
     const profile = this.deps.activeProfile()
-    const dbPath = join(this.deps.profileHome(profile), 'state.db')
     sid = await this.resolveSessionId(sid)
-    const [row, owners] = await Promise.all([stateDbSessionReadAsync(null, 'stateDbSessionRow', dbPath, sid), this.stateDbSources([sid])])
+    if (reads?.sid !== sid) reads = this.sessionGateReads(sid)
+    const [row, owners] = await Promise.all([reads.row(), reads.owners()])
     const stateDbSource = str(row?.source).trim().toLowerCase()
     const subagentChild = stateDbSource === 'subagent'
     const canonical = typeof owners?.get(sid) === 'object'
     if (((await this.indexMarksWasWebui(sid)) || ((await this.store.wasDeleted(sid)) && ['', 'webui', 'fork'].includes(stateDbSource))) && !subagentChild && !canonical) return { session: null, reason: 'was_webui' }
-    const msgs = isClaudeCodeSessionId(sid) ? this.deps.claudeCode?.messages(sid) ?? [] : await stateDbSessionReadAsync([], 'stateDbSessionMessages', dbPath, sid, { stitch: true })
-    const meta: Row = { ...(metaIn ?? (await this.lookupCliMeta(sid)) ?? {}) }
+    const msgs = await reads.messages(true)
+    const meta: Row = { ...(metaIn ?? (await reads.meta()) ?? {}) }
     // An owner receipt proves a session before its first turn (a fresh diagnostic chat, TAL-1040); a bare row does not.
     if (!msgs.length && !(meta._lineage_root_id && meta._lineage_tip_id) && !canonical) return { session: null, reason: 'no_foreign_state' }
     if (row) {
@@ -736,7 +771,7 @@ export class SessionService {
     const claimable = owners !== null && isClaimableCliSource(meta, owners.get(sid) || stateDbSource)
     const workspace = str(meta.workspace || meta.cwd).trim() || (await this.deps.workspaces.lastWorkspace(profile))
     const defaults = (await this.store.deps.defaults(profile))
-    const context = Array.isArray(meta._lineage_ids) ? await stateDbSessionReadAsync([], 'stateDbSessionMessages', dbPath, sid, { stitch: false }) : null
+    const context = Array.isArray(meta._lineage_ids) ? await reads.messages(false) : null
     const session = new Session({
       session_id: sid, title: str(meta.title) || 'CLI Session', workspace, model: str(meta.model) || 'unknown', model_provider: str(meta.model_provider) || null,
       messages: msgs, created_at: Number(meta.created_at) || 0, updated_at: Number(meta.updated_at) || 0, profile: str(meta.profile) || null,
@@ -752,9 +787,9 @@ export class SessionService {
     return { session, reason: claimable ? 'materialized' : 'not_claimable' }
   }
 
-  private async mutationTarget(sid: string, verb: string): Promise<Session> {
+  private async mutationTarget(sid: string, verb: string, reads?: SessionGateReads): Promise<Session> {
     try {
-      return (await this.getForMutation(sid))
+      return (await this.getForMutation(sid, reads))
     } catch (error) {
       if (error instanceof SessionNotFound) throw new HttpFailure(404, 'Session not found')
       if (error instanceof HttpFailure && error.status === 403) throw new HttpFailure(403, `Read-only imported sessions cannot be ${verb} from WebUI`)
@@ -770,15 +805,16 @@ export class SessionService {
     if (isClaudeCodeSessionId(sid)) throw new HttpFailure(400, `Claude Code sessions are view-only and cannot be ${verb} from WebUI`)
   }
 
-  private async rejectViewOnly(sid: string, verb: string): Promise<string> {
+  private async rejectViewOnly(sid: string, verb: string, reads?: SessionGateReads): Promise<string> {
     sid = sid.trim()
+    if (reads?.sid !== sid) reads = this.sessionGateReads(sid)
     this.rejectClaudeCode(sid, verb)
     let profile = this.deps.activeProfile()
     try { profile = (await this.store.get(sid, { metadataOnly: true, cacheOnMiss: false, promote: false })).profile || 'default' } catch { /* foreign row */ }
-    const owners = await this.stateDbSources([sid], profile)
+    const owners = await reads.owners(profile)
     const owner = owners?.get(sid)
     if (!owners || typeof owner === 'object') throw new HttpFailure(403, typeof owner === 'object' ? owner.reason ?? CANONICAL_READ_ONLY_REASON : OWNERSHIP_UNAVAILABLE_REASON)
-    if ((await this.isSubagentViewOnly(sid))) throw new HttpFailure(400, `Subagent sessions are view-only and cannot be ${verb} from WebUI`)
+    if ((await this.isSubagentViewOnly(sid, reads))) throw new HttpFailure(400, `Subagent sessions are view-only and cannot be ${verb} from WebUI`)
     return sid
   }
 
@@ -1487,7 +1523,8 @@ export class SessionService {
   }
 
   async rename(sid: string, rawTitle: unknown): Promise<Record<string, unknown>> {
-    const s = (await this.mutationTarget(sid, 'renamed'))
+    const reads = this.sessionGateReads(sid)
+    const s = (await this.mutationTarget(sid, 'renamed', reads))
     await this.withMutationLock(sid, async () => {
       applySessionTitleRename(s, rawTitle)
       await this.store.save(s)
@@ -1508,8 +1545,9 @@ export class SessionService {
   }
 
   private async pinUnserialized(sid: string, pinRequested: boolean): Promise<Record<string, unknown>> {
-    await this.rejectViewOnly(sid, 'modified')
-    let s = (await this.get404(sid))
+    const reads = this.sessionGateReads(sid)
+    await this.rejectViewOnly(sid, 'modified', reads)
+    let s = (await this.get404(sid, {}, reads))
     s = (await this.store.ensureFull(sid, s))
     if (pinRequested && !s.pinned) {
       const rows = (await allSessions(this.store))
@@ -1617,8 +1655,9 @@ export class SessionService {
   }
 
   async archive(sid: string, archived: boolean): Promise<Record<string, unknown>> {
-    await this.rejectViewOnly(sid, 'archived')
-    let s = (await this.get404(sid))
+    const reads = this.sessionGateReads(sid)
+    await this.rejectViewOnly(sid, 'archived', reads)
+    let s = (await this.get404(sid, {}, reads))
     s = (await this.store.ensureFull(sid, s))
     await this.withMutationLock(sid, async () => {
       s.archived = archived
@@ -1949,7 +1988,8 @@ export class SessionService {
    * back to a deterministic local summary rather than an error.
    */
   async handoffSummary(sid: string, since: number | null): Promise<{ ok: true; summary: string; message_count: number; rounds: number; fallback: boolean; warning?: string }> {
-    sid = (await this.rejectViewOnly(sid, 'summarized'))
+    const reads = this.sessionGateReads(sid.trim())
+    sid = (await this.rejectViewOnly(sid, 'summarized', reads))
     const { local, profile, dbPath } = (await this.handoffTarget(sid))
     const rounds = countConversationRounds(dbPath, sid, since)
     if (rounds < CONVERSATION_ROUND_THRESHOLD) throw new HttpFailure(400, 'Not enough conversation rounds to generate a summary.')
@@ -1960,11 +2000,11 @@ export class SessionService {
     if (messages.length < 2) throw new HttpFailure(400, 'Not enough messages to summarize.')
     const sidecar = this.deps.sidecar?.() ?? null
     await ensureAgentRuntimeCurrent(sidecar)
-    const meta = local ? null : (await this.lookupCliMeta(sid))
+    const meta = local ? null : (await reads.meta())
     const generated = await this.generateHandoffSummary(sidecar, profile, local, meta, messages, [...all, ...(local?.messages ?? []), ...(local?.context_messages ?? [])])
     const pick = (row: Record<string, unknown> | null, ...keys: string[]): string => { for (const key of keys) { const v = str(row?.[key]).trim(); if (v) return v } return '' }
     // Python `get_cli_sessions` never listed WebUI's own state.db rows, so they name no channel.
-    const cliRow = meta ?? (await this.lookupCliMeta(sid))
+    const cliRow = meta ?? (await reads.meta())
     const channel = pick(local as unknown as Record<string, unknown> | null, 'source_label', 'raw_source', 'source_tag', 'session_source') || (str(cliRow?.raw_source || cliRow?.source).trim().toLowerCase() === 'webui' ? '' : pick(cliRow, 'source_label', 'raw_source', 'source_tag', 'source')) || null
     await this.persistHandoffMarker(sid, profile, handoffMarker(sid, generated.summary, channel, rounds, generated.fallback, this.deps.now()))
     return { ok: true, summary: generated.summary, message_count: messages.length, rounds, fallback: generated.fallback, ...(generated.warning ? { warning: generated.warning } : {}) }
@@ -2401,17 +2441,18 @@ export class SessionService {
   async delete(sid: string): Promise<Record<string, unknown>> {
     if (!sid) throw new HttpFailure(400, 'session_id is required')
     if (!isSafeSessionId(sid)) throw new HttpFailure(400, 'Invalid session_id')
-    await this.rejectViewOnly(sid, 'deleted')
+    const reads = this.sessionGateReads(sid)
+    await this.rejectViewOnly(sid, 'deleted', reads)
     // Python: a read-only import (persisted sidecar flag, sidebar metadata, or a foreign state.db owner such as a
     // Claude Code session) is never deleted — that would erase the owner's authoritative transcript. An orphan has none.
-    const orphaned = (await this.isOrphanedImport(sid))
-    if (!orphaned && (await this.isReadOnlyImport(sid))) throw new HttpFailure(400, 'Read-only imported sessions cannot be deleted from WebUI')
-    if ((await this.isSubagentViewOnly(sid))) throw new HttpFailure(400, 'Subagent sessions are view-only and cannot be deleted from WebUI')
+    const orphaned = (await this.isOrphanedImport(sid, reads))
+    if (!orphaned && (await this.isReadOnlyImport(sid, reads))) throw new HttpFailure(400, 'Read-only imported sessions cannot be deleted from WebUI')
+    if ((await this.isSubagentViewOnly(sid, reads))) throw new HttpFailure(400, 'Subagent sessions are view-only and cannot be deleted from WebUI')
     const retained = (await (async () => { try { return worktreeRetainedPayload((await this.store.get(sid, { metadataOnly: true }))) } catch { return {} } })())
     let eventProfile: string | null = null
     try { eventProfile = (await this.store.get(sid, { metadataOnly: true })).profile } catch { eventProfile = null }
     // Python `_is_messaging_session_id`: decided before the JSON is gone, from WebUI metadata or the Agent's row.
-    const isMessaging = (await this.isMessagingSession(sid))
+    const isMessaging = (await this.isMessagingSession(sid, reads))
     const knownIds = !isMessaging && !orphaned ? await stateDbSessionReadAsync([sid], 'stateDbCompressionLineage', this.stateDbPath(eventProfile), sid) : [sid]
     const assertIdle = async () => { for (const id of knownIds) if (await this.activeRunBlocking(id)) throw new HttpFailure(409, 'Session has an active run; stop it before deleting') }
     await assertIdle()
