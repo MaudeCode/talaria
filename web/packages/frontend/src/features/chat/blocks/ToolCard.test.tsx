@@ -30,3 +30,11 @@ describe('ToolCard result (TAL-315)', () => {
     expect(await shownResult({})).toBeUndefined()
   })
 })
+
+it('shows server progress only on the running tool row (TAL-1268)', () => {
+  const progress = { percent: 42, message: 'indexing files' }
+  const { rerender } = render(<ToolCard call={{ ...call, done: false, progress }} />)
+  expect(screen.getByText('42% · indexing files')).toBeVisible()
+  rerender(<ToolCard call={{ ...call, done: true, progress }} />)
+  expect(screen.queryByText('42% · indexing files')).not.toBeInTheDocument()
+})

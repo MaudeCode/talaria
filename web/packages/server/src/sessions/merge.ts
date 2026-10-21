@@ -772,7 +772,12 @@ export function buildPartialMessage(contentText: string, reasoningText: string, 
   if (!stripped && !hasReasoning && !hasTools) return null
   const msg: Message = { role: 'assistant', content: stripped, _partial: true, timestamp: Math.trunc(now) }
   if (hasReasoning) msg.reasoning = reasoningText.trim()
-  if (hasTools) msg._partial_tool_calls = [...toolCalls]
+  if (hasTools) msg._partial_tool_calls = toolCalls.map((call) => {
+    if (!isDict(call)) return call
+    const stored = { ...call }
+    delete stored.progress
+    return stored
+  })
   return msg
 }
 

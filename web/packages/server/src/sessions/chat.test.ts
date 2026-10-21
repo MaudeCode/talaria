@@ -69,6 +69,50 @@ describe('chat turns through the sidecar', () => {
     expect(histories[1]?.every((m) => !('display_metadata' in m))).toBe(true)
   })
 
+  it.each(['complete', 'cancel', 'error'] as const)('keeps MCP progress live across reload and clears it on %s (TAL-1268)', async (ending) => {
+    const sid = await newSession(s)
+    let emitLive!: (frame: { event: string; data: Json }) => void
+    let finish!: (result: ChatResult) => void
+    let fail!: (error: Error) => void
+    sidecar.respond('chat.start', (_params, emit) => new Promise((resolve, reject) => {
+      emitLive = emit
+      finish = resolve
+      fail = reject
+      emit({ event: 'tool', data: { event_type: 'tool.started', name: 'mcp__index', tid: 'index-a', args: {} } })
+      emit({ event: 'tool', data: { event_type: 'tool.started', name: 'mcp__index', tid: 'index-b', args: {} } })
+      emit({ event: 'tool_progress', data: { tool_call_id: 'index-b', progress: 21, total: 50, message: 'indexing files' } })
+      emit({ event: 'token', data: { text: 'waiting' } })
+    }))
+    const start = await json(await post(s, '/api/chat/start', { session_id: sid, message: 'index files' }))
+    const streamId = String(start.stream_id)
+    try {
+      await s.sse(`/api/chat/stream?stream_id=${streamId}&replay=1`, (f) => f.event === 'token')
+      const detail = ((await json(await s.get(`/api/session?session_id=${sid}`))).session as Json)
+      expect(detail.tool_calls).toEqual(expect.arrayContaining([expect.objectContaining({ id: 'index-b', progress: { percent: 42, message: 'indexing files' } })]))
+      expect(JSON.stringify(detail.tool_calls)).not.toContain('index-a')
+      const reloaded = await s.sse(`/api/chat/stream?stream_id=${streamId}&replay=1`, (f) => f.event === 'tool_progress')
+      expect(reloaded.find((f) => f.event === 'tool_progress')?.data).toMatchObject({ id: 'index-b', progress: { percent: 42, message: 'indexing files' } })
+      const journal = await s.deps.journal.readRunEvents(sid, streamId)
+      expect(JSON.stringify(journal)).not.toContain('indexing files')
+      if (ending === 'complete') {
+        emitLive({ event: 'tool_complete', data: { event_type: 'tool.completed', name: 'mcp__index', tid: 'index-b', preview: 'ok' } })
+        await s.sse(`/api/chat/stream?stream_id=${streamId}&replay=1`, (f) => f.event === 'tool_complete')
+        emitLive({ event: 'tool_progress', data: { tool_call_id: 'index-b', percent: 70, message: 'late' } })
+        emitLive({ event: 'token', data: { text: 'done' } })
+        await s.sse(`/api/chat/stream?stream_id=${streamId}&replay=1`, (f) => f.event === 'token' && (f.data as Json).text === 'done')
+        expect(JSON.stringify((await json(await s.get(`/api/session?session_id=${sid}`))).session)).not.toContain('indexing files')
+        finish(completed([{ role: 'user', content: 'index files' }, { role: 'assistant', content: 'done' }]))
+      } else if (ending === 'cancel') {
+        sidecar.respond('chat.interrupt', () => ({ ok: true, pending_steer: '' }))
+        await post(s, `/api/chat/cancel?stream_id=${streamId}`, {})
+        finish(completed([], { status: 'cancelled' }))
+      } else fail(new Error('synthetic failure'))
+      await s.sse(`/api/chat/stream?stream_id=${streamId}&replay=1`, (f) => f.event === 'stream_end' || f.event === 'cancel' || f.event === 'apperror')
+      expect(JSON.stringify((await json(await s.get(`/api/session?session_id=${sid}`))).session)).not.toContain('indexing files')
+      expect(JSON.stringify(await s.deps.sessionStore.get(sid))).not.toContain('indexing files')
+    } finally { finish(completed([])) }
+  })
+
   it('refuses new chat admission during a Web update without recording a pending turn', async () => {
     const sid = await newSession(s)
     const guard = vi.spyOn(s.deps.updates, 'blocksNewWork').mockReturnValue(true)

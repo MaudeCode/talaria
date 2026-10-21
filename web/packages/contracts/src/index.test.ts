@@ -1,5 +1,5 @@
 import { ModelConfirmationRequiredSchema, sessionsContract } from './routes/sessions.js'
-import { MessageSchema, SessionSchema } from './views.js'
+import { MessageSchema, SessionSchema, ToolCallSchema } from './views.js'
 import { ExecutionModesSchema, OwnerAttachmentSchema, OwnerActionRequestSchema } from './gateway-session.js'
 import { describe, expect, it } from 'vitest'
 import { readFileSync } from 'node:fs'
@@ -10,6 +10,13 @@ import { CronBlueprintsSchema, CronBlueprintFillSchema, AgentHealthSchema, Error
 const shared = (path: string): unknown => JSON.parse(readFileSync(resolve(import.meta.dirname, '../../../../contracts', path), 'utf8'))
 
 describe('contracts package', () => {
+  it('shares live MCP progress between SSE and the running tool view', () => {
+    const fixture = shared('fixtures/tool-progress.json') as { running: unknown; completed: unknown; tool: unknown }
+    expect(ChatEventSchema.parse(fixture.running)).toEqual(fixture.running)
+    expect(ChatEventSchema.parse(fixture.completed)).toEqual(fixture.completed)
+    expect(ToolCallSchema.parse(fixture.tool)).toEqual(fixture.tool)
+    expect(ToolCallSchema.parse({ id: 'old-agent', name: 'tool' }).progress).toBeUndefined()
+  })
   it('validates the native model confirmation refusal against the canonical server schema', () => {
     const fixture = shared('fixtures/model-confirmation.json') as { request: unknown; refusal: unknown }
     expect(sessionsContract.session.update['~orpc'].inputSchema!.parse(fixture.request)).toEqual(fixture.request)

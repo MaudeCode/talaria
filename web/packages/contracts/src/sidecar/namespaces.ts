@@ -577,6 +577,7 @@ export const ChatStreamSchema = z.discriminatedUnion('event', [
   /** TAL-397: the Agent's session counters, before the content frame that follows a change. */
   z.object({ event: z.literal('usage'), data: ChatUsageSchema }),
   z.object({ event: z.literal('tool'), data: ToolFrame }),
+  z.object({ event: z.literal('tool_progress'), data: z.object({ tool_call_id: z.string(), message: z.string().nullable().optional(), progress: z.number().nullable().optional(), total: z.number().nullable().optional(), percent: z.number().nullable().optional() }) }),
   z.object({ event: z.literal('tool_complete'), data: ToolFrame }),
   z.object({ event: z.literal('approval'), data: Loose }),
   z.object({ event: z.literal('clarify'), data: Loose }),

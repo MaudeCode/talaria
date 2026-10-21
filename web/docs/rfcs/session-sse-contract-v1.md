@@ -28,6 +28,7 @@ and the per-session relay. The chat-turn events:
 | `token` | Assistant text delta |
 | `reasoning` | Model reasoning / thinking delta |
 | `tool` | Tool call started; required `id` names the call |
+| `tool_progress` | Ephemeral `{id, progress: {percent, message}}` for a running MCP call; percentages are server-normalized and messages redacted. Not journaled; an active-stream attach includes the latest in-memory value after replay. |
 | `tool_complete` | Tool call finished; carries the same `id` as its `tool` frame, the server's `is_error`, `duration` (seconds between the server receiving the call's start and its completion), and `result_view` (TAL-315, below) |
 | `interim_assistant` | Mid-turn assistant prose (pre-final) |
 | `approval` | Destructive-command approval prompt |
@@ -238,3 +239,14 @@ The ordered turn publisher normalizes percentages, journals status before publis
 and clears provider progress on content, explicit clear, Stop, error, completion, or replacement.
 Terminal `run_status: null` cannot be reopened by post-turn title or metering events.
 Clients localize the selected phase and format the percentage without deciding precedence.
+
+### Live MCP progress
+
+The sidecar forwards the Agent's throttled `tool.progress` callbacks as `tool_progress`.
+The server matches the exact running call id, normalizes finite percentages to 0..100
+using `progress/total` when no percent is supplied, and caps the redacted message.
+`progress` is optional on tool display contracts for older servers. Completion sends
+`progress: null`; terminal events clear every remaining value. Progress is kept only
+in the live turn and channel reconnect snapshot, never in the journal or transcript.
+Session detail includes the current values on its live `tool_calls`, including a
+mid-turn reload. Older Agents that do not emit progress retain their existing rows.

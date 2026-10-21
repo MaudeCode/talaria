@@ -18,6 +18,7 @@ import { HttpFailure, markSessionTitleGenerated } from './service.js'
 import type { SessionEventBus } from './events.js'
 import { StreamRegistry, SessionChannels, type StreamChannel } from './streams.js'
 import { ChatUsageSchema, ConnectorOperationSnapshotSchema, type ProviderPhase, type RateLimitWait, type RunStatus, type ClarifyAnswers, type PendingSteer, type SessionGoal, type SessionNotice, type SidecarResult, type SteerWithdrawn, type SteerWithdrawRequest, type SteerSendNowResponse } from '@maudecode/talaria-web-contracts'
+import { toolProgress } from './tool-display.js'
 import { catalogNames, connectorOperation } from '../tools/connectors.js'
 import { PendingPrompts, clarifyReply, isVaultPrompt, vaultReply } from './pending.js'
 import type { JournalEventMeta } from './storage/backend.js'
@@ -550,7 +551,10 @@ export class TurnRunner {
     const put = async (event: string, data: Record<string, unknown>, meta: JournalEventMeta = {}): Promise<void> => {
       if (this.registry.cancelled.has(streamId) && !['cancel', 'apperror', 'steer_consumed', 'steer_withdrawn', 'run_status'].includes(event)) return
       const terminal = ['done', 'cancel', 'apperror', 'error', 'stream_end'].includes(event)
-      if (terminal) statusEnded = true
+      if (terminal) {
+        statusEnded = true
+        for (const call of this.registry.liveToolCalls.get(streamId) ?? []) delete call.progress
+      }
       if (CONTENT_EVENTS.has(event) || terminal) providerPhase = null
       if (event === 'rate_limit_wait') waitDetail = data.wait as RateLimitWait | null
       // Both pre-turn compaction and Agent callbacks publish through this boundary.
@@ -584,7 +588,7 @@ export class TurnRunner {
         return
       }
       let eventId: string | null = null
-      if (writer) {
+      if (writer && event !== 'tool_progress') {
         try {
           eventId = (await writer.appendSseEvent(event, data, meta)).event_id
         } catch (error) {
@@ -783,11 +787,21 @@ export class TurnRunner {
                 await emitFrame('tool', publicToolFrame(withToolId(data, toolIds.get(call)!), redacted), { redacted })
                 return
               }
+              case 'tool_progress': {
+                if (statusEnded || this.registry.cancelled.has(streamId)) return
+                const tc = liveToolCalls.findLast((call) => !call.done && call.tid === data.tool_call_id && Boolean(data.tool_call_id))
+                if (!tc) return
+                const redacted = deps.redactEnabled()
+                tc.progress = toolProgress({ ...data, message: typeof data.message === 'string' ? redactString(data.message, redacted) : null })
+                await emitFrame('tool_progress', { id: toolIds.get(tc)!, progress: tc.progress }, { redacted })
+                return
+              }
               case 'tool_complete': {
                 // TAL-313: the server decides failure from the sidecar's raw result, which never leaves the server; TAL-315: so
                 // are its display sections, which keep the stderr and exit code the flat preview drops.
                 const { raw_result: rawResult, todo_result: todoResult, result_diff: resultDiff, display_metadata: displayMetadata, ...complete } = data
                 const outcome = toolOutcome(rawResult, data.name)
+                complete.progress = null
                 complete.is_error = outcome.is_error
                 if (rawResult !== undefined) complete.result_view = outcome.result_view
                 // TAL-448: a file edit's change, counted over the whole diff the sidecar forwards; redacted with the frame. TAL-909:
@@ -799,7 +813,7 @@ export class TurnRunner {
                   const startedAt = toolStartedAt.get(tc)
                   if (startedAt !== undefined) complete.duration = Math.round(Math.max(0, receivedAt - startedAt) * 1000) / 1000
                   // TAL-315: the decided view too, so a failed or cancelled turn's snapshot keeps the sections shown live.
-                  Object.assign(tc, { done: true, snippet: data.preview, is_error: complete.is_error, duration: complete.duration ?? null, ...(complete.result_view ? { result_view: complete.result_view } : {}), ...(editDiff ? { edit_diff: editDiff } : {}) })
+                  Object.assign(tc, { done: true, progress: null, snippet: data.preview, is_error: complete.is_error, duration: complete.duration ?? null, ...(complete.result_view ? { result_view: complete.result_view } : {}), ...(editDiff ? { edit_diff: editDiff } : {}) })
                 }
                 const id = (tc && toolIds.get(tc)) || str(data.tid) || mintToolId()
                 this.lastCompletedTool.set(streamId, id)
@@ -2061,6 +2075,11 @@ export class TurnRunner {
   private pendingSteerView(r: SteerRecord): PendingSteer {
     const open = r.state === 'pending'
     return { steer_id: r.steer_id, text: r.display_text, submitted_at: r.created_at, state: r.state, actions: { edit: open, cancel: open, send_now: open && r.can_redirect } }
+  }
+
+  liveToolProgress(streamId: string): Record<string, unknown>[] {
+    if (this.registry.cancelled.has(streamId)) return []
+    return (this.registry.liveToolCalls.get(streamId) ?? []).filter((call) => !call.done && call.progress).map((call) => ({ ...call, id: str(call.tid) }))
   }
 
   runStatus(streamId: string): RunStatus | null {

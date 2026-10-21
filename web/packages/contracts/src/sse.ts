@@ -1,6 +1,6 @@
 import { z } from 'zod'
 import { RateLimitWaitSchema, RunStatusSchema } from './run-status.js'
-import { ApprovalPendingSchema, SessionSchema, AgentRuntimeMetadataSchema, ClarifyStepSchema, VaultPromptSchema, ConnectorOperationViewSchema, ContextUsageFields, PendingSteerSchema, SessionGoalSchema, SessionNoticeSchema, SteerWithdrawnSchema, ToolDisplayFields, ToolResultViewSchema, TodoStateSchema, TurnTerminalStateSchema } from './views.js'
+import { ApprovalPendingSchema, SessionSchema, AgentRuntimeMetadataSchema, ClarifyStepSchema, VaultPromptSchema, ConnectorOperationViewSchema, ContextUsageFields, PendingSteerSchema, SessionGoalSchema, SessionNoticeSchema, SteerWithdrawnSchema, ToolDisplayFields, ToolProgressSchema, ToolResultViewSchema, TodoStateSchema, TurnTerminalStateSchema } from './views.js'
 export { RateLimitWaitSchema, type RateLimitWait } from './run-status.js'
 
 /**
@@ -52,7 +52,7 @@ const BgTask = z.looseObject({ session_id: z.string().optional(), task_id: z.str
 const ServerTurn = z.looseObject({ session_id: z.string().optional(), stream_id: z.string().optional(), turn_id: z.string().optional(), user_message_id: z.union([z.string(), z.number()]).optional() })
 const Loose = z.looseObject({})
 export const CHAT_EVENT_NAMES = [
-  'session_snapshot', 'token', 'reasoning', 'tool', 'tool_complete', 'interim_assistant', 'approval', 'approval_cleared', 'clarify', 'compressing', 'compressed',
+  'session_snapshot', 'token', 'reasoning', 'tool', 'tool_progress', 'tool_complete', 'interim_assistant', 'approval', 'approval_cleared', 'clarify', 'compressing', 'compressed',
   'title', 'title_status', 'warning', 'apperror', 'cancel', 'error', 'done', 'stream_end', 'metering', 'context_status',
   'goal', 'goal_continue', 'steer_consumed', 'steer_pending', 'steer_withdrawn', 'state_saved', 'todo_state', 'bg_task_complete',
   'server_turn_started', 'notices', 'session_goal', 'rate_limit_wait', 'run_status', 'connect_card', 'hello', 'initial', 'events', 'gateway_status', 'sessions_changed',
@@ -65,6 +65,7 @@ export const ChatEventSchema = z.discriminatedUnion('event', [
   z.object({ event: z.literal('interim_assistant'), data: Text }),
   z.object({ event: z.literal('reasoning'), data: Reasoning }),
   z.object({ event: z.literal('tool'), data: Tool }),
+  z.object({ event: z.literal('tool_progress'), data: z.object({ id: z.string(), progress: ToolProgressSchema.nullable() }) }),
   z.object({ event: z.literal('tool_complete'), data: ToolComplete }),
   z.object({ event: z.literal('approval'), data: Approval }),
   /** TAL-514: the last pending approval was withdrawn (answered elsewhere, or the Agent stopped waiting); clients drop the card. */

@@ -1,0 +1,29 @@
+{
+  "running": {
+    "event": "tool_progress",
+    "data": {
+      "id": "call-index",
+      "progress": {
+        "percent": 42,
+        "message": "indexing files"
+      }
+    }
+  },
+  "completed": {
+    "event": "tool_complete",
+    "data": {
+      "id": "call-index",
+      "name": "mcp__index",
+      "progress": null
+    }
+  },
+  "tool": {
+    "id": "call-index",
+    "name": "mcp__index",
+    "done": false,
+    "progress": {
+      "percent": 42,
+      "message": "indexing files"
+    }
+  }
+}

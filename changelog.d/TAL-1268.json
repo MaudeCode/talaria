@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Added",
+      "summary": "See live progress from MCP tools while they run.",
+      "highlight": false,
+      "components": ["web"]
+    }
+  ]
+}

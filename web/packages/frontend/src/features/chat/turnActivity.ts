@@ -2,7 +2,7 @@ import type { Message } from '../../contracts'
 import type { LiveTurn } from '../../stream/reducer'
 import { isTerminal } from '../../stream/reducer'
 import type { ToolCardData } from './blocks/ToolCard'
-import { BackgroundLinkSchema, DisplayMediaSchema, ToolKindSchema, ToolResultViewSchema, type DisplayMedia, type ToolKind, type ToolResultView } from '@maudecode/talaria-web-contracts'
+import { BackgroundLinkSchema, DisplayMediaSchema, ToolKindSchema, ToolProgressSchema, ToolResultViewSchema, type DisplayMedia, type ToolKind, type ToolResultView } from '@maudecode/talaria-web-contracts'
 import { extractInlineThinking, messageText, stripToolCallXml } from './render/text'
 import type { VisibleMessage } from './useTranscript'
 
@@ -101,7 +101,7 @@ export function sceneItems(value: unknown): ActivityItem[] {
     if (row.role !== 'tool') return []
     const tool = record(row.tool)
     return [{ key, kind: 'tool', call: {
-      id: text(tool.id), name: text(tool.name), kind: toolKindOf(tool.kind), target: text(tool.target), args: tool.args, preview: typeof tool.preview === 'string' ? tool.preview : null, resultView: resultViewOf(tool.result_view),
+      progress: ToolProgressSchema.safeParse(tool.progress).data ?? null, id: text(tool.id), name: text(tool.name), kind: toolKindOf(tool.kind), target: text(tool.target), args: tool.args, preview: typeof tool.preview === 'string' ? tool.preview : null, resultView: resultViewOf(tool.result_view),
       done: tool.done === true, isError: tool.is_error === true, duration: typeof tool.duration === 'number' ? tool.duration : null, costUsd: typeof tool.cost_usd === 'number' ? tool.cost_usd : null,
       ...backgroundOf(tool.background), ...(tool.result_truncated === true ? { resultTruncated: true } : {}),
     } }]
@@ -168,7 +168,7 @@ export function continuedActivity(activity: TurnActivity, turn: LiveTurn): TurnA
     const live = item.kind === 'tool' ? turn.tools[item.call.id] : undefined
     if (!live || item.kind !== 'tool') return item
     const call = item.call
-    return { ...item, call: { ...call, done: call.done || live.done, isError: live.isError, preview: live.preview ?? call.preview, duration: live.duration ?? call.duration, costUsd: live.costUsd ?? call.costUsd, resultView: live.resultView ?? call.resultView } }
+    return { ...item, call: { ...call, progress: live.progress ?? null, done: call.done || live.done, isError: live.isError, preview: live.preview ?? call.preview, duration: live.duration ?? call.duration, costUsd: live.costUsd ?? call.costUsd, resultView: live.resultView ?? call.resultView } }
   })
   return { ...activity, items, continued: liveActivity(turn, toolIdsOf(activity)).items.length > 0 }
 }

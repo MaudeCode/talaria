@@ -17,11 +17,12 @@ import type { AgentRuntimeMetadata } from '@maudecode/talaria-web-contracts'
 import type { ChatEvent } from '../contracts/sse'
 import type { ApprovalPending, Attachment, ClarifyPending, Session } from '../contracts'
 import type { ConnectorOperationView } from '@maudecode/talaria-web-contracts'
-import type { PendingSteer, RunStatus, RateLimitWait, ToolKind, ToolResultView } from '@maudecode/talaria-web-contracts'
+import type { PendingSteer, RunStatus, RateLimitWait, ToolKind, ToolProgress, ToolResultView } from '@maudecode/talaria-web-contracts'
 
 export type TurnStatus = 'starting' | 'connecting' | 'streaming' | 'reconnecting' | 'done' | 'error' | 'cancelled'
 
 export interface LiveToolCall {
+  progress?: ToolProgress | null
   id: string
   name: string
   /** Server-derived display class and redacted label; an older server sends neither (`unknown`, no target). */
@@ -124,6 +125,11 @@ const TERMINAL: ReadonlySet<TurnStatus> = new Set(['done', 'error', 'cancelled']
 /** A settled turn waits on nothing: its approval, clarification, connect card and compression go with it. */
 const NO_PROMPTS = { approval: null, clarify: null, connectCard: null, compressionStartedAt: null, runStatus: null } as const
 
+/** Terminal frames and status reconciliation release the same transient tool display. */
+function clearToolProgress(tools: LiveTurn['tools']): LiveTurn['tools'] {
+  return Object.fromEntries(Object.entries(tools).map(([id, call]) => [id, { ...call, progress: null }]))
+}
+
 /** The settled session a terminal frame carries, which replaces the live view with the server's scenes. */
 function sessionOf(data: unknown): Session | null {
   const session = data && typeof data === 'object' ? (data as { session?: unknown }).session : null
@@ -176,11 +182,14 @@ function appendReasoning(segments: Segment[], text: string, titles: string[] | n
 function reduceTurn(turn: LiveTurn, action: Extract<StreamAction, { type: 'event' }>): LiveTurn {
   const { event, lastEventId, now } = action
   // Invariant 3: duplicate or stale replay cursor.
-  const seq = parseSeq(lastEventId, turn.streamId)
+  const seq = event.event === 'tool_progress' ? null : parseSeq(lastEventId, turn.streamId)
   if (seq !== null) {
     if (seq <= turn.lastSeq) return turn
   }
-  const stamped: LiveTurn = seq !== null ? { ...turn, lastSeq: seq, lastEventId } : lastEventId ? { ...turn, lastEventId } : turn
+  let stamped: LiveTurn = seq !== null ? { ...turn, lastSeq: seq, lastEventId } : lastEventId ? { ...turn, lastEventId } : turn
+  if (['done', 'cancel', 'apperror', 'error', 'stream_end'].includes(event.event)) {
+    stamped = { ...stamped, tools: clearToolProgress(stamped.tools) }
+  }
   const terminal = isTerminal(turn.status)
   const live = (): LiveTurn => (stamped.status === 'starting' || stamped.status === 'connecting' || stamped.status === 'reconnecting' ? { ...stamped, status: 'streaming' } : stamped)
 
@@ -214,11 +223,18 @@ function reduceTurn(turn: LiveTurn, action: Extract<StreamAction, { type: 'event
       const t = live()
       const id = event.data.id
       const existing = t.tools[id]
-      const call: LiveToolCall = existing ?? { id, name: event.data.name ?? 'tool', kind: event.data.kind ?? 'unknown', target: event.data.target ?? '', args: event.data.args ?? {}, preview: event.data.preview ?? null, done: false, isError: false, duration: null, costUsd: null, resultView: null, startedAt: event.data.timestamp ?? now }
-      const tools = { ...t.tools, [id]: existing ? { ...existing, kind: event.data.kind ?? existing.kind, target: event.data.target ?? existing.target, args: event.data.args ?? existing.args, preview: event.data.preview ?? existing.preview } : call }
+      const progress = event.data.progress === undefined ? existing?.progress ?? null : event.data.progress
+      const call: LiveToolCall = existing ?? { id, progress, name: event.data.name ?? 'tool', kind: event.data.kind ?? 'unknown', target: event.data.target ?? '', args: event.data.args ?? {}, preview: event.data.preview ?? null, done: false, isError: false, duration: null, costUsd: null, resultView: null, startedAt: event.data.timestamp ?? now }
+      const tools = { ...t.tools, [id]: existing ? { ...existing, progress, kind: event.data.kind ?? existing.kind, target: event.data.target ?? existing.target, args: event.data.args ?? existing.args, preview: event.data.preview ?? existing.preview } : call }
       const toolOrder = existing ? t.toolOrder : [...t.toolOrder, id]
       const segments = existing ? t.segments : [...t.segments, { kind: 'tool' as const, toolId: id }]
       return { ...t, tools, toolOrder, segments }
+    }
+    case 'tool_progress': {
+      if (terminal || stamped.streamEnded) return stamped
+      const call = stamped.tools[event.data.id]
+      if (!call || call.done) return stamped
+      return { ...stamped, tools: { ...stamped.tools, [call.id]: { ...call, progress: event.data.progress } } }
     }
     case 'tool_complete': {
       if (terminal) return stamped
@@ -226,7 +242,7 @@ function reduceTurn(turn: LiveTurn, action: Extract<StreamAction, { type: 'event
       const t = live()
       const id = event.data.id
       const existing = t.tools[id] ?? { id, name: event.data.name ?? 'tool', kind: 'unknown', target: '', args: event.data.args ?? {}, preview: null, done: false, isError: false, duration: null, costUsd: null, resultView: null, startedAt: now }
-      const call: LiveToolCall = { ...existing, kind: event.data.kind ?? existing.kind, target: event.data.target ?? existing.target, done: true, isError: !!event.data.is_error, preview: event.data.preview ?? existing.preview, duration: event.data.duration ?? null, costUsd: event.data.cost_usd ?? null, resultView: event.data.result_view ?? existing.resultView, args: event.data.args ?? existing.args }
+      const call: LiveToolCall = { ...existing, progress: null, kind: event.data.kind ?? existing.kind, target: event.data.target ?? existing.target, done: true, isError: !!event.data.is_error, preview: event.data.preview ?? existing.preview, duration: event.data.duration ?? null, costUsd: event.data.cost_usd ?? null, resultView: event.data.result_view ?? existing.resultView, args: event.data.args ?? existing.args }
       const known = id in t.tools
       return { ...t, tools: { ...t.tools, [id]: call }, toolOrder: known ? t.toolOrder : [...t.toolOrder, id], segments: known ? t.segments : [...t.segments, { kind: 'tool', toolId: id }] }
     }
@@ -362,7 +378,7 @@ export function streamReducer(state: StreamState, action: StreamAction): StreamS
     case 'settle': {
       const turn = state.turns[action.sessionId]
       if (turn?.streamId !== action.streamId || !turn) return state
-      if (!isTerminal(turn.status)) return { turns: { ...state.turns, [action.sessionId]: { ...turn, status: 'done', doneAt: turn.doneAt ?? Date.now(), doneSession: action.session ?? turn.doneSession, streamEnded: true, ...NO_PROMPTS } } }
+      if (!isTerminal(turn.status)) return { turns: { ...state.turns, [action.sessionId]: { ...turn, tools: clearToolProgress(turn.tools), status: 'done', doneAt: turn.doneAt ?? Date.now(), doneSession: action.session ?? turn.doneSession, streamEnded: true, ...NO_PROMPTS } } }
       return { turns: { ...state.turns, [action.sessionId]: { ...turn, doneSession: action.session ?? turn.doneSession, streamEnded: true } } }
     }
     case 'teardown': {
