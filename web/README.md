@@ -197,6 +197,11 @@ expired confirmation requires a fresh review; a dangerous verdict blocks the upd
 continues in `hermes plugins update` in a terminal. Older Agents without cached update support
 show no update controls.
 
+Automatic read-aloud claims each watched reply once across tabs on the same browser origin and app mount,
+account, profile, and session. The browser retains the last 1024 automatic attempts, including interrupted
+attempts. If coordination storage is unavailable, automatic playback stays quiet; **Read aloud** remains
+available. Opening saved history does not start automatic playback.
+
 ### Remote access
 
 Bind to loopback and use an SSH tunnel or Tailscale, or set `HERMES_WEBUI_HOST=0.0.0.0` with

@@ -147,7 +147,7 @@ def native_owner_stub(tmp_path, monkeypatch):
     from types import SimpleNamespace
     from talaria_sidecar.methods import gateway_sessions as adapter
 
-    owner = SimpleNamespace(receipt=None, replay=[], payload=None, calls=[], config_failure=None)
+    owner = SimpleNamespace(receipt=None, replay=[], events=[], payload=None, calls=[], config_failure=None)
     async def rpc(method, **params):
         owner.calls.append((method, params))
         if method == "runtime.describe":
@@ -169,7 +169,10 @@ def native_owner_stub(tmp_path, monkeypatch):
     @asynccontextmanager
     async def connect(home, selected):
         assert home == tmp_path and selected is endpoint
-        yield SimpleNamespace(rpc=rpc), asyncio.Queue()
+        queue = asyncio.Queue()
+        for event in owner.events:
+            queue.put_nowait({"params": event})
+        yield SimpleNamespace(rpc=rpc), queue
     monkeypatch.setitem(sys.modules, "hermes_cli.gateway_client", SimpleNamespace(GatewayRPCError=RuntimeError))
     monkeypatch.setattr(adapter, "_connect", connect)
     monkeypatch.setattr(adapter, "_control_refusal", lambda *args: None)
@@ -203,3 +206,23 @@ def test_watch_replays_idle_model_outcomes_without_execution_stamp(native_owner_
     ctx = SimpleNamespace(cancelled=True, emit=lambda kind, data: emitted.append((kind, data)))
     native_owner_stub.run(ctx, {"session_id": "chat", "action": "watch"})
     assert ("event", event) in emitted
+
+
+def test_watch_forwards_native_progress_and_deduplicates_replay_overlap(native_owner_stub):
+    from types import SimpleNamespace
+    def progress(seq, message, session="chat"):
+        return {"session_id": session, "type": "tool.progress", "seq": seq, "replay_epoch": "epoch",
+                "authority_epoch": 1, "execution_generation": 1,
+                "payload": {"tool_id": "index", "progress": 21, "total": 50, "percent": 42, "message": message}}
+    retained, current = progress(4, "retained"), progress(5, "current")
+    native_owner_stub.replay = [retained]
+    native_owner_stub.events = [retained, progress(5, "foreign", "other-chat"), current]
+    emitted = []
+    ctx = SimpleNamespace(cancelled=False)
+    def emit(kind, data):
+        emitted.append((kind, data))
+        if kind == "event" and data == current:
+            ctx.cancelled = True
+    ctx.emit = emit
+    native_owner_stub.run(ctx, {"session_id": "chat", "action": "watch"})
+    assert [data for kind, data in emitted if kind == "event"] == [retained, current]
