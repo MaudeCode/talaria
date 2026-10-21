@@ -32,7 +32,8 @@ _RELOAD_SKILLS_LOCK = threading.Lock()
 _CODEX_RUNTIME_LOCK = threading.Lock()
 
 
-def parse_slash_command(command: str) -> tuple[str, str]:
+def _split_slash_command(command: str) -> tuple[str, str]:
+    """The command name as typed (lowercase, no slash) and its raw arguments."""
     raw = str(command or "").strip()
     if not raw:
         raise InvalidParams("command is required")
@@ -41,7 +42,12 @@ def parse_slash_command(command: str) -> tuple[str, str]:
     base = (parts[0] if parts else "").strip().lower()
     if not base:
         raise InvalidParams("command is required")
-    return _ALIASES.get(base, base), parts[1] if len(parts) > 1 else ""
+    return base, parts[1] if len(parts) > 1 else ""
+
+
+def parse_slash_command(command: str) -> tuple[str, str]:
+    base, args = _split_slash_command(command)
+    return _ALIASES.get(base, base), args
 
 
 def _expand_plan(args: str, **_turn) -> str:
@@ -333,9 +339,8 @@ def _fire_pre_command(command: str, canonical: str, arg: str, session_id: str) -
         from hermes_cli.plugins import fire_pre_command_hook
     except ImportError:
         return
-    typed = str(command).strip().lstrip("/").split(maxsplit=1)[0].lower()
-    fire_pre_command_hook(surface="webui", command=canonical, alias_used=typed, args_raw=arg, session_key=session_id or None,
-                          platform="webui")
+    fire_pre_command_hook(surface="webui", command=canonical, alias_used=_split_slash_command(command)[0], args_raw=arg,
+                          session_key=session_id or None, platform="webui")
 
 
 def execute_agent_command(command: str, session_id: str = "") -> str | None:
