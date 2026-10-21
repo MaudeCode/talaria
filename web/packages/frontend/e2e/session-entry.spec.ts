@@ -14,6 +14,9 @@ const transcript = (sid: string, turns: number, from = 0) => Array.from({ length
 const distance = (page: Page) => page.locator('#messages').evaluate((el) => el.scrollHeight - el.scrollTop - el.clientHeight)
 const withoutContainment = 'html.without-containment .msg-row{content-visibility:visible!important}'
 
+/** Retain native entries as well as their count so batching cannot hide task duration. */
+interface LongTaskProbe { longTasks: PerformanceEntry[]; observer: PerformanceObserver }
+
 test('off-screen rows stay searchable and reveal their measured content', async ({ page }, testInfo) => {
   const sid = 'contained-search'
   await page.route('**/api/settings', (route) => route.fulfill({ json: { virtualize_transcript: false } }))
@@ -71,6 +74,7 @@ test('off-screen history halves long tasks during a 200-token stream', async ({ 
   try {
     const samples: number[] = []
     const timings: Record<string, number>[] = []
+    const taskTimings: Record<string, number>[] = []
     // Fixed paired repetitions keep one scheduling outlier from deciding a threshold-count benchmark.
     for (let trial = 0; trial < 3; trial++) {
       for (const baseline of [true, false]) {
@@ -93,9 +97,9 @@ test('off-screen history halves long tasks during a 200-token stream', async ({ 
         await cpu.send('Emulation.setCPUThrottlingRate', { rate: 10 })
         const before = await readTimings()
         await page.evaluate(() => {
-          const w = window as unknown as { longTasks: number; observer: PerformanceObserver }
-          w.longTasks = 0
-          w.observer = new PerformanceObserver((list) => { w.longTasks += list.getEntries().length })
+          const w = window as unknown as LongTaskProbe
+          w.longTasks = []
+          w.observer = new PerformanceObserver((list) => { w.longTasks.push(...list.getEntries()) })
           w.observer.observe({ type: 'longtask' })
         })
         for (let token = 0; token < 200; token++) {
@@ -105,12 +109,14 @@ test('off-screen history halves long tasks during a 200-token stream', async ({ 
         await expect(page.locator('.live-turn .msg-body')).toContainText('word '.repeat(200).trim())
         await expect.poll(() => distance(page)).toBeLessThan(2)
         await page.waitForTimeout(100)
-        samples.push(await page.evaluate(() => {
-          const w = window as unknown as { longTasks: number; observer: PerformanceObserver }
-          w.longTasks += w.observer.takeRecords().length
+        const tasks = await page.evaluate(() => {
+          const w = window as unknown as LongTaskProbe
+          w.longTasks.push(...w.observer.takeRecords())
           w.observer.disconnect()
-          return w.longTasks
-        }))
+          return w.longTasks.map((entry) => entry.duration)
+        })
+        samples.push(tasks.length)
+        taskTimings.push({ totalMs: tasks.reduce((sum, duration) => sum + duration, 0), blockingMs: tasks.reduce((sum, duration) => sum + Math.max(0, duration - 50), 0), maxMs: Math.max(0, ...tasks) })
         const after = await readTimings()
         timings.push(Object.fromEntries(['TaskDuration', 'ScriptDuration', 'LayoutDuration', 'RecalcStyleDuration', 'LayoutCount', 'RecalcStyleCount'].map((name) => [name, (after[name] ?? 0) - (before[name] ?? 0)])))
         await cpu.send('Emulation.setCPUThrottlingRate', { rate: 1 })
@@ -118,8 +124,8 @@ test('off-screen history halves long tasks during a 200-token stream', async ({ 
     }
     const median = (offset: number) => samples.filter((_, i) => i % 2 === offset).toSorted((a, b) => a - b)[1]!
     const baseline = median(0), contained = median(1)
-    console.info('Long-task samples', { baseline, contained, samples, tokens: 200, timings })
-    await testInfo.attach('long-task-counts', { body: JSON.stringify({ baseline, contained, samples, tokens: 200, timings }), contentType: 'application/json' })
+    console.info('Long-task samples', { baseline, contained, samples, tokens: 200, timings, taskTimings })
+    await testInfo.attach('long-task-counts', { body: JSON.stringify({ baseline, contained, samples, tokens: 200, timings, taskTimings }), contentType: 'application/json' })
     expect(baseline, 'baseline must exercise long tasks').toBeGreaterThan(0)
     expect(contained, 'contained long tasks must be at most half the baseline').toBeLessThanOrEqual(baseline / 2)
   } finally {
