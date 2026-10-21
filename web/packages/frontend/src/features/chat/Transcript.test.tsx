@@ -183,8 +183,9 @@ it.each([
   // At the tail with follow disabled, a running turn must still preserve a reader anchor.
   const flush = animationFrames()
   const notFollowing = !autoFollow && scrollTop === 2000
-  if (notFollowing) dispatch({ type: 'start', sessionId: 'history', streamId: 'run', turnId: null, userMessageId: null, userText: '', now: 0 })
-  const view = render(<Transcript {...props()} autoFollow={autoFollow} live={notFollowing ? getStreamState().turns.history! : null} />)
+  const streaming = scrollTop === 2000
+  const input = props()
+  const view = render(<Transcript {...input} autoFollow={autoFollow} />)
   const pane = view.container.querySelector<HTMLElement>('#messages')
   const inner = view.container.querySelector<HTMLElement>('#msgInner')
   if (!pane || !inner) throw new Error('Missing transcript')
@@ -194,6 +195,10 @@ it.each([
   })
   act(() => requestScroll('end'))
   expect(pane.scrollTop).toBe(2000)
+  if (streaming) {
+    dispatch({ type: 'start', sessionId: 'history', streamId: 'run', turnId: null, userMessageId: null, userText: '', now: 0 })
+    view.rerender(<Transcript {...input} autoFollow={autoFollow} live={getStreamState().turns.history!} />)
+  }
   const history = view.container.querySelector<HTMLElement>('[data-message-key="121"]')!
   const measured = vi.spyOn(history, 'getBoundingClientRect')
   if (scrollTop < 2000) fireEvent.wheel(pane, { deltaY: -1 })
@@ -206,6 +211,19 @@ it.each([
   flush()
   if (scrollTop === 2000 && autoFollow) expect(measured).not.toHaveBeenCalled()
   if (notFollowing) expect(measured).toHaveBeenCalled()
+})
+
+it.each([false, true])('settles lazy entry growth before the resize observer runs: autoFollow=%s', async (autoFollow) => {
+  const view = render(<Transcript {...props()} truncated={false} autoFollow={autoFollow} />)
+  const pane = view.container.querySelector<HTMLElement>('#messages')!, inner = view.container.querySelector<HTMLElement>('#msgInner')!
+  let height = 2600
+  Object.defineProperty(pane, 'scrollHeight', { configurable: true, get: () => height })
+  vi.spyOn(pane, 'scrollTo').mockImplementation((options: ScrollToOptions | number) => { pane.scrollTop = Math.min(typeof options === 'number' ? options : options.top ?? 0, height - 600) })
+  act(() => requestScroll('end'))
+  expect(pane.scrollTop).toBe(2000)
+  height = 3200
+  await act(async () => { inner.append(document.createTextNode('Lazy Markdown revealed')); await Promise.resolve() })
+  expect(pane.scrollTop).toBe(2600)
 })
 
 it.each([

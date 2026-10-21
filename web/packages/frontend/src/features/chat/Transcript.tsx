@@ -180,8 +180,8 @@ export function Transcript(props: TranscriptProps) {
     const pane = scrollRef.current
     if (!inner || !pane) return
     const follow = (fromMutation = false) => {
-      // Resize observes tail growth after layout; text mutations alone need no synchronous geometry.
-      if (fromMutation && followsRef.current() && performance.now() - handAtRef.current >= HAND_SCROLL_MS) return
+      // Settling entry must follow lazy content synchronously; steady streaming can wait for resize.
+      if (fromMutation && !settlingRef.current && followsRef.current() && performance.now() - handAtRef.current >= HAND_SCROLL_MS) return
       // A reader scroll can precede its browser event; reconcile it before following a DOM mutation.
       if (pane.scrollTop !== lastTopRef.current) onScroll()
       if (followsRef.current()) scrollToBottom(false)
