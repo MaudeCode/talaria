@@ -2,7 +2,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { act, cleanup, fireEvent, render, waitFor } from '@testing-library/react'
 import { Transcript } from './Transcript'
 import { LiveStatusPill } from './LiveTurnView'
-import { initialStreamState, streamReducer, type StreamAction } from '../../stream/reducer'
+import { dispatch as storeDispatch, getStreamState, resetStreamStoreForTests } from '../../stream/store'
+import type { StreamAction } from '../../stream/reducer'
 import type { ChatEvent } from '../../contracts/sse'
 import type { ActivityMode } from './blocks/Worklog'
 import * as api from '../../api/endpoints'
@@ -13,7 +14,7 @@ vi.mock(import('../../api/endpoints'), async (importOriginal) => ({ ...(await im
 vi.mock(import('../toast/toast'), async (importOriginal) => ({ ...(await importOriginal()), showToast: vi.fn() }))
 
 const originalScroll = Object.getOwnPropertyDescriptor(HTMLElement.prototype, 'scrollTo')
-beforeEach(() => { Object.defineProperty(HTMLElement.prototype, 'scrollTo', { configurable: true, value: vi.fn() }) })
+beforeEach(() => { resetStreamStoreForTests(); Object.defineProperty(HTMLElement.prototype, 'scrollTo', { configurable: true, value: vi.fn() }) })
 afterEach(() => {
   cleanup()
   if (originalScroll) Object.defineProperty(HTMLElement.prototype, 'scrollTo', originalScroll)
@@ -21,14 +22,14 @@ afterEach(() => {
 })
 
 function liveRun() {
-  let state = streamReducer(initialStreamState, { type: 'start', sessionId: 's', streamId: 'run', turnId: 'turn', userMessageId: 'u', userText: 'Inspect', now: 0 })
+  storeDispatch({ type: 'start', sessionId: 's', streamId: 'run', turnId: 'turn', userMessageId: 'u', userText: 'Inspect', now: 0 })
   let seq = 0
-  const dispatch = (action: StreamAction) => { state = streamReducer(state, action) }
+  const dispatch = (action: StreamAction) => { act(() => storeDispatch(action)) }
   return {
     emit(event: ChatEvent) { dispatch({ type: 'event', sessionId: 's', streamId: 'run', event, lastEventId: `run:${++seq}`, now: seq }) },
     dispatch,
     reconnect() { dispatch({ type: 'connection', sessionId: 's', streamId: 'run', status: 'reconnecting' }) },
-    get turn() { return state.turns.s! },
+    get turn() { return getStreamState().turns.s! },
   }
 }
 
@@ -49,7 +50,7 @@ describe('live status', () => {
   it('labels the run with the laurel, the rate, and the reconnect state', () => {
     const run = liveRun()
     run.emit({ event: 'metering', data: { tps: 42.14 } })
-    const view = render(<LiveStatusPill turn={run.turn} />)
+    const view = render(<LiveStatusPill sessionId={run.turn.sessionId} />)
     const [pill, ...rest] = pills(view.container)
     expect(rest).toHaveLength(0)
     expect(pill).toHaveAttribute('role', 'status')
@@ -57,7 +58,7 @@ describe('live status', () => {
     expect(pill).toHaveTextContent('42.1 tok/s')
     expect(pill!.querySelectorAll('svg.live-laurel .laurel-leaf')).toHaveLength(10)
     run.reconnect()
-    view.rerender(<LiveStatusPill turn={run.turn} />)
+    view.rerender(<LiveStatusPill sessionId={run.turn.sessionId} />)
     expect(pills(view.container)[0]).toHaveTextContent('Reconnecting…')
   })
 })
@@ -65,18 +66,18 @@ describe('live status', () => {
 describe('server-selected prompt reading (TAL-1058)', () => {
   it('renders known and unknown progress in the existing accessible status, and clears terminal state', () => {
     const run = liveRun()
-    const view = render(<LiveStatusPill turn={run.turn} />)
+    const view = render(<LiveStatusPill sessionId={run.turn.sessionId} />)
     for (const progress_percent of [0, 42, 100, null]) {
       run.emit({ event: 'run_status', data: { session_id: 's', status: { phase: 'prompt_reading', progress_percent } } })
-      view.rerender(<LiveStatusPill turn={run.turn} />)
+      view.rerender(<LiveStatusPill sessionId={run.turn.sessionId} />)
       expect(view.getByRole('status')).toHaveTextContent(progress_percent === null ? /^Reading prompt$/ : `Reading prompt · ${progress_percent}%`)
       expect(view.container.querySelectorAll('.live-laurel')).toHaveLength(1)
     }
     run.emit({ event: 'run_status', data: { session_id: 's', status: { phase: 'compressing' } } })
-    view.rerender(<LiveStatusPill turn={run.turn} />)
+    view.rerender(<LiveStatusPill sessionId={run.turn.sessionId} />)
     expect(view.getByRole('status')).toHaveTextContent(/^Compressing context$/)
     run.emit({ event: 'run_status', data: { session_id: 's', status: { phase: 'working' } } })
-    view.rerender(<LiveStatusPill turn={run.turn} />)
+    view.rerender(<LiveStatusPill sessionId={run.turn.sessionId} />)
     expect(view.getByRole('status')).toHaveTextContent('Working')
     run.emit({ event: 'done', data: {} })
     expect(run.turn.runStatus).toBeNull()
@@ -90,11 +91,11 @@ describe('server-selected prompt reading (TAL-1058)', () => {
     const cursor = run.turn.lastEventId
     run.dispatch({ type: 'attach', sessionId: 's', streamId: 'run', now: 2, replay: true, serverRunStatus: { phase: 'prompt_reading', progress_percent: 0 } })
     run.dispatch({ type: 'connection', sessionId: 's', streamId: 'run', status: 'open' })
-    const view = render(<LiveStatusPill turn={run.turn} />)
+    const view = render(<LiveStatusPill sessionId={run.turn.sessionId} />)
     expect(view.getByRole('status')).toHaveTextContent('Reading prompt · 42%')
     expect(run.turn.lastEventId).toBe(cursor)
     run.emit({ event: 'run_status', data: { session_id: 's', status: { phase: 'working' } } })
-    view.rerender(<LiveStatusPill turn={run.turn} />)
+    view.rerender(<LiveStatusPill sessionId={run.turn.sessionId} />)
     expect(view.getByRole('status')).toHaveTextContent('Working')
   })
 
@@ -118,17 +119,17 @@ describe('rate-limit wait (TAL-821)', () => {
     const run = liveRun()
     const until = new Date(2026, 9, 14, 10, 17).getTime() / 1000
     run.emit({ event: 'rate_limit_wait', data: { session_id: 's', wait: { provider: 'openrouter', provider_label: 'OpenRouter', until, until_kind: 'reset' } } })
-    const view = render(<LiveStatusPill turn={run.turn} />)
+    const view = render(<LiveStatusPill sessionId={run.turn.sessionId} />)
     expect(pills(view.container)[0]).toHaveTextContent(/^OpenRouter rate limit until 10:17\sAM$/)
     run.emit({ event: 'rate_limit_wait', data: { session_id: 's', wait: { provider: null, provider_label: null, until, until_kind: 'reset' } } })
-    view.rerender(<LiveStatusPill turn={run.turn} />)
+    view.rerender(<LiveStatusPill sessionId={run.turn.sessionId} />)
     expect(pills(view.container)[0]).toHaveTextContent(/^Rate limited until 10:17\sAM$/)
     // No reset from the provider: the time is the Agent's next retry.
     run.emit({ event: 'rate_limit_wait', data: { session_id: 's', wait: { provider: 'openrouter', provider_label: 'OpenRouter', until, until_kind: 'retry' } } })
-    view.rerender(<LiveStatusPill turn={run.turn} />)
+    view.rerender(<LiveStatusPill sessionId={run.turn.sessionId} />)
     expect(pills(view.container)[0]).toHaveTextContent(/^OpenRouter rate limit · retry at 10:17\sAM$/)
     run.emit({ event: 'rate_limit_wait', data: { session_id: 's', wait: null } })
-    view.rerender(<LiveStatusPill turn={run.turn} />)
+    view.rerender(<LiveStatusPill sessionId={run.turn.sessionId} />)
     expect(pills(view.container)[0]).toHaveTextContent(/^Working \d/)
   })
 })
@@ -136,13 +137,16 @@ describe('rate-limit wait (TAL-821)', () => {
 describe('live elapsed time (TAL-922)', () => {
   afterEach(() => { vi.useRealTimers() })
   const at = (startedAt: number, reconnecting = false) => {
-    const started = streamReducer(initialStreamState, { type: 'start', sessionId: 's', streamId: 'run', turnId: null, userMessageId: null, userText: '', now: startedAt })
-    return reconnecting ? streamReducer(started, { type: 'connection', sessionId: 's', streamId: 'run', status: 'reconnecting' }).turns.s! : started.turns.s!
+    act(() => {
+      storeDispatch({ type: 'start', sessionId: 's', streamId: 'run', turnId: null, userMessageId: null, userText: '', now: startedAt })
+      if (reconnecting) storeDispatch({ type: 'connection', sessionId: 's', streamId: 'run', status: 'reconnecting' })
+    })
+    return 's'
   }
 
   it('reads "Working <elapsed>" from the turn start and ticks each second', () => {
     vi.useFakeTimers({ now: 1_000_000 })
-    const view = render(<LiveStatusPill turn={at(1_000_000 - 59_000)} />)
+    const view = render(<LiveStatusPill sessionId={at(1_000_000 - 59_000)} />)
     expect(pills(view.container)[0]).toHaveTextContent('Working 59s')
     act(() => { vi.advanceTimersByTime(1000) })
     expect(pills(view.container)[0]).toHaveTextContent('Working 1m')
@@ -150,7 +154,7 @@ describe('live elapsed time (TAL-922)', () => {
 
   it("formats seconds, minutes, and hours in T3 Code's units", () => {
     vi.useFakeTimers({ now: 10_000_000 })
-    const label = (ms: number) => { const v = render(<LiveStatusPill turn={at(10_000_000 - ms)} />); const t = pills(v.container)[0]!.textContent; v.unmount(); return t }
+    const label = (ms: number) => { const v = render(<LiveStatusPill sessionId={at(10_000_000 - ms)} />); const t = pills(v.container)[0]!.textContent; v.unmount(); return t }
     expect(label(1_000)).toMatch(/Working 1s$/)
     expect(label(359_000)).toMatch(/Working 5m$/)
     expect(label(3_600_000)).toMatch(/Working 1h 0m$/)
@@ -159,9 +163,9 @@ describe('live elapsed time (TAL-922)', () => {
 
   it('shows no time while reconnecting or on background work', () => {
     vi.useFakeTimers({ now: 1_000_000 })
-    const view = render(<LiveStatusPill turn={at(0, true)} />)
+    const view = render(<LiveStatusPill sessionId={at(0, true)} />)
     expect(pills(view.container)[0]).toHaveTextContent(/^Reconnecting…$/)
-    view.rerender(<LiveStatusPill turn={at(0)} background />)
+    view.rerender(<LiveStatusPill sessionId={at(0)} background />)
     expect(pills(view.container)[0]).toHaveTextContent(/^Working on background results$/)
   })
 })

@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Keep typing responsive while a chat response streams.",
+      "highlight": false,
+      "components": ["web"]
+    }
+  ]
+}

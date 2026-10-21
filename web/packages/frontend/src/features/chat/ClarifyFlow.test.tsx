@@ -6,7 +6,7 @@ import { BootstrapContext } from '../../app/bootstrap'
 import { DEFAULT_BOOTSTRAP } from '../../contracts/adapters/memory'
 import { ApiError } from '../../contracts/common'
 import type { ClarifyPending, Session } from '../../contracts'
-import type { LiveTurn } from '../../stream/reducer'
+import { isTerminal, type LiveTurn } from '../../stream/reducer'
 import { keys } from '../../api/queryKeys'
 
 // The server's queue head as `/api/clarify/pending` reports it.
@@ -38,7 +38,7 @@ function Chat({ live = streaming }: { live?: LiveTurn }) {
     <>
       {clarify && <ClarifyCard key={clarify.pending.clarify_id} clarify={clarify} />}
       <Composer
-        sessionId="s1" session={session} live={live} settings={undefined} onEnsureSession={() => Promise.resolve(session)} onLocalCommand={() => Promise.resolve(false)}
+        sessionId="s1" session={session} busy={!isTerminal(live.status)} streamId={live.streamId ?? null} settings={undefined} onEnsureSession={() => Promise.resolve(session)} onLocalCommand={() => Promise.resolve(false)}
         terminalOpen={false} onToggleTerminal={noop} onModelChange={noop} onWorkspaceChange={noop} onToolsetsChange={noop} onReasoningChange={noop} reasoning={null}
         yolo={false} onToggleYolo={noop} queued={[]} onQueue={onQueue} onQueueChange={noop} clarify={clarify}
       />
