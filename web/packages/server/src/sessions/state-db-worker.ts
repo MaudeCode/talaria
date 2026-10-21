@@ -1,8 +1,8 @@
 /**
- * The listing worker behind the `state-db.ts` `…Async` readers (TAL-920): runs
+ * The worker behind each lane of the `state-db.ts` `…Async` readers (TAL-1189): runs
  * the synchronous `state.db` reads of the session list, the gateway watcher, the
  * single-session lookups (TAL-923), and the transcript reads (TAL-1162) off the
- * server's event loop, one request at a time.
+ * server's event loop, one request at a time per lane.
  */
 import { parentPort } from 'node:worker_threads'
 import type { StateDbWorkerReply, StateDbWorkerRequest } from './state-db.js'

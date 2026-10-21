@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Changed",
+      "summary": "Keep chat and session reads responsive while the sidebar loads a large session history.",
+      "highlight": false,
+      "components": ["web"]
+    }
+  ]
+}

@@ -1,9 +1,10 @@
 import { sessionDirectory } from '../test/storage.js'
-import { mkdirSync, utimesSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, rmSync, utimesSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
 import { Worker } from 'node:worker_threads'
-import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
+import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest'
 import { bootTestServer, type TestServer } from '../test/harness.js'
 import type { SidecarResult } from '@maudecode/talaria-web-contracts'
 import { FakeSidecar } from '../sidecar/fake.js'
@@ -11,7 +12,7 @@ import { str } from '../util.js'
 import { CliSessionSource } from './cli-sessions.js'
 import { GatewayWatcher } from './gateway-watcher.js'
 import { Session } from './session.js'
-import { crashStateDbWorkerForTests, readImportableAgentSessionRowsAsync, setStateDbReadDelayForTests, stateDbSessionReadAsync, stopStateDbWorker } from './state-db.js'
+import { agentSessionRowsExistingAsync, crashStateDbWorkerForTests, readImportableAgentSessionRowsAsync, setStateDbReadDelayForTests, stateDbSessionReadAsync, stateDbSessionSourcesAsync, stopStateDbWorker, type StateDbWorkerReply, type StateDbWorkerRequest } from './state-db.js'
 
 type Json = Record<string, unknown>
 
@@ -52,6 +53,165 @@ function seedStateDb(path: string, ids: { id: string; source: string; at: number
 }
 
 const ids = (body: Json): string[] => (body.sessions as Json[]).map((r) => String(r.session_id))
+
+describe('independent state.db worker lanes (TAL-1189)', () => {
+  let dir: string
+  let dbPath: string
+  const sessionRow = (): Promise<Json | null> => stateDbSessionReadAsync(null, 'stateDbSessionRow', dbPath, 'lane-session')
+  beforeAll(() => {
+    dir = mkdtempSync(join(tmpdir(), 'talaria-state-db-lanes-'))
+    dbPath = join(dir, 'state.db')
+    seedStateDb(dbPath, [{ id: 'lane-session', source: 'cli', at: 1000 }])
+  })
+  afterEach(async () => { setStateDbReadDelayForTests(0); await stopStateDbWorker() })
+  afterAll(() => { rmSync(dir, { recursive: true, force: true }) })
+
+  it('resolves a single-session row before an already queued slow listing', async () => {
+    // Warm both lanes so startup scheduling cannot determine the completion order.
+    await Promise.all([readImportableAgentSessionRowsAsync(dbPath), sessionRow()])
+    setStateDbReadDelayForTests(1500)
+    const listing = readImportableAgentSessionRowsAsync(dbPath).then(() => 'listing')
+    setStateDbReadDelayForTests(0)
+    const session = sessionRow().then((row) => { expect(row?.id).toBe('lane-session'); return 'session' })
+    try {
+      expect(await Promise.race([listing, session])).toBe('session')
+    } finally {
+      await Promise.all([listing, session])
+    }
+  })
+
+  it('routes mutation sources and existence probes around a slow listing too', async () => {
+    await Promise.all([readImportableAgentSessionRowsAsync(dbPath), sessionRow()])
+    setStateDbReadDelayForTests(1500)
+    const listing = readImportableAgentSessionRowsAsync(dbPath).then(() => 'listing')
+    setStateDbReadDelayForTests(0)
+    const probes = Promise.all([
+      stateDbSessionSourcesAsync(dbPath, ['lane-session']),
+      agentSessionRowsExistingAsync(dbPath, ['lane-session']),
+    ]).then(([sources, existing]) => {
+      expect(sources?.has('lane-session')).toBe(true)
+      expect(existing).toEqual(new Set(['lane-session']))
+      return 'probes'
+    })
+    try {
+      expect(await Promise.race([listing, probes])).toBe('probes')
+    } finally {
+      await Promise.all([listing, probes])
+    }
+  })
+
+  it.each(['listing', 'session'] as const)('keeps FIFO order within the %s lane', async (lane) => {
+    const read = (): Promise<unknown> => lane === 'listing' ? readImportableAgentSessionRowsAsync(dbPath) : sessionRow()
+    await read()
+    setStateDbReadDelayForTests(300)
+    const first = read().then(() => 'first')
+    setStateDbReadDelayForTests(0)
+    const second = read().then(() => 'second')
+    expect(await Promise.race([first, second])).toBe('first')
+    await second
+  })
+
+  it.each(['listing', 'session'] as const)('isolates a %s crash and restarts only the crashed lane', async (lane) => {
+    const listingRow = (): Promise<Json | null> => readImportableAgentSessionRowsAsync(dbPath).then((rows) => rows[0] ?? null).catch(() => null)
+    const affected = lane === 'listing' ? listingRow : sessionRow
+    const unaffected = lane === 'listing' ? sessionRow : listingRow
+    await Promise.all([affected(), unaffected()])
+    setStateDbReadDelayForTests(1500)
+    const pending = unaffected()
+    setStateDbReadDelayForTests(0)
+    const crash = crashStateDbWorkerForTests(lane)
+    const interrupted = affected()
+    await expect(crash).rejects.toThrow(/state\.db worker exited/)
+    expect(await interrupted).toBeNull()
+    expect(await affected()).toMatchObject({ id: 'lane-session' })
+    expect(await pending).toMatchObject({ id: 'lane-session' })
+  })
+
+  it('terminates both blocked workers, settles their reads and restarts both lanes after shutdown', async () => {
+    await Promise.all([readImportableAgentSessionRowsAsync(dbPath), sessionRow()])
+    const terminate = vi.spyOn(Worker.prototype, 'terminate')
+    setStateDbReadDelayForTests(1500)
+    const listing = readImportableAgentSessionRowsAsync(dbPath).catch((error: unknown) => error as Error)
+    const session = sessionRow()
+    setStateDbReadDelayForTests(0)
+    try {
+      const stop = stopStateDbWorker()
+      // Neither lane may restart while shutdown is draining the old workers.
+      await expect(readImportableAgentSessionRowsAsync(dbPath)).rejects.toThrow('state.db worker stopped')
+      expect(await sessionRow()).toBeNull()
+      await stop
+      expect(((await listing) as Error).message).toBe('state.db worker stopped')
+      expect(await session).toBeNull()
+      expect(terminate).toHaveBeenCalledTimes(2)
+      expect(terminate.mock.contexts.map((worker) => (worker as Worker).threadId)).toEqual([-1, -1])
+    } finally {
+      terminate.mockRestore()
+    }
+    expect((await readImportableAgentSessionRowsAsync(dbPath))[0]?.id).toBe('lane-session')
+    expect(await sessionRow()).toMatchObject({ id: 'lane-session' })
+  })
+})
+
+describe('sidebar probe lane isolation (TAL-1189)', () => {
+  let s: TestServer
+  let dbPath: string
+  beforeAll(async () => {
+    s = await bootTestServer()
+    dbPath = join(s.state, 'state.db')
+    seedStateDb(dbPath, [{ id: 'sidebar-cli', source: 'cli', at: 1000 }, { id: 'cron_job1_1', source: 'cron', at: 1010 }])
+    const db = new DatabaseSync(dbPath)
+    try { db.exec("UPDATE sessions SET title = NULL WHERE source = 'cron'") } finally { db.close() }
+    await s.deps.sessionStore.save(new Session({ session_id: 'sidebar-cli', title: 'Imported', source_tag: 'cli', raw_source: 'cli', read_only: true, messages: [{ role: 'user', content: 'hi', timestamp: 1 }] }, { workspace: s.state, model: null }))
+  })
+  afterAll(async () => { await s.close() })
+
+  it.each(['sources', 'existing', 'cron admissions'] as const)('serves interactive reads before a held sidebar %s probe', async (phase) => {
+    s.deps.cliSessions.invalidate()
+    await Promise.all([readImportableAgentSessionRowsAsync(dbPath), stateDbSessionReadAsync(null, 'stateDbSessionRow', dbPath, 'sidebar-cli')])
+    let dispatched!: () => void
+    let completed!: () => void
+    const started = new Promise<void>((resolve) => { dispatched = resolve })
+    const held = new Promise<void>((resolve) => { completed = resolve })
+    // eslint-disable-next-line @typescript-eslint/unbound-method -- Forward with the original Worker receiver below.
+    const post = Worker.prototype.postMessage
+    const calls = vi.spyOn(Worker.prototype, 'postMessage')
+    let heldRequest = false
+    let cleanup = (): void => undefined
+    calls.mockImplementation(function (this: Worker, value, transferList) {
+      const request = value as StateDbWorkerRequest
+      const matches = phase === 'cron admissions' ? request.op === 'session' && request.read === 'stateDbCronJobIds' : request.op === phase
+      if (!heldRequest && matches) {
+        heldRequest = true
+        const onReply = (reply: StateDbWorkerReply): void => { if (reply.id === request.id) completed() }
+        this.on('message', onReply)
+        cleanup = () => { this.off('message', onReply) }
+        post.call(this, { ...request, delayMs: 1500 }, transferList)
+        dispatched()
+      } else post.call(this, value, transferList)
+    })
+    const listing = s.get(ALL_SOURCES).then(async (res) => { expect(res.status).toBe(200); return ids(await res.json() as Json) })
+    try {
+      await Promise.race([started, listing.then(() => { throw new Error(`sidebar never dispatched ${phase}`) })])
+      const interactive = Promise.all([
+        stateDbSessionReadAsync(null, 'stateDbSessionRow', dbPath, 'sidebar-cli'),
+        stateDbSessionSourcesAsync(dbPath, ['sidebar-cli']),
+        agentSessionRowsExistingAsync(dbPath, ['sidebar-cli']),
+      ]).then(([row, sources, existing]) => {
+        expect(row?.id).toBe('sidebar-cli')
+        expect(sources?.get('sidebar-cli')).toBe('cli')
+        expect(existing).toEqual(new Set(['sidebar-cli']))
+        return 'interactive'
+      })
+      expect(await Promise.race([held.then(() => 'sidebar'), interactive])).toBe('interactive')
+      expect(await listing).toEqual(expect.arrayContaining(['sidebar-cli', 'cron_job1_1']))
+    } finally {
+      try { await listing } finally {
+        calls.mockRestore()
+        cleanup()
+      }
+    }
+  })
+})
 
 /** The stacks of this thread's opens of `dbPath` while `run` handles one request. */
 async function opensDuring(s: TestServer, dbPath: string, run: () => Promise<void>): Promise<string[]> {

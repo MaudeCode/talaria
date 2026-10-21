@@ -154,10 +154,15 @@ it('carries one trace across an HTTP admission and real Python RPC stdio with se
   // This process proves the Node/Python envelope and logging boundary; Agent behavior remains fake.
   const state = mkdtempSync(join(tmpdir(), 'talaria-timing-transport-'))
   const logs: string[] = []
+  let sidecarTerminal!: () => void
+  const sidecarFinished = new Promise<void>((resolve) => { sidecarTerminal = resolve })
   const client = new SidecarClient({
     python: process.env.HERMES_WEBUI_TEST_PYTHON ?? 'python3',
     command: [process.env.HERMES_WEBUI_TEST_PYTHON ?? 'python3', resolve(import.meta.dirname, 'fixtures/startup-timing.py'), resolve(import.meta.dirname, '../../../contracts/fixtures/sidecar')],
-    agentDir: state, hermesHome: state, sidecarDir: resolve(import.meta.dirname, '../../../../sidecar'), log: (line) => logs.push(line),
+    agentDir: state, hermesHome: state, sidecarDir: resolve(import.meta.dirname, '../../../../sidecar'), log: (line) => {
+      logs.push(line)
+      if (line.includes('"event":"chat_start_timing"') && line.includes('"stage":"terminal"')) sidecarTerminal()
+    },
   })
   let server: Awaited<ReturnType<typeof bootTestServer>> | undefined
   try {
@@ -168,6 +173,8 @@ it('carries one trace across an HTTP admission and real Python RPC stdio with se
     expect(response.status).toBe(200)
     const body = await response.json() as { stream_id: string }
     await server.deps.turns.finished(body.stream_id)
+    // Python logs its terminal timing after the stdout RPC result, on a separate stderr pipe.
+    await sidecarFinished
     const records = [...server.logs, ...logs].filter((line) => line.includes('"event":"chat_start_timing"')).map((line) => JSON.parse(line.slice(line.indexOf('{'))) as { process: string; trace_id: string; session_key: string; stream_key: string; stage: string })
     expect(new Set(records.map((r) => r.process))).toEqual(new Set(['server', 'sidecar']))
     expect(new Set(records.map((r) => r.trace_id)).size).toBe(1)
