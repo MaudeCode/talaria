@@ -23,7 +23,7 @@ export function LiveTurnView({ turn, name, mode, userVisible, omitToolIds }: { t
   const rowRef = useRef<HTMLDivElement>(null)
   useLayoutEffect(() => {
     if (rowRef.current) rememberLiveTurnHeight(activity.key, rowRef.current.getBoundingClientRect().height)
-  })
+  }, [activity.key, turn.segments.length, turn.status])
   return (
     <div ref={rowRef} className="msg-row assistant-turn live-turn" data-role="assistant" data-live="1" data-stream-id={turn.streamId} data-status={turn.status} aria-busy={streaming}>
       <div className="msg-role assistant"><span className="msg-role-name">{name}</span></div>

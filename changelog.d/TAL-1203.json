@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Keep long Web chats responsive while responses stream and preserve your reading position.",
+      "highlight": false,
+      "components": ["web"]
+    }
+  ]
+}
