@@ -35,7 +35,7 @@ describe('workspace checkpoints through the Agent (TAL-913)', () => {
     sidecar.calls.length = 0
     sidecar.respond('checkpoints.list', () => ({ checkpoints: [{ hash: HASH, short_hash: 'd7ead93', timestamp: '2026-10-12T09:30:15+02:00', reason: 'before write_file', files_changed: 3, insertions: 2, deletions: 1 }], store: STORE }))
     sidecar.respond('checkpoints.diff', () => ({ stat: '', diff: DIFF }))
-    sidecar.respond('checkpoints.restore', () => ({ restored_to: HASH.slice(0, 8), reason: 'before write_file' }))
+    sidecar.respond('checkpoints.restore', () => ({ restored_to: HASH.slice(0, 8), reason: 'before write_file', restored_files: null, kept_user_edits: [], skipped_oversize: [], failed_deletes: [] }))
   })
 
   it('lists the checkpoints the Agent keeps for a configured workspace', async () => {
@@ -64,10 +64,20 @@ describe('workspace checkpoints through the Agent (TAL-913)', () => {
   it('restores through the Agent and reports the files the checkpoint rewrote', async () => {
     const res = await post(s, '/api/rollback/restore', { workspace: ws, checkpoint: HASH })
     expect(res.status).toBe(200)
-    // A file added since the checkpoint is not in it, so a restore leaves it alone.
-    expect(await json(res)).toEqual({ ok: true, checkpoint: HASH, workspace: ws, files_restored: ['docs/a.txt', 'removed.txt', 'old name.txt', 'café.txt', 'logo.png'], files_restored_count: 5, errors: [] })
+    // With no agent-write history the Agent checks the whole checkpoint out; a file added since is not in it, so it stays.
+    expect(await json(res)).toEqual({ ok: true, checkpoint: HASH, workspace: ws, files_restored: ['docs/a.txt', 'removed.txt', 'old name.txt', 'café.txt', 'logo.png'], files_restored_count: 5, errors: [], kept_user_edits: [], skipped_oversize: [], failed_deletes: [] })
     expect(sidecar.calls.map((c) => c.method)).toEqual(['checkpoints.diff', 'checkpoints.restore'])
-    expect(sidecar.calls.at(-1)?.params).toEqual({ profile_home: expect.any(String) as unknown, workspace: ws, checkpoint: HASH })
+    expect(sidecar.calls.at(-1)?.params).toEqual({ profile_home: expect.any(String) as unknown, workspace: ws, checkpoint: HASH, all: false })
+  })
+
+  it('keeps the hand-edits the Agent reports by default, and restores everything only with all (TAL-1260)', async () => {
+    sidecar.respond('checkpoints.restore', () => ({ restored_to: HASH.slice(0, 8), reason: 'before write_file', restored_files: ['docs/a.txt', 'new.txt'], kept_user_edits: ['café.txt'], skipped_oversize: ['logo.png'], failed_deletes: ['new.txt'] }))
+    const res = await post(s, '/api/rollback/restore', { workspace: ws, checkpoint: HASH })
+    expect(res.status).toBe(200)
+    expect(await json(res)).toEqual({ ok: true, checkpoint: HASH, workspace: ws, files_restored: ['docs/a.txt', 'new.txt'], files_restored_count: 2, errors: [], kept_user_edits: ['café.txt'], skipped_oversize: ['logo.png'], failed_deletes: ['new.txt'] })
+    expect(sidecar.calls.at(-1)).toEqual({ method: 'checkpoints.restore', params: { profile_home: expect.any(String) as unknown, workspace: ws, checkpoint: HASH, all: false } })
+    expect((await post(s, '/api/rollback/restore', { workspace: ws, checkpoint: HASH, all: true })).status).toBe(200)
+    expect(sidecar.calls.at(-1)).toEqual({ method: 'checkpoints.restore', params: { profile_home: expect.any(String) as unknown, workspace: ws, checkpoint: HASH, all: true } })
   })
 
   it("answers the Agent's refusal as a 400 and an unavailable sidecar as a 503", async () => {
@@ -113,7 +123,7 @@ describe('workspace checkpoints through the Agent (TAL-913)', () => {
     }
     let release!: () => void
     const gate = new Promise<void>((r) => { release = r })
-    sidecar.respond('checkpoints.restore', async () => { await gate; return { restored_to: HASH.slice(0, 8), reason: 'before write_file' } })
+    sidecar.respond('checkpoints.restore', async () => { await gate; return { restored_to: HASH.slice(0, 8), reason: 'before write_file', restored_files: null, kept_user_edits: [], skipped_oversize: [], failed_deletes: [] } })
     const restoring = post(s, '/api/rollback/restore', { workspace: ws, checkpoint: HASH })
     await vi.waitFor(() => { expect(sidecar.calls.map((c) => c.method)).toContain('checkpoints.restore') })
     const turn = await post(s, '/api/chat/start', { session_id: other, message: 'hi' })

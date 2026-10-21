@@ -1857,8 +1857,12 @@
 	"checkpoint_view_diff": "Vedi diff",
 	"checkpoint_restore": "Ripristina",
 	"checkpoint_restore_confirm_title": "Ripristinare checkpoint?",
-	"checkpoint_restore_confirm_message": "Ripristinare il workspace al checkpoint \"{ckpt}\"? Questo sovrascriverà i file con le versioni salvate. I file aggiunti dopo questo checkpoint non saranno eliminati.",
+	"checkpoint_restore_confirm_message": "Ripristinare i file modificati dall'agente dal checkpoint \"{ckpt}\"? I file che hai modificato a mano dopo la sua ultima scrittura restano invariati.",
 	"checkpoint_restored": "Checkpoint ripristinato",
+	"checkpoint_restore_everything": "Ripristina tutto",
+	"checkpoint_kept_user_edits": "Modifiche mantenute: {files}",
+	"checkpoint_skipped_oversize": "Troppo grandi da ripristinare: {files}",
+	"checkpoint_failed_deletes": "Impossibile eliminare: {files}",
 	"checkpoint_diff_title": "Modifiche nel checkpoint",
 	"checkpoint_diff_no_changes": "Nessuna differenza trovata tra questo checkpoint e il workspace attuale.",
 	"checkpoint_diff_files_changed": [

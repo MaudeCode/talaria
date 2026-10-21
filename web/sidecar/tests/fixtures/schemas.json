@@ -7027,11 +7027,46 @@
       },
       "reason": {
         "type": "string"
+      },
+      "restored_files": {
+        "anyOf": [
+          {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
+      "kept_user_edits": {
+        "type": "array",
+        "items": {
+          "type": "string"
+        }
+      },
+      "skipped_oversize": {
+        "type": "array",
+        "items": {
+          "type": "string"
+        }
+      },
+      "failed_deletes": {
+        "type": "array",
+        "items": {
+          "type": "string"
+        }
       }
     },
     "required": [
       "restored_to",
-      "reason"
+      "reason",
+      "restored_files",
+      "kept_user_edits",
+      "skipped_oversize",
+      "failed_deletes"
     ],
     "additionalProperties": false
   },

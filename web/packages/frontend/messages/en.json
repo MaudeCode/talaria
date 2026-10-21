@@ -2043,8 +2043,12 @@
 	"checkpoint_view_diff": "View diff",
 	"checkpoint_restore": "Restore",
 	"checkpoint_restore_confirm_title": "Restore checkpoint?",
-	"checkpoint_restore_confirm_message": "Restore workspace to checkpoint \"{ckpt}\"? This will overwrite files with the saved versions. Files added after this checkpoint will not be deleted.",
+	"checkpoint_restore_confirm_message": "Restore files the Agent changed since \"{ckpt}\"? Files you edited by hand after its last write stay as they are.",
 	"checkpoint_restored": "Checkpoint restored",
+	"checkpoint_restore_everything": "Restore everything",
+	"checkpoint_kept_user_edits": "Kept your edits: {files}",
+	"checkpoint_skipped_oversize": "Too large to restore: {files}",
+	"checkpoint_failed_deletes": "Could not delete: {files}",
 	"checkpoint_diff_title": "Changes in checkpoint",
 	"checkpoint_diff_no_changes": "No differences found between this checkpoint and the current workspace.",
 	"checkpoint_diff_files_changed": [

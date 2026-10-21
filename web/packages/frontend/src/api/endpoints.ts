@@ -181,7 +181,8 @@ export const fetchGitInfo = (sessionId: string) => orpc().gitInfo({ session_id: 
 // TAL-571: the Agent's file checkpoints for the session's own workspace (a worktree chat's included).
 export const fetchCheckpoints = (session_id: string) => orpc().rollback.list({ session_id })
 export const fetchCheckpointDiff = (session_id: string, checkpoint: string) => orpc().rollback.diff({ session_id, checkpoint })
-export const restoreCheckpoint = (session_id: string, checkpoint: string) => orpc().rollback.restore({ session_id, checkpoint })
+/** `all` also overwrites the user's hand-edits, which a restore otherwise keeps (TAL-1260). */
+export const restoreCheckpoint = (session_id: string, checkpoint: string, all: boolean) => orpc().rollback.restore({ session_id, checkpoint, all })
 // TAL-605: a worktree chat's removal check, and the removal itself (`force` overrides the server's `force_required`).
 export const fetchWorktreeStatus = (session_id: string) => orpc().worktree.status({ session_id })
 export const removeWorktree = (session_id: string, force: boolean) => orpc().worktree.remove({ session_id, force })

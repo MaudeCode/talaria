@@ -43,7 +43,11 @@
       },
       "result": {
         "restored_to": "4bd547a3",
-        "reason": "before write_file"
+        "reason": "before write_file",
+        "restored_files": null,
+        "kept_user_edits": [],
+        "skipped_oversize": [],
+        "failed_deletes": []
       }
     }
   ]

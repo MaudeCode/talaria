@@ -1891,8 +1891,12 @@
 	"checkpoint_view_diff": "Wyświetl diff",
 	"checkpoint_restore": "Przywróć",
 	"checkpoint_restore_confirm_title": "Przywrócić punkt kontrolny?",
-	"checkpoint_restore_confirm_message": "Przywrócić obszar roboczy do punktu kontrolnego \"{ckpt}\"? To nadpisze pliki wersjami zapisanymi. Pliki dodane po tym punkcie kontrolnym nie zostaną usunięte.",
+	"checkpoint_restore_confirm_message": "Przywrócić pliki zmienione przez agenta od punktu kontrolnego „{ckpt}”? Pliki edytowane ręcznie po jego ostatnim zapisie pozostaną bez zmian.",
 	"checkpoint_restored": "Punkt kontrolny przywrócony",
+	"checkpoint_restore_everything": "Przywróć wszystko",
+	"checkpoint_kept_user_edits": "Zachowano Twoje zmiany: {files}",
+	"checkpoint_skipped_oversize": "Zbyt duże, aby przywrócić: {files}",
+	"checkpoint_failed_deletes": "Nie można usunąć: {files}",
 	"checkpoint_diff_title": "Zmiany w punkcie kontrolnym",
 	"checkpoint_diff_no_changes": "Nie znaleziono różnic między tym punktem kontrolnym a obecnym obszarem roboczym.",
 	"checkpoint_diff_files_changed": [

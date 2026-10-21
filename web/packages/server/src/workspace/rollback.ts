@@ -108,18 +108,25 @@ export class RollbackStore {
     return { checkpoint: cid, workspace: resolved, diff: diff.trimEnd(), files_changed: filesChanged, total_changes: filesChanged.length }
   }
 
-  /** The Agent snapshots the workspace first, then checks the checkpoint out over it; a file added since is left in place. */
-  async restore(workspace: unknown, checkpoint: unknown, allowed: string[] = []): Promise<Record<string, unknown>> {
+  /**
+   * The Agent snapshots the workspace first, then reverts it. By default only files still as the Agent last wrote them
+   * (TAL-1260), and it names what it acted on; `all`, or a store with no agent-write history, checks the whole checkpoint
+   * out, rewriting every file the diff shows except one added since, which is left in place.
+   */
+  async restore(workspace: unknown, checkpoint: unknown, allowed: string[] = [], all = false): Promise<Record<string, unknown>> {
     const resolved = (await this.resolveWorkspace(workspace, allowed))
     const cid = validateCheckpointId(checkpoint)
     const sidecar = this.sidecar()
-    const rewritten = await this.exclusive(async (home) => {
+    const { files, result } = await this.exclusive(async (home) => {
       const target = { profile_home: home, workspace: resolved, checkpoint: cid }
-      const files = checkpointDiffFiles((await sidecar.call('checkpoints.diff', target)).diff).filter((f) => f.status !== 'added').map((f) => f.file)
-      await sidecar.call('checkpoints.restore', target)
-      return files
+      const changed = checkpointDiffFiles((await sidecar.call('checkpoints.diff', target)).diff).filter((f) => f.status !== 'added').map((f) => f.file)
+      const restored = await sidecar.call('checkpoints.restore', { ...target, all })
+      return { files: restored.restored_files ?? changed, result: restored }
     })
-    return { ok: true, checkpoint: cid, workspace: resolved, files_restored: rewritten, files_restored_count: rewritten.length, errors: [] }
+    return {
+      ok: true, checkpoint: cid, workspace: resolved, files_restored: files, files_restored_count: files.length, errors: [],
+      kept_user_edits: result.kept_user_edits, skipped_oversize: result.skipped_oversize, failed_deletes: result.failed_deletes,
+    }
   }
 }
 

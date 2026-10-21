@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Restoring a checkpoint keeps files you edited by hand and lists them afterwards; Restore everything overwrites them too.",
+      "highlight": false,
+      "components": ["web"]
+    }
+  ]
+}

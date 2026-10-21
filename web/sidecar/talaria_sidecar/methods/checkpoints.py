@@ -54,6 +54,10 @@ def _agent_result(result: dict) -> dict:
     return result
 
 
+def _paths(result: dict, key: str) -> list[str]:
+    return [str(f) for f in result.get(key) or []]
+
+
 def _owned(manager, workspace: str, checkpoint: str) -> str:
     """The full hash of ``checkpoint`` among ``workspace``'s own checkpoints. The store is shared by every project and the
     Agent's diff and restore accept any commit in it, so another workspace's hash would check that tree out here."""
@@ -82,8 +86,14 @@ def register(registry) -> None:
 
     @registry.method("checkpoints.restore")
     def restore(ctx: CallContext, params: dict) -> dict:
+        """Safe by default, as the Agent's own ``rollback.restore`` (TAL-1260): only files whose content is still what the
+        Agent last wrote are reverted, and the hand-edited ones it kept are reported. ``all`` restores every file. Without an
+        agent-write ledger the Agent falls back to a full restore and ``restored_files`` is null."""
         workspace, checkpoint = _param(params, "workspace"), _param(params, "checkpoint")
         with scoped_home(profile_home_param(params)):
             manager = _manager()
-            result = _agent_result(manager.restore(workspace, _owned(manager, workspace, checkpoint)))
-        return {"restored_to": str(result.get("restored_to") or ""), "reason": str(result.get("reason") or "")}
+            result = _agent_result(manager.restore(workspace, _owned(manager, workspace, checkpoint), safe=params.get("all") is not True))
+        return {"restored_to": str(result.get("restored_to") or ""), "reason": str(result.get("reason") or ""),
+                "restored_files": _paths(result, "restored_files") if isinstance(result.get("restored_files"), list) else None,
+                "kept_user_edits": _paths(result, "skipped_user_edits"), "skipped_oversize": _paths(result, "skipped_oversize"),
+                "failed_deletes": _paths(result, "failed_deletes")}

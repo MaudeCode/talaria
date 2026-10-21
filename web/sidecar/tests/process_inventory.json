@@ -671,6 +671,13 @@
         ""
       ]
     },
+    "tests/test_checkpoints.py::test_a_restore_keeps_the_users_hand_edits_unless_all_is_set": {
+      "layer": "compatibility",
+      "reason": "Supported-Agent API compatibility: a whole-tree restore keeps hand-edits through the Agent's agent-write ledger unless all is set. Uses the real installed release, not a fabricated API response.",
+      "cases": [
+        ""
+      ]
+    },
     "tests/test_checkpoints.py::test_an_unknown_checkpoint_is_the_agents_refusal": {
       "layer": "compatibility",
       "reason": "Supported-Agent API compatibility: an unknown checkpoint is the agents refusal. Uses the real installed release, not a fabricated API response.",

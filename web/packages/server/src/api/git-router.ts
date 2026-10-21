@@ -199,7 +199,7 @@ export const gitRouter = os.router({
       if (!workspace || !checkpoint) throw new HttpError(400, 'workspace and checkpoint are required')
       // Held for the whole restore so no run, terminal, file write, or Git mutation starts there while the Agent rewrites its files.
       try {
-        return await ctx.deps.git.holdCheckpoint(workspace, () => ctx.deps.rollback.restore(workspace, checkpoint, allowed)) as never
+        return await ctx.deps.git.holdCheckpoint(workspace, () => ctx.deps.rollback.restore(workspace, checkpoint, allowed, input.all === true)) as never
       } catch (error) {
         throw rollbackError(error)
       }
