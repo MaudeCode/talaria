@@ -3,7 +3,7 @@ import type { StartupTiming } from '../startup-timing.js'
 import { createHash, randomUUID } from 'node:crypto'
 import { GatewayClarifyBatchSchema, GatewaySessionResultSchema, type ClarifyAnswers, type ClarifyStep, type ExecutionModes, type GatewayClarifyBatch, type GatewayCreateParams, type GatewaySessionParams, type GatewaySessionResult, type GatewaySnapshot, type OwnerAttachment, type ModelChange } from '@maudecode/talaria-web-contracts'
 import type { SidecarLike } from '../sidecar/client.js'
-import { redactNestedMessageContainers, publicToolFrame } from '../redact.js'
+import { redactNestedMessageContainers, publicToolFrame, redactString } from '../redact.js'
 import { str } from '../util.js'
 import { PendingPrompts } from './pending.js'
 import { clarifyReply } from './pending.js'
@@ -16,6 +16,7 @@ import { messageWindowForDisplay, messagesForLimitedPayload } from './window.js'
 import { pendingUserRow } from './merge.js'
 import { ReasoningTitleTracker, reasoningEventPayload } from './reasoning-titles.js'
 import { CANONICAL_READ_ONLY_REASON, WEB_DIAGNOSTIC_REQUEST_PREFIX } from './state-db.js'
+import { toolProgress } from './tool-display.js'
 
 type Row = Record<string, unknown>
 interface Target { sid: string; profile: string; home: string; key: string }
@@ -45,6 +46,7 @@ function retryText(admission: GatewaySnapshot['pending'][number]): string | null
 
 /** Steering belongs to the current turn; it must never replace that turn's transcript anchor. */
 const runningAdmission = (snapshot: GatewaySnapshot) => snapshot.pending.find((p) => p.status === 'started' && !p.steering)
+const sameExecution = (a: GatewaySnapshot, b: GatewaySnapshot): boolean => a.authority_epoch === b.authority_epoch && a.replay_epoch === b.replay_epoch && a.execution_generation === b.execution_generation
 
 /** Native counters and the owner's compact turn-end usage share one existing Web usage shape. */
 function ownerUsage(data: Row): Row {
@@ -193,6 +195,7 @@ export class GatewaySessions {
     const snapshot = result.snapshot
     const fields: Row = { ...base, owner_attachment: this.attachment({ ...result, model_change: this.currentModelChange(target, snapshot) }), composer_state_key: ownerStateId(target.key), active_stream_id: stream, is_streaming: Boolean(stream) }
     if (snapshot) {
+      const observed = this.watches.get(target.key)?.snapshot
       const nativeRows = [...snapshot.messages]
       const active = stream ? runningAdmission(snapshot) : null
       let start = active ? nativeRows.findIndex((m) => m.role === 'user' && m.message_id === active.admission_id) : -1
@@ -211,6 +214,8 @@ export class GatewaySessions {
         model_provider: provider, model_option_id: this.deps.service.deps.modelOptionFor?.(model, provider) ?? null,
         workspace: str(snapshot.info.cwd) || base.workspace, active_stream_id: stream, is_streaming: Boolean(stream), agent_running: snapshot.running,
         transcript_seq: stream ? { stream_id: stream, seq: 0 } : null,
+        tool_calls: withMessages && before === null && stream && snapshot.running && observed && sameExecution(snapshot, observed)
+          ? this.deps.service.deps.runtime.liveToolProgress?.(stream) ?? [] : [],
       })
       fields.workspace_name = (await this.deps.service.workspaceNames([fields]))(fields)
     }
@@ -390,12 +395,19 @@ export class GatewaySessions {
       let usage: Row = {}
       let reasoning = ''
       let titles = new ReasoningTitleTracker()
-      const resetProjection = () => { reasoning = ''; usage = {}; titles = new ReasoningTitleTracker() }
+      const calls = registry.liveToolCalls.get(watch.stream)!
       const put = async (event: string, data: Row) => {
         const safe = event === 'tool' || event === 'tool_complete' ? publicToolFrame(data, this.deps.redactEnabled()) : redactNestedMessageContainers(data, this.deps.redactEnabled()) as Row
+        // Progress is ephemeral, just like direct turns; a reload gets the channel's latest value after journal replay.
+        if (event === 'tool_progress') { channel.put([event, safe, null, this.deps.redactEnabled()]); return }
         const record = await writer.appendSseEvent(event, safe)
         channel.put([event, safe, record.event_id])
       }
+      const clearTools = async () => {
+        for (const call of calls) if (call.progress) await put('tool_progress', { id: call.tid, progress: null })
+        calls.length = 0
+      }
+      const resetProjection = async () => { await clearTools(); reasoning = ''; usage = {}; titles = new ReasoningTitleTracker() }
       const meter = async (data: Row) => {
         usage = { ...usage, ...ownerUsage(data) }
         if (['input_tokens', 'output_tokens', 'cache_read_tokens', 'cache_write_tokens'].every((key) => typeof usage[key] === 'number')) await put('metering', { session_id: target.sid, usage: { ...usage, estimated_cost: usage.estimated_cost ?? null }, tps: usage.tps ?? null, tps_available: usage.tps !== undefined, estimated: false })
@@ -404,6 +416,7 @@ export class GatewaySessions {
         // A model pick resolves at the owner's next claim boundary, after the turn becomes idle.
         if (terminal || this.modelMutations.has(target.key) || this.currentModelChange(target, watch.snapshot)?.state === 'deferred') return
         terminal = true
+        await clearTools()
         const current = await this.call(target, { action: 'snapshot' })
         const rawReceipt = activeAdmission ? (await this.call(target, { action: 'receipt', admission_id: activeAdmission })).receipt : null
         const receipt = rawReceipt && 'admission_id' in rawReceipt ? rawReceipt : null
@@ -456,7 +469,7 @@ export class GatewaySessions {
             if (frame.event === 'snapshot') {
               const result = GatewaySessionResultSchema.parse(frame.data)
               if (!result.snapshot) return
-              if (result.replay_gap || result.snapshot.execution_generation > watch.snapshot.execution_generation) resetProjection()
+              if (result.replay_gap || !sameExecution(result.snapshot, watch.snapshot)) await resetProjection()
               await put('session_snapshot', { session: await this.view(base, result, watch.stream, target), replay_gap: result.replay_gap === true })
               await prompts(result.snapshot)
               if (!result.snapshot.running && !result.snapshot.pending.some((p) => p.status === 'queued' || p.status === 'started')) await finish()
@@ -490,7 +503,7 @@ export class GatewaySessions {
               if (data.authority_epoch !== watch.snapshot.authority_epoch) return
               if (Number(data.execution_generation) < watch.snapshot.execution_generation) return
               const firstClaim = !ran && data.running === true
-              if (Number(data.execution_generation) > watch.snapshot.execution_generation) resetProjection()
+              if (Number(data.execution_generation) > watch.snapshot.execution_generation) await resetProjection()
               watch.snapshot = { ...watch.snapshot, ...data }
               const claimed = runningAdmission(watch.snapshot)
               if (firstClaim && claimed) activeAdmission = claimed.admission_id
@@ -519,8 +532,24 @@ export class GatewaySessions {
             }
             else if (kind === 'session.usage') await meter(data)
             else if (kind === 'message.complete' && data.usage && typeof data.usage === 'object') await meter(data.usage as Row)
-            else if (kind === 'tool.start') await put('tool', { ...data, id: data.tool_id || data.tool_call_id, name: data.name || data.tool_name })
-            else if (kind === 'tool.complete') await put('tool_complete', { ...data, id: data.tool_id || data.tool_call_id, name: data.name || data.tool_name })
+            else if (kind === 'tool.start' || kind === 'tool.progress' || kind === 'tool.complete') {
+              if (event.session_id !== target.sid || event.replay_epoch !== undefined && event.replay_epoch !== watch.snapshot.replay_epoch) return
+              const id = str(data.tool_id) || str(data.tool_call_id)
+              const call = calls.findLast((call) => call.tid === id)
+              if (kind === 'tool.start') {
+                if (id && call) return
+                calls.push({ tid: id, name: data.name || data.tool_name, args: data.args ?? {}, done: false })
+                await put('tool', { ...data, id, name: data.name || data.tool_name })
+              } else if (kind === 'tool.progress') {
+                if (!id || !call || call.done || !watch.snapshot.running) return
+                call.progress = toolProgress({ ...data, message: typeof data.message === 'string' ? redactString(data.message, this.deps.redactEnabled()) : null })
+                await put('tool_progress', { id, progress: call.progress })
+              } else {
+                if (call?.done) return
+                if (call) Object.assign(call, { done: true, progress: null })
+                await put('tool_complete', { ...data, id, name: data.name || data.tool_name, progress: null })
+              }
+            }
             else if (kind === 'approval.request' || kind === 'clarify.request') await prompts({ ...watch.snapshot, prompts: [...watch.snapshot.prompts.filter((p) => p.prompt_id !== data.prompt_id), { ...data, kind: kind.split('.')[0] }] })
             else if (kind === 'approval.settled' || kind === 'clarify.settled') {
               await prompts({ ...watch.snapshot, prompts: watch.snapshot.prompts.filter((p) => p.prompt_id !== data.prompt_id) })
