@@ -64,8 +64,9 @@ try:
  command=status._read_process_cmdline(child.pid)
  assert status._looks_like_gateway_process(child.pid), command
  if os.environ['PROFILE']=='named':
-  assert not status._command_line_belongs_to_profile(command,home), 'fixture must reproduce the raw-profile refusal'
-  assert pause._gateway_on_home(str(home),set()) is None
+  # Agents before v0.22.3 refuse the raw inline line; v0.22.3 decodes its argv. Talaria's own decode is the ready() matrix.
+  native=status._command_line_belongs_to_profile(command,home)
+  assert pause._gateway_on_home(str(home),set())==(child.pid if native else None)
  plist=root/'gateway.plist'; plist.write_text('synthetic original service')
  old=subprocess.Popen([sys.executable,'-c','input()'],stdin=subprocess.PIPE,text=True)
  old_entry=dict(pid=old.pid,service_pid=old.pid)

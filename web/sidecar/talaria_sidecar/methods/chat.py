@@ -2222,9 +2222,9 @@ def register(registry) -> None:
     @registry.method("chat.commit_memory", requires_agent=False)
     def commit_memory_(ctx: CallContext, params: dict) -> dict:
         """Predecessor ``commit_session_memory``: flush the cached Agent's memory for a session the user just left.
-        Providers get the session's transcript and run under its profile's ``scoped_home``."""
+        Providers get the session's transcript and run under the ``scoped_home`` the Agent was built in, which v0.22.3
+        binds them to (like ``_release_agent``), not the request's ``profile_home``."""
         session_id = str(params.get("session_id") or "").strip()
-        home = profile_home_param(params)
         with _AGENT_CACHE_LOCK:
             cached = _AGENT_CACHE.get(session_id)
             with _RUNS_LOCK:
@@ -2235,7 +2235,7 @@ def register(registry) -> None:
                 return {"committed": False}
             _COMMITTING.append(agent)
         try:
-            with scoped_home(home):
+            with scoped_home(cached[2]):
                 commit(list(getattr(agent, "_session_messages", None) or []))
         except Exception as exc:  # noqa: BLE001
             log.warning("commit_memory_session() failed for session %s: %s", session_id, exc)

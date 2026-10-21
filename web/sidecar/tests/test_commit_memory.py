@@ -15,6 +15,7 @@ def test_commit_memory_hands_the_transcript_to_providers_in_the_session_profile(
     root = tmp_path / ".hermes"
     alpha = root / "profiles" / "alpha"
     alpha.mkdir(parents=True)
+    (root / "profiles" / "beta").mkdir()  # the request names beta; the Agent was built in alpha
     (alpha / ".env").write_text("ALPHA_ONLY=alpha\n")
     env = isolated_env(root)
     probe = Path(__file__).with_name("commit_memory_probe.py")

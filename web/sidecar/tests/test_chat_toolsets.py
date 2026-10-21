@@ -136,7 +136,10 @@ def test_disabled_toolsets_win_over_overrides_and_cached_agents(tmp_path) -> Non
         assert 'todo_list' not in result[path]['tools'], f'{path} re-enabled disabled todo: {result[path]}'
         assert 'read_file' in result[path]['tools']
         assert 'todo_list' not in json.dumps(result[path]['search'])
-        assert 'todo_list' in json.loads(result[path]['describe'])['not_found']
+        # v0.22.3 reports a registered tool absent from the session under errors, earlier Agents under not_found.
+        describe = json.loads(result[path]['describe'])
+        assert 'todo_list' not in describe.get('tools', {})
+        assert 'todo_list' in describe.get('not_found', []) or 'todo_list' in describe.get('errors', {})
     assert result['constructions'] == 3, 'a policy change must replace the cached Agent'
 
 
