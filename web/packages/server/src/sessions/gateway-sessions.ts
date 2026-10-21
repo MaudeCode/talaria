@@ -7,6 +7,7 @@ import type { SidecarLike, StreamFrame } from '../sidecar/client.js'
 import { redactNestedMessageContainers, redactText, publicToolFrame, redactString } from '../redact.js'
 import { str } from '../util.js'
 import { PendingPrompts } from './pending.js'
+import { wrapExportHtml } from './export.js'
 import { clarifyReply } from './pending.js'
 import type { SessionService } from './service.js'
 import { HttpFailure } from './service.js'
@@ -257,7 +258,7 @@ export class GatewaySessions {
     let content: string
     try {
       // The owner redacts HTML's structured transcript before rendering. A shell/text redactor corrupts its markup.
-      content = format === 'html' ? value.content : format === 'json'
+      content = format === 'html' ? wrapExportHtml(value.content) : format === 'json'
         ? JSON.stringify(redactNestedMessageContainers(JSON.parse(value.content) as unknown, redact), null, 2)
         : str(redactText(value.content, redact))
     } catch {
