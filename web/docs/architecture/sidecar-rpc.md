@@ -608,4 +608,3 @@ model mutations fence idle settlement before dispatch; every result releases tha
 and rechecks settlement through the ordered owner-event queue. Outcomes
 are observations in server memory, scoped by profile home, session, authority and replay
 epoch. They never write a second session or change the owner's canonical transcript.
-
