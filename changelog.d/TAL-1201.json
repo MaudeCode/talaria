@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Fast replies stream smoothly in Web: the chat redraws once per screen frame instead of once per token, and a reply in one chat no longer redraws the others.",
+      "highlight": false,
+      "components": ["web"]
+    }
+  ]
+}

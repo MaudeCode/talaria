@@ -1,0 +1,53 @@
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { act, renderHook } from '@testing-library/react'
+import { dispatch, resetStreamStoreForTests, subscribe, useLiveTurn } from './store'
+import { parseChatEvent } from '../contracts/sse'
+
+let frames: FrameRequestCallback[] = []
+const tick = () => { const run = frames; frames = []; for (const cb of run) cb(0) }
+
+function event(sessionId: string, name: string, data: unknown, seq: number) {
+  const parsed = parseChatEvent(name, JSON.stringify(data))
+  if (!parsed) throw new Error(`unparseable ${name}`)
+  dispatch({ type: 'event', sessionId, streamId: `${sessionId}-stream`, event: parsed, lastEventId: `${sessionId}-stream:${seq}`, now: seq })
+}
+const start = (sessionId: string) => dispatch({ type: 'start', sessionId, streamId: `${sessionId}-stream`, turnId: null, userMessageId: null, userText: 'hi', now: 0 })
+
+beforeEach(() => {
+  frames = []
+  vi.stubGlobal('requestAnimationFrame', (cb: FrameRequestCallback) => frames.push(cb))
+  vi.stubGlobal('cancelAnimationFrame', () => { frames = [] })
+  resetStreamStoreForTests()
+})
+afterEach(() => vi.unstubAllGlobals())
+
+describe('live-turn store notification', () => {
+  it('coalesces token frames into one notification per animation frame and notifies terminal frames immediately', () => {
+    start('a')
+    const listener = vi.fn()
+    const unsubscribe = subscribe(listener)
+    for (let i = 1; i <= 10; i++) event('a', 'token', { text: `t${i}` }, i)
+    expect(listener).not.toHaveBeenCalled()
+    tick()
+    expect(listener).toHaveBeenCalledTimes(1)
+
+    event('a', 'token', { text: 'last' }, 11)
+    event('a', 'done', {}, 12)
+    expect(listener).toHaveBeenCalledTimes(2)
+    tick()
+    expect(listener).toHaveBeenCalledTimes(2)
+    unsubscribe()
+  })
+
+  it('keeps the snapshot for one session unchanged while another session streams', () => {
+    start('a')
+    start('b')
+    let renders = 0
+    const { result } = renderHook(() => { renders++; return useLiveTurn('b') })
+    const before = result.current
+    const rendersBefore = renders
+    act(() => { event('a', 'token', { text: 'only a' }, 1); tick() })
+    expect(result.current).toBe(before)
+    expect(renders).toBe(rendersBefore)
+  })
+})

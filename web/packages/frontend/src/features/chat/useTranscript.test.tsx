@@ -121,7 +121,7 @@ it('paints retained output before delayed detail/status and reconnects once on A
     streams[1]!.event(parseChatEvent('token', JSON.stringify({ text: 'Already visible.' }))!, 'run-a:7')
     streams[1]!.event(parseChatEvent('token', JSON.stringify({ text: ' Unseen.' }))!, 'run-a:8')
   })
-  expect(result.current.live && liveText(result.current.live)).toBe('Already visible. Unseen.')
+  await waitFor(() => expect(result.current.live && liveText(result.current.live)).toBe('Already visible. Unseen.'))
 })
 
 
