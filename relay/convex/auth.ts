@@ -7,7 +7,7 @@ export async function revokeDevicesForSession(
   userId: string,
   sessionId: string,
   now: number,
-): Promise<void> {
+): Promise<number> {
   const devices = await ctx.db
     .query("devices")
     .withIndex("by_user_id_and_session_id", (query) =>
@@ -34,6 +34,7 @@ export async function revokeDevicesForSession(
       }
     }
   }
+  return devices.length;
 }
 
 export const acceptAppleSignIn = internalMutation({
