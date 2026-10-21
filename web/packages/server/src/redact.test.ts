@@ -1,4 +1,5 @@
 import { crc32 } from 'node:zlib'
+import { subscribe, unsubscribe } from 'node:diagnostics_channel'
 import { describe, expect, it } from 'vitest'
 import { mightContainSensitiveText, publicToolFrame, redactSensitive, redactSessionData, redactText } from './redact.js'
 import { MessageSchema } from '@maudecode/talaria-web-contracts'
@@ -537,6 +538,40 @@ describe('credential key length', () => {
 })
 
 describe('redactSensitive cost', () => {
+  it('preserves assignment boundaries and masks other credential families without equals (TAL-1029)', () => {
+    for (const [text, expected] of [
+      ['https://example.test/UPPERCASE_TOKEN_TEXT', 'https://example.test/UPPERCASE_TOKEN_TEXT'],
+      ['= https://bob:secret@example.test/', '= https://bob:***@example.test/'],
+      ['https://bob:secret@example.test/ =', 'https://bob:***@example.test/ ='],
+      ['API_KEY=secret PASSWORD="secret" TOKEN=\'secret\'', 'API_KEY=*** PASSWORD="***" TOKEN=\'***\''],
+      ['API_KEY=) API_KEY=secret API_KEY=) API_KEY=other', 'API_KEY=) API_KEY=*** API_KEY=) API_KEY=***'],
+      ['Authorization: Bearer secret', 'Authorization: Bearer ***'],
+      ['https://bob:secret@example.test/', 'https://bob:***@example.test/'],
+      ['ghp_abcdefghij0123456789', 'ghp_ab...6789'],
+      ['ghp_abc\x1b[1mdefghij0123456789', 'ghp_ab...6789'],
+      ['ghp_abc\ndefghij0123456789', 'ghp_ab...6789'],
+    ]) expect(redactSensitive(text!)).toBe(expected)
+  })
+
+  it('skips assignment-family scans when their required equals delimiter is absent (TAL-1029)', () => {
+    const scans: unknown[] = []
+    const onScan = (message: unknown): void => { scans.push(message) }
+    subscribe('talaria.redaction.assignment-scan', onScan)
+    try {
+      redactSensitive('API_KEY=secret API_KEY=)')
+      expect(scans).toContainEqual({ purpose: 'mask', characters: expect.any(Number) as unknown })
+      expect(scans).toContainEqual({ purpose: 'restore', characters: expect.any(Number) as unknown })
+      scans.length = 0
+      for (const size of [64 * 1024, 256 * 1024]) {
+        const text = `https://example.test/${'UPPERCASE_TOKEN_TEXT/'.repeat(Math.ceil(size / 21))}`.slice(0, size)
+        expect(redactSensitive(text)).toBe(text)
+      }
+      expect(scans).toEqual([])
+    } finally {
+      unsubscribe('talaria.redaction.assignment-scan', onScan)
+    }
+  })
+
   it('stays linear on long runs of scheme and identifier characters', () => {
     // A quadratic scan takes seconds on these inputs; a linear one takes milliseconds.
     // Unquoted runs, and many credential keys inside one long quoted argument.

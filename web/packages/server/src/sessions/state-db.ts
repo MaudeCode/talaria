@@ -334,6 +334,11 @@ function freshestActivity(lastActivityAt: string, lastMessage: string): string {
   return `MAX(COALESCE(${lastActivityAt}, 0), COALESCE(${lastMessage}, 0), COALESCE(s.started_at, 0))`
 }
 
+/** Stale Agent statistics can favor a non-covering index and read every message row. */
+function lastMessageTimestamp(indexed: boolean, alias = 'm'): string {
+  return `(SELECT MAX(${alias}.timestamp) FROM messages ${alias}${indexed ? ' INDEXED BY idx_messages_session' : ''} WHERE ${alias}.session_id = s.id)`
+}
+
 interface LocalLineage { owner: string; ids: string[]; context: string[]; rows: Dict[]; title: unknown }
 const LOCAL_POLICY_PREFIX = 'gateway.local_policy.v1:'
 
@@ -346,7 +351,7 @@ function localLineages(db: DatabaseSync, sid?: string): Map<string, LocalLineage
   const meta = db.prepare('SELECT value FROM state_meta WHERE key = ?')
   const fetch = db.prepare('SELECT * FROM sessions WHERE id IN (SELECT value FROM json_each(?))')
   const messageCols = tableColumns(db, 'messages')
-  const lastMessage = ['session_id', 'timestamp'].every((c) => messageCols.has(c)) ? '(SELECT MAX(m.timestamp) FROM messages m WHERE m.session_id = s.id)' : 'NULL'
+  const lastMessage = ['session_id', 'timestamp'].every((c) => messageCols.has(c)) ? lastMessageTimestamp(tableIndexes(db, 'messages').has('idx_messages_session')) : 'NULL'
   const activity = freshestActivity(cols.has('last_activity_at') ? 's.last_activity_at' : 'NULL', lastMessage)
   // Agent _CHAIN_STEP_SQL prefers a compression child, then a live child, then recency and id.
   const children = db.prepare(`SELECT s.* FROM sessions s WHERE s.parent_session_id = ? ORDER BY CASE WHEN s.end_reason = 'compression' THEN 0 WHEN s.ended_at IS NULL THEN 1 ELSE 2 END, ${activity} DESC, s.started_at DESC, s.id DESC`)
@@ -546,7 +551,7 @@ export function readImportableAgentSessionRowBatches(dbPath: string, queries: Re
             ? "(SELECT COUNT(*) FROM (SELECT 1 FROM messages um WHERE um.session_id = s.id AND um.role = 'user' LIMIT 2))"
             : "EXISTS(SELECT 1 FROM messages um WHERE um.session_id = s.id AND LOWER(um.role) = 'user')"
         } else userCountExpr = actualCountExpr
-        baseLastActivityExpr = messagesHasTimestamp ? '(SELECT MAX(lm.timestamp) FROM messages lm WHERE lm.session_id = s.id)' : 'NULL'
+        baseLastActivityExpr = messagesHasTimestamp ? lastMessageTimestamp(messagesIndexPresent, 'lm') : 'NULL'
       } else {
         actualCountExpr = `COUNT(m.${countCol})`
         userCountExpr = messageCols.has('role') ? "EXISTS(SELECT 1 FROM messages um WHERE um.session_id = s.id AND LOWER(um.role) = 'user')" : `COUNT(m.${countCol})`
@@ -596,7 +601,7 @@ export function readImportableAgentSessionRowBatches(dbPath: string, queries: Re
         candidateOrder = 'ORDER BY COALESCE(lm.last_message_at, s.started_at) DESC, s.started_at DESC'
       } else if (messagesHasSessionId && messagesHasTimestamp) {
         orderBy = messagesIndexPresent ? 'ORDER BY COALESCE(last_activity, s.started_at) DESC' : 'ORDER BY COALESCE(MAX(m.timestamp), s.started_at) DESC'
-        candidateOrder = 'ORDER BY COALESCE((SELECT MAX(mx.timestamp) FROM messages mx WHERE mx.session_id = s.id), s.started_at) DESC, s.started_at DESC'
+        candidateOrder = `ORDER BY COALESCE(${lastMessageTimestamp(messagesIndexPresent, 'mx')}, s.started_at) DESC, s.started_at DESC`
       }
       const selectSql = `SELECT s.id, s.title, s.model, s.message_count, s.started_at, s.source, ${['model_config', 'session_source', 'user_id', 'chat_id', 'chat_type', 'thread_id', 'session_key', 'origin_chat_id', 'origin_user_id', 'platform', 'parent_session_id', 'ended_at', 'end_reason'].map(col).join(', ')}, ${actualCountExpr} AS actual_message_count, ${userCountExpr} AS actual_user_message_count, ${lastActivityExpr} AS last_activity`
       let raw: Dict[]
@@ -746,13 +751,18 @@ export function latestCronSessionInfo(dbPath: string, jobIds: Iterable<string>, 
     const admissions = cronAdmissionJobIds(db, true)
     const count = cols.has('message_count') ? 's.message_count' : 'NULL'
     const order = cols.has('started_at') ? 'COALESCE(s.started_at, 0) DESC, s.id DESC' : 's.id DESC'
-    const rows = db.prepare(`SELECT s.id AS id, ${count} AS message_count FROM sessions s WHERE LOWER(COALESCE(s.source, '')) = 'cron' ORDER BY ${order}`).all() as { id: unknown; message_count: unknown }[]
-    for (const row of rows) {
-      const sid = typeof row.id === 'string' ? row.id : ''
-      const owner = cronSessionJobId(sid, ids, admissions)
-      if (owner === null || !wanted.has(owner) || found.has(owner)) continue
-      found.set(owner, { session_id: sid, message_count: Number.isFinite(Number(row.message_count)) && row.message_count !== null ? Math.trunc(Number(row.message_count)) : null })
-      if (found.size === wanted.size) break
+    const indexed = tableIndexes(db, 'sessions').has('idx_sessions_source_id') ? ' INDEXED BY idx_sessions_source_id' : ''
+    const query = db.prepare(`SELECT s.id AS id, ${count} AS message_count FROM sessions s${indexed} WHERE s.source = 'cron' ORDER BY ${order} LIMIT ? OFFSET ?`)
+    const batchSize = wanted.size * 8
+    // Stream older rows only if needed: a busy job must not hide another job's completion link.
+    for (const [limit, offset] of [[batchSize, 0], [-1, batchSize]] as const) {
+      for (const row of query.iterate(limit, offset) as Iterable<{ id: unknown; message_count: unknown }>) {
+        const sid = typeof row.id === 'string' ? row.id : ''
+        const owner = cronSessionJobId(sid, ids, admissions)
+        if (owner === null || !wanted.has(owner) || found.has(owner)) continue
+        found.set(owner, { session_id: sid, message_count: Number.isFinite(Number(row.message_count)) && row.message_count !== null ? Math.trunc(Number(row.message_count)) : null })
+        if (found.size === wanted.size) return found
+      }
     }
     return found
   } catch {
@@ -802,30 +812,41 @@ function sessionSources(db: DatabaseSync, cols: Set<string>, ids: string[]): Map
     for (const id of aliases) if (typeof id === 'string' && wanted.has(id) && !receiptOwners.has(id)) receiptOwners.set(id, owner)
   }
   if (tables.has('state_meta')) {
-    const read = db.prepare('SELECT value FROM state_meta WHERE key = ?')
+    const prefixes = [LOCAL_POLICY_PREFIX, 'gateway.retired_session.v1.', 'gateway.api.binding.v1.']
+    const keys = candidates.flatMap((owner) => prefixes.map((prefix) => `${prefix}${owner}`))
+    const metadata = new Map<string, string>()
+    const read = db.prepare('SELECT key, value FROM state_meta WHERE key IN (SELECT value FROM json_each(?))')
+    for (let i = 0; i < keys.length; i += 400) {
+      for (const row of read.all(JSON.stringify(keys.slice(i, i + 400))) as { key: string; value: string }[]) metadata.set(row.key, row.value)
+    }
+    // Keep receipt precedence in candidate order, independent of SQLite's key ordering.
     for (const owner of candidates) {
-      const raw = read.get(`${LOCAL_POLICY_PREFIX}${owner}`) as { value: string } | undefined
-      if (raw) rememberPolicy(owner, policyValue(raw.value))
-      if (read.get(`gateway.retired_session.v1.${owner}`)) retired.add(owner)
-      if (read.get(`gateway.api.binding.v1.${owner}`)) bindings.add(owner)
+      const key = `${LOCAL_POLICY_PREFIX}${owner}`
+      if (metadata.has(key)) rememberPolicy(owner, policyValue(metadata.get(key)))
+      if (metadata.has(`gateway.retired_session.v1.${owner}`)) retired.add(owner)
+      if (metadata.has(`gateway.api.binding.v1.${owner}`)) bindings.add(owner)
     }
   }
   const ledgerIds = new Set<string>()
+  const ledgerCandidates = JSON.stringify(candidates)
   for (const [table, column] of [['session_admissions', 'target_session_id'], ['worker_executions', 'session_id']] as const) {
-    if (!tables.has(table)) continue
+    if (!tables.has(table) || !candidates.length) continue
     const hasLineage = tableColumns(db, table).has('lineage_json')
     for (let i = 0; i < candidates.length; i += 400) {
       const chunk = candidates.slice(i, i + 400)
       const marks = chunk.map(() => '?').join(',')
-      const linked = hasLineage ? ` OR EXISTS (SELECT 1 FROM json_each(lineage_json) WHERE value IN (${marks}))` : ''
-      const found = db.prepare(`SELECT ${column} AS id, ${hasLineage ? 'lineage_json' : 'NULL AS lineage_json'} FROM ${table} WHERE ${column} IN (${marks})${linked}`).all(...chunk, ...(hasLineage ? chunk : [])) as { id: string; lineage_json: string | null }[]
-      for (const row of found) {
+      for (const row of db.prepare(`SELECT ${column} AS id FROM ${table} WHERE ${column} IN (${marks})`).all(...chunk) as { id: string }[]) ledgerIds.add(row.id)
+    }
+    if (hasLineage) {
+      // Bind the complete set once so unrelated history never crosses into JavaScript, even across candidate chunks.
+      const scan = db.prepare(`SELECT ${column} AS id, lineage_json FROM ${table} WHERE lineage_json IS NOT NULL AND
+        (${column} IN (SELECT value FROM json_each(?)) OR EXISTS
+          (SELECT 1 FROM json_each(lineage_json) WHERE value IN (SELECT value FROM json_each(?))))`)
+      for (const row of scan.iterate(ledgerCandidates, ledgerCandidates) as Iterable<{ id: string; lineage_json: string }>) {
+        const lineage: unknown = JSON.parse(row.lineage_json)
+        if (!Array.isArray(lineage) || !lineage.every((v) => typeof v === 'string')) throw new Error('Unreadable Agent admission lineage')
         ledgerIds.add(row.id)
-        if (row.lineage_json !== null) {
-          const lineage: unknown = JSON.parse(row.lineage_json)
-          if (!Array.isArray(lineage) || !lineage.every((v) => typeof v === 'string')) throw new Error('Unreadable Agent admission lineage')
-          for (const sid of lineage) ledgerIds.add(sid)
-        }
+        for (const sid of lineage) ledgerIds.add(sid)
       }
     }
   }
@@ -841,7 +862,7 @@ function sessionSources(db: DatabaseSync, cols: Set<string>, ids: string[]): Map
       rememberPolicy(owner, policy)
     }
   }
-  const kanban = new Set(kanbanOwnedIds(db, cols, ids.filter((id) => rows.has(id))))
+  const kanban = new Set(kanbanOwnedIds(db, cols, new Map([...lineages].filter(([id]) => rows.has(id)))))
   for (const id of ids) {
     const row = rows.get(id)
     let source = kanban.has(id) ? 'kanban' : str(row?.source)
@@ -951,18 +972,16 @@ function resumeLineageWalker(db: DatabaseSync, cols: Set<string>): (sid: string)
  * TAL-793 (Agent `is_kanban_owned_session`): the `ids` whose compression lineage has a `kanban` `source` or
  * `created_source` (schema v31; `source` alone decides before it), a Kanban worker's transcript only its dispatcher continues.
  */
-function kanbanOwnedIds(db: DatabaseSync, cols: Set<string>, ids: string[]): string[] {
-  if (!ids.length) return []
-  const walk = resumeLineageWalker(db, cols)
-  const lineages = ids.map(walk)
-  const segments = [...new Set(lineages.flat())]
+function kanbanOwnedIds(db: DatabaseSync, cols: Set<string>, lineages: Map<string, string[]>): string[] {
+  if (!lineages.size) return []
+  const segments = [...new Set([...lineages.values()].flat())]
   const match = cols.has('created_source') ? "(source = 'kanban' OR created_source = 'kanban')" : "source = 'kanban'"
   const kanban = new Set<string>()
   for (let i = 0; i < segments.length; i += 500) {
     const chunk = segments.slice(i, i + 500)
     for (const row of db.prepare(`SELECT id FROM sessions WHERE id IN (${chunk.map(() => '?').join(',')}) AND ${match}`).all(...chunk) as { id: string }[]) kanban.add(row.id)
   }
-  return ids.filter((_, i) => lineages[i]!.some((sid) => kanban.has(sid)))
+  return [...lineages].filter(([, lineage]) => lineage.some((sid) => kanban.has(sid))).map(([id]) => id)
 }
 
 /** Python `state_db_has_session`: true only when `sid` is a row of the sessions table; a missing or unreadable db is false. */
@@ -974,6 +993,24 @@ export function stateDbHasSession(dbPath: string, sid: string): boolean {
   try {
     if (!tableColumns(db, 'sessions').has('id')) return false
     return db.prepare('SELECT 1 FROM sessions WHERE id = ? LIMIT 1').get(id) !== undefined
+  } catch {
+    return false
+  } finally {
+    finishStateDbRead(db)
+  }
+}
+
+/** True when a session has a live message; never materializes its transcript or compaction archive. */
+export function stateDbSessionHasMessages(dbPath: string, sid: string): boolean {
+  const id = sid.trim()
+  if (!id || !existsSync(dbPath)) return false
+  let db: DatabaseSync
+  try { db = openStateDbReadonly(dbPath) } catch { return false }
+  try {
+    const cols = tableColumns(db, 'messages')
+    if (!cols.has('session_id')) return false
+    const active = cols.has('active') ? ' AND (active IS NULL OR active != 0)' : ''
+    return db.prepare(`SELECT 1 FROM messages WHERE session_id = ?${active} LIMIT 1`).get(id) !== undefined
   } catch {
     return false
   } finally {
@@ -1143,7 +1180,7 @@ export async function agentSessionRowsExistingAsync(dbPath: string, sessionIds: 
  * TAL-1162: and the transcript reads behind turn history, settlement, and the detail's page tail.
  * TAL-1256: shared cron admission identities and completion links use this same dispatcher.
  */
-export const SESSION_READS = { stateDbCronJobIds, latestCronSessionInfo, stateDbLocalTargetRead, stateDbSessionRow, stateDbSessionMessages, stateDbCompressionLineage, stateDbSessionRead, stateDbSessionTailRead, stateDbSettlementRead }
+export const SESSION_READS = { stateDbHasSession, stateDbSessionHasMessages, insightsSessionRows, countConversationRounds, stateDbTailToolContent, stateDbLineageReport, stateDbCronJobIds, latestCronSessionInfo, stateDbLocalTargetRead, stateDbSessionRow, stateDbSessionMessages, stateDbCompressionLineage, stateDbSessionRead, stateDbSessionTailRead, stateDbSettlementRead }
 type SessionReadName = keyof typeof SESSION_READS
 
 /**
@@ -1513,7 +1550,7 @@ function lineageReportRow(row: Dict, role: 'tip' | 'hidden_segment' | 'child_ses
   }
 }
 
-const emptyLineageReport = (sid: string): Dict => ({
+export const emptyLineageReport = (sid: string): Dict => ({
   mutation: false, found: false, session_id: sid, lineage_key: sid, tip_session_id: sid, total_segments: 0, materialized_segments: 0, segments: [], children: [], manual_review: false,
 })
 
@@ -1612,13 +1649,29 @@ export function insightsSessionRows(dbPath: string, cutoff: number): Dict[] {
     const hasMessages = messageCols.has('session_id') && messageCols.has('timestamp')
     const indexed = hasMessages && tableIndexes(db, 'messages').has('idx_messages_session')
     // Without the index a per-session lookup scans messages once per session; one grouped scan replaces it.
-    const lastMessage = !hasMessages ? 'NULL' : indexed ? '(SELECT MAX(m.timestamp) FROM messages m WHERE m.session_id = s.id)' : 'lm.last_message_at'
-    const join = hasMessages && !indexed ? 'LEFT JOIN (SELECT session_id, MAX(timestamp) AS last_message_at FROM messages GROUP BY session_id) lm ON lm.session_id = s.id' : ''
+    const lastMessage = !hasMessages ? 'NULL' : indexed ? lastMessageTimestamp(indexed) : 'lm.last_message_at'
+    const messageCte = hasMessages && !indexed ? 'latest_messages AS MATERIALIZED (SELECT session_id, MAX(timestamp) AS last_message_at FROM messages GROUP BY session_id)' : ''
+    const join = messageCte ? 'LEFT JOIN latest_messages lm ON lm.session_id = s.id' : ''
     const source = cols.has('source') ? "LOWER(COALESCE(s.source, '')) != 'webui'" : '1'
-    const rows = db.prepare(`SELECT * FROM (SELECT s.id AS id, ${col('model')} AS model, ${col('message_count')} AS message_count, ${col('input_tokens')} AS input_tokens,
+    const activityIndexed = cols.has('last_activity_at') && tableIndexes(db, 'sessions').has('idx_sessions_effective_activity')
+    const activity = activityIndexed ? freshestActivity('s.last_activity_at', `MAX(COALESCE(${col('ended_at')}, 0), COALESCE(${lastMessage}, 0))`)
+      : `MAX(COALESCE(s.started_at, 0), COALESCE(${col('ended_at')}, 0), COALESCE(${lastMessage}, 0))`
+    // The heartbeat can lag a message or end time; union their candidates before the exact activity check.
+    const candidates = activityIndexed ? [
+      'SELECT s.id FROM sessions s INDEXED BY idx_sessions_effective_activity WHERE COALESCE(s.last_activity_at, s.started_at) >= ?',
+      'SELECT id FROM sessions WHERE started_at >= ?',
+      ...(cols.has('ended_at') ? ['SELECT id FROM sessions WHERE ended_at >= ?'] : []),
+      ...(hasMessages ? [indexed ? 'SELECT DISTINCT session_id AS id FROM messages WHERE timestamp >= ?' : 'SELECT session_id AS id FROM latest_messages WHERE last_message_at >= ?'] : []),
+    ] : []
+    const ctes = [messageCte, ...(activityIndexed ? [`candidates AS MATERIALIZED (SELECT DISTINCT id FROM (${candidates.join(' UNION ALL ')}))`] : [])].filter(Boolean)
+    const withClause = ctes.length ? `WITH ${ctes.join(', ')} ` : ''
+    // CROSS JOIN keeps the candidate IDs ahead of the expensive per-session freshness projection.
+    const from = activityIndexed ? 'candidates c CROSS JOIN sessions s ON s.id = c.id' : 'sessions s'
+    const ordering = activityIndexed ? ' ORDER BY COALESCE(s.last_activity_at, s.started_at) DESC' : ''
+    const rows = db.prepare(`${withClause}SELECT * FROM (SELECT s.id AS id, ${col('model')} AS model, ${col('message_count')} AS message_count, ${col('input_tokens')} AS input_tokens,
       ${col('output_tokens')} AS output_tokens, ${col('cache_read_tokens')} AS cache_read_tokens, ${col('estimated_cost_usd')} AS estimated_cost_usd, s.started_at AS started_at,
-      MAX(COALESCE(s.started_at, 0), COALESCE(${col('ended_at')}, 0), COALESCE(${lastMessage}, 0)) AS last_activity
-      FROM sessions s ${join} WHERE ${source}) WHERE last_activity >= ?`).all(cutoff) as Dict[]
+      ${activity} AS last_activity
+      FROM ${from} ${join} WHERE ${source}${ordering}) WHERE last_activity >= ?`).all(...Array<number>(candidates.length + 1).fill(cutoff)) as Dict[]
     return rows.map((r) => ({
       session_id: str(r.id), model: r.model, message_count: r.message_count, input_tokens: r.input_tokens, output_tokens: r.output_tokens,
       cache_read_tokens: r.cache_read_tokens, estimated_cost: r.estimated_cost_usd, created_at: r.started_at, updated_at: r.last_activity,

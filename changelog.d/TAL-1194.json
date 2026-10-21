@@ -1,0 +1,12 @@
+{
+  "entries": [
+    {
+      "category": "Changed",
+      "summary": "Session actions make fewer repeated database reads, especially for long conversations.",
+      "highlight": false,
+      "components": [
+        "web"
+      ]
+    }
+  ]
+}

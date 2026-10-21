@@ -12,10 +12,11 @@ import { SessionSchema } from '@maudecode/talaria-web-contracts'
 import { str } from '../util.js'
 import { Session } from './session.js'
 import { recordBackgroundUpdate } from './background-updates.js'
-import { agentSessionRowsExisting, cheapChangeFingerprint, latestCronSessionInfo, isCliSessionRowVisible, normalizeAgentSessionSource, projectAgentSessionRows, readImportableAgentSessionRows, stateDbCompressionLineage, stateDbHasSession, stateDbLineageReport, stateDbSessionRead, stateDbSessionSources, type ReadRowsOptions } from './state-db.js'
+import { agentSessionRowsExisting, cheapChangeFingerprint, insightsSessionRows, latestCronSessionInfo, isCliSessionRowVisible, normalizeAgentSessionSource, projectAgentSessionRows, readImportableAgentSessionRows, stateDbCompressionLineage, stateDbHasSession, stateDbLineageReport, stateDbSessionRead, stateDbSessionSources, type ReadRowsOptions } from './state-db.js'
 import agentSchema from '../test/fixtures/canonical-ownership.json' with { type: 'json' }
 import cronSchema from '../test/fixtures/cron-sessions.json' with { type: 'json' }
 import { MESSAGING_SOURCES } from './source-kind.js'
+import type { CliSessionRead } from './cli-sessions.js'
 import { GatewayWatcher, snapshotHash } from './gateway-watcher.js'
 import { capRecentCliSessions, keepLatestMessagingSessionPerSource, mergeCliSidebarMetadata, withOwnerLocks, type GatewayIdentity } from './list.js'
 
@@ -418,7 +419,7 @@ describe('state.db projection', () => {
     const before = cheapChangeFingerprint(dbPath)
     expect(before).not.toBeNull()
     expect(cheapChangeFingerprint(dbPath)).toBe(before)
-    const watcher = new GatewayWatcher('default', s.state, { now: () => Date.now() / 1000, log: () => undefined, pollIntervalMs: 50 })
+    const watcher = new GatewayWatcher('default', s.state, { rows: (profile) => s.deps.cliSessions.read(profile), now: () => Date.now() / 1000, log: () => undefined, pollIntervalMs: 50 })
     const sub = watcher.subscribe()
     expect(await watcher.pollOnce()).toBe(true)
     const first = await sub.next(AbortSignal.timeout(500))
@@ -438,6 +439,63 @@ describe('state.db projection', () => {
     expect(sub.ended).toBe(true)
     expect(await watcher.subscribe().next()).toBeNull()
     expect(snapshotHash([{ session_id: 'b', updated_at: 1 }, { session_id: 'a', updated_at: 2 }])).toBe(snapshotHash([{ session_id: 'a', updated_at: 2 }, { session_id: 'b', updated_at: 1 }]))
+  })
+
+  it('keeps parity reads, failed-read retries and slow-consumer drops with shared rows', async () => {
+    let now = 100
+    const read: CliSessionRead = { rows: [{ session_id: 'shared', title: 'Shared', source_tag: 'cli', message_count: 1, created_at: 1, updated_at: 2 }], truncated: new Set(), buildSucceeded: true, storage: { state: 'ok', reason: null } }
+    const rows = vi.fn(() => Promise.resolve(read))
+    const watcher = new GatewayWatcher('default', s.state, { rows, now: () => now, log: () => undefined })
+    const sub = watcher.subscribe()
+    try {
+      expect(await watcher.pollOnce()).toBe(true)
+      expect((await sub.next())?.sessions).toEqual([{ session_id: 'shared', title: 'Shared', model: null, message_count: 1, created_at: 1, updated_at: 2, source: 'cli', raw_source: null, session_source: null, source_label: null }])
+      now += 299
+      expect(await watcher.pollOnce()).toBe(false)
+      expect(rows).toHaveBeenCalledTimes(1)
+      now += 1
+      expect(await watcher.pollOnce()).toBe(true)
+      expect(rows).toHaveBeenCalledTimes(2)
+      expect(await sub.next(AbortSignal.timeout(20))).toBeNull()
+      expect(sub.ended).toBe(false)
+      now += 300
+      rows.mockRejectedValueOnce(new Error('synthetic read failure'))
+      expect(await watcher.pollOnce()).toBe(false)
+      rows.mockResolvedValueOnce({ ...read, rows: [], storage: { state: 'unavailable', reason: 'read_failed' } })
+      expect(await watcher.pollOnce()).toBe(false)
+      expect(await watcher.pollOnce()).toBe(true)
+      expect(rows).toHaveBeenCalledTimes(5)
+      now += 300
+      rows.mockResolvedValueOnce({ ...read, rows: [], storage: { state: 'outdated', reason: 'missing_source_column' } })
+      expect(await watcher.pollOnce()).toBe(true)
+      expect((await sub.next())?.sessions).toEqual([])
+      for (let count = 2; count <= 12; count++) {
+        now += 300
+        rows.mockResolvedValueOnce({ ...read, rows: [{ ...read.rows[0], message_count: count }] })
+        expect(await watcher.pollOnce()).toBe(true)
+      }
+      expect(watcher.hasSubscribers()).toBe(false)
+      expect(await sub.next()).toBeNull()
+      expect(sub.ended).toBe(true)
+    } finally { sub.close(); watcher.stop() }
+  })
+
+  it('publishes no shared rows after stopping an in-flight poll', async () => {
+    let release!: (read: CliSessionRead) => void
+    const rows = vi.fn(() => new Promise<CliSessionRead>((resolve) => { release = resolve }))
+    const watcher = new GatewayWatcher('default', s.state, { rows, now: () => 100, log: () => undefined })
+    const sub = watcher.subscribe()
+    const poll = watcher.pollOnce()
+    try {
+      await vi.waitFor(() => { expect(rows).toHaveBeenCalledTimes(1) })
+      expect(await watcher.pollOnce()).toBe(false)
+      watcher.stop()
+      expect(await sub.next()).toBeNull()
+      release({ rows: [{ session_id: 'late', message_count: 1 }], truncated: new Set(), buildSucceeded: true, storage: { state: 'ok', reason: null } })
+      expect(await poll).toBe(false)
+      expect(await sub.next(AbortSignal.timeout(20))).toBeNull()
+      expect(await watcher.subscribe().next()).toBeNull()
+    } finally { sub.close(); watcher.stop() }
   })
 
   it('serves the standalone gateway stream and its probe, never with Connection: close', async () => {
@@ -983,10 +1041,82 @@ describe('indexed sidebar window (TAL-1163)', () => {
     const legacy = agentDb(name.replaceAll(' ', '-'), ddl)
     for (const [pass, opts] of [['interactive', interactive], ['cron', cron]] as const) {
       const before = read(legacy, opts)
-      expect(before.sql).toContain('ORDER BY COALESCE((SELECT MAX(mx.timestamp) FROM messages mx WHERE mx.session_id = s.id), s.started_at) DESC')
+      expect(before.sql).toContain('ORDER BY COALESCE((SELECT MAX(mx.timestamp) FROM messages mx INDEXED BY idx_messages_session WHERE mx.session_id = s.id), s.started_at) DESC')
       expect(before.ids).toEqual(expected[pass])
       expect(read(indexed, opts).rows).toEqual(before.rows)
     }
+  })
+})
+
+describe('remaining indexed readers (TAL-1188)', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'tal-1188-plans-'))
+  afterAll(() => { rmSync(dir, { recursive: true, force: true }) })
+
+  it('bounds cron result batches, uses the source index, and retains infrequent jobs', () => {
+    const path = join(dir, 'cron.db')
+    const db = new DatabaseSync(path)
+    db.exec(agentSchema.schema.join('\n'))
+    insertSession(db, { id: 'cron_rare_1', source: 'cron', started_at: 1 })
+    for (let i = 0; i < 100; i += 1) insertSession(db, { id: `cron_hot_${i}`, source: 'cron', started_at: i + 2 })
+    const prepare = vi.spyOn(DatabaseSync.prototype, 'prepare')
+    let sql: string
+    try {
+      expect(latestCronSessionInfo(path, ['hot', 'rare'], ['hot', 'rare'])).toEqual(new Map([
+        ['hot', { session_id: 'cron_hot_99', message_count: 0 }], ['rare', { session_id: 'cron_rare_1', message_count: 0 }],
+      ]))
+      sql = prepare.mock.calls.map(([sql]) => sql).find((sql) => sql.includes('AS message_count FROM sessions s'))!
+    } finally { prepare.mockRestore() }
+    try {
+      const plan = db.prepare(`EXPLAIN QUERY PLAN ${sql}`).all(...Array<null>(sql.split('?').length - 1).fill(null)) as { detail: string }[]
+      expect(plan.map((r) => r.detail).join('\n')).toMatch(/USING INDEX idx_sessions_source(_id)?/)
+      expect(sql).toContain('LIMIT')
+    } finally { db.close() }
+  })
+
+  it.each(['indexed', 'no-message-index', 'legacy'])('keeps activity beyond a stale heartbeat on %s schemas', (schema) => {
+    const path = join(dir, `insights-stale-${schema}.db`)
+    const db = new DatabaseSync(path)
+    db.exec(agentSchema.schema.join('\n'))
+    for (const [id, source, started_at, messageAt, heartbeat, endedAt] of [
+      ['heartbeat', 'cli', 1, 950, 1000, null],
+      ['message', 'telegram', 1, 1000, 800, null],
+      ['end', 'cron', 1, 2, 800, 1100],
+      ['null-heartbeat', 'cli', 1, 1000, null, null],
+      ['start', 'cli', 1000, 1001, 800, null],
+      ['old', 'cli', 1, 2, 800, 850],
+      ['webui', 'webui', 1, 1000, 1000, null],
+    ] as const) {
+      insertSession(db, { id, source, started_at, messages: [['user', messageAt]] })
+      db.prepare('UPDATE sessions SET last_activity_at = ?, ended_at = ? WHERE id = ?').run(heartbeat, endedAt, id)
+    }
+    if (schema === 'no-message-index') db.exec('DROP INDEX idx_messages_session')
+    if (schema === 'legacy') db.exec('DROP INDEX idx_sessions_effective_activity; ALTER TABLE sessions DROP COLUMN last_activity_at')
+    db.close()
+    const rows = insightsSessionRows(path, 900)
+    expect(new Map(rows.map((row) => [row.session_id, row.updated_at]))).toEqual(new Map([
+      ['heartbeat', schema === 'legacy' ? 950 : 1000], ['message', 1000], ['end', 1100], ['null-heartbeat', 1000], ['start', 1001],
+    ]))
+    expect(rows).toHaveLength(5)
+  })
+
+  it('range-scans the activity index before checking message freshness', () => {
+    const path = join(dir, 'insights.db')
+    const db = new DatabaseSync(path)
+    db.exec(agentSchema.schema.join('\n'))
+    insertSession(db, { id: 'recent', source: 'cli', started_at: 1, messages: [['user', 1050]] })
+    insertSession(db, { id: 'old', source: 'cli', started_at: 1, messages: [['user', 2]] })
+    db.exec("UPDATE sessions SET last_activity_at = 1000 WHERE id = 'recent'")
+    const prepare = vi.spyOn(DatabaseSync.prototype, 'prepare')
+    let sql: string
+    try {
+      expect(insightsSessionRows(path, 900)).toMatchObject([{ session_id: 'recent', updated_at: 1050 }])
+      sql = prepare.mock.calls.map(([sql]) => sql).find((sql) => sql.includes('AS last_activity') && sql.includes('AS estimated_cost_usd'))!
+    } finally { prepare.mockRestore() }
+    try {
+      const plan = db.prepare(`EXPLAIN QUERY PLAN ${sql}`).all(...Array<number>(sql.split('?').length - 1).fill(900)) as { detail: string }[]
+      expect(plan.map((r) => r.detail).join('\n')).toContain('SEARCH s USING INDEX idx_sessions_effective_activity')
+      expect(plan.some((r) => /^SCAN s(?: |$)/.test(r.detail))).toBe(false)
+    } finally { db.close() }
   })
 })
 

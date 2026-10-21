@@ -10,7 +10,7 @@ import type { RequestContext } from '../http/context.js'
 import { activeProfileName, ensureTrustedAuthSession, sessionCanManageServer } from '../auth/gate.js'
 import { currentChatReadiness, HttpFailure } from '../sessions/service.js'
 import { SessionNotFound } from '../sessions/store.js'
-import { insightsSessionRows } from '../sessions/state-db.js'
+import { stateDbSessionReadAsync } from '../sessions/state-db.js'
 import { ConfigUnavailable, type Config, type Dict } from '../config/agent-config.js'
 import { SidecarError } from '../sidecar/client.js'
 import { createPrompt, deletePrompt, externalNotesEnabled, loadPrompts, readMemory, writeMemory } from '../tools/memory.js'
@@ -529,7 +529,7 @@ export const toolsRouter = os.router({
   insights: os.insights.handler(({ input, context: { ctx } }) => run(async () => {
     let entries: Dict[] = []
     try { entries = (await ctx.deps.sessionStore.readIndexEntries()) } catch { entries = [] }
-    return buildInsights(entries, input.days, ctx.deps.nowSeconds(), (cutoff) => insightsSessionRows(join(home(ctx), 'state.db'), cutoff)) as never
+    return buildInsights(entries, input.days, ctx.deps.nowSeconds(), (cutoff) => stateDbSessionReadAsync([], 'insightsSessionRows', join(home(ctx), 'state.db'), cutoff)) as never
   })),
   logs: os.logs.handler(({ input, context: { ctx } }) => run(() => readLogTail(home(ctx), input.file, input.tail) as never)),
   ops: {

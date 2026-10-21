@@ -1563,7 +1563,7 @@ describe('tools helpers', () => {
     expect(status(true, ids({ raw_source: 'home_assistant', platform: 'home_assistant' }), { gateway_state: { nested: true } })).toMatchObject({ platforms: [{ name: 'home_assistant', label: 'Home_Assistant' }], health: { gateway_state: null } })
   })
 
-  it('window limiter, toggle list, mcp summary, project context', () => {
+  it('window limiter, toggle list, mcp summary, project context', async () => {
     let t = 0
     const limiter = new WindowLimiter(60, 2, () => t)
     expect(limiter.limited('a')).toBe(false)
@@ -1577,7 +1577,7 @@ describe('tools helpers', () => {
     expect(serverSummary('s', { command: 'run', env: { SECRET: 'x' } }, { connected: true, tools: [1, 2] })).toMatchObject({ transport: 'stdio', active: true, status: 'active', tool_count: 2, env: { SECRET: '••••••' } })
     expect(readProjectContext(null)).toMatchObject({ content: '', path: '' })
     const now = 1_760_000_000
-    const insights = buildInsights([{ created_at: now - 100, updated_at: now - 50, input_tokens: 10, output_tokens: 5, cache_read_tokens: 5, estimated_cost: '$0.5', message_count: 3, model: 'm' }, { created_at: now - 10 * 86_400 * 4 }], '3', now)
+    const insights = await buildInsights([{ created_at: now - 100, updated_at: now - 50, input_tokens: 10, output_tokens: 5, cache_read_tokens: 5, estimated_cost: '$0.5', message_count: 3, model: 'm' }, { created_at: now - 10 * 86_400 * 4 }], '3', now)
     expect(insights).toMatchObject({ period_days: 3, total_sessions: 1, total_messages: 3, total_tokens: 15, total_cost: 0.5, total_cache_hit_percent: 33 })
     expect((insights.models as Json[])[0]).toMatchObject({ model: 'm', sessions: 1, session_share: 100, cost_share: 100 })
   })

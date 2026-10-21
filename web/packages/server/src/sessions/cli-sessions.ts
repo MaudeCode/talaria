@@ -48,6 +48,8 @@ export interface CliLoadOptions {
 export interface CliSessionRead {
   rows: Dict[]
   truncated: ReadonlySet<string>
+  /** False when row metadata could not be built, independently of SQLite storage health. */
+  buildSucceeded: boolean
   /** TAL-785: whether state.db could serve the rows; a corrupt or outdated one explains an empty Agent list. */
   storage: AgentStorage
 }
@@ -63,7 +65,7 @@ type QueryResult = Dict[] | Error
 type QueryResults = QueryResult[] | null | Error
 
 export class CliSessionSource {
-  private readonly cache = new Map<string, { key: string; until: number; rows: Dict[]; truncated: ReadonlySet<string>; storage: AgentStorage }>()
+  private readonly cache = new Map<string, CliSessionRead & { key: string; until: number }>()
   constructor(private readonly deps: CliSessionsDeps) {}
 
   dbPath(profile: string): string { return join(this.deps.profileHome(profile), 'state.db') }
@@ -106,7 +108,7 @@ export class CliSessionSource {
   private cached(slot: CacheSlot): CliSessionRead | null {
     const hit = this.cache.get(slot.cacheKey)
     if (hit?.key !== slot.key || hit.until <= this.deps.now()) return null
-    return { rows: hit.rows.map((r) => ({ ...r })), truncated: hit.truncated, storage: hit.storage }
+    return { rows: hit.rows.map((r) => ({ ...r })), truncated: hit.truncated, buildSucceeded: hit.buildSucceeded, storage: hit.storage }
   }
 
   /**
@@ -116,22 +118,25 @@ export class CliSessionSource {
    */
   private async store(slot: CacheSlot, now: number, profile: string, results: QueryResults, probed: AgentStorage): Promise<CliSessionRead> {
     let rows: Dict[]
+    let buildSucceeded = true
     const truncated = new Set<string>()
     const failures = results instanceof Error ? [results] : (results ?? []).filter((r): r is Error => r instanceof Error)
     const failed = failures.map(stateDbReadFailure)
     const storage = failed.find((s) => s.state === 'corrupt') ?? failed[0] ?? (probed.state === 'unavailable' ? AGENT_STORAGE_OK : probed)
     try {
       if (results instanceof Error) throw results
-      rows = results ? (await this.build(profile, slot, results, truncated)) : []
+      if (results) ({ rows, buildSucceeded } = await this.build(profile, slot, results, truncated))
+      else rows = []
     } catch (error) {
       this.deps.log(`[webui] get_cli_sessions() failed; check state.db schema or path (${slot.dbPath}): ${(error as Error).message}`)
       rows = []
+      buildSucceeded = false
     }
     // Targeted lookups have many identities; retire expired entries and bound retained snapshots.
     for (const [key, hit] of this.cache) if (hit.until <= now) this.cache.delete(key)
     if (this.cache.size >= CACHE_SLOT_LIMIT) this.cache.delete(this.cache.keys().next().value!)
-    this.cache.set(slot.cacheKey, { key: slot.key, until: now + CACHE_TTL_S, rows, truncated, storage })
-    return { rows: rows.map((r) => ({ ...r })), truncated, storage }
+    this.cache.set(slot.cacheKey, { key: slot.key, until: now + CACHE_TTL_S, rows, truncated, buildSucceeded, storage })
+    return { rows: rows.map((r) => ({ ...r })), truncated, buildSucceeded, storage }
   }
 
   private queries(slot: CacheSlot): ReadRowsOptions[] {
@@ -180,7 +185,7 @@ export class CliSessionSource {
     return names
   }
 
-  private async build(profile: string, slot: CacheSlot, results: QueryResult[], truncated: Set<string>): Promise<Dict[]> {
+  private async build(profile: string, slot: CacheSlot, results: QueryResult[], truncated: Set<string>): Promise<Pick<CliSessionRead, 'rows' | 'buildSucceeded'>> {
     const { sourceFilter } = slot
     const home = this.deps.profileHome(profile)
     let workspace: string | null = null
@@ -239,7 +244,8 @@ export class CliSessionSource {
       out.push(await toRow(row, source, `${source.charAt(0).toUpperCase()}${source.slice(1)} Session`))
       seen.add(sid)
     }
-    if (sourceFilter !== null) return out
+    if (sourceFilter !== null) return { rows: out, buildSucceeded: true }
+    let buildSucceeded = true
     for (const [i, kind] of BACKGROUND_KINDS.entries()) {
       try {
         const rows = results[i + 1] ?? []
@@ -252,9 +258,10 @@ export class CliSessionSource {
           seen.add(sid)
         }
       } catch (error) {
+        buildSucceeded = false
         this.deps.log(`[webui] ${kind} sidebar second pass failed: ${(error as Error).message}`)
       }
     }
-    return out
+    return { rows: out, buildSucceeded }
   }
 }

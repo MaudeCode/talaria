@@ -499,7 +499,7 @@ def _live_children() -> list[dict]:
     return out
 
 
-def _ledger_children(home: Path, owners: list[str]) -> list[dict]:
+def _ledger_children(home: Path, owners: list[str], dispatched_at: float) -> list[dict]:
     """Finished subagents' own sessions in state.db: ``source = subagent`` rows tagged ``_delegate_from`` with their
     parent's session, each with its start time and first user message (the child's goal, sent verbatim)."""
     db_path = home / "state.db"
@@ -508,10 +508,11 @@ def _ledger_children(home: Path, owners: list[str]) -> list[dict]:
     marks = ",".join("?" * len(owners))
     with closing(sqlite3.connect(f"{db_path.resolve().as_uri()}?mode=ro", uri=True, timeout=5)) as conn:
         try:
-            # Only these chats' children: a long-lived profile keeps every subagent session it ever ran.
+            # Bound history before parsing owner JSON; allow 60 seconds of dispatch/start clock skew.
             rows = conn.execute(
                 "SELECT s.id, s.model_config, s.started_at, (SELECT m.content FROM messages m WHERE m.session_id = s.id AND m.role = 'user' ORDER BY m.id LIMIT 1)"
-                f" FROM sessions s WHERE s.source = 'subagent' AND json_extract(s.model_config, '$._delegate_from') IN ({marks})", owners).fetchall()
+                f" FROM sessions s WHERE s.source = 'subagent' AND s.started_at >= ? AND json_extract(s.model_config, '$._delegate_from') IN ({marks})",
+                [dispatched_at - 60, *owners]).fetchall()
         except sqlite3.OperationalError:
             return []
     out = []
@@ -583,7 +584,7 @@ def background_list(home: Path, session_ids: list[str]) -> dict:
     live = _live_delegations()
     delegations = _ledger_rows(home, session_ids)
     live_children = _live_children()
-    finished = _ledger_children(home, session_ids) if delegations else []
+    finished = _ledger_children(home, session_ids, min(row["dispatched_at"] for row in delegations)) if delegations else []
     now = time.time()
     for row in delegations:
         row["live_status"] = live.get(row["delegation_id"], {}).get("status")

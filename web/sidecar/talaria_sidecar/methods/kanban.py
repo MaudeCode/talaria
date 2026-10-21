@@ -97,8 +97,6 @@ def _connect_module():
 
 
 def _conn(board=None):
-    kb = _kb()
-    kb.init_db(board=board)
     module = _connect_module()
     closing = getattr(module, "connect_closing", None)
     return closing(board=board) if closing is not None else module.connect(board=board)

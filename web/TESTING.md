@@ -42,6 +42,9 @@ before the longer real-Agent suite.
   stub, synthetic `state.db` through `node:sqlite`, synthetic git repositories and `file://` remotes for
   git and self-update tests, `InMemoryTransport` for the MCP bin, and a fake serve command for `ctl`.
 - Focus a file with `npx vitest run src/tools/updates.test.ts`; `-t "name"` selects one case.
+- Redaction work budgets use Node's `diagnostics_channel` channel `talaria.redaction.assignment-scan`.
+  Each scan reports only `purpose` (`mask` or `restore`) and `characters` (input length), never transcript
+  text or credentials. Tests subscribe for the synchronous call and unsubscribe in `finally`.
 - `HERMES_WEBUI_TEST_HOOKS=1` enables `GET /api/approval/inject_test` and `/api/clarify/inject_test` for
   loopback clients: each queues a fake approval or clarify prompt that `respond` clears without the Agent.
 

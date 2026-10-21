@@ -2623,6 +2623,13 @@
         "[client]",
         "[xai]"
       ]
+    },
+    "tests/test_kanban_workflow.py::test_repeated_board_reads_skip_schema_and_open_one_connection_per_switcher_board": {
+      "layer": "compatibility",
+      "reason": "Supported-Agent initialization caching and SQL schema behavior require real board databases; traces native SQLite statements and connection opens across repeated RPC payloads.",
+      "cases": [
+        ""
+      ]
     }
   }
 }
