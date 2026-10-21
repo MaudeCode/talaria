@@ -1,0 +1,13 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Agent startup warnings now appear in the notification center and stay dismissed across chats and restarts.",
+      "highlight": false,
+      "components": [
+        "web",
+        "app"
+      ]
+    }
+  ]
+}

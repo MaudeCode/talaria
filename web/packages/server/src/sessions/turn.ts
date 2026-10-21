@@ -31,6 +31,7 @@ import { dict, findPersonality, type Config, type PersonalityRow } from '../conf
 import { ReasoningTitleTracker, reasoningEventPayload } from './reasoning-titles.js'
 import { messageWindowForDisplay, messagesForLimitedPayload, toolCallsForMessageWindow } from './window.js'
 import { UNSETTLED_TODO_KEY, attachTodoState, parseTodoToolResult } from './todo.js'
+import type { UpdateNotificationStore } from '../tools/update-notifications.js'
 import { SessionNotices } from './notices.js'
 import { SessionGoals } from './goals.js'
 import { hydrateAnchorActivityScenes, turnTerminalState, withTurnIds } from './anchor.js'
@@ -59,6 +60,9 @@ const CONTENT_EVENTS = new Set(['token', 'reasoning', 'interim_assistant', 'tool
 const BACKGROUND_UNWIND_WAIT_MS = 30_000
 
 export interface TurnRunnerDeps {
+  notifications: UpdateNotificationStore
+  /** Authenticated request owner; null for automatic turns, which retain the session owner. */
+  notificationOwner: () => string | null
   store: SessionStore
   service: () => SessionService
   events: SessionEventBus
@@ -487,6 +491,8 @@ export class TurnRunner {
     const sameRuntime = str(s.model) === str(opts.model) && str(s.model_provider) === str(opts.modelProvider)
     const compactionDue = !opts.ephemeral && sameRuntime && this.deps.service().compactionDue(s)
     if (!sameRuntime) forgetContextFigures(s)
+    const notificationOwner = this.deps.notificationOwner()
+    if (notificationOwner) s.extra.notification_owner = notificationOwner
     s.workspace = opts.workspace
     s.model = opts.model
     s.model_provider = opts.modelProvider
@@ -643,6 +649,7 @@ export class TurnRunner {
       await this.teardown(sessionId, streamId)
       return
     }
+    const notificationScope = { owner: str(s.extra.notification_owner) || 'local-owner', profile: s.profile ?? 'default' }
     const msgText = opts.msg
     const history = async (): Promise<{ previousMessages: Message[]; previousContext: Message[]; apiHistory: Message[] }> => {
       // TAL-493: one state.db read builds the history and marks where this turn's own rows begin.
@@ -921,6 +928,10 @@ export class TurnRunner {
                 return
               // TAL-803: the session's notice list changed; every client replaces its copy.
               case 'notice': {
+                if (str(data.key).startsWith('startup-warning.')) {
+                  await deps.notifications.agentWarning(notificationScope, str(data.key), { text: str(data.text), level: data.level })
+                  return
+                }
                 const notice = this.notices.add(sessionId, data)
                 if (!notice) return
                 await emitFrame('notices', { session_id: sessionId, notices: this.sessionNotices(sessionId) })
@@ -938,6 +949,10 @@ export class TurnRunner {
               }
               case 'notice_clear':
               case 'notices_reset':
+                if (frame.event === 'notice_clear' && str(data.key).startsWith('startup-warning.')) {
+                  await deps.notifications.agentWarning(notificationScope, str(data.key), null)
+                  return
+                }
                 if (frame.event === 'notice_clear' ? this.notices.clear(sessionId, str(data.key)) : this.notices.reset(sessionId)) (await emitFrame('notices', { session_id: sessionId, notices: this.sessionNotices(sessionId) }))
                 return
               default:

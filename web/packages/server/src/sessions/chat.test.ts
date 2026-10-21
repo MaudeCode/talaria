@@ -125,9 +125,73 @@ describe('chat turns through the sidecar', () => {
     } finally { guard.mockRestore() }
   })
 
+  it('routes startup warnings to persistent profile notifications across chats (TAL-1018)', async () => {
+    const first = await newSession(s)
+    const second = await newSession(s)
+    const warning = { key: 'startup-warning.1a2b3c4d', level: 'warn', kind: 'sticky', text: 'Home Assistant plugin is not installed.', lapses_with_agent: false }
+    const turn = async (sid: string, frames: Json[]): Promise<void> => {
+      sidecar.respond('chat.start', (_params, emit) => {
+        for (const frame of frames) emit(frame as never)
+        return completed([{ role: 'user', content: 'go' }, { role: 'assistant', content: 'ok' }])
+      })
+      const start = await json(await post(s, '/api/chat/start', { session_id: sid, message: 'go' }))
+      const events = await s.sse(`/api/chat/stream?stream_id=${String(start.stream_id)}`, (f) => f.event === 'stream_end')
+      expect(((events.find((f) => f.event === 'done')?.data as Json).session as Json).notices).toEqual([])
+      expect(events.filter((f) => f.event === 'notices')).toEqual([])
+      expect(((await json(await s.get(`/api/session?session_id=${sid}`))).session as Json).notices).toEqual([])
+    }
+    const rows = async (): Promise<Json[]> => (await json(await s.get('/api/update-notifications'))).notifications as Json[]
+    await turn(first, [{ event: 'notice', data: warning }])
+    expect(await rows()).toHaveLength(1)
+    const row = (await rows())[0]!
+    expect(row).toMatchObject({ kind: 'agent_warning', target: 'agent', phase: 'active', severity: 'warning', title: 'Agent warning', message: warning.text, persistent: true, requires_acknowledgement: false, actions: [], destination: null, unread: true, can_dismiss: true })
+    expect(row).not.toHaveProperty('notice_key')
+    await turn(second, [{ event: 'notice', data: warning }])
+    expect((await rows()).map((r) => r.id)).toEqual([row.id])
+    await post(s, `/api/update-notifications/${String(row.id)}/dismiss`, { dismiss: true })
+    await s.deps.updateNotifications.initialize()
+    await turn(first, [{ event: 'notices_reset', data: {} }, { event: 'notice', data: warning }])
+    expect(await rows()).toEqual([])
+    await turn(second, [{ event: 'notice', data: { ...warning, text: 'Home Assistant plugin could not load.', level: 'error' } }])
+    expect(await rows()).toMatchObject([{ id: row.id, severity: 'critical', unread: true, message: 'Home Assistant plugin could not load.' }])
+    await turn(first, [{ event: 'notices_reset', data: {} }])
+    expect(await rows()).toHaveLength(1)
+    await turn(second, [{ event: 'notice_clear', data: { key: warning.key } }])
+    expect(await rows()).toEqual([])
+  })
+
+  it('retains the authenticated warning owner for server-initiated turns (TAL-1018)', async () => {
+    const ownedSidecar = new FakeSidecar()
+    const owned = await bootTestServer({ sidecar: ownedSidecar, env: { HERMES_WEBUI_PASSWORD: 'synthetic-password' } })
+    try {
+      const cookie = (username: string): string => `${owned.deps.auth.cookieName()}=${owned.deps.auth.createSession({ authType: 'password', username })}`
+      const alice = { cookie: cookie('alice') }
+      const bob = { cookie: cookie('bob') }
+      const created = await owned.get('/api/session/new', { method: 'POST', headers: { ...alice, 'content-type': 'application/json' }, body: '{}' })
+      const sid = String(((await json(created)).session as Json).session_id)
+      ownedSidecar.respond('chat.start', (_params, emit) => {
+        emit({ event: 'notice', data: { key: 'startup-warning.owner', text: 'Synthetic owner warning.', level: 'warn' } })
+        return completed([{ role: 'user', content: 'go' }, { role: 'assistant', content: 'ok' }])
+      })
+      const start = await json(await owned.get('/api/chat/start', { method: 'POST', headers: { ...alice, 'content-type': 'application/json' }, body: JSON.stringify({ session_id: sid, message: 'go' }) }))
+      await owned.sse(`/api/chat/stream?stream_id=${String(start.stream_id)}`, (f) => f.event === 'stream_end', { headers: alice })
+      const rows = async (headers: { cookie: string }): Promise<Json[]> => (await json(await owned.get('/api/update-notifications', { headers }))).notifications as Json[]
+      expect(await rows(alice)).toMatchObject([{ kind: 'agent_warning', message: 'Synthetic owner warning.' }])
+      expect(await rows(bob)).toEqual([])
+      const row = (await rows(alice))[0]!
+      await owned.get(`/api/update-notifications/${String(row.id)}/dismiss`, { method: 'POST', headers: { ...alice, 'content-type': 'application/json' }, body: '{"dismiss":true}' })
+      const session = await owned.deps.sessionStore.get(sid)
+      expect(session.extra.notification_owner).toBe('password:alice')
+      const background = await owned.deps.turns.startServerTurn(session, { msg: 'background', source: 'process_wakeup' })
+      await owned.sse(`/api/chat/stream?stream_id=${String(background.stream_id)}`, (f) => f.event === 'stream_end', { headers: alice })
+      expect(await rows(alice)).toEqual([])
+      expect(await rows(bob)).toEqual([])
+    } finally { await owned.close() }
+  })
+
   it('keeps the Agent\'s notices on the session, one per key across turns, until the Agent clears them (TAL-803)', async () => {
     const sid = await newSession(s)
-    const warning = { id: 'startup-warning.1a2b3c4d', key: 'startup-warning.1a2b3c4d', level: 'warn', kind: 'sticky', ttl_ms: null, text: "⚠ Memory provider 'honcho' could not be loaded; memory is off." }
+    const warning = { id: 'memory-provider.session', key: 'memory-provider.session', level: 'warn', kind: 'sticky', ttl_ms: null, text: "⚠ Memory provider 'honcho' could not be loaded; memory is off." }
     const turn = async (message: string, frames: Json[]): Promise<SseFrame[]> => {
       sidecar.respond('chat.start', (_params, emit) => {
         for (const frame of frames) emit(frame as never)
@@ -138,7 +202,7 @@ describe('chat turns through the sidecar', () => {
     }
     const detailNotices = async (): Promise<unknown> => ((await json(await s.get(`/api/session?session_id=${sid}`))).session as Json).notices
     const shown = [{ key: warning.key, level: 'warn', text: warning.text, expires_at: null }]
-    // A startup warning: every client gets the session's list live, then on the settled and loaded session.
+    // A session warning: every client gets the session's list live, then on the settled and loaded session.
     let frames = await turn('first', [{ event: 'notice', data: warning }])
     expect(frames.filter((f) => f.event === 'notices').map((f) => f.data)).toEqual([{ session_id: sid, notices: shown }])
     expect(((frames.find((f) => f.event === 'done')?.data as Json).session as Json).notices).toEqual(shown)
@@ -154,8 +218,7 @@ describe('chat turns through the sidecar', () => {
     frames = await turn('fourth', [{ event: 'notice_clear', data: { key: warning.key } }])
     expect(frames.filter((f) => f.event === 'notices').map((f) => f.data)).toEqual([{ session_id: sid, notices: [] }])
     expect(await detailNotices()).toEqual([])
-    // A rebuilt agent lapses the credit notice the replaced one raised; the Agent never repeats a startup warning in
-    // the same process, so that one stays.
+    // Agent replacement lapses credit notices while preserving notices explicitly marked as non-lapsing.
     const credits = { id: 'credits.usage_band', key: 'credits.usage_band', level: 'info', kind: 'sticky', ttl_ms: null, text: 'Usage at 90%', lapses_with_agent: true }
     await turn('fifth', [{ event: 'notice', data: { ...warning, lapses_with_agent: false } }, { event: 'notice', data: credits }])
     frames = await turn('sixth', [{ event: 'notices_reset', data: {} }])

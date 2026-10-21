@@ -102,7 +102,7 @@ export interface AppDeps {
   /** The request's profile when called inside `requestScope.run`, else the process default. */
   activeProfile: () => string
   /** Binds `activeProfile()` to the request context for the whole handler (cookie, bound session, and later retags). */
-  requestScope: AsyncLocalStorage<{ requestProfile: string | null }>
+  requestScope: AsyncLocalStorage<{ requestProfile: string | null; notificationOwner?: string }>
   isRootProfile: (name: string) => boolean
   /** The agent's display name for a profile (`assistant_name`). */
   assistantName: (profile: string | null) => string
@@ -249,6 +249,7 @@ export class RequestContext {
   pendingCookies: string[] = []
   authRefreshCookie: string | null = null
   requestProfile: string | null = null
+  notificationOwner?: string
   csrfFailure: CsrfFailure = null
   /** Headers a `RawResponse` asks the oRPC layer to add. */
   extraResponseHeaders: Record<string, string> = {}

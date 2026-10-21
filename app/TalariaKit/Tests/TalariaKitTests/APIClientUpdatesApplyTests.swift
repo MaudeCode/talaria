@@ -195,6 +195,24 @@ final class APIClientUpdatesApplyTests: APIClientTestCase {
         XCTAssertTrue(acted.canDismiss)
     }
 
+    func testSharedAgentWarningNotificationDecodes() throws {
+        let decoder = JSONDecoder()
+        decoder.keyDecodingStrategy = .convertFromSnakeCase
+        let response = try decoder.decode(UpdateNotificationsResponse.self, from: sharedContractFixture("update-notifications"))
+        let warning = try XCTUnwrap(response.notifications.first { $0.kind == "agent_warning" })
+        XCTAssertEqual(warning.target, "agent")
+        XCTAssertEqual(warning.phase, "active")
+        XCTAssertEqual(warning.severity, "warning")
+        XCTAssertEqual(warning.title, "Agent warning")
+        XCTAssertTrue(warning.message.contains("Home Assistant"))
+        XCTAssertTrue(warning.persistent)
+        XCTAssertTrue(warning.unread)
+        XCTAssertTrue(warning.canDismiss)
+        XCTAssertFalse(warning.requiresAcknowledgement)
+        XCTAssertTrue(warning.actions.isEmpty)
+        XCTAssertNil(warning.destination)
+    }
+
     func testUpdateNotificationTimestampAcceptsServerFractionalSeconds() {
         XCTAssertNotNil(UpdateNotificationTimestamp.date(from: "2026-09-26T12:00:00.123Z"))
         XCTAssertNotNil(UpdateNotificationTimestamp.date(from: "2026-09-26T12:00:00Z"))

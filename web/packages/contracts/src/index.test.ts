@@ -179,7 +179,8 @@ describe('contracts package', () => {
   it('parses the shared update notification fixture', () => {
     const fixture = shared('fixtures/update-notifications.json')
     const parsed = UpdateNotificationsSchema.parse(fixture)
-    expect(parsed.notifications.map((row) => row.kind)).toEqual(['update', 'system', 'update', 'update'])
+    expect(parsed.notifications.map((row) => row.kind)).toEqual(['update', 'system', 'update', 'update', 'agent_warning'])
+    expect(parsed.notifications[4]).toMatchObject({ kind: 'agent_warning', target: 'agent', phase: 'active', severity: 'warning', persistent: true, unread: true, can_dismiss: true, actions: [], destination: null })
     expect(parsed.frontend_build).toMatchObject({ refresh_required: true, notification_id: null })
     expect(parsed.notifications[0]).toMatchObject({ phase: 'verifying', presents_dialog: true, dialog_close: 'none', steps: [{ state: 'done' }, { state: 'done' }, { state: 'done' }, { id: 'agent_ready', state: 'active' }] })
     expect(parsed.tab_update).toEqual(parsed.notifications[0])
