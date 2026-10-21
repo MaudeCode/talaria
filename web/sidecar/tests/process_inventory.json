@@ -2630,6 +2630,13 @@
       "cases": [
         ""
       ]
+    },
+    "tests/test_command_approval_persistence.py::test_always_preserves_revocation_and_profile_scoped_grants": {
+      "layer": "compatibility",
+      "reason": "Actual retained-Agent allowlist reconciliation, baseline refresh and profile-scoped approval APIs; config IO is fake, but these private native contracts cannot be proven by a stand-in.",
+      "cases": [
+        ""
+      ]
     }
   }
 }

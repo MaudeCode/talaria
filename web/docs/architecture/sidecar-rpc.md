@@ -322,6 +322,15 @@ close) ends its memory session with its transcript and releases its LLM clients
 under its profile, once no turn still holds it. Shutdown stops running turns
 and waits up to 4 s for those releases.
 
+`approval.respond` grants only the selected request's patterns, or the oldest
+request when no ID is supplied. Always saves only unsaved grants relative to
+the active profile's Agent allowlist baseline. A cached standing approval can
+therefore never become a new grant after an operator revokes it. Retained Agents
+with a full-snapshot native choice writer use this sidecar path; an Agent without
+the profile-scoped baseline APIs is refused before granting Always. Disk writes
+remain best effort, as in the Agent: a failed save leaves the explicit grant in
+memory and resolves the request, and a later successful save includes it.
+
 Clear and delete call `chat.finalize_session` with the owning `profile_home`,
 `session_id`, and `reason` (`clear` or `delete`). Clear finalizes before removing
 the transcript. Delete finalizes only after the local session deletion commits,

@@ -2534,7 +2534,7 @@ def register(registry) -> None:
             raise RpcError(f"approval module unavailable: {exc}", condition="agent_unavailable") from exc
         with scoped_home(profile_home_param(params)):
             entries = approval_mod.list_gateway_approvals(session_id)
-            targets = [e for e in entries if not request_id or e.get("request_id") == request_id]
+            targets = [e for e in entries if e.get("request_id") == request_id] if request_id else entries[:1]
             keys = []
             for entry in targets:
                 keys.extend(entry.get("pattern_keys") or [entry.get("pattern_key", "")])
@@ -2542,17 +2542,21 @@ def register(registry) -> None:
             if choice == "session":
                 for k in keys:
                     approval_mod.approve_session(session_id, k)
-            elif choice == "always":
+            elif choice == "always" and keys:
+                permanent_set = getattr(approval_mod, "_permanent_set", None)
+                baseline_key = getattr(approval_mod, "_baseline_key", None)
+                baselines = getattr(approval_mod, "_permanent_baseline_by_home", None)
+                if not callable(permanent_set) or not callable(baseline_key) or not isinstance(baselines, dict):
+                    raise RpcError("Agent cannot safely persist command approvals", condition="agent_incompatible")
                 for k in keys:
                     approval_mod.approve_session(session_id, k)
                     approval_mod.approve_permanent(k)
                 try:
-                    # Persist the set that governs THIS home (per-profile under the home override), not the launch
-                    # profile's module-level set, which would overwrite a named profile's allowlist with the wrong keys.
-                    permanent_set = getattr(approval_mod, "_permanent_set", None)
+                    # Older retained Agents' _persist_choice saves full snapshots. Capture only unsaved grants
+                    # against this home's baseline, so a concurrent revocation cannot become fresh approval intent.
                     with approval_mod._lock:
-                        snapshot = set(permanent_set()) if callable(permanent_set) else set(approval_mod._permanent_approved)
-                    approval_mod.save_permanent_allowlist(snapshot)
+                        grants = permanent_set() - baselines.get(baseline_key(), set())
+                    approval_mod.save_permanent_allowlist(grants)
                 except Exception:  # noqa: BLE001
                     log.debug("save_permanent_allowlist failed", exc_info=True)
             resolved = approval_mod.resolve_gateway_approval(session_id, choice, request_id=request_id)
