@@ -18,6 +18,8 @@ export interface SessionChange {
     | { kind: 'append'; rows: Message[] }
     | { kind: 'splice'; from: number; deleteCount: number; rows: Message[] }
     | { kind: 'replace'; rows: Message[] }
+  /** The complete message list after the change, when the writer holds it; a backend may use it instead of re-reading its base. */
+  all?: Message[]
 }
 export interface MessageMatch { idx: number; text: string }
 export type StorageIssue = RecoveryAuditItem & { profile?: string; revision?: string | null; backupRevision?: string | null }

@@ -39,12 +39,20 @@ export class SessionStore {
   private indexWriter: Promise<void> = Promise.resolve()
   private readonly indexPending = new Map<string, Record<string, unknown>>()
   private indexFlush: Promise<void> | null = null
+  private indexFailure: Error | null = null
   constructor(readonly deps: SessionStoreDeps) {}
   private get backend() { return this.deps.storage.sessions }
   async exists(sid: string): Promise<boolean> { return this.backend.exists(sid) }
   async revision(sid: string): Promise<string | null> { return this.backend.revision(sid) }
   readMessages(sid: string, range: { start: number; end: number }): Promise<Message[]> { return this.backend.readMessages(sid, range) }
-  async index() { return this.backend.index() }
+  /** Readers retry rows a failed batch left queued; a still-failing index reads as unreadable, never as current. */
+  async index() {
+    await this.queueIndexUpdate([])
+    // The joined flush may itself have failed; retry what it left queued once.
+    if (this.indexPending.size) await this.queueIndexUpdate([])
+    if (this.indexFailure && this.indexPending.size) throw this.indexFailure
+    return this.backend.index()
+  }
   async hasIndex(): Promise<boolean> { return this.backend.hasIndex() }
   get shrinkBackup() { return this.backend.shrinkBackup }
   async diagnose(): Promise<StorageIssue[]> { return this.backend.diagnose() }
@@ -232,14 +240,12 @@ export class SessionStore {
     session.messages = withBackgroundDisplayKinds(session.messages, session)
     const prefix = session.prefixIndex
     let appendOnly = Boolean(prefix && session.messages.length >= prefix.length && prefix.generation === markedStateDbGeneration(session) && prefix.matchesToolCalls(session.tool_calls))
-    const payload = JSON.stringify(session.toDocument(), function (this: unknown, key: string, value: unknown): unknown {
-      if (appendOnly && this === session.messages && Number(key) < prefix!.length && !prefix!.matchesRow(Number(key), value)) appendOnly = false
-      return value
-    })
-    const doc = JSON.parse(payload) as Record<string, unknown>
+    const doc = structuredClone(session.toDocument())
     const rows = doc.messages as Message[]
     delete doc.messages
+    // One serialization per row serves both the prefix check and the diff; the backend serializes the document once.
     const snapshot = rows.map((row) => JSON.stringify(row))
+    if (appendOnly) for (let i = 0; i < prefix!.length; i += 1) if (!prefix!.matchesRow(i, snapshot[i]!)) { appendOnly = false; break }
     const indexEntry = session.compact()
     const previous = this.persistedMessages.get(session)
     let messages: SessionChange['messages'] = { kind: 'replace', rows }
@@ -261,7 +267,7 @@ export class SessionStore {
         return
       }
     }
-    try { session.sidecarLoadedSignature = await this.backend.write(sid, { doc, messages }, expected) }
+    try { session.sidecarLoadedSignature = await this.backend.write(sid, { doc, messages, all: rows }, expected) }
     catch (error) {
       if (error instanceof RevisionConflict) {
         this.sessions.delete(sid)
@@ -273,7 +279,8 @@ export class SessionStore {
     this.persistedMessages.set(session, snapshot)
     if (appendOnly) prefix!.savedAppend(rows, session.sidecarLoadedSignature)
     else delete session.prefixIndex
-    if (!(opts.skipIndex ?? false)) await this.queueIndexUpdate([indexEntry])
+    // The document is committed; the batched index flush must not delay the caller (the turn's `done`).
+    if (!(opts.skipIndex ?? false)) void this.queueIndexUpdate([indexEntry])
     if (rows.length) await this.clearDeletedTombstone(sid)
   }
 
@@ -293,7 +300,7 @@ export class SessionStore {
 
   async persistedIds(): Promise<Set<string>> { return this.backend.ids() }
   async hasPersistedSessionFiles(): Promise<boolean> { return (await this.persistedIds()).size > 0 }
-  async readIndexEntries(): Promise<Record<string, unknown>[]> { return (await this.backend.index()).entries }
+  async readIndexEntries(): Promise<Record<string, unknown>[]> { return (await this.index()).entries }
   async indexMessageCounts(entries?: Record<string, unknown>[]): Promise<Map<string, number>> {
     let rows = entries
     if (!rows) { try { rows = await this.readIndexEntries() } catch { rows = [] } }
@@ -327,19 +334,29 @@ export class SessionStore {
     await this.serializeIndex(async () => {
       if (!snapshots || !await this.backend.hasIndex()) { await this.rebuildIndexNow(); return }
       let rows: Record<string, unknown>[]
-      try { rows = await this.readIndexEntries() } catch { await this.rebuildIndexNow(); return }
-      const previous = JSON.stringify(rows)
+      try { rows = (await this.backend.index()).entries } catch { await this.rebuildIndexNow(); return }
       const ids = await this.persistedIds()
-      rows = rows.filter((r) => ids.has(str(r.session_id)) || this.sessions.has(str(r.session_id)))
+      const live = (sid: string) => ids.has(sid) || this.sessions.has(sid)
+      const kept = rows.filter((r) => live(str(r.session_id)))
+      // Only the pruned and upserted entries can differ, so compare those instead of serializing the whole index.
+      let changed = kept.length !== rows.length
+      rows = kept
+      const order = rows.map((r) => str(r.session_id))
       const positions = new Map(rows.map((r, i) => [str(r.session_id), i]))
       for (const row of snapshots) {
         const sid = str(row.session_id)
-        if (!sid) continue
+        // A queued row can outlive its session (deleted while a failed batch waited for a retry).
+        if (!sid || !live(sid)) continue
         const i = positions.get(sid)
-        if (i === undefined) { positions.set(sid, rows.length); rows.push(row) } else rows[i] = row
+        if (i === undefined) { positions.set(sid, rows.length); rows.push(row); changed = true }
+        else {
+          changed ||= JSON.stringify(rows[i]) !== JSON.stringify(row)
+          rows[i] = row
+        }
       }
       rows.sort((a, b) => Number(b.updated_at ?? 0) - Number(a.updated_at ?? 0))
-      if (JSON.stringify(rows) !== previous) await this.backend.writeIndex(rows)
+      changed ||= rows.some((r, i) => str(r.session_id) !== order[i])
+      if (changed) await this.backend.writeIndex(rows)
     });
   }
   queueIndexUpdate(updates: (Session | Record<string, unknown>)[]): Promise<void> {
@@ -351,9 +368,16 @@ export class SessionStore {
     this.indexFlush ??= Promise.resolve().then(async () => {
       try {
         while (this.indexPending.size) {
-          const rows = [...this.indexPending.values()]
+          const batch = new Map(this.indexPending)
           this.indexPending.clear()
-          await this.writeIndex(rows)
+          try { await this.writeIndex([...batch.values()]); this.indexFailure = null }
+          catch (error) {
+            // Nobody awaits the flush, so a failed batch stays queued for the next save or index read instead of being lost.
+            for (const [sid, row] of batch) if (!this.indexPending.has(sid)) this.indexPending.set(sid, row)
+            this.indexFailure = error instanceof Error ? error : new Error(String(error))
+            this.deps.log(`[webui] WARNING: session index update failed: ${this.indexFailure.message}`)
+            break
+          }
         }
       } finally { this.indexFlush = null }
     })
@@ -363,7 +387,7 @@ export class SessionStore {
     await this.serializeIndex(async () => {
       if (!sid || !await this.backend.hasIndex()) return
       try {
-        const rows = await this.readIndexEntries()
+        const rows = (await this.backend.index()).entries
         const pruned = rows.filter((r) => r.session_id !== sid)
         if (pruned.length !== rows.length) await this.backend.writeIndex(pruned)
       } catch { await this.rebuildIndexNow() }

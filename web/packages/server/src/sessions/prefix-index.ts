@@ -123,8 +123,10 @@ export class SessionPrefixIndex {
     this.model.finish()
   }
 
-  private hash(value: unknown): string { return createHash('sha256').update(JSON.stringify(value)).digest('base64') }
-  matchesRow(index: number, row: unknown): boolean { return this.rowHashes[index] === this.hash(row) }
+  private hash(value: unknown): string { return this.hashText(JSON.stringify(value)) }
+  private hashText(text: string): string { return createHash('sha256').update(text).digest('base64') }
+  /** `text` is the row's JSON serialization. */
+  matchesRow(index: number, text: string): boolean { return this.rowHashes[index] === this.hashText(text) }
   matchesToolCalls(calls: unknown[]): boolean { return this.toolCallsHash === this.hash(calls) }
   /** Called only after save verified every indexed row during its existing serialization pass. */
   savedAppend(rows: Message[], revision: string | null): void { this.rows = rows; this.revision = revision; this.extend() }

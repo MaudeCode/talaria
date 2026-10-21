@@ -10,18 +10,19 @@ it('preserves baseline JSON bytes through save, shrink, compress, index and dele
     const store = server.deps.sessionStore
     const session = new Session({ session_id: 'golden', created_at: 1699999990, updated_at: 1699999990, workspace: '/synthetic', title: 'Golden É', messages: [{ role: 'user', content: 'hello' }, { role: 'assistant', content: 'world' }] }, { workspace: '/synthetic', model: 'synthetic-model' })
     const dir = join(server.state, 'sessions')
-    const bytes = () => Object.fromEntries(readdirSync(dir).filter((n) => n.endsWith('.json') || n.endsWith('.bak')).sort().map((n) => [n, readFileSync(join(dir, n), 'utf8')]))
+    // Index readers wait for the batched index flush that `save` no longer awaits.
+    const bytes = async () => { await store.readIndexEntries(); return Object.fromEntries(readdirSync(dir).filter((n) => n.endsWith('.json') || n.endsWith('.bak')).sort().map((n) => [n, readFileSync(join(dir, n), 'utf8')])) }
     await store.save(session)
-    expect(bytes()).toMatchSnapshot('save')
+    expect(await bytes()).toMatchSnapshot('save')
     session.messages = session.messages.slice(0, 1)
     await store.save(session)
-    expect(bytes()).toMatchSnapshot('shrink')
+    expect(await bytes()).toMatchSnapshot('shrink')
     session.compression_anchor_mode = 'manual'
     session.context_messages = [{ role: 'assistant', content: 'compressed context' }]
     await store.save(session)
     await store.writeIndex()
-    expect(bytes()).toMatchSnapshot('compress and index')
+    expect(await bytes()).toMatchSnapshot('compress and index')
     await store.delete(session.session_id)
-    expect(bytes()).toMatchSnapshot('delete and tombstone')
+    expect(await bytes()).toMatchSnapshot('delete and tombstone')
   } finally { await server.close() }
 })
