@@ -69,6 +69,72 @@ it('keeps the row filter and user scans cached across ten streamed tokens', () =
   expect(view.container.querySelector('[data-live]')).toBeNull()
 })
 
+function animationFrames() {
+  const frames = new Map<number, FrameRequestCallback>()
+  let next = 0
+  vi.stubGlobal('requestAnimationFrame', vi.fn((callback: FrameRequestCallback) => { frames.set(++next, callback); return next }))
+  vi.stubGlobal('cancelAnimationFrame', vi.fn((id: number) => { frames.delete(id) }))
+  return () => act(() => { const pending = [...frames.values()]; frames.clear(); pending.forEach((callback) => callback(0)) })
+}
+
+it('streams 20 lines while following without measuring persisted rows (TAL-1203)', async () => {
+  let resize: ResizeObserverCallback = () => undefined
+  vi.stubGlobal('ResizeObserver', class {
+    constructor(callback: ResizeObserverCallback) { resize = callback }
+    observe = vi.fn(); disconnect = vi.fn(); unobserve = vi.fn()
+  })
+  dispatch({ type: 'start', sessionId: 'history', streamId: 'run', turnId: null, userMessageId: null, userText: '', now: 0 })
+  const input = { ...props(), autoFollow: true, truncated: false }
+  const view = render(<Transcript {...input} live={getStreamState().turns.history!} />)
+  const pane = view.container.querySelector<HTMLElement>('#messages')!
+  Object.defineProperty(pane, 'scrollHeight', { configurable: true, value: 2600 })
+  vi.spyOn(pane, 'scrollTo').mockImplementation(() => { pane.scrollTop = 2000 })
+  act(() => requestScroll('end'))
+  const row = view.container.querySelector<HTMLElement>('[data-message-key]')!
+  const measure = vi.spyOn(row, 'getBoundingClientRect')
+  for (let line = 1; line <= 20; line++) {
+    await act(async () => {
+      dispatch({ type: 'event', sessionId: 'history', streamId: 'run', event: { event: 'token', data: { text: `Line ${line}\n` } }, lastEventId: `run:${line}`, now: line })
+      view.rerender(<Transcript {...input} live={getStreamState().turns.history!} />)
+      await Promise.resolve()
+      resize([], {} as ResizeObserver)
+    })
+    fireEvent.scroll(pane)
+  }
+  expect(measure).not.toHaveBeenCalled()
+})
+
+it('coalesces reader anchor scans into one frame while content grows and cancels on teardown (TAL-1203)', async () => {
+  vi.stubGlobal('CSS', { escape: (key: string) => key })
+  const flush = animationFrames()
+  const view = render(<Transcript {...props()} autoFollow />)
+  const pane = view.container.querySelector<HTMLElement>('#messages')!
+  const inner = view.container.querySelector<HTMLElement>('#msgInner')!
+  Object.defineProperty(pane, 'scrollHeight', { configurable: true, value: 2600 })
+  vi.spyOn(pane, 'scrollTo').mockImplementation(() => { pane.scrollTop = 2000 })
+  act(() => requestScroll('end'))
+  pane.getBoundingClientRect = () => ({ top: 0, bottom: 600 } as DOMRect)
+  const row = view.container.querySelector<HTMLElement>('[data-message-key]')!
+  row.getBoundingClientRect = () => ({ top: 100, bottom: 200 } as DOMRect)
+  const scan = vi.spyOn(pane, 'querySelectorAll')
+  pane.scrollTop = 300
+  for (let line = 0; line < 20; line++) {
+    fireEvent.scroll(pane)
+    await act(async () => { inner.append(document.createTextNode(`Line ${line}\n`)); await Promise.resolve() })
+  }
+  expect(scan).not.toHaveBeenCalled()
+  flush()
+  expect(scan).toHaveBeenCalledTimes(1)
+  for (let event = 0; event < 20; event++) fireEvent.scroll(pane)
+  expect(scan).toHaveBeenCalledTimes(1)
+  flush()
+  expect(scan).toHaveBeenCalledTimes(2)
+  fireEvent.scroll(pane)
+  view.unmount()
+  flush()
+  expect(scan).toHaveBeenCalledTimes(2)
+})
+
 it.each([false, true])('preserves an upward reader scroll before its scroll event when content arrives: autoFollow=%s', async (autoFollow) => {
   const view = render(<Transcript {...props()} autoFollow={autoFollow} />)
   const pane = view.container.querySelector<HTMLElement>('#messages')
@@ -163,6 +229,7 @@ it('a terminal snapshot that beats admission replaces the pending row by server 
 })
 
 it('preserves the visible row offset when terminal excerpts shrink an earlier reply (TAL-1114)', () => {
+  const flush = animationFrames()
   let resized: ResizeObserverCallback = () => undefined
   globalThis.ResizeObserver = class {
     constructor(private callback: ResizeObserverCallback) {}
@@ -187,6 +254,7 @@ it('preserves the visible row offset when terminal excerpts shrink an earlier re
   fireEvent.scroll(pane)
   pane.scrollTop = 4000
   fireEvent.scroll(pane)
+  flush()
   const collapsed = { ...props.rows[0]!, message: { ...props.rows[0]!.message, _display_truncated: true, _display_excerpt: 'A'.repeat(3000) } }
   view.rerender(<Transcript {...props} rows={[collapsed, props.rows[1]!]} />)
   rowY -= 1200
