@@ -443,7 +443,7 @@ describe('state.db projection', () => {
 
   it('keeps parity reads, failed-read retries and slow-consumer drops with shared rows', async () => {
     let now = 100
-    const read: CliSessionRead = { rows: [{ session_id: 'shared', title: 'Shared', source_tag: 'cli', message_count: 1, created_at: 1, updated_at: 2 }], truncated: new Set(), storage: { state: 'ok', reason: null } }
+    const read: CliSessionRead = { rows: [{ session_id: 'shared', title: 'Shared', source_tag: 'cli', message_count: 1, created_at: 1, updated_at: 2 }], truncated: new Set(), buildSucceeded: true, storage: { state: 'ok', reason: null } }
     const rows = vi.fn(() => Promise.resolve(read))
     const watcher = new GatewayWatcher('default', s.state, { rows, now: () => now, log: () => undefined })
     const sub = watcher.subscribe()
@@ -491,7 +491,7 @@ describe('state.db projection', () => {
       expect(await watcher.pollOnce()).toBe(false)
       watcher.stop()
       expect(await sub.next()).toBeNull()
-      release({ rows: [{ session_id: 'late', message_count: 1 }], truncated: new Set(), storage: { state: 'ok', reason: null } })
+      release({ rows: [{ session_id: 'late', message_count: 1 }], truncated: new Set(), buildSucceeded: true, storage: { state: 'ok', reason: null } })
       expect(await poll).toBe(false)
       expect(await sub.next(AbortSignal.timeout(20))).toBeNull()
       expect(await watcher.subscribe().next()).toBeNull()

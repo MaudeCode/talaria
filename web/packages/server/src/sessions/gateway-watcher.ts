@@ -162,6 +162,7 @@ export class GatewayWatcher {
     let read: CliSessionRead
     try {
       read = await this.opts.rows(this.profileName)
+      if (!read.buildSucceeded) throw new Error('session row build failed')
       if (read.storage.state === 'corrupt' || read.storage.state === 'unavailable') throw new Error(read.storage.reason ?? read.storage.state)
     } catch (error) {
       this.warnFailure('session projection failed', error)

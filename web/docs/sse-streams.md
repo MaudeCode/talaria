@@ -109,9 +109,9 @@ When that signal moves or cannot be read, the watcher reads `CliSessionSource`
 for the profile. This shares the sidebar's bounded windows and five-second cache,
 keyed by the database, WAL and session-index revisions, rather than projecting a
 separate 200-row window. The event retains its compact `sessions` row shape.
-An idle tick skips the shared read until the parity pass is due. A failed read
-leaves the last successful fingerprint and snapshot unchanged so the next tick
-retries.
+An idle tick skips the shared read until the parity pass is due. Failed database
+reads and row-metadata builds leave the last successful fingerprint and snapshot
+unchanged so the next tick retries, including when the failed result is cached.
 
 Two consequences worth knowing before changing this:
 

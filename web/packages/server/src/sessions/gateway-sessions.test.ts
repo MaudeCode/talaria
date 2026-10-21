@@ -2,7 +2,7 @@ import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
 import { Worker } from 'node:worker_threads'
-import { afterEach, beforeEach, describe, expect, it, onTestFinished, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { SessionEnvelopeSchema, ClarifyPendingEnvelopeSchema, ChatEventSchema, type GatewaySnapshot, type GatewaySessionResult } from '@maudecode/talaria-web-contracts'
 import type { StreamFrame } from '../sidecar/client.js'
 import { bootTestServer, type TestServer } from '../test/harness.js'
@@ -21,14 +21,21 @@ const attached = (snap: GatewaySnapshot): GatewaySessionResult => ({ state: 'att
 const admission = (status: 'queued' | 'started' | 'unknown' | 'terminal' = 'started') => ({ admission_id: 'native-input', sequence: 1, status, outcome: null, authority_epoch: 1, execution_generation: 1, text: 'native work', input_id: 'stable-input' })
 
 describe('gateway sidebar cache', () => {
-  it('shares one listing worker call between a changed gateway poll and the sidebar list', async () => {
-    const s = await bootTestServer({ now: () => 100, gatewayPollMs: 60_000 })
-    const db = new DatabaseSync(join(s.state, 'state.db'))
-    onTestFinished(async () => { db.close(); await s.close() })
+  let s: TestServer
+  let db: DatabaseSync
+  let now: number
+  beforeEach(async () => {
+    now = 100
+    s = await bootTestServer({ now: () => now, gatewayPollMs: 60_000 })
+    db = new DatabaseSync(join(s.state, 'state.db'))
     db.exec(fixture.schema.join('\n'))
     db.prepare('INSERT INTO sessions (id, source, started_at, message_count, title) VALUES (?, ?, ?, ?, ?)').run(sid, 'cli', 100, 2, 'Shared session')
     for (const role of ['user', 'assistant']) db.prepare('INSERT INTO messages (session_id, role, content, timestamp) VALUES (?, ?, ?, ?)').run(sid, role, 'first turn', 101)
     await s.deps.sessionStore.writeIndex([])
+  })
+  afterEach(async () => { db.close(); await s.close() })
+
+  it('shares one listing worker call between a changed gateway poll and the sidebar list', async () => {
     const watcher = s.deps.gatewayWatchers.get('default')
     const sub = watcher.subscribe()
     expect((await sub.next(AbortSignal.timeout(2000)))?.sessions.some((row) => row.session_id === sid)).toBe(true)
@@ -52,6 +59,31 @@ describe('gateway sidebar cache', () => {
       sub.close()
       watcher.stop()
     }
+  })
+  it.each(['cli', 'cron'])('retries failed %s row builds without publishing an empty snapshot', async (source) => {
+    db.prepare('UPDATE sessions SET source = ? WHERE id = ?').run(source, sid)
+    const watcher = s.deps.gatewayWatchers.get('default')
+    const sub = watcher.subscribe()
+    const metadata = vi.spyOn(s.deps.sessionStore, 'persistedIds')
+    try {
+      expect((await sub.next(AbortSignal.timeout(2000)))?.sessions.find((row) => row.session_id === sid)).toMatchObject({ message_count: 2 })
+      await Promise.resolve()
+      now += 5
+      db.prepare('UPDATE sessions SET message_count = 3 WHERE id = ?').run(sid)
+      metadata.mockRejectedValueOnce(new Error('synthetic sidecar metadata failure'))
+      expect(await watcher.pollOnce()).toBe(false)
+      const failed = await s.deps.cliSessions.read('default')
+      expect(failed.rows).toEqual([])
+      expect(failed.storage.state).toBe('ok')
+      // The cached failure is still a failed projection, not a successful empty list.
+      expect(await watcher.pollOnce()).toBe(false)
+      expect(await sub.next(AbortSignal.timeout(20))).toBeNull()
+      expect(sub.ended).toBe(false)
+      now += 5
+      // No further database write: the failed pass must not have acknowledged its fingerprint.
+      expect(await watcher.pollOnce()).toBe(true)
+      expect((await sub.next(AbortSignal.timeout(2000)))?.sessions.find((row) => row.session_id === sid)).toMatchObject({ message_count: 3 })
+    } finally { metadata.mockRestore(); sub.close(); watcher.stop() }
   })
 })
 
