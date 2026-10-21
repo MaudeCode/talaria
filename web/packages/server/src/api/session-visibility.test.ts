@@ -131,5 +131,18 @@ describe('request-profile session visibility', () => {
     expect(own.status).toBe(200)
     expect(await own.text()).toContain('event: done')
     expect(((await (await s.get('/api/chat/stream/status?stream_id=run1234abcd', { headers: root.headers })).json()) as { replay_available: boolean }).replay_available).toBe(true)
+    const resumed = await s.deps.journal.writer(sid, 'run1234abcd')
+    await resumed.appendSseEvent('title', { title: 'Fresh title' })
+    await resumed.appendSseEvent('stream_end', {})
+    await resumed.close()
+    const replay = await s.get('/api/chat/stream?stream_id=run1234abcd&after_seq=2', { headers: root.headers })
+    expect(await replay.text()).toContain('Fresh title')
+    expect((await s.get('/api/chat/stream?stream_id=run1234abcd', { headers: work.headers })).status).toBe(404)
+    // A warm run-owner lookup must still check the session's current profile.
+    const session = await s.deps.sessionStore.get(sid)
+    session.profile = 'work'
+    await s.deps.sessionStore.save(session)
+    expect((await s.get('/api/chat/stream?stream_id=run1234abcd', { headers: root.headers })).status).toBe(404)
+    expect((await s.get('/api/chat/stream?stream_id=run1234abcd', { headers: work.headers })).status).toBe(200)
   })
 })

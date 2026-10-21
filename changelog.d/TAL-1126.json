@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Changed",
+      "summary": "Reconnect to chat streams with less disk work when many sessions are stored.",
+      "highlight": false,
+      "components": ["web"]
+    }
+  ]
+}

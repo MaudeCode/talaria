@@ -19,11 +19,13 @@ const RUN_SUMMARY_MAX_BYTES = 4 * 1024 * 1024
 const RUN_SUMMARY_MAX_ROWS = 512
 const RUN_EVENTS_PAGE_BYTES = 64 * 1024
 const PRUNED_SUMMARY_SUFFIX = '.summary.json'
+const RUN_OWNER_CACHE_MAX = 1000
 
 const TURN_JOURNAL_DIR = '_turn_journal'
 const TURN_JOURNAL_ID_RE = /^[A-Za-z0-9_.-]+$/
 const createdAt = (event: Record<string, unknown>): number => { const value = Number(event.created_at ?? 0); return Number.isFinite(value) ? value : 0 }
 export class JsonJournal implements JournalBackend {
+  private readonly runOwners = new Map<string, string>()
   constructor(readonly sessionDir: string, private readonly env: Record<string, string | undefined> = {}) {}
 
   root(): string {
@@ -39,6 +41,7 @@ export class JsonJournal implements JournalBackend {
     if (/^\.+$/.test(sessionId)) return false
     let dir: string
     try { dir = join(this.root(), validateId(sessionId, 'session_id')) } catch { return false }
+    for (const [rid, sid] of this.runOwners) if (sid === sessionId) this.runOwners.delete(rid)
     if (dir === this.root() || !existsSync(dir)) return false
     try { rmSync(dir, { recursive: true, force: true }) } catch { return false }
     return !existsSync(dir)
@@ -88,7 +91,7 @@ export class JsonJournal implements JournalBackend {
     return new JsonJournalWriter(this, sessionId, runId, opts.durability)
   }
   private closed = false
-  async close(): Promise<void> { this.closed = true; await Promise.all([...this.writers].map(async (writer) => { await writer.close(); })) }
+  async close(): Promise<void> { this.closed = true; this.runOwners.clear(); await Promise.all([...this.writers].map(async (writer) => { await writer.close(); })) }
 
   async *read(sessionId: string, runId: string, fromSeq: number): AsyncGenerator<JournalEvent> {
     yield* this.iterRunEventsNow(sessionId, runId, { afterSeq: fromSeq - 1 })
@@ -343,31 +346,42 @@ export class JsonJournal implements JournalBackend {
     } catch {
       return null
     }
+    const cached = this.runOwners.get(rid)
+    if (cached !== undefined) {
+      this.runOwners.delete(rid)
+      const summary = this.resolvedRunSummary(cached, rid, false) ?? this.resolvedRunSummary(cached, rid, true)
+      if (summary) return summary
+    }
     let sessions: string[]
     try {
-      sessions = readdirSync(this.root())
+      sessions = readdirSync(this.root()).filter((sid) => SAFE_ID_RE.test(sid) && !/^\.+$/.test(sid))
     } catch {
       return null
     }
     for (const sid of sessions) {
-      const path = join(this.root(), sid, `${rid}.jsonl`)
-      if (existsSync(path)) {
-        const summary = this.latestRunSummaryNow(sid, rid)
-        summary.path = path
-        return summary
-      }
+      const summary = this.resolvedRunSummary(sid, rid, false)
+      if (summary) return summary
     }
     for (const sid of sessions) {
-      const summaryPath = join(this.root(), sid, `${rid}${PRUNED_SUMMARY_SUFFIX}`)
-      if (existsSync(summaryPath)) {
-        const summary = this.loadPrunedSummary(join(this.root(), sid, `${rid}.jsonl`))
-        if (summary) {
-          summary.path = summaryPath
-          return summary
-        }
-      }
+      const summary = this.resolvedRunSummary(sid, rid, true)
+      if (summary) return summary
     }
     return null
+  }
+
+  private resolvedRunSummary(sessionId: string, runId: string, pruned: boolean): RunSummary | null {
+    const journalPath = this.pathFor(sessionId, runId)
+    const path = pruned ? journalPath.replace(/\.jsonl$/, PRUNED_SUMMARY_SUFFIX) : journalPath
+    if (!existsSync(path)) return null
+    const summary = pruned ? this.loadPrunedSummary(journalPath) : this.latestRunSummaryNow(sessionId, runId)
+    if (!summary) return null
+    // Cache ownership only; appends and retention summaries must always be read fresh.
+    if (!this.closed) {
+      this.runOwners.set(runId, sessionId)
+      if (this.runOwners.size > RUN_OWNER_CACHE_MAX) this.runOwners.delete(this.runOwners.keys().next().value!)
+    }
+    summary.path = path
+    return summary
   }
 
   sessionJournalFingerprintNow(sessionId: string): string {
