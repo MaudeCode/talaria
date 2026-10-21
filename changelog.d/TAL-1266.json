@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Model changes in Agent-owned chats now show when they are pending, need confirmation, or are refused.",
+      "highlight": false,
+      "components": ["web"]
+    }
+  ]
+}

@@ -13,9 +13,21 @@ export const GatewaySnapshotSchema = z.object({
   subscription_id: z.string(), revision: z.number().int(), execution_generation: z.number().int(),
   pending: z.array(GatewayAdmissionSchema), prompts: z.array(ObjectSchema), info: ObjectSchema,
 })
+/** Owner mutation receipts are distinct from prompt admissions. Applied mutations have no status. */
+export const GatewayMutationReceiptSchema = z.looseObject({
+  operation: z.string(), status: z.string().optional(),
+})
+/** The server's model decision, shared by mutation responses and owner-session views. */
+export const ModelChangeSchema = z.object({
+  state: z.enum(['applied', 'deferred', 'confirmation_required', 'refused']),
+  message: z.string().optional(), confirm: z.string().optional(),
+  model: z.string().optional(), provider: z.string().nullable().optional(),
+})
+export type ModelChange = z.infer<typeof ModelChangeSchema>
 export const GatewaySessionResultSchema = z.object({
   state: z.enum(['attached', 'stopped', 'unavailable', 'incompatible', 'refused']), reason: z.string().nullable(),
-  replay_gap: z.boolean().optional(), snapshot: GatewaySnapshotSchema.nullable(), receipt: GatewayAdmissionSchema.nullable(),
+  replay_gap: z.boolean().optional(), snapshot: GatewaySnapshotSchema.nullable(), receipt: z.union([GatewayAdmissionSchema, GatewayMutationReceiptSchema]).nullable(),
+  model_change: ModelChangeSchema.optional(),
   restarting: z.boolean().optional().describe("The owner is in a restart's after-turn wait: parked prompts stay answerable, new work is refused."),
   lock: z.object({ status: z.enum(['ok', 'expired']), remaining: z.array(z.string()).optional() }).optional()
     .describe('`clarify_lock`: the batch question ids the owner still waits on; `expired` when the batch already ended.'),
@@ -81,6 +93,7 @@ export const OwnerAttachmentSchema = z.object({
   can_submit: z.boolean(), can_interrupt: z.boolean(), can_attach: z.boolean(),
   restarting: z.boolean().describe('The owning gateway is restarting once this turn ends; sending waits until it is back.'),
   revision: z.number().int().nullable(), execution_generation: z.number().int().nullable(),
+  model_change: ModelChangeSchema.optional(),
   active_admission: GatewayAdmissionSchema.nullable().optional(),
   admissions: z.array(GatewayAdmissionSchema.extend({ actions: z.array(z.enum(['cancel', 'steer', 'edit', 'retry', 'discard'])) })),
 })

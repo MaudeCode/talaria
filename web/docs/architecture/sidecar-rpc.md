@@ -591,3 +591,19 @@ that call's recorder rather than consulting process-global session context.
 Bounded redacted startup records go to stderr, never to a per-token RPC stream
 or a client endpoint. See [the startup breakdown](../troubleshooting.md#chat-startup-phase-breakdown)
 for process clock limits, retrieval, and unsupported provider boundaries.
+
+## Native model picks
+
+`gateway.session` preserves `session.mutate` receipts separately from prompt admissions.
+The server maps model receipts and `session.updated` outcomes to `model_change` on the
+owner-action response and `owner_attachment` view. An applied receipt has no `status`;
+`deferred` retains the committed model until the next turn boundary. A guarded pick
+carries the owner's message, target model/provider and `confirm` token. The existing
+confirmation dialog re-sends that token as `payload.confirm` with current owner fences.
+
+A native idle mutation has no execution stamp. Its session-scoped subscription and replay
+still carry it; turn-generation filtering must not discard it. Observation of a deferred
+pick stays attached past the idle notification until its outcome is projected. Outcomes
+are observations in server memory, scoped by profile home, session, authority and replay
+epoch. They never write a second session or change the owner's canonical transcript.
+

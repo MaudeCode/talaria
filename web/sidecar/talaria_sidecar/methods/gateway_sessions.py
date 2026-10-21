@@ -185,7 +185,7 @@ async def _run(ctx, params: dict, home: Path, discovery) -> dict:
                     execution_generation=params["execution_generation"],
                     **({"choice": params["choice"]} if action == "approval" else {"answer": params["text"]}))
             elif action == "mutate":
-                await client.rpc("session.mutate", **common, request_id=params["request_id"],
+                receipt = await client.rpc("session.mutate", **common, request_id=params["request_id"],
                     expected_revision=params["expected_revision"], expected_generation=params["execution_generation"],
                     operation=params["operation"], payload=params["payload"], _timeout=660)
             if action not in {"snapshot", "watch"}:
@@ -210,7 +210,8 @@ async def _run(ctx, params: dict, home: Path, discovery) -> dict:
                 epoch, sequence = snap["replay_epoch"], snap["last_sequence"]
             else:
                 for event in replay["events"]:
-                    if (event.get("execution_generation") == snap["execution_generation"]
+                    if (event.get("type") == "session.updated"
+                            or event.get("execution_generation") == snap["execution_generation"]
                             or event.get("type") == "session.info" and event.get("payload", {}).get("execution_generation") == snap["execution_generation"]):
                         ctx.emit("event", event)
                 sequence = replay["last_sequence"]

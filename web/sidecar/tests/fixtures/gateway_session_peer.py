@@ -150,6 +150,42 @@ async def probe_queued_controls(home, peer, desc):
         sidecar.close()
 
 
+async def probe_model(home, peer, desc):
+    sidecar = SidecarProcess(home)
+    viewer = SidecarProcess(home)
+    try:
+        async with websocket(home, desc) as native:
+            created = await rpc(native, "session.create", request_id="model-create", source="cli", toolsets=[])
+            sid = created["result"]["session_id"]
+            def call(action, **params):
+                return sidecar.result("gateway.session", {"profile_home": str(home), "session_id": sid, "action": action, **params})
+            await asyncio.to_thread(call, "submit", request_id="model-turn", text="BLOCK_STARTED")
+            assert await asyncio.to_thread(peer.blocked.wait, 25)
+            running = (await asyncio.to_thread(call, "snapshot"))["snapshot"]
+            picked = await asyncio.to_thread(call, "mutate", request_id="native-model-pick",
+                expected_revision=running["revision"], execution_generation=running["execution_generation"],
+                operation="model", payload={"model": "owner-fixture-picked", "provider": "custom"})
+            assert picked["receipt"]["status"] == "deferred", picked
+            model_watch = viewer.request("gateway.session", {"profile_home": str(home), "session_id": sid, "action": "watch"})
+            frame = await asyncio.to_thread(viewer.next_message, 20)
+            assert frame["params"]["event"] == "snapshot", frame
+            peer.release.set()
+            while True:
+                frame = await asyncio.to_thread(viewer.next_message, 20)
+                data = frame.get("params", {}).get("data", {})
+                if data.get("type") == "session.updated" and data.get("payload", {}).get("operation") == "model":
+                    assert data["payload"].get("status") is None, data
+                    assert data["payload"]["model"] == "owner-fixture-picked", data
+                    break
+            viewer.request("rpc.cancel", {"id": model_watch})
+            while (await asyncio.to_thread(viewer.next_message, 20)).get("id") != model_watch:
+                pass
+    finally:
+        peer.release.set()
+        sidecar.close()
+        viewer.close()
+
+
 async def probe_control(home, peer, desc, kind):
     sidecar = SidecarProcess(home)
     try:
@@ -727,6 +763,8 @@ def main():
                 asyncio.run(probe_detail(home, peer, desc))
             elif mode == "restart":
                 asyncio.run(probe_restart(home, peer, desc, proc))
+            elif mode == "model":
+                asyncio.run(probe_model(home, peer, desc))
             elif mode == "profiles":
                 asyncio.run(probe_profiles(home, peer, desc))
             elif mode in {"approval", "clarify"}:

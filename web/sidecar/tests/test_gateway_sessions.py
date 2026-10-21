@@ -41,6 +41,17 @@ def test_real_native_owner_shared_admission_and_detach(tmp_path, mode):
 
 
 @requires_agent
+def test_real_native_owner_model_outcomes(tmp_path):
+    if not (AGENT_DIR / "gateway/session_deferred_pick.py").exists():
+        pytest.skip("this supported Agent does not expose deferred native model picks")
+    env = isolated_env(tmp_path / "hermes", HERMES_WEBUI_AGENT_DIR=str(AGENT_DIR), HERMES_WEBUI_PYTHON=str(AGENT_PYTHON),
+                       PYTHONPATH=f"{SIDECAR_ROOT}:{Path(pytest.__file__).parent.parent}")
+    result = subprocess.run([AGENT_PYTHON, str(Path(__file__).parent / "fixtures/gateway_session_peer.py"), "model"],
+                            env=env, capture_output=True, text=True, timeout=90, check=False)
+    assert result.returncode == 0, result.stdout + result.stderr
+
+
+@requires_agent
 def test_diagnostic_creation_refuses_without_starting(tmp_path):
     home = tmp_path / "hermes"
     home.mkdir()
@@ -180,3 +191,59 @@ def test_watch_negotiates_display_without_breaking_older_owners(tmp_path, monkey
     assert frames[0][0] == "snapshot"
     assert ("config.set", {"session_id": "native", "key": "show_reasoning", "value": "1" if shown else "0", "_timeout": 10}) in calls
     assert calls[-1] == ("session.detach", {"session_id": "native", "subscription_id": "viewer"})
+
+
+@pytest.fixture
+def native_owner_stub(tmp_path, monkeypatch):
+    import asyncio
+    from contextlib import asynccontextmanager
+    import sys
+    from types import SimpleNamespace
+    from talaria_sidecar.methods import gateway_sessions as adapter
+
+    owner = SimpleNamespace(receipt=None, replay=[], payload=None)
+    async def rpc(method, **params):
+        if method == "runtime.describe":
+            return {"instance_id": "owner", "profile_id": "profile", "authority_epoch": 1,
+                    "capabilities": ["durable-admission-v1", "event-replay-v1"]}
+        if method == "session.resume":
+            return {"session_id": "chat", "subscription_id": "viewer", "messages": [], "info": {},
+                    "replay_epoch": "epoch", "last_sequence": 4, "execution_generation": 1}
+        if method == "session.mutate":
+            owner.payload = params["payload"]
+            return owner.receipt
+        if method == "session.events.since":
+            return {"events": owner.replay, "last_sequence": 4}
+    @asynccontextmanager
+    async def connect(*args):
+        yield SimpleNamespace(rpc=rpc), asyncio.Queue()
+    monkeypatch.setitem(sys.modules, "hermes_cli.gateway_client", SimpleNamespace(GatewayRPCError=RuntimeError))
+    monkeypatch.setattr(adapter, "_connect", connect)
+    monkeypatch.setattr(adapter, "_control_refusal", lambda *args: None)
+    endpoint = SimpleNamespace(control_home=None, instance_id="owner", profile_id="profile", authority_epoch=1)
+    owner.run = lambda ctx, params: asyncio.run(adapter._run(ctx, params, tmp_path, SimpleNamespace(endpoint=endpoint)))
+    return owner
+
+
+@pytest.mark.parametrize("receipt", [
+    {"operation": "model", "model": "picked", "revision": 3, "execution_generation": 1},
+    {"operation": "model", "status": "deferred", "model": "picked"},
+    {"operation": "model", "status": "confirmation_required", "confirm": "owner-token", "confirm_message": "Guard warning"},
+])
+def test_model_mutation_preserves_owner_receipt(native_owner_stub, receipt):
+    native_owner_stub.receipt = receipt
+    result = native_owner_stub.run(None, {"session_id": "chat", "action": "mutate", "request_id": "pick",
+        "expected_revision": 2, "execution_generation": 1, "operation": "model", "payload": {"model": "picked"}})
+    assert result["receipt"] == receipt
+    assert native_owner_stub.payload == {"model": "picked"}
+
+
+def test_watch_replays_idle_model_outcomes_without_execution_stamp(native_owner_stub):
+    from types import SimpleNamespace
+    event = {"session_id": "chat", "type": "session.updated", "seq": 4, "replay_epoch": "epoch",
+             "payload": {"operation": "model", "status": "refused", "reason": "model_resolution_failed"}}
+    native_owner_stub.replay = [event]
+    emitted = []
+    ctx = SimpleNamespace(cancelled=True, emit=lambda kind, data: emitted.append((kind, data)))
+    native_owner_stub.run(ctx, {"session_id": "chat", "action": "watch"})
+    assert ("event", event) in emitted
