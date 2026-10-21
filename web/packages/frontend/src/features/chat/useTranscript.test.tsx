@@ -82,12 +82,13 @@ it('contains page failures and blocks automatic requests until explicit retry', 
 
 it('discards a page that finishes after the reader changes sessions', async () => {
   const page = deferred<Awaited<ReturnType<typeof api.fetchSession>>>()
-  vi.mocked(api.fetchSession).mockImplementation(() => page.promise)
+  vi.mocked(api.fetchSession).mockImplementation((sid) => sid === 'history' ? page.promise : Promise.resolve({ session: sessionFixture({ session_id: sid, messages: [] }) }))
   const { result, rerender } = historyHook()
   let pending!: Promise<unknown>
   act(() => { pending = result.current.loadOlder() })
   rerender({ sid: 'other' })
   await act(async () => { page.resolve({ session: sessionFixture({ session_id: 'history', messages: [{ id: 121, role: 'user', content: 'wrong session' }] }) }); await pending })
+  await waitFor(() => expect(result.current.query.isSuccess).toBe(true))
   expect(result.current.rows).toEqual([])
 })
 

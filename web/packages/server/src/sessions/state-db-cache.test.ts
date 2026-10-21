@@ -5,7 +5,7 @@ import { DatabaseSync } from 'node:sqlite'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { agentSessionRowsExisting, cheapChangeFingerprint, countConversationRounds, insightsSessionRows, latestCronSessionInfo, readImportableAgentSessionRows, stateDbCompressionLineage, stateDbCronJobIds, stateDbHasSession, stateDbLineageReport, stateDbLocalTarget, stateDbSessionRow, stateDbSessionSources, stateDbSessionRead, stateDbStorage, stateDbTailToolContent, stateDbWebDiagnosticIds, stopStateDbWorker } from './state-db.js'
 
-const observed = vi.hoisted(() => ({ handles: [] as import('node:sqlite').DatabaseSync[], probes: [] as string[] }))
+const observed = vi.hoisted(() => ({ handles: [] as import('node:sqlite').DatabaseSync[], probes: [] as string[], executions: [] as string[], rowCounts: new Map<string, number>() }))
 vi.mock('node:sqlite', async (importOriginal) => {
   const real = await importOriginal<typeof import('node:sqlite')>()
   class ObservedDatabase extends real.DatabaseSync {
@@ -15,7 +15,22 @@ vi.mock('node:sqlite', async (importOriginal) => {
     }
     override prepare(sql: string): ReturnType<DatabaseSync['prepare']> {
       if (/PRAGMA (table_info|index_list)/i.test(sql)) observed.probes.push(sql)
-      return super.prepare(sql)
+      return new Proxy(super.prepare(sql), {
+        get(target, key) {
+          const value: unknown = Reflect.get(target, key)
+          if (typeof value !== 'function') return value
+          return (...args: unknown[]) => {
+            if (['get', 'all', 'iterate'].includes(String(key))) observed.executions.push(sql)
+            const result: unknown = Reflect.apply(value, target, args)
+            const countRows = (count: number): void => { observed.rowCounts.set(sql, (observed.rowCounts.get(sql) ?? 0) + count) }
+            if (Array.isArray(result)) countRows(result.length)
+            if (key !== 'iterate') return result
+            return (function* () {
+              for (const row of result as Iterable<unknown>) { countRows(1); yield row }
+            })()
+          }
+        },
+      })
     }
   }
   return { ...real, DatabaseSync: ObservedDatabase }
@@ -164,5 +179,95 @@ describe('state.db handle and schema reuse', () => {
     expect(db.isOpen).toBe(false)
     readImportableAgentSessionRows(path)
     expect(observed.handles.length).toBe(2)
+  })
+
+  it('walks 200 ownership lineages once and batches metadata keys', () => {
+    const db = new DatabaseSync(path)
+    const ids = Array.from({ length: 200 }, (_, i) => `child-${String(i)}`)
+    try {
+      db.exec(`ALTER TABLE sessions ADD COLUMN parent_session_id TEXT;
+        ALTER TABLE sessions ADD COLUMN end_reason TEXT;
+        ALTER TABLE sessions ADD COLUMN created_source TEXT;
+        ALTER TABLE sessions ADD COLUMN chat_id TEXT;
+        CREATE TABLE state_meta (key TEXT PRIMARY KEY, value TEXT)`)
+      const insert = db.prepare('INSERT INTO sessions (id, source, parent_session_id, end_reason, created_source, chat_id) VALUES (?, ?, ?, ?, ?, ?)')
+      const meta = db.prepare('INSERT INTO state_meta VALUES (?, ?)')
+      for (const [i, id] of ids.entries()) {
+        const parent = `parent-${String(i)}`
+        const owner = `owner-${String(i)}`
+        insert.run(parent, 'cli', null, 'compression', i % 2 ? 'kanban' : 'cli', owner)
+        insert.run(id, 'cli', parent, null, 'cli', owner)
+        meta.run(`gateway.local_policy.v1:${owner}`, JSON.stringify({ session_id: owner, entry: { session_id: id }, lineage: [parent, id], policy: { source: i % 2 ? 'kanban' : 'cli', safe_mode: true } }))
+        meta.run(`gateway.api.binding.v1.${id}`, '{}')
+        meta.run(`gateway.retired_session.v1.${parent}`, '{}')
+      }
+    } finally { db.close() }
+    observed.executions.length = 0
+    expect(stateDbSessionSources(path, ids)).toEqual(new Map(ids.map((id, i) => [id, { source: i % 2 ? 'kanban' : 'cli', canonical: true, execution_mode: 'safe' }])))
+    const selects = observed.executions.filter((sql) => sql.includes('FROM sessions WHERE id = ?'))
+    expect.soft(selects.length, 'one point select per requested lineage segment').toBeLessThanOrEqual(400)
+    const meta = observed.executions.filter((sql) => sql.includes('FROM state_meta'))
+    expect(meta.length, 'three keys per candidate, in batches of 400').toBeLessThanOrEqual(Math.ceil(600 * 3 / 400))
+  })
+
+  it.each([
+    ['session_admissions', 200], ['session_admissions', 801],
+    ['worker_executions', 200], ['worker_executions', 801],
+  ] as const)('scans %s lineages once across %i candidates without returning unrelated history', (table, count) => {
+    const db = new DatabaseSync(path)
+    const ids = Array.from({ length: count }, (_, i) => `candidate-${String(i)}`)
+    const column = table === 'session_admissions' ? 'target_session_id' : 'session_id'
+    try {
+      db.exec(`CREATE TABLE ${table} (${column} TEXT, lineage_json TEXT); CREATE INDEX ledger_target ON ${table} (${column})`)
+      const insert = db.prepare(`INSERT INTO ${table} VALUES (?, ?)`)
+      insert.run(ids[0]!, null)
+      insert.run('pruned-owner', JSON.stringify(ids.slice(1)))
+      db.exec('BEGIN')
+      for (let i = 0; i < 10_000; i += 1) insert.run(`unrelated-owner-${String(i)}`, JSON.stringify([`unrelated-segment-${String(i)}`]))
+      db.exec('COMMIT')
+    } finally { db.close() }
+    observed.executions.length = 0
+    observed.rowCounts.clear()
+    expect(stateDbSessionSources(path, ids)).toEqual(new Map(ids.map((id) => [id, { source: '', canonical: true }])))
+    const scans = observed.executions.filter((sql) => sql.includes(`FROM ${table}`) && (sql.includes('lineage_json') || sql.includes('json_each')))
+    expect(scans, 'one lineage scan regardless of candidate chunk count').toHaveLength(1)
+    expect(observed.rowCounts.get(scans[0]!), 'only matching lineage rows cross into JavaScript').toBe(1)
+  })
+
+  it('keeps receipt alias precedence in candidate order across metadata batches', () => {
+    const db = new DatabaseSync(path)
+    try {
+      db.exec('CREATE TABLE state_meta (key TEXT PRIMARY KEY, value TEXT)')
+      const meta = db.prepare('INSERT INTO state_meta VALUES (?, ?)')
+      for (const [owner, source] of [['z-owner', 'cli'], ['a-owner', 'tui']]) {
+        meta.run(`gateway.local_policy.v1:${owner}`, JSON.stringify({ session_id: owner, entry: { session_id: 'pruned-alias' }, lineage: ['pruned-alias'], policy: { source } }))
+      }
+    } finally { db.close() }
+    const padding = Array.from({ length: 133 }, (_, i) => `padding-${String(i)}`)
+    const result = stateDbSessionSources(path, ['z-owner', ...padding, 'a-owner', 'pruned-alias'])
+    expect(result?.get('pruned-alias')).toEqual({ source: 'cli', canonical: true, execution_mode: 'normal' })
+  })
+
+  it.each([
+    ['target', '[1]', true], ['other', '{broken', true],
+    ['other', '["target", 1]', true], ['other', '{"segment":"target"}', true],
+    ['other', '"target"', true], ['other', '[1]', false],
+    ['other', '{"segment":"unrelated"}', false],
+  ] as const)('preserves the ownership fence for ledger %s with %s', (owner, lineage, unreadable) => {
+    const db = new DatabaseSync(path)
+    try {
+      db.exec('CREATE TABLE session_admissions (target_session_id TEXT, lineage_json TEXT)')
+      db.prepare('INSERT INTO session_admissions VALUES (?, ?)').run(owner, lineage)
+    } finally { db.close() }
+    const result = stateDbSessionSources(path, ['target', '1'])
+    expect(result).toEqual(unreadable ? null : new Map())
+  })
+
+  it('keeps direct ledger ownership on schemas without lineage_json', () => {
+    const db = new DatabaseSync(path)
+    try {
+      db.exec("CREATE TABLE session_admissions (target_session_id TEXT); INSERT INTO session_admissions VALUES ('pruned')")
+    } finally { db.close() }
+    expect(stateDbSessionSources(path, ['pruned'])).toEqual(new Map([['pruned', { source: '', canonical: true }]]))
   })
 })
