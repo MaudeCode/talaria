@@ -28,6 +28,12 @@ def outcome_for(error):
     return "error"
 
 
+def _timing_key(value):
+    # Match JavaScript's UTF-8 replacement of unpaired surrogates without rejecting the RPC.
+    text = value.encode("utf-16-le", "surrogatepass").decode("utf-16-le", "replace")
+    return hashlib.sha256(text.encode("utf-8")).hexdigest()
+
+
 class StartupTiming:
     def __init__(self, request, *, now=None, write=None):
         self._now = now or time.monotonic
@@ -41,7 +47,7 @@ class StartupTiming:
             self.trace_id = str(uuid.uuid4())
         self.rpc_id = request.get("id") if type(request.get("id")) is int else None
         params = request.get("params") or {}
-        self._keys = {name + "_key": hashlib.sha256(value.encode()).hexdigest() for name in ("session", "stream")
+        self._keys = {name + "_key": _timing_key(value) for name in ("session", "stream")
                       if isinstance(value := params.get(name + "_id"), str)} if isinstance(params, dict) else {}
         self.spans = {}
         self.observations = {}

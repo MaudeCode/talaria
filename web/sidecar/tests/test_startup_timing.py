@@ -208,3 +208,26 @@ def test_rpc_shutdown_records_unknown_once_and_cancel_remains_cooperative(caplog
     finally:
         release.set()
         worker.join(5)
+
+
+def test_timing_identity_never_prevents_dispatch_of_unusual_unicode():
+    """Diagnostics must not add a new rejection before the handler's own validation."""
+    calls = []
+    server = RpcServer({"chat.start": lambda ctx, params: calls.append(params["session_id"]) or {"status": "completed"}}, stdout=io.BytesIO())
+    request = {"id": 1, "method": "chat.start", "params": {"session_id": "synthetic-\ud800", "stream_id": "synthetic-\udfff"}}
+    try:
+        server._dispatch(request)
+    except UnicodeError:
+        pass
+    assert calls == [request["params"]["session_id"]]
+    assert not server._active
+
+
+def test_unusual_unicode_identity_matches_javascript_utf8_replacement():
+    import hashlib
+    from talaria_sidecar.startup_timing import StartupTiming
+    for value, normalized in [("synthetic-\ud800", "synthetic-\ufffd"), ("synthetic-\udfff", "synthetic-\ufffd"), ("synthetic-\ud83d\ude00", "synthetic-\U0001f600")]:
+        records = []
+        timing = StartupTiming({"id": 1, "params": {"session_id": value}}, write=lambda line: records.append(json.loads(line)))
+        timing.finish("ok")
+        assert records[0]["session_key"] == hashlib.sha256(normalized.encode("utf-8")).hexdigest()
