@@ -1,10 +1,14 @@
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { deferred } from '../../test/fixtures'
+import { claimAutoRead } from './autoReadClaim'
 import * as api from '../../api/endpoints'
-import { speak, stopSpeaking } from './tts'
+import { claimAutomaticSpeech, speak, stopSpeaking } from './tts'
 
 vi.mock(import('../../api/endpoints'), async (importOriginal) => ({ ...(await importOriginal()), prepareSpeech: vi.fn() }))
+
+vi.mock(import('./autoReadClaim'), () => ({ claimAutoRead: vi.fn() }))
 
 /** The shared speech.prepare exchange (contracts/fixtures/speech-prepare.json). */
 const exchange = JSON.parse(readFileSync(resolve(import.meta.dirname, '../../../../../../contracts/fixtures/speech-prepare.json'), 'utf8')) as { request: { text: string }; response: { spoken_text: string } }
@@ -44,5 +48,21 @@ describe('speak (TAL-906)', () => {
     release({ spoken_text: 'Hello' })
     await pending
     expect(spoken).toEqual([])
+  })
+})
+
+
+describe('automatic speech admission', () => {
+  it.each(['stop', 'manual read'] as const)('keeps a committed claim quiet after a pending %s', async (action) => {
+    const claim = deferred<boolean>()
+    vi.mocked(claimAutoRead).mockReturnValue(claim.promise)
+    const pending = claimAutomaticSpeech('synthetic-turn')
+    if (action === 'stop') stopSpeaking()
+    else {
+      vi.mocked(api.prepareSpeech).mockResolvedValue({ spoken_text: 'Manual read' })
+      await speak('Manual read')
+    }
+    claim.resolve(true)
+    expect(await pending).toBe(false)
   })
 })
