@@ -1,4 +1,5 @@
 /** One native-owner seam. Talaria observes its history and never settles it into a local Session. */
+import type { StartupTiming } from '../startup-timing.js'
 import { createHash, randomUUID } from 'node:crypto'
 import { GatewayClarifyBatchSchema, GatewaySessionResultSchema, type ClarifyAnswers, type ClarifyStep, type ExecutionModes, type GatewayClarifyBatch, type GatewayCreateParams, type GatewaySessionParams, type GatewaySessionResult, type GatewaySnapshot, type OwnerAttachment } from '@maudecode/talaria-web-contracts'
 import type { SidecarLike } from '../sidecar/client.js'
@@ -180,20 +181,24 @@ export class GatewaySessions {
   }
 
   /** Called before the direct-chat admission path, including for an already materialized foreign session. */
-  async submit(sid: string, body: Row): Promise<Row | null> {
+  async submit(sid: string, body: Row, timing?: StartupTiming): Promise<Row | null> {
     const target = await this.target(sid)
     if (!target) return null
     const text = str(body.message).trim()
     if (!text) throw new HttpFailure(400, 'message is required')
     // Native policy is frozen by its owner. Changing model/workspace travels through session.mutate,
     // never through a hidden per-turn override or the local Agent setup path.
+    const closeSnapshot = timing?.begin('owner_snapshot')
     const before = await this.call(target, { action: 'snapshot' })
+    closeSnapshot?.(before.state === 'unavailable' ? 'unknown' : before.state === 'attached' ? 'ok' : 'refused')
     if (!this.attachment(before).can_submit) throw new HttpFailure(before.state === 'attached' ? 409 : 403, 'The owning Agent is unavailable or needs an explicit recovery decision', { owner_attachment: this.attachment(before) })
     if (typeof body.submission_id !== 'string' || !body.submission_id || body.submission_id.length > 128) throw new HttpFailure(400, 'A stable submission_id is required for an owner chat')
     if (Array.isArray(body.attachments) && body.attachments.length) throw new HttpFailure(400, 'File attachments are unavailable through this owner connection', { code: 'owner_attachments_unavailable' })
     // Resolve display state before admission; a failed post-ACK read must never turn accepted work into a refusal.
-    const base = await this.deps.service.detail(sid, {})
+    const base = await (timing ? timing.measure('owner_detail', () => this.deps.service.detail(sid, {})) : this.deps.service.detail(sid, {}))
+    const closeSubmit = timing?.begin('owner_submit')
     const result = await this.call(target, { action: 'submit', request_id: body.submission_id, text })
+    closeSubmit?.(result.receipt ? 'ok' : result.state === 'unavailable' ? 'unknown' : 'refused')
     if (!result.receipt) throw new HttpFailure(409, 'The owner did not confirm this admission. Reconcile it before resending.', { owner_attachment: this.attachment(result), outcome_unknown: result.state === 'unavailable' })
     const snapshot = result.snapshot
     const watch = snapshot && (snapshot.running || snapshot.pending.some((p) => p.status === 'queued' || p.status === 'started')) ? this.watches.get(target.key) ?? this.watch(target, base, snapshot) : null

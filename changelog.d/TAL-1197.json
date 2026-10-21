@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Added",
+      "summary": "Chat startup diagnostics now separate admission, setup, and first visible output to help explain slow starts.",
+      "highlight": false,
+      "components": ["web"]
+    }
+  ]
+}

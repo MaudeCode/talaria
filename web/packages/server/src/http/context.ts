@@ -4,6 +4,7 @@
  * security headers, CSP report-only policy, sliding-session renewal, queued
  * cookies, and the structured access log.
  */
+import { StartupTiming } from '../startup-timing.js'
 import type { AsyncLocalStorage } from 'node:async_hooks'
 import type { DnsLookup, PinnedFetch } from './pinned.js'
 import type { IncomingMessage, ServerResponse } from 'node:http'
@@ -242,6 +243,8 @@ export class RequestContext {
   readonly search: string
   private queryParams: URLSearchParams | null = null
   readonly startedAtMs = Date.now()
+  readonly startupTiming: StartupTiming | undefined
+  private closeStartupGuards: (() => void) | undefined
   readonly peer: string
   pendingCookies: string[] = []
   authRefreshCookie: string | null = null
@@ -269,9 +272,16 @@ export class RequestContext {
     // `/api/share/create/` can never reach a handler under a different gate decision than `/api/share/create`.
     this.path = normalizeRequestPath(q >= 0 ? target.slice(0, q) : target)
     this.search = q >= 0 ? target.slice(q) : ''
+    if (this.method === 'POST' && ['/api/chat/start', '/api/chat', '/api/chat/steer'].includes(this.path)) {
+      this.startupTiming = new StartupTiming(deps.log)
+      this.startupTiming.observe('request_receipt')
+      this.closeStartupGuards = this.startupTiming.begin('request_guards')
+    }
     this.peer = req.socket.remoteAddress ?? ''
     this.cspExtras = cspExtras(deps.config.env, (line) => { deps.log(`[webui] WARNING: ${line}`) })
   }
+
+  enterChatStart(): void { this.closeStartupGuards?.(); this.closeStartupGuards = undefined }
 
   get query(): URLSearchParams {
     this.queryParams ??= new URLSearchParams(this.search)
@@ -400,12 +410,20 @@ export class RequestContext {
   }
 
   logRequest(status: number): void {
+    this.closeStartupGuards?.()
+    if (this.startupTiming) {
+      this.startupTiming.observe('acknowledgement')
+      this.startupTiming.emit('acknowledgement', status >= 500 ? 'error' : status >= 400 ? 'refused' : 'ok')
+      if (status >= 400) this.startupTiming.finish(status >= 500 ? 'error' : 'refused')
+      else if (this.closeStartupGuards) this.startupTiming.finish('noop')
+    }
     const record: Record<string, unknown> = {
       ts: new Date().toISOString().replace(/\.\d{3}Z$/, 'Z'),
       remote: this.peer || '-',
       method: this.method,
       path: loggedUrl(this.req.url) || '-',
       status,
+      ...(this.startupTiming ? { trace_id: this.startupTiming.traceId } : {}),
       ms: Math.round((Date.now() - this.startedAtMs) * 10) / 10,
     }
     const env = this.deps.config.env

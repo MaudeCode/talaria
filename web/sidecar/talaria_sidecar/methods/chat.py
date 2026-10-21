@@ -66,6 +66,7 @@ class _Run:
         # agent this run binds afterwards forks no review and stays out of the cache.
         self.session_ended = False
         self.home = None  # the profile home its agent runs under, set by ``start``
+        self.mcp_discovery_outcome = "ok"
 
 
 class _ClarifyEntry:
@@ -776,9 +777,11 @@ def _discover_mcp_tools(run: _Run) -> threading.Event | None:
 
     def discover() -> None:
         try:
-            discover_profile_mcp_tools()
+            discovered = discover_profile_mcp_tools()
             refresh_profile_agents_mcp_tools(profile_home)
+            done.startup_outcome = "ok" if discovered else "noop"
         except Exception:  # noqa: BLE001
+            done.startup_outcome = "error"
             log.warning("MCP discovery failed", exc_info=True)
         finally:
             with _RELEASES_LOCK:
@@ -793,6 +796,7 @@ def _discover_mcp_tools(run: _Run) -> threading.Event | None:
         done = _MCP_DISCOVERIES.get(home)
         if done is None or done.is_set():
             done = threading.Event()
+            done.startup_outcome = "unknown"
             _MCP_DISCOVERIES[home] = done
             # The copied context carries the turn's home override and secret scope into the worker.
             worker = threading.Thread(target=contextvars.copy_context().run, args=(discover,), daemon=True, name=f"chat-mcp-{run.stream_id[:8]}")
@@ -809,14 +813,17 @@ def _discover_mcp_tools(run: _Run) -> threading.Event | None:
                 raise
     while not done.is_set():
         if run.cancel.is_set() or run.ctx.cancelled:
+            run.mcp_discovery_outcome = "cancelled"
             return None
         remaining = None if deadline is None else deadline - time.monotonic()
         if remaining is not None and remaining <= 0:
+            run.mcp_discovery_outcome = "timeout"
             run.ctx.emit("notice", {"key": _MCP_PENDING_KEY, "level": "info", "kind": "sticky",
                                     "text": "Some tools are still connecting. Using available tools for this turn.",
                                     "lapses_with_agent": False})
             return done
         done.wait(0.25 if remaining is None else min(0.25, remaining))
+    run.mcp_discovery_outcome = getattr(done, "startup_outcome", "ok")
     return None
 
 
@@ -1591,10 +1598,18 @@ def start(ctx: CallContext, params: dict) -> dict:  # noqa: PLR0915 - one turn, 
                 usage_state["last"] = usage
                 raw_emit("usage", usage)
         raw_emit(event, data)
+    timing = getattr(ctx, "timing", None)
     try:
+        if timing:
+            timing.begin("mcp_discovery")
         mcp_discovery = _discover_mcp_tools(run)
         pending_mcp = mcp_discovery is not None
-        runtime = _resolve_runtime(provider, model)
+        if timing:
+            timing.end("mcp_discovery", "cancelled" if ctx.cancelled or run.cancel.is_set() else "timeout" if pending_mcp else run.mcp_discovery_outcome)
+        with timing.span("runtime_resolution") if timing else contextlib.nullcontext():
+            runtime = _resolve_runtime(provider, model)
+        if timing:
+            timing.begin("agent_binding")
         resolved_model = model or str(runtime.get("model") or "")
         resolved_provider = provider or runtime.get("provider")
         AIAgent = _agent_class()
@@ -1900,6 +1915,7 @@ def start(ctx: CallContext, params: dict) -> dict:  # noqa: PLR0915 - one turn, 
                     agent = cached[0]
                     _AGENT_CACHE.move_to_end(session_id)
                     bind(agent)
+        cached_agent = agent is not None
         if agent is not None:
             for name in ("stream_delta_callback", "reasoning_callback", "tool_progress_callback", "clarify_callback", "interim_assistant_callback", "tool_start_callback", "tool_complete_callback", "tool_result_metadata_callback", "status_callback", "thinking_callback", "notice_callback", "notice_clear_callback"):
                 if name in kwargs and hasattr(agent, name):
@@ -1926,6 +1942,9 @@ def start(ctx: CallContext, params: dict) -> dict:  # noqa: PLR0915 - one turn, 
                     _AGENT_CACHE[session_id] = (agent, signature, home)
                     _release_agents_locked([replaced] if replaced else [])
                     _evict_idle_agents_locked()
+        if timing:
+            timing.end("agent_binding", "cache_hit" if cached_agent else "ok")
+            timing.begin("conversation_setup")
         # Predecessor ``agent.ephemeral_system_prompt``: personality, surface context, progress guidance, and delivery
         # hints travel as runtime instructions that are never persisted to history.
         ephemeral = params.get("ephemeral_system_prompt")
@@ -2011,6 +2030,10 @@ def start(ctx: CallContext, params: dict) -> dict:  # noqa: PLR0915 - one turn, 
                 bind_turn_secret_capture = None
                 log.debug("Agent lacks turn-local skill secret capture; secure setup is unavailable")
             with bind_turn_secret_capture(skill_secret_prompt) if bind_turn_secret_capture and params.get("skill_secret") is True else contextlib.nullcontext():
+                if timing:
+                    timing.end("conversation_setup")
+                    timing.observe("conversation_entry")
+                    timing.emit("conversation_entry")
                 raw = agent.run_conversation(**run_kwargs)
             result = raw if isinstance(raw, dict) else {}
         except Exception as exc:  # noqa: BLE001

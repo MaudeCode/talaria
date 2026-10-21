@@ -1,4 +1,5 @@
 /** Chat turn admission, control, approvals, clarify, goals, background tasks, and side questions. */
+import { timingOutcome } from '../startup-timing.js'
 import { GATEWAY_APPROVAL_RELAY_UNAVAILABLE, isGenericContinuationIntent } from '../sessions/turn.js'
 import { implement } from '@orpc/server'
 import { chatContract, MAX_CHAT_ATTACHMENTS, RPC_ERROR_CODES, type SidecarResult } from '@maudecode/talaria-web-contracts'
@@ -120,18 +121,37 @@ async function expandPromptBuiltin(ctx: RequestContext, s: Session, msg: string,
 
 /** `chat.start`; a `chat.steer` sent while a background turn runs starts the user's turn through it too (TAL-460). */
 async function startChat(ctx: RequestContext, body: Record<string, unknown>, settle: Pick<StartTurnOptions, 'onDone' | 'onFailed'> = {}): Promise<Record<string, unknown>> {
+  ctx.enterChatStart()
+  const timing = ctx.startupTiming
+  try {
+    const response = await startChatTimed(ctx, body, settle)
+    if (!response.stream_id) timing?.finish('noop')
+    return response
+  } catch (error) { timing?.finish(timingOutcome(error)); throw error }
+}
+
+async function startChatTimed(ctx: RequestContext, body: Record<string, unknown>, settle: Pick<StartTurnOptions, 'onDone' | 'onFailed'>): Promise<Record<string, unknown>> {
+  const timing = ctx.startupTiming
+  const measure = <T>(name: Parameters<NonNullable<typeof timing>['measure']>[0], fn: () => Promise<T> | T): Promise<T> => timing ? timing.measure(name, fn) : Promise.resolve(fn())
   requireField(body, 'session_id')
+  timing?.identify(str(body.session_id))
   if (str(body.message).trim() === '[SILENT]') return { status: 'suppressed', reason: 'silent_control_message' }
   if (body.regenerate === true) throw new HttpError(409, 'Regeneration is not supported by this backend.', { code: 'unsupported_regeneration_backend' })
   const sid = str(body.session_id)
   // Python `_agent_runtime_barrier_response`: a stale local Agent checkout is refused with a typed 409 before any
   // session state is materialised, claimed, or mutated.
-  await ensureAgentRuntimeCurrent(ctx.deps.sidecar())
+  await measure('runtime_barrier', () => ensureAgentRuntimeCurrent(ctx.deps.sidecar()))
   const owner = ctx.deps.sessions.owner
-  if (owner && (await owner.isOwned(sid))) {
+  if (owner && (await measure('owner_routing', () => owner.isOwned(sid)))) {
     if (!(await ctx.deps.sessions.sessionIdVisible(sid))) throw new HttpError(404, 'Session not found')
-    return (await owner.submit(sid, body))!
+    const response = (await owner.submit(sid, body, timing))!
+    timing?.finish('ok')
+    return response
   }
+  // Admission reads the cached catalog snapshot; it never waits for a refresh.
+  timing?.begin('catalog_wait')
+  timing?.end('catalog_wait', 'noop')
+  const closeLoad = timing?.begin('session_load')
   let s: Session
   try {
     s = (await ctx.deps.sessionStore.get(sid))
@@ -144,19 +164,22 @@ async function startChat(ctx: RequestContext, body: Record<string, unknown>, set
     await ctx.deps.sessionStore.save(synth.session)
     s = (await ctx.deps.sessionStore.get(sid))
   }
+  closeLoad?.()
+  const closeOwnership = timing?.begin('ownership_checks')
   // Python `_get_or_materialize_session` raised PermissionError for both: a read-only import and a delegated
   // subagent child (by sidecar tag or state.db row), which chat start answered with the same 403.
   if ((await ctx.deps.sessions.isReadOnly(s)) || s.branchSourceReadonly || (await ctx.deps.sessions.isSubagentViewOnly(sid))) throw new HttpError(403, 'Read-only imported sessions cannot be continued from WebUI')
   const requestedProfile = str(body.profile).trim()
   if (requestedProfile && requestedProfile !== 'default' && !PROFILE_ID_RE.test(requestedProfile)) throw new HttpError(400, 'invalid profile')
   visibleOrRetag(ctx, s, requestedProfile)
+  closeOwnership?.()
   const msg = str(body.message).trim()
   const attachments = normalizeChatAttachments(body.attachments).slice(0, MAX_CHAT_ATTACHMENTS)
   // TAL-276: an attached file alone makes a turn; one with neither text nor a file path is refused.
   if (!msg && !attachments.some((att) => str(att.path))) throw new HttpError(400, 'message is required')
-  const prompt = await expandPromptBuiltin(ctx, s, msg, body.workspace)
+  const prompt = await measure('prompt_preparation', () => expandPromptBuiltin(ctx, s, msg, body.workspace))
   // TAL-460: the user's message never joins a background turn; that turn stops quietly and this one takes its place.
-  const yielded = await ctx.deps.turns.yieldBackgroundTurn(sid)
+  const yielded = await measure('background_yield', () => ctx.deps.turns.yieldBackgroundTurn(sid))
   if (prompt !== null || yielded) {
     s = (await ctx.deps.sessionStore.get(sid))
     visibleOrRetag(ctx, s, requestedProfile)
@@ -165,10 +188,10 @@ async function startChat(ctx: RequestContext, body: Record<string, unknown>, set
   if (compressionRecoveryPayload(s) && !attachments.length && isGenericContinuationIntent(msg)) {
     throw new HttpError(409, 'This session exhausted context compression. Start a focused continuation, then describe the next narrow task.', { type: 'compression_recovery_required', compression_recovery: s.compression_recovery, session_id: s.session_id })
   }
-  const workspace = (await ctx.deps.sessions.turnWorkspace(s, body.workspace))
+  const workspace = await measure('workspace_preparation', () => ctx.deps.sessions.turnWorkspace(s, body.workspace))
   const [model, provider, normalized] = ctx.deps.sessions.turnModel(s, body)
   if (body.moa_config) throw new HttpError(503, 'MoA overrides need the Agent command registry (checkpoint 7).')
-  const response = (await ctx.deps.turns.start(s, { msg, ...(prompt === null ? {} : { prompt }), attachments, workspace, model, modelProvider: provider, normalizedModel: normalized, source: 'webui', voiceTurn: body.voice_turn === true, connectCard: body.connect_card === true, skillSecret: body.skill_secret === true, ...settle }))
+  const response = (await ctx.deps.turns.start(s, { timing, msg, ...(prompt === null ? {} : { prompt }), attachments, workspace, model, modelProvider: provider, normalizedModel: normalized, source: 'webui', voiceTurn: body.voice_turn === true, connectCard: body.connect_card === true, skillSecret: body.skill_secret === true, ...settle }))
   if (response._status !== undefined && response._status >= 400) throw new HttpError(response._status, response.error ?? 'chat start failed', response.active_stream_id ? { active_stream_id: response.active_stream_id } : {})
   return startPayload(response)
 }

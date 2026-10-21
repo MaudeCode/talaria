@@ -342,3 +342,62 @@ changed service configuration, unsafe source/dependencies or missing modern
 APIs remain refusals. Keep authentication, ledger and recovery records intact.
 Do not bypass custody checks, force-kill a service or rewrite its configuration
 to clear a refusal. Safe sibling services can recover independently.
+
+### Chat startup phase breakdown
+
+Search the existing server log for `"event":"chat_start_timing"`. Each record
+contains a server-generated `trace_id`, SHA-256 `session_key` and `stream_key`,
+a process name, and process-local monotonic millisecond offsets. The HTTP access
+record includes the same `trace_id`; the sidecar receives it in the optional RPC
+envelope field. To find a run, hash its exact session/stream ID with SHA-256,
+locate that key, then filter by its `trace_id`. For example, on an exported log:
+
+```sh
+rg '"event":"chat_start_timing"' server.log
+rg '"trace_id":"<trace from the matching record>"' server.log
+```
+
+The server emits at most four records per start: acknowledgement, dispatch,
+first visible content, and terminal outcome. Sidecar stderr, already forwarded
+into that log, adds at most three: conversation entry, first visible content,
+and terminal outcome. Spans that have not closed have null duration/outcome.
+Each span closes once. Outcomes distinguish success, no-op, cache hit, timeout,
+refusal, cancellation, error, and an unknown result. A transport exit or sidecar
+shutdown cannot prove whether the Agent performed work, so it records unknown.
+Diagnostics never retry admission. A canonical-owner start instead records its
+snapshot, detail load and submit; a lost submit acknowledgement remains unknown.
+Its terminal diagnostic ends admission observation, not the owner's conversation.
+
+Server spans cover request guards (profile/visibility/routing and body parsing),
+the runtime barrier, owner routing, catalog wait, session loading and ownership,
+prompt/background preparation, workspace preparation, admission checks and
+persistence, workspace persistence, worker preparation, and sidecar dispatch/call.
+Catalog admission uses a cached snapshot, so its wait span is an explicit no-op;
+no refresh is introduced for timing. The worker preparation span includes journal/history loading, compaction,
+attachments, profile configuration, personality and approval setup. Sidecar spans
+cover receipt-to-worker scheduling, MCP discovery wait, runtime resolution,
+agent binding (cache hit or new instance), and conversation setup before entry
+into `run_conversation`. An MCP wait timeout can continue with available tools;
+it is not a failed conversation. The acknowledgement observation means the server
+has written its HTTP response; it does not measure a client receipt.
+
+The first published run status, first sidecar frame (which may be a notice), and
+first visible token, reasoning, tool or interim reply are separate observations.
+Only one first-visible snapshot is emitted; terminal records retain each content
+kind's first observation. Supported Agent callbacks currently expose no reliable
+first-provider-call or first-provider-chunk boundary here. Both are explicitly
+`unavailable`; neither is estimated from a tool, retry, Agent log, or API timer.
+
+Read durations only within their named process. Spans can nest and overlap
+(particularly acknowledgement and worker setup); do not sum overlapping spans or
+subtract server and sidecar offsets. There is no clock synchronization basis.
+The transport gap and setup inside Agent `run_conversation` before provider entry
+are intentionally unattributed. Server dispatch-to-first-output includes transport
+and sidecar/Agent startup; it is neither network latency nor time to first token.
+API duration can also include preparation, retries and the whole completion.
+
+Timing records contain fixed phase names, outcomes, opaque correlation and
+numbers only. They contain no prompt, memory, tool arguments, exception messages,
+raw URLs, paths or credentials, even on errors. This redaction promise covers the
+timing records; ordinary Agent/application logs have their own redaction rules.
+Export only the matching timing and access records needed for a diagnosis.

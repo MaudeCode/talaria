@@ -5,6 +5,7 @@
  * (Python `api/routes.py::_start_chat_stream_for_session`,
  * `api/streaming.py::_run_agent_streaming`, `cancel_stream`).
  */
+import { StartupTiming, timingOutcome } from '../startup-timing.js'
 import { randomUUID } from 'node:crypto'
 import { closeSync, fstatSync, readFileSync } from 'node:fs'
 import { openAnchoredFd } from '../workspace/fs.js'
@@ -118,6 +119,7 @@ interface ConsumedSteer { steer_id: string; text: string; agent_text: string; su
 export type SteerWithdrawReason = SteerWithdrawRequest['reason']
 
 export interface StartTurnOptions {
+  timing?: StartupTiming | undefined
   /** The user's text: the transcript row, title, and `persist_user_message`. */
   msg: string
   /** What the model gets instead of `msg` (TAL-817: a prompt built-in's expansion); the Agent keeps it as the row's `api_content`. */
@@ -434,6 +436,20 @@ export class TurnRunner {
 
   /** Python `_start_chat_stream_for_session`: persist pending state, register the channel, launch the worker. */
   private async admit(session: Session, opts: StartTurnOptions, releaseStopHold = false): Promise<AdmissionResult> {
+    const timing = opts.timing ?? new StartupTiming(this.deps.log)
+    timing.identify(session.session_id)
+    timing.begin('admission')
+    try {
+      const response = await this.admitTimed(session, { ...opts, timing }, releaseStopHold)
+      if (response._status !== undefined) timing.finish('refused')
+      else if (!response.stream_id || !this.workers.has(response.stream_id)) timing.finish('noop')
+      return response
+    } catch (error) { timing.finish(timingOutcome(error)); throw error }
+  }
+
+  private async admitTimed(session: Session, opts: StartTurnOptions & { timing: StartupTiming }, releaseStopHold: boolean): Promise<AdmissionResult> {
+    const timing = opts.timing
+    const closeChecks = timing.begin('admission_checks')
     const s = session
     const readOnly = (await this.deps.service().readOnlyReason(s))
     if (readOnly) return { error: readOnly, _status: 403 }
@@ -452,9 +468,13 @@ export class TurnRunner {
     }
     const accepted = isDict(s.extra.completion_acceptances) ? s.extra.completion_acceptances : {}
     if (opts.completionKeys?.length && opts.completionKeys.every((key) => typeof accepted[key] === 'string' && accepted[key])) {
+      timing.identify(s.session_id, str(accepted[opts.completionKeys[0]!]))
+      timing.finish('noop')
       return { stream_id: str(accepted[opts.completionKeys[0]!]), session_id: s.session_id }
     }
+    closeChecks()
     const streamId = randomUUID().replace(/-/g, '')
+    timing.identify(s.session_id, streamId)
     const wasHiddenEmpty = !s.messages.length && !s.context_messages.length && !s.hasPendingPrompt
     const attachments = opts.attachments ?? []
     // A background wakeup stays one in a forked session too (TAL-460).
@@ -492,7 +512,7 @@ export class TurnRunner {
     if (opts.backgroundUpdate) recordBackgroundUpdate(s, streamId, opts.backgroundUpdate)
     const admission = { stream_id: streamId, session_id: s.session_id, started_at: this.deps.now(), phase: 'starting', workspace: opts.workspace, model: opts.model, provider: opts.modelProvider, ephemeral: Boolean(opts.ephemeral), origin: turnOrigin(source), admitting: true }
     this.registry.registerActiveRun(admission)
-    try { (await this.deps.store.save(s)) } catch (error) {
+    try { await timing.measure('admission_persistence', () => this.deps.store.save(s)) } catch (error) {
       this.registry.activeRuns.delete(streamId)
       s.extra.background_updates = previousUpdates
       s.extra.completion_acceptances = previousAcceptances
@@ -502,13 +522,15 @@ export class TurnRunner {
     this.registry.writebackOwners.set(s.session_id, streamId)
     // A new chat appears in the list; every turn tells open clients a run started (TAL-434).
     this.deps.events.publish(wasHiddenEmpty ? 'session_new' : 'turn_started', { profile: s.profile, sessionId: s.session_id })
-    try { (await this.deps.workspaces.setLastWorkspace(opts.workspace, s.profile)) } catch { /* best effort */ }
+    try { await timing.measure('workspace_persistence', () => this.deps.workspaces.setLastWorkspace(opts.workspace, s.profile)) } catch { /* best effort */ }
     const channel = this.registry.create(streamId, s.session_id)
     admission.admitting = false
     if (opts.goalRelated) this.registry.goalRelated.add(streamId)
+    timing.end('admission')
     const worker = this.run(s.session_id, streamId, channel, opts, compactionDue).catch((error: unknown) => {
+      timing.finish(timingOutcome(error))
       this.deps.log(`[webui] ERROR turn ${streamId} crashed\n${error instanceof Error ? (error.stack ?? error.message) : String(error)}`)
-    }).finally(() => { this.workers.delete(streamId) })
+    }).finally(() => { timing.finish(this.registry.cancelled.has(streamId) ? 'cancelled' : undefined); this.workers.delete(streamId) })
     this.workers.set(streamId, worker)
     const response: StartTurnResponse = { stream_id: streamId, session_id: s.session_id, pending_started_at: s.pending_started_at, turn_id: streamId, title: s.title }
     if (opts.normalizedModel && opts.model) response.effective_model = opts.model
@@ -532,6 +554,8 @@ export class TurnRunner {
 
   private async run(sessionId: string, streamId: string, channel: StreamChannel, opts: StartTurnOptions, compactionDue: boolean): Promise<void> {
     const { deps } = this
+    const timing = opts.timing
+    const closePreparation = timing?.begin('worker_preparation')
     let writer: RunJournalWriter | null = null
     try {
       writer = (await deps.journal.writer(sessionId, streamId))
@@ -584,6 +608,7 @@ export class TurnRunner {
       if (this.registry.cancelled.has(streamId) && !['cancel', 'apperror', 'steer_consumed', 'steer_withdrawn', 'run_status'].includes(event)) return
       // `cancel()` already wrote the terminal row and closed the stream: the worker's unwind adds no second one.
       if (event === 'cancel' && !this.registry.streams.has(streamId)) {
+        timing?.frame(event, data)
         try { deps.onTerminal?.(streamId, 'cancelled') } catch { /* best effort */ }
         return
       }
@@ -597,6 +622,7 @@ export class TurnRunner {
         }
       }
       channel.put([event, data, eventId, meta.redacted])
+      timing?.frame(event, data)
       if (event === 'done' || event === 'cancel' || event === 'apperror' || event === 'error') {
         // Relay's phase follows the turn outcome, so a background Live Activity ends as the app would end it.
         const state = str(data.terminal_state)
@@ -726,6 +752,8 @@ export class TurnRunner {
       await put('context_status', { session_id: sessionId, prefill: { status: 'not_configured', source: 'none', label: '', message_count: 0 } })
       // Setup awaits can outlive a gateway adoption, so the owner is rechecked right before dispatch.
       await deps.service().assertWritable(s)
+      closePreparation?.()
+      timing?.emit('dispatch')
       agentDispatched = true
       const result = await sidecar.call('chat.start', {
         profile_home: deps.profileHome(s.profile), session_id: sessionId, stream_id: streamId, ...this.agentWorkspace(s, opts.workspace), model: opts.model ?? '', model_provider: opts.modelProvider,
@@ -734,9 +762,11 @@ export class TurnRunner {
         ...(opts.connectCard ? { connect_card: true } : {}),
         ...(opts.skillSecret ? { skill_secret: true } : {}),
       }, {
+        timing,
         signal: controller.signal,
         timeoutMs: 0,
         onStream: (frame) => {
+          timing?.observe('first_sidecar_output')
           const receivedAt = deps.now()
           streamWrites = streamWrites.then(async () => {
             const publish = put
@@ -1140,9 +1170,11 @@ export class TurnRunner {
       succeeded = true
       await opts.onDone?.(lastAnswer(s.messages))
     } catch (error) {
+      timing?.fail(error)
       await streamWrites
       const readOnly = !agentDispatched ? (await deps.service().readOnlyReason(s)) : null
       if (readOnly) {
+        timing?.fail({ status: 403 })
         ownershipRefused = true
         if (this.registry.writebackOwners.get(sessionId) === streamId && s.active_stream_id === streamId) {
           // Cancellation persists the prompt and a Stop row; an unstarted, refused turn must add neither.

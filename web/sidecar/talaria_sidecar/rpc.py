@@ -21,6 +21,8 @@ import threading
 import traceback
 from typing import Any, Callable
 
+from .startup_timing import StartupTiming, outcome_for
+
 from .errors import (
     APPLICATION_ERROR,
     INTERNAL_ERROR,
@@ -42,11 +44,12 @@ DEFAULT_MAX_CALLS = 64
 class CallContext:
     """Per-request handle: stream emission and cooperative cancellation."""
 
-    def __init__(self, server: "RpcServer", request_id: Any, method: str):
+    def __init__(self, server: "RpcServer", request_id: Any, method: str, request: dict | None = None):
         self.server = server
         self.id = request_id
         self.method = method
         self.cancel_event = threading.Event()
+        self.timing = StartupTiming(request) if method == "chat.start" and request is not None else None
         self._seq = 0
         self._seq_lock = threading.Lock()
 
@@ -63,6 +66,8 @@ class CallContext:
         with self._seq_lock:
             self._seq += 1
             seq = self._seq
+        if self.timing:
+            self.timing.frame(event, data)
         self.server.notify("stream", {"id": self.id, "seq": seq, "event": event, "data": data if data is not None else {}})
 
 
@@ -127,6 +132,8 @@ class RpcServer:
         with self._active_lock:
             for ctx in self._active.values():
                 ctx.cancel_event.set()
+                if ctx.timing:
+                    ctx.timing.finish("unknown")
 
     # ── dispatch ──────────────────────────────────────────────────────────
     def _register(self, request: dict) -> CallContext | None:
@@ -135,7 +142,7 @@ class RpcServer:
         method = request.get("method")
         if request_id is None or not isinstance(method, str):
             return None
-        ctx = CallContext(self, request_id, method)
+        ctx = CallContext(self, request_id, method, request)
         with self._active_lock:
             self._active[request_id] = ctx
         return ctx
@@ -147,6 +154,8 @@ class RpcServer:
         if params is None:
             params = {}
         if not isinstance(method, str) or not isinstance(params, dict):
+            if ctx and ctx.timing:
+                ctx.timing.finish("refused")
             if request_id is not None:
                 with self._active_lock:
                     self._active.pop(request_id, None)
@@ -160,19 +169,28 @@ class RpcServer:
                 self._error(request_id, METHOD_NOT_FOUND, f"unknown method {method}")
             return
         if ctx is None:
-            ctx = CallContext(self, request_id, method)
+            ctx = CallContext(self, request_id, method, request)
             if request_id is not None:
                 with self._active_lock:
                     self._active[request_id] = ctx
+        outcome = "error"
+        if ctx.timing:
+            ctx.timing.end("rpc_wait")
+            ctx.timing.observe("rpc_start")
         try:
             result = handler(ctx, params)
+            status = result.get("status") if isinstance(result, dict) else None
+            failed = isinstance(result, dict) and bool(result.get("failed") or result.get("partial") or result.get("error"))
+            outcome = "cancelled" if ctx.cancelled or status == "cancelled" else "error" if status == "error" or failed else "ok"
             if request_id is not None:
                 self._result(request_id, result if result is not None else {})
         except RpcError as exc:
+            outcome = outcome_for(exc)
             if request_id is not None:
                 error = exc.to_json()
                 self._error(request_id, error["code"], error["message"], error.get("data"))
         except TypeError as exc:
+            outcome = "refused"
             # Wrong keyword arguments reaching a wrapped Agent function.
             log.debug("invalid params for %s", method, exc_info=True)
             if request_id is not None:
@@ -182,6 +200,8 @@ class RpcServer:
             if request_id is not None:
                 self._error(request_id, INTERNAL_ERROR, f"{type(exc).__name__}: {exc}")
         finally:
+            if ctx.timing:
+                ctx.timing.finish(outcome)
             if request_id is not None:
                 with self._active_lock:
                     self._active.pop(request_id, None)
@@ -237,6 +257,8 @@ class RpcServer:
                 self._dispatch(request)
                 continue
             if not self._slots.acquire(blocking=False):
+                if request.get("method") == "chat.start":
+                    StartupTiming(request).finish("refused")
                 self._error(request.get("id"), APPLICATION_ERROR, "sidecar is at its concurrent call limit", {"condition": "sidecar_busy"})
                 continue
             ctx = self._register(request)

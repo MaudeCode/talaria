@@ -183,6 +183,22 @@ describe('canonical owner attachment', () => {
     expect(sidecar.calls.some((c) => c.method === 'chat.start')).toBe(false)
   })
 
+  it('records a lost submit acknowledgement as unknown without replaying admission', async () => {
+    sidecar.respond('gateway.session', (params) => params.action === 'submit'
+      ? { state: 'unavailable', reason: 'owner_connection_lost', snapshot: null, receipt: null }
+      : attached(snapshot()))
+    const result = await post('/api/chat/start', { session_id: sid, message: 'PRIVATE_PROMPT', submission_id: 'stable-input' })
+    expect(result.status).toBe(409)
+    expect(await result.json()).toMatchObject({ outcome_unknown: true })
+    const records = s.logs.filter((line) => line.includes('"event":"chat_start_timing"')).map((line) => JSON.parse(line.slice(line.indexOf('{'))) as unknown) as { stage: string; outcome: string; spans: Record<string, unknown> }[]
+    expect(records.find((record) => record.stage === 'terminal')).toMatchObject({ outcome: 'unknown', spans: {
+      owner_snapshot: { outcome: 'ok', duration_ms: (expect.any(Number) as unknown) }, owner_detail: { outcome: 'ok', duration_ms: (expect.any(Number) as unknown) }, owner_submit: { outcome: 'unknown', duration_ms: (expect.any(Number) as unknown) },
+    } })
+    expect(sidecar.calls.filter((c) => c.method === 'gateway.session' && (c.params as { action: string }).action === 'submit')).toHaveLength(1)
+    expect(sidecar.calls.some((c) => c.method === 'chat.start')).toBe(false)
+    expect(JSON.stringify(records)).not.toContain('PRIVATE_PROMPT')
+  })
+
   it('keeps a confirmed admission successful when its post-ACK snapshot becomes unavailable', async () => {
     sidecar.respond('gateway.session', (params) => params.action === 'submit'
       ? { state: 'unavailable', reason: 'owner_connection_lost', snapshot: null, receipt: admission('queued') }

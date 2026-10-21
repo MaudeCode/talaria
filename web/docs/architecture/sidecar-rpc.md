@@ -580,3 +580,14 @@ Tools actions and explicit operational restarts consent to interruption. The
 post-update restart queue passes its Restart now intent; automatic attempts wait
 on live-work refusals, retain the notification and poll again. Existing gateway
 counts remain advisory; the Agent guard also covers cron and delegated work.
+
+### Startup correlation
+
+The request envelope optionally carries `trace_id` (UUID). It is diagnostic
+metadata, not an execution or admission key; older peers may ignore it.
+`CallContext` captures receipt and worker start separately for `chat.start` and
+passes its recorder explicitly into the chat handler. Callback threads retain
+that call's recorder rather than consulting process-global session context.
+Bounded redacted startup records go to stderr, never to a per-token RPC stream
+or a client endpoint. See [the startup breakdown](../troubleshooting.md#chat-startup-phase-breakdown)
+for process clock limits, retrieval, and unsupported provider boundaries.
