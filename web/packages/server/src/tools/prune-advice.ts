@@ -20,6 +20,8 @@ export interface PruneAdviceDeps {
   sidecar: () => SidecarLike | null
   /** Every Agent profile, the root as `default`, with its home. */
   profiles: () => { name: string; home: string }[]
+  /** The profile's write lease (`ProfileService.beginWrite`): deletion waits for it, and it is refused while deletion runs. */
+  lease: (name: string) => Promise<(() => void) | 'deleting' | 'missing' | 'unreadable'>
   notifications: UpdateNotificationStore
   /** Seconds. */
   now: () => number
@@ -60,6 +62,9 @@ export class PruneAdvice {
   async check(name: string, home: string): Promise<boolean> {
     const sidecar = this.deps.sidecar()
     if (sidecar?.status !== 'ready') return false
+    // Held across the Agent read and the question it records, so a deleted profile never gets one.
+    const release = await this.deps.lease(name)
+    if (typeof release !== 'function') return false
     try {
       const { advice } = await sidecar.call('state_db.prune_advice', { profile_home: home }, { timeoutMs: 120_000 })
       // The message names the low disk and what turning auto-prune on deletes, so a client that shows only the message
@@ -74,6 +79,8 @@ export class PruneAdvice {
     } catch (error) {
       this.deps.log(`[webui] WARNING: auto-prune advice for profile ${name} failed: ${(error as Error).message}`)
       return false
+    } finally {
+      release()
     }
   }
 }

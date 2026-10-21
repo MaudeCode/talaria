@@ -198,7 +198,7 @@ export async function createDeps(opts: CreateDepsOptions): Promise<AppDeps> {
     return resolvePathLikePython(override ? override.replace(/^~(?=$|\/)/, home) : join(config.stateDir, 'attachments'))
   }
   const sidecar = opts.sidecar ?? null
-  const pruneAdvice = new PruneAdvice({ sidecar: () => deps.sidecar(), profiles: agentProfiles, notifications: updateNotifications, now, log })
+  const pruneAdvice = new PruneAdvice({ sidecar: () => deps.sidecar(), profiles: agentProfiles, lease: (name) => deps.profiles.beginWrite(name), notifications: updateNotifications, now, log })
   const agentConfig = new AgentConfig({ sidecar: () => sidecar, env })
   /** A profile's config.yaml `model` as [model, provider] as written; '' / null when unset or not yet read. */
   const profileDefaultModel = (profile: string | null): [string, string | null] => {

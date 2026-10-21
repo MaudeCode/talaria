@@ -75,6 +75,32 @@ describe('auto-prune question (TAL-1274)', () => {
     expect((await t.questions()).map((row) => row.phase)).toEqual(['succeeded'])
   })
 
+  it('checks a profile only under its write lease, so a profile being deleted never gets a question', async () => {
+    const t = await boot()
+    const work = join(t.s.state, 'profiles', 'work')
+    mkdirSync(work, { recursive: true })
+    t.low.add(t.s.state)
+    t.low.add(work)
+    const held: string[] = []
+    let released = 0
+    const beginWrite = t.s.deps.profiles.beginWrite.bind(t.s.deps.profiles)
+    t.s.deps.profiles.beginWrite = async (name) => {
+      if (name === 'work') return 'deleting'
+      const release = await beginWrite(name)
+      if (typeof release !== 'function') return release
+      held.push(name)
+      return () => { released += 1; release() }
+    }
+    await t.s.deps.pruneAdvice.sweep()
+    expect(held).toEqual(['default'])
+    expect(released).toBe(1)
+    // The profile under deletion was never read, and is retried on the next sweep rather than marked checked.
+    expect(t.adviceCalls()).toBe(1)
+    t.s.deps.profiles.beginWrite = beginWrite
+    await t.s.deps.pruneAdvice.sweep()
+    expect(t.adviceCalls()).toBe(2)
+  })
+
   it('publishes nothing when the Agent does not ask, including Agents before v0.22.3', async () => {
     const t = await boot()
     await t.s.deps.pruneAdvice.sweep()
