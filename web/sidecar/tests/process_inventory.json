@@ -2444,6 +2444,13 @@
       "cases": [
         ""
       ]
+    },
+    "tests/test_gateway_sessions.py::test_real_owner_queued_controls": {
+      "layer": "compatibility",
+      "reason": "Supported-Agent queued-control execution semantics: an actual native owner consumes steering in the running turn and replaces queued text before execution. Boundary fakes cannot establish owner execution behavior.",
+      "cases": [
+        ""
+      ]
     }
   }
 }

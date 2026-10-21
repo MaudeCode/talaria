@@ -109,6 +109,46 @@ async def probe(home, peer, desc, *, require_gap=False):
         viewer.close()
 
 
+async def probe_queued_controls(home, peer, desc):
+    sidecar = SidecarProcess(home)
+    try:
+        async with websocket(home, desc) as native:
+            created = await rpc(native, "session.create", request_id="queue-create", source="cli", toolsets=[])
+            sid = created["result"]["session_id"]
+            def call(action, **params):
+                return sidecar.result("gateway.session", {"profile_home": str(home), "session_id": sid, "action": action, **params})
+            await asyncio.to_thread(call, "submit", request_id="queue-running", text="BLOCK_STARTED")
+            assert await asyncio.to_thread(peer.blocked.wait, 25), "running turn did not reach provider"
+            steer = await asyncio.to_thread(call, "submit", request_id="queue-steer", text="QUEUE_CORRECTION")
+            edit = await asyncio.to_thread(call, "submit", request_id="queue-edit", text="NEVER_RUN_ORIGINAL")
+            steered = await asyncio.to_thread(call, "steer_queued", admission_id=steer["receipt"]["admission_id"])
+            assert steered["state"] == "attached", steered
+            assert any(p["admission_id"] == steer["receipt"]["admission_id"] and p.get("steering") is True for p in steered["snapshot"]["pending"]), steered
+            replacement = dict(admission_id=edit["receipt"]["admission_id"], submission_id="queue-edit-stable", text="REPLACED_QUEUED")
+            replaced = await asyncio.to_thread(call, "replace_queued", **replacement)
+            repeated = await asyncio.to_thread(call, "replace_queued", **replacement)
+            assert replaced["state"] == repeated["state"] == "attached", (replaced, repeated)
+            assert replaced["receipt"]["admission_id"] == repeated["receipt"]["admission_id"], (replaced, repeated)
+            peer.release.set()
+            deadline = time.monotonic() + 40
+            while True:
+                final = await asyncio.to_thread(call, "snapshot")
+                if final["snapshot"] and not final["snapshot"]["pending"]:
+                    break
+                assert time.monotonic() < deadline, final
+                await asyncio.sleep(.05)
+            contexts = [body["messages"] for body in peer.requests]
+            # Steering reaches the original execution before the edited queued turn starts.
+            corrected = next(i for i, rows in enumerate(contexts) if "QUEUE_CORRECTION" in json.dumps(rows))
+            edited = next(i for i, rows in enumerate(contexts) if "REPLACED_QUEUED" in json.dumps(rows))
+            assert corrected < edited, contexts
+            assert "NEVER_RUN_ORIGINAL" not in json.dumps(contexts), contexts
+            assert "REPLACED_QUEUED" in json.dumps(final["snapshot"]["messages"]), final
+    finally:
+        peer.release.set()
+        sidecar.close()
+
+
 async def probe_control(home, peer, desc, kind):
     sidecar = SidecarProcess(home)
     try:
@@ -443,7 +483,9 @@ def main():
             probe_recovery(home, peer, env)
             return
         with daemon(agent, home, env, barrier=mode == "replay", fixture=str(Path(__file__).with_name("gateway_replay_daemon.py"))) as (_, desc):
-            if mode == "profiles":
+            if mode == "queued-controls":
+                asyncio.run(probe_queued_controls(home, peer, desc))
+            elif mode == "profiles":
                 asyncio.run(probe_profiles(home, peer, desc))
             elif mode in {"approval", "clarify"}:
                 asyncio.run(probe_control(home, peer, desc, mode))

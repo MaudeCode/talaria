@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Added",
+      "summary": "Edit queued messages or steer them into the running response in Agent-owned chats when the Agent allows it.",
+      "highlight": false,
+      "components": ["web"]
+    }
+  ]
+}

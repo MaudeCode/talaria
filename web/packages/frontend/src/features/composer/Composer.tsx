@@ -5,7 +5,7 @@ import { m } from '../../paraglide/messages.js'
 import * as api from '../../api/endpoints'
 import { keys } from '../../api/queryKeys'
 import type { Session, Settings } from '../../contracts'
-import type { ExecutionMode } from '@maudecode/talaria-web-contracts'
+import type { ExecutionMode, OwnerActionRequest } from '@maudecode/talaria-web-contracts'
 import type { LiveTurn } from '../../stream/reducer'
 import { isTerminal } from '../../stream/reducer'
 import { adoptTurn, cancelTurn, getStreamContext, retryPendingTurn, startTurn } from '../../stream/connection'
@@ -71,7 +71,7 @@ export interface ComposerProps {
   onQueue: (entry: QueuedTurn) => void
   /** The queue after an edit, removal or move. */
   onQueueChange: (queued: QueuedTurn[]) => void
-  onOwnerAction?: (id: string, action: 'cancel' | 'retry' | 'discard', generation: number | null) => void
+  onOwnerAction?: (request: OwnerActionRequest) => Promise<void>
   /** Sending is disabled (e.g. while a manual compression job runs). */
   locked?: boolean | undefined
   /** A pending clarification: the box becomes its answer input and the chat draft and attachments wait untouched. */

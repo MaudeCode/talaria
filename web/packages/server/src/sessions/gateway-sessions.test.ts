@@ -32,6 +32,42 @@ describe('canonical owner attachment', () => {
   afterEach(async () => { db.close(); await s.close() })
   const post = (path: string, body: unknown) => s.get(path, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) })
 
+  it('projects only owner controls and never groups the active turn under a steering row', async () => {
+    const pending = [
+      { ...admission(), admission_id: 'steering', steering: true, text: 'Correction' },
+      { ...admission(), admission_id: 'running', steering: false, text: 'Original task' },
+      { ...admission('queued'), admission_id: 'editable', controls: ['steer', 'replace', 'future-control'] },
+      { ...admission('queued'), admission_id: 'legacy' },
+    ]
+    const snap = snapshot({ running: true, messages: [], message_count: 0, pending })
+    sidecar.respond('gateway.session', (params, _emit, opts) => params.action === 'watch'
+      ? new Promise((resolve) => { opts.signal!.addEventListener('abort', () => { resolve(attached(snap)) }, { once: true }) }) : attached(snap))
+    const result = SessionEnvelopeSchema.parse(await (await s.get(`/api/session?session_id=${sid}`)).json()).session
+    expect(result.owner_attachment?.admissions).toMatchObject([
+      { admission_id: 'editable', actions: ['cancel', 'steer', 'edit'] },
+      { admission_id: 'legacy', actions: ['cancel'] },
+    ])
+    expect(result.owner_attachment?.active_admission).toMatchObject({ admission_id: 'running', steering: false })
+    expect(result.messages).toEqual([expect.objectContaining({ content: 'Original task', message_id: 'running' })])
+  })
+
+  it.each(['steer_queued', 'replace_queued'] as const)('routes %s with stable ids and surfaces owner refusals', async (action) => {
+    const request = { session_id: sid, action, admission_id: 'queued-native',
+      ...(action === 'replace_queued' ? { submission_id: 'stable-edit', text: 'Edited prompt' } : {}) }
+    sidecar.respond('gateway.session', () => attached(snapshot()))
+    for (let i = 0; i < 2; i++) expect((await post('/api/chat/owner-action', request)).status).toBe(200)
+    expect(sidecar.calls.filter((c) => c.method === 'gateway.session' && (c.params as { action: string }).action === action).map((c) => c.params)).toEqual([
+      { ...request, profile_home: s.state }, { ...request, profile_home: s.state },
+    ])
+    for (const reason of ['steer_unavailable', 'admission_started', 'unsupported_control']) {
+      sidecar.respond('gateway.session', () => ({ state: 'refused', reason, snapshot: null, receipt: null }))
+      const response = await post('/api/chat/owner-action', request)
+      expect(response.status).toBe(409)
+      expect(await response.json()).toMatchObject({ owner_attachment: { state: 'refused', reason } })
+    }
+    expect(sidecar.calls.some((c) => c.method === 'chat.start')).toBe(false)
+  })
+
   it('opens the canonical transcript through its owner while keeping direct writes fenced', async () => {
     const sid = fixture.sessions.cli!
     sidecar.respond('gateway.session', () => ({ state: 'attached', reason: null, receipt: null, snapshot: {

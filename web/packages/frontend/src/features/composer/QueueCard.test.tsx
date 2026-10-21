@@ -19,8 +19,33 @@ function Harness({ initial }: { initial: QueuedTurn[] }) {
 const row = (text: string) => screen.getAllByRole('listitem').find((li) => li.textContent.includes(text))!
 
 describe('QueueCard (TAL-562)', () => {
+  it('shows native Edit and Steer only when the server lists them', async () => {
+    const action = vi.fn().mockResolvedValue(undefined)
+    const admission = { admission_id: 'editable', sequence: 1, status: 'queued' as const, outcome: null, authority_epoch: 2, execution_generation: null, text: 'Before edit' }
+    render(<QueueCard sessionId="native" queued={[]} onChange={() => undefined} admissions={[
+      { ...admission, actions: ['cancel', 'edit', 'steer'] },
+      { ...admission, admission_id: 'legacy', text: 'Cancel only', actions: ['cancel'] },
+    ]} onAdmissionAction={action} />)
+    expect(within(row('Cancel only')).queryByRole('button', { name: 'Edit queued message' })).not.toBeInTheDocument()
+    expect(within(row('Cancel only')).queryByRole('button', { name: 'Steer current response' })).not.toBeInTheDocument()
+    await userEvent.click(within(row('Before edit')).getByRole('button', { name: 'Steer current response' }))
+    expect(action).toHaveBeenCalledWith({ session_id: 'native', action: 'steer_queued', admission_id: 'editable' })
+    await userEvent.click(within(row('Before edit')).getByRole('button', { name: 'Edit queued message' }))
+    const editor = screen.getByRole('textbox', { name: 'Edit queued message' })
+    action.mockRejectedValueOnce(new Error('Lost response'))
+    await userEvent.clear(editor)
+    await userEvent.type(editor, 'After edit{Enter}')
+    expect(action).toHaveBeenLastCalledWith({ session_id: 'native', action: 'replace_queued', admission_id: 'editable', text: 'After edit', submission_id: expect.any(String) })
+    const request = action.mock.calls.at(-1)![0]
+    await userEvent.click(editor)
+    await userEvent.keyboard('{Enter}')
+    expect(action.mock.calls.at(-1)![0]).toEqual(request)
+    // The displayed row stays authoritative until the server snapshot changes.
+    expect(screen.getByText('Before edit')).toBeInTheDocument()
+  })
+
   it('renders native unknown admissions with only the server recovery actions', async () => {
-    const action = vi.fn()
+    const action = vi.fn().mockResolvedValue(undefined)
     render(<QueueCard sessionId="native" queued={[]} onChange={() => undefined} admissions={[{
       admission_id: 'lost', sequence: 1, status: 'unknown', outcome: null, authority_epoch: 2,
       execution_generation: 4, text: 'Inspect this result before retrying', actions: ['retry', 'discard'],
@@ -28,9 +53,9 @@ describe('QueueCard (TAL-562)', () => {
     expect(screen.getByText('Outcome unknown')).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Edit queued message' })).not.toBeInTheDocument()
     await userEvent.click(screen.getByRole('button', { name: 'Retry' }))
-    expect(action).toHaveBeenCalledWith('lost', 'retry', 4)
+    expect(action).toHaveBeenCalledWith({ session_id: 'native', action: 'retry', admission_id: 'lost', execution_generation: 4 })
     await userEvent.click(screen.getByRole('button', { name: 'Discard' }))
-    expect(action).toHaveBeenCalledWith('lost', 'discard', 4)
+    expect(action).toHaveBeenCalledWith({ session_id: 'native', action: 'discard', admission_id: 'lost', execution_generation: 4 })
   })
   it('does not let an in-flight admission remove or roll back its queued receipt', async () => {
     vi.mocked(api.rollbackUpload).mockClear()

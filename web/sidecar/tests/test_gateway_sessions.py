@@ -67,3 +67,55 @@ def test_real_owner_diagnostic_execution_modes(tmp_path):
     result = subprocess.run([AGENT_PYTHON, str(Path(__file__).parent / "fixtures/gateway_execution_peer.py")],
                             env=env, capture_output=True, text=True, timeout=600, check=False)
     assert result.returncode == 0, result.stdout + result.stderr
+
+
+@pytest.mark.parametrize("action,method,extra", [
+    ("steer_queued", "prompt.steer_queued", {}),
+    ("replace_queued", "prompt.replace_queued", {"submission_id": "stable-edit", "text": "Edited"}),
+])
+def test_queued_controls_use_owner_verbs_and_caller_ids(tmp_path, monkeypatch, action, method, extra):
+    import asyncio
+    from contextlib import asynccontextmanager
+    import sys
+    from types import SimpleNamespace
+    from talaria_sidecar.methods import gateway_sessions as gateway
+
+    class RPCError(Exception):
+        pass
+
+    monkeypatch.setitem(sys.modules, "hermes_cli.gateway_client", SimpleNamespace(GatewayRPCError=RPCError))
+    endpoint = SimpleNamespace(control_home=None, instance_id="owner", profile_id="profile", authority_epoch=1)
+    calls = []
+    class Client:
+        async def rpc(self, verb, **params):
+            calls.append((verb, params))
+            if verb == "runtime.describe":
+                return {"instance_id": "owner", "profile_id": "profile", "authority_epoch": 1, "capabilities": list(gateway._CAPABILITIES)}
+            if verb == "session.resume":
+                return {"session_id": "native", "subscription_id": "viewer", "messages": [], "info": {}}
+            return {"admission_id": "queued"}
+    @asynccontextmanager
+    async def connect(*_):
+        yield Client(), asyncio.Queue()
+    monkeypatch.setattr(gateway, "_connect", connect)
+    monkeypatch.setattr(gateway, "_control_refusal", lambda *_: None)
+    monkeypatch.setattr(gateway, "_with_owner", lambda home, run: asyncio.run(run(SimpleNamespace(endpoint=endpoint))))
+    # _run exercises dispatch independently of public input validation.
+    result = asyncio.run(gateway._run(None, {"session_id": "native", "action": action, "admission_id": "queued", **extra}, tmp_path, SimpleNamespace(endpoint=endpoint)))
+    assert (method, {"session_id": "native", "admission_id": "queued", **extra}) in calls
+    assert result["receipt"] == {"admission_id": "queued"}
+    assert gateway.session(None, {"profile_home": str(tmp_path), "session_id": "native", "action": action, "admission_id": "queued", **extra})["receipt"] == result["receipt"]
+
+
+@requires_agent
+def test_real_owner_queued_controls(tmp_path):
+    protocol = AGENT_DIR / "hermes_cli/gateway_client.py"
+    # Only releases publishing these verbs can establish their execution semantics.
+    if not protocol.exists() or not any("prompt.steer_queued" in p.read_text() for p in (AGENT_DIR / "gateway").rglob("*.py")):
+        pytest.skip("this supported Agent does not expose queued controls")
+    home = tmp_path / "hermes"
+    env = isolated_env(home, HERMES_WEBUI_AGENT_DIR=str(AGENT_DIR), HERMES_WEBUI_PYTHON=str(AGENT_PYTHON),
+                       PYTHONPATH=f"{SIDECAR_ROOT}:{Path(pytest.__file__).parent.parent}")
+    result = subprocess.run([AGENT_PYTHON, str(Path(__file__).parent / "fixtures/gateway_session_peer.py"), "queued-controls"],
+                            env=env, capture_output=True, text=True, timeout=200, check=False)
+    assert result.returncode == 0, result.stdout + result.stderr
