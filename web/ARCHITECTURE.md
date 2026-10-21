@@ -69,6 +69,13 @@ sidecar deadline is three seconds; successes and failures are cached for 45 seco
 A warm cache answers immediately during refresh, and expired cooldowns are omitted
 on every response. Catalog invalidation or changed credentials discard that snapshot.
 
+The `state.db` readers retain one read-only handle per database path and file identity.
+Each read gets a fresh transaction and checks its schema version before reusing column
+and index probes. Every reader commits its snapshot in `finally`; shutdown and file
+replacement release the cached handles. Main-file modifications also reopen the handle
+so in-place damage cannot hide behind cached pages; ordinary WAL commits reuse it.
+Recovery keeps its own short-lived handle.
+
 Worktree lifecycle status probes use private Git metadata and copied indexes. Only non-executable
 status settings enter that view; live repository filter definitions and configuration includes cannot
 be loaded by its status command. Initialized submodules use the same boundary, preserving their

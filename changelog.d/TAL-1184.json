@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Changed",
+      "summary": "Session lists reuse database connections to reduce repeated loading work.",
+      "highlight": false,
+      "components": ["web"]
+    }
+  ]
+}

@@ -2,8 +2,8 @@
  * Read-only projection of the Agent's `state.db` (Python `api/agent_sessions.py`):
  * importable agent session rows with compression-chain collapse, CLI visibility
  * rules, the O(1) change fingerprint used by the gateway watcher, and existence
- * probes. Uses `node:sqlite`; every read opens a short-lived read-only handle
- * with a bounded busy timeout, and no path here ever writes to the database.
+ * probes. Uses cached read-only `node:sqlite` handles with a bounded busy timeout
+ * and a fresh snapshot per read; no path here ever writes to the database.
  */
 import { existsSync, openSync, readSync, closeSync, statSync } from 'node:fs'
 import { DatabaseSync } from 'node:sqlite'
@@ -239,20 +239,88 @@ export function projectAgentSessionRows(rows: Dict[], keepEmpty = false): Dict[]
 
 // ── sqlite access ─────────────────────────────────────────────────────────
 
-/** Python `open_state_db_readonly`: read-only URI open with a bounded busy timeout; the caller closes it. */
-export function openStateDbReadonly(dbPath: string, busyTimeoutMs = STATE_DB_BUSY_TIMEOUT_MS): DatabaseSync {
-  if (!existsSync(dbPath)) throw new Error(`agent state.db not found: ${dbPath}`)
-  const db = new DatabaseSync(dbPath, { readOnly: true, timeout: busyTimeoutMs })
-  return db
+interface ReadonlyStateDb {
+  db: DatabaseSync
+  ino: bigint
+  dev: bigint
+  mtimeNs: bigint
+  schemaVersion: number | null
+  columns: Map<string, Set<string>>
+  indexes: Map<string, Set<string>>
 }
 
-/** The table's columns; a failed read throws, so an unreadable database is never mistaken for an older schema (TAL-785). */
+const readonlyStateDbs = new Map<string, ReadonlyStateDb>()
+const schemaCaches = new WeakMap<DatabaseSync, ReadonlyStateDb>()
+
+/** Cache ownership ends at shutdown; worker termination also disposes its native SQLite resources. */
+function closeStateDbs(): void {
+  for (const { db } of readonlyStateDbs.values()) if (db.isOpen) db.close()
+  readonlyStateDbs.clear()
+}
+process.once('exit', closeStateDbs)
+
+/** One handle per file identity. The caller ends the read snapshot in finally, leaving closure to the cache. */
+function openStateDbReadonly(dbPath: string, busyTimeoutMs = STATE_DB_BUSY_TIMEOUT_MS): DatabaseSync {
+  const { ino, dev, mtimeNs } = statSync(dbPath, { bigint: true })
+  let cached = readonlyStateDbs.get(dbPath)
+  // Raw writes need not advance SQLite's change counter; revalidate the main file after any such change.
+  if (cached && (cached.ino !== ino || cached.dev !== dev || cached.mtimeNs !== mtimeNs || !cached.db.isOpen)) {
+    if (cached.db.isOpen) cached.db.close()
+    readonlyStateDbs.delete(dbPath)
+    cached = undefined
+  }
+  if (!cached) {
+    const db = new DatabaseSync(dbPath, { readOnly: true, timeout: busyTimeoutMs })
+    cached = { db, ino, dev, mtimeNs, schemaVersion: null, columns: new Map(), indexes: new Map() }
+    readonlyStateDbs.set(dbPath, cached)
+    schemaCaches.set(db, cached)
+  }
+  const { db } = cached
+  try {
+    db.exec(`PRAGMA busy_timeout = ${Math.max(0, Math.trunc(busyTimeoutMs))}`)
+    // The schema cookie and all probes/queries must describe the same committed snapshot.
+    db.exec('BEGIN')
+    const version = (db.prepare('PRAGMA schema_version').get() as { schema_version: number }).schema_version
+    if (cached.schemaVersion !== version) {
+      cached.columns.clear()
+      cached.indexes.clear()
+      cached.schemaVersion = version
+    }
+    return db
+  } catch (error) {
+    readonlyStateDbs.delete(dbPath)
+    db.close()
+    throw error
+  }
+}
+
+function finishStateDbRead(db: DatabaseSync): void {
+  try { db.exec('COMMIT') } catch {
+    // A failed read can poison COMMIT too; discard the handle without hiding the reader's failure result.
+    db.close()
+  }
+}
+
+/** A failed probe throws, so unreadable storage is never mistaken for an older schema (TAL-785). */
 function tableColumns(db: DatabaseSync, table: string): Set<string> {
-  return new Set((db.prepare(`PRAGMA table_info(${table})`).all() as { name: string }[]).map((r) => r.name))
+  const cache = schemaCaches.get(db)!.columns
+  let columns = cache.get(table)
+  if (!columns) {
+    columns = new Set((db.prepare(`PRAGMA table_info(${table})`).all() as { name: string }[]).map((r) => r.name))
+    cache.set(table, columns)
+  }
+  return columns
 }
 
 function tableIndexes(db: DatabaseSync, table: string): Set<string> {
-  try { return new Set((db.prepare(`PRAGMA index_list(${table})`).all() as { name: string }[]).map((r) => r.name)) } catch { return new Set() }
+  const cache = schemaCaches.get(db)!.indexes
+  const indexes = cache.get(table)
+  if (indexes) return indexes
+  try {
+    const found = new Set((db.prepare(`PRAGMA index_list(${table})`).all() as { name: string }[]).map((r) => r.name))
+    cache.set(table, found)
+    return found
+  } catch { return new Set() }
 }
 
 /** Agent `_sql_freshest_of`: the `last_activity_at` heartbeat can lag a newer message, so it never ranks alone. */
@@ -338,11 +406,10 @@ export function stateDbLocalTarget(dbPath: string, sid: string, opts: { onRead?:
   let db: DatabaseSync
   try { db = openStateDbReadonly(dbPath) } catch { return sid }
   try {
-    db.exec('BEGIN')
     const target = localLineages(db, sid).get(sid)?.ids.at(-1) ?? sid
     opts.onRead?.(target)
     return target
-  } catch { return sid } finally { db.close() }
+  } catch { return sid } finally { finishStateDbRead(db) }
 }
 
 /** `stateDbLocalTarget` plus whether state.db answered (a missing one does), so only a real answer seeds a routing cache. */
@@ -386,7 +453,7 @@ export function stateDbStorage(dbPath: string): AgentStorage {
     try {
       if (!tableColumns(db, 'sessions').has('source')) return { state: 'outdated', reason: `state.db has no 'source' column (older hermes-agent?). Agent sessions unavailable. Upgrade hermes-agent to fix this.` }
     } finally {
-      db.close()
+      finishStateDbRead(db)
     }
   } catch (error) {
     return stateDbReadFailure(error)
@@ -429,7 +496,6 @@ export function readImportableAgentSessionRows(dbPath: string, opts: ReadRowsOpt
   if (readDelayMs > 0) Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, readDelayMs)
   const db = openStateDbReadonly(dbPath)
   try {
-    db.exec('BEGIN') // Receipt and physical rows must belong to the same committed generation.
     const local = localLineages(db, opts.sessionIds?.length === 1 ? opts.sessionIds[0] : undefined)
     const sessionCols = tableColumns(db, 'sessions')
     const messageCols = tableColumns(db, 'messages')
@@ -555,7 +621,7 @@ export function readImportableAgentSessionRows(dbPath: string, opts: ReadRowsOpt
     }
     return selected
   } finally {
-    db.close()
+    finishStateDbRead(db)
   }
 }
 
@@ -577,7 +643,7 @@ export function agentSessionRowsExisting(dbPath: string, sessionIds: Iterable<st
   } catch {
     return wanted
   } finally {
-    db.close()
+    finishStateDbRead(db)
   }
 }
 
@@ -600,7 +666,7 @@ export function stateDbCronJobIds(dbPath: string): Map<string, string> {
   if (!existsSync(dbPath)) return new Map()
   let db: DatabaseSync
   try { db = openStateDbReadonly(dbPath) } catch { return new Map() }
-  try { return cronAdmissionJobIds(db) } catch { return new Map() } finally { db.close() }
+  try { return cronAdmissionJobIds(db) } catch { return new Map() } finally { finishStateDbRead(db) }
 }
 
 /** Shared job identity rule for completion links and sidebar titles, including legacy job ids with underscores. */
@@ -647,7 +713,7 @@ export function latestCronSessionInfo(dbPath: string, jobIds: Iterable<string>, 
   } catch {
     return new Map()
   } finally {
-    db.close()
+    finishStateDbRead(db)
   }
 }
 
@@ -779,7 +845,7 @@ export function stateDbWebDiagnosticIds(dbPath: string): string[] {
     return rows.map((row) => row.key.slice(LOCAL_POLICY_PREFIX.length))
   } catch {
     return []
-  } finally { db.close() }
+  } finally { finishStateDbRead(db) }
 }
 
 /** Batched source/ownership probe. An unreadable authority answers null so callers fail closed. */
@@ -789,11 +855,10 @@ export function stateDbSessionSources(dbPath: string, sessionIds: Iterable<strin
   let db: DatabaseSync
   try { db = openStateDbReadonly(dbPath) } catch { return null }
   try {
-    db.exec('BEGIN')
     return sessionSources(db, tableColumns(db, 'sessions'), ids)
   } catch {
     return null
-  } finally { db.close() }
+  } finally { finishStateDbRead(db) }
 }
 
 /** The same marker parser serves conservative history boundaries and exact-parent ownership walks. */
@@ -867,7 +932,7 @@ export function stateDbHasSession(dbPath: string, sid: string): boolean {
   } catch {
     return false
   } finally {
-    db.close()
+    finishStateDbRead(db)
   }
 }
 
@@ -885,7 +950,7 @@ export function cheapChangeFingerprint(dbPath: string, onError?: (reason: string
         try { parts.push((db.prepare(`SELECT MAX(rowid) AS m FROM ${table}`).get() as { m: number | null } | undefined)?.m ?? null) } catch { parts.push(null) }
       }
     } finally {
-      db.close()
+      finishStateDbRead(db)
     }
     for (const path of [dbPath, `${dbPath}-wal`]) {
       try { const st = statSync(path, { bigint: true }); parts.push([Number(st.size), st.mtimeNs.toString()]) } catch { parts.push(null) }
@@ -913,7 +978,7 @@ type ListingCall =
   | { op: 'storage' | 'webDiagnostic'; dbPath: string }
   | { op: 'sources' | 'existing'; dbPath: string; ids: string[] }
   | { [K in SessionReadName]: { op: 'session'; read: K; args: Parameters<typeof SESSION_READS[K]> } }[SessionReadName]
-  | { op: 'crash' }
+  | { op: 'crash' | 'stop' }
 /** A request to the listing worker; `delayMs` carries the test read delay across the thread boundary. */
 export type StateDbWorkerRequest = ListingCall & { id: number; delayMs: number }
 /** The call's result or error message, plus the log lines and `[reason, message]` failures it reported in the worker. */
@@ -1041,12 +1106,19 @@ export function crashStateDbWorkerForTests(): Promise<unknown> {
 
 /** Stop the listing worker (server shutdown). Calls in flight reject; a later call starts a new worker. */
 export async function stopStateDbWorker(): Promise<void> {
+  closeStateDbs()
   const current = listingWorker
   if (!current) return
   stoppingWorker = true
   try {
     retireListingWorker(current, new Error('state.db worker stopped'))
-    await current.worker.terminate()
+    const exited = new Promise<void>((resolve) => { current.worker.once('exit', () => { resolve() }) })
+    // Idle workers close their cache through process.exit; a blocked read still cannot delay shutdown.
+    const force = setTimeout(() => { void current.worker.terminate() }, 100)
+    try {
+      current.worker.postMessage({ op: 'stop', id: 0, delayMs: 0 } satisfies StateDbWorkerRequest)
+      await exited
+    } finally { clearTimeout(force) }
   } finally {
     stoppingWorker = false
   }
@@ -1232,9 +1304,8 @@ function readStateDbSession(dbPath: string, sid: string, opts: { stitch?: boolea
   const id = sid.trim()
   if (!id || !existsSync(dbPath)) return none
   let db: DatabaseSync
-  try { db = openStateDbReadonly(dbPath) } catch { return none }
+  try { db = openStateDbReadonly(dbPath) } catch (error) { return { ...none, reason: stateDbReadFailure(error).reason } }
   try {
-    db.exec('BEGIN') // The live rows and their archived predecessors must describe one snapshot.
     const available = tableColumns(db, 'messages')
     if (!['role', 'content', 'timestamp'].every((c) => available.has(c))) return { ...none, ok: available.size > 0 }
     const hasId = available.has('id')
@@ -1331,7 +1402,7 @@ function readStateDbSession(dbPath: string, sid: string, opts: { stitch?: boolea
   } catch (error) {
     return { ...none, reason: stateDbReadFailure(error).reason }
   } finally {
-    db.close()
+    finishStateDbRead(db)
   }
 }
 
@@ -1346,7 +1417,6 @@ export function stateDbCompressionLineage(dbPath: string, sid: string): string[]
   let db: DatabaseSync
   try { db = openStateDbReadonly(dbPath) } catch { return lineage }
   try {
-    db.exec('BEGIN')
     const local = localLineages(db, lineage[0]).get(lineage[0])
     if (local) return [...local.ids]
     const sessionCols = tableColumns(db, 'sessions')
@@ -1367,7 +1437,7 @@ export function stateDbCompressionLineage(dbPath: string, sid: string): string[]
   } catch {
     return lineage.slice(0, 1)
   } finally {
-    db.close()
+    finishStateDbRead(db)
   }
 }
 
@@ -1395,7 +1465,6 @@ export function stateDbLineageReport(dbPath: string, rawSid: string, maxHops = C
   let db: DatabaseSync
   try { db = openStateDbReadonly(dbPath) } catch { return emptyLineageReport(sid) }
   try {
-    db.exec('BEGIN')
     const local = localLineages(db, sid).get(sid)
     const cols = tableColumns(db, 'sessions')
     if (!['id', 'parent_session_id', 'end_reason'].every((c) => cols.has(c))) return emptyLineageReport(sid)
@@ -1439,7 +1508,7 @@ export function stateDbLineageReport(dbPath: string, rawSid: string, maxHops = C
   } catch {
     return emptyLineageReport(sid)
   } finally {
-    db.close()
+    finishStateDbRead(db)
   }
 }
 
@@ -1457,7 +1526,7 @@ export function stateDbSessionRow(dbPath: string, sid: string): Dict | null {
   } catch {
     return null
   } finally {
-    db.close()
+    finishStateDbRead(db)
   }
 }
 
@@ -1493,7 +1562,7 @@ export function insightsSessionRows(dbPath: string, cutoff: number): Dict[] {
   } catch {
     return []
   } finally {
-    db.close()
+    finishStateDbRead(db)
   }
 }
 
@@ -1518,7 +1587,7 @@ export function countConversationRounds(dbPath: string, sid: string, since: numb
   let rows: Dict[]
   try {
     const db = openStateDbReadonly(dbPath)
-    try { rows = db.prepare('SELECT role, timestamp FROM messages WHERE session_id = ? ORDER BY timestamp ASC').all(sid) } finally { db.close() }
+    try { rows = db.prepare('SELECT role, timestamp FROM messages WHERE session_id = ? ORDER BY timestamp ASC').all(sid) } finally { finishStateDbRead(db) }
   } catch {
     return 0
   }
@@ -1551,7 +1620,7 @@ export function stateDbTailToolContent(dbPath: string, sid: string): string | nu
       const content = row?.role === 'tool' ? decodeStateDbContent(row.content) : null
       return typeof content === 'string' ? content : null
     } finally {
-      db.close()
+      finishStateDbRead(db)
     }
   } catch {
     return null
