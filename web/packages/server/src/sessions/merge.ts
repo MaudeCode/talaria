@@ -1276,6 +1276,23 @@ function toolCallId(tc: unknown): string {
 }
 
 const API_SAFE_MSG_KEYS = new Set(['role', 'content', 'tool_calls', 'tool_call_id', 'tool_use_id', 'name', 'refusal', 'reasoning_content'])
+
+function messageDataUse(msg: Message): unknown {
+  return msg.data_use ?? (isDict(msg.display_metadata) ? msg.display_metadata.data_use : undefined)
+}
+
+/** Derived prompts inherit the source session's requirements even when tool rows are outside the selected window. */
+export function withDataUseRequirements(prompt: Message[], source: Message[]): Message[] {
+  const requirements = new Set<string>()
+  for (const msg of source) {
+    const value = messageDataUse(msg)
+    if (value == null) continue
+    if (!Array.isArray(value) || value.some((item) => typeof item !== 'string')) throw new Error('Invalid connector privacy requirements')
+    for (const requirement of value as string[]) requirements.add(requirement)
+  }
+  const dataUse = [...requirements].sort()
+  return dataUse.length ? prompt.map((msg) => msg.role === 'user' ? { ...msg, data_use: dataUse } : msg) : prompt
+}
 // TAL-927: the Agent's reload projection (`_rows_to_conversation`) restores these on assistant rows so prior reasoning
 // replays and keeps its signatures; turn history keeps them too. Persistence-only: the Agent strips them per route.
 const AGENT_ASSISTANT_REPLAY_KEYS = new Set(['reasoning', 'reasoning_details', 'codex_reasoning_items', 'codex_message_items', 'finish_reason'])
@@ -1320,7 +1337,8 @@ function stripOobBlocks(content: unknown): unknown {
  * otherwise the neighbours fuse cleanly or the prompt is stale, and replaying it would answer it again.
  * `preserveApiContent` (Python `_sanitize_messages_for_agent`) keeps the Agent's `api_content` replay sidecar on
  * user/assistant rows, every row's `timestamp`, and the assistant reasoning carriers the Agent replays (TAL-927) for
- * turn history; compression and other projections strip them all. Provider-issued carriers stay only on rows stamped at
+ * turn history; compression and other projections strip those replay fields. Tool `data_use` routing requirements stay
+ * in both histories, lifted from durable `display_metadata` when needed. Provider-issued carriers stay only on rows stamped at
  * or after `issuedReasoningSince`, the turn provider's start; without one they stay home too.
  */
 export function sanitizeMessagesForApi(messages: Message[], { preserveApiContent = false, issuedReasoningSince = null, maxMessages = Infinity }: { preserveApiContent?: boolean; issuedReasoningSince?: number | null; maxMessages?: number } = {}): Message[] {
@@ -1348,6 +1366,11 @@ export function sanitizeMessagesForApi(messages: Message[], { preserveApiContent
     const issuedHere = issuedReasoningSince !== null && Number(msg.timestamp) >= issuedReasoningSince
     const replayKey = (k: string): boolean => replayCarriers && AGENT_ASSISTANT_REPLAY_KEYS.has(k) && (issuedHere || !PROVIDER_ISSUED_REASONING_KEYS.has(k))
     const sanitized = Object.fromEntries(Object.entries(msg).filter(([k]) => API_SAFE_MSG_KEYS.has(k) || replayKey(k)))
+    // Agent routing metadata survives both turn and compression history; the Agent strips it before provider calls.
+    if (msg.role === 'tool') {
+      const dataUse = messageDataUse(msg)
+      if (dataUse !== undefined) sanitized.data_use = dataUse
+    }
     if (Array.isArray(sanitized.tool_calls) && !sanitized.tool_calls.length) Reflect.deleteProperty(sanitized, 'tool_calls')
     if (replay) sanitized.api_content = replay
     // TAL-681: the Agent re-inserts turn history when it prunes and keys display dedupe on the row timestamp, so turn

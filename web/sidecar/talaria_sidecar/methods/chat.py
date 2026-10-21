@@ -1245,6 +1245,20 @@ def _agent_class():
     return AIAgent
 
 
+def _require_data_use_support(history: list) -> frozenset[str]:
+    """A downgraded Agent must never send history whose connector privacy requirements it cannot enforce."""
+    if not any(isinstance(row, dict) and row.get("data_use") for row in history):
+        return frozenset()
+    try:
+        from agent.message_metadata import DATA_USE, data_use_requirement
+    except ImportError:
+        pass
+    else:
+        if DATA_USE == "data_use" and callable(data_use_requirement):
+            return data_use_requirement(history)
+    raise RpcError("This Agent release cannot enforce connector privacy requirements. Update Hermes Agent before continuing, compressing or refining this chat.", condition="agent_incompatible")
+
+
 def _max_iterations_summary_request() -> str:
     """The user row the Agent appends to ask for a summary once its tool budget runs out; the server drops it."""
     try:
@@ -1384,6 +1398,7 @@ def start(ctx: CallContext, params: dict) -> dict:  # noqa: PLR0915 - one turn, 
         history = []
     if not isinstance(history, list):
         raise InvalidParams("conversation_history must be a list")
+    _require_data_use_support(history)
     toolsets = _turn_toolsets(params.get("enabled_toolsets"))
     system_message = params.get("system_message")
     home = profile_home_param(params)
@@ -1958,6 +1973,7 @@ def compress(ctx: CallContext, params: dict) -> dict:
     history = params.get("conversation_history")
     if not isinstance(history, list):
         raise InvalidParams("conversation_history must be a list")
+    _require_data_use_support(history)
     model = str(params.get("model") or "").strip()
     provider = str(params.get("model_provider") or "").strip() or None
     focus_topic = str(params.get("focus_topic") or "").strip()[:500] or None
@@ -2088,6 +2104,7 @@ def refine(params: dict) -> str:
     messages = params.get("messages")
     if not session_id or not isinstance(messages, list):
         raise InvalidParams("session_id and messages are required")
+    _require_data_use_support(messages)
     focus = str(params.get("focus") or "").strip()
     with _RUNS_LOCK:
         if _session_running_locked(session_id):

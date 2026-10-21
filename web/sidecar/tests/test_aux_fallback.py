@@ -261,3 +261,79 @@ def test_explicit_title_auxiliary_wins_over_main_fallback(monkeypatch) -> None:
     assert result["model"] == "title-model" and result["text"] == "Dedicated title model answer"
     assert len(seen) == 1 and seen[0]["model"] == "title-model"
     assert FakeAgent.calls == []
+
+
+@pytest.mark.parametrize("model", [None, "explicit-model"])
+def test_private_auxiliary_history_is_refused_on_a_legacy_agent_before_dispatch(monkeypatch, model) -> None:
+    calls = []
+    def call_llm(task, *, main_runtime=None, messages, stream=False, **kwargs):
+        calls.append(messages)
+        return _response("unsafe title")
+    _install_call_llm(monkeypatch, STREAMING_CLIENT, call_llm)
+    with pytest.raises(RpcError) as denied:
+        aux.complete("title_generation", [{"role": "user", "content": "private", "data_use": ["no_training"]}], main_runtime=None, max_tokens=None, temperature=None, ctx=Ctx(), model=model)
+    assert not calls, "private auxiliary history reached an incapable Agent"
+    assert denied.value.data["condition"] == "agent_incompatible"
+
+
+def _privacy_capability(monkeypatch):
+    metadata = types.ModuleType("agent.message_metadata")
+    metadata.DATA_USE = "data_use"
+    metadata.data_use_requirement = lambda rows: frozenset(r for row in rows for r in row.get("data_use", []))
+    monkeypatch.setitem(sys.modules, "agent.message_metadata", metadata)
+    providers = types.ModuleType("providers")
+    providers.get_provider_profile = lambda name: SimpleNamespace(build_extra_body=lambda **kw: {"provider": {"data_collection": "deny", **({"zdr": True} if "zero_retention" in kw["data_use"] else {})}} if name == "nous" else {})
+    monkeypatch.setitem(sys.modules, "providers", providers)
+    module = sys.modules["agent.auxiliary_client"]
+    module._resolve_task_provider_model = lambda task: ("nous", "aux-model", None, None, None)
+    module.resolve_provider_client = lambda provider, **kwargs: module.get_text_auxiliary_client("title_generation", main_runtime=kwargs.get("main_runtime"))
+
+
+@pytest.mark.parametrize("route", ["auxiliary", "explicit", "unconfigured", "stream-error", "unsafe-fallback"])
+def test_private_auxiliary_routes_and_main_fallback_keep_policy_and_disable_implicit_hops(monkeypatch, route) -> None:
+    sent = []
+    def call_llm(task, *, main_runtime=None, messages, stream=False, **kwargs):
+        sent.append({"messages": messages, "stream": stream, **kwargs})
+        if route in {"stream-error", "unsafe-fallback"} and kwargs.get("model", "aux-model") == "aux-model":
+            def broken():
+                raise RuntimeError("auxiliary stream failed")
+                yield
+            return broken()
+        return _response("private title")
+    client = SimpleNamespace(**vars(STREAMING_CLIENT), _hermes_aux_effective_provider="nous", base_url="https://nous.example/v1", api_key="test-key")
+    _install_call_llm(monkeypatch, client, call_llm)
+    if route == "unconfigured":
+        sys.modules["agent.auxiliary_client"].get_text_auxiliary_client = lambda *args, **kw: (None, None)
+    _privacy_capability(monkeypatch)
+    messages = [{"role": "user", "content": "private", "data_use": ["no_training", "zero_retention"]}]
+    params = dict(main_runtime={"provider": "openrouter" if route == "unsafe-fallback" else "nous", "model": "main-model"}, max_tokens=64, temperature=None, ctx=Ctx(), main_fallback=True, model="explicit-model" if route == "explicit" else None, provider="nous")
+    if route == "unsafe-fallback":
+        with pytest.raises(RpcError) as denied:
+            aux.complete("title_generation", messages, **params)
+        assert denied.value.data["condition"] == "data_policy_denied"
+        assert len(sent) == 1, "private content reached an unsafe main-model fallback"
+        assert not FakeAgent.calls
+        return
+    result = aux.complete("title_generation", messages, **params)
+    assert not FakeAgent.calls, "the string-only Agent fallback discarded privacy metadata"
+    assert len(sent) == (2 if route == "stream-error" else 1)
+    for request in sent:
+        assert request["messages"] == messages
+        assert request.get("provider") == "nous"
+        assert request["stream"] is True, "non-streamed Agent calls can silently hop to an unsafe fallback"
+        assert request.get("extra_body", {}).get("provider") == {"data_collection": "deny", "zdr": True}
+    assert result["text"] == "private title"
+
+
+def test_private_auxiliary_route_without_a_verifiable_provider_policy_never_dispatches(monkeypatch) -> None:
+    calls = []
+    def call_llm(task, *, main_runtime=None, messages, stream=False, **kwargs):
+        calls.append(messages)
+        return _response("unsafe title")
+    client = SimpleNamespace(**vars(STREAMING_CLIENT), _hermes_aux_effective_provider="openrouter", base_url="https://unverified.example/v1", api_key="test-key")
+    _install_call_llm(monkeypatch, client, call_llm)
+    _privacy_capability(monkeypatch)
+    with pytest.raises(RpcError) as denied:
+        aux.complete("title_generation", [{"role": "user", "content": "private", "data_use": ["no_training"]}], main_runtime={"model": "main", "provider": "nous"}, max_tokens=None, temperature=None, ctx=Ctx(), main_fallback=True)
+    assert not calls, "private content reached a route without the required provider policy"
+    assert denied.value.data["condition"] == "data_policy_denied"

@@ -126,6 +126,19 @@ describe('handoff dock routes', () => {
   })
 
   describe('handoff-summary', () => {
+    it('carries privacy requirements from before the handoff window into its derived prompt', async () => {
+      const sid = await webSession()
+      seedStateDb(sid, roundRows(30))
+      const db = new DatabaseSync(dbPath())
+      db.exec('ALTER TABLE messages ADD COLUMN display_metadata TEXT')
+      db.prepare('INSERT INTO messages (session_id, role, content, timestamp, display_metadata) VALUES (?, ?, ?, ?, ?)').run(sid, 'tool', 'private connector result before the selected window', 900, JSON.stringify({ data_use: ['no_training', 'zero_retention'], diff: 'display only' }))
+      db.close()
+      expect((await post(s, '/api/session/handoff-summary', { session_id: sid, since: 1100 })).status).toBe(200)
+      const prompt = completions[0]!.messages as Json[]
+      expect(prompt.find((m) => m.role === 'user')).toMatchObject({ data_use: ['no_training', 'zero_retention'] })
+      expect(JSON.stringify(prompt)).not.toContain('display_metadata')
+    })
+
     it('refuses a session under the round threshold or without two messages after since', async () => {
       seedStateDb('gw-short', roundRows(9), { source: 'telegram' })
       const short = await post(s, '/api/session/handoff-summary', { session_id: 'gw-short' })

@@ -26,7 +26,7 @@ import { stateDbWebDiagnosticIdsAsync, agentSessionRowsExistingAsync, CANONICAL_
 import { completionIncomplete, fallbackHandoffSummary, HANDOFF_SYSTEM_PROMPT, handoffMarker, handoffPayload, handoffTranscript, messageHandoffPayload, sameHandoff } from './handoff.js'
 import { anchorMessageKey, anchorSummary, CompressionJobs, compressionReference, visibleMessagesForAnchor, type CompressionJob } from './compress.js'
 import { chatReadiness, runtimeFailureDetails, SidecarError, type SidecarLike } from '../sidecar/client.js'
-import { agentSteerText, ApiMessageSummary, appendStateDbIdentityRows, attachedFilesPrompt, attachmentObjects, checkpointTurnStart, dedupeContext, isContextCompressionMarker, journalOutputRows, looksLikeCurrentUserTurn, stoppedTurnContext, mergeSessionMessagesAppendOnly, messageIdentity, pendingUserRow, reasoningFieldsText, sanitizeMessagesForApi, stateDbSeenId, stripWorkspacePrefix, withAttachmentObjects, newestSettledReply, withBodyExcerpts, withDisplayMedia, withMarkerKinds, withMirrorSources, withSceneRowMedia, withPendingUserTurn, withToolCallOutcomes, withoutRunningTurnOutput, type ToolResultView } from './merge.js'
+import { agentSteerText, ApiMessageSummary, appendStateDbIdentityRows, attachedFilesPrompt, attachmentObjects, checkpointTurnStart, dedupeContext, isContextCompressionMarker, journalOutputRows, looksLikeCurrentUserTurn, stoppedTurnContext, mergeSessionMessagesAppendOnly, messageIdentity, pendingUserRow, reasoningFieldsText, sanitizeMessagesForApi, withDataUseRequirements, stateDbSeenId, stripWorkspacePrefix, withAttachmentObjects, newestSettledReply, withBodyExcerpts, withDisplayMedia, withMarkerKinds, withMirrorSources, withSceneRowMedia, withPendingUserTurn, withToolCallOutcomes, withoutRunningTurnOutput, type ToolResultView } from './merge.js'
 import { withBackgroundUpdates } from './background-updates.js'
 import { markedStateDbGeneration, stateDbIdentityKeys, stampStateDbGeneration, stateDbMessageRepresented } from './state-db-identity.js'
 import { sourceKind } from './source-kind.js'
@@ -1866,7 +1866,7 @@ export class SessionService {
     const sidecar = this.deps.sidecar?.() ?? null
     await ensureAgentRuntimeCurrent(sidecar)
     const meta = local ? null : (await this.lookupCliMeta(sid))
-    const generated = await this.generateHandoffSummary(sidecar, profile, local, meta, messages)
+    const generated = await this.generateHandoffSummary(sidecar, profile, local, meta, messages, [...all, ...(local?.messages ?? []), ...(local?.context_messages ?? [])])
     const pick = (row: Record<string, unknown> | null, ...keys: string[]): string => { for (const key of keys) { const v = str(row?.[key]).trim(); if (v) return v } return '' }
     // Python `get_cli_sessions` never listed WebUI's own state.db rows, so they name no channel.
     const cliRow = meta ?? (await this.lookupCliMeta(sid))
@@ -1876,11 +1876,11 @@ export class SessionService {
   }
 
   /** The main model's summary at 700 tokens, once more at 1400 when it was cut off, else the local fallback. */
-  private async generateHandoffSummary(sidecar: SidecarLike | null, profile: string, local: Session | null, meta: Row | null, messages: Message[]): Promise<{ summary: string; fallback: boolean; warning?: string }> {
+  private async generateHandoffSummary(sidecar: SidecarLike | null, profile: string, local: Session | null, meta: Row | null, messages: Message[], source: Message[]): Promise<{ summary: string; fallback: boolean; warning?: string }> {
     const fallback = (warning?: string) => ({ summary: fallbackHandoffSummary(messages), fallback: true, ...(warning ? { warning: `Summary generation used local fallback: ${warning}` } : {}) })
     if (!sidecar) return fallback('the Agent sidecar is not running')
     const [model, provider] = local ? this.deps.modelStateFromRequest(local.model, local.model_provider, local.model_provider) : [str(meta?.model).trim() || null, null]
-    const prompt = [{ role: 'system', content: HANDOFF_SYSTEM_PROMPT }, { role: 'user', content: `Conversation transcript:\n${handoffTranscript(messages)}` }]
+    const prompt = withDataUseRequirements([{ role: 'system', content: HANDOFF_SYSTEM_PROMPT }, { role: 'user', content: `Conversation transcript:\n${handoffTranscript(messages)}` }], source)
     const ask = (maxTokens: number) => sidecar.call('aux.complete', { profile_home: this.deps.profileHome(profile), task: 'handoff_summary', messages: prompt, model: model ?? '', provider, max_tokens: maxTokens, temperature: 0.2 }, { timeoutMs: 60_000 })
     try {
       let result = await ask(700)

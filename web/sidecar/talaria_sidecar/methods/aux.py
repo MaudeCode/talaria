@@ -41,11 +41,15 @@ def resolve_main_runtime(hint: dict | None) -> dict | None:
     return out
 
 
-def _main_model_completion(messages: list, runtime: dict, *, task: str) -> dict:
+def _main_model_completion(messages: list, runtime: dict, *, task: str, ctx: CallContext) -> dict:
     """Predecessor fallback: run the main model through ``AIAgent`` with no tools when no auxiliary client answers.
 
     The throwaway agent never touches long-term memory (the prompt is a raw git diff) and is always closed."""
-    from .chat import _agent_class, _supported
+    from .chat import _agent_class, _supported, _require_data_use_support
+
+    if _require_data_use_support(messages):
+        # The string-only AIAgent fallback would discard the derived prompt's routing metadata.
+        return _model_completion(task, messages, model=runtime["model"], provider=runtime.get("provider"), max_tokens=None, temperature=None, ctx=ctx)
 
     AIAgent = _agent_class()
 
@@ -78,12 +82,15 @@ def _model_completion(task: str, messages: list, *, model: str, provider: str | 
     """TAL-258 (predecessor ``_agent_text_completion``): the named model answers itself through the Agent's ``call_llm``,
     reasoning off and no tools, so the caller sees its ``finish_reason``. ``max_tokens`` reaches the provider on the routes
     the Agent forwards a cap on. ``credential_missing`` when the model has no credential."""
-    from .chat import _resolve_runtime
+    from .chat import _resolve_runtime, _require_data_use_support
 
     runtime = _resolve_runtime(provider, model)
     if not runtime.get("api_key"):
         raise RpcError(f"no credential for model {model or 'default'!r}", condition="credential_missing")
     resolved = model or str(runtime.get("model") or "")
+    if _require_data_use_support(messages):
+        route = _privacy_request_kwargs(messages, provider=provider or runtime.get("provider"), model=resolved, base_url=runtime.get("base_url"), api_key=runtime.get("api_key"))
+        return _stream_completion(lambda **_: _call_llm(task, ctx, **route, messages=messages, max_tokens=max_tokens, temperature=temperature, stream=True), resolved, stream=True, ctx=ctx, retry_nonstream=False)
     response = _call_llm(
         task, ctx, provider=provider or runtime.get("provider"), model=resolved, base_url=runtime.get("base_url"), api_key=runtime.get("api_key"),
         api_mode=runtime.get("api_mode"), messages=messages, max_tokens=int(max_tokens) if max_tokens else None,
@@ -107,6 +114,9 @@ def complete(task: str, messages: list, *, main_runtime: dict | None, max_tokens
     With ``main_fallback`` the main model answers (through ``AIAgent``) when no auxiliary client is configured or the
     auxiliary call fails, as the predecessor's git commit-message route did. An explicit ``model`` skips the auxiliary
     route: that model answers (``_model_completion``)."""
+    from .chat import _require_data_use_support
+
+    protected = bool(_require_data_use_support(messages))
     if model is not None:
         return _model_completion(task, messages, model=model, provider=provider, max_tokens=max_tokens, temperature=temperature, ctx=ctx)
     try:
@@ -114,24 +124,32 @@ def complete(task: str, messages: list, *, main_runtime: dict | None, max_tokens
     except Exception as exc:  # noqa: BLE001
         raise RpcError(f"auxiliary client unavailable: {exc}", condition="aux_unavailable") from exc
     main_runtime = resolve_main_runtime(main_runtime)
-    try:
-        client, model = get_text_auxiliary_client(task, main_runtime=main_runtime)
-    except TypeError:
-        client, model = get_text_auxiliary_client(task)
+    selected_provider = None
+    if protected:
+        # Snapshot the selected provider with its client; get_text_auxiliary_client's tuple omits the provider.
+        from agent.auxiliary_client import _resolve_task_provider_model, resolve_provider_client
+
+        selected_provider, selected_model, base_url, api_key, api_mode = _resolve_task_provider_model(task)
+        client, model = resolve_provider_client(selected_provider, model=selected_model, explicit_base_url=base_url, explicit_api_key=api_key, api_mode=api_mode, main_runtime=main_runtime)
+    else:
+        try:
+            client, model = get_text_auxiliary_client(task, main_runtime=main_runtime)
+        except TypeError:
+            client, model = get_text_auxiliary_client(task)
     if client is None or not model:
         if main_fallback and main_runtime and main_runtime.get("model"):
-            return _main_model_completion(messages, main_runtime, task=task)
+            return _main_model_completion(messages, main_runtime, task=task, ctx=ctx)
         raise RpcError(f"no auxiliary model configured for task {task!r}", condition="aux_unconfigured")
-    create, stream = _aux_request(task, client, model, messages, main_runtime=main_runtime, max_tokens=max_tokens, temperature=temperature, ctx=ctx)
+    create, stream = _aux_request(task, client, model, messages, main_runtime=main_runtime, max_tokens=max_tokens, temperature=temperature, ctx=ctx, selected_provider=selected_provider)
     if main_fallback and main_runtime and main_runtime.get("model"):
         try:
-            return _stream_completion(create, model, stream=stream, ctx=ctx)
+            return _stream_completion(create, model, stream=stream, ctx=ctx, retry_nonstream=not protected)
         except RpcError:
             raise
         except Exception as exc:  # noqa: BLE001 - predecessor fell back to the main model
             log.debug("auxiliary %s call failed; falling back to the main model: %s", task, exc)
-            return _main_model_completion(messages, main_runtime, task=task)
-    return _stream_completion(create, model, stream=stream, ctx=ctx)
+            return _main_model_completion(messages, main_runtime, task=task, ctx=ctx)
+    return _stream_completion(create, model, stream=stream, ctx=ctx, retry_nonstream=not protected)
 
 
 def _permit_limited(task: str) -> bool:
@@ -180,7 +198,25 @@ def _call_llm_streams() -> bool:
     return {"stream", "main_runtime"} <= inspect.signature(call_llm).parameters.keys()
 
 
-def _aux_request(task: str, client, model: str, messages: list, *, main_runtime: dict | None, max_tokens: int | None, temperature: float | None, ctx: CallContext):
+def _privacy_request_kwargs(messages: list, *, provider, model, base_url, api_key) -> dict:
+    """Pin a verifiable Agent-owned privacy route; streamed call_llm never takes its implicit provider fallback ladder."""
+    from .chat import _require_data_use_support
+    from providers import get_provider_profile
+
+    requires = _require_data_use_support(messages)
+    try:
+        profile = get_provider_profile(str(provider or ""))
+        body = profile.build_extra_body(model=model, base_url=base_url, data_use=requires) if profile else {}
+        policy = body.get("provider", {})
+        safe = not requires.difference({"no_training", "zero_retention"}) and policy.get("data_collection") == "deny" and ("zero_retention" not in requires or policy.get("zdr") is True)
+    except Exception as exc:  # noqa: BLE001 - unknown policy fails before any provider dispatch
+        raise RpcError("Cannot verify the auxiliary provider's connector privacy policy.", condition="data_policy_denied") from exc
+    if not safe or not provider or not base_url or not api_key or not _call_llm_streams():
+        raise RpcError("The auxiliary provider cannot enforce connector privacy requirements.", condition="data_policy_denied")
+    return {"provider": provider, "model": model, "base_url": str(base_url), "api_key": api_key, "extra_body": {"provider": policy}}
+
+
+def _aux_request(task: str, client, model: str, messages: list, *, main_runtime: dict | None, max_tokens: int | None, temperature: float | None, ctx: CallContext, selected_provider: str | None = None):
     """``(create(**stream), stream)`` for one auxiliary request. TAL-823: through the Agent's ``call_llm`` funnel (plugin
     hooks, a custom provider's ``extra_body``, watchdogs, response unwrap, fallbacks) when it streams; else the raw
     client. ``stream`` is False for a permit-limited task (its call must stay cancellable, see ``_call_llm``) and for
@@ -190,13 +226,18 @@ def _aux_request(task: str, client, model: str, messages: list, *, main_runtime:
         kwargs["max_tokens"] = int(max_tokens)
     if temperature is not None:
         kwargs["temperature"] = float(temperature)
+    from .chat import _require_data_use_support
+
+    if _require_data_use_support(messages):
+        route = _privacy_request_kwargs(messages, provider=getattr(client, "_hermes_aux_effective_provider", None) or selected_provider, model=model, base_url=getattr(client, "base_url", None), api_key=getattr(client, "api_key", None))
+        return (lambda **_: _call_llm(task, ctx, **route, **kwargs, stream=True)), True
     stream = hasattr(client.chat.completions, "with_streaming_response")
     if _call_llm_streams():
         return (lambda **stream: _call_llm(task, ctx, main_runtime=main_runtime, **kwargs, **stream)), stream and not _permit_limited(task)
     return (lambda **stream: client.chat.completions.create(model=model, **kwargs, **stream)), stream
 
 
-def _stream_completion(create, model: str, *, stream: bool, ctx: CallContext) -> dict:
+def _stream_completion(create, model: str, *, stream: bool, ctx: CallContext, retry_nonstream: bool = True) -> dict:
     if not stream:
         return _response_result(model, create())
     text_parts: list[str] = []
@@ -229,6 +270,8 @@ def _stream_completion(create, model: str, *, stream: bool, ctx: CallContext) ->
     except RpcError:
         raise
     except Exception as exc:  # noqa: BLE001 - fall back to a non-streaming call
+        if not retry_nonstream:
+            raise
         log.debug("streaming auxiliary call failed (%s); retrying without stream", exc)
         return _response_result(model, create())
     return {"model": str(model), "text": "".join(text_parts).strip(), "usage": usage, "finish_reason": finish_reason}

@@ -47,6 +47,28 @@ describe('chat turns through the sidecar', () => {
   })
   afterAll(() => s.close())
 
+  it.each(['top-level', 'persisted'])('keeps %s connector data-use requirements in the next turn history', async (source) => {
+    const sid = await newSession(s)
+    const tool = { role: 'tool', tool_call_id: 'connector', content: 'private result',
+      ...(source === 'top-level' ? { data_use: ['no_training'] } : {}),
+      display_metadata: { ...(source === 'persisted' ? { data_use: ['no_training'] } : {}), diff: 'display only' } }
+    const histories: Json[][] = []
+    sidecar.respond('chat.start', (params) => {
+      histories.push(params.conversation_history)
+      return completed([...params.conversation_history, { role: 'user', content: str(params.user_message) },
+        ...(histories.length === 1 ? [{ role: 'assistant', content: '', tool_calls: [{ id: 'connector', type: 'function', function: { name: 'connector', arguments: '{}' } }] }, tool] : []),
+        { role: 'assistant', content: 'done' }])
+    })
+    for (const message of ['read connector', 'follow up']) {
+      const start = await json(await post(s, '/api/chat/start', { session_id: sid, message }))
+      expect(start.stream_id).toBeTypeOf('string')
+      await s.sse(`/api/chat/stream?stream_id=${String(start.stream_id)}`, (f) => f.event === 'stream_end')
+    }
+    expect(histories).toHaveLength(2)
+    expect(histories[1]?.find((m) => m.role === 'tool')).toMatchObject({ role: 'tool', tool_call_id: 'connector', content: 'private result', data_use: ['no_training'] })
+    expect(histories[1]?.every((m) => !('display_metadata' in m))).toBe(true)
+  })
+
   it('refuses new chat admission during a Web update without recording a pending turn', async () => {
     const sid = await newSession(s)
     const guard = vi.spyOn(s.deps.updates, 'blocksNewWork').mockReturnValue(true)
@@ -1161,6 +1183,30 @@ describe('chat turns through the sidecar', () => {
     } finally {
       turns.deps.titleRefreshEvery = original
     }
+  })
+
+  it.each(['top-level', 'persisted', 'state.db'])('carries %s session privacy requirements into a derived title prompt', async (source) => {
+    const sid = await newSession(s)
+    const session = await s.deps.sessionStore.get(sid)
+    session.messages = [
+      { role: 'user', content: 'summarize my mail' },
+      { role: 'tool', content: 'private mail', tool_call_id: 'mail', ...(source === 'top-level' ? { data_use: ['no_training'] } : { display_metadata: { data_use: ['no_training'], diff: 'display only' } }) },
+      { role: 'tool', content: 'private calendar', tool_call_id: 'calendar', data_use: ['zero_retention'] },
+      { role: 'assistant', content: 'Private meeting details from the mail and calendar.' },
+    ]
+    // The model context may already be compacted; the transcript still owns the requirements.
+    session.context_messages = [{ role: 'user', content: '[CONTEXT COMPACTION] private meeting details' }]
+    const stateRows = source === 'state.db' ? session.messages.filter((m) => m.role === 'tool') : null
+    if (stateRows) session.messages = session.messages.filter((m) => m.role !== 'tool')
+    const stateRead = stateRows ? vi.spyOn(s.deps.sessions, 'stateDbRows').mockResolvedValue(stateRows) : null
+    await s.deps.sessionStore.save(session)
+    let sent: Json[] = []
+    sidecar.respond('aux.complete', (params) => { sent = params.messages; return { model: 'test-model', text: 'Private meeting details', usage: null } })
+    try {
+      expect((await post(s, '/api/session/title/regenerate', { session_id: sid })).status).toBe(200)
+      expect(sent.find((m) => m.role === 'user')).toMatchObject({ data_use: ['no_training', 'zero_retention'] })
+      expect(JSON.stringify(sent)).not.toContain('display_metadata')
+    } finally { stateRead?.mockRestore() }
   })
 
   it('skips background titling when the profile turns auxiliary.title_generation.enabled off; manual regenerate still titles (TAL-531)', async () => {

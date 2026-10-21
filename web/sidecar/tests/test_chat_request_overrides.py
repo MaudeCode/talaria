@@ -145,3 +145,176 @@ def test_custom_provider_extra_body_reaches_chat_and_compress(tmp_path) -> None:
         {"extra_body": {"user": "edited-user", "metadata": "talaria"}},
         {"extra_body": {"user": "main-user", "metadata": "talaria", "store": False}},
     ], seen
+
+
+# Keep the real Agent constructor, provider profile and request builder; replace only execution with a recorder.
+DATA_USE_PROBE = """
+import json, os, sys
+from pathlib import Path
+from unittest.mock import patch
+sys.path.append(sys.argv[1])
+from run_agent import AIAgent
+from agent import message_metadata
+from talaria_sidecar.errors import RpcError
+from talaria_sidecar.home import scoped_home
+from talaria_sidecar.methods import chat
+
+seen = []
+refusals = []
+capable = callable(getattr(message_metadata, "data_use_requirement", None))
+
+class RecordingAgent(AIAgent):
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs, skip_memory=True, skip_context_files=True)
+
+    def run_conversation(self, user_message, conversation_history, **kwargs):
+        messages = [*conversation_history, {"role": "user", "content": user_message}]
+        seen.append(self._build_api_kwargs(messages))
+        return {"final_response": "ok", "messages": [*messages, {"role": "assistant", "content": "ok"}]}
+
+    def _spawn_background_review(self, **kwargs):
+        seen.append(self._build_api_kwargs(kwargs["messages_snapshot"]))
+
+class Client:
+    def __init__(self, **kwargs):
+        self.api_key = kwargs.get("api_key")
+        self.base_url = kwargs.get("base_url")
+
+    def close(self):
+        pass
+
+class Ctx:
+    cancelled = False
+
+    def emit(self, event, data=None):
+        pass
+
+home = Path(os.environ["HERMES_HOME"])
+chat._agent_class = lambda: RecordingAgent
+chat._resolve_runtime = lambda provider, model: {"model": model, "provider": provider, "api_key": "test-key", "api_mode": "chat_completions", "base_url": "https://inference-api.nousresearch.com/v1"}
+params = {"profile_home": str(home), "session_id": "privacy", "model": "gpt-5", "model_provider": "nous", "enabled_toolsets": []}
+with patch("agent.process_bootstrap.OpenAI", Client), scoped_home(home):
+    first = chat.start(Ctx(), {**params, "stream_id": "first", "user_message": "read connector", "conversation_history": []})
+    assert first["status"] == "completed", first
+    for requirement in ("no_training", "zero_retention"):
+        history = [{"role": "user", "content": "read connector"},
+                   {"role": "assistant", "content": "", "tool_calls": [{"id": "c1", "type": "function", "function": {"name": "connector", "arguments": "{}"}}]},
+                   {"role": "tool", "tool_call_id": "c1", "content": "private result", "data_use": [requirement]},
+                   {"role": "assistant", "content": "done"}]
+        turn = {**params, "stream_id": requirement, "user_message": "follow up", "conversation_history": history}
+        if capable:
+            result = chat.start(Ctx(), turn)
+            assert result["status"] == "completed", result
+            assert "Reviewing this conversation" in chat.refine({**turn, "messages": history})
+        else:
+            for method in ("start", "compress", "refine"):
+                try:
+                    if method == "refine":
+                        chat.refine({**turn, "messages": history})
+                    else:
+                        getattr(chat, method)(Ctx(), turn)
+                except RpcError as exc:
+                    refusals.append(exc.data["condition"])
+                else:
+                    raise AssertionError("legacy Agent admitted private history")
+print(json.dumps({"capable": capable, "requests": seen, "refusals": refusals}))
+"""
+
+
+@requires_agent
+def test_second_turn_connector_data_use_reaches_nous_request(tmp_path) -> None:
+    root = tmp_path / ".hermes"
+    root.mkdir()
+    run = subprocess.run([AGENT_PYTHON, "-c", DATA_USE_PROBE, str(AGENT_DIR)], env=isolated_env(root), capture_output=True, text=True, timeout=120)
+    assert run.returncode == 0, run.stderr[-4000:]
+    observed = json.loads(run.stdout.strip().splitlines()[-1])
+    requests = observed["requests"]
+    if not observed["capable"]:
+        assert len(requests) == 1
+        assert observed["refusals"] == ["agent_incompatible"] * 6
+        return
+    assert observed["refusals"] == []
+    assert [request["extra_body"].get("provider") for request in requests] == [None, *[{"data_collection": "deny"}] * 2, *[{"data_collection": "deny", "zdr": True}] * 2]
+    for request in requests[1:]:
+        assert next(row for row in request["messages"] if row["role"] == "tool") == {"role": "tool", "tool_call_id": "c1", "content": "private result"}
+        assert all("data_use" not in row and "display_metadata" not in row for row in request["messages"])
+
+
+AUX_PRIVACY_PROBE = """
+import json, os, sys
+from pathlib import Path
+from openai import OpenAI
+import httpx
+sys.path.append(sys.argv[1])
+from agent import auxiliary_client, message_metadata
+from talaria_sidecar.errors import RpcError
+from talaria_sidecar.home import scoped_home
+from talaria_sidecar.methods import aux, chat
+
+requests = []
+class Client(OpenAI):
+    fail = False
+    def __init__(self):
+        super().__init__(api_key="test-key", base_url="https://inference-api.nousresearch.com/v1", max_retries=0, http_client=httpx.Client(transport=httpx.MockTransport(self.respond)))
+    def respond(self, request):
+        body = json.loads(request.content)
+        requests.append(body)
+        if self.fail:
+            self.fail = False
+            raise RuntimeError("synthetic stream failure")
+        if not body.get("stream"):
+            return httpx.Response(200, json={"id": "c1", "object": "chat.completion", "created": 0, "model": "gpt-5", "choices": [{"index": 0, "message": {"role": "assistant", "content": "Private title"}, "finish_reason": "stop"}]})
+        chunk = {"id": "c1", "object": "chat.completion.chunk", "created": 0, "model": "gpt-5", "choices": [{"index": 0, "delta": {"content": "Private title"}, "finish_reason": "stop"}]}
+        return httpx.Response(200, headers={"Content-Type": "text/event-stream"}, content="data: " + json.dumps(chunk) + "\\n\\ndata: [DONE]\\n\\n")
+
+class Ctx:
+    def check_cancelled(self): pass
+    def emit(self, *args): pass
+
+client = Client()
+auxiliary_client._try_nous = lambda **kwargs: (client, "gpt-5")
+auxiliary_client._get_cached_client = lambda *args, **kwargs: (client, "gpt-5")
+chat._resolve_runtime = lambda provider, model: {"provider": provider or "nous", "model": model or "gpt-5", "base_url": client.base_url, "api_key": client.api_key}
+class NoStringFallback:
+    def __init__(self, **kwargs):
+        raise AssertionError("private content reached the string-only Agent fallback")
+chat._agent_class = lambda: NoStringFallback
+home = Path(os.environ["HERMES_HOME"])
+capable = callable(getattr(message_metadata, "data_use_requirement", None))
+with scoped_home(home):
+    for requirement in ("no_training", "zero_retention"):
+        messages = [{"role": "user", "content": "Derived private transcript", "data_use": [requirement]}]
+        if not capable:
+            try:
+                aux.complete("title_generation", messages, main_runtime=None, max_tokens=64, temperature=None, ctx=Ctx())
+            except RpcError as exc:
+                assert exc.data["condition"] == "agent_incompatible", exc.to_json()
+            else:
+                raise AssertionError("legacy auxiliary route admitted private content")
+            continue
+        for mode in ("auxiliary", "explicit", "main-fallback"):
+            client.fail = mode == "main-fallback"
+            result = aux.complete("title_generation", messages, main_runtime={"provider": "nous", "model": "gpt-5", "base_url": client.base_url, "api_key": client.api_key}, max_tokens=64, temperature=None, ctx=Ctx(), main_fallback=True, model="gpt-5" if mode == "explicit" else None, provider="nous")
+            assert result["text"] == "Private title", result
+client.close()
+print(json.dumps({"capable": capable, "requests": requests}))
+"""
+
+
+@requires_agent
+def test_auxiliary_privacy_routes_use_real_agent_policy_without_hidden_provider_hops(tmp_path) -> None:
+    root = tmp_path / ".hermes"
+    root.mkdir()
+    (root / "config.yaml").write_text(json.dumps({"model": {"provider": "nous", "default": "gpt-5"}, "auxiliary": {"title_generation": {"provider": "nous", "model": "gpt-5", "fallback_chain": [{"provider": "openrouter", "model": "unsafe-fallback"}]}}}))
+    run = subprocess.run([AGENT_PYTHON, "-c", AUX_PRIVACY_PROBE, str(AGENT_DIR)], env=isolated_env(root), capture_output=True, text=True, timeout=120)
+    assert run.returncode == 0, run.stderr[-4000:]
+    observed = json.loads(run.stdout.strip().splitlines()[-1])
+    requests = observed["requests"]
+    if not observed["capable"]:
+        assert requests == []
+        return
+    assert len(requests) == 8
+    assert all(request.get("stream") is True and request["model"] != "unsafe-fallback" for request in requests)
+    for index, request in enumerate(requests):
+        assert request["provider"] == {"data_collection": "deny", **({"zdr": True} if index >= 4 else {})}
+        assert request["messages"] == [{"role": "user", "content": "Derived private transcript"}]
