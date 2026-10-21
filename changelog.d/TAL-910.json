@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Session lists stay responsive with large chat histories and older database statistics.",
+      "highlight": false,
+      "components": ["web"]
+    }
+  ]
+}
