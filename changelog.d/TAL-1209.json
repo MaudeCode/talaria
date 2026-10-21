@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "While a session runs, Talaria Web no longer reloads the open chat and every other loaded session each time the sidebar updates.",
+      "highlight": false,
+      "components": ["web"]
+    }
+  ]
+}

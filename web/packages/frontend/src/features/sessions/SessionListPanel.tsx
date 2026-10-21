@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useNavigate, useParams } from '@tanstack/react-router'
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { useMutation, useQuery, useQueryClient, type QueryClient } from '@tanstack/react-query'
 import { Archive, ArchiveRestore, Filter, GitBranch, Plus, Search, Upload, X } from 'lucide-react'
 import { m } from '../../paraglide/messages.js'
 import * as api from '../../api/endpoints'
@@ -24,6 +24,14 @@ export function useSessionListQuery(params: api.SessionListParams = {}) {
   return useQuery({ queryKey: keys.sessions.list(params as Record<string, string | boolean | number | undefined>), queryFn: () => api.fetchSessions(params), staleTime: 10_000 })
 }
 
+/**
+ * TAL-1209: refetch the sidebar rows (list and search) and every query of the named session; other sessions' transcripts,
+ * status, and background work stay cached, so a run's event stream does not refetch every mounted session.
+ */
+function invalidateSidebar(qc: QueryClient, sessionId?: string | null) {
+  void qc.invalidateQueries({ predicate: ({ queryKey: [root, kind, id] }) => root === 'sessions' && (kind === 'list' || kind === 'search' || (!!sessionId && id === sessionId)) })
+}
+
 /** One EventSource for sidebar invalidation (`sessions_changed`), bounded to the panel's lifetime. */
 export function useSessionListStream() {
   const qc = useQueryClient()
@@ -31,11 +39,16 @@ export function useSessionListStream() {
     let closed = false
     let handle = openSessionListStream({
       onEvent: (ev) => {
-        if (ev.event === 'sessions_changed' || ev.event === 'initial') void qc.invalidateQueries({ queryKey: keys.sessions.all })
+        if (ev.event === 'sessions_changed') {
+          if (ev.data.session_id) invalidateSidebar(qc, ev.data.session_id)
+          // No id (a delete, an import, or two sessions' events coalesced): any session may have changed.
+          else void qc.invalidateQueries({ queryKey: keys.sessions.all })
+        }
+        else if (ev.event === 'initial') invalidateSidebar(qc)
       },
       onError: () => { /* EventSource retries on its own; the poll below covers long outages */ },
     })
-    const poll = window.setInterval(() => { if (!closed && document.visibilityState === 'visible') void qc.invalidateQueries({ queryKey: keys.sessions.all }) }, 60_000)
+    const poll = window.setInterval(() => { if (!closed && document.visibilityState === 'visible') invalidateSidebar(qc) }, 60_000)
     return () => {
       closed = true
       handle.close()
