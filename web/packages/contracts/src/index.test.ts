@@ -1,3 +1,4 @@
+import { RpcRequestSchema } from './sidecar/rpc.js'
 import { ModelConfirmationRequiredSchema, sessionsContract } from './routes/sessions.js'
 import { MessageSchema, SessionSchema, ToolCallSchema } from './views.js'
 import { ExecutionModesSchema, OwnerAttachmentSchema, OwnerActionRequestSchema } from './gateway-session.js'
@@ -16,6 +17,13 @@ describe('contracts package', () => {
     expect(ChatEventSchema.parse(fixture.completed)).toEqual(fixture.completed)
     expect(ToolCallSchema.parse(fixture.tool)).toEqual(fixture.tool)
     expect(ToolCallSchema.parse({ id: 'old-agent', name: 'tool' }).progress).toBeUndefined()
+  })
+  it('accepts optional opaque startup correlation without requiring it from older peers', () => {
+    const request = { jsonrpc: '2.0', id: 1, method: 'chat.start', params: {} }
+    expect(RpcRequestSchema.parse(request)).toEqual(request)
+    const correlated = { ...request, trace_id: '11111111-1111-4111-8111-111111111111' }
+    expect(RpcRequestSchema.parse(correlated)).toEqual(correlated)
+    expect(RpcRequestSchema.safeParse({ ...request, trace_id: '/private/prompt-or-secret' }).success).toBe(false)
   })
   it('validates the native model confirmation refusal against the canonical server schema', () => {
     const fixture = shared('fixtures/model-confirmation.json') as { request: unknown; refusal: unknown }

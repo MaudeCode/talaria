@@ -1,3 +1,5 @@
+import { StartupTiming } from '../startup-timing.js'
+import type { ChildProcess } from 'node:child_process'
 import { delimiter } from 'node:path'
 import { existsSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs'
 import { homedir } from 'node:os'
@@ -280,5 +282,55 @@ describe.skipIf(!agentAvailable)('SidecarClient against the pinned Agent', () =>
     await client.call('runtime.shutdown', { exit_code: 3 })
     await expect.poll(() => client?.status, { timeout: 5_000 }).toBe('incompatible')
     await expect(client.call('rpc.methods', {})).rejects.toBeInstanceOf(SidecarError)
+  })
+})
+
+
+describe('startup timing at the RPC transport boundary', () => {
+  const transport = () => {
+    const client = new SidecarClient({ python: '', sidecarDir: '', agentDir: '', hermesHome: '', log: () => undefined })
+    const requests: { id: number; trace_id?: string; method: string }[] = []
+    const child = { stdin: { writable: true, write: (line: string, callback?: (error?: Error) => void) => { requests.push(JSON.parse(line) as { id: number; trace_id?: string; method: string }); callback?.() } } } as unknown as ChildProcess
+    const internal = client as unknown as { child: ChildProcess; closed: boolean; onLine: (line: string) => void; onExit: (child: ChildProcess, code: number | null, signal: NodeJS.Signals | null) => void }
+    internal.child = child
+    client.status = 'ready'
+    return { client, internal, child, requests }
+  }
+  afterEach(() => { vi.useRealTimers() })
+
+  it.each(['before_dispatch', 'timeout', 'exit'] as const)('records %s without changing cancellation or pending-call semantics', async (scenario) => {
+    vi.useFakeTimers()
+    const { client, internal, child, requests } = transport()
+    const logs: string[] = []
+    const timing = new StartupTiming((line) => logs.push(line))
+    const controller = new AbortController()
+    if (scenario === 'before_dispatch') controller.abort()
+    const result = client.call('runtime.ensure_current', {}, { timing, signal: controller.signal, timeoutMs: 25 })
+    const condition = scenario === 'before_dispatch' ? 'cancelled' : scenario === 'timeout' ? 'sidecar_timeout' : 'sidecar_unavailable'
+    const rejected = expect(result).rejects.toMatchObject({ condition })
+    if (scenario === 'timeout') await vi.advanceTimersByTimeAsync(25)
+    if (scenario === 'exit') { internal.closed = true; internal.onExit(child, 1, null) }
+    await rejected
+    timing.finish()
+    const record = JSON.parse(logs[0]!.slice(logs[0]!.indexOf('{'))) as { outcome: string; spans: Record<string, { outcome: string }> }
+    expect(record.outcome).toBe(scenario === 'before_dispatch' ? 'cancelled' : scenario === 'timeout' ? 'timeout' : 'unknown')
+    expect(record.spans.sidecar_call?.outcome).toBe(record.outcome)
+    if (scenario === 'before_dispatch') expect(requests).toHaveLength(0)
+    if (scenario === 'timeout') expect(requests.map((r) => r.method)).toEqual(['runtime.ensure_current', 'rpc.cancel'])
+  })
+
+  it('binds interleaved pending calls to their own trace and first output', async () => {
+    const { client, internal, requests } = transport()
+    const first = new StartupTiming(() => undefined)
+    const second = new StartupTiming(() => undefined)
+    const calls = [client.call('runtime.ensure_current', {}, { timing: first }), client.call('runtime.ensure_current', {}, { timing: second })]
+    expect(requests.map((r) => r.trace_id)).toEqual([first.traceId, second.traceId])
+    internal.onLine(JSON.stringify({ jsonrpc: '2.0', method: 'stream', params: { id: requests[1]!.id, seq: 1, event: 'token', data: { text: 'SECRET' } } }))
+    expect(first.snapshot().observations.first_sidecar_output).toBeUndefined()
+    expect(second.snapshot().observations.first_sidecar_output).toBeTypeOf('number')
+    for (const request of [...requests].reverse()) internal.onLine(JSON.stringify({ jsonrpc: '2.0', id: request.id, result: { current: true, agent_revision: null } }))
+    await Promise.all(calls)
+    expect(first.rpcId).toBe(requests[0]!.id)
+    expect(second.rpcId).toBe(requests[1]!.id)
   })
 })

@@ -8,6 +8,7 @@
  * incompatible, calls fail closed with a `SidecarError` whose `condition` the
  * HTTP layer forwards as the 503 `condition` field.
  */
+import { timingOutcome, type StartupTiming } from '../startup-timing.js'
 import { delimiter, resolve } from 'node:path'
 import { homedir } from 'node:os'
 import { spawn, type ChildProcess } from 'node:child_process'
@@ -41,6 +42,7 @@ export class SidecarError extends Error {
 export interface StreamFrame { seq: number; event: string; data: unknown }
 
 export interface CallOptions {
+  timing?: StartupTiming | undefined
   /** Receives every stream frame the sidecar emits for this request, in order. */
   onStream?: (frame: StreamFrame) => void
   signal?: AbortSignal
@@ -85,6 +87,7 @@ export type ReadyGate = (call: SidecarLike['call']) => Promise<void>
 export type SidecarStatus = 'stopped' | 'starting' | 'ready' | 'incompatible' | 'restarting'
 
 interface Pending {
+  timing?: StartupTiming | undefined
   method: string
   resolve: (value: unknown) => void
   reject: (error: Error) => void
@@ -266,7 +269,9 @@ export class SidecarClient implements SidecarLike {
     if ('method' in message) {
       if (message.method === 'stream') {
         const frame = message.params as { id: number; seq: number; event: string; data: unknown }
-        this.pending.get(frame.id)?.onStream?.({ seq: frame.seq, event: frame.event, data: frame.data })
+        const pending = this.pending.get(frame.id)
+        pending?.timing?.observe('first_sidecar_output')
+        pending?.onStream?.({ seq: frame.seq, event: frame.event, data: frame.data })
       }
       return
     }
@@ -317,7 +322,9 @@ export class SidecarClient implements SidecarLike {
     const configAccess = (method === 'config.get' || method === 'config.set') && this.status === 'incompatible' && this.describe?.rpc_version === SIDECAR_RPC_VERSION
     const { condition } = chatReadiness(this)
     if (condition !== null && !configAccess && !method.startsWith('runtime.') && method !== 'rpc.methods') {
-      return Promise.reject(new SidecarError(`sidecar not ready (${this.status})`, { condition }))
+      const error = new SidecarError(`sidecar not ready (${this.status})`, { condition })
+      opts.timing?.fail(error)
+      return Promise.reject(error)
     }
     const child = this.child
     const refreshStatus = method === 'runtime.status' && (this.status === 'ready' || this.status === 'incompatible')
@@ -339,35 +346,44 @@ export class SidecarClient implements SidecarLike {
   }
 
   private async rawCall<M extends SidecarMethodName>(method: M, params: SidecarParams<M>, opts: CallOptions = {}): Promise<SidecarResult<M>> {
-    // A signal that already fired never reaches the sidecar: the abort listener below would otherwise be installed
-    // after the fact and the call (e.g. a `chat.start` behind an earlier await) would run to completion uncancelled.
-    if (opts.signal?.aborted) throw new SidecarError(`sidecar call ${method} cancelled before it was sent`, { condition: 'cancelled' })
-    const stdin = this.child?.stdin
-    if (!stdin?.writable) throw new SidecarError('sidecar process is not running', { condition: 'sidecar_unavailable' })
-    const schema = SIDECAR_METHODS[method]
-    const id = this.nextId++
-    const request = { jsonrpc: '2.0' as const, id, method, params: schema.params.parse(params) }
-    const raw = await new Promise<unknown>((resolve, reject) => {
-      const pending: Pending = { method, resolve, reject, onStream: opts.onStream }
-      if (opts.timeoutMs !== 0) {
-        pending.timer = setTimeout(() => {
-          this.pending.delete(id)
-          this.sendCancel(id)
-          reject(new SidecarError(`sidecar call ${method} timed out`, { condition: 'sidecar_timeout' }))
-        }, opts.timeoutMs ?? 120_000)
-        pending.timer.unref()
-      }
-      this.pending.set(id, pending)
-      opts.signal?.addEventListener('abort', () => { this.sendCancel(id) }, { once: true })
-      stdin.write(JSON.stringify(request) + '\n', (error) => {
-        if (error) {
-          this.pending.delete(id)
-          if (pending.timer) clearTimeout(pending.timer)
-          reject(new SidecarError(`sidecar write failed: ${error.message}`, { condition: 'sidecar_unavailable' }))
+    const closeCall = opts.timing?.begin('sidecar_call')
+    try {
+      // A signal that already fired never reaches the sidecar: the abort listener below would otherwise be installed
+      // after the fact and the call (e.g. a `chat.start` behind an earlier await) would run to completion uncancelled.
+      if (opts.signal?.aborted) throw new SidecarError(`sidecar call ${method} cancelled before it was sent`, { condition: 'cancelled' })
+      const stdin = this.child?.stdin
+      if (!stdin?.writable) throw new SidecarError('sidecar process is not running', { condition: 'sidecar_unavailable' })
+      const schema = SIDECAR_METHODS[method]
+      const id = this.nextId++
+      if (opts.timing) opts.timing.rpcId = id
+      const request = { jsonrpc: '2.0' as const, id, method, params: schema.params.parse(params), ...(opts.timing ? { trace_id: opts.timing.traceId } : {}) }
+      const closeDispatch = opts.timing?.begin('sidecar_dispatch')
+      const raw = await new Promise<unknown>((resolve, reject) => {
+        const pending: Pending = { method, resolve, reject, onStream: opts.onStream, timing: opts.timing }
+        if (opts.timeoutMs !== 0) {
+          pending.timer = setTimeout(() => {
+            this.pending.delete(id)
+            this.sendCancel(id)
+            reject(new SidecarError(`sidecar call ${method} timed out`, { condition: 'sidecar_timeout' }))
+          }, opts.timeoutMs ?? 120_000)
+          pending.timer.unref()
         }
+        this.pending.set(id, pending)
+        opts.signal?.addEventListener('abort', () => { this.sendCancel(id) }, { once: true })
+        stdin.write(JSON.stringify(request) + '\n', (error) => {
+          closeDispatch?.(error ? 'unknown' : 'ok')
+          if (error) {
+            this.pending.delete(id)
+            if (pending.timer) clearTimeout(pending.timer)
+            reject(new SidecarError(`sidecar write failed: ${error.message}`, { condition: 'sidecar_unavailable' }))
+          }
+        })
       })
-    })
-    return schema.result.parse(raw) as SidecarResult<M>
+      const result = schema.result.parse(raw) as SidecarResult<M>
+      const status = raw as { status?: string; failed?: boolean; partial?: boolean; error?: unknown }
+      closeCall?.(status.status === 'cancelled' ? 'cancelled' : status.status === 'error' || status.failed || status.partial || status.error ? 'error' : 'ok')
+      return result
+    } catch (error) { closeCall?.(timingOutcome(error)); opts.timing?.fail(error); throw error }
   }
 
   private sendCancel(id: number): void {

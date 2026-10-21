@@ -8,6 +8,8 @@ export const RpcRequestSchema = z.object({
   id: RpcIdSchema,
   method: z.string().min(1),
   params: z.record(z.string(), z.unknown()),
+  /** Optional opaque correlation only; never includes request payloads or cross-process timestamps. */
+  trace_id: z.uuid().optional(),
 })
 export type RpcRequest = z.infer<typeof RpcRequestSchema>
 
