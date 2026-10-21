@@ -34,6 +34,8 @@ _CODEX_EXPIRES_IN = 15 * 60  # OpenAI's device-code lifetime, as the Agent dashb
 _ENDED_TTL = 10 * 60
 # A pending flow past its code's expiry by this much ends expired even if its provider call has not returned yet.
 _EXPIRY_GRACE = 60
+# How long a start waits for the flows it replaces to close their loopback listeners.
+_RELEASE_WAIT = 5.0
 
 _DENIED = "Sign-in was declined."
 _EXPIRED = "The sign-in code expired before it was approved."
@@ -63,6 +65,8 @@ class Flow:
     committed: bool = False
     # A browser sign-in also finishes from the redirect address the user pastes (``oauth.submit_redirect``).
     submit: Callable[[str], None] | None = None
+    # Set once a browser sign-in's loopback listener is closed, so a replacing start can bind the same fixed port.
+    closed: threading.Event | None = None
 
     @property
     def stoppable(self) -> bool:
@@ -446,6 +450,11 @@ def start(home: Path, provider: str, *, providers: dict[str, Provider] | None = 
     # old code that lands while the provider answers can no longer save.
     for old in _pending(home, provider):
         _cancel(old)
+    # A cancelled browser sign-in closes its listener from its own thread; a fixed redirect port is free only after that.
+    with _FLOWS_LOCK:
+        listening = [f for f in _FLOWS.values() if f.provider == provider and f.closed is not None and not f.closed.is_set() and _same_home(f.home, home)]
+    for old in listening:
+        old.closed.wait(_RELEASE_WAIT)
     try:
         with scoped_home(home):
             display, state = begin()
@@ -458,7 +467,7 @@ def start(home: Path, provider: str, *, providers: dict[str, Provider] | None = 
         # The browser opens this link: anything but a web address is refused before a flow exists.
         _discard(state)
         raise RpcError("The provider answered an invalid sign-in link.", condition="oauth_failed")
-    flow = Flow(secrets.token_urlsafe(16), provider, home, time.time() + int(display["expires_in"]), max(1, int(display["interval"])), submit=state.get("submit"))
+    flow = Flow(secrets.token_urlsafe(16), provider, home, time.time() + int(display["expires_in"]), max(1, int(display["interval"])), submit=state.get("submit"), closed=state.get("closed"))
     with _FLOWS_LOCK:
         if _GENERATIONS.get(key) != generation:
             # A newer start for this home and provider began while this one waited on the provider: it owns the sign-in.

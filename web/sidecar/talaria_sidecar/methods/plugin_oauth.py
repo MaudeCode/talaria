@@ -148,7 +148,7 @@ def _begin(plugin: str, oauth_id: str) -> tuple[dict, dict]:
     authorize_url = f"{cfg.authorize_url}{'&' if urlparse(cfg.authorize_url).query else '?'}{urlencode(params)}"
     display = {"verification_url": authorize_url, "redirect_uri": redirect_uri, **_hosts(client), "expires_in": int(cfg.timeout_seconds), "interval": 2}
     flow_state = {"agent": agent, "key": key, "client": client, "cfg": cfg, "server": server, "result": result, "port": port, "path": path,
-                  "redirect_uri": redirect_uri, "verifier": verifier, "state": state, "answer_lock": threading.Lock()}
+                  "redirect_uri": redirect_uri, "verifier": verifier, "state": state, "answer_lock": threading.Lock(), "closed": threading.Event()}
     flow_state["submit"] = lambda url: _submit(flow_state, url)
     return display, flow_state
 
@@ -193,6 +193,7 @@ def _wait(flow, state: dict) -> dict:
         server.shutdown()
         server.server_close()
         thread.join(timeout=1.0)
+        state["closed"].set()
     if flow.cancelled.is_set():
         raise _Stop()
     if result["error"]:
@@ -218,6 +219,7 @@ def discard(state: dict) -> None:
     server = state.get("server")
     if server is not None:
         server.server_close()
+        state["closed"].set()
 
 
 def register(reg) -> None:

@@ -255,7 +255,26 @@ except OSError:
     listener = "closed"
 out["cancelled"] = [cancelled, refused, listener, call("oauth.poll", flow_id=flow["flow_id"])["status"], grant()]
 
-# 5. No secret leaves through a response or a log line; ``state`` only appears inside the authorize link it belongs to.
+# 5. With a pinned redirect port, a replacing start and a retry right after a cancel bind once the old listener closed.
+import dataclasses  # noqa: E402
+import socket  # noqa: E402
+
+from hermes_cli import plugin_oauth  # noqa: E402
+
+with socket.socket() as probe_socket:
+    probe_socket.bind(("127.0.0.1", 0))
+    pinned = probe_socket.getsockname()[1]
+unpinned = plugin_oauth._pkce_config
+plugin_oauth._pkce_config = lambda *a, **k: dataclasses.replace(unpinned(*a, **k), redirect_port=pinned)
+first = start()
+second = start()  # replaces the first flow while its listener holds the port
+call("oauth.cancel", flow_id=second.get("flow_id", ""))
+third = start()  # right after a cancel
+out["pinned_port"] = [f.get("status") or f.get("raised") for f in (first, second, third)] + [urlparse(third.get("redirect_uri", "")).port == pinned]
+call("oauth.cancel", flow_id=third.get("flow_id", ""))
+plugin_oauth._pkce_config = unpinned
+
+# 6. No secret leaves through a response or a log line; ``state`` only appears inside the authorize link it belongs to.
 start_links = {r["verification_url"] for r in responses if isinstance(r, dict) and "verification_url" in r}
 public = json.dumps([{k: v for k, v in r.items() if k != "verification_url"} if isinstance(r, dict) else r for r in responses])
 states = [parse_qs(urlparse(link).query)["state"][0] for link in start_links]

@@ -48,6 +48,7 @@ def test_plugin_oauth_sign_in_status_and_sign_out(tmp_path: Path) -> None:
         "foreign_host": ["oauth_redirect_invalid", "pending", None],
         "expired": ["expired", "oauth_flow_ended", None],
         "cancelled": ["cancelled", "oauth_flow_ended", "closed", "cancelled", None],
+        "pinned_port": ["pending", "pending", "pending", True],
         "leaks": [],
         "link_has_verifier": False,
     }
