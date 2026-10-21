@@ -2,6 +2,9 @@ import type { FunctionComponent, MemoExoticComponent } from 'react'
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
+import { configureClient, resetClientForTests } from '../../api/client'
+import { createMemoryAdapter } from '../../contracts/adapters/memory'
+import * as toast from '../toast/toast'
 import { keys } from '../../api/queryKeys'
 import { sessionFixture } from '../../test/fixtures'
 import type { ChatEvent } from '../../contracts/sse'
@@ -60,7 +63,7 @@ beforeEach(() => {
   globalThis.ResizeObserver = class { observe = vi.fn(); unobserve = vi.fn(); disconnect = vi.fn() }
   vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockReturnValue(null)
 })
-afterEach(() => { resetConnectionsForTests(); vi.restoreAllMocks() })
+afterEach(() => { resetClientForTests(); resetConnectionsForTests(); vi.restoreAllMocks() })
 
 it('renders the composer once for a draft while only its status pill follows three token frames', async () => {
   const session = sessionFixture({ session_id: 'composer-chat', worktree_branch: 'synthetic-worktree', messages: [{ id: 1, role: 'user', content: 'Question' }] })
@@ -105,6 +108,57 @@ it('renders the composer once for a draft while only its status pill follows thr
   emit({ event: 'done', data: {} })
   await waitFor(() => expect(view.container.querySelector('#btnStop')).not.toBeInTheDocument())
   expect(screen.getByRole('textbox')).toHaveValue('Check the logs too')
+  view.unmount()
+  qc.clear()
+})
+
+it.each(['high', 'default'])('routes native /reasoning %s with the current conversation and never retries globally', async (effort) => {
+  const session = sessionFixture({ session_id: 'native-reasoning', model: 'native-model', model_provider: 'openai', read_only: true,
+    owner_attachment: { state: 'attached', reason: null, restarting: false, can_submit: true, can_interrupt: false, can_attach: false, revision: 1, execution_generation: 1, admissions: [] } })
+  const adapter = createMemoryAdapter({ routes: { 'POST /api/reasoning': () => [409, { error: 'Reasoning changes are unavailable for this conversation', code: 'reasoning_unsupported' }] } })
+  configureClient({ transport: adapter })
+  const ownerAction = vi.spyOn(api, 'ownerAction')
+  const showToast = vi.spyOn(toast, 'showToast').mockImplementation(() => undefined)
+  const qc = new QueryClient({ defaultOptions: { queries: { retry: false, staleTime: Infinity } } })
+  vi.mocked(api.fetchSession).mockResolvedValue({ session })
+  qc.setQueryData(keys.sessions.detail(session.session_id), { session })
+  const view = render(<QueryClientProvider client={qc}><ChatView sessionId={session.session_id} /></QueryClientProvider>)
+  await waitFor(() => expect(qc.isFetching()).toBe(0))
+  expect(view.container.querySelector('.composer-reasoning-wrap')).not.toBeInTheDocument()
+  fireEvent.change(screen.getByRole('textbox'), { target: { value: `/reasoning ${effort}` } })
+  fireEvent.keyDown(screen.getByRole('textbox'), { key: 'Enter', code: 'Enter' })
+  await waitFor(() => expect(adapter.calls.filter((call) => call.url.pathname.endsWith('/api/reasoning'))).toHaveLength(1))
+  expect(JSON.parse(adapter.calls.find((call) => call.url.pathname.endsWith('/api/reasoning'))!.body as string)).toEqual({ effort: effort === 'default' ? '' : effort, model: session.model, provider: session.model_provider, session_id: session.session_id })
+  await waitFor(() => expect(showToast).toHaveBeenCalledWith('Reasoning changes are unavailable for this conversation', 4000, 'error'))
+  expect(screen.getByRole('textbox')).toHaveValue('')
+  expect(ownerAction).not.toHaveBeenCalled()
+  expect(adapter.calls.filter((call) => call.url.pathname.endsWith('/api/reasoning'))).toHaveLength(1)
+  view.unmount()
+  qc.clear()
+})
+
+it('routes picker effort and reset through the current direct-chat identity after navigation', async () => {
+  const adapter = createMemoryAdapter({ routes: { 'POST /api/reasoning': () => [200, { show_reasoning: false, reasoning_effort: 'high' }] } })
+  configureClient({ transport: adapter })
+  const qc = new QueryClient({ defaultOptions: { queries: { retry: false, staleTime: Infinity } } })
+  const first = sessionFixture({ session_id: 'first-direct', model: 'shared-model' })
+  const second = sessionFixture({ session_id: 'second-direct', model: 'shared-model' })
+  for (const session of [first, second]) qc.setQueryData(keys.sessions.detail(session.session_id), { session })
+  vi.mocked(api.fetchSession).mockImplementation((id) => Promise.resolve({ session: id === first.session_id ? first : second }))
+  const view = render(<QueryClientProvider client={qc}><ChatView sessionId={first.session_id} /></QueryClientProvider>)
+  await waitFor(() => expect(qc.isFetching()).toBe(0))
+  fireEvent.click(view.container.querySelector('#composerReasoningChip')!)
+  fireEvent.click(await screen.findByRole('menuitemradio', { name: 'high' }))
+  await waitFor(() => expect(adapter.calls).toHaveLength(1))
+  expect(JSON.parse(adapter.calls[0]!.body as string)).toEqual({ effort: 'high', model: 'shared-model', session_id: first.session_id })
+  fireEvent.keyDown(screen.getByRole('menu'), { key: 'Escape' })
+  await waitFor(() => expect(view.container.querySelector('#composerReasoningChip')).toHaveAttribute('aria-expanded', 'false'))
+  view.rerender(<QueryClientProvider client={qc}><ChatView sessionId={second.session_id} /></QueryClientProvider>)
+  await waitFor(() => expect(qc.isFetching()).toBe(0))
+  fireEvent.click(view.container.querySelector('#composerReasoningChip')!)
+  fireEvent.click(await screen.findByRole('menuitemradio', { name: 'Default' }))
+  await waitFor(() => expect(adapter.calls).toHaveLength(2))
+  expect(JSON.parse(adapter.calls[1]!.body as string)).toEqual({ effort: '', model: 'shared-model', session_id: second.session_id })
   view.unmount()
   qc.clear()
 })

@@ -63,7 +63,7 @@ export const setPersonality = (session_id: SessionId, name: string) => orpc().pe
 /** Reasoning config shared with the CLI (config.yaml agent.reasoning_effort / display.show_reasoning). */
 export const fetchReasoning = (model?: string | null, provider?: string | null) => orpc().reasoning.get({ ...(model ? { model } : {}), ...(provider ? { provider } : {}) })
 /** `effort: ''` clears the override so the provider default applies. */
-export const setReasoningEffort = (effort: string, model?: string | null, provider?: string | null) => orpc().reasoning.set({ effort, ...(model ? { model } : {}), ...(provider ? { provider } : {}) })
+export const setReasoningEffort = (effort: string, model?: string | null, provider?: string | null, session_id?: SessionId) => orpc().reasoning.set({ effort, ...(session_id !== undefined ? { session_id } : {}), ...(model ? { model } : {}), ...(provider ? { provider } : {}) })
 export const setReasoningDisplay = (display: 'show' | 'hide') => orpc().reasoning.set({ display })
 
 // Sessions

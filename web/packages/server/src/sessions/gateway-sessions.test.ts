@@ -102,6 +102,23 @@ describe('canonical owner attachment', () => {
   afterEach(async () => { db.close(); await s.close() })
   const post = (path: string, body: unknown) => s.get(path, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) })
 
+  it.each(['high', ''])('refuses native reasoning effort %j without touching profile bytes or dispatching a control', async (effort) => {
+    const path = join(s.state, 'config.yaml')
+    const bytes = '# synthetic profile\nagent:\n  reasoning_effort: low\n'
+    writeFileSync(path, bytes)
+    sidecar.respond('config.get', () => ({ path, exists: true, config: { agent: { reasoning_effort: 'low' } } }))
+    sidecar.respond('config.set', (params) => { writeFileSync(path, JSON.stringify(params.config)); return { ok: true, path } })
+    for (const state of ['attached', 'unavailable'] as const) {
+      sidecar.respond('gateway.session', () => state === 'attached' ? attached(snapshot()) : { state, reason: 'owner_unavailable', snapshot: null, receipt: null })
+      const start = sidecar.calls.length
+      const response = await post('/api/reasoning', { session_id: sid, effort })
+      expect.soft(response.status).toBe(409)
+      expect.soft(await response.json()).toMatchObject({ code: 'reasoning_unsupported' })
+      expect.soft(readFileSync(path, 'utf8')).toBe(bytes)
+      expect.soft(sidecar.calls.slice(start).filter((c) => c.method === 'config.set' || c.method === 'gateway.session')).toEqual([])
+    }
+  })
+
   it('projects only owner controls and never groups the active turn under a steering row', async () => {
     const pending = [
       { ...admission(), admission_id: 'steering', steering: true, text: 'Correction' },

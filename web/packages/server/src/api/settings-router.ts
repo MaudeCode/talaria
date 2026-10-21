@@ -367,6 +367,13 @@ export const settingsRouter = os.router({
     get: os.reasoning.get.handler(({ input, context: { ctx } }) => run(async () => reasoningStatus(await ctx.deps.agentConfig.read(home(ctx)), effortsResolver(ctx), { model: input.model ?? null, provider: input.provider ?? null, baseUrl: input.base_url ?? null }))),
     set: os.reasoning.set.handler(({ input, context: { ctx } }) => run(async () => {
       const h = home(ctx)
+      if (input.session_id !== undefined && input.effort !== undefined && input.effort !== null) {
+        try { await ctx.deps.sessions.getForMutation(input.session_id) } catch (error) {
+          // Native and other read-only chats must never fall through to the profile default.
+          if (error instanceof HttpFailure && error.status === 403) throw new HttpError(409, 'Reasoning changes are unavailable for this conversation', { code: 'reasoning_unsupported' })
+          throw error
+        }
+      }
       if (input.display !== undefined && input.display !== null) {
         const flag = str(input.display).trim().toLowerCase()
         let show: boolean

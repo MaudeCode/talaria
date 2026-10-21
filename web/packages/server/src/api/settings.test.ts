@@ -153,6 +153,25 @@ describe('settings, profiles, models, providers, reasoning, onboarding', () => {
     expect(body.supports_thinking_toggle).toBe(false)
   })
 
+  it('allows direct-chat effort and reset but refuses stale or empty targets without config writes', async () => {
+    const created = await json(await post(s, '/api/session/new', {}))
+    const sid = (created.session as Json).session_id
+    for (const effort of ['low', '']) {
+      const res = await post(s, '/api/reasoning', { session_id: sid, effort })
+      expect(res.status).toBe(200)
+      const agent = configs.get(s.state)?.agent as Json
+      if (effort) expect(agent.reasoning_effort).toBe(effort)
+      else expect(agent).not.toHaveProperty('reasoning_effort')
+    }
+    for (const [session_id, status] of [['missing-chat', 404], ['', 400], ['   ', 400]] as const) {
+      const before = readFileSync(join(s.state, 'config.yaml'), 'utf8')
+      const start = sidecar.calls.length
+      expect((await post(s, '/api/reasoning', { session_id, effort: 'high' })).status).toBe(status)
+      expect(readFileSync(join(s.state, 'config.yaml'), 'utf8')).toBe(before)
+      expect(sidecar.calls.slice(start).filter((c) => c.method === 'config.set')).toEqual([])
+    }
+  })
+
   it('the reasoning display toggle writes only the webui platform key and reads a global value as before', async () => {
     const seeded = configs.get(s.state) ?? {}
     try {

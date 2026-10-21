@@ -10,6 +10,8 @@ const tags = ['settings']
 
 export const ErrorSchema = z.object({ error: z.string() })
 
+export const ReasoningUnsupportedSchema = ErrorSchema.extend({ code: z.literal('reasoning_unsupported') })
+
 const AdvancedBody = z.object({ advanced: Loose.nullable().optional() })
 
 export const settingsContract = {
@@ -44,7 +46,7 @@ export const settingsContract = {
   },
   reasoning: {
     get: oc.route({ method: 'GET', path: '/api/reasoning', tags }).input(z.object({ model: z.string().optional(), provider: z.string().optional(), base_url: z.string().optional() })).output(ReasoningStatusSchema),
-    set: oc.route({ method: 'POST', path: '/api/reasoning', tags, summary: 'Body is `{display: show|hide}` or `{effort, model?, provider?, base_url?}`.' }).input(z.object({ display: Json.optional(), effort: Json.optional(), model: z.string().nullable().optional(), provider: z.string().nullable().optional(), base_url: z.string().nullable().optional() })).output(ReasoningStatusSchema),
+    set: oc.route({ method: 'POST', path: '/api/reasoning', tags, summary: 'Body is `{display: show|hide}` or `{effort, session_id?, model?, provider?, base_url?}`. Chat effort changes carry session_id; read-only/native targets return 409 reasoning_unsupported without changing profile defaults. Omit session_id only for explicit profile settings.' }).input(z.object({ display: Json.optional(), effort: Json.optional(), session_id: z.string().trim().min(1).optional(), model: z.string().nullable().optional(), provider: z.string().nullable().optional(), base_url: z.string().nullable().optional() })).output(ReasoningStatusSchema),
   },
   personalities: {
     list: oc.route({ method: 'GET', path: '/api/personalities', tags }).output(PersonalitiesSchema),

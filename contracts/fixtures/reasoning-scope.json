@@ -1,0 +1,19 @@
+{
+  "effort": {
+    "session_id": "native-reasoning",
+    "effort": "high",
+    "model": "native-model",
+    "provider": "openai"
+  },
+  "reset": {
+    "session_id": "native-reasoning",
+    "effort": ""
+  },
+  "profile": {
+    "effort": "low"
+  },
+  "refusal": {
+    "error": "Reasoning changes are unavailable for this conversation",
+    "code": "reasoning_unsupported"
+  }
+}
