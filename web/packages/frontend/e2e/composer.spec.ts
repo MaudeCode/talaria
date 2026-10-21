@@ -734,4 +734,3 @@ test('status chips measure their resting width and refit when the chat width cha
   await cap(needed + 1)
   await expect(row).toHaveClass(/\bis-stacked\b/)
 })
-
