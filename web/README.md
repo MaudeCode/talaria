@@ -176,6 +176,10 @@ Use **Use profile defaults** to remove the session override. An operator's `agen
 always applies, including to saved overrides, cached chat Agents, and manual compression. Catalog
 availability is read from the server; a failed catalog load leaves selection disabled.
 
+The first MCP discovery for a profile waits for its tools before chat starts. Later turns wait at most
+two seconds for discovery, then use the registered tools while connections finish in the background.
+The composer shows a notice while that turn is waiting for more tools.
+
 ### Remote access
 
 Bind to loopback and use an SSH tunnel or Tailscale, or set `HERMES_WEBUI_HOST=0.0.0.0` with

@@ -33,6 +33,8 @@ _ALLOWED = frozenset(_RUNTIME_COMMANDS) | _REGISTRY_EXECUTED
 _RELOAD_MCP_LOCK = threading.Lock()
 _RELOAD_SKILLS_LOCK = threading.Lock()
 _CODEX_RUNTIME_LOCK = threading.Lock()
+_MCP_DISCOVERED_HOMES: set[str] = set()
+_MCP_DISCOVERED_LOCK = threading.Lock()
 
 
 def _split_slash_command(command: str) -> tuple[str, str]:
@@ -209,10 +211,26 @@ def retire_unscoped_launch_mcp_servers() -> set[str]:
 
 def discover_profile_mcp_tools() -> list[str]:
     """Connect this profile's configured servers, retiring pre-multiplex launch connections first."""
+    from hermes_constants import get_hermes_home
     from tools.mcp_tool_discovery import discover_mcp_tools
 
     retire_unscoped_launch_mcp_servers()
-    return discover_mcp_tools()
+    tools = discover_mcp_tools()
+    with _MCP_DISCOVERED_LOCK:
+        _MCP_DISCOVERED_HOMES.add(os.path.realpath(get_hermes_home()))
+    return tools
+
+
+def profile_mcp_tools_discovered(home) -> bool:
+    """A completed discovery, including an empty registry, establishes this process's profile baseline."""
+    with _MCP_DISCOVERED_LOCK:
+        return os.path.realpath(home) in _MCP_DISCOVERED_HOMES
+
+
+def forget_profile_mcp_tools(home) -> None:
+    """A successfully deleted profile must start cold if its path is recreated."""
+    with _MCP_DISCOVERED_LOCK:
+        _MCP_DISCOVERED_HOMES.discard(os.path.realpath(home))
 
 
 def _reload_mcp() -> str:
@@ -222,7 +240,6 @@ def _reload_mcp() -> str:
             from hermes_constants import get_hermes_home
             from tools.mcp_tool import _lock, _mcp_tool_server_names, _server_visible_in_scope, _servers
             from tools.mcp_tool_agent import reprobe_tool_availability
-            from tools.mcp_tool_discovery import discover_mcp_tools
             from tools.mcp_tool_lifecycle import shutdown_mcp_servers
             from tools.mcp_tool_scope import _key_name
             from tools.registry import registry
@@ -244,7 +261,7 @@ def _reload_mcp() -> str:
             # As the gateway does: drop the cached tool availability verdicts, then hand the profile's open chats the
             # rediscovered tools.
             reprobe_tool_availability()
-            tools = discover_mcp_tools() or []
+            tools = discover_profile_mcp_tools() or []
             refresh_profile_agents_mcp_tools(get_hermes_home())
             connected = server_names()
             if scope is not None:

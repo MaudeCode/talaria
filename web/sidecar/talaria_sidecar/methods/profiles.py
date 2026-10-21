@@ -354,9 +354,9 @@ def register(registry) -> None:
         # Idle cached agents end their memory sessions while the profile's home still exists.
         from .chat import forget_profile_hooks, release_profile_agents
 
-        release_profile_agents(base_home / "profiles" / name)
-        forget_profile_hooks(base_home / "profiles" / name)
-        delete_profile(base_home, name)
+        with release_profile_agents(base_home / "profiles" / name):
+            forget_profile_hooks(base_home / "profiles" / name)
+            delete_profile(base_home, name)
         return {"ok": True}
 
     @registry.method("profiles.runtime_env")
