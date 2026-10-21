@@ -293,6 +293,38 @@ def _restart_method():
     return registry.methods["gateway.restart"]
 
 
+@pytest.mark.parametrize("action", gateway.ACTIONS)
+@pytest.mark.parametrize("interrupt", [False, True])
+@pytest.mark.parametrize("modern", [False, True])
+def test_lifecycle_flags_are_scoped_to_capability_action_and_consent(tmp_path, monkeypatch, action, interrupt, modern) -> None:
+    if modern:
+        monkeypatch.setitem(sys.modules, "hermes_cli.gateway_lifecycle_guards", types.ModuleType("hermes_cli.gateway_lifecycle_guards"))
+    def cli(cmd, kwargs):
+        assert cmd[1:] == ["gateway", action, *(["--yes"] if modern and interrupt and action != "start" else []), *(["--detach"] if modern and action == "restart" else [])]
+        return "ok", "", 0, 0
+    monkeypatch.setattr(gateway.subprocess, "Popen", _popen_with_script(cli))
+    result = gateway.control(action, tmp_path, None, _Ctx(), quick_timeout=1, background_wait=1, interrupt=interrupt)
+    assert result["status"] == "completed", result
+
+
+@pytest.mark.parametrize("interrupt", ["true", 1, None])
+def test_interrupt_requires_an_actual_boolean(tmp_path, interrupt) -> None:
+    with pytest.raises(InvalidParams, match="interrupt must be a boolean"):
+        _restart_method()(_Ctx(), {"profile_home": str(tmp_path), "interrupt": interrupt})
+
+
+@pytest.mark.parametrize("code,reason,status", [
+    (1, "Refusing to stop the gateway: 2 live session(s) would be interrupted.", "busy_live_work"),
+    (2, "Refusing to stop the gateway: 2 live session(s) would be interrupted.", "failed"),
+    (1, "Refusing to stop the gateway: foreign service.", "failed"),
+])
+def test_only_the_live_work_refusal_is_busy(tmp_path, monkeypatch, code, reason, status) -> None:
+    monkeypatch.setattr(gateway.subprocess, "Popen", _popen_with_script(lambda *args: (f"\033[31m✗ {reason}\033[0m\nprivate work details", "", code, 0)))
+    result = gateway.control("stop", tmp_path, None, _Ctx(), quick_timeout=1, background_wait=1)
+    assert result["status"] == status
+    assert result["reason"] == reason
+
+
 def _agent_budget(monkeypatch, budget: float | None) -> list:
     """The Agent's restart budget reads ``budget`` (raises, as on an Agent without the helper, when None); returns the envs it read."""
     envs: list = []
@@ -378,13 +410,51 @@ def _profile(root, name: str, dotenv: str = ""):
 
 
 @requires_agent
+def test_live_work_consent_matches_the_installed_gateway_cli(tmp_path, hermes_home) -> None:
+    """Actual release capability and refusal formatting, with disposable CLI/work and no real gateway."""
+    bindir = tmp_path / "bin"
+    bindir.mkdir()
+    cli = bindir / "hermes"
+    cli.write_text(textwrap.dedent(f"""\
+        #!{AGENT_PYTHON}
+        import json, sys
+        sys.path.insert(0, {str(AGENT_DIR)!r})
+        try:
+            from hermes_cli import gateway_lifecycle_guards as guards
+        except ImportError:
+            guards = None
+        print(json.dumps(sys.argv[1:]))
+        if guards and sys.argv[4] in ('stop', 'restart') and '--yes' not in sys.argv:
+            from pathlib import Path
+            print('✗ ' + guards._work_lines(sys.argv[4], Path('.'), {{'active_agents': 1}}, 'hermes gateway {{verb}} --yes')[0])
+            sys.exit(1)
+    """))
+    cli.chmod(0o755)
+    modern = (AGENT_DIR / "hermes_cli/gateway_lifecycle_guards.py").is_file()
+    proc = SidecarProcess(hermes_home, env={"PATH": f"{bindir}{os.pathsep}{os.environ.get('PATH', '')}"})
+    try:
+        for method in ("gateway.control", "gateway.restart"):
+            for interrupt in (False, True):
+                result = proc.result(method, {"profile_home": str(hermes_home), "action": "restart", "interrupt": interrupt, "background_wait_seconds": 2})
+                if modern and not interrupt:
+                    assert result["status"] == "busy_live_work", result
+                    assert result["reason"] == "Refusing to restart the gateway: 1 live session(s) would be interrupted."
+                else:
+                    assert result["status"] == "completed", result
+                args = json.loads(result["detail"].splitlines()[0])
+                assert args == ["--profile", "default", "gateway", "restart", *(["--yes"] if modern and interrupt else []), *(["--detach"] if modern else [])]
+    finally:
+        proc.close()
+
+
+@requires_agent
 def test_every_action_names_the_requested_profile_not_the_sticky_active_one(tmp_path, hermes_home) -> None:
     _profile(hermes_home, "work")
     b = _profile(hermes_home, "b")
     (hermes_home / "active_profile").write_text("work\n")
     proc, run = _cli_sidecar(tmp_path, hermes_home)
     try:
-        assert run(hermes_home, "restart")["argv"] == ["--profile", "default", "gateway", "restart"]
+        assert run(hermes_home, "restart")["argv"] == ["--profile", "default", "gateway", "restart", *(["--detach"] if (AGENT_DIR / "hermes_cli/gateway_lifecycle_guards.py").is_file() else [])]
         assert run(b, "start")["argv"] == ["--profile", "b", "gateway", "start"]
         assert run(hermes_home, "stop", cli_profile="work")["argv"] == ["--profile", "work", "gateway", "stop"]
     finally:

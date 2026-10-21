@@ -6657,7 +6657,8 @@
         "enum": [
           "completed",
           "failed",
-          "busy"
+          "busy",
+          "busy_live_work"
         ]
       },
       "message": {
@@ -6693,7 +6694,8 @@
         "enum": [
           "completed",
           "failed",
-          "busy"
+          "busy",
+          "busy_live_work"
         ]
       },
       "message": {

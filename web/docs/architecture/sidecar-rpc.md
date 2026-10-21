@@ -567,3 +567,16 @@ repair data and includes revisions in its existing source fingerprint. Concurren
 metadata reads for the same profile and source identity share one request. A failed metadata read keeps
 last-confirmed display identity but cannot authorize session-model repair. A
 sidecar restart changes the opaque revisions and invalidates those caches.
+
+## Gateway lifecycle consent
+
+`gateway.control` and `gateway.restart` accept optional `interrupt: boolean`,
+defaulting to false. For an installed Agent with `hermes_cli.gateway_lifecycle_guards`,
+stop and restart pass `--yes` only with explicit consent, and restart always passes
+`--detach`. Older Agents retain their original command line. An exit-1 live-work
+refusal returns `busy_live_work` with the bounded Agent reason line.
+
+Tools actions and explicit operational restarts consent to interruption. The
+post-update restart queue passes its Restart now intent; automatic attempts wait
+on live-work refusals, retain the notification and poll again. Existing gateway
+counts remain advisory; the Agent guard also covers cron and delegated work.

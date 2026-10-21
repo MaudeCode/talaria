@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Gateway controls work with newer Hermes Agent versions, while automatic restarts wait for live work to finish.",
+      "highlight": false,
+      "components": ["web"]
+    }
+  ]
+}

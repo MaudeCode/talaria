@@ -26,7 +26,7 @@ const NEW_PID = process.ppid
  * A Hermes home with a synthetic gateway, a notification store, and a queue whose polls advance only on `tick()`. The
  * default restart replaces the gateway process (TAL-1138), and the Agent runtime reports ready unless `ready.now` is false.
  */
-async function setup(stateDir = mkdtempSync(join(tmpdir(), 'talaria-gateway-restart-')), restart?: () => Promise<Dict>, updating = { now: false }, probe: () => void = () => undefined) {
+async function setup(stateDir = mkdtempSync(join(tmpdir(), 'talaria-gateway-restart-')), restart?: (interrupt: boolean) => Promise<Dict>, updating = { now: false }, probe: () => void = () => undefined) {
   dirs.push(stateDir)
   const home = join(stateDir, 'home')
   let last: { pid?: number | null; gateway_state?: string; active_agents?: number; updated_at?: string } = {}
@@ -41,6 +41,7 @@ async function setup(stateDir = mkdtempSync(join(tmpdir(), 'talaria-gateway-rest
   const replaced = (): Promise<Dict> => { if (last.pid !== null) gateway({ ...last, pid: (last.pid ?? OLD_PID) === OLD_PID ? NEW_PID : OLD_PID, active_agents: 0 }); return Promise.resolve({ status: 'completed' }) }
   const store = (await initializeStore(new UpdateNotificationStore(new JsonDocuments(stateDir))))
   const calls: string[] = []
+  const interrupts: boolean[] = []
   const profiles: string[] = []
   const waiters: (() => void)[] = []
   const clock = { ms: NOW * 1000 }
@@ -48,7 +49,7 @@ async function setup(stateDir = mkdtempSync(join(tmpdir(), 'talaria-gateway-rest
   const queue = new GatewayRestartQueue({
     notifications: store,
     blockers: (profile) => { profiles.push(`probe:${profile}`); const blockers = gatewayRestartBlockers(home, home, NOW); probe(); return blockers },
-    restart: (profile) => { calls.push('gateway.restart'); profiles.push(`restart:${profile}`); return (restart ?? replaced)() },
+    restart: (profile, interrupt) => { interrupts.push(interrupt); calls.push('gateway.restart'); profiles.push(`restart:${profile}`); return (restart ?? replaced)(interrupt) },
     gateways: () => liveGateways(home, home, NOW),
     runtimeReady: () => Promise.resolve(ready.now),
     updating: () => updating.now,
@@ -64,7 +65,7 @@ async function setup(stateDir = mkdtempSync(join(tmpdir(), 'talaria-gateway-rest
     return row.id
   }
   const row = async (id: string) => (await store.list(OWNER)).notifications.find((entry) => entry.id === id)
-  return { stateDir, home, gateway, replaced, store, queue, calls, profiles, tick, waiting, row, clock, ready }
+  return { stateDir, home, gateway, replaced, store, queue, calls, interrupts, profiles, tick, waiting, row, clock, ready }
 }
 
 describe('gatewayRestartBlockers', () => {
@@ -114,6 +115,54 @@ describe('gatewayRestartBlockers', () => {
 })
 
 describe('GatewayRestartQueue', () => {
+  it.each(['gatewayWaiting', 'transition', 'recordGatewayBaseline'] as const)('releases the waiting slot when %s rejects, so another update can restart', async (method) => {
+    const t = await setup()
+    t.gateway({ active_agents: 0 })
+    const first = await t.waiting()
+    vi.spyOn(t.store, method).mockRejectedValueOnce(new Error('synthetic persistence failure'))
+    await t.queue.schedule(first, 'default')
+    await flush()
+    expect(t.queue.pendingId()).toBeNull()
+    expect(t.queue.restarting()).toBe(false)
+    expect(t.queue.restartNow(first)).toBe(false)
+    expect(t.calls).toEqual([])
+    const next = await t.waiting()
+    expect(await t.queue.schedule(next, 'default')).toBe(next)
+    await flush()
+    expect(t.calls).toEqual(['gateway.restart'])
+    expect((await t.row(next))?.phase).toBe('succeeded')
+  })
+
+  it('holds live work absent from active_agents, then retries automatically once it clears', async () => {
+    let busy = true
+    const t = await setup(undefined, () => busy ? Promise.resolve({ status: 'busy_live_work', reason: 'Refusing to restart the gateway: 1 live session(s) would be interrupted.' }) : t.replaced())
+    t.gateway({ active_agents: 0 })
+    const id = await t.waiting('kept update detail')
+    await t.queue.schedule(id, 'default', 'kept update detail')
+    await flush()
+    expect(t.queue.pendingId()).toBe(id)
+    expect(t.queue.restarting()).toBe(false)
+    expect((await t.row(id))).toMatchObject({ phase: 'waiting_for_idle', detail: 'kept update detail', actions: [{ id: GATEWAY_RESTART_NOW }] })
+    expect(t.interrupts).toEqual([false])
+    busy = false
+    await t.tick()
+    expect(t.interrupts).toEqual([false, false])
+    expect((await t.row(id))?.phase).toBe('succeeded')
+    expect(t.queue.pendingId()).toBeNull()
+  })
+
+  it('Restart now consents after a live-work refusal', async () => {
+    const t = await setup(undefined, (interrupt) => interrupt ? t.replaced() : Promise.resolve({ status: 'busy_live_work' }))
+    t.gateway({ active_agents: 0 })
+    const id = await t.waiting()
+    await t.queue.schedule(id, 'default')
+    await flush()
+    expect(t.queue.restartNow(id)).toBe(true)
+    await flush()
+    expect(t.interrupts).toEqual([false, true])
+    expect((await t.row(id))?.phase).toBe('succeeded')
+  })
+
   it('holds the restart while the gateway is busy and restarts exactly once when it goes idle', async () => {
     const t = (await setup())
     t.gateway({ active_agents: 2 })
@@ -167,6 +216,7 @@ describe('GatewayRestartQueue', () => {
     await t.tick()
     expect(t.calls).toEqual(['gateway.restart'])
     expect(t.queue.restartNow(id)).toBe(false)
+    expect(t.interrupts).toEqual([true])
   })
 
   it('starts no restart, even a forced one, while another update changes the Agent source', async () => {

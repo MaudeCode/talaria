@@ -912,7 +912,7 @@ describe('skills, memory, prompts, commands, mcp, health, updates, diagnostics',
     let res = await post(s, '/api/health/restart', {})
     expect(res.status).toBe(429)
     let timeoutMs: number | undefined
-    sidecar.respond('gateway.restart', (_params, _emit, opts) => { timeoutMs = opts.timeoutMs; return { status: 'completed', message: 'ok' } })
+    sidecar.respond('gateway.restart', (params, _emit, opts) => { expect(params.interrupt).toBe(true); timeoutMs = opts.timeoutMs; return { status: 'completed', message: 'ok' } })
     res = await post(s, '/api/health/restart', {})
     expect(await json(res)).toEqual({ ok: true, message: 'Gateway service restarted successfully' })
     // TAL-894: the sidecar waits out the Agent's own restart budget; a client timeout would cancel, and so kill, the restart first.
@@ -987,7 +987,7 @@ describe('skills, memory, prompts, commands, mcp, health, updates, diagnostics',
       expect(res.status).toBe(200)
       expect(text).not.toContain('4242')
       expect(JSON.parse(text)).toMatchObject({ ok: true, action: 'start', message: 'Gateway start completed.', status: { running: false, configured: false, platforms: [] } })
-      expect(calls).toEqual([{ profile_home: s.state, action: 'start', background_wait_seconds: 60 }])
+      expect(calls).toEqual([{ profile_home: s.state, action: 'start', interrupt: true, background_wait_seconds: 60 }])
       outcome = { status: 'failed', message: 'Stop failed: stop failed', detail: 'partial output', returncode: 7 }
       res = await post(s, '/api/gateway/stop', {})
       text = await res.text()
@@ -1007,6 +1007,7 @@ describe('skills, memory, prompts, commands, mcp, health, updates, diagnostics',
       expect(text).not.toContain('4242')
       expect([res.status, JSON.parse(text)]).toEqual([500, { error: 'Gateway start failed: Profile \'work\' does not get a gateway of its own.', ok: false, action: 'start', returncode: 78 }])
       expect(calls.map((c) => c.action)).toEqual(['start', 'stop', 'restart', 'restart', 'start', 'start'])
+      expect(calls.every((c) => c.interrupt === true)).toBe(true)
     } finally {
       sidecar.respond('gateway.control', undefined)
     }

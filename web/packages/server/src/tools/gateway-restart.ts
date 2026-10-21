@@ -10,7 +10,7 @@ export interface GatewayRestartQueueDeps {
   /** `gatewayRestartBlockers` for the profile whose update owns the restart. */
   blockers: (profile: string) => Promise<RestartBlockers>
   /** Sidecar `gateway.restart` (`hermes gateway restart`) for that profile. */
-  restart: (profile: string) => Promise<Dict>
+  restart: (profile: string, interrupt: boolean) => Promise<Dict>
   /** TAL-1138: `liveGateways` for that profile: the gateway processes a restart must replace. */
   gateways: (profile: string) => Promise<GatewayProcess[]>
   /** TAL-1138: the server's Agent runtime check (sidecar `runtime.status`) reports compatible and not stale. */
@@ -29,7 +29,7 @@ export interface GatewayRestartQueueDeps {
  * TAL-894: sidecar `gateway.restart` for a profile home. The sidecar bounds the wait by the Agent CLI's own restart budget
  * (30 min by default); a client timeout here would cancel the call, and with it terminate the restart mid-drain.
  */
-export const restartGateway = (sidecar: SidecarLike, profileHome: string) => sidecar.call('gateway.restart', { profile_home: profileHome }, { timeoutMs: 0 })
+export const restartGateway = (sidecar: SidecarLike, profileHome: string, interrupt: boolean) => sidecar.call('gateway.restart', { profile_home: profileHome, interrupt }, { timeoutMs: 0 })
 
 const IDLE: RestartBlockers = { active_streams: 0, active_runs: 0, blocking_stream_ids: [], blocking_run_ids: [], restart_blocked: false }
 const HELD: RestartBlockers = { ...IDLE, restart_blocked: true }
@@ -50,7 +50,7 @@ const replaced = (before: GatewayProcess[], after: GatewayProcess[]): boolean =>
  */
 export class GatewayRestartQueue {
   private pending: { id: string; profile: string; forced: boolean; wake: () => void } | null = null
-  private inFlight: Promise<void> | null = null
+  private inFlight: Promise<unknown> | null = null
   private stopped = false
   private stop = (): void => undefined
   private readonly stopping = new Promise<void>((resolve) => { this.stop = resolve })
@@ -85,7 +85,9 @@ export class GatewayRestartQueue {
     const woken = new Promise<void>((resolve) => { wake = resolve })
     const pending = { id, profile, forced: false, wake }
     this.pending = pending
-    void this.run(pending, woken, detail).catch((error: unknown) => { this.deps.log(`[updates] gateway restart failed: ${(error as Error).message}`) })
+    void this.run(pending, woken, detail)
+      .catch((error: unknown) => { this.deps.log(`[updates] gateway restart failed: ${(error as Error).message}`) })
+      .finally(() => { if (this.pending === pending) this.pending = null })
     return id
   }
 
@@ -128,16 +130,19 @@ export class GatewayRestartQueue {
   }
 
   private async run(pending: { id: string; profile: string; forced: boolean }, woken: Promise<void>, detail: string | null): Promise<void> {
-    // An update can take the source lock while a blocker probe is in flight: recheck it right before restarting.
-    do await this.waitForIdle(pending, woken)
-    while (!this.stopped && this.deps.updating?.())
-    if (this.stopped) return
-    // Cleared before the restart starts, so an update installed meanwhile waits for its own restart.
-    this.pending = null
-    const restart = this.restartGateway(pending, detail)
-    this.inFlight = restart
-    await restart
-    if (this.inFlight === restart) this.inFlight = null
+    while (!this.stopped) {
+      // An update can take the source lock while a blocker probe is in flight: recheck it before restarting.
+      await this.waitForIdle(pending, woken)
+      if (this.stopped) return
+      if (this.deps.updating?.()) continue
+      const restart = this.restartGateway(pending, detail)
+      this.inFlight = restart
+      let held: boolean
+      try { held = await restart } finally { if (this.inFlight === restart) this.inFlight = null }
+      if (!held) return
+      // A CLI refusal covers work not counted by active_agents. Keep the record and poll without a hot retry loop.
+      await Promise.race([this.sleep(this.deps.pollMs ?? READY_POLL_MS), pending.forced ? this.stopping : woken, this.stopping])
+    }
   }
 
   private async waitForIdle(pending: { id: string; profile: string; forced: boolean }, woken: Promise<void>): Promise<void> {
@@ -154,20 +159,29 @@ export class GatewayRestartQueue {
     while (this.inFlight) await this.inFlight
   }
 
-  private async restartGateway({ id, profile }: { id: string; profile: string }, detail: string | null): Promise<void> {
+  private async restartGateway(pending: { id: string; profile: string; forced: boolean }, detail: string | null): Promise<boolean> {
+    const { id, profile } = pending
     await this.deps.notifications.transition(id, 'restarting')
     const baseline = await this.deps.gateways(profile)
     await this.deps.notifications.recordGatewayBaseline(id, baseline)
-    const [ok, gateway] = await this.attempt(profile)
+    const [ok, gateway] = await this.attempt(profile, pending.forced)
     this.deps.log(`[updates] gateway restart after the Agent update: ${str(gateway.status) || 'failed'}`)
+    if (gateway.status === 'busy_live_work') {
+      await this.deps.notifications.transition(id, 'waiting_for_idle', null, undefined, detail)
+      await this.deps.notifications.gatewayWaiting(id, 0)
+      return true
+    }
+    // A completed attempt releases the waiting slot; an update installed during verification needs its own restart.
+    if (this.pending === pending) this.pending = null
     // TAL-1138: the CLI returning (or still restarting in the background) is not success; the new gateway and the Agent must answer.
     if (ok) {
       await this.deps.notifications.transition(id, 'verifying', null, undefined, detail)
       await this.checkReady(id, profile, baseline, detail)
-      return
+      return false
     }
     const failure = gateway.message ? `Hermes Agent was updated, but the gateway restart did not complete: ${str(gateway.message)}. Run \`hermes gateway restart\` manually.` : 'Hermes Agent was updated, but the gateway restart did not complete. Run `hermes gateway restart` manually.'
     await this.deps.notifications.transition(id, 'failed', null, undefined, [failure, detail].filter(Boolean).join('\n\n'))
+    return false
   }
 
   private async checkReady(id: string, profile: string, baseline: GatewayProcess[], detail: string | null): Promise<void> {
@@ -186,8 +200,8 @@ export class GatewayRestartQueue {
   }
 
   /** Python `_ensure_gateway_restart_for_agent_update`: retry once after a transient supervisor handoff failure. */
-  private async attempt(profile: string): Promise<[boolean, Dict]> {
-    const attempt = async (): Promise<Dict> => { try { return await this.deps.restart(profile) } catch (error) { return { status: 'failed', message: (error as Error).message } } }
+  private async attempt(profile: string, interrupt: boolean): Promise<[boolean, Dict]> {
+    const attempt = async (): Promise<Dict> => { try { return await this.deps.restart(profile, interrupt) } catch (error) { return { status: 'failed', message: (error as Error).message } } }
     const first = await attempt()
     const status = str(first.status)
     if (status === 'completed' || status === 'in_progress') return [true, first]
