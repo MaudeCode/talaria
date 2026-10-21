@@ -96,6 +96,7 @@ _COMMITTING: list = []
 _DRAINING = threading.Event()
 _MCP_DISCOVERIES: dict[str, threading.Event] = {}
 _MCP_DISCOVERY_LOCK = threading.Lock()
+_MCP_CLOSING_HOMES: set[str] = set()
 _MCP_REDISCOVERY_WAIT = 2.0
 _MCP_PENDING_KEY = "mcp_discovery_pending"
 
@@ -779,15 +780,32 @@ def _discover_mcp_tools(run: _Run) -> threading.Event | None:
         except Exception:  # noqa: BLE001
             log.warning("MCP discovery failed", exc_info=True)
         finally:
+            with _RELEASES_LOCK:
+                _RELEASES.pop(worker, None)
             done.set()
 
     with _MCP_DISCOVERY_LOCK:
+        if _DRAINING.is_set():
+            raise RpcError("The sidecar is shutting down.", condition="sidecar_unavailable")
+        if home in _MCP_CLOSING_HOMES:
+            raise RpcError("The profile is being deleted.", condition="profile_unavailable")
         done = _MCP_DISCOVERIES.get(home)
         if done is None or done.is_set():
             done = threading.Event()
             _MCP_DISCOVERIES[home] = done
             # The copied context carries the turn's home override and secret scope into the worker.
-            threading.Thread(target=contextvars.copy_context().run, args=(discover,), daemon=True, name=f"chat-mcp-{run.stream_id[:8]}").start()
+            worker = threading.Thread(target=contextvars.copy_context().run, args=(discover,), daemon=True, name=f"chat-mcp-{run.stream_id[:8]}")
+            worker.failed = False
+            # Existing profile/shutdown custody includes this worker after its originating turn has ended.
+            with _RELEASES_LOCK:
+                _RELEASES[worker] = profile_home
+            try:
+                worker.start()
+            except Exception:
+                with _RELEASES_LOCK:
+                    _RELEASES.pop(worker, None)
+                done.set()
+                raise
     while not done.is_set():
         if run.cancel.is_set() or run.ctx.cancelled:
             return None
@@ -1250,7 +1268,7 @@ def drain_agents(timeout: float = _AGENT_RELEASE_TIMEOUT) -> None:
     """Shutdown: release every cached agent, stop running turns (like a Stop) so each releases the agent it holds, and
     wait, bounded, for those turns and every release still running."""
     deadline = time.monotonic() + timeout
-    with _AGENT_CACHE_LOCK, _RUNS_LOCK:
+    with _MCP_DISCOVERY_LOCK, _AGENT_CACHE_LOCK, _RUNS_LOCK:
         # Admission closes with the snapshot, so no later turn forks a review outside it.
         _DRAINING.set()
         runs = list(_RUNS.values())
@@ -1295,26 +1313,43 @@ def refresh_profile_agents_mcp_tools(home) -> None:
         _release_agents_locked(failed)
 
 
-def release_profile_agents(home) -> None:
-    """Profile deletion: release the profile's cached agents, cancel their background reviews, and wait for both and
-    every release running under its home. Fails rather than let the home go while a memory flush still runs under it."""
+@contextlib.contextmanager
+def release_profile_agents(home):
+    """Fence discovery and drain this profile's agents and background work before the caller removes its home."""
+    from .commands import forget_profile_mcp_tools
+
     target = os.path.realpath(home)
-    with _AGENT_CACHE_LOCK:
-        entries = [_AGENT_CACHE.pop(sid) for sid, entry in list(_AGENT_CACHE.items()) if os.path.realpath(entry[2]) == target]
-        started = _release_agents_locked(entries)
-    started += _cancel_background_reviews([(entry[0], entry[2]) for entry in entries], "profile deleted")
-    deadline = time.monotonic() + _PROFILE_RELEASE_TIMEOUT
-    # A commit or refine under the home holds its agent past the cache; the agent's release starts when it lets go.
-    while (holding := _holding_home(target)) and time.monotonic() < deadline:
-        time.sleep(0.05)
-    # The threads started here count even once they left ``_RELEASES``: a fast failure must still block the delete.
-    with _RELEASES_LOCK:
-        threads = list(dict.fromkeys(started + [thread for thread, owner in _RELEASES.items() if owner is not None and os.path.realpath(owner) == target]))
-    _join(threads, deadline)
-    if holding or any(thread.is_alive() for thread in threads):
-        raise RpcError("The profile is still saving memory from its chats. Retry in a moment.")
-    if any(thread.failed for thread in threads):
-        raise RpcError("Memory from the profile's chats could not be saved; see the sidecar log. Retry to delete the profile anyway.")
+    with _MCP_DISCOVERY_LOCK:
+        if target in _MCP_CLOSING_HOMES:
+            raise RpcError("The profile is already being deleted.", condition="profile_unavailable")
+        _MCP_CLOSING_HOMES.add(target)
+    try:
+        with _AGENT_CACHE_LOCK:
+            entries = [_AGENT_CACHE.pop(sid) for sid, entry in list(_AGENT_CACHE.items()) if os.path.realpath(entry[2]) == target]
+            started = _release_agents_locked(entries)
+        started += _cancel_background_reviews([(entry[0], entry[2]) for entry in entries], "profile deleted")
+        deadline = time.monotonic() + _PROFILE_RELEASE_TIMEOUT
+        # A commit or refine under the home holds its agent past the cache; the agent's release starts when it lets go.
+        while (holding := _holding_home(target)) and time.monotonic() < deadline:
+            time.sleep(0.05)
+        # The threads started here count even once they left ``_RELEASES``: a fast failure must still block the delete.
+        with _RELEASES_LOCK:
+            threads = list(dict.fromkeys(started + [thread for thread, owner in _RELEASES.items() if owner is not None and os.path.realpath(owner) == target]))
+        _join(threads, deadline)
+        if any(thread.is_alive() and thread.name.startswith("chat-mcp-") for thread in threads):
+            raise RpcError("The profile is still connecting MCP tools. Retry in a moment.")
+        if holding or any(thread.is_alive() for thread in threads):
+            raise RpcError("The profile is still saving memory from its chats. Retry in a moment.")
+        if any(thread.failed for thread in threads):
+            raise RpcError("Memory from the profile's chats could not be saved; see the sidecar log. Retry to delete the profile anyway.")
+        yield
+        # The old generation has no worker left that could restore its readiness after deletion.
+        forget_profile_mcp_tools(target)
+        with _MCP_DISCOVERY_LOCK:
+            _MCP_DISCOVERIES.pop(target, None)
+    finally:
+        with _MCP_DISCOVERY_LOCK:
+            _MCP_CLOSING_HOMES.discard(target)
 
 
 def _holding_home(target: str) -> bool:

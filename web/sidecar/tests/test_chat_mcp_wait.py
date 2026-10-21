@@ -9,7 +9,8 @@ import types
 import pytest
 
 from test_chat_turn import Ctx, FakeAgent, _params, _patch
-from talaria_sidecar.methods import chat, commands
+from talaria_sidecar.errors import RpcError
+from talaria_sidecar.methods import Registry, chat, commands, profiles
 
 
 @pytest.fixture
@@ -17,8 +18,9 @@ def discovery(monkeypatch, tmp_path):
     _patch(monkeypatch)
     monkeypatch.setattr(chat, "_MCP_DISCOVERIES", {})
     monkeypatch.setattr(commands, "_MCP_DISCOVERED_HOMES", set())
-    home = tmp_path / "profile"
-    home.mkdir()
+    monkeypatch.setattr(chat, "_DRAINING", threading.Event())
+    home = tmp_path / "profiles" / "alpha"
+    home.mkdir(parents=True)
     monkeypatch.setattr(chat, "refresh_profile_agents_mcp_tools", lambda home: None)
     monkeypatch.setattr(commands, "retire_unscoped_launch_mcp_servers", lambda: set())
     # The Agent boundary only. Real Talaria discovery orchestration and chat.start run below.
@@ -159,3 +161,96 @@ def test_concurrent_turns_share_retry_and_clear_notice_when_tools_arrive(discove
         for ctx, result, returned, worker in turns:
             worker.join(5)
     assert all(result["status"] == "completed" for _, result, _, _ in turns)
+
+
+@pytest.fixture
+def profile_delete(discovery, monkeypatch):
+    home, release, entered, calls = discovery
+    # No Agent memory or review work in these discovery-only lifecycle cases.
+    monkeypatch.setattr(chat, "_cancel_background_reviews", lambda *args: [])
+    monkeypatch.setattr(chat, "_release_agents_locked", lambda *args: [])
+    deleted = []
+    monkeypatch.setattr(profiles, "delete_profile", lambda base, name: deleted.append(name))
+    registry = Registry(runtime=types.SimpleNamespace(load=lambda: None, ensure_current=lambda: None))
+    profiles.register(registry)
+    def delete():
+        return registry.methods["profiles.delete"](Ctx(), {"base_home": str(home.parent.parent), "name": home.name})
+    return delete, deleted
+
+
+def test_profile_deletion_refuses_until_background_discovery_finishes(discovery, profile_delete, monkeypatch):
+    home, release, entered, calls = discovery
+    delete, deleted = profile_delete
+    release.set()
+    commands.discover_profile_mcp_tools()
+    release.clear()
+    ctx, result, returned, worker = start(home, "delete-pending")
+    try:
+        assert returned.wait(3)
+        monkeypatch.setattr(chat, "_PROFILE_RELEASE_TIMEOUT", 0.02)
+        with pytest.raises(RpcError, match="MCP|discovery"):
+            delete()
+        assert deleted == [], "profile home was removed while discovery could still publish"
+        assert commands.profile_mcp_tools_discovered(home), "refused deletion must preserve the live profile baseline"
+        release.set()
+        assert chat._MCP_DISCOVERIES[str(home.resolve())].wait(1)
+        assert delete() == {"ok": True}
+        assert deleted == ["alpha"]
+    finally:
+        release.set()
+        worker.join(5)
+
+
+def test_profile_deletion_forgets_readiness_for_recreated_home(discovery, profile_delete):
+    home, release, entered, calls = discovery
+    delete, deleted = profile_delete
+    release.set()
+    commands.discover_profile_mcp_tools()
+    assert commands.profile_mcp_tools_discovered(home)
+    assert delete() == {"ok": True}
+    assert not commands.profile_mcp_tools_discovered(home), "recreated profile inherited deleted profile's readiness"
+    release.clear()
+    ctx, result, returned, worker = start(home, "recreated")
+    try:
+        assert entered.wait(1)
+        assert not returned.wait(2.2), "recreated profile skipped its first tool snapshot"
+        ctx.cancelled = True
+        assert returned.wait(1)
+    finally:
+        release.set()
+        worker.join(5)
+
+
+def test_shutdown_joins_background_discovery_after_turn_finishes(discovery, monkeypatch):
+    home, release, entered, calls = discovery
+    monkeypatch.setattr(chat, "_cancel_background_reviews", lambda *args: [])
+    monkeypatch.setattr(chat, "_release_agents_locked", lambda *args: [])
+    release.set()
+    commands.discover_profile_mcp_tools()
+    release.clear()
+    ctx, result, returned, worker = start(home, "shutdown-pending")
+    stopped = threading.Event()
+    shutdown = threading.Thread(target=lambda: (chat.drain_agents(timeout=1), stopped.set()))
+    try:
+        assert returned.wait(3)
+        shutdown.start()
+        assert not stopped.wait(0.1), "shutdown abandoned an active discovery worker"
+        release.set()
+        assert stopped.wait(1)
+    finally:
+        release.set()
+        worker.join(5)
+        if shutdown.ident is not None:
+            shutdown.join(5)
+
+
+def test_profile_delete_fences_new_discovery_until_home_is_removed(discovery, profile_delete, monkeypatch):
+    home, release, entered, calls = discovery
+    delete, deleted = profile_delete
+    release.set()
+    commands.discover_profile_mcp_tools()
+    def remove(base, name):
+        with pytest.raises(RpcError, match="profile|Profile"):
+            chat.start(Ctx(), {**_params("during-delete"), "profile_home": str(home)})
+    monkeypatch.setattr(profiles, "delete_profile", remove)
+    assert delete() == {"ok": True}

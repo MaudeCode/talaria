@@ -225,6 +225,12 @@ def profile_mcp_tools_discovered(home) -> bool:
         return os.path.realpath(home) in _MCP_DISCOVERED_HOMES
 
 
+def forget_profile_mcp_tools(home) -> None:
+    """A successfully deleted profile must start cold if its path is recreated."""
+    with _MCP_DISCOVERED_LOCK:
+        _MCP_DISCOVERED_HOMES.discard(os.path.realpath(home))
+
+
 def _reload_mcp() -> str:
     with _RELOAD_MCP_LOCK:
         try:
