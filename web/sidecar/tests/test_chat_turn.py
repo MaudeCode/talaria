@@ -469,6 +469,37 @@ def test_tool_complete_ships_the_raw_result_and_no_error_decision(monkeypatch) -
     assert frames[3]["raw_result"] == ""
 
 
+def test_raw_result_keeps_the_fields_the_shape_rule_reads(monkeypatch) -> None:
+    """TAL-1261: a ``results`` batch stays a list of bounded items and ``status`` is kept past the field cap, so the server's
+    live outcome matches the settled one (an all-interrupted ``delegate_task`` fails)."""
+    _patch(monkeypatch)
+    results = [
+        json.dumps({"results": [{"task_index": 0, "error": "interrupted", "summary": "s" * 5000}, {"task_index": 1, "error": {"message": "interrupted"}}, '{"error": "as text"}', 7]}),
+        {**{f"k{i}": i for i in range(100)}, "status": "failed", "results": [{**{f"f{i}": i for i in range(40)}, "error": "x"}] * 100},
+    ]
+
+    class BatchAgent(FakeAgent):
+        def run_conversation(self, **kwargs):
+            for i, result in enumerate(results):
+                self.kwargs["tool_start_callback"](f"t{i}", "delegate_task", {"tasks": []})
+                self.kwargs["tool_complete_callback"](f"t{i}", "delegate_task", {"tasks": []}, result)
+            return super().run_conversation(**kwargs)
+
+    monkeypatch.setattr(chat, "_agent_class", lambda: BatchAgent)
+    ctx = Ctx()
+    assert chat.start(ctx, _params("st-batch"))["status"] == "completed"
+    frames = [data for event, data in ctx.frames if event == "tool_complete"]
+    assert frames[0]["raw_result"] == {"results": [
+        {"task_index": 0, "error": "interrupted", "summary": "s" * 400},
+        {"task_index": 1, "error": json.dumps({"message": "interrupted"})},
+        '{"error": "as text"}', "7",
+    ]}
+    batch = frames[1]["raw_result"]
+    assert batch["status"] == "failed"
+    # Bounded: at most 64 items of at most 16 fields each, plus the item's own outcome fields.
+    assert len(batch["results"]) == 64 and all(len(item) == 17 and item["error"] == "x" for item in batch["results"])
+
+
 def test_a_result_diff_reaches_the_server_whole(monkeypatch) -> None:
     """TAL-448: a result's string ``diff`` travels whole as ``result_diff``; other results carry none."""
     _patch(monkeypatch)
