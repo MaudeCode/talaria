@@ -22,7 +22,7 @@ import { SessionBusy, SessionNotFound, type SessionStore } from './store.js'
 import { UNSETTLED_TODO_KEY, attachTodoSnapshot, attachTodoState } from './todo.js'
 import { isClaudeCodeSessionId, type ClaudeCodeSessionSource } from './claude-code.js'
 import { auditSessionRecovery, repairSafeSessionRecovery, type RecoveryDeps } from './recovery.js'
-import { stateDbWebDiagnosticIdsAsync, agentSessionRowsExistingAsync, CANONICAL_READ_ONLY_REASON, OWNERSHIP_UNAVAILABLE_REASON, CONVERSATION_ROUND_THRESHOLD, countConversationRounds, stateDbTailToolContent, stateDbLineageReport, stateDbSessionMessages, stateDbSessionReadAsync, stateDbSessionRow, stateDbSessionSourcesAsync, stateDbTimestampSeconds, type StateDbRead, type StateDbSessionSource, type StateDbSettlementRead } from './state-db.js'
+import { stateDbWebDiagnosticIdsAsync, agentSessionRowsExistingAsync, CANONICAL_READ_ONLY_REASON, OWNERSHIP_UNAVAILABLE_REASON, CONVERSATION_ROUND_THRESHOLD, emptyLineageReport, stateDbSessionReadAsync, stateDbSessionSourcesAsync, stateDbTimestampSeconds, type StateDbRead, type StateDbSessionSource, type StateDbSettlementRead } from './state-db.js'
 import { completionIncomplete, fallbackHandoffSummary, HANDOFF_SYSTEM_PROMPT, handoffMarker, handoffPayload, handoffTranscript, messageHandoffPayload, sameHandoff } from './handoff.js'
 import { anchorMessageKey, anchorSummary, CompressionJobs, compressionReference, visibleMessagesForAnchor, type CompressionJob } from './compress.js'
 import { chatReadiness, runtimeFailureDetails, SidecarError, type SidecarLike } from '../sidecar/client.js'
@@ -1121,9 +1121,9 @@ export class SessionService {
       // A read-only foreign parent (a cron run) has no sidecar and opens from the active profile's state.db while it
       // has transcript rows and is not a deleted chat (`claimOrSynthesizeCliSession`'s `was_webui` and `no_foreign_state`).
       const dbPath = this.stateDbPath(null)
-      const row = stateDbSessionRow(dbPath, parentId)
+      const row = await stateDbSessionReadAsync(null, 'stateDbSessionRow', dbPath, parentId)
       if (!row || (await this.store.wasDeleted(parentId)) || (await this.indexMarksWasWebui(parentId))) return null
-      if (!stateDbSessionMessages(dbPath, parentId, { stitch: true }).length) return null
+      if (!(await stateDbSessionReadAsync(false, 'stateDbSessionHasMessages', dbPath, parentId))) return null
       title = row.title
     }
     return { session_id: parentId, title: str(redactText(str(title) || 'Untitled', this.deps.redactEnabled())) }
@@ -1939,7 +1939,7 @@ export class SessionService {
 
   /** Python `_handle_conversation_rounds` (TAL-258): the session's rounds and whether the handoff dock is due. */
   async conversationRounds(sid: string, since: number | null): Promise<{ ok: true; rounds: number; threshold: number; should_show: boolean }> {
-    const rounds = countConversationRounds((await this.handoffTarget(sid)).dbPath, sid, since)
+    const rounds = await stateDbSessionReadAsync(0, 'countConversationRounds', (await this.handoffTarget(sid)).dbPath, sid, since)
     return { ok: true, rounds, threshold: CONVERSATION_ROUND_THRESHOLD, should_show: rounds >= CONVERSATION_ROUND_THRESHOLD }
   }
 
@@ -1951,11 +1951,11 @@ export class SessionService {
   async handoffSummary(sid: string, since: number | null): Promise<{ ok: true; summary: string; message_count: number; rounds: number; fallback: boolean; warning?: string }> {
     sid = (await this.rejectViewOnly(sid, 'summarized'))
     const { local, profile, dbPath } = (await this.handoffTarget(sid))
-    const rounds = countConversationRounds(dbPath, sid, since)
+    const rounds = await stateDbSessionReadAsync(0, 'countConversationRounds', dbPath, sid, since)
     if (rounds < CONVERSATION_ROUND_THRESHOLD) throw new HttpFailure(400, 'Not enough conversation rounds to generate a summary.')
     // A running turn settles the transcript it started from, which would drop a card appended meanwhile.
     if (local?.active_stream_id) throw new HttpFailure(409, 'Session is still streaming; wait for the current turn to finish.')
-    const all = stateDbSessionMessages(dbPath, sid, { stitch: true })
+    const all = await stateDbSessionReadAsync([], 'stateDbSessionMessages', dbPath, sid, { stitch: true })
     const messages = (since === null ? all : all.filter((m) => { const ts = stateDbTimestampSeconds(m.timestamp); return ts !== null && ts > since })).slice(-50)
     if (messages.length < 2) throw new HttpFailure(400, 'Not enough messages to summarize.')
     const sidecar = this.deps.sidecar?.() ?? null
@@ -1998,7 +1998,7 @@ export class SessionService {
     const card = messageHandoffPayload(marker)
     const toStateDb = async (): Promise<boolean> => {
       await this.rejectViewOnly(sid, 'summarized')
-      if (sameHandoff(handoffPayload(stateDbTailToolContent(this.stateDbPath(profile), sid)), card)) return true
+      if (sameHandoff(handoffPayload(await stateDbSessionReadAsync(null, 'stateDbTailToolContent', this.stateDbPath(profile), sid)), card)) return true
       const sidecar = this.deps.sidecar?.()
       if (!sidecar) return false
       try {
@@ -2308,8 +2308,8 @@ export class SessionService {
   }
 
   /** Python `read_session_lineage_report` on the active profile's state.db. */
-  lineageReport(sid: string): Record<string, unknown> {
-    return stateDbLineageReport(this.stateDbPath(null), sid)
+  lineageReport(sid: string): Promise<Record<string, unknown>> {
+    return stateDbSessionReadAsync(emptyLineageReport(sid.trim()), 'stateDbLineageReport', this.stateDbPath(null), sid)
   }
 
   /** TAL-259: recovery reads the active profile's state.db, and a recovered sidecar joins that profile. */

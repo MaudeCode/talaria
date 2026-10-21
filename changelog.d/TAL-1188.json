@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Changed",
+      "summary": "Keep file browsing, usage insights, and conversation handoffs responsive while reading chat history.",
+      "highlight": false,
+      "components": ["web"]
+    }
+  ]
+}

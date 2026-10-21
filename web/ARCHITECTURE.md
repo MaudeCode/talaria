@@ -93,6 +93,15 @@ Each read gets a fresh transaction and checks its schema version before reusing 
 and index probes. Every reader commits its snapshot in `finally`; shutdown and file
 replacement release the cached handles. Main-file modifications also reopen the handle
 so in-place damage cannot hide behind cached pages; ordinary WAL commits reuse it.
+File-operation existence checks, cron completion links, insights, fork-parent probes,
+handoff reads and lineage reports use the same worker dispatcher. Fork-parent checks
+probe one active message instead of loading a transcript. Cron completion results are
+read from a bounded recent window, streaming older rows only when requested jobs remain.
+Insights use the Agent's effective-activity index to select their window when available,
+then check exact message freshness for those candidates; older schemas retain the full
+message-activity fallback. Handoff round counts inspect physical role/timestamp rows,
+while summaries read the stitched active transcript once; those distinct projections
+stay on the worker without changing their compaction semantics.
 Recovery keeps its own short-lived handle.
 Each thread retains at most 16 handles, closing the least recently used path on
 eviction so deleted profiles cannot accumulate unbounded descriptors or page caches.

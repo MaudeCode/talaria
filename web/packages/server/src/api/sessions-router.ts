@@ -1,6 +1,6 @@
 /** Session, project, share, workspace, and file procedures. */
 import { implement } from '@orpc/server'
-import { stateDbHasSession } from '../sessions/state-db.js'
+import { stateDbSessionReadAsync } from '../sessions/state-db.js'
 import { sessionsContract, workspacesContract, type Attachment, type SessionDeleteRefused, type SessionsListQuery } from '@maudecode/talaria-web-contracts'
 import { mkdirSync } from 'node:fs'
 import { closeSync, existsSync, lstatSync, statSync } from 'node:fs'
@@ -318,10 +318,10 @@ export const sessionsRouter = os.router({
       if (!result.clean) throw new RawResponse(409, result)
       return result
     })),
-    lineageReport: os.session.lineageReport.handler(({ input, context: { ctx } }) => run(() => {
+    lineageReport: os.session.lineageReport.handler(({ input, context: { ctx } }) => run(async () => {
       const sid = input.session_id ?? ''
       if (!sid) throw new HttpError(400, 'session_id required')
-      const report = ctx.deps.sessions.lineageReport(sid)
+      const report = await ctx.deps.sessions.lineageReport(sid)
       if (!report.found) throw new HttpError(404, 'Session not found')
       return report as { found: true }
     })),
@@ -823,7 +823,7 @@ export async function fileOpsSession(ctx: RequestContext, sid: string, opts: { s
     session = (await ctx.deps.sessionStore.get(sid, { metadataOnly: true }))
   } catch {
     const profile = ctx.deps.activeProfile()
-    if (!isSafeSessionId(sid) || !stateDbHasSession(ctx.deps.cliSessions.dbPath(profile), sid)) throw new HttpError(404, 'Session not found')
+    if (!isSafeSessionId(sid) || !(await stateDbSessionReadAsync(false, 'stateDbHasSession', ctx.deps.cliSessions.dbPath(profile), sid))) throw new HttpError(404, 'Session not found')
     if (!ctx.deps.workspaces.profileSupportsLocalIo(profile)) throw new HttpError(400, REMOTE_WORKSPACE_UNSUPPORTED_CODE, { message: REMOTE_WORKSPACE_UNSUPPORTED_MESSAGE })
     return { workspace: (await ctx.deps.workspaces.lastWorkspace(profile)), profile, recovered: false, session: null }
   }
