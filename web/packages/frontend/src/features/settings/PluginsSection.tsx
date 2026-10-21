@@ -143,7 +143,11 @@ function PluginSettingsForm({ pluginKey, fields, onSaved }: { pluginKey: string;
       for (const f of fields) if (f.key in drafts) { if (f.type === 'secret') secrets[f.key] = text(drafts[f.key]); else values[f.key] = drafts[f.key] }
       return api.savePluginSettings(pluginKey, values, secrets)
     },
-    onSuccess: () => { showToast(m.saved()); void qc.invalidateQueries({ queryKey: keys.plugins }); onSaved() },
+    onSuccess: (result) => {
+      showToast(result.runtime_application === 'applied' ? m.saved() : result.runtime_application === 'restart_required' ? m.plugins_settings_restart_required() : m.plugins_settings_runtime_unknown(), result.runtime_application === 'applied' ? 3000 : 10000)
+      void qc.invalidateQueries({ queryKey: keys.plugins })
+      onSaved()
+    },
     onError: (e) => showToast(e instanceof Error ? e.message : String(e), 5000, 'error'),
   })
   return (

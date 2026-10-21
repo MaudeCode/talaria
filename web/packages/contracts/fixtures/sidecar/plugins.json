@@ -748,7 +748,8 @@
             "env": "FAKE_SETTINGS_API_KEY",
             "has_value": false
           }
-        ]
+        ],
+        "runtime_application": "applied"
       }
     }
   ],

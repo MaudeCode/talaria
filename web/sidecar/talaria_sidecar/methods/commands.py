@@ -746,6 +746,59 @@ def plugin_settings() -> dict:
     return {"supported": True, "plugins": rows}
 
 
+def _apply_plugin_mcp_settings(plugins_cmd, plugin_dir, key: str) -> str:
+    """Reconcile package-owned launch inputs on the RPC worker, preserving the request's profile scope."""
+    try:
+        if not plugin_dir or not plugins_cmd._is_portable_plugin_dir(plugin_dir):
+            return "applied"
+        from hermes_cli.agent_plugins import load_agent_plugin
+        from hermes_cli.plugins_manifest import portable_mcp_server_name
+
+        package = load_agent_plugin(plugin_dir, plugin_dir)
+        if any(d.scope == "mcp" or d.scope.startswith("mcp:") for d in package.diagnostics):
+            return "unknown"
+        names = {portable_mcp_server_name(key, server) for server in package.mcp_servers}
+        if not names:
+            return "applied"
+        from hermes_cli.config import load_config_readonly
+        from hermes_cli.plugins import get_plugin_manager
+
+        manager = get_plugin_manager()
+        manager.discover_and_load(force=False)
+        owners = getattr(manager, "_portable_mcp_server_plugins", None)
+        if owners is None:
+            return "restart_required"
+        native = (load_config_readonly() or {}).get("mcp_servers") or {}
+        names = {name for name in names if owners.get(name) == key and name not in native}
+        if not names:
+            return "applied"
+        from tools import mcp_tool_discovery as discovery
+
+        reconnect = getattr(discovery, "restart_mcp_servers_with_new_inputs", None)
+        if reconnect is None:
+            return "restart_required"
+        # Also exclude the explicit Reload MCP path. The native helper serializes settings-driven reconnects.
+        with _RELOAD_MCP_LOCK:
+            restarted = reconnect(names)
+            if restarted:
+                from hermes_constants import get_hermes_home
+
+                from .chat import refresh_profile_agents_mcp_tools
+
+                refresh_profile_agents_mcp_tools(get_hermes_home())
+            statuses = {row["name"]: row["status"] for row in discovery.get_mcp_status() if row["name"] in names}
+            if any(status == "failed" for status in statuses.values()):
+                return "restart_required"
+            if any(status == "connecting" for status in statuses.values()) or any(name not in statuses for name in names):
+                return "unknown"
+        return "applied"
+    except ImportError:
+        return "restart_required"
+    except Exception:  # noqa: BLE001
+        # Persistence already succeeded. Neither expose launch inputs in an exception nor retry an uncertain reconnect.
+        return "unknown"
+
+
 def save_plugin_settings(key: str, values: Any, secret_envs: Any = None) -> dict:
     """Write manifest-declared, non-secret settings through the Agent's locked writer; returns the refreshed fields.
 
@@ -772,7 +825,9 @@ def save_plugin_settings(key: str, values: Any, secret_envs: Any = None) -> dict
         raise RpcError(str(exc), condition="plugin_settings_managed") from exc
     except ValueError as exc:
         raise InvalidParams(str(exc)) from exc
-    return {"key": found[5], "written": written, "fields": plugins_settings.plugin_settings_fields(found[5], plugin_dir)}
+    fields = plugins_settings.plugin_settings_fields(found[5], plugin_dir)
+    application = _apply_plugin_mcp_settings(plugins_cmd, plugin_dir, found[5])
+    return {"key": found[5], "written": written, "fields": fields, "runtime_application": application}
 
 
 def register(registry) -> None:

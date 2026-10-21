@@ -699,7 +699,7 @@ export const toolsRouter = os.router({
       if (error instanceof EnvWriteError) throw new HttpError(error.status, `Failed to save a secret: ${error.message}`, { condition: error.condition })
       throw error
     }
-    return { ok: true as const, key: result.key, written: [...result.written, ...secretFields.map((field) => field.key)], settings: pluginSettingsFieldsView(ctx, result.fields) }
+    return { ok: true as const, key: result.key, runtime_application: result.runtime_application ?? 'restart_required', written: [...result.written, ...secretFields.map((field) => field.key)], settings: pluginSettingsFieldsView(ctx, result.fields) }
   }))),
   pluginOAuthRedirect: os.pluginOAuthRedirect.handler(({ input, context: { ctx } }) => run(async () => {
     // Only this flow's own answer reaches the sidecar: its loopback address and its `state`.

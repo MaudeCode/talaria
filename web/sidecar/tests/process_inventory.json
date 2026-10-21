@@ -2637,6 +2637,13 @@
       "cases": [
         ""
       ]
+    },
+    "tests/test_plugin_settings_mcp.py::test_plugin_save_reconciles_live_mcp_inputs": {
+      "layer": "compatibility",
+      "reason": "Real Agent portable-package settings and native reconnect API must replace a live stdio child launch environment while preserving profile borrowers; fakes cannot prove supported-Agent connection ownership.",
+      "cases": [
+        ""
+      ]
     }
   }
 }

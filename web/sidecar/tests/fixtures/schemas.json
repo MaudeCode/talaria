@@ -1424,6 +1424,14 @@
           ],
           "additionalProperties": false
         }
+      },
+      "runtime_application": {
+        "type": "string",
+        "enum": [
+          "applied",
+          "restart_required",
+          "unknown"
+        ]
       }
     },
     "required": [
