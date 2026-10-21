@@ -784,6 +784,115 @@ def _discover_mcp_tools(run: _Run) -> None:
             return
 
 
+# Serializes every hook change the sidecar makes, so two turns or a turn and a profile deletion never interleave a
+# drop with a registration.
+_HOOKS_LOCK = threading.Lock()
+_HOOK_CALLBACK_PREFIXES = {"agent.shell_hooks": "shell_hook[", "agent.outbound_webhooks": "outbound_webhook["}
+
+
+def _drop_home_callbacks(*modules) -> None:
+    """Forget this home's registrations in each Agent hook module and remove their callbacks from the home's plugin
+    manager; the Agent has no teardown for either registry. Runs under the call's ``scoped_home`` and ``_HOOKS_LOCK``."""
+    from agent import shell_hooks
+    from hermes_cli.plugins import get_plugin_manager
+
+    prefixes = tuple(_HOOK_CALLBACK_PREFIXES[module.__name__] for module in modules)
+    for module in modules:
+        shell_hooks._forget_home_registrations(module._registered, module._registered_lock)
+    manager = get_plugin_manager()
+    with shell_hooks._registered_lock:
+        for event, callbacks in list(manager._hooks.items()):
+            # Replaced, never edited in place: a concurrent invoke_hook keeps iterating the old list.
+            manager._hooks[event] = [cb for cb in callbacks if not getattr(cb, "__name__", "").startswith(prefixes)]
+
+
+def _hook_state_trusted(shell_hooks, cfg: dict) -> bool:
+    """``sync_from_config``'s removal guard for Agents without it: an empty (failed-open) config, an unreadable
+    allowlist or a ``hooks:`` entry the Agent could not parse must never disarm a registered guard."""
+    if not cfg:
+        return False
+    try:
+        allowlist = json.loads(shell_hooks.allowlist_path().read_text(encoding="utf-8-sig"))
+    except FileNotFoundError:
+        allowlist = {"approvals": []}
+    except (OSError, ValueError):
+        return False
+    if not isinstance(allowlist, dict) or not isinstance(allowlist.get("approvals"), list):
+        return False
+    hooks = cfg.get("hooks")
+    if hooks is None:
+        return True
+    if not isinstance(hooks, dict):
+        return False
+    events = [entries for event, entries in hooks.items() if event not in ("output_spill", "outbound") and entries is not None]
+    if not all(isinstance(entries, list) for entries in events):
+        return False
+    return len(shell_hooks.iter_configured_hooks(cfg)) == sum(len(entries) for entries in events)
+
+
+def _replace_shell_hooks(shell_hooks, cfg: dict) -> None:
+    """Agents without ``sync_from_config``: wire the home's consented hooks from ``cfg`` and drop the rest, so a hook
+    removed from config or revoked stops, as it does on v0.22.3. The stale callbacks go only after the current set is
+    wired, so a concurrent turn's tool call always meets its guard. Add-only when the hook state is not trusted."""
+    if not _hook_state_trusted(shell_hooks, cfg):
+        shell_hooks.register_from_config(cfg, accept_hooks=False)
+        return
+    from hermes_cli.plugins import get_plugin_manager
+
+    manager = get_plugin_manager()
+    stale = [cb for callbacks in manager._hooks.values() for cb in callbacks if getattr(cb, "__name__", "").startswith("shell_hook[")]
+    shell_hooks._forget_home_registrations(shell_hooks._registered, shell_hooks._registered_lock)
+    shell_hooks.register_from_config(cfg, accept_hooks=False)
+    with shell_hooks._registered_lock:
+        for event, callbacks in list(manager._hooks.items()):
+            manager._hooks[event] = [cb for cb in callbacks if not any(cb is old for old in stale)]
+
+
+def _register_profile_hooks(home: Path) -> None:
+    """Wire the profile's consented shell hooks and current outbound webhooks before the turn's tools run, like the
+    gateway on every session open (TAL-1258). Hooks added or approved since the last call join this one; hooks removed
+    from config or revoked stop, through ``sync_from_config`` or its sidecar twin for older Agents. Outbound webhooks
+    are add-only on every Agent, so each call replaces the home's set with the configured one (a concurrent turn's
+    notification can miss that instant; webhooks only observe). Consent comes from the allowlist or an opt-in in
+    force: stdin is the RPC pipe, so nothing prompts. A failure is logged and never blocks the turn."""
+    try:
+        from agent import outbound_webhooks, shell_hooks
+        from hermes_cli.config import load_config
+
+        with _HOOKS_LOCK:
+            sync = getattr(shell_hooks, "sync_from_config", None)
+            if sync is not None:
+                sync(load_config)
+            else:
+                _replace_shell_hooks(shell_hooks, load_config())
+            _drop_home_callbacks(outbound_webhooks)
+            outbound_webhooks.register_from_config(load_config())
+    except Exception:  # noqa: BLE001
+        log.warning("shell-hook sync failed; keeping the registered hooks", exc_info=True)
+
+
+def forget_profile_hooks(home: Path) -> None:
+    """Profile deletion: drop the home's shell hooks and outbound webhooks. The Agent keys both registries and its
+    plugin manager by path, so a profile recreated at that path would otherwise fire hooks its new config and allowlist
+    never approved. Raises rather than let the profile go with its hooks still wired."""
+    try:
+        from agent import outbound_webhooks, shell_hooks
+    except ImportError:  # no Agent, so no hook was ever registered
+        return
+    with _HOOKS_LOCK, scoped_home(home):
+        _drop_home_callbacks(shell_hooks, outbound_webhooks)
+
+
+@contextlib.contextmanager
+def agent_scope(home: Path):
+    """``scoped_home`` for a call that runs Agent work: the profile's hooks are wired before any of it (TAL-1258), so
+    the call's first LLM request, tool call or lifecycle event already sees them, even as a session's first work after
+    a sidecar restart."""
+    with scoped_home(home):
+        _register_profile_hooks(home)
+        yield
+
+
 def _profile_fallback_chain() -> list[dict] | None:
     """The profile's fallback routes (``fallback_providers`` first, then legacy ``fallback_model``, deduplicated)
     through the Agent's own resolver, like the CLI and gateway. Runs under the call's ``scoped_home``."""
@@ -2149,18 +2258,18 @@ def register(registry) -> None:
         workspace = params.get("workspace")
         if not isinstance(workspace, str) or not workspace.strip():
             raise InvalidParams("workspace is required")
-        with scoped_home(profile_home_param(params)):
+        with agent_scope(profile_home_param(params)):
             with _turn_identity(session_id, workspace):
                 return start(ctx, params)
 
     @registry.method("chat.compress")
     def compress_(ctx: CallContext, params: dict) -> dict:
-        with scoped_home(profile_home_param(params)):
+        with agent_scope(profile_home_param(params)):
             return compress(ctx, params)
 
     @registry.method("chat.refine")
     def refine_(ctx: CallContext, params: dict) -> dict:
-        with scoped_home(profile_home_param(params)):
+        with agent_scope(profile_home_param(params)):
             return {"output": refine(params)}
 
     @registry.method("chat.compress_finalize", requires_agent=False)
@@ -2239,7 +2348,7 @@ def register(registry) -> None:
         def finalize() -> None:
             try:
                 # Scope inside the worker: a timed-out plugin keeps its own profile until it finishes.
-                with scoped_home(home):
+                with agent_scope(home):
                     from hermes_cli import lifecycle
 
                     callback = getattr(lifecycle, "finalize_session", None)

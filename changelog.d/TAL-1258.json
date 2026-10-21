@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Web chats run the shell hooks a profile's config.yaml declares and you approved, so a fail-closed pre_tool_call guard blocks Web tool calls as it does in the CLI and gateway; a hook or outbound webhook you remove or revoke stops on the next turn.",
+      "highlight": false,
+      "components": ["web"]
+    }
+  ]
+}
