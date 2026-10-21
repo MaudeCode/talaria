@@ -6,7 +6,7 @@ import { existsSync, lstatSync, mkdirSync, readdirSync, readFileSync, rmSync, st
 import { join } from 'node:path'
 import { isSafeSessionId, type Message } from '../session.js'
 import { RevisionConflict, type MessageMatch, type SessionBackend, type SessionChange, type SessionIndexEntry, type StorageBackend, type StorageIssue, type StoredSession } from './backend.js'
-import { readMetadataJsonPrefixWithSignature, statSignature, writeAtomic } from './json-files.js'
+import { readJsonMessagePrefix, readMetadataJsonPrefixWithSignature, statSignature, statSignatureAsync, writeAtomic } from './json-files.js'
 import { sessionSearchMatches, sessionSearchMessageText } from './search-text.js'
 import { diagnoseJson, repairJson, restoreJsonBackup } from './json-recovery.js'
 
@@ -31,9 +31,16 @@ export class JsonStorage implements StorageBackend {
   }
 }
 
+// ponytail: fixed entry cap without eviction, so a larger library keeps its first sessions warm; add LRU if hit rates matter.
+const SEARCH_TEXT_CACHE_MAX = 5000
+/** Clients search 5 leading messages; a deeper (or whole-transcript, depth 0) search is read but never kept resident. */
+const SEARCH_TEXT_CACHE_DEPTH_MAX = 20
+
 class JsonSessions implements SessionBackend {
   closed = false
   private parsedIndex: { revision: string; entries: SessionIndexEntry[] } | null = null
+  /** TAL-1212: each session's leading-message search text, valid while its file keeps the recorded revision. */
+  private readonly searchTexts = new Map<string, { revision: string; depth: number; texts: string[] }>()
   constructor(private readonly options: JsonStorageOptions) {}
   private check(): void { if (this.closed) throw new Error('Storage is closed') }
   private path(sid: string): string {
@@ -85,16 +92,31 @@ class JsonSessions implements SessionBackend {
     const doc = JSON.parse(readFileSync(path, 'utf8')) as Record<string, unknown>
     return Array.isArray(doc.messages) ? (doc.messages as Message[]).slice(Math.max(0, range.start), Math.max(0, range.end)) : []
   }
+  /** The leading `depth` messages (all when 0), parsed without reading or parsing the rest of the file. */
+  private async readMessagePrefix(sid: string, depth: number): Promise<{ rows: Message[]; revision: string }> {
+    const { rows, signature } = await readJsonMessagePrefix(this.path(sid), depth || Infinity)
+    return { rows: rows as Message[], revision: signature }
+  }
   async searchMessages(sids: readonly string[], terms: readonly string[], depth: number): Promise<Map<string, MessageMatch>> {
     const matches = new Map<string, MessageMatch>()
     for (const sid of sids) {
       try {
-        const rows = await this.readMessages(sid, { start: 0, end: depth || Infinity })
-        const idx = rows.findIndex((row) => sessionSearchMatches(sessionSearchMessageText(row), terms))
-        if (idx >= 0) matches.set(sid, { idx, text: sessionSearchMessageText(rows[idx]) })
+        const texts = await this.searchText(sid, depth)
+        const idx = texts.findIndex((text) => sessionSearchMatches(text, terms))
+        if (idx >= 0) matches.set(sid, { idx, text: texts[idx]! })
       } catch { /* unreadable sessions cannot match */ }
     }
     return matches
+  }
+  private async searchText(sid: string, depth: number): Promise<string[]> {
+    const revision = await statSignatureAsync(this.path(sid))
+    if (revision === null) return []
+    const cached = this.searchTexts.get(sid)
+    if (cached?.revision === revision && cached.depth === depth) return cached.texts
+    const prefix = await this.readMessagePrefix(sid, depth)
+    const texts = prefix.rows.map(sessionSearchMessageText)
+    if (depth > 0 && depth <= SEARCH_TEXT_CACHE_DEPTH_MAX && (cached || this.searchTexts.size < SEARCH_TEXT_CACHE_MAX)) this.searchTexts.set(sid, { revision: prefix.revision, depth, texts })
+    return texts
   }
   async write(sid: string, change: SessionChange, expected: string | null): Promise<string> {
     const path = this.path(sid)
@@ -123,11 +145,13 @@ class JsonSessions implements SessionBackend {
     if (previousText !== null && Array.isArray(previous?.messages) && previous.messages.length > rows.length) {
       try { writeAtomic(`${path}.bak`, previousText) } catch { /* backup is best effort */ }
     }
+    this.searchTexts.delete(sid)
     writeAtomic(path, payload)
     return statSignature(path)!
   }
   async delete(sid: string, opts: { tombstone: boolean }): Promise<boolean> {
     const path = this.path(sid)
+    this.searchTexts.delete(sid)
     try { rmSync(path, { force: true }) } catch { return false }
     if (existsSync(path)) return false
     try { rmSync(`${path}.bak`, { force: true }) } catch { /* best effort */ }

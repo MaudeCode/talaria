@@ -1,0 +1,12 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Searching sessions no longer stalls open chats while it reads every transcript.",
+      "highlight": false,
+      "components": [
+        "web"
+      ]
+    }
+  ]
+}
