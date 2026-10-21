@@ -68,4 +68,3 @@ def test_a_lock_replaced_after_it_was_read_is_kept(tmp_path: pathlib.Path) -> No
     assert not _take_lock(admin, "hermes pid=1")
     assert _lock_reason(repo, tree) == "on my external drive"
     assert [p.name for p in admin.iterdir() if p.name.startswith("locked.")] == []
-
