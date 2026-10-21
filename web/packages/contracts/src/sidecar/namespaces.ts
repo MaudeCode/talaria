@@ -541,8 +541,8 @@ export const WORKTREE_METHODS = {
   'worktree.create': { params: ProfileHomeParams.extend({ repo_root: z.string().min(1) }), result: z.object({ path: z.string(), branch: z.string(), repo_root: z.string(), base: z.string().nullable() }) },
   /**
    * TAL-1254: relock Talaria's worktrees for this sidecar (`hermes pid=<pid>`) so the Agent's worktree sweep reads them as
-   * live. `foreign_lock`: a lock that is not a `hermes pid=` one holds the tree and stays; a path git could not lock now is
-   * absent from `results`.
+   * live. `foreign_lock`: a lock that is not a `hermes pid=` one holds the tree and stays. A tree this sidecar does not
+   * hold yet (a running process's `hermes pid=` lock, or a git failure) is absent from `results`; the caller retries it.
    */
   'worktree.retain': { params: z.object({ paths: z.array(z.string().min(1)) }), result: z.object({ results: z.record(z.string(), z.enum(['retained', 'missing', 'foreign_lock'])) }) },
 } as const

@@ -7,6 +7,7 @@ import logging
 import os
 import re
 import subprocess
+import uuid
 from contextlib import redirect_stderr, redirect_stdout
 from pathlib import Path
 
@@ -73,12 +74,33 @@ def _admin_dir(tree: Path) -> Path | None:
     return admin if admin.parent.name == "worktrees" and registered == (tree / ".git").resolve() else None
 
 
+def _take_lock(admin: Path, expected: str) -> bool:
+    """Remove the tree's lock only while it still reads ``expected``: it is moved aside first, so a lock written since it
+    was read is never deleted; anything else is put back unless a newer lock already holds the tree."""
+    lock, aside = admin / "locked", admin / f"locked.talaria-{uuid.uuid4().hex}"
+    try:
+        os.rename(lock, aside)
+    except FileNotFoundError:
+        return True
+    try:
+        if aside.read_text(encoding="utf-8-sig", errors="replace").strip(" \t\n\v\f\r") == expected:
+            return True
+        try:
+            os.link(aside, lock)
+        except FileExistsError:
+            pass
+        return False
+    finally:
+        aside.unlink(missing_ok=True)
+
+
 def retain(path: str) -> str:
     """Lock a Talaria worktree for this process, so the Agent's sweep reads its lock live (TAL-1254).
 
     ``missing`` when the tree is gone or git no longer registers it; ``foreign_lock`` when a lock that is not a ``hermes
-    pid=`` lock (a user's own) holds it, which stays untouched. A ``hermes pid=`` lock of a live other process is left
-    alone too; one of an exited process is replaced.
+    pid=`` lock (a user's own) holds it, which stays untouched. A ``hermes pid=`` lock of an exited process is replaced;
+    one of a live other process (a reused pid, another instance) is left alone and raises, so the caller retries until
+    this sidecar holds the lock.
     """
     tree = Path(path)
     admin = _admin_dir(tree)
@@ -96,18 +118,19 @@ def retain(path: str) -> str:
         if lock is None:
             return "foreign_lock"
         if int(lock.group(1)) != os.getpid() and _pid_alive(int(lock.group(1))):
-            return "retained"
-    git = ["git", "-C", str(tree), "worktree"]
-    if reason is not None:
-        subprocess.run([*git, "unlock", str(tree)], capture_output=True, timeout=10, check=False, stdin=subprocess.DEVNULL)
-    locked = subprocess.run([*git, "lock", "--reason", ours, str(tree)], capture_output=True, timeout=10, check=False, stdin=subprocess.DEVNULL)
+            raise OSError(f"locked by running pid {lock.group(1)}")
+        if not _take_lock(admin, reason):
+            raise OSError("the lock changed while it was being replaced")
+    # git refuses to lock a tree someone locked meanwhile, so that lock stays too.
+    locked = subprocess.run(["git", "-C", str(tree), "worktree", "lock", "--reason", ours, str(tree)],
+                            capture_output=True, timeout=10, check=False, stdin=subprocess.DEVNULL)
     if locked.returncode != 0:
         raise OSError(locked.stderr.decode(errors="replace").strip() or "git worktree lock failed")
     return "retained"
 
 
 def retain_all(paths: list[str]) -> dict[str, str]:
-    """``retain`` per path; a tree git cannot lock now is left out (unknown), never reported missing."""
+    """``retain`` per path; a tree this sidecar cannot lock now is left out (unknown), never reported missing."""
     results = {}
     for path in dict.fromkeys(paths):
         try:

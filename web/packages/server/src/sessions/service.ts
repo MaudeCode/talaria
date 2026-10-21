@@ -193,6 +193,7 @@ export class SessionService {
   /** TAL-1005: the turns now waiting on their session's compression job before they read its history. */
   private readonly compactionWaiters = new Set<string>()
   private worktreeRetainRetry: ReturnType<typeof setTimeout> | null = null
+  private worktreesUnconfirmed = 0
 
   constructor(readonly deps: SessionServiceDeps) {
     this.compressionJobs = new CompressionJobs()
@@ -1533,8 +1534,7 @@ export class SessionService {
    * the sidecar could not confirm is retried until git takes it; meanwhile that tree keeps its flag.
    */
   async retainWorktrees(call: SidecarLike['call'], only?: Session): Promise<void> {
-    const rows = only ? [only.compact()] : await this.store.readIndexEntries().catch(async () =>
-      (await Promise.all([...(await this.store.persistedIds())].map(async (sid) => (await this.store.loadMetadataOnly(sid))?.compact()))).filter((row) => row !== undefined))
+    const rows = only ? [only.compact()] : await this.worktreeSessionRows()
     const targets = rows.filter((row) => !row.archived && typeof row.worktree_path === 'string' && row.worktree_path && typeof row.session_id === 'string')
     if (!targets.length) return
     let results: Record<string, string>
@@ -1545,16 +1545,17 @@ export class SessionService {
       throw error
     }
     const unconfirmed = targets.filter((row) => !results[String(row.worktree_path)]).length
-    if (unconfirmed) {
-      this.deps.log(`[webui] could not lock ${String(unconfirmed)} worktree(s) for the sidecar; retrying`)
-      this.retryWorktreeRetention()
-    }
+    if (!only && unconfirmed !== this.worktreesUnconfirmed) this.deps.log(`[webui] ${String(unconfirmed)} worktree lock(s) not yet held by the sidecar${unconfirmed ? '; retrying' : ''}`)
+    if (!only) this.worktreesUnconfirmed = unconfirmed
+    if (unconfirmed) this.retryWorktreeRetention()
     for (const row of targets) {
       const state = results[String(row.worktree_path)]
-      if (!state || (state === 'missing') === (row[WORKTREE_RETAINED_KEY] === true)) continue
       const sid = String(row.session_id)
+      if (!state) continue
       try {
-        const s = await this.store.ensureFull(sid, await this.store.get(sid))
+        // `extra` follows the transcript in the file, past what a metadata-only read sees.
+        const s = await this.store.ensureFull(sid, await this.store.get(sid, { metadataOnly: true }))
+        if ((state === 'missing') === (s.extra[WORKTREE_RETAINED_KEY] === true)) continue
         await this.withMutationLock(sid, async () => {
           s.extra = Object.fromEntries(Object.entries(s.extra).filter(([key]) => key !== WORKTREE_RETAINED_KEY))
           if (state === 'missing') s.extra[WORKTREE_RETAINED_KEY] = true
@@ -1563,6 +1564,18 @@ export class SessionService {
         this.publish('session_worktree', s.profile, sid)
       } catch (error) { if (!(error instanceof SessionNotFound)) throw error }
     }
+  }
+
+  /**
+   * Every persisted worktree chat, read from its own file: the index only narrows the files to read, since a crash
+   * between a save and its index update can leave a session out of the index or with a stale `archived`.
+   */
+  private async worktreeSessionRows(): Promise<Record<string, unknown>[]> {
+    let indexed: Map<string, Record<string, unknown>>
+    try { indexed = new Map((await this.store.readIndexEntries()).map((row) => [str(row.session_id), row])) } catch { indexed = new Map() }
+    const candidates = [...(await this.store.persistedIds())].filter((sid) => !indexed.has(sid) || indexed.get(sid)?.worktree_path)
+    // An unreadable file is skipped here, as the session list skips it.
+    return (await Promise.all(candidates.map(async (sid) => (await this.store.get(sid, { metadataOnly: true }).catch(() => null))?.compact()))).filter((row) => row !== undefined)
   }
 
   /** One pending retry at a time; a sidecar that is not ready by then retains everything in its next ready gate instead. */

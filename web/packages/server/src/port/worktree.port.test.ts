@@ -327,9 +327,22 @@ describe('TAL-1254: a restarted sidecar retains the worktree chats before it is 
     missing = new Set()
     retained.length = 0
     await post(s, '/api/session/archive', { session_id: archived.session_id, archived: false })
+    s.deps.sessionStore.sessions.delete(String(gone.session_id)) // read back from its file, as after a Web restart
     await sidecar.restart()
     expect(retained).toEqual([{ status: 'ready', paths: [String(archived.worktree_path)] }, { status: 'starting', paths: [String(kept.worktree_path), String(gone.worktree_path), String(archived.worktree_path)].sort() }])
     expect((await detail(gone.session_id)).worktree_retained).toBeUndefined()
+  })
+
+  it('retains a worktree chat the session index lost or still lists as archived', async () => {
+    const [lost, unarchived] = [await create(), await create()]
+    await s.deps.sessionStore.pruneFromIndex(String(lost.session_id))
+    const row = (await s.deps.sessionStore.readIndexEntries()).find((r) => r.session_id === unarchived.session_id)
+    await s.deps.sessionStore.writeIndex([{ ...row, archived: true }])
+    retained.length = 0
+
+    await sidecar.restart()
+
+    expect(retained.flatMap((call) => call.paths)).toEqual(expect.arrayContaining([String(lost.worktree_path), String(unarchived.worktree_path)]))
   })
 
   it('retries a worktree the sidecar could not lock until it confirms it', async () => {
