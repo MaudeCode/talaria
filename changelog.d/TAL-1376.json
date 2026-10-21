@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Saving an Always command approval keeps previously revoked approvals removed.",
+      "highlight": false,
+      "components": ["web"]
+    }
+  ]
+}
