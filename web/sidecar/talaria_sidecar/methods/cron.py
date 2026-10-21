@@ -914,7 +914,8 @@ def register(registry) -> None:
 
     @registry.method("cron.delivery_options", requires_agent=False)
     def delivery_options(ctx: CallContext, params: dict) -> dict:
-        known: frozenset = frozenset()
+        home = profile_home_param(params)
+        known: set = set()
         for module_name in ("cron.scheduler_delivery", "cron.scheduler"):
             try:
                 module = importlib.import_module(module_name)
@@ -922,7 +923,12 @@ def register(registry) -> None:
                 continue
             candidates = getattr(module, "_KNOWN_DELIVERY_PLATFORMS", None)
             if candidates:
-                known = frozenset(candidates)
+                known = set(candidates)
+                # Agent 0.22.3+ keeps messaging platforms in the plugin registry; mirror its `_is_known_delivery_platform`.
+                plugin_platforms = getattr(module, "_iter_home_target_platforms", None)
+                if plugin_platforms is not None:
+                    with scoped_home(home):
+                        known.update(plugin_platforms())
                 break
         platforms = [{"value": "local", "label": "Local (save output only)"}, {"value": "origin", "label": "Origin (reply to creator)"}]
         platforms.extend({"value": name, "label": name.capitalize()} for name in sorted(known))

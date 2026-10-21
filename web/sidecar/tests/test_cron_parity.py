@@ -129,3 +129,11 @@ def test_a_failed_profile_snapshot_leaves_no_orphan_job(handshaken: SidecarProce
     assert message["error"]["data"]["condition"] == "cron_snapshot_failed"
     assert handshaken.result("cron.list", {"profile_home": home})["jobs"] == before
     assert handshaken.result("cron.list", {"profile_home": str(execution_home)})["jobs"] == before_execution
+
+
+@requires_agent
+def test_delivery_options_list_messaging_platforms(handshaken: SidecarProcess, hermes_home: pathlib.Path) -> None:
+    # Agent 0.22.3 moved messaging platforms out of _KNOWN_DELIVERY_PLATFORMS into plugin registry entries.
+    platforms = [p["value"] for p in handshaken.result("cron.delivery_options", {"profile_home": str(hermes_home)})["platforms"]]
+    assert platforms[:2] == ["local", "origin"] and platforms[2:] == sorted(platforms[2:])
+    assert {"telegram", "discord", "slack", "matrix"} <= set(platforms), platforms
