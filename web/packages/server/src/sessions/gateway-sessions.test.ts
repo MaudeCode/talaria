@@ -139,29 +139,159 @@ describe('canonical owner attachment', () => {
   })
 
   /** Own one synthetic owner connection and exercise its actual journalled SSE projection. */
-  const observeOwner = async (initial: GatewaySnapshot) => {
+  const observeOwner = async (initial: GatewaySnapshot, profile = 'default') => {
     let snap = initial
+    let outcome = 'completed'
     let emit: ((frame: Omit<StreamFrame, 'seq'>) => void) | undefined
+    const original = sidecar.responderFor('gateway.session')
+    const headers = { cookie: `hermes_profile=${profile}` }
     sidecar.respond('gateway.session', (params, send, opts) => {
-      if (params.action !== 'watch') return { ...attached(snap), receipt: params.action === 'receipt' ? { ...admission('terminal'), outcome: 'completed' } : null }
+      if (params.session_id !== initial.session_id || params.profile_home !== s.deps.profileHome(profile)) return original!(params, send, opts)
+      if (params.action !== 'watch') return { ...attached(snap), receipt: params.action === 'receipt' ? { ...admission('terminal'), outcome } : null }
       emit = send
       send({ event: 'snapshot', data: attached(snap) })
       return new Promise((resolve) => { opts.signal!.addEventListener('abort', () => { resolve(attached(snap)) }, { once: true }) })
     })
-    const row = SessionEnvelopeSchema.parse(await (await s.get(`/api/session?session_id=${sid}`)).json())
+    const row = SessionEnvelopeSchema.parse(await (await s.get(`/api/session?session_id=${initial.session_id}`, { headers })).json())
     const stream = row.session.active_stream_id!
-    const read = s.sse(`/api/chat/stream?stream_id=${stream}&replay=1&after_seq=0`, (frame) => frame.event === 'stream_end' || frame.event === 'apperror')
+    const read = s.sse(`/api/chat/stream?stream_id=${stream}&replay=1&after_seq=0`, (frame) => frame.event === 'stream_end' || frame.event === 'apperror', { headers })
     await vi.waitFor(() => { expect(s.deps.registry.peek(stream)?.subscriberCount).toBe(1) })
     return { stream, read, get attached() { return Boolean(emit) },
-      event: (type: string, payload: Record<string, unknown>, generation = initial.execution_generation) => {
-        emit!({ event: 'event', data: { type, payload, authority_epoch: 1, execution_generation: generation, session_id: sid } })
+      event: (type: string, payload: Record<string, unknown>, generation = snap.execution_generation, stamps: Record<string, unknown> = {}) => {
+        emit!({ event: 'event', data: { type, payload, authority_epoch: snap.authority_epoch, replay_epoch: snap.replay_epoch, execution_generation: generation, session_id: snap.session_id, ...stamps } })
       },
-      finish: (generation = initial.execution_generation) => {
-        snap = snapshot({ execution_generation: generation })
-        emit!({ event: 'event', data: { type: 'session.info', payload: { authority_epoch: 1, execution_generation: generation, running: false, pending: [] } } })
+      snapshot: (extra: Partial<GatewaySnapshot>, replayGap = false, notify = true) => {
+        snap = { ...snap, ...extra }
+        if (notify) emit!({ event: 'snapshot', data: { ...attached(snap), replay_gap: replayGap } })
+      },
+      finish: (generation = snap.execution_generation, terminalOutcome = 'completed') => {
+        outcome = terminalOutcome
+        snap = { ...snap, execution_generation: generation, running: false, pending: [] }
+        emit!({ event: 'event', data: { type: 'session.info', payload: { authority_epoch: snap.authority_epoch, execution_generation: generation, running: false, pending: [] } } })
       },
     }
   }
+
+  it('carries native MCP progress on one tool row through completion', async () => {
+    const watch = await observeOwner(snapshot({ running: true, pending: [admission()] }))
+    watch.event('tool.start', { tool_id: 'index-a', name: 'mcp__index', args: {} })
+    watch.event('tool.progress', { tool_id: 'index-a', progress: 10, total: 50, message: 'starting' })
+    watch.event('tool.progress', { tool_id: 'index-a', progress: 21, total: 50, message: 'indexing files' })
+    watch.event('tool.complete', { tool_id: 'index-a', name: 'mcp__index', preview: 'done' })
+    watch.event('tool.progress', { tool_id: 'index-a', percent: 80, message: 'late' })
+    watch.finish()
+    const frames = await watch.read
+    expect(frames.filter((frame) => frame.event === 'tool')).toHaveLength(1)
+    const progress = frames.filter((frame) => frame.event === 'tool_progress')
+    expect(progress.map((frame) => frame.data)).toEqual([
+      { id: 'index-a', progress: { percent: 20, message: 'starting' } },
+      { id: 'index-a', progress: { percent: 42, message: 'indexing files' } },
+    ])
+    for (const frame of progress) expect(ChatEventSchema.safeParse(frame).success).toBe(true)
+    expect(frames.find((frame) => frame.event === 'tool_complete')?.data).toMatchObject({ id: 'index-a', progress: null })
+  })
+
+  it('reloads only the latest active native progress, redacted before bounding and never journaled', async () => {
+    const watch = await observeOwner(snapshot({ running: true, pending: [admission()] }))
+    try {
+      for (const id of ['a', 'b']) watch.event('tool.start', { tool_id: id, name: 'mcp__index', args: {} })
+      watch.event('tool.progress', { tool_id: 'a', percent: 10, message: 'old progress' })
+      watch.event('tool.progress', { tool_id: 'b', progress: 21, total: 50, message: 'indexing files' })
+      const secret = 'sk-synthetic-native-progress-123456789012345'
+      watch.event('tool.progress', { tool_id: 'a', percent: 200, message: `OPENAI_API_KEY=${secret} ${'x'.repeat(1200)}` })
+      await vi.waitFor(() => { expect(s.deps.sessions.deps.runtime.liveToolProgress?.(watch.stream)).toHaveLength(2) })
+      const detail = SessionEnvelopeSchema.parse(await (await s.get(`/api/session?session_id=${sid}`)).json()).session
+      expect(detail.tool_calls).toEqual(expect.arrayContaining([
+        expect.objectContaining({ id: 'a', progress: { percent: 100, message: expect.any(String) as unknown } }),
+        expect.objectContaining({ id: 'b', progress: { percent: 42, message: 'indexing files' } }),
+      ]))
+      expect(JSON.stringify(detail.tool_calls)).not.toContain(secret)
+      const replay = await s.sse(`/api/chat/stream?stream_id=${watch.stream}&replay=1`, (f) => f.event === 'tool_progress' && (f.data as { id: string }).id === 'b')
+      expect(replay.filter((f) => f.event === 'tool_progress')).toHaveLength(2)
+      expect(JSON.stringify(replay)).not.toContain('old progress')
+      const journal = await s.deps.journal.readRunEvents(detail.composer_state_key!, watch.stream)
+      expect(JSON.stringify(journal)).not.toMatch(/indexing files|tool_progress|old progress/)
+      watch.event('tool.complete', { tool_id: 'a', name: 'mcp__index' })
+      await vi.waitFor(() => { expect(s.deps.sessions.deps.runtime.liveToolProgress?.(watch.stream).map((call) => call.id)).toEqual(['b']) })
+    } finally { watch.finish(); await watch.read }
+  })
+
+  it.each(['generation', 'authority', 'replay', 'gap'] as const)('clears native progress on %s replacement and rejects stale identities', async (replacement) => {
+    const watch = await observeOwner(snapshot({ running: true, pending: [admission()] }))
+    try {
+      watch.event('tool.start', { tool_id: 'reused', name: 'mcp__index' })
+      watch.event('tool.progress', { tool_id: 'reused', percent: 42, message: 'obsolete' })
+      await vi.waitFor(() => { expect(s.deps.sessions.deps.runtime.liveToolProgress?.(watch.stream)).toHaveLength(1) })
+      const changed = replacement === 'generation' ? { execution_generation: 2 } : replacement === 'authority' ? { authority_epoch: 2 } : replacement === 'replay' ? { replay_epoch: 'replacement' } : {}
+      if (replacement !== 'gap') {
+        // HTTP can discover a successor before the watch receives its replacement snapshot.
+        watch.snapshot(changed, false, false)
+        const detail = SessionEnvelopeSchema.parse(await (await s.get(`/api/session?session_id=${sid}`)).json()).session
+        expect(detail.tool_calls).toEqual([])
+      }
+      watch.snapshot(changed, replacement === 'gap')
+      watch.event('tool.progress', { tool_id: 'reused', percent: 99, message: 'no new start' })
+      await vi.waitFor(() => { expect(s.deps.sessions.deps.runtime.liveToolProgress?.(watch.stream)).toEqual([]) })
+      watch.event('tool.start', { tool_id: 'reused', name: 'mcp__index' })
+      watch.event('tool.progress', { tool_id: 'reused', percent: 50, message: 'current' })
+      for (const stamps of [{ session_id: 'another-session' }, { authority_epoch: 99 }, { replay_epoch: 'stale' }, { execution_generation: 99 }]) {
+        watch.event('tool.progress', { tool_id: 'reused', percent: 99, message: 'stale' }, undefined, stamps)
+      }
+      await vi.waitFor(() => { expect(s.deps.sessions.deps.runtime.liveToolProgress?.(watch.stream)[0]?.progress).toEqual({ percent: 50, message: 'current' }) })
+    } finally { watch.finish(); }
+    const frames = await watch.read
+    expect(frames.filter((f) => f.event === 'tool_progress').map((f) => (f.data as { progress: unknown }).progress)).toEqual([
+      { percent: 42, message: 'obsolete' }, null, { percent: 50, message: 'current' }, null,
+    ])
+  })
+
+  it('ignores duplicate native starts/completions and old-owner omission', async () => {
+    const watch = await observeOwner(snapshot({ running: true, pending: [admission()] }))
+    for (let i = 0; i < 2; i++) watch.event('tool.start', { tool_id: 'a', name: 'mcp__index' })
+    for (let i = 0; i < 2; i++) watch.event('tool.complete', { tool_id: 'a', name: 'mcp__index' })
+    watch.event('tool.start', { tool_id: 'a', name: 'mcp__index' })
+    watch.event('tool.progress', { tool_id: 'a', percent: 50, message: 'late duplicate' })
+    watch.finish()
+    const frames = await watch.read
+    expect(frames.filter((f) => f.event === 'tool')).toHaveLength(1)
+    expect(frames.filter((f) => f.event === 'tool_complete')).toHaveLength(1)
+    expect(frames.filter((f) => f.event === 'tool_progress')).toEqual([])
+  })
+
+  it('clears unfinished native progress on interruption and releases the running projection', async () => {
+    const watch = await observeOwner(snapshot({ running: true, pending: [admission()] }))
+    watch.event('tool.start', { tool_id: 'a', name: 'mcp__index' })
+    watch.event('tool.progress', { tool_id: 'a', percent: 42, message: 'unfinished' })
+    watch.finish(undefined, 'interrupted')
+    const frames = await watch.read
+    expect(frames.find((f) => f.event === 'cancel')?.data).toMatchObject({ terminal_state: 'cancelled', session: { tool_calls: [] } })
+    expect(frames.findLast((f) => f.event === 'tool_progress')?.data).toEqual({ id: 'a', progress: null })
+    await vi.waitFor(() => { expect(s.deps.registry.liveToolCalls.has(watch.stream)).toBe(false) })
+  })
+
+  it('isolates native progress for concurrent calls in separate sessions and profile homes', async () => {
+    const otherHome = join(s.state, 'profiles', 'work')
+    mkdirSync(otherHome, { recursive: true })
+    const other = new DatabaseSync(join(otherHome, 'state.db'))
+    other.exec(fixture.schema.join('\n'))
+    for (const sql of fixture.inserts) other.exec(sql)
+    const watches: Awaited<ReturnType<typeof observeOwner>>[] = []
+    try {
+      for (const [session, profile] of [[sid, 'default'], [fixture.sessions.tui!, 'default'], [sid, 'work']] as const) {
+        const watch = await observeOwner(snapshot({ session_id: session, stored_session_id: session, running: true, pending: [admission()] }), profile)
+        watches.push(watch)
+        watch.event('tool.start', { tool_id: 'same-id', name: 'mcp__index' })
+        watch.event('tool.progress', { tool_id: 'same-id', percent: watches.length * 10, message: `${profile}/${session}` })
+      }
+      for (const [index, watch] of watches.entries()) await vi.waitFor(() => {
+        expect(s.deps.sessions.deps.runtime.liveToolProgress?.(watch.stream)[0]?.progress).toMatchObject({ percent: (index + 1) * 10 })
+      })
+    } finally {
+      for (const watch of watches) watch.finish()
+      await Promise.all(watches.map((watch) => watch.read))
+      other.close()
+    }
+  })
 
   it.each([false, true])('accepts a voice stop without an admission or replacing an owner watch, running=%s', async (running) => {
     const snap = snapshot({ running, pending: running ? [admission()] : [] })
