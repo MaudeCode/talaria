@@ -115,6 +115,24 @@ describe('gatewayRestartBlockers', () => {
 })
 
 describe('GatewayRestartQueue', () => {
+  it.each(['gatewayWaiting', 'transition', 'recordGatewayBaseline'] as const)('releases the waiting slot when %s rejects, so another update can restart', async (method) => {
+    const t = await setup()
+    t.gateway({ active_agents: 0 })
+    const first = await t.waiting()
+    vi.spyOn(t.store, method).mockRejectedValueOnce(new Error('synthetic persistence failure'))
+    await t.queue.schedule(first, 'default')
+    await flush()
+    expect(t.queue.pendingId()).toBeNull()
+    expect(t.queue.restarting()).toBe(false)
+    expect(t.queue.restartNow(first)).toBe(false)
+    expect(t.calls).toEqual([])
+    const next = await t.waiting()
+    expect(await t.queue.schedule(next, 'default')).toBe(next)
+    await flush()
+    expect(t.calls).toEqual(['gateway.restart'])
+    expect((await t.row(next))?.phase).toBe('succeeded')
+  })
+
   it('holds live work absent from active_agents, then retries automatically once it clears', async () => {
     let busy = true
     const t = await setup(undefined, () => busy ? Promise.resolve({ status: 'busy_live_work', reason: 'Refusing to restart the gateway: 1 live session(s) would be interrupted.' }) : t.replaced())

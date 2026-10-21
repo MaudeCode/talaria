@@ -85,7 +85,9 @@ export class GatewayRestartQueue {
     const woken = new Promise<void>((resolve) => { wake = resolve })
     const pending = { id, profile, forced: false, wake }
     this.pending = pending
-    void this.run(pending, woken, detail).catch((error: unknown) => { this.deps.log(`[updates] gateway restart failed: ${(error as Error).message}`) })
+    void this.run(pending, woken, detail)
+      .catch((error: unknown) => { this.deps.log(`[updates] gateway restart failed: ${(error as Error).message}`) })
+      .finally(() => { if (this.pending === pending) this.pending = null })
     return id
   }
 
