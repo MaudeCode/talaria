@@ -5,7 +5,7 @@ import type { SidecarLike } from '../sidecar/client.js'
 import { parseProviderQualifiedModel, type Dict } from '../config/agent-config.js'
 import { HttpFailure } from '../sessions/service.js'
 import { SidecarError } from '../sidecar/client.js'
-import { latestCronSessionInfo } from '../sessions/state-db.js'
+import { stateDbSessionReadAsync } from '../sessions/state-db.js'
 import { stripToolCallXml } from '../sessions/merge.js'
 import { str } from '../util.js'
 
@@ -426,7 +426,7 @@ export class CronService {
     completions.sort((a, b) => b.completed_at - a.completed_at || (a.job_id < b.job_id ? -1 : a.job_id > b.job_id ? 1 : 0))
     for (const storeHome of new Set(rows.map((row) => row.home))) {
       const ids = rows.filter((row) => row.home === storeHome).map((row) => str(row.job.id))
-      const sessions = latestCronSessionInfo(join(storeHome, 'state.db'), ids, completions.filter((c) => ids.includes(c.job_id)).map((c) => c.job_id))
+      const sessions = await stateDbSessionReadAsync(new Map(), 'latestCronSessionInfo', join(storeHome, 'state.db'), ids, completions.filter((c) => ids.includes(c.job_id)).map((c) => c.job_id))
       for (const completion of completions) {
         if (!ids.includes(completion.job_id)) continue
         const info = sessions.get(completion.job_id)

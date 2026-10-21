@@ -14,6 +14,7 @@ import { Session } from './session.js'
 import { recordBackgroundUpdate } from './background-updates.js'
 import { agentSessionRowsExisting, cheapChangeFingerprint, latestCronSessionInfo, isCliSessionRowVisible, normalizeAgentSessionSource, projectAgentSessionRows, readImportableAgentSessionRows, stateDbCompressionLineage, stateDbHasSession, stateDbLineageReport, stateDbSessionRead, stateDbSessionSources, type ReadRowsOptions } from './state-db.js'
 import agentSchema from '../test/fixtures/canonical-ownership.json' with { type: 'json' }
+import cronSchema from '../test/fixtures/cron-sessions.json' with { type: 'json' }
 import { MESSAGING_SOURCES } from './source-kind.js'
 import { GatewayWatcher, snapshotHash } from './gateway-watcher.js'
 import { capRecentCliSessions, keepLatestMessagingSessionPerSource, mergeCliSidebarMetadata, withOwnerLocks, type GatewayIdentity } from './list.js'
@@ -172,6 +173,48 @@ describe('latestCronSessionInfo', () => {
   let dir: string
   beforeAll(() => { dir = realpathSync(mkdtempSync(join(tmpdir(), 'cron-sessions-'))) })
   afterAll(() => { rmSync(dir, { recursive: true, force: true }) })
+
+  it('merges v0.22.3 scheduler admissions with legacy runs by start time', () => {
+    const path = join(dir, 'admissions.db')
+    const db = new DatabaseSync(path)
+    db.exec(cronSchema.schema.join('\n'))
+    for (const [id, started_at] of [['cron_daily_20261020_120000', 100], ['local-daily', 200], ['cron_daily_digest_20261020_120000', 400], ['local-digest', 300]] as const) insertSession(db, { id, source: 'cron', started_at, messages: [['user', started_at]] })
+    const admit = db.prepare("INSERT INTO session_admissions (admission_id, request_id, principal_id, target_session_id, lineage_json, payload_json, payload_digest, intent, status) VALUES (?, ?, ?, ?, '[]', '{}', 'synthetic', 'queue', 'terminal')")
+    admit.run('daily', 'cron:daily:exec1', 'cron-owner', 'local-daily')
+    admit.run('digest', 'cron:daily_digest:exec1', 'cron-owner', 'local-digest')
+    // Neither malformed keys nor another principal can claim a cron run.
+    admit.run('malformed', 'cron:daily:exec:bad', 'cron-owner', 'local-digest')
+    admit.run('empty', 'cron:daily:', 'cron-owner', 'local-digest')
+    admit.run('foreign', 'cron:daily:foreign', 'human', 'local-digest')
+    db.close()
+    expect(latestCronSessionInfo(path, ['daily'], ['daily'])).toEqual(new Map([['daily', { session_id: 'local-daily', message_count: 1 }]]))
+    expect(latestCronSessionInfo(path, ['daily', 'daily_digest'], ['daily', 'daily_digest'])).toEqual(new Map([
+      ['daily_digest', { session_id: 'cron_daily_digest_20261020_120000', message_count: 1 }],
+      ['daily', { session_id: 'local-daily', message_count: 1 }],
+    ]))
+  })
+
+  it.each(['completion', 'listing'])('links a v0.22.3 local cron run in its %s', async (surface) => {
+    const sidecar = new FakeSidecar()
+    const s = await bootTestServer({ sidecar })
+    try {
+      const db = new DatabaseSync(join(s.state, 'state.db'))
+      db.exec(cronSchema.schema.join('\n'))
+      insertSession(db, { id: 'local-cron-job1', source: 'cron', started_at: 100, messages: [['user', 100], ['assistant', 101]] })
+      db.exec("INSERT INTO session_admissions (admission_id, request_id, principal_id, target_session_id, lineage_json, payload_json, payload_digest, intent, status) VALUES ('fire1', 'cron:job1:exec1', 'cron-owner', 'local-cron-job1', '[]', '{}', 'synthetic', 'queue', 'terminal')")
+      db.close()
+      const jobs = [{ id: 'job1', name: 'Morning digest', profile: null, monitor: '', continuity: false, last_run_at: 102, last_status: 'ok', toast_notifications: true }]
+      mkdirSync(join(s.state, 'cron'), { recursive: true })
+      writeFileSync(join(s.state, 'cron', 'jobs.json'), JSON.stringify({ jobs }))
+      sidecar.respond('cron.list', () => ({ jobs }))
+      if (surface === 'completion') {
+        expect(await s.deps.crons.recent(s.state, '0')).toMatchObject({ completions: [{ job_id: 'job1', session_id: 'local-cron-job1', message_count: 2 }] })
+      } else {
+        const listed = await json(await s.get('/api/sessions?show_cron_sessions=1'))
+        expect((listed.sessions as Json[]).find((row) => row.session_id === 'local-cron-job1')).toMatchObject({ title: 'Morning digest', source_tag: 'cron' })
+      }
+    } finally { await s.close() }
+  })
 
   it('falls back to id order without started_at and leaves jobs without a session out', () => {
     const path = join(dir, 'no-started-at.db')
