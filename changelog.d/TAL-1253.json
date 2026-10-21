@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Leaving a chat saves its memories to the profile the chat ran in, even if the request named another profile.",
+      "highlight": false,
+      "components": ["web"]
+    }
+  ]
+}

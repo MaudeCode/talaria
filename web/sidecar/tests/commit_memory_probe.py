@@ -1,7 +1,8 @@
 """Run on the Agent interpreter: ``chat.commit_memory`` for a cached Agent in a named profile.
 
 Prints one JSON line with what a recording memory provider saw at ``on_session_end``: the messages, the Hermes home and
-the profile's credential, after a named-profile call has switched the process to multiplexing.
+the profile's credential, after a named-profile call has switched the process to multiplexing. The Agent is built in
+``alpha`` and the request names ``beta``: the commit still runs where the Agent was built.
 """
 
 from __future__ import annotations
@@ -25,6 +26,7 @@ from talaria_sidecar.methods import Registry, chat  # noqa: E402
 
 SID = "commit-probe"
 ALPHA = Path(os.environ["HERMES_HOME"]) / "profiles" / "alpha"
+BETA = Path(os.environ["HERMES_HOME"]) / "profiles" / "beta"
 MESSAGES = [{"role": "user", "content": "remember the blue door"}, {"role": "assistant", "content": "noted"}]
 seen: list = []
 
@@ -54,10 +56,10 @@ manager.add_provider(Recording())
 agent = AIAgent.__new__(AIAgent)
 agent._memory_manager, agent.context_compressor, agent.session_id, agent._session_messages = manager, None, SID, list(MESSAGES)
 
-with scoped_home(ALPHA):  # an earlier named-profile turn leaves the process multiplexing
-    pass
+with scoped_home(ALPHA):  # a real Agent build binds its providers to the profile, which leaves the process multiplexing
+    manager.initialize_all(session_id=SID)
 registry = Registry(runtime=types.SimpleNamespace(load=lambda: None, ensure_current=lambda: None))
 chat.register(registry)
 chat._AGENT_CACHE[SID] = (agent, "sig", str(ALPHA))
-result = registry.methods["chat.commit_memory"](None, {"session_id": SID, "profile_home": str(ALPHA)})
+result = registry.methods["chat.commit_memory"](None, {"session_id": SID, "profile_home": str(BETA)})
 print(json.dumps({"result": result, "seen": seen}))

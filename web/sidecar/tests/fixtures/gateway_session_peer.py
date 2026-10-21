@@ -10,6 +10,7 @@ import time
 
 agent = Path(os.environ["HERMES_WEBUI_AGENT_DIR"])
 sys.path[:0] = [str(agent), str(agent / "tests/gateway/fixtures"), str(Path(__file__).resolve().parents[1])]
+from agent.context_compressor import SUMMARY_PREFIX
 from local_recovery_probe import Model, child_env, daemon, rpc, websocket
 from conftest import SidecarProcess
 
@@ -89,7 +90,12 @@ async def probe(home, peer, desc, *, require_gap=False):
             compressed = await asyncio.to_thread(call, "mutate", request_id="compress-stable", expected_revision=final["snapshot"]["revision"],
                 execution_generation=final["snapshot"]["execution_generation"], operation="compress", payload={})
             assert compressed["state"] == "attached" and compressed["snapshot"]["session_id"] == sid, compressed
-            assert len(compressed["snapshot"]["messages"]) < len(final["snapshot"]["messages"]), compressed
+            # v0.22.3 resumes with the whole display history (older rows archived), so the row count need not shrink.
+            def summaries(snapshot):
+                return sum(isinstance(m.get("content"), str) and m["content"].startswith(SUMMARY_PREFIX) for m in snapshot["messages"])
+            assert compressed["snapshot"]["revision"] > final["snapshot"]["revision"], compressed
+            assert summaries(compressed["snapshot"]) == summaries(final["snapshot"]) + 1, compressed
+            assert [m.get("content") for m in compressed["snapshot"]["messages"][-2:]] == ["COMPRESSION_TAIL", "RECOVERY_ACK_COMPRESSION_TAIL"], compressed
             reset = await asyncio.to_thread(call, "mutate", request_id="reset-stable", expected_revision=compressed["snapshot"]["revision"],
                 execution_generation=compressed["snapshot"]["execution_generation"], operation="reset", payload={})
             assert reset["state"] == "attached" and reset["snapshot"]["session_id"] == sid, reset

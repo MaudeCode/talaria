@@ -352,12 +352,21 @@ def test_owner_disconnect_and_restart_leave_unknown_guarded_without_resubmission
     model.wait_ready()
     retry, frames = sidecar.call("cron.run", params)
     assert [frame["event"] for frame in frames] == ["started"], "Web must acknowledge accepted recovery before its terminal outcome"
-    assert retry.get("error", {}).get("data", {}).get("condition") == "cron_execution_unverified", retry
-    assert json.loads(record_path.read_text())["execution_id"] == identity
     [after] = admissions(home)
-    assert after["admission_id"] == original["admission_id"] and after["status"] == "unknown", after
+    assert after["admission_id"] == original["admission_id"], after
     assert len(model.requests) == 1
-    assert sidecar.result("cron.output", params)["outputs"] == []
+    if (AGENT_DIR / "gateway/session_unattended_unknown.py").exists():
+        # v0.22.3 settles the lost turn as interrupted; Web books it once, like the Agent's own scheduler.
+        assert (after["status"], after["outcome"]) == ("terminal", "interrupted"), after
+        assert retry.get("result", {}).get("success") is False, retry
+        assert not record_path.exists()
+        stored = sidecar.result("cron.get", params)["job"]
+        assert stored["state"] == "scheduled" and stored["last_error"] == "interrupted", stored
+    else:
+        assert retry.get("error", {}).get("data", {}).get("condition") == "cron_execution_unverified", retry
+        assert json.loads(record_path.read_text())["execution_id"] == identity
+        assert after["status"] == "unknown", after
+        assert sidecar.result("cron.output", params)["outputs"] == []
 
 
 @requires_agent

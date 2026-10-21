@@ -467,6 +467,44 @@ def test_an_agent_evicted_during_a_memory_commit_is_released_after_the_commit(mo
     assert EVENTS == [("commit", "commit"), *_released("commit")]
 
 
+def test_profile_deletion_waits_for_a_memory_commit_under_that_profile(monkeypatch, tmp_path) -> None:
+    """A commit runs under the home its Agent was built in, whatever profile the request names, so that home's deletion
+    (and its retry) waits for it."""
+    _setup(monkeypatch)
+    monkeypatch.setattr(chat, "_PROFILE_RELEASE_TIMEOUT", 0.2)
+    committing = threading.Event()
+    gate = threading.Event()
+
+    class CommittingAgent(MemoryAgent):
+        def commit_memory_session(self, messages=None):
+            committing.set()
+            gate.wait(5)
+            EVENTS.append(("commit", self.kwargs["session_id"], getattr(_HOME, "home", None)))
+
+    monkeypatch.setattr(chat, "_agent_class", lambda: CommittingAgent)
+    alpha, beta = tmp_path / "profiles" / "alpha", tmp_path / "profiles" / "beta"
+    assert chat.start(Ctx(), {**_params("st-commit", "commit"), "profile_home": str(alpha)})["status"] == "completed"
+    deleted: list = []
+    monkeypatch.setattr(profiles, "delete_profile", lambda base_home, name: deleted.append(name))
+    registry = Registry(runtime=types.SimpleNamespace(load=lambda: None, ensure_current=lambda: None))  # type: ignore[arg-type]
+    chat.register(registry)
+    profiles.register(registry)
+    reply: dict = {}
+    worker = threading.Thread(target=lambda: reply.update(registry.methods["chat.commit_memory"](Ctx(), {"session_id": "commit", "profile_home": str(beta)})))
+    worker.start()
+    assert committing.wait(5)
+    for _attempt in range(2):  # a retry keeps waiting although the first attempt already took the agent out of the cache
+        with pytest.raises(RpcError, match="still saving memory"):
+            registry.methods["profiles.delete"](Ctx(), {"base_home": str(tmp_path), "name": "alpha"})
+    assert deleted == []
+    gate.set()
+    worker.join(5)
+    assert reply == {"committed": True}
+    assert registry.methods["profiles.delete"](Ctx(), {"base_home": str(tmp_path), "name": "alpha"}) == {"ok": True}
+    assert deleted == ["alpha"]
+    assert EVENTS == [("commit", "commit", str(alpha)), ("on_session_end", "commit", TRANSCRIPT, str(alpha)), ("release_clients", "commit")]
+
+
 def test_a_release_whose_profile_scope_fails_still_closes_clients_and_blocks_the_delete(monkeypatch, tmp_path) -> None:
     _setup(monkeypatch)
     alpha = tmp_path / "profiles" / "alpha"
