@@ -143,6 +143,23 @@ describe('SidecarClient version mismatch', () => {
     expect(seen[2]).toBe('ready {}')
   })
 
+  it('runs the ready gates before a runtime recovered in place turns ready through runtime.status', async () => {
+    const dir = mkdtempSync(resolve(tmpdir(), 'talaria-sidecar-ready-gate-recovery-'))
+    const fixture = resolve(import.meta.dirname, '../../../contracts/fixtures/sidecar/runtime.json')
+    const script = `const fs=require('fs');const value=JSON.parse(fs.readFileSync(process.argv[1],'utf8'))['runtime.handshake'][0].result;require('readline').createInterface({input:process.stdin}).on('line',line=>{const req=JSON.parse(line);const send=result=>process.stdout.write(JSON.stringify({jsonrpc:'2.0',id:req.id,result})+'\\n');if(req.method==='runtime.handshake')send({...value,stale:true,agent_source_changed:true});if(req.method==='runtime.status')send(value);if(req.method==='worktree.retain')send({results:{}})})`
+    client = new SidecarClient({ python: process.execPath, command: [process.execPath, '-e', script, fixture], agentDir: '', sidecarDir: dir, hermesHome: dir, log: () => undefined })
+    const seen: string[] = []
+    await client.start()
+    await client.addReadyGate(async (call) => { await call('worktree.retain', { paths: [] }); seen.push(client!.status) })
+    expect(client.status).toBe('incompatible')
+    expect(seen).toEqual([])
+    await client.call('runtime.status', {})
+    expect(seen).toEqual(['incompatible'])
+    expect(client.status).toBe('ready')
+    await client.call('runtime.status', {})
+    expect(seen).toHaveLength(1)
+  })
+
   it('a closed client cannot publish a late handshake or notify recovery', async () => {
     const dir = mkdtempSync(resolve(tmpdir(), 'talaria-sidecar-closed-handshake-'))
     const fixture = resolve(import.meta.dirname, '../../../contracts/fixtures/sidecar/runtime.json')

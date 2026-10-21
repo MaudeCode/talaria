@@ -180,6 +180,11 @@ export class SidecarClient implements SidecarLike {
     try { await gate(call) } catch (error) { this.log(`[sidecar] ready gate failed: ${String(error)}`) }
   }
 
+  /** Every gate, on the raw channel: the status is not `ready` yet, so `call` would refuse Agent methods. */
+  private async runReadyGates(): Promise<void> {
+    for (const gate of [...this.readyGates]) await this.runReadyGate(gate, (method, params, opts) => this.rawCall(method, params, { timeoutMs: READY_GATE_TIMEOUT_MS, ...opts }))
+  }
+
   /** Spawn and handshake. Resolves with the handshake payload; rejects only on spawn failure. */
   async start(): Promise<RuntimeDescribe> {
     if (this.closed) throw new SidecarError('sidecar client closed', { condition: 'sidecar_unavailable' })
@@ -213,7 +218,7 @@ export class SidecarClient implements SidecarLike {
       if (this.child !== child || this.closed) throw new SidecarError('sidecar handshake was superseded', { condition: 'sidecar_unavailable' })
       if (describe.rpc_version !== SIDECAR_RPC_VERSION) throw new SidecarError('sidecar RPC version mismatch', { condition: 'sidecar_rpc_version_mismatch' })
       if (describe.compatible && !describe.stale) {
-        for (const gate of [...this.readyGates]) await this.runReadyGate(gate, (method, params, opts) => this.rawCall(method, params, { timeoutMs: READY_GATE_TIMEOUT_MS, ...opts }))
+        await this.runReadyGates()
         if (this.child !== child || this.closed) throw new SidecarError('sidecar handshake was superseded', { condition: 'sidecar_unavailable' })
       }
       this.describe = describe
@@ -317,11 +322,18 @@ export class SidecarClient implements SidecarLike {
     const child = this.child
     const refreshStatus = method === 'runtime.status' && (this.status === 'ready' || this.status === 'incompatible')
     const statusSequence = method === 'runtime.status' ? ++this.runtimeStatusSequence : 0
-    return this.rawCall(method, params, opts).then((result) => {
-      if (refreshStatus && statusSequence === this.runtimeStatusSequence && this.child === child && !this.closed && !opts.signal?.aborted && (this.status === 'ready' || this.status === 'incompatible')) {
-        this.describe = result as RuntimeDescribe
-        this.status = this.describe.compatible && !this.describe.stale ? 'ready' : 'incompatible'
+    const current = () => refreshStatus && statusSequence === this.runtimeStatusSequence && this.child === child && !this.closed && !opts.signal?.aborted && (this.status === 'ready' || this.status === 'incompatible')
+    return this.rawCall(method, params, opts).then(async (result) => {
+      if (!current()) return result
+      const describe = result as RuntimeDescribe
+      const ready = describe.compatible && !describe.stale
+      // A runtime recovered in place turns ready here without a new handshake, so its ready gates run first.
+      if (ready && this.status !== 'ready') {
+        await this.runReadyGates()
+        if (!current()) return result
       }
+      this.describe = describe
+      this.status = ready ? 'ready' : 'incompatible'
       return result
     })
   }
