@@ -636,8 +636,11 @@ export const toolsRouter = os.router({
       const settings = new Map(declared.map((entry) => [entry.key, entry.fields]))
       // So does an OAuth status failure.
       const oauth = await pluginOAuthClients(ctx).catch((error: unknown) => { ctx.deps.log(`[plugins] oauth status failed: ${str((error as Error).message)}`); return new Map<string, PluginOAuthClientView[]>() })
-      const plugins = result.plugins.map((plugin) => ({
-        ...plugin, ...(settings.has(plugin.key) ? { settings: settings.get(plugin.key) } : {}), ...(oauth.has(plugin.key) ? { oauth_clients: oauth.get(plugin.key) } : {}),
+      const plugins = result.plugins.map(({ update_available, latest_revision, ...plugin }) => ({
+        ...plugin,
+        ...(update_available === undefined ? {} : { update: { available: update_available, ...(latest_revision ? { latest_revision } : {}) } }),
+        ...(settings.has(plugin.key) ? { settings: settings.get(plugin.key) } : {}),
+        ...(oauth.has(plugin.key) ? { oauth_clients: oauth.get(plugin.key) } : {}),
       }))
       // An advisory failure leaves the list itself readable.
       const advisory = await pluginIsolationAdvisory(ctx).catch((error: unknown) => { ctx.deps.log(`[plugins] isolation advisory failed: ${str((error as Error).message)}`); return false })
@@ -645,6 +648,15 @@ export const toolsRouter = os.router({
     } catch (error) {
       ctx.deps.log(`[plugins] visibility payload failed: ${str((error as Error).message)}`)
       return { plugins: [], empty: true, supported_hooks: hooks, read_only: true, unavailable: true }
+    }
+  })),
+  pluginUpdate: os.pluginUpdate.handler(({ input, context: { ctx } }) => run(async () => {
+    try {
+      return await runningSidecar(ctx).call('plugins.update', { profile_home: home(ctx), key: input.key, accept_caution: input.accept_caution, ...(input.consent_token ? { consent_token: input.consent_token } : {}) }, { timeoutMs: 0 })
+    } catch (error) {
+      if (error instanceof SidecarError && error.condition === 'plugin_not_found') throw new HttpError(404, error.message)
+      if (error instanceof SidecarError && ['plugin_update_refused', 'plugin_update_consent_changed'].includes(error.condition)) throw new HttpError(409, error.message, { condition: error.condition })
+      throw error
     }
   })),
   pluginSettings: os.pluginSettings.handler(({ input, context: { ctx } }) => run(() => serializePluginSettingsSave(async () => {

@@ -1021,6 +1021,8 @@ export type PluginSettingView = z.infer<typeof PluginSettingViewSchema>
 export const PluginOAuthClientViewSchema = PluginOAuthClientSchema.extend({ can_sign_out: z.boolean() })
 export type PluginOAuthClientView = z.infer<typeof PluginOAuthClientViewSchema>
 export const PluginSchema = z.looseObject({ key: z.string(), name: z.string().optional(), kind: z.string().optional(), enabled: z.boolean().optional(), description: z.string().optional(), version: z.string().optional(), activation: z.string().optional(), is_active_provider: z.boolean().optional(), hooks: z.array(Json).optional(),
+  /** Stored Agent check, absent when the installed Agent lacks cached update support. */
+  update: z.object({ available: z.boolean(), latest_revision: z.string().optional() }).optional(),
   /** TAL-806: the manifest's `config_schema` fields with current values; absent when the plugin declares none. */
   settings: z.array(PluginSettingViewSchema).optional(),
   /**

@@ -1,6 +1,11 @@
 {
   "schemaVersion": 1,
   "families": {
+    "tests/test_plugin_updates.py::test_plugin_cached_update_and_scan_consent": {
+      "layer": "compatibility",
+      "reason": "Real Agent cached updates, local Git staging and scan APIs; controlled scanner verdicts retain Agent policy, and only final PM publication uses disposable trees.",
+      "cases": [""]
+    },
     "tests/test_chat_request_overrides.py::test_auxiliary_privacy_routes_use_real_agent_policy_without_hidden_provider_hops": {
       "layer": "compatibility",
       "reason": "Real Agent auxiliary resolver, provider profiles and call_llm stream path must preserve deny/ZDR policy without hidden provider hops; legacy Agent APIs must refuse before transport. Only credentials and the final transport are faked.",
