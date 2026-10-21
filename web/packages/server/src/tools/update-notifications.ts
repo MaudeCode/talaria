@@ -314,6 +314,14 @@ export class UpdateNotificationStore {
     await this.save()
   }
 
+  /** Drop every server-asked question about a deleted profile, open or answered, so a profile recreated with its name starts clean. */
+  async forgetProfileQuestions(profile: string): Promise<void> {
+    const kept = this.rows.filter((row) => !(row.owner === '*' && row.visibility === 'profile' && row.profile === profile))
+    if (kept.length === this.rows.length) return
+    this.rows = kept
+    await this.save()
+  }
+
   /** The open question `id` of `kind` this scope sees, or null. */
   openQuestion(scope: UpdateNotificationScope, id: string, kind: string): PublicUpdateNotification | null {
     const row = this.visible(scope, id)

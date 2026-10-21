@@ -33,6 +33,8 @@ export type PruneAnswer = { notification: PublicUpdateNotification } | { refused
 export class PruneAdvice {
   /** When each profile was last checked in this process. */
   private readonly checked = new Map<string, number>()
+  /** Questions an answer is running for; a second answer is refused until the first settles. */
+  private readonly answering = new Set<string>()
   constructor(private readonly deps: PruneAdviceDeps) {}
 
   /** A hygiene sweep: each profile is checked once per process start and once per window; a failed check retries next sweep. */
@@ -51,11 +53,25 @@ export class PruneAdvice {
     if (!choice || !this.deps.notifications.openQuestion(scope, id, AUTO_PRUNE_KIND)) return null
     const sidecar = this.deps.sidecar()
     if (!sidecar) return { refused: 'Hermes Agent is not running.' }
-    const { output } = await sidecar.call('commands.exec', { profile_home: home, command: `/autoprune ${choice}` }, { timeoutMs: 120_000 })
-    // The Agent stops asking only once it saved the answer; a config it could not write keeps it asking.
-    if ((await sidecar.call('state_db.prune_advice', { profile_home: home }, { timeoutMs: 120_000 })).advice) return { refused: output }
-    const notification = await this.deps.notifications.answerQuestion(scope, id, AUTO_PRUNE_KIND, actionId, output)
-    return notification ? { notification } : null
+    // Reserved before the first await, so two answers can never both run: the recorded answer is the one the Agent saved.
+    if (this.answering.has(id)) return { refused: 'This question is already being answered.' }
+    this.answering.add(id)
+    try {
+      const { output } = await sidecar.call('commands.exec', { profile_home: home, command: `/autoprune ${choice}` }, { timeoutMs: 120_000 })
+      // The Agent stops asking only once it saved the answer; a config it could not write keeps it asking.
+      if ((await sidecar.call('state_db.prune_advice', { profile_home: home }, { timeoutMs: 120_000 })).advice) return { refused: output }
+      const notification = await this.deps.notifications.answerQuestion(scope, id, AUTO_PRUNE_KIND, actionId, output)
+      return notification ? { notification } : null
+    } finally {
+      this.answering.delete(id)
+    }
+  }
+
+  /** A deleted profile: its next check is due at once, and its questions are gone. */
+  async forget(name: string): Promise<void> {
+    this.checked.delete(name)
+    // The profile is already gone: a question that could not be dropped must not fail its deletion.
+    try { await this.deps.notifications.forgetProfileQuestions(name) } catch (error) { this.deps.log(`[webui] WARNING: auto-prune questions for deleted profile ${name} were kept: ${(error as Error).message}`) }
   }
 
   /** Ask or withdraw one profile's question now; also run after `/autoprune` from the composer, outside the window. False when the Agent did not answer. */

@@ -528,6 +528,7 @@ export async function createDeps(opts: CreateDepsOptions): Promise<AppDeps> {
   }
   const profiles = new ProfileService({
     sidecar: () => sidecar,
+    forgetProfile: (name) => pruneAdvice.forget(name),
     baseHome,
     profileHome,
     isolatedProfileMode,

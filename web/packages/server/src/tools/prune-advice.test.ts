@@ -1,4 +1,4 @@
-import { mkdirSync, rmSync } from 'node:fs'
+import { mkdirSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
 import { FakeSidecar } from '../sidecar/fake.js'
@@ -33,7 +33,7 @@ async function boot(options: { saves?: boolean } = {}) {
   const adviceCalls = () => sidecar.calls.filter((call) => call.method === 'state_db.prune_advice').length
   const questions = async (): Promise<Json[]> => ((await (await s.get('/api/update-notifications')).json()) as { notifications: Json[] }).notifications.filter((row) => row.kind === AUTO_PRUNE_KIND)
   const post = (path: string, body: unknown) => s.get(path, { method: 'POST', body: JSON.stringify(body), headers: { 'content-type': 'application/json' } })
-  return { s, low, commands, adviceCalls, questions, post, tick: (seconds: number) => { clock += seconds } }
+  return { s, sidecar, low, commands, adviceCalls, questions, post, tick: (seconds: number) => { clock += seconds } }
 }
 
 describe('auto-prune question (TAL-1274)', () => {
@@ -99,6 +99,45 @@ describe('auto-prune question (TAL-1274)', () => {
     t.s.deps.profiles.beginWrite = beginWrite
     await t.s.deps.pruneAdvice.sweep()
     expect(t.adviceCalls()).toBe(2)
+  })
+
+  it('runs only the first of two concurrent answers, so the recorded answer is the one the Agent saved', async () => {
+    const t = await boot()
+    t.low.add(t.s.state)
+    await t.s.deps.pruneAdvice.sweep()
+    const [question] = await t.questions()
+    let finish: () => void = () => undefined
+    const exec = t.sidecar.responderFor('commands.exec')!
+    t.sidecar.respond('commands.exec', async (params, emit, opts) => { await new Promise<void>((resolve) => { finish = resolve }); return exec(params, emit, opts) })
+    const first = t.post(`/api/update-notifications/${String(question?.id)}/actions/autoprune_off`, { perform: true })
+    await expect.poll(() => t.sidecar.calls.filter((call) => call.method === 'commands.exec').length).toBe(1)
+    const second = await t.post(`/api/update-notifications/${String(question?.id)}/actions/autoprune_on`, { perform: true })
+    expect(second.status).toBe(409)
+    expect(JSON.stringify(await second.json())).toContain('already being answered')
+    finish()
+    expect((await first).status).toBe(200)
+    expect(t.commands).toEqual([{ home: t.s.state, command: '/autoprune off' }])
+    expect(await t.questions()).toMatchObject([{ phase: 'succeeded', acknowledged_action_id: 'autoprune_off' }])
+  })
+
+  it('forgets a deleted profile, so a profile recreated with its name is checked afresh with no old question', async () => {
+    const t = await boot()
+    const work = join(t.s.state, 'profiles', 'work')
+    mkdirSync(work, { recursive: true })
+    writeFileSync(join(work, 'config.yaml'), '{}\n')
+    t.low.add(work)
+    t.sidecar.respond('profiles.delete', (params) => { rmSync(join(params.base_home, 'profiles', params.name), { recursive: true, force: true }); return { ok: true } })
+    await t.s.deps.pruneAdvice.sweep()
+    const workScope = { owner: 'local-owner', profile: 'work', serverOwner: true }
+    expect((await t.s.deps.updateNotifications.list(workScope)).notifications.map((row) => row.kind)).toEqual([AUTO_PRUNE_KIND])
+    await t.s.deps.profiles.delete('work', 'default')
+    expect((await t.s.deps.updateNotifications.list(workScope)).notifications).toEqual([])
+    // Recreated within the window (its tombstone lifted, as a successful create does): it is checked again at once.
+    mkdirSync(work, { recursive: true })
+    t.s.deps.profiles.beginWrite = () => Promise.resolve(() => undefined)
+    const calls = t.adviceCalls()
+    await t.s.deps.pruneAdvice.sweep()
+    expect(t.adviceCalls()).toBe(calls + 1)
   })
 
   it('publishes nothing when the Agent does not ask, including Agents before v0.22.3', async () => {
