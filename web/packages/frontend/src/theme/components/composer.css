@@ -117,14 +117,26 @@
 /* Attached extension (T3 ContextStrip): inset from the card, seamed to its bottom edge. */
 .composer-strip{box-sizing:border-box;width:calc(100% - var(--space-4) * 2);max-width:calc(var(--msg-max) - var(--space-4) * 2);margin:0 auto;border:1px solid var(--composer-border-color);background:color-mix(in srgb,var(--composer-bg) var(--composer-glass-mix),transparent);-webkit-backdrop-filter:var(--composer-backdrop);backdrop-filter:var(--composer-backdrop)}
 :root[data-chat-width="full"] .composer-strip{max-width:none}
-/* Status chips (TAL-1078, after the App's StatusChip): separate glass capsules floating a gap above the card, wrapping
-   within its width. The row itself lets pointers through to the transcript; only the chips take them. */
-.composer-notices{display:flex;flex-wrap:wrap;align-items:flex-end;gap:var(--space-2);max-width:var(--msg-max);margin:0 auto var(--space-2);font-size:var(--font-size-sm);color:var(--muted);pointer-events:none}
-:root[data-chat-width="full"] .composer-notices{max-width:none}
-.composer-notice{box-sizing:border-box;display:flex;align-items:center;gap:var(--space-1);min-width:0;max-width:100%;min-height:32px;padding:calc(var(--space-1) / 2) var(--space-1) calc(var(--space-1) / 2) var(--space-3);border:1px solid var(--composer-border-color);border-radius:calc(var(--r-lg) + var(--space-1));background:color-mix(in srgb,var(--composer-bg) var(--composer-glass-mix),transparent);-webkit-backdrop-filter:var(--composer-backdrop);backdrop-filter:var(--composer-backdrop);box-shadow:var(--composer-shadow);animation:composer-notice-in .18s cubic-bezier(.2,.8,.2,1)}
+/* Status chips (TAL-1078; TAL-1300, after the App's StatusChipGroup): glass capsules floating a gap above the card,
+   centered over it. ComposerNotices measures the row: chips that fit share one pill with a divider between them
+   (is-grouped); otherwise they stack, each its own capsule (is-stacked). Unclassed, they sit unshrunk in one row inside
+   the pill's border for that measurement. The track is the card's width, which the fit compares them with; it lets
+   pointers through to the transcript, and only the chips take them. */
+.composer-notices-track{display:flex;justify-content:center;max-width:var(--msg-max);margin:0 auto var(--space-2);pointer-events:none}
+.composer-notices{box-sizing:border-box;display:flex;align-items:center;max-width:100%;border:1px solid transparent;font-size:var(--font-size-sm);color:var(--muted)}
+.composer-notices.is-stacked{flex-direction:column;gap:var(--space-2)}
+/* One glass surface for a chip and for the pill; a tone tints its own chip or segment. */
+.composer-notice,.composer-notices.is-grouped{border:1px solid var(--composer-border-color);border-radius:calc(var(--r-lg) + var(--space-1));background:linear-gradient(var(--notice-tint,transparent),var(--notice-tint,transparent)),color-mix(in srgb,var(--composer-bg) var(--composer-glass-mix),transparent);-webkit-backdrop-filter:var(--composer-backdrop);backdrop-filter:var(--composer-backdrop);box-shadow:var(--composer-shadow)}
+.composer-notice{box-sizing:border-box;display:flex;flex:none;align-items:center;gap:var(--space-1);min-width:0;max-width:100%;min-height:32px;padding:calc(var(--space-1) / 2) var(--space-1) calc(var(--space-1) / 2) var(--space-3);animation:composer-notice-in .18s cubic-bezier(.2,.8,.2,1)}
 .composer-notice.is-leaving{animation:composer-notice-out .22s ease-in forwards;pointer-events:none}
-.composer-notice[data-tone="warning"]{color:var(--amber);background:linear-gradient(color-mix(in srgb,var(--amber) 9%,transparent),color-mix(in srgb,var(--amber) 9%,transparent)),color-mix(in srgb,var(--composer-bg) var(--composer-glass-mix),transparent)}
-.composer-notice[data-tone="error"]{color:var(--error);background:linear-gradient(color-mix(in srgb,var(--error) 8%,transparent),color-mix(in srgb,var(--error) 8%,transparent)),color-mix(in srgb,var(--composer-bg) var(--composer-glass-mix),transparent)}
+.composer-notice[data-tone="warning"]{--notice-tint:color-mix(in srgb,var(--amber) 9%,transparent);color:var(--amber)}
+.composer-notice[data-tone="error"]{--notice-tint:color-mix(in srgb,var(--error) 8%,transparent);color:var(--error)}
+/* A grouped chip is a segment of the pill: no surface of its own, its tint clipped to the pill's ends, and the App's
+   18 pt divider before it. */
+.composer-notices.is-grouped .composer-notice{position:relative;border-color:transparent;border-radius:0;background:linear-gradient(var(--notice-tint,transparent),var(--notice-tint,transparent));-webkit-backdrop-filter:none;backdrop-filter:none;box-shadow:none}
+.composer-notices.is-grouped .composer-notice:first-child{border-start-start-radius:inherit;border-end-start-radius:inherit}
+.composer-notices.is-grouped .composer-notice:last-child{border-start-end-radius:inherit;border-end-end-radius:inherit}
+.composer-notices.is-grouped .composer-notice+.composer-notice::before{content:"";position:absolute;inset-inline-start:-1px;top:50%;width:1px;height:18px;transform:translateY(-50%);background:var(--composer-border-color)}
 .composer-notice-content{display:flex;flex:1 1 auto;align-items:center;gap:calc(var(--space-1) * 1.5);min-width:0;padding-right:var(--space-2)}
 .composer-notice-open{padding-block:calc(var(--space-1) / 2);border:0;background:none;font:inherit;color:inherit;text-align:start;cursor:pointer}
 .composer-notice-open:hover{color:var(--text)}

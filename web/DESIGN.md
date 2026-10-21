@@ -66,7 +66,7 @@ needed to explain a visible recovery or error state.
 
 ### Composer
 
-The composer is the command surface: a floating glass card (24 px radius in the default skin) with borderless, muted controls, separate status chips floating a gap above it and a context strip attached below. Keep it legible and focused: transparent inactive controls, circular primary actions, no theatrical hover scaling.
+The composer is the command surface: a floating glass card (24 px radius in the default skin) with borderless, muted controls, status chips centered a gap above it (one shared pill when they fit, stacked when they do not) and a context strip attached below. Keep it legible and focused: transparent inactive controls, circular primary actions, no theatrical hover scaling.
 
 ## Do's and Don'ts
 

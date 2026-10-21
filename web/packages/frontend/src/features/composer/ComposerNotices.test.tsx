@@ -82,4 +82,16 @@ describe('ComposerNotices (TAL-1078)', () => {
     await new Promise((r) => setTimeout(r, 260))
     expect(container.querySelector('[data-notice="x"]')).toHaveTextContent('New')
   })
+
+  it('shares one pill between staying chips and lets a set that leaves together fade as separate capsules (TAL-1300)', async () => {
+    const { container, update } = setup([{ id: 'a', content: 'A' }])
+    const row = () => container.querySelector('.composer-notices')
+    expect(row()).toHaveClass('is-stacked')
+    update([{ id: 'a', content: 'A' }, { id: 'b', content: 'B' }])
+    await waitFor(() => expect(row()).toHaveClass('is-grouped'))
+    update([])
+    await waitFor(() => expect(row()?.querySelectorAll('.composer-notice.is-leaving')).toHaveLength(2))
+    await waitFor(() => expect(row()).toHaveClass('is-stacked'))
+    expect(row()).not.toHaveClass('is-grouped')
+  })
 })

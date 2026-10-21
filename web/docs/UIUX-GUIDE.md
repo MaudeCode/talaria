@@ -253,7 +253,9 @@ detail in the shared `Dialog`: the queue editor behind the queued count, a
 `/btw` answer, command output, background work, and the full text of a long
 runtime notice. The dialog closes when its notice ends and focus returns to the
 chip, or to the composer once the chip is gone; a chat switch closes it. Chips
-wrap within the card's width with a gap between them, which passes pointers
+center over the card, after the App's `StatusChipGroup` (TAL-1300): chips that
+fit on one row share one pill with a divider between them; otherwise they stack,
+each its own capsule within the card's width. The row passes pointers
 through to the transcript. New transient status is a new entry, not new
 composer chrome; `useRuntimeNotices` supplies the connection and runtime ones (offline,
 Talaria server unreachable, agent unavailable, provider failure, turn error with
