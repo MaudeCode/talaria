@@ -983,7 +983,7 @@ describe('indexed sidebar window (TAL-1163)', () => {
     const legacy = agentDb(name.replaceAll(' ', '-'), ddl)
     for (const [pass, opts] of [['interactive', interactive], ['cron', cron]] as const) {
       const before = read(legacy, opts)
-      expect(before.sql).toContain('ORDER BY COALESCE((SELECT MAX(mx.timestamp) FROM messages mx WHERE mx.session_id = s.id), s.started_at) DESC')
+      expect(before.sql).toContain('ORDER BY COALESCE((SELECT MAX(mx.timestamp) FROM messages mx INDEXED BY idx_messages_session WHERE mx.session_id = s.id), s.started_at) DESC')
       expect(before.ids).toEqual(expected[pass])
       expect(read(indexed, opts).rows).toEqual(before.rows)
     }

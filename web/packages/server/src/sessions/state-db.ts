@@ -333,6 +333,11 @@ function freshestActivity(lastActivityAt: string, lastMessage: string): string {
   return `MAX(COALESCE(${lastActivityAt}, 0), COALESCE(${lastMessage}, 0), COALESCE(s.started_at, 0))`
 }
 
+/** Stale Agent statistics can favor a non-covering index and read every message row. */
+function lastMessageTimestamp(indexed: boolean, alias = 'm'): string {
+  return `(SELECT MAX(${alias}.timestamp) FROM messages ${alias}${indexed ? ' INDEXED BY idx_messages_session' : ''} WHERE ${alias}.session_id = s.id)`
+}
+
 interface LocalLineage { owner: string; ids: string[]; context: string[]; rows: Dict[]; title: unknown }
 const LOCAL_POLICY_PREFIX = 'gateway.local_policy.v1:'
 
@@ -345,7 +350,7 @@ function localLineages(db: DatabaseSync, sid?: string): Map<string, LocalLineage
   const meta = db.prepare('SELECT value FROM state_meta WHERE key = ?')
   const fetch = db.prepare('SELECT * FROM sessions WHERE id IN (SELECT value FROM json_each(?))')
   const messageCols = tableColumns(db, 'messages')
-  const lastMessage = ['session_id', 'timestamp'].every((c) => messageCols.has(c)) ? '(SELECT MAX(m.timestamp) FROM messages m WHERE m.session_id = s.id)' : 'NULL'
+  const lastMessage = ['session_id', 'timestamp'].every((c) => messageCols.has(c)) ? lastMessageTimestamp(tableIndexes(db, 'messages').has('idx_messages_session')) : 'NULL'
   const activity = freshestActivity(cols.has('last_activity_at') ? 's.last_activity_at' : 'NULL', lastMessage)
   // Agent _CHAIN_STEP_SQL prefers a compression child, then a live child, then recency and id.
   const children = db.prepare(`SELECT s.* FROM sessions s WHERE s.parent_session_id = ? ORDER BY CASE WHEN s.end_reason = 'compression' THEN 0 WHEN s.ended_at IS NULL THEN 1 ELSE 2 END, ${activity} DESC, s.started_at DESC, s.id DESC`)
@@ -545,7 +550,7 @@ export function readImportableAgentSessionRowBatches(dbPath: string, queries: Re
             ? "(SELECT COUNT(*) FROM (SELECT 1 FROM messages um WHERE um.session_id = s.id AND um.role = 'user' LIMIT 2))"
             : "EXISTS(SELECT 1 FROM messages um WHERE um.session_id = s.id AND LOWER(um.role) = 'user')"
         } else userCountExpr = actualCountExpr
-        baseLastActivityExpr = messagesHasTimestamp ? '(SELECT MAX(lm.timestamp) FROM messages lm WHERE lm.session_id = s.id)' : 'NULL'
+        baseLastActivityExpr = messagesHasTimestamp ? lastMessageTimestamp(messagesIndexPresent, 'lm') : 'NULL'
       } else {
         actualCountExpr = `COUNT(m.${countCol})`
         userCountExpr = messageCols.has('role') ? "EXISTS(SELECT 1 FROM messages um WHERE um.session_id = s.id AND LOWER(um.role) = 'user')" : `COUNT(m.${countCol})`
@@ -595,7 +600,7 @@ export function readImportableAgentSessionRowBatches(dbPath: string, queries: Re
         candidateOrder = 'ORDER BY COALESCE(lm.last_message_at, s.started_at) DESC, s.started_at DESC'
       } else if (messagesHasSessionId && messagesHasTimestamp) {
         orderBy = messagesIndexPresent ? 'ORDER BY COALESCE(last_activity, s.started_at) DESC' : 'ORDER BY COALESCE(MAX(m.timestamp), s.started_at) DESC'
-        candidateOrder = 'ORDER BY COALESCE((SELECT MAX(mx.timestamp) FROM messages mx WHERE mx.session_id = s.id), s.started_at) DESC, s.started_at DESC'
+        candidateOrder = `ORDER BY COALESCE(${lastMessageTimestamp(messagesIndexPresent, 'mx')}, s.started_at) DESC, s.started_at DESC`
       }
       const selectSql = `SELECT s.id, s.title, s.model, s.message_count, s.started_at, s.source, ${['model_config', 'session_source', 'user_id', 'chat_id', 'chat_type', 'thread_id', 'session_key', 'origin_chat_id', 'origin_user_id', 'platform', 'parent_session_id', 'ended_at', 'end_reason'].map(col).join(', ')}, ${actualCountExpr} AS actual_message_count, ${userCountExpr} AS actual_user_message_count, ${lastActivityExpr} AS last_activity`
       let raw: Dict[]
@@ -1601,7 +1606,7 @@ export function insightsSessionRows(dbPath: string, cutoff: number): Dict[] {
     const hasMessages = messageCols.has('session_id') && messageCols.has('timestamp')
     const indexed = hasMessages && tableIndexes(db, 'messages').has('idx_messages_session')
     // Without the index a per-session lookup scans messages once per session; one grouped scan replaces it.
-    const lastMessage = !hasMessages ? 'NULL' : indexed ? '(SELECT MAX(m.timestamp) FROM messages m WHERE m.session_id = s.id)' : 'lm.last_message_at'
+    const lastMessage = !hasMessages ? 'NULL' : indexed ? lastMessageTimestamp(indexed) : 'lm.last_message_at'
     const join = hasMessages && !indexed ? 'LEFT JOIN (SELECT session_id, MAX(timestamp) AS last_message_at FROM messages GROUP BY session_id) lm ON lm.session_id = s.id' : ''
     const source = cols.has('source') ? "LOWER(COALESCE(s.source, '')) != 'webui'" : '1'
     const rows = db.prepare(`SELECT * FROM (SELECT s.id AS id, ${col('model')} AS model, ${col('message_count')} AS message_count, ${col('input_tokens')} AS input_tokens,
