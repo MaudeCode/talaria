@@ -445,6 +445,10 @@ export function stateDbReadFailure(error: unknown): AgentStorage {
   return { state: 'unavailable', reason: `Agent session storage (state.db) could not be read: ${error instanceof Error ? error.message : String(error)}.` }
 }
 
+function outdatedStateDbStorage(): AgentStorage {
+  return { state: 'outdated', reason: "state.db has no 'source' column (older hermes-agent?). Agent sessions unavailable. Upgrade hermes-agent to fix this." }
+}
+
 /**
  * TAL-785: whether `state.db` can serve the session list: `corrupt` when SQLite reports the file damaged, `unavailable`
  * when it cannot be read for another reason (permissions, a lock, an I/O error), `outdated` when a readable database
@@ -456,7 +460,7 @@ export function stateDbStorage(dbPath: string): AgentStorage {
   try {
     const db = openStateDbReadonly(dbPath)
     try {
-      if (!tableColumns(db, 'sessions').has('source')) return { state: 'outdated', reason: `state.db has no 'source' column (older hermes-agent?). Agent sessions unavailable. Upgrade hermes-agent to fix this.` }
+      if (!tableColumns(db, 'sessions').has('source')) return outdatedStateDbStorage()
     } finally {
       finishStateDbRead(db)
     }
@@ -494,33 +498,43 @@ export function setStateDbReadDelayForTests(ms: number): void { readDelayMs = ms
  * `idx_messages_session` exactly as Python does when its heal fails.
  */
 export function readImportableAgentSessionRows(dbPath: string, opts: ReadRowsOptions = {}): Dict[] {
-  if (!existsSync(dbPath)) return []
-  const limit = opts.limit === undefined ? 200 : opts.limit
-  const exclude = opts.excludeSources === undefined ? ['cron', 'webui'] : opts.excludeSources
-  const include = opts.includeSources ?? null
+  const result = readImportableAgentSessionRowBatches(dbPath, [opts]).rows[0]!
+  if (result instanceof Error) throw result
+  return result
+}
+
+/** Per-query failures preserve healthy sidebar kinds while still reporting damaged storage. */
+export interface AgentSessionRowBatches { rows: (Dict[] | Error)[]; storage: AgentStorage }
+
+/** All listing windows share one read snapshot, schema, validated local lineages and ownership lookup. */
+export function readImportableAgentSessionRowBatches(dbPath: string, queries: ReadRowsOptions[]): AgentSessionRowBatches {
+  if (!existsSync(dbPath)) return { rows: queries.map(() => []), storage: AGENT_STORAGE_OK }
   if (readDelayMs > 0) Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, readDelayMs)
   const db = openStateDbReadonly(dbPath)
   try {
-    const local = localLineages(db, opts.sessionIds?.length === 1 ? opts.sessionIds[0] : undefined)
     const sessionCols = tableColumns(db, 'sessions')
     const messageCols = tableColumns(db, 'messages')
     if (!sessionCols.has('source')) {
       if (!warnedNoSourceColumn.has(dbPath)) {
         warnedNoSourceColumn.add(dbPath)
-        opts.log?.(`[webui] agent session listing skipped: state.db at ${dbPath} has no 'source' column (older hermes-agent?). Agent sessions unavailable. Upgrade hermes-agent to fix this.`)
+        queries[0]?.log?.(`[webui] agent session listing skipped: state.db at ${dbPath} has no 'source' column (older hermes-agent?). Agent sessions unavailable. Upgrade hermes-agent to fix this.`)
       }
-      return []
+      return { rows: queries.map(() => []), storage: outdatedStateDbStorage() }
     }
+    const only = queries.length === 1 ? queries[0]?.sessionIds : undefined
+    const local = localLineages(db, only?.length === 1 ? only[0] : undefined)
     const col = (name: string): string => (sessionCols.has(name) ? `s.${name}` : `NULL AS ${name}`)
     const messagesHasSessionId = messageCols.has('session_id')
     const messagesHasTimestamp = messageCols.has('timestamp')
     const countCol = messageCols.has('id') ? 'id' : 'session_id'
     const messageIndexes = messagesHasSessionId && messagesHasTimestamp ? tableIndexes(db, 'messages') : new Set<string>()
+    const sessionIndexes = tableIndexes(db, 'sessions')
+    const hasPolicies = Boolean(db.prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'state_meta'").get())
     const messagesIndexPresent = messageIndexes.has('idx_messages_session')
     const userMessagesIndexPresent = messageIndexes.has('idx_messages_session_user')
     let actualCountExpr: string
     let userCountExpr: string
-    let lastActivityExpr: string
+    let baseLastActivityExpr: string
     let joinClause = ''
     let groupByClause = ''
     if (messagesHasSessionId) {
@@ -531,100 +545,125 @@ export function readImportableAgentSessionRows(dbPath: string, opts: ReadRowsOpt
             ? "(SELECT COUNT(*) FROM (SELECT 1 FROM messages um WHERE um.session_id = s.id AND um.role = 'user' LIMIT 2))"
             : "EXISTS(SELECT 1 FROM messages um WHERE um.session_id = s.id AND LOWER(um.role) = 'user')"
         } else userCountExpr = actualCountExpr
-        lastActivityExpr = messagesHasTimestamp ? '(SELECT MAX(lm.timestamp) FROM messages lm WHERE lm.session_id = s.id)' : 'NULL'
+        baseLastActivityExpr = messagesHasTimestamp ? '(SELECT MAX(lm.timestamp) FROM messages lm WHERE lm.session_id = s.id)' : 'NULL'
       } else {
         actualCountExpr = `COUNT(m.${countCol})`
         userCountExpr = messageCols.has('role') ? "EXISTS(SELECT 1 FROM messages um WHERE um.session_id = s.id AND LOWER(um.role) = 'user')" : `COUNT(m.${countCol})`
-        lastActivityExpr = messagesHasTimestamp ? 'MAX(m.timestamp)' : 'NULL'
+        baseLastActivityExpr = messagesHasTimestamp ? 'MAX(m.timestamp)' : 'NULL'
         joinClause = 'LEFT JOIN messages m ON m.session_id = s.id'
         groupByClause = 'GROUP BY s.id'
       }
     } else {
       actualCountExpr = 's.message_count'
       userCountExpr = 's.message_count'
-      lastActivityExpr = 'NULL'
+      baseLastActivityExpr = 'NULL'
     }
-    let orderBy = 'ORDER BY s.started_at DESC'
-    let latestMessagesCte: string | null = null
-    let candidateOrder = 'ORDER BY s.started_at DESC'
-    const where = ['s.source IS NOT NULL']
-    const params: string[] = []
-    if (opts.sessionIds !== undefined) {
-      where.push('s.id IN (SELECT value FROM json_each(?))')
-      const ids = opts.sessionIds.map((id) => local.get(id)?.ids.at(-1) ?? id)
-      params.push(JSON.stringify(opts.compressionChains ? compressionChainIds(db, sessionCols, ids) : ids))
+    const candidates = (opts: ReadRowsOptions): Dict[] => {
+      const limit = opts.limit === undefined ? 200 : opts.limit
+      const exclude = opts.excludeSources === undefined ? ['cron', 'webui'] : opts.excludeSources
+      const include = opts.includeSources ?? null
+      let lastActivityExpr = baseLastActivityExpr
+      let orderBy = 'ORDER BY s.started_at DESC'
+      let latestMessagesCte: string | null = null
+      let candidateOrder = 'ORDER BY s.started_at DESC'
+      const where = ['s.source IS NOT NULL']
+      const params: string[] = []
+      if (opts.sessionIds !== undefined) {
+        where.push('s.id IN (SELECT value FROM json_each(?))')
+        const ids = opts.sessionIds.map((id) => local.get(id)?.ids.at(-1) ?? id)
+        params.push(JSON.stringify(opts.compressionChains ? compressionChainIds(db, sessionCols, ids) : ids))
+      }
+      const superseded = [...local].filter(([id, lineage]) => id !== lineage.ids.at(-1)).map(([id]) => id)
+      if (superseded.length) { where.push('s.id NOT IN (SELECT value FROM json_each(?))'); params.push(JSON.stringify(superseded)) }
+      const policySource = (id: string): string => `(SELECT CASE WHEN json_valid(value) THEN json_extract(value, '$.policy.source') END FROM state_meta WHERE key = '${LOCAL_POLICY_PREFIX}' || ${id})`
+      const sourceSql = hasPolicies ? `COALESCE(${policySource('s.id')}, ${sessionCols.has('chat_id') ? policySource('s.chat_id') : 'NULL'}, s.source)` : 's.source'
+      const included = (include ?? []).map(String).filter(Boolean)
+      if (included.length) { where.push(`${sourceSql} IN (${included.map(() => '?').join(', ')})`); params.push(...included) }
+      const excluded = (exclude ?? []).map(String).filter(Boolean)
+      if (excluded.length) { where.push(`${sourceSql} NOT IN (${excluded.map(() => '?').join(', ')})`); params.push(...excluded) }
+      const preaggregated = messagesHasSessionId && messagesHasTimestamp && included.length === 1 && included[0] === 'cron' && !messagesIndexPresent
+      // TAL-1163: the Agent's activity index preselects the window; exact recency is computed for those candidates only.
+      const activityIndexed = limit !== null && messagesHasSessionId && messagesHasTimestamp && sessionCols.has('last_activity_at')
+        && sessionIndexes.has('idx_sessions_effective_activity')
+      if (activityIndexed) {
+        lastActivityExpr = freshestActivity('s.last_activity_at', lastActivityExpr)
+        orderBy = 'ORDER BY last_activity DESC'
+        candidateOrder = 'ORDER BY COALESCE(s.last_activity_at, s.started_at) DESC, s.started_at DESC, s.id DESC'
+      } else if (preaggregated) {
+        orderBy = 'ORDER BY COALESCE(MAX(m.timestamp), s.started_at) DESC'
+        latestMessagesCte = 'latest_messages AS (SELECT mx.session_id AS session_id, MAX(mx.timestamp) AS last_message_at FROM messages mx GROUP BY mx.session_id)'
+        candidateOrder = 'ORDER BY COALESCE(lm.last_message_at, s.started_at) DESC, s.started_at DESC'
+      } else if (messagesHasSessionId && messagesHasTimestamp) {
+        orderBy = messagesIndexPresent ? 'ORDER BY COALESCE(last_activity, s.started_at) DESC' : 'ORDER BY COALESCE(MAX(m.timestamp), s.started_at) DESC'
+        candidateOrder = 'ORDER BY COALESCE((SELECT MAX(mx.timestamp) FROM messages mx WHERE mx.session_id = s.id), s.started_at) DESC, s.started_at DESC'
+      }
+      const selectSql = `SELECT s.id, s.title, s.model, s.message_count, s.started_at, s.source, ${['model_config', 'session_source', 'user_id', 'chat_id', 'chat_type', 'thread_id', 'session_key', 'origin_chat_id', 'origin_user_id', 'platform', 'parent_session_id', 'ended_at', 'end_reason'].map(col).join(', ')}, ${actualCountExpr} AS actual_message_count, ${userCountExpr} AS actual_user_message_count, ${lastActivityExpr} AS last_activity`
+      let raw: Dict[]
+      if (limit !== null) {
+        const resultLimit = Math.max(0, Math.trunc(limit))
+        if (resultLimit === 0) return []
+        const candidateLimit = Math.max(resultLimit * 8, resultLimit)
+        const candidateCte = latestMessagesCte
+          ? `WITH ${latestMessagesCte}, candidates AS (SELECT s.id FROM sessions s LEFT JOIN latest_messages lm ON lm.session_id = s.id WHERE ${where.join(' AND ')} ${candidateOrder} LIMIT ?)`
+          : `WITH candidates AS (SELECT s.id FROM sessions s WHERE ${where.join(' AND ')} ${candidateOrder} LIMIT ?)`
+        raw = db.prepare(`${candidateCte} ${selectSql} FROM sessions s JOIN candidates c ON c.id = s.id ${joinClause} ${groupByClause} ${orderBy}`).all(...params, candidateLimit)
+      } else {
+        raw = db.prepare(`${selectSql} FROM sessions s ${joinClause} WHERE ${where.join(' AND ')} ${groupByClause} ${orderBy}`).all(...params)
+      }
+      return raw
     }
-    const superseded = [...local].filter(([id, lineage]) => id !== lineage.ids.at(-1)).map(([id]) => id)
-    if (superseded.length) { where.push('s.id NOT IN (SELECT value FROM json_each(?))'); params.push(JSON.stringify(superseded)) }
-    const hasPolicies = Boolean(db.prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'state_meta'").get())
-    const policySource = (id: string): string => `(SELECT CASE WHEN json_valid(value) THEN json_extract(value, '$.policy.source') END FROM state_meta WHERE key = '${LOCAL_POLICY_PREFIX}' || ${id})`
-    const sourceSql = hasPolicies ? `COALESCE(${policySource('s.id')}, ${sessionCols.has('chat_id') ? policySource('s.chat_id') : 'NULL'}, s.source)` : 's.source'
-    const included = (include ?? []).map(String).filter(Boolean)
-    if (included.length) { where.push(`${sourceSql} IN (${included.map(() => '?').join(', ')})`); params.push(...included) }
-    const excluded = (exclude ?? []).map(String).filter(Boolean)
-    if (excluded.length) { where.push(`${sourceSql} NOT IN (${excluded.map(() => '?').join(', ')})`); params.push(...excluded) }
-    const preaggregated = messagesHasSessionId && messagesHasTimestamp && included.length === 1 && included[0] === 'cron' && !messagesIndexPresent
-    // TAL-1163: the Agent's activity index preselects the window; exact recency is computed for those candidates only.
-    const activityIndexed = limit !== null && messagesHasSessionId && messagesHasTimestamp && sessionCols.has('last_activity_at')
-      && tableIndexes(db, 'sessions').has('idx_sessions_effective_activity')
-    if (activityIndexed) {
-      lastActivityExpr = freshestActivity('s.last_activity_at', lastActivityExpr)
-      orderBy = 'ORDER BY last_activity DESC'
-      candidateOrder = 'ORDER BY COALESCE(s.last_activity_at, s.started_at) DESC, s.started_at DESC, s.id DESC'
-    } else if (preaggregated) {
-      orderBy = 'ORDER BY COALESCE(MAX(m.timestamp), s.started_at) DESC'
-      latestMessagesCte = 'latest_messages AS (SELECT mx.session_id AS session_id, MAX(mx.timestamp) AS last_message_at FROM messages mx GROUP BY mx.session_id)'
-      candidateOrder = 'ORDER BY COALESCE(lm.last_message_at, s.started_at) DESC, s.started_at DESC'
-    } else if (messagesHasSessionId && messagesHasTimestamp) {
-      orderBy = messagesIndexPresent ? 'ORDER BY COALESCE(last_activity, s.started_at) DESC' : 'ORDER BY COALESCE(MAX(m.timestamp), s.started_at) DESC'
-      candidateOrder = 'ORDER BY COALESCE((SELECT MAX(mx.timestamp) FROM messages mx WHERE mx.session_id = s.id), s.started_at) DESC, s.started_at DESC'
-    }
-    const selectSql = `SELECT s.id, s.title, s.model, s.message_count, s.started_at, s.source, ${['model_config', 'session_source', 'user_id', 'chat_id', 'chat_type', 'thread_id', 'session_key', 'origin_chat_id', 'origin_user_id', 'platform', 'parent_session_id', 'ended_at', 'end_reason'].map(col).join(', ')}, ${actualCountExpr} AS actual_message_count, ${userCountExpr} AS actual_user_message_count, ${lastActivityExpr} AS last_activity`
-    let raw: Dict[]
-    if (limit !== null) {
-      const resultLimit = Math.max(0, Math.trunc(limit))
-      if (resultLimit === 0) return []
-      const candidateLimit = Math.max(resultLimit * 8, resultLimit)
-      const candidateCte = latestMessagesCte
-        ? `WITH ${latestMessagesCte}, candidates AS (SELECT s.id FROM sessions s LEFT JOIN latest_messages lm ON lm.session_id = s.id WHERE ${where.join(' AND ')} ${candidateOrder} LIMIT ?)`
-        : `WITH candidates AS (SELECT s.id FROM sessions s WHERE ${where.join(' AND ')} ${candidateOrder} LIMIT ?)`
-      raw = db.prepare(`${candidateCte} ${selectSql} FROM sessions s JOIN candidates c ON c.id = s.id ${joinClause} ${groupByClause} ${orderBy}`).all(...params, candidateLimit)
-    } else {
-      raw = db.prepare(`${selectSql} FROM sessions s ${joinClause} WHERE ${where.join(' AND ')} ${groupByClause} ${orderBy}`).all(...params)
-    }
-    const owners = sessionSources(db, sessionCols, raw.map((r) => str(r.id)))
-    raw = raw.map((r) => { const owner = owners.get(str(r.id)); return { ...r, source: typeof owner === 'object' ? owner.source : owner || r.source } })
-    const keepEmpty = opts.keepEmpty === true && opts.sessionIds !== undefined
-    let projected = projectAgentSessionRows(raw.map((r) => {
-      const lineage = local.get(str(r.id))
-      if (!lineage) return { ...r }
-      const root = lineage.rows[0]!
-      const title = lineage.title || r.title
-      return { ...r, title, started_at: root.started_at, last_activity: r.last_activity ?? r.started_at, parent_session_id: root.parent_session_id,
-        _lineage_root_id: lineage.owner, _lineage_tip_id: r.id, _lineage_ids: [...lineage.ids], _compression_segment_count: lineage.ids.length }
-    }), keepEmpty)
-    projected = projected.map((r) => {
-      const parent = local.get(str(r.parent_session_id))
-      return { ...r, ...normalizeAgentSessionSource(r.source), ...(parent ? { _parent_lineage_root_id: parent.owner, parent_title: parent.title, parent_source: parent.rows.at(-1)?.source ?? null } : {}) }
+    const batches = queries.map((opts) => {
+      try { return candidates(opts) } catch (error) { return error as Error }
     })
-    if (!keepEmpty) projected = projected.filter(isCliSessionRowVisible)
-    if (limit === null) return projected
-    const selected = projected.slice(0, Math.max(0, Math.trunc(limit)))
-    const have = new Set(selected.map((r) => str(r.id)))
-    const byId = new Map(projected.filter((r) => r.id).map((r) => [str(r.id), r]))
-    const pending = [...selected]
-    while (pending.length) {
-      const row = pending.pop()!
-      if (lower(row.raw_source || row.source) !== 'subagent') continue
-      const parentId = str(row.parent_session_id)
-      if (!parentId || have.has(parentId)) continue
-      const parent = byId.get(parentId)
-      if (!parent || lower(parent.raw_source || parent.source) !== 'subagent') continue
-      selected.push(parent)
-      have.add(parentId)
-      pending.push(parent)
+    const ids = [...new Set(batches.flatMap((rows) => rows instanceof Error ? [] : rows.map((r) => str(r.id))))]
+    let owners: Map<string, StateDbSessionSource> | undefined
+    try { owners = sessionSources(db, sessionCols, ids) } catch (error) {
+      if (queries.length === 1) throw error
+      // Retry ownership per window only on damage, so a background failure cannot hide healthy interactive rows.
     }
-    return selected
+    const rows = batches.map((batch, i) => {
+      if (batch instanceof Error) return batch
+      let batchOwners = owners
+      if (batchOwners === undefined) {
+        try { batchOwners = sessionSources(db, sessionCols, batch.map((row) => str(row.id))) } catch (error) { return error as Error }
+      }
+      let raw = batch
+      const opts = queries[i]!
+      const limit = opts.limit === undefined ? 200 : opts.limit
+      raw = raw.map((r) => { const owner = batchOwners.get(str(r.id)); return { ...r, source: typeof owner === 'object' ? owner.source : owner || r.source } })
+      const keepEmpty = opts.keepEmpty === true && opts.sessionIds !== undefined
+      let projected = projectAgentSessionRows(raw.map((r) => {
+        const lineage = local.get(str(r.id))
+        if (!lineage) return { ...r }
+        const root = lineage.rows[0]!
+        const title = lineage.title || r.title
+        return { ...r, title, started_at: root.started_at, last_activity: r.last_activity ?? r.started_at, parent_session_id: root.parent_session_id,
+          _lineage_root_id: lineage.owner, _lineage_tip_id: r.id, _lineage_ids: [...lineage.ids], _compression_segment_count: lineage.ids.length }
+      }), keepEmpty)
+      projected = projected.map((r) => {
+        const parent = local.get(str(r.parent_session_id))
+        return { ...r, ...normalizeAgentSessionSource(r.source), ...(parent ? { _parent_lineage_root_id: parent.owner, parent_title: parent.title, parent_source: parent.rows.at(-1)?.source ?? null } : {}) }
+      })
+      if (!keepEmpty) projected = projected.filter(isCliSessionRowVisible)
+      if (limit === null) return projected
+      const selected = projected.slice(0, Math.max(0, Math.trunc(limit)))
+      const have = new Set(selected.map((r) => str(r.id)))
+      const byId = new Map(projected.filter((r) => r.id).map((r) => [str(r.id), r]))
+      const pending = [...selected]
+      while (pending.length) {
+        const row = pending.pop()!
+        if (lower(row.raw_source || row.source) !== 'subagent') continue
+        const parentId = str(row.parent_session_id)
+        if (!parentId || have.has(parentId)) continue
+        const parent = byId.get(parentId)
+        if (!parent || lower(parent.raw_source || parent.source) !== 'subagent') continue
+        selected.push(parent)
+        have.add(parentId)
+        pending.push(parent)
+      }
+      return selected
+    })
+    return { rows, storage: AGENT_STORAGE_OK }
   } finally {
     finishStateDbRead(db)
   }
@@ -978,6 +1017,7 @@ export function cheapChangeFingerprint(dbPath: string, onError?: (reason: string
 // ── off-thread listing (TAL-920) ──────────────────────────────────────────
 
 type ListingCall =
+  | { op: 'rowBatches'; dbPath: string; queries: Omit<ReadRowsOptions, 'log'>[] }
   | { op: 'rows'; dbPath: string; opts: Omit<ReadRowsOptions, 'log'> }
   | { op: 'fingerprint'; dbPath: string }
   | { op: 'storage' | 'webDiagnostic'; dbPath: string }
@@ -1044,6 +1084,14 @@ export async function readImportableAgentSessionRowsAsync(dbPath: string, opts: 
   for (const line of reply.logs) log?.(line)
   if (reply.error !== undefined) throw new Error(reply.error)
   return reply.value as Dict[]
+}
+
+/** One worker crossing for all sidebar windows and their storage health. */
+export async function readImportableAgentSessionRowBatchesAsync(dbPath: string, queries: ReadRowsOptions[]): Promise<AgentSessionRowBatches> {
+  const reply = await callListingWorker({ op: 'rowBatches', dbPath, queries: queries.map((opts) => ({ ...opts, log: undefined })) })
+  for (const line of reply.logs) queries[0]?.log?.(line)
+  if (reply.error !== undefined) throw new Error(reply.error)
+  return reply.value as AgentSessionRowBatches
 }
 
 /** `cheapChangeFingerprint` on the listing worker; a worker failure reports as a failed change check. */

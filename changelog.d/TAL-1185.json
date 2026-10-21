@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Changed",
+      "summary": "Load the session sidebar with fewer database reads and reuse recent session lookups.",
+      "highlight": false,
+      "components": ["web"]
+    }
+  ]
+}
