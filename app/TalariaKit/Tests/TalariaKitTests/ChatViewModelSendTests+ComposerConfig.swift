@@ -947,6 +947,36 @@ extension ChatViewModelSendTests {
     }
 
     @MainActor
+    func testSelectedModelTitleTracksCatalogRefreshAndSelection() async throws {
+        var catalogLabel = "Initial model"
+        let viewModel = try makeViewModel(sessionSummary: makeSession(model: "vendor/initial", modelProvider: "custom")) { request in
+            switch request.url?.path {
+            case "/api/models":
+                return apiTestJSONResponse("""
+                {"groups":[{"provider_id":"custom","models":[
+                  {"id":"vendor/initial","name":"\(catalogLabel)"},
+                  {"id":"vendor/next","name":"Next model"}
+                ]}]}
+                """, for: request)
+            case "/api/session/update":
+                return apiTestJSONResponse(#"{"session":{"session_id":"session-abc","model":"vendor/next","model_provider":"custom"}}"#, for: request)
+            case "/api/profiles": return apiTestJSONResponse(#"{"profiles":[]}"#, for: request)
+            case "/api/workspaces": return apiTestJSONResponse(#"{"workspaces":[]}"#, for: request)
+            case "/api/commands": return apiTestJSONResponse(#"{"commands":[]}"#, for: request)
+            default: return apiTestJSONResponse("{}", for: request)
+            }
+        }
+        XCTAssertEqual(viewModel.selectedModelTitle, "initial")
+        await viewModel.loadComposerConfiguration()
+        XCTAssertEqual(viewModel.selectedModelTitle, "Initial model")
+        catalogLabel = "Renamed model"
+        await viewModel.refreshModelCatalogForPickerOpen()
+        XCTAssertEqual(viewModel.selectedModelTitle, "Renamed model")
+        let selected = await viewModel.selectComposerModel(ModelCatalogOption(id: "vendor/next", displayName: "Next model", providerID: "custom"))
+        XCTAssertTrue(selected)
+        XCTAssertEqual(viewModel.selectedModelTitle, "Next model")
+    }
+
     func testSelectedModelTitleRequiresExactProviderCatalogMatch() async throws {
         func makeConfiguredViewModel(
             model: String,

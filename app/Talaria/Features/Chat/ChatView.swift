@@ -5,6 +5,19 @@ import PhotosUI
 import UniformTypeIdentifiers
 import TalariaKit
 
+#if DEBUG
+private struct ChatBodyEvaluationKey: EnvironmentKey {
+    static let defaultValue: ((String) -> Void)? = nil
+}
+
+extension EnvironmentValues {
+    var chatBodyEvaluation: ((String) -> Void)? {
+        get { self[ChatBodyEvaluationKey.self] }
+        set { self[ChatBodyEvaluationKey.self] = newValue }
+    }
+}
+#endif
+
 private enum GitChatAlert: Identifiable {
     case confirmRemote(GitRemoteAction)
     case dirtyCheckout(GitCheckoutTarget)
@@ -41,6 +54,9 @@ private enum TurnDiffPresentation: Identifiable {
 }
 
 struct ChatView: View {
+#if DEBUG
+    @Environment(\.chatBodyEvaluation) private var recordBodyEvaluation
+#endif
     private var bottomAnchorID: String {
         latestTranscriptMessageID ?? ChatTranscriptView.emptyContainerID
     }
@@ -477,7 +493,7 @@ struct ChatView: View {
 
                     listenPlaybackBar
 
-                    messageContent
+                    ChatMessageListView(chat: self, viewModel: viewModel)
                         // Scope RTL to the chat transcript only (#259): the offline
                         // banner above stays in the app's default direction.
                         .environment(\.layoutDirection, chatLayoutDirection)
@@ -713,6 +729,9 @@ struct ChatView: View {
     }
 
     var body: some View {
+#if DEBUG
+        let _ = recordBodyEvaluation?("chat")
+#endif
         chatWithToolbar
             .environment(\.retryPendingAttachment) { id in Task { await viewModel.retryAttachment(id: id) } }
             .navigationDestination(item: $forkedSession) { session in
@@ -1310,157 +1329,168 @@ struct ChatView: View {
         .accessibilityHidden(!isVisible)
     }
 
-    @ViewBuilder
-    private var messageContent: some View {
-        ChatTranscriptView(
-            isLoading: viewModel.isLoading,
-            errorMessage: viewModel.errorMessage,
-            messages: viewModel.messages,
-            displayedTranscriptMessages: displayedTranscriptMessages,
-            compressionReferenceCard: viewModel.compressionReferenceCard,
-            branchedFrom: viewModel.branchedFrom,
-            reasoningGroups: viewModel.displayedReasoningGroups,
-            completedToolCallGroupsForAnchor: { anchorMessageID in
-                viewModel.completedToolCallGroupsForAnchor(anchorMessageID)
-            },
-            archivedActivityRowsForAnchor: { anchorMessageID in
-                viewModel.archivedActivityRowsForAnchor(anchorMessageID)
-            },
-            earlierSceneRowsForTurn: { transcriptMessage in
-                viewModel.earlierSceneRows(for: transcriptMessage)
-            },
-            onLoadEarlierSceneRows: { transcriptMessage in
-                Task { await viewModel.loadEarlierSceneRows(for: transcriptMessage) }
-            },
-            liveReasoningText: viewModel.liveReasoningText,
-            liveActivityRows: viewModel.liveActivityRows,
-            reasoningAnchorMessageID: viewModel.reasoningAnchorMessageID,
-            liveToolCalls: viewModel.liveToolCalls,
-            toolCallAnchorMessageID: viewModel.toolCallAnchorMessageID,
-            streamingAssistantMessageID: viewModel.streamingAssistantMessageID,
-            liveTokensPerSecond: viewModel.liveTokensPerSecond,
-            showsRunStateCheck: viewModel.showsRunStateCheck,
-            clarificationPrompt: viewModel.clarificationPrompt,
-            showsThinkingAndToolCards: showsThinkingAndToolCards,
-            shouldFollowLatestMessage: shouldFollowLatestMessage,
-            isDisclosureSettling: isDisclosureSettling,
-            latestTranscriptMessageRole: latestTranscriptMessageRole,
-            isScrolledNearBottom: isScrolledNearBottom,
-            activeStreamID: viewModel.activeStreamID,
-            streamingScrollTrigger: viewModel.streamingScrollTrigger,
-            cacheFirstReconcileScrollToken: viewModel.cacheFirstReconcileScrollToken,
-            transcriptMessageSpacing: transcriptMessageSpacing,
-            transcriptBlockSpacing: transcriptBlockSpacing,
-            transcriptBottomInsetHeight: transcriptBottomInsetHeight,
-            scrollToBottomRequest: scrollToBottomRequest,
-            followReplayRequest: followReplayRequest,
-            assistantName: viewModel.assistantName,
-            localAttachmentPreviews: viewModel.localAttachmentPreviews,
-            listeningMessageID: viewModel.listeningMessageID,
-            isViewingCachedData: viewModel.isViewingCachedData,
-            isSessionReadOnly: viewModel.isSessionReadOnly,
-            canBranch: viewModel.canBranch,
-            hasOlderMessages: viewModel.hasOlderMessages,
-            isLoadingOlderMessages: viewModel.isLoadingOlderMessages,
-            isRegeneratingMessage: viewModel.isRegeneratingMessage,
-            isEditingMessage: viewModel.isEditingMessage,
-            isForkingMessage: viewModel.isForkingMessage,
-            loadAttachmentImage: { path in
-                await viewModel.attachmentImageData(path: path)
-            },
-            loadAttachmentData: { path in
-                await viewModel.attachmentRawData(path: path)
-            },
-            loadTranscriptMediaImage: { reference in
-                await viewModel.transcriptMediaThumbnailData(for: reference)
-            },
-            loadTranscriptMediaData: { reference in
-                await viewModel.transcriptMediaData(for: reference)
-            },
-            transcriptMediaCacheNamespace: transcriptMediaCacheNamespace,
-            actionContext: { message, visibleIndex in
-                viewModel.actionContext(for: message, visibleIndex: visibleIndex)
-            },
-            shouldRenderMessageRow: shouldRenderMessageRow,
-            onLoadMessages: {
-                await loadMessages(isUserRefresh: true, joinsLoadInFlight: true)
-            },
-            onLoadOlderMessages: { beforePrepend in
-                await loadOlderMessages(beforePrepend: beforePrepend)
-            },
-            onUpdateScrollMetrics: updateScrollMetrics,
-            onFollowEvent: handleFollowEvent,
-            onDisclosureToggle: suspendBottomAnchorForDisclosure,
-            onFollowSuppressed: recordSuppressedFollow,
-            onDismissKeyboard: dismissKeyboard,
-            onScrollToBottom: scrollToBottom,
-            onScrollToLatestTranscriptMessage: { proxy in
-                scrollToLatestTranscriptMessage(proxy)
-            },
-            onScrollToLatestContent: { proxy, animated in
-                scrollToLatestContent(proxy, animated: animated)
-            },
-            onPreviewAttachment: { attachment, localData in
-                presentPreviewRestoringComposerFocusIfNeeded {
-                    attachmentPreviewItem = ChatAttachmentPreviewItem(message: attachment, localData: localData)
+    /// Observes reveal updates here while reusing ChatTranscriptView's renderer and the chat's state-backed actions.
+    private struct ChatMessageListView: View {
+        let chat: ChatView
+        let viewModel: ChatViewModel
+#if DEBUG
+        @Environment(\.chatBodyEvaluation) private var recordBodyEvaluation
+#endif
+
+        var body: some View {
+#if DEBUG
+            let _ = recordBodyEvaluation?("messages")
+#endif
+            ChatTranscriptView(
+                isLoading: viewModel.isLoading,
+                errorMessage: viewModel.errorMessage,
+                messages: viewModel.messages,
+                displayedTranscriptMessages: chat.displayedTranscriptMessages,
+                compressionReferenceCard: viewModel.compressionReferenceCard,
+                branchedFrom: viewModel.branchedFrom,
+                reasoningGroups: viewModel.displayedReasoningGroups,
+                completedToolCallGroupsForAnchor: { anchorMessageID in
+                    viewModel.completedToolCallGroupsForAnchor(anchorMessageID)
+                },
+                archivedActivityRowsForAnchor: { anchorMessageID in
+                    viewModel.archivedActivityRowsForAnchor(anchorMessageID)
+                },
+                earlierSceneRowsForTurn: { transcriptMessage in
+                    viewModel.earlierSceneRows(for: transcriptMessage)
+                },
+                onLoadEarlierSceneRows: { transcriptMessage in
+                    Task { await viewModel.loadEarlierSceneRows(for: transcriptMessage) }
+                },
+                liveReasoningText: viewModel.liveReasoningText,
+                liveActivityRows: viewModel.liveActivityRows,
+                reasoningAnchorMessageID: viewModel.reasoningAnchorMessageID,
+                liveToolCalls: viewModel.liveToolCalls,
+                toolCallAnchorMessageID: viewModel.toolCallAnchorMessageID,
+                streamingAssistantMessageID: viewModel.streamingAssistantMessageID,
+                liveTokensPerSecond: viewModel.liveTokensPerSecond,
+                showsRunStateCheck: viewModel.showsRunStateCheck,
+                clarificationPrompt: viewModel.clarificationPrompt,
+                showsThinkingAndToolCards: chat.showsThinkingAndToolCards,
+                shouldFollowLatestMessage: chat.shouldFollowLatestMessage,
+                isDisclosureSettling: chat.isDisclosureSettling,
+                latestTranscriptMessageRole: chat.latestTranscriptMessageRole,
+                isScrolledNearBottom: chat.isScrolledNearBottom,
+                activeStreamID: viewModel.activeStreamID,
+                streamingScrollTrigger: viewModel.streamingScrollTrigger,
+                cacheFirstReconcileScrollToken: viewModel.cacheFirstReconcileScrollToken,
+                transcriptMessageSpacing: chat.transcriptMessageSpacing,
+                transcriptBlockSpacing: chat.transcriptBlockSpacing,
+                transcriptBottomInsetHeight: chat.transcriptBottomInsetHeight,
+                scrollToBottomRequest: chat.scrollToBottomRequest,
+                followReplayRequest: chat.followReplayRequest,
+                assistantName: viewModel.assistantName,
+                localAttachmentPreviews: viewModel.localAttachmentPreviews,
+                listeningMessageID: viewModel.listeningMessageID,
+                isViewingCachedData: viewModel.isViewingCachedData,
+                isSessionReadOnly: viewModel.isSessionReadOnly,
+                canBranch: viewModel.canBranch,
+                hasOlderMessages: viewModel.hasOlderMessages,
+                isLoadingOlderMessages: viewModel.isLoadingOlderMessages,
+                isRegeneratingMessage: viewModel.isRegeneratingMessage,
+                isEditingMessage: viewModel.isEditingMessage,
+                isForkingMessage: viewModel.isForkingMessage,
+                loadAttachmentImage: { path in
+                    await viewModel.attachmentImageData(path: path)
+                },
+                loadAttachmentData: { path in
+                    await viewModel.attachmentRawData(path: path)
+                },
+                loadTranscriptMediaImage: { reference in
+                    await viewModel.transcriptMediaThumbnailData(for: reference)
+                },
+                loadTranscriptMediaData: { reference in
+                    await viewModel.transcriptMediaData(for: reference)
+                },
+                transcriptMediaCacheNamespace: chat.transcriptMediaCacheNamespace,
+                actionContext: { message, visibleIndex in
+                    viewModel.actionContext(for: message, visibleIndex: visibleIndex)
+                },
+                shouldRenderMessageRow: chat.shouldRenderMessageRow,
+                onLoadMessages: {
+                    await chat.loadMessages(isUserRefresh: true, joinsLoadInFlight: true)
+                },
+                onLoadOlderMessages: { beforePrepend in
+                    await chat.loadOlderMessages(beforePrepend: beforePrepend)
+                },
+                onUpdateScrollMetrics: chat.updateScrollMetrics,
+                onFollowEvent: chat.handleFollowEvent,
+                onDisclosureToggle: chat.suspendBottomAnchorForDisclosure,
+                onFollowSuppressed: chat.recordSuppressedFollow,
+                onDismissKeyboard: chat.dismissKeyboard,
+                onScrollToBottom: chat.scrollToBottom,
+                onScrollToLatestTranscriptMessage: { proxy in
+                    chat.scrollToLatestTranscriptMessage(proxy)
+                },
+                onScrollToLatestContent: { proxy, animated in
+                    chat.scrollToLatestContent(proxy, animated: animated)
+                },
+                onPreviewAttachment: { attachment, localData in
+                    chat.presentPreviewRestoringComposerFocusIfNeeded {
+                        chat.attachmentPreviewItem = ChatAttachmentPreviewItem(message: attachment, localData: localData)
+                    }
+                },
+                onPreviewTranscriptMedia: { reference in
+                    chat.transcriptMediaPreviewItem = TranscriptMediaPreviewItem(reference: reference)
+                },
+                onToggleListening: { context in
+                    viewModel.toggleListening(to: context)
+                },
+                onSelectText: { context in
+                    chat.selectableResponseText = SelectableTextPresentation(context: context)
+                },
+                onRegenerate: chat.beginRegenerateResponse,
+                onEdit: chat.beginEditMessage,
+                onFork: { context in
+                    Task { await chat.forkFromMessage(context) }
+                },
+                onCopy: { context in
+                    UIPasteboard.general.string = context.copyText
+                },
+                inlineCommitContext: chat.inlineCommitContext,
+                onInlineCommit: {
+                    Task { await chat.performQuickCommit(push: true) }
+                },
+                turnChangesSummary: chat.turnChangesRecapSummary,
+                onOpenTurnDiff: {
+                    chat.presentTurnDiff(for: chat.turnChangesRecapSummary)
+                },
+                onOpenTurnFileDiff: { file in
+                    chat.turnDiffPresentation = .file(file)
                 }
-            },
-            onPreviewTranscriptMedia: { reference in
-                transcriptMediaPreviewItem = TranscriptMediaPreviewItem(reference: reference)
-            },
-            onToggleListening: { context in
-                viewModel.toggleListening(to: context)
-            },
-            onSelectText: { context in
-                selectableResponseText = SelectableTextPresentation(context: context)
-            },
-            onRegenerate: beginRegenerateResponse,
-            onEdit: beginEditMessage,
-            onFork: { context in
-                Task { await forkFromMessage(context) }
-            },
-            onCopy: { context in
-                UIPasteboard.general.string = context.copyText
-            },
-            inlineCommitContext: inlineCommitContext,
-            onInlineCommit: {
-                Task { await performQuickCommit(push: true) }
-            },
-            turnChangesSummary: turnChangesRecapSummary,
-            onOpenTurnDiff: {
-                presentTurnDiff(for: turnChangesRecapSummary)
-            },
-            onOpenTurnFileDiff: { file in
-                turnDiffPresentation = .file(file)
+            )
+            .environment(\.openURL, OpenURLAction(handler: chat.handleTranscriptLink))
+            .environment(\.chatFullToolResultLoader) { toolCallID in
+                try await viewModel.fullToolResult(toolCallID: toolCallID)
             }
-        )
-        .environment(\.openURL, OpenURLAction(handler: handleTranscriptLink))
-        .environment(\.chatFullToolResultLoader) { toolCallID in
-            try await viewModel.fullToolResult(toolCallID: toolCallID)
-        }
-        .environment(\.voiceNoteControls, VoiceNoteControls(
-            retry: { id in Task { await viewModel.retryVoiceNote(messageID: id, modelContext: modelContext) } },
-            remove: { viewModel.removeVoiceNote(messageID: $0) }
-        ))
-        .environment(\.pendingSteerControls, PendingSteerControls(
-            actions: viewModel.pendingSteerActions,
-            inFlight: viewModel.steerActionsInFlight,
-            perform: { id, action in
-                Task {
-                    switch action {
-                    case .sendNow: await viewModel.sendPendingSteerNow(id: id)
-                    case .edit: await viewModel.withdrawPendingSteer(id: id, reason: .edit)
-                    case .cancel: await viewModel.withdrawPendingSteer(id: id, reason: .cancel)
+            .environment(\.voiceNoteControls, VoiceNoteControls(
+                retry: { id in Task { await viewModel.retryVoiceNote(messageID: id, modelContext: chat.modelContext) } },
+                remove: { viewModel.removeVoiceNote(messageID: $0) }
+            ))
+            .environment(\.pendingSteerControls, PendingSteerControls(
+                actions: viewModel.pendingSteerActions,
+                inFlight: viewModel.steerActionsInFlight,
+                perform: { id, action in
+                    Task {
+                        switch action {
+                        case .sendNow: await viewModel.sendPendingSteerNow(id: id)
+                        case .edit: await viewModel.withdrawPendingSteer(id: id, reason: .edit)
+                        case .cancel: await viewModel.withdrawPendingSteer(id: id, reason: .cancel)
+                        }
                     }
                 }
+            ))
+            // TAL-426: a steer taken back (Edit, or a Stop of this device's steer) returns after the draft, blank line between.
+            .onChange(of: viewModel.returnedComposerTexts) { _, texts in
+                guard !texts.isEmpty else { return }
+                let returned = viewModel.takeReturnedComposerTexts().joined(separator: "\n\n")
+                chat.appendReturnedComposerText(returned)
+                chat.composerIsFocused = true
             }
-        ))
-        // TAL-426: a steer taken back (Edit, or a Stop of this device's steer) returns after the draft, blank line between.
-        .onChange(of: viewModel.returnedComposerTexts) { _, texts in
-            guard !texts.isEmpty else { return }
-            let returned = viewModel.takeReturnedComposerTexts().joined(separator: "\n\n")
-            appendReturnedComposerText(returned)
-            composerIsFocused = true
         }
     }
 
@@ -1530,7 +1560,7 @@ struct ChatView: View {
     private var usesCompactComposer: Bool {
         ChatScrollPolicy.shouldUseCompactComposer(
             isReadingOlderTranscript: isReadingOlderTranscript,
-            hasMessages: !viewModel.messages.isEmpty,
+            hasMessages: viewModel.hasMessages,
             isFocused: composerIsFocused,
             hasDraft: !draftMessage.isEmpty,
             hasPendingAttachments: !viewModel.pendingAttachments.isEmpty,

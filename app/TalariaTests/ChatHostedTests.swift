@@ -9,6 +9,75 @@ import XCTest
 /// The fixture chat's media, long bodies, background work and pending steers, hosted in process (TAL-856).
 @MainActor
 final class ChatHostedTests: XCTestCase {
+    func testRevealTicksOnlyEvaluateTheMessageList() async throws {
+        try await checkRevealTickIsolation(size: CGSize(width: 320, height: 844), name: "phone")
+    }
+
+    func testRevealTicksOnlyEvaluateTheMessageListOnPad() async throws {
+        try await checkRevealTickIsolation(size: HostedSize.padLandscape, name: "pad")
+    }
+
+    private func checkRevealTickIsolation(size: CGSize, name: String) async throws {
+        let fixture = try FixtureApp(for: self)
+        let stream = ScriptedSSEStreamingClient()
+        let summary = SessionSummary(sessionId: "session-abc", title: "Streaming isolation")
+        let viewModel = try makeScriptedChatViewModel(streamClient: stream, flushesEachEvent: false,
+            streamingScrollCoalescingDelayNanoseconds: 60_000_000_000, sessionSummary: summary,
+            server: UITestFixtureEnvironment.serverURL) { request in
+            if request.url?.path == "/api/chat/start" {
+                return apiTestJSONResponse(#"{"session_id":"session-abc","stream_id":"stream-isolation"}"#, for: request)
+            }
+            if request.url?.path == "/api/session/yolo" {
+                return apiTestJSONResponse(#"{"yolo_enabled":true}"#, for: request)
+            }
+            return apiTestJSONResponse("{}", for: request)
+        }
+        stream.flushPendingStreamingContent = { [weak viewModel] in viewModel?.revealStreamingContentTickForTesting() }
+        defer {
+            viewModel.suspendStreamForNavigation()
+            viewModel.cleanupPollingTasks()
+            MockURLProtocol.requestHandler = nil
+            stream.stop()
+            ChatViewModel.resetActiveStreamSnapshotsForTesting()
+        }
+        var evaluations: [String: Int] = [:]
+        let window = try hostWindow(NavigationStack {
+            ChatView(session: summary, server: UITestFixtureEnvironment.serverURL, onAPIError: { _ in },
+                     initialDraft: "Keep this draft", loadsInitialMessages: false, viewModel: viewModel)
+        }.environment(\.chatBodyEvaluation) { evaluations[$0, default: 0] += 1 }
+            .modelContainer(fixture.cache), size: size)
+        let configured = await awaitCondition { viewModel.isSessionApprovalBypassEnabled }
+        XCTAssertTrue(configured, "The hosted chat's startup must finish before measuring reveal work")
+        let started = await viewModel.sendMessage("Stream a reply")
+        XCTAssertTrue(started)
+        stream.emit(.token("Opening "))
+        let opened = await awaitCondition { viewModel.messages.last?.content == "Opening " }
+        XCTAssertTrue(opened)
+        settle(0.5)
+        attachHostedScreenshot(window, name: "stream-isolation-before-ticks-\(name)")
+        evaluations = [:]
+        var expected = "Opening "
+        for tick in 1...20 {
+            let token = "word\(tick) "
+            expected += token
+            stream.emit(.token(token))
+            let revealed = await awaitCondition { viewModel.messages.last?.content == expected }
+            XCTAssertTrue(revealed, "Reveal tick \(tick) never reached the transcript")
+            settle(0.05)
+        }
+        let counts = XCTAttachment(string: "20 reveal ticks: \(evaluations)")
+        counts.name = "body-evaluations-\(name)"
+        counts.lifetime = .keepAlways
+        add(counts)
+        XCTAssertEqual(evaluations["messages", default: 0], 20, "Each reveal must evaluate the message list once")
+        XCTAssertLessThanOrEqual(evaluations["composer", default: 0], 1, "Reveal ticks rebuilt the composer")
+        XCTAssertEqual(evaluations["chat", default: 0], 0, "Reveal ticks rebuilt the whole chat")
+        let composer = await composerTextView(in: window)
+        XCTAssertEqual(composer?.text, "Keep this draft")
+        XCTAssertNotNil(HostedAccessibility.element(in: window, label: "Send"))
+        attachHostedScreenshot(window, name: "stream-isolation-after-ticks-\(name)")
+    }
+
     func testModelGuardCancelRefreshAndConfirmUseServerWarnings() async throws {
         let fixture = try FixtureApp(for: self)
         let stream = ScriptedSSEStreamingClient()

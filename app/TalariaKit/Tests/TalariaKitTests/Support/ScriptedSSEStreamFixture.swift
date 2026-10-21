@@ -106,7 +106,9 @@ extension XCTestCase {
     func makeScriptedChatViewModel(
         streamClient: ScriptedSSEStreamingClient,
         flushesEachEvent: Bool = true,
+        streamingScrollCoalescingDelayNanoseconds: UInt64 = 16_000_000,
         sessionSummary: SessionSummary? = nil,
+        server: URL = URL(string: "https://example.test")!,
         handler: @escaping (URLRequest) throws -> (HTTPURLResponse, Data)
     ) throws -> ChatViewModel {
         MockURLProtocol.requestHandler = handler
@@ -114,7 +116,6 @@ extension XCTestCase {
         let configuration = URLSessionConfiguration.ephemeral
         configuration.protocolClasses = [MockURLProtocol.self]
         let urlSession = URLSession(configuration: configuration)
-        let server = try XCTUnwrap(URL(string: "https://example.test"))
         let client = APIClient(baseURL: server, session: urlSession)
 
         let decoder = JSONDecoder()
@@ -139,7 +140,8 @@ extension XCTestCase {
             clarifyStreamClient: ScriptedSSEStreamingClient(),
             btwStreamClient: ScriptedSSEStreamingClient(),
             // A real manager leaves Live Activities that break the next test-host launch (TAL-375).
-            liveActivityManager: SpyChatLiveActivityManager()
+            liveActivityManager: SpyChatLiveActivityManager(),
+            streamingScrollCoalescingDelayNanoseconds: streamingScrollCoalescingDelayNanoseconds
         )
         if flushesEachEvent {
             streamClient.flushPendingStreamingContent = { [weak viewModel] in
